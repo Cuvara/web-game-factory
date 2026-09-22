@@ -1,0 +1,177 @@
+# Web Game Factory — Role registry
+#
+# Roles come in three kinds, and keeping them distinct matters:
+#
+#   owner       — accountable for a lifecycle state and for the artifact it produces.
+#                 Exactly one owner per state.
+#   implementer — does work INSIDE a state (prototype, production) and owns no state.
+#   human       — a person. Appears at gates.
+#
+# The previous role list mixed owners and implementers in one flat table, and that is
+# precisely why core/workflows/ (8 dirs) and core/schemas/ (6 dirs) drifted apart: the
+# directory structure inherited a list that conflated two taxonomies.
+#
+# These are provider-independent. Adapters bind them to whatever surface their runtime
+# offers — a subagent, a prompt file, something else; nothing here names an AI provider.
+
+version: 1.0.0
+
+roles:
+  # ---------------------------------------------------------------- owners
+  research:
+    kind: owner
+    label: Research
+    charter: research.md
+    owns_states:
+      - portfolio:discovered
+    owns_jobs:
+      - portfolio:market-scan
+    produces: [claim, opportunity]
+    consumes: []
+    responsibility: >
+      Gather market signal from platform sources and normalize it into claims. Never
+      promotes a hypothesis to observed without a citation.
+
+  analysis:
+    kind: owner
+    label: Analysis
+    charter: analysis.md
+    owns_states:
+      - portfolio:scored
+      - portfolio:shortlisted
+      - portfolio:approved
+      - title:concept
+    produces: [evaluation]
+    consumes: [claim, opportunity]
+    responsibility: >
+      Score opportunities under a named scoring model, keep evidence coverage honest, and
+      present the shortlist at G1 without hiding the rejected candidates.
+
+  game-designer:
+    kind: owner
+    label: Game designer
+    charter: game-designer.md
+    owns_states:
+      - title:strategy
+      - title:design
+    produces: [title-strategy, game-design]
+    consumes: [opportunity, evaluation, claim]
+    responsibility: >
+      Author the strategy including its kill criteria, then solve scope, session,
+      retention and monetization jointly as one design. Presents evidence at G4 and does
+      not defend the prototype against its own kill criteria.
+
+  architect:
+    kind: owner
+    label: Architect
+    charter: architect.md
+    owns_states:
+      - title:tech-plan
+    produces: [tech-plan]
+    consumes: [game-design, title-strategy, asset-manifest]
+    responsibility: >
+      Select the engine with a written rationale, define the technical architecture and
+      performance budgets, and produce a development plan specific enough that a coding
+      agent does not have to invent scope.
+
+  qa:
+    kind: owner
+    label: QA
+    charter: qa.md
+    owns_states:
+      - release:qa
+    produces: [qa-report]
+    consumes: [release-manifest, game-design, tech-plan]
+    responsibility: >
+      Independent verification of a built candidate. Distinct from the implement/test/fix
+      loop agents run during production — an agent saying "ready" is not QA saying
+      "approved", and QA must be able to fail a build its author believes is finished.
+
+  release:
+    kind: owner
+    label: Release
+    charter: release.md
+    owns_states:
+      - title:scaffolding
+      - title:releasing
+      - release:draft
+      - release:rc
+      - release:approved
+      - release:validating
+      - release:submitting
+      - release:partially-live
+    produces: [release-manifest, platform-publication]
+    consumes: [tech-plan, qa-report]
+    responsibility: >
+      Create the game repository from the template, assemble and freeze release
+      candidates, run platform validation, prepare submissions.
+
+      Also owns COMPLIANCE AND LOCALIZATION — store metadata, required locales, per-portal
+      requirements. This is assigned explicitly because it was previously assigned to
+      nobody, which meant it was discovered at submission time.
+
+  liveops:
+    kind: owner
+    label: LiveOps
+    charter: liveops.md
+    owns_states:
+      - title:live
+    produces: [performance-review, claim]
+    consumes: [release-manifest, platform-publication]
+    responsibility: >
+      Interpret post-launch data and decide iterate / scale / hold / sunset. Feeds claims
+      back into the portfolio so the factory learns across titles.
+
+      This role was missing from the original ten. The sdk role integrates the analytics
+      SDK; nobody interpreted the data, which left the entire "learns from what it ships"
+      premise without an owner.
+
+  # ---------------------------------------------------------- implementers
+  gameplay:
+    kind: implementer
+    label: Gameplay
+    charter: implementers.md
+    works_in: [title:prototype, title:production]
+    responsibility: Core mechanics, game loop, systems, progression, and their tests.
+
+  ui:
+    kind: implementer
+    label: UI
+    charter: implementers.md
+    works_in: [title:prototype, title:production]
+    responsibility: Interface, HUD, menus, onboarding flow, and platform UI constraints.
+
+  asset:
+    kind: implementer
+    label: Asset
+    charter: implementers.md
+    works_in: [title:design, title:tech-plan, title:prototype, title:production]
+    produces: [asset-manifest]
+    responsibility: >
+      Author the asset manifest with sources and cost estimates, then produce or source
+      the assets and keep line-item status current.
+
+      Note it contributes during design: asset cost is an input to the scope decision, and
+      an input cannot be produced downstream of the decision it feeds.
+
+  sdk:
+    kind: implementer
+    label: SDK
+    charter: implementers.md
+    works_in: [title:prototype, title:production, release:validating]
+    responsibility: >
+      Platform SDK, ads, analytics and cloud-save integration through the template's
+      platform abstraction. Game code never calls a portal SDK directly.
+
+  # ----------------------------------------------------------------- human
+  portfolio-owner:
+    kind: human
+    label: Portfolio owner
+    charter: portfolio-owner.md
+    approves_gates: [G1, G2, G3, G4, G5, G6, G7]
+    responsibility: >
+      The human accountable for every gate decision, and the only party that may kill a
+      concept, authorize publication, or approve spend.
+
+      Named as a role rather than left as an implicit "somebody approves", because a gate
+      with no named approver is a gate that gets skipped.

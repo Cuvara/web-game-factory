@@ -1,0 +1,180 @@
+# Web Game Factory — Human approval gates
+#
+# Gates are DATA, not code. That is what lets the same factory run supervised (everything
+# approved by hand) or semi-autonomously (reversible gates time out into approval) without
+# a rewrite — you change auto_approve_after, not the machine.
+#
+# The hard rule, stated once and enforced by the `irreversible` flag:
+#
+#     An irreversible gate never auto-approves.
+#
+# Three things are irreversible: killing a concept, making something public, and spending
+# money. An AI should not do any of them unattended, regardless of how confident it is or
+# how long the human takes to respond.
+#
+# The counter-pressure is real and worth stating: seven gates against a 7-14 day cycle is
+# a gate roughly every 1.4 days, and with several titles in flight the human becomes the
+# entire factory. That is why the four reversible gates support auto-approval and why
+# portfolio.max_concurrent_titles exists. A factory whose gates cannot be cleared is a
+# factory that deadlocks, and a deadlocked factory tempts people to remove the gates that
+# actually matter.
+
+version: 1.0.0
+
+defaults:
+  approvers: [portfolio-owner]
+  require_rationale: true
+  emits: decision-record
+
+gates:
+  G1:
+    label: Opportunity selection
+    machine: portfolio
+    on_transition: shortlisted -> approved
+    question: Is this the opportunity worth spending a production cycle on?
+    irreversible: false
+    auto_approve_after: 72h
+    required_artifacts: [opportunity, evaluation]
+    required_predicates:
+      - evidence_coverage_met
+      - no_veto_fired
+    presents:
+      role: analysis
+      must_show:
+        - The ranked shortlist, not just the winner.
+        - Which dimensions are evidence-backed and which are hypothesis.
+        - Every veto that fired on rejected candidates.
+    rejection_routes_to: [parked, rejected]
+
+  G2:
+    label: Strategy approval
+    machine: title
+    on_transition: strategy -> design
+    question: Are we committed to this game, these platforms, this timebox — and do we agree on what would make us stop?
+    irreversible: false
+    auto_approve_after: 48h
+    required_artifacts: [title-strategy]
+    required_predicates:
+      - kill_criteria_defined
+      - timebox_set
+    presents:
+      role: game-designer
+      must_show:
+        - The kill criteria, read aloud. These are the terms of the bet.
+        - What is explicitly out of scope.
+        - Primary vs secondary platforms and why.
+    rejection_routes_to: [abandoned]
+
+  G3:
+    label: Design and development plan approval
+    machine: title
+    on_transition: tech-plan -> scaffolding
+    question: Is this buildable in the timebox, and is the plan specific enough to hand to a coding agent?
+    irreversible: false
+    auto_approve_after: 48h
+    required_artifacts: [game-design, asset-manifest, tech-plan]
+    required_predicates:
+      - design_consistent
+      - engine_selected
+      - plan_fits_timebox
+      - asset_manifest_present
+    presents:
+      role: architect
+      must_show:
+        - The design consistency result, including any rule that was close to failing.
+        - Milestone estimates against the timebox.
+        - Asset cost and how much of it is not yet sourced.
+    rejection_routes_to: [design]
+    note: >
+      Design and tech plan are approved together deliberately. Splitting them adds a gate
+      to a cycle that already has too many, and they are not independently actionable —
+      approving a design whose plan does not fit the timebox decides nothing.
+
+  G4:
+    label: Prototype review
+    machine: title
+    on_transition: prototype-review -> {production | prototype | abandoned}
+    question: Is the core loop actually good, judged against what we said at strategy time?
+    irreversible: true
+    irreversible_because: The abandon outcome kills the title.
+    auto_approve_after: null
+    required_artifacts: [prototype-report, title-strategy, game-design]
+    required_predicates:
+      - playable_build
+    outcomes: [pass, iterate, abandon]
+    presents:
+      role: game-designer
+      contributors: [qa]
+      must_show:
+        - Each kill criterion with its measured value and whether it was breached.
+        - Playtest evidence from someone who had not seen the game before.
+        - Iteration count against the maximum set at strategy.
+    note: >
+      The whole factory exists to be able to say no here. Sunk cost is not an input: the
+      question is not "can this be saved" but "would we start this today knowing what we
+      now know".
+
+  G5:
+    label: Release approval
+    machine: release
+    on_transition: rc -> approved
+    question: Is this build good enough to be the thing people play?
+    irreversible: false
+    auto_approve_after: 24h
+    required_artifacts: [qa-report, release-manifest]
+    required_predicates:
+      - verify_suite_green
+      - no_blocking_defects
+      - candidate_frozen
+    presents:
+      role: release
+      must_show:
+        - Blocking defect count and the non-blocking ones being accepted.
+        - Performance results per device class against budget.
+        - The changelog.
+    rejection_routes_to: [cancelled]
+
+  G6:
+    label: Publish authorization
+    machine: release
+    on_transition: approved -> validating
+    question: Do we publish this, to these platforms, now?
+    irreversible: true
+    irreversible_because: Publication is public and cannot be fully undone; portals cache and index.
+    auto_approve_after: null
+    required_artifacts: [release-manifest]
+    required_predicates:
+      - store_metadata_complete
+    presents:
+      role: release
+      must_show:
+        - Which platforms are required and which optional for this release.
+        - Store metadata and localizations per platform.
+        - The rollback plan, i.e. the previous release manifest.
+    note: >
+      Separate from G5 on purpose. An approved build can sit indefinitely at no cost. This
+      gate is the one that makes it public, and it is authorized per release, never
+      standing.
+
+  G7:
+    label: Campaign spend
+    machine: title
+    on_transition: live -> live (scale)
+    question: Do we spend money acquiring players for this game, and how much at most?
+    irreversible: true
+    irreversible_because: Spends real money.
+    auto_approve_after: null
+    required_artifacts: [performance-review]
+    required_predicates:
+      - campaign_budget_approved
+    requires_explicit_ceiling: true
+    presents:
+      role: liveops
+      must_show:
+        - Retention and monetization actuals against the success criteria from strategy.
+        - The proposed spend ceiling and the metric that would stop the campaign.
+        - Which numbers are observed and which are projected.
+    note: >
+      The AI proposes; a human authorizes an amount. No standing budget, no auto-renewal.
+      Correlation in a performance review is not causation and must not be presented as a
+      reason to spend.

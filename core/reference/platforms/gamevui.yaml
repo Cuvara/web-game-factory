@@ -1,0 +1,76 @@
+# Platform profile — GameVui
+#
+# See yandex.yaml for how profiles are consumed. This profile is the least verified of the
+# set; treat every figure as a hypothesis until someone has read the portal's own terms.
+
+id: gamevui
+name: GameVui
+version: 1.0.0
+status: unverified
+docs: https://gamevui.vn/
+
+audience:
+  primary_regions: [vn]
+  device_mix: { mobile: 0.8, desktop: 0.2 }
+
+capabilities:
+  ads: [interstitial, banner]
+  iap: false
+  cloud_saves: false
+  leaderboards: false
+  achievements: false
+  auth: none
+  analytics: self-hosted
+
+requirements:
+  locales_required: [vi]
+  locales_recommended: [en]
+  max_bundle_mb: 50
+  orientation: [portrait, landscape]
+  loading_api: optional
+  offline_start: false
+  https_only: true
+
+ads:
+  interstitial_min_interval_s: 120
+  rewarded_available: false
+  banner_available: true
+  notes: >
+    No rewarded video. A monetization design that leans on rewarded ads cannot treat this
+    platform as required — catch that at design, not at validation.
+
+metadata_requirements:
+  descriptions_locales: [vi]
+  screenshots_min: 2
+  icon_required: true
+  age_rating_required: false
+
+review:
+  process: manual
+  typical_days: [2, 14]
+  common_rejections:
+    - Missing Vietnamese localization.
+    - Bundle too large for the local mobile network assumption.
+    - Poor performance on low-end Android devices.
+
+assertions:
+  - id: gamevui_bundle_size
+    check: { left: package.size_mb, op: lte, right: 50 }
+    severity: blocking
+  - id: gamevui_vi_locale_present
+    check: { left: package.locales, op: in, right: [vi] }
+    severity: blocking
+  - id: gamevui_no_rewarded
+    check: { left: package.uses_rewarded_ads, op: eq, right: false }
+    severity: blocking
+  - id: gamevui_lowend_perf
+    check: { left: package.perf.lowend_android_fps, op: gte, right: 30 }
+    severity: warning
+
+scoring_hints:
+  platform_fit_favours:
+    - Small, portrait, low-end-friendly mobile titles.
+    - Language-light designs that localize cheaply.
+  platform_fit_penalizes:
+    - Rewarded-ad-led monetization — unsupported.
+    - Large bundles and heavy 3D.

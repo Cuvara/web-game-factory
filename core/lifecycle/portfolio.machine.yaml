@@ -1,0 +1,202 @@
+# Web Game Factory — Portfolio tier state machine
+#
+# The entity that has state here is an OPPORTUNITY, not "the factory" and not a game.
+# Market scanning itself is a stateless recurring job: it emits claims and opportunities
+# and then it is done. Modelling "market intelligence" as a state is the single most
+# common error in factory designs — no entity can sit in it.
+#
+# Opportunities are cheap. Most of them should end in REJECTED, and that is the machine
+# working correctly, not failing.
+
+machine: portfolio
+version: 1.0.0
+entity: opportunity
+initial: discovered
+terminals: [promoted, rejected]
+
+# ---------------------------------------------------------------------------
+# Jobs — recurring activities with no state of their own.
+# ---------------------------------------------------------------------------
+jobs:
+  market-scan:
+    label: Market scan
+    kind: ai-assisted
+    role: research
+    procedure: stages/market-scan.md
+    schedule: on-demand-or-periodic
+    reads:
+      - core/reference/platforms/
+      - core/reference/dimensions.yaml
+    emits: [claim, opportunity]
+    notes: >
+      Also fed by performance-review artifacts from live titles. That feedback is a DATA
+      edge, not a control edge: a live game's metrics become claims that raise or lower
+      confidence in genre/mechanic hypotheses. Nothing transitions as a result.
+
+# ---------------------------------------------------------------------------
+# Guards — named predicates referenced by transitions.
+# ---------------------------------------------------------------------------
+guards:
+  scored_completely:
+    description: Every dimension in the scoring model is present, or explicitly recorded as null with a reason.
+  above_shortlist_threshold:
+    description: evaluation.aggregate >= scoring_model.shortlist_threshold
+  evidence_coverage_met:
+    description: evaluation.evidence_coverage >= scoring_model.evidence_policy.min_coverage
+  no_veto_fired:
+    description: evaluation.vetoes_fired is empty
+  wip_available:
+    description: Count of titles in non-terminal, pre-LIVE states < portfolio.max_concurrent_titles
+  evidence_fresh:
+    description: now - max(evidence.observed_at) <= scoring_model.evidence_ttl_days
+
+states:
+  discovered:
+    label: Discovered
+    kind: automatic
+    role: research
+    procedure: stages/market-scan.md
+    inputs: [claim]
+    outputs: [opportunity]
+    description: >
+      A candidate exists and is deduplicated against the existing backlog. Nothing has
+      been judged yet.
+    transitions:
+      - event: score
+        to: scored
+        kind: ai-assisted
+        role: analysis
+
+  scored:
+    label: Scored
+    kind: ai-assisted
+    role: analysis
+    procedure: stages/score-opportunity.md
+    inputs: [opportunity, claim]
+    outputs: [evaluation]
+    description: >
+      Carries at least one evaluation produced under a named, versioned scoring model.
+      Re-scoring appends a new evaluation; evaluations are never overwritten, so a
+      ranking change can always be attributed to either new evidence or a new model.
+    transitions:
+      - event: rank
+        to: shortlisted
+        kind: automatic
+        guard: [above_shortlist_threshold, evidence_coverage_met, no_veto_fired]
+      - event: rank
+        to: rejected
+        kind: automatic
+        guard_negated: [above_shortlist_threshold, no_veto_fired]
+        note: Below threshold or a veto fired. Records which, so the rejection is explainable.
+      - event: ttl_expire
+        to: stale
+        kind: automatic
+        guard_negated: [evidence_fresh]
+
+  shortlisted:
+    label: Shortlisted
+    kind: automatic
+    role: analysis
+    procedure: stages/opportunity-selection.md
+    inputs: [evaluation, opportunity]
+    outputs: []
+    description: Ranks above threshold and is waiting for a human to choose.
+    transitions:
+      - event: select
+        to: approved
+        kind: human-approval
+        gate: G1
+        outputs: [decision-record]
+      - event: defer
+        to: parked
+        kind: human-approval
+        gate: G1
+      - event: reject
+        to: rejected
+        kind: human-approval
+        gate: G1
+      - event: ttl_expire
+        to: stale
+        kind: automatic
+        guard_negated: [evidence_fresh]
+
+  approved:
+    label: Approved
+    kind: automatic
+    role: analysis
+    inputs: [decision-record]
+    outputs: []
+    description: A human has chosen this opportunity. Promotion is now a capacity question.
+    transitions:
+      - event: promote
+        to: promoted
+        kind: automatic
+        guard: [wip_available]
+      - event: hold
+        to: parked
+        kind: automatic
+        guard_negated: [wip_available]
+        note: >
+          The WIP cap is what stops the factory from queueing more titles than its human
+          gates can clear. Without it the system deadlocks at the approval step.
+
+  promoted:
+    label: Promoted
+    kind: automatic
+    terminal: true
+    description: >
+      A title now exists and carries the work forward. This opportunity's portfolio-tier
+      life is over; see title.machine.yaml.
+    spawns:
+      machine: title
+      initial_state: concept
+
+  parked:
+    label: Parked
+    kind: human-approval
+    description: Worth doing, not now — capacity, timing, or a missing dependency.
+    transitions:
+      - event: refresh
+        to: scored
+        kind: ai-assisted
+        role: analysis
+      - event: ttl_expire
+        to: stale
+        kind: automatic
+        guard_negated: [evidence_fresh]
+      - event: reject
+        to: rejected
+        kind: human-approval
+
+  stale:
+    label: Stale
+    kind: automatic
+    description: >
+      The evidence behind this opportunity's score has aged past the model's TTL. The
+      score is no longer trustworthy and the opportunity must not be promoted from here.
+    transitions:
+      - event: rescore
+        to: scored
+        kind: ai-assisted
+        role: analysis
+        note: Requires fetching fresh claims, not re-reading the old ones.
+      - event: abandon
+        to: rejected
+        kind: automatic
+
+  rejected:
+    label: Rejected
+    kind: automatic
+    terminal: true
+    description: >
+      Killed at portfolio level. Retained, not deleted — a rejected opportunity plus its
+      evaluation is evidence for future scans, and re-discovering the same dead end every
+      quarter is a real cost.
+
+# ---------------------------------------------------------------------------
+# Portfolio-level policy. Overridable per installation in workspace/config/.
+# ---------------------------------------------------------------------------
+policy:
+  max_concurrent_titles: 2
+  default_scoring_model: portfolio-default
+  backlog_review_cadence_days: 14

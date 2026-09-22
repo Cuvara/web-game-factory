@@ -1,0 +1,113 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://webgamefactory.dev/schemas/artifacts/evaluation.schema.json",
+  "title": "Evaluation",
+  "description": "A scored judgement of one opportunity under one named, versioned scoring model.\n\nEvaluations are APPEND-ONLY per opportunity. Re-scoring writes a new evaluation; it never edits an old one. That is what makes two things possible: re-scoring the whole backlog under a new model and diffing the rankings to see what a weight change actually did, and detecting that an old score was computed from claims that have since been superseded. Store only a number and both are lost.\n\nThe model is recorded by id, version AND content hash, because a model file that changed underneath an evaluation makes that evaluation unexplainable.",
+
+  "x-wgf": {
+    "id": "evaluation",
+    "kind": "artifact",
+    "format": "json",
+    "producer": "portfolio:scored",
+    "consumers": ["portfolio:shortlisted", "title:concept", "title:strategy"],
+    "repo_path": "workspace/opportunities/<opportunity-id>/evaluations/<evaluation-id>.json",
+    "append_only": true,
+    "required_for_gates": ["G1"]
+  },
+
+  "type": "object",
+  "required": ["provenance", "id", "opportunity_id", "scoring_model", "scored_by", "dimensions", "aggregate", "evidence_coverage", "vetoes_fired"],
+  "properties": {
+    "provenance": { "$ref": "./shared/provenance.schema.json#/$defs/provenance" },
+
+    "id": { "type": "string", "pattern": "^eval-[0-9a-z]{3,}$" },
+    "opportunity_id": { "type": "string" },
+
+    "scoring_model": {
+      "type": "object",
+      "required": ["id", "version", "file_hash"],
+      "properties": {
+        "id": { "type": "string" },
+        "version": { "type": "string" },
+        "file_hash": { "$ref": "./shared/provenance.schema.json#/$defs/hash" }
+      },
+      "additionalProperties": false
+    },
+
+    "scored_by": {
+      "$ref": "./shared/provenance.schema.json#/$defs/producer",
+      "description": "The model and the scorer fail independently, so both are recorded. This is the only place an AI provider is named anywhere in the system, and it is instance data — never core methodology."
+    },
+
+    "dimensions": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["id", "normalized", "weight", "tier", "evidence_refs"],
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Must exist in core/reference/dimensions.yaml."
+          },
+          "raw": {
+            "description": "The measurement before normalization, in the dimension's own unit.",
+            "type": ["number", "string", "null"]
+          },
+          "normalized": { "type": "number", "minimum": 0, "maximum": 1 },
+          "weight": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1,
+            "description": "Effective weight after any hypothesis multiplier, not the raw model weight."
+          },
+          "tier": {
+            "enum": ["observed", "derived", "hypothesis"],
+            "description": "Forced to hypothesis when evidence_refs is empty. This is the mechanism that stops a guess being counted as a fact."
+          },
+          "evidence_refs": {
+            "type": "array",
+            "items": { "type": "string" },
+            "description": "Claim ids supporting this dimension's value."
+          },
+          "rationale": { "type": "string" },
+          "below_min_evidence_tier": {
+            "type": "boolean",
+            "default": false,
+            "description": "True when the dimension's tier is weaker than the minimum its vocabulary entry demands. A finding to raise at the gate, not a blocker."
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+
+    "aggregate": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1
+    },
+
+    "evidence_coverage": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1,
+      "description": "Share of total weight carried by evidence-backed dimensions. Turns 'well-evidenced' into a number a gate can require."
+    },
+
+    "vetoes_fired": {
+      "type": "array",
+      "items": {
+        "$ref": "./shared/criteria-expression.schema.json#/$defs/criterionResult"
+      },
+      "description": "Recorded by id even when empty, so a rejection is always explainable in one sentence."
+    },
+
+    "ranking_note": {
+      "type": "string",
+      "description": "Why this sits where it does relative to the rest of the shortlist. What the human actually reads at G1."
+    },
+
+    "supersedes_evaluation_id": { "type": ["string", "null"] }
+  },
+  "additionalProperties": false
+}

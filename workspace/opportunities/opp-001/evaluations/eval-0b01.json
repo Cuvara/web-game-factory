@@ -1,0 +1,66 @@
+{
+  "provenance": {
+    "artifact_id": "wgf:evaluation:opp-001:20260829-01",
+    "artifact_type": "evaluation",
+    "schema_version": "1.0.0",
+    "opportunity_id": "opp-001",
+    "produced_by": { "role": "analysis", "actor": "ai" },
+    "produced_at": "2026-08-29T09:00:00Z",
+    "inputs": [
+      {
+        "artifact_id": "wgf:opportunity:opp-001:20260828-01",
+        "artifact_type": "opportunity",
+        "content_hash": "sha256:3f1c9a7e42b58d06c1ea94773b5d208fa6e3c4517d09be82a4f16c3d5e0b7a91"
+      }
+    ],
+    "content_hash": "sha256:8b24d7e5190af36c2d5178be4c093ea71f6b0d24e5839acf7710b6e2c4581f3d",
+    "status": "final"
+  },
+
+  "id": "eval-0b01",
+  "opportunity_id": "opp-001",
+
+  "scoring_model": {
+    "id": "portfolio-default",
+    "version": "1.0.0",
+    "file_hash": "sha256:c07e3b9142da6f8501eb47c3a29d6150fb8e24079c3d5a6188be4207fd93ca6e"
+  },
+
+  "scored_by": {
+    "role": "analysis",
+    "actor": "ai",
+    "ai_provider": "example-provider",
+    "ai_model": "example-model"
+  },
+
+  "dimensions": [
+    { "id": "revenue_potential", "raw": 3400, "normalized": 0.58, "weight": 0.07, "tier": "hypothesis", "evidence_refs": [], "rationale": "No comparable revenue data was found for this category on Yandex.", "below_min_evidence_tier": true },
+    { "id": "platform_fit", "raw": 0.78, "normalized": 1.0, "weight": 0.12, "tier": "observed", "evidence_refs": ["claim-0a01", "claim-0a02"], "rationale": "One-touch input matches the category norm; rewarded video is supported." },
+    { "id": "dev_speed_days", "raw": 11, "normalized": 0.63, "weight": 0.11, "tier": "derived", "evidence_refs": ["claim-0a03"] },
+    { "id": "monetization_fit", "raw": 0.75, "normalized": 0.75, "weight": 0.09, "tier": "hypothesis", "evidence_refs": [] },
+    { "id": "retention_potential", "raw": 0.45, "normalized": 0.45, "weight": 0.04, "tier": "hypothesis", "evidence_refs": [], "rationale": "Score-chase retention without a metagame is historically weak; weight halved as hypothesis." },
+    { "id": "scope_complexity", "raw": "s", "normalized": 0.8, "weight": 0.08, "tier": "derived", "evidence_refs": ["claim-0a03"] },
+    { "id": "technical_risk", "raw": 0.6, "normalized": 0.4, "weight": 0.08, "tier": "derived", "evidence_refs": [], "rationale": "Web audio latency is the dominant risk and it sits on the core mechanic." },
+    { "id": "asset_cost", "raw": 320, "normalized": 0.72, "weight": 0.07, "tier": "derived", "evidence_refs": [] },
+    { "id": "session_quality", "raw": 0.7, "normalized": 0.7, "weight": 0.07, "tier": "hypothesis", "evidence_refs": [] },
+    { "id": "competition", "raw": 0.7, "normalized": 0.3, "weight": 0.05, "tier": "observed", "evidence_refs": ["claim-0a01"] },
+    { "id": "replayability", "raw": 0.8, "normalized": 0.8, "weight": 0.025, "tier": "hypothesis", "evidence_refs": [] },
+    { "id": "performance_risk", "raw": 0.5, "normalized": 0.5, "weight": 0.015, "tier": "hypothesis", "evidence_refs": [] },
+    { "id": "time_to_market", "raw": 18, "normalized": 0.84, "weight": 0.02, "tier": "derived", "evidence_refs": ["claim-0a02"] },
+    { "id": "iterability", "raw": 0.8, "normalized": 0.8, "weight": 0.01, "tier": "hypothesis", "evidence_refs": [] }
+  ],
+
+  "aggregate": 0.643,
+  "evidence_coverage": 0.62,
+
+  "vetoes_fired": [
+    { "criterion_id": "no_viable_platform", "measured": 1.0, "breached": false },
+    { "criterion_id": "over_timebox", "measured": 11, "breached": false },
+    { "criterion_id": "unevidenced_revenue", "measured": 0.58, "breached": false, "note": "Revenue is hypothesis-tier but below the 0.80 trigger, so the veto does not fire. It remains the weakest part of this case." },
+    { "criterion_id": "asset_cost_exceeds_value", "measured": 320, "breached": false }
+  ],
+
+  "ranking_note": "Ranked first of four on the 2026-08-29 shortlist, but on a thin margin. Platform fit and competition are the only observed dimensions; revenue, monetization and retention are all hypotheses at half weight. Coverage clears the 0.60 floor by 0.02. The case rests on a genuine positioning gap and a small scope, not on any evidenced revenue expectation — and the technical risk sits directly on the core mechanic, which is the reason the strategy's kill criteria concentrate on audio latency.",
+
+  "supersedes_evaluation_id": null
+}

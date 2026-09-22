@@ -1,0 +1,389 @@
+# Web Game Factory — Title tier state machine
+#
+# A title enters when an opportunity is promoted and leaves only by shipping, being
+# killed, or being sunset. The design target is a 7-14 day production cycle, which drives
+# three decisions visible below:
+#
+#   1. There is no VERTICAL SLICE state. At this scale the prototype IS the vertical
+#      slice, so the bar at prototype-review is raised instead of adding a state.
+#   2. There is no CONTENT COMPLETE state. It is a guard on production exit.
+#   3. Scope, session, retention and monetization are not states. They are mutually
+#      dependent facets of one design problem and are solved jointly in `design`,
+#      with a computable consistency check as the exit guard.
+
+machine: title
+version: 1.0.0
+entity: title
+initial: concept
+entry_from: portfolio:promoted
+terminals: [abandoned, sunset]
+
+# ---------------------------------------------------------------------------
+# Guards — named predicates referenced by transitions.
+# CI appears here, as guard vocabulary. It is not a lifecycle stage: `ci_green` is
+# checked on several transitions and `verify_suite_green` on exactly one.
+# ---------------------------------------------------------------------------
+guards:
+  ci_green:
+    description: The template's ci.yml pipeline passed on the named commit (lint, typecheck, unit, integration).
+    implemented_by: web-game-template/.github/workflows/ci.yml
+  verify_suite_green:
+    description: The heavier verify.yml suite passed — smoke against built artifacts, performance budgets, mobile compatibility.
+    implemented_by: web-game-template/.github/workflows/verify.yml
+  design_consistent:
+    description: game_design.consistency.status == pass, evaluated against core/reference/design-consistency-rules.yaml.
+  platform_constraints_satisfied:
+    description: Every binding requirement in each targeted platform profile is addressed in the design.
+  kill_criteria_defined:
+    description: title_strategy.kill_criteria is non-empty and each criterion is a criteria-expression.
+  timebox_set:
+    description: title_strategy.timebox_days is set and platform_set is non-empty.
+  plan_fits_timebox:
+    description: sum(tech_plan.dev_plan.milestones[].est_days) <= title_strategy.timebox_days * overrun_tolerance.
+  engine_selected:
+    description: tech_plan.engine.type is one of pixijs, threejs — with a written rationale.
+  asset_manifest_present:
+    description: asset_manifest exists and every item has a source and an estimate.
+  repo_created:
+    description: The game repository exists, was created from web-game-template, and game.config.yaml is written from tech_plan.repo_params.
+  playable_build:
+    description: A build artifact exists that a playtester can open and play unaided.
+  kill_criteria_not_breached:
+    description: No criterion in title_strategy.kill_criteria evaluates to breached in prototype_report.
+  iterations_remaining:
+    description: prototype iteration_count < title_strategy.max_prototype_iterations.
+  content_complete:
+    description: content_manifest.complete AND asset_manifest.complete.
+  within_timebox_tolerance:
+    description: Elapsed days <= timebox_days * overrun_tolerance.
+  inputs_fresh:
+    description: >
+      Every artifact in this title's provenance chain still hashes to the value recorded
+      when it was consumed. False means an upstream artifact was superseded and anything
+      derived from it is suspect.
+  campaign_budget_approved:
+    description: A decision-record exists for gate G7 with an explicit spend ceiling.
+  below_sunset_floor:
+    description: performance_review metrics below title_strategy.sunset_floor for N consecutive reviews.
+
+states:
+  concept:
+    label: Concept
+    kind: automatic
+    role: analysis
+    procedure: stages/concept.md
+    inputs: [opportunity, evaluation]
+    outputs: []
+    description: >
+      The title exists as a record. Its opportunity and evaluation are pinned by hash so
+      later stages can detect that the market read they were built on has moved.
+    transitions:
+      - event: draft_strategy
+        to: strategy
+        kind: ai-assisted
+        role: game-designer
+
+  strategy:
+    label: Strategy
+    kind: ai-assisted
+    role: game-designer
+    contributors: [analysis, architect]
+    procedure: stages/strategy.md
+    inputs: [opportunity, evaluation, claim]
+    outputs: [title-strategy]
+    description: >
+      The commitment document: platforms and their roles, audience, monetization class,
+      timebox, what success looks like — and what failure looks like.
+
+      Strategy survives as its own state for one reason: it is where KILL CRITERIA are
+      authored. Kill criteria written at review time get written to justify the decision
+      already made. Defining them here, before any code exists and under a gate, is what
+      makes ABANDON a real option later.
+    transitions:
+      - event: approve
+        to: design
+        kind: human-approval
+        gate: G2
+        guard: [kill_criteria_defined, timebox_set]
+        outputs: [decision-record]
+      - event: reject
+        to: abandoned
+        kind: human-approval
+        gate: G2
+        outputs: [decision-record]
+
+  design:
+    label: Design
+    kind: ai-assisted
+    role: game-designer
+    contributors: [analysis, asset, architect]
+    procedure: stages/design.md
+    inputs: [title-strategy, claim]
+    outputs: [game-design, asset-manifest]
+    description: >
+      One state, one artifact. Scope, session, retention and monetization are sections of
+      game-design, not separate documents, because they constrain each other and four
+      files would drift.
+
+      Platform profiles are read here as BINDING constraints — localization, ad cadence,
+      bundle size, orientation. This is the point of defect 6 in the workflow review: by
+      the time you reach platform validation you must be re-checking a known constraint,
+      never discovering one.
+    exit_check:
+      name: design_consistency
+      kind: deterministic
+      rules: core/reference/design-consistency-rules.yaml
+      note: Recorded into game_design.consistency so "cross-validated" is a result, not a claim.
+    transitions:
+      - event: plan
+        to: tech-plan
+        kind: ai-assisted
+        role: architect
+        guard: [design_consistent, platform_constraints_satisfied]
+      - event: descope
+        to: design
+        kind: ai-assisted
+        guard_negated: [design_consistent]
+        note: Self-loop. Cut scope until the rules pass; do not relax the rules.
+      - event: abandon
+        to: abandoned
+        kind: human-approval
+        note: Consistency unresolvable, or estimated cost exceeds the timebox beyond tolerance.
+        outputs: [decision-record]
+
+  tech-plan:
+    label: Technical plan
+    kind: ai-assisted
+    role: architect
+    contributors: [asset, sdk, gameplay]
+    procedure: stages/tech-plan.md
+    inputs: [game-design, title-strategy, asset-manifest]
+    outputs: [tech-plan]
+    description: >
+      Engine selection lives here, not in a state of its own, because engine.type is a
+      repository-creation parameter. That ordering dependency — decide the engine, then
+      create the repo — is load-bearing.
+
+      Produces the development plan the coding agent actually works from: milestones,
+      tasks, dependencies, acceptance criteria, tests. A coding agent handed only a GDD
+      will invent scope.
+    transitions:
+      - event: approve
+        to: scaffolding
+        kind: human-approval
+        gate: G3
+        guard: [engine_selected, asset_manifest_present, plan_fits_timebox]
+        outputs: [decision-record]
+      - event: reject
+        to: design
+        kind: human-approval
+        gate: G3
+        outputs: [decision-record]
+
+  scaffolding:
+    label: Scaffolding
+    kind: automatic
+    role: release
+    procedure: stages/scaffolding.md
+    inputs: [tech-plan]
+    outputs: []
+    description: >
+      Transient and mechanical: create the game repository FROM web-game-template via the
+      gh CLI, then write game.config.yaml from tech_plan.repo_params. It is a state rather
+      than a transition action only because it can fail.
+
+      Never construct a game repository from scratch.
+    transitions:
+      - event: created
+        to: prototype
+        kind: automatic
+        guard: [repo_created, ci_green]
+      - event: failed
+        to: tech-plan
+        kind: automatic
+
+  prototype:
+    label: Prototype
+    kind: ai-assisted
+    role: gameplay
+    contributors: [ui, asset, architect, sdk]
+    procedure: stages/prototype.md
+    inputs: [tech-plan, game-design, title-strategy]
+    outputs: [prototype-report]
+    description: >
+      Not "small production". It exists to prove the core loop, that a new player
+      understands it, the session shape, the retention hook, and that platform SDK and
+      monetization integration actually work on the target portal.
+
+      At this scale the prototype is the vertical slice, so it must be genuinely
+      playtestable — not a technical demonstration of a mechanic.
+    transitions:
+      - event: submit_review
+        to: prototype-review
+        kind: deterministic-ci
+        guard: [ci_green, playable_build]
+
+  prototype-review:
+    label: Prototype review
+    kind: human-approval
+    role: portfolio-owner
+    contributors: [game-designer, qa]
+    procedure: stages/prototype-review.md
+    inputs: [prototype-report, title-strategy, game-design]
+    outputs: [decision-record]
+    gate: G4
+    description: >
+      The most valuable gate in the factory. A factory that cannot kill a concept is a
+      liability generator — it converts a bad idea into a shipped bad idea at full cost.
+
+      Judged against the kill criteria authored at strategy time, not against how much
+      work has already gone in.
+    transitions:
+      - event: pass
+        to: production
+        kind: human-approval
+        guard: [kill_criteria_not_breached]
+      - event: iterate
+        to: prototype
+        kind: human-approval
+        guard: [iterations_remaining]
+      - event: abandon
+        to: abandoned
+        kind: human-approval
+        note: Any kill criterion breached, or iterations exhausted.
+
+  production:
+    label: Production
+    kind: ai-assisted
+    role: gameplay
+    contributors: [ui, asset, sdk, game-designer, release]
+    procedure: stages/production.md
+    inputs: [tech-plan, game-design, prototype-report]
+    outputs: [asset-manifest]
+    description: >
+      Plan-driven. Agents may discover implementation detail freely, but scope,
+      monetization, platform strategy, core gameplay and architecture change only through
+      a change-request recorded as a decision-record. Without that rule the development
+      plan stops describing what is being built within about a day.
+
+      CI runs continuously here. It is not a stage.
+    transitions:
+      - event: open_release
+        to: releasing
+        kind: deterministic-ci
+        guard: [content_complete, ci_green]
+      - event: abandon
+        to: abandoned
+        kind: human-approval
+        guard_negated: [within_timebox_tolerance]
+        outputs: [decision-record]
+
+  releasing:
+    label: Releasing
+    kind: automatic
+    role: release
+    description: >
+      A Release sub-machine instance is active. See release.machine.yaml. Releases are
+      numbered per title (r1, r2, ...) and a title may return here many times.
+    spawns:
+      machine: release
+      initial_state: draft
+    transitions:
+      - event: release.live
+        to: live
+        kind: automatic
+      - event: release.cancelled
+        to: production
+        kind: automatic
+        note: Only meaningful for a first release; a cancelled hotfix returns to live.
+
+  live:
+    label: Live
+    kind: ai-assisted
+    role: liveops
+    contributors: [analysis, release]
+    procedure: stages/live.md
+    inputs: [release-manifest, platform-publication]
+    outputs: [performance-review]
+    description: >
+      An ongoing condition, not a step. A title sits here indefinitely. A scheduled review
+      job at fixed checkpoints emits a performance-review whose decision drives what
+      happens next.
+
+      Analytics is not a stage either: it is a continuous feed. The review is the step.
+    scheduled_jobs:
+      performance-review:
+        procedure: stages/performance-review.md
+        checkpoints_days: [1, 7, 30]
+        then_every_days: 30
+        emits: [performance-review, claim]
+    transitions:
+      - event: review.iterate
+        to: production
+        kind: automatic
+      - event: review.scale
+        to: live
+        kind: human-approval
+        gate: G7
+        guard: [campaign_budget_approved]
+        note: Paid campaign. Self-loop; see stages/campaign.md.
+      - event: review.hold
+        to: live
+        kind: automatic
+      - event: review.sunset
+        to: sunset
+        kind: human-approval
+        guard: [below_sunset_floor]
+      - event: hotfix
+        to: releasing
+        kind: automatic
+
+  paused:
+    label: Paused
+    kind: human-approval
+    description: >
+      Work halted deliberately and resumably. Reachable from any non-terminal state.
+
+      Resume is not a simple return. If the title's inputs are no longer fresh — an
+      upstream artifact was superseded while it sat here — it resumes at the nearest
+      upstream producing state instead. Without this a paused title silently ships a game
+      built on a dead market read.
+    transitions:
+      - event: resume
+        to: $previous
+        kind: automatic
+        guard: [inputs_fresh]
+      - event: resume
+        to: $nearest_upstream_producer
+        kind: automatic
+        guard_negated: [inputs_fresh]
+      - event: abandon
+        to: abandoned
+        kind: human-approval
+        outputs: [decision-record]
+
+  abandoned:
+    label: Abandoned
+    kind: automatic
+    terminal: true
+    description: >
+      Killed before launch. The artifacts are retained: an abandoned title with its
+      prototype-report and decision-record is one of the more valuable things the factory
+      produces, because it is evidence about what does not work.
+
+  sunset:
+    label: Sunset
+    kind: automatic
+    terminal: true
+    description: Was live; now de-listed or unmaintained. Final performance-review retained.
+
+# Any non-terminal state may transition to `paused` on a `pause` event.
+global_transitions:
+  - event: pause
+    from: non-terminal
+    to: paused
+    kind: human-approval
+
+policy:
+  overrun_tolerance: 1.5
+  default_max_prototype_iterations: 2

@@ -1,0 +1,155 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://webgamefactory.dev/schemas/artifacts/performance-review.schema.json",
+  "title": "Performance Review",
+  "description": "A scheduled assessment of a live title, and the factory's learning loop.\n\nAnalytics is a continuous feed and is NOT a stage; a live title sits in `live` indefinitely. The review is the step: at fixed checkpoints it reads the data, compares it to the success criteria set at strategy time, and emits one of four decisions.\n\nTwo separations are enforced structurally rather than by convention. First, observed metrics are separated from interpretation: `metrics` holds what was measured, `findings` holds what someone thinks it means, and `hypotheses` holds what has not been tested. Correlation is never promoted to causation by prose. Second, hypotheses lead to EXPERIMENTS with a stated success condition, so an iteration can be wrong and be known to be wrong.\n\nEmitted claims flow back to the portfolio, which is how the factory learns across titles rather than per title.",
+
+  "x-wgf": {
+    "id": "performance-review",
+    "kind": "artifact",
+    "format": "json",
+    "producer": "title:live",
+    "consumers": ["title:live", "title:production", "portfolio:market-scan"],
+    "repo_path": "workspace/titles/<title-id>/reviews/<review-id>.json",
+    "required_for_gates": ["G7"],
+    "emits": ["claim"]
+  },
+
+  "type": "object",
+  "required": ["provenance", "title_id", "review_id", "window", "metrics", "vs_success_criteria", "decision"],
+  "properties": {
+    "provenance": { "$ref": "./shared/provenance.schema.json#/$defs/provenance" },
+
+    "title_id": { "type": "string" },
+    "review_id": { "type": "string" },
+    "checkpoint": {
+      "type": "string",
+      "description": "Which scheduled checkpoint this is, e.g. d1, d7, d30, or a periodic id."
+    },
+
+    "window": {
+      "type": "object",
+      "required": ["from", "to"],
+      "properties": {
+        "from": { "type": "string", "format": "date-time" },
+        "to": { "type": "string", "format": "date-time" }
+      },
+      "additionalProperties": false
+    },
+
+    "metrics": {
+      "type": "array",
+      "minItems": 1,
+      "description": "OBSERVED values only. No interpretation here. Per platform, because the same game performs differently on different portals and an average hides that.",
+      "items": {
+        "type": "object",
+        "required": ["name", "value", "platform_id"],
+        "properties": {
+          "name": { "type": "string" },
+          "value": { "type": "number" },
+          "unit": { "type": "string" },
+          "platform_id": { "type": "string" },
+          "sample_size": {
+            "type": ["integer", "null"],
+            "description": "Without this, a retention figure from 40 players reads the same as one from 40,000."
+          },
+          "source": { "type": "string" }
+        },
+        "additionalProperties": false
+      }
+    },
+
+    "vs_success_criteria": {
+      "type": "array",
+      "items": { "$ref": "./shared/criteria-expression.schema.json#/$defs/criterionResult" },
+      "description": "The criteria set at strategy time, evaluated. This is the only honest way to judge a launch — targets set after seeing results are not targets."
+    },
+
+    "findings": {
+      "type": "array",
+      "description": "DERIVED interpretation. Each must cite the metrics it rests on.",
+      "items": {
+        "type": "object",
+        "required": ["statement", "metric_refs", "confidence"],
+        "properties": {
+          "statement": { "type": "string" },
+          "metric_refs": { "type": "array", "items": { "type": "string" } },
+          "confidence": { "type": "number", "minimum": 0, "maximum": 1 },
+          "caveat": {
+            "type": "string",
+            "description": "What would make this reading wrong. Rarely absent in practice and should not be."
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+
+    "hypotheses": {
+      "type": "array",
+      "description": "Untested explanations. Kept separate from findings so the difference survives being summarized by someone in a hurry.",
+      "items": {
+        "type": "object",
+        "required": ["statement", "would_be_tested_by"],
+        "properties": {
+          "statement": { "type": "string" },
+          "would_be_tested_by": { "type": "string" },
+          "confidence": { "type": "number", "minimum": 0, "maximum": 1 }
+        },
+        "additionalProperties": false
+      }
+    },
+
+    "experiments": {
+      "type": "array",
+      "description": "Proposed or completed changes with a stated success condition. An experiment without one is just a change.",
+      "items": {
+        "type": "object",
+        "required": ["id", "hypothesis", "change", "success_condition", "status"],
+        "properties": {
+          "id": { "type": "string" },
+          "hypothesis": { "type": "string" },
+          "change": { "type": "string" },
+          "success_condition": { "$ref": "./shared/criteria-expression.schema.json#/$defs/expression" },
+          "status": { "enum": ["proposed", "running", "succeeded", "failed", "inconclusive"] },
+          "result": { "type": "string" },
+          "task_refs": { "type": "array", "items": { "type": "string" } }
+        },
+        "additionalProperties": false
+      }
+    },
+
+    "emitted_claims": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Claim ids written back to the portfolio. This is the mechanism by which shipping a game improves the next opportunity scan — a data edge to discovery, not a control transition."
+    },
+
+    "campaign": {
+      "type": "object",
+      "description": "Present when the decision is scale. Requires gate G7 and an explicit ceiling; there is no standing budget and no auto-renewal.",
+      "properties": {
+        "proposed_ceiling_usd": { "type": "number", "minimum": 0 },
+        "channels": { "type": "array", "items": { "type": "string" } },
+        "stop_condition": { "$ref": "./shared/criteria-expression.schema.json#/$defs/expression" },
+        "projected_outcome": { "type": "string" },
+        "projection_basis": {
+          "type": "string",
+          "description": "Which observed metrics the projection extrapolates from, and over what assumption."
+        }
+      },
+      "additionalProperties": false
+    },
+
+    "decision": {
+      "type": "object",
+      "required": ["outcome", "rationale"],
+      "properties": {
+        "outcome": { "enum": ["iterate", "scale", "hold", "sunset"] },
+        "rationale": { "type": "string" },
+        "next_review_at": { "type": "string", "format": "date-time" }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}

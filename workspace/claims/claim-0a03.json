@@ -1,0 +1,17 @@
+{
+  "id": "claim-0a03",
+  "statement": "One-touch arcade is the dominant control idiom in Yandex's arcade category, so a new entrant competes on feel rather than on novelty of control.",
+  "tier": "derived",
+  "confidence": 0.65,
+  "evidence": [],
+  "parents": ["claim-0a01"],
+  "subject": {
+    "genre": "arcade",
+    "platform": "yandex",
+    "dimension": "competition"
+  },
+  "asserted_at": "2026-08-28T11:00:00Z",
+  "asserted_by": "research",
+  "superseded_by": null,
+  "tags": ["controls", "positioning"]
+}

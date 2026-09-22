@@ -1,0 +1,111 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://webgamefactory.dev/schemas/artifacts/shared/criteria-expression.schema.json",
+  "title": "Criteria Expression",
+  "description": "One deliberately dumb expression type serving four features: kill criteria, success criteria, scoring vetoes, and platform assertions. It is not a language and must not become one — no arithmetic, no functions, no string interpolation. If a rule cannot be said here, write prose in the stage procedure and require a human to judge it.",
+
+  "$defs": {
+    "operator": {
+      "type": "string",
+      "enum": ["gt", "gte", "lt", "lte", "eq", "neq", "in", "not_in", "exists", "absent"]
+    },
+
+    "comparison": {
+      "type": "object",
+      "required": ["left", "op"],
+      "properties": {
+        "left": {
+          "type": "string",
+          "description": "A dimension id from core/reference/dimensions.yaml, a metric name, or a dotted artifact path such as 'game_design.session.target_seconds'."
+        },
+        "op": { "$ref": "#/$defs/operator" },
+        "right": {
+          "description": "Literal only. Omitted for exists/absent.",
+          "type": ["string", "number", "boolean", "array", "null"]
+        }
+      },
+      "additionalProperties": false
+    },
+
+    "allOf": {
+      "type": "object",
+      "required": ["all_of"],
+      "properties": {
+        "all_of": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/$defs/expression" }
+        }
+      },
+      "additionalProperties": false
+    },
+
+    "anyOf": {
+      "type": "object",
+      "required": ["any_of"],
+      "properties": {
+        "any_of": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/$defs/expression" }
+        }
+      },
+      "additionalProperties": false
+    },
+
+    "not": {
+      "type": "object",
+      "required": ["not"],
+      "properties": {
+        "not": { "$ref": "#/$defs/expression" }
+      },
+      "additionalProperties": false
+    },
+
+    "expression": {
+      "oneOf": [
+        { "$ref": "#/$defs/comparison" },
+        { "$ref": "#/$defs/allOf" },
+        { "$ref": "#/$defs/anyOf" },
+        { "$ref": "#/$defs/not" }
+      ]
+    },
+
+    "namedCriterion": {
+      "type": "object",
+      "description": "An expression with an identity and a reason, so an evaluation result is explainable rather than just true/false.",
+      "required": ["id", "when", "rationale"],
+      "properties": {
+        "id": { "type": "string", "pattern": "^[a-z][a-z0-9_]*$" },
+        "label": { "type": "string" },
+        "when": { "$ref": "#/$defs/expression" },
+        "rationale": {
+          "type": "string",
+          "description": "Why this threshold. A criterion nobody can justify will be argued away at the gate."
+        },
+        "severity": {
+          "type": "string",
+          "enum": ["blocking", "warning", "advisory"],
+          "default": "blocking"
+        }
+      },
+      "additionalProperties": false
+    },
+
+    "criterionResult": {
+      "type": "object",
+      "description": "The recorded outcome of evaluating a namedCriterion, stored so a gate decision can be re-read later.",
+      "required": ["criterion_id", "breached"],
+      "properties": {
+        "criterion_id": { "type": "string" },
+        "measured": { "type": ["string", "number", "boolean", "array", "null"] },
+        "breached": { "type": "boolean" },
+        "evaluated_at": { "type": "string", "format": "date-time" },
+        "note": { "type": "string" }
+      },
+      "additionalProperties": false
+    }
+  },
+
+  "$ref": "#/$defs/expression"
+}

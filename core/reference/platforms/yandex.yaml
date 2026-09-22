@@ -1,0 +1,95 @@
+# Platform profile — Yandex Games
+#
+# Read at three points with rising strictness:
+#   1. opportunity scoring  — advisory, feeds platform_fit
+#   2. strategy / design    — BINDING on the design (locales, ad cadence, bundle size)
+#   3. release validating   — BINDING on the built package, via assertions[]
+#
+# By step 3 you are re-checking a constraint the design already absorbed. If validation
+# surprises you, the design drifted.
+#
+# Figures here are starting values to be corrected from the portal's own documentation and
+# from compliance findings emitted by rejections. Treat unverified numbers as hypotheses —
+# bump `version` whenever a value changes so releases stay reproducible against the rules
+# that were in force.
+
+id: yandex
+name: Yandex Games
+version: 1.0.0
+status: unverified
+docs: https://yandex.ru/dev/games/
+
+audience:
+  primary_regions: [ru, by, kz, tr]
+  device_mix: { mobile: 0.7, desktop: 0.3 }
+
+capabilities:
+  ads: [interstitial, rewarded, banner]
+  iap: true
+  cloud_saves: true
+  leaderboards: true
+  achievements: true
+  auth: optional
+  analytics: platform-provided
+
+requirements:
+  locales_required: [ru]
+  locales_recommended: [en, tr]
+  max_bundle_mb: 100
+  orientation: [landscape, portrait]
+  loading_api: required
+  offline_start: false
+  https_only: true
+  external_requests: restricted
+
+ads:
+  interstitial_min_interval_s: 60
+  rewarded_available: true
+  banner_available: true
+  notes: >
+    The SDK must be told when gameplay pauses and resumes around ad playback, or audio and
+    input leak through the ad.
+
+metadata_requirements:
+  descriptions_locales: [ru]
+  screenshots_min: 3
+  icon_required: true
+  age_rating_required: true
+
+review:
+  process: manual
+  typical_days: [1, 5]
+  common_rejections:
+    - Missing or machine-translated Russian localization.
+    - Game does not report loading progress through the SDK.
+    - Ads shown before any gameplay.
+    - External network requests to undeclared domains.
+
+assertions:
+  - id: yandex_bundle_size
+    check: { left: package.size_mb, op: lte, right: 100 }
+    severity: blocking
+  - id: yandex_ru_locale_present
+    check: { left: package.locales, op: in, right: [ru] }
+    severity: blocking
+  - id: yandex_sdk_present
+    check: { left: package.platform_sdk, op: eq, right: yandex }
+    severity: blocking
+  - id: yandex_loading_api_called
+    check: { left: package.calls_loading_api, op: eq, right: true }
+    severity: blocking
+  - id: yandex_https_only
+    check: { left: package.insecure_requests, op: eq, right: 0 }
+    severity: blocking
+  - id: yandex_screenshots
+    check: { left: metadata.screenshots, op: gte, right: 3 }
+    severity: warning
+
+scoring_hints:
+  platform_fit_favours:
+    - Casual and midcore titles with short sessions.
+    - Rewarded-video-led monetization.
+    - Localizable content with little text.
+  platform_fit_penalizes:
+    - Heavy text or culture-specific humour.
+    - Titles needing large downloads.

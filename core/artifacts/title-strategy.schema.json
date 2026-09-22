@@ -1,0 +1,153 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://webgamefactory.dev/schemas/artifacts/title-strategy.schema.json",
+  "title": "Title Strategy",
+  "description": "The commitment document. What we are building, for whom, on which platforms, by when — and, critically, the terms under which we stop.\n\nKill criteria are authored HERE, before any code exists and under a gate, not at prototype review. Criteria written at review time get written to justify the decision already made; criteria written in advance are a bet you can lose honestly. This is the single reason strategy survives as its own lifecycle state rather than folding into design.",
+
+  "x-wgf": {
+    "id": "title-strategy",
+    "kind": "artifact",
+    "format": "json",
+    "producer": "title:strategy",
+    "consumers": ["title:design", "title:tech-plan", "title:prototype", "title:prototype-review", "title:production", "title:live"],
+    "repo_path": "workspace/titles/<title-id>/title-strategy.json",
+    "required_for_gates": ["G2", "G4"]
+  },
+
+  "type": "object",
+  "required": ["provenance", "title_id", "opportunity_id", "one_liner", "platform_set", "audience", "monetization", "session", "timebox_days", "mvp", "out_of_scope", "success_criteria", "kill_criteria", "prototype_must_prove"],
+  "properties": {
+    "provenance": { "$ref": "./shared/provenance.schema.json#/$defs/provenance" },
+
+    "title_id": { "type": "string", "pattern": "^[a-z][a-z0-9-]*$" },
+    "opportunity_id": { "type": "string" },
+
+    "one_liner": {
+      "type": "string",
+      "description": "The game in one sentence a stranger would understand. If this is hard to write, the concept is not yet a concept."
+    },
+    "why_this_opportunity": {
+      "type": "string",
+      "description": "The argument, referencing claims. Not a restatement of the score."
+    },
+
+    "platform_set": {
+      "type": "array",
+      "minItems": 1,
+      "description": "Platforms and their role. Roles are per-release policy at publication time, but the intended shape is set here so the design can be bound to the right constraints.",
+      "items": {
+        "type": "object",
+        "required": ["id", "profile_version", "role"],
+        "properties": {
+          "id": { "type": "string", "pattern": "^[a-z][a-z0-9-]*$" },
+          "profile_version": {
+            "type": "string",
+            "description": "Pinned so the design and the eventual build agree on which compliance rules applied."
+          },
+          "role": { "enum": ["required", "optional"] },
+          "rationale": { "type": "string" }
+        },
+        "additionalProperties": false
+      }
+    },
+
+    "audience": {
+      "type": "object",
+      "required": ["type", "device"],
+      "properties": {
+        "type": { "enum": ["casual", "midcore", "core"] },
+        "device": { "enum": ["mobile", "desktop", "both"] },
+        "regions": { "type": "array", "items": { "type": "string" } },
+        "player_description": { "type": "string" }
+      },
+      "additionalProperties": false
+    },
+
+    "monetization": {
+      "type": "object",
+      "required": ["class"],
+      "properties": {
+        "class": { "enum": ["rewarded-led", "interstitial-led", "mixed-ads", "iap-led", "hybrid", "none"] },
+        "placements": { "type": "array", "items": { "enum": ["rewarded", "interstitial", "banner", "iap"] } },
+        "rationale": { "type": "string" }
+      },
+      "additionalProperties": false
+    },
+
+    "session": {
+      "type": "object",
+      "required": ["target_seconds"],
+      "description": "Intent, not detail. The detailed session design belongs to game-design.",
+      "properties": {
+        "first_session_seconds": { "type": "number" },
+        "target_seconds": { "type": "number" },
+        "sessions_per_day_target": { "type": "number" }
+      },
+      "additionalProperties": false
+    },
+
+    "timebox_days": {
+      "type": "number",
+      "minimum": 1,
+      "description": "Concept to release candidate. The factory is built around 7-14 days; beyond ~21 this is a different kind of project."
+    },
+
+    "mvp": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "type": "string" },
+      "description": "What must exist for this to be a game at all."
+    },
+
+    "out_of_scope": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "type": "string" },
+      "description": "Named exclusions. Required and non-empty on purpose: a strategy that excludes nothing has not made a decision, and every attractive concept becomes an oversized project through additions nobody ever refused."
+    },
+
+    "prototype_must_prove": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "type": "string" },
+      "description": "The specific questions the prototype exists to answer. Without these the prototype becomes small production."
+    },
+
+    "success_criteria": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "./shared/criteria-expression.schema.json#/$defs/namedCriterion" }
+    },
+
+    "kill_criteria": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "./shared/criteria-expression.schema.json#/$defs/namedCriterion" },
+      "description": "The conditions under which we stop. Non-empty is enforced by gate G2. Each needs a rationale, because a criterion nobody can justify gets argued away at exactly the moment it matters."
+    },
+
+    "sunset_floor": {
+      "type": "object",
+      "description": "Sustained performance below this sunsets the title.",
+      "properties": {
+        "metric": { "type": "string" },
+        "value": { "type": "number" },
+        "consecutive_reviews": { "type": "integer", "minimum": 1, "default": 2 }
+      },
+      "additionalProperties": false
+    },
+
+    "max_prototype_iterations": {
+      "type": "integer",
+      "minimum": 0,
+      "default": 2,
+      "description": "Bounded so ITERATE cannot become an infinite polish loop on the wrong game."
+    },
+
+    "rollback_threshold": {
+      "type": "string",
+      "description": "Defect severity at or above which a live release is rolled back."
+    }
+  },
+  "additionalProperties": false
+}

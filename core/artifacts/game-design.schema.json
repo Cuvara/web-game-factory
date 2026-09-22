@@ -1,0 +1,222 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://webgamefactory.dev/schemas/artifacts/game-design.schema.json",
+  "title": "Game Design",
+  "description": "One artifact covering scope, session, retention, monetization, progression and economy.\n\nThese are NOT separate stages and not separate documents. Scope depends on monetization, which depends on session, which depends on scope — sequencing them invents an order that does not exist, and splitting them into four files guarantees they drift apart. One artifact with a recorded consistency result is atomic; four files cannot be.\n\nThe `consistency` block is what makes 'these were co-designed' checkable rather than asserted. It is produced by evaluating core/reference/design-consistency-rules.yaml and is the exit guard on title:design.\n\nThe human-readable GDD is a RENDERING of this artifact (see core/templates/gdd.md), not a separate source of truth.",
+
+  "x-wgf": {
+    "id": "game-design",
+    "kind": "artifact",
+    "format": "json",
+    "template": "templates/gdd.md",
+    "producer": "title:design",
+    "consumers": ["title:tech-plan", "title:prototype", "title:production", "release:qa"],
+    "repo_path": "workspace/titles/<title-id>/game-design.json",
+    "rendered_to": "<game-repo>/docs/GDD.md",
+    "required_for_gates": ["G3", "G4"]
+  },
+
+  "type": "object",
+  "required": ["provenance", "title_id", "core_loop", "scope", "session", "retention", "monetization", "consistency"],
+  "properties": {
+    "provenance": { "$ref": "./shared/provenance.schema.json#/$defs/provenance" },
+    "title_id": { "type": "string" },
+
+    "fantasy": { "type": "string" },
+    "core_loop": {
+      "type": "string",
+      "description": "The repeating unit of play, stated as a cycle. If it cannot be written as a loop, it is not one."
+    },
+
+    "pillars": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Two or three. More than three means none of them decide anything."
+    },
+
+    "scope": {
+      "type": "object",
+      "required": ["tiers", "content_units", "locales"],
+      "properties": {
+        "tiers": {
+          "type": "object",
+          "description": "Explicit scope tiers. The factory must be able to say 'this feature is excluded because it does not contribute enough to initial validation' — and that sentence needs somewhere to live.",
+          "required": ["mvp", "prototype", "production", "out_of_scope"],
+          "properties": {
+            "mvp": { "type": "array", "items": { "type": "string" } },
+            "prototype": { "type": "array", "items": { "type": "string" } },
+            "production": { "type": "array", "items": { "type": "string" } },
+            "future": { "type": "array", "items": { "type": "string" } },
+            "out_of_scope": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "required": ["item", "why_excluded"],
+                "properties": {
+                  "item": { "type": "string" },
+                  "why_excluded": { "type": "string" }
+                },
+                "additionalProperties": false
+              }
+            }
+          },
+          "additionalProperties": false
+        },
+        "content_units": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Countable content: levels, maps, enemy types, puzzle sets. The number the consistency rules check against session length."
+        },
+        "content_unit_kind": { "type": "string" },
+        "locales": { "type": "array", "items": { "type": "string" } },
+        "asset_budget": { "type": "number" },
+        "progression_terminal": {
+          "type": ["string", "null"],
+          "description": "How progression ends, or an explicit statement that it loops. Open-ended progression is an endless content obligation."
+        }
+      },
+      "additionalProperties": false
+    },
+
+    "session": {
+      "type": "object",
+      "required": ["target_seconds", "first_session_seconds", "time_to_first_play_s", "time_to_first_reward_s", "structure"],
+      "description": "Explicit because it is the thing most often left implicit and then contradicted by the monetization plan. Values depend on genre, audience, platform and monetization — there are no universal numbers, which is why none are defaulted here.",
+      "properties": {
+        "time_to_first_play_s": {
+          "type": "number",
+          "description": "From load to the player doing something. Web portal traffic has no install cost anchoring it, so this is unforgiving."
+        },
+        "time_to_first_reward_s": { "type": "number" },
+        "first_session_seconds": { "type": "number" },
+        "target_seconds": { "type": "number" },
+        "structure": {
+          "type": "string",
+          "description": "How a session begins, escalates and ends. A session that ends arbitrarily reads as being interrupted."
+        },
+        "reward_moments_per_session": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Natural points where the player wants something. Rewarded video only works at these, which is why the consistency rules check it."
+        },
+        "end_condition": { "type": "string" }
+      },
+      "additionalProperties": false
+    },
+
+    "retention": {
+      "type": "object",
+      "required": ["hooks", "return_reason"],
+      "properties": {
+        "hooks": {
+          "type": "array",
+          "items": { "enum": ["daily_quest", "energy", "streak", "leaderboard", "collection", "progression", "unlock_timer", "social", "none"] }
+        },
+        "return_reason": {
+          "type": "string",
+          "description": "Why a player opens this again tomorrow, in their words rather than in mechanics."
+        },
+        "progression_loop": { "type": "string" },
+        "targets": {
+          "type": "object",
+          "properties": {
+            "d1": { "type": "number" },
+            "d7": { "type": "number" },
+            "d30": { "type": "number" }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+
+    "monetization": {
+      "type": "object",
+      "required": ["placements"],
+      "description": "Designed before production, not retrofitted. Platform-aware: game code calls the template's platform abstraction, never a portal SDK directly.",
+      "properties": {
+        "placements": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["kind", "trigger"],
+            "properties": {
+              "kind": { "enum": ["rewarded", "interstitial", "banner", "iap"] },
+              "trigger": {
+                "type": "string",
+                "description": "The in-game moment. 'On death, offer a continue' — not 'every 90 seconds'."
+              },
+              "player_value": {
+                "type": "string",
+                "description": "What the player gets. Required thinking for rewarded placements: if the answer is nothing, it is an interstitial wearing a costume."
+              },
+              "platforms": { "type": "array", "items": { "type": "string" } }
+            },
+            "additionalProperties": false
+          }
+        },
+        "economy": { "type": "string" },
+        "currencies": { "type": "array", "items": { "type": "string" } }
+      },
+      "additionalProperties": false
+    },
+
+    "progression": { "type": "string" },
+    "difficulty": { "type": "string" },
+    "controls": { "type": "string" },
+    "ux": {
+      "type": "object",
+      "properties": {
+        "onboarding": { "type": "string" },
+        "screens": { "type": "array", "items": { "type": "string" } },
+        "accessibility": { "type": "string" }
+      },
+      "additionalProperties": false
+    },
+    "art_direction": { "type": "string" },
+    "audio_direction": { "type": "string" },
+
+    "platform_constraints_applied": {
+      "type": "array",
+      "description": "Which binding platform requirements this design absorbed, and how. Populated from the pinned platform profiles. An empty list on a title with required platforms means the profiles were not read.",
+      "items": {
+        "type": "object",
+        "required": ["platform_id", "requirement", "how_addressed"],
+        "properties": {
+          "platform_id": { "type": "string" },
+          "requirement": { "type": "string" },
+          "how_addressed": { "type": "string" }
+        },
+        "additionalProperties": false
+      }
+    },
+
+    "consistency": {
+      "type": "object",
+      "description": "The recorded result of evaluating core/reference/design-consistency-rules.yaml. Exit guard on title:design.",
+      "required": ["status", "evaluated_at", "rule_results"],
+      "properties": {
+        "status": { "enum": ["pass", "fail"] },
+        "evaluated_at": { "type": "string", "format": "date-time" },
+        "ruleset_version": { "type": "string" },
+        "rule_results": {
+          "type": "array",
+          "items": { "$ref": "./shared/criteria-expression.schema.json#/$defs/criterionResult" }
+        },
+        "warnings_acknowledged": {
+          "type": "boolean",
+          "default": false,
+          "description": "Set at G3. A warning nobody read is just a comment."
+        }
+      },
+      "additionalProperties": false
+    },
+
+    "open_questions": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Things the prototype is expected to answer. Better recorded than silently assumed."
+    }
+  },
+  "additionalProperties": false
+}

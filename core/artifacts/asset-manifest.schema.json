@@ -1,0 +1,79 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://webgamefactory.dev/schemas/artifacts/asset-manifest.schema.json",
+  "title": "Asset Manifest",
+  "description": "Every asset the game needs, its source, its cost, and its status.\n\nThis is an ARTIFACT, not a stage. There is deliberately no asset-production state: serializing art behind a gate would put code behind art and wreck a 7-14 day schedule. Asset work happens inside prototype and production, tracked here as line-item status, and `complete` becomes a guard on production exit.\n\nIt is authored during design because asset cost is an input to the scope decision — and an input cannot be produced downstream of the decision it feeds.",
+
+  "x-wgf": {
+    "id": "asset-manifest",
+    "kind": "artifact",
+    "format": "json",
+    "producer": "title:design",
+    "updated_by": ["title:tech-plan", "title:prototype", "title:production"],
+    "consumers": ["title:tech-plan", "title:prototype", "title:production", "release:qa", "release:draft"],
+    "repo_path": "workspace/titles/<title-id>/asset-manifest.json",
+    "required_for_gates": ["G3"]
+  },
+
+  "type": "object",
+  "required": ["provenance", "title_id", "items", "total_est_cost", "total_est_hours", "complete"],
+  "properties": {
+    "provenance": { "$ref": "./shared/provenance.schema.json#/$defs/provenance" },
+    "title_id": { "type": "string" },
+
+    "items": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "type", "source", "est_cost", "est_hours", "status"],
+        "properties": {
+          "id": { "type": "string", "pattern": "^[a-z][a-z0-9-]*$" },
+          "label": { "type": "string" },
+          "type": {
+            "enum": ["sprite", "spritesheet", "texture", "model", "animation", "vfx", "sfx", "music", "font", "ui", "icon", "screenshot", "other"]
+          },
+          "source": {
+            "enum": ["library", "procedural", "ai-generated", "purchased", "commissioned"],
+            "description": "Drives both cost and licensing risk. Library and procedural are the cheap paths and should be preferred at this scale."
+          },
+          "est_cost": { "type": "number", "minimum": 0 },
+          "est_hours": { "type": "number", "minimum": 0 },
+          "status": {
+            "enum": ["planned", "sourced", "in-progress", "delivered", "integrated", "cut"]
+          },
+          "license": {
+            "type": "string",
+            "description": "Required before a purchased or library asset can be integrated. An unlicensed asset in a published build is a real liability, not a paperwork detail."
+          },
+          "scope_tier": { "enum": ["mvp", "prototype", "production", "future"] },
+          "platforms": { "type": "array", "items": { "type": "string" } },
+          "notes": { "type": "string" }
+        },
+        "additionalProperties": false
+      }
+    },
+
+    "pipeline": {
+      "type": "object",
+      "description": "How source assets become runtime assets. 3D adds compression steps that materially change load time on mobile web.",
+      "properties": {
+        "2d": { "type": "string" },
+        "3d": { "type": "string" },
+        "texture_compression": { "type": "array", "items": { "type": "string" } },
+        "mesh_compression": { "type": "array", "items": { "type": "string" } },
+        "audio_format": { "type": "array", "items": { "type": "string" } }
+      },
+      "additionalProperties": false
+    },
+
+    "total_est_cost": { "type": "number", "minimum": 0 },
+    "total_est_hours": { "type": "number", "minimum": 0 },
+    "budget": { "type": ["number", "null"] },
+
+    "complete": {
+      "type": "boolean",
+      "description": "True when every non-cut item is integrated. Part of the content_complete guard on production exit — which is why CONTENT COMPLETE is not a lifecycle state."
+    }
+  },
+  "additionalProperties": false
+}

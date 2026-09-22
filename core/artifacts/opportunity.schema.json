@@ -1,0 +1,126 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://webgamefactory.dev/schemas/artifacts/opportunity.schema.json",
+  "title": "Opportunity",
+  "description": "A candidate game shaped by market signal. The entity that carries state in the portfolio tier.\n\nAn opportunity is a question, not an answer: it says 'here is a gap we think exists and why'. The evaluation that scores it is a separate artifact, appended rather than embedded, so re-scoring never overwrites the record of what was previously believed.",
+
+  "x-wgf": {
+    "id": "opportunity",
+    "kind": "artifact",
+    "format": "json",
+    "producer": "portfolio:market-scan",
+    "consumers": ["portfolio:scored", "portfolio:shortlisted", "title:concept", "title:strategy"],
+    "repo_path": "workspace/opportunities/<opportunity-id>/opportunity.json",
+    "required_for_gates": ["G1"]
+  },
+
+  "type": "object",
+  "required": ["provenance", "id", "title", "state", "concept", "candidate_platforms", "claim_refs"],
+  "properties": {
+    "provenance": { "$ref": "./shared/provenance.schema.json#/$defs/provenance" },
+
+    "id": { "type": "string", "pattern": "^opp-[0-9a-z]{3,}$" },
+    "title": {
+      "type": "string",
+      "description": "A working name. Not the shipped title."
+    },
+    "state": {
+      "type": "string",
+      "enum": ["discovered", "scored", "shortlisted", "approved", "promoted", "parked", "stale", "rejected"]
+    },
+
+    "concept": {
+      "type": "object",
+      "description": "Enough to judge the idea without building it. Deliberately not a design.",
+      "required": ["genre", "core_mechanic", "fantasy", "core_loop"],
+      "properties": {
+        "genre": { "type": "string" },
+        "subgenre": { "type": "string" },
+        "core_mechanic": { "type": "string" },
+        "fantasy": {
+          "type": "string",
+          "description": "What the player gets to feel or pretend to be. A concept with no fantasy is a mechanic looking for a game."
+        },
+        "core_loop": { "type": "string" },
+        "reference_titles": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Comparable shipped games. Naming them is what makes competition and revenue claims checkable."
+        }
+      },
+      "additionalProperties": false
+    },
+
+    "hypothesis": {
+      "type": "string",
+      "description": "Claim id stating why this gap is believed to exist. The thing the whole opportunity rests on."
+    },
+
+    "audience": {
+      "type": "object",
+      "properties": {
+        "type": { "enum": ["casual", "midcore", "core"] },
+        "device": { "enum": ["mobile", "desktop", "both"] },
+        "regions": { "type": "array", "items": { "type": "string" } },
+        "age_band": { "type": "string" }
+      },
+      "additionalProperties": false
+    },
+
+    "candidate_platforms": {
+      "type": "array",
+      "minItems": 1,
+      "description": "Platform ids under consideration. Roles (required/optional) are decided later, at strategy.",
+      "items": { "type": "string", "pattern": "^[a-z][a-z0-9-]*$" }
+    },
+
+    "monetization_hypothesis": {
+      "type": "object",
+      "properties": {
+        "primary": { "enum": ["rewarded", "interstitial", "banner", "iap", "none"] },
+        "secondary": { "type": "array", "items": { "type": "string" } },
+        "rationale": { "type": "string" }
+      },
+      "additionalProperties": false
+    },
+
+    "estimates": {
+      "type": "object",
+      "description": "Rough, pre-design figures feeding the scoring model. Precision here is false confidence.",
+      "properties": {
+        "dev_speed_days": { "type": "number" },
+        "scope_complexity": { "enum": ["xs", "s", "m", "l", "xl"] },
+        "asset_cost_usd": { "type": "number" },
+        "session_seconds": { "type": "number" }
+      },
+      "additionalProperties": false
+    },
+
+    "claim_refs": {
+      "type": "array",
+      "description": "Every claim this opportunity rests on. An opportunity with no claims is an idea, which is fine — but it will score as hypothesis throughout and will not clear the evidence coverage floor.",
+      "items": { "type": "string" }
+    },
+
+    "risks": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["description", "severity"],
+        "properties": {
+          "description": { "type": "string" },
+          "severity": { "enum": ["low", "medium", "high"] },
+          "claim_refs": { "type": "array", "items": { "type": "string" } }
+        },
+        "additionalProperties": false
+      }
+    },
+
+    "latest_evaluation_id": { "type": ["string", "null"] },
+    "title_id": {
+      "type": ["string", "null"],
+      "description": "Set when promoted."
+    }
+  },
+  "additionalProperties": false
+}

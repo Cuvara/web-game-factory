@@ -1,0 +1,261 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://webgamefactory.dev/schemas/artifacts/tech-plan.schema.json",
+  "title": "Technical Plan",
+  "description": "Engine selection, architecture, performance budgets, repository parameters, and the development plan.\n\nEngine selection lives here rather than in a state of its own because `engine.type` is a repository-creation parameter: decide the engine, then create the repo. That ordering is load-bearing.\n\nThe development plan matters more than anything else in this artifact. A coding agent handed only a GDD will invent scope — it has to, because a GDD does not say what to build first. The plan supplies milestones, tasks, dependencies, acceptance criteria and tests, which is what makes agent output reviewable against something other than taste.",
+
+  "x-wgf": {
+    "id": "tech-plan",
+    "kind": "artifact",
+    "format": "json",
+    "template": "templates/tech-plan.md",
+    "producer": "title:tech-plan",
+    "consumers": ["title:scaffolding", "title:prototype", "title:production", "release:qa", "release:draft"],
+    "repo_path": "workspace/titles/<title-id>/tech-plan.json",
+    "rendered_to": "<game-repo>/docs/tech-plan.md",
+    "required_for_gates": ["G3"]
+  },
+
+  "type": "object",
+  "required": ["provenance", "title_id", "engine", "architecture", "perf_budgets", "repo_params", "dev_plan"],
+  "properties": {
+    "provenance": { "$ref": "./shared/provenance.schema.json#/$defs/provenance" },
+    "title_id": { "type": "string" },
+
+    "engine": {
+      "type": "object",
+      "required": ["type", "rationale"],
+      "properties": {
+        "type": {
+          "enum": ["pixijs", "threejs"],
+          "description": "PixiJS for 2D, Three.js for 3D. Driven by the game, not by preference. No other engine is supported by the template."
+        },
+        "rationale": {
+          "type": "string",
+          "description": "Why this game needs this engine. '3D because it looks better' is not a rationale; load budget and asset pipeline cost are."
+        },
+        "version_constraint": { "type": "string" }
+      },
+      "additionalProperties": false
+    },
+
+    "architecture": {
+      "type": "object",
+      "description": "Covers the systems the template provides slots for. Each entry should say what is generic (template), what is game-specific, and what is platform-specific.",
+      "properties": {
+        "rendering": { "type": "string" },
+        "game_core": { "type": "string" },
+        "state": { "type": "string" },
+        "input": { "type": "string" },
+        "ui": { "type": "string" },
+        "audio": { "type": "string" },
+        "assets": { "type": "string" },
+        "platform_sdk": { "type": "string" },
+        "analytics": { "type": "string" },
+        "persistence": { "type": "string" },
+        "networking": { "type": ["string", "null"] }
+      },
+      "additionalProperties": false
+    },
+
+    "ownership": {
+      "type": "object",
+      "description": "Explicitly separating these prevents the most common scaffolding mistake: reimplementing in the game what the template already provides.",
+      "properties": {
+        "generic": { "type": "array", "items": { "type": "string" } },
+        "game_specific": { "type": "array", "items": { "type": "string" } },
+        "platform_specific": { "type": "array", "items": { "type": "string" } },
+        "agent_responsibility": { "type": "array", "items": { "type": "string" } },
+        "ci_responsibility": { "type": "array", "items": { "type": "string" } }
+      },
+      "additionalProperties": false
+    },
+
+    "perf_budgets": {
+      "type": "object",
+      "description": "Checked by the verify suite at release. Budgets set after the fact are not budgets.",
+      "required": ["device_classes"],
+      "properties": {
+        "device_classes": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "required": ["id", "target_fps"],
+            "properties": {
+              "id": { "type": "string" },
+              "description": { "type": "string" },
+              "target_fps": { "type": "number" },
+              "max_memory_mb": { "type": "number" },
+              "max_time_to_interactive_s": { "type": "number" }
+            },
+            "additionalProperties": false
+          }
+        },
+        "max_bundle_mb": {
+          "type": "number",
+          "description": "Must respect the tightest max_bundle_mb across required platform profiles."
+        }
+      },
+      "additionalProperties": false
+    },
+
+    "repo_params": {
+      "type": "object",
+      "description": "Everything needed to create the game repository from web-game-template and write its game.config.yaml. The Factory never builds a repo from scratch.",
+      "required": ["repo_name", "template_ref", "game_config"],
+      "properties": {
+        "repo_name": { "type": "string" },
+        "template_ref": {
+          "type": "string",
+          "description": "The template repository and ref the game is created from, e.g. web-game-template@main."
+        },
+        "visibility": { "enum": ["private", "public"], "default": "private" },
+        "game_config": {
+          "type": "object",
+          "description": "Written verbatim into game.config.yaml at scaffolding.",
+          "required": ["game", "engine", "platforms", "build"],
+          "properties": {
+            "game": {
+              "type": "object",
+              "required": ["id", "name", "version"],
+              "properties": {
+                "id": { "type": "string" },
+                "name": { "type": "string" },
+                "version": { "type": "string" }
+              },
+              "additionalProperties": false
+            },
+            "engine": {
+              "type": "object",
+              "required": ["type"],
+              "properties": { "type": { "enum": ["pixijs", "threejs"] } },
+              "additionalProperties": false
+            },
+            "platforms": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "required": ["id", "profile", "role"],
+                "properties": {
+                  "id": { "type": "string" },
+                  "profile": {
+                    "type": "string",
+                    "description": "Pinned as <platform-id>@<profile-version> so a build is reproducible against the compliance rules in force."
+                  },
+                  "role": { "enum": ["required", "optional"] }
+                },
+                "additionalProperties": false
+              }
+            },
+            "build": {
+              "type": "object",
+              "properties": {
+                "command": { "type": "string" },
+                "output": { "type": "string" }
+              },
+              "additionalProperties": false
+            },
+            "verification": {
+              "type": "object",
+              "properties": {
+                "smoke_test": { "type": "boolean" },
+                "performance_test": { "type": "boolean" },
+                "mobile_test": { "type": "boolean" }
+              },
+              "additionalProperties": false
+            },
+            "publishing": {
+              "type": "object",
+              "properties": { "enabled": { "type": "boolean" } },
+              "additionalProperties": false
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+
+    "dev_plan": {
+      "type": "object",
+      "required": ["milestones", "tasks", "est_days"],
+      "properties": {
+        "est_days": { "type": "number" },
+        "milestones": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "required": ["id", "label", "est_days", "exit_criteria"],
+            "properties": {
+              "id": { "type": "string" },
+              "label": { "type": "string" },
+              "phase": { "enum": ["prototype", "production", "hardening"] },
+              "est_days": { "type": "number" },
+              "exit_criteria": { "type": "array", "items": { "type": "string" } }
+            },
+            "additionalProperties": false
+          }
+        },
+        "tasks": {
+          "type": "array",
+          "minItems": 1,
+          "description": "The unit an agent actually works from. Acceptance criteria and tests are required: a task without them cannot be verified and will be reported complete when it is not.",
+          "items": {
+            "type": "object",
+            "required": ["id", "title", "milestone", "acceptance_criteria"],
+            "properties": {
+              "id": { "type": "string", "pattern": "^[A-Z]+-[0-9]+$" },
+              "title": { "type": "string" },
+              "milestone": { "type": "string" },
+              "phase": { "type": "string" },
+              "description": { "type": "string" },
+              "dependencies": { "type": "array", "items": { "type": "string" } },
+              "acceptance_criteria": { "type": "array", "minItems": 1, "items": { "type": "string" } },
+              "tests": { "type": "array", "items": { "type": "string" } },
+              "assets": { "type": "array", "items": { "type": "string" } },
+              "est_hours": { "type": "number" },
+              "status": { "enum": ["todo", "in-progress", "blocked", "done"], "default": "todo" }
+            },
+            "additionalProperties": false
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+
+    "technical_risks": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["description", "severity", "mitigation"],
+        "properties": {
+          "description": { "type": "string" },
+          "severity": { "enum": ["low", "medium", "high"] },
+          "mitigation": { "type": "string" }
+        },
+        "additionalProperties": false
+      }
+    },
+
+    "sdk_integration": {
+      "type": "object",
+      "properties": {
+        "platform_sdks": { "type": "array", "items": { "type": "string" } },
+        "analytics_events": { "type": "array", "items": { "type": "string" } },
+        "note": {
+          "type": "string",
+          "description": "Game code calls the template's platform abstraction, never a portal SDK directly."
+        }
+      },
+      "additionalProperties": false
+    },
+
+    "release_requirements": {
+      "type": "array",
+      "items": { "type": "string" }
+    }
+  },
+  "additionalProperties": false
+}

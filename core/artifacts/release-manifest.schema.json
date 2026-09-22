@@ -1,0 +1,126 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://webgamefactory.dev/schemas/artifacts/release-manifest.schema.json",
+  "title": "Release Manifest",
+  "description": "An immutable, versioned description of one shipment.\n\nImmutability is the point. Once frozen at RC, a release manifest never changes — any correction produces a new release. That is what makes rollback possible as an operation rather than a rebuild: rolling back means re-publishing a previous manifest, which only works if manifests are retained and trustworthy.\n\nTarget platforms carry their role (required/optional) HERE rather than in the strategy, because which platforms must succeed is a per-release policy: r1 may ship Yandex-only and r2 may add CrazyGames.",
+
+  "x-wgf": {
+    "id": "release-manifest",
+    "kind": "artifact",
+    "format": "json",
+    "template": "templates/release-report.md",
+    "producer": "release:draft",
+    "frozen_at": "release:rc",
+    "consumers": ["release:qa", "release:rc", "release:validating", "release:submitting", "title:live"],
+    "repo_path": "<game-repo>/release/<release-id>/manifest.json",
+    "required_for_gates": ["G5", "G6"],
+    "immutable": true
+  },
+
+  "type": "object",
+  "required": ["provenance", "release_id", "title_id", "version", "commit_sha", "target_platforms", "changelog", "state"],
+  "properties": {
+    "provenance": { "$ref": "./shared/provenance.schema.json#/$defs/provenance" },
+
+    "release_id": {
+      "type": "string",
+      "pattern": "^r[0-9]+$",
+      "description": "Sequential per title."
+    },
+    "title_id": { "type": "string" },
+    "version": { "type": "string", "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$" },
+
+    "kind": {
+      "enum": ["initial", "content", "hotfix", "rollback"],
+      "default": "content"
+    },
+
+    "state": {
+      "enum": ["draft", "qa", "rc", "approved", "validating", "submitting", "partially-live", "live", "rolled-back", "cancelled"]
+    },
+
+    "commit_sha": { "type": "string" },
+    "build_ref": {
+      "type": "object",
+      "properties": {
+        "url": { "type": "string" },
+        "built_at": { "type": "string", "format": "date-time" },
+        "ci_run_url": { "type": "string" }
+      },
+      "additionalProperties": false
+    },
+
+    "packages": {
+      "type": "array",
+      "description": "One per targeted platform. Built artifacts differ per platform because each profile shapes the bundle.",
+      "items": {
+        "type": "object",
+        "required": ["platform_id", "filename", "size_mb", "checksum"],
+        "properties": {
+          "platform_id": { "type": "string" },
+          "filename": { "type": "string" },
+          "size_mb": { "type": "number" },
+          "checksum": { "$ref": "./shared/provenance.schema.json#/$defs/hash" }
+        },
+        "additionalProperties": false
+      }
+    },
+
+    "target_platforms": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["id", "role", "profile_version"],
+        "properties": {
+          "id": { "type": "string" },
+          "role": {
+            "enum": ["required", "optional"],
+            "description": "The release is LIVE only when every required platform is live; otherwise PARTIALLY_LIVE. Publication is not atomic — portals moderate independently."
+          },
+          "profile_version": {
+            "type": "string",
+            "description": "Pinned, so the build stays reproducible against the compliance rules in force when it shipped."
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+
+    "changelog": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "type": "string" }
+    },
+
+    "store_metadata": {
+      "type": "object",
+      "description": "Per-platform submission material. Completeness of this is the guard on G6 — a missing required locale is the classic late failure.",
+      "additionalProperties": {
+        "type": "object",
+        "properties": {
+          "title": { "type": "string" },
+          "descriptions": {
+            "type": "object",
+            "additionalProperties": { "type": "string" },
+            "description": "Keyed by locale."
+          },
+          "screenshots": { "type": "array", "items": { "type": "string" } },
+          "icon": { "type": "string" },
+          "age_rating": { "type": "string" },
+          "locales_included": { "type": "array", "items": { "type": "string" } }
+        },
+        "additionalProperties": false
+      }
+    },
+
+    "supersedes_release_id": { "type": ["string", "null"] },
+    "rollback_target_release_id": {
+      "type": ["string", "null"],
+      "description": "The known-good manifest to re-publish. Named in advance, at G6, rather than found under pressure."
+    },
+
+    "frozen_at": { "type": ["string", "null"], "format": "date-time" }
+  },
+  "additionalProperties": false
+}

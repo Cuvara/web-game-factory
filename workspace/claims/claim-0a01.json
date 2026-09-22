@@ -1,0 +1,25 @@
+{
+  "id": "claim-0a01",
+  "statement": "Of the top 20 titles in the Yandex Games arcade category on 2026-08-28, 14 use a one-touch control scheme.",
+  "tier": "observed",
+  "confidence": 0.9,
+  "evidence": [
+    {
+      "source_uri": "https://yandex.ru/games/category/arcade",
+      "source_kind": "portal-listing",
+      "observed_at": "2026-08-28T09:00:00Z",
+      "excerpt": "Category listing, positions 1-20, inspected individually for control scheme.",
+      "metric": { "name": "one_touch_share", "value": 0.7, "unit": "ratio" }
+    }
+  ],
+  "parents": [],
+  "subject": {
+    "genre": "arcade",
+    "platform": "yandex",
+    "dimension": "competition"
+  },
+  "asserted_at": "2026-08-28T09:30:00Z",
+  "asserted_by": "research",
+  "superseded_by": null,
+  "tags": ["controls", "yandex", "arcade"]
+}

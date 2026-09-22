@@ -1,0 +1,140 @@
+# Web Game Factory — Default opportunity scoring model
+#
+# Scoring models are VERSIONED FILES AND ARE NEVER EDITED IN PLACE. A new weighting is a
+# new file (portfolio-default.v2.yaml). Editing in place makes every historical evaluation
+# unexplainable, because you can no longer reconstruct what the score meant.
+#
+# Aggregation is weighted_sum plus named vetoes, NOT a weighted geometric mean — even
+# though geometric mean is the mathematically better answer to "a zero on platform fit
+# should not be compensated by high revenue potential".
+#
+# The reason is explainability at the gate. A human at G1 has to see why something ranked
+# where it did; "0.64, and the no_viable_platform veto fired" is one sentence, and a
+# geometric mean is not. The vetoes recover non-compensatory behaviour exactly where it
+# matters and nowhere else.
+#
+# Weights below are a starting point, not a finding. Retune them against shipped outcomes;
+# that is what versioning is for.
+#
+# Validated by core/artifacts/shared/scoring-model.schema.json
+
+id: portfolio-default
+version: 1.0.0
+label: Default portfolio scoring model
+extends: null
+
+aggregation:
+  method: weighted_sum
+  missing_policy: treat_as_hypothesis
+
+shortlist_threshold: 0.62
+
+evidence_policy:
+  min_coverage: 0.60
+  unevidenced_dimension_tier: hypothesis
+  hypothesis_weight_multiplier: 0.5
+  note: >
+    A hypothesis still counts, at half weight. Zeroing it would push scorers to invent
+    citations; ignoring the distinction would let guesses rank as facts.
+
+evidence_ttl_days: 45
+
+dimensions:
+  - id: revenue_potential
+    weight: 0.14
+    normalize: { type: log, min: 0, max: 50000 }
+
+  - id: platform_fit
+    weight: 0.12
+    normalize:
+      type: band
+      bands:
+        - { max: 0.30, score: 0.0 }
+        - { max: 0.70, score: 0.6 }
+        - { max: 1.00, score: 1.0 }
+
+  - id: dev_speed_days
+    weight: 0.11
+    normalize: { type: linear, min: 21, max: 5 }   # min > max inverts: fewer days scores higher
+
+  - id: monetization_fit
+    weight: 0.09
+    normalize: { type: linear, min: 0, max: 1 }
+
+  - id: retention_potential
+    weight: 0.08
+    normalize: { type: linear, min: 0, max: 1 }
+
+  - id: scope_complexity
+    weight: 0.08
+    normalize:
+      type: ordinal
+      levels: [xs, s, m, l, xl]
+      scores: [1.0, 0.8, 0.45, 0.15, 0.0]
+
+  - id: technical_risk
+    weight: 0.08
+    normalize: { type: linear, min: 1, max: 0 }
+
+  - id: asset_cost
+    weight: 0.07
+    normalize: { type: log, min: 2000, max: 0 }
+
+  - id: session_quality
+    weight: 0.07
+    normalize: { type: linear, min: 0, max: 1 }
+
+  - id: competition
+    weight: 0.05
+    normalize: { type: linear, min: 1, max: 0 }
+
+  - id: replayability
+    weight: 0.05
+    normalize: { type: linear, min: 0, max: 1 }
+
+  - id: performance_risk
+    weight: 0.03
+    normalize: { type: linear, min: 1, max: 0 }
+
+  - id: time_to_market
+    weight: 0.02
+    normalize: { type: linear, min: 60, max: 10 }
+
+  - id: iterability
+    weight: 0.01
+    normalize: { type: linear, min: 0, max: 1 }
+
+# Non-compensatory rules. A veto rejects regardless of aggregate score.
+vetoes:
+  - id: no_viable_platform
+    label: No viable platform
+    when: { left: platform_fit, op: lt, right: 0.25 }
+    rationale: >
+      No target portal will carry this well. A high score elsewhere cannot fix having
+      nowhere to publish.
+
+  - id: over_timebox
+    label: Exceeds the production model
+    when: { left: dev_speed_days, op: gt, right: 21 }
+    rationale: >
+      The factory is built around 7-14 day cycles with tolerance to 21. Beyond that this
+      is a different kind of project and should be decided as one, not slipped in through
+      a high score.
+
+  - id: unevidenced_revenue
+    label: High revenue claim with no evidence
+    when:
+      all_of:
+        - { left: revenue_potential, op: gte, right: 0.80 }
+        - { left: revenue_potential_tier, op: eq, right: hypothesis }
+    rationale: >
+      An exciting revenue number nobody sourced is the most common way a bad opportunity
+      reaches a gate. Find evidence or score it lower.
+
+  - id: asset_cost_exceeds_value
+    label: Asset cost out of proportion
+    when:
+      all_of:
+        - { left: asset_cost, op: gt, right: 1500 }
+        - { left: revenue_potential, op: lt, right: 0.50 }
+    rationale: Spending more on art than the opportunity plausibly returns.

@@ -1,0 +1,159 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://webgamefactory.dev/schemas/artifacts/shared/platform-profile.schema.json",
+  "title": "Platform Profile",
+  "description": "Validates files in core/reference/platforms/. A platform profile is DATA, not integration code — adding a platform is one new file and zero changes anywhere else, which is what keeps core platform-independent.\n\nProfiles are versioned and read at three points with rising strictness: advisory when scoring an opportunity, binding on the design at strategy/design, and binding on the built package at release validation. Because a release pins the profile version it was built against, a build stays reproducible against the compliance rules that were in force when it shipped.",
+
+  "x-wgf": {
+    "id": "platform-profile",
+    "kind": "reference",
+    "format": "yaml",
+    "instance_path": "core/reference/platforms/*.yaml",
+    "consumers": ["portfolio:scored", "title:strategy", "title:design", "release:validating", "release:submitting"],
+    "updated_by": "platform-publication:rejected"
+  },
+
+  "type": "object",
+  "required": ["id", "name", "version", "capabilities", "requirements", "ads", "review"],
+  "properties": {
+    "id": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9-]*$",
+      "description": "Must match the platform id used in web-game-template/game.config.yaml."
+    },
+    "name": { "type": "string" },
+    "version": { "type": "string", "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$" },
+    "status": {
+      "type": "string",
+      "enum": ["verified", "unverified", "deprecated"],
+      "description": "unverified means the figures have not been checked against the portal's own documentation and should be treated as hypotheses."
+    },
+    "docs": { "type": ["string", "null"] },
+
+    "audience": {
+      "type": "object",
+      "properties": {
+        "primary_regions": { "type": "array", "items": { "type": "string" } },
+        "device_mix": {
+          "type": "object",
+          "properties": {
+            "mobile": { "type": "number", "minimum": 0, "maximum": 1 },
+            "desktop": { "type": "number", "minimum": 0, "maximum": 1 }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+
+    "capabilities": {
+      "type": "object",
+      "required": ["ads", "iap"],
+      "properties": {
+        "ads": {
+          "type": "array",
+          "items": { "enum": ["interstitial", "rewarded", "banner"] }
+        },
+        "iap": { "type": "boolean" },
+        "cloud_saves": { "type": "boolean" },
+        "leaderboards": { "type": "boolean" },
+        "achievements": { "type": "boolean" },
+        "auth": { "enum": ["required", "optional", "none"] },
+        "analytics": { "enum": ["platform-provided", "self-hosted", "none"] }
+      },
+      "additionalProperties": false
+    },
+
+    "requirements": {
+      "type": "object",
+      "required": ["locales_required"],
+      "properties": {
+        "locales_required": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Binding on the design. Yandex needs ru, GameVui needs vi — discovering this after the build is the expensive path."
+        },
+        "locales_recommended": { "type": "array", "items": { "type": "string" } },
+        "max_bundle_mb": { "type": ["number", "null"] },
+        "orientation": { "type": "array", "items": { "enum": ["landscape", "portrait"] } },
+        "loading_api": { "enum": ["required", "optional", "none"] },
+        "offline_start": { "type": "boolean" },
+        "https_only": { "type": "boolean" },
+        "external_requests": { "enum": ["allowed", "restricted", "forbidden"] },
+        "quality_guidelines": { "enum": ["enforced", "advisory", "none"] },
+        "no_external_links": { "type": "boolean" }
+      },
+      "additionalProperties": false
+    },
+
+    "ads": {
+      "type": "object",
+      "properties": {
+        "interstitial_min_interval_s": { "type": ["number", "null"] },
+        "rewarded_available": { "type": "boolean" },
+        "banner_available": { "type": "boolean" },
+        "notes": { "type": "string" }
+      },
+      "additionalProperties": false
+    },
+
+    "metadata_requirements": {
+      "type": "object",
+      "properties": {
+        "descriptions_locales": { "type": "array", "items": { "type": "string" } },
+        "screenshots_min": { "type": "integer", "minimum": 0 },
+        "icon_required": { "type": "boolean" },
+        "age_rating_required": { "type": "boolean" }
+      },
+      "additionalProperties": false
+    },
+
+    "review": {
+      "type": "object",
+      "required": ["process"],
+      "properties": {
+        "process": { "enum": ["manual", "automated", "none"] },
+        "typical_days": {
+          "type": "array",
+          "prefixItems": [{ "type": "number" }, { "type": "number" }],
+          "minItems": 2,
+          "maxItems": 2,
+          "description": "[min, max]. The factory cannot accelerate moderation; this exists so waiting is visible rather than mistaken for being finished."
+        },
+        "common_rejections": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Appended to whenever a submission is rejected. This is the factory's memory — without it the same wall gets hit by every title."
+        }
+      },
+      "additionalProperties": false
+    },
+
+    "assertions": {
+      "type": "array",
+      "description": "Executed at release:validating against the built package. Every assertion should correspond to a requirement the design was already bound to.",
+      "items": {
+        "type": "object",
+        "required": ["id", "check", "severity"],
+        "properties": {
+          "id": { "type": "string", "pattern": "^[a-z][a-z0-9_]*$" },
+          "check": { "$ref": "https://webgamefactory.dev/schemas/artifacts/shared/criteria-expression.schema.json#/$defs/expression" },
+          "severity": { "enum": ["blocking", "warning"] },
+          "rationale": { "type": "string" }
+        },
+        "additionalProperties": false
+      }
+    },
+
+    "scoring_hints": {
+      "type": "object",
+      "description": "Advisory input to the platform_fit dimension. Prose on purpose — this informs a judgement, it does not compute one.",
+      "properties": {
+        "platform_fit_favours": { "type": "array", "items": { "type": "string" } },
+        "platform_fit_penalizes": { "type": "array", "items": { "type": "string" } }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}

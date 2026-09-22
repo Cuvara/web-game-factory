@@ -1,0 +1,61 @@
+{
+  "provenance": {
+    "artifact_id": "wgf:decision-record:neon-drift:20260916-01",
+    "artifact_type": "decision-record",
+    "schema_version": "1.0.0",
+    "title_id": "neon-drift",
+    "produced_by": { "role": "portfolio-owner", "actor": "human" },
+    "produced_at": "2026-09-16T09:30:00Z",
+    "inputs": [
+      {
+        "artifact_id": "wgf:prototype-report:neon-drift:20260915-01",
+        "artifact_type": "prototype-report",
+        "content_hash": "sha256:b5107ce93a4f28d61e0bd7429c8135ea60f79d3128ab4e075c6913fd820ae4c7"
+      }
+    ],
+    "content_hash": "sha256:d2f84b06e91a37c5084fe27b15d9a3c6710be452093fd8a71c6e05b34827da9f",
+    "status": "final"
+  },
+
+  "gate_id": "G4",
+  "machine": "title",
+  "transition": "prototype-review -> abandoned",
+
+  "subject": [
+    {
+      "artifact_id": "wgf:prototype-report:neon-drift:20260915-01",
+      "artifact_type": "prototype-report",
+      "content_hash": "sha256:b5107ce93a4f28d61e0bd7429c8135ea60f79d3128ab4e075c6913fd820ae4c7"
+    },
+    {
+      "artifact_id": "wgf:title-strategy:neon-drift:20260901-01",
+      "artifact_type": "title-strategy",
+      "content_hash": "sha256:1d90fe52a7c41863b0e24df7195ca3086b7e4f2019cd53a86e174b0d92fc38a7"
+    }
+  ],
+
+  "decision": "abandon",
+
+  "decided_by": {
+    "role": "portfolio-owner",
+    "identifier": "example-owner",
+    "mode": "human"
+  },
+
+  "decided_at": "2026-09-16T09:30:00Z",
+
+  "rationale": "audio_latency_unfixable is breached at 95ms against the 60ms ceiling we set on 2026-09-01, with both permitted iterations spent. We agreed at G2 that this criterion was the bet, and we are losing it on its own terms rather than on a judgement made after the fact. The two passing criteria do not change that: control comprehension was never the risk we were carrying, and the retry figure is inflated by players retrying in disbelief at misses they consider unfair, which is the same defect wearing a friendlier number. Nothing downstream fixes a mechanic whose fairness the player does not believe in. Eleven days spent, and the alternative is spending thirty more to ship something the platform constraint will not carry. Abandoning. The latency finding is the valuable output here and should go back to the backlog as a claim: rhythm-timing concepts on mobile web need a latency-tolerant mechanic or a different platform, and the next scan should apply that before an opportunity gets this far.",
+
+  "criteria_eval": [
+    { "criterion_id": "audio_latency_unfixable", "measured": 95, "breached": true, "note": "Decisive." },
+    { "criterion_id": "control_not_understood", "measured": 0.875, "breached": false },
+    { "criterion_id": "no_retry_pull", "measured": 0.75, "breached": false, "note": "Passes numerically; discounted as contaminated." }
+  ],
+
+  "conditions": [
+    "Emit a claim capturing the measured mobile-web audio latency range so the next market scan can apply it as a constraint.",
+    "Retain the prototype and its report; the latency instrumentation is reusable."
+  ],
+
+  "dissent": "The game designer noted that a latency-tolerant variant — scoring on a wider window with visual-only beat cues — might preserve the positioning argument. Recorded, and deliberately not pursued here: that is a different mechanic and belongs in the backlog as a new opportunity, judged on its own evidence rather than inheriting this one's sunk cost."
+}

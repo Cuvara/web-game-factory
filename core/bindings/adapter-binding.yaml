@@ -1,0 +1,283 @@
+# Web Game Factory — Adapter binding manifest
+#
+# The provider-independent statement of WHAT an AI adapter must cover. Never HOW to phrase
+# it — nothing here names a specific AI system or runtime concept.
+#
+# Why this file exists: adapter files are hand-written markdown pointing into core. That is
+# the right shape (a generator would produce committed files that get hand-edited under
+# pressure and silently diverge from their source), but textual references alone cannot
+# tell you that an adapter never covered `title:architecture`. This manifest supplies
+# exactly that missing bit, in one file.
+#
+# The contract for adapter authors:
+#
+#   An adapter file's body is "read these core paths, then follow them."
+#   An adapter file that restates a schema, a procedure, or a contract is a BUG.
+#   Core is authoritative; on conflict, report it rather than resolving it.
+#
+# Each adapter carries a CONFORMANCE.md mapping every surface id below to its file, so
+# reviewing adapter completeness is a two-file diff rather than a directory crawl.
+
+version: 1.0.0
+
+surface_kinds:
+  agent: A persistent role the runtime can delegate to.
+  command: A user-initiated action, typically a lifecycle transition or a gate.
+  skill: Reference capability loaded on demand, not a role and not an action.
+
+# ---------------------------------------------------------------------------
+# Roles → agent surfaces. One per non-human role in core/roles/roles.yaml.
+# ---------------------------------------------------------------------------
+agents:
+  - id: research
+    role: research
+    owns: [portfolio:market-scan, portfolio:discovered]
+    must_read:
+      - core/roles/research.md
+      - core/lifecycle/stages/market-scan.md
+      - core/artifacts/shared/claim.schema.json
+      - core/artifacts/opportunity.schema.json
+      - core/reference/dimensions.yaml
+    produces: [claim, opportunity]
+    consumes: []
+
+  - id: analysis
+    role: analysis
+    owns: [portfolio:scored, portfolio:shortlisted, portfolio:approved, title:concept]
+    must_read:
+      - core/roles/analysis.md
+      - core/lifecycle/stages/score-opportunity.md
+      - core/lifecycle/stages/opportunity-selection.md
+      - core/artifacts/evaluation.schema.json
+      - core/artifacts/shared/scoring-model.schema.json
+      - core/reference/scoring/portfolio-default.v1.yaml
+    produces: [evaluation]
+    consumes: [claim, opportunity]
+
+  - id: game-designer
+    role: game-designer
+    owns: [title:strategy, title:design]
+    must_read:
+      - core/roles/game-designer.md
+      - core/lifecycle/stages/strategy.md
+      - core/lifecycle/stages/design.md
+      - core/artifacts/title-strategy.schema.json
+      - core/artifacts/game-design.schema.json
+      - core/reference/design-consistency-rules.yaml
+      - core/templates/gdd.md
+    produces: [title-strategy, game-design]
+    consumes: [opportunity, evaluation, claim]
+
+  - id: architect
+    role: architect
+    owns: [title:tech-plan]
+    must_read:
+      - core/roles/architect.md
+      - core/lifecycle/stages/tech-plan.md
+      - core/artifacts/tech-plan.schema.json
+      - core/templates/tech-plan.md
+    produces: [tech-plan]
+    consumes: [game-design, title-strategy, asset-manifest]
+
+  - id: qa
+    role: qa
+    owns: [release:qa]
+    must_read:
+      - core/roles/qa.md
+      - core/lifecycle/stages/qa.md
+      - core/artifacts/qa-report.schema.json
+      - core/templates/qa-report.md
+    produces: [qa-report]
+    consumes: [release-manifest, game-design, tech-plan]
+
+  - id: release
+    role: release
+    owns:
+      - title:scaffolding
+      - release:draft
+      - release:rc
+      - release:validating
+      - release:submitting
+    must_read:
+      - core/roles/release.md
+      - core/lifecycle/stages/scaffolding.md
+      - core/lifecycle/stages/release-draft.md
+      - core/lifecycle/stages/release-candidate.md
+      - core/lifecycle/stages/platform-validation.md
+      - core/lifecycle/stages/publish.md
+      - core/artifacts/release-manifest.schema.json
+      - core/artifacts/platform-publication.schema.json
+      - core/reference/platforms/
+      - core/templates/release-report.md
+    produces: [release-manifest, platform-publication]
+    consumes: [tech-plan, qa-report]
+
+  - id: liveops
+    role: liveops
+    owns: [title:live]
+    must_read:
+      - core/roles/liveops.md
+      - core/lifecycle/stages/live.md
+      - core/lifecycle/stages/performance-review.md
+      - core/lifecycle/stages/campaign.md
+      - core/artifacts/performance-review.schema.json
+    produces: [performance-review, claim]
+    consumes: [release-manifest, platform-publication]
+
+  - id: gameplay
+    role: gameplay
+    works_in: [title:prototype, title:production]
+    must_read:
+      - core/roles/implementers.md
+      - core/lifecycle/stages/prototype.md
+      - core/lifecycle/stages/production.md
+      - core/artifacts/prototype-report.schema.json
+    produces: [prototype-report]
+    consumes: [tech-plan, game-design]
+
+  - id: ui
+    role: ui
+    works_in: [title:prototype, title:production]
+    must_read:
+      - core/roles/implementers.md
+      - core/lifecycle/stages/production.md
+    produces: []
+    consumes: [game-design, tech-plan]
+
+  - id: asset
+    role: asset
+    works_in: [title:design, title:tech-plan, title:prototype, title:production]
+    must_read:
+      - core/roles/implementers.md
+      - core/artifacts/asset-manifest.schema.json
+    produces: [asset-manifest]
+    consumes: [game-design]
+
+  - id: sdk
+    role: sdk
+    works_in: [title:prototype, title:production, release:validating]
+    must_read:
+      - core/roles/implementers.md
+      - core/reference/platforms/
+      - core/artifacts/shared/platform-profile.schema.json
+    produces: []
+    consumes: [tech-plan, game-design]
+
+# ---------------------------------------------------------------------------
+# Transitions → command surfaces.
+#
+# Commands map to TRANSITIONS, not to stages. Stage-named commands drift from the machine
+# within a month, because the machine's edges are what a user actually wants to trigger.
+# ---------------------------------------------------------------------------
+commands:
+  - id: scan
+    triggers: portfolio:market-scan
+    role: research
+    gate: null
+  - id: score
+    triggers: "portfolio: discovered -> scored -> shortlisted"
+    role: analysis
+    gate: null
+  - id: select
+    triggers: "portfolio: shortlisted -> approved -> promoted"
+    role: analysis
+    gate: G1
+  - id: strategy
+    triggers: "title: concept -> strategy -> design"
+    role: game-designer
+    gate: G2
+  - id: design
+    triggers: "title: design -> tech-plan"
+    role: game-designer
+    gate: null
+  - id: plan
+    triggers: "title: tech-plan -> scaffolding"
+    role: architect
+    gate: G3
+  - id: scaffold
+    triggers: "title: scaffolding -> prototype"
+    role: release
+    gate: null
+  - id: prototype
+    triggers: "title: prototype -> prototype-review"
+    role: gameplay
+    gate: null
+  - id: review
+    triggers: "title: prototype-review -> {production | prototype | abandoned}"
+    role: portfolio-owner
+    gate: G4
+  - id: release
+    triggers: "title: production -> releasing; release: draft -> qa -> rc -> approved"
+    role: release
+    gate: G5
+  - id: publish
+    triggers: "release: approved -> validating -> submitting -> live"
+    role: release
+    gate: G6
+  - id: live
+    triggers: "title: live (scheduled performance review)"
+    role: liveops
+    gate: G7
+  - id: status
+    triggers: null
+    role: null
+    gate: null
+    note: Read-only. Reports portfolio and title state from workspace/.
+
+# ---------------------------------------------------------------------------
+# Skills — reference capability, loaded on demand.
+# ---------------------------------------------------------------------------
+skills:
+  - id: market-intelligence
+    supports: [research]
+    covers: Normalizing platform signal into tiered claims; evidence discipline.
+  - id: opportunity-scoring
+    supports: [analysis]
+    covers: Scoring models, normalizers, vetoes, evidence coverage.
+  - id: game-design
+    supports: [game-designer]
+    covers: Core loop, session, retention, scope tiers, consistency rules.
+  - id: monetization
+    supports: [game-designer, sdk]
+    covers: Placement design, platform ad capabilities and cadence limits.
+  - id: architecture
+    supports: [architect]
+    covers: Engine selection, performance budgets, ownership split.
+  - id: development-planning
+    supports: [architect]
+    covers: Milestones, tasks, acceptance criteria, test planning.
+  - id: pixijs
+    supports: [gameplay, ui]
+    covers: 2D rendering, sprites, animation, particles.
+  - id: threejs
+    supports: [gameplay]
+    covers: 3D scenes, GLB/GLTF, Draco/Meshopt, KTX2.
+  - id: assets
+    supports: [asset]
+    covers: Asset manifest, sourcing, licensing, compression pipelines.
+  - id: platform-sdk
+    supports: [sdk]
+    covers: Platform abstraction, ads, cloud save, analytics wiring.
+  - id: localization
+    supports: [release, ui]
+    covers: >
+      Required locales per platform, translation quality expectations, string extraction.
+      Exists because compliance and localization were previously assigned to nobody and
+      were discovered at submission time.
+  - id: qa
+    supports: [qa]
+    covers: Test suites, device matrices, defect triage, performance measurement.
+  - id: release
+    supports: [release]
+    covers: Manifests, checksums, store metadata, platform assertions, submission.
+
+# ---------------------------------------------------------------------------
+# What an adapter must NOT do.
+# ---------------------------------------------------------------------------
+prohibitions:
+  - Do not copy schema field lists into adapter files. Reference the schema path.
+  - Do not restate stage procedures. Reference the procedure path.
+  - Do not define a per-provider `workflows/` tree. It duplicates core/lifecycle/stages/.
+  - Do not advance a lifecycle state from inside an agent surface. Emit artifacts and stop;
+    transitions are commands and gates are human.
+  - Do not auto-approve G4, G6 or G7 under any configuration.

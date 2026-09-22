@@ -1,0 +1,81 @@
+# Platform profile — CrazyGames
+#
+# See yandex.yaml for how profiles are consumed. Figures are starting values to be
+# corrected from portal documentation and from compliance findings.
+
+id: crazygames
+name: CrazyGames
+version: 1.0.0
+status: unverified
+docs: https://docs.crazygames.com/
+
+audience:
+  primary_regions: [us, br, de, fr, gb]
+  device_mix: { mobile: 0.5, desktop: 0.5 }
+
+capabilities:
+  ads: [interstitial, rewarded, banner]
+  iap: false
+  cloud_saves: true
+  leaderboards: false
+  achievements: false
+  auth: optional
+  analytics: platform-provided
+
+requirements:
+  locales_required: [en]
+  locales_recommended: [pt, de, fr, es]
+  max_bundle_mb: 250
+  orientation: [landscape, portrait]
+  loading_api: required
+  offline_start: false
+  https_only: true
+  quality_guidelines: enforced
+
+ads:
+  interstitial_min_interval_s: 180
+  rewarded_available: true
+  banner_available: true
+  notes: >
+    Ad placement rules are enforced editorially, not only technically. A game that
+    technically respects the interval can still be rejected for interrupting badly.
+
+metadata_requirements:
+  descriptions_locales: [en]
+  screenshots_min: 4
+  icon_required: true
+  age_rating_required: false
+
+review:
+  process: manual
+  typical_days: [3, 10]
+  common_rejections:
+    - Quality below the portal's bar — placeholder art, unfinished UI.
+    - Ads interrupting gameplay rather than sitting at natural breaks.
+    - No mobile support on a title the portal considers mobile-suitable.
+    - Loading screen without progress feedback.
+
+assertions:
+  - id: crazygames_bundle_size
+    check: { left: package.size_mb, op: lte, right: 250 }
+    severity: blocking
+  - id: crazygames_sdk_present
+    check: { left: package.platform_sdk, op: eq, right: crazygames }
+    severity: blocking
+  - id: crazygames_en_locale_present
+    check: { left: package.locales, op: in, right: [en] }
+    severity: blocking
+  - id: crazygames_mobile_supported
+    check: { left: package.mobile_supported, op: eq, right: true }
+    severity: warning
+  - id: crazygames_screenshots
+    check: { left: metadata.screenshots, op: gte, right: 4 }
+    severity: warning
+
+scoring_hints:
+  platform_fit_favours:
+    - Polished, immediately readable action and puzzle titles.
+    - Desktop-and-mobile playability from one build.
+  platform_fit_penalizes:
+    - IAP-dependent economies — there is no IAP here.
+    - Slow-starting games; the portal's traffic bounces fast.

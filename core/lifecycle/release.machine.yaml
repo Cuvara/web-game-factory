@@ -1,0 +1,216 @@
+# Web Game Factory — Release sub-machine
+#
+# Nested under a title. Instances are numbered r1, r2, ... A title returns to `releasing`
+# for every shipment including hotfixes, so this machine runs many times per title.
+#
+# The key modelling decision: which platforms are REQUIRED is a property of the release,
+# not of the title. Release r1 may ship Yandex-only; r2 may add CrazyGames. That is why
+# the quorum is read from release_manifest.target_platforms[].role rather than from
+# title_strategy.
+
+machine: release
+version: 1.0.0
+entity: release
+parent: title
+initial: draft
+terminals: [live, rolled-back, cancelled]
+
+guards:
+  ci_green:
+    description: ci.yml passed on the release commit.
+  verify_suite_green:
+    description: verify.yml passed — smoke, performance budgets, mobile compatibility.
+  no_blocking_defects:
+    description: qa_report.blocking_defects is empty.
+  perf_budgets_met:
+    description: qa_report.perf_results meets tech_plan.perf_budgets on every target device class.
+  candidate_frozen:
+    description: release_manifest has a commit_sha, a build_ref and checksums for every package.
+  store_metadata_complete:
+    description: >
+      Every required platform has its descriptions, screenshots, icons and REQUIRED
+      LOCALIZATIONS present, per that platform's profile. This is the check that stops a
+      Yandex submission failing on a missing ru locale.
+  all_targeted_validated:
+    description: Every targeted platform-publication is in state validated.
+  required_all_live:
+    description: Every platform-publication with role=required is in state live.
+  none_permanently_rejected:
+    description: No required platform-publication is in state rejected.
+  publish_authorized:
+    description: A decision-record exists for gate G6 naming this release_manifest by hash.
+
+states:
+  draft:
+    label: Draft
+    kind: ai-assisted
+    role: release
+    procedure: stages/release-draft.md
+    inputs: [tech-plan, game-design]
+    outputs: [release-manifest]
+    description: >
+      Assemble the release scope, changelog, version, and the target platform list with
+      each platform's role (required or optional) and pinned profile version.
+    transitions:
+      - event: start_qa
+        to: qa
+        kind: deterministic-ci
+        guard: [ci_green]
+
+  qa:
+    label: QA
+    kind: ai-assisted
+    role: qa
+    contributors: [gameplay, sdk]
+    procedure: stages/qa.md
+    inputs: [release-manifest, game-design, tech-plan]
+    outputs: [qa-report]
+    description: >
+      Independent QA against a built candidate — distinct from the implement/test/fix loop
+      an agent runs during production. An agent reporting "ready" is not the same event as
+      QA reporting "approved", and collapsing the two removes the only check on the agent.
+    transitions:
+      - event: pass
+        to: rc
+        kind: deterministic-ci
+        guard: [no_blocking_defects, perf_budgets_met]
+      - event: fail
+        to: $parent.production
+        kind: automatic
+
+  rc:
+    label: Release candidate
+    kind: deterministic-ci
+    role: release
+    contributors: [qa]
+    procedure: stages/release-candidate.md
+    inputs: [qa-report, release-manifest]
+    outputs: [release-manifest]
+    description: >
+      The candidate is frozen and immutable from here: a fixed commit, a fixed build, and
+      checksums. Any change produces a new release, never an edit to this one.
+    transitions:
+      - event: approve
+        to: approved
+        kind: human-approval
+        gate: G5
+        guard: [verify_suite_green, candidate_frozen]
+        outputs: [decision-record]
+      - event: cancel
+        to: cancelled
+        kind: human-approval
+        outputs: [decision-record]
+
+  approved:
+    label: Approved
+    kind: human-approval
+    role: release
+    description: >
+      The build is accepted. Publishing is a separate authorization because it is the
+      irreversible one — an approved build can sit indefinitely; a published one is public.
+    transitions:
+      - event: publish
+        to: validating
+        kind: human-approval
+        gate: G6
+        guard: [publish_authorized, store_metadata_complete]
+        outputs: [decision-record]
+      - event: cancel
+        to: cancelled
+        kind: human-approval
+
+  validating:
+    label: Platform validating
+    kind: deterministic-ci
+    role: release
+    contributors: [sdk]
+    procedure: stages/platform-validation.md
+    inputs: [release-manifest]
+    outputs: [platform-publication]
+    description: >
+      Runs each targeted platform profile's assertions against the actual built package.
+      Every assertion here corresponds to a requirement the design was already bound to,
+      so a failure means the design drifted — not that a new rule was discovered.
+    transitions:
+      - event: ok
+        to: submitting
+        kind: deterministic-ci
+        guard: [all_targeted_validated]
+      - event: fail
+        to: $parent.production
+        kind: automatic
+        note: Carries the failed assertion ids back so production fixes a named thing.
+
+  submitting:
+    label: Submitting
+    kind: automatic
+    role: release
+    procedure: stages/publish.md
+    inputs: [release-manifest, platform-publication]
+    outputs: [platform-publication]
+    description: >
+      Packaging and metadata preparation are automated; the submission itself is a human
+      checklist plus a status file. No portal APIs are integrated — see
+      platform-publication.machine.yaml.
+    transitions:
+      - event: progress
+        to: live
+        kind: automatic
+        guard: [required_all_live]
+      - event: progress
+        to: partially-live
+        kind: automatic
+        guard: [none_permanently_rejected]
+        guard_negated: [required_all_live]
+
+  partially-live:
+    label: Partially live
+    kind: automatic
+    role: release
+    description: >
+      Some required platforms are live and some are not. This state exists because publish
+      is not atomic: portal moderation is independent per platform and Yandex can reject
+      what CrazyGames approved.
+    transitions:
+      - event: resolve
+        to: live
+        kind: automatic
+        guard: [required_all_live]
+      - event: accept_partial
+        to: live
+        kind: human-approval
+        note: Policy decision to ship without a platform that was marked required.
+        outputs: [decision-record]
+      - event: remediate
+        to: $parent.production
+        kind: automatic
+        note: A required platform rejected the build. Emits a compliance finding first.
+
+  live:
+    label: Live
+    kind: automatic
+    terminal: true
+    description: Every required platform is live. The parent title transitions to `live`.
+
+  rolled-back:
+    label: Rolled back
+    kind: automatic
+    terminal: true
+    description: >
+      The previous release manifest was re-published. Reachable from a live regression;
+      this is why release manifests are immutable and retained — rollback is republishing
+      a known-good manifest, not rebuilding.
+
+  cancelled:
+    label: Cancelled
+    kind: automatic
+    terminal: true
+    description: The candidate was abandoned before publication.
+
+# A regression found after a release goes live rolls it back.
+global_transitions:
+  - event: regression
+    from: [live, partially-live]
+    to: rolled-back
+    kind: human-approval
+    guard_description: Severity at or above the rollback threshold in title_strategy.

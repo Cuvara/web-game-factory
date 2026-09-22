@@ -1,0 +1,82 @@
+# Platform profile — Poki
+#
+# See yandex.yaml for how profiles are consumed. Figures are starting values to be
+# corrected from portal documentation and from compliance findings.
+
+id: poki
+name: Poki
+version: 1.0.0
+status: unverified
+docs: https://developers.poki.com/
+
+audience:
+  primary_regions: [us, br, gb, de, fr, id]
+  device_mix: { mobile: 0.6, desktop: 0.4 }
+
+capabilities:
+  ads: [interstitial, rewarded]
+  iap: false
+  cloud_saves: false
+  leaderboards: false
+  achievements: false
+  auth: none
+  analytics: platform-provided
+
+requirements:
+  locales_required: [en]
+  locales_recommended: [pt, es, id]
+  max_bundle_mb: 150
+  orientation: [landscape, portrait]
+  loading_api: required
+  offline_start: false
+  https_only: true
+  quality_guidelines: enforced
+  no_external_links: true
+
+ads:
+  interstitial_min_interval_s: 120
+  rewarded_available: true
+  banner_available: false
+  notes: >
+    Banner ads are not part of the model; the portal frames the game itself. Ad breaks are
+    expected at natural boundaries and the SDK's commercial-break hooks must be used.
+
+metadata_requirements:
+  descriptions_locales: [en]
+  screenshots_min: 3
+  icon_required: true
+  age_rating_required: false
+
+review:
+  process: manual
+  typical_days: [5, 20]
+  common_rejections:
+    - External links or calls to action leaving the portal.
+    - Ad breaks at arbitrary points rather than natural boundaries.
+    - Quality or polish below the portal's editorial bar.
+    - Slow time-to-first-interaction.
+
+assertions:
+  - id: poki_bundle_size
+    check: { left: package.size_mb, op: lte, right: 150 }
+    severity: blocking
+  - id: poki_sdk_present
+    check: { left: package.platform_sdk, op: eq, right: poki }
+    severity: blocking
+  - id: poki_no_external_links
+    check: { left: package.external_links, op: eq, right: 0 }
+    severity: blocking
+  - id: poki_no_banner_ads
+    check: { left: package.uses_banner_ads, op: eq, right: false }
+    severity: blocking
+  - id: poki_time_to_interactive
+    check: { left: package.perf.time_to_interactive_s, op: lte, right: 5 }
+    severity: warning
+
+scoring_hints:
+  platform_fit_favours:
+    - High-polish titles with immediate readability.
+    - Designs with natural break points for commercial breaks.
+  platform_fit_penalizes:
+    - Banner-dependent or IAP-dependent monetization.
+    - Long tutorials before the first interaction.

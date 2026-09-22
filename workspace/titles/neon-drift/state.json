@@ -1,0 +1,41 @@
+{
+  "title_id": "neon-drift",
+  "opportunity_id": "opp-001",
+  "machine": "title",
+  "machine_version": "1.0.0",
+  "current_state": "abandoned",
+  "terminal": true,
+  "entered_current_state_at": "2026-09-16T09:30:00Z",
+
+  "history": [
+    { "state": "concept",          "entered_at": "2026-08-30T08:00:00Z", "exited_at": "2026-09-01T10:00:00Z", "event": "draft_strategy" },
+    { "state": "strategy",         "entered_at": "2026-09-01T10:00:00Z", "exited_at": "2026-09-02T09:00:00Z", "event": "approve",       "gate": "G2", "decision_record": "decisions/G2-20260902.json" },
+    { "state": "design",           "entered_at": "2026-09-02T09:00:00Z", "exited_at": "2026-09-04T11:00:00Z", "event": "plan" },
+    { "state": "tech-plan",        "entered_at": "2026-09-04T11:00:00Z", "exited_at": "2026-09-05T10:00:00Z", "event": "approve",       "gate": "G3", "decision_record": "decisions/G3-20260905.json" },
+    { "state": "scaffolding",      "entered_at": "2026-09-05T10:00:00Z", "exited_at": "2026-09-05T10:40:00Z", "event": "created" },
+    { "state": "prototype",        "entered_at": "2026-09-05T10:40:00Z", "exited_at": "2026-09-10T17:00:00Z", "event": "submit_review", "iteration": 1 },
+    { "state": "prototype-review", "entered_at": "2026-09-10T17:00:00Z", "exited_at": "2026-09-11T09:00:00Z", "event": "iterate",       "gate": "G4", "decision_record": "decisions/G4-20260911.json" },
+    { "state": "prototype",        "entered_at": "2026-09-11T09:00:00Z", "exited_at": "2026-09-15T16:00:00Z", "event": "submit_review", "iteration": 2 },
+    { "state": "prototype-review", "entered_at": "2026-09-15T16:00:00Z", "exited_at": "2026-09-16T09:30:00Z", "event": "abandon",       "gate": "G4", "decision_record": "decisions/G4-20260916.json" },
+    { "state": "abandoned",        "entered_at": "2026-09-16T09:30:00Z" }
+  ],
+
+  "artifacts": {
+    "title-strategy": "title-strategy.json",
+    "game-design": "game-design.json",
+    "prototype-report": "prototype-report.json"
+  },
+
+  "repository": {
+    "name": "neon-drift",
+    "created_from": "web-game-template@main",
+    "created_at": "2026-09-05T10:40:00Z",
+    "archived": true
+  },
+
+  "outcome": {
+    "elapsed_days": 17,
+    "timebox_days": 12,
+    "note": "Abandoned at G4 on a breached kill criterion, with both permitted prototype iterations used. Artifacts retained: the measured mobile-web audio latency range is the reusable result, and the decision record carries it forward as a condition on the next market scan."
+  }
+}

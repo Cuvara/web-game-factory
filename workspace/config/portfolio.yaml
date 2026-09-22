@@ -1,0 +1,37 @@
+# Local portfolio policy.
+#
+# Overrides the `policy` blocks in core/lifecycle/*.machine.yaml. Core ships defaults;
+# this file is where a particular factory installation tunes them without editing core.
+
+version: 1.0.0
+
+# The WIP cap. This is the single most important number here.
+#
+# Seven gates against a 7-14 day cycle is a gate roughly every 1.4 days. Run five titles
+# concurrently and the portfolio owner becomes the entire factory, gates go uncleared, and
+# whoever is under pressure starts removing them — including the three that matter.
+#
+# Raise this only after observing that gates are actually being cleared on time.
+max_concurrent_titles: 2
+
+default_scoring_model: portfolio-default
+backlog_review_cadence_days: 14
+
+# Production overrun tolerance, as a multiple of title_strategy.timebox_days.
+# Beyond this, production routes to an abandon decision.
+overrun_tolerance: 1.5
+
+# Auto-approval windows for REVERSIBLE gates only. Setting any of these for G4, G6 or G7
+# has no effect — the decision-record schema rejects a non-human decision on those.
+auto_approve:
+  G1: 72h
+  G2: 48h
+  G3: 48h
+  G5: 24h
+  G4: null   # kill decision   — never
+  G6: null   # publication     — never
+  G7: null   # spend           — never
+
+# Set to false to require a human at every gate regardless of the windows above.
+# Gates are data, so supervised and semi-autonomous operation differ by config, not code.
+allow_auto_approval: true

@@ -1,0 +1,145 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://webgamefactory.dev/schemas/artifacts/prototype-report.schema.json",
+  "title": "Prototype Report",
+  "description": "The evidence package for gate G4 — the kill gate.\n\nIts job is to make an honest kill possible. That means it must evaluate each kill criterion authored at strategy time with a MEASURED value, and it must carry playtest observations from someone who had not seen the game before. A report that only describes what was built cannot support a decision to stop.\n\nThe recommendation field is the producing role's view, not the verdict. The verdict is a decision-record.",
+
+  "x-wgf": {
+    "id": "prototype-report",
+    "kind": "artifact",
+    "format": "json",
+    "producer": "title:prototype",
+    "consumers": ["title:prototype-review", "title:production"],
+    "repo_path": "workspace/titles/<title-id>/prototype-report.json",
+    "required_for_gates": ["G4"]
+  },
+
+  "type": "object",
+  "required": ["provenance", "title_id", "build_ref", "iteration", "proved", "kill_criteria_eval", "playtest_sessions", "recommendation"],
+  "properties": {
+    "provenance": { "$ref": "./shared/provenance.schema.json#/$defs/provenance" },
+    "title_id": { "type": "string" },
+
+    "build_ref": {
+      "type": "object",
+      "required": ["commit_sha", "url"],
+      "properties": {
+        "commit_sha": { "type": "string" },
+        "url": { "type": "string", "description": "A playable build a reviewer can open unaided." },
+        "built_at": { "type": "string", "format": "date-time" }
+      },
+      "additionalProperties": false
+    },
+
+    "iteration": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "Checked against title_strategy.max_prototype_iterations so ITERATE cannot become an unbounded polish loop."
+    },
+
+    "proved": {
+      "type": "array",
+      "minItems": 1,
+      "description": "One entry per item in title_strategy.prototype_must_prove. The prototype exists to answer these; anything else built is scope that was not asked for.",
+      "items": {
+        "type": "object",
+        "required": ["question", "verdict", "evidence"],
+        "properties": {
+          "question": { "type": "string" },
+          "verdict": { "enum": ["proved", "disproved", "inconclusive"] },
+          "evidence": { "type": "string" },
+          "claim_refs": { "type": "array", "items": { "type": "string" } }
+        },
+        "additionalProperties": false
+      }
+    },
+
+    "kill_criteria_eval": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "./shared/criteria-expression.schema.json#/$defs/criterionResult" },
+      "description": "Every criterion from title-strategy, with what was actually measured. Omitting one is how a kill gate quietly stops working."
+    },
+
+    "playtest_sessions": {
+      "type": "array",
+      "minItems": 1,
+      "description": "At scale this is the vertical slice review, so the bar is 'a stranger played it', not 'the mechanic runs'.",
+      "items": {
+        "type": "object",
+        "required": ["observer", "player_context", "duration_s", "notes"],
+        "properties": {
+          "observer": { "type": "string" },
+          "player_context": {
+            "enum": ["first-time", "returning", "internal"],
+            "description": "First-time sessions are the ones that count. Internal sessions cannot tell you whether the game is understandable."
+          },
+          "duration_s": { "type": "number" },
+          "understood_without_help": { "type": "boolean" },
+          "reached_first_reward": { "type": "boolean" },
+          "notes": { "type": "string" },
+          "claim_refs": { "type": "array", "items": { "type": "string" } }
+        },
+        "additionalProperties": false
+      }
+    },
+
+    "integration_status": {
+      "type": "object",
+      "description": "The prototype must prove integration, not just gameplay. Deferring SDK and monetization wiring to production is how titles discover at release that the placement does not fit the loop.",
+      "properties": {
+        "platform_sdk": { "enum": ["working", "partial", "not-started"] },
+        "monetization": { "enum": ["working", "partial", "not-started"] },
+        "analytics": { "enum": ["working", "partial", "not-started"] },
+        "persistence": { "enum": ["working", "partial", "not-started"] }
+      },
+      "additionalProperties": false
+    },
+
+    "perf_measurements": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["device_class", "fps"],
+        "properties": {
+          "device_class": { "type": "string" },
+          "fps": { "type": "number" },
+          "memory_mb": { "type": "number" },
+          "time_to_interactive_s": { "type": "number" },
+          "within_budget": { "type": "boolean" }
+        },
+        "additionalProperties": false
+      }
+    },
+
+    "scope_deltas": {
+      "type": "array",
+      "description": "What was built that the plan did not call for, or planned and not built. Surfaced rather than absorbed silently.",
+      "items": {
+        "type": "object",
+        "required": ["item", "direction", "reason"],
+        "properties": {
+          "item": { "type": "string" },
+          "direction": { "enum": ["added", "cut", "deferred"] },
+          "reason": { "type": "string" }
+        },
+        "additionalProperties": false
+      }
+    },
+
+    "recommendation": {
+      "type": "object",
+      "required": ["decision", "rationale"],
+      "properties": {
+        "decision": { "enum": ["pass", "iterate", "abandon"] },
+        "rationale": {
+          "type": "string",
+          "description": "Sunk cost is not a rationale. The question is whether we would start this today knowing what we now know."
+        },
+        "if_iterate_what_changes": { "type": "string" }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}

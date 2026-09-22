@@ -1,0 +1,123 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://webgamefactory.dev/schemas/artifacts/platform-publication.schema.json",
+  "title": "Platform Publication",
+  "description": "The status of one release on one platform. Publication is not atomic — Yandex can reject what CrazyGames approved — so each (release × platform) pair carries its own state, and the release computes its quorum from these.\n\nThe rejection path is the important one. A rejection MUST emit a compliance finding that versions the platform profile, either as a new assertion or an entry in review.common_rejections. A rejection that only sets a status field teaches the factory nothing, and the next title hits the same wall. This is the highest-return feedback loop in the system.",
+
+  "x-wgf": {
+    "id": "platform-publication",
+    "kind": "artifact",
+    "format": "json",
+    "producer": "release:validating",
+    "updated_by": ["release:submitting"],
+    "consumers": ["release:submitting", "release:partially-live", "title:live"],
+    "repo_path": "<game-repo>/release/<release-id>/publications/<platform-id>.json",
+    "updates": "core/reference/platforms/<platform-id>.yaml"
+  },
+
+  "type": "object",
+  "required": ["provenance", "release_id", "title_id", "platform_id", "profile_version", "role", "state"],
+  "properties": {
+    "provenance": { "$ref": "./shared/provenance.schema.json#/$defs/provenance" },
+
+    "release_id": { "type": "string" },
+    "title_id": { "type": "string" },
+    "platform_id": { "type": "string", "pattern": "^[a-z][a-z0-9-]*$" },
+    "profile_version": { "type": "string" },
+    "role": { "enum": ["required", "optional"] },
+
+    "state": {
+      "enum": ["pending", "packaged", "validated", "validation-failed", "submitted", "in-review", "live", "rejected", "withdrawn"]
+    },
+
+    "assertion_results": {
+      "type": "array",
+      "description": "Results of running this platform profile's assertions against the built package. Every failure here names a rule, so remediation targets a known thing rather than 'platform validation failed'.",
+      "items": { "$ref": "./shared/criteria-expression.schema.json#/$defs/criterionResult" }
+    },
+
+    "submission": {
+      "type": "object",
+      "description": "Submission is a human checklist plus this record — no portal APIs are integrated. The machine's value here is structure and learning, not automation.",
+      "properties": {
+        "submitted_at": { "type": "string", "format": "date-time" },
+        "submitted_by": { "type": "string" },
+        "package_filename": { "type": "string" },
+        "checklist": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["item", "done"],
+            "properties": {
+              "item": { "type": "string" },
+              "done": { "type": "boolean" },
+              "note": { "type": "string" }
+            },
+            "additionalProperties": false
+          }
+        },
+        "portal_reference": { "type": "string" }
+      },
+      "additionalProperties": false
+    },
+
+    "review": {
+      "type": "object",
+      "properties": {
+        "acknowledged_at": { "type": "string", "format": "date-time" },
+        "expected_by": { "type": "string", "format": "date-time" },
+        "resolved_at": { "type": "string", "format": "date-time" }
+      },
+      "additionalProperties": false
+    },
+
+    "rejection": {
+      "type": "object",
+      "description": "Required when state is rejected.",
+      "required": ["reason", "compliance_finding"],
+      "properties": {
+        "reason": { "type": "string" },
+        "assertion_ids": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Assertions that should have caught this. Empty means the profile had no rule for it — which is exactly the case that must produce a new one."
+        },
+        "compliance_finding": {
+          "type": "object",
+          "required": ["summary", "profile_update"],
+          "description": "How the platform profile changes so this cannot recur. Mandatory: this is what turns a rejection into institutional memory.",
+          "properties": {
+            "summary": { "type": "string" },
+            "profile_update": {
+              "type": "object",
+              "required": ["kind"],
+              "properties": {
+                "kind": { "enum": ["new-assertion", "common-rejection-entry", "requirement-change", "none-needed"] },
+                "detail": { "type": "string" },
+                "new_profile_version": { "type": "string" }
+              },
+              "additionalProperties": false
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+
+    "live_url": { "type": ["string", "null"] },
+    "went_live_at": { "type": ["string", "null"], "format": "date-time" }
+  },
+  "additionalProperties": false,
+
+  "allOf": [
+    {
+      "if": { "properties": { "state": { "const": "rejected" } }, "required": ["state"] },
+      "then": { "required": ["rejection"] }
+    },
+    {
+      "if": { "properties": { "state": { "const": "live" } }, "required": ["state"] },
+      "then": { "required": ["live_url"] }
+    }
+  ]
+}

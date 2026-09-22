@@ -1,0 +1,17 @@
+{
+  "id": "claim-0a04",
+  "statement": "A rhythm-reaction hybrid would stand out in Yandex arcade because rhythm titles are absent from the top 20 while one-touch input is already the norm.",
+  "tier": "hypothesis",
+  "confidence": 0.45,
+  "evidence": [],
+  "parents": ["claim-0a03"],
+  "subject": {
+    "genre": "arcade",
+    "mechanic": "rhythm",
+    "platform": "yandex"
+  },
+  "asserted_at": "2026-08-28T11:10:00Z",
+  "asserted_by": "research",
+  "superseded_by": null,
+  "tags": ["opportunity-hypothesis"]
+}

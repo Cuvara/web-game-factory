@@ -1,0 +1,114 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://webgamefactory.dev/schemas/artifacts/decision-record.schema.json",
+  "title": "Decision Record",
+  "description": "The output of a gate. Every gate produces one; a gate that produces no artifact is not auditable and, more practically, is not resumable.\n\nThis matters most when an AI agent picks work back up days later. Without a decision record the agent cannot tell whether a gate was passed, skipped, or never reached, and the safe assumption (re-ask the human) is exactly the behaviour that makes gates feel like friction.\n\nThe subject is pinned by content hash. Approving \"the strategy\" is meaningless if the strategy can be edited afterwards — the record must name the exact version that was approved.",
+
+  "x-wgf": {
+    "id": "decision-record",
+    "kind": "artifact",
+    "format": "json",
+    "producer": "gate",
+    "consumers": ["portfolio:approved", "title:design", "title:scaffolding", "title:production", "release:approved", "release:validating", "title:live"],
+    "repo_path": "workspace/titles/<title-id>/decisions/<gate-id>-<yyyymmdd>.json",
+    "also_at": "workspace/opportunities/<opportunity-id>/decisions/<gate-id>-<yyyymmdd>.json",
+    "immutable": true
+  },
+
+  "type": "object",
+  "required": ["provenance", "gate_id", "machine", "transition", "subject", "decision", "decided_by", "decided_at", "rationale"],
+  "properties": {
+    "provenance": { "$ref": "./shared/provenance.schema.json#/$defs/provenance" },
+
+    "gate_id": {
+      "type": "string",
+      "pattern": "^G[1-9][0-9]*$",
+      "description": "Must exist in core/lifecycle/gates.yaml."
+    },
+    "machine": { "enum": ["portfolio", "title", "release"] },
+    "transition": {
+      "type": "string",
+      "description": "The transition this decision authorizes, e.g. 'strategy -> design'."
+    },
+
+    "subject": {
+      "type": "array",
+      "minItems": 1,
+      "description": "The exact artifact versions being decided on, pinned by hash.",
+      "items": { "$ref": "./shared/provenance.schema.json#/$defs/artifactRef" }
+    },
+
+    "decision": {
+      "type": "string",
+      "enum": ["approved", "rejected", "deferred", "pass", "iterate", "abandon", "accept_partial"],
+      "description": "The vocabulary is per gate; see gates.yaml. G4 uses pass/iterate/abandon."
+    },
+
+    "decided_by": {
+      "type": "object",
+      "required": ["role", "mode"],
+      "properties": {
+        "role": { "type": "string" },
+        "identifier": { "type": "string" },
+        "mode": {
+          "enum": ["human", "auto-approved"],
+          "description": "auto-approved is permitted only on gates where irreversible is false. It is recorded, never implicit — a decision nobody knows was automatic is worse than no decision."
+        }
+      },
+      "additionalProperties": false
+    },
+
+    "decided_at": { "type": "string", "format": "date-time" },
+
+    "rationale": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Required. The record exists to be re-read by someone who was not there, including the agent resuming the work."
+    },
+
+    "criteria_eval": {
+      "type": "array",
+      "items": { "$ref": "./shared/criteria-expression.schema.json#/$defs/criterionResult" },
+      "description": "For gates that judge against named criteria — G4 above all. Evaluating each criterion explicitly is what stops a kill gate degrading into a vibe check."
+    },
+
+    "conditions": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Approvals granted subject to something. Conditions that are never tracked are just misgivings."
+    },
+
+    "spend_ceiling_usd": {
+      "type": "number",
+      "minimum": 0,
+      "description": "Required for G7. An approval to spend without an amount is not an approval."
+    },
+
+    "dissent": {
+      "type": "string",
+      "description": "Recorded disagreement. Worth keeping: the decisions that go wrong are usually the ones someone had a reservation about."
+    }
+  },
+  "additionalProperties": false,
+
+  "allOf": [
+    {
+      "if": { "properties": { "gate_id": { "const": "G7" } }, "required": ["gate_id"] },
+      "then": { "required": ["spend_ceiling_usd"] }
+    },
+    {
+      "if": {
+        "properties": { "gate_id": { "enum": ["G4", "G6", "G7"] } },
+        "required": ["gate_id"]
+      },
+      "then": {
+        "properties": {
+          "decided_by": {
+            "properties": { "mode": { "const": "human" } }
+          }
+        },
+        "description": "Irreversible gates never auto-approve. Killing a concept, publishing, and spending money are not decisions an AI makes unattended."
+      }
+    }
+  ]
+}

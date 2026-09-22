@@ -1,0 +1,99 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://webgamefactory.dev/schemas/artifacts/shared/provenance.schema.json",
+  "title": "Provenance",
+  "description": "Carried by every Factory artifact. Supplies audit, staleness detection, resume, and producer attribution in one struct. An artifact without provenance cannot be trusted by any downstream stage.",
+
+  "$defs": {
+    "artifactRef": {
+      "type": "object",
+      "description": "A pinned reference to another artifact instance. The hash is what makes staleness detectable: if the referenced artifact's content_hash no longer matches, everything derived from it is suspect.",
+      "required": ["artifact_id", "artifact_type", "content_hash"],
+      "properties": {
+        "artifact_id": { "$ref": "#/$defs/artifactId" },
+        "artifact_type": { "type": "string", "pattern": "^[a-z][a-z0-9-]*$" },
+        "version": { "type": "string" },
+        "content_hash": { "$ref": "#/$defs/hash" }
+      },
+      "additionalProperties": false
+    },
+
+    "artifactId": {
+      "type": "string",
+      "description": "wgf:<artifact-type>:<scope-slug>:<yyyymmdd>-<nn>",
+      "pattern": "^wgf:[a-z][a-z0-9-]*:[a-z0-9][a-z0-9-]*:[0-9]{8}-[0-9]{2}$"
+    },
+
+    "hash": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+
+    "producer": {
+      "type": "object",
+      "description": "Who produced this. ai_provider/ai_model appear here as instance data only — never inside core methodology, which stays provider-independent.",
+      "required": ["role"],
+      "properties": {
+        "role": {
+          "type": "string",
+          "description": "A role id from core/roles/roles.yaml.",
+          "pattern": "^[a-z][a-z0-9-]*$"
+        },
+        "actor": {
+          "type": "string",
+          "enum": ["ai", "human", "automation"],
+          "default": "ai"
+        },
+        "ai_provider": { "type": "string" },
+        "ai_model": { "type": "string" },
+        "ai_model_version": { "type": "string" },
+        "human": { "type": "string" }
+      },
+      "additionalProperties": false
+    },
+
+    "provenance": {
+      "type": "object",
+      "required": [
+        "artifact_id",
+        "artifact_type",
+        "schema_version",
+        "produced_by",
+        "produced_at",
+        "inputs",
+        "content_hash",
+        "status"
+      ],
+      "properties": {
+        "artifact_id": { "$ref": "#/$defs/artifactId" },
+        "artifact_type": {
+          "type": "string",
+          "description": "Must equal the x-wgf.id of the schema validating this artifact.",
+          "pattern": "^[a-z][a-z0-9-]*$"
+        },
+        "schema_version": {
+          "type": "string",
+          "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$"
+        },
+        "opportunity_id": { "type": "string" },
+        "title_id": { "type": "string" },
+        "produced_by": { "$ref": "#/$defs/producer" },
+        "produced_at": { "type": "string", "format": "date-time" },
+        "inputs": {
+          "type": "array",
+          "description": "Every artifact this one was derived from, pinned by hash. Empty only for root artifacts (claims emitted by a market scan).",
+          "items": { "$ref": "#/$defs/artifactRef" }
+        },
+        "content_hash": { "$ref": "#/$defs/hash" },
+        "status": {
+          "type": "string",
+          "enum": ["draft", "final", "superseded"]
+        },
+        "supersedes": { "$ref": "#/$defs/artifactId" }
+      },
+      "additionalProperties": false
+    }
+  },
+
+  "$ref": "#/$defs/provenance"
+}

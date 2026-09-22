@@ -1,0 +1,23 @@
+{
+  "id": "claim-0a02",
+  "statement": "Yandex Games requires a Russian localization for submission and rejects machine-translated Russian.",
+  "tier": "observed",
+  "confidence": 0.95,
+  "evidence": [
+    {
+      "source_uri": "https://yandex.ru/dev/games/",
+      "source_kind": "portal-docs",
+      "observed_at": "2026-08-28T10:15:00Z",
+      "excerpt": "Publishing requirements: the game must be available in Russian; automatic translation is not accepted."
+    }
+  ],
+  "parents": [],
+  "subject": {
+    "platform": "yandex",
+    "dimension": "platform_fit"
+  },
+  "asserted_at": "2026-08-28T10:20:00Z",
+  "asserted_by": "research",
+  "superseded_by": null,
+  "tags": ["compliance", "localization", "yandex"]
+}

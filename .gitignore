@@ -6,3 +6,8 @@ dist/
 .env.*
 .DS_Store
 Thumbs.db
+
+# Python bytecode. The repository has no toolchain; these are a side effect of running
+# the check scripts and must not be committed.
+__pycache__/
+*.py[cod]

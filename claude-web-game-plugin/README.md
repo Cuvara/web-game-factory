@@ -18,6 +18,26 @@ block of Claude-specific execution notes. Nothing more.
 restatement is how two adapters drift apart and how both drift from core. If you find
 yourself explaining what a GDD contains, stop and link `core/artifacts/game-design.schema.json`.
 
+## Installing it
+
+The plugin is catalogued by `.claude-plugin/marketplace.json` at the **factory repository
+root**, not inside this directory. From the directory that holds both repositories:
+
+```bash
+claude plugin marketplace add ./web-game-factory
+claude plugin install web-game-factory@cuvara
+```
+
+`claude plugin list` should then show it enabled. Installing adds it at user scope; to make
+it travel with a checkout instead, put it in the project's `.claude/settings.json`:
+
+```json
+{ "enabledPlugins": { "web-game-factory@cuvara": true } }
+```
+
+Commands resolve core paths relative to the factory repository root, so run Claude Code from
+there — or from a game repository with the factory checked out beside it.
+
 ## Structure
 
 ```

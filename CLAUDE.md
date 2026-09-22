@@ -25,6 +25,12 @@ python scripts/check-integrity.py
 # Regenerate both adapter plugins from the tables inside the script.
 bash scripts/gen-adapters.sh
 
+# The instance-side mechanics. Standard library only; run them from the repository root.
+python -m unittest discover scripts/tests   # includes differential tests against the template
+python scripts/wgf-hash.py --check workspace/          # digests and pins reproduce
+python scripts/wgf-state.py --show neon-drift          # cursor, and what may happen next
+python scripts/wgf-guard.py --title neon-drift --state prototype-review
+
 # Create or reconcile the organization's WGF_* secrets and variables for the game pipelines.
 # Idempotent, and the living inventory of what the org is supposed to hold. Needs admin:org.
 bash scripts/wgf-org-setup.sh --dry-run
@@ -36,8 +42,9 @@ npx --yes -p ajv-cli@5 -p ajv-formats@2 ajv validate \
   -c ajv-formats --spec=draft2020 --strict=false \
   -d workspace/titles/neon-drift/game-design.json
 
-# Compile every schema (swap `validate -d ...` for `compile`, loop over the tree).
-for f in core/artifacts/*.schema.json core/artifacts/shared/*.schema.json; do
+# Compile every artifact schema. Only the top-level ones: passing a shared schema as both
+# `-s` and `-r` registers the same $id twice and ajv rejects it.
+for f in core/artifacts/*.schema.json; do
   npx --yes -p ajv-cli@5 -p ajv-formats@2 ajv compile \
     -s "$f" -r "core/artifacts/shared/*.schema.json" \
     -c ajv-formats --spec=draft2020 --strict=false
@@ -140,7 +147,15 @@ There is no `artifact-contracts/` tree. Producer, consumers, format, `repo_path`
 `core/artifacts/shared/` have no `x-wgf` block — that is expected, not a gap.
 
 Every artifact references `shared/provenance.schema.json#/$defs/provenance` as a **required**
-property. There are no exceptions.
+property, with two deliberate exceptions. `claim` carries no provenance — it is identified by
+id and made immutable by append-only discipline instead. `state` carries none because it is a
+mutable cursor, and pinning a cursor by hash would make every transition invalidate every
+reference to it.
+
+`provenance.content_hash` is not just a format. The canonicalization is specified on
+`#/$defs/hash` and implemented twice — `scripts/wgflib/hashing.py` here,
+`web-game-template/scripts/_shared.mjs` in a game repository. They must agree exactly;
+`scripts/tests/test_hashing.py` runs both and compares.
 
 ## Adapters are generated, not written
 

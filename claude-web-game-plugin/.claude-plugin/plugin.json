@@ -1,9 +1,11 @@
 {
   "name": "web-game-factory",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Claude Code adapter for Web Game Factory. Translates the provider-independent core methodology into agents, commands and skills; contains no Factory business logic of its own.",
   "author": {
     "name": "Web Game Factory"
   },
+  "homepage": "https://github.com/Cuvara/web-game-factory",
+  "repository": "https://github.com/Cuvara/web-game-factory",
   "keywords": ["game-development", "web-games", "pixijs", "threejs", "workflow"]
 }

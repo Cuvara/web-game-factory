@@ -1,0 +1,15 @@
+{
+  "$schema": "https://code.claude.com/schemas/marketplace.json",
+  "name": "cuvara",
+  "description": "Web Game Factory adapters.",
+  "owner": {
+    "name": "Cuvara"
+  },
+  "plugins": [
+    {
+      "name": "web-game-factory",
+      "description": "Runs the Web Game Factory lifecycle: market scan through opportunity selection, title strategy, design, prototype review, release and publication, with the seven gates intact.",
+      "source": "./claude-web-game-plugin"
+    }
+  ]
+}

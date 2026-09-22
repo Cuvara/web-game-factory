@@ -55,11 +55,14 @@ run() {
 #
 # name|visibility|what it is for
 #
-# WGF_BOOTSTRAP_PRIVATE_KEY is the one exception to selected visibility. A repository created
-# from the template is not on any selected list yet — that is precisely what bootstrap.yml
-# fixes — so it has to be able to read this one to get started.
+# Every one of these is scoped to selected repositories. Nothing here is readable by the
+# organization's other repositories, and none of their secrets are readable by these.
+#
+# bootstrap.yml is the deliberate exception, and it does not appear below: it authenticates
+# as the organization's existing bot app through APP_ID and APP_PRIVATE_KEY, which are
+# already organization secrets visible everywhere. It has to be that way round — a repository
+# created from the template is on no selected list until bootstrap puts it on one.
 SECRETS="
-WGF_BOOTSTRAP_PRIVATE_KEY|all|Private key of the WGF Bootstrap GitHub App. Used once per new game repo.
 WGF_CF_API_TOKEN|selected|Cloudflare API token for deploying develop builds to Pages.
 WGF_POKI_AUTH_JSON|selected|Contents of ~/.config/poki/auth.json, captured once locally. Poki's CLI login is a browser flow.
 WGF_YANDEX_CONSOLE_SESSION|selected|Reserved. Yandex publishes no upload API; submission is manual.
@@ -72,13 +75,8 @@ WGF_GAMEVUI_TOKEN|selected|Reserved. GameVui publishes no upload API; submission
 # Not secrets. An app id and a game id are identifiers, not credentials, and storing them as
 # secrets only means nobody can read them back to check them.
 #
-# WGF_BOOTSTRAP_APP_ID is visible to all repositories for the same reason the bootstrap
-# private key is: a repository created from the template has to read both before it is on
-# any selected list, because putting it on that list is what bootstrap does.
-#
 # name|value|visibility|what it is for
 VARIABLES="
-WGF_BOOTSTRAP_APP_ID|__UNSET__|all|App ID of the WGF Bootstrap GitHub App.
 WGF_CF_ACCOUNT_ID|__UNSET__|selected|Cloudflare account id.
 WGF_CF_PROJECT_PREFIX|wgf|selected|Prefix for the Cloudflare Pages project of each game.
 WGF_YANDEX_APP_ID|__UNSET__|selected|Yandex Games draft id for the current title.
@@ -162,21 +160,25 @@ done
 
 echo
 cat <<'EOF'
-Next, and only a human can do these:
+Next:
 
-  1. Create the "WGF Bootstrap" GitHub App in the organization and install it.
-     Permissions — Organization: Secrets R/W, Variables R/W.
-                   Repository:   Contents R/W, Actions R/W, Variables R/W,
-                                 Administration R/W (to create the gate environments),
-                                 Metadata R.
-     Then:  gh variable set WGF_BOOTSTRAP_APP_ID --org <ORG> --body "<app id>"
-            gh secret   set WGF_BOOTSTRAP_PRIVATE_KEY --org <ORG> < key.pem
+  1. Set the values that are still __UNSET__. Workflows skip the steps that need them and
+     say so in the run summary, so it is safe to leave any of them for later. The Cloudflare
+     ones can be copied from the organization's existing CLOUDFLARE_* secrets if the same
+     account is being used:
+       gh secret   set WGF_CF_API_TOKEN  --org <ORG> --body "<token>"
+       gh variable set WGF_CF_ACCOUNT_ID --org <ORG> --body "<account id>"
 
-  2. Set the values that are still __UNSET__. Workflows skip the steps that need them and
-     say so in the run summary, so it is safe to leave any of them for later.
+  2. Nothing to do about the bootstrap credential. bootstrap.yml authenticates as the
+     organization's existing bot app through APP_ID and APP_PRIVATE_KEY. Confirm that app
+     still holds: organization secrets W, organization variables W, and, per repository,
+     contents W, actions W, variables W, administration W, metadata R.
 
-  3. In each game repository, create two environments and put required reviewers on them:
-       production     — this is gate G6, publication
-       campaign-spend — this is gate G7, money
-     Neither gate may auto-approve. An environment with no reviewers is not a gate.
+  3. Game repositories get their gate environments from bootstrap.yml. Verify after the first
+     one is created that `production` and `campaign-spend` exist AND have required reviewers.
+     An environment with no reviewers is not a gate, and publish.yml/campaign.yml will refuse
+     to run rather than proceed unapproved.
+
+     Required reviewers are unavailable on PRIVATE repositories under a free plan. A private
+     game repository on a free organization cannot enforce G6 or G7 this way at all.
 EOF

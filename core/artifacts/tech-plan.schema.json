@@ -156,6 +156,21 @@
               },
               "additionalProperties": false
             },
+            "monetization": {
+              "type": "object",
+              "description": "The ad kinds the design committed to, carried into the game repository so release validation can evaluate a profile's uses_banner_ads and uses_rewarded_ads assertions against a DECLARATION rather than against whatever an end-to-end run happened to trigger. Observing a run can only prove an ad was requested, never that one was not; on GameVui `uses_rewarded_ads` is a blocking assertion, so the difference decides whether a title can ship there.\n\nDerived from game_design.monetization.placements[].kind — deduplicated, not decided here. A disagreement between this list and the design is a drift the tech plan should not be able to introduce silently.",
+              "required": ["ad_kinds"],
+              "properties": {
+                "ad_kinds": {
+                  "type": "array",
+                  "items": { "enum": ["interstitial", "rewarded", "banner"] },
+                  "uniqueItems": true,
+                  "description": "Empty means the title shows no ads. `iap` is deliberately not here: it is not an ad kind and no profile asserts on it."
+                },
+                "iap": { "type": "boolean" }
+              },
+              "additionalProperties": false
+            },
             "verification": {
               "type": "object",
               "properties": {

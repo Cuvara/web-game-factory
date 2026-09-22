@@ -7,7 +7,8 @@
   "$defs": {
     "operator": {
       "type": "string",
-      "enum": ["gt", "gte", "lt", "lte", "eq", "neq", "in", "not_in", "exists", "absent"]
+      "enum": ["gt", "gte", "lt", "lte", "eq", "neq", "in", "not_in", "exists", "absent"],
+      "description": "Ordering operators (gt, gte, lt, lte) require both sides to be numbers; a non-number on either side is an evaluation error, never a silent false.\n\n`in` and `not_in` are containment, and which way round depends on the measured value:\n  - measured value is an ARRAY — `in` holds when every element of `right` is present in it. This is the 'required element is present' reading, and it is the one platform profiles use: `{left: package.locales, op: in, right: [ru]}` asks whether the package ships Russian, not whether the whole locale list equals [ru].\n  - measured value is a SCALAR — `in` holds when it appears in `right`.\nThe distinction matters because reading it the other way makes every locale assertion pass vacuously, and those assertions are blocking on three platforms.\n\n`exists` and `absent` test only for the presence of the measured value and omit `right`. A value of null counts as absent."
     },
 
     "comparison": {

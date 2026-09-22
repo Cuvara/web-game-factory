@@ -1,0 +1,175 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://webgamefactory.dev/schemas/artifacts/state.schema.json",
+  "title": "Lifecycle state",
+  "description": "Where one entity currently sits in its machine, and how it got there.\n\nThis is the only Factory artifact that is mutable, and the only one without provenance. The other twelve are statements made at a point in time and are pinned by content hash; this one is a cursor, rewritten on every transition. Giving it provenance would claim a permanence it does not have, and pinning a cursor by hash would make every transition invalidate every reference to it.\n\nWhat makes it auditable is `history[]` instead: append-only in practice, one entry per state entered, carrying the event that left it and — where a gate was crossed — the decision record that authorized the crossing. The cursor can be rebuilt from the history; the history cannot be rebuilt from the cursor.\n\nOne file per entity, not one per machine: an opportunity, a title, a release and a platform publication each carry their own.",
+
+  "x-wgf": {
+    "id": "state",
+    "kind": "state",
+    "producer": "every transition in every machine",
+    "consumers": ["portfolio", "title", "release", "platform-publication"],
+    "format": "json",
+    "repo_path": "workspace/titles/<title-id>/state.json",
+    "repo_path_by_machine": {
+      "portfolio": "workspace/opportunities/<opportunity-id>/state.json",
+      "title": "workspace/titles/<title-id>/state.json",
+      "release": "<game-repo>/release/<release-id>/state.json",
+      "platform-publication": "<game-repo>/release/<release-id>/publications/<platform-id>.state.json"
+    },
+    "mutable": true,
+    "note": "Advanced by scripts/wgf-state.py, which refuses an edge the machine does not have and a gated edge without its decision record. Nothing else may write this file."
+  },
+
+  "type": "object",
+  "required": ["machine", "machine_version", "current_state", "entered_current_state_at", "history"],
+
+  "properties": {
+    "machine": {
+      "type": "string",
+      "description": "Which machine in core/lifecycle/ this cursor belongs to.",
+      "enum": ["portfolio", "title", "release", "platform-publication"]
+    },
+    "machine_version": {
+      "type": "string",
+      "description": "The `version` of the machine file this entity is being run under. A machine that changes shape underneath a running entity is the reason this is recorded rather than assumed.",
+      "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$"
+    },
+
+    "opportunity_id": { "type": "string", "pattern": "^opp-[0-9a-z]{3,}$" },
+    "title_id": { "type": "string", "pattern": "^[a-z][a-z0-9-]*$" },
+    "release_id": { "type": "string", "pattern": "^r[0-9]+$" },
+    "platform_id": { "type": "string", "pattern": "^[a-z][a-z0-9-]*$" },
+
+    "current_state": {
+      "type": "string",
+      "description": "A state id from the named machine. Unqualified: the machine is already known.",
+      "pattern": "^[a-z][a-z0-9-]*$"
+    },
+    "terminal": {
+      "type": "boolean",
+      "description": "True when `current_state` is one of the machine's `terminals`. Derived, and recorded so that reading the file answers the question without also reading the machine.",
+      "default": false
+    },
+    "entered_current_state_at": { "type": "string", "format": "date-time" },
+
+    "history": {
+      "type": "array",
+      "description": "One entry per state entered, oldest first. The last entry is the current state and has no `exited_at`.",
+      "minItems": 1,
+      "items": { "$ref": "#/$defs/visit" }
+    },
+
+    "artifacts": {
+      "type": "object",
+      "description": "Artifact type to the file holding it, relative to this state file. What this entity has produced so far, so a reader does not have to guess at filenames.",
+      "propertyNames": { "pattern": "^[a-z][a-z0-9-]*$" },
+      "additionalProperties": { "type": "string" }
+    },
+
+    "repository": {
+      "type": "object",
+      "description": "The game repository, once scaffolding has created one. Absent before that, which is itself the answer to whether a repository exists.",
+      "required": ["name", "created_from", "created_at"],
+      "properties": {
+        "name": { "type": "string" },
+        "created_from": {
+          "type": "string",
+          "description": "The template and ref it was created from. A game repository is never built from scratch."
+        },
+        "created_at": { "type": "string", "format": "date-time" },
+        "archived": { "type": "boolean", "default": false }
+      },
+      "additionalProperties": false
+    },
+
+    "outcome": {
+      "type": "object",
+      "description": "Written once the entity reaches a terminal state. Retained for abandoned and rejected work too — rediscovering the same dead end every quarter is a real cost.",
+      "properties": {
+        "elapsed_days": { "type": "number", "minimum": 0 },
+        "timebox_days": { "type": "number", "minimum": 0 },
+        "note": { "type": "string" }
+      },
+      "additionalProperties": false
+    }
+  },
+
+  "additionalProperties": false,
+
+  "allOf": [
+    {
+      "if": { "properties": { "machine": { "const": "portfolio" } }, "required": ["machine"] },
+      "then": { "required": ["opportunity_id"] }
+    },
+    {
+      "if": { "properties": { "machine": { "const": "title" } }, "required": ["machine"] },
+      "then": { "required": ["title_id"] }
+    },
+    {
+      "if": { "properties": { "machine": { "const": "release" } }, "required": ["machine"] },
+      "then": { "required": ["title_id", "release_id"] }
+    },
+    {
+      "if": {
+        "properties": { "machine": { "const": "platform-publication" } },
+        "required": ["machine"]
+      },
+      "then": { "required": ["title_id", "release_id", "platform_id"] }
+    },
+    {
+      "if": { "properties": { "terminal": { "const": true } }, "required": ["terminal"] },
+      "then": {
+        "required": ["outcome"],
+        "description": "A terminal state without a recorded outcome is work whose result nobody wrote down."
+      }
+    }
+  ],
+
+  "$defs": {
+    "visit": {
+      "type": "object",
+      "description": "One stay in one state.",
+      "required": ["state", "entered_at"],
+      "properties": {
+        "state": { "type": "string", "pattern": "^[a-z][a-z0-9-]*$" },
+        "entered_at": { "type": "string", "format": "date-time" },
+        "exited_at": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Absent on the current state, and only there."
+        },
+        "event": {
+          "type": "string",
+          "description": "The transition event that left this state. Absent on the current state.",
+          "pattern": "^[a-z][a-z0-9_.]*$"
+        },
+        "gate": {
+          "type": "string",
+          "description": "Set when the departing transition crossed a gate.",
+          "pattern": "^G[1-7]$"
+        },
+        "decision_record": {
+          "type": "string",
+          "description": "Path to the decision-record that authorized the crossing, relative to this state file."
+        },
+        "iteration": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Which pass through a state that loops back on itself — prototype, or design under descope."
+        },
+        "note": { "type": "string" }
+      },
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "if": { "required": ["gate"] },
+          "then": {
+            "required": ["decision_record"],
+            "description": "Every gate emits a decision-record. A history entry naming a gate but no record is a decision nobody can produce."
+          }
+        }
+      ]
+    }
+  }
+}

@@ -44,7 +44,11 @@ guards:
   evidence_coverage_met:
     description: evaluation.evidence_coverage >= scoring_model.evidence_policy.min_coverage
   no_veto_fired:
-    description: evaluation.vetoes_fired is empty
+    description: >
+      No entry in evaluation.vetoes_fired has breached=true. The field is typed as
+      criterionResult[] and records every veto that was evaluated, not only the ones that
+      fired — which is what lets a rejection be explained in one sentence, and why
+      emptiness is not the test.
   wip_available:
     description: Count of titles in non-terminal, pre-LIVE states < portfolio.max_concurrent_titles
   evidence_fresh:

@@ -10,10 +10,10 @@
       {
         "artifact_id": "wgf:prototype-report:neon-drift:20260915-01",
         "artifact_type": "prototype-report",
-        "content_hash": "sha256:b5107ce93a4f28d61e0bd7429c8135ea60f79d3128ab4e075c6913fd820ae4c7"
+        "content_hash": "sha256:62b7d59f2c47573d308324e7de311edcdb3b5c8b3641290310c0486dbc03d572"
       }
     ],
-    "content_hash": "sha256:d2f84b06e91a37c5084fe27b15d9a3c6710be452093fd8a71c6e05b34827da9f",
+    "content_hash": "sha256:73d980dfedd0e30890d4ddf0bc7c868da3adce48c7d48bde289f84be0c13823c",
     "status": "final"
   },
 
@@ -25,12 +25,12 @@
     {
       "artifact_id": "wgf:prototype-report:neon-drift:20260915-01",
       "artifact_type": "prototype-report",
-      "content_hash": "sha256:b5107ce93a4f28d61e0bd7429c8135ea60f79d3128ab4e075c6913fd820ae4c7"
+      "content_hash": "sha256:62b7d59f2c47573d308324e7de311edcdb3b5c8b3641290310c0486dbc03d572"
     },
     {
       "artifact_id": "wgf:title-strategy:neon-drift:20260901-01",
       "artifact_type": "title-strategy",
-      "content_hash": "sha256:1d90fe52a7c41863b0e24df7195ca3086b7e4f2019cd53a86e174b0d92fc38a7"
+      "content_hash": "sha256:c85e790ba2965324e8d3db290c2aa33317c23c791bbce10d930bd5fa0cd62615"
     }
   ],
 

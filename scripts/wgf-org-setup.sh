@@ -166,7 +166,9 @@ Next, and only a human can do these:
 
   1. Create the "WGF Bootstrap" GitHub App in the organization and install it.
      Permissions — Organization: Secrets R/W, Variables R/W.
-                   Repository:   Contents R/W, Actions R/W, Variables R/W, Metadata R.
+                   Repository:   Contents R/W, Actions R/W, Variables R/W,
+                                 Administration R/W (to create the gate environments),
+                                 Metadata R.
      Then:  gh variable set WGF_BOOTSTRAP_APP_ID --org <ORG> --body "<app id>"
             gh secret   set WGF_BOOTSTRAP_PRIVATE_KEY --org <ORG> < key.pem
 

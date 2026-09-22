@@ -14,6 +14,8 @@ capability that makes the rest of it worth running.
 Market → Opportunity → Game → Prototype → Launch → Analytics → Learning → Next opportunity
 ```
 
+Recent changes, and what each would take to adopt: [CHANGELOG.md](CHANGELOG.md).
+
 ---
 
 ## Layout

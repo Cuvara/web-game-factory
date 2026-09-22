@@ -26,6 +26,7 @@
 
     "hash": {
       "type": "string",
+      "description": "A content digest, `sha256:` followed by 64 lowercase hex characters.\n\nCANONICALIZATION. Two producers must agree on this string or nothing downstream can be pinned, so the serialization is part of the contract, not an implementation detail:\n\n1. Serialize the artifact as JSON with no insignificant whitespace.\n2. Sort object keys lexicographically by code point. Leave array element order alone — in an artifact, list order is meaning rather than formatting.\n3. Compute it over a copy whose `provenance.content_hash` is the empty string, because a value cannot contain a digest of itself.\n4. SHA-256 the UTF-8 bytes of that string; lowercase hex; prefix `sha256:`.\n\nA digest that depends on key order, indentation, or the tool that wrote the file is not a pin.",
       "pattern": "^sha256:[0-9a-f]{64}$"
     },
 
@@ -84,7 +85,10 @@
           "description": "Every artifact this one was derived from, pinned by hash. Empty only for root artifacts (claims emitted by a market scan).",
           "items": { "$ref": "#/$defs/artifactRef" }
         },
-        "content_hash": { "$ref": "#/$defs/hash" },
+        "content_hash": {
+          "$ref": "#/$defs/hash",
+          "description": "This artifact's own digest, computed as described on #/$defs/hash over a copy of itself with this field set to the empty string. Every gate pins its subject by this value, so an artifact whose recorded hash does not reproduce is an artifact that was edited after it was decided on."
+        },
         "status": {
           "type": "string",
           "enum": ["draft", "final", "superseded"]

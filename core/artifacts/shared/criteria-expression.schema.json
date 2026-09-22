@@ -21,11 +21,24 @@
         },
         "op": { "$ref": "#/$defs/operator" },
         "right": {
-          "description": "Literal only. Omitted for exists/absent.",
+          "description": "Literal only. Omitted for exists/absent, and mutually exclusive with right_path.",
           "type": ["string", "number", "boolean", "array", "null"]
+        },
+        "right_path": {
+          "type": "string",
+          "description": "A dotted path, resolved the same way as `left`, for comparing two measured values against each other — a session against the platform's interstitial interval, an asset estimate against the budget it has to fit.\n\nIt is a separate key rather than a convention on `right` because `right: casual` and `right: platform.capabilities.ads` are both bare strings, and nothing mechanical can tell a literal from a path. One of the two has to be declared, and declaring the rarer one keeps every existing literal unchanged."
         }
       },
-      "additionalProperties": false
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "if": { "required": ["right", "right_path"] },
+          "then": {
+            "propertyNames": { "not": { "enum": ["right", "right_path"] } },
+            "description": "A comparison has one right-hand side. Giving both is a rule whose meaning depends on which the evaluator happens to read first."
+          }
+        }
+      ]
     },
 
     "allOf": {

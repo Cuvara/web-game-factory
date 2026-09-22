@@ -10,10 +10,10 @@
       {
         "artifact_id": "wgf:opportunity:opp-001:20260828-01",
         "artifact_type": "opportunity",
-        "content_hash": "sha256:3f1c9a7e42b58d06c1ea94773b5d208fa6e3c4517d09be82a4f16c3d5e0b7a91"
+        "content_hash": "sha256:5ce59873b47b07de72725ed2808bead817eddfe2c30259a4f491405a524227d3"
       }
     ],
-    "content_hash": "sha256:8b24d7e5190af36c2d5178be4c093ea71f6b0d24e5839acf7710b6e2c4581f3d",
+    "content_hash": "sha256:ed87364db4ea7978321b89b1a0df6639286cc72f5e1deeac86863c40362809be",
     "status": "final"
   },
 

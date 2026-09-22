@@ -41,7 +41,7 @@ rules:
   - id: interstitial_interval_fits_session
     label: Session must be longer than the platform's interstitial interval
     severity: blocking
-    when: { left: session.target_seconds, op: lt, right: platform.ads.interstitial_min_interval_s }
+    when: { left: session.target_seconds, op: lt, right_path: platform.ads.interstitial_min_interval_s }
     rationale: >
       If the session is shorter than the minimum gap the portal enforces between
       interstitials, at most one can ever show and the revenue model does not hold.
@@ -60,7 +60,7 @@ rules:
   - id: required_locales_addressed
     label: Every required locale is in scope
     severity: blocking
-    when: { left: scope.locales, op: not_in, right: platform.requirements.locales_required }
+    when: { left: scope.locales, op: not_in, right_path: platform.requirements.locales_required }
     rationale: >
       Yandex requires ru, GameVui requires vi. Discovering this at platform validation is
       post-build; addressing it here costs a line in the scope.
@@ -68,7 +68,7 @@ rules:
   - id: monetization_supported_by_platform
     label: Monetization must be supported by every required platform
     severity: blocking
-    when: { left: monetization.placements, op: not_in, right: platform.capabilities.ads }
+    when: { left: monetization.placements, op: not_in, right_path: platform.capabilities.ads }
     rationale: >
       Designing around a placement a required portal does not offer forces either a
       redesign or dropping the platform, both late and both expensive.
@@ -76,7 +76,7 @@ rules:
   - id: first_reward_within_first_session
     label: First reward must land inside the first session
     severity: warning
-    when: { left: session.time_to_first_reward_s, op: gt, right: session.first_session_seconds }
+    when: { left: session.time_to_first_reward_s, op: gt, right_path: session.first_session_seconds }
     rationale: >
       A player who never reaches a reward has no reason to return. Web game traffic is
       unforgiving about this in a way app traffic is not — there is no install cost to
@@ -97,7 +97,7 @@ rules:
   - id: asset_cost_within_scope
     label: Asset cost must fit the production model
     severity: blocking
-    when: { left: asset_manifest.total_est_cost, op: gt, right: scope.asset_budget }
+    when: { left: asset_manifest.total_est_cost, op: gt, right_path: scope.asset_budget }
     rationale: Scope is the variable that moves. Cut content, not the budget.
 
   - id: progression_has_an_end_or_a_loop

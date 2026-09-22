@@ -11,10 +11,10 @@
       {
         "artifact_id": "wgf:title-strategy:neon-drift:20260901-01",
         "artifact_type": "title-strategy",
-        "content_hash": "sha256:1d90fe52a7c41863b0e24df7195ca3086b7e4f2019cd53a86e174b0d92fc38a7"
+        "content_hash": "sha256:c85e790ba2965324e8d3db290c2aa33317c23c791bbce10d930bd5fa0cd62615"
       }
     ],
-    "content_hash": "sha256:6a3e07b4c9152df8830ab61e4c79d035f2e8b147ac06d95318fb7e204c6da8b1",
+    "content_hash": "sha256:8223c3903395d2142a689a829837a3d0452b3b0b134dc5952b0ae32b666352fc",
     "status": "final"
   },
 

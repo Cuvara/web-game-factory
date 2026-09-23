@@ -26,10 +26,10 @@ workflow:
   description: Discover an opportunity, plan a title, build it, verify it and prepare its first release.
   start: research
 
-  # Output types that have no schema in core/artifacts/ yet. Everything else a step declares
-  # must resolve to one; check-integrity.py enforces both halves. Giving one of these a
-  # contract means writing its schema and deleting it from this list.
-  untyped_artifacts: [scaffold-record, sdk-report]
+  # Every artifact a step names has a schema in core/artifacts/. A workflow MAY list types
+  # without one under `untyped_artifacts`, as a visible, temporary gap: check-integrity.py
+  # reports each one, and the engine accepts nothing but a non-empty JSON object for them.
+  # This workflow lists none.
 
   defaults:
     # Omitted keys fall back to factory.execution in workspace/config/factory.yaml.

@@ -15,6 +15,7 @@ state or the new one, never half of each. That is the property resume depends on
 import hashlib
 import json
 import os
+import re
 
 from .model import ArtifactRef, RunState
 
@@ -23,6 +24,18 @@ __all__ = ["RunStore", "StoreError", "RunLocked"]
 
 class StoreError(LookupError):
     """No such run, or its state cannot be read."""
+
+
+# Run ids and artifact ids become directory names, so they are checked before they touch a
+# path: no separators, no `..`, nothing that could leave the store.
+_RUN_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")
+ARTIFACT_ID = re.compile(r"^[a-z][a-z0-9-]*$")
+
+
+def check_run_id(run_id):
+    if not isinstance(run_id, str) or not _RUN_ID.match(run_id) or ".." in run_id:
+        raise StoreError(f"{run_id!r} is not a valid run id")
+    return run_id
 
 
 class RunLocked(RuntimeError):
@@ -56,7 +69,7 @@ class RunStore:
     # -- layout -------------------------------------------------------------------------
 
     def run_dir(self, run_id):
-        return os.path.join(self.workflows, run_id)
+        return os.path.join(self.workflows, check_run_id(run_id))
 
     def _path(self, run_id, *parts):
         return os.path.join(self.run_dir(run_id), *parts)
@@ -99,7 +112,7 @@ class RunStore:
             return []
         states = []
         for run_id in os.listdir(self.workflows):
-            if run_id.startswith("LATEST"):
+            if run_id.startswith("LATEST") or not _RUN_ID.match(run_id):
                 continue
             if self.exists(run_id):
                 try:
@@ -146,7 +159,9 @@ class RunStore:
 
     def write_artifact(self, run_id, artifact_id, version, content):
         """Persist one artifact version. Returns (location, checksum)."""
-        location = f"artifacts/{artifact_id}/v{version}.json"
+        if not ARTIFACT_ID.match(artifact_id or ""):
+            raise StoreError(f"artifact id {artifact_id!r} is not kebab-case")
+        location = f"artifacts/{artifact_id}/v{int(version)}.json"
         path = self._path(run_id, *location.split("/"))
         os.makedirs(os.path.dirname(path), exist_ok=True)
         payload = _dump(content).encode("utf-8")
@@ -190,14 +205,15 @@ class RunStore:
                 handle.write(str(os.getpid()))
             return
 
-    def held_by_other(self, run_id):
-        """True if a live process other than this one holds the run's lock."""
+    def is_held(self, run_id):
+        """True if a live process (this one included) holds the run's lock. False means a
+        run that says RUNNING is a crashed run."""
         try:
             with open(self._path(run_id, "lock"), encoding="utf-8") as handle:
                 owner = int(handle.read().strip() or 0)
         except (OSError, ValueError):
             return False
-        return bool(owner) and owner != os.getpid() and _pid_alive(owner)
+        return bool(owner) and _pid_alive(owner)
 
     def release(self, run_id):
         try:

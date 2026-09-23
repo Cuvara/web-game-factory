@@ -10,12 +10,11 @@ orchestration of its own to drift from the others.
 import os
 
 from .. import paths
-from ..machine import load_gates
 from . import checkpoint, mock
 from .config import load_config
 from .definition import WORKFLOWS, load_definition
 from .engine import WorkflowEngine
-from .model import RunStatus
+from .contracts import ArtifactContracts
 from .runtime import create_runtime
 from .step import StepRegistry
 from .store import RunStore
@@ -25,6 +24,14 @@ __all__ = ["WorkflowAPI", "RunRequest"]
 
 def _no_sleep(_seconds):
     """Mock steps fail instantly; waiting out a backoff in a mock run teaches nothing."""
+
+
+def checkpoint_gates(definition):
+    """Gates named by the definition's human-checkpoint steps."""
+    return {
+        step.params["gate"] for step in definition.steps
+        if step.type == checkpoint.HumanCheckpointStep.type and step.params.get("gate")
+    }
 
 
 class RunRequest:
@@ -107,6 +114,7 @@ class WorkflowAPI:
             runtime=create_runtime(self.config.runtime),
             config=self.config.data,
             subscribers=self.subscribers,
+            artifact_validator=ArtifactContracts(untyped=definition.untyped_artifacts),
             **overrides,
         )
 
@@ -128,14 +136,15 @@ class WorkflowAPI:
             params["mock"] = True
             if request.mock_plan:
                 params["mock_plan"] = request.mock_plan
-        auto = list(self.config.auto_approve)
-        if request.mock and not request.hold_gates:
-            reversible = set(load_gates()) - checkpoint.irreversible_gates()
-            auto = sorted(set(auto) | reversible)
-        if auto:
-            params["auto_approve"] = auto  # irreversible gates are refused by the checkpoint
-
         engine = self.engine(request.mock)
+        auto = set(self.config.auto_approve)
+        if request.mock and not request.hold_gates:
+            # Only the gates this workflow actually checkpoints, and only reversible ones:
+            # a mock run approves its own checkpoints, never a gate it does not contain.
+            auto |= checkpoint_gates(engine.definition) - checkpoint.irreversible_gates()
+        if auto:
+            params["auto_approve"] = sorted(auto)  # the checkpoint refuses irreversible ones
+
         scope = request.scope
         if scope == engine.definition.id:
             scope = None
@@ -158,9 +167,8 @@ class WorkflowAPI:
 
     def pause(self, run_id):
         state = self.store.load(run_id)
-        if state.status != RunStatus.RUNNING:
-            raise ValueError(f"run {run_id} is {state.status}, not RUNNING; nothing to pause")
-        self.store.request(run_id, "pause")
+        engine = self.engine(bool(state.params.get("mock")), self.definition_for(state))
+        return engine.request_pause(run_id)
 
     def cancel(self, run_id):
         state = self.store.load(run_id)

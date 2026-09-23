@@ -3,7 +3,8 @@
 The executable backbone of the Factory: a small kernel that runs a workflow definition step by
 step, persists every change, and can be stopped, resumed, retried and routed without anyone
 calling a step by hand. It ships with placeholder steps only. Discovery, strategy, design,
-assets, development, SDK and verification are separate modules that plug into it later.
+assets, development, SDK and verification are separate modules that plug into it later —
+**[workflow-module-contract.md](workflow-module-contract.md) is what they implement against.**
 
 Standard library Python, like every other script here. No database, no toolchain.
 
@@ -73,19 +74,29 @@ route label ever appears as a literal in `engine.py`.
 | `store.py` | `RunStore`: state, events, artifacts, lock |
 | `config.py` | `workspace/config/factory.yaml` |
 | `checkpoint.py` | The built-in `human-checkpoint` step type |
+| `contracts.py` | Structural artifact checks against `core/artifacts/` schemas |
 | `api.py` | `WorkflowAPI`: assembles an engine for the CLI |
 | `mock.py`, `fixtures/` | Placeholder steps for every business step type |
 
-### Relation to the lifecycle machines
+### Two state machines, kept apart
 
-These are two different things and must stay that way. `core/lifecycle/*.machine.yaml` say
-what **state an entity is in** — an opportunity, a title, a release — and which transitions
-are legal, behind which gates. A workflow says **which units of work run, in what order, and
-where each result goes**. Each step names the lifecycle stage it serves (`stage:
-title:design`), and `check-integrity.py` resolves it, but running a step does not move a
-title. Advancing an entity still goes through `wgf-state.py`, its guards and its decision
-records. A step implementation that wants to advance a title calls that, from inside the
-step; the engine never will.
+| | Workflow state | Lifecycle state |
+|---|---|---|
+| Describes | a *run* of work | an *entity* — opportunity, title, release, publication |
+| Values | `PENDING RUNNING WAITING PAUSED FAILED BLOCKED COMPLETED CANCELLED` | `concept strategy design … live abandoned sunset` |
+| Defined in | `scripts/wgflib/workflow/model.py` | `core/lifecycle/*.machine.yaml` |
+| Stored in | `.factory/workflows/<run>/state.json` | `workspace/titles/<id>/state.json` |
+| Moved by | the engine | `wgf-state.py` only — guards, gates, decision records |
+
+A workflow says **which units of work run, in what order, and where each result goes**. A
+machine says **what state an entity is in** and which transitions are legal. Each step names
+the lifecycle stage it serves (`stage: title:design`) and `check-integrity.py` resolves it,
+but running a step — or completing, failing or cancelling a whole run — **never mutates
+lifecycle state**. The kernel does not import the workspace or guard modules and never writes
+`workspace/`; `LifecycleSeparation` in `test_workflow_contracts.py` runs a full mock workflow
+and asserts `workspace/` is byte-for-byte unchanged, and that no run status shares a name
+with a lifecycle state. A step that must advance a title does so only through `wgf-state.py`,
+with its guards and, on a gated edge, a decision record.
 
 ---
 
@@ -99,7 +110,7 @@ workflow:
   id: new-game
   version: 1
   start: research                    # default: first step
-  untyped_artifacts: [scaffold-record, sdk-report]
+  untyped_artifacts: []             # temporary gaps only; see below
   defaults:
     retry: {max_attempts: 3, backoff: exponential, delay_seconds: 2}
     max_visits: 3
@@ -118,12 +129,14 @@ workflow:
       next: release                  # success target; default is the next step listed
 ```
 
-Targets are step ids, `$end` (complete) or `$fail` (fail). The parser reports every problem
-at once: unknown targets, duplicate ids, groups naming unknown steps, malformed retry, an
+Targets are step ids, `$end` (complete) or `$fail` (fail). Step types are kebab-case and
+may be namespaced by module (`discovery.research`); a type is only a registry key. The
+parser reports every problem at once: unknown targets, duplicate ids, groups naming unknown steps, malformed retry, an
 unqualified `stage`, a `start` that is not a step. `check-integrity.py` additionally checks
 that every stage resolves to a machine state or stage procedure, that every gate exists, and
 that every artifact type has a schema in `core/artifacts/` — or is listed under
-`untyped_artifacts`, which is the visible list of contracts core does not have yet.
+`untyped_artifacts`, a visible, temporary gap that the integrity check reports on every run
+and the engine accepts only as a non-empty JSON object. `new-game` lists none.
 
 Retry and loop settings layer: `factory.execution` in config, then the workflow's
 `defaults`, then the step.
@@ -178,23 +191,34 @@ process holding its lock is a crashed run, and is resumable.
 
 ## 5. Artifact flow
 
-Steps never call each other. A step returns `ArtifactOutput(type, content)`; the engine
-writes it to `artifacts/<id>/v<n>.json` and records only a reference in state:
+Steps never call each other. A step returns `ArtifactOutput(type, content, name=None,
+metadata=None)`; the engine checks it against its contract, writes it to
+`artifacts/<id>/v<n>.json`, and records only a reference in state:
 
 ```json
 {"id": "qa-report", "type": "qa-report", "version": 2,
  "location": "artifacts/qa-report/v2.json", "checksum": "sha256:…",
- "content_hash": "sha256:…", "produced_by": "verify", "created_at": "…"}
+ "content_hash": "sha256:…", "schema_version": "1.0.0",
+ "produced_by": "verify", "created_at": "…", "metadata": {…}}
 ```
 
-`checksum` is over the file bytes and is verified on every read. `content_hash` is the
-Factory's canonical digest (`provenance.schema.json#/$defs/hash`) when the artifact carries
-provenance — the value a gate pins. Producing the same artifact again (a develop/verify loop)
-is a new version, emitted as `ARTIFACT_UPDATED`; every version is kept.
+- `version` counts productions of that id in the run; every version is kept, and a second
+  one is emitted as `ARTIFACT_UPDATED`.
+- `schema_version` is the contract version the content claims (`provenance.schema_version`).
+- `checksum` is over the file bytes and is verified on every read.
+- `content_hash` is the Factory's canonical digest (`provenance.schema.json#/$defs/hash`) —
+  the value a gate pins.
+- Each step's `consumed` list (and each trail entry) records the exact `id@vN` of every input
+  it read.
 
-The mock steps emit schema-valid instances of `opportunity`, `title-strategy`, `game-design`,
-`asset-manifest`, `prototype-report`, `qa-report` and `release-manifest`, with provenance
-whose `inputs` pin what they consumed by hash.
+Before writing, the engine applies `contracts.ArtifactContracts`: the type must have a
+schema (or be listed as untyped), the content must have every required top-level key and no
+forbidden one, and provenance must name the type and reproduce its hash. A violation is a
+non-retryable `FAILED` and nothing is written. Full JSON Schema validation remains ajv's job.
+
+The mock steps emit schema-valid instances of all nine output types, with provenance whose
+`inputs` pin what they consumed by hash. The step-by-step input/output contract is in
+[workflow-module-contract.md §5](workflow-module-contract.md#5-outputs).
 
 ## 6. Retry
 
@@ -219,7 +243,12 @@ resume too.
 
 `--run <run-id>` is the other way to continue: it runs a command's slice *inside* an existing
 run, reusing its artifacts, and skips any step in that slice that already succeeded (`--force`
-to redo). This is the idempotency guarantee — `wgf init --run <id>` twice scaffolds once. Each
+to redo). `wgf init --run <id>` twice executes `init` once.
+
+**The engine guarantees state-level idempotency. The step implementation is responsible for
+side-effect idempotency.** The engine cannot make creating a repository or uploading a file
+happen once; it can only make sure a completed step is not re-executed, and hand the step
+what it needs to find its own earlier work. Each
 execution also gets `context.idempotency_key` (`<run>:<step>:<visit>`, stable across attempts,
 crashes and resumes) and `context.previous_outputs`, so a step with an outside side effect can
 find what it already made.
@@ -236,8 +265,12 @@ the run instead of guessing. A loop is just a route that points backwards:
     fail: develop
 ```
 
-Loops are bounded by `max_visits` per step; exceeding it blocks the run with a message, and
-resuming grants another pass. The graph is not assumed to be linear: any step can route
+**Loop safety.** Every step has `max_visits` (new-game: 3, from `defaults`; installation
+default 5). Entering a step more often than that since the run last started or resumed stops
+the run as `BLOCKED` with a `loop limit` message instead of looping; a person resuming it
+grants every step a fresh budget. For `new-game` that is at most three develop → sdk →
+verify passes per start or resume. Retries are bounded separately by `max_attempts`, and no
+outcome but a retryable `FAILED` is ever retried, so there is no unbounded path. The graph is not assumed to be linear: any step can route
 anywhere, and a human checkpoint with more than two choices is a branch.
 
 ## 9. Human checkpoints
@@ -259,26 +292,61 @@ With no decision recorded it returns `WAITING_FOR_HUMAN`; the run parks as `WAIT
 that choice as the route; `reject` is `BLOCKED` unless routed. A decision answers one visit,
 so a loop back through the checkpoint waits again.
 
+`WAITING_FOR_HUMAN` is not a failure: no `STEP_FAILED` or `WORKFLOW_FAILED` is emitted, and
+nothing is retried.
+
 A checkpoint tied to a reversible gate may be auto-approved when the run allows it —
-`factory.checkpoints.auto_approve`, or every reversible gate under `--mock` unless
-`--hold-gates`. **G4, G6 and G7 are never auto-approved and never accept a non-human
+`factory.checkpoints.auto_approve` (empty by default), or, under `--mock`, only the
+reversible gates the workflow's own checkpoints name (`G2` for `new-game`) unless
+`--hold-gates`. A checkpoint with no gate is never auto-approved. **G4, G6 and G7 are never auto-approved and never accept a non-human
 decision here**, whatever config says; the list is read from `irreversible: true` in
 `core/lifecycle/gates.yaml`. This mirrors the rule `decision-record.schema.json` and
 `wgf-state.py` already enforce.
 
 ## 10. Events and logs
 
-Every change is an event on one bus: `WORKFLOW_STARTED`, `WORKFLOW_RESUMED`,
-`WORKFLOW_PAUSED` (also emitted when a run parks as `WAITING`), `WORKFLOW_BLOCKED`,
-`WORKFLOW_COMPLETED`, `WORKFLOW_FAILED`, `WORKFLOW_CANCELLED`, `STEP_STARTED`,
-`STEP_COMPLETED`, `STEP_FAILED`, `STEP_RETRIED`, `STEP_SKIPPED`, `STEP_WAITING`,
-`STEP_BLOCKED`, `STEP_LOG`, `TRANSITION`, `DECISION_RECORDED`, `ARTIFACT_CREATED`,
-`ARTIFACT_UPDATED`.
+Every change is an event on one bus. Each is a flat JSON object appended to `events.jsonl`,
+which is the structured log:
 
-Each is a flat JSON object — `ts, event, workflow_id, run_id, step_id, attempt, status,
-duration_ms, error, data` — appended to `events.jsonl`, which is the structured log. The CLI's
-progress output is just another subscriber. A UI, a monitor or an agent host subscribes the
-same way without the engine changing, and a failing subscriber never stops a run.
+| Field | Always | Meaning |
+|---|---|---|
+| `format` | yes | Event format version, currently `1`; bumped only if a field is removed or changes meaning |
+| `ts` | yes | UTC ISO-8601 with milliseconds |
+| `event` | yes | One of the names below |
+| `workflow_id`, `run_id` | yes | The run |
+| `step_id` | on `STEP_*`, `ARTIFACT_*`, `TRANSITION`, `DECISION_RECORDED` | The step |
+| `attempt`, `status`, `duration_ms`, `error` | where they apply | Omitted when not |
+| `data` | often | Event-specific payload, below |
+
+| Event | `data` |
+|---|---|
+| `WORKFLOW_STARTED` | `scope`, `start` |
+| `WORKFLOW_RESUMED` | `from_status`; `from_step`, `scope`, `force`, `definition_version` when relevant |
+| `WORKFLOW_PAUSED` | `reason` (`requested`, `waiting_for_human`, `waiting_for_input`), `next_step` or `message` |
+| `WORKFLOW_BLOCKED` | `message` (a blocked step, a rejection, or the loop limit) |
+| `WORKFLOW_COMPLETED` | `exit`: `{step, route, outcome, next}` |
+| `WORKFLOW_FAILED` | `message` |
+| `WORKFLOW_CANCELLED` | — |
+| `STEP_STARTED` | `type`, `visit` |
+| `STEP_COMPLETED` | `route`, `message`, `outputs`, `result` (the step's own small data) |
+| `STEP_FAILED` | `will_retry`, `route`, `outputs` |
+| `STEP_RETRIED` | `delay_seconds`, `max_attempts` |
+| `STEP_SKIPPED` | `reason` |
+| `STEP_WAITING` | `message`, `result` |
+| `STEP_BLOCKED` | `message`, `result` |
+| `STEP_LOG` | top-level `level`, `message`; `data` is the logged fields |
+| `TRANSITION` | `route`, `outcome`, `kind` (`goto end abort block wait`), `to` |
+| `DECISION_RECORDED` | `decision`, `decided_by`, `decided_at`, `visit`, `note` |
+| `ARTIFACT_CREATED` | the `ArtifactRef` |
+| `ARTIFACT_UPDATED` | the `ArtifactRef` (version ≥ 2) |
+
+Consumers must ignore fields and events they do not know. `EventContract` fails if an event
+is added without being documented here. The CLI's progress output is just another
+subscriber; a UI, a monitor or an agent host subscribes the same way without the engine
+changing, and a failing subscriber never stops a run.
+
+`wgf status` renders `state.json`; `wgf logs` renders `events.jsonl`. Neither reconstructs
+anything from console output.
 
 ## 11. CLI
 
@@ -362,6 +430,8 @@ it. `.factory/` is git-ignored — run state is instance data.
 
 ## 13. How a real module registers itself
 
+The full contract is [workflow-module-contract.md](workflow-module-contract.md). In short:
+
 1. Write a module with step classes and a `register` function:
 
    ```python
@@ -408,17 +478,41 @@ python -m unittest discover scripts/tests
 | `test_workflow_definition.py` | Parser, refusals, scopes, retry policy layering and delays |
 | `test_workflow_engine.py` | Engine against scripted test doubles: artifacts, events, retry, permanent failure, resume, crash recovery, idempotency, routing, loop limit, checkpoints, irreversible gates, pause/cancel, store integrity and locking |
 | `test_workflow_cli.py` | `wgf` as a subprocess with the real mocks: `new-game --mock`, every individual command, chaining slices in one run, retry, permanent failure + resume, verification loop, human checkpoint, status and logs |
+| `test_workflow_contracts.py` | The gate before module work: an external module plugged in through config; artifact contract (versions, consumption, invalid and untyped artifacts, path-shaped ids); lifecycle separation; security; every run status; configuration-driven routing; event contract; one engine behind every command; docs match the workflow |
 | `fixtures/workflows/` | The acceptance workflows: `verify-loop`, `human-checkpoint`, `retry` |
 
 All deterministic and offline.
+
+## Security
+
+The engine executes no code it was not given by the installation:
+
+- A workflow file is data. A step `type` is a registry key — never imported, evaluated or
+  resolved to a path — and must match `^[a-z][a-z0-9-]*(\.[a-z][a-z0-9-]*)*$`.
+- YAML goes through `yamllite`, which refuses tags, anchors and aliases: there is no
+  object-construction path.
+- The only import of configurable code is `factory.steps.modules`, in the installation's own
+  config file, and each entry must be a dotted Python identifier.
+- Run ids and artifact ids become directory names, so both are validated before they touch a
+  path; `..` and separators are refused.
+- The kernel and CLI contain no `subprocess`, `eval`, `exec`, `shell=True` or `pickle`;
+  `Security.test_the_kernel_executes_nothing` enforces it. `--mock-plan @FILE` reads a file
+  the person running the command named.
 
 ## Known limits
 
 - **Single machine.** The lock is a pid file; two hosts sharing a store are not coordinated.
 - **Steps run in-process and sequentially.** The definition format permits branching but not
   parallel fan-out; nothing in this phase needs it.
-- **`scaffold-record` and `sdk-report` have no schema.** They are listed in
-  `untyped_artifacts` until someone writes one.
+- **Artifact checks are structural.** Top-level required and forbidden keys and provenance
+  only; nested shapes are ajv's job in each module's tests.
 - **Checkpoint decisions are recorded in run state, not as `decision-record` artifacts.** When
   a checkpoint stands for a lifecycle gate, the real gate module should emit the decision
   record and advance the entity through `wgf-state.py`.
+- **CLI test runtime** (~30 s for `test_workflow_cli.py`) is interpreter start-up: about
+  0.25 s per `wgf` process, most of it importing modules from the Windows-mounted checkout,
+  against about 0.4 s for a whole mock `new-game`. It is not engine cost. The tests read run
+  state in-process rather than spawning `wgf status` for each inspection.
+- **Baseline failures outside this code.** `test_hashing.AgreesWithTheGameRepoImplementation`
+  errors when `../web-game-template` has no `node_modules` (`Cannot find package 'yaml'`).
+  It predates the engine; `pnpm install` in the template resolves it.

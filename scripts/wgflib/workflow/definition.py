@@ -55,6 +55,7 @@ __all__ = [
     "END",
     "FAIL",
     "WORKFLOWS",
+    "STEP_TYPE",
 ]
 
 WORKFLOWS = os.path.join(paths.CORE, "workflows")
@@ -64,6 +65,10 @@ FAIL = "$fail"
 SPECIAL_TARGETS = (END, FAIL)
 
 _ID = re.compile(r"^[a-z][a-z0-9-]*$")
+# Step types may be namespaced by the module that implements them: `research`,
+# `discovery.research`, `test.external`. A type is only ever a registry key - it is never
+# imported, evaluated or resolved to a path.
+STEP_TYPE = re.compile(r"^[a-z][a-z0-9-]*(\.[a-z][a-z0-9-]*)*$")
 _STAGE = re.compile(r"^([a-z][a-z0-9-]*):([a-z][a-z0-9-]*)$")
 BACKOFFS = ("none", "fixed", "exponential")
 
@@ -247,8 +252,9 @@ def parse_definition(document, source="<memory>", base_retry=None, base_max_visi
         elif step_id in seen:
             problems.append(f"{where}: duplicate id")
         seen.add(step_id)
-        if not isinstance(entry.get("type"), str) or not _ID.match(entry.get("type") or ""):
-            problems.append(f"{where}: type must be a kebab-case step type")
+        if not isinstance(entry.get("type"), str) or not STEP_TYPE.match(entry.get("type") or ""):
+            problems.append(f"{where}: type must be a kebab-case step type, optionally "
+                            f"dot-namespaced (module.step)")
         stage = entry.get("stage")
         if stage is not None and not (isinstance(stage, str) and _STAGE.match(stage)):
             problems.append(f"{where}: stage must be qualified, <machine>:<state>")

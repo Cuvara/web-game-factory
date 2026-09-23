@@ -22,6 +22,7 @@ Invariants the engine keeps:
 
 import contextlib
 import datetime
+import json
 import secrets
 import time
 
@@ -39,6 +40,7 @@ from .model import (
 )
 from .runtime import LocalRuntime, Task
 from .step import RegistryError, StepInputs
+from .store import ARTIFACT_ID
 
 __all__ = ["WorkflowEngine", "EngineError", "utc_now"]
 
@@ -77,7 +79,7 @@ _STEP_EVENT = {
 class WorkflowEngine:
     def __init__(self, definition, registry, store, *, runtime=None, config=None,
                  clock=utc_now, sleep=time.sleep, monotonic=time.monotonic,
-                 run_id_factory=default_run_id, subscribers=()):
+                 run_id_factory=default_run_id, subscribers=(), artifact_validator=None):
         self.definition = definition
         self.registry = registry
         self.store = store
@@ -87,6 +89,9 @@ class WorkflowEngine:
         self.sleep = sleep
         self.monotonic = monotonic
         self.run_id_factory = run_id_factory
+        # (artifact_type, content) -> [problems]. Optional so the engine stays testable
+        # without core/; the API always supplies contracts.ArtifactContracts.
+        self.artifact_validator = artifact_validator
         self.bus = EventBus(clock)
         self.bus.subscribe(self._persist_event)
         for subscriber in subscribers:
@@ -227,14 +232,26 @@ class WorkflowEngine:
         self._emit(state, Events.DECISION_RECORDED, step_id=step_id, data=entry)
 
     def request_pause(self, run_id):
-        self.store.request(run_id, "pause")
+        """Pause at the next step boundary; at once if nothing is driving the run."""
+        state = self.store.load(run_id)
+        if state.status != RunStatus.RUNNING:
+            raise EngineError(f"run {run_id} is {state.status}, not RUNNING; nothing to pause")
+        if self.store.is_held(run_id):
+            self.store.request(run_id, "pause")
+            return state
+        state.status = RunStatus.PAUSED
+        state.message = "paused on request"
+        self._save(state)
+        self._emit(state, Events.WORKFLOW_PAUSED, status=state.status,
+                   data={"reason": "requested", "next_step": state.cursor})
+        return state
 
     def request_cancel(self, run_id):
         """Cancel now if nothing is driving the run, else at the next step boundary."""
         state = self.store.load(run_id)
         if state.status in RunStatus.TERMINAL:
             raise EngineError(f"run {run_id} is already {state.status}")
-        if state.status == RunStatus.RUNNING and self.store.held_by_other(run_id):
+        if state.status == RunStatus.RUNNING and self.store.is_held(run_id):
             self.store.request(run_id, "cancel")
             return state
         state.status = RunStatus.CANCELLED
@@ -396,6 +413,7 @@ class WorkflowEngine:
                 "attempt": attempt,
                 "outcome": result.outcome,
                 "route": result.routing_key,
+                "consumed": list(step_state.consumed),
                 "at": step_state.finished_at,
                 "duration_ms": duration_ms,
             })
@@ -410,6 +428,7 @@ class WorkflowEngine:
                 state, _STEP_EVENT[result.outcome], step_id=step_def.id, attempt=attempt,
                 status=step_state.status, duration_ms=duration_ms, error=result.error,
                 data=_compact({"route": result.route, "message": result.message,
+                               "result": _jsonable(result.data) or None,
                                "will_retry": will_retry if result.outcome == "FAILED" else None,
                                "outputs": step_state.outputs if refs else None}),
             )
@@ -431,6 +450,7 @@ class WorkflowEngine:
                 refs[artifact_type] = ref
         inputs = StepInputs(refs, lambda ref: self.store.read_artifact(state.run_id, ref),
                             missing)
+        step_state.consumed = [f"{ref.id}@v{ref.version}" for ref in refs.values()]
 
         decision = state.decisions.get(step_def.id)
         if decision and decision.get("visit") != step_state.visits:
@@ -464,21 +484,35 @@ class WorkflowEngine:
         return self.runtime.run(Task(step, inputs, context))
 
     def _persist_artifacts(self, state, step_def, result):
-        refs = []
+        """Check every output against its contract, then write them all - or none."""
         for output in result.artifacts:
             if step_def.outputs and output.type not in step_def.outputs:
                 raise _ContractViolation(
                     f"produced {output.type!r}, which step {step_def.id!r} does not declare "
                     f"in outputs {step_def.outputs}"
                 )
+            if not ARTIFACT_ID.match(output.artifact_id or ""):
+                raise _ContractViolation(
+                    f"artifact id {output.artifact_id!r} is not kebab-case"
+                )
+            if self.artifact_validator is not None:
+                problems = self.artifact_validator(output.type, output.content)
+                if problems:
+                    raise _ContractViolation("invalid artifact: " + "; ".join(problems))
+
+        refs = []
+        for output in result.artifacts:
             artifact_id = output.artifact_id
             versions = state.artifacts.setdefault(artifact_id, [])
             version = len(versions) + 1
             location, checksum = self.store.write_artifact(
                 state.run_id, artifact_id, version, output.content
             )
-            digest = None
-            if isinstance(output.content, dict) and isinstance(output.content.get("provenance"), dict):
+            digest = schema_version = None
+            provenance = (output.content.get("provenance")
+                          if isinstance(output.content, dict) else None)
+            if isinstance(provenance, dict):
+                schema_version = provenance.get("schema_version")
                 try:
                     digest = content_hash(output.content)
                 except CanonicalizationError:
@@ -486,7 +520,8 @@ class WorkflowEngine:
             ref = ArtifactRef(
                 id=artifact_id, type=output.type, version=version, location=location,
                 checksum=checksum, produced_by=step_def.id, created_at=self.clock(),
-                content_hash=digest,
+                content_hash=digest, schema_version=schema_version,
+                metadata=dict(output.metadata) if output.metadata else None,
             )
             versions.append(ref)
             refs.append(ref)
@@ -605,6 +640,15 @@ class WorkflowEngine:
 
 class _ContractViolation(Exception):
     pass
+
+
+def _jsonable(value):
+    """`value` if it survives JSON, else a note saying it did not. Events must persist."""
+    try:
+        json.dumps(value)
+        return value
+    except (TypeError, ValueError):
+        return {"unserializable": type(value).__name__}
 
 
 def _compact(mapping):

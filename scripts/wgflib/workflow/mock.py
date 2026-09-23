@@ -4,8 +4,8 @@ These do no research, design, development or publishing. Each one emits the arti
 step declares, built from the fixtures beside this file, with real provenance: an
 artifact id in the canonical shape, the consumed inputs pinned by content hash, and a
 content_hash that reproduces. For artifact types with a schema in core/artifacts/ the
-output is schema-valid; the two types core has no contract for yet (see the workflow's
-`untyped_artifacts`) get a small, clearly-marked record instead.
+output is schema-valid; the engine checks that before persisting it. There is a fixture for
+every artifact type the shipped workflow names.
 
 Behaviour is scripted per run, not per process, so a resumed run continues the same script:
 
@@ -90,15 +90,7 @@ class MockStep(WorkflowStep):
         epoch = context.environment.get("mock_epoch") or DEFAULT_EPOCH
         path = os.path.join(FIXTURES, f"{artifact_type}.json")
         if not os.path.exists(path):
-            return ArtifactOutput(artifact_type, {
-                "mock": True,
-                "artifact_type": artifact_type,
-                "step": self.id,
-                "project_id": slug,
-                "visit": context.visit,
-                "idempotency_key": context.idempotency_key,
-                "note": "No core/artifacts schema exists for this type yet; placeholder only.",
-            })
+            raise MockStepError(f"no mock fixture for artifact type {artifact_type!r}")
 
         with open(path, encoding="utf-8") as handle:
             body = json.loads(handle.read().replace(FIXTURE_SLUG, slug))
@@ -151,7 +143,15 @@ class MockDesignStep(MockStep):
 
 
 class MockInitStep(MockStep):
-    type, role = "init", "architect"
+    type, role = "init", "release"
+
+    def customize(self, body, artifact_type, context, entry):
+        # The side-effect idempotency pattern a real init must follow: key the effect, and
+        # on re-execution find what was made before instead of making it again.
+        if artifact_type == "scaffold-record":
+            body["idempotency_key"] = f"{context.run_id}:{self.id}"
+            if context.previous_outputs:
+                body["outcome"] = "reused"
 
 
 class MockAssetsStep(MockStep):

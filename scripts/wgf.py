@@ -347,8 +347,8 @@ def cmd_runs(args):
 
 
 def cmd_pause(args):
-    _api(args).pause(args.run)
-    print(f"pause requested; {args.run} stops at its next step boundary")
+    state = _api(args).pause(args.run)
+    print(f"{args.run}: {'PAUSED' if state.status == 'PAUSED' else 'pause requested; it stops at its next step boundary'}")
     return EXIT_OK
 
 

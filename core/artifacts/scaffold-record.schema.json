@@ -1,0 +1,77 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://webgamefactory.dev/schemas/artifacts/scaffold-record.schema.json",
+  "title": "Scaffold Record",
+  "description": "What the scaffolding stage created, or found already created: the game repository made from web-game-template, the template revision it came from, and the game.config.yaml written from tech_plan.repo_params.\n\nScaffolding is the one stage with an outside side effect that must not happen twice, so the record states whether the repository was created by this execution or reused. A re-run that finds the repository it made before records `reused`, never a second repository.",
+
+  "x-wgf": {
+    "id": "scaffold-record",
+    "kind": "artifact",
+    "format": "json",
+    "producer": "title:scaffolding",
+    "consumers": ["title:prototype", "title:production", "release:draft"],
+    "repo_path": "workspace/titles/<title-id>/scaffold-record.json"
+  },
+
+  "type": "object",
+  "required": ["provenance", "title_id", "repository", "template", "game_config", "outcome"],
+  "properties": {
+    "provenance": { "$ref": "./shared/provenance.schema.json#/$defs/provenance" },
+    "title_id": { "type": "string" },
+    "repository": {
+      "type": "object",
+      "required": ["owner", "name"],
+      "properties": {
+        "owner": { "type": "string" },
+        "name": { "type": "string", "pattern": "^[A-Za-z0-9._-]+$" },
+        "url": { "type": "string" },
+        "default_branch": { "type": "string" },
+        "visibility": { "enum": ["private", "internal", "public"] }
+      },
+      "additionalProperties": false
+    },
+    "template": {
+      "type": "object",
+      "description": "The web-game-template revision the repository was generated from.",
+      "required": ["repository"],
+      "properties": {
+        "repository": { "type": "string" },
+        "commit_sha": { "type": "string" }
+      },
+      "additionalProperties": false
+    },
+    "game_config": {
+      "type": "object",
+      "description": "The game.config.yaml written into the repository.",
+      "required": ["path"],
+      "properties": {
+        "path": { "type": "string" },
+        "platforms": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["id", "profile", "role"],
+            "properties": {
+              "id": { "type": "string", "pattern": "^[a-z][a-z0-9-]*$" },
+              "profile": { "type": "string", "description": "<profile-id>@<version>" },
+              "role": { "enum": ["required", "optional"] }
+            },
+            "additionalProperties": false
+          }
+        },
+        "checksum": { "$ref": "./shared/provenance.schema.json#/$defs/hash" }
+      },
+      "additionalProperties": false
+    },
+    "outcome": {
+      "enum": ["created", "reused"],
+      "description": "created: this execution made the repository. reused: it already existed from an earlier execution and was verified rather than recreated."
+    },
+    "idempotency_key": {
+      "type": "string",
+      "description": "The key the side effect was performed under, so a later execution can find it."
+    },
+    "notes": { "type": "string" }
+  },
+  "additionalProperties": false
+}

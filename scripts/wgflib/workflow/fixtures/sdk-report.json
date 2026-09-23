@@ -1,0 +1,25 @@
+{
+  "title_id": "mock-title",
+  "build_ref": {"commit_sha": "0000000000000000000000000000000000000000"},
+  "platforms": [
+    {
+      "platform_id": "yandex",
+      "profile_version": "1.0.0",
+      "status": "working",
+      "features": [
+        {"feature": "init", "status": "working", "observed_by": "mock"},
+        {"feature": "rewarded", "status": "working", "observed_by": "mock"},
+        {"feature": "cloud-save", "status": "working", "observed_by": "mock"}
+      ]
+    },
+    {
+      "platform_id": "crazygames",
+      "profile_version": "1.0.0",
+      "status": "working",
+      "features": [
+        {"feature": "init", "status": "working", "observed_by": "mock"},
+        {"feature": "rewarded", "status": "working", "observed_by": "mock"}
+      ]
+    }
+  ]
+}

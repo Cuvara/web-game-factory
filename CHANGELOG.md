@@ -10,6 +10,20 @@ numbering: `core/` is the contract, and schemas carry their own versions.
 
 ### Added
 
+- **Workflow module contract.** `docs/workflow-module-contract.md` is what the discovery,
+  strategy, design, init, assets, development, SDK and verification modules implement
+  against; `scripts/tests/test_workflow_contracts.py` holds the gate — an external module
+  plugged in through `factory.steps.modules` runs without engine changes. The engine now
+  checks every produced artifact against its schema's top level and provenance before
+  persisting it, records which input versions each step consumed, versions its events
+  (`format: 1`), accepts dot-namespaced step types, and validates run ids, artifact ids and
+  module names before they reach a path or an import. `--mock` auto-approves only the
+  workflow's own reversible checkpoint gates. Pausing or cancelling a crashed run takes
+  effect at once.
+- **`scaffold-record` and `sdk-report` schemas**, named as outputs of `title:scaffolding` and
+  `title:prototype`, replacing the workflow's `untyped_artifacts`. Additive: no existing
+  artifact changes. The title machine keeps version 1.0.0 because only its declared outputs
+  grew.
 - **Executable workflow engine (`wgf`).** `core/workflows/new-game.workflow.yaml` defines the
   work from research to release preparation as data; `scripts/wgflib/workflow/` runs it —
   step registry, retry with backoff, failure routing (`verify` fail → `develop`), human

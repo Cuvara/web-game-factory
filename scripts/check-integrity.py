@@ -99,6 +99,8 @@ def check_workflows(artifacts):
             ERRORS.append(f"{path}: {exc}")
             continue
         untyped = set(definition.untyped_artifacts)
+        for aid in sorted(untyped - artifacts):
+            NOTES.append(f"{path}: '{aid}' is untyped - no schema yet, only structure checked")
         for aid in sorted(untyped & artifacts):
             ERRORS.append(f"{path}: '{aid}' is listed as untyped but has a schema")
         for step in definition.steps:

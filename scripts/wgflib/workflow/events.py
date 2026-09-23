@@ -6,13 +6,17 @@ stream, and a UI or monitor can subscribe later without the engine changing.
 
 Every event is a flat JSON-able dict:
 
-    {"ts": ..., "event": "STEP_FAILED", "workflow_id": ..., "run_id": ..., "step_id": ...,
+    {"format": 1, "ts": ..., "event": "STEP_FAILED", "workflow_id": ..., "run_id": ..., "step_id": ...,
      "attempt": 2, "status": "FAILED", "duration_ms": 12, "error": "...", "data": {...}}
 
 Keys that do not apply are omitted rather than null.
 """
 
-__all__ = ["Events", "EventBus"]
+__all__ = ["Events", "EventBus", "EVENT_FORMAT"]
+
+# Bumped if a field is removed or changes meaning. Adding a field or an event is not a
+# format change; consumers must ignore what they do not know.
+EVENT_FORMAT = 1
 
 
 class Events:
@@ -39,6 +43,11 @@ class Events:
     ARTIFACT_CREATED = "ARTIFACT_CREATED"
     ARTIFACT_UPDATED = "ARTIFACT_UPDATED"
 
+    @classmethod
+    def all(cls):
+        return sorted(value for key, value in vars(cls).items()
+                      if key.isupper() and isinstance(value, str))
+
 
 class EventBus:
     """Synchronous fan-out. A subscriber that raises does not stop the run or the others.
@@ -57,7 +66,7 @@ class EventBus:
         return callback
 
     def emit(self, event, **fields):
-        record = {"ts": self._clock(), "event": event}
+        record = {"format": EVENT_FORMAT, "ts": self._clock(), "event": event}
         record.update({key: value for key, value in fields.items() if value is not None})
         for callback in list(self._subscribers):
             try:

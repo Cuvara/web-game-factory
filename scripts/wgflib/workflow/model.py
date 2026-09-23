@@ -90,6 +90,11 @@ def _fields(cls, data):
 class ArtifactRef:
     """A pointer to an artifact the run holds. State carries these, never the content.
 
+    `version` counts productions of this artifact id within the run (1, 2, ... - a
+    develop/verify loop produces several). `schema_version` is the contract version the
+    content claims (`provenance.schema_version`), which is what a consumer checks for
+    compatibility. `metadata` is small, step-supplied, and never the content.
+
     `location` is relative to the run directory, so a run directory can be moved or archived
     whole. `checksum` is the digest of the file's bytes; `content_hash` is the Factory's
     canonical digest (provenance.schema.json#/$defs/hash) when the artifact carries
@@ -104,6 +109,8 @@ class ArtifactRef:
     produced_by: str = None
     created_at: str = None
     content_hash: str = None
+    schema_version: str = None
+    metadata: dict = None
 
     def to_dict(self):
         return {k: v for k, v in dataclasses.asdict(self).items() if v is not None}
@@ -118,12 +125,14 @@ class ArtifactOutput:
     """An artifact a step wants persisted. The engine writes it and hands back a ref.
 
     `name` identifies the artifact within the run; producing the same name again is a new
-    version of the same artifact, not a second artifact.
+    version of the same artifact, not a second artifact. It must be kebab-case, because it
+    becomes a directory name.
     """
 
     type: str
     content: object
     name: str = None
+    metadata: dict = None
 
     @property
     def artifact_id(self):
@@ -209,6 +218,7 @@ class StepState:
     message: str = None
     error: str = None
     outputs: list = field(default_factory=list)
+    consumed: list = field(default_factory=list)
 
     def to_dict(self):
         return dataclasses.asdict(self)

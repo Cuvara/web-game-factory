@@ -23,8 +23,15 @@ module supersedes a mock without either knowing about the other.
 """
 
 import importlib
+import re
+
+from .definition import STEP_TYPE
 
 __all__ = ["WorkflowStep", "StepInputs", "StepRegistry", "RegistryError"]
+
+# A module name from factory.steps.modules: dotted Python identifiers, nothing else. No
+# paths, no relative imports, no expressions - the config names code, it does not contain it.
+_MODULE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*(\.[A-Za-z_][A-Za-z0-9_]*)*$")
 
 
 class RegistryError(LookupError):
@@ -84,7 +91,21 @@ class StepRegistry:
 
     def register(self, step_type, factory):
         """`factory(definition)` must return an object with `execute(inputs, context)`."""
+        if not isinstance(step_type, str) or not STEP_TYPE.match(step_type):
+            raise RegistryError(f"step type {step_type!r} is not a valid type name")
+        if not callable(factory):
+            raise RegistryError(f"implementation for {step_type!r} is not callable")
         self._types[step_type] = factory
+        return factory
+
+    def resolve(self, step_type):
+        """The implementation registered for `step_type`, or RegistryError."""
+        factory = self._types.get(step_type)
+        if factory is None:
+            raise RegistryError(
+                f"no implementation registered for step type {step_type!r}. "
+                f"Registered: {', '.join(self.types()) or 'none'}"
+            )
         return factory
 
     def has(self, step_type):
@@ -94,12 +115,10 @@ class StepRegistry:
         return sorted(self._types)
 
     def create(self, definition):
-        factory = self._types.get(definition.type)
-        if factory is None:
-            raise RegistryError(
-                f"no implementation registered for step type {definition.type!r} "
-                f"(step {definition.id!r}). Registered: {', '.join(self.types()) or 'none'}"
-            )
+        try:
+            factory = self.resolve(definition.type)
+        except RegistryError as exc:
+            raise RegistryError(f"step {definition.id!r}: {exc}")
         return factory(definition)
 
     def missing_for(self, definition, step_ids=None):
@@ -110,6 +129,10 @@ class StepRegistry:
     def load_modules(self, module_names):
         """Import each module and call its `register(registry)`."""
         for name in module_names or []:
+            if not isinstance(name, str) or not _MODULE.match(name):
+                raise RegistryError(
+                    f"step module {name!r} is not a dotted Python module name"
+                )
             try:
                 module = importlib.import_module(name)
             except ImportError as exc:

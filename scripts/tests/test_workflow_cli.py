@@ -29,6 +29,8 @@ FIXTURES = os.path.join(HERE, "fixtures", "workflows")
 sys.path.insert(0, SCRIPTS)
 
 from wgflib.hashing import content_hash  # noqa: E402
+from wgflib.workflow.model import RunStatus  # noqa: E402
+from wgflib.workflow.store import RunStore  # noqa: E402
 
 NEW_GAME = ["research", "strategy", "strategy-review", "design", "init", "assets", "develop",
             "sdk", "verify", "release"]
@@ -40,6 +42,8 @@ SCHEMATIZED = {
     "develop": "prototype-report",
     "verify": "qa-report",
     "release": "release-manifest",
+    "init": "scaffold-record",
+    "sdk": "sdk-report",
 }
 
 
@@ -63,8 +67,12 @@ class CliCase(unittest.TestCase):
         return done
 
     def state(self, run_id=None):
-        done = self.wgf("status", *( [run_id] if run_id else []), "--json")
-        return json.loads(done.stdout)
+        """Read the persisted state directly. `wgf status` is tested on its own; spawning it
+        for every inspection only multiplies interpreter start-up (see docs/workflow-engine.md,
+        Known limits)."""
+        store = RunStore(self.store, fsync=False)
+        state = store.load(run_id) if run_id else store.latest()
+        return state.to_dict()
 
     def artifact(self, state, artifact_id, version=None):
         versions = state["artifacts"][artifact_id]
@@ -102,8 +110,6 @@ class MockNewGame(CliCase):
                 with open(schema_path, encoding="utf-8") as handle:
                     required = json.load(handle)["required"]
                 self.assertEqual([k for k in required if k not in artifact], [])
-        for untyped in ("scaffold-record", "sdk-report"):
-            self.assertIn(untyped, state["artifacts"])
 
     def test_downstream_artifacts_pin_their_inputs_by_hash(self):
         self.wgf("new-game", "--mock")
@@ -293,6 +299,85 @@ class StatusAndLogs(CliCase):
 
     def test_unknown_run(self):
         self.assertIn("no run", self.wgf("status", "nope", expect=2).stderr)
+
+
+class RunStatesThroughTheCli(CliCase):
+    """status and logs read persisted state and events, for a run in every status."""
+
+    def crash(self, run_id, cursor):
+        """Leave a run RUNNING on disk with no process behind it, as a crash would."""
+        store = RunStore(self.store, fsync=False)
+        state = store.load(run_id)
+        state.status, state.cursor = RunStatus.RUNNING, cursor
+        store.save(state)
+
+    def status_line(self, run_id):
+        return [l for l in self.wgf("status", run_id).stdout.splitlines()
+                if l.startswith("Status:")][0]
+
+    def test_running_paused_and_resume_after_pause(self):
+        self.wgf("init", "--mock", "--quiet")
+        run_id = self.state()["run_id"]
+        self.crash(run_id, "init")
+        self.assertEqual(self.status_line(run_id), "Status: RUNNING")
+
+        self.assertIn("PAUSED", self.wgf("pause", run_id).stdout)
+        self.assertEqual(self.status_line(run_id), "Status: PAUSED")
+        self.assertIn("WORKFLOW_PAUSED", self.wgf("logs", run_id).stdout)
+
+        self.wgf("init", "--resume", run_id, "--quiet")
+        self.assertEqual(self.status_line(run_id), "Status: COMPLETED")
+
+    def test_pause_refuses_a_run_that_is_not_running(self):
+        self.wgf("research", "--mock", "--quiet")
+        self.assertIn("not RUNNING", self.wgf("pause", self.state()["run_id"], expect=2).stderr)
+
+    def test_cancelled(self):
+        self.wgf("new-game", "--mock", "--hold-gates", "--quiet", expect=3)
+        run_id = self.state()["run_id"]
+        self.assertIn("CANCELLED", self.wgf("cancel", run_id).stdout)
+        self.assertEqual(self.status_line(run_id), "Status: CANCELLED")
+        self.assertIn("WORKFLOW_CANCELLED", self.wgf("logs", run_id).stdout)
+        self.wgf("new-game", "--resume", run_id, expect=2)
+
+    def test_blocked_by_the_loop_limit_then_resumed(self):
+        # verify fails on every pass; new-game allows 3 visits per step before blocking.
+        done = self.wgf("new-game", "--mock", "--quiet", "--mock-plan",
+                        '{"verify": ["fail", "fail", "fail", "fail"]}', expect=1)
+        self.assertIn("loop limit", done.stdout)
+        state = self.state()
+        self.assertEqual(state["status"], "BLOCKED")
+        self.assertEqual(state["steps"]["verify"]["visits"], 3)
+        self.assertEqual(self.status_line(state["run_id"]), "Status: BLOCKED")
+        self.assertIn("WORKFLOW_BLOCKED", self.wgf("logs", state["run_id"]).stdout)
+
+        self.wgf("new-game", "--resume", state["run_id"], "--quiet")
+        self.assertEqual(self.state(state["run_id"])["status"], "COMPLETED")
+
+    def test_waiting(self):
+        self.wgf("new-game", "--mock", "--hold-gates", "--quiet", expect=3)
+        run_id = self.state()["run_id"]
+        self.assertEqual(self.status_line(run_id), "Status: WAITING")
+        self.assertIn("STEP_WAITING", self.wgf("logs", run_id).stdout)
+
+    def test_resume_does_not_duplicate_successful_steps(self):
+        self.wgf("new-game", "--mock", "--quiet", "--mock-plan",
+                 '{"develop": ["failed", "failed", "failed"]}', expect=1)
+        before = self.state()
+        succeeded = lambda s: sorted(t["step"] for t in s["trail"] if t["outcome"] == "SUCCESS")
+        self.assertEqual(succeeded(before),
+                         sorted(["research", "strategy", "strategy-review", "design", "init",
+                                 "assets"]))
+        self.wgf("new-game", "--resume", before["run_id"], "--quiet")
+        after = self.state(before["run_id"])
+        self.assertEqual(succeeded(after), sorted(succeeded(before) +
+                                                  ["develop", "sdk", "verify", "release"]))
+
+    def test_mock_auto_approves_only_the_workflows_own_checkpoint(self):
+        self.wgf("new-game", "--mock", "--quiet")
+        self.assertEqual(self.state()["params"]["auto_approve"], ["G2"])
+        self.wgf("new-game", "--mock", "--hold-gates", "--quiet", expect=3)
+        self.assertNotIn("auto_approve", self.state()["params"])
 
 
 if __name__ == "__main__":

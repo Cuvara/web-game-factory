@@ -2,8 +2,10 @@
 
 The executable backbone of the Factory: a small kernel that runs a workflow definition step by
 step, persists every change, and can be stopped, resumed, retried and routed without anyone
-calling a step by hand. It ships with placeholder steps only. Discovery, strategy, design,
-assets, development, SDK and verification are separate modules that plug into it later —
+calling a step by hand. It ships with placeholder steps for every step type. Init
+([init-module.md](init-module.md)) and verification
+([verification-module.md](verification-module.md)) are real modules; discovery, strategy,
+design, assets, development and SDK are separate modules that plug into it later —
 **[workflow-module-contract.md](workflow-module-contract.md) is what they implement against.**
 
 Standard library Python, like every other script here. No database, no toolchain.
@@ -426,7 +428,9 @@ factory:
 ```
 
 `storage.directory` resolves against the directory `wgf` is run from; `--store` overrides
-it. `.factory/` is git-ignored — run state is instance data.
+it. A module may read its own section from the same file — `factory.init` and
+`factory.verification` configure those modules; the engine ignores keys it does not know.
+`.factory/` is git-ignored — run state is instance data.
 
 ## 13. How a real module registers itself
 

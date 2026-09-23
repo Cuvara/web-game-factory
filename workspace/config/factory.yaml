@@ -27,10 +27,23 @@ factory:
     fsync: true                 # flush state.json to disk before the atomic rename
 
   # Python modules that register real step implementations: each exposes register(registry).
-  # Steps no module implements yet (discovery, strategy, design, init, assets, development,
-  # SDK, release) still need --mock, which replaces every implementation with placeholders.
+  # Steps no module implements yet (discovery, strategy, design, assets, development, SDK,
+  # release) still need --mock, which replaces every implementation with placeholders.
   steps:
-    modules: [wgf_verification]
+    modules: [wgf_init, wgf_verification]
+
+  # The init module (scripts/wgf_init, docs/init-module.md): creates each game's repository
+  # from the template with `gh`, clones it, and checks the template's infrastructure arrived.
+  init:
+    owner: Cuvara                       # who owns game repositories
+    template: Cuvara/web-game-template  # never a blank repository
+    visibility: private                 # private | internal | public
+    projects_dir: ..                    # local clones go in <projects_dir>/<title-id>,
+                                        # relative to this repository's root
+    # Take over a repository or directory init did not create in this run. Leave false:
+    # set it only to adopt a specific existing project, then set it back.
+    adopt_existing: false
+    populate_timeout_seconds: 60        # GitHub generates from a template asynchronously
 
   # The verification module (scripts/wgf_verification, docs/verification-module.md). It
   # verifies a local checkout and never clones: the game repository is found from the

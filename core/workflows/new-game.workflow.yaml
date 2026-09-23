@@ -88,7 +88,9 @@ workflow:
       type: develop
       stage: title:prototype
       description: Build the game. Re-entered with the failing qa-report when verification fails.
-      inputs: [game-design, asset-manifest, qa-report]
+      # scaffold-record says which repository to build in; title-strategy carries the
+      # questions the prototype must answer and the kill criteria its report must list.
+      inputs: [game-design, asset-manifest, scaffold-record, title-strategy, qa-report]
       outputs: [prototype-report]
 
     - id: sdk

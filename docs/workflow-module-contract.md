@@ -153,14 +153,16 @@ reading, and `DocumentedIoContract` fails if the two disagree.
 | `design` | `design` | `title-strategy` | `game-design` |
 | `init` | `init` | `game-design` | `scaffold-record` |
 | `assets` | `assets` | `game-design`, `scaffold-record` | `asset-manifest` |
-| `develop` | `develop` | `game-design`, `asset-manifest`, `qa-report` | `prototype-report` |
+| `develop` | `develop` | `game-design`, `asset-manifest`, `scaffold-record`, `title-strategy`, `qa-report` | `prototype-report` |
 | `sdk` | `sdk` | `prototype-report` | `sdk-report` |
 | `verify` | `verify` | `prototype-report`, `sdk-report`, `game-design`, `scaffold-record`, `asset-manifest` | `verification-report`, `qa-report` |
 | `release` | `release` | `qa-report` | `release-manifest` |
 <!-- io-contract:end -->
 
 `develop` declares `qa-report` so that on a verify → develop loop it receives the failing
-report; on its first visit that input is missing, which is expected. `verify` emits the
+report; on its first visit that input is missing, which is expected. It reads
+`scaffold-record` to find the game repository it builds in, and `title-strategy` for the
+questions and kill criteria its `prototype-report` must list. `verify` emits the
 `verification-report` — every check with its evidence — and the `qa-report` computed from it;
 see [verification-module.md](verification-module.md). `release` produces a
 `release-manifest` in state `draft` and stops: building, packaging and publishing are the game

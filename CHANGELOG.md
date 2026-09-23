@@ -33,6 +33,16 @@ numbering: `core/` is the contract, and schemas carry their own versions.
 
   *Migration:* none. Existing manifests and designs stay valid.
 
+- **Development module.** `scripts/wgf_develop` implements the `develop` step and is
+  registered in `workspace/config/factory.yaml`. It briefs the build from the game design
+  (`docs/development/brief.md` in the game repository), hands it to a developer — a person
+  (`handoff`) or a configured command — then checks template conformance, typecheck, lint,
+  tests, build and the browser smoke suite, commits once per visit, and emits a
+  `prototype-report` that records only what it measured. See
+  `docs/development-module.md`. **Contract change:** `develop` now declares
+  `scaffold-record` and `title-strategy` as inputs in `core/workflows/new-game.workflow.yaml`;
+  existing runs resume unaffected, and a run without them is told what is missing.
+
 - **Workflow module contract.** `docs/workflow-module-contract.md` is what the discovery,
   strategy, design, init, assets, development, SDK and verification modules implement
   against; `scripts/tests/test_workflow_contracts.py` holds the gate — an external module

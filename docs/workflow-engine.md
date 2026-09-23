@@ -432,6 +432,10 @@ it. A module may read its own section from the same file — `factory.init` and
 `factory.verification` configure those modules; the engine ignores keys it does not know.
 `.factory/` is git-ignored — run state is instance data.
 
+A step module may own a section of its own, which the engine passes through untouched in
+`context.config`: `develop:` belongs to the development module
+([development-module.md](development-module.md)).
+
 ## 13. How a real module registers itself
 
 The full contract is [workflow-module-contract.md](workflow-module-contract.md). In short:

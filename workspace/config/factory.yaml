@@ -27,10 +27,10 @@ factory:
     fsync: true                 # flush state.json to disk before the atomic rename
 
   # Python modules that register real step implementations: each exposes register(registry).
-  # Steps no module implements yet (discovery, strategy, design, development, SDK, release)
+  # Steps no module implements yet (discovery, strategy, design, SDK, release)
   # still need --mock, which replaces every implementation with placeholders.
   steps:
-    modules: [wgf_init, wgf_assets, wgf_verification]
+    modules: [wgf_init, wgf_assets, wgf_develop, wgf_verification]
 
   # The init module (scripts/wgf_init, docs/init-module.md): creates each game's repository
   # from the template with `gh`, clones it, and checks the template's infrastructure arrived.
@@ -70,6 +70,20 @@ factory:
       #   license: CC0-1.0        # only if the server's terms grant it; else unknown
     optimize: true              # lossless, and only on files the step writes
     fail_on: []                 # issue codes that fail the step, e.g. [license-restricted]
+
+  # The development module (scripts/wgf_develop, docs/development-module.md). Where the game
+  # repositories are checked out, who writes the game, and what must pass before a visit is
+  # committed. The module never clones, pushes or creates a repository.
+  develop:
+    checkouts: ..               # <checkouts>/<scaffold-record repository.name>; relative to the Factory root
+    developer:
+      kind: handoff             # handoff: brief, wait for --decision done | command: run argv unattended
+      argv: []                  # command only: {brief} {repo} {key} {prompt} are substituted
+      timeout_seconds: 5400
+    checks: [install, conformance, typecheck, lint, unit, build, smoke]
+    check_timeout_seconds: 900
+    commit: true                # one local commit per visit, keyed by the idempotency key
+    build_url: null             # e.g. "https://{branch}.{name}.pages.dev"; default links the commit
 
   # Checkpoint gates this installation lets a run approve without a person. Only reversible
   # gates are honoured; G4, G6 and G7 are refused whatever is listed here. `--mock` runs

@@ -58,6 +58,34 @@ theoretical one. If you remove nothing else from this methodology, keep this.
 6. **Set `timebox_days` and `max_prototype_iterations`.** The factory targets 7-14 days.
    Beyond ~21 this is a different kind of project and should be decided as one.
 
+7. **Record what the plan rests on.** `concept` narrows the opportunity to one control
+   scheme and one gameplay direction. `production_scope` states technical and asset
+   complexity, the estimate before fitting, the asset budget, the reusable systems and each
+   scope decision. `platform_compatibility` lists every candidate — including the ones left
+   out and why — with the SDK features and profile constraints the design inherits.
+   `risks` carries the opportunity's risks forward and adds the ones this plan introduces;
+   `assumptions` names what the plan takes as true and what would show it false.
+
+## Optimize for rapid production
+
+Strategy is where a title is kept small, because every later stage inherits its scope. The
+default answer to a feature is *no*, with the reason written into `out_of_scope` or
+`scope_decisions`:
+
+- **A small core loop**, one content set, difficulty from one data-driven ramp rather than
+  hand-built levels.
+- **Reusable systems** from the template — boot flow, SDK adapter, persistence, ad breaks —
+  rather than bespoke ones.
+- **A low asset count**, capped as a number in `production_scope.asset_budget`.
+- **Short sessions** — minutes, not tens of minutes — and **replay from a system** (score
+  chase, procedural variation, a mastery ramp), not from more content.
+- **One simple control scheme**, understood without a tutorial.
+- **Simple platform integration**: one required platform; secondaries only where the same
+  build satisfies them.
+
+An estimate above the target timebox cuts the design, not the calendar. Beyond ~21 days the
+opportunity is refused and goes back to be re-scoped — that is a different kind of project.
+
 ## Gate G2
 
 Guards: `kill_criteria_defined`, `timebox_set`. The presenter reads the kill criteria

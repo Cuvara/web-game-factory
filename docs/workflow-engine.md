@@ -2,10 +2,10 @@
 
 The executable backbone of the Factory: a small kernel that runs a workflow definition step by
 step, persists every change, and can be stopped, resumed, retried and routed without anyone
-calling a step by hand. It ships with placeholder steps for every step type. Init
-([init-module.md](init-module.md)) and verification
-([verification-module.md](verification-module.md)) are real modules; discovery, strategy,
-design, assets, development and SDK are separate modules that plug into it later —
+calling a step by hand. It ships with a placeholder for every step type. Discovery, strategy,
+design, init ([init-module.md](init-module.md)), assets, development, SDK and verification
+([verification-module.md](verification-module.md)) are real modules that plug into it;
+`release` is still a placeholder —
 **[workflow-module-contract.md](workflow-module-contract.md) is what they implement against.**
 
 Standard library Python, like every other script here. No database, no toolchain.
@@ -423,7 +423,8 @@ factory:
                 max_delay_seconds: 60, max_visits: 5}
   agents:      {default: local}
   storage:     {directory: .factory, fsync: true}
-  steps:       {modules: []}
+  steps:       {modules: [wgf_discovery, wgf_strategy, wgf_init, wgf_assets, wgf_develop,
+                          wgf_verification, wgf_design, wgf_sdk]}
   design:      {author: archetype}   # read by the design module, not the engine
   checkpoints: {auto_approve: []}
 ```

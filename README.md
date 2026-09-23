@@ -149,9 +149,10 @@ are implemented. Schemas are JSON Schema 2020-12, validated on demand with `npx 
 there is deliberately no toolchain.
 
 The workflow engine is executable: `bin/wgf new-game --mock` runs research through release
-preparation end to end, with retry, resume, failure routing and human checkpoints. Every step
-behind it is still a placeholder; the discovery, strategy, design, asset, development, SDK and
-verification modules register against it later.
+preparation end to end, with retry, resume, failure routing and human checkpoints. Strategy is
+the first real module (`scripts/wgf_strategy/`); every other step is still a placeholder, and
+the discovery, design, asset, development, SDK and verification modules register against it
+later.
 
 Real portal API integrations, publishing credentials and campaign automation are deliberately
 **not** built. `web-game-template` remains a scaffold.

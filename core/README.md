@@ -30,6 +30,7 @@ entry you are one hop from everything else:
 | Who owns this stage | `roles/roles.yaml`, then `roles/<role-id>.md` |
 | What a gate requires | `lifecycle/gates.yaml` |
 | What a platform demands | `reference/platforms/<platform-id>.yaml` |
+| What an asset may be, and which licenses ship | `reference/asset-policy.yaml` |
 
 Two files — this one and `lifecycle/title.machine.yaml` — are enough to hold the whole
 system in your head.
@@ -179,7 +180,8 @@ core/
   lifecycle/        state machines, gates, per-stage procedures
   artifacts/        JSON Schemas; each carries its own contract in x-wgf
     shared/         primitives reused everywhere (provenance, claim, criteria-expression)
-  reference/        maintained data: dimensions, platform profiles, scoring models, rules
+  reference/        maintained data: dimensions, platform profiles, scoring models, rules,
+                    asset policy
   roles/            who is accountable for what
   templates/        document scaffolds for artifacts whose canonical form is prose
   bindings/         what an AI adapter must cover, provider-independently

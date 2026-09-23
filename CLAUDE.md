@@ -240,6 +240,7 @@ error. Validate what you write.
 - `docs/workflow-module-contract.md` — what a step module implements; read before writing one
 - `docs/verification-module.md` — the `verify` step: checks, statuses, evidence, gameplay drivers
 - `docs/init-module.md` — the init module: repository from the template, idempotency, refusals
+- `docs/assets-module.md` — the `assets` step: asset policy, licensing rule, placeholder backends
 - `docs/development.md` — working on the Factory
 
 Documentation that contradicts a machine file is worse than none, because people believe it.

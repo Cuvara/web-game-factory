@@ -27,10 +27,10 @@ factory:
     fsync: true                 # flush state.json to disk before the atomic rename
 
   # Python modules that register real step implementations: each exposes register(registry).
-  # Steps no module implements yet (discovery, strategy, design, assets, development, SDK,
-  # release) still need --mock, which replaces every implementation with placeholders.
+  # Steps no module implements yet (discovery, strategy, design, development, SDK, release)
+  # still need --mock, which replaces every implementation with placeholders.
   steps:
-    modules: [wgf_init, wgf_verification]
+    modules: [wgf_init, wgf_assets, wgf_verification]
 
   # The init module (scripts/wgf_init, docs/init-module.md): creates each game's repository
   # from the template with `gh`, clones it, and checks the template's infrastructure arrived.
@@ -51,6 +51,25 @@ factory:
   # from the run's scaffold-record>.
   verification:
     checkouts: ..
+
+  # The assets step (scripts/wgf_assets). Every key is optional; a step's `with:` block
+  # overrides any of them. See docs/assets-module.md.
+  assets:
+    # The game repository checkout assets are written into, under public/assets/.
+    # Default: .factory/assets/<title-id>, which is git-ignored scratch.
+    # root: ../my-game
+    libraries: []               # directories with an index.json of reusable, licensed assets
+    placeholders:
+      enabled: true
+      # Tried in order; the procedural backend is always last and always works. An
+      # unconfigured or unreachable 2d-assets-mcp is recorded on the manifest and skipped.
+      backends: [2d-assets-mcp, procedural]
+      # 2d-assets-mcp:
+      #   command: [npx, -y, 2d-assets-mcp]
+      #   tool: generate_sprite
+      #   license: CC0-1.0        # only if the server's terms grant it; else unknown
+    optimize: true              # lossless, and only on files the step writes
+    fail_on: []                 # issue codes that fail the step, e.g. [license-restricted]
 
   # Checkpoint gates this installation lets a run approve without a person. Only reversible
   # gates are honoured; G4, G6 and G7 are refused whatever is listed here. `--mock` runs

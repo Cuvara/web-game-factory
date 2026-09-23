@@ -1,0 +1,65 @@
+{
+  "library": {
+    "id": "fixture-lib"
+  },
+  "assets": [
+    {
+      "id": "coin-nc",
+      "kind": "sprite",
+      "path": "sprites/coin-nc.png",
+      "tags": [
+        "coin",
+        "pickup",
+        "gold"
+      ],
+      "license": "CC-BY-NC-4.0",
+      "source_url": "https://example.invalid/coin-nc",
+      "author": "NC Artist"
+    },
+    {
+      "id": "gold-coin",
+      "kind": "sprite",
+      "path": "sprites/coin.png",
+      "tags": [
+        "coin",
+        "pickup"
+      ],
+      "license": "CC0-1.0",
+      "source_url": "https://example.invalid/coin",
+      "author": "Kind Artist"
+    },
+    {
+      "id": "lantern-gem",
+      "kind": "sprite",
+      "path": "sprites/gem.png",
+      "tags": [
+        "lantern",
+        "gem"
+      ]
+    },
+    {
+      "id": "hero-run",
+      "kind": "spritesheet",
+      "path": "sprites/hero-run.png",
+      "tags": [
+        "hero",
+        "run"
+      ],
+      "license": "CC-BY-4.0",
+      "source_url": "https://example.invalid/hero",
+      "author": "Sheet Maker",
+      "attribution": "Hero run cycle by Sheet Maker, CC BY 4.0"
+    },
+    {
+      "id": "ui-click",
+      "kind": "sfx",
+      "path": "audio/click.ogg",
+      "tags": [
+        "click",
+        "ui"
+      ],
+      "license": "CC0-1.0",
+      "source_url": "https://example.invalid/click"
+    }
+  ]
+}

@@ -10,6 +10,29 @@ numbering: `core/` is the contract, and schemas carry their own versions.
 
 ### Added
 
+- **Assets module (`scripts/wgf_assets`, step type `assets`).** Turns a game design into an
+  asset manifest and the files behind it: inspects `game_design.asset_requirements` (or
+  derives a baseline), classifies each against the new `core/reference/asset-policy.yaml`,
+  reuses a design's existing file or a licensed library asset, otherwise generates a
+  placeholder — through an optional 2D asset MCP server when one is configured, always
+  falling back to a standard-library procedural backend — then validates formats from the
+  bytes, optimizes losslessly and records licence, origin and usage constraints per item.
+  An asset whose licence is unknown or restricted, or that has no recorded origin, is never
+  `production_ready`. Covers 2D (sprites, sheets, backgrounds, UI, icons, VFX, fonts, audio)
+  and 3D (models, textures, materials, animations, environments). Registered in
+  `factory.steps.modules`; see `docs/assets-module.md`.
+
+  *Schema changes, all additive:* `asset-manifest` items gain `dimension`,
+  `license_status`, `usage_constraints`, `origin`, `placeholder`, `production_ready`,
+  `files`, `reference`, `optimization` and `issues`, the `type` enum gains `background`,
+  `material` and `environment`, and the manifest gains `policy`, `issues` and `generation`
+  (instances now declare `schema_version` 1.1.0). `game-design` gains optional
+  `asset_requirements`. The `assets` step and `title:prototype` now also consume
+  `scaffold-record` (for platform bundle limits), and `title:prototype` names
+  `asset-manifest` among its outputs.
+
+  *Migration:* none. Existing manifests and designs stay valid.
+
 - **Workflow module contract.** `docs/workflow-module-contract.md` is what the discovery,
   strategy, design, init, assets, development, SDK and verification modules implement
   against; `scripts/tests/test_workflow_contracts.py` holds the gate — an external module

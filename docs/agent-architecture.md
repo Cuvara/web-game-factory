@@ -165,6 +165,11 @@ Prefer `library` and `procedural` at this scale; `commissioned` is rarely compat
 timebox. No `purchased` or `library` item is integrated without a recorded license — an
 unlicensed asset in a published build is a real liability.
 
+Both rules are data in `core/reference/asset-policy.yaml` — the formats each asset kind may
+be, and which licenses may ship — and are enforced by the `assets` workflow step
+(`scripts/wgf_assets`, see [assets-module.md](assets-module.md)): an asset whose license is
+unknown or restricted, or that has no recorded origin, is never `production_ready`.
+
 ### 3D
 
 ```

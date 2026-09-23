@@ -2,7 +2,7 @@
 
 **Machine** title · **State** `prototype` · **Kind** AI-assisted · **Role** gameplay
 **Contributors** ui, asset, architect, sdk
-**Inputs** `tech-plan`, `game-design`, `title-strategy` · **Outputs** `prototype-report`
+**Inputs** `tech-plan`, `game-design`, `title-strategy`, `scaffold-record` · **Outputs** `prototype-report`, `sdk-report`, `asset-manifest` (updated)
 
 ## What a prototype is for
 
@@ -24,6 +24,11 @@ technical demonstration that a mechanic runs.
 ## Procedure
 
 1. Work the tasks in the development plan's prototype milestones, in dependency order.
+   **Update the asset manifest first**, so code is never waiting on art: every asset the
+   design needs is sourced from an existing library, or stood in for by a placeholder, and
+   each line records its format check, licence and origin against
+   `core/reference/asset-policy.yaml`. A placeholder is never production-ready, and neither
+   is an asset whose licence is unknown or restricted — it can prototype, not ship.
 2. **Integrate SDK, monetization and analytics now**, not in production. Deferring them is
    how titles discover at release that the ad placement does not fit the loop — which is a
    design failure found at the most expensive possible moment.

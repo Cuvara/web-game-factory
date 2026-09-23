@@ -176,6 +176,52 @@
     "art_direction": { "type": "string" },
     "audio_direction": { "type": "string" },
 
+    "asset_requirements": {
+      "type": "array",
+      "description": "The assets the design needs, by kind. The asset manifest is built from this list; when it is absent a baseline is derived from screens, audio direction and locales, which is a floor, not a design. Kinds are the keys of core/reference/asset-policy.yaml.",
+      "items": {
+        "type": "object",
+        "required": ["id", "kind"],
+        "properties": {
+          "id": { "type": "string", "pattern": "^[a-z][a-z0-9-]*$" },
+          "kind": {
+            "enum": ["sprite", "spritesheet", "background", "ui", "icon", "vfx", "font", "sfx", "music", "model", "texture", "material", "animation", "environment"]
+          },
+          "label": { "type": "string" },
+          "dimension": { "enum": ["2d", "3d"] },
+          "scope_tier": { "enum": ["mvp", "prototype", "production", "future"] },
+          "source": {
+            "enum": ["library", "procedural", "ai-generated", "purchased", "commissioned"],
+            "description": "The intended final source. Absent means library first, then procedural."
+          },
+          "tags": { "type": "array", "items": { "type": "string" }, "description": "Words a library search matches on." },
+          "width": { "type": "integer", "minimum": 1 },
+          "height": { "type": "integer", "minimum": 1 },
+          "frames": { "type": "integer", "minimum": 1, "description": "For a spritesheet or an animation." },
+          "platforms": { "type": "array", "items": { "type": "string" } },
+          "existing": {
+            "type": "object",
+            "description": "An asset already chosen, with where it came from. Its license and origin are checked like any other external asset's.",
+            "required": ["path"],
+            "properties": {
+              "path": { "type": "string", "description": "Relative to the game repository root." },
+              "license": { "type": "string" },
+              "source_url": { "type": "string" },
+              "author": { "type": "string" },
+              "vendor": { "type": "string" },
+              "attribution": { "type": "string" },
+              "license_url": { "type": "string" },
+              "evidence": { "type": "string" },
+              "usage_constraints": { "type": "array", "items": { "type": "string" } }
+            },
+            "additionalProperties": false
+          },
+          "notes": { "type": "string" }
+        },
+        "additionalProperties": false
+      }
+    },
+
     "platform_constraints_applied": {
       "type": "array",
       "description": "Which binding platform requirements this design absorbed, and how. Populated from the pinned platform profiles. An empty list on a title with required platforms means the profiles were not read.",

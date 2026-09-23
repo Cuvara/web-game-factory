@@ -30,7 +30,11 @@
           "id": { "type": "string", "pattern": "^[a-z][a-z0-9-]*$" },
           "label": { "type": "string" },
           "type": {
-            "enum": ["sprite", "spritesheet", "texture", "model", "animation", "vfx", "sfx", "music", "font", "ui", "icon", "screenshot", "other"]
+            "enum": ["sprite", "spritesheet", "background", "texture", "material", "model", "animation", "environment", "vfx", "sfx", "music", "font", "ui", "icon", "screenshot", "other"]
+          },
+          "dimension": {
+            "enum": ["2d", "3d"],
+            "description": "Which renderer the asset is for. Audio and fonts take the game's dimension."
           },
           "source": {
             "enum": ["library", "procedural", "ai-generated", "purchased", "commissioned"],
@@ -43,7 +47,77 @@
           },
           "license": {
             "type": "string",
-            "description": "Required before a purchased or library asset can be integrated. An unlicensed asset in a published build is a real liability, not a paperwork detail."
+            "description": "An SPDX identifier, or a LicenseRef- id from core/reference/asset-policy.yaml. Required before a purchased, library or commissioned asset can be integrated. An unlicensed asset in a published build is a real liability, not a paperwork detail."
+          },
+          "license_status": {
+            "enum": ["generated", "verified", "restricted", "unknown"],
+            "description": "The license classified against core/reference/asset-policy.yaml. generated: made by the Factory, owing nobody. verified: a permitted license with a recorded origin. restricted: a license the policy forbids in a published build. unknown: missing or unrecognised, and treated exactly like missing."
+          },
+          "usage_constraints": {
+            "type": "array",
+            "items": { "type": "string" },
+            "description": "What using the asset obliges - attribution, share-alike, keep-receipt - from the license's policy entry plus anything the source adds."
+          },
+          "origin": {
+            "type": "object",
+            "description": "Where the asset came from. Required in substance for every asset the Factory did not generate: without it a license is an assertion nobody can check.",
+            "required": ["kind"],
+            "properties": {
+              "kind": { "enum": ["generated", "library", "external"] },
+              "generator": { "type": "string", "description": "For a generated asset, the backend that made it." },
+              "library_id": { "type": "string", "description": "For a library asset, its entry in the library index." },
+              "source_url": { "type": "string" },
+              "author": { "type": "string" },
+              "vendor": { "type": "string" },
+              "attribution": { "type": "string", "description": "The credits line, verbatim, when the license requires one." },
+              "license_url": { "type": "string" },
+              "acquired_at": { "type": "string", "format": "date-time" },
+              "evidence": { "type": "string", "description": "Where the proof of license lives: a receipt, a contract, an archived page." }
+            },
+            "additionalProperties": false
+          },
+          "placeholder": {
+            "type": "boolean",
+            "description": "A stand-in generated so code is not blocked on art. Never production-ready."
+          },
+          "production_ready": {
+            "type": "boolean",
+            "description": "Valid, license-cleared and not a placeholder. Always false when license_status is unknown or restricted: unknown licensing must not silently become a production asset."
+          },
+          "files": {
+            "type": "array",
+            "description": "The delivered files, relative to the game repository root. A spritesheet has an image and its atlas.",
+            "items": {
+              "type": "object",
+              "required": ["path", "format", "bytes", "content_hash"],
+              "properties": {
+                "path": { "type": "string" },
+                "format": { "type": "string" },
+                "bytes": { "type": "integer", "minimum": 0 },
+                "content_hash": { "$ref": "./shared/provenance.schema.json#/$defs/hash" },
+                "width": { "type": "integer", "minimum": 0 },
+                "height": { "type": "integer", "minimum": 0 }
+              },
+              "additionalProperties": false
+            }
+          },
+          "reference": {
+            "type": "string",
+            "description": "For an asset delivered as a named fallback rather than a file, such as a system font stack."
+          },
+          "optimization": {
+            "type": "object",
+            "properties": {
+              "applied": { "type": "array", "items": { "type": "string" }, "description": "Lossless steps already done to the delivered files." },
+              "deferred": { "type": "array", "items": { "type": "string" }, "description": "Pipeline steps still owed, from the policy's optimize list." },
+              "bytes_saved": { "type": "integer", "minimum": 0 }
+            },
+            "additionalProperties": false
+          },
+          "issues": {
+            "type": "array",
+            "items": { "type": "string" },
+            "description": "Issue codes on this item. The details are in the manifest's issues list."
           },
           "scope_tier": { "enum": ["mvp", "prototype", "production", "future"] },
           "platforms": { "type": "array", "items": { "type": "string" } },
@@ -73,6 +147,58 @@
     "complete": {
       "type": "boolean",
       "description": "True when every non-cut item is integrated. Part of the content_complete guard on production exit — which is why CONTENT COMPLETE is not a lifecycle state."
+    },
+
+    "policy": {
+      "type": "object",
+      "description": "The asset policy the items were classified against, pinned by hash so a re-classification is visible.",
+      "required": ["id", "version"],
+      "properties": {
+        "id": { "type": "string" },
+        "version": { "type": "string" },
+        "content_hash": { "$ref": "./shared/provenance.schema.json#/$defs/hash" }
+      },
+      "additionalProperties": false
+    },
+
+    "issues": {
+      "type": "array",
+      "description": "Everything wrong with the manifest, one entry per problem. An error keeps its item from being production-ready.",
+      "items": {
+        "type": "object",
+        "required": ["code", "severity", "message"],
+        "properties": {
+          "item_id": { "type": "string" },
+          "code": {
+            "enum": ["missing", "invalid-format", "format-not-allowed", "too-large", "not-power-of-two", "duplicate-content", "license-unknown", "license-restricted", "provenance-missing", "placeholder", "generation-failed", "library-candidate-rejected", "over-budget", "over-bundle-size"]
+          },
+          "severity": { "enum": ["error", "warning", "info"] },
+          "message": { "type": "string" }
+        },
+        "additionalProperties": false
+      }
+    },
+
+    "generation": {
+      "type": "object",
+      "description": "Which placeholder backends were tried. An optional backend that is unavailable is recorded, never fatal.",
+      "properties": {
+        "backends": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["id", "available"],
+            "properties": {
+              "id": { "type": "string" },
+              "available": { "type": "boolean" },
+              "used": { "type": "integer", "minimum": 0 },
+              "note": { "type": "string" }
+            },
+            "additionalProperties": false
+          }
+        }
+      },
+      "additionalProperties": false
     }
   },
   "additionalProperties": false

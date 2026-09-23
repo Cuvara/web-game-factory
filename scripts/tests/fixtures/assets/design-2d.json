@@ -1,0 +1,298 @@
+{
+  "title_id": "lantern-hop",
+  "fantasy": "Being effortlessly in the groove. The player should feel skilled slightly before they actually are.",
+  "core_loop": "Hear the beat → anticipate the next gate → tap to switch lanes on the beat → combo climbs and the track responds → miss, and the run ends → retry immediately.",
+  "pillars": [
+    "The beat is always right — a miss must read as the player's error, never the game's",
+    "Readable at a glance on a phone held one-handed",
+    "Retry in under one second"
+  ],
+  "scope": {
+    "tiers": {
+      "mvp": [
+        "One track, three difficulty ramps",
+        "Lane switching on beat",
+        "Combo and score",
+        "Personal best",
+        "Rewarded continue"
+      ],
+      "prototype": [
+        "One track at one ramp",
+        "Lane switching",
+        "Fail and retry",
+        "Yandex SDK init and rewarded stub",
+        "Latency instrumentation"
+      ],
+      "production": [
+        "Three difficulty ramps",
+        "Score and combo polish",
+        "Audio-reactive visuals",
+        "ru and en locales",
+        "Interstitial between runs"
+      ],
+      "future": [
+        "Additional tracks",
+        "Weekly seed"
+      ],
+      "out_of_scope": [
+        {
+          "item": "Multiple music tracks",
+          "why_excluded": "One track proves the mechanic. More tracks are content, and content does not answer the validation question."
+        },
+        {
+          "item": "Character customization",
+          "why_excluded": "No bearing on whether beat-matching feels fair, which is the only thing at issue."
+        },
+        {
+          "item": "Global leaderboards",
+          "why_excluded": "Adds backend and moderation surface for a retention effect the personal best already supplies at this scope."
+        },
+        {
+          "item": "Daily quests",
+          "why_excluded": "A 240-second session has no room to present and complete one — see design rule short_session_no_daily_quest."
+        }
+      ]
+    },
+    "content_units": 3,
+    "content_unit_kind": "difficulty ramps",
+    "locales": [
+      "ru",
+      "en"
+    ],
+    "asset_budget": 400,
+    "progression_terminal": "Progression is the personal best. There is no terminal state and the loop is deliberately open, bounded by a single track."
+  },
+  "session": {
+    "time_to_first_play_s": 6,
+    "time_to_first_reward_s": 25,
+    "first_session_seconds": 180,
+    "target_seconds": 240,
+    "structure": "A run lasts 45-90 seconds and ends on a miss. A session is a string of runs, each starting within a second of the last ending. The session ends when the player beats their best or stops improving — both are satisfying stopping points rather than arbitrary ones.",
+    "reward_moments_per_session": 3,
+    "end_condition": "Player sets a new personal best, or three runs pass without improvement."
+  },
+  "retention": {
+    "hooks": [
+      "progression",
+      "streak"
+    ],
+    "return_reason": "They know they can beat their own score, and they were close last time.",
+    "progression_loop": "Score ceiling rises with familiarity rather than with unlocks. The player improves; the game does not change.",
+    "targets": {
+      "d1": 0.25,
+      "d7": 0.1,
+      "d30": 0.04
+    }
+  },
+  "monetization": {
+    "placements": [
+      {
+        "kind": "rewarded",
+        "trigger": "On a miss that ends a run above the player's median score",
+        "player_value": "Continue the run from the missed gate, keeping the combo",
+        "platforms": [
+          "yandex",
+          "crazygames"
+        ]
+      },
+      {
+        "kind": "interstitial",
+        "trigger": "Between runs, at most once every 180 seconds, never inside a run",
+        "player_value": "None — this is a pure interruption and is priced as such, kept below the platform cadence limit",
+        "platforms": [
+          "yandex"
+        ]
+      }
+    ],
+    "economy": "No currency. The rewarded continue is the only economic action.",
+    "currencies": []
+  },
+  "progression": "There is no unlock progression. The player's skill is the progression, and the score is its readout.",
+  "difficulty": "Three ramps differing in gate density and tempo. The first ramp is deliberately forgiving for the first 20 seconds so a new player reaches a reward before failing.",
+  "controls": "Single tap anywhere switches lanes. No other input.",
+  "ux": {
+    "onboarding": "No tutorial. The first 10 seconds present one gate at a slow tempo with a pulsing prompt; the control teaches itself because the idiom is already familiar on this portal.",
+    "screens": [
+      "Loading with progress",
+      "Run",
+      "Fail with retry and rewarded continue",
+      "Best score"
+    ],
+    "accessibility": "Beat is signalled visually as well as audibly, so the game is playable muted — which also covers the substantial share of portal traffic that plays with sound off."
+  },
+  "art_direction": "Flat neon vectors on dark ground. Procedurally generated, near-zero asset cost, and the palette shifts with the combo so visual feedback is free.",
+  "audio_direction": "One licensed loop at a fixed BPM. Fixed tempo is a design constraint, not a simplification: variable tempo multiplies the latency problem that is already the title's main risk.",
+  "platform_constraints_applied": [
+    {
+      "platform_id": "yandex",
+      "requirement": "Russian localization required, machine translation rejected",
+      "how_addressed": "ru is in scope.locales and budgeted for human translation; text is kept to under 40 strings to make this cheap."
+    },
+    {
+      "platform_id": "yandex",
+      "requirement": "Loading progress must be reported through the SDK",
+      "how_addressed": "Loading screen is driven by the SDK loading API rather than a fake progress bar."
+    },
+    {
+      "platform_id": "yandex",
+      "requirement": "Interstitial minimum interval 60s",
+      "how_addressed": "Interstitial cadence set to 180s, comfortably above the limit and matched to session structure."
+    },
+    {
+      "platform_id": "crazygames",
+      "requirement": "Interstitial minimum interval 180s",
+      "how_addressed": "Same 180s cadence satisfies the tighter of the two limits, so one build serves both."
+    }
+  ],
+  "consistency": {
+    "status": "pass",
+    "evaluated_at": "2026-09-03T14:30:00Z",
+    "ruleset_version": "1.0.0",
+    "rule_results": [
+      {
+        "criterion_id": "rewarded_ads_need_reward_moments",
+        "measured": 3,
+        "breached": false
+      },
+      {
+        "criterion_id": "short_session_no_daily_quest",
+        "measured": 240,
+        "breached": false
+      },
+      {
+        "criterion_id": "interstitial_interval_fits_session",
+        "measured": 240,
+        "breached": false,
+        "note": "Session 240s exceeds the tightest platform interval of 180s."
+      },
+      {
+        "criterion_id": "scope_fits_session_count",
+        "measured": 3,
+        "breached": false
+      },
+      {
+        "criterion_id": "required_locales_addressed",
+        "measured": [
+          "ru",
+          "en"
+        ],
+        "breached": false
+      },
+      {
+        "criterion_id": "monetization_supported_by_platform",
+        "measured": [
+          "rewarded",
+          "interstitial"
+        ],
+        "breached": false
+      },
+      {
+        "criterion_id": "first_reward_within_first_session",
+        "measured": 25,
+        "breached": false
+      },
+      {
+        "criterion_id": "iap_matches_audience",
+        "measured": [],
+        "breached": false
+      },
+      {
+        "criterion_id": "asset_cost_within_scope",
+        "measured": 340,
+        "breached": false
+      },
+      {
+        "criterion_id": "progression_has_an_end_or_a_loop",
+        "measured": "open loop, bounded by one track",
+        "breached": false
+      }
+    ],
+    "warnings_acknowledged": true
+  },
+  "open_questions": [
+    "What is the actual audio-to-input latency on a mid-range Android phone in Chrome? This is the title's central risk and the prototype exists mainly to answer it.",
+    "Does a fixed-tempo track become monotonous within a 240-second session?"
+  ],
+  "asset_requirements": [
+    {
+      "id": "player",
+      "kind": "sprite",
+      "label": "Player lantern",
+      "tags": [
+        "lantern",
+        "player"
+      ],
+      "width": 48,
+      "height": 48
+    },
+    {
+      "id": "coin",
+      "kind": "sprite",
+      "label": "Coin pickup",
+      "tags": [
+        "coin",
+        "pickup"
+      ]
+    },
+    {
+      "id": "player-run",
+      "kind": "spritesheet",
+      "label": "Player run cycle",
+      "frames": 6,
+      "tags": [
+        "hero",
+        "run"
+      ]
+    },
+    {
+      "id": "night-sky",
+      "kind": "background",
+      "label": "Night sky",
+      "scope_tier": "prototype"
+    },
+    {
+      "id": "hud",
+      "kind": "ui",
+      "label": "HUD"
+    },
+    {
+      "id": "app-icon",
+      "kind": "icon",
+      "label": "Store icon",
+      "scope_tier": "production",
+      "width": 512,
+      "height": 512
+    },
+    {
+      "id": "spark",
+      "kind": "vfx",
+      "label": "Pickup spark"
+    },
+    {
+      "id": "title-font",
+      "kind": "font",
+      "label": "Title font"
+    },
+    {
+      "id": "tap",
+      "kind": "sfx",
+      "label": "Tap",
+      "tags": [
+        "click",
+        "ui"
+      ]
+    },
+    {
+      "id": "theme",
+      "kind": "music",
+      "label": "Theme",
+      "source": "purchased"
+    },
+    {
+      "id": "seasonal-skin",
+      "kind": "sprite",
+      "label": "Seasonal skin",
+      "scope_tier": "future"
+    }
+  ]
+}

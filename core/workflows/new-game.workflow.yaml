@@ -75,10 +75,13 @@ workflow:
       outputs: [scaffold-record]
       retry: {max_attempts: 2}
 
+    # scaffold-record is optional: it names the target platforms, whose bundle-size limits
+    # the delivered files are checked against. Without it the manifest skips that check.
     - id: assets
       type: assets
       stage: title:prototype
-      inputs: [game-design]
+      description: Inspect, source or generate, validate and license-check every asset.
+      inputs: [game-design, scaffold-record]
       outputs: [asset-manifest]
 
     - id: develop

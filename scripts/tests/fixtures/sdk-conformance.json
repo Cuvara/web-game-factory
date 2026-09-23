@@ -1,0 +1,867 @@
+{
+ "success": true,
+ "numTotalTests": 86,
+ "testResults": [
+  {
+   "assertionResults": [
+    {
+     "ancestorTitles": [],
+     "title": "covers every platform id the registry knows",
+     "fullName": "covers every platform id the registry knows",
+     "status": "passed",
+     "failureMessages": []
+    },
+    {
+     "ancestorTitles": [
+      "'generic-web'",
+      "not-configured"
+     ],
+     "title": "createPlatform builds this adapter",
+     "fullName": "'generic-web' not-configured createPlatform builds this adapter",
+     "status": "passed",
+     "failureMessages": []
+    },
+    {
+     "ancestorTitles": [
+      "'generic-web'",
+      "not-configured"
+     ],
+     "title": "an unknown platform id fails at startup instead of degrading",
+     "fullName": "'generic-web' not-configured an unknown platform id fails at startup instead of degrading",
+     "status": "passed",
+     "failureMessages": []
+    },
+    {
+     "ancestorTitles": [
+      "'generic-web'",
+      "init"
+     ],
+     "title": "initialize resolves, is idempotent, and signalReady is reported once",
+     "fullName": "'generic-web' init initialize resolves, is idempotent, and signalReady is reported once",
+     "status": "passed",
+     "failureMessages": []
+    },
+    {
+     "ancestorTitles": [
+      "'generic-web'",
+      "sdk-unavailable"
+     ],
+     "title": "not applicable to generic-web",
+     "fullName": "'generic-web' sdk-unavailable not applicable to generic-web",
+     "status": "todo",
+     "failureMessages": []
+    },
+    {
+     "ancestorTitles": [
+      "'generic-web'",
+      "init-failure"
+     ],
+     "title": "not applicable to generic-web",
+     "fullName": "'generic-web' init-failure not applicable to generic-web",
+     "status": "todo",
+     "failureMessages": []
+    },
+    {
+     "ancestorTitles": [
+      "'generic-web'",
+      "loading"
+     ],
+     "title": "progress is accepted in any order and counted for release validation",
+     "fullName": "'generic-web' loading progress is accepted in any order and counted for release validation",
+     "status": "passed",
+     "failureMessages": []
+    },
+    {
+     "ancestorTitles": [
+      "'generic-web'",
+      "gameplay-lifecycle"
+     ],
+     "title": "start/stop are tracked and duplicates are not forwarded to the portal",
+     "fullName": "'generic-web' gameplay-lifecycle start/stop are tracked and duplicates are not forwarded to the portal",
+     "status": "passed",
+     "failureMessages": []
+    },
+    {
+     "ancestorTitles": [
+      "'generic-web'",
+      "pause-resume"
+     ],
+     "title": "no portal: the foreground is always the game's",
+     "fullName": "'generic-web' pause-resume no portal: the foreground is always the game's",
+     "status": "passed",
+     "failureMessages": []
+    },
+    {
+     "ancestorTitles": [
+      "'generic-web'",
+      "interstitial"
+     ],
+     "title": "the portal offers none: refused as unsupported",
+     "fullName": "'generic-web' interstitial the portal offers none: refused as unsupported",
+     "status": "passed",
+     "failureMessages": []
+    },
+    {
+     "ancestorTitles": [
+      "'generic-web'",
+      "rewarded"
+     ],
+     "title": "the portal offers none: refused as unsupported",
+     "fullName": "'generic-web' rewarded the portal offers none: refused as unsupported",
+     "status": "passed",
+     "failureMessages": []
+    },
+    {
+     "ancestorTitles": [
+      "'generic-web'",
+      "storage"
+     ],
+     "title": "set, get and remove round-trip",
+     "fullName": "'generic-web' storage set, get and remove round-trip",
+     "status": "passed",
+     "failureMessages": []
+    },
+    {
+     "ancestorTitles": [
+      "'generic-web'",
+      "game-binding"
+     ],
+     "title": "a hidden tab pauses the game and stops reported gameplay",
+     "fullName": "'generic-web' game-binding a hidden tab pauses the game and stops reported gameplay",
+     "status": "passed",
+     "failureMessages": []
+    },
+    {
+     "ancestorTitles": [
+      "'yandex'",
+      "not-configured"
+     ],
+     "title": "createPlatform builds this adapter",
+     "fullName": "'yandex' not-configured createPlatform builds this adapter",
+     "status": "passed",
+     "failureMessages": []
+    },
+    {
+     "ancestorTitles": [
+      "'yandex'",
+      "not-configured"
+     ],
+     "title": "an unknown platform id fails at startup instead of degrading",
+     "fullName": "'yandex' not-configured an unknown platform id fails at startup instead of degrading",
+     "status": "passed",
+     "failureMessages": []
+    },
+    {
+     "ancestorTitles": [
+      "'yandex'",
+      "init"
+     ],
+     "title": "initialize resolves, is idempotent, and signalReady is reported once",
+     "fullName": "'yandex' init initialize resolves, is idempotent, and signalReady is reported once",
+     "status": "passed",
+     "failureMessages": []
+    },
+    {
+     "ancestorTitles": [
+      "'yandex'",
+      "sdk-unavailable"
+     ],
+     "title": "the game boots, ads are refused, storage still works",
+     "fullName": "'yandex' sdk-unavailable the game boots, ads are refused, storage still works",
+     "status": "passed",
+     "failureMessages": []
+    },
+    {
+     "ancestorTitles": [
+      "'yandex'",
+      "init-failure"
+     ],
+     "title": "a rejected init degrades instead of failing boot",
+     "fullName": "'yandex' init-failure a rejected init degrades instead of failing boot",
+     "status": "passed",
+     "failureMessages": []
+    },
+    {
+     "ancestorTitles": [
+      "'yandex'",
+      "loading"
+     ],
+     "title": "progress is accepted in any order and counted for release validation",
+     "fullName": "'yandex' loading progress is accepted in any order and counted for release validation",
+     "status": "passed",
+     "failureMessages": []
+    },
+    {
+     "ancestorTitles": [
+      "'yandex'",
+      "gameplay-lifecycle"
+     ],
+     "title": "start/stop are tracked and duplicates are not forwarded to the portal",
+     "fullName": "'yandex' gameplay-lifecycle start/stop are tracked and duplicates are not forwarded to the portal",
+     "status": "passed",
+     "failureMessages": []
+    },
+    {
+     "ancestorTitles": [
+      "'yandex'",
+      "pause-resume"
+     ],
+     "title": "the portal's pause and resume become foreground signals, once each",
+     "fullName": "'yandex' pause-resume the portal's pause and resume become foreground signals, once each",
+     "status": "passed",
+     "failureMessages": []
+    },
+    {
+     "ancestorTitles": [
+      "'yandex'",
+      "pause-resume"
+     ],
+     "title": "an ad takes the foreground and gives it back",
+     "fullName": "'yandex' pause-resume an ad takes the foreground and gives it back",
+     "status": "passed",
+     "failureMessages": []
+    },
+    {
+     "ancestorTitles": [
+      "'yandex'",
+      "interstitial"
+     ],
+     "title": "plays when the portal fills it",
+     "fullName": "'yandex' interstitial plays when the portal fills it",
+     "status": "passed",
+     "failureMessages": []
+    },
+    {
+     "ancestorTitles": [
+      "'yandex'",
+      "interstitial"
+     ],
+     "title": "ad unavailable (no fill) resolves unshown, never throws",
+     "fullName": "'yandex' interstitial ad unavailable (no fill) resolves unshown, never throws",
+     "status": "passed",
+     "failureMessages": []
+    },
+    {
+     "ancestorTitles": [
+      "'yandex'",
+      "interstitial"
+     ],
+     "title": "a portal error resolves unshown, never throws",
+     "fullName": "'yandex' interstitial a portal error resolves unshown, never throws",
+     "status": "passed",
+     "failureMessages": []
+    },
+    {
+     "ancestorTitles": [
+      "'yandex'",
+      "interstitial"
+     ],
+     "title": "a second interstitial inside the profile interval is refused as too-soon",
+     "fullName": "'yandex' interstitial a second interstitial inside the profile interval is refused as too-soon",
+     "status": "passed",
+     "failureMessages": []
+    },
+    {
+     "ancestorTitles": [
+      "'yandex'",
+      "rewarded"
+     ],
+     "title": "reward callback: granted only when the portal confirms it",
+     "fullName": "'yandex' rewarded reward callback: granted only when the portal confirms it",
+     "status": "passed",
+     "failureMessages": []
+    },
+    {
+     "ancestorTitles": [
+      "'yandex'",
+      "rewarded"
+     ],
+     "title": "user closes the ad early: no reward",
+     "fullName": "'yandex' rewarded user closes the ad early: no reward",
+     "status": "passed",
+     "failureMessages": []
+    },
+    {
+     "ancestorTitles": [
+      "'yandex'",
+      "rewarded"
+     ],
+     "title": "ad unavailable (no fill): no reward, never throws",
+     "fullName": "'yandex' rewarded ad unavailable (no fill): no reward, never throws",
+     "status": "passed",
+     "failureMessages": []
+    },
+    {
+     "ancestorTitles": [
+      "'yandex'",
+      "rewarded"
+     ],
+     "title": "a portal error: no reward, never throws",
+     "fullName": "'yandex' rewarded a portal error: no reward, never throws",
+     "status": "passed",
+     "failureMessages": []
+    },
+    {
+     "ancestorTitles": [
+      "'yandex'",
+      "storage"
+     ],
+     "title": "set, get and remove round-trip",
+     "fullName": "'yandex' storage set, get and remove round-trip",
+     "status": "passed",
+     "failureMessages": []
+    },
+    {
+     "ancestorTitles": [
+      "'yandex'",
+      "storage"
+     ],
+     "title": "saves reach the portal's cloud storage",
+     "fullName": "'yandex' storage saves reach the portal's cloud storage",
+     "status": "passed",
+     "failureMessages": []
+    },
+    {
+     "ancestorTitles": [
+      "'yandex'",
+      "game-binding"
+     ],
+     "title": "the game is paused for the whole ad and resumes after it",
+     "fullName": "'yandex' game-binding the game is paused for the whole ad and resumes after it",
+     "status": "passed",
+     "failureMessages": []
+    },
+    {
+     "ancestorTitles": [
+      "'yandex'",
+      "game-binding"
+     ],
+     "title": "an ad closed early resumes the game without a reward",
+     "fullName": "'yandex' game-binding an ad closed early resumes the game without a reward",
+     "status": "passed",
+     "failureMessages": []
+    },
+    {
+     "ancestorTitles": [
+      "'yandex'",
+      "game-binding"
+     ],
+     "title": "a portal pause pauses the game until the portal resumes",
+     "fullName": "'yandex' game-binding a portal pause pauses the game until the portal resumes",
+     "status": "passed",
+     "failureMessages": []
+    },
+    {
+     "ancestorTitles": [
+      "'yandex'",
+      "game-binding"
+     ],
+     "title": "a hidden tab pauses the game and stops reported gameplay",
+     "fullName": "'yandex' game-binding a hidden tab pauses the game and stops reported gameplay",
+     "status": "passed",
+     "failureMessages": []
+    },
+    {
+     "ancestorTitles": [
+      "'poki'",
+      "not-configured"
+     ],
+     "title": "createPlatform builds this adapter",
+     "fullName": "'poki' not-configured createPlatform builds this adapter",
+     "status": "passed",
+     "failureMessages": []
+    },
+    {
+     "ancestorTitles": [
+      "'poki'",
+      "not-configured"
+     ],
+     "title": "an unknown platform id fails at startup instead of degrading",
+     "fullName": "'poki' not-configured an unknown platform id fails at startup instead of degrading",
+     "status": "passed",
+     "failureMessages": []
+    },
+    {
+     "ancestorTitles": [
+      "'poki'",
+      "init"
+     ],
+     "title": "initialize resolves, is idempotent, and signalReady is reported once",
+     "fullName": "'poki' init initialize resolves, is idempotent, and signalReady is reported once",
+     "status": "passed",
+     "failureMessages": []
+    },
+    {
+     "ancestorTitles": [
+      "'poki'",
+      "sdk-unavailable"
+     ],
+     "title": "the game boots, ads are refused, storage still works",
+     "fullName": "'poki' sdk-unavailable the game boots, ads are refused, storage still works",
+     "status": "passed",
+     "failureMessages": []
+    },
+    {
+     "ancestorTitles": [
+      "'poki'",
+      "init-failure"
+     ],
+     "title": "a rejected init degrades instead of failing boot",
+     "fullName": "'poki' init-failure a rejected init degrades instead of failing boot",
+     "status": "passed",
+     "failureMessages": []
+    },
+    {
+     "ancestorTitles": [
+      "'poki'",
+      "loading"
+     ],
+     "title": "progress is accepted in any order and counted for release validation",
+     "fullName": "'poki' loading progress is accepted in any order and counted for release validation",
+     "status": "passed",
+     "failureMessages": []
+    },
+    {
+     "ancestorTitles": [
+      "'poki'",
+      "gameplay-lifecycle"
+     ],
+     "title": "start/stop are tracked and duplicates are not forwarded to the portal",
+     "fullName": "'poki' gameplay-lifecycle start/stop are tracked and duplicates are not forwarded to the portal",
+     "status": "passed",
+     "failureMessages": []
+    },
+    {
+     "ancestorTitles": [
+      "'poki'",
+      "pause-resume"
+     ],
+     "title": "an ad takes the foreground and gives it back",
+     "fullName": "'poki' pause-resume an ad takes the foreground and gives it back",
+     "status": "passed",
+     "failureMessages": []
+    },
+    {
+     "ancestorTitles": [
+      "'poki'",
+      "interstitial"
+     ],
+     "title": "plays when the portal fills it",
+     "fullName": "'poki' interstitial plays when the portal fills it",
+     "status": "passed",
+     "failureMessages": []
+    },
+    {
+     "ancestorTitles": [
+      "'poki'",
+      "interstitial"
+     ],
+     "title": "ad unavailable (no fill) resolves unshown, never throws",
+     "fullName": "'poki' interstitial ad unavailable (no fill) resolves unshown, never throws",
+     "status": "passed",
+     "failureMessages": []
+    },
+    {
+     "ancestorTitles": [
+      "'poki'",
+      "interstitial"
+     ],
+     "title": "a portal error resolves unshown, never throws",
+     "fullName": "'poki' interstitial a portal error resolves unshown, never throws",
+     "status": "passed",
+     "failureMessages": []
+    },
+    {
+     "ancestorTitles": [
+      "'poki'",
+      "rewarded"
+     ],
+     "title": "reward callback: granted only when the portal confirms it",
+     "fullName": "'poki' rewarded reward callback: granted only when the portal confirms it",
+     "status": "passed",
+     "failureMessages": []
+    },
+    {
+     "ancestorTitles": [
+      "'poki'",
+      "rewarded"
+     ],
+     "title": "user closes the ad early: no reward",
+     "fullName": "'poki' rewarded user closes the ad early: no reward",
+     "status": "passed",
+     "failureMessages": []
+    },
+    {
+     "ancestorTitles": [
+      "'poki'",
+      "rewarded"
+     ],
+     "title": "ad unavailable (no fill): no reward, never throws",
+     "fullName": "'poki' rewarded ad unavailable (no fill): no reward, never throws",
+     "status": "passed",
+     "failureMessages": []
+    },
+    {
+     "ancestorTitles": [
+      "'poki'",
+      "rewarded"
+     ],
+     "title": "a portal error: no reward, never throws",
+     "fullName": "'poki' rewarded a portal error: no reward, never throws",
+     "status": "passed",
+     "failureMessages": []
+    },
+    {
+     "ancestorTitles": [
+      "'poki'",
+      "storage"
+     ],
+     "title": "set, get and remove round-trip",
+     "fullName": "'poki' storage set, get and remove round-trip",
+     "status": "passed",
+     "failureMessages": []
+    },
+    {
+     "ancestorTitles": [
+      "'poki'",
+      "game-binding"
+     ],
+     "title": "the game is paused for the whole ad and resumes after it",
+     "fullName": "'poki' game-binding the game is paused for the whole ad and resumes after it",
+     "status": "passed",
+     "failureMessages": []
+    },
+    {
+     "ancestorTitles": [
+      "'poki'",
+      "game-binding"
+     ],
+     "title": "an ad closed early resumes the game without a reward",
+     "fullName": "'poki' game-binding an ad closed early resumes the game without a reward",
+     "status": "passed",
+     "failureMessages": []
+    },
+    {
+     "ancestorTitles": [
+      "'poki'",
+      "game-binding"
+     ],
+     "title": "a hidden tab pauses the game and stops reported gameplay",
+     "fullName": "'poki' game-binding a hidden tab pauses the game and stops reported gameplay",
+     "status": "passed",
+     "failureMessages": []
+    },
+    {
+     "ancestorTitles": [
+      "'crazygames'",
+      "not-configured"
+     ],
+     "title": "createPlatform refuses loudly \u2014 No CrazyGames adapter on this ref: createPlatform(\"crazygames\") throws. The adapter is in progress on its own branch; add its harness here when it merges.",
+     "fullName": "'crazygames' not-configured createPlatform refuses loudly \u2014 No CrazyGames adapter on this ref: createPlatform(\"crazygames\") throws. The adapter is in progress on its own branch; add its harness here when it merges.",
+     "status": "passed",
+     "failureMessages": []
+    },
+    {
+     "ancestorTitles": [
+      "'crazygames'",
+      "not-configured"
+     ],
+     "title": "an unknown platform id fails at startup instead of degrading",
+     "fullName": "'crazygames' not-configured an unknown platform id fails at startup instead of degrading",
+     "status": "passed",
+     "failureMessages": []
+    },
+    {
+     "ancestorTitles": [
+      "'crazygames'",
+      "init"
+     ],
+     "title": "initialize resolves, is idempotent, and signalReady is reported once",
+     "fullName": "'crazygames' init initialize resolves, is idempotent, and signalReady is reported once",
+     "status": "skipped",
+     "failureMessages": []
+    },
+    {
+     "ancestorTitles": [
+      "'crazygames'",
+      "sdk-unavailable"
+     ],
+     "title": "the game boots, ads are refused, storage still works",
+     "fullName": "'crazygames' sdk-unavailable the game boots, ads are refused, storage still works",
+     "status": "skipped",
+     "failureMessages": []
+    },
+    {
+     "ancestorTitles": [
+      "'crazygames'",
+      "init-failure"
+     ],
+     "title": "a rejected init degrades instead of failing boot",
+     "fullName": "'crazygames' init-failure a rejected init degrades instead of failing boot",
+     "status": "skipped",
+     "failureMessages": []
+    },
+    {
+     "ancestorTitles": [
+      "'crazygames'",
+      "loading"
+     ],
+     "title": "progress is accepted in any order and counted for release validation",
+     "fullName": "'crazygames' loading progress is accepted in any order and counted for release validation",
+     "status": "skipped",
+     "failureMessages": []
+    },
+    {
+     "ancestorTitles": [
+      "'crazygames'",
+      "gameplay-lifecycle"
+     ],
+     "title": "start/stop are tracked and duplicates are not forwarded to the portal",
+     "fullName": "'crazygames' gameplay-lifecycle start/stop are tracked and duplicates are not forwarded to the portal",
+     "status": "skipped",
+     "failureMessages": []
+    },
+    {
+     "ancestorTitles": [
+      "'crazygames'",
+      "pause-resume"
+     ],
+     "title": "an ad takes the foreground and gives it back",
+     "fullName": "'crazygames' pause-resume an ad takes the foreground and gives it back",
+     "status": "skipped",
+     "failureMessages": []
+    },
+    {
+     "ancestorTitles": [
+      "'crazygames'",
+      "interstitial"
+     ],
+     "title": "plays when the portal fills it",
+     "fullName": "'crazygames' interstitial plays when the portal fills it",
+     "status": "skipped",
+     "failureMessages": []
+    },
+    {
+     "ancestorTitles": [
+      "'crazygames'",
+      "interstitial"
+     ],
+     "title": "ad unavailable (no fill) resolves unshown, never throws",
+     "fullName": "'crazygames' interstitial ad unavailable (no fill) resolves unshown, never throws",
+     "status": "skipped",
+     "failureMessages": []
+    },
+    {
+     "ancestorTitles": [
+      "'crazygames'",
+      "interstitial"
+     ],
+     "title": "a portal error resolves unshown, never throws",
+     "fullName": "'crazygames' interstitial a portal error resolves unshown, never throws",
+     "status": "skipped",
+     "failureMessages": []
+    },
+    {
+     "ancestorTitles": [
+      "'crazygames'",
+      "rewarded"
+     ],
+     "title": "reward callback: granted only when the portal confirms it",
+     "fullName": "'crazygames' rewarded reward callback: granted only when the portal confirms it",
+     "status": "skipped",
+     "failureMessages": []
+    },
+    {
+     "ancestorTitles": [
+      "'crazygames'",
+      "rewarded"
+     ],
+     "title": "user closes the ad early: no reward",
+     "fullName": "'crazygames' rewarded user closes the ad early: no reward",
+     "status": "skipped",
+     "failureMessages": []
+    },
+    {
+     "ancestorTitles": [
+      "'crazygames'",
+      "rewarded"
+     ],
+     "title": "ad unavailable (no fill): no reward, never throws",
+     "fullName": "'crazygames' rewarded ad unavailable (no fill): no reward, never throws",
+     "status": "skipped",
+     "failureMessages": []
+    },
+    {
+     "ancestorTitles": [
+      "'crazygames'",
+      "rewarded"
+     ],
+     "title": "a portal error: no reward, never throws",
+     "fullName": "'crazygames' rewarded a portal error: no reward, never throws",
+     "status": "skipped",
+     "failureMessages": []
+    },
+    {
+     "ancestorTitles": [
+      "'crazygames'",
+      "storage"
+     ],
+     "title": "set, get and remove round-trip",
+     "fullName": "'crazygames' storage set, get and remove round-trip",
+     "status": "skipped",
+     "failureMessages": []
+    },
+    {
+     "ancestorTitles": [
+      "'crazygames'",
+      "game-binding"
+     ],
+     "title": "the game is paused for the whole ad and resumes after it",
+     "fullName": "'crazygames' game-binding the game is paused for the whole ad and resumes after it",
+     "status": "skipped",
+     "failureMessages": []
+    },
+    {
+     "ancestorTitles": [
+      "'crazygames'",
+      "game-binding"
+     ],
+     "title": "an ad closed early resumes the game without a reward",
+     "fullName": "'crazygames' game-binding an ad closed early resumes the game without a reward",
+     "status": "skipped",
+     "failureMessages": []
+    },
+    {
+     "ancestorTitles": [
+      "'crazygames'",
+      "game-binding"
+     ],
+     "title": "a hidden tab pauses the game and stops reported gameplay",
+     "fullName": "'crazygames' game-binding a hidden tab pauses the game and stops reported gameplay",
+     "status": "skipped",
+     "failureMessages": []
+    },
+    {
+     "ancestorTitles": [
+      "'gamevui'",
+      "not-configured"
+     ],
+     "title": "createPlatform refuses loudly \u2014 GameVui documents no SDK; builds run on the generic-web adapter and createPlatform(\"gamevui\") throws by design (docs/platforms/gamevui/platform-contract.md). Portal-injected ads are outside the game's control.",
+     "fullName": "'gamevui' not-configured createPlatform refuses loudly \u2014 GameVui documents no SDK; builds run on the generic-web adapter and createPlatform(\"gamevui\") throws by design (docs/platforms/gamevui/platform-contract.md). Portal-injected ads are outside the game's control.",
+     "status": "passed",
+     "failureMessages": []
+    },
+    {
+     "ancestorTitles": [
+      "'gamevui'",
+      "not-configured"
+     ],
+     "title": "an unknown platform id fails at startup instead of degrading",
+     "fullName": "'gamevui' not-configured an unknown platform id fails at startup instead of degrading",
+     "status": "passed",
+     "failureMessages": []
+    },
+    {
+     "ancestorTitles": [
+      "'gamevui'",
+      "init"
+     ],
+     "title": "initialize resolves, is idempotent, and signalReady is reported once",
+     "fullName": "'gamevui' init initialize resolves, is idempotent, and signalReady is reported once",
+     "status": "passed",
+     "failureMessages": []
+    },
+    {
+     "ancestorTitles": [
+      "'gamevui'",
+      "sdk-unavailable"
+     ],
+     "title": "not applicable to gamevui",
+     "fullName": "'gamevui' sdk-unavailable not applicable to gamevui",
+     "status": "todo",
+     "failureMessages": []
+    },
+    {
+     "ancestorTitles": [
+      "'gamevui'",
+      "init-failure"
+     ],
+     "title": "not applicable to gamevui",
+     "fullName": "'gamevui' init-failure not applicable to gamevui",
+     "status": "todo",
+     "failureMessages": []
+    },
+    {
+     "ancestorTitles": [
+      "'gamevui'",
+      "loading"
+     ],
+     "title": "progress is accepted in any order and counted for release validation",
+     "fullName": "'gamevui' loading progress is accepted in any order and counted for release validation",
+     "status": "passed",
+     "failureMessages": []
+    },
+    {
+     "ancestorTitles": [
+      "'gamevui'",
+      "gameplay-lifecycle"
+     ],
+     "title": "start/stop are tracked and duplicates are not forwarded to the portal",
+     "fullName": "'gamevui' gameplay-lifecycle start/stop are tracked and duplicates are not forwarded to the portal",
+     "status": "passed",
+     "failureMessages": []
+    },
+    {
+     "ancestorTitles": [
+      "'gamevui'",
+      "pause-resume"
+     ],
+     "title": "no portal: the foreground is always the game's",
+     "fullName": "'gamevui' pause-resume no portal: the foreground is always the game's",
+     "status": "passed",
+     "failureMessages": []
+    },
+    {
+     "ancestorTitles": [
+      "'gamevui'",
+      "interstitial"
+     ],
+     "title": "the portal offers none: refused as unsupported",
+     "fullName": "'gamevui' interstitial the portal offers none: refused as unsupported",
+     "status": "passed",
+     "failureMessages": []
+    },
+    {
+     "ancestorTitles": [
+      "'gamevui'",
+      "rewarded"
+     ],
+     "title": "the portal offers none: refused as unsupported",
+     "fullName": "'gamevui' rewarded the portal offers none: refused as unsupported",
+     "status": "passed",
+     "failureMessages": []
+    },
+    {
+     "ancestorTitles": [
+      "'gamevui'",
+      "storage"
+     ],
+     "title": "set, get and remove round-trip",
+     "fullName": "'gamevui' storage set, get and remove round-trip",
+     "status": "passed",
+     "failureMessages": []
+    },
+    {
+     "ancestorTitles": [
+      "'gamevui'",
+      "game-binding"
+     ],
+     "title": "a hidden tab pauses the game and stops reported gameplay",
+     "fullName": "'gamevui' game-binding a hidden tab pauses the game and stops reported gameplay",
+     "status": "passed",
+     "failureMessages": []
+    }
+   ]
+  }
+ ]
+}

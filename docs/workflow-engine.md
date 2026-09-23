@@ -468,12 +468,20 @@ from `factory.steps.modules`, with its own evidence collectors and fixtures.
 type is a placeholder whether or not a real module exists. Without `--mock`, only configured
 modules and the built-in checkpoint are available.
 
-Installed so far: **`wgf_design`** (`scripts/wgf_design/`) implements `design`. It reads the
+Installed modules include `wgf_discovery`, `wgf_init`, `wgf_assets`, `wgf_develop` and `wgf_verification` (each has its own doc or docstring), and:
+
+**`wgf_design`** (`scripts/wgf_design/`) implements `design`. It reads the
 title-strategy and the pinned platform profiles, has an *author* write the creative draft
 (the built-in `archetype` author is offline and deterministic; `factory.design.author`
 selects another by name), derives scope tiers and SDK touchpoints, refuses a draft whose MVP
 cannot be built without guessing, and evaluates the design-consistency rules. A blocking
 breach returns `FAILED` with route `descope` and the design persisted as evidence.
+
+**`wgf_sdk`** (`scripts/wgf_sdk/`) implements `sdk`. It reads the game repository's
+`game.config.yaml` and the pinned platform profiles, runs the repository's SDK conformance
+suite against mocked portal SDKs (optionally the browser smoke), and writes the sdk-report
+per platform and feature. It never publishes. See
+[platform-sdk-verification.md](platform-sdk-verification.md).
 
 Rules for a step implementation:
 

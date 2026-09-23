@@ -172,9 +172,9 @@ The engine must never name a step type or route — routing is data, and
 `test_engine_source_names_no_step_type` enforces it. A workflow step names the lifecycle
 stage it serves; it never moves an entity — that is still `wgf-state.py`, guards and gates.
 Real step modules register via `factory.steps.modules` in `workspace/config/factory.yaml`;
-`wgf_discovery` (research), `wgf_init`, `wgf_assets`, `wgf_develop`, `wgf_verification` and `wgf_design`
-exist so far, so a whole run still needs `--mock`. Discovery reads evidence snapshots from
-`workspace/research/snapshots/`. A module owns its domain logic; the
+`wgf_discovery` (research), `wgf_init`, `wgf_assets`, `wgf_develop`, `wgf_verification`,
+`wgf_design` and `wgf_sdk` exist so far, so a whole run still needs `--mock`. Discovery reads
+evidence snapshots from `workspace/research/snapshots/`. A module owns its domain logic; the
 engine owns orchestration — a module never edits `scripts/wgflib/workflow/` to implement
 domain behaviour. See `docs/workflow-module-contract.md`.
 
@@ -245,6 +245,8 @@ error. Validate what you write.
 - `docs/init-module.md` — the init module: repository from the template, idempotency, refusals
 - `docs/assets-module.md` — the `assets` step: asset policy, licensing rule, placeholder backends
 - `docs/development-module.md` — the `develop` step: brief, developers, checks, keyed commits
+- `docs/platform-sdk-verification.md` — how platform SDK integration is verified, and where the
+  platform profiles disagree with current portal documentation
 - `docs/development.md` — working on the Factory
 
 Documentation that contradicts a machine file is worse than none, because people believe it.

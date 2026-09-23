@@ -1,0 +1,24 @@
+# Verification fixture: a scaffolded game, as the Factory writes it.
+game:
+  id: fixture-game
+  name: Fixture Game
+  version: 0.1.0
+
+engine:
+  type: pixijs
+
+platforms:
+  - { id: generic-web, profile: generic-web@1.0.0, role: required }
+
+monetization:
+  ad_kinds: []
+  iap: false
+
+build:
+  command: pnpm build
+  output: dist
+
+verification:
+  smoke_test: true
+  performance_test: true
+  mobile_test: true

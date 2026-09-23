@@ -121,7 +121,7 @@ gates:
     question: Is this build good enough to be the thing people play?
     irreversible: false
     auto_approve_after: 24h
-    required_artifacts: [qa-report, release-manifest]
+    required_artifacts: [qa-report, verification-report, release-manifest]
     required_predicates:
       - verify_suite_green
       - no_blocking_defects

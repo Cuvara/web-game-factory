@@ -1,0 +1,23 @@
+{
+  "title_id": "mock-title",
+  "commit": {"sha": "0000000000000000000000000000000000000000", "dirty": false},
+  "build_artifact": {"status": "not-built"},
+  "gameplay_driver": {"id": "none", "note": "Mock verification: nothing was run."},
+  "checks": [
+    {
+      "id": "build.build",
+      "category": "build",
+      "title": "Production build",
+      "status": "PASS",
+      "required": true,
+      "message": "mock",
+      "evidence": [{"kind": "observation", "summary": "Mock verification: no command was run."}]
+    }
+  ],
+  "summary": {"total": 1, "PASS": 1, "FAIL": 0, "BLOCKED": 0, "WARNING": 0},
+  "failed_checks": [],
+  "blocked_checks": [],
+  "warning_checks": [],
+  "platform_readiness": [],
+  "verdict": "PASS"
+}

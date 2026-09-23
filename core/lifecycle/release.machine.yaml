@@ -63,8 +63,8 @@ states:
     role: qa
     contributors: [gameplay, sdk]
     procedure: stages/qa.md
-    inputs: [release-manifest, game-design, tech-plan]
-    outputs: [qa-report]
+    inputs: [release-manifest, game-design, tech-plan, scaffold-record, asset-manifest, sdk-report]
+    outputs: [verification-report, qa-report]
     description: >
       Independent QA against a built candidate — distinct from the implement/test/fix loop
       an agent runs during production. An agent reporting "ready" is not the same event as
@@ -84,7 +84,7 @@ states:
     role: release
     contributors: [qa]
     procedure: stages/release-candidate.md
-    inputs: [qa-report, release-manifest]
+    inputs: [qa-report, verification-report, release-manifest]
     outputs: [release-manifest]
     description: >
       The candidate is frozen and immutable from here: a fixed commit, a fixed build, and

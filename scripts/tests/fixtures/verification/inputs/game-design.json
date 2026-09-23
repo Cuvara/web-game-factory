@@ -1,0 +1,9 @@
+{
+  "title_id": "fixture-game",
+  "core_loop": "Switch lanes on the beat, pass gates, build a combo; a miss ends the run; retry.",
+  "controls": "Arrow keys or tap left/right half of the screen.",
+  "progression": "Personal best.",
+  "session": {"end_condition": "A missed gate ends the run."},
+  "scope": {"locales": ["en"]},
+  "monetization": {"placements": []}
+}

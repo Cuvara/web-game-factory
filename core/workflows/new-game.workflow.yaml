@@ -94,11 +94,14 @@ workflow:
       inputs: [prototype-report]
       outputs: [sdk-report]
 
+    # Verification returns a result, not a destination: FAIL (route `fail`) goes back to
+    # develop with the failing qa-report, PASS continues to release, and BLOCKED - a check
+    # that could not be established - is unrouted, so the run stops for a person.
     - id: verify
       type: verify
       stage: release:qa
-      inputs: [prototype-report, sdk-report]
-      outputs: [qa-report]
+      inputs: [prototype-report, sdk-report, game-design, scaffold-record, asset-manifest]
+      outputs: [verification-report, qa-report]
       retry: {max_attempts: 2}
       on:
         fail: develop

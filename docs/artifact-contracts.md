@@ -63,6 +63,7 @@ design:
 | `prototype-report` | prototype | prototype-review, production | **G4** |
 | `sdk-report` | prototype (updated in production) | prototype-review, QA, validating | — |
 | `qa-report` | release QA | rc, production | G5 |
+| `verification-report` | release QA (with `qa-report`) | rc, production | G5 |
 | `release-manifest` | release draft | QA, rc, validating, submitting, live | G5, G6 |
 | `platform-publication` | validating | submitting, partially-live, live | — |
 | `performance-review` | live | live, production, market-scan | G7 |

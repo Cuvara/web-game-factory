@@ -155,12 +155,14 @@ reading, and `DocumentedIoContract` fails if the two disagree.
 | `assets` | `assets` | `game-design` | `asset-manifest` |
 | `develop` | `develop` | `game-design`, `asset-manifest`, `qa-report` | `prototype-report` |
 | `sdk` | `sdk` | `prototype-report` | `sdk-report` |
-| `verify` | `verify` | `prototype-report`, `sdk-report` | `qa-report` |
+| `verify` | `verify` | `prototype-report`, `sdk-report`, `game-design`, `scaffold-record`, `asset-manifest` | `verification-report`, `qa-report` |
 | `release` | `release` | `qa-report` | `release-manifest` |
 <!-- io-contract:end -->
 
 `develop` declares `qa-report` so that on a verify → develop loop it receives the failing
-report; on its first visit that input is missing, which is expected. `release` produces a
+report; on its first visit that input is missing, which is expected. `verify` emits the
+`verification-report` — every check with its evidence — and the `qa-report` computed from it;
+see [verification-module.md](verification-module.md). `release` produces a
 `release-manifest` in state `draft` and stops: building, packaging and publishing are the game
 repository's CI, behind G5 and G6.
 

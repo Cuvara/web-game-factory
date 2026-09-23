@@ -1,0 +1,10 @@
+{
+  "title_id": "fixture-game",
+  "items": [
+    {"id": "player-ship", "type": "sprite", "source": "procedural", "est_cost": 0, "est_hours": 1, "status": "integrated"},
+    {"id": "hit-sfx", "type": "sfx", "source": "library", "est_cost": 0, "est_hours": 0.5, "status": "cut"}
+  ],
+  "total_est_cost": 0,
+  "total_est_hours": 1.5,
+  "complete": true
+}

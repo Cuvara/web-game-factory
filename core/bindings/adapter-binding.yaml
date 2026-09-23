@@ -86,9 +86,11 @@ agents:
       - core/roles/qa.md
       - core/lifecycle/stages/qa.md
       - core/artifacts/qa-report.schema.json
+      - core/artifacts/verification-report.schema.json
+      - core/artifacts/shared/gameplay-session.schema.json
       - core/templates/qa-report.md
-    produces: [qa-report]
-    consumes: [release-manifest, game-design, tech-plan]
+    produces: [verification-report, qa-report]
+    consumes: [release-manifest, game-design, tech-plan, scaffold-record, asset-manifest, sdk-report]
 
   - id: release
     role: release

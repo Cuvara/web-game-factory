@@ -183,6 +183,11 @@ class MockVerificationStep(MockStep):
                 "repro": "Run the mock workflow with verify scripted to fail.",
             })]
             body["suites"][1]["failed"] = 1
+        if artifact_type == "verification-report" and entry == "fail":
+            body["verdict"] = "FAIL"
+            body["checks"][0].update(status="FAIL", message="scripted failure (mock)")
+            body["summary"].update(PASS=0, FAIL=1)
+            body["failed_checks"] = [body["checks"][0]["id"]]
 
 
 class MockReleaseStep(MockStep):

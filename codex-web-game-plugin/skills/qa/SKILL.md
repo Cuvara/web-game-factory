@@ -7,6 +7,7 @@ Test suites, device matrices, defect triage, and performance measurement.
 ## Authoritative sources
 
 - `core/lifecycle/stages/qa.md`
+- `core/artifacts/verification-report.schema.json`
 - `core/artifacts/qa-report.schema.json`
 
 This skill is a pointer, not a copy. Read the paths above rather than relying on anything

@@ -1,0 +1,36 @@
+{
+  "config": {"version": "1.49.0"},
+  "suites": [
+    {
+      "title": "smoke.spec.ts",
+      "file": "smoke.spec.ts",
+      "specs": [
+        {
+          "title": "boots and steps the simulation",
+          "tags": [],
+          "tests": [
+            {"projectName": "desktop", "status": "expected", "results": [{"status": "passed"}]},
+            {"projectName": "mobile", "status": "expected", "results": [{"status": "passed"}]}
+          ]
+        },
+        {
+          "title": "renders a canvas",
+          "tags": [],
+          "tests": [
+            {"projectName": "desktop", "status": "expected", "results": [{"status": "passed"}]},
+            {"projectName": "mobile", "status": "flaky", "results": [{"status": "failed"}, {"status": "passed"}]}
+          ]
+        },
+        {
+          "title": "makes no insecure requests",
+          "tags": [],
+          "tests": [
+            {"projectName": "desktop", "status": "expected", "results": [{"status": "passed"}]},
+            {"projectName": "mobile", "status": "skipped", "results": []}
+          ]
+        }
+      ]
+    }
+  ],
+  "stats": {"expected": 4, "unexpected": 0, "flaky": 1, "skipped": 1}
+}

@@ -1,0 +1,14 @@
+{
+  "name": "fixture-game",
+  "private": true,
+  "packageManager": "pnpm@9.15.4",
+  "scripts": {
+    "build": "vite build",
+    "typecheck": "tsc -b",
+    "lint": "eslint .",
+    "test:unit": "vitest run --project unit",
+    "test:integration": "vitest run --project integration",
+    "test:e2e": "playwright test --project desktop --project mobile",
+    "test:verify": "playwright test --project verify"
+  }
+}

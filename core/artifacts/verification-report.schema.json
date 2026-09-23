@@ -1,0 +1,168 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://webgamefactory.dev/schemas/artifacts/verification-report.schema.json",
+  "title": "Verification Report",
+  "description": "The evidence behind a QA verdict: every technical-readiness check run against one commit of a game repository, its status, and what was run or seen to reach it.\n\nThe qa-report is the summary a gate reads; this is what it was computed from. Each check is PASS, FAIL, BLOCKED or WARNING. BLOCKED is a statement about the verification, not the game: the check could not be established (no checkout, a missing tool, a failed prerequisite). A check without evidence is an assertion, and is refused.\n\nPlatform readiness is local and deterministic. It never states that a portal approved or will approve the build — `external_approval` is always `not-claimed`.",
+
+  "x-wgf": {
+    "id": "verification-report",
+    "kind": "artifact",
+    "format": "json",
+    "producer": "release:qa",
+    "consumers": ["release:rc", "title:production"],
+    "repo_path": "<game-repo>/qa/<release-id>/verification.json",
+    "required_for_gates": ["G5"]
+  },
+
+  "type": "object",
+  "required": ["provenance", "title_id", "commit", "build_artifact", "gameplay_driver", "checks", "summary", "failed_checks", "blocked_checks", "warning_checks", "platform_readiness", "verdict"],
+  "properties": {
+    "provenance": { "$ref": "./shared/provenance.schema.json#/$defs/provenance" },
+    "title_id": { "type": "string" },
+    "release_id": { "type": "string" },
+
+    "commit": {
+      "type": "object",
+      "description": "The commit under test. `sha` is null only when no checkout could be read, which blocks the verdict.",
+      "required": ["sha"],
+      "properties": {
+        "sha": { "type": ["string", "null"] },
+        "dirty": { "type": ["boolean", "null"], "description": "Uncommitted changes in the checkout: the build is then not reproducible from `sha`." },
+        "repository": { "type": "string", "description": "Where the checkout was, for diagnostics." }
+      },
+      "additionalProperties": false
+    },
+
+    "build_artifact": {
+      "type": "object",
+      "description": "The bundle the checks ran against, pinned by a digest over its paths and contents.",
+      "required": ["status"],
+      "properties": {
+        "status": { "enum": ["built", "not-built"] },
+        "path": { "type": "string" },
+        "content_hash": { "$ref": "./shared/provenance.schema.json#/$defs/hash" },
+        "files": { "type": "integer", "minimum": 0 },
+        "bytes": { "type": "integer", "minimum": 0 }
+      },
+      "additionalProperties": false
+    },
+
+    "gameplay_driver": {
+      "type": "object",
+      "description": "What drove the game in a browser: a recorded interactive session (playwright-mcp), the repository's own browser suites (repository-playwright), or nothing.",
+      "required": ["id"],
+      "properties": {
+        "id": { "type": "string" },
+        "note": { "type": "string" }
+      },
+      "additionalProperties": false
+    },
+
+    "checks": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/$defs/check" }
+    },
+
+    "summary": {
+      "type": "object",
+      "required": ["total", "PASS", "FAIL", "BLOCKED", "WARNING"],
+      "properties": {
+        "total": { "type": "integer", "minimum": 0 },
+        "PASS": { "type": "integer", "minimum": 0 },
+        "FAIL": { "type": "integer", "minimum": 0 },
+        "BLOCKED": { "type": "integer", "minimum": 0 },
+        "WARNING": { "type": "integer", "minimum": 0 }
+      },
+      "additionalProperties": false
+    },
+
+    "failed_checks": { "type": "array", "items": { "$ref": "#/$defs/checkId" } },
+    "blocked_checks": { "type": "array", "items": { "$ref": "#/$defs/checkId" } },
+    "warning_checks": { "type": "array", "items": { "$ref": "#/$defs/checkId" } },
+
+    "platform_readiness": {
+      "type": "array",
+      "description": "Per target platform in game.config.yaml. ready: every check about it, and every required shared check, passed. unverified: nothing failed but something could not be established.",
+      "items": {
+        "type": "object",
+        "required": ["platform_id", "profile", "role", "readiness", "checks", "blocking_checks", "external_approval"],
+        "properties": {
+          "platform_id": { "type": "string", "pattern": "^[a-z][a-z0-9-]*$" },
+          "profile": { "type": "string", "description": "<profile-id>@<version>, as pinned." },
+          "role": { "enum": ["required", "optional"] },
+          "readiness": { "enum": ["ready", "not-ready", "unverified"] },
+          "checks": { "type": "array", "items": { "$ref": "#/$defs/checkId" } },
+          "blocking_checks": { "type": "array", "items": { "$ref": "#/$defs/checkId" } },
+          "warnings": { "type": "array", "items": { "$ref": "#/$defs/checkId" } },
+          "external_approval": {
+            "const": "not-claimed",
+            "description": "Portal approval is an external, later event. A verification that claimed it would be claiming something it cannot observe."
+          },
+          "note": { "type": "string" }
+        },
+        "additionalProperties": false
+      }
+    },
+
+    "verdict": {
+      "enum": ["PASS", "FAIL", "BLOCKED"],
+      "description": "Derived, not asserted: FAIL if any required check failed; else BLOCKED if any required check is blocked; else PASS. Warnings never change it."
+    }
+  },
+  "additionalProperties": false,
+
+  "$defs": {
+    "checkId": {
+      "type": "string",
+      "pattern": "^[a-z]+\\.[a-z0-9-]+(:[a-z0-9-]+)?$"
+    },
+
+    "check": {
+      "type": "object",
+      "required": ["id", "category", "title", "status", "required", "message", "evidence"],
+      "properties": {
+        "id": { "$ref": "#/$defs/checkId" },
+        "category": { "enum": ["source", "build", "code", "gameplay", "platform", "assets", "policy"] },
+        "title": { "type": "string" },
+        "status": { "enum": ["PASS", "FAIL", "BLOCKED", "WARNING"] },
+        "required": { "type": "boolean", "description": "Whether this check can block the verdict. A non-required check reports FAIL as WARNING." },
+        "message": { "type": "string" },
+        "platform_id": { "type": "string", "pattern": "^[a-z][a-z0-9-]*$" },
+        "counts": {
+          "type": "object",
+          "properties": {
+            "passed": { "type": "integer", "minimum": 0 },
+            "failed": { "type": "integer", "minimum": 0 },
+            "skipped": { "type": "integer", "minimum": 0 }
+          },
+          "additionalProperties": false
+        },
+        "evidence": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/$defs/evidence" }
+        }
+      },
+      "additionalProperties": false
+    },
+
+    "evidence": {
+      "type": "object",
+      "required": ["kind", "summary"],
+      "properties": {
+        "kind": { "enum": ["command", "file", "test", "observation", "artifact", "reference"] },
+        "summary": { "type": "string", "minLength": 1 },
+        "command": { "type": "string" },
+        "exit_code": { "type": ["integer", "null"] },
+        "duration_s": { "type": "number", "minimum": 0 },
+        "output_tail": { "type": "string", "description": "The end of the command's output: enough to see a failure, not the whole log." },
+        "path": { "type": "string" },
+        "content_hash": { "$ref": "./shared/provenance.schema.json#/$defs/hash" },
+        "check_ref": { "$ref": "#/$defs/checkId" },
+        "data": { "type": "object" }
+      },
+      "additionalProperties": false
+    }
+  }
+}

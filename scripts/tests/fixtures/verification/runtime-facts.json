@@ -1,0 +1,12 @@
+{
+  "package": {
+    "calls_loading_api": true,
+    "insecure_requests": 0,
+    "external_links": 0,
+    "mobile_supported": true,
+    "perf": {"time_to_interactive_s": 1.42, "lowend_android_fps": 41.5}
+  },
+  "adsRequested": {},
+  "measured_at": "2026-09-01T00:00:00Z",
+  "note": "lowend_android_fps is a CPU-throttled desktop proxy, not a device measurement"
+}

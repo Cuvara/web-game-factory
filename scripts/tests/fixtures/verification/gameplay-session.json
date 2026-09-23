@@ -1,0 +1,24 @@
+{
+  "driver": "playwright-mcp",
+  "commit_sha": "__COMMIT__",
+  "url": "http://localhost:4173/",
+  "recorded_at": "2026-09-01T00:00:00Z",
+  "scenarios": [
+    {"aspect": "boot", "status": "PASS", "observation": "Page loaded; #hud reached data-ready=true in 1.4s with no page errors.", "viewport": "1280x720"},
+    {"aspect": "loading", "status": "PASS", "observation": "Loading bar reached 100% and the platform ready signal fired once."},
+    {"aspect": "start", "status": "PASS", "observation": "Clicked Play on the title screen; the first run began and the score read 0."},
+    {"aspect": "input", "status": "PASS", "observation": "Pressed ArrowLeft at 00:03; the ship moved one lane left.", "steps": ["press ArrowLeft", "read lane from HUD"]},
+    {"aspect": "core-loop", "status": "PASS", "observation": "Passed four gates on the beat; the combo counter rose to 4."},
+    {"aspect": "progression", "status": "PASS", "observation": "A run ending at 1200 replaced the personal best of 800."},
+    {"aspect": "game-over", "status": "PASS", "observation": "Missed a gate deliberately; the game-over panel appeared with the final score."},
+    {"aspect": "restart", "status": "PASS", "observation": "Clicked Retry; a new run started within one second at score 0."},
+    {"aspect": "pause-resume", "status": "PASS", "observation": "Hid the page; the loop stopped stepping. Showed it; stepping resumed from the same frame count."},
+    {"aspect": "responsive", "status": "PASS", "observation": "At 393x851 the canvas filled the viewport and the Play button was tappable.", "viewport": "393x851"}
+  ],
+  "console_errors": [],
+  "failed_requests": [],
+  "browsers": [
+    {"browser": "chromium", "platform": "desktop", "result": "pass"},
+    {"browser": "chromium", "platform": "mobile-393x851", "result": "pass"}
+  ]
+}

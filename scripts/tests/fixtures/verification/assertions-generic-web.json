@@ -1,0 +1,4 @@
+[
+  {"criterion_id": "generic_web_https_only", "measured": 0, "breached": false, "evaluated_at": "2026-09-01T00:00:00Z", "severity": "blocking"},
+  {"criterion_id": "generic_web_standalone", "measured": "none", "breached": false, "evaluated_at": "2026-09-01T00:00:00Z", "severity": "blocking"}
+]

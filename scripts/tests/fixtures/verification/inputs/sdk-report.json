@@ -1,0 +1,15 @@
+{
+  "title_id": "fixture-game",
+  "build_ref": {"commit_sha": "__COMMIT__"},
+  "platforms": [
+    {
+      "platform_id": "generic-web",
+      "profile_version": "1.0.0",
+      "status": "working",
+      "features": [
+        {"feature": "init", "status": "not-required", "note": "generic-web loads no portal SDK"},
+        {"feature": "loading-progress", "status": "working", "observed_by": "unit: platform.test.ts"}
+      ]
+    }
+  ]
+}

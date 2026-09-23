@@ -238,6 +238,7 @@ error. Validate what you write.
 - `docs/platform-architecture.md` — profiles, SDK, publishing
 - `docs/workflow-engine.md` — the `wgf` engine: definitions, steps, retry, resume, routing
 - `docs/workflow-module-contract.md` — what a step module implements; read before writing one
+- `docs/verification-module.md` — the `verify` step: checks, statuses, evidence, gameplay drivers
 - `docs/development.md` — working on the Factory
 
 Documentation that contradicts a machine file is worse than none, because people believe it.

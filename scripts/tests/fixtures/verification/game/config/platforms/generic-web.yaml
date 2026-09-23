@@ -1,0 +1,67 @@
+# Platform profile — Generic Web
+#
+# Self-hosted, no portal. Included as a real profile rather than a special case so that
+# "no portal" is expressed in the same vocabulary as every other target — the design and
+# validation paths do not need a branch for it.
+#
+# Useful as a fallback target and as a control: a title that only fits here has no
+# distribution, which is what makes its platform_fit low.
+
+id: generic-web
+name: Generic Web
+version: 1.0.0
+status: verified
+docs: null
+
+audience:
+  primary_regions: []
+  device_mix: { mobile: 0.5, desktop: 0.5 }
+
+capabilities:
+  ads: []
+  iap: false
+  cloud_saves: false
+  leaderboards: false
+  achievements: false
+  auth: none
+  analytics: self-hosted
+
+requirements:
+  locales_required: [en]
+  locales_recommended: []
+  max_bundle_mb: null
+  orientation: [landscape, portrait]
+  loading_api: optional
+  offline_start: true
+  https_only: true
+
+ads:
+  interstitial_min_interval_s: null
+  rewarded_available: false
+  banner_available: false
+  notes: No portal ad SDK. Any monetization must be arranged independently.
+
+metadata_requirements:
+  descriptions_locales: [en]
+  screenshots_min: 0
+  icon_required: false
+  age_rating_required: false
+
+review:
+  process: none
+  typical_days: [0, 0]
+  common_rejections: []
+
+assertions:
+  - id: generic_web_https_only
+    check: { left: package.insecure_requests, op: eq, right: 0 }
+    severity: blocking
+  - id: generic_web_standalone
+    check: { left: package.platform_sdk, op: eq, right: none }
+    severity: blocking
+
+scoring_hints:
+  platform_fit_favours:
+    - Portfolio pieces, demos, and titles being validated before portal submission.
+  platform_fit_penalizes:
+    - Anything depending on portal traffic or portal monetization, which is most things.

@@ -2,7 +2,8 @@
 
 **Machine** release · **State** `qa` · **Kind** AI-assisted + deterministic CI · **Role** qa
 **Contributors** gameplay, sdk
-**Inputs** `release-manifest`, `game-design`, `tech-plan` · **Outputs** `qa-report`
+**Inputs** `release-manifest`, `game-design`, `tech-plan`, `scaffold-record`, `asset-manifest`, `sdk-report`
+**Outputs** `verification-report`, `qa-report`
 
 Independent verification of a built candidate.
 
@@ -28,6 +29,25 @@ Lint → Typecheck → Unit → Integration → E2E → Build → Smoke → Perf
 ```
 
 These produce facts. They go in `suites[]` with pass/fail counts and a run URL.
+
+## Evidence, check by check
+
+Every fact behind the verdict is recorded in the `verification-report`: one entry per check —
+build, code, gameplay, platform, assets, policy — each `PASS`, `FAIL`, `BLOCKED` or `WARNING`,
+each with the command run, the file read or the behaviour observed. The `qa-report` is
+computed from it, never written beside it, so the two cannot disagree.
+
+- `BLOCKED` is about the verification, not the build: no checkout, a missing tool, a check
+  whose prerequisite did not pass. It stops the verdict, because an unverified requirement
+  is not a met one.
+- Gameplay — boot, loading, start, input, core loop, progression, game over, restart,
+  pause/resume, mobile viewport — is observed in a browser against the built bundle. An
+  interactive session recorded against the commit under test
+  (`shared/gameplay-session.schema.json`) is preferred; the repository's own browser suites
+  are the fallback, so verification never depends on an interactive browser tool. An aspect
+  the design implies and nothing exercised is a failure, not a pass.
+- Platform readiness is local and deterministic: SDK evidence per platform and the pinned
+  profile's assertions. It never claims a portal's approval.
 
 ## Human and agent judgement
 

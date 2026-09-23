@@ -115,6 +115,15 @@ Standard library only, no dependencies. Checks that:
 Run it after editing any machine, schema, role or binding. It catches the dangling-reference
 class that would otherwise only surface when an agent followed a path that does not exist.
 
+## The workflow engine
+
+`scripts/wgf.py` (or `bin/wgf`) executes `core/workflows/*.workflow.yaml`. It is standard
+library Python like the rest of `scripts/`. Changing the order of work, a retry policy or a
+failure route means editing the workflow file, never the engine; adding a step there adds a
+CLI command. After editing a workflow file, run `check-integrity.py` — it resolves every
+step's `stage`, gate and artifact type. Architecture, the step contract and how a real
+module registers itself: [workflow-engine.md](workflow-engine.md).
+
 ## Why there is no toolchain
 
 `core/` must stay consumable by a provider that cannot execute anything. A `package.json`,

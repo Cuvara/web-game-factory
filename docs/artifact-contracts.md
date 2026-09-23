@@ -48,7 +48,7 @@ design:
 
 ---
 
-## The thirteen artifacts
+## The fifteen artifacts
 
 | Artifact | Producer | Consumers | Gates |
 |---|---|---|---|
@@ -59,7 +59,9 @@ design:
 | `game-design` | design | tech-plan, prototype, production, QA | G3, G4 |
 | `asset-manifest` | design | tech-plan, prototype, production, QA, release | G3 |
 | `tech-plan` | tech-plan | scaffolding, prototype, production, QA, release | G3 |
+| `scaffold-record` | scaffolding | prototype, production, release draft | — |
 | `prototype-report` | prototype | prototype-review, production | **G4** |
+| `sdk-report` | prototype (updated in production) | prototype-review, QA, validating | — |
 | `qa-report` | release QA | rc, production | G5 |
 | `release-manifest` | release draft | QA, rc, validating, submitting, live | G5, G6 |
 | `platform-publication` | validating | submitting, partially-live, live | — |

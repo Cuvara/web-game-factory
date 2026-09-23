@@ -186,7 +186,7 @@ states:
     role: release
     procedure: stages/scaffolding.md
     inputs: [tech-plan]
-    outputs: []
+    outputs: [scaffold-record]
     description: >
       Transient and mechanical: create the game repository FROM web-game-template via the
       gh CLI, then write game.config.yaml from tech_plan.repo_params. It is a state rather
@@ -209,7 +209,7 @@ states:
     contributors: [ui, asset, architect, sdk]
     procedure: stages/prototype.md
     inputs: [tech-plan, game-design, title-strategy]
-    outputs: [prototype-report]
+    outputs: [prototype-report, sdk-report]
     description: >
       Not "small production". It exists to prove the core loop, that a new player
       understands it, the session shape, the retention hook, and that platform SDK and

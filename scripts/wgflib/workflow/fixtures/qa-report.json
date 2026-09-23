@@ -1,0 +1,33 @@
+{
+  "title_id": "mock-title",
+  "release_id": "r1",
+  "build_ref": {
+    "commit_sha": "0000000000000000000000000000000000000000"
+  },
+  "suites": [
+    {
+      "name": "lint",
+      "passed": 1,
+      "failed": 0
+    },
+    {
+      "name": "unit",
+      "passed": 12,
+      "failed": 0
+    },
+    {
+      "name": "build",
+      "passed": 1,
+      "failed": 0
+    }
+  ],
+  "blocking_defects": [],
+  "perf_results": [
+    {
+      "device_class": "mid-range-mobile",
+      "fps": 60,
+      "within_budget": true
+    }
+  ],
+  "verdict": "pass"
+}

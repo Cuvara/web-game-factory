@@ -1,0 +1,3 @@
+#!/usr/bin/env sh
+# The `wgf` command. Put this directory on PATH, or call it as bin/wgf.
+exec python3 "$(dirname "$0")/../scripts/wgf.py" "$@"

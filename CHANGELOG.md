@@ -10,6 +10,30 @@ numbering: `core/` is the contract, and schemas carry their own versions.
 
 ### Added
 
+- **Workflow module contract.** `docs/workflow-module-contract.md` is what the discovery,
+  strategy, design, init, assets, development, SDK and verification modules implement
+  against; `scripts/tests/test_workflow_contracts.py` holds the gate — an external module
+  plugged in through `factory.steps.modules` runs without engine changes. The engine now
+  checks every produced artifact against its schema's top level and provenance before
+  persisting it, records which input versions each step consumed, versions its events
+  (`format: 1`), accepts dot-namespaced step types, and validates run ids, artifact ids and
+  module names before they reach a path or an import. `--mock` auto-approves only the
+  workflow's own reversible checkpoint gates. Pausing or cancelling a crashed run takes
+  effect at once.
+- **`scaffold-record` and `sdk-report` schemas**, named as outputs of `title:scaffolding` and
+  `title:prototype`, replacing the workflow's `untyped_artifacts`. Additive: no existing
+  artifact changes. The title machine keeps version 1.0.0 because only its declared outputs
+  grew.
+- **Executable workflow engine (`wgf`).** `core/workflows/new-game.workflow.yaml` defines the
+  work from research to release preparation as data; `scripts/wgflib/workflow/` runs it —
+  step registry, retry with backoff, failure routing (`verify` fail → `develop`), human
+  checkpoints tied to gates, resume, idempotent re-entry, events and a file store in
+  `.factory/`. `bin/wgf` exposes `new-game`, `research`, `plan`, `init`, `assets`, `develop`,
+  `sdk`, `verify`, `release`, `status`, `logs`, `runs`, `pause` and `cancel`, all through
+  one engine. Every step is a placeholder (`--mock`) that emits schema-valid artifacts;
+  nothing is researched, built or published. `workspace/config/factory.yaml` configures it.
+  `check-integrity.py` now validates workflow files. Existing artifacts are unaffected.
+
 - **`tech_plan.repo_params.game_config.monetization`** — the ad kinds a title commits to,
   carried into the game repository. Platform profiles assert on `package.uses_banner_ads` and
   `package.uses_rewarded_ads`, and on GameVui the latter is blocking; but observing a run can

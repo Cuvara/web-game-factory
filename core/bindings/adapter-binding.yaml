@@ -109,7 +109,7 @@ agents:
       - core/artifacts/platform-publication.schema.json
       - core/reference/platforms/
       - core/templates/release-report.md
-    produces: [release-manifest, platform-publication]
+    produces: [scaffold-record, release-manifest, platform-publication]
     consumes: [tech-plan, qa-report]
 
   - id: liveops
@@ -160,7 +160,7 @@ agents:
       - core/roles/implementers.md
       - core/reference/platforms/
       - core/artifacts/shared/platform-profile.schema.json
-    produces: []
+    produces: [sdk-report]
     consumes: [tech-plan, game-design]
 
 # ---------------------------------------------------------------------------

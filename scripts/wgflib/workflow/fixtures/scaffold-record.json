@@ -1,0 +1,23 @@
+{
+  "title_id": "mock-title",
+  "repository": {
+    "owner": "mock-org",
+    "name": "mock-title",
+    "url": "https://example.invalid/mock-org/mock-title",
+    "default_branch": "main",
+    "visibility": "private"
+  },
+  "template": {
+    "repository": "mock-org/web-game-template",
+    "commit_sha": "0000000000000000000000000000000000000000"
+  },
+  "game_config": {
+    "path": "game.config.yaml",
+    "platforms": [
+      {"id": "yandex", "profile": "yandex@1.0.0", "role": "required"},
+      {"id": "crazygames", "profile": "crazygames@1.0.0", "role": "optional"}
+    ]
+  },
+  "outcome": "created",
+  "notes": "Mock scaffold: no repository was created."
+}

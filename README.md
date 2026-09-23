@@ -29,10 +29,13 @@ web-game-factory/
     roles/                 — who is accountable for what
     templates/             — document scaffolds
     bindings/              — what an AI adapter must cover
+    workflows/             — executable workflow definitions, run by `wgf`
   workspace/               — instance data: claims, opportunities, titles, decisions
   claude-web-game-plugin/  — Claude Code adapter
   codex-web-game-plugin/   — Codex adapter
   docs/                    — architecture documentation
+  scripts/                 — integrity check, state runner, and the `wgf` workflow engine
+  bin/wgf                  — the workflow CLI
 ```
 
 Games live in their own repositories, created from **`web-game-template`**. The Factory never
@@ -133,6 +136,7 @@ added as a profile.
 | Contracts | [docs/artifact-contracts.md](docs/artifact-contracts.md) |
 | Roles and agents | [docs/agent-architecture.md](docs/agent-architecture.md) |
 | Platforms | [docs/platform-architecture.md](docs/platform-architecture.md) |
+| Running workflows (`wgf`) | [docs/workflow-engine.md](docs/workflow-engine.md) |
 | Working on the Factory | [docs/development.md](docs/development.md) |
 | A worked example | [workspace/](workspace/) — `opp-001` / `neon-drift`, claim to kill decision |
 
@@ -143,6 +147,11 @@ added as a profile.
 Core methodology, artifact contracts, lifecycle machines, reference data and both AI adapters
 are implemented. Schemas are JSON Schema 2020-12, validated on demand with `npx ajv-cli`;
 there is deliberately no toolchain.
+
+The workflow engine is executable: `bin/wgf new-game --mock` runs research through release
+preparation end to end, with retry, resume, failure routing and human checkpoints. Every step
+behind it is still a placeholder; the discovery, strategy, design, asset, development, SDK and
+verification modules register against it later.
 
 Real portal API integrations, publishing credentials and campaign automation are deliberately
 **not** built. `web-game-template` remains a scaffold.

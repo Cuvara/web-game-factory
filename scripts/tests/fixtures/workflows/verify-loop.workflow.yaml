@@ -1,0 +1,22 @@
+# Acceptance fixture: a failed verification routes back to development, then passes.
+#   develop -> verify -> FAIL -> develop -> verify -> PASS -> release
+workflow:
+  id: verify-loop
+  version: 1
+  defaults:
+    retry: {max_attempts: 1}
+    max_visits: 3
+  steps:
+    - id: develop
+      type: develop
+      outputs: [prototype-report]
+    - id: verify
+      type: verify
+      inputs: [prototype-report]
+      outputs: [qa-report]
+      on:
+        fail: develop
+    - id: release
+      type: release
+      inputs: [qa-report]
+      outputs: [release-manifest]

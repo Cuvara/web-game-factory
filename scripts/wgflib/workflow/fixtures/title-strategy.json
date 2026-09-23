@@ -1,0 +1,131 @@
+{
+  "title_id": "mock-title",
+  "opportunity_id": "opp-mock",
+  "one_liner": "A one-touch lane-switching runner where every move lands on the beat.",
+  "why_this_opportunity": "Yandex arcade is saturated with one-touch reaction games (claim-0a01) but carries no rhythm titles in its top 20 (claim-0a04). The control idiom players already know is the one this design needs, so the novelty budget goes entirely into feel rather than into teaching.",
+  "platform_set": [
+    {
+      "id": "yandex",
+      "profile_version": "1.0.0",
+      "role": "required",
+      "rationale": "Primary audience and the only targeted portal with both rewarded video and a matching category."
+    },
+    {
+      "id": "crazygames",
+      "profile_version": "1.0.0",
+      "role": "optional",
+      "rationale": "Cheap secondary once the build exists; no IAP dependency to unwind."
+    }
+  ],
+  "audience": {
+    "type": "casual",
+    "device": "mobile",
+    "regions": [
+      "ru",
+      "kz",
+      "by"
+    ],
+    "player_description": "Plays in short bursts on a mid-range Android phone, expects to be playing within seconds of the page loading."
+  },
+  "monetization": {
+    "class": "rewarded-led",
+    "placements": [
+      "rewarded",
+      "interstitial"
+    ],
+    "rationale": "The fail-and-retry loop creates a genuine rewarded moment — continue the run rather than lose the combo. Interstitials sit between runs, never inside one."
+  },
+  "session": {
+    "first_session_seconds": 180,
+    "target_seconds": 240,
+    "sessions_per_day_target": 3
+  },
+  "timebox_days": 12,
+  "mvp": [
+    "One track with three difficulty ramps",
+    "One-touch lane switching locked to the beat",
+    "Combo and score with a personal best",
+    "Rewarded continue on failure",
+    "Yandex SDK: init, loading progress, rewarded video, cloud save of best score"
+  ],
+  "out_of_scope": [
+    "Multiple music tracks — one track proves the mechanic; more is content, not validation",
+    "Character or skin customization",
+    "Leaderboards beyond the personal best",
+    "Level editor",
+    "Any metagame or daily-quest layer",
+    "Desktop-specific control scheme"
+  ],
+  "prototype_must_prove": [
+    "Audio-to-input latency on mid-range mobile web is low enough that beat-matching feels fair rather than arbitrary",
+    "A first-time player understands the control without instruction",
+    "The fail-and-retry loop produces an unforced desire to retry immediately",
+    "A rewarded continue reads as a favour rather than an interruption"
+  ],
+  "success_criteria": [
+    {
+      "id": "d1_retention",
+      "label": "D1 retention",
+      "when": {
+        "left": "d1_retention",
+        "op": "gte",
+        "right": 0.25
+      },
+      "rationale": "Below this, a score-chase arcade title without a metagame has no path to sustained traffic on portal distribution.",
+      "severity": "blocking"
+    },
+    {
+      "id": "session_length",
+      "label": "Median session at or above target",
+      "when": {
+        "left": "median_session_seconds",
+        "op": "gte",
+        "right": 180
+      },
+      "rationale": "Shorter than this and at most one interstitial can ever show, which breaks the monetization assumption.",
+      "severity": "warning"
+    }
+  ],
+  "kill_criteria": [
+    {
+      "id": "audio_latency_unfixable",
+      "label": "Beat matching feels unfair on mid-range mobile",
+      "when": {
+        "left": "audio_input_latency_ms",
+        "op": "gt",
+        "right": 60
+      },
+      "rationale": "Above roughly 60ms players perceive correct inputs as misses. The entire design rests on the beat feeling authoritative, and no amount of polish recovers a mechanic players believe is cheating.",
+      "severity": "blocking"
+    },
+    {
+      "id": "control_not_understood",
+      "label": "First-time players do not understand the control",
+      "when": {
+        "left": "first_time_understood_share",
+        "op": "lt",
+        "right": 0.6
+      },
+      "rationale": "The whole positioning argument is that this control idiom is already familiar on Yandex. If it needs teaching, that argument was wrong and the opportunity's premise fails with it.",
+      "severity": "blocking"
+    },
+    {
+      "id": "no_retry_pull",
+      "label": "Players do not retry unprompted",
+      "when": {
+        "left": "unprompted_retry_share",
+        "op": "lt",
+        "right": 0.5
+      },
+      "rationale": "Immediate retry is both the retention loop and the rewarded-ad moment. Without it there is no game and no revenue model.",
+      "severity": "blocking"
+    }
+  ],
+  "sunset_floor": {
+    "metric": "d1_retention",
+    "value": 0.12,
+    "consecutive_reviews": 2
+  },
+  "max_prototype_iterations": 2,
+  "rollback_threshold": "critical"
+}

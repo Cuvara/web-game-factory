@@ -1,0 +1,65 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://webgamefactory.dev/schemas/artifacts/sdk-report.schema.json",
+  "title": "SDK Report",
+  "description": "Per-platform evidence that a build's platform SDK integration works: which SDK features each target platform requires, and whether each is working on that platform.\n\nprototype-report.integration_status says whether the SDK works in aggregate; this says which platform and which feature, because a portal can reject what another portal accepted. Every `working` claim should name how it was observed.",
+
+  "x-wgf": {
+    "id": "sdk-report",
+    "kind": "artifact",
+    "format": "json",
+    "producer": "title:prototype",
+    "updated_by": ["title:production"],
+    "consumers": ["title:prototype-review", "release:qa", "release:validating"],
+    "repo_path": "workspace/titles/<title-id>/sdk-report.json"
+  },
+
+  "type": "object",
+  "required": ["provenance", "title_id", "build_ref", "platforms"],
+  "properties": {
+    "provenance": { "$ref": "./shared/provenance.schema.json#/$defs/provenance" },
+    "title_id": { "type": "string" },
+    "build_ref": {
+      "type": "object",
+      "required": ["commit_sha"],
+      "properties": {
+        "commit_sha": { "type": "string" },
+        "url": { "type": "string" }
+      },
+      "additionalProperties": false
+    },
+    "platforms": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["platform_id", "profile_version", "status", "features"],
+        "properties": {
+          "platform_id": { "type": "string", "pattern": "^[a-z][a-z0-9-]*$" },
+          "profile_version": { "type": "string" },
+          "status": { "enum": ["working", "partial", "not-started"] },
+          "features": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": ["feature", "status"],
+              "properties": {
+                "feature": {
+                  "type": "string",
+                  "description": "e.g. init, loading-progress, rewarded, interstitial, banner, cloud-save, analytics"
+                },
+                "status": { "enum": ["working", "partial", "not-started", "not-required"] },
+                "observed_by": { "type": "string" },
+                "note": { "type": "string" }
+              },
+              "additionalProperties": false
+            }
+          },
+          "note": { "type": "string" }
+        },
+        "additionalProperties": false
+      }
+    }
+  },
+  "additionalProperties": false
+}

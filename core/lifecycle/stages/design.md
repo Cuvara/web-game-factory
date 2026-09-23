@@ -44,7 +44,30 @@ consistency result is atomic.
    `procedural`, `ai-generated`, `purchased`, `commissioned`) and an estimate. Prefer
    library and procedural at this scale.
 
-6. **Run the consistency check.** Evaluate `core/reference/design-consistency-rules.yaml`
+6. **Record the engine.** PixiJS for 2D, Three.js for 3D, with a rationale in `engine`.
+   Dimensionality changes the asset list, camera, controls and load budget, so a design
+   that does not know which it is cannot be costed. tech-plan owns the binding selection
+   and must agree with it or supersede the design.
+
+7. **Write the build spec.** `build_spec` is what the implementation agent builds from:
+   mechanics with testable rules and starting tuning, controls per input device, the
+   game's own state machine, screens, HUD, menus, tutorial, rewards, failure and retry,
+   the session as ordered beats, monetization and platform touchpoints, asset and audio
+   requirements, responsive behaviour and a visual identity. Every entry is tiered
+   `mvp`, `post-mvp` or `optional`, and every cross-reference inside it must resolve. The
+   test: could someone build the MVP from this without asking a question? If not, the
+   design is not finished.
+
+   The visual identity is a decision, not a default: a committed palette with one leading
+   colour, a display face with character, a shape language, a motion rule and an explicit
+   list of what to avoid. Generic UI is a design failure.
+
+8. **List features by tier.** `features` is the canonical tier list; `scope.tiers` is
+   derived from it (mvp → mvp and prototype, post-mvp → production, optional → future).
+   An mvp feature carries acceptance criteria. Every item of the strategy's `mvp` is carried
+   into an mvp feature; every item of its `out_of_scope` stays out.
+
+9. **Run the consistency check.** Evaluate `core/reference/design-consistency-rules.yaml`
    and write the result into `game_design.consistency`. This is the exit guard.
 
 ## Exit

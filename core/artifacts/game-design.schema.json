@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://webgamefactory.dev/schemas/artifacts/game-design.schema.json",
   "title": "Game Design",
-  "description": "One artifact covering scope, session, retention, monetization, progression and economy.\n\nThese are NOT separate stages and not separate documents. Scope depends on monetization, which depends on session, which depends on scope — sequencing them invents an order that does not exist, and splitting them into four files guarantees they drift apart. One artifact with a recorded consistency result is atomic; four files cannot be.\n\nThe `consistency` block is what makes 'these were co-designed' checkable rather than asserted. It is produced by evaluating core/reference/design-consistency-rules.yaml and is the exit guard on title:design.\n\nThe human-readable GDD is a RENDERING of this artifact (see core/templates/gdd.md), not a separate source of truth.",
+  "description": "One artifact covering scope, session, retention, monetization, progression and economy.\n\nThese are NOT separate stages and not separate documents. Scope depends on monetization, which depends on session, which depends on scope — sequencing them invents an order that does not exist, and splitting them into four files guarantees they drift apart. One artifact with a recorded consistency result is atomic; four files cannot be.\n\nThe `consistency` block is what makes 'these were co-designed' checkable rather than asserted. It is produced by evaluating core/reference/design-consistency-rules.yaml and is the exit guard on title:design.\n\nThe human-readable GDD is a RENDERING of this artifact (see core/templates/gdd.md), not a separate source of truth.\n\nSchema 1.1.0 adds three optional blocks — `engine`, `features` and `build_spec` — which carry the design down to what an implementation agent needs to build the MVP without guessing. They are optional so 1.0.0 artifacts stay valid; the design module always emits them.",
 
   "x-wgf": {
     "id": "game-design",
@@ -237,6 +237,494 @@
       }
     },
 
+    "engine": {
+      "type": "object",
+      "description": "The engine the design is drawn for: PixiJS for 2D, Three.js for 3D. Recorded at design because dimensionality changes the asset list, the camera, the controls and the load budget — a design that does not know which it is cannot be costed. tech-plan owns the binding selection (`tech_plan.engine.type`, guard engine_selected) and must agree with this, or supersede the design.",
+      "required": ["type", "dimension", "rationale"],
+      "properties": {
+        "type": { "enum": ["pixijs", "threejs"] },
+        "dimension": { "enum": ["2d", "3d"] },
+        "rationale": {
+          "type": "string",
+          "description": "Why this game needs this dimensionality. Load budget, asset pipeline cost and readability on a phone are rationales; 'looks better' is not."
+        },
+        "design_resolution": { "$ref": "#/$defs/resolution" },
+        "camera": { "type": "string", "description": "Fixed, follow, orbit, isometric… and what it frames." }
+      },
+      "additionalProperties": false
+    },
+
+    "features": {
+      "type": "array",
+      "description": "Every feature of the game, tiered. The canonical tier list: scope.tiers is derived from it (mvp → mvp and prototype, post-mvp → production, optional → future), so the two cannot drift. An mvp feature carries acceptance criteria because the implementation agent builds against them, not against taste.",
+      "items": {
+        "type": "object",
+        "required": ["id", "name", "tier", "description"],
+        "properties": {
+          "id": { "$ref": "#/$defs/localId" },
+          "name": { "type": "string" },
+          "tier": { "$ref": "#/$defs/tier" },
+          "description": { "type": "string" },
+          "acceptance": { "type": "array", "items": { "type": "string" } },
+          "depends_on": { "type": "array", "items": { "$ref": "#/$defs/localId" } }
+        },
+        "additionalProperties": false
+      }
+    },
+
+    "build_spec": {
+      "type": "object",
+      "description": "What the implementation agent builds from. The prose fields above (core_loop, controls, progression, difficulty, ux, art_direction, audio_direction) are the summary a person reads; this is the specification a coding agent reads, and the MVP must be buildable from it without guessing. Every entry carries a tier. Ids are local to this artifact and cross-referenced within it (a screen names the game state it belongs to; a touchpoint names the state it fires in), which is what makes the spec checkable for dangling references. Platform capabilities are named generically — game code calls the template's platform abstraction, never a portal SDK.",
+      "required": ["mechanics", "controls", "player_goals", "progression", "difficulty", "game_states", "screens", "hud", "menus", "tutorial", "rewards", "failure", "session_flow", "monetization_touchpoints", "sdk_touchpoints", "assets", "audio", "responsive", "visual_identity"],
+      "properties": {
+        "mechanics": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "required": ["id", "name", "tier", "description", "rules"],
+            "properties": {
+              "id": { "$ref": "#/$defs/localId" },
+              "name": { "type": "string" },
+              "tier": { "$ref": "#/$defs/tier" },
+              "description": { "type": "string" },
+              "rules": { "type": "array", "minItems": 1, "items": { "type": "string" }, "description": "Testable statements. 'Feels good' is not a rule." },
+              "parameters": {
+                "type": "object",
+                "description": "Starting tuning values, so the first build is playable rather than zeroed.",
+                "additionalProperties": { "type": ["number", "string", "boolean"] }
+              }
+            },
+            "additionalProperties": false
+          }
+        },
+
+        "controls": {
+          "type": "object",
+          "required": ["primary_input", "actions"],
+          "properties": {
+            "primary_input": { "enum": ["touch", "mouse", "keyboard", "touch-and-mouse", "any"] },
+            "actions": {
+              "type": "array",
+              "minItems": 1,
+              "items": {
+                "type": "object",
+                "required": ["id", "action", "tier", "touch", "mouse", "keyboard"],
+                "properties": {
+                  "id": { "$ref": "#/$defs/localId" },
+                  "action": { "type": "string" },
+                  "tier": { "$ref": "#/$defs/tier" },
+                  "mechanic": { "$ref": "#/$defs/localId" },
+                  "touch": { "type": "string" },
+                  "mouse": { "type": "string" },
+                  "keyboard": { "type": "string" },
+                  "gamepad": { "type": "string" }
+                },
+                "additionalProperties": false
+              }
+            },
+            "pause": { "type": "string", "description": "How play pauses, including on tab blur and during an ad." },
+            "notes": { "type": "string" }
+          },
+          "additionalProperties": false
+        },
+
+        "player_goals": {
+          "type": "object",
+          "required": ["moment", "session", "long_term"],
+          "properties": {
+            "moment": { "type": "string", "description": "What the player is trying to do in the next five seconds." },
+            "session": { "type": "string" },
+            "long_term": { "type": "string" }
+          },
+          "additionalProperties": false
+        },
+
+        "progression": {
+          "type": "object",
+          "required": ["model", "steps"],
+          "properties": {
+            "model": { "enum": ["skill-only", "linear-levels", "unlock-track", "meta-currency", "endless-scaling"] },
+            "steps": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "required": ["id", "tier", "unlock_condition", "grants"],
+                "properties": {
+                  "id": { "$ref": "#/$defs/localId" },
+                  "tier": { "$ref": "#/$defs/tier" },
+                  "unlock_condition": { "type": "string" },
+                  "grants": { "type": "string" }
+                },
+                "additionalProperties": false
+              }
+            },
+            "persistence": { "type": "string", "description": "What is saved between sessions, and where." }
+          },
+          "additionalProperties": false
+        },
+
+        "difficulty": {
+          "type": "object",
+          "required": ["model", "curve"],
+          "properties": {
+            "model": { "enum": ["time-ramp", "level-authored", "adaptive", "player-chosen"] },
+            "curve": {
+              "type": "array",
+              "minItems": 1,
+              "items": {
+                "type": "object",
+                "required": ["at", "description"],
+                "properties": {
+                  "at": { "type": "string", "description": "When: '0-20s', 'level 4', 'after 3 fails'." },
+                  "description": { "type": "string" },
+                  "parameters": { "type": "object", "additionalProperties": { "type": ["number", "string", "boolean"] } }
+                },
+                "additionalProperties": false
+              }
+            },
+            "assist": { "type": "string", "description": "What happens for a player who keeps failing." }
+          },
+          "additionalProperties": false
+        },
+
+        "game_states": {
+          "type": "array",
+          "minItems": 2,
+          "description": "The game's own state machine — boot, loading, menu, play, pause, fail, results. Not the title lifecycle.",
+          "items": {
+            "type": "object",
+            "required": ["id", "tier", "description", "exits"],
+            "properties": {
+              "id": { "$ref": "#/$defs/localId" },
+              "tier": { "$ref": "#/$defs/tier" },
+              "description": { "type": "string" },
+              "initial": { "type": "boolean" },
+              "exits": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "required": ["to", "on"],
+                  "properties": {
+                    "to": { "$ref": "#/$defs/localId" },
+                    "on": { "type": "string" }
+                  },
+                  "additionalProperties": false
+                }
+              }
+            },
+            "additionalProperties": false
+          }
+        },
+
+        "screens": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "required": ["id", "tier", "state", "purpose", "elements"],
+            "properties": {
+              "id": { "$ref": "#/$defs/localId" },
+              "tier": { "$ref": "#/$defs/tier" },
+              "state": { "$ref": "#/$defs/localId", "description": "The game state this screen is shown in." },
+              "purpose": { "type": "string" },
+              "elements": { "type": "array", "items": { "type": "string" } },
+              "actions": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "required": ["label", "goes_to"],
+                  "properties": {
+                    "label": { "type": "string" },
+                    "goes_to": { "$ref": "#/$defs/localId", "description": "A game state id." }
+                  },
+                  "additionalProperties": false
+                }
+              },
+              "layout": { "type": "string" }
+            },
+            "additionalProperties": false
+          }
+        },
+
+        "hud": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["id", "tier", "shows", "anchor"],
+            "properties": {
+              "id": { "$ref": "#/$defs/localId" },
+              "tier": { "$ref": "#/$defs/tier" },
+              "shows": { "type": "string" },
+              "anchor": { "enum": ["top-left", "top-center", "top-right", "center", "bottom-left", "bottom-center", "bottom-right"] },
+              "updates_on": { "type": "string" },
+              "feedback": { "type": "string" }
+            },
+            "additionalProperties": false
+          }
+        },
+
+        "menus": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["id", "tier", "screen", "items"],
+            "properties": {
+              "id": { "$ref": "#/$defs/localId" },
+              "tier": { "$ref": "#/$defs/tier" },
+              "screen": { "$ref": "#/$defs/localId" },
+              "items": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "required": ["label", "action"],
+                  "properties": {
+                    "label": { "type": "string" },
+                    "action": { "type": "string" },
+                    "tier": { "$ref": "#/$defs/tier" }
+                  },
+                  "additionalProperties": false
+                }
+              }
+            },
+            "additionalProperties": false
+          }
+        },
+
+        "tutorial": {
+          "type": "object",
+          "required": ["approach", "steps"],
+          "properties": {
+            "approach": { "enum": ["none", "diegetic", "guided-first-run", "explicit"] },
+            "rationale": { "type": "string" },
+            "steps": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "required": ["id", "tier", "trigger", "prompt", "completes_on"],
+                "properties": {
+                  "id": { "$ref": "#/$defs/localId" },
+                  "tier": { "$ref": "#/$defs/tier" },
+                  "trigger": { "type": "string" },
+                  "prompt": { "type": "string" },
+                  "completes_on": { "type": "string" }
+                },
+                "additionalProperties": false
+              }
+            },
+            "skippable": { "type": "boolean" },
+            "shown_once": { "type": "boolean" }
+          },
+          "additionalProperties": false
+        },
+
+        "rewards": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["id", "tier", "trigger", "grants", "feedback"],
+            "properties": {
+              "id": { "$ref": "#/$defs/localId" },
+              "tier": { "$ref": "#/$defs/tier" },
+              "trigger": { "type": "string" },
+              "grants": { "type": "string" },
+              "feedback": { "type": "string", "description": "What the player sees and hears. A reward nobody notices is not one." }
+            },
+            "additionalProperties": false
+          }
+        },
+
+        "failure": {
+          "type": "object",
+          "required": ["condition", "feedback", "retry"],
+          "properties": {
+            "condition": { "type": "string" },
+            "feedback": { "type": "string" },
+            "retry": {
+              "type": "object",
+              "required": ["path", "time_to_retry_s"],
+              "properties": {
+                "path": { "type": "string" },
+                "time_to_retry_s": { "type": "number", "minimum": 0 },
+                "keeps": { "type": "string", "description": "What survives a retry." }
+              },
+              "additionalProperties": false
+            },
+            "continue_offer": { "$ref": "#/$defs/localId", "description": "A monetization touchpoint id, when failure offers a continue." }
+          },
+          "additionalProperties": false
+        },
+
+        "session_flow": {
+          "type": "array",
+          "minItems": 1,
+          "description": "The session as an ordered sequence of beats, from page load to the natural stopping point.",
+          "items": {
+            "type": "object",
+            "required": ["beat", "description"],
+            "properties": {
+              "beat": { "type": "string" },
+              "at_s": { "type": "number", "minimum": 0 },
+              "description": { "type": "string" }
+            },
+            "additionalProperties": false
+          }
+        },
+
+        "monetization_touchpoints": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["id", "kind", "tier", "state", "trigger", "player_value", "when_unavailable"],
+            "properties": {
+              "id": { "$ref": "#/$defs/localId" },
+              "kind": { "enum": ["rewarded", "interstitial", "banner", "iap"] },
+              "tier": { "$ref": "#/$defs/tier" },
+              "state": { "$ref": "#/$defs/localId", "description": "The game state it is offered in." },
+              "trigger": { "type": "string" },
+              "player_value": { "type": "string" },
+              "cooldown_s": { "type": "number", "minimum": 0 },
+              "platforms": { "type": "array", "items": { "type": "string" } },
+              "when_unavailable": { "type": "string", "description": "What the game does when the platform has no fill, no ads, or the player declines. Never a dead button." }
+            },
+            "additionalProperties": false
+          }
+        },
+
+        "sdk_touchpoints": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "required": ["id", "capability", "tier", "when", "required"],
+            "properties": {
+              "id": { "$ref": "#/$defs/localId" },
+              "capability": {
+                "enum": ["init", "loading-progress", "loading-complete", "gameplay-start", "gameplay-stop", "pause-audio", "resume-audio", "ad-interstitial", "ad-rewarded", "ad-banner", "cloud-save", "cloud-load", "leaderboard", "achievement", "language", "analytics-event", "purchase"]
+              },
+              "tier": { "$ref": "#/$defs/tier" },
+              "when": { "type": "string" },
+              "state": { "$ref": "#/$defs/localId" },
+              "platforms": { "type": "array", "items": { "type": "string" } },
+              "required": { "type": "boolean", "description": "Required by a platform profile, as opposed to chosen by the design." },
+              "fallback": { "type": "string", "description": "Behaviour on a platform that lacks the capability." }
+            },
+            "additionalProperties": false
+          }
+        },
+
+        "assets": {
+          "type": "array",
+          "minItems": 1,
+          "description": "Asset REQUIREMENTS. The assets step turns them into the asset-manifest, with sources resolved and licences recorded.",
+          "items": {
+            "type": "object",
+            "required": ["id", "type", "tier", "description", "count", "source_preference", "est_cost"],
+            "properties": {
+              "id": { "$ref": "#/$defs/localId" },
+              "type": { "enum": ["sprite", "spritesheet", "texture", "model", "animation", "vfx", "font", "ui", "icon", "other"] },
+              "tier": { "$ref": "#/$defs/tier" },
+              "description": { "type": "string" },
+              "count": { "type": "integer", "minimum": 1 },
+              "source_preference": { "enum": ["library", "procedural", "ai-generated", "purchased", "commissioned"] },
+              "est_cost": { "type": "number", "minimum": 0 },
+              "spec": { "type": "string", "description": "Sizes, frames, poly budget, format." }
+            },
+            "additionalProperties": false
+          }
+        },
+
+        "audio": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["id", "type", "tier", "description", "trigger", "source_preference", "est_cost"],
+            "properties": {
+              "id": { "$ref": "#/$defs/localId" },
+              "type": { "enum": ["music", "sfx", "ui", "ambience", "voice"] },
+              "tier": { "$ref": "#/$defs/tier" },
+              "description": { "type": "string" },
+              "trigger": { "type": "string" },
+              "loop": { "type": "boolean" },
+              "source_preference": { "enum": ["library", "procedural", "ai-generated", "purchased", "commissioned"] },
+              "est_cost": { "type": "number", "minimum": 0 }
+            },
+            "additionalProperties": false
+          }
+        },
+
+        "responsive": {
+          "type": "object",
+          "required": ["orientation", "design_resolution", "scale_mode", "layouts", "min_touch_target_px", "safe_area"],
+          "properties": {
+            "orientation": { "enum": ["portrait", "landscape", "any"] },
+            "design_resolution": { "$ref": "#/$defs/resolution" },
+            "scale_mode": { "enum": ["fit", "fill", "expand"], "description": "fit letterboxes, fill crops, expand reveals more world." },
+            "layouts": {
+              "type": "array",
+              "minItems": 1,
+              "items": {
+                "type": "object",
+                "required": ["id", "when", "arrangement"],
+                "properties": {
+                  "id": { "$ref": "#/$defs/localId" },
+                  "when": { "type": "string", "description": "e.g. 'aspect < 0.75', 'width >= 1024 and pointer: fine'." },
+                  "arrangement": { "type": "string" }
+                },
+                "additionalProperties": false
+              }
+            },
+            "min_touch_target_px": { "type": "number", "minimum": 0 },
+            "safe_area": { "type": "string" },
+            "wrong_orientation": { "type": "string" },
+            "resize": { "type": "string", "description": "What happens on resize or rotation mid-play." },
+            "max_pixel_ratio": { "type": "number", "minimum": 1 }
+          },
+          "additionalProperties": false
+        },
+
+        "visual_identity": {
+          "type": "object",
+          "description": "A deliberate look, specified so two implementers would build the same thing. Generic UI — system fonts, default purple gradients, evenly spread pastel palettes, rounded cards everywhere — is a design failure, not a neutral default.",
+          "required": ["concept", "palette", "typography", "shape_language", "motion", "avoid"],
+          "properties": {
+            "concept": { "type": "string" },
+            "palette": {
+              "type": "array",
+              "minItems": 3,
+              "items": {
+                "type": "object",
+                "required": ["token", "hex", "role"],
+                "properties": {
+                  "token": { "type": "string", "pattern": "^[a-z][a-z0-9-]*$" },
+                  "hex": { "type": "string", "pattern": "^#[0-9a-fA-F]{6}$" },
+                  "role": { "type": "string" }
+                },
+                "additionalProperties": false
+              }
+            },
+            "typography": {
+              "type": "object",
+              "required": ["display", "body"],
+              "properties": {
+                "display": { "type": "string" },
+                "body": { "type": "string" },
+                "numeric": { "type": "string" },
+                "source": { "type": "string", "description": "Where the faces come from and their licence, since they ship in the bundle." }
+              },
+              "additionalProperties": false
+            },
+            "shape_language": { "type": "string" },
+            "motion": { "type": "string" },
+            "texture": { "type": "string" },
+            "avoid": { "type": "array", "minItems": 1, "items": { "type": "string" } }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+
     "consistency": {
       "type": "object",
       "description": "The recorded result of evaluating core/reference/design-consistency-rules.yaml. Exit guard on title:design.",
@@ -264,5 +752,26 @@
       "description": "Things the prototype is expected to answer. Better recorded than silently assumed."
     }
   },
-  "additionalProperties": false
+  "additionalProperties": false,
+
+  "$defs": {
+    "tier": {
+      "enum": ["mvp", "post-mvp", "optional"],
+      "description": "mvp: built before prototype review, and what the prototype is judged on. post-mvp: production, after G4 passes. optional: a candidate for later, committed to nothing."
+    },
+    "localId": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9-]*$",
+      "description": "An id local to this artifact, referenced from elsewhere inside it."
+    },
+    "resolution": {
+      "type": "object",
+      "required": ["width", "height"],
+      "properties": {
+        "width": { "type": "integer", "minimum": 1 },
+        "height": { "type": "integer", "minimum": 1 }
+      },
+      "additionalProperties": false
+    }
+  }
 }

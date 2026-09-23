@@ -104,6 +104,63 @@ budget: {{asset_budget}}
 
 {{audio_direction}}
 
+## 10a. Engine
+
+**{{engine_type}}** ({{dimension}}) at {{design_width}}×{{design_height}} · Camera: {{camera}}
+
+{{engine_rationale}}
+
+## 10b. Build specification — MVP
+
+<!-- Rendered from build_spec, filtered to tier mvp. Post-MVP and optional entries are
+     listed in 10c so the implementer can see what NOT to build yet. -->
+
+**Mechanics.** For each: {{name}} — {{description}}; rules {{rules}}; tuning {{parameters}}.
+
+**Controls.** Primary input {{primary_input}}.
+
+| Action | Touch | Mouse | Keyboard |
+|---|---|---|---|
+| {{action}} | {{touch}} | {{mouse}} | {{keyboard}} |
+
+**Player goals.** Moment: {{moment}} · Session: {{session_goal}} · Long term: {{long_term}}
+
+**Game states.**
+
+| State | Description | Exits (on → to) |
+|---|---|---|
+| {{state_id}} | {{description}} | {{exits}} |
+
+**Screens, HUD, menus.** {{screens}} · {{hud}} · {{menus}}
+
+**Tutorial.** {{tutorial_approach}} — {{tutorial_steps}}
+
+**Rewards.** {{rewards}}
+
+**Failure and retry.** {{failure_condition}} → {{failure_feedback}} → {{retry_path}}
+({{time_to_retry_s}}s)
+
+**Session flow.** {{session_flow}}
+
+**Monetization touchpoints.** {{monetization_touchpoints}}
+
+**Platform SDK touchpoints.** {{sdk_touchpoints}} — through the template's platform
+abstraction, never a portal SDK.
+
+**Assets.** {{assets}} · **Audio.** {{audio}}
+
+**Responsive.** {{orientation}}, {{scale_mode}}, layouts {{layouts}}, touch targets
+≥ {{min_touch_target_px}}px, safe area: {{safe_area}}
+
+**Visual identity.** {{visual_concept}} · Palette {{palette}} · Type {{display}} /
+{{body}} · Shapes {{shape_language}} · Motion {{motion}} · Avoid {{avoid}}
+
+## 10c. Post-MVP and optional
+
+| Feature | Tier | Description |
+|---|---|---|
+| {{feature}} | {{tier}} | {{description}} |
+
 ## 11. Platform considerations
 
 | Platform | Requirement | How addressed |

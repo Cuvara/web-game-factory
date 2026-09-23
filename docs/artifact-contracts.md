@@ -73,6 +73,16 @@ design:
 **Reference types** (maintained, not stage-produced): `platform-profile`, `scoring-model`,
 `dimension-vocabulary`.
 
+**`game-design` 1.1.0** adds three optional blocks that carry the design down to what an
+implementation agent builds from: `engine` (PixiJS for 2D, Three.js for 3D, with a
+rationale — tech-plan still owns the binding choice), `features` (every feature tiered
+`mvp` / `post-mvp` / `optional`, with acceptance criteria on the MVP; `scope.tiers` is derived
+from it) and `build_spec` (mechanics, controls, player goals, progression, difficulty, game
+states, screens, HUD, menus, tutorial, rewards, failure and retry, session flow, monetization
+and platform-SDK touchpoints, asset and audio requirements, responsive behaviour, visual
+identity). Ids inside `build_spec` cross-reference each other so that "buildable without
+guessing" is checkable. 1.0.0 artifacts remain valid.
+
 ---
 
 ## Shared primitives

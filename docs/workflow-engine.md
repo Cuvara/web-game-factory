@@ -424,6 +424,7 @@ factory:
   agents:      {default: local}
   storage:     {directory: .factory, fsync: true}
   steps:       {modules: []}
+  design:      {author: archetype}   # read by the design module, not the engine
   checkpoints: {auto_approve: []}
 ```
 
@@ -466,6 +467,13 @@ from `factory.steps.modules`, with its own evidence collectors and fixtures.
 `--mock` registers the placeholders *after* configured modules, so under `--mock` every step
 type is a placeholder whether or not a real module exists. Without `--mock`, only configured
 modules and the built-in checkpoint are available.
+
+Installed so far: **`wgf_design`** (`scripts/wgf_design/`) implements `design`. It reads the
+title-strategy and the pinned platform profiles, has an *author* write the creative draft
+(the built-in `archetype` author is offline and deterministic; `factory.design.author`
+selects another by name), derives scope tiers and SDK touchpoints, refuses a draft whose MVP
+cannot be built without guessing, and evaluates the design-consistency rules. A blocking
+breach returns `FAILED` with route `descope` and the design persisted as evidence.
 
 Rules for a step implementation:
 

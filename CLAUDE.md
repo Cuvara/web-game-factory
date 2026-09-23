@@ -172,11 +172,11 @@ The engine must never name a step type or route — routing is data, and
 `test_engine_source_names_no_step_type` enforces it. A workflow step names the lifecycle
 stage it serves; it never moves an entity — that is still `wgf-state.py`, guards and gates.
 Real step modules register via `factory.steps.modules` in `workspace/config/factory.yaml`;
-`wgf_discovery` (research), `wgf_init`, `wgf_assets`, `wgf_develop` and `wgf_verification`
+`wgf_discovery` (research), `wgf_init`, `wgf_assets`, `wgf_develop`, `wgf_verification` and `wgf_design`
 exist so far, so a whole run still needs `--mock`. Discovery reads evidence snapshots from
-`workspace/research/snapshots/`. A module owns its domain logic; the engine owns
-orchestration — a module never edits `scripts/wgflib/workflow/` to implement domain
-behaviour. See `docs/workflow-module-contract.md`.
+`workspace/research/snapshots/`. A module owns its domain logic; the
+engine owns orchestration — a module never edits `scripts/wgflib/workflow/` to implement
+domain behaviour. See `docs/workflow-module-contract.md`.
 
 ## Adapters are generated, not written
 

@@ -12,7 +12,7 @@
 # artifact plus the resolved platform profiles. Keep them few and obvious — a rule nobody
 # understands gets waived, and a waived rule is worse than no rule.
 
-version: 1.0.0
+version: 1.1.0
 
 rules:
   - id: rewarded_ads_need_reward_moments
@@ -68,7 +68,12 @@ rules:
   - id: monetization_supported_by_platform
     label: Monetization must be supported by every required platform
     severity: blocking
-    when: { left: monetization.placements, op: not_in, right_path: platform.capabilities.ads }
+    # The platform's list is on the LEFT on purpose. With an array on the left, `in` asks
+    # whether every element of the right is present in it (shared/criteria-expression) - so
+    # this reads "not every designed placement is offered". Written the other way round, as
+    # it was in 1.0.0, it fired whenever a portal offered a placement the design did not use.
+    # `ads` here includes `iap` when the profile's capabilities.iap is true.
+    when: { left: platform.capabilities.ads, op: not_in, right_path: monetization.placements }
     rationale: >
       Designing around a placement a required portal does not offer forces either a
       redesign or dropping the platform, both late and both expensive.

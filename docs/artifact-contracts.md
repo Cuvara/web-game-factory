@@ -48,12 +48,13 @@ design:
 
 ---
 
-## The fifteen artifacts
+## The sixteen artifacts
 
 | Artifact | Producer | Consumers | Gates |
 |---|---|---|---|
 | `claim` | market-scan, live | scoring, strategy, design | — |
 | `opportunity` | market-scan | scoring, G1, concept, strategy | G1 |
+| `research-report` | market-scan | scoring, G1, strategy | G1 |
 | `evaluation` | scored | shortlisted, concept, strategy | G1 |
 | `title-strategy` | strategy | design, tech-plan, prototype, review, production, live | G2, G4 |
 | `game-design` | design | tech-plan, prototype, production, QA | G3, G4 |

@@ -25,7 +25,7 @@ alongside it — a single circular chain cannot express that.
 
 ```
 market-scan (job, stateless)
-    │ emits claim + opportunity
+    │ emits claim + opportunity + research-report
     ▼
 discovered ──score──▶ scored ──rank──▶ shortlisted ──[G1]──▶ approved ──▶ promoted
                         │                   │                    │

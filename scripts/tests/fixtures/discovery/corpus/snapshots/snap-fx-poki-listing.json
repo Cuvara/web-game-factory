@@ -1,0 +1,32 @@
+{
+  "id": "snap-fx-poki-listing",
+  "source_uri": "https://fixtures.invalid/poki/puzzle",
+  "source_kind": "portal-listing",
+  "title": "FIXTURE - Poki puzzle category",
+  "observed_at": "2026-09-15T00:00:00Z",
+  "retrieved_via": "fixture",
+  "platform": "poki",
+  "observations": [
+    {
+      "statement": "FIXTURE: Poki lists a Puzzle category with 300 games.",
+      "excerpt": "FIXTURE: Puzzle Games (300)",
+      "subject": { "platform": "poki", "genre": "puzzle", "dimension": "competition" },
+      "facts": { "category": { "name": "Puzzle Games", "genre": "puzzle", "game_count": 300 } },
+      "tags": ["fixture"]
+    },
+    {
+      "statement": "FIXTURE: 'Fixture Sort' appears in the Poki puzzle category.",
+      "excerpt": "FIXTURE: Fixture Sort",
+      "subject": { "platform": "poki", "genre": "sorting", "dimension": "distribution_potential" },
+      "facts": { "reference_title": { "name": "Fixture Sort", "genre": "sorting", "list": "category:puzzle" } },
+      "tags": ["fixture"]
+    },
+    {
+      "statement": "FIXTURE: 'Fixture Blocks' appears in the Poki puzzle category.",
+      "excerpt": "FIXTURE: Fixture Blocks",
+      "subject": { "platform": "poki", "genre": "block-puzzle", "dimension": "distribution_potential" },
+      "facts": { "reference_title": { "name": "Fixture Blocks", "genre": "block-puzzle", "list": "category:puzzle" } },
+      "tags": ["fixture"]
+    }
+  ]
+}

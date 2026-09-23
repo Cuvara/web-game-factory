@@ -1,0 +1,29 @@
+{
+  "id": "snap-poki-localization",
+  "source_uri": "https://developers.poki.com/guide/localization",
+  "source_kind": "portal-docs",
+  "title": "Localization | Poki Documentation",
+  "observed_at": "2026-09-23T00:00:00Z",
+  "retrieved_via": "web-fetch",
+  "platform": "poki",
+  "observations": [
+    {
+      "statement": "Poki states that non-localized text-based games struggle in countries they are not localized for.",
+      "excerpt": "For the Poki audience, as we are worldwide, non-localized text based games struggle in countries not localized so it's really important to think this through when creating your game!",
+      "subject": { "platform": "poki", "dimension": "platform_fit" },
+      "tags": ["localization"]
+    },
+    {
+      "statement": "Poki recommends EFIGS plus Turkish as the first localization batch (a recommendation, not a requirement).",
+      "excerpt": "EFIGS (English, French, Italian, German, Spanish): the broad base across Europe and the Americas. We recommend adding Turkish to this first batch; it's an increasingly popular locale.",
+      "subject": { "platform": "poki", "dimension": "scope_complexity" },
+      "tags": ["localization", "recommendation"]
+    },
+    {
+      "statement": "Poki names clicker and idle games among the genres where localization pays off most.",
+      "excerpt": "Genres where localization pays off most: story games, clicker and idle games, quiz games, and anything where mechanics, items, or powerups are explained through text.",
+      "subject": { "platform": "poki", "dimension": "scope_complexity", "genre": "idle" },
+      "tags": ["localization", "genre-guidance"]
+    }
+  ]
+}

@@ -32,6 +32,7 @@ python scripts/wgf-state.py --show neon-drift          # cursor, and what may ha
 python scripts/wgf-guard.py --title neon-drift --state prototype-review
 
 # The workflow engine. Every run command is a slice of core/workflows/new-game.workflow.yaml.
+bin/wgf research                          # real market scan: research-report + opportunity
 bin/wgf new-game --mock                   # research -> ... -> release, placeholder steps
 bin/wgf verify --mock                     # one step; `plan` = strategy, checkpoint, design
 bin/wgf new-game --resume <run-id> [--decision approve]
@@ -171,9 +172,11 @@ The engine must never name a step type or route — routing is data, and
 `test_engine_source_names_no_step_type` enforces it. A workflow step names the lifecycle
 stage it serves; it never moves an entity — that is still `wgf-state.py`, guards and gates.
 Real step modules register via `factory.steps.modules` in `workspace/config/factory.yaml`;
-`wgf_init`, `wgf_assets`, `wgf_develop` and `wgf_verification` exist so far, so a whole run still needs `--mock`.
-A module owns its domain logic; the engine owns orchestration — a module never edits
-`scripts/wgflib/workflow/` to implement domain behaviour. See `docs/workflow-module-contract.md`.
+`wgf_discovery` (research), `wgf_init`, `wgf_assets`, `wgf_develop` and `wgf_verification`
+exist so far, so a whole run still needs `--mock`. Discovery reads evidence snapshots from
+`workspace/research/snapshots/`. A module owns its domain logic; the engine owns
+orchestration — a module never edits `scripts/wgflib/workflow/` to implement domain
+behaviour. See `docs/workflow-module-contract.md`.
 
 ## Adapters are generated, not written
 

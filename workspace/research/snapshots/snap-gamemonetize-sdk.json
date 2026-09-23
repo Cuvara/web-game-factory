@@ -1,0 +1,30 @@
+{
+  "id": "snap-gamemonetize-sdk",
+  "source_uri": "https://gamemonetize.com/sdk",
+  "source_kind": "portal-docs",
+  "title": "SDK Documentation for Online Games - GameMonetize.com",
+  "observed_at": "2026-09-23T00:00:00Z",
+  "retrieved_via": "web-fetch",
+  "platform": "gamemonetize",
+  "observations": [
+    {
+      "statement": "GameMonetize provides SDKs for HTML5/JS, Construct 2, Construct 3 and Unity 3D.",
+      "excerpt": "HTML5 / JS For web and mobile Docs Download Construct 2 For HTML5 games Docs Download Construct 3 For HTML5 games Docs Download Unity 3D For Unity3D games",
+      "subject": { "platform": "gamemonetize", "dimension": "technical_risk" },
+      "tags": ["sdk", "engines"]
+    },
+    {
+      "statement": "GameMonetize verifies SDK integration before a game can be sent for activation and reviewed by a content manager.",
+      "excerpt": "SDK integration state: button \"Verify Game\" shows you that you have correctly done integration and ready to publish. After integrating SDK you can send game to the activation. Our content manager will review your game and approve your game.",
+      "subject": { "platform": "gamemonetize", "dimension": "time_to_market" },
+      "facts": { "sdk_required": true },
+      "tags": ["sdk", "review"]
+    },
+    {
+      "statement": "GameMonetize offers exclusive deals and higher eCPM for exclusive games.",
+      "excerpt": "We offers for exclusive games exclusive deals for publishing and higher eCPM",
+      "subject": { "platform": "gamemonetize", "dimension": "monetization_fit" },
+      "tags": ["exclusivity"]
+    }
+  ]
+}

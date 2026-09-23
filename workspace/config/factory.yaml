@@ -27,10 +27,10 @@ factory:
     fsync: true                 # flush state.json to disk before the atomic rename
 
   # Python modules that register real step implementations: each exposes register(registry).
-  # Steps no module implements yet (discovery, strategy, design, SDK, release)
-  # still need --mock, which replaces every implementation with placeholders.
+  # Steps no module implements yet (strategy, design, SDK, release) still need --mock,
+  # which replaces every implementation with placeholders.
   steps:
-    modules: [wgf_init, wgf_assets, wgf_develop, wgf_verification]
+    modules: [wgf_discovery, wgf_init, wgf_assets, wgf_develop, wgf_verification]
 
   # The init module (scripts/wgf_init, docs/init-module.md): creates each game's repository
   # from the template with `gh`, clones it, and checks the template's infrastructure arrived.
@@ -84,6 +84,13 @@ factory:
     check_timeout_seconds: 900
     commit: true                # one local commit per visit, keyed by the idempotency key
     build_url: null             # e.g. "https://{branch}.{name}.pages.dev"; default links the commit
+
+  # The discovery module (scripts/wgf_discovery) implements `research`. Every key is
+  # optional; see scripts/wgf_discovery/step.py. Evidence snapshots live in
+  # workspace/research/snapshots/; live probes are off unless `live: true`.
+  # discovery:
+  #   platforms: [crazygames, gamevui, poki, yandex]
+  #   live: false
 
   # Checkpoint gates this installation lets a run approve without a person. Only reversible
   # gates are honoured; G4, G6 and G7 are refused whatever is listed here. `--mock` runs

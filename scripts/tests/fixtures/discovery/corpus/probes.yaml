@@ -1,0 +1,16 @@
+# FIXTURE probes, answered by the fake fetcher in test_discovery.py. Never fetched for real.
+probes:
+  - id: yandex-rewarded
+    platform: yandex
+    url: https://fixtures.invalid/yandex/sdk-adv
+    source_kind: portal-docs
+    pattern: 'showRewardedVideo'
+    statement: 'FIXTURE: the Yandex SDK advertising docs reference rewarded video.'
+    subject: {dimension: monetization_fit}
+    facts: {ads.rewarded: true}
+  - id: yandex-missing
+    platform: yandex
+    url: https://fixtures.invalid/yandex/sdk-adv
+    source_kind: portal-docs
+    pattern: 'thisTextIsNotOnThePage'
+    statement: 'FIXTURE: a probe whose pattern is absent.'

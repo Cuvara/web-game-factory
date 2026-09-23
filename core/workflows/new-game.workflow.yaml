@@ -42,8 +42,8 @@ workflow:
     - id: research
       type: research
       stage: portfolio:market-scan
-      description: Find and describe one opportunity, with its claims.
-      outputs: [opportunity]
+      description: Scan the market, screen candidate games, and carry one opportunity forward.
+      outputs: [research-report, opportunity]
 
     - id: strategy
       type: strategy

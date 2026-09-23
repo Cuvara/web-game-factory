@@ -10,7 +10,8 @@ Invoked from `AGENTS.md` or by the matching `/wgf-*` prompt.
 2. `core/lifecycle/stages/market-scan.md`
 3. `core/artifacts/shared/claim.schema.json`
 4. `core/artifacts/opportunity.schema.json`
-5. `core/reference/dimensions.yaml`
+5. `core/artifacts/research-report.schema.json`
+6. `core/reference/dimensions.yaml`
 
 Core is authoritative. Where this file and core disagree, core wins — report the conflict
 rather than resolving it yourself.

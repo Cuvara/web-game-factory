@@ -1,7 +1,7 @@
 # Market scan
 
 **Machine** portfolio · **Kind** job (stateless) · **Role** research
-**Emits** `claim`, `opportunity`
+**Emits** `claim`, `opportunity`, `research-report`
 
 A recurring job, not a state. Nothing sits "in" market scan — it runs, writes claims and
 opportunities, and finishes. This is why the portfolio tier has no `MARKET_INTELLIGENCE`
@@ -56,6 +56,20 @@ state: there is no entity to hold it.
 - `claim` records in `workspace/claims/`
 - `opportunity` records in `workspace/opportunities/<id>/opportunity.json`, state
   `discovered`
+- one `research-report` per scan: the scope, every source read, every claim made, what
+  each target platform allows and demands, every candidate considered with its screen and
+  its reason for exclusion, and the selection. The report is how a reviewer sees that the
+  field was widened before it was narrowed.
+
+When the scan runs as the `research` step of a workflow, the candidates live in the
+research report and only the selected one is emitted as an `opportunity`; the others stay
+on record, where the next scan can find them. The report's screen borrows the scoring
+model's weights and vetoes to rank candidates. It is not an `evaluation`: scoring for the
+shortlist remains a separate act by a separate role.
+
+A scan with no external source at all is not a scan. It still writes its report - every
+platform fact resting on unverified profiles, every product figure on estimates - and
+stops for evidence rather than emitting an opportunity nobody looked for.
 
 ## Failure modes
 

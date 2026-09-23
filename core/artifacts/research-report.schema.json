@@ -1,0 +1,391 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://webgamefactory.dev/schemas/artifacts/research-report.schema.json",
+  "title": "Research report",
+  "description": "The complete record of one market scan: which sources were read, every claim drawn from them, what each target platform allows and demands, the candidate games the scan considered, how they were screened against each other, and which one was carried forward as an opportunity.\n\nAn opportunity says 'here is a gap'. The research report says how that was found, and what else was looked at and passed over. It exists so that a reviewer at G1 can see that the scan widened the field before it narrowed it, and so that a later scan can be diffed against this one.\n\nThe screen is NOT an evaluation. It ranks candidates so the scan can pick which opportunity to emit; scoring an opportunity for the shortlist is the evaluation artifact's job, produced by a different role. Revenue is never estimated here: a scan that has no attributable revenue evidence records the dimension as unscored and says why.",
+
+  "x-wgf": {
+    "id": "research-report",
+    "kind": "artifact",
+    "format": "json",
+    "producer": "portfolio:market-scan",
+    "consumers": ["portfolio:scored", "title:strategy"],
+    "repo_path": "workspace/research/reports/<report-id>.json",
+    "required_for_gates": ["G1"]
+  },
+
+  "$defs": {
+    "tier": { "$ref": "./shared/claim.schema.json#/$defs/tier" },
+    "level": { "enum": ["low", "medium", "high"] },
+    "size": { "enum": ["xs", "s", "m", "l", "xl"] },
+    "ratio": { "type": "number", "minimum": 0, "maximum": 1 },
+    "concept": {
+      "type": "object",
+      "description": "The same shape as opportunity.concept, so a selected candidate becomes an opportunity without translation.",
+      "required": ["genre", "core_mechanic", "fantasy", "core_loop"],
+      "properties": {
+        "genre": { "type": "string" },
+        "subgenre": { "type": "string" },
+        "core_mechanic": { "type": "string" },
+        "fantasy": { "type": "string" },
+        "core_loop": { "type": "string" },
+        "reference_titles": { "type": "array", "items": { "type": "string" } }
+      },
+      "additionalProperties": false
+    },
+    "monetization": {
+      "type": "object",
+      "description": "The same shape as opportunity.monetization_hypothesis.",
+      "required": ["primary"],
+      "properties": {
+        "primary": { "enum": ["rewarded", "interstitial", "banner", "iap", "none"] },
+        "secondary": { "type": "array", "items": { "type": "string" } },
+        "rationale": { "type": "string" }
+      },
+      "additionalProperties": false
+    },
+    "claimRefs": {
+      "type": "array",
+      "description": "Claim ids, each present in this report's `claims`.",
+      "items": { "type": "string", "pattern": "^claim-[0-9a-z]{4,}$" }
+    },
+
+    "source": {
+      "type": "object",
+      "description": "One document the scan read. A platform profile, a portal page captured as a snapshot, or a page fetched during the run.",
+      "required": ["id", "source_uri", "source_kind", "observed_at", "collector", "fresh"],
+      "properties": {
+        "id": { "type": "string", "pattern": "^[a-z][a-z0-9-]*$" },
+        "source_uri": { "type": "string", "minLength": 1 },
+        "source_kind": { "$ref": "./shared/claim.schema.json#/$defs/evidence/properties/source_kind" },
+        "title": { "type": "string" },
+        "platform": { "type": ["string", "null"] },
+        "observed_at": { "type": "string", "format": "date-time" },
+        "collector": {
+          "type": "string",
+          "description": "Collector id from method.collectors that supplied this source."
+        },
+        "fresh": {
+          "type": "boolean",
+          "description": "observed_at is within the scoring model's evidence_ttl_days of the report's as_of."
+        },
+        "observations": { "type": "integer", "minimum": 0 }
+      },
+      "additionalProperties": false
+    },
+
+    "collector": {
+      "type": "object",
+      "required": ["id", "kind", "status"],
+      "properties": {
+        "id": { "type": "string", "pattern": "^[a-z][a-z0-9-]*$" },
+        "kind": {
+          "enum": ["reference", "snapshot", "live"],
+          "description": "reference = core platform profiles; snapshot = evidence captured before the run; live = fetched during the run."
+        },
+        "status": { "enum": ["used", "empty", "disabled", "unavailable"] },
+        "detail": { "type": "string" }
+      },
+      "additionalProperties": false
+    },
+
+    "platform": {
+      "type": "object",
+      "description": "What one target platform allows and demands, as far as this scan's evidence goes.",
+      "required": ["platform", "profile_version", "profile_status", "monetization", "constraints", "sdk_complexity", "verification_risk", "claim_refs"],
+      "properties": {
+        "platform": { "type": "string", "pattern": "^[a-z][a-z0-9-]*$" },
+        "profile_version": { "type": "string" },
+        "profile_status": { "type": "string" },
+        "monetization": {
+          "type": "object",
+          "required": ["ads", "rewarded", "iap"],
+          "properties": {
+            "ads": { "type": "array", "items": { "enum": ["interstitial", "rewarded", "banner"] } },
+            "rewarded": { "type": "boolean" },
+            "iap": { "type": "boolean" }
+          },
+          "additionalProperties": false
+        },
+        "constraints": {
+          "type": "object",
+          "properties": {
+            "max_bundle_mb": { "type": ["number", "null"] },
+            "locales_required": { "type": "array", "items": { "type": "string" } },
+            "orientation": { "type": "array", "items": { "type": "string" } },
+            "loading_api": { "type": "string" },
+            "mobile_share": { "type": ["number", "null"] },
+            "interstitial_min_interval_s": { "type": ["number", "null"] },
+            "review_days": { "type": "array", "items": { "type": "number" }, "maxItems": 2 },
+            "web_exclusive": {
+              "type": ["boolean", "null"],
+              "description": "The portal requires the game not be published on other web portals. null = no source says either way."
+            }
+          },
+          "additionalProperties": false
+        },
+        "sdk_complexity": { "$ref": "#/$defs/level" },
+        "verification_risk": { "$ref": "#/$defs/level" },
+        "discoverability": {
+          "type": "object",
+          "description": "Observed category listings on this platform, keyed by genre slug.",
+          "properties": {
+            "categories": { "type": "array", "items": { "type": "string" } },
+            "reference_titles": { "type": "integer", "minimum": 0 }
+          },
+          "additionalProperties": false
+        },
+        "discrepancies": {
+          "type": "array",
+          "description": "Where a source disagrees with the platform profile. Each one is a reason to bump the profile, not to trust it.",
+          "items": { "type": "string" }
+        },
+        "claim_refs": { "$ref": "#/$defs/claimRefs" }
+      },
+      "additionalProperties": false
+    },
+
+    "dimension": {
+      "type": "object",
+      "description": "One screened dimension, in the vocabulary of core/reference/dimensions.yaml. value null means not scored, and `reason` says why.",
+      "required": ["dimension", "value", "tier", "claim_refs"],
+      "properties": {
+        "dimension": { "type": "string", "pattern": "^[a-z][a-z0-9_]*$" },
+        "value": { "type": ["number", "string", "null"] },
+        "normalized": { "type": ["number", "null"], "minimum": 0, "maximum": 1 },
+        "weight": { "type": "number", "minimum": 0 },
+        "tier": { "$ref": "#/$defs/tier" },
+        "reason": { "type": "string" },
+        "claim_refs": { "$ref": "#/$defs/claimRefs" }
+      },
+      "additionalProperties": false
+    },
+
+    "candidate": {
+      "type": "object",
+      "required": ["id", "opportunity_id", "concept", "profile", "platform_fit", "dimensions", "screen", "market_signal", "status", "claim_refs"],
+      "properties": {
+        "id": { "type": "string", "pattern": "^[a-z][a-z0-9-]*$" },
+        "opportunity_id": { "type": "string", "pattern": "^opp-[0-9a-z]{3,}$" },
+        "concept": { "$ref": "#/$defs/concept" },
+        "profile": {
+          "type": "object",
+          "description": "The production and product shape of the candidate. Estimates, and labelled as such by the hypothesis claims they cite.",
+          "required": ["session_seconds", "replayability", "technical_complexity", "asset_complexity", "dev_speed_days", "asset_cost_usd", "monetization"],
+          "properties": {
+            "session_seconds": { "type": "number", "minimum": 0 },
+            "replayability": { "$ref": "#/$defs/level" },
+            "retention_design": { "type": "string" },
+            "technical_complexity": { "$ref": "#/$defs/size" },
+            "asset_complexity": { "$ref": "#/$defs/size" },
+            "dev_speed_days": { "type": "number", "minimum": 0 },
+            "asset_cost_usd": { "type": "number", "minimum": 0 },
+            "bundle_mb": { "type": "number", "minimum": 0 },
+            "rendering": { "enum": ["2d", "3d"] },
+            "text_heavy": { "type": "boolean" },
+            "multiplayer": { "type": "boolean" },
+            "mobile_ready": { "type": "boolean" },
+            "monetization": { "$ref": "#/$defs/monetization" }
+          },
+          "additionalProperties": false
+        },
+        "platform_fit": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["platform", "fit", "blockers", "claim_refs"],
+            "properties": {
+              "platform": { "type": "string" },
+              "fit": { "$ref": "#/$defs/ratio" },
+              "blockers": { "type": "array", "items": { "type": "string" } },
+              "concerns": { "type": "array", "items": { "type": "string" } },
+              "claim_refs": { "$ref": "#/$defs/claimRefs" }
+            },
+            "additionalProperties": false
+          }
+        },
+        "dimensions": { "type": "array", "items": { "$ref": "#/$defs/dimension" } },
+        "screen": {
+          "type": "object",
+          "required": ["score", "weight_coverage", "vetoes"],
+          "properties": {
+            "score": { "$ref": "#/$defs/ratio" },
+            "weight_coverage": {
+              "$ref": "#/$defs/ratio",
+              "description": "Share of the scoring model's total weight that this screen could score at all."
+            },
+            "evidence_coverage": {
+              "$ref": "#/$defs/ratio",
+              "description": "Share of scored weight resting on observed or derived claims rather than hypotheses."
+            },
+            "vetoes": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "required": ["criterion_id", "breached"],
+                "properties": {
+                  "criterion_id": { "type": "string" },
+                  "breached": { "type": ["boolean", "null"] },
+                  "measured": {},
+                  "note": { "type": "string" }
+                },
+                "additionalProperties": false
+              }
+            }
+          },
+          "additionalProperties": false
+        },
+        "market_signal": {
+          "type": "object",
+          "description": "Observed listings - category pages and reference titles of this kind of game - on the scoped platforms. When a scan observed any listings, candidates without a signal rank after candidates with one.",
+          "required": ["observed", "platforms", "reference_titles", "claim_refs"],
+          "properties": {
+            "observed": { "type": "boolean" },
+            "platforms": { "type": "array", "items": { "type": "string" } },
+            "reference_titles": { "type": "integer", "minimum": 0 },
+            "claim_refs": { "$ref": "#/$defs/claimRefs" }
+          },
+          "additionalProperties": false
+        },
+        "backlog_match": {
+          "type": ["object", "null"],
+          "description": "An existing opportunity with the same genre and core mechanic. A rejected match is evidence against this candidate, not a coincidence.",
+          "properties": {
+            "opportunity_id": { "type": "string" },
+            "state": { "type": "string" }
+          },
+          "additionalProperties": false
+        },
+        "status": { "enum": ["selected", "considered", "excluded"] },
+        "exclusion_reason": { "type": "string" },
+        "claim_refs": { "$ref": "#/$defs/claimRefs" }
+      },
+      "additionalProperties": false
+    },
+
+    "gap": {
+      "type": "object",
+      "required": ["kind", "description"],
+      "properties": {
+        "kind": {
+          "enum": ["no-external-evidence", "unscored-dimension", "stale-source", "rejected-observation", "collector-failure", "probe-miss", "profile-discrepancy", "unverified-profile"]
+        },
+        "description": { "type": "string" },
+        "source_id": { "type": "string" },
+        "platform": { "type": "string" }
+      },
+      "additionalProperties": false
+    }
+  },
+
+  "type": "object",
+  "required": ["provenance", "id", "scope", "method", "sources", "claims", "platforms", "candidates", "selection", "evidence_summary", "gaps"],
+  "properties": {
+    "provenance": { "$ref": "./shared/provenance.schema.json#/$defs/provenance" },
+
+    "id": { "type": "string", "pattern": "^rr-[0-9a-z]{4,}$" },
+
+    "scope": {
+      "type": "object",
+      "description": "What the scan was bounded to. An unbounded scan produces observations nobody scores.",
+      "required": ["question", "platforms", "as_of"],
+      "properties": {
+        "question": { "type": "string", "minLength": 8 },
+        "platforms": { "type": "array", "minItems": 1, "items": { "type": "string", "pattern": "^[a-z][a-z0-9-]*$" } },
+        "genres": { "type": "array", "items": { "type": "string" } },
+        "as_of": { "type": "string", "format": "date-time" }
+      },
+      "additionalProperties": false
+    },
+
+    "method": {
+      "type": "object",
+      "required": ["scoring_model", "evidence_ttl_days", "collectors"],
+      "properties": {
+        "scoring_model": {
+          "type": "object",
+          "description": "The model whose weights and vetoes the screen borrowed, pinned by content hash so the screen can be re-run.",
+          "required": ["id", "version", "file_hash"],
+          "properties": {
+            "id": { "type": "string" },
+            "version": { "type": "string" },
+            "file_hash": { "$ref": "./shared/provenance.schema.json#/$defs/hash" }
+          },
+          "additionalProperties": false
+        },
+        "evidence_ttl_days": { "type": "number", "minimum": 0 },
+        "collectors": { "type": "array", "items": { "$ref": "#/$defs/collector" } },
+        "corpus_hash": {
+          "$ref": "./shared/provenance.schema.json#/$defs/hash",
+          "description": "Digest over every source document read, so two scans over the same evidence can be recognised as such."
+        }
+      },
+      "additionalProperties": false
+    },
+
+    "sources": { "type": "array", "items": { "$ref": "#/$defs/source" } },
+
+    "claims": {
+      "type": "array",
+      "description": "Every claim this scan made, in full. Observation and interpretation are separate entries.",
+      "items": { "$ref": "./shared/claim.schema.json#/$defs/claim" }
+    },
+
+    "platforms": { "type": "array", "items": { "$ref": "#/$defs/platform" } },
+
+    "candidates": {
+      "type": "array",
+      "minItems": 1,
+      "description": "Four to eight is healthy. One means the decision was made before the looking started.",
+      "items": { "$ref": "#/$defs/candidate" }
+    },
+
+    "selection": {
+      "type": "object",
+      "required": ["candidate_id", "opportunity_id", "rationale"],
+      "properties": {
+        "candidate_id": { "type": "string" },
+        "opportunity_id": { "type": "string", "pattern": "^opp-[0-9a-z]{3,}$" },
+        "rationale": { "type": "string" },
+        "runner_up": { "type": ["string", "null"] }
+      },
+      "additionalProperties": false
+    },
+
+    "evidence_summary": {
+      "type": "object",
+      "required": ["sources", "claims_by_tier", "evidence_coverage"],
+      "properties": {
+        "sources": { "type": "integer", "minimum": 0 },
+        "external_sources": { "type": "integer", "minimum": 0 },
+        "stale_sources": { "type": "integer", "minimum": 0 },
+        "claims_by_tier": {
+          "type": "object",
+          "required": ["observed", "derived", "hypothesis"],
+          "properties": {
+            "observed": { "type": "integer", "minimum": 0 },
+            "derived": { "type": "integer", "minimum": 0 },
+            "hypothesis": { "type": "integer", "minimum": 0 }
+          },
+          "additionalProperties": false
+        },
+        "evidence_coverage": {
+          "$ref": "#/$defs/ratio",
+          "description": "Share of claims that are observed or derived."
+        },
+        "revenue": {
+          "type": "string",
+          "description": "What the scan could and could not say about revenue. Present so that its absence is explicit."
+        }
+      },
+      "additionalProperties": false
+    },
+
+    "gaps": {
+      "type": "array",
+      "description": "What the scan could not establish. As much a finding as anything it did establish.",
+      "items": { "$ref": "#/$defs/gap" }
+    }
+  },
+  "additionalProperties": false
+}

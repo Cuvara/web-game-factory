@@ -1,0 +1,52 @@
+{
+  "id": "snap-yandex-puzzles-category-ru",
+  "source_uri": "https://yandex.ru/games/category/puzzles",
+  "source_kind": "portal-listing",
+  "title": "Игры Головоломки Онлайн 🧩 Играйте Бесплатно На Яндекс Игры",
+  "observed_at": "2026-09-23T00:00:00Z",
+  "retrieved_via": "web-fetch",
+  "platform": "yandex",
+  "observations": [
+    {
+      "statement": "The Yandex Games (yandex.ru) catalog navigation includes categories such as Казуальные, Головоломки, Шарики, Три в ряд, Настольные, Карточные, Аркады, Гонки and Игры .io.",
+      "excerpt": "Казуальные Головоломки Шарики Детские Для мальчиков Три в ряд Настольные Аркады Обучающие Карточные Приключения Хорроры Для девочек Викторины Для двоих Стратегии Экономические Симуляторы Гонки Игры .io Мидкорные Боевики Спорт Для малышей Новеллы Ролевые",
+      "subject": { "platform": "yandex", "dimension": "platform_fit" },
+      "tags": ["category-navigation", "ru"]
+    },
+    {
+      "statement": "DOP 4 Удали Лишнее appears in the Yandex Games puzzles category listing.",
+      "excerpt": "DOP 4 Удали Лишнее",
+      "subject": { "platform": "yandex", "dimension": "competition", "genre": "puzzle" },
+      "facts": { "reference_title": { "name": "DOP 4 Удали Лишнее", "genre": "puzzle", "list": "category:puzzles" } },
+      "tags": ["reference-title", "listing-order-varies"]
+    },
+    {
+      "statement": "Сортировка Болтомания appears in the Yandex Games puzzles category listing.",
+      "excerpt": "Сортировка Болтомания",
+      "subject": { "platform": "yandex", "dimension": "competition", "genre": "sorting" },
+      "facts": { "reference_title": { "name": "Сортировка Болтомания", "genre": "sorting", "list": "category:puzzles" } },
+      "tags": ["reference-title", "listing-order-varies"]
+    },
+    {
+      "statement": "Маджонг: Супер Соедини appears in the Yandex Games puzzles category listing.",
+      "excerpt": "Маджонг: Супер Соедини",
+      "subject": { "platform": "yandex", "dimension": "competition", "genre": "puzzle" },
+      "facts": { "reference_title": { "name": "Маджонг: Супер Соедини", "genre": "puzzle", "list": "category:puzzles" } },
+      "tags": ["reference-title", "listing-order-varies"]
+    },
+    {
+      "statement": "Филворды с подсказками appears in the Yandex Games puzzles category listing.",
+      "excerpt": "Филворды с подсказками",
+      "subject": { "platform": "yandex", "dimension": "competition", "genre": "word" },
+      "facts": { "reference_title": { "name": "Филворды с подсказками", "genre": "word", "list": "category:puzzles" } },
+      "tags": ["reference-title", "listing-order-varies"]
+    },
+    {
+      "statement": "New Bubble Shooter appears in the Yandex Games puzzles category listing.",
+      "excerpt": "New Bubble Shooter",
+      "subject": { "platform": "yandex", "dimension": "competition", "genre": "puzzle" },
+      "facts": { "reference_title": { "name": "New Bubble Shooter", "genre": "puzzle", "list": "category:puzzles" } },
+      "tags": ["reference-title", "listing-order-varies"]
+    }
+  ]
+}

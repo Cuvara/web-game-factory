@@ -1,0 +1,36 @@
+{
+  "id": "snap-poki-what-we-look-for",
+  "source_uri": "https://developers.poki.com/guide/what-we-look-for",
+  "source_kind": "portal-docs",
+  "title": "What we look for | Poki Documentation",
+  "observed_at": "2026-09-23T00:00:00Z",
+  "retrieved_via": "web-fetch",
+  "platform": "poki",
+  "observations": [
+    {
+      "statement": "Poki states its audience is majority mobile and that desktop-only games are at a disadvantage.",
+      "excerpt": "Cross-device feel: controls and UI that work as well with a thumb as with a mouse. Our audience is majority mobile, so a desktop-only game is at a disadvantage.",
+      "subject": { "platform": "poki", "dimension": "platform_fit" },
+      "facts": { "mobile_support_expected": true },
+      "tags": ["mobile", "audience"]
+    },
+    {
+      "statement": "Poki checks technical soundness and optimization for mobile and desktop web, including load times, frame rates and file size.",
+      "excerpt": "we check how technically sound the game is and how well it is optimized for mobile and desktop web. With so many differing internet speeds and devices, it’s really important to nail fast load times, stable frame rates, and a lean file size across devices and engines!",
+      "subject": { "platform": "poki", "dimension": "performance_risk" },
+      "tags": ["curation", "performance"]
+    },
+    {
+      "statement": "Poki states that clones of existing hits won't be promoted.",
+      "excerpt": "Originality: a fresh idea, mechanic, or twist. Clones of existing hits don't stand out to players and won't be promoted;",
+      "subject": { "platform": "poki", "dimension": "competition" },
+      "tags": ["originality", "curation"]
+    },
+    {
+      "statement": "Poki curates submissions, so not every game fits.",
+      "excerpt": "We curate what goes on Poki, so not everything fits right away.",
+      "subject": { "platform": "poki", "dimension": "time_to_market" },
+      "tags": ["curation"]
+    }
+  ]
+}

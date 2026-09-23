@@ -1,0 +1,41 @@
+{
+  "id": "snap-poki-external-resources-policy",
+  "source_uri": "https://developers.poki.com/guide/external-resources-policy",
+  "source_kind": "portal-docs",
+  "title": "External resources policy | Poki Documentation",
+  "observed_at": "2026-09-23T00:00:00Z",
+  "retrieved_via": "web-fetch",
+  "platform": "poki",
+  "observations": [
+    {
+      "statement": "Poki blocks all external requests by default and games may not call third-party URLs unless explicitly approved.",
+      "excerpt": "To reduce privacy risk and overhead, Poki blocks all external requests by default. Your game may not call any third-party URLs unless they've been explicitly approved.",
+      "subject": { "platform": "poki", "dimension": "technical_risk" },
+      "tags": ["csp", "external-requests"]
+    },
+    {
+      "statement": "Poki disallows runtime requests to Google Fonts, externally hosted media, or libraries on external CDNs.",
+      "excerpt": "External assets. No runtime requests to Google Fonts, externally hosted images or audio, or code libraries on external CDNs like jsDelivr. Download and bundle these assets into your build instead.",
+      "subject": { "platform": "poki", "dimension": "technical_risk" },
+      "tags": ["bundling"]
+    },
+    {
+      "statement": "In-game chat systems are not allowed on Poki.",
+      "excerpt": "In-game chat systems. Chat can expose players, especially younger ones, to inappropriate language, bullying, and worse. Chat systems aren't allowed.",
+      "subject": { "platform": "poki", "dimension": "scope_complexity", "genre": "multiplayer" },
+      "tags": ["chat", "multiplayer"]
+    },
+    {
+      "statement": "Poki disallows external account systems, including email logins and Google or Facebook sign-in.",
+      "excerpt": "External account systems. Games must not collect personal information. No email-based logins, no Google or Facebook sign-in.",
+      "subject": { "platform": "poki", "dimension": "technical_risk" },
+      "tags": ["accounts", "privacy"]
+    },
+    {
+      "statement": "Externally hosted multiplayer servers are possible exceptions once approved by Poki; Google products including Google Analytics cannot be approved.",
+      "excerpt": "Multiplayer servers: externally hosted game servers are fine once approved by Poki. Analytics: providers like GameAnalytics, ByteBrew, or an in-house solution are reviewed case by case. Google products (including Google Analytics) cannot be approved.",
+      "subject": { "platform": "poki", "dimension": "technical_risk" },
+      "tags": ["multiplayer", "analytics"]
+    }
+  ]
+}

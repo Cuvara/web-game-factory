@@ -16,7 +16,7 @@ and the directory structure inherited that conflation — a direct cause of `cor
 
 | Role | Owns | Produces |
 |---|---|---|
-| `research` | portfolio market-scan, `discovered` | `claim`, `opportunity` |
+| `research` | portfolio market-scan, `discovered` | `claim`, `opportunity`, `research-report` |
 | `analysis` | `scored`, `shortlisted`, `approved`, title `concept` | `evaluation` |
 | `game-designer` | `strategy`, `design` | `title-strategy`, `game-design` |
 | `architect` | `tech-plan` | `tech-plan` |

@@ -460,6 +460,9 @@ The full contract is [workflow-module-contract.md](workflow-module-contract.md).
 3. Run without `--mock`. The engine refuses to start a run whose scope contains a step type
    nothing implements, before creating any state.
 
+`scripts/wgf_discovery/` is the shipped, tested example: the `research` step, registered
+from `factory.steps.modules`, with its own evidence collectors and fixtures.
+
 `--mock` registers the placeholders *after* configured modules, so under `--mock` every step
 type is a placeholder whether or not a real module exists. Without `--mock`, only configured
 modules and the built-in checkpoint are available.

@@ -1,0 +1,43 @@
+{
+  "id": "snap-fx-poki-docs",
+  "source_uri": "https://fixtures.invalid/poki/monetization",
+  "source_kind": "portal-docs",
+  "title": "FIXTURE - Poki monetization docs",
+  "observed_at": "2026-09-01T00:00:00Z",
+  "retrieved_via": "fixture",
+  "platform": "poki",
+  "observations": [
+    {
+      "statement": "FIXTURE: Poki games earn through ads served by the Poki SDK and have no in-app purchases.",
+      "excerpt": "FIXTURE: games earn through in-game ads served by the SDK. There are no in-app purchases.",
+      "subject": { "platform": "poki", "dimension": "monetization_fit" },
+      "facts": { "iap": false, "sdk_required": true },
+      "tags": ["fixture"]
+    },
+    {
+      "statement": "FIXTURE: The Poki SDK offers rewarded breaks.",
+      "excerpt": "FIXTURE: call rewardedBreak() to offer a reward.",
+      "subject": { "platform": "poki", "dimension": "monetization_fit" },
+      "facts": { "ads.rewarded": true },
+      "tags": ["fixture"]
+    },
+    {
+      "statement": "FIXTURE: Poki requires web exclusivity.",
+      "excerpt": "FIXTURE: you can't publish the same game on other web portals.",
+      "subject": { "platform": "poki", "dimension": "distribution_potential" },
+      "facts": { "web_exclusive": true },
+      "tags": ["fixture"]
+    },
+    {
+      "statement": "FIXTURE: an observation with no excerpt must be refused.",
+      "excerpt": "",
+      "subject": { "platform": "poki" }
+    },
+    {
+      "statement": "FIXTURE: an unknown fact key is ignored and reported.",
+      "excerpt": "FIXTURE: the portal pays in seashells.",
+      "subject": { "platform": "poki" },
+      "facts": { "currency": "seashells" }
+    }
+  ]
+}

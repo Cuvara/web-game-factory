@@ -1,0 +1,19 @@
+{
+  "id": "snap-fx-crazygames-docs",
+  "source_uri": "https://fixtures.invalid/crazygames/technical",
+  "source_kind": "portal-docs",
+  "title": "FIXTURE - CrazyGames technical requirements",
+  "observed_at": "2026-09-10T00:00:00Z",
+  "retrieved_via": "fixture",
+  "platform": "crazygames",
+  "observations": [
+    {
+      "statement": "FIXTURE: CrazyGames limits the initial download to 50 MB.",
+      "excerpt": "FIXTURE: initial download size must be at most 50MB.",
+      "subject": { "platform": "crazygames", "dimension": "platform_fit" },
+      "facts": { "max_bundle_mb": 50 },
+      "metric": { "name": "max_initial_download", "value": 50, "unit": "MB" },
+      "tags": ["fixture"]
+    }
+  ]
+}

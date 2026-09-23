@@ -1,0 +1,76 @@
+{
+  "provenance": {
+    "artifact_id": "wgf:opportunity:opp-900:20260801-01",
+    "artifact_type": "opportunity",
+    "schema_version": "1.0.0",
+    "opportunity_id": "opp-001",
+    "produced_by": {
+      "role": "research",
+      "actor": "ai"
+    },
+    "produced_at": "2026-08-28T11:30:00Z",
+    "inputs": [],
+    "content_hash": "sha256:5ce59873b47b07de72725ed2808bead817eddfe2c30259a4f491405a524227d3",
+    "status": "final"
+  },
+  "id": "opp-900",
+  "title": "FIXTURE rejected physics puzzle",
+  "state": "rejected",
+  "concept": {
+    "genre": "puzzle",
+    "subgenre": "physics",
+    "core_mechanic": "fixture",
+    "fantasy": "fixture",
+    "core_loop": "fixture"
+  },
+  "hypothesis": "claim-0a04",
+  "audience": {
+    "type": "casual",
+    "device": "mobile",
+    "regions": [
+      "ru",
+      "kz",
+      "by"
+    ],
+    "age_band": "13-34"
+  },
+  "candidate_platforms": [
+    "yandex",
+    "crazygames"
+  ],
+  "monetization_hypothesis": {
+    "primary": "rewarded",
+    "secondary": [
+      "interstitial"
+    ],
+    "rationale": "Failure-and-retry loops create a natural rewarded moment: continue the run rather than lose the combo."
+  },
+  "estimates": {
+    "dev_speed_days": 11,
+    "scope_complexity": "s",
+    "asset_cost_usd": 320,
+    "session_seconds": 210
+  },
+  "claim_refs": [
+    "claim-0a01",
+    "claim-0a02",
+    "claim-0a03",
+    "claim-0a04"
+  ],
+  "risks": [
+    {
+      "description": "Audio latency on mobile web can break beat-matching, which is the entire mechanic.",
+      "severity": "high",
+      "claim_refs": []
+    },
+    {
+      "description": "Russian localization is mandatory on Yandex and machine translation is rejected.",
+      "severity": "medium",
+      "claim_refs": [
+        "claim-0a02"
+      ]
+    }
+  ],
+  "latest_evaluation_id": "eval-0b01",
+  "title_id": "neon-drift"
+}

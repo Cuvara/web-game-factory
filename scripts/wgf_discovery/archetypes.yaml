@@ -1,0 +1,346 @@
+# Discovery module - candidate archetype catalog.
+#
+# The shapes of web game the market scan considers. The scan's job is to find out which of
+# these the evidence favours on the target portals, not to invent a game from nothing - and
+# a catalog makes "what else did you consider?" answerable at G1.
+#
+# EVERY NUMBER HERE IS AN ESTIMATE, not a measurement. The research step turns each
+# archetype's figures into one `hypothesis` claim (capped at 0.6 confidence), and every
+# dimension resting on them is screened at the hypothesis weight. Correct them from shipped
+# titles' prototype and performance reports; that is how they stop being guesses.
+#
+# Fields:
+#   market_tags         genre slugs matched against category / reference-title facts
+#   session_seconds     a typical session, not a best case
+#   replayability       low | medium | high
+#   technical_complexity, asset_complexity    xs | s | m | l | xl
+#   dev_speed_days      to a verifiable prototype, in the factory's 7-14 day model
+#   asset_cost_usd      library and generated sources, not commissioned art
+#   bundle_mb           expected initial download
+#   priors              0..1 guesses for dimensions no public source measures
+#
+# No revenue figure appears here, deliberately: revenue_potential needs at least a derived
+# claim (core/reference/dimensions.yaml), and a catalog guess would anchor everyone.
+
+version: 1.0.0
+
+archetypes:
+  - id: block-puzzle
+    title: Block Grid Puzzle
+    genre: puzzle
+    subgenre: block-puzzle
+    market_tags: [puzzle, block-puzzle, casual]
+    core_mechanic: drag given block shapes onto a grid; full rows and columns clear
+    fantasy: turning a cluttered board into a clean one, one satisfying clear at a time
+    core_loop: receive three pieces, place them, clear lines for combo points, run ends when nothing fits, retry for a high score
+    session_seconds: 240
+    replayability: high
+    retention_design: score chase plus daily challenge board
+    technical_complexity: xs
+    asset_complexity: xs
+    dev_speed_days: 7
+    asset_cost_usd: 150
+    bundle_mb: 8
+    rendering: 2d
+    text_heavy: false
+    multiplayer: false
+    needs_cloud_save: false
+    mobile_ready: true
+    monetization:
+      primary: rewarded
+      secondary: [interstitial]
+      rationale: A full board is a natural rewarded moment (clear space to continue); interstitials fit between runs.
+    priors: {monetization_fit: 0.7, retention_potential: 0.6, session_quality: 0.7, technical_risk: 0.1, performance_risk: 0.1, iterability: 0.8}
+    risks:
+      - {description: A well-served genre; differentiation rests on feel and polish rather than novelty., severity: medium}
+
+  - id: sort-puzzle
+    title: Color Sort Puzzle
+    genre: puzzle
+    subgenre: sorting
+    market_tags: [puzzle, sorting, casual]
+    core_mechanic: move coloured units between containers until each container holds one colour
+    fantasy: bringing order to a mess with a few clever moves
+    core_loop: read the level, plan moves, solve, advance to a harder level; hints and an extra container on demand
+    session_seconds: 300
+    replayability: medium
+    retention_design: level progression with difficulty ramps
+    technical_complexity: xs
+    asset_complexity: xs
+    dev_speed_days: 8
+    asset_cost_usd: 150
+    bundle_mb: 8
+    rendering: 2d
+    text_heavy: false
+    multiplayer: false
+    needs_cloud_save: true
+    mobile_ready: true
+    monetization:
+      primary: rewarded
+      secondary: [interstitial]
+      rationale: Being stuck is the rewarded moment (hint, undo, extra container); interstitials between levels.
+    priors: {monetization_fit: 0.75, retention_potential: 0.65, session_quality: 0.75, technical_risk: 0.1, performance_risk: 0.1, iterability: 0.7}
+    risks:
+      - {description: Level content is the product; it needs a solvable-level generator or a large authored set., severity: medium}
+
+  - id: merge-idle
+    title: Merge Idle Empire
+    genre: idle
+    subgenre: merge
+    market_tags: [idle, merge, clicker]
+    core_mechanic: merge identical items into higher tiers that produce currency, including while away
+    fantasy: building an empire that keeps growing when you are not looking
+    core_loop: buy items, merge upward, earn income, unlock the next tier, return later to collect offline earnings
+    session_seconds: 420
+    replayability: high
+    retention_design: offline earnings and tier unlocks pull the player back
+    technical_complexity: s
+    asset_complexity: m
+    dev_speed_days: 13
+    asset_cost_usd: 600
+    bundle_mb: 20
+    rendering: 2d
+    text_heavy: false
+    multiplayer: false
+    needs_cloud_save: true
+    mobile_ready: true
+    monetization:
+      primary: rewarded
+      secondary: [interstitial]
+      rationale: Idle economies offer many optional boosts (double earnings, skip a timer) that fit rewarded placements.
+    priors: {monetization_fit: 0.8, retention_potential: 0.75, session_quality: 0.6, technical_risk: 0.35, performance_risk: 0.2, iterability: 0.7}
+    risks:
+      - {description: Economy balance needs iteration a 7-14 day cycle may not allow., severity: high}
+
+  - id: one-touch-arcade
+    title: One-Tap Arcade
+    genre: arcade
+    subgenre: one-touch
+    market_tags: [arcade, casual]
+    core_mechanic: a single tap timed to dodge, jump or stack
+    fantasy: precision under pressure
+    core_loop: tap to act, survive longer, beat a personal best, retry instantly
+    session_seconds: 150
+    replayability: medium
+    retention_design: personal best and unlockable skins
+    technical_complexity: xs
+    asset_complexity: s
+    dev_speed_days: 7
+    asset_cost_usd: 250
+    bundle_mb: 10
+    rendering: 2d
+    text_heavy: false
+    multiplayer: false
+    needs_cloud_save: false
+    mobile_ready: true
+    monetization:
+      primary: rewarded
+      secondary: [interstitial]
+      rationale: Continue-after-failure is the rewarded moment; runs are short, so interstitial cadence needs care.
+    priors: {monetization_fit: 0.6, retention_potential: 0.4, session_quality: 0.6, technical_risk: 0.15, performance_risk: 0.15, iterability: 0.8}
+    risks:
+      - {description: Thin content ceiling; retention decays quickly without meta progression., severity: medium}
+
+  - id: endless-runner
+    title: Endless Runner
+    genre: arcade
+    subgenre: runner
+    market_tags: [runner, arcade, action]
+    core_mechanic: swipe between lanes to dodge obstacles and collect pickups at rising speed
+    fantasy: speed and near misses
+    core_loop: run, dodge, collect, die, spend pickups on upgrades, run again
+    session_seconds: 240
+    replayability: medium
+    retention_design: upgrade meta and missions
+    technical_complexity: m
+    asset_complexity: m
+    dev_speed_days: 14
+    asset_cost_usd: 700
+    bundle_mb: 35
+    rendering: 3d
+    text_heavy: false
+    multiplayer: false
+    needs_cloud_save: true
+    mobile_ready: true
+    monetization:
+      primary: rewarded
+      secondary: [interstitial]
+      rationale: Revive-after-crash and doubled pickups are established rewarded placements.
+    priors: {monetization_fit: 0.65, retention_potential: 0.5, session_quality: 0.6, technical_risk: 0.4, performance_risk: 0.5, iterability: 0.6}
+    risks:
+      - {description: 3D rendering on low-end mobile browsers is the constraint that bites., severity: high}
+
+  - id: io-arena
+    title: Arena .io
+    genre: io
+    subgenre: arena
+    market_tags: [io, multiplayer, action]
+    core_mechanic: real-time arena where players grow by absorbing smaller entities
+    fantasy: rising from the smallest to the biggest thing on the map
+    core_loop: spawn small, eat, dodge bigger players, climb the leaderboard, die, respawn
+    session_seconds: 360
+    replayability: high
+    retention_design: live opponents and leaderboards
+    technical_complexity: l
+    asset_complexity: s
+    dev_speed_days: 20
+    asset_cost_usd: 400
+    bundle_mb: 15
+    rendering: 2d
+    text_heavy: false
+    multiplayer: true
+    needs_cloud_save: false
+    mobile_ready: true
+    monetization:
+      primary: rewarded
+      secondary: [interstitial]
+      rationale: Respawn boosts and cosmetic unlocks fit rewarded placements.
+    priors: {monetization_fit: 0.6, retention_potential: 0.6, session_quality: 0.7, technical_risk: 0.8, performance_risk: 0.5, iterability: 0.4}
+    risks:
+      - {description: Needs a realtime game server - hosting cost plus portals that restrict external requests., severity: high}
+      - {description: An empty server kills the game; bots are needed at launch., severity: high}
+
+  - id: physics-puzzle
+    title: Physics Puzzle
+    genre: puzzle
+    subgenre: physics
+    market_tags: [physics, puzzle]
+    core_mechanic: cut, draw or remove pieces so physics carries an object to its goal
+    fantasy: the aha of a contraption doing exactly what you planned
+    core_loop: study the level, make one change, watch physics play out, retry or advance
+    session_seconds: 300
+    replayability: medium
+    retention_design: level packs and star ratings
+    technical_complexity: s
+    asset_complexity: s
+    dev_speed_days: 12
+    asset_cost_usd: 400
+    bundle_mb: 15
+    rendering: 2d
+    text_heavy: false
+    multiplayer: false
+    needs_cloud_save: true
+    mobile_ready: true
+    monetization:
+      primary: rewarded
+      secondary: [interstitial]
+      rationale: Hints and level skips on a stuck puzzle are the rewarded moment.
+    priors: {monetization_fit: 0.65, retention_potential: 0.55, session_quality: 0.75, technical_risk: 0.35, performance_risk: 0.3, iterability: 0.6}
+    risks:
+      - {description: Physics determinism across devices; a level solvable on desktop may fail on mobile., severity: medium}
+
+  - id: word-puzzle
+    title: Word Puzzle
+    genre: puzzle
+    subgenre: word
+    market_tags: [word, puzzle]
+    core_mechanic: form words from a letter set to fill a crossword-style grid
+    fantasy: feeling clever with words
+    core_loop: swipe letters into words, fill the grid, earn coins, spend on hints, next level
+    session_seconds: 360
+    replayability: medium
+    retention_design: level progression and daily puzzle
+    technical_complexity: xs
+    asset_complexity: xs
+    dev_speed_days: 9
+    asset_cost_usd: 150
+    bundle_mb: 12
+    rendering: 2d
+    text_heavy: true
+    multiplayer: false
+    needs_cloud_save: true
+    mobile_ready: true
+    monetization:
+      primary: rewarded
+      secondary: [interstitial]
+      rationale: Letter hints on a stuck level are the rewarded moment.
+    priors: {monetization_fit: 0.6, retention_potential: 0.7, session_quality: 0.75, technical_risk: 0.15, performance_risk: 0.05, iterability: 0.7}
+    risks:
+      - {description: Every language needs its own dictionary and level set; machine translation does not work for word games., severity: high}
+
+  - id: match-3
+    title: Match-3 Saga
+    genre: puzzle
+    subgenre: match-3
+    market_tags: [match-3, puzzle, casual]
+    core_mechanic: swap adjacent tiles to match three or more of a colour against level goals
+    fantasy: cascading combos that clear the board
+    core_loop: play a level against a move limit, earn stars, advance on a map, use boosters when stuck
+    session_seconds: 360
+    replayability: high
+    retention_design: level map, boosters and lives
+    technical_complexity: s
+    asset_complexity: m
+    dev_speed_days: 14
+    asset_cost_usd: 800
+    bundle_mb: 20
+    rendering: 2d
+    text_heavy: false
+    multiplayer: false
+    needs_cloud_save: true
+    mobile_ready: true
+    monetization:
+      primary: rewarded
+      secondary: [interstitial]
+      rationale: Extra moves at the end of a failed level is the canonical rewarded placement.
+    priors: {monetization_fit: 0.75, retention_potential: 0.7, session_quality: 0.7, technical_risk: 0.25, performance_risk: 0.2, iterability: 0.6}
+    risks:
+      - {description: Mature genre with polished incumbents; asset and level volume set the quality bar., severity: medium}
+
+  - id: solitaire
+    title: Solitaire Classic
+    genre: card
+    subgenre: solitaire
+    market_tags: [card, solitaire, board]
+    core_mechanic: build foundation piles from a shuffled tableau
+    fantasy: a calm, familiar ritual
+    core_loop: deal, move cards, win or stall, undo or redeal, track streaks
+    session_seconds: 300
+    replayability: high
+    retention_design: daily deal and win streaks
+    technical_complexity: xs
+    asset_complexity: s
+    dev_speed_days: 8
+    asset_cost_usd: 200
+    bundle_mb: 6
+    rendering: 2d
+    text_heavy: false
+    multiplayer: false
+    needs_cloud_save: false
+    mobile_ready: true
+    monetization:
+      primary: interstitial
+      secondary: [rewarded]
+      rationale: Deals are natural breaks for interstitials; rewarded hints and undos are secondary.
+    priors: {monetization_fit: 0.6, retention_potential: 0.7, session_quality: 0.7, technical_risk: 0.1, performance_risk: 0.05, iterability: 0.7}
+    risks:
+      - {description: Undifferentiated - many near-identical free versions exist., severity: medium}
+
+  - id: car-parking
+    title: Car Parking 3D
+    genre: driving
+    subgenre: parking
+    market_tags: [parking, driving, racing, simulation]
+    core_mechanic: steer a vehicle into a tight space without collisions
+    fantasy: precision driving mastery
+    core_loop: read the lot, drive, park without scratches, unlock vehicles, harder lots
+    session_seconds: 300
+    replayability: medium
+    retention_design: vehicle unlocks and level progression
+    technical_complexity: m
+    asset_complexity: l
+    dev_speed_days: 18
+    asset_cost_usd: 1500
+    bundle_mb: 60
+    rendering: 3d
+    text_heavy: false
+    multiplayer: false
+    needs_cloud_save: true
+    mobile_ready: true
+    monetization:
+      primary: rewarded
+      secondary: [interstitial]
+      rationale: Vehicle unlocks and level skips fit rewarded placements.
+    priors: {monetization_fit: 0.65, retention_potential: 0.5, session_quality: 0.6, technical_risk: 0.45, performance_risk: 0.6, iterability: 0.5}
+    risks:
+      - {description: 3D vehicle and environment assets dominate cost and bundle size., severity: high}

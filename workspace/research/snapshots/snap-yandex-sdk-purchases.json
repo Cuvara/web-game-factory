@@ -1,0 +1,24 @@
+{
+  "id": "snap-yandex-sdk-purchases",
+  "source_uri": "https://yandex.com/dev/games/doc/en/sdk/sdk-purchases",
+  "source_kind": "portal-docs",
+  "title": "In-app purchases | Yandex Games SDK",
+  "observed_at": "2026-09-23T00:00:00Z",
+  "retrieved_via": "web-fetch",
+  "platform": "yandex",
+  "observations": [
+    {
+      "statement": "Yandex Games supports in-app purchases added to games via its SDK.",
+      "excerpt": "Add purchases to your game (for example, extra time for completing a level or accessories for the character) and earn income.",
+      "subject": { "platform": "yandex", "dimension": "monetization_fit" },
+      "facts": { "iap": true },
+      "tags": ["iap"]
+    },
+    {
+      "statement": "Yandex Games instructs developers to enable purchases in advance to unlock moderation.",
+      "excerpt": "Enable purchases — do this in advance to unlock moderation.",
+      "subject": { "platform": "yandex", "dimension": "time_to_market" },
+      "tags": ["iap", "moderation"]
+    }
+  ]
+}

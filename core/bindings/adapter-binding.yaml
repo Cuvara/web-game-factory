@@ -37,8 +37,9 @@ agents:
       - core/lifecycle/stages/market-scan.md
       - core/artifacts/shared/claim.schema.json
       - core/artifacts/opportunity.schema.json
+      - core/artifacts/research-report.schema.json
       - core/reference/dimensions.yaml
-    produces: [claim, opportunity]
+    produces: [claim, opportunity, research-report]
     consumes: []
 
   - id: analysis

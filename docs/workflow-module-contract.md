@@ -147,7 +147,7 @@ reading, and `DocumentedIoContract` fails if the two disagree.
 <!-- io-contract:start -->
 | Step | Type | Inputs | Outputs |
 |---|---|---|---|
-| `research` | `research` | — | `opportunity` |
+| `research` | `research` | — | `research-report`, `opportunity` |
 | `strategy` | `strategy` | `opportunity` | `title-strategy` |
 | `strategy-review` | `human-checkpoint` | — | — |
 | `design` | `design` | `title-strategy` | `game-design` |

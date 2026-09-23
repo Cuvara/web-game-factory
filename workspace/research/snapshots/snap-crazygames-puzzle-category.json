@@ -1,0 +1,59 @@
+{
+  "id": "snap-crazygames-puzzle-category",
+  "source_uri": "https://www.crazygames.com/c/puzzle",
+  "source_kind": "portal-listing",
+  "title": "Puzzle Games 🧩 Play on CrazyGames",
+  "observed_at": "2026-09-23T00:00:00Z",
+  "retrieved_via": "web-fetch",
+  "platform": "crazygames",
+  "observations": [
+    {
+      "statement": "CrazyGames' category navigation lists Action, Adventure, Arcade, Board, Card, Clicker, Driving, .io, Puzzle, Shooting, Simulation, Sports, Strategy, Trivia and Word.",
+      "excerpt": "Action Adventure Arcade Board Card Clicker Driving .io Puzzle Shooting Simulation Sports Strategy Trivia Word",
+      "subject": { "platform": "crazygames", "dimension": "platform_fit" },
+      "tags": ["category-navigation"]
+    },
+    {
+      "statement": "Mahjongg Solitaire is listed first among the most popular puzzle games on CrazyGames.",
+      "excerpt": "What are the most popular Puzzle Games? Mahjongg Solitaire Piece of Cake: Merge and Bake Piles of Mahjong Designville: Merge & Design Mergest Kingdom",
+      "subject": { "platform": "crazygames", "dimension": "competition", "genre": "puzzle" },
+      "facts": { "reference_title": { "name": "Mahjongg Solitaire", "genre": "puzzle", "list": "category:puzzle most-popular" } },
+      "tags": ["reference-title"]
+    },
+    {
+      "statement": "Piece of Cake: Merge and Bake is listed among the most popular puzzle games and best mobile puzzle games on CrazyGames.",
+      "excerpt": "Piece of Cake: Merge and Bake",
+      "subject": { "platform": "crazygames", "dimension": "competition", "genre": "merge" },
+      "facts": { "reference_title": { "name": "Piece of Cake: Merge and Bake", "genre": "merge", "list": "category:puzzle most-popular" } },
+      "tags": ["reference-title", "mobile"]
+    },
+    {
+      "statement": "Mergest Kingdom is listed among the most popular puzzle games on CrazyGames.",
+      "excerpt": "Mergest Kingdom",
+      "subject": { "platform": "crazygames", "dimension": "competition", "genre": "merge" },
+      "facts": { "reference_title": { "name": "Mergest Kingdom", "genre": "merge", "list": "category:puzzle most-popular" } },
+      "tags": ["reference-title"]
+    },
+    {
+      "statement": "Screw Out: Bolts and Nuts is listed among the most popular puzzle games and best mobile puzzle games on CrazyGames.",
+      "excerpt": "Screw Out: Bolts and Nuts",
+      "subject": { "platform": "crazygames", "dimension": "competition", "genre": "puzzle" },
+      "facts": { "reference_title": { "name": "Screw Out: Bolts and Nuts", "genre": "puzzle", "list": "category:puzzle most-popular" } },
+      "tags": ["reference-title", "mobile"]
+    },
+    {
+      "statement": "Hexa Stack is listed among the most popular puzzle games on CrazyGames.",
+      "excerpt": "Farm Merge Valley Color Tap: Coloring by Numbers Hexa Stack Numicolor",
+      "subject": { "platform": "crazygames", "dimension": "competition", "genre": "puzzle" },
+      "facts": { "reference_title": { "name": "Hexa Stack", "genre": "puzzle", "list": "category:puzzle most-popular" } },
+      "tags": ["reference-title"]
+    },
+    {
+      "statement": "CrazyGames names Words of Wonders as one of the most played word games.",
+      "excerpt": "One of the most played word games is Words of Wonders , a casual crossword game.",
+      "subject": { "platform": "crazygames", "dimension": "competition", "genre": "word" },
+      "facts": { "reference_title": { "name": "Words of Wonders", "genre": "word", "list": "category:puzzle editorial" } },
+      "tags": ["reference-title"]
+    }
+  ]
+}

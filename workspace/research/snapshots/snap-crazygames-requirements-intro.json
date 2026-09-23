@@ -1,0 +1,50 @@
+{
+  "id": "snap-crazygames-requirements-intro",
+  "source_uri": "https://docs.crazygames.com/requirements/intro/",
+  "source_kind": "portal-docs",
+  "title": "Introduction - CrazyGames Documentation",
+  "observed_at": "2026-09-23T00:00:00Z",
+  "retrieved_via": "web-fetch",
+  "platform": "crazygames",
+  "observations": [
+    {
+      "statement": "In CrazyGames Basic Launch the SDK is optional and monetization is not available.",
+      "excerpt": "A game in Basic Launch allows you to go live without needing to customize your game for CrazyGames. The CrazyGames SDK is optional and monetization is not available.",
+      "subject": { "platform": "crazygames", "dimension": "time_to_market" },
+      "tags": ["basic-launch"]
+    },
+    {
+      "statement": "Games selected for CrazyGames Full Launch must comply with all integration requirements including the SDK.",
+      "excerpt": "Once your game has been selected for Full Launch , you are required to comply to all integration requirements listed below, including the CrazyGames SDK.",
+      "subject": { "platform": "crazygames", "dimension": "scope_complexity" },
+      "facts": { "sdk_required": true },
+      "tags": ["full-launch"]
+    },
+    {
+      "statement": "CrazyGames technical limits: initial download ≤ 50MB, total file size ≤ 250MB (50MB without SDK), file count ≤ 1500.",
+      "excerpt": "Initial download size ≤ 50MB Total file size ≤ 250MB ( 50MB without SDK ) File count ≤ 1500",
+      "subject": { "platform": "crazygames", "dimension": "technical_risk" },
+      "facts": { "max_bundle_mb": 50 },
+      "tags": ["file-size"]
+    },
+    {
+      "statement": "Only ads served through the CrazyGames SDK are allowed, and ad revenue share is the primary monetization.",
+      "excerpt": "The primary monetization mechanism we offer is through advertisement revenue share. Only ads served through our SDK are allowed",
+      "subject": { "platform": "crazygames", "dimension": "monetization_fit" },
+      "tags": ["ads"]
+    },
+    {
+      "statement": "In-game purchases on CrazyGames are available only to selected games with a Full Implementation using Xsolla.",
+      "excerpt": "Selected games are eligible for In-game Purchases . A Full Implementation is required, using Xsolla as payments provider.",
+      "subject": { "platform": "crazygames", "dimension": "monetization_fit" },
+      "facts": { "iap": true },
+      "tags": ["iap", "invite-only", "xsolla"]
+    },
+    {
+      "statement": "CrazyGames offers technical SDK-integration support once a developer's games reach 50k combined plays.",
+      "excerpt": "Once your games reach 50k plays (combined), we can offer you technical support with SDK integration.",
+      "subject": { "platform": "crazygames", "dimension": "technical_risk" },
+      "tags": ["support"]
+    }
+  ]
+}

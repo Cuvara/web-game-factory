@@ -27,7 +27,7 @@ jobs:
     reads:
       - core/reference/platforms/
       - core/reference/dimensions.yaml
-    emits: [claim, opportunity]
+    emits: [claim, opportunity, research-report]
     notes: >
       Also fed by performance-review artifacts from live titles. That feedback is a DATA
       edge, not a control edge: a live game's metrics become claims that raise or lower

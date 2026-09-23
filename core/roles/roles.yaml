@@ -26,7 +26,7 @@ roles:
       - portfolio:discovered
     owns_jobs:
       - portfolio:market-scan
-    produces: [claim, opportunity]
+    produces: [claim, opportunity, research-report]
     consumes: []
     responsibility: >
       Gather market signal from platform sources and normalize it into claims. Never

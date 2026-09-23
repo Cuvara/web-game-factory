@@ -276,7 +276,14 @@ def main(argv=None):
     # The step's outcome is recorded, not required: a ref without the conformance suite, or
     # a required platform with no adapter there, fails it by design. The integration must
     # pass, and so must everything the template itself checks.
-    ok = (summary["step"].get("tests", {}).get("status") == "passed"
+    integration = summary["step"].get("tests", {}).get("status")
+    if integration is None and "sdk:conformance" in (summary["step"]["message"] or ""):
+        # A ref older than the template's conformance suite: the step stops at that phase,
+        # and the integration's own suites are proven by the template's `pnpm test` instead.
+        integration = "passed" if summary["checks"]["template-tests"]["exit"] == 0 else "failed"
+        summary["step"]["note"] = ("no `pnpm sdk:conformance` on this ref; integration suites "
+                                   "verified through `pnpm test`")
+    ok = (integration == "passed"
           and all(c["exit"] == 0 for c in summary["checks"].values())
           and all(b["build"] == 0 and b["e2e"]["exit"] == 0 for b in summary["builds"]))
     print("e2e:", "PASS" if ok else "FAIL", "-", os.path.join(work, "e2e-summary.json"))

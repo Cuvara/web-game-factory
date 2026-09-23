@@ -10,6 +10,9 @@ Core answers three questions and nothing else:
 3. **Who is accountable for each state?** → `roles/`
 
 Everything else (`reference/`, `templates/`, `bindings/`) is data those three depend on.
+`workflows/` is the one addition: the order in which units of work *execute*, as data an
+engine can run (see `../docs/workflow-engine.md`). It serves the lifecycles and never
+replaces them — a workflow step names the stage it serves; it does not move an entity.
 
 ---
 
@@ -180,6 +183,7 @@ core/
   roles/            who is accountable for what
   templates/        document scaffolds for artifacts whose canonical form is prose
   bindings/         what an AI adapter must cover, provider-independently
+  workflows/        executable workflow definitions (steps, routing, retry) - run by `wgf`
 ```
 
 Instance data — the opportunity backlog, claims, evaluations, decisions, title state —

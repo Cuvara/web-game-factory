@@ -1,0 +1,13 @@
+# Acceptance fixture: a failing step is retried with exponential backoff, then either
+# succeeds or exhausts its attempts and fails the run.
+workflow:
+  id: retry
+  version: 1
+  steps:
+    - id: develop
+      type: develop
+      outputs: [prototype-report]
+      retry: {max_attempts: 3, backoff: exponential, delay_seconds: 1, max_delay_seconds: 10}
+    - id: release
+      type: release
+      outputs: [release-manifest]

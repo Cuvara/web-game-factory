@@ -7,6 +7,9 @@ dist/
 .DS_Store
 Thumbs.db
 
+# Workflow run state (`wgf`): instance data, local to one machine.
+.factory/
+
 # Python bytecode. The repository has no toolchain; these are a side effect of running
 # the check scripts and must not be committed.
 __pycache__/

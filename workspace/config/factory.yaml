@@ -1,0 +1,39 @@
+# Local factory configuration, read by the `wgf` CLI (scripts/wgf.py).
+#
+# Core ships the workflow definitions (core/workflows/); this file is where one installation
+# decides how they execute. Every key is optional and falls back to the defaults in
+# scripts/wgflib/workflow/config.py.
+
+factory:
+  workflow:
+    default: new-game
+
+  # Retry and loop policy for every step that does not set its own in the workflow file.
+  execution:
+    max_attempts: 3
+    backoff: exponential        # none | fixed | exponential
+    delay_seconds: 2            # before the first retry; doubles each time when exponential
+    max_delay_seconds: 60
+    max_visits: 5               # how often a loop may re-enter one step before the run blocks
+
+  # Which runtime executes a step. Only `local` exists; an agent-host runtime registers
+  # itself from a step module and is selected here by name.
+  agents:
+    default: local
+
+  # Relative to the directory `wgf` is run from. Run state is instance data, never committed.
+  storage:
+    directory: .factory
+    fsync: true                 # flush state.json to disk before the atomic rename
+
+  # Python modules that register real step implementations: each exposes register(registry).
+  # Empty until the discovery, strategy, design, asset, development, SDK and verification
+  # modules exist - until then, run with --mock.
+  steps:
+    modules: []
+
+  # Checkpoint gates this installation lets a run approve without a person. Only reversible
+  # gates are honoured; G4, G6 and G7 are refused whatever is listed here. `--mock` runs
+  # approve every reversible gate unless --hold-gates is given.
+  checkpoints:
+    auto_approve: []

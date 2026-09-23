@@ -1,0 +1,146 @@
+{
+  "title_id": "mock-title",
+  "build_ref": {
+    "commit_sha": "4e1a9c0d7b3f25184a6c0e9312bd7748f0a53c62",
+    "url": "https://example.invalid/builds/mock-title/pr-2",
+    "built_at": "2026-09-15T11:00:00Z"
+  },
+  "iteration": 1,
+  "proved": [
+    {
+      "question": "Audio-to-input latency on mid-range mobile web is low enough that beat-matching feels fair",
+      "verdict": "disproved",
+      "evidence": "Measured 95-140ms end-to-end on a Redmi Note 11 in Chrome, against a 60ms design ceiling. Web Audio scheduling plus touch event latency accounts for most of it. Iteration 2 added predictive input windowing, which reduced perceived unfairness but did not move measured latency below 90ms. Five of eight first-time testers described correct-looking inputs registering as misses.",
+      "claim_refs": []
+    },
+    {
+      "question": "A first-time player understands the control without instruction",
+      "verdict": "proved",
+      "evidence": "Seven of eight first-time testers were switching lanes deliberately within 10 seconds, with no prompt beyond the pulsing gate indicator.",
+      "claim_refs": []
+    },
+    {
+      "question": "The fail-and-retry loop produces an unforced desire to retry immediately",
+      "verdict": "inconclusive",
+      "evidence": "Six of eight retried unprompted at least twice, but four of those explicitly attributed their failure to the game rather than themselves. Retry motivated by disbelief is not the same signal as retry motivated by challenge, and it does not predict retention.",
+      "claim_refs": []
+    },
+    {
+      "question": "A rewarded continue reads as a favour rather than an interruption",
+      "verdict": "inconclusive",
+      "evidence": "Only three testers reached the rewarded trigger, because runs ended earlier than designed. Too few observations to judge.",
+      "claim_refs": []
+    }
+  ],
+  "kill_criteria_eval": [
+    {
+      "criterion_id": "audio_latency_unfixable",
+      "measured": 95,
+      "breached": true,
+      "evaluated_at": "2026-09-15T15:00:00Z",
+      "note": "Best case after two iterations of mitigation. Ceiling was 60ms."
+    },
+    {
+      "criterion_id": "control_not_understood",
+      "measured": 0.875,
+      "breached": false,
+      "evaluated_at": "2026-09-15T15:00:00Z",
+      "note": "The positioning argument held: the control idiom was familiar."
+    },
+    {
+      "criterion_id": "no_retry_pull",
+      "measured": 0.75,
+      "breached": false,
+      "evaluated_at": "2026-09-15T15:00:00Z",
+      "note": "Threshold met numerically, but see the inconclusive verdict above — half of these retries were driven by disbelief at a perceived unfair miss."
+    }
+  ],
+  "playtest_sessions": [
+    {
+      "observer": "qa",
+      "player_context": "first-time",
+      "duration_s": 420,
+      "understood_without_help": true,
+      "reached_first_reward": true,
+      "notes": "Grasped the control immediately. Complained twice that a tap 'should have counted'. Stopped after 6 runs."
+    },
+    {
+      "observer": "qa",
+      "player_context": "first-time",
+      "duration_s": 300,
+      "understood_without_help": true,
+      "reached_first_reward": true,
+      "notes": "Retried 5 times, visibly frustrated rather than engaged. Said it 'feels laggy' without being asked about latency."
+    },
+    {
+      "observer": "qa",
+      "player_context": "first-time",
+      "duration_s": 180,
+      "understood_without_help": true,
+      "reached_first_reward": false,
+      "notes": "Quit after 3 runs. 'I don't think it's registering.'"
+    },
+    {
+      "observer": "game-designer",
+      "player_context": "first-time",
+      "duration_s": 540,
+      "understood_without_help": false,
+      "reached_first_reward": true,
+      "notes": "The only tester who needed a prompt; recovered quickly. Most tolerant of the timing window."
+    },
+    {
+      "observer": "game-designer",
+      "player_context": "internal",
+      "duration_s": 600,
+      "understood_without_help": true,
+      "reached_first_reward": true,
+      "notes": "Internal session. Latency is learnable with practice — which is precisely the problem, since portal traffic will not practise."
+    }
+  ],
+  "integration_status": {
+    "platform_sdk": "working",
+    "monetization": "partial",
+    "analytics": "working",
+    "persistence": "working"
+  },
+  "perf_measurements": [
+    {
+      "device_class": "mid-android",
+      "fps": 58,
+      "memory_mb": 94,
+      "time_to_interactive_s": 4.2,
+      "within_budget": true
+    },
+    {
+      "device_class": "low-android",
+      "fps": 47,
+      "memory_mb": 88,
+      "time_to_interactive_s": 6.1,
+      "within_budget": false
+    },
+    {
+      "device_class": "desktop",
+      "fps": 60,
+      "memory_mb": 120,
+      "time_to_interactive_s": 1.8,
+      "within_budget": true
+    }
+  ],
+  "scope_deltas": [
+    {
+      "item": "Predictive input windowing",
+      "direction": "added",
+      "reason": "Iteration 2 mitigation for the latency finding. Not in the plan; justified as a direct attempt to clear a kill criterion."
+    },
+    {
+      "item": "Audio-reactive visuals",
+      "direction": "deferred",
+      "reason": "Production-tier scope, correctly not built at prototype."
+    }
+  ],
+  "recommendation": {
+    "decision": "abandon",
+    "rationale": "The audio_latency_unfixable kill criterion is breached at 95ms against a 60ms ceiling, after two iterations, with iterations now exhausted. The two criteria that passed do not rescue it: control comprehension was never the risk, and the retry numbers are contaminated by players retrying out of disbelief at a miss they consider unfair. The mechanic rests entirely on the beat being perceived as authoritative, and on mid-range mobile web it is not. Nothing downstream of this — art, tuning, more tracks — addresses it. The honest reading is that this concept is a poor fit for the platform constraint, not that it was built badly.",
+    "if_iterate_what_changes": "No further iteration proposed. A third pass would have to change the core mechanic to be latency-tolerant, which would make it a different game and should be evaluated as a new opportunity rather than defended as this one."
+  }
+}

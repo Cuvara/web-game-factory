@@ -1,0 +1,47 @@
+{
+  "title_id": "mock-title",
+  "items": [
+    {
+      "id": "player-sprite",
+      "label": "Player",
+      "type": "sprite",
+      "source": "procedural",
+      "est_cost": 0,
+      "est_hours": 2,
+      "status": "planned",
+      "scope_tier": "mvp"
+    },
+    {
+      "id": "beat-track",
+      "label": "Music track",
+      "type": "music",
+      "source": "library",
+      "est_cost": 40,
+      "est_hours": 1,
+      "status": "planned",
+      "license": "CC-BY-4.0",
+      "scope_tier": "mvp"
+    },
+    {
+      "id": "ui-kit",
+      "label": "HUD and menus",
+      "type": "ui",
+      "source": "procedural",
+      "est_cost": 0,
+      "est_hours": 4,
+      "status": "planned",
+      "scope_tier": "mvp"
+    }
+  ],
+  "pipeline": {
+    "2d": "texture atlas",
+    "audio_format": [
+      "ogg",
+      "m4a"
+    ]
+  },
+  "total_est_cost": 40,
+  "total_est_hours": 7,
+  "budget": 400,
+  "complete": true
+}

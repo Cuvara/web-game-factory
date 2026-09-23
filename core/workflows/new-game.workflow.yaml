@@ -1,0 +1,111 @@
+# The new-game workflow: from a market signal to a prepared release, as executable data.
+#
+# This is an EXECUTION plan, not a lifecycle. The lifecycles in core/lifecycle/*.machine.yaml
+# say what state an opportunity, title or release is in and which transitions are legal; this
+# file says which units of work run, in what order, and where each result goes next. Each
+# step names the lifecycle stage it serves in `stage:`, which check-integrity.py resolves.
+# A step advancing an entity's lifecycle still goes through wgf-state.py and its gates - the
+# workflow never moves a title by itself.
+#
+# Read by scripts/wgflib/workflow (see docs/workflow-engine.md). Every `wgf` command is a
+# slice of this file: `wgf new-game` runs all of it, `wgf plan` runs the `plan` group, and
+# `wgf verify` runs one step. None of them has an order of its own.
+#
+# Routing: a step's result is routed by its `on:` map, keyed by the route label it returned
+# or by its outcome (success, failed, blocked, waiting_for_input, waiting_for_human).
+# Unrouted success goes to `next`, or the next step listed; unrouted failure fails the run;
+# unrouted blocked blocks it; unrouted waiting parks it until resumed. Targets are step ids,
+# $end or $fail.
+#
+# `release` prepares a release - a release-manifest in state `draft` - and stops. Building,
+# packaging and publishing belong to the game repository's CI, behind G5 and G6.
+
+workflow:
+  id: new-game
+  version: 1
+  description: Discover an opportunity, plan a title, build it, verify it and prepare its first release.
+  start: research
+
+  # Output types that have no schema in core/artifacts/ yet. Everything else a step declares
+  # must resolve to one; check-integrity.py enforces both halves. Giving one of these a
+  # contract means writing its schema and deleting it from this list.
+  untyped_artifacts: [scaffold-record, sdk-report]
+
+  defaults:
+    # Omitted keys fall back to factory.execution in workspace/config/factory.yaml.
+    max_visits: 3
+
+  groups:
+    plan: [strategy, strategy-review, design]
+
+  steps:
+    - id: research
+      type: research
+      stage: portfolio:market-scan
+      description: Find and describe one opportunity, with its claims.
+      outputs: [opportunity]
+
+    - id: strategy
+      type: strategy
+      stage: title:strategy
+      inputs: [opportunity]
+      outputs: [title-strategy]
+
+    # G2 is reversible, so an installation may auto-approve it (factory.checkpoints); a
+    # rejection is unrouted, so it blocks the run for a person to look at.
+    - id: strategy-review
+      type: human-checkpoint
+      stage: title:strategy
+      with:
+        gate: G2
+        prompt: Approve the title strategy before design starts?
+        choices: [approve, reject]
+
+    - id: design
+      type: design
+      stage: title:design
+      inputs: [title-strategy]
+      outputs: [game-design]
+
+    - id: init
+      type: init
+      stage: title:scaffolding
+      description: Create the game repository from the template. Idempotent per run.
+      inputs: [game-design]
+      outputs: [scaffold-record]
+      retry: {max_attempts: 2}
+
+    - id: assets
+      type: assets
+      stage: title:prototype
+      inputs: [game-design]
+      outputs: [asset-manifest]
+
+    - id: develop
+      type: develop
+      stage: title:prototype
+      description: Build the game. Re-entered with the failing qa-report when verification fails.
+      inputs: [game-design, asset-manifest, qa-report]
+      outputs: [prototype-report]
+
+    - id: sdk
+      type: sdk
+      stage: title:prototype
+      inputs: [prototype-report]
+      outputs: [sdk-report]
+
+    - id: verify
+      type: verify
+      stage: release:qa
+      inputs: [prototype-report, sdk-report]
+      outputs: [qa-report]
+      retry: {max_attempts: 2}
+      on:
+        fail: develop
+
+    - id: release
+      type: release
+      stage: release:draft
+      inputs: [qa-report]
+      outputs: [release-manifest]
+      next: $end

@@ -78,6 +78,47 @@ def check_machines(artifacts, roles, gates):
                 ERRORS.append(f"{machine}: unknown gate '{gate}'")
 
 
+def check_workflows(artifacts):
+    """core/workflows/*.workflow.yaml parse as runnable definitions, every step's `stage`
+    names a real lifecycle state or stage procedure, and every artifact a step consumes or
+    produces has a schema - or is listed in the workflow's `untyped_artifacts`, which is the
+    visible list of contracts core does not have yet."""
+    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+    from wgflib.machine import MACHINES, load_machine
+    from wgflib.workflow.definition import DefinitionError, load_definition
+    from wgflib.yamllite import YamlError
+
+    stages = {os.path.basename(p)[:-3] for p in glob.glob("core/lifecycle/stages/*.md")}
+    states = {name: set(load_machine(name).states) for name in MACHINES}
+
+    found = sorted(glob.glob("core/workflows/*.workflow.yaml"))
+    for path in found:
+        try:
+            definition = load_definition(path)
+        except (DefinitionError, YamlError) as exc:
+            ERRORS.append(f"{path}: {exc}")
+            continue
+        untyped = set(definition.untyped_artifacts)
+        for aid in sorted(untyped & artifacts):
+            ERRORS.append(f"{path}: '{aid}' is listed as untyped but has a schema")
+        for step in definition.steps:
+            for aid in step.inputs + step.outputs:
+                if aid not in artifacts and aid not in untyped:
+                    ERRORS.append(f"{path}: step '{step.id}' names unknown artifact '{aid}'")
+            if step.stage:
+                machine, stage = step.stage.split(":", 1)
+                if machine not in states:
+                    ERRORS.append(f"{path}: step '{step.id}' stage names unknown machine "
+                                  f"'{machine}'")
+                elif stage not in states[machine] and stage not in stages:
+                    ERRORS.append(f"{path}: step '{step.id}' stage '{step.stage}' is neither "
+                                  f"a state nor a stage procedure")
+            gate = step.params.get("gate")
+            if gate and not re.search(rf"^  {gate}:", read("core/lifecycle/gates.yaml"), re.M):
+                ERRORS.append(f"{path}: step '{step.id}' names unknown gate '{gate}'")
+    return found
+
+
 def check_bindings(roles):
     text = read("core/bindings/adapter-binding.yaml")
     for path in re.findall(r"^\s*- (core/\S+)$", text, re.M):
@@ -151,6 +192,7 @@ def main():
     gates = read("core/lifecycle/gates.yaml")
 
     check_machines(artifacts, roles, gates)
+    workflows = check_workflows(artifacts)
     check_bindings(roles)
     check_charters()
     check_templates()
@@ -163,6 +205,7 @@ def main():
     print(f"platforms   {', '.join(sorted(platforms))}")
     print(f"machines    {len(glob.glob('core/lifecycle/*.machine.yaml'))}")
     print(f"stages      {len(glob.glob('core/lifecycle/stages/*.md'))}")
+    print(f"workflows   {len(workflows)}")
     for note in NOTES:
         print(f"note        {note}")
     print()

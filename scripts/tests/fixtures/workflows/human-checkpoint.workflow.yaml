@@ -1,0 +1,24 @@
+# Acceptance fixture: the run parks for a person between strategy and design.
+#   research -> strategy -> WAITING_FOR_HUMAN -> resume -> design
+workflow:
+  id: human-checkpoint
+  version: 1
+  steps:
+    - id: research
+      type: research
+      outputs: [opportunity]
+    - id: strategy
+      type: strategy
+      inputs: [opportunity]
+      outputs: [title-strategy]
+    - id: review
+      type: human-checkpoint
+      with:
+        prompt: Approve the strategy?
+        choices: [approve, rework, reject]
+      on:
+        rework: strategy
+    - id: design
+      type: design
+      inputs: [title-strategy]
+      outputs: [game-design]

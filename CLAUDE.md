@@ -31,6 +31,12 @@ python scripts/wgf-hash.py --check workspace/          # digests and pins reprod
 python scripts/wgf-state.py --show neon-drift          # cursor, and what may happen next
 python scripts/wgf-guard.py --title neon-drift --state prototype-review
 
+# The workflow engine. Every run command is a slice of core/workflows/new-game.workflow.yaml.
+bin/wgf new-game --mock                   # research -> ... -> release, placeholder steps
+bin/wgf verify --mock                     # one step; `plan` = strategy, checkpoint, design
+bin/wgf new-game --resume <run-id> [--decision approve]
+bin/wgf status [<run-id>]                 # also: logs, runs, pause, cancel
+
 # Create or reconcile the organization's WGF_* secrets and variables for the game pipelines.
 # Idempotent, and the living inventory of what the org is supposed to hold. Needs admin:org.
 bash scripts/wgf-org-setup.sh --dry-run
@@ -157,6 +163,16 @@ reference to it.
 `web-game-template/scripts/_shared.mjs` in a game repository. They must agree exactly;
 `scripts/tests/test_hashing.py` runs both and compares.
 
+## The workflow engine executes; the machines decide
+
+`scripts/wgflib/workflow/` runs `core/workflows/*.workflow.yaml`: steps by type, results
+routed by the file's `on:` maps, state and artifacts persisted in `.factory/` (git-ignored).
+The engine must never name a step type or route — routing is data, and
+`test_engine_source_names_no_step_type` enforces it. A workflow step names the lifecycle
+stage it serves; it never moves an entity — that is still `wgf-state.py`, guards and gates.
+Real step modules register via `factory.steps.modules` in `workspace/config/factory.yaml`;
+until they exist, only `--mock` runs. See `docs/workflow-engine.md`.
+
 ## Adapters are generated, not written
 
 `claude-web-game-plugin/` and `codex-web-game-plugin/` translate core for a host; they never
@@ -218,6 +234,7 @@ error. Validate what you write.
 - `docs/artifact-contracts.md` — the artifacts
 - `docs/agent-architecture.md` — roles, agents, asset pipeline
 - `docs/platform-architecture.md` — profiles, SDK, publishing
+- `docs/workflow-engine.md` — the `wgf` engine: definitions, steps, retry, resume, routing
 - `docs/development.md` — working on the Factory
 
 Documentation that contradicts a machine file is worse than none, because people believe it.

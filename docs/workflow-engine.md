@@ -477,10 +477,13 @@ selects another by name), derives scope tiers and SDK touchpoints, refuses a dra
 cannot be built without guessing, and evaluates the design-consistency rules. A blocking
 breach returns `FAILED` with route `descope` and the design persisted as evidence.
 
-**`wgf_sdk`** (`scripts/wgf_sdk/`) implements `sdk`. It reads the game repository's
-`game.config.yaml` and the pinned platform profiles, runs the repository's SDK conformance
-suite against mocked portal SDKs (optionally the browser smoke), and writes the sdk-report
-per platform and feature. It never publishes. See
+**`wgf_sdk`** (`scripts/wgf_sdk/`) implements `sdk`. With a game-design and a
+scaffold-record in the run it first integrates the template's platform SDK into the game —
+a gameplay layer, the develop step's seam and `main.ts` wired to the `Platform` interface,
+checked by its own mock suite. Then it reads the game repository's `game.config.yaml` and the
+pinned platform profiles, runs the repository's SDK conformance suite against mocked portal
+SDKs (optionally the browser smoke), and writes the sdk-report per platform and feature. It
+never publishes. See [platform-architecture.md](platform-architecture.md) and
 [platform-sdk-verification.md](platform-sdk-verification.md).
 
 Rules for a step implementation:

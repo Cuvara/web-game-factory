@@ -93,10 +93,12 @@ workflow:
       inputs: [game-design, asset-manifest, scaffold-record, title-strategy, qa-report]
       outputs: [prototype-report]
 
+    # Integrates the template's platform SDK into the game the design and init produced:
+    # it reads the design's placements, and writes into the repository init created.
     - id: sdk
       type: sdk
       stage: title:prototype
-      inputs: [prototype-report]
+      inputs: [game-design, scaffold-record, prototype-report]
       outputs: [sdk-report]
 
     # Verification returns a result, not a destination: FAIL (route `fail`) goes back to

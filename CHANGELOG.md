@@ -43,6 +43,30 @@ numbering: `core/` is the contract, and schemas carry their own versions.
   `scaffold-record` and `title-strategy` as inputs in `core/workflows/new-game.workflow.yaml`;
   existing runs resume unaffected, and a run without them is told what is missing.
 
+- **SDK integration phase (`scripts/wgf_sdk`).** Before its conformance check, the `sdk`
+  step now integrates web-game-template's existing platform SDK into a game's gameplay: it reads
+  the SDK the game repository carries, compares what each target platform's adapter offers
+  with what the game-design needs, writes a gameplay layer (`bootPlatform`,
+  `PlatformGameplay`), a plan generated from the design's placements and an SDK-mock suite
+  into the game repository, routes the template's boot through it, and reports per platform
+  and feature, laid over the conformance result (the worse status wins). It implements no
+  SDK and contacts no portal. Settings in `factory.sdk`; `--mock` runs are unaffected. See
+  `docs/platform-architecture.md`.
+- **The sdk module checked against each portal's current documentation** (Yandex, CrazyGames,
+  Poki, GameVui; 2026-09-23). The gameplay layer now keeps one "playing" state with the
+  adapter's own, mutes and pauses for every ad and for the portal's own pause (Yandex
+  `game_api_pause`), hands late rewards to the game, says why a reward was not granted,
+  hides offers when the portal SDK did not load, and gives Poki an ad opportunity before
+  every continue (`factory.sdk.break_on_continue`) while keeping interstitials off
+  CrazyGames' pause menu (`factory.sdk.interstitial_forbidden_moments`). The boot timeout is
+  gone: every adapter bounds its own waits, and replacing one on a timer lost Yandex Game
+  Ready and CrazyGames gameplay events. `python -m wgf_sdk.e2e` builds a PixiJS and a
+  Three.js game per platform from a template revision and drives it in Chromium against the
+  template's own SDK mocks. Platform limitations are listed in
+  `docs/platform-architecture.md`. The step also wires the develop module's seam
+  (`src/game/integration.ts`): it implements `GameIntegration` on the platform, maps the
+  game's own placement ids to the design's moments, and swaps the developer's default
+  implementation out of `main.ts`.
 - **Workflow module contract.** `docs/workflow-module-contract.md` is what the discovery,
   strategy, design, init, assets, development, SDK and verification modules implement
   against; `scripts/tests/test_workflow_contracts.py` holds the gate — an external module
@@ -85,6 +109,12 @@ numbering: `core/` is the contract, and schemas carry their own versions.
 
 ### Changed
 
+- **`sdk-report` 1.1.0**, additive: optional `sdk`, per-platform `adapter`, per-feature
+  `required_by`/`hooks`/`fallback`, feature status `unsupported`, and an `integration` block
+  (files, placements, game hooks, tests). Existing 1.0.0 reports still validate.
+- **The workflow's `sdk` step reads `game-design` and `scaffold-record`** as well as
+  `prototype-report`: it integrates what the design placed into the repository init made.
+  A run whose `sdk` step was already completed is unaffected.
 - **`criteria-expression` now states which way `in` and `not_in` read.** Platform profiles use
   `{left: package.locales, op: in, right: [ru]}` to mean "the package ships Russian". Read as
   the conventional "left is a member of right", that assertion passes for a package with no

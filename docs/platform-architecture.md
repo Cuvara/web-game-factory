@@ -101,19 +101,123 @@ platforms:
 Game code calls the template's abstraction. It **never** calls a portal SDK directly.
 
 ```ts
-platform.ads.showRewarded()
-platform.ads.showInterstitial()
-platform.storage.save(state)
-platform.leaderboards.submit(score)
+await platform.initialize()
+platform.reportLoadingProgress(0.5); await platform.signalReady()
+platform.gameplayStart(); platform.gameplayStop()
+const { rewarded } = await platform.showRewarded()
+await platform.showInterstitial()
+await platform.storage.set("progress", json)
 ```
 
 Adapters in `web-game-template/packages/platform-sdk/` implement it per portal. This is what
 makes one build shippable to four portals, and what keeps the game independent of any of
-them.
+them. The interface differs between template revisions — which adapters exist, whether
+`adAvailability` is declared — so nothing in the Factory restates it; the `sdk` step reads it
+off the game repository every time.
 
 Wire this during **prototype**, not production. The prototype exists partly to prove that
 monetization and SDK integration work in context; deferring them is how a title discovers at
 release that its ad placement does not fit its loop.
+
+### Integrating it into a game: the `sdk` step
+
+`scripts/wgf_sdk` implements the workflow's `sdk` step, in two phases. The **integration**
+phase, described here, connects the template's SDK to a game's gameplay, for exactly what
+the game-design asks for. The **conformance** phase runs the game repository's
+`pnpm sdk:conformance` against fake portal SDKs and says whether each adapter works — see
+[platform-sdk-verification.md](platform-sdk-verification.md). One `sdk-report` carries both:
+a feature both phases see takes the worse status, because an adapter the game never calls
+is not integrated, and a wired game on a failing adapter is not working. The step writes
+**no SDK**. The integration phase reads:
+
+| Reads | For |
+|---|---|
+| `game-design` | Monetization placements, retention hooks and targets — what the game needs |
+| `scaffold-record` | Which repository, and which platforms init configured |
+| the game repository | `packages/platform-sdk` (API, registry, adapter capabilities), `game.config.yaml`, `src/` |
+
+It writes three files and one patch into the game repository, convergently — a second run
+changes nothing:
+
+- `src/platform/gameplay.ts` — `bootPlatform()` and `PlatformGameplay`: the hooks scenes call
+  (`runStarted`, `continueFrom`, `gameOver`, `levelComplete`, `pause`/`resume`,
+  `canOfferReward`/`offerReward`, `naturalBreak`, `save`/`load`), built only on the
+  `Platform` interface. Portal-specific calls stay in the template's adapters.
+- `src/platform/integration-plan.ts` — generated: each placement attached to a gameplay
+  moment (`game-over`, `level-complete`, `pause-menu`) by reading its trigger.
+- `tests/unit/platform/gameplay-integration.test.ts` — SDK-mock suite, one block per
+  situation: SDK available, SDK unavailable, SDK initialization failure, ad unavailable, ad
+  closed early, reward callback, pause/resume, platform not configured.
+- `src/main.ts` — the template's boot routed through `bootPlatform`, and the
+  `PlatformGameplay` instance installed. Applied only when the template's lines are found
+  unchanged.
+
+When the game declares the develop step's seam (`src/game/integration.ts`, `interface
+GameIntegration` — see [development-module.md](development-module.md)), the step also writes
+`src/platform/game-integration.ts`, a `PlatformGameIntegration` built on `PlatformGameplay`,
+and replaces the construction of the developer's default implementation in `main.ts` with
+it. The game's calls do not change. Its placement ids (`rewarded("revive-after-crash")`) are
+read from the source, attached to the design's moments like triggers are, and put in the
+plan; an id at a moment where the design placed nothing stays a plain natural break, never
+an ad the design did not ask for.
+
+The fallbacks are the point:
+
+| Situation | The game |
+|---|---|
+| Portal SDK blocked, slow or failing | the **adapter** degrades inside itself and keeps reporting to an SDK that connects late; the game plays on without ads |
+| An adapter's `initialize()` rejects (a contract breach) | `bootPlatform` continues on `generic-web`, reporting `degraded` |
+| Platform id with no adapter | still **fails at boot**, visibly, as the registry intends |
+| Portal with no SDK at all (GameVui) | runs on the adapter named in `factory.sdk.adapter_substitutes` — explicitly, reported as `substitutedBy` |
+| Ad kind unsupported, disabled, blocked, or the SDK did not load | hides the offer; never shows a button that does nothing |
+| Ad closed early, no fill, or the SDK throws | grants nothing, says why (`RewardOutcome.reason`), and play continues |
+| The portal takes the foreground (Yandex `game_api_pause`) | the game pauses and mutes until it is given back |
+| Storage or analytics failing | play continues; a failed save is tracked |
+
+There is deliberately **no boot timeout**. Every adapter bounds its own waits (Poki 5 s,
+CrazyGames about 10 s, Yandex up to 10 s per call); replacing one on a timer would abandon a
+working SDK mid-start and lose exactly the calls the portals check — Yandex `LoadingAPI.ready`,
+CrazyGames `loadingStop`/`gameplayStart`.
+
+Two portal rules are configuration, in `factory.sdk`, because they are data about a portal
+rather than code: `break_on_continue: [poki]` (an ad opportunity each time the player heads
+back into gameplay) and `interstitial_forbidden_moments: {crazygames: [pause-menu]}`.
+
+The `sdk-report` records, per platform and per feature, the adapter used, the hooks that
+carry the feature and where the game calls them (`file:line`), what is unsupported and the
+fallback, and both suites' results. A feature is `working` only when it is wired in the game
+source, the integration suite passed and the conformance scenarios for it passed — and
+`observed_by` says that was against SDK mocks, **never** on the portal. Nothing here claims
+a portal accepted anything. Analytics is required of the game only where the adapter's
+analytics is self-hosted (the portals that sell ads measure play themselves), and muting
+only where the game plays audio. Without a game-design and a scaffold-record in the run
+(`wgf sdk` on its own), only the conformance phase runs.
+
+`python -m wgf_sdk.e2e` (from `scripts/`) checks the whole path on a real template revision:
+the step, the template's own tests, typecheck and lint, then a production build per platform
+and engine (PixiJS and Three.js) driven in Chromium against the SDK mocks the template ships.
+
+### Known limitations, by platform
+
+Checked against each portal's documentation on 2026-09-23. A limitation here is a fact about
+what the integration can do today, not a claim that the portal would reject the game.
+
+| Platform | Limitation | Source |
+|---|---|---|
+| all | The audio module is an empty slot in the template: muting is wired (`PlatformGameplay` `audio`), silence is only real once a game passes its audio in | template `src/audio/` |
+| all | No banner, in-app purchase, leaderboard, external-link or `happytime` call exists in the `Platform` interface; placements needing them are reported `unsupported` | template `types.ts` |
+| all | The rewarded button's wording, icon and the always-present plain continue are the scene's job (Yandex 4.5.1; Poki: 🎬 icon, not green) | yandex.com/dev/games/doc/en/concepts/requirements, developers.poki.com/guide/requirements-quality |
+| Yandex | A blocked `/sdk.js` on the portal cannot satisfy 1.19.2 (Game Ready) by any means; the game plays with no ads and local saves | yandex.com/dev/games/doc/en/concepts/requirements |
+| Yandex | The 60 s minimum between interstitials is the adapter's own; Yandex controls frequency itself | yandex.com/dev/games/doc/en/sdk/sdk-adv |
+| Yandex | Console switches (cloud saves 1.11, sticky banner) and the archive rules (1.21, 1.22) are manual | same |
+| CrazyGames | **No adapter on template main**: it exists only on an unmerged template branch, so a CrazyGames build fails at boot until that branch merges | template `registry.ts` |
+| CrazyGames | Basic vs Full Launch is only learned when an ad fails with `adsDisabledBasicLaunch`; the Progress Save toggle is a manual submission step | docs.crazygames.com/sdk/video-ads, /sdk/data |
+| Poki | No loading-progress or language call exists in Poki's HTML5 SDK; whether a `commercialBreak` shows an ad is always Poki's decision | developers.poki.com/guide/sdk-html5, /guide/sdk-overview |
+| GameVui | No SDK, JavaScript API or publishing API is published; builds run on `generic-web`: no ad revenue, local saves only (fragile two iframes deep), submission by email | template `docs/platforms/gamevui/`; gamevui.vn returned 403 on 2026-09-23 |
+| GameVui | The Factory profile `gamevui@1.0.0` lists interstitial and banner ads no API can deliver, and `age_rating_required: false` against the terms; it needs a new profile version | `core/reference/platforms/gamevui.yaml` |
+
+What the step does not do: write gameplay (the develop step places the hook calls), pick an
+analytics sink, commit, push or submit.
 
 ---
 

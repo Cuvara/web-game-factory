@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://webgamefactory.dev/schemas/artifacts/sdk-report.schema.json",
   "title": "SDK Report",
-  "description": "Per-platform evidence that a build's platform SDK integration works: which SDK features each target platform requires, and whether each is working on that platform.\n\nprototype-report.integration_status says whether the SDK works in aggregate; this says which platform and which feature, because a portal can reject what another portal accepted. Every `working` claim should name how it was observed.",
+  "description": "Per-platform evidence that a build's platform SDK integration works: which SDK features each target platform requires, and whether each is working on that platform.\n\nprototype-report.integration_status says whether the SDK works in aggregate; this says which platform and which feature, because a portal can reject what another portal accepted. Every `working` claim should name how it was observed.\n\nSince 1.1.0 it can also say how the integration was made: the SDK revision the game carries and the calls its `Platform` interface offers, which adapter each platform resolves to, which gameplay hooks call into it, what a platform cannot do and what the game does instead, and what the integration's own tests found. All of that is optional, so a 1.0.0 report still validates. A feature observed only against SDK mocks says so in `observed_by`: it is evidence that the game is wired, never that a portal accepted the build.",
 
   "x-wgf": {
     "id": "sdk-report",
@@ -28,6 +28,21 @@
       },
       "additionalProperties": false
     },
+    "sdk": {
+      "type": "object",
+      "description": "The template's platform SDK as found in the game repository. Revisions differ in which adapters and calls they have, so an integration is checked against this, not against a copy.",
+      "required": ["package"],
+      "properties": {
+        "package": { "type": "string" },
+        "version": { "type": "string" },
+        "api": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Members of the SDK's `Platform` interface."
+        }
+      },
+      "additionalProperties": false
+    },
     "platforms": {
       "type": "array",
       "minItems": 1,
@@ -38,6 +53,19 @@
           "platform_id": { "type": "string", "pattern": "^[a-z][a-z0-9-]*$" },
           "profile_version": { "type": "string" },
           "status": { "enum": ["working", "partial", "not-started"] },
+          "adapter": {
+            "type": "object",
+            "description": "What the SDK's registry constructs for this platform id. `substituted`: the portal publishes no SDK, and builds for it run on `adapter_id` by explicit configuration. `missing`: no adapter, and a build for this platform fails at boot.",
+            "required": ["status"],
+            "properties": {
+              "status": { "enum": ["implemented", "substituted", "missing"] },
+              "adapter_id": { "type": "string" },
+              "class": { "type": "string" },
+              "source": { "type": "string" },
+              "portal_sdk": { "type": "string", "description": "The portal SDK script the adapter loads, where it names one." }
+            },
+            "additionalProperties": false
+          },
           "features": {
             "type": "array",
             "items": {
@@ -48,7 +76,17 @@
                   "type": "string",
                   "description": "e.g. init, loading-progress, rewarded, interstitial, banner, cloud-save, analytics"
                 },
-                "status": { "enum": ["working", "partial", "not-started", "not-required"] },
+                "status": {
+                  "enum": ["working", "partial", "not-started", "not-required", "unsupported"],
+                  "description": "unsupported: the design needs it, but the platform, its adapter or the SDK's API does not offer it; `fallback` says what the game does instead."
+                },
+                "required_by": { "type": "string", "description": "What in the design needs this feature." },
+                "hooks": {
+                  "type": "array",
+                  "items": { "type": "string" },
+                  "description": "The gameplay hooks that carry the feature, as named in integration.game_hooks."
+                },
+                "fallback": { "type": "string", "description": "What the game does when the feature is unsupported here, or unavailable at runtime." },
                 "observed_by": { "type": "string" },
                 "note": { "type": "string" }
               },
@@ -59,6 +97,90 @@
         },
         "additionalProperties": false
       }
+    },
+    "integration": {
+      "type": "object",
+      "description": "What the integration changed in the game repository, and the evidence that it works.",
+      "properties": {
+        "repository_state": {
+          "enum": ["clean", "uncommitted-changes"],
+          "description": "Whether build_ref.commit_sha already contains the integration. `uncommitted-changes`: the working tree is ahead of it."
+        },
+        "files": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["path", "action"],
+            "properties": {
+              "path": { "type": "string" },
+              "action": { "enum": ["created", "updated", "patched", "unchanged", "skipped"] },
+              "note": { "type": "string" }
+            },
+            "additionalProperties": false
+          }
+        },
+        "placements": {
+          "type": "array",
+          "description": "Each game-design monetization placement and the gameplay moment it was attached to. `moment` is absent where the trigger matched none.",
+          "items": {
+            "type": "object",
+            "required": ["kind", "trigger", "integrated"],
+            "properties": {
+              "id": { "type": "string" },
+              "kind": { "type": "string" },
+              "trigger": { "type": "string" },
+              "moment": { "type": "string" },
+              "integrated": { "type": "boolean" },
+              "note": { "type": "string" }
+            },
+            "additionalProperties": false
+          }
+        },
+        "game_hooks": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["hook", "wired"],
+            "properties": {
+              "hook": { "type": "string" },
+              "wired": { "type": "boolean" },
+              "locations": {
+                "type": "array",
+                "items": { "type": "string" },
+                "description": "file:line in the game repository."
+              }
+            },
+            "additionalProperties": false
+          }
+        },
+        "tests": {
+          "type": "object",
+          "required": ["status"],
+          "properties": {
+            "status": { "enum": ["passed", "failed", "not-run"] },
+            "command": { "type": "string" },
+            "typecheck": { "enum": ["passed", "failed", "not-run"] },
+            "scenarios": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "required": ["id", "status"],
+                "properties": {
+                  "id": { "type": "string" },
+                  "status": { "enum": ["passed", "failed", "not-run"] },
+                  "passed": { "type": "integer", "minimum": 0 },
+                  "failed": { "type": "integer", "minimum": 0 }
+                },
+                "additionalProperties": false
+              }
+            },
+            "note": { "type": "string" }
+          },
+          "additionalProperties": false
+        },
+        "notes": { "type": "array", "items": { "type": "string" } }
+      },
+      "additionalProperties": false
     }
   },
   "additionalProperties": false

@@ -91,19 +91,39 @@ factory:
   # discovery:
   #   platforms: [crazygames, gamevui, poki, yandex]
   #   live: false
-
+  # The platform integration module (scripts/wgf_sdk, the `sdk` step). Every key is optional
+  # and may be overridden per workflow step under `with:`.
   # The design module's author: who writes the creative draft before the module checks it.
   # `archetype` is built in (offline, deterministic); an agent-host author registers its own
   # name from its module. See scripts/wgf_design/authors.py.
   design:
     author: archetype
 
-  # The SDK module: where the game repository is checked out, and whether to run the browser
-  # smoke as well as the conformance suite. Unset game_repo blocks the step ("platform not
-  # configured"). The step runs tests against mocked portal SDKs; it never publishes.
+  # The SDK module (scripts/wgf_sdk, the `sdk` step): integrates the template's platform SDK
+  # into the game, then verifies it with the game repository's conformance suite. It runs
+  # tests against mocked portal SDKs; it never publishes. See docs/platform-architecture.md
+  # and docs/platform-sdk-verification.md.
   sdk:
+    # Where the game repository is: game_repo, else WGF_GAME_REPO, else
+    # <games_dir>/<scaffold-record repository name>, else where init cloned it. With none
+    # found the step blocks ("platform not configured").
     # game_repo: ../web-game-template
-    browser: false
+    games_dir: ..
+    browser: false              # also run the PixiJS/Three.js browser smoke
+    # A portal that publishes no SDK runs on another adapter - explicitly, so a missing
+    # adapter anywhere else still fails at boot. GameVui has no SDK, JavaScript API or
+    # publishing API (web-game-template docs/platforms/gamevui/platform-contract.md).
+    adapter_substitutes: {gamevui: generic-web}
+    # Portals that want an ad opportunity each time the player heads back into gameplay -
+    # restart, continue, leaving the pause menu - not only where the design placed one.
+    # Poki: "Not every call triggers an ad ... signal as many opportunities as possible";
+    # commercialBreak "only when exiting a pause and heading back into gameplay"
+    # (developers.poki.com/guide/sdk-overview, /guide/requirements-quality).
+    break_on_continue: [poki]
+    # Moments at which a portal forbids an interstitial. CrazyGames: "Do not show a midgame
+    # ad on a navigational button (e.g. ... opening the settings)"
+    # (docs.crazygames.com/requirements/ads).
+    interstitial_forbidden_moments: {crazygames: [pause-menu]}
 
   # Checkpoint gates this installation lets a run approve without a person. Only reversible
   # gates are honoured; G4, G6 and G7 are refused whatever is listed here. `--mock` runs

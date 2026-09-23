@@ -154,7 +154,7 @@ reading, and `DocumentedIoContract` fails if the two disagree.
 | `init` | `init` | `game-design` | `scaffold-record` |
 | `assets` | `assets` | `game-design`, `scaffold-record` | `asset-manifest` |
 | `develop` | `develop` | `game-design`, `asset-manifest`, `scaffold-record`, `title-strategy`, `qa-report` | `prototype-report` |
-| `sdk` | `sdk` | `prototype-report` | `sdk-report` |
+| `sdk` | `sdk` | `game-design`, `scaffold-record`, `prototype-report` | `sdk-report` |
 | `verify` | `verify` | `prototype-report`, `sdk-report`, `game-design`, `scaffold-record`, `asset-manifest` | `verification-report`, `qa-report` |
 | `release` | `release` | `qa-report` | `release-manifest` |
 <!-- io-contract:end -->

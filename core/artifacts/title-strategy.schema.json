@@ -147,6 +147,131 @@
     "rollback_threshold": {
       "type": "string",
       "description": "Defect severity at or above which a live release is rolled back."
+    },
+
+    "concept": {
+      "type": "object",
+      "required": ["genre", "core_loop", "control_scheme"],
+      "description": "The concept the opportunity proposed, narrowed to the direction the title commits to. Still not a design: enough for design to start from without re-reading the opportunity.",
+      "properties": {
+        "genre": { "type": "string" },
+        "subgenre": { "type": "string" },
+        "core_mechanic": { "type": "string" },
+        "core_loop": { "type": "string" },
+        "gameplay_direction": {
+          "type": "string",
+          "description": "The shape of play in a sentence or two: what a run or a level is, and what changes from one to the next."
+        },
+        "control_scheme": {
+          "enum": ["one-touch", "tap", "swipe", "drag", "point-and-click", "keyboard"],
+          "description": "One scheme. A title that needs two has two games' worth of onboarding."
+        },
+        "replayability": {
+          "type": "string",
+          "description": "Why a player starts another session. Replay should come from a system, not from more content."
+        }
+      },
+      "additionalProperties": false
+    },
+
+    "production_scope": {
+      "type": "object",
+      "required": ["scope_complexity", "technical_complexity", "asset_complexity", "estimate_days"],
+      "description": "How big the commitment is, and what was done to keep it small. The timebox is the constraint; this is the evidence the scope fits it.",
+      "properties": {
+        "scope_complexity": { "enum": ["xs", "s", "m", "l", "xl"] },
+        "technical_complexity": { "enum": ["low", "medium", "high"] },
+        "asset_complexity": { "enum": ["low", "medium", "high"] },
+        "estimate_days": {
+          "type": "number",
+          "minimum": 0,
+          "description": "Estimated effort before the scope was fitted to the timebox. Above timebox_days means the scope was cut to fit; see scope_decisions."
+        },
+        "asset_budget": {
+          "type": "object",
+          "properties": {
+            "max_unique_assets": { "type": "integer", "minimum": 0 },
+            "estimated_cost_usd": { "type": "number", "minimum": 0 }
+          },
+          "additionalProperties": false
+        },
+        "reusable_systems": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Systems taken from the template or an earlier title rather than built for this one."
+        },
+        "scope_decisions": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Each decision taken to keep the title small, in a sentence that says why."
+        }
+      },
+      "additionalProperties": false
+    },
+
+    "platform_compatibility": {
+      "type": "array",
+      "description": "Every candidate platform the opportunity named, checked against its pinned profile — including the ones left out of platform_set, so the reason for leaving them out is recorded.",
+      "items": {
+        "type": "object",
+        "required": ["id", "compatible"],
+        "properties": {
+          "id": { "type": "string", "pattern": "^[a-z][a-z0-9-]*$" },
+          "profile_version": { "type": ["string", "null"] },
+          "compatible": { "type": "boolean" },
+          "sdk": {
+            "type": "object",
+            "required": ["id", "features"],
+            "description": "What the platform SDK adapter must implement for this title. `none` for a platform with no SDK.",
+            "properties": {
+              "id": { "type": "string" },
+              "features": { "type": "array", "items": { "type": "string" } }
+            },
+            "additionalProperties": false
+          },
+          "constraints": {
+            "type": "array",
+            "items": { "type": "string" },
+            "description": "Binding profile requirements the design inherits."
+          },
+          "issues": { "type": "array", "items": { "type": "string" } }
+        },
+        "additionalProperties": false
+      }
+    },
+
+    "risks": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["description", "severity"],
+        "properties": {
+          "description": { "type": "string" },
+          "severity": { "enum": ["low", "medium", "high"] },
+          "origin": {
+            "enum": ["opportunity", "strategy"],
+            "description": "Carried over from the opportunity, or introduced by a decision taken here."
+          },
+          "mitigation": { "type": "string" },
+          "claim_refs": { "type": "array", "items": { "type": "string" } }
+        },
+        "additionalProperties": false
+      }
+    },
+
+    "assumptions": {
+      "type": "array",
+      "description": "What this strategy takes as true without having checked. Each names what would show it false, so the prototype and the first review know what to look at.",
+      "items": {
+        "type": "object",
+        "required": ["statement", "tier"],
+        "properties": {
+          "statement": { "type": "string" },
+          "tier": { "enum": ["derived", "hypothesis"] },
+          "invalidated_by": { "type": "string" }
+        },
+        "additionalProperties": false
+      }
     }
   },
   "additionalProperties": false

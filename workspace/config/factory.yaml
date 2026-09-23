@@ -27,10 +27,11 @@ factory:
     fsync: true                 # flush state.json to disk before the atomic rename
 
   # Python modules that register real step implementations: each exposes register(registry).
-  # Steps no module implements yet (strategy, release)
-  # still need --mock, which replaces every implementation with placeholders.
+  # Steps no module implements yet (release) still need --mock, which replaces every
+  # implementation with its placeholder for that run.
+  #   wgf_strategy   the `strategy` step (scripts/wgf_strategy/)
   steps:
-    modules: [wgf_discovery, wgf_init, wgf_assets, wgf_develop, wgf_verification, wgf_design, wgf_sdk]
+    modules: [wgf_discovery, wgf_strategy, wgf_init, wgf_assets, wgf_develop, wgf_verification, wgf_design, wgf_sdk]
 
   # The init module (scripts/wgf_init, docs/init-module.md): creates each game's repository
   # from the template with `gh`, clones it, and checks the template's infrastructure arrived.

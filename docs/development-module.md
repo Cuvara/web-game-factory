@@ -42,10 +42,19 @@ the game, regenerated on every visit and committed with the code it asked for. I
   progression, UI, HUD, tutorial, game over, restart, asset loading, responsive layout,
   audio hooks — each with its acceptance line.
 - **Scope** — the MVP verbatim, the tiers that are *not now*, and what is out of scope.
-- **The integration seam** — `src/game/integration.ts`, an interface the game calls for
-  gameplay start/stop, rewarded and interstitial placements, analytics and saves. The
-  default implementation wraps the template's `Platform`; the SDK module rewires it
-  without the game changing a call. This is how development stays out of SDK work.
+- **The integration seam** — provided by the Factory, not written by the developer
+  (`scripts/wgf_develop/seam.py`, `wgflib.gameseam`). Before the developer runs, the step
+  writes `src/game/integration.ts` (the `GameIntegration` interface the game calls for
+  gameplay start/stop, rewarded and interstitial placements, analytics and saves) and
+  `src/platform/integration.ts`, its wiring: `createGamePlatform()` and
+  `createGameIntegration(game, platform, { audio, tracker })`, built only on the template's
+  API (`createPlatform` with `platformOptions(primary)` and `virtual:platform-config`,
+  `withAdBreak`, `Analytics`). The brief asks `src/main.ts` to get its platform and its seam
+  from those two functions and never to call `createPlatform`. The SDK module later writes
+  its integrated wiring over `src/platform/integration.ts` as a whole file - same exports -
+  so neither main.ts nor any game call changes. This is how development stays out of SDK
+  work. A file that already exists (after the SDK step, the integrated wiring) is left as
+  it is.
 - **Tests** — unit tests for the rules, and a browser smoke test that *plays*.
 - **Report back** — `docs/development/report.json`: the developer's own account of each
   system, each MVP item, the placements, integration status, assets, scope deltas and

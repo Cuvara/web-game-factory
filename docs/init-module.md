@@ -27,17 +27,32 @@ tech-plan ───────────────────────�
    `consistency.status` is not `pass`, or whose title does not match the run's `--project`,
    is refused — `FAILED`, not retryable. So is a `tech-plan` for another title, or one whose
    `engine.type` and `repo_params.game_config.engine` disagree.
-2. **Repository** — by `factory.init.source`:
+2. **Repository**, always at the Factory's pinned template revision
+   (`workspace/config/template.lock.json`: the latest template release, by tag and commit).
+   `factory.init.template` must be the lock's repository, and a `tech-plan` approved at G3
+   must name `<repository>@<pinned commit>` as `repo_params.template_ref`; otherwise
+   `FAILED`, not retryable. By `factory.init.source`:
    - **`github`** (default). `gh repo view <owner>/<title-id>`. Absent: `gh repo create
-     --template <template>`, recording the template's head commit as `template.commit_sha`.
-     Present: see *Idempotency*. Either way the repository must report the configured
+     --template <template>`, recording the template's head commit as
+     `template.generated_from_sha`. Present: see *Idempotency*. Either way the repository must report the configured
      template as its `templateRepository`, or it is refused — adopting is authorizable, a
      repository that did not come from the template is not. Then it waits for GitHub to
      finish generating the contents (`game.config.yaml` present), and clones with `gh repo
      clone` into `<projects_dir>/<title-id>`. An existing clone of the same repository is
      reused, and filled with `git pull --ff-only` if an earlier attempt cloned it empty.
-   - **`local`**. No `gh`, no network, no remote. `template_path` must be a git checkout of
-     the template; `template_ref` (default `HEAD`) is resolved to a commit and pinned.
+     **Pinning.** GitHub generates from the template's default branch as it is at that
+     moment, which need not be the pinned commit. Init fetches the pinned commit by sha and,
+     when the generated root's tree differs from it, applies root→pin as ONE local commit
+     (`chore(init): pin web-game-template <sha>`, trailers `Wgf-Template: <template>@<sha>`
+     and `Wgf-Init-Key`), keeping whatever was committed on top of the root (bootstrap's
+     commit). Afterwards the tree must equal the pin everywhere except the paths committed
+     on top of the root; a patch that does not apply, or any other residue, is `FAILED`, not
+     retryable, with nothing half-applied. The record carries `template.commit_sha` (the
+     pin), `generated_from_sha` and `pin_commit`.
+   - **`local`**. No `gh`, no network, no remote. `template_path` is a git checkout of the
+     template that holds the pinned commit (left out: a checkout of the pin is made, as the
+     tests' `wgflib.template.checkout()` does); a checkout without it is `BLOCKED`.
+     `template_ref`, if set, must resolve to the pinned commit or the step `FAILS`.
      `git archive` of that commit is committed as the single initial commit of a new
      repository at `<projects_dir>/<title-id>` — the same shape GitHub's "use this template"
      produces, sharing no objects or history with the template. It is built in a staging
@@ -56,9 +71,13 @@ tech-plan ───────────────────────�
    - The pinned profiles are copied byte-for-byte from `core/reference/platforms/` into
      `config/platforms/`, and `pinned.json` lists each with its sha256. A pin that no longer
      matches the Factory's profile is refused rather than vendored under the wrong version.
-   - With `source: local` there is no bootstrap workflow to run, so init also does what
-     `bootstrap.yml` would have left in the files: `game.id`/`game.name` from the repository
-     name (the same derivation), and `bootstrap.yml` removed.
+   - `game.id`/`game.name` are set from the repository name with exactly `bootstrap.yml`'s
+     derivation, for either source (see *The bootstrap race*). With `source: local` there is
+     no bootstrap workflow, so init also removes `bootstrap.yml`.
+   - Each platform entry carries what the plan carries: `id`, `profile`, `role`, and for
+     portals that issue one, `game_id` (and `hosting`/`game_url` for a non-default hosting
+     mode) - see `docs/techplan-module.md`, *Portal registrations*. A key game.config.yaml
+     has no place for is refused.
    - The changed paths are committed **locally**, once, with the trailers
      `Wgf-Init-Key: <marker>` and `Wgf-Tech-Plan: <content hash>`. Nothing is pushed.
    Without a `tech-plan` (a run whose workflow has no tech-plan step), the file is left as
@@ -78,9 +97,6 @@ tech-plan ───────────────────────�
 - **Push.** Pushing is outward-facing. The configuration commit exists only in the local
   project until a person (or a later, explicitly authorized step) pushes it; the record's
   `game_config.pushed: false` says so.
-- **Set the game's identity on GitHub.** `bootstrap.yml` sets `game.id`/`game.name` from the
-  repository name — which is why the repository name is the title id. Init leaves those
-  lines alone with `source: github`, so the two writers never touch the same line.
 - **Advance the title.** Moving `title:scaffolding` forward is `wgf-state.py`'s job.
 
 ## The bootstrap race
@@ -92,12 +108,15 @@ may not already contain that commit. Init's configuration commit is made on top 
 was cloned, and is not pushed. Consequences, stated honestly:
 
 - If bootstrap's commit landed after the clone, the local branch and `origin` have
-  diverged. Before pushing, `git pull --rebase`. The two commits touch disjoint lines
-  (identity versus engine/platforms/monetization, plus bootstrap's deletion of its own
-  file), so the rebase is clean.
-- Bootstrap's "already ran?" guard reads the first indented `id:` line; init writes
-  platforms in flow style (`- { id: … }`), which that pattern does not match, so init's
-  edit can never make bootstrap think it already ran.
+  diverged. Before pushing, `git pull --rebase`. Both commits set the identity lines, to
+  identical values (init uses bootstrap's own derivation), and otherwise touch disjoint
+  lines, so the rebase is clean (`test_a_later_bootstrap_commit_rebases_cleanly_under_init_s`).
+- Init used to leave the identity to bootstrap alone. Bootstrap mints a token from the
+  organization's bot app; a repository that cannot reach those credentials fails bootstrap,
+  and the game then kept the template's placeholder `example-game` without anyone being
+  told. Writing the same identity locally removes that dependency.
+- Bootstrap's "already ran?" guard reads the first indented `id:` line of the file on
+  GitHub. Init never pushes, so bootstrap always sees the template's own identity there.
 - Until the commit is pushed, the repository on GitHub still targets the template default
   (`generic-web`, `pixijs`). Anything that builds from GitHub rather than from the local
   project sees that default.
@@ -136,8 +155,8 @@ reusing it — and even then only if it came from the configured template.
 | `source` | `github` | `github` or `local` |
 | `owner` | — (required for `github`) | Account or organization that owns game repositories |
 | `template` | — (required for `github`) | Template repository, `owner/name` |
-| `template_path` | — (required for `local`) | Git checkout of the template; relative to the Factory's root |
-| `template_ref` | `HEAD` | `local` only: the commit or ref to pin |
+| `template_path` | a checkout of the pin | `local` only: git checkout of the template holding the pinned commit; relative to the Factory's root |
+| `template_ref` | the pin | `local` only: if set, must resolve to the pinned commit |
 | `visibility` | `private` | `private`, `internal` or `public` |
 | `projects_dir` | `..` | Where local projects go; relative to the Factory's root |
 | `adopt_existing` | `false` | Authorize reusing a repository or directory this run did not create |

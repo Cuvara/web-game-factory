@@ -25,6 +25,10 @@ Invariants the engine keeps:
     a step runs; a step interrupted by it is never retried.
   * An input artifact is re-checked (checksum, and contract when a validator is set) before
     the step that consumes it runs; one that fails is a non-retryable FAILED naming it.
+  * With a validator set, an output whose provenance carries `inputs` must pin exactly the
+    versions the step consumed (contracts.check_lineage): a stale pin, or a pin of an
+    artifact of a consumed type the step was not given, is a non-retryable FAILED and
+    nothing is written.
 """
 
 import contextlib
@@ -39,6 +43,7 @@ from .. import procs
 from . import integrity
 from ..hashing import CanonicalizationError, content_hash
 from .context import StepLogger, WorkflowContext
+from .contracts import check_lineage
 from .definition import END, FAIL
 from .events import EventBus, Events
 from .model import (
@@ -654,6 +659,41 @@ class WorkflowEngine:
             return [f"{artifact_type}: the contract check itself failed: "
                     f"{type(exc).__name__}: {exc}"]
 
+    def _lineage(self, state, step_def, step_state, output):
+        """check_lineage against the refs this execution consumed, when a validator is set
+        and the output declares its lineage (`provenance.inputs` is a list).
+
+        On top of check_lineage: a pin of a type the step declares as an input but was not
+        given (an optional input absent on this visit) names an artifact the step never
+        saw. Pins of types the step does not take at all - claims, lineage carried forward
+        from further upstream - are left alone, as check_lineage leaves them."""
+        if self.artifact_validator is None or not isinstance(output.content, dict):
+            return []
+        provenance = output.content.get("provenance")
+        if not isinstance(provenance, dict) or not isinstance(provenance.get("inputs"), list):
+            return []
+        consumed = []
+        for name in step_state.consumed or []:
+            artifact_id, _, version = name.rpartition("@v")
+            ref = next((r for r in state.artifacts.get(artifact_id) or []
+                        if str(r.version) == version), None)
+            if ref is None:
+                return [f"lineage: consumed {name} is not in the run's state"]
+            consumed.append(ref)
+        try:
+            problems = check_lineage(output.content, consumed)
+        except Exception as exc:
+            return [f"lineage: the check itself failed: {type(exc).__name__}: {exc}"]
+        given = {ref.type for ref in consumed}
+        for index, pin in enumerate(provenance["inputs"]):
+            pinned_type = pin.get("artifact_type") if isinstance(pin, dict) else None
+            if pinned_type in step_def.inputs and pinned_type not in given:
+                problems.append(
+                    f"lineage: /provenance/inputs/{index}: pins {pinned_type} at "
+                    f"{pin.get('content_hash')}, which this step did not consume (the run "
+                    f"held none when it ran)")
+        return problems
+
     def _check_inputs(self, state, refs):
         """Read and check every resolved input before the step sees it.
 
@@ -703,6 +743,11 @@ class WorkflowEngine:
             problems = self._validate(output.type, output.content)
             if problems:
                 raise _ContractViolation("invalid artifact: " + "; ".join(problems))
+            problems = self._lineage(state, step_def, state.step(step_def.id), output)
+            if problems:
+                raise _ContractViolation(
+                    f"{output.type} {output.artifact_id!r} does not pin what step "
+                    f"{step_def.id!r} consumed: " + "; ".join(problems))
 
         planned, events = [], []
         seq = state.next_artifact_seq()

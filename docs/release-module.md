@@ -24,13 +24,15 @@ It never pushes, tags, publishes or contacts a portal. A draft is the input to `
 
 Release artifacts belong in the game repository (CLAUDE.md); the run holds the manifest so a
 gate can pin it by hash. The manifest is the one the game's `release:manifest` wrote, checked
-and then **extended** with what it rests on (schema 1.1.0, all optional fields):
+and then **extended** with what it rests on (schema 1.1.0, `evidence.review` since 1.2.0,
+all optional fields):
 
 | Field | Holds |
 |---|---|
-| `provenance.inputs` | the qa-report, verification-report, sdk-report, prototype-report and scaffold-record it was drafted from, by content hash |
+| `provenance.inputs` | the qa-report, verification-report, sdk-report, prototype-report, scaffold-record and review-report it was drafted from, by content hash |
 | `evidence.qa_report`, `evidence.verification_report` | id, hash, verdict, evidence status |
-| `evidence.commit_lineage` | the commit each report names, and the checkout's HEAD — all equal |
+| `evidence.commit_lineage` | the commit each report names, and the checkout's HEAD: the verified commit (qa-report, verification-report, sdk-report, checkout), and the commit develop made (`sdk-report.base`, `prototype-report`) — related by the lineage rule below |
+| `evidence.review` | `approved` (of exactly the prototype-report's commit), `skipped` (no reviewer configured: **UNREVIEWED**, never an approval — the step's message says so too) or `absent` (no review-report in the run), with the verdict, the reviewed commit and the review-report's id and hash |
 | `evidence.bundle_hash` | the digest of the bundle that was verified and packaged |
 | `evidence.platforms[]` | per target: readiness, `evidence_status`, `portal_status`, `external_approval: not-claimed` — carried from the verification exactly |
 | `evidence.package_audit` | the rules every package passed |
@@ -54,7 +56,9 @@ when its preconditions held is what makes a draft mean something. The refusals a
 | `evidence-status-missing` | FAILED | a 1.0.x verification: whether it passed on mocks cannot be told |
 | `stale-qa-report` | FAILED | the qa-report does not pin the run's newest verification-report, prototype-report or sdk-report — work happened after it |
 | `foreign-qa-report` | FAILED | the qa-report names another run |
-| `commit-lineage-mismatch`, `commit-unknown` | FAILED | the reports, or the reports and HEAD, name different commits |
+| `commit-lineage-mismatch` | FAILED | the evidence breaks the commit lineage rule: the verified reports or HEAD name different commits, sdk built on another commit than develop's, a commit between develop's and sdk's is not this run's keyed sdk commit, the review approved another commit, or the history cannot be read |
+| `commit-unknown` | FAILED | a report names no commit, or a placeholder (`unknown`, 40 zeros) |
+| `review-not-approved` | FAILED | the run's newest review-report requested changes, or produced no verdict |
 | `verified-dirty-tree` | BLOCKED | verification ran on uncommitted changes, which no commit reproduces |
 | `dirty-checkout` | BLOCKED | the checkout has uncommitted or untracked changes |
 | `bundle-not-verified` | BLOCKED | the build output on disk is not the bundle verification digested |
@@ -95,15 +99,29 @@ Every archive is opened and checked; the rules are the same for every platform:
 
 ## Commit lineage
 
+The rule is defined once, in `docs/core-contracts.md` §5, and implemented once, in
+`scripts/wgf_verification/lineage.py`; verify's `source.upstream-commits` and this step both
+apply it.
+
 ```
-prototype-report.build_ref.commit_sha ┐
-sdk-report.build_ref.commit_sha       ├─ all equal ─ git rev-parse HEAD (clean tree)
-verification-report.commit.sha        │
+review-report.reviewed_commit (approve) ─┐
+prototype-report.build_ref.commit_sha ───┴─ equal ─ sdk-report.build_ref.base_commit_sha
+                                                          │
+                              git log base..sdk: only this run's `Wgf-Sdk-Key` commits
+                                                          │
+sdk-report.build_ref.commit_sha       ┐                   ▼
+verification-report.commit.sha        ├─ all equal ─ git rev-parse HEAD (clean tree)
 qa-report.build_ref.commit_sha        ┘
 verification-report.build_artifact.content_hash ── equals ── digest of dist/ on disk
 ```
 
-The second line is what ties the bytes about to be packaged to the bytes that were verified:
+What can be checked from the reports alone is checked before anything else; the history
+between the base and the sdk commit is read with git from the checkout. If git cannot read
+it, the release is refused: the rule is never assumed to hold. An sdk-report from before sdk
+committed (no `base_commit_sha`) is read as base == commit, so it must name the prototype's
+commit itself.
+
+The last line is what ties the bytes about to be packaged to the bytes that were verified:
 the build output is git-ignored, so a clean tree alone says nothing about it. The step
 packages that bundle and never rebuilds it.
 

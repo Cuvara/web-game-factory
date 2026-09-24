@@ -629,5 +629,33 @@ class LiveTemplateSmoke(unittest.TestCase):
         self.assertTrue(clean, f"new vite/playwright processes: {_server_pids() - before}")
 
 
+class EveryChildGoesThroughProcs(unittest.TestCase):
+    """The rule the orphaned Vite server taught: a step module never starts a process
+    itself. Only wgflib/procs.py may call subprocess; everything else calls procs.run or
+    procs.spawn, which own the tree."""
+
+    FORBIDDEN = ("subprocess.run(", "subprocess.Popen(", "subprocess.call(",
+                 "subprocess.check_call(", "subprocess.check_output(", "os.system(",
+                 "os.popen(", "os.spawn", "os.exec", "shell=True")
+
+    def test_no_module_outside_procs_starts_a_process(self):
+        offenders = []
+        for root, dirs, files in os.walk(SCRIPTS):
+            dirs[:] = [d for d in dirs if d not in ("tests", "__pycache__")]
+            for name in files:
+                if not name.endswith(".py"):
+                    continue
+                path = os.path.join(root, name)
+                if os.path.relpath(path, SCRIPTS) == os.path.join("wgflib", "procs.py"):
+                    continue
+                with open(path, encoding="utf-8") as handle:
+                    for number, line in enumerate(handle, 1):
+                        code = line.split("#", 1)[0]
+                        if any(token in code for token in self.FORBIDDEN):
+                            offenders.append(f"{os.path.relpath(path, SCRIPTS)}:{number}: "
+                                             f"{line.strip()}")
+        self.assertEqual(offenders, [], "start child processes through wgflib.procs")
+
+
 if __name__ == "__main__":
     unittest.main()

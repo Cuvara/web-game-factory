@@ -77,10 +77,13 @@ class GitError(RuntimeError):
 
 
 class GitRepo:
-    def __init__(self, root, runner, author=None):
+    def __init__(self, root, runner, author=None, trailer=KEY_TRAILER):
         self.root = root
         self.runner = runner
         self.author = author or {}
+        # The trailer this repository's keyed commits carry. develop's by default; the sdk
+        # step keys its integration commits with its own (wgf_sdk/commit.py).
+        self.trailer = trailer
 
     def _git(self, *args, check=True):
         result = self.runner.run(["git", *args], cwd=self.root, timeout=120)
@@ -126,7 +129,7 @@ class GitRepo:
         result = self._git("log", f"-n{depth}", "--format=%H%x00%B%x1e", check=False)
         if not result.ok:
             return None
-        needle = f"{KEY_TRAILER}: {key}"
+        needle = f"{self.trailer}: {key}"
         for record in result.output.split("\x1e"):
             sha, _, body = record.strip().partition("\x00")
             if sha and any(line.strip() == needle for line in body.splitlines()):
@@ -141,7 +144,7 @@ class GitRepo:
         self._git("add", "--all")
         # --allow-empty: when the tree already matches HEAD the commit still carries the
         # key, which is what makes this visit findable by a later execution.
-        message = f"{subject}\n\n{body.strip()}\n\n{KEY_TRAILER}: {key}\n"
+        message = f"{subject}\n\n{body.strip()}\n\n{self.trailer}: {key}\n"
         identity = []
         if self.author.get("name"):
             identity += ["-c", f"user.name={self.author['name']}"]

@@ -2,7 +2,7 @@
   "title_id": "mock-title",
   "reviewed_commit": "0000000000000000000000000000000000000000",
   "baseline_commit": null,
-  "verdict": "approve",
+  "verdict": "skipped",
   "blockers": [],
   "notes": "Mock review: no reviewer ran and no code was read.",
   "failure": null,

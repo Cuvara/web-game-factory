@@ -157,7 +157,7 @@
         "verification_report": { "$ref": "#/$defs/clearedBy" },
         "commit_lineage": {
           "type": "array",
-          "description": "Every commit named by the evidence and the checkout. All equal, or there is no manifest.",
+          "description": "Every commit named by the evidence and the checkout. The verified commit (qa-report, verification-report, sdk-report, checkout) is one; since 1.2.0 `sdk-report.base` and `prototype-report` name the commit develop made, which sdk built on. The commit lineage rule (docs/core-contracts.md) holds between them, or there is no manifest.",
           "items": {
             "type": "object",
             "required": ["source", "commit_sha"],
@@ -209,6 +209,20 @@
         "source_manifest_hash": {
           "$ref": "./shared/provenance.schema.json#/$defs/hash",
           "description": "content_hash of the manifest the game repository's own tooling wrote, which this one extends."
+        },
+        "review": {
+          "type": "object",
+          "description": "Since 1.2.0. The independent review of the commit develop made, as the run holds it. `approved`: a review-report approved exactly the prototype-report's commit. `skipped`: no reviewer was configured, so the build is UNREVIEWED - this is never an approval. `absent`: the run holds no review-report. A request for changes, or an approval of another commit, produces no manifest.",
+          "required": ["status"],
+          "properties": {
+            "status": { "enum": ["approved", "skipped", "absent"] },
+            "verdict": { "type": "string" },
+            "reviewed_commit": { "type": "string" },
+            "artifact_id": { "type": "string" },
+            "content_hash": { "$ref": "./shared/provenance.schema.json#/$defs/hash" },
+            "note": { "type": "string" }
+          },
+          "additionalProperties": false
         }
       },
       "additionalProperties": false

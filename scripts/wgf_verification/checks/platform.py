@@ -11,6 +11,7 @@ import os
 import re
 
 from ..model import BLOCKED, FAIL, PASS, PASS_MOCK, WARNING, Check, Evidence
+from ..lineage import same_commit
 
 __all__ = ["check_platform", "check_policy", "sdk_evidence_status", "live_observation",
            "same_commit"]
@@ -37,14 +38,6 @@ def sdk_evidence_status(features):
         return PASS_MOCK
     return PASS
 
-
-def same_commit(a, b):
-    """Two commit names denote the same commit (either may be abbreviated to 7+ chars)."""
-    if not a or not b:
-        return False
-    if min(len(a), len(b)) < 7:
-        return a == b
-    return a.startswith(b) or b.startswith(a)
 
 AD_FEATURES = ("rewarded", "interstitial", "banner")
 RUNTIME_FACTS = "build/runtime-facts.json"

@@ -12,7 +12,7 @@ are files in scripts/tests/ without `.py`.
 SUITE = {
     "WORKFLOW": ["test_core_workflow", "test_core_persistence"],
     "AGENTS": ["test_core_agents"],
-    "CONTRACTS": ["test_core_contracts"],
+    "CONTRACTS": ["test_core_contracts", "test_core_lineage"],
     "VERIFY": ["test_core_verify"],
     "RELEASE": ["test_core_release"],
     "2D GOLDEN": ["test_golden_2d"],

@@ -209,8 +209,12 @@ class GameRepository:
     def evidence(self, *, commit=None, qa_verdict="pass", verdict="PASS",
                  evidence_status="PASS_MOCK", dirty=False, bundle_hash=None, run_id="run-1",
                  sdk_commit=None, prototype_commit=None, platforms=None, schema_version="1.1.0",
-                 drop=()):
-        """The artifacts a run holds after a verification of this repository."""
+                 drop=(), sdk_base=None, sdk_commits=None, review=None):
+        """The artifacts a run holds after a verification of this repository.
+
+        `sdk_base` (+ `sdk_commits`) makes a 1.2.0 sdk-report that integrated on that commit;
+        `review` ({verdict, reviewed_commit}) adds a review-report to the run.
+        """
         commit = commit or self.head
         prototype = seal("prototype-report", {
             "title_id": "fixture-game",
@@ -223,8 +227,11 @@ class GameRepository:
             "playtest_sessions": [{"observer": "fixture", "player_context": "internal",
                                    "duration_s": 60, "notes": "fixture"}],
             "recommendation": {"decision": "iterate", "rationale": "fixture"}}, schema_version="1.0.0")
+        sdk_ref = {"commit_sha": sdk_commit or commit}
+        if sdk_base is not None:
+            sdk_ref.update(base_commit_sha=sdk_base, sdk_commits=list(sdk_commits or []))
         sdk = seal("sdk-report", {
-            "title_id": "fixture-game", "build_ref": {"commit_sha": sdk_commit or commit},
+            "title_id": "fixture-game", "build_ref": sdk_ref,
             "platforms": [{"platform_id": "generic-web", "profile_version": "1.0.0",
                            "status": "working", "features": [
                                {"feature": "loading-progress", "status": "working",
@@ -285,14 +292,34 @@ class GameRepository:
         artifacts = {"prototype-report": prototype, "sdk-report": sdk,
                      "scaffold-record": scaffold, "verification-report": verification,
                      "qa-report": qa}
+        if review is not None:
+            artifacts["review-report"] = review_report(prototype, **review)
         return {t: a for t, a in artifacts.items() if t not in drop}
+
+
+def review_report(prototype, verdict="approve", reviewed_commit=None):
+    """A review-report of `prototype`'s commit (or of `reviewed_commit`)."""
+    commit = reviewed_commit or prototype["build_ref"]["commit_sha"]
+    skipped = verdict == "skipped"
+    return seal("review-report", {
+        "title_id": "fixture-game", "reviewed_commit": commit, "baseline_commit": None,
+        "verdict": verdict,
+        "blockers": [{"id": "b-1", "file": None, "summary": "fixture blocker",
+                      "severity": "blocker"}] if verdict == "request-changes" else [],
+        "failure": None,
+        "reviewer": {"kind": "none" if skipped else "command",
+                     "argv0": None if skipped else "reviewer", "exit_code": None if skipped else 0,
+                     "status": None if skipped else "exited", "killed_pids": []},
+        "isolation": {"checked_paths": 0, "violations": [], "intact": True, "restored": None},
+        "iteration": 1, "attempt": 1, "duration_s": 0, "timed_out": False},
+        inputs=[pin(prototype)], schema_version="1.0.0")
 
 
 def step(**params):
     definition = StepDefinition({
         "id": "release", "type": "release",
         "inputs": ["qa-report", "verification-report", "sdk-report", "prototype-report",
-                   "scaffold-record"],
+                   "scaffold-record", "review-report"],
         "outputs": ["release-manifest"], "with": params}, retry=None, max_visits=None)
     return ReleaseStep(definition)
 

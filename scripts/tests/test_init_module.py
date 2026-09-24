@@ -1071,12 +1071,16 @@ class GithubSourceWithAPlan(InitCase):
         return step.execute(inputs_with_plan(self.design, self.plan),
                             context or Context(self.config))
 
-    def test_config_committed_locally_and_identity_left_to_bootstrap(self):
+    def test_config_and_identity_committed_locally(self):
+        # The identity used to be left to bootstrap.yml. When bootstrap cannot run (a new
+        # repository without the organization's bot credentials), the game kept the
+        # template's placeholder id, silently. init now writes bootstrap's own derivation.
         result = self.execute()
         self.assertEqual(result.outcome, StepOutcome.SUCCESS, result.error)
         document = yaml_load(read_text(self.local, "game.config.yaml"))
         self.assertEqual(document["engine"], {"type": "threejs"})
-        self.assertEqual(document["game"]["id"], "example-game")
+        self.assertEqual((document["game"]["id"], document["game"]["name"]),
+                         bootstrap_identity("neon-drift"))
         self.assertTrue(os.path.exists(os.path.join(self.local, ".github", "workflows",
                                                     "bootstrap.yml")))
         record = result.artifacts[0].content
@@ -1091,6 +1095,26 @@ class GithubSourceWithAPlan(InitCase):
         self.assertEqual(again.artifacts[0].content["outcome"], "reused")
         self.assertEqual(git(self.local, "rev-list", "--count", "HEAD"), "2")
         self.assertEqual(len(self.github.calls_to("create")), 1)
+
+    def test_a_later_bootstrap_commit_rebases_cleanly_under_init_s(self):
+        # On GitHub, bootstrap.yml sets the same identity in its own commit and deletes
+        # itself. Its change and init's are identical lines, so pulling it rebases cleanly.
+        self.assertEqual(self.execute().outcome, StepOutcome.SUCCESS)
+        root = git(self.local, "rev-list", "--max-parents=0", "HEAD")
+        git(self.local, "checkout", "-q", "-b", "remote-main", root)
+        game_id, game_name = bootstrap_identity("neon-drift")
+        config = read_text(self.local, "game.config.yaml")
+        with open(os.path.join(self.local, "game.config.yaml"), "w") as handle:
+            handle.write(config.replace("id: example-game", f"id: {game_id}")
+                         .replace("name: Example Game", f"name: {game_name}"))
+        git(self.local, "rm", "-q", ".github/workflows/bootstrap.yml")
+        git(self.local, "commit", "-q", "-am", "chore: bootstrap")
+        git(self.local, "checkout", "-q", "main")
+        subprocess.run(["git", *IDENTITY, "-C", self.local, "rebase", "-q", "remote-main"],
+                       check=True, capture_output=True)
+        document = yaml_load(read_text(self.local, "game.config.yaml"))
+        self.assertEqual(document["game"]["id"], game_id)
+        self.assertEqual(git(self.local, "status", "--porcelain"), "")
 
 
 @unittest.skipUnless(GIT, "git is not installed")

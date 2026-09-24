@@ -19,11 +19,15 @@ pushes: pushing is outward-facing, and on GitHub the template's bootstrap workfl
 to the same fresh repository (docs/init-module.md, "The bootstrap race"). A re-run finds the
 file already matching the plan and records the commit it made before.
 
+Identity. game.id and game.name are set from the repository name with exactly the
+derivation web-game-template's bootstrap.yml uses (gameconfig.bootstrap_identity), for
+either source. On GitHub bootstrap.yml writes the same lines in its own remote commit, so
+the two changes are identical and a later `pull --rebase` drops one; if bootstrap never runs
+- it cannot, without the organization's bot credentials - the project still has its own
+identity instead of the template's placeholder.
+
 What it does not do, on purpose:
 
-- set the game's identity on GitHub. bootstrap.yml does that from the repository name;
-  writing game.id there too would be a second writer. With `source: local` there is no
-  bootstrap, so init applies the same derivation itself.
 - recreate anything the template ships: CI, SDKs, build and test configuration. It checks
   they arrived (infrastructure.py) and refuses the project if they did not.
 - adopt a repository or a directory it did not make, unless the installation says so.
@@ -500,8 +504,7 @@ class InitStep(WorkflowStep):
             path = os.path.join(local, GAME_CONFIG)
             with open(path, encoding="utf-8") as handle:
                 current = handle.read()
-            identity = (bootstrap_identity(project.repo_name)
-                        if settings.source == "local" else None)
+            identity = bootstrap_identity(project.repo_name)
             try:
                 desired = apply_game_config(current, game_config, identity)
                 candidates += vendor_profiles(local, game_config["platforms"], self.profiles_dir)
@@ -591,8 +594,9 @@ class InitStep(WorkflowStep):
             else:
                 notes += "The file already matched the plan; nothing was committed."
             if settings.source == "github":
-                notes += (" On GitHub the template's bootstrap workflow sets game.id/name and "
-                          "deletes itself in its own commit; pull --rebase before pushing.")
+                notes += (" game.id/name are set as the template's bootstrap workflow derives "
+                          "them; on GitHub it writes the same lines and deletes itself in its "
+                          "own commit, so pull --rebase before pushing.")
         if settings.source == "local":
             notes += " Source local: no remote, no network, no bootstrap."
         elif pin and pin.get("commit"):

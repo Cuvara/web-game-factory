@@ -29,6 +29,8 @@ ROOT = os.path.dirname(SCRIPTS)
 sys.path.insert(0, SCRIPTS)
 sys.path.insert(0, HERE)
 
+import pinned_template  # noqa: E402
+
 import wgf_init  # noqa: E402
 from test_workflow_contracts import tree_digest  # noqa: E402
 from wgf_init import (  # noqa: E402
@@ -955,24 +957,26 @@ class GithubSourceWithAPlan(InitCase):
 # -- against the real template -------------------------------------------------------------
 
 
-@unittest.skipUnless(os.path.isdir(paths.TEMPLATE), "web-game-template is not checked out")
+_PINNED, _PINNED_WHY = pinned_template.checkout()
+
+
+@unittest.skipUnless(_PINNED, _PINNED_WHY)
 class RealTemplate(unittest.TestCase):
     """TEMPLATE_INFRASTRUCTURE is a claim about web-game-template. Check it against the
     real thing, so the list cannot drift into describing a template that does not exist."""
 
     def test_the_template_has_every_expected_piece(self):
-        self.assertEqual(missing_infrastructure(paths.TEMPLATE), [])
+        self.assertEqual(missing_infrastructure(_PINNED), [])
 
     def test_the_template_game_config_is_pinned(self):
-        game_config = wgf_init.read_game_config(paths.TEMPLATE)
+        game_config = wgf_init.read_game_config(_PINNED)
         self.assertTrue(game_config["platforms"])
 
 
-REAL_TEMPLATE = os.environ.get("WGF_TEMPLATE_DIR") or paths.TEMPLATE
+REAL_TEMPLATE = _PINNED or ""
 
 
-@unittest.skipUnless(GIT and os.path.isdir(os.path.join(REAL_TEMPLATE, ".git")),
-                     "no web-game-template git checkout (beside the repository, or WGF_TEMPLATE_DIR)")
+@unittest.skipUnless(GIT and _PINNED, _PINNED_WHY or "git is not on PATH")
 class RealTemplateLocalSource(LocalCase):
     """source local against the real template: what a golden regression run does."""
 

@@ -360,13 +360,20 @@ class ContinueIn(ReleaseCase):
 
 # -- opt-in: the real template's release scripts --------------------------------------------
 
-TEMPLATE = os.environ.get("WGF_TEMPLATE_DIR") or paths.TEMPLATE
+def _pinned_template():
+    if os.environ.get("WGF_TEMPLATE_RELEASE_TEST") != "1":
+        return None, "set WGF_TEMPLATE_RELEASE_TEST=1 to run the template's release scripts"
+    sys.path.insert(0, HERE)
+    import pinned_template
+    return pinned_template.with_dependencies()
 
 
-@unittest.skipUnless(os.environ.get("WGF_TEMPLATE_RELEASE_TEST") == "1"
-                     and os.path.isdir(os.path.join(TEMPLATE, "node_modules"))
-                     and shutil.which("pnpm") and shutil.which("node"),
-                     "set WGF_TEMPLATE_RELEASE_TEST=1 with ../web-game-template installed")
+TEMPLATE, _TEMPLATE_WHY = _pinned_template()
+TEMPLATE = TEMPLATE or ""
+
+
+@unittest.skipUnless(TEMPLATE and shutil.which("pnpm") and shutil.which("node"),
+                     _TEMPLATE_WHY or "pnpm/node not on PATH")
 class Template(unittest.TestCase):
     """Runs the real `pnpm release:package` / `release:manifest` of a copy of the template,
     and checks the step's view of what they produce: schema-valid, audited, and

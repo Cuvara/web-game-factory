@@ -8,9 +8,19 @@ The **methodology** for discovering, building, publishing and learning from web 
 machines, JSON Schemas, reference data, role charters, and two AI adapters. It is markdown,
 JSON and YAML. It contains no game source code and never will.
 
-Games live in their own repositories, created from `web-game-template`, which is checked out
-as a **sibling directory** (`../web-game-template`). Some checks here read across that
-boundary; they degrade to a skip when the sibling is absent.
+Games live in their own repositories, created from `web-game-template`
+(https://github.com/Cuvara/web-game-template) — the source of truth for template code, the
+example games (Tower Merge Rush, PixiJS; Neon Drift Arena, Three.js), platform adapters and
+engine support. The Factory never copies any of it. It pins **one template commit** in
+`workspace/config/template.lock.json`, and everything that reads template files (golden runs,
+SDK inspector tests, hashing/YAML differential tests) reads a checkout of exactly that commit
+through `scripts/wgflib/template.py` — cached under `~/.cache/wgf/templates/<sha>`, cloned
+from the sibling `../web-game-template` when it holds the commit, else from GitHub. A
+checkout offered at another commit (`WGF_TEMPLATE_DIR`) is refused, never used. Moving the
+pin is deliberate: run both golden runs with `WGF_TEMPLATE_COMMIT=<sha>`, then change the lock
+in the same commit. `python3 scripts/wgf-template.py` shows the pin and any sibling drift.
+`test_core_template` fails if any game/template source (`.ts`, `.js`, `.html`, …) is tracked
+here.
 
 ## Commands
 

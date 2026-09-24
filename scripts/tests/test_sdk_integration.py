@@ -27,6 +27,9 @@ import unittest
 HERE = os.path.dirname(os.path.abspath(__file__))
 SCRIPTS = os.path.dirname(HERE)
 sys.path.insert(0, SCRIPTS)
+sys.path.insert(0, HERE)
+
+import pinned_template  # noqa: E402
 
 from wgflib import paths  # noqa: E402
 from wgflib.hashing import content_hash  # noqa: E402
@@ -449,15 +452,17 @@ class InspectSdk(SdkCase):
         self.assertIsNotNone(sdk.adapter("generic-web").capabilities)
         self.assertFalse([p for p in sdk.problems if "GenericWebPlatform" in p])
 
-    @unittest.skipUnless(os.path.isdir(os.path.join(paths.TEMPLATE, "packages", "platform-sdk")),
-                         "sibling web-game-template not checked out")
-    def test_the_sibling_template_is_readable(self):
-        sdk = inspect_sdk(paths.TEMPLATE)
+    @unittest.skipUnless(pinned_template.checkout()[0], pinned_template.checkout()[1])
+    def test_the_pinned_template_is_readable(self):
+        # The template this Factory is pinned to (workspace/config/template.lock.json), not
+        # whatever the sibling working copy is at: drift fails here only when the pin moves.
+        template = pinned_template.checkout()[0]
+        sdk = inspect_sdk(template)
         self.assertEqual(sdk.problems, [])
         self.assertTrue(sdk.adapter("generic-web").implemented)
         for member in ("initialize", "signalReady", "showRewarded", "showInterstitial"):
             self.assertIn(member, sdk.members)
-        main = os.path.join(paths.TEMPLATE, "src", "main.ts")
+        main = os.path.join(template, "src", "main.ts")
         if os.path.exists(main):
             os.makedirs(os.path.join(self.repo, "src"))
             shutil.copy(main, os.path.join(self.repo, "src", "main.ts"))

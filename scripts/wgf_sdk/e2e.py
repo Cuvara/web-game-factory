@@ -214,12 +214,18 @@ def playwright(tree, work, platform, engine, expect="boot"):
 
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    parser.add_argument("--template", default=paths.TEMPLATE)
-    parser.add_argument("--ref", default="origin/main")
+    parser.add_argument("--template", default=None)  # default: the pinned checkout
+    # The pinned revision (workspace/config/template.lock.json), never a floating branch.
+    parser.add_argument("--ref", default=None)
     parser.add_argument("--work", required=True)
     parser.add_argument("--platforms", default=",".join(PLATFORMS))
     parser.add_argument("--engines", default=",".join(ENGINES))
     args = parser.parse_args(argv)
+    from wgflib import template
+    if args.ref is None:
+        args.ref = template.expected_commit()
+    if args.template is None:
+        args.template = template.checkout(args.ref)
 
     work = os.path.abspath(args.work)
     tree = os.path.join(work, "tree")

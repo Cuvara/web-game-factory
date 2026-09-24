@@ -503,9 +503,16 @@ class InsideAWorkflowStep(ProcessCase):
 
 # -- live: the template's own toolchain ---------------------------------------------------
 
-TEMPLATE = os.path.abspath(os.path.join(SCRIPTS, "..", "..", "web-game-template"))
-if not os.path.isdir(TEMPLATE):  # a worktree: .claude/worktrees/<name>/scripts
-    TEMPLATE = os.path.abspath(os.path.join(SCRIPTS, *[".."] * 4, "..", "web-game-template"))
+def _pinned_template():
+    # Only the opt-in live test reads the template; do not clone or install otherwise.
+    if os.environ.get("WGF_LIVE_PROCESS_TEST") != "1":
+        return ""
+    sys.path.insert(0, HERE)
+    import pinned_template
+    return pinned_template.with_dependencies()[0] or ""
+
+
+TEMPLATE = _pinned_template()
 
 
 def _server_pids():

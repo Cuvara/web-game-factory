@@ -23,9 +23,14 @@ import unittest
 HERE = os.path.dirname(os.path.abspath(__file__))
 SCRIPTS = os.path.dirname(HERE)
 ROOT = os.path.dirname(SCRIPTS)
-TEMPLATE_SHARED = os.path.join(ROOT, os.pardir, "web-game-template", "scripts", "_shared.mjs")
-
 sys.path.insert(0, SCRIPTS)
+sys.path.insert(0, HERE)
+
+import pinned_template  # noqa: E402
+
+_PINNED, _PINNED_WHY = (pinned_template.with_dependencies() if shutil.which("node")
+                        else (None, "node is not on PATH"))
+TEMPLATE_SHARED = os.path.join(_PINNED or "", "scripts", "_shared.mjs")
 
 from wgflib.hashing import (  # noqa: E402
     CanonicalizationError,
@@ -119,7 +124,7 @@ class ContentHash(unittest.TestCase):
 
 
 @unittest.skipUnless(shutil.which("node"), "node is not on PATH")
-@unittest.skipUnless(os.path.exists(TEMPLATE_SHARED), "web-game-template is not checked out")
+@unittest.skipUnless(_PINNED, _PINNED_WHY)
 class AgreesWithTheGameRepoImplementation(unittest.TestCase):
     """Differential test against web-game-template/scripts/_shared.mjs."""
 

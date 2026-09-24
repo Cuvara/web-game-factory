@@ -57,19 +57,34 @@ from wgflib.yamllite import load_file  # noqa: E402
 
 from golden import games  # noqa: E402
 
-__all__ = ["TEMPLATE_DIR", "TEMPLATE_REF", "VALIDATED_TEMPLATE_REF", "make_workdir", "build_config", "GoldenRun", "Summary"]
+__all__ = ["template_dir", "make_workdir", "build_config", "GoldenRun", "Summary"]
 
-DEFAULT_TEMPLATE = "/mnt/e/GameWeb/web-game-template"
-TEMPLATE_DIR = os.environ.get("WGF_TEMPLATE_DIR") or (
-    DEFAULT_TEMPLATE if os.path.isdir(DEFAULT_TEMPLATE)
-    else os.path.join(os.path.dirname(paths.ROOT), "web-game-template"))
+from wgflib import template  # noqa: E402
 
-# The template commit the golden runs are validated against (Core v1, 2026-09-24). Pinned so
-# the regression baseline never moves because web-game-template's main did: a new template
-# is adopted by changing this line after both golden runs pass on it. Set
-# WGF_GOLDEN_TEMPLATE_REF=HEAD to run against the checkout as it is (a drift check).
-VALIDATED_TEMPLATE_REF = "5eb698fe42553ed2e3fe051ecad8bbcd43c1eef5"
-TEMPLATE_REF = os.environ.get("WGF_GOLDEN_TEMPLATE_REF") or VALIDATED_TEMPLATE_REF
+# The template a golden run creates its game from: the commit pinned in
+# workspace/config/template.lock.json, as a checkout of exactly that commit
+# (wgflib.template.checkout) - never the sibling working copy as it happens to be.
+# WGF_TEMPLATE_COMMIT=<sha> runs against another revision on purpose (adopting a new pin);
+# WGF_GOLDEN_TEMPLATE_REF is its older spelling.
+if os.environ.get("WGF_GOLDEN_TEMPLATE_REF") and not os.environ.get("WGF_TEMPLATE_COMMIT"):
+    os.environ["WGF_TEMPLATE_COMMIT"] = os.environ["WGF_GOLDEN_TEMPLATE_REF"]
+
+
+def template_dir():
+    """The pinned checkout; raises wgflib.template.TemplateError if it cannot be obtained."""
+    return template.checkout()
+
+
+def __getattr__(name):
+    # `harness.TEMPLATE_DIR`: the pinned checkout, resolved on first use; "" when it cannot
+    # be obtained, so the fast tests skip instead of reading another revision.
+    if name == "TEMPLATE_DIR":
+        try:
+            return template_dir()
+        except template.TemplateError:
+            return ""
+    raise AttributeError(name)
+
 
 # Who the golden run's local commits are by (develop's and sdk's): the machine may have no
 # git identity. Init has its own default (wgf-init). Nothing is ever pushed.
@@ -146,7 +161,7 @@ def base_config():
 
 def build_config(game, workdir, template_dir=None, python=None):
     """The golden run's factory configuration, as the `factory:` mapping."""
-    template_dir = os.path.abspath(template_dir or TEMPLATE_DIR)
+    template_dir = os.path.abspath(template_dir or globals()["template_dir"]())
     python = python or sys.executable
     games_dir = os.path.join(workdir, "games")
     repo = os.path.join(games_dir, game.title_id)
@@ -156,7 +171,7 @@ def build_config(game, workdir, template_dir=None, python=None):
         "init": {
             "source": "local",
             "template_path": template_dir,
-            "template_ref": TEMPLATE_REF,
+            "template_ref": template.expected_commit(),
             "projects_dir": games_dir,
             "adopt_existing": False,
         },
@@ -214,7 +229,7 @@ class GoldenRun:
         self.workdir = os.path.abspath(workdir or make_workdir())
         os.makedirs(self.workdir, exist_ok=True)
         self.keep = keep
-        self.template_dir = os.path.abspath(template_dir or TEMPLATE_DIR)
+        self.template_dir = os.path.abspath(template_dir or globals()["template_dir"]())
         self.progress = progress
         self.browser = browser
         self.config_data = build_config(self.game, self.workdir, self.template_dir)

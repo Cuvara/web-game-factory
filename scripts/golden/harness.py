@@ -111,15 +111,7 @@ FOREIGN_ENV = ("WGF_GAME_REPO", "WGF_RESEARCH_LIVE", "WGF_GAME_CONFIG")
 # pnpm needs no network either: the store is warm and installs are --offline /
 # --prefer-offline. A guard, not a sandbox: a child that ignores proxy variables is not
 # stopped by it.
-NO_PROXY = "localhost,127.0.0.1,::1"
-PROXY_VARS = ("http_proxy", "https_proxy", "HTTP_PROXY", "HTTPS_PROXY", "all_proxy",
-              "ALL_PROXY")
-
-
-def sandbox_env(proxy_url):
-    env = {name: proxy_url for name in PROXY_VARS}
-    env.update({"no_proxy": NO_PROXY, "NO_PROXY": NO_PROXY})
-    return env
+from wgflib.netguard import NO_PROXY, PROXY_VARS, sandbox_env  # noqa: E402,F401
 
 
 class network_sandbox:

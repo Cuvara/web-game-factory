@@ -14,6 +14,8 @@ import json
 import os
 import re
 
+from wgflib.netguard import RefusingProxy, sandbox_env
+
 from .brief import ENGINE_DIRS, PROTECTED_PATHS, REPORT_PATH, REQUIRED_SYSTEMS
 from .seam import seam_findings
 
@@ -29,6 +31,13 @@ TOOLCHAIN = {
     "build": (["pnpm", "run", "build"], "build"),
     "smoke": (["pnpm", "run", "test:e2e"], "test:e2e"),
 }
+
+# Checks that run the built game in a browser. They run behind a proxy that refuses every
+# non-local request (wgflib.netguard): a portal build would otherwise load the portal's real
+# SDK from its CDN - dev-build traffic to a portal, and a result that depends on the CDN. The
+# real acceptance run's smoke failed exactly so, on Poki's SDK pulling an http:// ad bridge.
+# A refused SDK is what an ad blocker does; the game must boot and play anyway.
+NETWORK_GUARDED = ("smoke",)
 
 # Output that means the check could not run here, not that the game is broken.
 _UNAVAILABLE = {
@@ -239,7 +248,14 @@ def run_checks(root, brief, settings, runner, git, logger=None):
                 results.append(CheckResult(check_id, "skipped",
                                            f"package.json has no {script!r} script"))
                 continue
-            run = runner.run(argv, cwd=root, timeout=settings.check_timeout)
+            guard = RefusingProxy().start() if check_id in NETWORK_GUARDED else None
+            try:
+                run = runner.run(argv, cwd=root, timeout=settings.check_timeout,
+                                 **({"env": sandbox_env(guard.url)} if guard else {}))
+            finally:
+                refused = guard.summary() if guard else None
+                if guard:
+                    guard.stop()
             unavailable = _UNAVAILABLE.get(check_id)
             if not run.ok and unavailable and unavailable.search(run.output):
                 result = CheckResult(check_id, "skipped",
@@ -252,6 +268,9 @@ def run_checks(root, brief, settings, runner, git, logger=None):
                 why = "timed out" if run.timed_out else f"exit {run.returncode}"
                 result = CheckResult(check_id, "failed", f"{' '.join(argv)}: {why}",
                                      output_tail=run.tail(), duration_s=run.duration_s)
+            if refused and refused["refused_requests"]:
+                result.summary += (f" (network guarded: {refused['refused_requests']} "
+                                   f"request(s) refused: {', '.join(refused['targets'][:5])})")
             if check_id == "install" and result.failed:
                 stop_all = True
         if logger is not None:

@@ -377,6 +377,45 @@ class Command(DevelopCase):
         self.assertIn("continue from it rather than starting over", brief)
         self.assertIn("### lint", brief)  # attempt 1's failed check is not forgotten
 
+    def test_the_smoke_check_cannot_reach_a_portal(self):
+        # The real acceptance run: a Poki build's smoke loaded Poki's real SDK from its CDN,
+        # which pulled an http:// ad bridge, and the template's "makes no insecure requests"
+        # failed on the portal, not the game. The browser check now runs behind a refusing
+        # proxy; other checks do not.
+        import urllib.error
+        import urllib.request
+        seen = {}
+
+        class Portal(FakeRunner):
+            def run(self, argv, cwd, timeout=None, env=None):
+                if argv[:3] == ["pnpm", "run", "test:e2e"]:
+                    seen["env"] = dict(env or {})
+                    proxy = (env or {}).get("http_proxy")
+                    opener = urllib.request.build_opener(urllib.request.ProxyHandler(
+                        {"http": proxy} if proxy else {}))
+                    try:
+                        opener.open("http://imasdk.googleapis.com/js/core/bridge.html",
+                                    timeout=5)
+                        seen["portal"] = "reached"
+                    except urllib.error.HTTPError as exc:
+                        seen["portal"] = exc.code
+                    except OSError as exc:
+                        seen["portal"] = str(exc)
+                elif argv[:3] == ["pnpm", "run", "test"]:
+                    seen["unit_env"] = dict(env or {})
+                return super().run(argv, cwd, timeout, env)
+
+        runner = Portal(on_develop=write_game)
+        result = step_with(runner).execute(inputs_for(), context(self.command_config()))
+        self.assertEqual(result.outcome, StepOutcome.SUCCESS, result.error)
+        self.assertEqual(seen["portal"], 403)
+        self.assertEqual(seen["env"]["no_proxy"], "localhost,127.0.0.1,::1")
+        self.assertNotIn("http_proxy", seen["unit_env"])
+        with open(os.path.join(self.repo, briefs.BRIEF_DIR, "checks.json")) as handle:
+            smoke = next(c for c in json.load(handle)["checks"] if c["id"] == "smoke")
+        self.assertIn("network guarded: 1 request(s) refused", smoke["summary"])
+        self.assertIn("GET http://imasdk.googleapis.com", smoke["summary"])
+
     def test_failing_checks_are_retryable_and_emit_the_report(self):
         runner = FakeRunner(fail={"test"}, on_develop=write_game)
         result = step_with(runner).execute(inputs_for(), context(self.command_config()))

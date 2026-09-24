@@ -83,10 +83,10 @@ Run in this order; `conformance` cannot be switched off.
 | Check | What |
 |---|---|
 | `install` | `pnpm install --frozen-lockfile`. A failure stops the rest |
-| `conformance` | Static: engine imports only in `src/rendering/<engine>/`, no other engine, no portal SDK identifiers, ad APIs called only from `src/platform/`, `BootScene` replaced, the seam present, template-owned paths unchanged since the visit began, and `report.json` complete — every required system `done`, every MVP item and placement reported |
+| `conformance` | Static: engine imports only in `src/rendering/<engine>/`, no other engine, no portal SDK identifiers, ad APIs called only from `src/platform/`, `BootScene` replaced, the seam files as the Factory provided them and `src/main.ts` booting through them (`wgflib.gameseam`), template-owned paths unchanged since the visit began, and `report.json` complete — every required system `done`, every MVP item and placement reported |
 | `format` | `pnpm format` — optional |
 | `typecheck`, `lint`, `unit`, `build` | the repository's own scripts, as CI runs them |
-| `smoke` | `pnpm test:e2e`. Skipped, and reported as skipped, only when no browser is installed |
+| `smoke` | `pnpm test:e2e`, behind a proxy that refuses every non-local request (`wgflib.netguard`): a portal build would otherwise load the portal's real SDK from its CDN - dev traffic to the portal, and a result that depends on it (a Poki build's own "makes no insecure requests" failed on Poki's http:// ad bridge). The game must boot and play with the SDK refused, as for an ad-blocker; the summary says what was refused. Skipped, and reported as skipped, only when no browser is installed |
 
 ## Idempotency
 

@@ -180,7 +180,14 @@ class DevelopStep(WorkflowStep):
                 )
             except GitError as exc:
                 return StepResult.failed(str(exc))
-        commit_sha = commit_sha or git.head() or "0" * 40
+        commit_sha = commit_sha or git.head()
+        if not commit_sha:
+            # A placeholder commit would flow downstream as if it were a build: review, sdk,
+            # verify and release all pin what this report names.
+            return StepResult.blocked(
+                f"the build commit cannot be established: {checkout} has no readable HEAD "
+                f"(git rev-parse HEAD failed). Commit the checkout's initial state, then "
+                f"resume.")
 
         produced_at = self.clock()
         report = build_report(

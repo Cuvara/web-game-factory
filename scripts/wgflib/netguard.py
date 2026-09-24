@@ -3,7 +3,7 @@
 A build for a portal loads that portal's SDK from its CDN, so a browser test of a game would
 fetch it: real traffic to a portal from a development build, and a result that depends on
 the portal's CDN - on a machine with network, web-game-template's own "makes no insecure
-requests" smoke fails on a Poki build, because Poki's SDK pulls an http:// ad bridge. Tests
+requests" smoke fails on a build whose portal SDK pulls an http:// ad bridge. Tests
 therefore run with HTTP(S) proxy variables pointing at this proxy (children inherit them;
 Chromium on Linux, git and pnpm honour them) and `no_proxy` = localhost, so preview servers
 are still reached directly. Used by the develop step's smoke check and by the golden runs.

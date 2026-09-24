@@ -25,6 +25,8 @@ DEFAULTS = {
         "delay_seconds": 2,
         "max_delay_seconds": 60,
         "max_visits": 5,
+        # `wgf status` calls a RUNNING step with no sign of life for longer than this hung.
+        "hung_after_seconds": 300,
     },
     "agents": {"default": "local"},
     "storage": {"directory": ".factory", "fsync": True},
@@ -69,6 +71,13 @@ class FactoryConfig:
     @property
     def max_visits(self):
         return self.section("execution").get("max_visits")
+
+    @property
+    def hung_after_seconds(self):
+        value = self.section("execution").get("hung_after_seconds", 300)
+        if isinstance(value, bool) or not isinstance(value, (int, float)) or value <= 0:
+            return 300
+        return value
 
     def retry_policy(self):
         execution = self.section("execution")

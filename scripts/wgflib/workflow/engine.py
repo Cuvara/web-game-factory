@@ -17,12 +17,21 @@ Invariants the engine keeps:
   * A FAILED step is retried per its policy; no other outcome is retried.
   * Revisiting a step is bounded by `max_visits`; exceeding it blocks the run rather than
     looping forever.
-  * Artifacts go to the store; state holds only references to them.
+  * Artifacts go to the store; state holds only references to them. An execution's
+    artifact references, its step status and its trail entry are saved in one write, and
+    the events describing them are emitted after it, so a crash never leaves state (or the
+    log) naming an artifact the other does not.
+  * A cancel request stops the run as CANCELLED, whether it arrives between steps or while
+    a step runs; a step interrupted by it is never retried.
+  * An input artifact is re-checked (checksum, and contract when a validator is set) before
+    the step that consumes it runs; one that fails is a non-retryable FAILED naming it.
 """
 
 import contextlib
+import copy
 import datetime
 import json
+import re
 import secrets
 import time
 
@@ -41,13 +50,31 @@ from .model import (
 )
 from .runtime import LocalRuntime, Task
 from .step import RegistryError, StepInputs
-from .store import ARTIFACT_ID
+from .store import ARTIFACT_ID, RunLocked, StoreError
 
-__all__ = ["WorkflowEngine", "EngineError", "utc_now"]
+__all__ = ["WorkflowEngine", "EngineError", "utc_now", "check_decision"]
 
 
 class EngineError(RuntimeError):
     """The engine was asked to do something the run's state does not allow."""
+
+
+# A decision is a choice label, typed by a person or sent by automation. It is persisted and
+# echoed into logs and status, so it is refused unless it is a plain token.
+_DECISION = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.:-]{0,63}")
+_DECIDER = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.:@-]{0,127}")
+_NOTE_LIMIT = 4000
+
+
+def check_decision(decision, decided_by="human", note=None):
+    if not isinstance(decision, str) or not _DECISION.fullmatch(decision):
+        raise EngineError(f"decision {decision!r} is not a plain choice label "
+                          f"(letters, numbers, - _ . :; at most 64 characters)")
+    if not isinstance(decided_by, str) or not _DECIDER.fullmatch(decided_by):
+        raise EngineError(f"decided_by {decided_by!r} is not a plain identifier")
+    if note is not None and (not isinstance(note, str) or "\x00" in note
+                             or len(note) > _NOTE_LIMIT):
+        raise EngineError(f"note must be text without NUL, at most {_NOTE_LIMIT} characters")
 
 
 def utc_now():
@@ -139,9 +166,11 @@ class WorkflowEngine:
         `from_step` moves the cursor first (re-running that step and everything after it).
         `decision` answers a step that is WAITING, typically a human checkpoint.
         """
+        if decision is not None:
+            check_decision(decision, decided_by, note)
         with self._holding(run_id):
             state = self._prepare_resume(run_id, from_step, decision, decided_by, note)
-        return self._drive(state)
+        return self._drive(state, held=True)
 
     def _prepare_resume(self, run_id, from_step, decision, decided_by, note):
         state = self.store.load(run_id)
@@ -155,6 +184,9 @@ class WorkflowEngine:
                 f"{', '.join(RunStatus.RESUMABLE)} runs can be resumed"
             )
         data = {"from_status": state.status}
+        # Resuming is the answer to a pause; one requested of a driver that then died must
+        # not immediately pause the run it was just asked to continue.
+        self.store.clear_request(run_id, "pause")
         for step_state in state.steps.values():
             step_state.loop_base = step_state.visits  # a resume is a fresh loop budget
         if state.workflow_version != self.definition.version:
@@ -195,7 +227,7 @@ class WorkflowEngine:
         """
         with self._holding(run_id):
             state = self._prepare_continue(run_id, scope, force)
-        return self._drive(state, skip_completed=not force, enter_first=True)
+        return self._drive(state, skip_completed=not force, enter_first=True, held=True)
 
     def _prepare_continue(self, run_id, scope, force):
         state = self.store.load(run_id)
@@ -209,6 +241,8 @@ class WorkflowEngine:
             raise EngineError(f"run {run_id} was cancelled")
         scope_ids = self.definition.resolve_scope(scope)
         self._require_implementations(scope_ids)
+        for step_state in state.steps.values():
+            step_state.loop_base = step_state.visits  # an explicit command: a fresh budget
         previous = state.status
         state.scope = scope_ids
         state.cursor = scope_ids[0]
@@ -219,6 +253,7 @@ class WorkflowEngine:
         return state
 
     def record_decision(self, state, step_id, decision, decided_by="human", note=None):
+        check_decision(decision, decided_by, note)
         step = state.step(step_id)
         entry = {
             "decision": decision,
@@ -237,28 +272,52 @@ class WorkflowEngine:
         state = self.store.load(run_id)
         if state.status != RunStatus.RUNNING:
             raise EngineError(f"run {run_id} is {state.status}, not RUNNING; nothing to pause")
-        if self.store.is_held(run_id):
+        # Change state directly only while holding the lock, so a driver that starts in
+        # between cannot have its state overwritten; if one holds it, ask it instead.
+        try:
+            self.store.acquire(run_id)
+        except RunLocked:
             self.store.request(run_id, "pause")
             return state
-        state.status = RunStatus.PAUSED
-        state.message = "paused on request"
-        self._save(state)
-        self._emit(state, Events.WORKFLOW_PAUSED, status=state.status,
-                   data={"reason": "requested", "next_step": state.cursor})
-        return state
+        try:
+            state = self.store.load(run_id)
+            if state.status != RunStatus.RUNNING:
+                raise EngineError(
+                    f"run {run_id} is {state.status}, not RUNNING; nothing to pause")
+            state.status = RunStatus.PAUSED
+            state.message = "paused on request"
+            self._save(state)
+            self._emit(state, Events.WORKFLOW_PAUSED, status=state.status,
+                       data={"reason": "requested", "next_step": state.cursor})
+            return state
+        finally:
+            self.store.release(run_id)
 
     def request_cancel(self, run_id):
-        """Cancel now if nothing is driving the run, else at the next step boundary."""
+        """Cancel now if nothing is driving the run, else as soon as the driver notices.
+
+        A driven run notices between steps, and also while a step runs: a child process the
+        step started through wgflib.procs is terminated, tree and all, and the step that was
+        waiting on it is not retried.
+        """
         state = self.store.load(run_id)
         if state.status in RunStatus.TERMINAL:
             raise EngineError(f"run {run_id} is already {state.status}")
-        if state.status == RunStatus.RUNNING and self.store.is_held(run_id):
+        try:
+            self.store.acquire(run_id)
+        except RunLocked:
             self.store.request(run_id, "cancel")
             return state
-        state.status = RunStatus.CANCELLED
-        self._save(state)
-        self._emit(state, Events.WORKFLOW_CANCELLED)
-        return state
+        try:
+            state = self.store.load(run_id)
+            if state.status in RunStatus.TERMINAL:
+                raise EngineError(f"run {run_id} is already {state.status}")
+            state.status = RunStatus.CANCELLED
+            self._save(state)
+            self._emit(state, Events.WORKFLOW_CANCELLED)
+            return state
+        finally:
+            self.store.release(run_id)
 
     # -- the loop -----------------------------------------------------------------------
 
@@ -266,8 +325,8 @@ class WorkflowEngine:
     def _holding(self, run_id):
         """Hold the run's lock while preparing it; released only if preparation fails.
 
-        On success the lock stays taken and `_drive` (which re-acquires it, reentrantly)
-        releases it when the run stops, so nothing can change the run in between.
+        On success the lock stays taken and `_drive(held=True)` releases it when the run
+        stops, so nothing can change the run in between.
         """
         self.store.acquire(run_id)
         try:
@@ -276,18 +335,29 @@ class WorkflowEngine:
             self.store.release(run_id)
             raise
 
-    def _drive(self, state, skip_completed=False, enter_first=False):
+    def _drive(self, state, skip_completed=False, enter_first=False, held=False):
         """Execute from the cursor until the run stops.
 
         With `skip_completed`, a step that already succeeded in this run is skipped when it
         is reached by ordinary success progression. A step reached by an explicit route (a
         verification failure sending work back to development) always executes: that is a
-        loop, and skipping it would defeat it.
+        loop, and skipping it would defeat it. A step is skipped at most once per drive: a
+        cycle of `next:` edges through completed steps would otherwise spin forever without
+        executing anything, and so without ever meeting the loop limit.
+
+        `held` means the caller already holds the run's lock (resume, continue_in).
         """
-        self.store.acquire(state.run_id)
-        self.store.mark_latest(state.run_id)
-        skip, needs_enter = skip_completed, enter_first
+        if not held:
+            self.store.acquire(state.run_id)
+        skip = skip_completed
+        # The cursor step must begin a new visit before it executes when `needs_enter`;
+        # `check` applies the loop limit to that entry. Only a drive's first entry (resume
+        # --from, continue_in) is exempt - every later one, including an entry deferred
+        # past a skip, counts against max_visits, so no path through the graph is unbounded.
+        needs_enter, check = enter_first, False
+        skipped = set()
         try:
+            self.store.mark_latest(state.run_id)
             state.status = RunStatus.RUNNING
             state.message = None
             self._save(state)
@@ -299,7 +369,8 @@ class WorkflowEngine:
                 step_def = self.definition.step(step_id)
                 step_state = state.step(step_id)
 
-                if skip and step_state.status == StepStatus.SUCCESS:
+                if skip and step_state.status == StepStatus.SUCCESS and step_id not in skipped:
+                    skipped.add(step_id)
                     self._emit(state, Events.STEP_SKIPPED, step_id=step_id,
                                data={"reason": "already completed in this run"})
                     target = self.definition.success_target(step_def)
@@ -307,13 +378,17 @@ class WorkflowEngine:
                                     ("goto", target) if target != END else ("end", END),
                                     enter=False):
                         return state
-                    needs_enter = True
+                    needs_enter, check = True, True
                     continue
                 if step_state.visits == 0 or needs_enter:
-                    self._enter(state, step_id, check_loop=False)
+                    if not self._enter(state, step_id, check_loop=check):
+                        self._loop_limit(state, step_id)
+                        return state
                 needs_enter = False
 
                 result = self._execute_visit(state, step_def)
+                if self._honour_cancel(state):
+                    return state
                 skip = (skip_completed and result.outcome == StepOutcome.SUCCESS
                         and not self._explicitly_routed(step_def, result))
                 route = self._route(step_def, result)
@@ -323,16 +398,25 @@ class WorkflowEngine:
                 if self._follow(state, step_def, result.routing_key, result.outcome, route,
                                 message=result.message or result.error, enter=enter):
                     return state
-                needs_enter = not enter
+                needs_enter, check = not enter, True
         finally:
             self.store.release(state.run_id)
 
+    def _cancel_requested(self, state):
+        return self.store.requested(state.run_id, "cancel")
+
+    def _honour_cancel(self, state):
+        if not self._cancel_requested(state):
+            return False
+        self.store.clear_request(state.run_id, "cancel")
+        state.status = RunStatus.CANCELLED
+        state.message = "cancelled on request"
+        self._save(state)
+        self._emit(state, Events.WORKFLOW_CANCELLED, step_id=state.cursor)
+        return True
+
     def _honour_requests(self, state):
-        if self.store.requested(state.run_id, "cancel"):
-            self.store.clear_request(state.run_id, "cancel")
-            state.status = RunStatus.CANCELLED
-            self._save(state)
-            self._emit(state, Events.WORKFLOW_CANCELLED)
+        if self._honour_cancel(state):
             return True
         if self.store.requested(state.run_id, "pause"):
             self.store.clear_request(state.run_id, "pause")
@@ -385,12 +469,22 @@ class WorkflowEngine:
             result = self._run_once(state, step_def, step_state)
             duration_ms = int(round((self.monotonic() - began) * 1000))
 
-            refs = []
+            refs, artifact_events = [], []
             if result.artifacts:
                 try:
-                    refs = self._persist_artifacts(state, step_def, result)
+                    refs, artifact_events = self._persist_artifacts(state, step_def, result)
                 except _ContractViolation as exc:
                     result = StepResult(StepOutcome.FAILED, error=str(exc), retryable=False)
+                except (OSError, StoreError) as exc:
+                    # Nothing was recorded; any file already written is an unrecorded
+                    # orphan that the next attempt overwrites.
+                    result = StepResult(StepOutcome.FAILED,
+                                        error=f"could not persist artifacts: {exc}")
+            cancelled = self._cancel_requested(state)
+            if cancelled and result.outcome != StepOutcome.SUCCESS:
+                result = StepResult(
+                    result.outcome, route=result.route, message="cancelled while running",
+                    error=result.error, retryable=False, data=result.data)
             if result.outcome == StepOutcome.SUCCESS:
                 missing = [t for t in step_def.outputs if t not in {r.type for r in refs}]
                 if missing:
@@ -423,8 +517,13 @@ class WorkflowEngine:
                 result.outcome == StepOutcome.FAILED
                 and result.retryable
                 and attempt < policy.max_attempts
+                and not cancelled
             )
+            # One save covers the artifact refs, the step's status and the trail entry; the
+            # events that describe them follow it.
             self._save(state)
+            for event, fields in artifact_events:
+                self._emit(state, event, step_id=step_def.id, **fields)
             self._emit(
                 state, _STEP_EVENT[result.outcome], step_id=step_def.id, attempt=attempt,
                 status=step_state.status, duration_ms=duration_ms, error=result.error,
@@ -441,6 +540,10 @@ class WorkflowEngine:
             step = self.registry.create(step_def)
         except RegistryError as exc:
             return StepResult(StepOutcome.FAILED, error=str(exc), retryable=False)
+        except Exception as exc:  # a step class whose constructor raises
+            return StepResult(StepOutcome.FAILED, retryable=False,
+                              error=f"step {step_def.id!r}: could not be constructed: "
+                                    f"{type(exc).__name__}: {exc}")
 
         refs, missing = {}, []
         for artifact_type in step_def.inputs:
@@ -449,9 +552,13 @@ class WorkflowEngine:
                 missing.append(artifact_type)
             else:
                 refs[artifact_type] = ref
-        inputs = StepInputs(refs, lambda ref: self.store.read_artifact(state.run_id, ref),
-                            missing)
         step_state.consumed = [f"{ref.id}@v{ref.version}" for ref in refs.values()]
+        loaded, problem = self._check_inputs(state, refs)
+        if problem:
+            return StepResult(StepOutcome.FAILED, error=problem, retryable=False)
+        inputs = StepInputs(refs, lambda ref: copy.deepcopy(loaded[(ref.id, ref.version)])
+                            if (ref.id, ref.version) in loaded
+                            else self.store.read_artifact(state.run_id, ref), missing)
 
         decision = state.decisions.get(step_def.id)
         if decision and decision.get("visit") != step_state.visits:
@@ -521,28 +628,80 @@ class WorkflowEngine:
 
         return record
 
+    def _validate(self, artifact_type, content):
+        """The validator's problems, with a validator that raises reported as one."""
+        if self.artifact_validator is None:
+            return []
+        try:
+            return list(self.artifact_validator(artifact_type, content) or [])
+        except Exception as exc:
+            return [f"{artifact_type}: the contract check itself failed: "
+                    f"{type(exc).__name__}: {exc}"]
+
+    def _check_inputs(self, state, refs):
+        """Read and check every resolved input before the step sees it.
+
+        Returns ({(id, version): content}, None), or (partial, problem) naming the first
+        input that is missing, changed on disk since it was recorded, or fails its contract.
+        """
+        loaded = {}
+        for artifact_type, ref in refs.items():
+            label = (f"input {artifact_type} ({ref.id}@v{ref.version}, produced by "
+                     f"{ref.produced_by or 'unknown step'})")
+            try:
+                content = self.store.read_artifact(state.run_id, ref)
+            except StoreError as exc:
+                return loaded, f"{label} cannot be used: {exc}"
+            problems = self._validate(ref.type, content)
+            if problems:
+                return loaded, f"{label} fails its contract: " + "; ".join(problems)
+            loaded[(ref.id, ref.version)] = content
+        return loaded, None
+
     def _persist_artifacts(self, state, step_def, result):
-        """Check every output against its contract, then write them all - or none."""
+        """Check every output against its contract, then write them all - or record none.
+
+        Returns (refs, events). The refs are appended to `state` in memory only; the caller
+        saves them together with the step's status, then emits the events. Until that save,
+        a written file is an orphan nothing refers to, and the version it occupies is
+        reused - the file replaced - by the next execution, so version numbers stay
+        deterministic: always one more than the versions state has recorded.
+        """
         for output in result.artifacts:
             if step_def.outputs and output.type not in step_def.outputs:
                 raise _ContractViolation(
                     f"produced {output.type!r}, which step {step_def.id!r} does not declare "
                     f"in outputs {step_def.outputs}"
                 )
-            if not ARTIFACT_ID.match(output.artifact_id or ""):
+            if not isinstance(output.artifact_id, str) or not ARTIFACT_ID.fullmatch(
+                    output.artifact_id):
                 raise _ContractViolation(
                     f"artifact id {output.artifact_id!r} is not kebab-case"
                 )
-            if self.artifact_validator is not None:
-                problems = self.artifact_validator(output.type, output.content)
-                if problems:
-                    raise _ContractViolation("invalid artifact: " + "; ".join(problems))
+            try:
+                json.dumps(output.content)
+                json.dumps(output.metadata)
+            except (TypeError, ValueError) as exc:
+                raise _ContractViolation(
+                    f"artifact {output.artifact_id!r} is not JSON-serializable: {exc}")
+            problems = self._validate(output.type, output.content)
+            if problems:
+                raise _ContractViolation("invalid artifact: " + "; ".join(problems))
 
-        refs = []
+        planned, events = [], []
+        seq = state.next_artifact_seq()
+        pending = {}
         for output in result.artifacts:
             artifact_id = output.artifact_id
-            versions = state.artifacts.setdefault(artifact_id, [])
-            version = len(versions) + 1
+            version = len(state.artifacts.get(artifact_id) or []) + pending.get(artifact_id, 0) + 1
+            pending[artifact_id] = pending.get(artifact_id, 0) + 1
+            if self.store.has_artifact_file(state.run_id, artifact_id, version):
+                events.append((Events.STEP_LOG, {
+                    "level": "warning",
+                    "message": "replaced an unrecorded artifact file left by an interrupted "
+                               "execution",
+                    "data": {"artifact": f"{artifact_id}@v{version}"},
+                }))
             location, checksum = self.store.write_artifact(
                 state.run_id, artifact_id, version, output.content
             )
@@ -560,16 +719,17 @@ class WorkflowEngine:
                 checksum=checksum, produced_by=step_def.id, created_at=self.clock(),
                 content_hash=digest, schema_version=schema_version,
                 metadata=dict(output.metadata) if output.metadata else None,
+                seq=seq,
             )
-            versions.append(ref)
-            refs.append(ref)
-            self._emit(
-                state,
-                Events.ARTIFACT_CREATED if version == 1 else Events.ARTIFACT_UPDATED,
-                step_id=step_def.id, data=ref.to_dict(),
-            )
-        self._save(state)
-        return refs
+            seq += 1
+            planned.append(ref)
+            events.append((Events.ARTIFACT_CREATED if version == 1 else Events.ARTIFACT_UPDATED,
+                           {"data": ref.to_dict()}))
+
+        # Every file is written; only now does state learn of them.
+        for ref in planned:
+            state.artifacts.setdefault(ref.id, []).append(ref)
+        return planned, events
 
     # -- routing ------------------------------------------------------------------------
 
@@ -616,13 +776,7 @@ class WorkflowEngine:
                                 f"left scope after {step_def.id} ({key}); next would be {target}")
         if kind == "goto":
             if enter and not self._enter(state, target):
-                state.cursor = target
-                limit = self.definition.step(target).max_visits
-                return self._finish(
-                    state, RunStatus.BLOCKED, Events.WORKFLOW_BLOCKED,
-                    f"loop limit: {target} has been entered {limit} time(s) since the run "
-                    f"last started or resumed (max_visits={limit}). Resume to allow more.",
-                )
+                return self._loop_limit(state, target)
             state.cursor = target
             self._save(state)
             return False
@@ -638,6 +792,15 @@ class WorkflowEngine:
                                 message or f"{step_def.id} is blocked")
         return self._finish(state, RunStatus.WAITING, Events.WORKFLOW_PAUSED,
                             message or f"{step_def.id} is waiting", reason=key)
+
+    def _loop_limit(self, state, target):
+        state.cursor = target
+        limit = self.definition.step(target).max_visits
+        return self._finish(
+            state, RunStatus.BLOCKED, Events.WORKFLOW_BLOCKED,
+            f"loop limit: {target} has been entered {limit} time(s) since the run "
+            f"last started or resumed (max_visits={limit}). Resume to allow more.",
+        )
 
     def _finish(self, state, status, event, message, reason=None):
         state.status = status

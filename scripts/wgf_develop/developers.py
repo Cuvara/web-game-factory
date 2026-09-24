@@ -88,6 +88,15 @@ class CommandDeveloper:
         kwargs = {}
         if idle is not None and _accepts(self.runner.run, "idle_timeout"):
             kwargs["idle_timeout"] = idle
+        # The developer's whole transcript is evidence, not only its failure tail: keep it
+        # in the run directory, outside the checkout, one file per visit and attempt.
+        run_dir = getattr(context, "run_dir", None)
+        if run_dir and _accepts(self.runner.run, "log_path"):
+            log_dir = os.path.join(run_dir, "develop")
+            os.makedirs(log_dir, exist_ok=True)
+            kwargs["log_path"] = os.path.join(
+                log_dir, f"{context.visit}-{context.attempt}.log")
+            context.logger.info("develop transcript", log=kwargs["log_path"])
         result = self.runner.run(argv, cwd=checkout, timeout=timeout, **kwargs)
         if result.timed_out:
             return Outcome(Outcome.FAILED, f"developer command timed out after {timeout:.0f}s",

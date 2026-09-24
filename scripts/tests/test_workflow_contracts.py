@@ -520,7 +520,8 @@ class CliContract(unittest.TestCase):
 
     def test_plan_is_a_group_of_independent_steps(self):
         definition = load_definition("new-game")
-        self.assertEqual(definition.groups["plan"], ["strategy", "strategy-review", "design"])
+        self.assertEqual(definition.groups["plan"], ["strategy", "strategy-review", "design",
+                                                     "tech-plan", "tech-plan-review"])
         self.assertFalse(definition.has_step("plan"))
 
 

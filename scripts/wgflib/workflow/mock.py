@@ -142,6 +142,10 @@ class MockDesignStep(MockStep):
     type, role = "design", "game-designer"
 
 
+class MockTechPlanStep(MockStep):
+    type, role = "tech-plan", "architect"
+
+
 class MockInitStep(MockStep):
     type, role = "init", "release"
 
@@ -198,6 +202,7 @@ MOCK_STEPS = (
     MockResearchStep,
     MockStrategyStep,
     MockDesignStep,
+    MockTechPlanStep,
     MockInitStep,
     MockAssetsStep,
     MockDevelopmentStep,

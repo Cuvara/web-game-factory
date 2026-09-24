@@ -31,7 +31,16 @@ factory:
   # implementation with its placeholder for that run.
   #   wgf_strategy   the `strategy` step (scripts/wgf_strategy/)
   steps:
-    modules: [wgf_discovery, wgf_strategy, wgf_init, wgf_assets, wgf_develop, wgf_verification, wgf_design, wgf_sdk]
+    modules: [wgf_discovery, wgf_strategy, wgf_init, wgf_assets, wgf_develop, wgf_verification, wgf_design, wgf_sdk, wgf_techplan]
+
+  # The tech-plan module (scripts/wgf_techplan, docs/techplan-module.md): engine from the
+  # design, pinned platforms from the strategy, a heuristic dev plan. Every key is optional.
+  techplan:
+    # template_ref: Cuvara/web-game-template@main   # default: factory.init.template @ main
+    # overrun_tolerance: 1.5                        # default: portfolio.yaml
+    # estimates: {hours_per_day: 6, feature_base_hours: 2, per_criterion_hours: 1.5}
+    # device_classes: [{id: mobile-mid, target_fps: 60}, {id: desktop, target_fps: 60}]
+    # build: {command: pnpm build, output: dist}
 
   # The init module (scripts/wgf_init, docs/init-module.md): creates each game's repository
   # from the template with `gh`, clones it, and checks the template's infrastructure arrived.

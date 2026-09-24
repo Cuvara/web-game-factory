@@ -36,7 +36,7 @@ workflow:
     max_visits: 3
 
   groups:
-    plan: [strategy, strategy-review, design]
+    plan: [strategy, strategy-review, design, tech-plan, tech-plan-review]
 
   steps:
     - id: research
@@ -67,11 +67,30 @@ workflow:
       inputs: [title-strategy]
       outputs: [game-design]
 
+    - id: tech-plan
+      type: tech-plan
+      stage: title:tech-plan
+      description: Select the engine the design declares, pin the platforms, plan the build.
+      inputs: [game-design, title-strategy]
+      outputs: [tech-plan]
+
+    # G3 is reversible, like G2: an installation may auto-approve it (factory.checkpoints).
+    # A rejection is unrouted, so it blocks the run for a person to look at.
+    - id: tech-plan-review
+      type: human-checkpoint
+      stage: title:tech-plan
+      with:
+        gate: G3
+        prompt: Approve the design and technical plan before the repository is created?
+        choices: [approve, reject]
+
     - id: init
       type: init
       stage: title:scaffolding
       description: Create the game repository from the template. Idempotent per run.
-      inputs: [game-design]
+      # tech-plan carries repo_params.game_config: the engine, platforms and ad kinds init
+      # writes into game.config.yaml.
+      inputs: [game-design, tech-plan]
       outputs: [scaffold-record]
       retry: {max_attempts: 2}
 

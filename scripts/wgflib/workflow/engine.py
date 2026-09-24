@@ -480,8 +480,42 @@ class WorkflowEngine:
             emit=self.bus.emit,
             run_dir=self.store.run_dir(state.run_id),
             mock=bool(state.params.get("mock")),
+            progress=self._progress_recorder(state, step_def, step_state),
+            should_stop=lambda: self.store.requested(state.run_id, "cancel"),
         )
-        return self.runtime.run(Task(step, inputs, context))
+        step_state.pid = None
+        step_state.last_event = "started"
+        step_state.last_activity_at = self.clock()
+        try:
+            return self.runtime.run(Task(step, inputs, context))
+        finally:
+            step_state.pid = None
+
+    # Liveness is saved at most this often from heartbeats and output; lifecycle events
+    # (spawned, exited, timeout, cancelled, ...) are saved at once.
+    PROGRESS_SAVE_SECONDS = 5.0
+
+    def _progress_recorder(self, state, step_def, step_state):
+        last_saved = {"at": None}
+
+        def record(kind, **data):
+            now = self.monotonic()
+            step_state.last_activity_at = self.clock()
+            step_state.last_event = kind
+            if kind == "spawned" and data.get("pid"):
+                step_state.pid = data.get("pid")
+            elif kind == "exited":
+                step_state.pid = None
+            lifecycle = kind not in ("heartbeat", "output")
+            if lifecycle or last_saved["at"] is None or (
+                    now - last_saved["at"] >= self.PROGRESS_SAVE_SECONDS):
+                last_saved["at"] = now
+                self._save(state)
+                self._emit(state, Events.STEP_PROGRESS, step_id=step_def.id,
+                           attempt=step_state.attempts,
+                           data=_compact({"kind": kind, **_jsonable(data)}))
+
+        return record
 
     def _persist_artifacts(self, state, step_def, result):
         """Check every output against its contract, then write them all - or none."""

@@ -47,7 +47,8 @@ class WorkflowContext:
 
     def __init__(self, *, workflow_id, workflow_version, run_id, project_id, step_id,
                  step_type, attempt, visit, execution, config, environment, params,
-                 decision, previous_outputs, logger, emit, run_dir, mock):
+                 decision, previous_outputs, logger, emit, run_dir, mock,
+                 progress=None, should_stop=None):
         self.workflow_id = workflow_id
         self.workflow_version = workflow_version
         self.run_id = run_id
@@ -66,6 +67,8 @@ class WorkflowContext:
         self._emit = emit
         self.run_dir = run_dir
         self.mock = mock
+        self._progress = progress
+        self._should_stop = should_stop
 
     @property
     def idempotency_key(self):
@@ -75,3 +78,22 @@ class WorkflowContext:
         """Emit a custom event on the run's bus, tagged with this step."""
         fields.setdefault("step_id", self.current_step)
         return self._emit(event, workflow_id=self.workflow_id, run_id=self.run_id, **fields)
+
+    def progress(self, kind, **data):
+        """Report liveness: a child process spawned, is still working (`heartbeat`), exited.
+
+        The engine records the latest one on the step's state (`pid`, `last_activity_at`,
+        `last_event`) so `wgf status` can tell a working step from a hung one. Cheap to call
+        often; persisting is throttled by the engine, not here.
+        """
+        if self._progress is not None:
+            self._progress(kind, **data)
+
+    def should_stop(self):
+        """True once someone has asked this run to cancel. A long-running step polls it."""
+        return bool(self._should_stop()) if self._should_stop is not None else False
+
+    def process_hooks(self):
+        """Keyword arguments for wgflib.procs.run that tie a child process to this step:
+        its lifecycle feeds `progress`, and a cancel request terminates its tree."""
+        return {"on_event": self.progress, "should_stop": self.should_stop}

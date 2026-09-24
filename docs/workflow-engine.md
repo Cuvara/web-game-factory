@@ -337,6 +337,7 @@ which is the structured log:
 | `STEP_WAITING` | `message`, `result` |
 | `STEP_BLOCKED` | `message`, `result` |
 | `STEP_LOG` | top-level `level`, `message`; `data` is the logged fields |
+| `STEP_PROGRESS` | `kind` (`started spawned heartbeat timeout idle-timeout cancelled cleanup exited`), plus `pid`, `elapsed_s`, `idle_s`, `killed`, `returncode` as they apply |
 | `TRANSITION` | `route`, `outcome`, `kind` (`goto end abort block wait`), `to` |
 | `DECISION_RECORDED` | `decision`, `decided_by`, `decided_at`, `visit`, `note` |
 | `ARTIFACT_CREATED` | the `ArtifactRef` |

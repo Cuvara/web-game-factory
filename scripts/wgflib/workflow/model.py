@@ -219,6 +219,11 @@ class StepState:
     error: str = None
     outputs: list = field(default_factory=list)
     consumed: list = field(default_factory=list)
+    # Liveness of the current execution, from WorkflowContext.progress: the child process
+    # the step is waiting on, when anything last showed signs of life, and what that was.
+    pid: int = None
+    last_activity_at: str = None
+    last_event: str = None
 
     def to_dict(self):
         return dataclasses.asdict(self)

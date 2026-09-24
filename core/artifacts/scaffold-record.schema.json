@@ -35,8 +35,15 @@
       "description": "The web-game-template revision the repository was generated from.",
       "required": ["repository"],
       "properties": {
-        "repository": { "type": "string" },
-        "commit_sha": { "type": "string" }
+        "repository": {
+          "type": "string",
+          "description": "owner/name for source github; the local template path, relative to the Factory root where possible, for source local."
+        },
+        "commit_sha": { "type": "string" },
+        "source": {
+          "enum": ["github", "local"],
+          "description": "github: generated from the template repository on GitHub. local: cloned from a local checkout of the template at commit_sha, with no remote and no network - what offline and golden-regression runs use. Absent means github (records written before this field existed)."
+        }
       },
       "additionalProperties": false
     },
@@ -59,7 +66,22 @@
             "additionalProperties": false
           }
         },
-        "checksum": { "$ref": "./shared/provenance.schema.json#/$defs/hash" }
+        "checksum": { "$ref": "./shared/provenance.schema.json#/$defs/hash" },
+        "engine": {
+          "type": "object",
+          "description": "The engine game.config.yaml selects, as read back from the project after it was written.",
+          "required": ["type"],
+          "properties": { "type": { "enum": ["pixijs", "threejs"] } },
+          "additionalProperties": false
+        },
+        "commit_sha": {
+          "type": "string",
+          "description": "The commit that wrote game.config.yaml from tech_plan.repo_params.game_config, or that an earlier execution of the same key made. Absent when the file already matched the plan and nothing was committed."
+        },
+        "pushed": {
+          "type": "boolean",
+          "description": "Whether commit_sha has been pushed. Scaffolding never pushes - pushing is outward-facing - so this is false whenever commit_sha is set: the commit exists only in the local project until someone pushes it."
+        }
       },
       "additionalProperties": false
     },

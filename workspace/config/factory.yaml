@@ -44,7 +44,16 @@ factory:
 
   # The init module (scripts/wgf_init, docs/init-module.md): creates each game's repository
   # from the template with `gh`, clones it, and checks the template's infrastructure arrived.
+  # With a tech-plan in the run it writes game.config.yaml (engine, platforms, ad kinds) and
+  # commits it locally; it never pushes.
   init:
+    # github: `gh repo create --template` (outward-facing). local: an independent project
+    # made from a local template checkout with `git archive`, no remote and no network -
+    # what offline and golden-regression runs use.
+    source: github
+    # template_path: ../web-game-template   # source local only: a git checkout of the template
+    # template_ref: HEAD                    # source local only: the commit or ref to pin
+    # commit_author: {name: wgf-init, email: wgf-init@users.noreply.invalid}
     owner: Cuvara                       # who owns game repositories
     template: Cuvara/web-game-template  # never a blank repository
     visibility: private                 # private | internal | public

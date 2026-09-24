@@ -607,6 +607,351 @@ class EngineContract(InitCase):
         self.assertEqual(wgf_init.register.__module__, "wgf_init")
 
 
+
+# -- game.config.yaml from the tech plan, and the local source ----------------------------
+
+from test_techplan_module import designed, plan as make_plan  # noqa: E402
+from wgf_init import apply_game_config, bootstrap_identity  # noqa: E402
+from wgf_init.gameconfig import GameConfigError  # noqa: E402
+from wgf_init.tooling import KEY_TRAILER, GitCli, run_command  # noqa: E402
+from wgflib.yamllite import load as yaml_load  # noqa: E402
+
+GIT = shutil.which("git")
+BOOTSTRAP_YML = "name: Bootstrap\non:\n  push:\n"
+IDENTITY = ["-c", "user.name=test", "-c", "user.email=test@example.invalid"]
+
+
+def read_text(*parts):
+    with open(os.path.join(*parts), encoding="utf-8") as handle:
+        return handle.read()
+
+
+def git(directory, *args):
+    completed = subprocess.run(["git", *IDENTITY, "-C", directory, *args], capture_output=True,
+                               text=True, check=True)
+    return completed.stdout.strip()
+
+
+_PLANS = {}
+
+
+def tech_plan(engine="threejs"):
+    if engine not in _PLANS:
+        _PLANS[engine] = make_plan(designed(engine)).artifacts[0].content
+    return copy.deepcopy(_PLANS[engine])
+
+
+def inputs_with_plan(design, plan):
+    refs = {"game-design": ArtifactRef(
+        id="game-design", type="game-design", version=1, location="x", checksum="x",
+        content_hash=design["provenance"]["content_hash"])}
+    if plan is not None:
+        refs["tech-plan"] = ArtifactRef(id="tech-plan", type="tech-plan", version=1,
+                                        location="y", checksum="y",
+                                        content_hash=plan["provenance"]["content_hash"])
+    content = {"game-design": design, "tech-plan": plan}
+    return StepInputs(refs, lambda ref: copy.deepcopy(content[ref.type]), [])
+
+
+def make_git_template(root, bootstrap=True):
+    build_template_tree(root)
+    if bootstrap:
+        with open(os.path.join(root, ".github", "workflows", "bootstrap.yml"), "w") as handle:
+            handle.write(BOOTSTRAP_YML)
+    subprocess.run(["git", "init", "-q", "-b", "main", root], check=True)
+    git(root, "add", "--all")
+    git(root, "commit", "-q", "-m", "template")
+    return root
+
+
+class GameConfigRewrite(unittest.TestCase):
+    PLAN = {"engine": {"type": "threejs"},
+            "platforms": [{"id": "yandex", "profile": "yandex@1.0.0", "role": "required"},
+                          {"id": "poki", "profile": "poki@1.0.0", "role": "optional"}],
+            "monetization": {"ad_kinds": ["rewarded"], "iap": True}}
+
+    def test_writes_only_the_owned_fields_and_keeps_comments(self):
+        text = apply_game_config(GAME_CONFIG, self.PLAN)
+        document = yaml_load(text)
+        self.assertEqual(document["engine"], {"type": "threejs"})
+        self.assertEqual(document["platforms"], self.PLAN["platforms"])
+        self.assertEqual(document["monetization"], {"ad_kinds": ["rewarded"], "iap": True})
+        self.assertEqual(document["game"]["id"], "example-game")  # bootstrap's, on GitHub
+        self.assertEqual(document["build"], yaml_load(GAME_CONFIG)["build"])
+        self.assertTrue(text.startswith("# Written by the Factory"))
+        self.assertEqual(apply_game_config(text, self.PLAN), text)  # a fixed point
+
+    def test_identity_is_bootstraps_derivation(self):
+        self.assertEqual(bootstrap_identity("neon-drift"), ("neon-drift", "Neon Drift"))
+        self.assertEqual(bootstrap_identity("My_Game 2"), ("my-game-2", "My Game 2"))
+        text = apply_game_config(GAME_CONFIG, self.PLAN, bootstrap_identity("neon-drift"))
+        self.assertEqual(yaml_load(text)["game"],
+                         {"id": "neon-drift", "name": "Neon Drift", "version": "0.1.0"})
+
+    def test_block_style_and_missing_sections(self):
+        text = ("game:\n  id: example-game\n  name: Example Game\n  version: 0.1.0\n"
+                "platforms:\n  - id: generic-web\n    profile: generic-web@1.0.0\n"
+                "    role: required\n# trailing comment\nbuild:\n  command: pnpm build\n")
+        result = yaml_load(apply_game_config(text, self.PLAN))
+        self.assertEqual(result["platforms"], self.PLAN["platforms"])
+        self.assertEqual(result["engine"], {"type": "threejs"})
+        self.assertEqual(result["build"], {"command": "pnpm build"})
+
+    def test_refuses_what_it_cannot_write_safely(self):
+        with self.assertRaises(GameConfigError):
+            apply_game_config(GAME_CONFIG, dict(self.PLAN, engine={"type": "unity"}))
+        with self.assertRaises(GameConfigError):
+            apply_game_config("engine: pixijs\nplatforms: []\n", self.PLAN)
+
+
+@unittest.skipUnless(GIT, "git is not installed")
+class ProcessRunner(unittest.TestCase):
+    def test_run_command_goes_through_the_owned_process_runner(self):
+        self.assertEqual(run_command([sys.executable, "-c", "print('ok')"]).strip(), "ok")
+        with self.assertRaises(ToolError) as failed:
+            run_command([sys.executable, "-c", "import sys; sys.exit(3)"])
+        self.assertTrue(failed.exception.retryable)
+        with self.assertRaises(ToolError) as missing:
+            run_command(["wgf-no-such-tool-xyz"])
+        self.assertFalse(missing.exception.retryable)
+        with self.assertRaises(ToolError) as slow:
+            run_command([sys.executable, "-c", "import time; time.sleep(10)"], timeout=0.5)
+        self.assertIn("timed out", str(slow.exception))
+
+
+@unittest.skipUnless(GIT, "git is not installed")
+class LocalCase(InitCase):
+    def setUp(self):
+        super().setUp()
+        self.template = make_git_template(os.path.join(self.scratch, "local-template"))
+        self.git = GitCli()
+        self.settings = {"source": "local", "template_path": self.template,
+                         "projects_dir": self.projects}
+        self.plan = tech_plan("threejs")
+
+    def step(self):
+        return InitStep(self.definition, github=self.github, git=self.git,
+                        clock=lambda: NOW, sleep=lambda _s: None)
+
+    def execute(self, context=None, plan="default"):
+        plan = self.plan if plan == "default" else plan
+        return self.step().execute(inputs_with_plan(self.design, plan),
+                                   context or Context(self.config))
+
+    def commits(self):
+        return git(self.local, "rev-list", "--count", "HEAD")
+
+
+class LocalSource(LocalCase):
+    def test_creates_an_independent_project_offline_and_configures_it(self):
+        result = self.execute()
+        self.assertEqual(result.outcome, StepOutcome.SUCCESS, result.error)
+        self.assertEqual(self.github.calls, [])  # no network, no gh at all
+        self.assertEqual(git(self.local, "remote"), "")
+        self.assertEqual(missing_infrastructure(self.local), [])
+        self.assertEqual(self.commits(), "2")  # template as one initial commit + config
+
+        config = wgf_init.read_game_config(self.local)
+        document = yaml_load(read_text(self.local, "game.config.yaml"))
+        planned = self.plan["repo_params"]["game_config"]
+        self.assertEqual(document["engine"], {"type": "threejs"})
+        self.assertEqual(document["platforms"], planned["platforms"])
+        self.assertEqual(document["monetization"], planned["monetization"])
+        self.assertEqual(document["game"]["id"], "neon-drift")
+        self.assertEqual(document["game"]["name"], "Neon Drift")
+        self.assertFalse(os.path.exists(os.path.join(self.local, ".github", "workflows",
+                                                     "bootstrap.yml")))
+        for platform in planned["platforms"]:
+            vendored = os.path.join(self.local, "config", "platforms", f"{platform['id']}.yaml")
+            with open(vendored, "rb") as a, \
+                    open(os.path.join(paths.PLATFORMS, f"{platform['id']}.yaml"), "rb") as b:
+                self.assertEqual(a.read(), b.read())
+        pinned = json.loads(read_text(self.local, "config", "platforms", "pinned.json"))
+        self.assertTrue({p["id"] for p in planned["platforms"]}
+                        <= {p["id"] for p in pinned["profiles"]})
+        self.assertEqual(git(self.local, "status", "--porcelain"), "")
+
+        record = result.artifacts[0].content
+        self.assertEqual(ArtifactContracts()("scaffold-record", record), [])
+        self.assertEqual(record["outcome"], "created")
+        self.assertEqual(record["template"]["source"], "local")
+        self.assertEqual(record["template"]["commit_sha"], git(self.template, "rev-parse", "HEAD"))
+        self.assertEqual(record["game_config"]["engine"], {"type": "threejs"})
+        self.assertEqual(record["game_config"]["platforms"], config["platforms"])
+        self.assertEqual(record["game_config"]["commit_sha"], git(self.local, "rev-parse", "HEAD"))
+        self.assertIs(record["game_config"]["pushed"], False)
+        self.assertIn("tech-plan", {i["artifact_type"] for i in record["provenance"]["inputs"]})
+        self.assertIn(f"{KEY_TRAILER}: wgf-init:run-1:init",
+                      git(self.local, "log", "-1", "--format=%B"))
+        self.assertEqual(git(self.local, "config", "--local", "wgf.init-marker"),
+                         "wgf-init:run-1:init")
+        self.assertEqual(result.artifacts[0].metadata["source"], "local")
+
+    def test_a_2d_plan_gets_pixijs(self):
+        self.plan = tech_plan("pixijs")
+        record = self.execute().artifacts[0].content
+        self.assertEqual(record["game_config"]["engine"], {"type": "pixijs"})
+
+    def test_rerun_is_idempotent(self):
+        first = self.execute()
+        head = git(self.local, "rev-parse", "HEAD")
+        second = self.execute()
+        self.assertEqual(second.outcome, StepOutcome.SUCCESS, second.error)
+        record = second.artifacts[0].content
+        self.assertEqual(record["outcome"], "reused")
+        self.assertEqual(git(self.local, "rev-parse", "HEAD"), head)
+        self.assertEqual(self.commits(), "2")
+        self.assertEqual(record["game_config"]["commit_sha"],
+                         first.artifacts[0].content["game_config"]["commit_sha"])
+        self.assertEqual(record["template"]["commit_sha"],
+                         first.artifacts[0].content["template"]["commit_sha"])
+
+    def test_a_crash_before_the_commit_is_recovered_with_one_commit(self):
+        class Crashing(GitCli):
+            crashed = False
+
+            def commit(self, *args, **kwargs):
+                if not Crashing.crashed:
+                    Crashing.crashed = True
+                    raise ToolError("killed")
+                return super().commit(*args, **kwargs)
+
+        self.git = Crashing()
+        failed = self.execute()
+        self.assertEqual((failed.outcome, failed.retryable), (StepOutcome.FAILED, True))
+        retried = self.execute()
+        self.assertEqual(retried.outcome, StepOutcome.SUCCESS, retried.error)
+        self.assertEqual(retried.artifacts[0].content["outcome"], "reused")
+        self.assertEqual(self.commits(), "2")
+        self.assertEqual(git(self.local, "status", "--porcelain"), "")
+
+    def test_a_revised_plan_in_the_same_run_is_a_second_keyed_commit(self):
+        self.execute()
+        self.plan = tech_plan("pixijs")  # G3 rejected, design and plan revised
+        result = self.execute()
+        self.assertEqual(result.artifacts[0].content["game_config"]["engine"], {"type": "pixijs"})
+        self.assertEqual(self.commits(), "3")
+        self.assertEqual(self.execute().artifacts[0].content["game_config"]["commit_sha"],
+                         git(self.local, "rev-parse", "HEAD"))
+
+    def test_the_template_ref_is_pinned(self):
+        first = git(self.template, "rev-parse", "HEAD")
+        with open(os.path.join(self.template, "later.txt"), "w") as handle:
+            handle.write("added after the pin")
+        git(self.template, "add", "later.txt")
+        git(self.template, "commit", "-q", "-m", "later")
+        self.settings["template_ref"] = first
+        record = self.execute().artifacts[0].content
+        self.assertEqual(record["template"]["commit_sha"], first)
+        self.assertFalse(os.path.exists(os.path.join(self.local, "later.txt")))
+
+    def test_without_a_plan_the_config_is_left_alone(self):
+        result = self.execute(plan=None)
+        self.assertEqual(result.outcome, StepOutcome.SUCCESS, result.error)
+        record = result.artifacts[0].content
+        self.assertNotIn("commit_sha", record["game_config"])
+        self.assertEqual(self.commits(), "1")
+        with open(os.path.join(self.local, "game.config.yaml")) as handle:
+            self.assertEqual(handle.read(), GAME_CONFIG)
+
+
+class LocalRefusals(LocalCase):
+    def test_another_runs_project_is_not_taken_over(self):
+        self.execute(Context(self.config, run_id="run-0"))
+        head = git(self.local, "rev-parse", "HEAD")
+        result = self.execute()
+        self.assertEqual(result.outcome, StepOutcome.BLOCKED)
+        self.assertEqual(git(self.local, "rev-parse", "HEAD"), head)
+
+    def test_adopting_requires_the_same_template(self):
+        self.execute(Context(self.config, run_id="run-0"))
+        self.settings["adopt_existing"] = True
+        self.assertEqual(self.execute().outcome, StepOutcome.SUCCESS)
+        other = make_git_template(os.path.join(self.scratch, "other-template"))
+        self.settings["template_path"] = other
+        result = self.execute()
+        self.assertEqual((result.outcome, result.retryable), (StepOutcome.FAILED, False))
+
+    def test_a_directory_init_did_not_make_is_never_overwritten(self):
+        os.makedirs(self.local)
+        with open(os.path.join(self.local, "precious.txt"), "w") as handle:
+            handle.write("mine")
+        before = tree_digest(self.local)
+        self.assertEqual(self.execute().outcome, StepOutcome.BLOCKED)
+        self.assertEqual(tree_digest(self.local), before)
+
+    def test_a_template_path_that_is_not_a_repository_blocks(self):
+        self.settings["template_path"] = self.template_tree  # plain files, no .git
+        self.assertEqual(self.execute().outcome, StepOutcome.BLOCKED)
+
+    def test_a_plan_for_another_title_fails(self):
+        self.plan["title_id"] = "other-title"
+        result = self.execute()
+        self.assertEqual((result.outcome, result.retryable), (StepOutcome.FAILED, False))
+        self.assertFalse(os.path.exists(self.local))
+
+    def test_local_settings(self):
+        with self.assertRaises(SettingsError):
+            InitSettings.from_config({"init": {"source": "local"}})
+        with self.assertRaises(SettingsError):
+            InitSettings.from_config({"init": {"source": "ftp", "template_path": "x"}})
+        settings = InitSettings.from_config({"init": {"source": "local",
+                                                      "template_path": "../t"}})
+        self.assertEqual((settings.owner, settings.template_ref), (None, "HEAD"))
+
+
+@unittest.skipUnless(GIT, "git is not installed")
+class GithubSourceWithAPlan(InitCase):
+    """source github: the clone gets the plan's config as one local commit, never pushed,
+    and the identity lines stay for bootstrap.yml to set."""
+
+    def setUp(self):
+        super().setUp()
+        with open(os.path.join(self.template_tree, ".github", "workflows", "bootstrap.yml"),
+                  "w") as handle:
+            handle.write(BOOTSTRAP_YML)
+        self.git = GitCli()
+        github = self.github
+
+        def clone(full_name, destination):
+            github._call("clone", full_name, destination)
+            shutil.copytree(github.template_tree, destination, dirs_exist_ok=True)
+            subprocess.run(["git", "init", "-q", "-b", "main", destination], check=True)
+            git(destination, "add", "--all")
+            git(destination, "commit", "-q", "-m", "Initial commit")
+            git(destination, "remote", "add", "origin", f"https://github.com/{full_name}.git")
+
+        self.github.clone = clone
+        self.plan = tech_plan("threejs")
+
+    def execute(self, context=None):
+        step = InitStep(self.definition, github=self.github, git=self.git, clock=lambda: NOW,
+                        sleep=lambda _s: None)
+        return step.execute(inputs_with_plan(self.design, self.plan),
+                            context or Context(self.config))
+
+    def test_config_committed_locally_and_identity_left_to_bootstrap(self):
+        result = self.execute()
+        self.assertEqual(result.outcome, StepOutcome.SUCCESS, result.error)
+        document = yaml_load(read_text(self.local, "game.config.yaml"))
+        self.assertEqual(document["engine"], {"type": "threejs"})
+        self.assertEqual(document["game"]["id"], "example-game")
+        self.assertTrue(os.path.exists(os.path.join(self.local, ".github", "workflows",
+                                                    "bootstrap.yml")))
+        record = result.artifacts[0].content
+        self.assertEqual(record["template"]["source"], "github")
+        self.assertIs(record["game_config"]["pushed"], False)
+        self.assertEqual(record["game_config"]["commit_sha"], git(self.local, "rev-parse", "HEAD"))
+        # Nothing was pushed: the remote-tracking ref does not even exist.
+        self.assertEqual(git(self.local, "branch", "-r"), "")
+        self.assertIn("pull --rebase", record["notes"])
+
+        again = self.execute()
+        self.assertEqual(again.artifacts[0].content["outcome"], "reused")
+        self.assertEqual(git(self.local, "rev-list", "--count", "HEAD"), "2")
+        self.assertEqual(len(self.github.calls_to("create")), 1)
+
+
 # -- against the real template -------------------------------------------------------------
 
 
@@ -623,6 +968,36 @@ class RealTemplate(unittest.TestCase):
         self.assertTrue(game_config["platforms"])
 
 
+REAL_TEMPLATE = os.environ.get("WGF_TEMPLATE_DIR") or paths.TEMPLATE
+
+
+@unittest.skipUnless(GIT and os.path.isdir(os.path.join(REAL_TEMPLATE, ".git")),
+                     "no web-game-template git checkout (beside the repository, or WGF_TEMPLATE_DIR)")
+class RealTemplateLocalSource(LocalCase):
+    """source local against the real template: what a golden regression run does."""
+
+    def setUp(self):
+        super().setUp()
+        self.settings["template_path"] = REAL_TEMPLATE
+
+    def test_a_3d_title_from_the_real_template(self):
+        result = self.execute()
+        self.assertEqual(result.outcome, StepOutcome.SUCCESS, result.error)
+        self.assertEqual(missing_infrastructure(self.local), [])
+        document = yaml_load(read_text(self.local, "game.config.yaml"))
+        self.assertEqual(document["engine"], {"type": "threejs"})
+        self.assertEqual(document["platforms"],
+                         self.plan["repo_params"]["game_config"]["platforms"])
+        self.assertEqual(document["game"]["id"], "neon-drift")
+        # The rest of the template's file survives untouched.
+        with open(os.path.join(REAL_TEMPLATE, "game.config.yaml")) as handle:
+            original = yaml_load(handle.read())
+        for key in ("build", "verification", "publishing"):
+            self.assertEqual(document.get(key), original.get(key), key)
+        self.assertEqual(self.execute().artifacts[0].content["outcome"], "reused")
+        self.assertEqual(self.commits(), "2")
+
+
 @unittest.skipUnless(os.environ.get("WGF_AJV") and shutil.which("npx"),
                      "set WGF_AJV=1 to validate with ajv (needs npx)")
 class AjvSchema(InitCase):
@@ -637,6 +1012,17 @@ class AjvSchema(InitCase):
              "--spec=draft2020", "--strict=false", "-d", path],
             cwd=ROOT, capture_output=True, text=True, check=False)
         self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
+
+
+@unittest.skipUnless(GIT and os.environ.get("WGF_AJV") and shutil.which("npx"),
+                     "set WGF_AJV=1 to validate with ajv (needs npx)")
+class AjvSchemaLocal(LocalCase):
+    execute_record = AjvSchema.test_the_scaffold_record_validates_against_its_schema
+
+    def test_the_local_record_with_engine_and_commit_validates(self):
+        record = self.execute().artifacts[0].content
+        self.assertIn("commit_sha", record["game_config"])
+        self.execute_record()
 
 
 if __name__ == "__main__":

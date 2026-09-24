@@ -10,6 +10,29 @@ numbering: `core/` is the contract, and schemas carry their own versions.
 
 ### Added
 
+- **Tech-plan module (`scripts/wgf_techplan`, step type `tech-plan`) and the G3 checkpoint.**
+  `new-game` now runs design → `tech-plan` → `tech-plan-review` (G3, reversible, same shape
+  as `strategy-review`) → init, as the title machine always said. The module is minimal and
+  deterministic: the engine is the one the design declares (dimension or asset kinds only as
+  a fallback for older designs), platforms are the strategy's pins resolved against
+  `core/reference/platforms/`, the bundle budget is the tightest required limit, ad kinds
+  come from the design's placements, and the dev plan's estimates are a stated heuristic
+  reported against the timebox, never fitted to it. See `docs/techplan-module.md`.
+  *Existing runs:* a run started before this change has no `tech-plan` step; resume it as
+  before, or start a new run to get one.
+- **Init writes `game.config.yaml` from the tech plan.** With a `tech-plan` in the run, init
+  rewrites `engine`, `platforms` and `monetization` in place (comments and every other field
+  kept, the result parsed back and checked), vendors the pinned profiles into
+  `config/platforms/`, and makes one local commit carrying the idempotency key as a trailer.
+  It never pushes. A 3D design now reaches the game repository as `engine.type: threejs`
+  instead of the template default.
+- **Init `factory.init.source: local`.** Makes the project from a local template checkout
+  (`template_path`, pinned by `template_ref`) with `git archive` into a new repository with no
+  remote: offline, for golden-regression runs. `github` stays the default and is unchanged.
+- **`scaffold-record` fields (additive, schema 1.1.0):** `template.source` (`github` |
+  `local`), `game_config.engine`, `game_config.commit_sha`, `game_config.pushed`. Existing
+  records remain valid; an absent `template.source` means `github`.
+
 - **Assets module (`scripts/wgf_assets`, step type `assets`).** Turns a game design into an
   asset manifest and the files behind it: inspects `game_design.asset_requirements` (or
   derives a baseline), classifies each against the new `core/reference/asset-policy.yaml`,

@@ -96,7 +96,10 @@ class ReviewStep(WorkflowStep):
                 "review skipped: no reviewer configured - the build is unreviewed"))
 
         repository = scaffold.get("repository") or {}
-        checkout = settings.checkout_for(repository.get("name") or title_id)
+        try:
+            checkout = settings.checkout_for(repository.get("name") or title_id)
+        except SettingsError as exc:
+            return StepResult.failed(f"scaffold-record: {exc}", retryable=False)
         git = isolation.Git(checkout)
         if not git.is_repository():
             return StepResult.blocked(
@@ -153,7 +156,11 @@ class ReviewStep(WorkflowStep):
         env.update({"WGF_REVIEW_REPO": checkout, "WGF_REVIEW_VERDICT": verdict_path,
                     "WGF_REVIEW_BRIEF": brief_path, "WGF_REVIEW_COMMIT": head})
 
-        before = isolation.take(git, settings.guarded_paths)
+        try:
+            before = isolation.take(git, settings.guarded_paths, settings.fingerprint_ignored)
+        except (isolation.GitError, OSError) as exc:
+            return StepResult.blocked(f"cannot fingerprint {checkout} before the review, so "
+                                      f"a review could not be checked for writes: {exc}")
         context.logger.info("review command", argv0=os.path.basename(argv[0]),
                             commit=head, timeout_s=settings.timeout,
                             idle_timeout_s=settings.idle_timeout,
@@ -163,8 +170,15 @@ class ReviewStep(WorkflowStep):
                            idle_timeout=settings.idle_timeout, log_path=log_path,
                            heartbeat_seconds=15.0)
         duration = time.monotonic() - began
-        after = isolation.take(git, settings.guarded_paths)
-        violations = isolation.diff(before, after)
+        try:
+            after = isolation.take(git, settings.guarded_paths, settings.fingerprint_ignored)
+            violations = isolation.diff(before, after)
+        except (isolation.GitError, OSError) as exc:
+            # The reviewer left the checkout in a state git cannot even read (a broken
+            # config, a removed .git). That is a write; never a pass.
+            violations = [{"path": "(checkout)", "change": "modified", "scope": "checkout",
+                           "sensitive": True}]
+            context.logger.error("review after-snapshot failed", error=str(exc))
 
         reviewer = {"kind": "command", "argv0": os.path.basename(argv[0]),
                     "exit_code": result.returncode, "status": result.status,

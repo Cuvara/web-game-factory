@@ -116,4 +116,7 @@ class Settings:
         root = self.data.get("checkouts") or ".."
         if not os.path.isabs(root):
             root = os.path.join(paths.ROOT, root)
-        return os.path.normpath(os.path.join(root, repository_name))
+        try:
+            return paths.checkout_path(root, repository_name)
+        except ValueError as exc:
+            raise SettingsError(str(exc))

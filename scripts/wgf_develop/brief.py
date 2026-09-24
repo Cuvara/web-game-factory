@@ -247,10 +247,10 @@ def render_markdown(brief):
         + ", ".join(f"`{p}`" for p in brief["protected_paths"])
         + ". If the template lacks something, stop and say so in `known_issues`; do not "
           "patch around it.")
-    add("4. **No platform SDK work.** Never import or reference a portal SDK. Ads, "
-        "analytics and saves go through the integration seam below, whose default "
-        "implementation wraps `@wgf/platform-sdk` and `withAdBreak` from "
-        "`src/platform/bind.ts`. The integration module replaces the wiring, not your calls.")
+    add("4. **No platform SDK work.** Never import or reference a portal SDK, and never "
+        "call `createPlatform`. Ads, analytics and saves go through the integration seam "
+        "below, which the Factory provides and wires. The integration module replaces the "
+        "wiring, not your calls.")
     add("5. Pause is by reason. Ads use `withAdBreak`; audio and input stop while "
         "`game.paused`. Never grant a reward unless `rewarded()` resolved true.")
     add("6. Keep the verify probe and the HUD contract: `#hud[data-ready]`, "
@@ -333,12 +333,22 @@ def render_markdown(brief):
         add("- The manifest lists nothing for this tier.")
     add("")
 
-    add("## Integration seam (for the integration module)\n")
-    add("Create `src/game/integration.ts` with exactly this interface, plus a default "
-        "implementation in `src/platform/` built from the template's `Platform`, "
-        "`withAdBreak` and `Analytics` (with `NullSink` until the integration module wires a "
-        "sink). Construct it in `main.ts` and pass it to the game; nothing else in `src/` "
-        "calls `showRewarded`/`showInterstitial`.\n")
+    add("## Integration seam (provided by the Factory - do not write or edit it)\n")
+    add("Two files are already in the repository and belong to the Factory: "
+        "`src/game/integration.ts` (the `GameIntegration` interface below) and "
+        "`src/platform/integration.ts` (its wiring). Do not change either; the checks compare "
+        "them byte for byte, and the integration module later replaces the wiring file as a "
+        "whole.\n")
+    add("- In `src/main.ts`, import `createGamePlatform` and `createGameIntegration` from "
+        "`./platform/integration.js`. Get the platform with `const platform = await "
+        "createGamePlatform();` where the template called `createPlatform(...)` and "
+        "`initialize()` - keep the template's boot order around it (loading progress, "
+        "`signalReady`, `game.start()`, `bindPlatform` and its first-input gameplay start).")
+    add("- Get the seam with `createGameIntegration(game, platform, { audio })` once the "
+        "`Game` exists, `audio` being your audio service's `{ mute(), unmute() }` so ads and "
+        "portal pauses silence it. Pass the seam to the game.")
+    add("- Game code calls only the seam: nothing in `src/` outside `src/platform/` calls "
+        "`createPlatform`, `showRewarded` or `showInterstitial`.\n")
     add("```ts\n" + INTEGRATION_CONTRACT + "```\n")
 
     add("## Tests\n")

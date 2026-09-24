@@ -28,6 +28,9 @@ Outcomes (docs/workflow-module-contract.md §7):
     a REQUIRED platform with a required feature not working  FAILED, not retryable, sdk-report
                                                              persisted as evidence
     no packages/platform-sdk in the game repository          BLOCKED (integration phase)
+    the build does not boot through the integration seam     FAILED, not retryable: main.ts
+    (wgflib.gameseam: main.ts importing createGamePlatform   must use the develop step's seam;
+    and createGameIntegration, no createPlatform)            nothing is written or committed
     the integration's own mock suite or typecheck failed     FAILED, not retryable, sdk-report
                                                              persisted as evidence
     no readable git HEAD, a prototype-report naming no
@@ -60,7 +63,7 @@ from wgf_verification.lineage import same_commit
 
 from . import commit as sdk_commit
 from . import evidence as ev
-from .integration import IntegrationPhase, PhaseBlocked
+from .integration import IntegrationPhase, PhaseBlocked, SeamMissing
 from .plan import FEATURES, PlanError, integration_plan, load_game_config
 from .runner import CommandRunner
 
@@ -271,6 +274,8 @@ class SdkStep(WorkflowStep):
                 integrated = phase.run(game_repo, design, scaffold, title_id)
             except PhaseBlocked as exc:
                 return StepResult.blocked(str(exc))
+            except SeamMissing as exc:
+                return StepResult.failed(str(exc), retryable=False)
             context.logger.info("sdk integration", tests=integrated["integration"]["tests"]["status"])
             if integrated["integration"]["tests"]["status"] != "failed":
                 try:

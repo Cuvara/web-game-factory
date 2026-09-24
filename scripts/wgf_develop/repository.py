@@ -124,6 +124,14 @@ class GitRepo:
         output = self._git(*args).output
         return [line[3:] for line in output.splitlines() if line.strip()]
 
+    def file_at(self, base, path):
+        """The text of `path` in commit `base`, or None when it is not there."""
+        if not self.has_commit(base) or not self._git(
+                "cat-file", "-e", f"{base}:{path}", check=False).ok:
+            return None
+        result = self._git("show", f"{base}:{path}", check=False)
+        return result.output if result.ok else None
+
     def changed_since(self, base, *pathspec):
         """Paths under `pathspec` that differ from `base`: committed, staged or untracked."""
         changed = set()

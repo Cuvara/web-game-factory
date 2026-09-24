@@ -145,6 +145,10 @@ class TheFactoryContainsNoGameSource(unittest.TestCase):
     # Factory generates, not a game: it names no game, scene or engine.
     ALLOWED_PREFIXES = (
         "scripts/wgf_sdk/game/",
+        # The integration seam's contract wiring, which scripts/wgf_develop/seam.py writes
+        # into every game before it is built: platform plumbing on the template's own API,
+        # with no game in it. The sdk step replaces it with scripts/wgf_sdk/game's version.
+        "scripts/wgf_develop/seam/",
         # The sdk module's own browser e2e harness: a stand-in run loop and a smoke spec,
         # copied into a scratch copy of the template by scripts/wgf_sdk/e2e.py; never a game.
         "scripts/wgf_sdk/e2e/",

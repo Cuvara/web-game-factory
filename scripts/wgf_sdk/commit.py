@@ -29,7 +29,7 @@ __all__ = ["SdkGit", "Ledger", "CommitRefused", "INTEGRATION_PATHS", "SDK_KEY_TR
 # Every path the integration phase may write (integrate.py). A dirty path outside these was
 # not made by this step, and is not committed by it.
 INTEGRATION_PATHS = frozenset(integrate.OWNED_FILES + integrate.SEAM_FILES
-                              + (integrate.PLAN_FILE, integrate.MAIN_FILE))
+                              + (integrate.PLAN_FILE, integrate.WIRING_FILE))
 
 _TAIL = 800
 

@@ -15,6 +15,7 @@ import os
 import re
 
 from .brief import ENGINE_DIRS, PROTECTED_PATHS, REPORT_PATH, REQUIRED_SYSTEMS
+from .seam import seam_findings
 
 __all__ = ["CheckResult", "run_checks", "conformance", "read_report", "TOOLCHAIN"]
 
@@ -178,11 +179,7 @@ def conformance(root, brief, git):
     main = os.path.join(root, "src", "main.ts")
     if os.path.exists(main) and re.search(r"\bBootScene\b", _read(main)):
         findings.append("src/main.ts still starts the template's BootScene")
-    if not os.path.exists(os.path.join(root, "src", "game", "integration.ts")):
-        findings.append("src/game/integration.ts (the integration seam) does not exist")
-    elif "interface GameIntegration" not in _read(os.path.join(root, "src", "game",
-                                                               "integration.ts")):
-        findings.append("src/game/integration.ts does not declare GameIntegration")
+    findings.extend(seam_findings(root, git, brief.get("baseline_commit")))
 
     package = os.path.join(root, "package.json")
     if os.path.exists(package):

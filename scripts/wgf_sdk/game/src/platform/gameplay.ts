@@ -28,6 +28,7 @@ import {
   GenericWebPlatform,
   createPlatform,
   type AdKind,
+  type CreatePlatformOptions,
   type AdResult,
   type Platform,
   type PlatformStorage,
@@ -80,10 +81,16 @@ export interface BootedPlatform {
 }
 
 export interface BootOptions {
-  readonly namespace: string;
+  /**
+   * What the template's own boot passes to createPlatform: `platformOptions(entry)` from
+   * src/core/config.ts (storage namespace, and the per-title portal settings from
+   * game.config.yaml — GameDistribution's and GameMonetize's Game IDs) plus Y8's build-time
+   * config. Passed through whole: dropping any of it boots a portal without its Game ID.
+   */
+  readonly options: CreatePlatformOptions;
   readonly plan: Pick<IntegrationPlan, "adapterSubstitutes">;
   /** For tests: how a platform is constructed. Defaults to the SDK's registry. */
-  readonly create?: (id: string, options: { namespace: string }) => Platform;
+  readonly create?: (id: string, options: CreatePlatformOptions) => Platform;
   /** For tests: the platform used when the target's adapter breaks its contract. */
   readonly fallback?: (namespace: string) => Platform;
 }
@@ -106,12 +113,12 @@ export async function bootPlatform(target: string, options: BootOptions): Promis
   const fallback =
     options.fallback ?? ((namespace: string) => new GenericWebPlatform({ namespace }));
   const substitute = options.plan.adapterSubstitutes[target] ?? null;
-  const platform = create(substitute ?? target, { namespace: options.namespace });
+  const platform = create(substitute ?? target, options.options);
   try {
     await platform.initialize();
     return { platform, target, substitutedBy: substitute, degraded: null };
   } catch (error) {
-    const replacement = fallback(options.namespace);
+    const replacement = fallback(options.options.namespace);
     await replacement.initialize();
     return {
       platform: replacement,

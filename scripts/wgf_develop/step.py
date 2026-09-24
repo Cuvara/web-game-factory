@@ -26,6 +26,7 @@ from . import brief as briefs
 from .checks import read_report, run_checks
 from .developers import Outcome, create_developer
 from .report import build_report
+from .seam import ensure_seam
 from .repository import GitError, GitRepo, Runner, read_game_config
 from .settings import Settings, SettingsError
 
@@ -147,6 +148,9 @@ class DevelopStep(WorkflowStep):
             )
             _write(brief_json, json.dumps(brief, indent=2, ensure_ascii=False) + "\n")
             _write(brief_md, briefs.render_markdown(brief))
+            written = ensure_seam(checkout)
+            if written:
+                context.logger.info("integration seam provided", paths=written)
 
             developer = create_developer(settings, runner)
             outcome = developer.develop(brief_md, checkout, context)

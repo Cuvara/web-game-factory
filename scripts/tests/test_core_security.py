@@ -405,12 +405,10 @@ class HostileIdentifiers(EngineCase):
         self.assertFalse(result.retryable)
         self.assertIn("single directory name", result.error)
 
-    @unittest.expectedFailure
-    def test_OPEN_the_scaffold_record_schema_refuses_dot_dot(self):
-        # OPEN (Team C, core/artifacts/scaffold-record.schema.json): repository.name's
-        # pattern ^[A-Za-z0-9._-]+$ admits "." and "..". Every consumer that builds a path
-        # from it must refuse them itself (review and develop now do). Proposed pattern:
-        # ^(?!\.\.?$)[A-Za-z0-9._-]+$
+    def test_the_scaffold_record_schema_refuses_dot_and_dot_dot(self):
+        # repository.name is one directory entry; consumers also refuse it themselves
+        # (wgflib.paths.checkout_path), so neither layer alone is relied on.
+        self.assertTrue(any("repository" in p for p in scaffold_problems(SCAFFOLD, ".")))
         self.assertTrue(any("repository" in p for p in scaffold_problems(SCAFFOLD, "..")))
 
     def test_the_scaffold_record_used_above_is_otherwise_valid(self):
@@ -746,9 +744,8 @@ class CommitsAfterReview(unittest.TestCase):
         repo.commit_all("feat: x", "body", "run:develop:1")
         self.assertFalse(os.path.exists(marker), "the checkout's config ran a command")
 
-    @unittest.expectedFailure
-    def test_OPEN_an_uncommitted_edit_to_an_sdk_owned_file_is_not_folded_into_its_commit(self):
-        # OPEN (Team L, scripts/wgf_sdk/commit.py:prepare): foreign_changes() exempts
+    def test_an_uncommitted_edit_to_an_sdk_owned_file_is_not_folded_into_its_commit(self):
+        # Was OPEN, fixed by the sdk ledger (Team L, scripts/wgf_sdk/commit.py:prepare): foreign_changes() exempts
         # INTEGRATION_PATHS, and patch_main() keeps whatever src/main.ts holds, so a hand
         # edit made after review is committed under Wgf-Sdk-Key and passes the lineage
         # rule as sdk's own work: unreviewed code reaches release. P1. Proposed: in
@@ -762,9 +759,8 @@ class CommitsAfterReview(unittest.TestCase):
         with self.assertRaises(CommitRefused):
             prepare(SdkGit(self.root, _ProcsRunner()), self.reviewed, True, "run-1")
 
-    @unittest.expectedFailure
-    def test_OPEN_a_commit_forging_the_sdk_trailer_is_not_taken_for_sdks_own(self):
-        # OPEN (Team L, scripts/wgf_sdk/commit.py:own_commits and
+    def test_a_commit_forging_the_sdk_trailer_is_not_taken_for_sdks_own(self):
+        # Was OPEN, fixed by the sdk ledger (Team L, scripts/wgf_sdk/commit.py:own_commits and
         # scripts/wgf_verification/lineage.py rule 3): a commit is "sdk's" if its message
         # carries `Wgf-Sdk-Key: <run_id>:...`. The run id is not secret - every developer
         # command gets it in {key} - so any writer between review and sdk can commit
@@ -810,16 +806,19 @@ class ReviewerLeftovers(unittest.TestCase):
         self.assertFalse(self.run_and_wait(clear_env=False))
 
     @unittest.skipUnless(LINUX, "descendants are found through /proc")
-    @unittest.expectedFailure
-    def test_OPEN_a_daemon_that_detaches_and_clears_its_environment_is_ended(self):
-        # OPEN (Team B, scripts/wgflib/procs.py; docs/agent-lifecycle.md "Known limits"):
+    def test_a_daemon_that_detaches_and_clears_its_environment_is_ended(self):
         # setsid + execve with an empty environment leaves no process group and no
-        # WGF_PROC_TAG, so run() cannot find it and it outlives the step - it can edit the
-        # checkout after the review's second snapshot, or later answer a checkpoint with a
-        # clean environment. Proposed: an opt-in procs.install_subreaper()
-        # (PR_SET_CHILD_SUBREAPER) called by the CLI, reaping and ending only pids that
-        # appear as the Factory's children after one of its leaders exits.
+        # WGF_PROC_TAG. With the subreaper the CLI installs (procs.install_subreaper), the
+        # orphan is reparented to the Factory instead of init, and ended with the step.
+        self.assertTrue(procs.install_subreaper())
+        self.addCleanup(procs.install_subreaper, False)
         self.assertFalse(self.run_and_wait(clear_env=True))
+
+    @unittest.skipUnless(LINUX, "descendants are found through /proc")
+    def test_without_the_subreaper_such_a_daemon_is_a_documented_limit(self):
+        # The limit the subreaper exists for: a library caller that did not opt in.
+        procs.install_subreaper(False)
+        self.assertTrue(self.run_and_wait(clear_env=True))
 
 
 # -- false PASS -----------------------------------------------------------------------------

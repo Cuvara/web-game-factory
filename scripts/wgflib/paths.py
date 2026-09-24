@@ -30,8 +30,8 @@ TEMPLATE = os.path.join(os.path.dirname(ROOT), "web-game-template")
 
 def checkout_path(root, name):
     """`<root>/<name>` for a repository name read from an artifact, refusing any name that
-    is not one plain directory entry. scaffold-record's pattern admits `.` and `..`, which
-    would make a step review, verify or release the checkouts directory or its parent."""
+    is not one plain directory entry. scaffold-record's schema refuses `.` and `..` too;
+    this is the second layer, for a record that never went through the engine."""
     if (not isinstance(name, str) or not name or name in (".", "..")
             or any(c in name for c in "/\\\0") or name != name.strip()
             or any(ord(c) < 32 for c in name)):

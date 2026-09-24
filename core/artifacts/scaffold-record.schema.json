@@ -23,7 +23,7 @@
       "required": ["owner", "name"],
       "properties": {
         "owner": { "type": "string" },
-        "name": { "type": "string", "pattern": "^[A-Za-z0-9._-]+$" },
+        "name": { "type": "string", "pattern": "^(?!\\.\\.?$)[A-Za-z0-9._-]+$", "description": "One directory entry: never . or .., which would make a consumer act on the checkouts directory or its parent." },
         "url": { "type": "string" },
         "default_branch": { "type": "string" },
         "visibility": { "enum": ["private", "internal", "public"] }

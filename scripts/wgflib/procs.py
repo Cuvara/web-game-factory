@@ -51,7 +51,7 @@ import threading
 import time
 
 __all__ = ["run", "spawn", "OwnedProcess", "ProcessResult", "TAG_ENV", "LINEAGE_ENV",
-           "HEARTBEAT_ENV", "tagged_pids", "terminate_tree", "live_groups", "terminate_all",
+           "HEARTBEAT_ENV", "tagged_pids", "terminate_tree", "live_groups", "terminate_all", "install_subreaper",
            "bound", "install_signal_cleanup", "default_heartbeat_seconds", "pid_alive"]
 
 TAG_ENV = "WGF_PROC_TAG"
@@ -250,6 +250,15 @@ def _signal(pids, pgid, sig):
 
 
 def terminate_tree(pid, pgid, tag, grace_seconds=5.0):
+    """End the child's whole tree, then (with the subreaper on) every orphan it left."""
+    ended = _terminate_tree(pid, pgid, tag, grace_seconds)
+    if POSIX:
+        ended = sorted(set(ended) | set(
+            _sweep_adopted(exclude={pid}, grace_seconds=min(grace_seconds, 1.0))))
+    return ended
+
+
+def _terminate_tree(pid, pgid, tag, grace_seconds=5.0):
     """End the child's whole tree. Returns the pids that were still alive and signalled.
 
     The group is signalled as a whole; tagged processes are signalled individually because
@@ -290,6 +299,76 @@ def terminate_tree(pid, pgid, tag, grace_seconds=5.0):
                 break
             time.sleep(0.05)
     return sorted(targets)
+
+
+# -- orphans adopted by this process ----------------------------------------------------------
+
+# With PR_SET_CHILD_SUBREAPER set, a descendant whose parent dies is reparented to this
+# process instead of init. That closes the one escape the tag and the group cannot see: a
+# daemon that detaches (setsid) AND execs with an empty environment. Opt-in, Linux only,
+# and only for a process whose children all come from this module - the Factory CLI, where
+# EveryChildGoesThroughProcs enforces that - because every adopted orphan that no live tree
+# claims is ended.
+_SUBREAPER = {"on": False}
+_PR_SET_CHILD_SUBREAPER = 36
+
+
+def install_subreaper(enabled=True):
+    """Make this process the subreaper of everything it starts. Returns True if active."""
+    if not POSIX or not os.path.isdir(_PROC) or not sys.platform.startswith("linux"):
+        return False
+    try:
+        import ctypes
+        libc = ctypes.CDLL(None, use_errno=True)
+        if libc.prctl(_PR_SET_CHILD_SUBREAPER, 1 if enabled else 0, 0, 0, 0) != 0:
+            return False
+    except (OSError, AttributeError):
+        return False
+    _SUBREAPER["on"] = bool(enabled)
+    return _SUBREAPER["on"]
+
+
+def _adopted_children(exclude):
+    """(pid, zombie) for each child of this process that no live tree owns."""
+    me = str(os.getpid())
+    claimed = {pid for pid, _ in live_groups().values()} | {p for p in exclude if p}
+    live_tags = set(live_groups())
+    found = []
+    for name in os.listdir(_PROC):
+        if not name.isdigit() or int(name) in claimed:
+            continue
+        fields = _stat_fields(int(name))
+        if not fields or len(fields) < 2 or fields[1] != me:
+            continue
+        environ = _read(os.path.join(_PROC, name, "environ")) or b""
+        if any(_carries(environ, tag) for tag in live_tags):
+            continue  # a descendant of a tree still running on another thread
+        found.append((int(name), fields[0] in ("Z", "X")))
+    return found
+
+
+def _sweep_adopted(exclude=(), grace_seconds=1.0):
+    """End and reap every adopted orphan; repeat while ending one orphans another."""
+    if not _SUBREAPER["on"]:
+        return []
+    ended = []
+    for _ in range(10):
+        found = _adopted_children(set(exclude))
+        if not found:
+            break
+        living = [pid for pid, zombie in found if not zombie]
+        _signal(living, None, signal.SIGTERM)
+        deadline = time.monotonic() + grace_seconds
+        while living and time.monotonic() < deadline and any(pid_alive(p) for p in living):
+            time.sleep(0.05)
+        _signal([p for p in living if pid_alive(p)], None, signal.SIGKILL)
+        for pid, _ in found:
+            try:
+                os.waitpid(pid, 0)
+            except ChildProcessError:
+                pass
+        ended.extend(living)
+    return ended
 
 
 def _terminate_windows(pid):  # pragma: no cover - exercised on Windows only

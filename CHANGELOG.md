@@ -10,6 +10,13 @@ numbering: `core/` is the contract, and schemas carry their own versions.
 
 ### Added
 
+- **Core v1 hardening (security pass).** `scaffold-record.repository.name` refuses `.` and
+  `..` (schema pattern; consumers also resolve checkouts through
+  `wgflib.paths.checkout_path`). `wgflib.procs.install_subreaper()` — installed by the `wgf`
+  CLI — reparents orphans to the Factory, so a descendant that detaches and clears its
+  environment is still ended with its step. *Migration:* a scaffold-record naming `.` or
+  `..` was never usable; none exist.
+
 - **Review module (`scripts/wgf_review`, step type `review`) and the `review-report`
   artifact.** An independent reviewer reads every development commit and approves it or
   requests changes with named blockers. The loop is data: `new-game` now runs

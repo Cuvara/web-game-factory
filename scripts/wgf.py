@@ -569,4 +569,7 @@ if __name__ == "__main__":
     # resumable: `wgf status` reports it stale and `wgf resume` continues it.
     from wgflib import procs as _procs
     _procs.install_signal_cleanup()
+    # Orphans reparent to wgf, not init: a daemon that detaches and clears its environment
+    # is still ended with its step.
+    _procs.install_subreaper()
     sys.exit(main())

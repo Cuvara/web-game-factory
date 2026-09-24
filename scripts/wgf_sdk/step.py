@@ -209,7 +209,10 @@ class SdkStep(WorkflowStep):
         games_dir = self._setting(context, "games_dir")
         name = ((scaffold or {}).get("repository") or {}).get("name")
         if games_dir and name:
-            candidates.append(rooted(os.path.join(games_dir, name)))
+            try:
+                candidates.append(rooted(paths.checkout_path(games_dir, name)))
+            except ValueError:
+                pass  # not one directory entry: never resolved to a path
         title = (scaffold or {}).get("title_id")
         if title:
             projects = _section(context.config, "init").get("projects_dir", "..")

@@ -131,8 +131,13 @@ Lifecycle events are persisted at once. Heartbeats are persisted at most every
   The zombie hold (`waitid(WNOWAIT)`) is Linux-only too. Elsewhere the child is reaped
   first and its group is signalled only while it still has live members.
 - **A descendant that clears its environment *and* detaches** cannot be found by tag or by
-  group. Nothing in the standard library can track it. The known offenders (Playwright,
-  vite, pnpm) keep the environment.
+  group. On Linux the `wgf` CLI closes this with `procs.install_subreaper()`
+  (`PR_SET_CHILD_SUBREAPER`): such an orphan is reparented to the Factory instead of init,
+  and every adopted orphan no live tree claims is ended and reaped with the step
+  (`test_core_security.ReviewerLeftovers`). A library caller that does not opt in, and any
+  platform without `prctl`, still has the limit. The subreaper assumes every child of the
+  process comes from `wgflib.procs` — true for the CLI, enforced by
+  `test_core_process.EveryChildGoesThroughProcs`.
 - **A descendant running as another user** (sudo, setuid) cannot be signalled, and its
   `/proc/<pid>/environ` cannot be read.
 - **SIGKILL of the Factory process, or a machine crash**, skips all cleanup. The orphans

@@ -41,8 +41,11 @@ def locate_checkout(params, config, scaffold, environ=None, section="verificatio
     checkouts = ((config or {}).get(section) or {}).get("checkouts")
     name = ((scaffold or {}).get("repository") or {}).get("name")
     if checkouts and name:
-        candidates.append((f"{section}.checkouts + scaffold-record repository",
-                           os.path.join(checkouts, name)))
+        try:
+            candidates.append((f"{section}.checkouts + scaffold-record repository",
+                               paths.checkout_path(checkouts, name)))
+        except ValueError:
+            pass  # not one directory entry: never resolved to a path
 
     for source, candidate in candidates:
         path = os.path.abspath(os.path.expanduser(candidate))

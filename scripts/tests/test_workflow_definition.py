@@ -58,12 +58,14 @@ class ParsesValidDefinitions(unittest.TestCase):
         definition = load_definition("new-game")
         self.assertEqual(
             definition.step_ids,
-            ["research", "strategy", "strategy-review", "design", "init", "assets",
-             "develop", "review", "sdk", "verify", "release"],
+            ["research", "strategy", "strategy-review", "design", "tech-plan",
+             "tech-plan-review", "init", "assets", "develop", "review", "sdk", "verify",
+             "release"],
         )
         self.assertEqual(definition.step("verify").on, {"fail": "develop"})
         self.assertEqual(definition.resolve_scope("plan"),
-                         ["strategy", "strategy-review", "design"])
+                         ["strategy", "strategy-review", "design", "tech-plan",
+                          "tech-plan-review"])
 
     def test_every_fixture_workflow(self):
         for name in os.listdir(FIXTURES):

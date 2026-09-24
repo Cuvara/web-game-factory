@@ -31,11 +31,29 @@ factory:
   # implementation with its placeholder for that run.
   #   wgf_strategy   the `strategy` step (scripts/wgf_strategy/)
   steps:
-    modules: [wgf_discovery, wgf_strategy, wgf_init, wgf_assets, wgf_develop, wgf_review, wgf_verification, wgf_design, wgf_sdk]
+    modules: [wgf_discovery, wgf_strategy, wgf_init, wgf_assets, wgf_develop, wgf_review, wgf_verification, wgf_design, wgf_sdk, wgf_techplan]
+
+  # The tech-plan module (scripts/wgf_techplan, docs/techplan-module.md): engine from the
+  # design, pinned platforms from the strategy, a heuristic dev plan. Every key is optional.
+  techplan:
+    # template_ref: Cuvara/web-game-template@main   # default: factory.init.template @ main
+    # overrun_tolerance: 1.5                        # default: portfolio.yaml
+    # estimates: {hours_per_day: 6, feature_base_hours: 2, per_criterion_hours: 1.5}
+    # device_classes: [{id: mobile-mid, target_fps: 60}, {id: desktop, target_fps: 60}]
+    # build: {command: pnpm build, output: dist}
 
   # The init module (scripts/wgf_init, docs/init-module.md): creates each game's repository
   # from the template with `gh`, clones it, and checks the template's infrastructure arrived.
+  # With a tech-plan in the run it writes game.config.yaml (engine, platforms, ad kinds) and
+  # commits it locally; it never pushes.
   init:
+    # github: `gh repo create --template` (outward-facing). local: an independent project
+    # made from a local template checkout with `git archive`, no remote and no network -
+    # what offline and golden-regression runs use.
+    source: github
+    # template_path: ../web-game-template   # source local only: a git checkout of the template
+    # template_ref: HEAD                    # source local only: the commit or ref to pin
+    # commit_author: {name: wgf-init, email: wgf-init@users.noreply.invalid}
     owner: Cuvara                       # who owns game repositories
     template: Cuvara/web-game-template  # never a blank repository
     visibility: private                 # private | internal | public

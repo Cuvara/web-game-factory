@@ -500,7 +500,7 @@ class ThroughTheEngine(unittest.TestCase):
                 return registry
 
         config = FactoryConfig({
-            "storage": {"fsync": False}, "checkpoints": {"auto_approve": ["G2"]},
+            "storage": {"fsync": False}, "checkpoints": {"auto_approve": ["G2", "G3"]},
             "develop": {"checkouts": os.path.join(self.scratch, "checkouts"),
                         "author": AUTHOR,
                         "developer": {"kind": "command", "argv": ["agent", "{brief}"]}},

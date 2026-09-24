@@ -151,7 +151,9 @@ reading, and `DocumentedIoContract` fails if the two disagree.
 | `strategy` | `strategy` | `opportunity` | `title-strategy` |
 | `strategy-review` | `human-checkpoint` | — | — |
 | `design` | `design` | `title-strategy` | `game-design` |
-| `init` | `init` | `game-design` | `scaffold-record` |
+| `tech-plan` | `tech-plan` | `game-design`, `title-strategy` | `tech-plan` |
+| `tech-plan-review` | `human-checkpoint` | — | — |
+| `init` | `init` | `game-design`, `tech-plan` | `scaffold-record` |
 | `assets` | `assets` | `game-design`, `scaffold-record` | `asset-manifest` |
 | `develop` | `develop` | `game-design`, `asset-manifest`, `scaffold-record`, `title-strategy`, `qa-report`, `review-report` | `prototype-report` |
 | `review` | `review` | `prototype-report`, `game-design`, `scaffold-record` | `review-report` |

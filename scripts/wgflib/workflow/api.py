@@ -7,6 +7,7 @@ scope it names. That is the whole of the "command design" rule: no command has a
 orchestration of its own to drift from the others.
 """
 
+import datetime
 import os
 
 from .. import paths
@@ -15,6 +16,7 @@ from .config import load_config
 from .definition import WORKFLOWS, load_definition
 from .engine import WorkflowEngine
 from .contracts import ArtifactContracts
+from .model import derive_liveness
 from .runtime import create_runtime
 from .step import StepRegistry
 from .store import RunStore
@@ -158,12 +160,20 @@ class WorkflowAPI:
             return None, None
         return state, self.definition_for(state)
 
-    def events(self, run_id=None):
-        state = self.store.load(run_id) if run_id else self.store.latest()
-        return (state, self.store.read_events(state.run_id)) if state else (None, [])
+    def liveness(self, state, now=None):
+        """derive_liveness for `state`, against the lock as it is right now."""
+        now = now or datetime.datetime.now(datetime.timezone.utc)
+        return derive_liveness(state, self.store.lock_owner(state.run_id), now,
+                               self.config.hung_after_seconds)
 
-    def runs(self):
-        return self.store.list_runs()
+    def events(self, run_id=None, problems=None):
+        """(state, events). Unreadable event lines are skipped and added to `problems`."""
+        state = self.store.load(run_id) if run_id else self.store.latest()
+        return ((state, self.store.read_events(state.run_id, problems)) if state
+                else (None, []))
+
+    def runs(self, problems=None):
+        return self.store.list_runs(problems)
 
     def pause(self, run_id):
         state = self.store.load(run_id)

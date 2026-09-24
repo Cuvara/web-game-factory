@@ -156,6 +156,14 @@ proves the pipeline, not an AI developer. See `docs/golden-runs.md`.
 
 Not faked, not bypassed, and not part of the acceptance suite:
 
+- **web-game-template main moved past the validated commit.** Core v1 and both golden runs
+  are validated against template 5eb698f, and the golden runs are pinned to it. The
+  template's main has since moved to 1f5dee2 (upstream, 2026-09-24). Against it the sdk
+  step cannot read the generic-web/GameVui adapters' capabilities
+  (`test_sdk_integration.InspectSdk` fails — deliberately left unpinned, it is the drift
+  detector) and the golden replay port no longer typechecks. Adopting it is `wgf_sdk` and
+  golden-port work under the module rule below. See `docs/golden-runs.md`.
+
 - **Portal QA** — Yandex moderation, CrazyGames QA, Poki Inspector, GameVui submission: need
   portal accounts and human review. Status `BLOCKED_EXTERNAL`. The template's opt-in harness
   (`pnpm test:sdk:live`, `web-game-template/docs/audits/`) is where live evidence would come

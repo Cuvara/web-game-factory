@@ -236,6 +236,7 @@ def build(run, api, state, seconds, browser):
         "duration_s": round(seconds, 1),
         "workdir": run.workdir,
         "template": run.template_dir,
+        "template_ref": run.config_data["init"]["template_ref"],
         "developer": "golden-run replay developer (scripts/golden/replay_developer.py) - a "
                      "deterministic port of a known-good template example, NOT an AI developer",
         "reviewer": "golden-run reviewer (scripts/golden/reviewer.py) - deterministic rule "

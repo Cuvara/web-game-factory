@@ -70,6 +70,23 @@ still alive in the work directory. `passed` is true only if every step reached i
 outcome, release drafted a manifest whose zip hashes reproduce, and the engine is the same
 everywhere. `browser_passed` is reported beside it; the CLI and the tests require both.
 
+## The template is pinned
+
+A golden run creates its game from web-game-template at one commit,
+`golden/harness.py` `VALIDATED_TEMPLATE_REF` (5eb698f, the commit Core v1 was validated on),
+not at whatever the sibling checkout's HEAD is. The regression baseline therefore moves only
+when someone moves it: adopting a newer template means running both golden runs with
+`WGF_GOLDEN_TEMPLATE_REF=<commit>` (or `HEAD`), making them pass, and changing that one line
+in the same commit. The summary records `template_ref`.
+
+`WGF_GOLDEN_TEMPLATE_REF=HEAD` is also the drift check. On 2026-09-24 the sibling template's
+main was fast-forwarded to 1f5dee2 (a real GameVui adapter; `GenericWebPlatform` takes its
+capabilities through its constructor). Against it both golden runs fail at `develop`
+(`pnpm run typecheck: exit 2` — the replay port targets the older API), and
+`test_sdk_integration.InspectSdk.test_the_sibling_template_is_readable` fails because the sdk
+step's source inspector cannot read those adapters' capabilities. Both are module work
+(`wgf_sdk`, the golden port), done one module at a time after the freeze.
+
 ## How a run is isolated and steered
 
 The harness (`scripts/golden/harness.py`) reads `workspace/config/factory.yaml` and never

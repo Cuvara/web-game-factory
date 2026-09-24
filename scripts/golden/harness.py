@@ -57,12 +57,19 @@ from wgflib.yamllite import load_file  # noqa: E402
 
 from golden import games  # noqa: E402
 
-__all__ = ["TEMPLATE_DIR", "make_workdir", "build_config", "GoldenRun", "Summary"]
+__all__ = ["TEMPLATE_DIR", "TEMPLATE_REF", "VALIDATED_TEMPLATE_REF", "make_workdir", "build_config", "GoldenRun", "Summary"]
 
 DEFAULT_TEMPLATE = "/mnt/e/GameWeb/web-game-template"
 TEMPLATE_DIR = os.environ.get("WGF_TEMPLATE_DIR") or (
     DEFAULT_TEMPLATE if os.path.isdir(DEFAULT_TEMPLATE)
     else os.path.join(os.path.dirname(paths.ROOT), "web-game-template"))
+
+# The template commit the golden runs are validated against (Core v1, 2026-09-24). Pinned so
+# the regression baseline never moves because web-game-template's main did: a new template
+# is adopted by changing this line after both golden runs pass on it. Set
+# WGF_GOLDEN_TEMPLATE_REF=HEAD to run against the checkout as it is (a drift check).
+VALIDATED_TEMPLATE_REF = "5eb698fe42553ed2e3fe051ecad8bbcd43c1eef5"
+TEMPLATE_REF = os.environ.get("WGF_GOLDEN_TEMPLATE_REF") or VALIDATED_TEMPLATE_REF
 
 # Who the golden run's local commits are by (develop's and sdk's): the machine may have no
 # git identity. Init has its own default (wgf-init). Nothing is ever pushed.
@@ -149,7 +156,7 @@ def build_config(game, workdir, template_dir=None, python=None):
         "init": {
             "source": "local",
             "template_path": template_dir,
-            "template_ref": "HEAD",
+            "template_ref": TEMPLATE_REF,
             "projects_dir": games_dir,
             "adopt_existing": False,
         },

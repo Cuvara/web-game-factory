@@ -19,7 +19,7 @@ and the directory structure inherited that conflation — a direct cause of `cor
 | `research` | portfolio market-scan, `discovered` | `claim`, `opportunity`, `research-report` |
 | `analysis` | `scored`, `shortlisted`, `approved`, title `concept` | `evaluation` |
 | `game-designer` | `strategy`, `design` | `title-strategy`, `game-design` |
-| `architect` | `tech-plan` | `tech-plan` |
+| `architect` | `tech-plan`; also reviews each development commit in `prototype`, read-only | `tech-plan`, `review-report` |
 | `qa` | release `qa` | `qa-report` |
 | `release` | `scaffolding`, release `draft`→`submitting` | `release-manifest`, `platform-publication` |
 | `liveops` | `live` | `performance-review`, `claim` |

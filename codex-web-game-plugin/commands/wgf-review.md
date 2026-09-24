@@ -4,7 +4,7 @@
 **Role** `portfolio-owner`
 **Gate** `G4` — see `core/lifecycle/gates.yaml` for its required artifacts, predicates and approvers.
 
-The kill gate. Judge the prototype against the kill criteria set at strategy.
+The kill gate. Judge the prototype against the kill criteria set at strategy. (Not the code review of a commit; that runs inside /wgf-prototype.)
 
 ## Procedure
 

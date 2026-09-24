@@ -14,7 +14,8 @@ Invoked from `AGENTS.md` or by the matching `/wgf-*` prompt.
 6. `core/lifecycle/stages/publish.md`
 7. `core/artifacts/release-manifest.schema.json`
 8. `core/artifacts/platform-publication.schema.json`
-9. `core/templates/release-report.md`
+9. `core/artifacts/review-report.schema.json`
+10. `core/templates/release-report.md`
 
 Core is authoritative. Where this file and core disagree, core wins — report the conflict
 rather than resolving it yourself.

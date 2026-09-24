@@ -154,12 +154,24 @@ class TheFactoryContainsNoGameSource(unittest.TestCase):
     )
     SKIP_DIRS = {".git", "node_modules", "__pycache__", ".factory", ".claude"}
 
+    def factory_files(self):
+        """Tracked + untracked files; every file on disk when this is not a git work tree
+        (an installed release archive), so the check never silently passes on nothing."""
+        if GIT and os.path.isdir(os.path.join(ROOT, ".git")):
+            listed = subprocess.run(["git", "-C", ROOT, "ls-files", "-z", "--cached",
+                                     "--others", "--exclude-standard"],
+                                    capture_output=True, check=True)
+            return [f for f in listed.stdout.decode("utf-8", "replace").split("\0") if f]
+        found = []
+        for directory, dirs, files in os.walk(ROOT):
+            dirs[:] = [d for d in dirs if d not in self.SKIP_DIRS]
+            found.extend(os.path.relpath(os.path.join(directory, f), ROOT).replace(os.sep, "/")
+                         for f in files)
+        return found
+
     def test_no_game_source_is_tracked_in_the_factory(self):
-        if not GIT:
-            self.skipTest("git is not on PATH")
-        listed = subprocess.run(["git", "-C", ROOT, "ls-files", "-z", "--cached", "--others",
-                                 "--exclude-standard"], capture_output=True, check=True)
-        files = [f for f in listed.stdout.decode("utf-8", "replace").split("\0") if f]
+        files = self.factory_files()
+        self.assertGreater(len(files), 100)
         offenders = [f for f in files if self.SOURCE.search(f) and f not in self.ALLOWED
                      and not f.startswith(self.ALLOWED_PREFIXES)
                      and not set(f.split("/")) & self.SKIP_DIRS]

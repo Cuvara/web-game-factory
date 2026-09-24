@@ -3,10 +3,21 @@
 Notable changes to the methodology. A change here can invalidate an artifact that already
 exists, so each entry says what it would take to bring one forward.
 
-Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). There is no release
-numbering: `core/` is the contract, and schemas carry their own versions.
+Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). The Factory is
+released as a whole (`v1.0.0` is Core v1, frozen); schemas still carry their own versions,
+and `core/` is still the contract.
 
 ## [Unreleased]
+
+## [1.0.0] - 2026-09-24
+
+Core v1, frozen (`docs/core-v1.md`). The executable workflow core - engine, persistence,
+contracts, process ownership, agent runtime, verify and release - protected by the Core
+Acceptance Suite (`bin/wgf test-core`) and two real golden pipelines, Tower Merge Rush
+(PixiJS) and Neon Drift Arena (Three.js). Validated against web-game-template
+`22482b4eb81084a89ff8ecdeea9130f06ebb8026` (`workspace/config/template.lock.json`).
+Everything below was added on the way there. Portal QA, publishing and real ad fill remain
+BLOCKED_EXTERNAL.
 
 ### Added
 

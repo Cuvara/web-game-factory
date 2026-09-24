@@ -1,0 +1,36 @@
+{
+  "id": "snap-poki-developers-home",
+  "source_uri": "https://developers.poki.com/",
+  "source_kind": "portal-docs",
+  "title": "Poki for Developers - Reach the world on web",
+  "observed_at": "2026-09-23T00:00:00Z",
+  "retrieved_via": "web-fetch",
+  "platform": "poki",
+  "observations": [
+    {
+      "statement": "Poki's developer landing page reports 100 million monthly players.",
+      "excerpt": "100 million monthly players",
+      "subject": { "platform": "poki", "dimension": "distribution_potential" },
+      "facts": { "monthly_players": 100000000 },
+      "tags": ["audience", "self-reported"]
+    },
+    {
+      "statement": "Poki reports more than 5 million monthly players per high-performing game.",
+      "excerpt": "With more than 5 million monthly players per high-performing game, your game is sure to find its perfect audience.",
+      "subject": { "platform": "poki", "dimension": "distribution_potential" },
+      "tags": ["audience", "self-reported", "per-game-reach"]
+    },
+    {
+      "statement": "Poki reports more than 1 billion gameplays per month.",
+      "excerpt": "1B+ gameplays per month The biggest audience in web gaming, open to developers of all sizes.",
+      "subject": { "platform": "poki", "dimension": "distribution_potential" },
+      "tags": ["audience", "self-reported"]
+    },
+    {
+      "statement": "Poki describes itself as the leading web gaming platform, powered by 500+ game developers.",
+      "excerpt": "Poki is the leading web gaming platform, powered by a community of 500+ game developers.",
+      "subject": { "platform": "poki", "dimension": "competition" },
+      "tags": ["developer-count", "self-reported"]
+    }
+  ]
+}

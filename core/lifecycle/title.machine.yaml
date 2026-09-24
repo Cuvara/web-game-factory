@@ -208,8 +208,8 @@ states:
     role: gameplay
     contributors: [ui, asset, architect, sdk]
     procedure: stages/prototype.md
-    inputs: [tech-plan, game-design, title-strategy, scaffold-record]
-    outputs: [prototype-report, sdk-report, asset-manifest]
+    inputs: [tech-plan, game-design, title-strategy, scaffold-record, review-report]
+    outputs: [prototype-report, review-report, sdk-report, asset-manifest]
     description: >
       Not "small production". It exists to prove the core loop, that a new player
       understands it, the session shape, the retention hook, and that platform SDK and

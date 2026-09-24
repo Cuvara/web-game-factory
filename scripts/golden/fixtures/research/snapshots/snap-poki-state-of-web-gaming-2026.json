@@ -1,0 +1,54 @@
+{
+  "id": "snap-poki-state-of-web-gaming-2026",
+  "source_uri": "https://poki.com/blog/state-of-web-gaming-report-2026",
+  "source_kind": "market-report",
+  "title": "The 2026 State of Web Gaming: Developer & Player Study",
+  "observed_at": "2026-09-23T00:00:00Z",
+  "retrieved_via": "web-fetch",
+  "platform": null,
+  "observations": [
+    {
+      "statement": "The report is based on two Poki-commissioned online surveys conducted by Atomik Research, one of which covered 400 game developers in the US and UK.",
+      "excerpt": "This report is based on two online surveys commissioned by Poki and conducted by the MRS-certified creative market research agency Atomik Research. One set of questions were put to 400 game developers in the US and UK",
+      "subject": { "dimension": "distribution_potential" },
+      "tags": ["methodology", "vendor-commissioned", "us-uk-only"]
+    },
+    {
+      "statement": "Poki reports more than 100 million monthly active players in 2026, up from 10 million in 2020.",
+      "excerpt": "Poki itself sees more than 100 million monthly active players in 2026, up from 10 million in 2020.",
+      "subject": { "platform": "poki", "dimension": "distribution_potential" },
+      "facts": { "monthly_players": 100000000 },
+      "tags": ["growth", "self-reported"]
+    },
+    {
+      "statement": "37% of surveyed gamers play web games multiple times per day.",
+      "excerpt": "37% of gamers play web games ‘multiple times per day’",
+      "subject": { "dimension": "retention_potential" },
+      "tags": ["engagement", "survey"]
+    },
+    {
+      "statement": "46% of surveyed web gamers stopped playing a mobile game because it took too long to load, and 28% because the download was too large.",
+      "excerpt": "46% of the web gamers surveyed for this report have stopped playing a mobile game because it took too long to open or load. 28%, meanwhile, have stopped playing a mobile gaming app because the download size was too large.",
+      "subject": { "dimension": "performance_risk" },
+      "tags": ["load-time", "survey"]
+    },
+    {
+      "statement": "62% of surveyed players have downloaded or purchased a game after discovering it on web.",
+      "excerpt": "62% of players have downloaded or purchased a game after discovering a game on web",
+      "subject": { "dimension": "distribution_potential" },
+      "tags": ["discovery", "survey"]
+    },
+    {
+      "statement": "36% of surveyed developers cite insufficient revenue as the biggest barrier to embracing web gaming.",
+      "excerpt": "36% cite insufficient revenue as the biggest barrier to embracing web gaming",
+      "subject": { "dimension": "monetization_fit" },
+      "tags": ["developer-sentiment", "survey"]
+    },
+    {
+      "statement": "53% of surveyed developers plan to port mobile games to browser in the next 12 months.",
+      "excerpt": "53% plan to port mobile games to browser in the next 12 months",
+      "subject": { "dimension": "competition" },
+      "tags": ["supply-growth", "survey"]
+    }
+  ]
+}

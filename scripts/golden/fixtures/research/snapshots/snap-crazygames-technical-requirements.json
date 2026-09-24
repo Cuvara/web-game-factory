@@ -1,0 +1,54 @@
+{
+  "id": "snap-crazygames-technical-requirements",
+  "source_uri": "https://docs.crazygames.com/requirements/technical/",
+  "source_kind": "portal-docs",
+  "title": "Technical - CrazyGames Documentation",
+  "observed_at": "2026-09-23T00:00:00Z",
+  "retrieved_via": "web-fetch",
+  "platform": "crazygames",
+  "observations": [
+    {
+      "statement": "CrazyGames requires an initial download size of at most 50MB, and at most 20MB for mobile homepage eligibility.",
+      "excerpt": "The game must have an initial download size ≤ 50MB . In order to be eligible for the mobile homepage, the initial download size needs to be ≤ 20MB.",
+      "subject": { "platform": "crazygames", "dimension": "technical_risk" },
+      "facts": { "max_bundle_mb": 50 },
+      "tags": ["file-size", "mobile-homepage-20mb"]
+    },
+    {
+      "statement": "CrazyGames allows a maximum total file size of 250MB and 1500 files.",
+      "excerpt": "A maximum total file size of 250MB is allowed. There's a file count limit on 1500 files as high file counts will make loading slower.",
+      "subject": { "platform": "crazygames", "dimension": "technical_risk" },
+      "tags": ["file-size", "file-count"]
+    },
+    {
+      "statement": "For externally loaded files, CrazyGames QA evaluates time to reach gameplay against 20 seconds.",
+      "excerpt": "For externally hosted/loaded files our QA team will evaluate based on the time it takes to reach gameplay (≤ 20 seconds)",
+      "subject": { "platform": "crazygames", "dimension": "performance_risk" },
+      "tags": ["load-time"]
+    },
+    {
+      "statement": "CrazyGames expects games to work on Chrome and Edge and disables games on Safari that don't work well there.",
+      "excerpt": "We expect games to work on Chrome and Edge. Games that don't work well on Safari will be disabled on that browser.",
+      "subject": { "platform": "crazygames", "dimension": "technical_risk" },
+      "tags": ["browser-compat"]
+    },
+    {
+      "statement": "CrazyGames disables games on Chromium OS if they don't run smoothly on a 4GB RAM device.",
+      "excerpt": "A significant segment of the CrazyGames audience uses Chromebook. Games will be disabled on Chromium OS if they do not work smoothly on a 4GB RAM device.",
+      "subject": { "platform": "crazygames", "dimension": "performance_risk" },
+      "tags": ["chromebook", "low-end-device"]
+    },
+    {
+      "statement": "Unity games are disabled on iOS by default on CrazyGames.",
+      "excerpt": "Unity games will be disabled on iOS by default due to frequent crashes (caused by memory shortage).",
+      "subject": { "platform": "crazygames", "dimension": "technical_risk" },
+      "tags": ["unity", "ios"]
+    },
+    {
+      "statement": "CrazyGames requires games to support mouse, keyboard, and touch if mobile is supported, and to be playable in landscape on desktop.",
+      "excerpt": "Game supports mouse, keyboard, and touch if mobile is supported. Game should be playable in landscape mode on desktop.",
+      "subject": { "platform": "crazygames", "dimension": "platform_fit" },
+      "tags": ["input", "orientation"]
+    }
+  ]
+}

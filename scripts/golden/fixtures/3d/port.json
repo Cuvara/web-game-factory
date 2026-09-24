@@ -1,0 +1,38 @@
+{
+  "comment": "Golden-run replay of examples/neon-drift-arena. Read by scripts/golden/replay_developer.py. This file is a mapping only: the Factory holds no game source. `copy` entries are taken from the game repository's own examples/neon-drift-arena/ (the template ships them) and written with a provenance header. `overlays` are directories of the game repository - shipped by the pinned web-game-template commit - holding the hand-made adaptation to the template layout the development brief asks for; each is copied onto the repository root in order (a later one wins), its README.md excepted. The template's boot scene (src/game/boot-scene.ts) is left in place: main.ts no longer starts it, and the template's own SDK matrix harness (tests/sdk-matrix/main.ts) imports it.",
+  "overlays": ["examples/wgf-golden-shared", "examples/neon-drift-arena/wgf-golden"],
+  "example": "neon-drift-arena",
+  "engine": "threejs",
+  "scene_id": "neon-drift-arena",
+  "copy": [
+    {"from": "src/game/simulation.ts", "to": "src/game/simulation.ts"},
+    {"from": "src/game/arena-view.ts", "to": "src/rendering/threejs/arena-view.ts",
+     "replace": [["from \"./simulation.js\"", "from \"../../game/simulation.js\""]]},
+    {"from": "src/input.ts", "to": "src/input/steering.ts"},
+    {"from": "tests/unit/simulation.test.ts", "to": "tests/unit/neon-drift-arena-simulation.test.ts"}
+  ],
+  "engine_dependencies": ["three", "@types/three"],
+  "placements": [
+    {"id": "revive-game-over", "kind": "rewarded"},
+    {"id": "restart-game-over", "kind": "interstitial"}
+  ],
+  "mvp": {
+    "Steering": {"status": "built", "notes": "Keyboard (arrows, A/D) and pointer steering from the example (src/input/steering.ts)."},
+    "Target gates": {"status": "partial", "notes": "Score climbs for every wall cleared, which plays like passing gates; there are no separate target gates in the replayed example."},
+    "Game flow": {"status": "built", "notes": "Menu -> playing -> pause -> crash -> revive / race again."},
+    "Kill and success criteria telemetry": {"status": "partial", "notes": "A run_over event (score) goes through the seam's track(); the default seam sends to NullSink until the integration wires a sink."},
+    "Platform integration": {"status": "built", "notes": "Every platform call goes through src/game/integration.ts; the default implementation wraps the template's Platform and withAdBreak."},
+    "Localization": {"status": "built", "notes": "All UI strings from public/locales/en.json and ru.json via src/core/i18n.ts."},
+    "Rewarded placement": {"status": "built", "notes": "revive-game-over: continue the same run once, granted only when rewarded() resolves true."},
+    "Interstitial placement": {"status": "built", "notes": "restart-game-over, at the break before the next drive; an unfilled ad never blocks the restart."},
+    "Core loop: drive into the arena, steer between the walls, score climbs with every wall cleared, the arena speeds up, crash, drive again": {"status": "built", "notes": "The example's seeded, deterministic simulation (src/game/simulation.ts)."},
+    "One content set with a data-driven difficulty ramp": {"status": "built", "notes": "Walls get faster the longer the drive lasts (the simulation's speed ramp)."},
+    "Score and personal best, persisted locally": {"status": "built", "notes": "Best score saved and loaded through the seam's save/load (platform storage)."},
+    "Localization: ru, en": {"status": "built", "notes": "en.json and ru.json ship in public/locales/."}
+  },
+  "how_to_play": "Steer a neon craft with the arrow keys, A/D or the pointer and thread it between the walls rushing at you; the score climbs the longer you survive and the walls speed up. Crash and it is over - revive once or race again.",
+  "known_issues": [
+    "This build is a deterministic REPLAY of web-game-template's examples/neon-drift-arena, ported into the template layout by the Factory's golden-run replay developer. It is not an AI-developed build and says nothing about an agent developer's ability.",
+    "Assets from the asset manifest are placeholders; the game builds every mesh procedurally and loads none of them."
+  ]
+}

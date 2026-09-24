@@ -91,7 +91,7 @@ class StepRegistry:
 
     def register(self, step_type, factory):
         """`factory(definition)` must return an object with `execute(inputs, context)`."""
-        if not isinstance(step_type, str) or not STEP_TYPE.match(step_type):
+        if not isinstance(step_type, str) or not STEP_TYPE.fullmatch(step_type):
             raise RegistryError(f"step type {step_type!r} is not a valid type name")
         if not callable(factory):
             raise RegistryError(f"implementation for {step_type!r} is not callable")
@@ -129,7 +129,7 @@ class StepRegistry:
     def load_modules(self, module_names):
         """Import each module and call its `register(registry)`."""
         for name in module_names or []:
-            if not isinstance(name, str) or not _MODULE.match(name):
+            if not isinstance(name, str) or not _MODULE.fullmatch(name):
                 raise RegistryError(
                     f"step module {name!r} is not a dotted Python module name"
                 )

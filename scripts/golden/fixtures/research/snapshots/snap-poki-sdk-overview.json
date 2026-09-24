@@ -1,0 +1,38 @@
+{
+  "id": "snap-poki-sdk-overview",
+  "source_uri": "https://developers.poki.com/guide/sdk-overview",
+  "source_kind": "portal-docs",
+  "title": "SDK overview & events | Poki Documentation",
+  "observed_at": "2026-09-23T00:00:00Z",
+  "retrieved_via": "web-fetch",
+  "platform": "poki",
+  "observations": [
+    {
+      "statement": "The Poki SDK handles ad delivery and gameplay tracking.",
+      "excerpt": "The Poki SDK connects your game to the platform. It handles ad delivery, gameplay tracking, and the tools you need to test and optimize.",
+      "subject": { "platform": "poki", "dimension": "technical_risk" },
+      "facts": { "sdk_required": true },
+      "tags": ["sdk"]
+    },
+    {
+      "statement": "gameLoadingFinished() must fire when loading completes and is required to track loading and conversion to play.",
+      "excerpt": "gameLoadingFinished() : fire when loading completes. Required to track loading and show your conversion to play.",
+      "subject": { "platform": "poki", "dimension": "scope_complexity" },
+      "tags": ["sdk-event"]
+    },
+    {
+      "statement": "commercialBreak() should be fired at natural stops before returning to gameplay; not every call triggers an ad.",
+      "excerpt": "commercialBreak() : fire at natural stops, whenever the player is about to head back into gameplay. Not every call triggers an ad; our system decides when a player is ready, so signal as many opportunities as possible.",
+      "subject": { "platform": "poki", "dimension": "monetization_fit" },
+      "facts": { "ads.interstitial": true },
+      "tags": ["sdk-event", "commercialBreak"]
+    },
+    {
+      "statement": "rewardedBreak() fires on the player's explicit choice and resets the ad timer.",
+      "excerpt": "rewardedBreak() : fire on the player's explicit choice to watch an ad for a reward. Make it clear beforehand that an ad is coming. A rewarded break resets the ad timer, so players won't immediately see another ad.",
+      "subject": { "platform": "poki", "dimension": "monetization_fit" },
+      "facts": { "ads.rewarded": true },
+      "tags": ["sdk-event", "rewardedBreak"]
+    }
+  ]
+}

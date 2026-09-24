@@ -1,7 +1,8 @@
 """The `develop` step: brief -> developer -> checks -> commit -> prototype-report.
 
     inputs   game-design, asset-manifest, scaffold-record (required)
-             title-strategy (read when present), qa-report (on a verify -> develop loop)
+             title-strategy (read when present), qa-report (on a verify -> develop loop),
+             review-report (on a review -> develop loop: its blockers lead the brief)
     output   prototype-report
     effect   one commit in the game repository per visit, keyed by the idempotency key
 
@@ -69,7 +70,7 @@ class DevelopStep(WorkflowStep):
         if missing:
             return StepResult.waiting_for_input(
                 f"develop needs {', '.join(missing)} in the run before it can brief a build")
-        for artifact_type in REQUIRED_INPUTS + ("title-strategy", "qa-report"):
+        for artifact_type in REQUIRED_INPUTS + ("title-strategy", "qa-report", "review-report"):
             ref = inputs.refs.get(artifact_type)
             version = getattr(ref, "schema_version", None) or ""
             if ref is not None and version and version.split(".")[0] != SUPPORTED_MAJOR:
@@ -82,6 +83,7 @@ class DevelopStep(WorkflowStep):
         scaffold = inputs.load("scaffold-record")
         strategy = inputs.load("title-strategy") if "title-strategy" in inputs else None
         qa = inputs.load("qa-report") if "qa-report" in inputs else None
+        review = inputs.load("review-report") if "review-report" in inputs else None
         # A qa-report on the first visit is a leftover from an earlier release, not feedback
         # on this build; only a loop back from verify carries defects to fix.
         if qa is not None and (context.visit <= 1 or qa.get("verdict") == "pass"):
@@ -102,6 +104,13 @@ class DevelopStep(WorkflowStep):
         except ValueError as exc:
             return StepResult.failed(str(exc), retryable=False)
         engine = game_config["engine"]["type"]
+        # Only a request for changes to the commit this visit starts from is feedback on
+        # this build. An approval, a skipped or failed review, or a review of some other
+        # commit (an earlier loop, another run) carries nothing to fix.
+        if review is not None and not (
+                context.visit > 1 and review.get("verdict") == "request-changes"
+                and review.get("blockers") and review.get("reviewed_commit") == git.head()):
+            review = None
 
         key = context.idempotency_key
         brief_dir = os.path.join(checkout, briefs.BRIEF_DIR)
@@ -134,7 +143,7 @@ class DevelopStep(WorkflowStep):
                 title_id=title_id, engine=engine, iteration=context.visit, key=key,
                 baseline=baseline, design=design, assets=assets, scaffold=scaffold,
                 strategy=strategy, qa=qa, previous_checks=previous_checks,
-                refs=inputs.refs, skills=settings.skills,
+                refs=inputs.refs, skills=settings.skills, review=review,
             )
             _write(brief_json, json.dumps(brief, indent=2, ensure_ascii=False) + "\n")
             _write(brief_md, briefs.render_markdown(brief))
@@ -171,7 +180,14 @@ class DevelopStep(WorkflowStep):
                 )
             except GitError as exc:
                 return StepResult.failed(str(exc))
-        commit_sha = commit_sha or git.head() or "0" * 40
+        commit_sha = commit_sha or git.head()
+        if not commit_sha:
+            # A placeholder commit would flow downstream as if it were a build: review, sdk,
+            # verify and release all pin what this report names.
+            return StepResult.blocked(
+                f"the build commit cannot be established: {checkout} has no readable HEAD "
+                f"(git rev-parse HEAD failed). Commit the checkout's initial state, then "
+                f"resume.")
 
         produced_at = self.clock()
         report = build_report(

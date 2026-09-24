@@ -24,6 +24,7 @@ inputs ──► brief ──► developer ──► checks ──► commit ─
 | `scaffold-record` | which repository to build in (`repository.name`) |
 | `title-strategy` | `prototype_must_prove` and `kill_criteria`, which the report must list — optional |
 | `qa-report` | on a verify → develop loop, the blocking defects the brief says to fix first |
+| `review-report` | on a review → develop loop, the reviewer's blockers the brief says to fix first — used only when it requests changes to the commit this visit starts from ([review-module.md](review-module.md)) |
 
 The engine comes from the checkout's `game.config.yaml`: `pixijs` for 2D, `threejs` for 3D.
 Anything else is refused — adding an engine is the tech plan's decision at G3.
@@ -56,6 +57,10 @@ the game, regenerated on every visit and committed with the code it asked for. I
 |---|---|---|
 | `handoff` (default) | A person, or an agent-host session a person drives. The step returns `WAITING_FOR_HUMAN`; resume with `--decision done` (or `abandon`). | Waits again, with the failures in `checks.json` and in the next brief |
 | `command` | A configured process, unattended — typically an agent host's non-interactive mode. `argv` gets `{brief}`, `{repo}`, `{key}`, `{prompt}`. | Retryable `FAILED`; the next attempt's brief carries the failure output |
+
+`command` runs are bounded by `timeout_seconds` (wall clock) and, optionally,
+`idle_timeout_seconds` (no output at all for that long — a hung agent, not a slow one).
+Either is a retryable `FAILED`.
 
 The provider, if any, is named only in the installation's `factory.yaml`. Host skills the
 brief recommends (PixiJS, Three.js, frontend design) are configured under

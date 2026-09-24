@@ -1,0 +1,110 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://webgamefactory.dev/schemas/artifacts/review-report.schema.json",
+  "title": "Review Report",
+  "description": "An independent code review of one development commit, made inside the prototype loop.\n\nThe reviewer is not the developer. It reads the committed build and returns a verdict: `approve`, or `request-changes` with the blockers the next development visit must fix. The verdict is the reviewer's; everything else in this record is measured by the Factory - which commit was reviewed, how long the review took, whether it timed out, and whether the reviewer left the checkout exactly as it found it.\n\nA reviewer is read-only on the game repository. That is enforced, not requested: the checkout is fingerprinted before and after the review, and any difference fails the review, is listed under `isolation.violations`, and is undone. A review that could not be trusted - isolation broken, verdict malformed, reviewer timed out or crashed - records `verdict: no-verdict` and a `failure`, never an approval. `skipped` means no reviewer is configured: no review happened, and nothing downstream may read it as one.",
+
+  "x-wgf": {
+    "id": "review-report",
+    "kind": "artifact",
+    "format": "json",
+    "producer": "title:prototype",
+    "consumers": ["title:prototype", "title:prototype-review", "release:draft"],
+    "repo_path": "workspace/titles/<title-id>/review-report.json"
+  },
+
+  "type": "object",
+  "required": ["provenance", "title_id", "reviewed_commit", "verdict", "blockers", "reviewer", "isolation", "iteration", "attempt", "duration_s", "timed_out"],
+  "properties": {
+    "provenance": { "$ref": "./shared/provenance.schema.json#/$defs/provenance" },
+    "title_id": { "type": "string" },
+    "reviewed_commit": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{40}$",
+      "description": "The commit the review was of: the checkout's HEAD, which must equal the prototype-report's build_ref.commit_sha."
+    },
+    "baseline_commit": {
+      "type": ["string", "null"],
+      "description": "Where the development visit that produced reviewed_commit started. The change under review is baseline..reviewed."
+    },
+    "verdict": {
+      "enum": ["approve", "request-changes", "skipped", "no-verdict"],
+      "description": "approve and request-changes are the reviewer's. skipped: no reviewer is configured. no-verdict: the review ran but produced nothing that can be trusted; see failure."
+    },
+    "blockers": {
+      "type": "array",
+      "description": "Empty for approve. Non-empty for request-changes: a request for changes that names none cannot be acted on.",
+      "items": { "$ref": "#/$defs/blocker" }
+    },
+    "notes": { "type": "string" },
+    "failure": {
+      "type": ["object", "null"],
+      "required": ["code", "message"],
+      "properties": {
+        "code": {
+          "enum": ["reviewer-isolation-violation", "malformed-verdict", "reviewer-timeout", "reviewer-idle-timeout", "reviewer-crashed", "reviewer-not-started", "cancelled"]
+        },
+        "message": { "type": "string" },
+        "retryable": { "type": "boolean" }
+      },
+      "additionalProperties": false
+    },
+    "reviewer": {
+      "type": "object",
+      "required": ["kind"],
+      "properties": {
+        "kind": { "enum": ["command", "none"] },
+        "argv0": { "type": ["string", "null"], "description": "Basename of the reviewer executable. Never the full argv: it may carry a prompt or a credential path." },
+        "exit_code": { "type": ["integer", "null"] },
+        "status": { "type": ["string", "null"], "description": "How the process ended: exited, timeout, idle-timeout, cancelled, not-started." },
+        "killed_pids": { "type": "array", "items": { "type": "integer" } }
+      },
+      "additionalProperties": false
+    },
+    "isolation": {
+      "type": "object",
+      "required": ["checked_paths", "violations", "intact"],
+      "properties": {
+        "checked_paths": { "type": "integer", "minimum": 0, "description": "Files fingerprinted in the checkout and the Factory's guarded paths." },
+        "intact": { "type": "boolean", "description": "True when the before and after fingerprints are identical." },
+        "violations": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["path", "change"],
+            "properties": {
+              "path": { "type": "string" },
+              "change": { "enum": ["modified", "added", "deleted", "head-moved", "branch-changed", "ref-changed", "status-changed", "git-metadata"] },
+              "scope": { "enum": ["checkout", "factory"] },
+              "sensitive": { "type": "boolean", "description": "package manifest, lockfile, test, CI or tool configuration." }
+            },
+            "additionalProperties": false
+          }
+        },
+        "restored": { "type": ["boolean", "null"], "description": "After a violation: whether the checkout and guarded paths were put back to their pre-review state. null when there was nothing to restore." }
+      },
+      "additionalProperties": false
+    },
+    "iteration": { "type": "integer", "minimum": 1, "description": "The workflow visit to the review step." },
+    "attempt": { "type": "integer", "minimum": 1 },
+    "duration_s": { "type": "number", "minimum": 0 },
+    "timed_out": { "type": "boolean" },
+    "reviewed_at": { "type": "string", "format": "date-time" }
+  },
+  "additionalProperties": false,
+
+  "$defs": {
+    "blocker": {
+      "type": "object",
+      "required": ["id", "file", "summary", "severity"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "file": { "type": ["string", "null"], "description": "Repository-relative path, or null for a finding about the build as a whole." },
+        "line": { "type": "integer", "minimum": 1 },
+        "summary": { "type": "string", "minLength": 1 },
+        "severity": { "enum": ["blocker", "critical", "major", "minor"] }
+      },
+      "additionalProperties": false
+    }
+  }
+}

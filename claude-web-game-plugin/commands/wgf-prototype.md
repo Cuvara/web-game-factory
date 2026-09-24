@@ -1,5 +1,5 @@
 ---
-description: Build the prototype to a fun-testable standard and write the prototype report.
+description: Build the prototype to a fun-testable standard, have each development commit reviewed (review-report), and write the prototype report.
 ---
 
 # /wgf-prototype
@@ -8,7 +8,7 @@ description: Build the prototype to a fun-testable standard and write the protot
 **Role** `gameplay`
 
 
-Build the prototype to a fun-testable standard and write the prototype report.
+Build the prototype to a fun-testable standard, have each development commit reviewed (review-report), and write the prototype report.
 
 ## Procedure
 

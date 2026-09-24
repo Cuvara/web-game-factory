@@ -7,8 +7,9 @@ pnpm and no git (docs/workflow-module-contract.md §11).
 import json
 import os
 import re
-import subprocess
 import tempfile
+
+from wgflib import procs
 
 __all__ = ["CommandRunner", "CommandResult", "TEST_FILE", "TEST_DIR", "SCENARIOS", "run_tests",
            "git_state"]
@@ -29,16 +30,22 @@ class CommandResult:
 
 
 class CommandRunner:
-    """Runs a command. `None` when the executable does not exist."""
+    """Runs a command as an owned process tree (wgflib.procs), so a vitest worker pool or a
+    dev server it started never outlives it. `None` when the executable does not exist."""
+
+    def __init__(self, log_path=None):
+        self.log_path = log_path
 
     def run(self, argv, cwd, timeout):
-        try:
-            done = subprocess.run(argv, cwd=cwd, capture_output=True, text=True,
-                                  timeout=timeout, check=False)
-        except FileNotFoundError:
-            return None
-        except subprocess.TimeoutExpired as exc:
-            return CommandResult(124, exc.stdout or "", f"timed out after {timeout}s")
+        done = procs.run(argv, cwd=cwd, timeout=timeout, log_path=self.log_path)
+        if done.error is not None:
+            if isinstance(done.exception, FileNotFoundError):
+                return None
+            return CommandResult(127, "", done.error)
+        if done.timed_out:
+            return CommandResult(124, done.stdout or "", f"timed out after {timeout}s")
+        if done.cancelled or done.idle_timed_out:
+            return CommandResult(130, done.stdout or "", f"stopped: {done.status}")
         return CommandResult(done.returncode, done.stdout, done.stderr)
 
 

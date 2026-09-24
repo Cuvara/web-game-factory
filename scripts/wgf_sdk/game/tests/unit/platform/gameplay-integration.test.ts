@@ -58,8 +58,13 @@ function portal(game: Game, overrides: Record<string, unknown> = {}): Portal {
   const listeners = new Map<string, Set<() => void>>();
   let active = false;
   const platform = new GenericWebPlatform({ namespace: "test" });
+  const capabilities = { ...platform.capabilities, ads: ["interstitial", "rewarded"] };
   const members: Record<string, unknown> = {
-    capabilities: { ...platform.capabilities, ads: ["interstitial", "rewarded"] },
+    capabilities,
+    // A portal with ads says so when asked. (generic-web itself answers "disabled" for a
+    // listed kind: it has no SDK to ask, so this fake has to.)
+    adAvailability: (kind: string) =>
+      capabilities.ads.includes(kind) ? "available" : "unsupported",
     gameplayStart: () => {
       if (active) return;
       active = true;

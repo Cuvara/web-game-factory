@@ -426,17 +426,26 @@ class BuildAndCode(VerificationCase):
         _, report, _ = self.verify(runner=FakeRunner({"pnpm build": build}))
         self.assertEqual(self.check(report, "build.bundle")["status"], "FAIL")
 
-    def test_a_dirty_tree_and_a_stale_upstream_commit_are_warnings(self):
+    def test_a_dirty_tree_is_a_warning_and_a_stale_upstream_commit_blocks(self):
         prototype = read_json(os.path.join(MOCK_FIXTURES, "prototype-report.json"))
         runner = FakeRunner({"status --porcelain": lambda c, cwd, env: ok(" M src/main.ts\n")})
         result, report, _ = self.verify(
             inputs=self.inputs(**{"prototype-report": prototype}), runner=runner)
-        self.assertEqual(result.outcome, StepOutcome.SUCCESS)
+        # Evidence about another commit cannot vouch for this one.
+        self.assertEqual(result.outcome, StepOutcome.BLOCKED)
         self.assertEqual(self.check(report, "source.clean-tree")["status"], "WARNING")
         self.assertTrue(report["commit"]["dirty"])
         upstream = self.check(report, "source.upstream-commits")
-        self.assertEqual(upstream["status"], "WARNING")
+        self.assertEqual(upstream["status"], "BLOCKED")
+        self.assertTrue(upstream["required"])
         self.assertIn("prototype-report", upstream["message"])
+
+    def test_a_dirty_tree_alone_is_a_warning(self):
+        runner = FakeRunner({"status --porcelain": lambda c, cwd, env: ok(" M src/main.ts\n")})
+        result, report, _ = self.verify(runner=runner)
+        self.assertEqual(result.outcome, StepOutcome.SUCCESS)
+        self.assertEqual(self.check(report, "source.clean-tree")["status"], "WARNING")
+        self.assertTrue(report["commit"]["dirty"])
 
     def test_a_missing_required_script_blocks(self):
         package = read_json(os.path.join(self.repo, "package.json"))
@@ -772,12 +781,19 @@ FIXTURES = %r
 SEEN = []
 
 
-def artifact(artifact_type, body, n):
+def pins(inputs):
+    # The engine checks lineage: an output pins exactly the versions its step consumed.
+    return [{"artifact_id": inputs.load(t)["provenance"]["artifact_id"], "artifact_type": t,
+             "content_hash": ref.content_hash} for t, ref in sorted(inputs.refs.items())]
+
+
+def artifact(artifact_type, body, n, inputs=None):
     content = {"provenance": {
         "artifact_id": "wgf:%%s:fixture-game:20260901-%%02d" %% (artifact_type, n),
         "artifact_type": artifact_type, "schema_version": "1.0.0",
         "produced_by": {"role": "gameplay", "actor": "automation"},
-        "produced_at": "2026-09-01T00:00:00Z", "inputs": [], "content_hash": "",
+        "produced_at": "2026-09-01T00:00:00Z",
+        "inputs": pins(inputs) if inputs is not None else [], "content_hash": "",
         "status": "draft"}}
     content.update(copy.deepcopy(body))
     content["provenance"]["content_hash"] = content_hash(content)
@@ -797,8 +813,8 @@ class Develop(WorkflowStep):
         SEEN.append(None if qa is None else [d["id"] for d in qa["blocking_defects"]])
         sdk = load("sdk-report.json")
         return StepResult.success([artifact("prototype-report", load("prototype-report.json"),
-                                            context.execution),
-                                   artifact("sdk-report", sdk, context.execution)])
+                                            context.execution, inputs),
+                                   artifact("sdk-report", sdk, context.execution, inputs)])
 
 
 class Release(WorkflowStep):
@@ -807,7 +823,7 @@ class Release(WorkflowStep):
     def execute(self, inputs, context):
         assert inputs.load("qa-report")["verdict"] == "pass"
         return StepResult.success([artifact("release-manifest", load("release-manifest.json"),
-                                            1)])
+                                            1, inputs)])
 
 
 def register(registry):
@@ -828,6 +844,11 @@ class ThroughTheEngine(VerificationCase):
         shutil.copytree(MOCK_FIXTURES, fixtures)
         with open(os.path.join(fixtures, "sdk-report.json"), "w") as handle:
             json.dump(mock_sdk, handle)
+        # Upstream reports name the commit the fake checkout is at: stale ones block.
+        prototype = read_json(os.path.join(fixtures, "prototype-report.json"))
+        prototype["build_ref"]["commit_sha"] = COMMIT
+        with open(os.path.join(fixtures, "prototype-report.json"), "w") as handle:
+            json.dump(prototype, handle)
         with open(os.path.join(self.modules, "wgf_verification_loop_fakes.py"), "w") as handle:
             handle.write(DEVELOP_MODULE % fixtures)
         sys.path.insert(0, self.modules)

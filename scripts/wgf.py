@@ -17,6 +17,8 @@ Every command that does work is a slice of one workflow definition, executed by 
     wgf logs [run-id] [--json]           its events, which are also its structured log
     wgf runs                             every run in the store
     wgf pause <run-id> | cancel <run-id>
+    wgf test-core [--only CATEGORY] [--json]
+                                         the Core Acceptance Suite, by category
 
 The run commands are generated from the default workflow's step ids and group names, so a
 step added to core/workflows/new-game.workflow.yaml is a command without touching this file.
@@ -29,9 +31,12 @@ Run from the web-game-factory repository root, as `python scripts/wgf.py ...` or
 """
 
 import argparse
+import importlib
+import io
 import json
 import os
 import sys
+import unittest
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
@@ -66,7 +71,49 @@ def _symbols():
 # -- rendering ------------------------------------------------------------------------------
 
 
-def render_status(state, definition):
+def _duration(seconds):
+    if seconds is None:
+        return "-"
+    seconds = max(0, int(round(seconds)))
+    if seconds < 60:
+        return f"{seconds}s"
+    minutes, seconds = divmod(seconds, 60)
+    if minutes < 60:
+        return f"{minutes}m{seconds:02d}s"
+    hours, minutes = divmod(minutes, 60)
+    return f"{hours}h{minutes:02d}m"
+
+
+def render_liveness(live):
+    """The current (or last) step and whether anything is actually happening."""
+    if not live or not live.get("step"):
+        return [f"Liveness: {live['liveness']}"] if live else []
+    step = (f"Step:     {live['step']}  attempt {live.get('attempt') or 0}, "
+            f"visit {live.get('visit') or 0}  {live.get('status') or ''}").rstrip()
+    lines = [step]
+    detail = []
+    if live.get("driver_pid"):
+        detail.append(f"driver pid {live['driver_pid']}")
+    if live.get("pid"):
+        detail.append(f"child pid {live['pid']}")
+    if live.get("last_event"):
+        detail.append(f"last event {live['last_event']}")
+    lines.append(f"Liveness: {live['liveness']}" + (f"  ({'; '.join(detail)})" if detail else ""))
+    lines.append(f"Started:  {live.get('started_at') or '-'}   "
+                 f"elapsed {_duration(live.get('elapsed_seconds'))}")
+    lines.append(f"Activity: {live.get('last_activity_at') or '-'}   "
+                 f"{_duration(live.get('idle_seconds'))} ago")
+    if live["liveness"] == "hung":
+        lines.append(f"          nothing for longer than {live['hung_after_seconds']}s "
+                     f"(factory.execution.hung_after_seconds); the step may be stuck. "
+                     f"`wgf cancel {live['run_id']}` terminates it.")
+    elif live["liveness"] == "stale":
+        lines.append("          RUNNING on disk but no live process holds the run: its driver "
+                     "crashed. Resume it to continue from this step.")
+    return lines
+
+
+def render_status(state, definition, live=None):
     marks = _symbols()
     lines = [
         f"Workflow: {state.workflow_id} (v{state.workflow_version})",
@@ -106,14 +153,19 @@ def render_status(state, definition):
     if state.exit and state.exit.get("next") not in (None, "$end"):
         lines.append(f"Next:   {state.exit['next']} (outside this run's scope; "
                      f"wgf {state.exit['next']} --run {state.run_id})")
-    hint = _resume_hint(state)
+    if live is not None:
+        lines.append("")
+        lines.extend(render_liveness(live))
+    hint = _resume_hint(state, live)
     if hint:
         lines.append(hint)
     return "\n".join(lines)
 
 
-def _resume_hint(state):
+def _resume_hint(state, live=None):
     command = f"wgf {state.workflow_id} --resume {state.run_id}"
+    if live is not None and live.get("liveness") == "stale":
+        return f"Resume: {command}   (its driver died)"
     if state.status == RunStatus.WAITING:
         step = state.steps.get(state.cursor)
         if step and step.status == StepStatus.WAITING:
@@ -269,6 +321,12 @@ def build_parser(commands):
     _common(runs)
     runs.set_defaults(handler=cmd_runs)
 
+    core = sub.add_parser("test-core", help="run the Core Acceptance Suite")
+    core.add_argument("--only", action="append", metavar="CATEGORY",
+                      help="run only this category (repeatable), e.g. WORKFLOW")
+    core.add_argument("--json", action="store_true")
+    core.set_defaults(handler=cmd_test_core)
+
     for name, handler in (("pause", cmd_pause), ("cancel", cmd_cancel)):
         control = sub.add_parser(name, help=f"{name} a run")
         _common(control)
@@ -317,33 +375,145 @@ def cmd_status(args):
     if state is None:
         print(f"no runs in {api.store.workflows}")
         return EXIT_USAGE
+    live = api.liveness(state)
     if args.json:
-        print(json.dumps(state.to_dict(), indent=2, ensure_ascii=False))
+        # The persisted state, plus the derived liveness under a key RunState ignores.
+        print(json.dumps(dict(state.to_dict(), liveness=live), indent=2, ensure_ascii=False))
     else:
-        print(render_status(state, definition))
+        print(render_status(state, definition, live))
     return EXIT_OK
+
+
+def _warn(problems):
+    for problem in problems:
+        text = problem[1] if isinstance(problem, tuple) else problem
+        print(f"wgf: warning: {text}", file=sys.stderr)
 
 
 def cmd_logs(args):
     api = _api(args)
-    state, events = api.events(args.run)
+    problems = []
+    state, events = api.events(args.run, problems)
     if state is None:
         print(f"no runs in {api.store.workflows}")
         return EXIT_USAGE
     if args.step:
         events = [e for e in events if e.get("step_id") == args.step]
     print(render_logs(events, args.json))
+    _warn(problems)
     return EXIT_OK
 
 
 def cmd_runs(args):
-    runs = _api(args).runs()
+    problems = []
+    runs = _api(args).runs(problems)
     for state in runs:
         print(f"{state.run_id:<40} {state.status:<10} {state.workflow_id:<12} "
               f"{state.created_at}  {state.cursor or ''}")
-    if not runs:
+    for run_id, _message in problems:
+        print(f"{run_id:<40} {'UNREADABLE':<10}")
+    if not runs and not problems:
         print("no runs")
+    _warn(problems)
     return EXIT_OK
+
+
+# -- the Core Acceptance Suite ----------------------------------------------------------------
+
+TESTS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "tests")
+PASS, FAIL, SKIP, MISSING = "PASS", "FAIL", "SKIP", "MISSING"
+
+
+def load_core_suite(tests_dir=TESTS_DIR):
+    """The category -> [test module] mapping, from tests/core_suite.py (data only)."""
+    if tests_dir not in sys.path:
+        sys.path.insert(0, tests_dir)
+    module = importlib.import_module("core_suite")
+    return {name: list(modules) for name, modules in module.SUITE.items()}
+
+
+def run_core_suite(suite, tests_dir=TESTS_DIR, only=None, stream=None):
+    """Run each category's test modules. Returns one row per category:
+
+        {"category", "result", "tests", "passed", "failed", "errors", "skipped",
+         "missing": [module...], "details": [text...]}
+
+    MISSING - a named module does not exist (an incomplete suite never looks green);
+    FAIL    - any failure or error, including a module that does not import;
+    SKIP    - zero tests ran, or every test that ran was skipped;
+    PASS    - otherwise.
+    """
+    wanted = [name.upper() for name in only] if only else None
+    unknown = [name for name in (wanted or []) if name not in suite]
+    if unknown:
+        raise ValueError(f"unknown categories {', '.join(unknown)}; known: "
+                         f"{', '.join(suite)}")
+    if tests_dir not in sys.path:
+        sys.path.insert(0, tests_dir)
+    rows = []
+    for category, modules in suite.items():
+        if wanted and category not in wanted:
+            continue
+        row = {"category": category, "result": None, "tests": 0, "passed": 0, "failed": 0,
+               "errors": 0, "skipped": 0, "missing": [], "details": []}
+        loader = unittest.TestLoader()
+        tests = unittest.TestSuite()
+        for name in modules:
+            if not os.path.exists(os.path.join(tests_dir, f"{name}.py")):
+                row["missing"].append(name)
+                continue
+            tests.addTests(loader.loadTestsFromName(name))
+        buffer = io.StringIO()
+        result = unittest.TextTestRunner(stream=stream or buffer, verbosity=0).run(tests)
+        row["tests"] = result.testsRun
+        row["failed"] = len(result.failures) + len(result.unexpectedSuccesses)
+        row["errors"] = len(result.errors)
+        row["skipped"] = len(result.skipped)
+        row["passed"] = max(0, result.testsRun - row["failed"] - row["errors"]
+                            - row["skipped"] - len(result.expectedFailures))
+        row["details"] = [f"{test.id()}\n{text}" for test, text in
+                          result.failures + result.errors]
+        if row["missing"]:
+            row["result"] = MISSING
+        elif row["failed"] or row["errors"]:
+            row["result"] = FAIL
+        elif row["tests"] == 0 or row["skipped"] >= row["tests"]:
+            row["result"] = SKIP
+        else:
+            row["result"] = PASS
+        rows.append(row)
+    return rows
+
+
+def render_core_table(rows):
+    width = max([len(r["category"]) for r in rows] + [8])
+    lines = [f"{'CATEGORY':<{width}}  RESULT   TESTS  PASS  FAIL  ERROR  SKIP",
+             "-" * (width + 42)]
+    for r in rows:
+        line = (f"{r['category']:<{width}}  {r['result']:<7} {r['tests']:>6} {r['passed']:>5}"
+                f" {r['failed']:>5} {r['errors']:>6} {r['skipped']:>5}")
+        if r["missing"]:
+            line += f"  missing: {', '.join(r['missing'])}"
+        lines.append(line)
+    bad = [r for r in rows if r["result"] in (FAIL, MISSING)]
+    lines.append("")
+    lines.append("Core Acceptance Suite: " + ("FAILED" if bad else "OK")
+                 + f" ({sum(r['tests'] for r in rows)} tests)")
+    return "\n".join(lines)
+
+
+def cmd_test_core(args):
+    suite = load_core_suite()
+    rows = run_core_suite(suite, only=args.only)
+    if args.json:
+        print(json.dumps({"ok": not any(r["result"] in (FAIL, MISSING) for r in rows),
+                          "categories": rows}, indent=2, ensure_ascii=False))
+    else:
+        print(render_core_table(rows))
+        for row in rows:
+            for detail in row["details"]:
+                print(f"\n[{row['category']}] {detail}")
+    return EXIT_FAILED if any(r["result"] in (FAIL, MISSING) for r in rows) else EXIT_OK
 
 
 def cmd_pause(args):
@@ -372,7 +542,7 @@ def _commands(argv):
     return api.definition().commands()
 
 
-def main(argv=None):
+def main(argv=None, cli=False):
     argv = list(sys.argv[1:] if argv is None else argv)
     try:
         commands = _commands(argv)
@@ -381,6 +551,12 @@ def main(argv=None):
         return EXIT_USAGE
     parser = build_parser(commands)
     args = parser.parse_args(argv)
+    if cli and getattr(args, "handler", None) is not cmd_test_core:
+        # Orphans reparent to wgf, not init: a daemon that detaches and clears its
+        # environment is still ended with its step. Not under test-core, whose tests
+        # start children of their own in this process.
+        from wgflib import procs as _procs
+        _procs.install_subreaper()
     if not getattr(args, "handler", None):
         parser.print_help()
         return EXIT_USAGE
@@ -394,4 +570,9 @@ def main(argv=None):
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    # SIGTERM/SIGHUP unwind through SystemExit, so every child tree a step owns is
+    # terminated instead of being orphaned (wgflib/procs.py). The run itself is left
+    # resumable: `wgf status` reports it stale and `wgf resume` continues it.
+    from wgflib import procs as _procs
+    _procs.install_signal_cleanup()
+    sys.exit(main(cli=True))

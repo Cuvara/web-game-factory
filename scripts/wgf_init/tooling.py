@@ -8,14 +8,33 @@ both with fakes, because a test that creates a repository is not a test.
 
 Every call either returns data or raises `ToolError`. `ToolError.retryable` separates a
 flaky network from a refusal that will recur.
+
+Every child process goes through `wgflib.procs.run`, so a `gh` or `git` that hangs or leaves
+a helper behind is terminated with its whole tree when the step's timeout or cancellation
+says so.
+
+`Git` also covers what init does inside the local project: the keyed commit that writes
+game.config.yaml, and - for `factory.init.source: local` - making the project from a local
+template checkout with no network at all.
 """
 
 import json
 import os
-import subprocess
+import re
+import shutil
+import tarfile
+import tempfile
 import time
 
-__all__ = ["Repository", "ToolError", "GitHub", "Git", "GhCli", "GitCli", "run_command"]
+from wgflib import procs
+
+__all__ = ["Repository", "ToolError", "GitHub", "Git", "GhCli", "GitCli", "run_command",
+           "KEY_TRAILER", "PLAN_TRAILER", "TEMPLATE_TRAILER"]
+
+# Commit trailers init writes, and looks for on re-execution.
+KEY_TRAILER = "Wgf-Init-Key"
+PLAN_TRAILER = "Wgf-Tech-Plan"
+TEMPLATE_TRAILER = "Wgf-Template"
 
 
 class ToolError(RuntimeError):
@@ -89,20 +108,60 @@ class Git:
     def pull(self, directory, branch):
         raise NotImplementedError
 
+    # -- the scaffolding commit ---------------------------------------------------------
+
+    def head(self, directory):
+        """The commit HEAD points at, or None."""
+        raise NotImplementedError
+
+    def changed(self, directory, paths):
+        """Whether any of `paths` differs from HEAD (modified, added, deleted or untracked)."""
+        raise NotImplementedError
+
+    def commit(self, directory, paths, message, author=None):
+        """Stage exactly `paths` (additions, changes and deletions) and commit them.
+        Returns the new commit. `author` is {"name", "email"} or None for git's own."""
+        raise NotImplementedError
+
+    def find_commit(self, directory, trailers):
+        """The newest commit reachable from HEAD whose message carries every
+        `{trailer: value}` given, or None."""
+        raise NotImplementedError
+
+    # -- the local source ---------------------------------------------------------------
+
+    def resolve(self, directory, ref):
+        """The full commit id `ref` names in the repository at `directory`."""
+        raise NotImplementedError
+
+    def get_config(self, directory, key):
+        raise NotImplementedError
+
+    def create_from_local(self, template, commit, destination, message, config, author=None):
+        """Make `destination` a new, independent repository holding the template's tree at
+        `commit` as its single initial commit - what GitHub's "use this template" produces -
+        with the local `git config` values given. Atomic: nothing appears at `destination`
+        unless it all worked."""
+        raise NotImplementedError
+
 
 def run_command(argv, cwd=None, timeout=300):
-    """Run a command and return its stdout; raise ToolError on failure. No shell."""
-    try:
-        completed = subprocess.run(argv, cwd=cwd, capture_output=True, text=True,
-                                   timeout=timeout, check=False)
-    except FileNotFoundError:
-        raise ToolError(f"{argv[0]} is not installed or not on PATH", retryable=False)
-    except subprocess.TimeoutExpired:
+    """Run a command and return its stdout; raise ToolError on failure. No shell. The child
+    runs as an owned process tree (wgflib.procs): a timeout takes its descendants too."""
+    # Short poll: init runs dozens of quick git commands, and procs polls for exit.
+    result = procs.run(argv, cwd=cwd, timeout=timeout, poll_seconds=0.02)
+    if result.error is not None:
+        if "FileNotFoundError" in result.error:
+            raise ToolError(f"{argv[0]} is not installed or not on PATH", retryable=False)
+        raise ToolError(f"{' '.join(argv[:3])} could not start: {result.error}")
+    if result.timed_out:
         raise ToolError(f"{' '.join(argv[:3])} timed out after {timeout}s")
-    if completed.returncode != 0:
-        detail = (completed.stderr or completed.stdout or "").strip()
+    if result.cancelled:
+        raise ToolError(f"{' '.join(argv[:3])} was cancelled")
+    if result.returncode != 0:
+        detail = (result.stderr or result.stdout or "").strip()
         raise ToolError(f"{' '.join(argv[:3])} failed: {detail}")
-    return completed.stdout
+    return result.stdout
 
 
 def parse_remote(url):
@@ -204,3 +263,86 @@ class GitCli(Git):
 
     def pull(self, directory, branch):
         self._run(["git", "-C", directory, "pull", "--ff-only", "origin", branch])
+
+    def _git(self, directory, *args):
+        return self._run(["git", "-C", directory, *args])
+
+    @staticmethod
+    def _identity(author):
+        identity = []
+        if author and author.get("name"):
+            identity += ["-c", f"user.name={author['name']}"]
+        if author and author.get("email"):
+            identity += ["-c", f"user.email={author['email']}"]
+        return identity
+
+    def head(self, directory):
+        try:
+            return self._git(directory, "rev-parse", "--verify", "--quiet", "HEAD").strip() or None
+        except ToolError:
+            return None
+
+    def changed(self, directory, paths):
+        out = self._git(directory, "status", "--porcelain", "--untracked-files=all", "--",
+                        *paths)
+        return bool(out.strip())
+
+    def commit(self, directory, paths, message, author=None):
+        self._git(directory, "add", "--all", "--", *paths)
+        self._run(["git", *self._identity(author), "-C", directory, "commit", "--no-verify",
+                   "--quiet", "-m", message, "--", *paths])
+        return self.head(directory)
+
+    def find_commit(self, directory, trailers):
+        if not self.head(directory):
+            return None
+        out = self._git(directory, "log", "--format=%H%x00%B%x1e", "HEAD")
+        for record in out.split("\x1e"):
+            sha, _, body = record.strip("\n").partition("\x00")
+            if not sha:
+                continue
+            found = dict(re.findall(r"^([A-Za-z-]+): (.+?)\s*$", body, re.M))
+            if all(found.get(key) == value for key, value in trailers.items()):
+                return sha.strip()
+        return None
+
+    def resolve(self, directory, ref):
+        try:
+            return self._git(directory, "rev-parse", "--verify", "--quiet",
+                             f"{ref}^{{commit}}").strip()
+        except ToolError as exc:
+            raise ToolError(f"{directory} has no commit {ref!r}: {exc}", retryable=False)
+
+    def get_config(self, directory, key):
+        try:
+            return self._git(directory, "config", "--local", "--get", key).strip() or None
+        except ToolError:
+            return None
+
+    def create_from_local(self, template, commit, destination, message, config, author=None):
+        parent = os.path.dirname(os.path.abspath(destination))
+        os.makedirs(parent, exist_ok=True)
+        staging = tempfile.mkdtemp(prefix=f".{os.path.basename(destination)}.wgf-", dir=parent)
+        try:
+            archive = os.path.join(staging, "template.tar")
+            # git archive, not clone: the project shares no objects, remotes or history
+            # with the template, exactly like a repository GitHub generates from one.
+            self._git(template, "archive", "--format=tar", "-o", archive, commit)
+            tree = os.path.join(staging, "tree")
+            os.makedirs(tree)
+            with tarfile.open(archive) as handle:
+                if hasattr(tarfile, "data_filter"):
+                    handle.extractall(tree, filter="data")
+                else:  # pragma: no cover - Python < 3.12 without the backport
+                    handle.extractall(tree)
+            os.remove(archive)
+            self._run(["git", "init", "--quiet", "-b", "main", tree])
+            for key, value in config.items():
+                self._git(tree, "config", "--local", key, value)
+            self._git(tree, "add", "--all")
+            self._run(["git", *self._identity(author), "-C", tree, "commit", "--no-verify",
+                       "--quiet", "-m", message])
+            os.rename(tree, destination)
+        finally:
+            shutil.rmtree(staging, ignore_errors=True)
+        return self.head(destination)

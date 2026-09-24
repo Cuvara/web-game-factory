@@ -23,11 +23,11 @@ DEFAULT_TIMEOUTS = {"install": 900, "build": 600, "script": 600, "browser": 900,
 DEFAULT_SESSION_FILE = "build/verification/gameplay-session.json"
 
 
-def locate_checkout(params, config, scaffold, environ=None):
+def locate_checkout(params, config, scaffold, environ=None, section="verification"):
     """(path or None, evidence). Where the game repository under test is checked out.
 
     In order: the step's `with: repo_dir`, the WGF_GAME_REPO environment variable, then
-    `verification.checkouts` in factory.yaml joined with the scaffold-record's repository
+    `<section>.checkouts` in factory.yaml joined with the scaffold-record's repository
     name. The module never clones: fetching code is not verification, and a checkout at an
     unknown commit would make the report's commit meaningless.
     """
@@ -38,11 +38,14 @@ def locate_checkout(params, config, scaffold, environ=None):
         candidates.append(("step parameter repo_dir", params["repo_dir"]))
     if environ.get("WGF_GAME_REPO"):
         candidates.append(("WGF_GAME_REPO", environ["WGF_GAME_REPO"]))
-    checkouts = ((config or {}).get("verification") or {}).get("checkouts")
+    checkouts = ((config or {}).get(section) or {}).get("checkouts")
     name = ((scaffold or {}).get("repository") or {}).get("name")
     if checkouts and name:
-        candidates.append(("verification.checkouts + scaffold-record repository",
-                           os.path.join(checkouts, name)))
+        try:
+            candidates.append((f"{section}.checkouts + scaffold-record repository",
+                               paths.checkout_path(checkouts, name)))
+        except ValueError:
+            pass  # not one directory entry: never resolved to a path
 
     for source, candidate in candidates:
         path = os.path.abspath(os.path.expanduser(candidate))
@@ -52,7 +55,7 @@ def locate_checkout(params, config, scaffold, environ=None):
 
     if not candidates:
         summary = ("no checkout configured: set the step's repo_dir, WGF_GAME_REPO, or "
-                   "verification.checkouts in factory.yaml")
+                   f"{section}.checkouts in factory.yaml")
         if not name:
             summary += " (and no scaffold-record names the repository)"
     else:
@@ -94,6 +97,21 @@ class VerificationSession:
             with open(self.path(relative), encoding="utf-8") as handle:
                 return json.load(handle)
         except (OSError, ValueError):
+            return None
+
+    def remove(self, relative):
+        """Delete a generated file, so a later read cannot mistake an old one for new."""
+        try:
+            os.remove(self.path(relative))
+        except FileNotFoundError:
+            pass
+
+    def file_hash(self, relative):
+        """sha256 of a file's bytes, as provenance.schema.json#/$defs/hash, or None."""
+        try:
+            with open(self.path(relative), "rb") as handle:
+                return "sha256:" + hashlib.sha256(handle.read()).hexdigest()
+        except OSError:
             return None
 
     def read_yaml(self, relative):

@@ -8,9 +8,19 @@ The **methodology** for discovering, building, publishing and learning from web 
 machines, JSON Schemas, reference data, role charters, and two AI adapters. It is markdown,
 JSON and YAML. It contains no game source code and never will.
 
-Games live in their own repositories, created from `web-game-template`, which is checked out
-as a **sibling directory** (`../web-game-template`). Some checks here read across that
-boundary; they degrade to a skip when the sibling is absent.
+Games live in their own repositories, created from `web-game-template`
+(https://github.com/Cuvara/web-game-template) — the source of truth for template code, the
+example games (Tower Merge Rush, PixiJS; Neon Drift Arena, Three.js), platform adapters and
+engine support. The Factory never copies any of it. It pins **one template commit** in
+`workspace/config/template.lock.json`, and everything that reads template files (golden runs,
+SDK inspector tests, hashing/YAML differential tests) reads a checkout of exactly that commit
+through `scripts/wgflib/template.py` — cached under `~/.cache/wgf/templates/<sha>`, cloned
+from the sibling `../web-game-template` when it holds the commit, else from GitHub. A
+checkout offered at another commit (`WGF_TEMPLATE_DIR`) is refused, never used. Moving the
+pin is deliberate: run both golden runs with `WGF_TEMPLATE_COMMIT=<sha>`, then change the lock
+in the same commit. `python3 scripts/wgf-template.py` shows the pin and any sibling drift.
+`test_core_template` fails if any game/template source (`.ts`, `.js`, `.html`, …) is tracked
+here.
 
 ## Commands
 
@@ -36,7 +46,12 @@ bin/wgf research                          # real market scan: research-report + 
 bin/wgf new-game --mock                   # research -> ... -> release, placeholder steps
 bin/wgf verify --mock                     # one step; `plan` = strategy, checkpoint, design
 bin/wgf new-game --resume <run-id> [--decision approve]
-bin/wgf status [<run-id>]                 # also: logs, runs, pause, cancel
+bin/wgf status [<run-id>] [--json]        # liveness: running | hung | stale; also logs, runs, pause, cancel
+
+# The Core Acceptance Suite: WORKFLOW, AGENTS, CONTRACTS, VERIFY, RELEASE, 2D/3D GOLDEN,
+# PROCESS CLEANUP, SECURITY. MISSING or FAIL exits non-zero; SKIP is never PASS.
+bin/wgf test-core [--only WORKFLOW] [--json]
+WGF_GOLDEN=1 bin/wgf test-core            # also runs the real 2D + 3D golden pipelines
 
 # Create or reconcile the organization's WGF_* secrets and variables for the game pipelines.
 # Idempotent, and the living inventory of what the org is supposed to hold. Needs admin:org.
@@ -172,12 +187,24 @@ The engine must never name a step type or route — routing is data, and
 `test_engine_source_names_no_step_type` enforces it. A workflow step names the lifecycle
 stage it serves; it never moves an entity — that is still `wgf-state.py`, guards and gates.
 Real step modules register via `factory.steps.modules` in `workspace/config/factory.yaml`;
-`wgf_discovery` (research), `wgf_strategy`, `wgf_init`, `wgf_assets`, `wgf_develop`,
-`wgf_verification`, `wgf_design` and `wgf_sdk` exist so far; `release` has no module yet, so
-a whole run still needs `--mock`. Discovery reads evidence snapshots from
+every step type in `new-game` has one: `wgf_discovery` (research), `wgf_strategy`,
+`wgf_design`, `wgf_techplan`, `wgf_init`, `wgf_assets`, `wgf_develop`, `wgf_review`,
+`wgf_sdk`, `wgf_verification` and `wgf_release`. `--mock` still replaces all of them with
+placeholders for a run. Discovery reads evidence snapshots from
 `workspace/research/snapshots/`. A module owns its domain logic; the engine owns
 orchestration — a module never edits `scripts/wgflib/workflow/` to implement domain
 behaviour. See `docs/workflow-module-contract.md`.
+
+Every child process a step starts goes through `scripts/wgflib/procs.py`: its own session,
+an environment tag, whole-tree termination on exit, timeout, cancel or `wgf` being
+signalled, and heartbeat/lifecycle reported to the step (`STEP_PROGRESS`, and `pid` /
+`last_activity_at` on the step state). Never call `subprocess` directly from a step module —
+that is how a Vite server outlived its step. See `docs/agent-lifecycle.md`.
+
+**Core v1 is frozen** (`docs/core-v1.md`). Change one module at a time, and validate it
+against the module's tests, the contract tests, `wgf test-core` and both golden runs
+(`WGF_GOLDEN=1`) before merging. Changing `scripts/wgflib/` is a core change and needs a
+stated reason.
 
 ## Adapters are generated, not written
 
@@ -227,9 +254,10 @@ system:
   gate can require as a number. Do not work around this.
 - Observation and interpretation are always separate claims.
 
-The honest limitation: contracts are **advisory until someone runs ajv**. Nothing stops an
-agent emitting a malformed artifact; it gets caught downstream rather than at the point of
-error. Validate what you write.
+The engine validates every artifact a step produces, and every input before a step runs,
+against its full schema (`scripts/wgflib/jsonschema_lite.py`, differential-tested against
+ajv), including the provenance hash. An artifact written by hand into `workspace/` is not
+seen by the engine — validate what you write there with ajv.
 
 ## Key documentation
 
@@ -248,6 +276,15 @@ error. Validate what you write.
 - `docs/development-module.md` — the `develop` step: brief, developers, checks, keyed commits
 - `docs/platform-sdk-verification.md` — how platform SDK integration is verified, and where the
   platform profiles disagree with current portal documentation
+- `docs/review-module.md` — the `review` step: enforced read-only reviewer, verdict contract
+- `docs/techplan-module.md` — the `tech-plan` step: engine and platform pins, G3
+- `docs/release-module.md` — the `release` step: what it refuses, packaging checks
+- `docs/core-contracts.md` — every pipeline boundary, lineage rules, the validator
+- `docs/agent-lifecycle.md` — process ownership, heartbeat, liveness, cancellation
+- `docs/golden-runs.md` — the 2D and 3D regression runs
+- `docs/core-v1.md` — what Core v1 guarantees, and how module work is validated against it
+- `docs/claude-capabilities.md` — agent-host capability audit: what the Factory enforces vs
+  the host's argv, verified headless developer/reviewer config, live evidence
 - `docs/development.md` — working on the Factory
 
 Documentation that contradicts a machine file is worse than none, because people believe it.

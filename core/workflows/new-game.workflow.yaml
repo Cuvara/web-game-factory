@@ -36,7 +36,7 @@ workflow:
     max_visits: 3
 
   groups:
-    plan: [strategy, strategy-review, design]
+    plan: [strategy, strategy-review, design, tech-plan, tech-plan-review]
 
   steps:
     - id: research
@@ -67,11 +67,30 @@ workflow:
       inputs: [title-strategy]
       outputs: [game-design]
 
+    - id: tech-plan
+      type: tech-plan
+      stage: title:tech-plan
+      description: Select the engine the design declares, pin the platforms, plan the build.
+      inputs: [game-design, title-strategy]
+      outputs: [tech-plan]
+
+    # G3 is reversible, like G2: an installation may auto-approve it (factory.checkpoints).
+    # A rejection is unrouted, so it blocks the run for a person to look at.
+    - id: tech-plan-review
+      type: human-checkpoint
+      stage: title:tech-plan
+      with:
+        gate: G3
+        prompt: Approve the design and technical plan before the repository is created?
+        choices: [approve, reject]
+
     - id: init
       type: init
       stage: title:scaffolding
       description: Create the game repository from the template. Idempotent per run.
-      inputs: [game-design]
+      # tech-plan carries repo_params.game_config: the engine, platforms and ad kinds init
+      # writes into game.config.yaml.
+      inputs: [game-design, tech-plan]
       outputs: [scaffold-record]
       retry: {max_attempts: 2}
 
@@ -87,11 +106,22 @@ workflow:
     - id: develop
       type: develop
       stage: title:prototype
-      description: Build the game. Re-entered with the failing qa-report when verification fails.
+      description: Build the game. Re-entered with the failing qa-report when verification fails, or with the review-report when review requests changes.
       # scaffold-record says which repository to build in; title-strategy carries the
       # questions the prototype must answer and the kill criteria its report must list.
-      inputs: [game-design, asset-manifest, scaffold-record, title-strategy, qa-report]
+      inputs: [game-design, asset-manifest, scaffold-record, title-strategy, qa-report, review-report]
       outputs: [prototype-report]
+
+    # An independent reviewer reads the commit develop made; it may not change it. Approve
+    # continues; request-changes (FAILED, route `request-changes`) goes back to develop with
+    # the blockers. Unrouted, a request for changes would fail the run, never continue.
+    - id: review
+      type: review
+      stage: title:prototype
+      inputs: [prototype-report, game-design, scaffold-record]
+      outputs: [review-report]
+      on:
+        request-changes: develop
 
     # Integrates the template's platform SDK into the game the design and init produced:
     # it reads the design's placements, and writes into the repository init created.
@@ -113,9 +143,12 @@ workflow:
       on:
         fail: develop
 
+    # Drafts a release only from the newest passing qa-report, whose commit the
+    # verification-report, sdk-report, prototype-report and the clean checkout all share.
+    # scaffold-record says which repository, and which template revision it came from.
     - id: release
       type: release
       stage: release:draft
-      inputs: [qa-report]
+      inputs: [qa-report, verification-report, sdk-report, prototype-report, scaffold-record, review-report]
       outputs: [release-manifest]
       next: $end

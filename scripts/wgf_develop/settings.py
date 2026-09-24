@@ -12,6 +12,7 @@ a workflow that wants, say, a narrower check list.
           kind: handoff            # handoff | command
           argv: []                 # command only; see developers.py for the placeholders
           timeout_seconds: 5400
+          idle_timeout_seconds: null   # command only: no output for this long ends it
         checks: [install, typecheck, lint, unit, build, smoke]
         check_timeout_seconds: 900
         commit: true
@@ -36,7 +37,8 @@ DEFAULTS = {
     # parent directory. Relative values resolve against the Factory root, not the cwd, so
     # the same config means the same place from wherever `wgf` is run.
     "checkouts": "..",
-    "developer": {"kind": "handoff", "argv": [], "timeout_seconds": 5400},
+    "developer": {"kind": "handoff", "argv": [], "timeout_seconds": 5400,
+                  "idle_timeout_seconds": None},
     "checks": ["install", "conformance", "typecheck", "lint", "unit", "build", "smoke"],
     "check_timeout_seconds": 900,
     "commit": True,
@@ -114,4 +116,7 @@ class Settings:
         root = self.data.get("checkouts") or ".."
         if not os.path.isabs(root):
             root = os.path.join(paths.ROOT, root)
-        return os.path.normpath(os.path.join(root, repository_name))
+        try:
+            return paths.checkout_path(root, repository_name)
+        except ValueError as exc:
+            raise SettingsError(str(exc))

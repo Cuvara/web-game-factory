@@ -29,14 +29,13 @@ import argparse
 import json
 import os
 import shutil
-import subprocess
 import sys
 import time
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.dirname(HERE))
 
-from wgflib import paths  # noqa: E402
+from wgflib import paths, procs  # noqa: E402
 from wgflib.workflow.config import load_config  # noqa: E402
 
 from .inspect_sdk import inspect_sdk  # noqa: E402
@@ -62,10 +61,15 @@ DESIGN = {
 
 
 def sh(argv, cwd, timeout=900, env=None, check=True):
+    """Run a command as an owned process tree (wgflib.procs): the preview servers and
+    browsers a Playwright run starts never outlive it, even on a timeout."""
     started = time.monotonic()
-    done = subprocess.run(argv, cwd=cwd, capture_output=True, text=True, timeout=timeout,
-                          env={**os.environ, **(env or {})})
+    done = procs.run(argv, cwd=cwd, timeout=timeout, env={**os.environ, **(env or {})})
     took = round(time.monotonic() - started, 1)
+    if done.error is not None:
+        raise RuntimeError(f"{' '.join(argv)} could not be started: {done.error}")
+    if done.timed_out:
+        raise RuntimeError(f"{' '.join(argv)} timed out after {took}s:\n{done.tail(60)}")
     if check and done.returncode != 0:
         raise RuntimeError(f"{' '.join(argv)} failed ({done.returncode}) in {took}s:\n"
                            f"{(done.stdout + done.stderr)[-3000:]}")
@@ -76,12 +80,14 @@ def prepare(template, ref, tree):
     if os.path.exists(tree):
         shutil.rmtree(tree)
     os.makedirs(tree)
-    archive = subprocess.run(["git", "-C", template, "archive", ref], capture_output=True,
-                             check=True)
-    subprocess.run(["tar", "-x", "-C", tree], input=archive.stdout, check=True)
+    archive = os.path.join(os.path.dirname(os.path.abspath(tree)), "template.tar")
+    sh(["git", "-C", template, "archive", "-o", archive, ref], None, timeout=300)
+    try:
+        sh(["tar", "-x", "-f", archive, "-C", tree], None, timeout=300)
+    finally:
+        os.remove(archive)
     sh(["pnpm", "install", "--frozen-lockfile", "--prefer-offline"], tree)
-    commit = subprocess.run(["git", "-C", template, "rev-parse", ref], capture_output=True,
-                            text=True, check=True).stdout.strip()
+    commit = sh(["git", "-C", template, "rev-parse", ref], None, timeout=60).stdout.strip()
     return commit
 
 
@@ -208,12 +214,18 @@ def playwright(tree, work, platform, engine, expect="boot"):
 
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    parser.add_argument("--template", default=paths.TEMPLATE)
-    parser.add_argument("--ref", default="origin/main")
+    parser.add_argument("--template", default=None)  # default: the pinned checkout
+    # The pinned revision (workspace/config/template.lock.json), never a floating branch.
+    parser.add_argument("--ref", default=None)
     parser.add_argument("--work", required=True)
     parser.add_argument("--platforms", default=",".join(PLATFORMS))
     parser.add_argument("--engines", default=",".join(ENGINES))
     args = parser.parse_args(argv)
+    from wgflib import template
+    if args.ref is None:
+        args.ref = template.expected_commit()
+    if args.template is None:
+        args.template = template.checkout(args.ref)
 
     work = os.path.abspath(args.work)
     tree = os.path.join(work, "tree")

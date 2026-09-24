@@ -110,12 +110,20 @@ class RetryPolicy:
         merged = RetryPolicy(self.max_attempts, self.backoff, self.delay_seconds,
                              self.max_delay_seconds)
         for key in self.__slots__:
-            if override and key in override:
+            if isinstance(override, dict) and key in override:
                 setattr(merged, key, override[key])
         return merged
 
     def to_dict(self):
         return {key: getattr(self, key) for key in self.__slots__}
+
+
+def _as_list(value):
+    return list(value) if isinstance(value, list) else []
+
+
+def _hashable_str(value):
+    return value if isinstance(value, str) else None
 
 
 class StepDefinition:
@@ -126,13 +134,14 @@ class StepDefinition:
         self.id = entry.get("id")
         self.type = entry.get("type")
         self.stage = entry.get("stage")
-        self.inputs = list(entry.get("inputs") or [])
-        self.outputs = list(entry.get("outputs") or [])
+        # Malformed shapes are reported by parse_definition; here they only must not raise.
+        self.inputs = _as_list(entry.get("inputs"))
+        self.outputs = _as_list(entry.get("outputs"))
         self.retry = retry
-        self.on = dict(entry.get("on") or {})
+        self.on = dict(entry.get("on")) if isinstance(entry.get("on"), dict) else {}
         self.next = entry.get("next")
         self.max_visits = max_visits
-        self.params = dict(entry.get("with") or {})
+        self.params = dict(entry.get("with")) if isinstance(entry.get("with"), dict) else {}
         self.description = entry.get("description")
 
     def __repr__(self):
@@ -224,12 +233,15 @@ def parse_definition(document, source="<memory>", base_retry=None, base_max_visi
         raise DefinitionError(source, ["top level must be a mapping with a `workflow:` key"])
 
     definition = WorkflowDefinition(data, source)
-    if not isinstance(definition.id, str) or not _ID.match(definition.id):
+    if not isinstance(definition.id, str) or not _ID.fullmatch(definition.id):
         problems.append(f"workflow.id {definition.id!r} must be kebab-case")
     if definition.version is None:
         problems.append("workflow.version is required")
 
     defaults = data.get("defaults") or {}
+    if not isinstance(defaults, dict):
+        problems.append("workflow.defaults must be a mapping")
+        defaults = {}
     _check_retry("defaults", defaults.get("retry"), problems)
     retry_default = (base_retry or RetryPolicy()).merged(defaults.get("retry"))
     visits_default = defaults.get("max_visits", base_max_visits)
@@ -247,28 +259,33 @@ def parse_definition(document, source="<memory>", base_retry=None, base_max_visi
             continue
         step_id = entry.get("id")
         where = f"step {step_id!r}"
-        if not isinstance(step_id, str) or not _ID.match(step_id):
+        if not isinstance(step_id, str) or not _ID.fullmatch(step_id):
             problems.append(f"{where}: id must be kebab-case")
         elif step_id in seen:
             problems.append(f"{where}: duplicate id")
-        seen.add(step_id)
-        if not isinstance(entry.get("type"), str) or not STEP_TYPE.match(entry.get("type") or ""):
+        if isinstance(step_id, str):
+            seen.add(step_id)
+        step_type = entry.get("type")
+        if not isinstance(step_type, str) or not STEP_TYPE.fullmatch(step_type):
             problems.append(f"{where}: type must be a kebab-case step type, optionally "
                             f"dot-namespaced (module.step)")
         stage = entry.get("stage")
-        if stage is not None and not (isinstance(stage, str) and _STAGE.match(stage)):
+        if stage is not None and not (isinstance(stage, str) and _STAGE.fullmatch(stage)):
             problems.append(f"{where}: stage must be qualified, <machine>:<state>")
         for key in ("inputs", "outputs"):
             value = entry.get(key)
             if value is not None and not (
-                isinstance(value, list) and all(isinstance(v, str) and _ID.match(v) for v in value)
+                isinstance(value, list)
+                and all(isinstance(v, str) and _ID.fullmatch(v) for v in value)
             ):
                 problems.append(f"{where}: {key} must be a list of artifact ids")
         _check_retry(where, entry.get("retry"), problems)
         if entry.get("on") is not None and not isinstance(entry.get("on"), dict):
             problems.append(f"{where}: on must be a mapping of route -> target")
+        if entry.get("with") is not None and not isinstance(entry.get("with"), dict):
+            problems.append(f"{where}: with must be a mapping")
         max_visits = entry.get("max_visits", visits_default)
-        if not isinstance(max_visits, int) or max_visits < 1:
+        if isinstance(max_visits, bool) or not isinstance(max_visits, int) or max_visits < 1:
             problems.append(f"{where}: max_visits must be an integer >= 1")
         definition.steps.append(
             StepDefinition(entry, retry_default.merged(entry.get("retry")), max_visits)
@@ -277,9 +294,9 @@ def parse_definition(document, source="<memory>", base_retry=None, base_max_visi
     targets_ok = set(seen) | set(SPECIAL_TARGETS)
     for step in definition.steps:
         for route, target in list(step.on.items()) + ([("next", step.next)] if step.next else []):
-            if not isinstance(route, str) or not _ID.match(route.replace("_", "-")):
+            if not isinstance(route, str) or not _ID.fullmatch(route.replace("_", "-")):
                 problems.append(f"step {step.id!r}: route {route!r} is not a valid label")
-            if target not in targets_ok:
+            if not isinstance(target, str) or target not in targets_ok:
                 problems.append(
                     f"step {step.id!r}: {route} -> {target!r} is not a step id, {END} or {FAIL}"
                 )
@@ -289,20 +306,20 @@ def parse_definition(document, source="<memory>", base_retry=None, base_max_visi
         problems.append("workflow.groups must be a mapping of name -> [step ids]")
         groups = {}
     for name, members in groups.items():
-        if not _ID.match(str(name)):
+        if not _ID.fullmatch(str(name)):
             problems.append(f"group {name!r}: name must be kebab-case")
-        if name in seen or name == definition.id:
+        if _hashable_str(name) in seen or name == definition.id:
             problems.append(f"group {name!r}: collides with a step or the workflow id")
         if not isinstance(members, list) or not members:
             problems.append(f"group {name!r}: must list at least one step")
             continue
         for member in members:
-            if member not in seen:
+            if _hashable_str(member) not in seen:
                 problems.append(f"group {name!r}: unknown step {member!r}")
         definition.groups[name] = list(members)
 
     start = data.get("start") or (definition.steps[0].id if definition.steps else None)
-    if start not in seen:
+    if _hashable_str(start) not in seen:
         problems.append(f"workflow.start {start!r} is not a step id")
     definition.start = start
 

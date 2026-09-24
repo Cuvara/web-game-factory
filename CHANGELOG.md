@@ -3,12 +3,124 @@
 Notable changes to the methodology. A change here can invalidate an artifact that already
 exists, so each entry says what it would take to bring one forward.
 
-Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). There is no release
-numbering: `core/` is the contract, and schemas carry their own versions.
+Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). The Factory is
+released as a whole (`v1.0.0` is Core v1, frozen); schemas still carry their own versions,
+and `core/` is still the contract.
 
 ## [Unreleased]
 
+## [1.0.0] - 2026-09-24
+
+Core v1, frozen (`docs/core-v1.md`). The executable workflow core - engine, persistence,
+contracts, process ownership, agent runtime, verify and release - protected by the Core
+Acceptance Suite (`bin/wgf test-core`) and two real golden pipelines, Tower Merge Rush
+(PixiJS) and Neon Drift Arena (Three.js). Validated against web-game-template
+`22482b4eb81084a89ff8ecdeea9130f06ebb8026` (`workspace/config/template.lock.json`).
+Everything below was added on the way there. Portal QA, publishing and real ad fill remain
+BLOCKED_EXTERNAL.
+
 ### Added
+
+- **Core v1 hardening (security pass).** `scaffold-record.repository.name` refuses `.` and
+  `..` (schema pattern; consumers also resolve checkouts through
+  `wgflib.paths.checkout_path`). `wgflib.procs.install_subreaper()` — installed by the `wgf`
+  CLI — reparents orphans to the Factory, so a descendant that detaches and clears its
+  environment is still ended with its step. *Migration:* a scaffold-record naming `.` or
+  `..` was never usable; none exist.
+
+- **Review module (`scripts/wgf_review`, step type `review`) and the `review-report`
+  artifact.** An independent reviewer reads every development commit and approves it or
+  requests changes with named blockers. The loop is data: `new-game` now runs
+  `develop → review → sdk`, with `review` `on: {request-changes: develop}`, and
+  `max_visits` bounds it. Request-changes is `FAILED` with a route and not retryable, so
+  a workflow that forgot to route it fails closed. The reviewer is read-only and that is
+  enforced: HEAD, refs, index, every tracked and untracked file, package/lock/test/config
+  paths, `.git/config`/hooks and the Factory's `core/workflows` + `workspace/config` are
+  fingerprinted before and after. Any change fails the review
+  (`reviewer-isolation-violation`) and is undone. Verdicts are validated strictly
+  (`malformed-verdict`). Timeouts and crashes are retryable and end the whole process tree
+  through `wgflib.procs`. `kind: none` records `skipped`, never an approval. `develop`
+  now takes `review-report` as an input: a request for changes to the commit it starts
+  from puts the blockers first in the next brief (`review_blockers`). It also gains an
+  optional `developer.idle_timeout_seconds`. Proved by
+  `scripts/tests/test_core_agents.py`, the AGENTS category of the Core Acceptance Suite,
+  with real subprocesses, real git and the real engine. See `docs/review-module.md`.
+  *Existing artifacts:* none change. Existing runs of `new-game` resume into a workflow
+  that has one more step. Installations must add `wgf_review` to `factory.steps.modules`
+  (done in the shipped config) or run it with `--mock`.
+
+- **Full schema validation inside the engine (`scripts/wgflib/jsonschema_lite.py`).** A
+  standard-library JSON Schema draft 2020-12 validator covering every keyword
+  `core/artifacts/**` uses (enumerated by the tests), with `$ref` across the shared schemas,
+  asserted formats, ECMA-faithful patterns and JSON-pointer errors in a fixed order. It raises
+  on any keyword it does not implement instead of ignoring it. `ArtifactContracts` now
+  validates the whole schema, not only top-level keys, rejects content JSON cannot represent
+  (NaN, non-string keys, Python-only values), and caps diagnostics at 20 while always keeping
+  the provenance type and hash problems. New `check_lineage(content, consumed)` checks that
+  `provenance.inputs` pins exactly the input versions a step consumed; the engine does not
+  call it yet. Deliberately stricter than ajv-formats@2 in one place: a `date-time` must
+  carry an RFC 3339 offset. **Bringing an artifact forward:** nothing to do if it already
+  passed ajv; every workspace instance, reference file and module output under the test
+  suite validates unchanged. See `docs/core-contracts.md`, which also audits every pipeline
+  boundary. No schema changed.
+
+- **Tech-plan module (`scripts/wgf_techplan`, step type `tech-plan`) and the G3 checkpoint.**
+  `new-game` now runs design → `tech-plan` → `tech-plan-review` (G3, reversible, same shape
+  as `strategy-review`) → init, as the title machine always said. The module is minimal and
+  deterministic: the engine is the one the design declares (dimension or asset kinds only as
+  a fallback for older designs), platforms are the strategy's pins resolved against
+  `core/reference/platforms/`, the bundle budget is the tightest required limit, ad kinds
+  come from the design's placements, and the dev plan's estimates are a stated heuristic
+  reported against the timebox, never fitted to it. See `docs/techplan-module.md`.
+  *Existing runs:* a run started before this change has no `tech-plan` step; resume it as
+  before, or start a new run to get one.
+- **Init writes `game.config.yaml` from the tech plan.** With a `tech-plan` in the run, init
+  rewrites `engine`, `platforms` and `monetization` in place (comments and every other field
+  kept, the result parsed back and checked), vendors the pinned profiles into
+  `config/platforms/`, and makes one local commit carrying the idempotency key as a trailer.
+  It never pushes. A 3D design now reaches the game repository as `engine.type: threejs`
+  instead of the template default.
+- **Init `factory.init.source: local`.** Makes the project from a local template checkout
+  (`template_path`, pinned by `template_ref`) with `git archive` into a new repository with no
+  remote: offline, for golden-regression runs. `github` stays the default and is unchanged.
+- **`scaffold-record` fields (additive, schema 1.1.0):** `template.source` (`github` |
+  `local`), `game_config.engine`, `game_config.commit_sha`, `game_config.pushed`. Existing
+  records remain valid; an absent `template.source` means `github`.
+
+- **Release module (`scripts/wgf_release`, step type `release`, stage `release:draft`).**
+  The `release` step is real: `wgf new-game` no longer needs `--mock` for it. It drafts a
+  release only when the newest qa-report in the run passed, pins the newest
+  verification-report, prototype-report and sdk-report by hash, and names the same commit as
+  each of them and as the checkout's HEAD; the checkout is clean and its bundle is the one
+  verification digested. It then runs the game repository's own `release:package` and
+  `release:manifest` (as owned process trees, `wgflib.procs`), checks every package's sha256
+  against its file, refuses archives with sourcemaps, test files, env/secret files or
+  secret-looking content or without `index.html` at their root, validates the manifest
+  against the schema, and returns it in state `draft`. It never pushes, tags, publishes or
+  contacts a portal. See `docs/release-module.md`. **Contract change:** the `release` step
+  now declares `verification-report`, `sdk-report`, `prototype-report` and
+  `scaffold-record` besides `qa-report`; `factory.release.checkouts` locates the game
+  repository.
+- **Evidence statuses.** `PASS`, `PASS_MOCK`, `BLOCKED_EXTERNAL`, `UNVERIFIED`, `FAIL`, in
+  the new shared primitive `core/artifacts/shared/evidence.schema.json`, alongside (not
+  instead of) the routing statuses. A check observed only against a stand-in — every SDK
+  feature exercised against a mocked portal SDK — is `PASS_MOCK`, and so is every
+  verification, qa-report, platform and release manifest resting on one; nothing promotes it
+  to `PASS`. A platform's own portal QA is `BLOCKED_EXTERNAL` unless its SDK evidence says it
+  was observed on the live portal (`NOT_APPLICABLE` for a profile whose review process is
+  `none`).
+
+  *Schema changes, all additive:* `verification-report` gains `evidence_status`,
+  `workflow`, `checks[].evidence_status`, `platform_readiness[].evidence_status` and
+  `portal_status`; `qa-report` gains `evidence_status`, `workflow` and
+  `platform_checks[].evidence_status` / `portal_status`; `release-manifest` gains
+  `workflow`, `template`, `evidence` (what the draft was cleared by: qa and verification
+  reports, commit lineage, bundle hash, per-platform evidence, package audit,
+  reproducibility) and `packages[].content_digest` / `files`. Reports the verify step writes
+  now declare `schema_version` 1.1.0; drafted manifests 1.1.0.
+
+  *Migration:* none for existing artifacts, which stay valid. A qa-report without
+  `evidence_status` (1.0.x) is refused by the release step: re-run verify.
 
 - **Assets module (`scripts/wgf_assets`, step type `assets`).** Turns a game design into an
   asset manifest and the files behind it: inspects `game_design.asset_requirements` (or
@@ -109,6 +221,54 @@ numbering: `core/` is the contract, and schemas carry their own versions.
 
 ### Changed
 
+- **Agent-host capability audit (docs/claude-capabilities.md).**
+  - `workspace/config/factory.yaml` `review.guarded_paths` is back to the module default,
+    `[core, scripts, bin, workspace/config]`. It had narrowed it to
+    `[core/workflows, workspace/config]`, which undid the widening from the security pass.
+    A test now pins it.
+  - The file gains commented, verified headless developer/reviewer argvs for the one host
+    audited. The active defaults (`handoff` / `none`) are unchanged.
+  - Adapter binding 1.1.0: `architect` produces `review-report` as the read-only reviewer
+    in `title:prototype`. `gameplay` and `release` consume what their steps read. Both
+    plugins are regenerated.
+  - `test_core_agents` gains `LiveDeveloperAndReviewer` (opt-in). `LiveReviewer` could not
+    pass against a competent live host and is fixed.
+  - No existing artifact is affected.
+
+- **Commit lineage: a real run can release.** The pipeline develop → review → sdk → verify →
+  release now names one chain of commits, and every step that reads it applies one rule
+  (docs/core-contracts.md §5, `scripts/wgf_verification/lineage.py`). The `sdk` step commits
+  its integration once, locally, keyed by the idempotency key in a `Wgf-Sdk-Key` trailer
+  (reusing develop's keyed-commit mechanism), and never pushes; it refuses (`BLOCKED`) a
+  checkout whose HEAD is not the prototype-report's commit or this run's sdk commits on it,
+  and uncommitted changes it did not make. `sdk-report.build_ref` gains `base_commit_sha` and
+  `sdk_commits` (**sdk-report 1.2.0, additive**). verify's `source.upstream-commits` and
+  release both require: sdk-report commit == verified commit == HEAD; prototype-report commit
+  == sdk base; `git log base..sdk` holds only this run's sdk commits — otherwise
+  `commit-lineage-mismatch`. release now takes `review-report` as an input (workflow
+  `new-game`, and `release:draft` added to its consumers): an approval must be of exactly the
+  prototype commit, a request for changes refuses (`review-not-approved`), and a skipped
+  review is recorded as `evidence.review.status: skipped` — never as approved
+  (**release-manifest 1.2.0, additive**: `evidence.review`). Placeholder commits are gone:
+  develop returns `BLOCKED` instead of `"0"*40`, sdk `BLOCKED` instead of `"unknown"`, and
+  release refuses either as `commit-unknown`. The engine now enforces artifact lineage: with
+  a validator, an output declaring `provenance.inputs` must pin exactly the versions its step
+  consumed (`contracts.check_lineage`, plus no pin of a declared input the step was not
+  given), else a non-retryable `FAILED`. Proved by `scripts/tests/test_core_lineage.py`.
+  *Existing artifacts:* sdk-reports and release-manifests from before still validate; an
+  sdk-report without `base_commit_sha` is read as having made no commit, so it must name the
+  prototype's commit. A prototype-report or sdk-report naming a placeholder commit can no
+  longer be released from: re-run develop (and sdk) so they commit.
+
+- **Verification no longer passes on stale or unowned evidence.** An sdk-report or
+  prototype-report naming another commit than the one under test is now a required,
+  `BLOCKED` `source.upstream-commits` check (was a non-blocking warning), and SDK checks
+  built on such an sdk-report are `BLOCKED`. Runtime facts and assertion results left by an
+  earlier run are deleted before the commands that write them, an assertion evaluator that
+  exits non-zero without a blocking breach is `FAIL`, a Playwright run that exits non-zero
+  with a green report is `FAIL`, a recorded scenario citing a screenshot that does not exist
+  is not counted, and the Playwright report, assertion results, runtime facts, recorded
+  session and screenshots are pinned by sha256 in the evidence.
 - **`sdk-report` 1.1.0**, additive: optional `sdk`, per-platform `adapter`, per-feature
   `required_by`/`hooks`/`fallback`, feature status `unsupported`, and an `integration` block
   (files, placements, game hooks, tests). Existing 1.0.0 reports still validate.

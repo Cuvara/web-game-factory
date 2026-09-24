@@ -1,0 +1,36 @@
+{
+  "id": "snap-yandex-sdk-advertising",
+  "source_uri": "https://yandex.com/dev/games/doc/en/sdk/sdk-adv",
+  "source_kind": "portal-docs",
+  "title": "Advertising | Yandex Games SDK",
+  "observed_at": "2026-09-23T00:00:00Z",
+  "retrieved_via": "web-fetch",
+  "platform": "yandex",
+  "observations": [
+    {
+      "statement": "The Yandex Games SDK provides interstitial, rewarded video and sticky banner ad units.",
+      "excerpt": "Interstitial ad ysdk.adv.showFullscreenAdv() Rewarded video ysdk.adv.showRewardedVideo() Sticky banner",
+      "subject": { "platform": "yandex", "dimension": "monetization_fit" },
+      "facts": { "ads.interstitial": true, "ads.rewarded": true, "ads.banner": true },
+      "tags": ["ad-formats"]
+    },
+    {
+      "statement": "Rewarded video ads on Yandex Games can be called as often as desired, while interstitial frequency is controlled by Yandex Games.",
+      "excerpt": "You can call rewarded video ads as often as you want. The frequency of calling an interstitial ad unit is controlled by Yandex Games .",
+      "subject": { "platform": "yandex", "dimension": "monetization_fit" },
+      "tags": ["ad-frequency"]
+    },
+    {
+      "statement": "Yandex recommends showing ads after a user action or on a timer if a level takes more than 5 minutes.",
+      "excerpt": "It is recommended to show ads after a user action or on a timer if completing a level takes more than 5 minutes.",
+      "subject": { "platform": "yandex", "dimension": "session_quality" },
+      "tags": ["ad-placement"]
+    },
+    {
+      "statement": "Yandex treats incidental clicks on ad units as ad fraud and advises not calling ads during gameplay.",
+      "excerpt": "The Yandex Advertising Network considers incidental user clicks on ad units as ad fraud and reduces revenue from in-game advertising.",
+      "subject": { "platform": "yandex", "dimension": "monetization_fit" },
+      "tags": ["ad-fraud"]
+    }
+  ]
+}

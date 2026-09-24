@@ -34,6 +34,8 @@ import shutil
 import subprocess
 import threading
 
+from wgflib import procs
+
 from .formats import sniff
 from .placeholders import BackendError, Generated, GeneratedFile, PlaceholderBackend
 
@@ -59,14 +61,24 @@ class McpClient:
         self._lines = queue.Queue()
         self._next_id = 0
 
+    def __enter__(self):
+        return self.start() if self._process is None else self
+
+    def __exit__(self, *exc):
+        self.close()
+        return False
+
     def start(self):
+        # An owned process (wgflib.procs): its own session, tagged, and taken down tree and
+        # all by close(), by an exception in start(), or at interpreter exit - an `npx`
+        # launcher's node server never outlives the client.
         try:
-            self._process = subprocess.Popen(
-                self.command, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
-                stderr=subprocess.DEVNULL, env=self.env, text=True, encoding="utf-8",
-                bufsize=1)
-        except OSError as exc:
+            self._owned = procs.spawn(
+                self.command, env=self.env, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                stderr=subprocess.DEVNULL, text=True, encoding="utf-8", bufsize=1)
+        except (OSError, ValueError) as exc:
             raise McpError(f"could not start {self.command[0]!r}: {exc}")
+        self._process = self._owned.process
         self._reader = threading.Thread(target=self._pump, daemon=True)
         self._reader.start()
         try:
@@ -76,15 +88,19 @@ class McpClient:
                 "clientInfo": {"name": "wgf-assets", "version": "1"},
             })
             self._send({"jsonrpc": "2.0", "method": "notifications/initialized"})
-        except McpError:
+        except BaseException:
             self.close()
             raise
         return self
 
     def _pump(self):
-        for line in self._process.stdout:
-            self._lines.put(line)
-        self._lines.put(None)
+        try:
+            for line in self._process.stdout:
+                self._lines.put(line)
+        except (OSError, ValueError):
+            pass
+        finally:
+            self._lines.put(None)
 
     def _send(self, message):
         try:
@@ -124,20 +140,20 @@ class McpClient:
         return result
 
     def close(self):
+        """Close the server's input, give it 5s to exit, then terminate its whole tree."""
         if self._process is None:
             return
+        process, self._process = self._process, None
         try:
-            self._process.stdin.close()
-        except OSError:
-            pass
-        try:
-            self._process.wait(timeout=5)
-        except subprocess.TimeoutExpired:
-            self._process.kill()
-            self._process.wait()
-        self._reader.join(timeout=5)
-        self._process.stdout.close()
-        self._process = None
+            self._owned.close(grace_seconds=5.0, close_streams=False)
+        finally:
+            reader = getattr(self, "_reader", None)
+            if reader is not None:
+                reader.join(timeout=5)
+            try:
+                process.stdout.close()
+            except (OSError, ValueError):
+                pass
 
 
 def _image_bytes(result):

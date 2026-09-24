@@ -7,8 +7,8 @@ to a remote: publishing a branch is the game repository's CI, behind its own gat
 """
 
 import os
-import subprocess
 
+from wgflib import procs
 from wgflib.yamllite import YamlError, load_file
 
 __all__ = ["Runner", "RunResult", "GitRepo", "GitError", "read_game_config", "ENGINES",
@@ -25,47 +25,51 @@ _OUTPUT_TAIL = 6000
 
 
 class RunResult:
-    __slots__ = ("argv", "returncode", "output", "timed_out", "duration_s")
+    __slots__ = ("argv", "returncode", "output", "timed_out", "duration_s", "idle_timed_out",
+                 "cancelled", "killed")
 
-    def __init__(self, argv, returncode, output, timed_out=False, duration_s=0.0):
+    def __init__(self, argv, returncode, output, timed_out=False, duration_s=0.0,
+                 idle_timed_out=False, cancelled=False, killed=()):
         self.argv = list(argv)
         self.returncode = returncode
         self.output = output or ""
         self.timed_out = timed_out
         self.duration_s = duration_s
+        self.idle_timed_out = idle_timed_out  # no output for `idle_timeout` seconds
+        self.cancelled = cancelled            # the run was cancelled while this ran
+        self.killed = list(killed)            # descendants left behind, and terminated
 
     @property
     def ok(self):
-        return self.returncode == 0 and not self.timed_out
+        return (self.returncode == 0 and not self.timed_out and not self.idle_timed_out
+                and not self.cancelled)
 
     def tail(self, limit=_OUTPUT_TAIL):
         return self.output[-limit:]
 
 
 class Runner:
-    """Runs a process to completion, capturing combined output. Never raises for exit codes."""
+    """Runs a process to completion, capturing combined output. Never raises for exit codes.
 
-    def run(self, argv, cwd, timeout=None, env=None):
-        import time
+    The process and everything it starts are owned (wgflib.procs): whatever it leaves
+    running - a dev server, a watcher - is terminated when it exits, times out, goes quiet
+    for `idle_timeout` seconds, or the step is cancelled.
+    """
 
-        started = time.monotonic()
+    def run(self, argv, cwd, timeout=None, env=None, idle_timeout=None, log_path=None):
         merged = dict(os.environ)
         merged.update(env or {})
         merged.setdefault("CI", "1")  # no watch modes, no interactive prompts
-        try:
-            completed = subprocess.run(
-                argv, cwd=cwd, env=merged, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-                stdin=subprocess.DEVNULL, timeout=timeout, check=False,
-            )
-        except subprocess.TimeoutExpired as exc:
-            output = exc.output.decode("utf-8", "replace") if exc.output else ""
-            return RunResult(argv, None, output, timed_out=True,
-                             duration_s=time.monotonic() - started)
-        except FileNotFoundError as exc:
-            return RunResult(argv, 127, f"{exc}", duration_s=time.monotonic() - started)
-        return RunResult(argv, completed.returncode,
-                         completed.stdout.decode("utf-8", "replace"),
-                         duration_s=time.monotonic() - started)
+        done = procs.run(argv, cwd=cwd, env=merged, timeout=timeout, idle_timeout=idle_timeout,
+                         log_path=log_path, stderr_to_stdout=True)
+        if done.error is not None:
+            return RunResult(argv, 127, f"{done.exception or done.error}",
+                             duration_s=done.duration_s)
+        interrupted = done.timed_out or done.idle_timed_out or done.cancelled
+        return RunResult(argv, None if interrupted else done.returncode, done.stdout,
+                         timed_out=done.timed_out, duration_s=done.duration_s,
+                         idle_timed_out=done.idle_timed_out, cancelled=done.cancelled,
+                         killed=done.killed)
 
 
 class GitError(RuntimeError):
@@ -73,13 +77,25 @@ class GitError(RuntimeError):
 
 
 class GitRepo:
-    def __init__(self, root, runner, author=None):
+    def __init__(self, root, runner, author=None, trailer=KEY_TRAILER):
         self.root = root
         self.runner = runner
         self.author = author or {}
+        # The trailer this repository's keyed commits carry. develop's by default; the sdk
+        # step keys its integration commits with its own (wgf_sdk/commit.py).
+        self.trailer = trailer
+
+    # The checkout's .git/config is written by the developer agent. Its fsmonitor would run
+    # on every `git status` and its hooks on commit - in the Factory's process, outside any
+    # sandbox the agent had. Filter drivers are left alone: a repository may rely on them
+    # (git-lfs) to commit correctly. wgflib/gitsafe.py has the full treatment for
+    # inspection-only callers.
+    SAFE_CONFIG = ("-c", "core.fsmonitor=false", "-c", f"core.hooksPath={os.devnull}",
+                   "-c", "gc.auto=0", "-c", "maintenance.auto=false")
 
     def _git(self, *args, check=True):
-        result = self.runner.run(["git", *args], cwd=self.root, timeout=120)
+        result = self.runner.run(["git", *self.SAFE_CONFIG, *args], cwd=self.root,
+                                 timeout=120)
         if check and not result.ok:
             raise GitError(f"git {' '.join(args)} failed: {result.tail(800).strip()}")
         return result
@@ -122,7 +138,7 @@ class GitRepo:
         result = self._git("log", f"-n{depth}", "--format=%H%x00%B%x1e", check=False)
         if not result.ok:
             return None
-        needle = f"{KEY_TRAILER}: {key}"
+        needle = f"{self.trailer}: {key}"
         for record in result.output.split("\x1e"):
             sha, _, body = record.strip().partition("\x00")
             if sha and any(line.strip() == needle for line in body.splitlines()):
@@ -137,7 +153,7 @@ class GitRepo:
         self._git("add", "--all")
         # --allow-empty: when the tree already matches HEAD the commit still carries the
         # key, which is what makes this visit findable by a later execution.
-        message = f"{subject}\n\n{body.strip()}\n\n{KEY_TRAILER}: {key}\n"
+        message = f"{subject}\n\n{body.strip()}\n\n{self.trailer}: {key}\n"
         identity = []
         if self.author.get("name"):
             identity += ["-c", f"user.name={self.author['name']}"]

@@ -9,12 +9,17 @@ import re
 
 from wgflib.hashing import content_hash
 
-from .model import BLOCKED, FAIL, PASS, STATUSES, WARNING, verdict_of
+from .model import (BLOCKED, BLOCKED_EXTERNAL, FAIL, PASS, PASS_MOCK, STATUSES, UNVERIFIED,
+                    WARNING, evidence_status_of, overall_evidence_status, verdict_of, weakest)
 
 __all__ = ["build_verification_report", "build_qa_report", "platform_readiness",
+           "workflow_ref", "NOT_APPLICABLE",
            "SCHEMA_VERSION", "ROLE"]
 
-SCHEMA_VERSION = "1.0.0"
+# 1.1.0: evidence_status on checks, platforms and the report; portal_status; workflow.
+SCHEMA_VERSION = "1.1.0"
+# portal_status for a platform whose profile says it has no review at all.
+NOT_APPLICABLE = "NOT_APPLICABLE"
 ROLE = "qa"
 EXTERNAL_APPROVAL_NOTE = ("Local, deterministic checks only. Whether a portal accepts the "
                           "build is decided by its own review, which this report does not "
@@ -60,6 +65,33 @@ def _seal(artifact):
     return artifact
 
 
+def workflow_ref(context):
+    """Where in a workflow run a report was produced: what lets a consumer tell this visit's
+    report from an earlier one's."""
+    if context is None:
+        return None
+    ref = {"run_id": getattr(context, "run_id", None),
+           "workflow_id": getattr(context, "workflow_id", None),
+           "step_id": getattr(context, "current_step", None),
+           "visit": getattr(context, "visit", None),
+           "execution": getattr(context, "execution", None)}
+    ref = {k: v for k, v in ref.items() if v is not None}
+    return ref if ref.get("run_id") else None
+
+
+def _portal_status(session, pid, own):
+    """Whether the portal's own QA/review has been observed. Local runs never observe it:
+    BLOCKED_EXTERNAL, unless every SDK check about the platform passed on live evidence.
+    A profile whose review process is `none` has no portal to wait for."""
+    profile, _ = session.profile(pid)
+    if str(((profile or {}).get("review") or {}).get("process") or "").lower() == "none":
+        return NOT_APPLICABLE
+    sdk = [c for c in own if c.id.startswith(("platform.sdk-init:", "platform.hooks:"))]
+    if sdk and all(c.status == PASS and evidence_status_of(c) == PASS for c in sdk):
+        return PASS
+    return BLOCKED_EXTERNAL
+
+
 def platform_readiness(session, checks):
     """Per platform: its own checks, plus every required check that is not per-platform."""
     shared = [c for c in checks if c.platform_id is None and c.required]
@@ -76,6 +108,10 @@ def platform_readiness(session, checks):
             state = "unverified"
         else:
             state = "ready"
+        strength = weakest(evidence_status_of(c) for c in relevant
+                           if c.required or c in own) if relevant else UNVERIFIED
+        if state == "unverified" and strength in (PASS, PASS_MOCK):
+            strength = UNVERIFIED
         readiness.append({
             "platform_id": pid,
             "profile": str(platform.get("profile") or pid),
@@ -85,13 +121,15 @@ def platform_readiness(session, checks):
             "blocking_checks": failing + blocked,
             "warnings": [c.id for c in own if c.status == WARNING],
             "external_approval": "not-claimed",
+            "evidence_status": strength,
+            "portal_status": _portal_status(session, pid, own),
             "note": EXTERNAL_APPROVAL_NOTE,
         })
     return readiness
 
 
 def build_verification_report(*, title_id, checks, session, pinned, produced_at, sequence,
-                              release_id=None):
+                              release_id=None, context=None):
     counts = {status: sum(c.status == status for c in checks) for status in STATUSES}
     artifact = session.build_artifact if session else None
     report = {
@@ -112,9 +150,13 @@ def build_verification_report(*, title_id, checks, session, pinned, produced_at,
         "warning_checks": [c.id for c in checks if c.status == WARNING],
         "platform_readiness": platform_readiness(session, checks),
         "verdict": verdict_of(checks),
+        "evidence_status": overall_evidence_status(checks),
     }
     if release_id:
         report["release_id"] = release_id
+    workflow = workflow_ref(context)
+    if workflow:
+        report["workflow"] = workflow
     if session and session.root:
         report["commit"]["repository"] = session.root
     return _seal(report)
@@ -192,7 +234,7 @@ def _perf_results(session):
 
 
 def build_qa_report(*, title_id, release_id, checks, session, verification, produced_at,
-                    sequence, pinned):
+                    sequence, pinned, context=None):
     defects = _defects(checks)
     perf = _perf_results(session)
     commit = (session.commit if session else None) or "unknown"
@@ -215,6 +257,14 @@ def build_qa_report(*, title_id, release_id, checks, session, verification, prod
         "perf_results": perf,
         "verdict": "pass" if not defects and all(p["within_budget"] for p in perf) else "fail",
     }
+    # What the pass rests on. A pass whose evidence is only PASS_MOCK stays PASS_MOCK here;
+    # a qa-report that fails is FAIL whatever the checks' strength.
+    qa["evidence_status"] = (verification["evidence_status"] if qa["verdict"] == "pass"
+                             else FAIL if verification["verdict"] != BLOCKED
+                             else verification["evidence_status"])
+    workflow = workflow_ref(context)
+    if workflow:
+        qa["workflow"] = workflow
     seen = getattr(session, "gameplay", None)
     if seen is not None and seen.browsers:
         qa["browser_matrix"] = [
@@ -224,7 +274,10 @@ def build_qa_report(*, title_id, release_id, checks, session, verification, prod
     for entry in verification["platform_readiness"]:
         result = {"ready": "pass", "not-ready": "fail"}.get(entry["readiness"], "not-tested")
         platform_checks.append({"platform_id": entry["platform_id"], "result": result,
-                                "checks": entry["checks"], "note": entry["note"]})
+                                "checks": entry["checks"],
+                                "evidence_status": entry["evidence_status"],
+                                "portal_status": entry["portal_status"],
+                                "note": entry["note"]})
     if platform_checks:
         qa["platform_checks"] = platform_checks
     return _seal(qa)

@@ -15,6 +15,7 @@ and the engine decides what that means, from the workflow definition.
 """
 
 import dataclasses
+import datetime
 from dataclasses import dataclass, field
 
 __all__ = [
@@ -27,6 +28,9 @@ __all__ = [
     "StepState",
     "RunState",
     "STATE_FORMAT",
+    "Liveness",
+    "derive_liveness",
+    "parse_timestamp",
 ]
 
 # Bumped when the persisted shape of RunState changes incompatibly. A run written under an
@@ -99,6 +103,11 @@ class ArtifactRef:
     whole. `checksum` is the digest of the file's bytes; `content_hash` is the Factory's
     canonical digest (provenance.schema.json#/$defs/hash) when the artifact carries
     provenance, which is what a gate would pin.
+
+    `seq` orders every artifact the run holds by production, across ids. It is what
+    "the newest artifact of a type" means; timestamps cannot, because two artifacts can be
+    written in the same millisecond and a wall clock can step backwards. Refs written before
+    `seq` existed have none and sort before every ref that has one, then by `created_at`.
     """
 
     id: str
@@ -111,9 +120,13 @@ class ArtifactRef:
     content_hash: str = None
     schema_version: str = None
     metadata: dict = None
+    seq: int = None
 
     def to_dict(self):
         return {k: v for k, v in dataclasses.asdict(self).items() if v is not None}
+
+    def order(self):
+        return (self.seq if self.seq is not None else -1, self.created_at or "")
 
     @classmethod
     def from_dict(cls, data):
@@ -219,6 +232,11 @@ class StepState:
     error: str = None
     outputs: list = field(default_factory=list)
     consumed: list = field(default_factory=list)
+    # Liveness of the current execution, from WorkflowContext.progress: the child process
+    # the step is waiting on, when anything last showed signs of life, and what that was.
+    pid: int = None
+    last_activity_at: str = None
+    last_event: str = None
 
     def to_dict(self):
         return dataclasses.asdict(self)
@@ -274,7 +292,11 @@ class RunState:
             for versions in self.artifacts.values()
             if versions and versions[-1].type == artifact_type
         ]
-        return max(found, key=lambda ref: ref.created_at or "") if found else None
+        return max(found, key=ArtifactRef.order) if found else None
+
+    def next_artifact_seq(self):
+        return 1 + max((ref.seq or 0 for versions in self.artifacts.values()
+                        for ref in versions), default=0)
 
     def to_dict(self):
         data = {
@@ -320,3 +342,108 @@ class RunState:
             for key, versions in (data.get("artifacts") or {}).items()
         }
         return state
+
+
+# -- liveness ---------------------------------------------------------------------------------
+
+
+class Liveness:
+    """What `wgf status` says about whether a run is actually making progress.
+
+    Derived, never stored: from the run's status, whether a live process holds its lock,
+    and how long ago anything last showed signs of life.
+    """
+
+    RUNNING = "running"      # RUNNING, lock held, activity within the threshold
+    HUNG = "hung"            # RUNNING, lock held, nothing for longer than the threshold
+    STALE = "stale"          # RUNNING on disk, nobody holds the lock: the driver crashed
+    PENDING = "pending"
+    WAITING = "waiting"
+    PAUSED = "paused"
+    BLOCKED = "blocked"
+    FAILED = "failed"
+    COMPLETED = "completed"
+    CANCELLED = "cancelled"
+
+    ALL = (RUNNING, HUNG, STALE, PENDING, WAITING, PAUSED, BLOCKED, FAILED, COMPLETED,
+           CANCELLED)
+
+
+def parse_timestamp(value):
+    """An engine timestamp (`2026-01-01T00:00:00.000Z`) as an aware datetime, or None."""
+    if not isinstance(value, str) or not value:
+        return None
+    text = value[:-1] + "+00:00" if value.endswith("Z") else value
+    try:
+        parsed = datetime.datetime.fromisoformat(text)
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=datetime.timezone.utc)
+    return parsed
+
+
+def _current_step(state):
+    """(step id, StepState) the status is about: the cursor, else the last step executed."""
+    if state.cursor and state.cursor in state.steps:
+        return state.cursor, state.steps[state.cursor]
+    for entry in reversed(state.trail or []):
+        step_id = entry.get("step")
+        if step_id in state.steps:
+            return step_id, state.steps[step_id]
+    return state.cursor, None
+
+
+def derive_liveness(state, lock_owner, now, hung_after_seconds=300):
+    """Pure: a dict describing the current (or last) step and the run's liveness.
+
+    `lock_owner` is the pid of the live process holding the run's lock, or None.
+    `now` is an aware datetime. Nothing here reads a clock, a file or a process.
+    """
+    step_id, step = _current_step(state)
+    started = parse_timestamp(step.started_at) if step else None
+    stamps = [parse_timestamp(value) for value in (
+        step.last_activity_at if step else None,
+        step.started_at if step else None,
+        state.updated_at,
+    )]
+    stamps = [stamp for stamp in stamps if stamp is not None]
+    last_activity = max(stamps) if stamps else None
+    idle = (now - last_activity).total_seconds() if last_activity else None
+
+    if state.status == RunStatus.RUNNING:
+        if lock_owner is None:
+            liveness = Liveness.STALE
+        elif idle is not None and idle > hung_after_seconds:
+            liveness = Liveness.HUNG
+        else:
+            liveness = Liveness.RUNNING
+    else:
+        liveness = str(state.status).lower()  # the waiting and terminal states name themselves
+
+    if step is not None and step.status == StepStatus.RUNNING and started is not None:
+        elapsed = (now - started).total_seconds()
+    elif step is not None and step.duration_ms is not None:
+        elapsed = step.duration_ms / 1000.0
+    else:
+        elapsed = None
+
+    return {
+        "run_id": state.run_id,
+        "run_status": state.status,
+        "liveness": liveness,
+        "driver_pid": lock_owner,
+        "step": step_id,
+        "attempt": step.attempts if step else None,
+        "visit": step.visits if step else None,
+        "status": step.status if step else None,
+        "started_at": step.started_at if step else None,
+        "last_activity_at": (last_activity.strftime("%Y-%m-%dT%H:%M:%S.")
+                             + f"{last_activity.microsecond // 1000:03d}Z"
+                             if last_activity else None),
+        "pid": step.pid if step else None,
+        "last_event": step.last_event if step else None,
+        "elapsed_seconds": round(elapsed, 3) if elapsed is not None else None,
+        "idle_seconds": round(idle, 3) if idle is not None else None,
+        "hung_after_seconds": hung_after_seconds,
+    }

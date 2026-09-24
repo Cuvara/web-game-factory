@@ -500,7 +500,7 @@ class ThroughTheEngine(unittest.TestCase):
                 return registry
 
         config = FactoryConfig({
-            "storage": {"fsync": False}, "checkpoints": {"auto_approve": ["G2"]},
+            "storage": {"fsync": False}, "checkpoints": {"auto_approve": ["G2", "G3"]},
             "develop": {"checkouts": os.path.join(self.scratch, "checkouts"),
                         "author": AUTHOR,
                         "developer": {"kind": "command", "argv": ["agent", "{brief}"]}},
@@ -531,7 +531,7 @@ class ThroughTheEngine(unittest.TestCase):
         definition = load_definition("new-game")
         step = next(s for s in definition.steps if s.id == "develop")
         self.assertEqual(set(step.inputs), {"game-design", "asset-manifest", "scaffold-record",
-                                            "title-strategy", "qa-report"})
+                                            "title-strategy", "qa-report", "review-report"})
         self.assertEqual(list(step.outputs), ["prototype-report"])
 
 
@@ -553,6 +553,19 @@ class Schema(DevelopCase):
              "--spec=draft2020", "--strict=false", "-d", path],
             cwd=ROOT, capture_output=True, text=True)
         self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
+
+
+class NoPlaceholderCommit(DevelopCase):
+    def test_a_build_commit_that_cannot_be_established_blocks(self):
+        # Formerly the report named "0" * 40, which review, sdk, verify and release would
+        # all have pinned as if it were a build.
+        shutil.rmtree(os.path.join(self.repo, ".git"))
+        self.git("init", "-q", "-b", "main")  # a repository with no commit: HEAD is unreadable
+        result = step_with(FakeRunner(on_develop=write_game)).execute(
+            inputs_for(), context(self.command_config(commit=False)))
+        self.assertEqual(result.outcome, StepOutcome.BLOCKED, result.error)
+        self.assertEqual(result.artifacts, [])
+        self.assertIn("cannot be established", result.message)
 
 
 if __name__ == "__main__":

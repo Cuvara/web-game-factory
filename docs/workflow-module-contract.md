@@ -151,22 +151,30 @@ reading, and `DocumentedIoContract` fails if the two disagree.
 | `strategy` | `strategy` | `opportunity` | `title-strategy` |
 | `strategy-review` | `human-checkpoint` | — | — |
 | `design` | `design` | `title-strategy` | `game-design` |
-| `init` | `init` | `game-design` | `scaffold-record` |
+| `tech-plan` | `tech-plan` | `game-design`, `title-strategy` | `tech-plan` |
+| `tech-plan-review` | `human-checkpoint` | — | — |
+| `init` | `init` | `game-design`, `tech-plan` | `scaffold-record` |
 | `assets` | `assets` | `game-design`, `scaffold-record` | `asset-manifest` |
-| `develop` | `develop` | `game-design`, `asset-manifest`, `scaffold-record`, `title-strategy`, `qa-report` | `prototype-report` |
+| `develop` | `develop` | `game-design`, `asset-manifest`, `scaffold-record`, `title-strategy`, `qa-report`, `review-report` | `prototype-report` |
+| `review` | `review` | `prototype-report`, `game-design`, `scaffold-record` | `review-report` |
 | `sdk` | `sdk` | `game-design`, `scaffold-record`, `prototype-report` | `sdk-report` |
 | `verify` | `verify` | `prototype-report`, `sdk-report`, `game-design`, `scaffold-record`, `asset-manifest` | `verification-report`, `qa-report` |
-| `release` | `release` | `qa-report` | `release-manifest` |
+| `release` | `release` | `qa-report`, `verification-report`, `sdk-report`, `prototype-report`, `scaffold-record`, `review-report` | `release-manifest` |
 <!-- io-contract:end -->
 
 `develop` declares `qa-report` so that on a verify → develop loop it receives the failing
-report; on its first visit that input is missing, which is expected. It reads
+report; on its first visit that input is missing, which is expected. It declares
+`review-report` for the same reason on a review → develop loop: when `review` requests
+changes to the commit develop made, the next brief leads with the reviewer's blockers
+([review-module.md](review-module.md)). It reads
 `scaffold-record` to find the game repository it builds in, and `title-strategy` for the
 questions and kill criteria its `prototype-report` must list. `verify` emits the
 `verification-report` — every check with its evidence — and the `qa-report` computed from it;
 see [verification-module.md](verification-module.md). `release` produces a
-`release-manifest` in state `draft` and stops: building, packaging and publishing are the game
-repository's CI, behind G5 and G6.
+`release-manifest` in state `draft` and stops: it refuses unless the newest qa-report passed
+and every report and the clean checkout name one commit, packages with the game repository's
+own scripts, and never publishes; see [release-module.md](release-module.md). Publishing is
+behind G5 and G6.
 
 Routing, retry and gates for each step are in the workflow file; read it, not a copy.
 

@@ -108,6 +108,8 @@
           "platform_id": { "type": "string" },
           "result": { "enum": ["pass", "fail", "not-tested"] },
           "checks": { "type": "array", "items": { "type": "string" } },
+          "evidence_status": { "$ref": "./shared/evidence.schema.json#/$defs/evidenceStatus" },
+          "portal_status": { "$ref": "./shared/evidence.schema.json#/$defs/portalStatus" },
           "note": { "type": "string" }
         },
         "additionalProperties": false
@@ -117,7 +119,14 @@
     "verdict": {
       "enum": ["pass", "fail"],
       "description": "pass requires blocking_defects empty AND every perf_result within budget. Derived, not asserted."
-    }
+    },
+
+    "evidence_status": {
+      "$ref": "./shared/evidence.schema.json#/$defs/evidenceStatus",
+      "description": "Since 1.1.0. What the verdict rests on: for a pass, the verification-report's evidence_status (PASS_MOCK when any required check was observed only against a stand-in); FAIL for a fail with failing checks; UNVERIFIED or BLOCKED_EXTERNAL for a fail because something could not be established. A consumer never reads a PASS_MOCK pass as PASS."
+    },
+
+    "workflow": { "$ref": "./shared/evidence.schema.json#/$defs/workflowRef" }
   },
   "additionalProperties": false,
 

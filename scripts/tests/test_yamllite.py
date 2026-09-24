@@ -26,10 +26,15 @@ import unittest
 HERE = os.path.dirname(os.path.abspath(__file__))
 SCRIPTS = os.path.dirname(HERE)
 ROOT = os.path.dirname(SCRIPTS)
-TEMPLATE = os.path.abspath(os.path.join(ROOT, os.pardir, "web-game-template"))
-YAML_PACKAGE = os.path.join(TEMPLATE, "node_modules", "yaml")
-
 sys.path.insert(0, SCRIPTS)
+sys.path.insert(0, HERE)
+
+import pinned_template  # noqa: E402
+
+_PINNED, _PINNED_WHY = (pinned_template.with_dependencies() if shutil.which("node")
+                        else (None, "node is not on PATH"))
+TEMPLATE = _PINNED or ""
+YAML_PACKAGE = os.path.join(TEMPLATE, "node_modules", "yaml")
 
 from wgflib.yamllite import YamlError, load, load_file  # noqa: E402
 
@@ -130,9 +135,8 @@ class OutsideTheSubset(unittest.TestCase):
 
 @unittest.skipUnless(shutil.which("node"), "node is not on PATH")
 @unittest.skipUnless(
-    os.path.isdir(YAML_PACKAGE),
-    "web-game-template/node_modules/yaml is absent; run `pnpm install` there to enable the "
-    "differential test",
+    _PINNED and os.path.isdir(YAML_PACKAGE),
+    _PINNED_WHY or "the pinned web-game-template has no node_modules/yaml",
 )
 class AgreesWithARealYamlParser(unittest.TestCase):
     """Every YAML file in both repositories, parsed both ways and compared."""

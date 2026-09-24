@@ -14,7 +14,7 @@ import re
 
 from wgflib.yamllite import YamlError, load_file
 
-__all__ = ["TEMPLATE_INFRASTRUCTURE", "GAME_CONFIG", "missing_infrastructure",
+__all__ = ["TEMPLATE_INFRASTRUCTURE", "GAME_CONFIG", "ENGINES", "missing_infrastructure",
            "read_game_config", "InfrastructureError"]
 
 GAME_CONFIG = "game.config.yaml"
@@ -51,6 +51,7 @@ TEMPLATE_INFRASTRUCTURE = (
     (".github/workflows/campaign.yml", "gate G7"),
 )
 
+ENGINES = ("pixijs", "threejs")
 _PROFILE = re.compile(r"^[a-z][a-z0-9-]*@[0-9]+\.[0-9]+\.[0-9]+$")
 
 
@@ -93,8 +94,15 @@ def read_game_config(root):
             raise InfrastructureError(f"{GAME_CONFIG} has an unpinned platform entry: {entry!r}")
         platforms.append({"id": entry["id"], "profile": entry["profile"], "role": entry["role"]})
 
-    return {
+    record = {
         "path": GAME_CONFIG,
         "platforms": platforms,
         "checksum": "sha256:" + hashlib.sha256(raw).hexdigest(),
     }
+    engine = (document.get("engine") or {}).get("type")
+    if engine is not None:
+        if engine not in ENGINES:
+            raise InfrastructureError(f"{GAME_CONFIG} engine.type is {engine!r}; the template "
+                                      f"supports only {' and '.join(ENGINES)}")
+        record["engine"] = {"type": engine}
+    return record

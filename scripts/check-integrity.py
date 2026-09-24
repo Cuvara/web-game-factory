@@ -185,6 +185,27 @@ def check_no_readme_only_dirs():
             ERRORS.append(f"{root}: contains only a README.md")
 
 
+def check_template_pin():
+    """workspace/config/template.lock.json names one web-game-template commit, as a full sha.
+    Where the sibling checkout stands against it is reported, never silently used: every
+    reader goes through scripts/wgflib/template.py, which checks out exactly the pin."""
+    sys.path.insert(0, "scripts")
+    from wgflib import template
+    try:
+        lock = template.load_lock()
+    except template.TemplateError as exc:
+        ERRORS.append(f"template pin: {exc}")
+        return None
+    state = template.drift(lock)
+    if state.get("sibling") and not state.get("sibling_at_pin"):
+        NOTES.append(
+            f"template drift: sibling web-game-template is at {state.get('sibling_head')}, "
+            f"the Factory is pinned to {lock['commit']}"
+            + ("" if state.get("sibling_has_pin") else " (not fetched there)")
+            + "; readers use a checkout of the pin")
+    return lock
+
+
 def main():
     if not os.path.isdir("core"):
         sys.exit("run from the web-game-factory repository root")
@@ -201,6 +222,7 @@ def main():
     platforms = check_platforms()
     check_provider_independence()
     check_no_readme_only_dirs()
+    pin = check_template_pin()
 
     print(f"artifacts   {len(artifacts)}")
     print(f"roles       {len(roles)}")
@@ -208,6 +230,8 @@ def main():
     print(f"machines    {len(glob.glob('core/lifecycle/*.machine.yaml'))}")
     print(f"stages      {len(glob.glob('core/lifecycle/stages/*.md'))}")
     print(f"workflows   {len(workflows)}")
+    if pin:
+        print(f"template    {pin['repository']}@{pin['commit'][:12]} ({pin['ref']})")
     for note in NOTES:
         print(f"note        {note}")
     print()

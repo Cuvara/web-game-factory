@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://webgamefactory.dev/schemas/artifacts/verification-report.schema.json",
   "title": "Verification Report",
-  "description": "The evidence behind a QA verdict: every technical-readiness check run against one commit of a game repository, its status, and what was run or seen to reach it.\n\nThe qa-report is the summary a gate reads; this is what it was computed from. Each check is PASS, FAIL, BLOCKED or WARNING. BLOCKED is a statement about the verification, not the game: the check could not be established (no checkout, a missing tool, a failed prerequisite). A check without evidence is an assertion, and is refused.\n\nPlatform readiness is local and deterministic. It never states that a portal approved or will approve the build — `external_approval` is always `not-claimed`.",
+  "description": "The evidence behind a QA verdict: every technical-readiness check run against one commit of a game repository, its status, and what was run or seen to reach it.\n\nThe qa-report is the summary a gate reads; this is what it was computed from. Each check is PASS, FAIL, BLOCKED or WARNING, and since 1.1.0 also carries an evidence status (PASS, PASS_MOCK, BLOCKED_EXTERNAL, UNVERIFIED, FAIL) saying how strong the evidence behind it is. BLOCKED is a statement about the verification, not the game: the check could not be established (no checkout, a missing tool, a failed prerequisite). A check without evidence is an assertion, and is refused.\n\nPlatform readiness is local and deterministic. It never states that a portal approved or will approve the build — `external_approval` is always `not-claimed`.",
 
   "x-wgf": {
     "id": "verification-report",
@@ -99,6 +99,8 @@
             "const": "not-claimed",
             "description": "Portal approval is an external, later event. A verification that claimed it would be claiming something it cannot observe."
           },
+          "evidence_status": { "$ref": "./shared/evidence.schema.json#/$defs/evidenceStatus", "description": "Since 1.1.0. The weakest evidence status among this platform's checks and the required shared ones." },
+          "portal_status": { "$ref": "./shared/evidence.schema.json#/$defs/portalStatus" },
           "note": { "type": "string" }
         },
         "additionalProperties": false
@@ -108,7 +110,14 @@
     "verdict": {
       "enum": ["PASS", "FAIL", "BLOCKED"],
       "description": "Derived, not asserted: FAIL if any required check failed; else BLOCKED if any required check is blocked; else PASS. Warnings never change it."
-    }
+    },
+
+    "evidence_status": {
+      "$ref": "./shared/evidence.schema.json#/$defs/evidenceStatus",
+      "description": "Since 1.1.0. The weakest evidence status among the required checks: what the verdict rests on. A PASS verdict whose required checks include PASS_MOCK evidence is PASS_MOCK here, and stays so downstream."
+    },
+
+    "workflow": { "$ref": "./shared/evidence.schema.json#/$defs/workflowRef" }
   },
   "additionalProperties": false,
 
@@ -127,6 +136,7 @@
         "title": { "type": "string" },
         "status": { "enum": ["PASS", "FAIL", "BLOCKED", "WARNING"] },
         "required": { "type": "boolean", "description": "Whether this check can block the verdict. A non-required check reports FAIL as WARNING." },
+        "evidence_status": { "$ref": "./shared/evidence.schema.json#/$defs/evidenceStatus", "description": "Since 1.1.0. Defaults from status (PASS->PASS, FAIL->FAIL, BLOCKED/WARNING->UNVERIFIED) and may only be weaker: a PASS observed against a stand-in is PASS_MOCK." },
         "message": { "type": "string" },
         "platform_id": { "type": "string", "pattern": "^[a-z][a-z0-9-]*$" },
         "counts": {

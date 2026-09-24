@@ -1,0 +1,33 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://webgamefactory.dev/schemas/artifacts/shared/evidence.schema.json",
+  "title": "Evidence vocabulary",
+  "description": "How strong the evidence behind a verification, a platform or a release is, in one vocabulary shared by verification-report, qa-report and release-manifest.\n\nThe status of a check (PASS, FAIL, BLOCKED, WARNING) decides routing. The evidence status decides what may be claimed afterwards, and it only ever travels downstream as it was observed: a PASS_MOCK is never summed, reported or promoted as a PASS, and a portal's own QA stays BLOCKED_EXTERNAL until someone has evidence from the portal.",
+
+  "$defs": {
+    "evidenceStatus": {
+      "enum": ["PASS", "PASS_MOCK", "BLOCKED_EXTERNAL", "UNVERIFIED", "FAIL"],
+      "description": "Strongest first. PASS: observed against the real thing (a command's exit code, a test report written by this run, a browser run of the built bundle). PASS_MOCK: observed only against a stand-in, such as a mocked or fake portal SDK. BLOCKED_EXTERNAL: needs an outside party (a portal's own QA or review) and no evidence from it exists. UNVERIFIED: not established (a check that is BLOCKED, or a WARNING nobody evidenced). FAIL: evidence shows the requirement does not hold."
+    },
+
+    "portalStatus": {
+      "enum": ["PASS", "BLOCKED_EXTERNAL", "NOT_APPLICABLE"],
+      "description": "Whether behaviour on the live portal has been observed. BLOCKED_EXTERNAL unless every SDK check about the platform passed on evidence its observer describes as a live-portal observation; NOT_APPLICABLE when the pinned profile's review process is `none`. Never a statement about portal approval, which is always `not-claimed`."
+    },
+
+    "workflowRef": {
+      "type": "object",
+      "description": "Where in a Factory workflow run an artifact was produced. Lets a consumer tell this visit's artifact from an earlier one's, or another run's.",
+      "required": ["run_id"],
+      "properties": {
+        "run_id": { "type": "string" },
+        "workflow_id": { "type": "string" },
+        "step_id": { "type": "string" },
+        "visit": { "type": "integer", "minimum": 1 },
+        "execution": { "type": "integer", "minimum": 1 },
+        "idempotency_key": { "type": "string" }
+      },
+      "additionalProperties": false
+    }
+  }
+}

@@ -142,6 +142,10 @@ class MockDesignStep(MockStep):
     type, role = "design", "game-designer"
 
 
+class MockTechPlanStep(MockStep):
+    type, role = "tech-plan", "architect"
+
+
 class MockInitStep(MockStep):
     type, role = "init", "release"
 
@@ -164,6 +168,31 @@ class MockDevelopmentStep(MockStep):
     def customize(self, body, artifact_type, context, entry):
         if artifact_type == "prototype-report":
             body["iteration"] = context.visit
+
+
+class MockReviewStep(MockStep):
+    """`request-changes` in a mock plan is a review asking for changes: FAILED with that
+    route and not retryable, the same shape the real review step returns."""
+
+    type, role = "review", "architect"
+
+    def execute(self, inputs, context):
+        result = super().execute(inputs, context)
+        if result.route == "request-changes":
+            return StepResult("FAILED", route=result.route, artifacts=result.artifacts,
+                              retryable=False, error=f"{self.id} requested changes (mock)")
+        return result
+
+    def customize(self, body, artifact_type, context, entry):
+        if artifact_type != "review-report":
+            return
+        body["iteration"] = context.visit
+        body["attempt"] = context.attempt
+        if entry == "request-changes":
+            body["verdict"] = "request-changes"
+            body["blockers"] = [{"id": f"mock-blocker-{context.execution}", "file": None,
+                                 "summary": "Scripted review blocker (mock).",
+                                 "severity": "blocker"}]
 
 
 class MockSDKStep(MockStep):
@@ -198,9 +227,11 @@ MOCK_STEPS = (
     MockResearchStep,
     MockStrategyStep,
     MockDesignStep,
+    MockTechPlanStep,
     MockInitStep,
     MockAssetsStep,
     MockDevelopmentStep,
+    MockReviewStep,
     MockSDKStep,
     MockVerificationStep,
     MockReleaseStep,

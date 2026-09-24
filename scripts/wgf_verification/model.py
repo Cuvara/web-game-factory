@@ -12,15 +12,43 @@ game over") with one of four answers:
 
 Every check carries at least one piece of evidence, whatever its status. A PASS with no
 evidence is an assertion, and the verification-report schema refuses it.
+
+Beside its status every check carries an EVIDENCE STATUS: how strong the evidence behind it
+is, in the vocabulary a release carries forward.
+
+    PASS              observed against the real thing: a command's exit code, a test report
+                      file, a browser run of the built bundle
+    PASS_MOCK         observed only against a stand-in - an SDK feature exercised against a
+                      mocked or fake portal SDK. Never reported, summed or promoted as PASS.
+    BLOCKED_EXTERNAL  cannot be established from here: it needs an outside party (a portal's
+                      own QA or review) and no evidence from that party exists
+    UNVERIFIED        not established: blocked by a missing tool or prerequisite, or an
+                      optional requirement nobody evidenced (status BLOCKED or WARNING)
+    FAIL              evidence shows the requirement does not hold
+
+The status decides routing (FAIL loops to development, BLOCKED stops the run); the evidence
+status decides what may be claimed about the build afterwards.
 """
 
 from dataclasses import dataclass, field
 
 __all__ = ["PASS", "FAIL", "BLOCKED", "WARNING", "STATUSES", "CATEGORIES", "Evidence", "Check",
-           "verdict_of"]
+           "verdict_of", "PASS_MOCK", "BLOCKED_EXTERNAL", "UNVERIFIED", "EVIDENCE_STATUSES",
+           "evidence_status_of", "overall_evidence_status", "weakest"]
 
 PASS, FAIL, BLOCKED, WARNING = "PASS", "FAIL", "BLOCKED", "WARNING"
 STATUSES = (PASS, FAIL, BLOCKED, WARNING)
+
+# Evidence statuses, strongest first. PASS and FAIL are shared with STATUSES on purpose: they
+# mean the same thing in both vocabularies.
+PASS_MOCK, BLOCKED_EXTERNAL, UNVERIFIED = "PASS_MOCK", "BLOCKED_EXTERNAL", "UNVERIFIED"
+EVIDENCE_STATUSES = (PASS, PASS_MOCK, BLOCKED_EXTERNAL, UNVERIFIED, FAIL)
+# How a status maps when a check does not say otherwise. A check may only ever WEAKEN this
+# (PASS -> PASS_MOCK, BLOCKED -> BLOCKED_EXTERNAL); it is refused if it tries to strengthen it.
+_DEFAULT_EVIDENCE = {PASS: PASS, FAIL: FAIL, BLOCKED: UNVERIFIED, WARNING: UNVERIFIED}
+_ALLOWED_EVIDENCE = {PASS: (PASS, PASS_MOCK), FAIL: (FAIL,),
+                     BLOCKED: (UNVERIFIED, BLOCKED_EXTERNAL),
+                     WARNING: (UNVERIFIED, BLOCKED_EXTERNAL, PASS_MOCK)}
 CATEGORIES = ("source", "build", "code", "gameplay", "platform", "assets", "policy")
 
 # How much command output a piece of evidence keeps. Enough to see the failure, not the log.
@@ -82,10 +110,15 @@ class Check:
     platform_id: str = None
     # Test counts, when the check ran a suite. Feeds qa-report.suites.
     counts: dict = None
+    # None: derived from `status`. Set only to weaken it - see _ALLOWED_EVIDENCE.
+    evidence_status: str = None
 
     def __post_init__(self):
         if self.status not in STATUSES:
             raise ValueError(f"check {self.id}: unknown status {self.status!r}")
+        if self.evidence_status is not None and self.evidence_status not in EVIDENCE_STATUSES:
+            raise ValueError(f"check {self.id}: unknown evidence status "
+                             f"{self.evidence_status!r}")
         if self.category not in CATEGORIES:
             raise ValueError(f"check {self.id}: unknown category {self.category!r}")
         if not self.evidence:
@@ -105,6 +138,7 @@ class Check:
             "required": self.required,
             "message": self.message,
             "evidence": [e.to_dict() for e in self.evidence],
+            "evidence_status": evidence_status_of(self),
         }
         if self.platform_id:
             out["platform_id"] = self.platform_id
@@ -127,3 +161,37 @@ def verdict_of(checks):
     if not checks:
         return BLOCKED
     return PASS
+
+
+def evidence_status_of(check):
+    """The check's evidence status: its own if it set one the status allows, else derived.
+
+    Derived on every read rather than stored, because a check's status can be changed after
+    construction (a console error turns a passing boot into a failure) and the evidence
+    status must follow it - never lag behind as a stale PASS.
+    """
+    own = check.evidence_status
+    if own is not None and own in _ALLOWED_EVIDENCE[check.status]:
+        return own
+    return _DEFAULT_EVIDENCE[check.status]
+
+
+def weakest(statuses):
+    """The weakest of some evidence statuses; PASS for none."""
+    rank = {s: i for i, s in enumerate(EVIDENCE_STATUSES)}
+    statuses = [s for s in statuses if s]
+    return max(statuses, key=rank.__getitem__) if statuses else PASS
+
+
+def overall_evidence_status(checks):
+    """What the verification as a whole establishes, over its REQUIRED checks.
+
+    FAIL if a required check failed; UNVERIFIED if one could not be established, or
+    BLOCKED_EXTERNAL when every one that could not was waiting on an outside party;
+    PASS_MOCK when everything passed but something only against a stand-in; else PASS.
+    No checks at all establishes nothing: UNVERIFIED.
+    """
+    required = [evidence_status_of(c) for c in checks if c.required]
+    if not checks:
+        return UNVERIFIED
+    return weakest(required)

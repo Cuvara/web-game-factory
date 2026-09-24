@@ -7,14 +7,16 @@ scope it names. That is the whole of the "command design" rule: no command has a
 orchestration of its own to drift from the others.
 """
 
+import datetime
 import os
 
-from .. import paths
+from .. import paths, procs
 from . import checkpoint, mock
 from .config import load_config
 from .definition import WORKFLOWS, load_definition
 from .engine import WorkflowEngine
 from .contracts import ArtifactContracts
+from .model import derive_liveness
 from .runtime import create_runtime
 from .step import StepRegistry
 from .store import RunStore
@@ -24,6 +26,51 @@ __all__ = ["WorkflowAPI", "RunRequest"]
 
 def _no_sleep(_seconds):
     """Mock steps fail instantly; waiting out a backoff in a mock run teaches nothing."""
+
+
+def _factory_owned(environ):
+    return any(entry.startswith(f"{procs.TAG_ENV}=".encode())
+               or entry.startswith(f"{procs.LINEAGE_ENV}=".encode())
+               for entry in environ.split(b"\0"))
+
+
+def spawned_by_a_step(environ=None, proc="/proc", pid=None):
+    """True when this process runs inside a tree a Factory step started - a developer or
+    reviewer agent calling `wgf ... --decision approve` on its own run, say.
+
+    Every child wgflib.procs starts carries WGF_PROC_TAG in its environment. A process
+    that dropped it from its own environment is still found through its ancestors', which
+    it cannot rewrite (Linux: /proc/<pid>/environ). A descendant that detached itself *and*
+    cleared its environment is not; see docs/agent-lifecycle.md."""
+    environ = os.environ if environ is None else environ
+    if environ.get(procs.TAG_ENV) or environ.get(procs.LINEAGE_ENV):
+        return True
+    pid = os.getpid() if pid is None else pid
+    seen = set()
+    while pid and pid > 1 and pid not in seen:
+        seen.add(pid)
+        try:
+            with open(os.path.join(proc, str(pid), "stat"), encoding="utf-8",
+                      errors="replace") as handle:
+                parent = int(handle.read().rsplit(")", 1)[1].split()[1])
+        except (OSError, ValueError, IndexError):
+            return False
+        if parent <= 1:
+            return False
+        try:
+            with open(os.path.join(proc, str(parent), "environ"), "rb") as handle:
+                if _factory_owned(handle.read()):
+                    return True
+        except OSError:
+            pass  # not ours to read (another user): keep walking
+        pid = parent
+    return False
+
+
+def default_decider():
+    """Who a decision given on this command line is recorded as. `automation` when the
+    command runs inside a step's process tree: G4, G6 and G7 then refuse it."""
+    return "automation" if spawned_by_a_step() else "human"
 
 
 def checkpoint_gates(definition):
@@ -39,7 +86,7 @@ class RunRequest:
 
     def __init__(self, scope=None, mock=False, mock_plan=None, resume=None, from_step=None,
                  run_id=None, force=False, decision=None, note=None, project_id=None,
-                 hold_gates=False):
+                 hold_gates=False, decided_by=None):
         self.scope = scope
         self.mock = mock
         self.mock_plan = mock_plan
@@ -51,6 +98,8 @@ class RunRequest:
         self.note = note
         self.project_id = project_id
         self.hold_gates = hold_gates
+        # None: default_decider() - "human", unless the command runs inside a step's tree.
+        self.decided_by = decided_by
 
 
 class WorkflowAPI:
@@ -127,8 +176,10 @@ class WorkflowAPI:
             existing = self.store.load(run_id)
             engine = self.engine(bool(existing.params.get("mock")), self.definition_for(existing))
             if request.resume:
+                decided_by = request.decided_by or default_decider()
                 return engine.resume(run_id, from_step=request.from_step,
-                                     decision=request.decision, note=request.note)
+                                     decision=request.decision, decided_by=decided_by,
+                                     note=request.note)
             return engine.continue_in(run_id, request.scope, force=request.force)
 
         params = {}
@@ -158,12 +209,20 @@ class WorkflowAPI:
             return None, None
         return state, self.definition_for(state)
 
-    def events(self, run_id=None):
-        state = self.store.load(run_id) if run_id else self.store.latest()
-        return (state, self.store.read_events(state.run_id)) if state else (None, [])
+    def liveness(self, state, now=None):
+        """derive_liveness for `state`, against the lock as it is right now."""
+        now = now or datetime.datetime.now(datetime.timezone.utc)
+        return derive_liveness(state, self.store.lock_owner(state.run_id), now,
+                               self.config.hung_after_seconds)
 
-    def runs(self):
-        return self.store.list_runs()
+    def events(self, run_id=None, problems=None):
+        """(state, events). Unreadable event lines are skipped and added to `problems`."""
+        state = self.store.load(run_id) if run_id else self.store.latest()
+        return ((state, self.store.read_events(state.run_id, problems)) if state
+                else (None, []))
+
+    def runs(self, problems=None):
+        return self.store.list_runs(problems)
 
     def pause(self, run_id):
         state = self.store.load(run_id)

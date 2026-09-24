@@ -5,6 +5,7 @@ import re
 import shlex
 
 from ..model import BLOCKED, FAIL, PASS, WARNING, Check, Evidence
+from ..lineage import CODE, lineage_problems
 
 __all__ = ["check_source", "check_build"]
 
@@ -47,12 +48,27 @@ def check_source(session):
 
 
 def _upstream_commits(session):
-    """Were the upstream reports made against the commit being verified?"""
+    """Is the evidence from upstream about the commit being verified, by the lineage rule?
+
+    wgf_verification/lineage.py, docs/core-contracts.md §5: the sdk-report's commit is the
+    commit under test; the prototype-report's commit is the one sdk built on; and the
+    commits between them are exactly the sdk step's keyed commits. Without an sdk-report,
+    the prototype-report's commit is the commit under test.
+
+    Required when there is something to compare: evidence about another commit, or a
+    commit nobody reviewed riding between develop's and sdk's, cannot vouch for this build.
+    BLOCKED rather than FAIL - the game is not at fault, the evidence is - so the run stops
+    for someone to re-run the steps that produce it.
+    """
     seen = []
     for artifact_type in ("prototype-report", "sdk-report"):
-        sha = ((session.inputs.get(artifact_type) or {}).get("build_ref") or {}).get("commit_sha")
-        if sha:
-            seen.append((artifact_type, sha))
+        content = session.inputs.get(artifact_type)
+        if content is None:
+            continue
+        build_ref = (content or {}).get("build_ref") or {}
+        seen.append((artifact_type, build_ref.get("commit_sha")))
+        if artifact_type == "sdk-report" and "base_commit_sha" in build_ref:
+            seen.append(("sdk-report base", build_ref.get("base_commit_sha")))
     title = "Upstream reports describe this commit"
     if not seen:
         return Check("source.upstream-commits", "source", title, WARNING, required=False,
@@ -60,17 +76,30 @@ def _upstream_commits(session):
                      evidence=[Evidence("observation", "no upstream build_ref to compare")])
     if not session.commit:
         return session.blocked_by("source.commit", id="source.upstream-commits",
-                                  category="source", title=title, required=False)
-    stale = [(t, sha) for t, sha in seen if not session.commit.startswith(sha)
-             and not sha.startswith(session.commit)]
-    evidence = [Evidence("reference", f"{t}.build_ref.commit_sha = {sha}") for t, sha in seen]
-    if stale:
-        return Check("source.upstream-commits", "source", title, WARNING, required=False,
-                     message="evidence in " + ", ".join(t for t, _ in stale) +
-                             f" was produced against another commit than {session.commit[:12]}",
+                                  category="source", title=title)
+    evidence = [Evidence("reference", f"{t}.build_ref.commit_sha = {sha or 'missing'}")
+                for t, sha in seen]
+
+    def git(*args):
+        result = session.run(["git", *args], "git")
+        return result.ok, result.stdout
+
+    prototype = session.inputs.get("prototype-report")
+    problems = lineage_problems(
+        verified=session.commit,
+        prototype_commit=((prototype or {}).get("build_ref") or {}).get("commit_sha"),
+        has_prototype=prototype is not None,
+        sdk_report=session.inputs.get("sdk-report"), git=git,
+        run_id=getattr(session, "run_id", None))
+    if problems:
+        return Check("source.upstream-commits", "source", title, BLOCKED,
+                     message=f"{CODE}: " + "; ".join(problems)
+                             + f". The evidence does not describe {session.commit[:12]}: "
+                               "re-run the steps that produce it at this commit",
                      evidence=evidence)
-    return Check("source.upstream-commits", "source", title, PASS, required=False,
-                 message="all upstream reports name the commit under test", evidence=evidence)
+    return Check("source.upstream-commits", "source", title, PASS,
+                 message="the upstream reports follow the commit lineage to the commit under "
+                         "test", evidence=evidence)
 
 
 def check_build(session):

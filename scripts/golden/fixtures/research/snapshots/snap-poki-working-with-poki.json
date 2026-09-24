@@ -1,0 +1,63 @@
+{
+  "id": "snap-poki-working-with-poki",
+  "source_uri": "https://developers.poki.com/guide/working-with-poki",
+  "source_kind": "portal-docs",
+  "title": "Working with Poki | Poki Documentation",
+  "observed_at": "2026-09-23T00:00:00Z",
+  "retrieved_via": "web-fetch",
+  "platform": "poki",
+  "observations": [
+    {
+      "statement": "Poki reports over 100 million monthly active players.",
+      "excerpt": "Poki is the world's largest web gaming platform, connecting over 100 million monthly active players around the globe.",
+      "subject": {
+        "platform": "poki",
+        "dimension": "distribution_potential"
+      },
+      "facts": {
+        "monthly_players": 100000000
+      },
+      "tags": [
+        "audience",
+        "self-reported"
+      ]
+    },
+    {
+      "statement": "Poki splits revenue 50/50 for players arriving via Poki.com or Poki marketing, and gives the developer 100% for players arriving directly.",
+      "excerpt": "If a user comes to your game directly, through bookmarks, search, social media or through your own community, you get 100% of the revenue for that user. If a user comes to your game through Poki.com, or through a marketing effort from Poki, then Poki splits the revenue 50/50 with you",
+      "subject": {
+        "platform": "poki",
+        "dimension": "monetization_fit"
+      },
+      "tags": [
+        "revenue-share"
+      ]
+    },
+    {
+      "statement": "Poki requires web exclusivity: the same game cannot be published on other web portals or aggregators, while Steam, app stores and consoles remain allowed.",
+      "excerpt": "That means you can’t publish the same game on other web portals or aggregators — but Steam, app stores, and consoles stay yours; the exclusivity applies to the open web only.",
+      "subject": {
+        "platform": "poki",
+        "dimension": "distribution_potential"
+      },
+      "tags": [
+        "exclusivity",
+        "multi-portal-conflict"
+      ],
+      "facts": {
+        "web_exclusive": true
+      }
+    },
+    {
+      "statement": "Every game on Poki is hand-picked and daily releases are limited.",
+      "excerpt": "Every game on Poki is hand-picked. We keep daily releases limited, so each game gets a real shot at being seen.",
+      "subject": {
+        "platform": "poki",
+        "dimension": "time_to_market"
+      },
+      "tags": [
+        "curation"
+      ]
+    }
+  ]
+}

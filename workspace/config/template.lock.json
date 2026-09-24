@@ -1,0 +1,8 @@
+{
+  "about": "The web-game-template revision this Factory is validated against. Golden runs, the SDK inspector's tests and every test that reads template files use a checkout of exactly this commit (scripts/wgflib/template.py). Change it only in a commit where both golden runs pass on the new revision (WGF_TEMPLATE_COMMIT=<sha> WGF_GOLDEN=1 bin/wgf test-core). This commit is 1f5dee2 (web-game-template main, 2026-09-24) plus one commit adding the golden-run ports under examples/*/wgf-golden/ and examples/wgf-golden-shared/.",
+  "repository": "Cuvara/web-game-template",
+  "url": "https://github.com/Cuvara/web-game-template.git",
+  "commit": "22482b4eb81084a89ff8ecdeea9130f06ebb8026",
+  "ref": "wgf/golden-ports",
+  "validated_on": "2026-09-24"
+}

@@ -352,6 +352,31 @@ class Command(DevelopCase):
         self.assertEqual((result.outcome, result.retryable), (StepOutcome.FAILED, True))
         self.assertEqual([c for c in runner.calls if c[0] == "pnpm"], [])
 
+    def test_the_retry_after_a_failed_developer_is_told_to_continue(self):
+        # The real acceptance run: the developer hit its turn limit half-way, and the retry,
+        # a new session whose brief mentioned no failure, took the tree for finished.
+        runner = FakeRunner(fail={"lint"}, on_develop=write_game)
+        step_with(runner).execute(inputs_for(), context(self.command_config()))  # attempt 1
+        failing = FakeRunner(develop_exit=1)
+        failed = step_with(failing).execute(inputs_for(), context(self.command_config(),
+                                                                  attempt=2))
+        self.assertEqual((failed.outcome, failed.retryable), (StepOutcome.FAILED, True))
+        seen = {}
+
+        def develop(cwd):
+            with open(os.path.join(cwd, briefs.BRIEF_DIR, "brief.md"), encoding="utf-8") as h:
+                seen["brief"] = h.read()
+            write_game(cwd)
+
+        step_with(FakeRunner(on_develop=develop)).execute(
+            inputs_for(), context(self.command_config(), attempt=3))
+        brief = seen["brief"]
+        self.assertIn("## Fix first: checks that failed on the previous attempt", brief)
+        self.assertIn("### developer", brief)
+        self.assertIn("ended before it finished (developer command exited 1)", brief)
+        self.assertIn("continue from it rather than starting over", brief)
+        self.assertIn("### lint", brief)  # attempt 1's failed check is not forgotten
+
     def test_failing_checks_are_retryable_and_emit_the_report(self):
         runner = FakeRunner(fail={"test"}, on_develop=write_game)
         result = step_with(runner).execute(inputs_for(), context(self.command_config()))

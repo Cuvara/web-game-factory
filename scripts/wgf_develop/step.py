@@ -159,6 +159,27 @@ class DevelopStep(WorkflowStep):
             if outcome.status == Outcome.DECLINED:
                 return StepResult.failed(outcome.message, retryable=False)
             if outcome.status == Outcome.FAILED:
+                # The next attempt is a new session that knows only its brief. Without this
+                # it saw no failure at all and took the half-built tree for a finished one:
+                # the real acceptance run's retry after a developer that hit its turn limit
+                # did 16 turns and stopped. Earlier failed checks of this visit carry over.
+                carried = [c for c in (previous_checks or {}).get("checks") or []
+                           if c.get("status") == "failed" and c.get("id") != "developer"]
+                _write(checks_json, json.dumps({
+                    "idempotency_key": key,
+                    "engine": engine,
+                    "checked_at": self.clock(),
+                    "green": False,
+                    "checks": [{
+                        "id": "developer",
+                        "status": "failed",
+                        "summary": (f"The previous attempt's developer ended before it finished "
+                                    f"({outcome.message}). Its partial work is still in the "
+                                    "checkout: continue from it rather than starting over, "
+                                    "finish every required system, make every check pass, "
+                                    f"and write {briefs.REPORT_PATH}."),
+                    }] + carried,
+                }, indent=2) + "\n")
                 return StepResult.failed(outcome.message, output_tail=outcome.output_tail)
 
         checks = run_checks(checkout, brief, settings, runner, git, logger=context.logger)

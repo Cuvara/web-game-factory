@@ -131,7 +131,7 @@ bin/wgf test-core --only SECURITY --json
 |---|---|---|
 | WORKFLOW | `test_core_workflow`, `test_core_persistence` | engine semantics and crash safety |
 | AGENTS | `test_core_agents` | developer → reviewer → request-changes → developer → approve, isolation, verdicts, timeouts, retry budget, loop bound |
-| CONTRACTS | `test_core_contracts`, `test_core_lineage` | full schema validation, lineage pins, malformed/missing/tampered artifacts |
+| CONTRACTS | `test_core_contracts`, `test_core_lineage`, `test_core_template`, `test_golden_fast` | full schema validation, lineage pins, malformed/missing/tampered artifacts |
 | VERIFY | `test_core_verify` | PASS only from evidence; stale/missing/mocked evidence never PASS |
 | RELEASE | `test_core_release` | release gated by verify, commit lineage, package hygiene, hashes |
 | 2D GOLDEN | `test_golden_2d` | the whole pipeline on a real PixiJS game |
@@ -152,17 +152,23 @@ auto-approved and recorded as such): Tower Merge Rush (PixiJS) and Neon Drift Ar
 **replay** of the known-good example game through the real `command` developer kind — it
 proves the pipeline, not an AI developer. See `docs/golden-runs.md`.
 
+## The template boundary
+
+The Factory contains no game or template source. web-game-template
+(https://github.com/Cuvara/web-game-template) holds the template, the example games, their
+golden-run ports (`examples/*/wgf-golden/`), the platform adapters and the PixiJS/Three.js
+support. The Factory pins one commit in `workspace/config/template.lock.json` — Core v1:
+`22482b4`, which is template main `1f5dee2` plus the commit that added the golden-run ports
+(branch `wgf/golden-ports`) — and every reader of template files goes through
+`scripts/wgflib/template.py`, which checks out exactly that commit and refuses any other.
+`test_core_template` proves the pin, the refusal, that the golden runs build from it, that
+nothing reads the sibling working copy, and that the Factory tracks no game source (each
+non-Python file it does track is named with its reason). Moving the pin: run both golden
+runs with `WGF_TEMPLATE_COMMIT=<sha>`, then change the lock in the same commit.
+
 ## Known external blockers
 
 Not faked, not bypassed, and not part of the acceptance suite:
-
-- **web-game-template main moved past the validated commit.** Core v1 and both golden runs
-  are validated against template 5eb698f, and the golden runs are pinned to it. The
-  template's main has since moved to 1f5dee2 (upstream, 2026-09-24). Against it the sdk
-  step cannot read the generic-web/GameVui adapters' capabilities
-  (`test_sdk_integration.InspectSdk` fails — deliberately left unpinned, it is the drift
-  detector) and the golden replay port no longer typechecks. Adopting it is `wgf_sdk` and
-  golden-port work under the module rule below. See `docs/golden-runs.md`.
 
 - **Portal QA** — Yandex moderation, CrazyGames QA, Poki Inspector, GameVui submission: need
   portal accounts and human review. Status `BLOCKED_EXTERNAL`. The template's opt-in harness

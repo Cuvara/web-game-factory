@@ -91,7 +91,8 @@ class InitSettings:
         template = section.get("template")
         template_path = section.get("template_path")
         if source == "github":
-            if not isinstance(owner, str) or not REPO_NAME.match(owner or ""):
+            if (not isinstance(owner, str) or not REPO_NAME.fullmatch(owner)
+                    or owner in (".", "..")):
                 raise SettingsError("set factory.init.owner: the account or organization that "
                                     "will own game repositories")
             if not isinstance(template, str) or template.count("/") != 1:
@@ -101,7 +102,9 @@ class InitSettings:
             if not isinstance(template_path, str) or not template_path:
                 raise SettingsError("factory.init.source local needs factory.init.template_path: "
                                     "a local checkout of the template, e.g. ../web-game-template")
-            if owner is not None and (not isinstance(owner, str) or not REPO_NAME.match(owner)):
+            if owner is not None and (not isinstance(owner, str)
+                                      or not REPO_NAME.fullmatch(owner)
+                                      or owner in (".", "..")):
                 raise SettingsError("factory.init.owner must be a plain name")
         visibility = section.get("visibility", "private")
         if visibility not in VISIBILITIES:

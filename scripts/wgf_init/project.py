@@ -42,7 +42,7 @@ class ProjectMetadata:
             raise DesignError("game-design is not a JSON object")
 
         title_id = design.get("title_id")
-        if not isinstance(title_id, str) or not TITLE_ID.match(title_id):
+        if not isinstance(title_id, str) or not TITLE_ID.fullmatch(title_id):
             raise DesignError(f"game-design title_id {title_id!r} is not a kebab-case id")
         if project_id and project_id != title_id:
             raise DesignError(

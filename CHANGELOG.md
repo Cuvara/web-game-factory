@@ -31,6 +31,21 @@ numbering: `core/` is the contract, and schemas carry their own versions.
   that has one more step. Installations must add `wgf_review` to `factory.steps.modules`
   (done in the shipped config) or run it with `--mock`.
 
+- **Full schema validation inside the engine (`scripts/wgflib/jsonschema_lite.py`).** A
+  standard-library JSON Schema draft 2020-12 validator covering every keyword
+  `core/artifacts/**` uses (enumerated by the tests), with `$ref` across the shared schemas,
+  asserted formats, ECMA-faithful patterns and JSON-pointer errors in a fixed order. It raises
+  on any keyword it does not implement instead of ignoring it. `ArtifactContracts` now
+  validates the whole schema, not only top-level keys, rejects content JSON cannot represent
+  (NaN, non-string keys, Python-only values), and caps diagnostics at 20 while always keeping
+  the provenance type and hash problems. New `check_lineage(content, consumed)` checks that
+  `provenance.inputs` pins exactly the input versions a step consumed; the engine does not
+  call it yet. Deliberately stricter than ajv-formats@2 in one place: a `date-time` must
+  carry an RFC 3339 offset. **Bringing an artifact forward:** nothing to do if it already
+  passed ajv; every workspace instance, reference file and module output under the test
+  suite validates unchanged. See `docs/core-contracts.md`, which also audits every pipeline
+  boundary. No schema changed.
+
 - **Assets module (`scripts/wgf_assets`, step type `assets`).** Turns a game design into an
   asset manifest and the files behind it: inspects `game_design.asset_requirements` (or
   derives a baseline), classifies each against the new `core/reference/asset-policy.yaml`,

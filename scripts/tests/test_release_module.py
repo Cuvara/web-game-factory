@@ -216,8 +216,13 @@ class GameRepository:
             "title_id": "fixture-game",
             "build_ref": {"commit_sha": prototype_commit or commit,
                           "url": "https://example.invalid/build"},
-            "iteration": 1, "proved": [], "kill_criteria_eval": [], "playtest_sessions": 0,
-            "recommendation": "iterate"}, schema_version="1.0.0")
+            "iteration": 1,
+            "proved": [{"question": "Does the core loop hold attention?",
+                        "verdict": "inconclusive", "evidence": "fixture"}],
+            "kill_criteria_eval": [{"criterion_id": "kc-1", "breached": False, "measured": 1}],
+            "playtest_sessions": [{"observer": "fixture", "player_context": "internal",
+                                   "duration_s": 60, "notes": "fixture"}],
+            "recommendation": {"decision": "iterate", "rationale": "fixture"}}, schema_version="1.0.0")
         sdk = seal("sdk-report", {
             "title_id": "fixture-game", "build_ref": {"commit_sha": sdk_commit or commit},
             "platforms": [{"platform_id": "generic-web", "profile_version": "1.0.0",
@@ -230,7 +235,7 @@ class GameRepository:
             "repository": {"owner": "example", "name": "fixture-game"},
             "template": {"repository": "example/web-game-template",
                          "commit_sha": "a" * 40},
-            "game_config": {"game": {"id": "fixture-game"}}, "outcome": "created"},
+            "game_config": {"path": "game.config.yaml"}, "outcome": "created"},
             schema_version="1.0.0")
         upstream = [pin(a) for a in (prototype, sdk, scaffold)]
         readiness = platforms if platforms is not None else [

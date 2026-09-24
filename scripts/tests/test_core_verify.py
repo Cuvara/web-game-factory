@@ -52,8 +52,13 @@ def sdk_report(observed_by=None, init="not-required", commit=COMMIT, platform="g
 def prototype_report(commit=COMMIT):
     return {"title_id": "fixture-game",
             "build_ref": {"commit_sha": commit, "url": "https://example.invalid/b"},
-            "iteration": 1, "proved": [], "kill_criteria_eval": [], "playtest_sessions": 0,
-            "recommendation": "iterate"}
+            "iteration": 1,
+            "proved": [{"question": "Does the core loop hold attention?",
+                        "verdict": "inconclusive", "evidence": "fixture"}],
+            "kill_criteria_eval": [{"criterion_id": "kc-1", "breached": False, "measured": 1}],
+            "playtest_sessions": [{"observer": "fixture", "player_context": "internal",
+                                   "duration_s": 60, "notes": "fixture"}],
+            "recommendation": {"decision": "iterate", "rationale": "fixture"}}
 
 
 def playwright_report(**failures):

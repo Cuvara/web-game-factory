@@ -140,6 +140,10 @@ class TheFactoryContainsNoGameSource(unittest.TestCase):
         # through its window hook and records evidence. It contains no game.
         "scripts/golden/browser/probe.spec.ts",
     }
+    # The sdk step's integration layer (gameplay seam + its SDK-mock suite), written into a
+    # game by scripts/wgf_sdk/integrate.py. Game- and renderer-agnostic platform wiring the
+    # Factory generates, not a game: it names no game, scene or engine.
+    ALLOWED_PREFIXES = ("scripts/wgf_sdk/game/",)
     SKIP_DIRS = {".git", "node_modules", "__pycache__", ".factory", ".claude"}
 
     def test_no_game_source_is_tracked_in_the_factory(self):
@@ -149,6 +153,7 @@ class TheFactoryContainsNoGameSource(unittest.TestCase):
                                  "--exclude-standard"], capture_output=True, check=True)
         files = [f for f in listed.stdout.decode("utf-8", "replace").split("\0") if f]
         offenders = [f for f in files if self.SOURCE.search(f) and f not in self.ALLOWED
+                     and not f.startswith(self.ALLOWED_PREFIXES)
                      and not set(f.split("/")) & self.SKIP_DIRS]
         self.assertEqual(offenders, [], "game/template source belongs in web-game-template")
 

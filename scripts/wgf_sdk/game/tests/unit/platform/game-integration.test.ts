@@ -42,8 +42,12 @@ function install(target: string, reward = true): { calls: string[] } {
   const game = new Game();
   const platform = new GenericWebPlatform({ namespace: "seam" });
   let active = false;
+  const capabilities = { ...platform.capabilities, ads: ["interstitial", "rewarded"] };
   const members: Record<string, unknown> = {
-    capabilities: { ...platform.capabilities, ads: ["interstitial", "rewarded"] },
+    capabilities,
+    // A portal with ads says so when asked (generic-web answers "disabled": no SDK to ask).
+    adAvailability: (kind: string) =>
+      capabilities.ads.includes(kind) ? "available" : "unsupported",
     gameplayStart: () => void (active || (calls.push("gameplayStart"), (active = true))),
     gameplayStop: () => void (active && (calls.push("gameplayStop"), (active = false))),
     showRewarded: () => {

@@ -30,6 +30,10 @@ _RETURN_NEW = re.compile(r"\breturn\s+new\s+([A-Za-z_]\w*)\s*\(")
 _IMPORT = re.compile(r'import\s*\{([^}]*)\}\s*from\s*"(\.[^"]+)"')
 _MEMBER = re.compile(r"^  (?:readonly\s+)?([A-Za-z_]\w*)\??\s*[(<:]")
 _CAPABILITIES_FIELD = re.compile(r"\bcapabilities\s*(?::\s*\w+\s*)?=\s*([A-Z][A-Z0-9_]*)\s*;")
+# An adapter that hands its capabilities to a shared base class instead of assigning a field:
+#     class GameVuiPlatform extends NoSdkPlatform {
+#       constructor(options) { super("gamevui", GAMEVUI_CAPABILITIES, options); }
+_CAPABILITIES_SUPER = re.compile(r'\bsuper\(\s*"[^"]*"\s*,\s*([A-Z][A-Z0-9_]*)\s*[,)]')
 _SDK_URL = re.compile(r'export\s+const\s+([A-Z][A-Z0-9_]*_SDK_URL)\s*=\s*"([^"]*)"')
 
 
@@ -167,6 +171,15 @@ def _adapter_files(sdk_src):
                 yield os.path.join(directory, name)
 
 
+def _class_body(text, class_name):
+    """The source of `class <class_name>` up to the next top-level class, or "" if absent."""
+    match = re.search(r"\bclass\s+" + re.escape(class_name) + r"\b", text)
+    if not match:
+        return ""
+    following = re.search(r"\n(?:export\s+)?(?:abstract\s+)?class\s", text[match.end():])
+    return text[match.start():match.end() + following.start()] if following else text[match.start():]
+
+
 def inspect_sdk(repo):
     """Inspect `<repo>/packages/platform-sdk`. Returns None when the game has no SDK."""
     sdk_root = os.path.join(repo, SDK_DIR)
@@ -207,7 +220,10 @@ def inspect_sdk(repo):
             path = next((p for p, t in sources.items()
                          if re.search(r"\bclass\s+" + class_name + r"\b", t)), None)
         text = sources.get(path) or (_read(path) if path else "")
-        field = _CAPABILITIES_FIELD.search(_strip_comments(text))
+        stripped = _strip_comments(text)
+        field = (_CAPABILITIES_FIELD.search(_class_body(stripped, class_name))
+                 or _CAPABILITIES_SUPER.search(_class_body(stripped, class_name))
+                 or _CAPABILITIES_FIELD.search(stripped))
         capabilities = None
         if field:
             constant = field.group(1)

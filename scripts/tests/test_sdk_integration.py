@@ -430,6 +430,25 @@ class InspectSdk(SdkCase):
         self.assertIsNone(sdk.adapter("yandex").capabilities)
         self.assertTrue(any("YandexPlatform" in p for p in sdk.problems))
 
+    def test_capabilities_handed_to_a_base_class_are_read(self):
+        # web-game-template 1f5dee2: `class GameVuiPlatform extends NoSdkPlatform` passes its
+        # capabilities through super(); the base class's own field assignment is not them.
+        make_repo(self.repo)
+        write(self.repo, "packages/platform-sdk/src/adapters/generic-web.ts",
+              "export const GENERIC_WEB_CAPABILITIES: PlatformCapabilities = {\n"
+              "  ads: [],\n  iap: false,\n  cloudSaves: false,\n  leaderboards: false,\n"
+              "  analytics: \"self-hosted\",\n  interstitialMinIntervalS: null,\n};\n"
+              "export class NoSdkPlatform {\n"
+              "  readonly capabilities;\n"
+              "  constructor(id, capabilities, options) { this.capabilities = capabilities; }\n"
+              "}\n"
+              "export class GenericWebPlatform extends NoSdkPlatform {\n"
+              "  constructor(options) { super(\"generic-web\", GENERIC_WEB_CAPABILITIES, options); }\n"
+              "}\n")
+        sdk = inspect_sdk(self.repo)
+        self.assertIsNotNone(sdk.adapter("generic-web").capabilities)
+        self.assertFalse([p for p in sdk.problems if "GenericWebPlatform" in p])
+
     @unittest.skipUnless(os.path.isdir(os.path.join(paths.TEMPLATE, "packages", "platform-sdk")),
                          "sibling web-game-template not checked out")
     def test_the_sibling_template_is_readable(self):

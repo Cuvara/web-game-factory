@@ -145,8 +145,14 @@ class ReleaseStep(WorkflowStep):
             return self._refusal(refused.refusals, context)
 
         path = os.path.join(root, "release", release_id, "manifest.json")
-        with open(path, "w", encoding="utf-8") as handle:
+        # temp + fsync + rename: a crash never leaves a torn manifest that a later run would
+        # read as "no release here" and allocate the next id over.
+        temporary = f"{path}.{os.getpid()}.tmp"
+        with open(temporary, "w", encoding="utf-8") as handle:
             handle.write(json.dumps(artifact, indent=2, sort_keys=False) + "\n")
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(temporary, path)
         evidence = artifact["evidence"]
         context.logger.info("release drafted", release_id=release_id, commit=head,
                             evidence=evidence["status"],

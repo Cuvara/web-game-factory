@@ -126,6 +126,7 @@ class WorkflowEngine:
         # (artifact_type, content) -> [problems]. Optional so the engine stays testable
         # without core/; the API always supplies contracts.ArtifactContracts.
         self.artifact_validator = artifact_validator
+        self.event_log_error = None
         self.bus = EventBus(clock)
         self.bus.subscribe(self._persist_event)
         for subscriber in subscribers:
@@ -213,6 +214,7 @@ class WorkflowEngine:
         if from_step is not None:
             if not self.definition.has_step(from_step):
                 raise EngineError(f"workflow {self.definition.id} has no step {from_step!r}")
+            self._refuse_unmet_upstream(state, from_step)
             if from_step not in state.scope:
                 state.scope = self._widen_scope(state.scope, from_step)
             state.cursor = from_step
@@ -223,9 +225,21 @@ class WorkflowEngine:
         else:
             current = state.step(state.cursor)
             if current.status in (StepStatus.SUCCESS, StepStatus.SKIPPED):
-                # Stopped at the loop limit before the next visit could begin; resuming is
-                # the human saying "one more pass".
-                self._enter(state, state.cursor, check_loop=False)
+                if state.status == RunStatus.BLOCKED and (state.message or "").startswith(
+                        "loop limit"):
+                    # Stopped at the loop limit before the next visit could begin; resuming
+                    # is the human saying "one more pass".
+                    self._enter(state, state.cursor, check_loop=False)
+                else:
+                    # The driver died after recording this step's success and before moving
+                    # the cursor on. The step is done: follow its recorded route instead of
+                    # executing it - and its side effects - a second time.
+                    data["advanced_past"] = state.cursor
+                    self._advance_past(state, state.cursor, current)
+                    if state.cursor is None or state.status in RunStatus.TERMINAL:
+                        self._emit(state, Events.WORKFLOW_RESUMED, data=data)
+                        return state
+                    current = state.step(state.cursor)
             current.attempts = 0  # a resume is a fresh attempt budget, not a continuation
 
         self._require_implementations(state.scope)
@@ -235,6 +249,42 @@ class WorkflowEngine:
 
         self._emit(state, Events.WORKFLOW_RESUMED, data=data)
         return state
+
+    def _advance_past(self, state, step_id, step_state):
+        """Move the cursor on from a step that already succeeded, along its recorded route."""
+        step_def = self.definition.step(step_id)
+        key = step_state.last_route
+        result = StepResult(StepOutcome.SUCCESS,
+                            route=None if key in (None, "success") else key)
+        route = self._route(step_def, result)
+        state.status = RunStatus.RUNNING
+        self._follow(state, step_def, result.routing_key, StepOutcome.SUCCESS, route)
+
+    def _refuse_unmet_upstream(self, state, target):
+        """Refuse to start `target` inside a run whose earlier steps did not get it there.
+
+        A step before `target` that stopped the run (BLOCKED, WAITING, FAILED) - a rejected
+        or unanswered checkpoint above all - must not be stepped over by naming a later
+        step. Neither may a gate (a step whose `with:` names one) that this run has not
+        passed: `wgf init --run <id>` is not a way around G3.
+        """
+        ids = self.definition.step_ids
+        if target not in ids:
+            return
+        problems = []
+        for step_id in ids[:ids.index(target)]:
+            step_def = self.definition.step(step_id)
+            step_state = state.steps.get(step_id)
+            status = step_state.status if step_state is not None else None
+            gate = (step_def.params or {}).get("gate")
+            if status in (StepStatus.BLOCKED, StepStatus.WAITING, StepStatus.FAILED):
+                problems.append(f"{step_id} is {status}")
+            elif gate and status != StepStatus.SUCCESS:
+                problems.append(f"{step_id} (gate {gate}) has not been passed in this run")
+        if problems:
+            raise EngineError(
+                f"run {state.run_id}: will not start {target} past unmet upstream step(s): "
+                + "; ".join(problems) + ". Resume the run to answer them.")
 
     def continue_in(self, run_id, scope, force=False):
         """Run `scope` inside an existing run, reusing what the run already produced.
@@ -254,6 +304,7 @@ class WorkflowEngine:
             raise EngineError(f"run {run_id} was cancelled")
         scope_ids = self.definition.resolve_scope(scope)
         self._require_implementations(scope_ids)
+        self._refuse_unmet_upstream(state, scope_ids[0])
         for step_state in state.steps.values():
             step_state.loop_base = step_state.visits  # an explicit command: a fresh budget
         previous = state.status
@@ -429,6 +480,9 @@ class WorkflowEngine:
         return True
 
     def _honour_requests(self, state):
+        if self.event_log_error:
+            return self._finish(state, RunStatus.FAILED, Events.WORKFLOW_FAILED,
+                                f"the event log could not be written ({self.event_log_error})")
         if self._honour_cancel(state):
             return True
         if self.store.requested(state.run_id, "pause"):
@@ -864,6 +918,9 @@ class WorkflowEngine:
         )
 
     def _finish(self, state, status, event, message, reason=None):
+        if self.event_log_error and status == RunStatus.COMPLETED:
+            status, event = RunStatus.FAILED, Events.WORKFLOW_FAILED
+            message = f"the event log could not be written ({self.event_log_error})"
         state.status = status
         state.message = message
         self._save(state)
@@ -897,7 +954,14 @@ class WorkflowEngine:
 
     def _persist_event(self, record):
         if record.get("run_id") and self.store.exists(record["run_id"]):
-            self.store.append_event(record)
+            try:
+                self.store.append_event(record)
+            except Exception as exc:
+                # The event log is not decoration: decisions are corroborated from it. A run
+                # that cannot write it must not carry on as if it could.
+                if self.event_log_error is None:
+                    self.event_log_error = f"{type(exc).__name__}: {exc}"
+                raise
 
 
 class _ContractViolation(Exception):

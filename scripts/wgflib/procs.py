@@ -69,6 +69,9 @@ _HAVE_WAITID = POSIX and hasattr(os, "waitid") and hasattr(os, "WNOWAIT")
 # SystemExit by install_signal_cleanup() - takes these down with it.
 _LIVE = {}
 _LIVE_LOCK = threading.Lock()
+# Held from Popen until the new child is registered, so the subreaper sweep never sees a
+# child of ours that no tree has claimed yet.
+_SPAWN_LOCK = threading.Lock()
 
 
 def default_heartbeat_seconds():
@@ -329,8 +332,17 @@ def install_subreaper(enabled=True):
 
 
 def _adopted_children(exclude):
-    """(pid, zombie) for each child of this process that no live tree owns."""
+    """(pid, zombie) for each orphan this process adopted that no live tree owns.
+
+    Only children outside this process's own session count: everything procs starts gets a
+    session of its own, so an orphan from one of its trees is never in ours, while a child
+    some other code started with plain subprocess (and is waiting on) is.
+    """
     me = str(os.getpid())
+    try:
+        own_session = str(os.getsid(0))
+    except OSError:
+        return []
     claimed = {pid for pid, _ in live_groups().values()} | {p for p in exclude if p}
     live_tags = set(live_groups())
     found = []
@@ -338,7 +350,7 @@ def _adopted_children(exclude):
         if not name.isdigit() or int(name) in claimed:
             continue
         fields = _stat_fields(int(name))
-        if not fields or len(fields) < 2 or fields[1] != me:
+        if not fields or len(fields) < 4 or fields[1] != me or fields[3] == own_session:
             continue
         environ = _read(os.path.join(_PROC, name, "environ")) or b""
         if any(_carries(environ, tag) for tag in live_tags):
@@ -353,7 +365,8 @@ def _sweep_adopted(exclude=(), grace_seconds=1.0):
         return []
     ended = []
     for _ in range(10):
-        found = _adopted_children(set(exclude))
+        with _SPAWN_LOCK:
+            found = _adopted_children(set(exclude))
         if not found:
             break
         living = [pid for pid, zombie in found if not zombie]
@@ -605,8 +618,9 @@ def spawn(argv, cwd=None, env=None, **popen_kwargs):
     for reserved in ("start_new_session", "creationflags", "preexec_fn", "process_group"):
         popen_kwargs.pop(reserved, None)
     popen_kwargs.update(_session_kwargs())
-    process = subprocess.Popen(argv, cwd=cwd, env=_child_env(env, tag), **popen_kwargs)
-    _register(tag, process.pid, process.pid if POSIX else None)
+    with _SPAWN_LOCK:
+        process = subprocess.Popen(argv, cwd=cwd, env=_child_env(env, tag), **popen_kwargs)
+        _register(tag, process.pid, process.pid if POSIX else None)
     return OwnedProcess(process, tag, argv)
 
 
@@ -768,12 +782,14 @@ def run(argv, cwd=None, timeout=None, env=None, input=None, on_event=None, on_ou
 
     began = time.monotonic()
     try:
-        process = subprocess.Popen(
-            argv, cwd=cwd, env=child_env,
-            stdin=subprocess.PIPE if input is not None else subprocess.DEVNULL,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT if stderr_to_stdout else subprocess.PIPE,
-            **_session_kwargs())
+        with _SPAWN_LOCK:
+            process = subprocess.Popen(
+                argv, cwd=cwd, env=child_env,
+                stdin=subprocess.PIPE if input is not None else subprocess.DEVNULL,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT if stderr_to_stdout else subprocess.PIPE,
+                **_session_kwargs())
+            _register(tag, process.pid, process.pid if POSIX else None)
     except (OSError, ValueError) as exc:
         close_log()
         error = f"{type(exc).__name__}: {exc}"
@@ -782,7 +798,6 @@ def run(argv, cwd=None, timeout=None, env=None, input=None, on_event=None, on_ou
                              exception=exc)
 
     pgid = process.pid if POSIX else None
-    _register(tag, process.pid, pgid)
     timed_out = idle = cancelled = False
     next_beat = began + heartbeat_seconds if heartbeat_seconds else None
 

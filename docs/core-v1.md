@@ -78,9 +78,10 @@ full table with the fields each consumer reads.
 |---|---|---|
 | Deterministic routing | pure `_route`; fixed clock + run-id ⇒ identical state and events | `test_core_workflow.Determinism` |
 | Retry | FAILED + retryable, per-step policy with backoff | `Retry` |
-| Resume | state saved before and after every execution; succeeded steps never re-run | `Resume`, `StaleRunResume` |
+| Resume | state saved before and after every execution; a step recorded as succeeded is never executed again by `resume`, even if the driver died before the cursor moved (it follows the recorded route instead) | `Resume`, `StaleRunResume` |
 | Pause / cancel | request files honoured between steps; cancel also terminates a running child tree and ends CANCELLED | `Pause`, `Cancel` |
-| Human gates | `human-checkpoint` waits; G4/G6/G7 never auto-approve | `HumanGate` |
+| Human gates | `human-checkpoint` waits; G4/G6/G7 never auto-approve; `wgf <step> --run` and `resume --from` refuse to start past an upstream step that is BLOCKED, WAITING or FAILED, or past a gate this run has not passed | `HumanGate` |
+| Event log is load-bearing | a run that cannot write `events.jsonl` ends FAILED with the reason, never COMPLETED | `test_core_persistence.EventLogLoss` |
 | No infinite loops | `max_visits` per step, including skipped and `--run` paths | `MaxVisits`, `VerifyDevelopLoop` |
 | One driver per run | O_EXCL lock with guarded stale takeover | `ConcurrentRunLock` |
 | Atomic persistence | temp + fsync + rename for state, artifacts, pointers; torn event lines skipped and reported | `test_core_persistence` |

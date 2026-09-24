@@ -220,7 +220,11 @@ def build(run, api, state, seconds, browser):
               else {"consistent": False})
     drafted = bool(release and release["manifest_path"] and release["packages"]
                    and all(p["reproduces"] for p in release["packages"]))
-    passed = steps_ok and drafted and engine["consistent"]
+    manifest = contents.get("release-manifest") or {}
+    review_status = ((manifest.get("evidence") or {}).get("review") or {}).get("status")
+    # A golden run passes only through a real review: `skipped` (reviewer kind none) or an
+    # absent review is a run that proves less than it claims.
+    passed = steps_ok and drafted and engine["consistent"] and review_status == "approved"
     return {
         "format": 1,
         "golden": run.game.key,
@@ -237,6 +241,7 @@ def build(run, api, state, seconds, browser):
         "reviewer": "golden-run reviewer (scripts/golden/reviewer.py) - deterministic rule "
                     "checks, NOT an AI reviewer",
         "auto_approved_gates": list(run.config_data["checkpoints"]["auto_approve"]),
+        "review_status": review_status,
         "steps": steps,
         "unexpected_steps": extra,
         "artifacts": artifacts,

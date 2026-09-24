@@ -657,5 +657,17 @@ class EveryChildGoesThroughProcs(unittest.TestCase):
         self.assertEqual(offenders, [], "start child processes through wgflib.procs")
 
 
+class SubreaperLeavesOtherChildrenAlone(unittest.TestCase):
+    @unittest.skipUnless(sys.platform.startswith("linux"), "PR_SET_CHILD_SUBREAPER is Linux")
+    def test_a_child_started_outside_procs_keeps_its_exit_status(self):
+        # Reaping it would make its owner's wait() see ECHILD and report 0 - a false success.
+        self.assertTrue(procs.install_subreaper())
+        self.addCleanup(procs.install_subreaper, False)
+        child = subprocess.Popen([sys.executable, "-c",
+                                  "import sys, time; time.sleep(1.5); sys.exit(3)"])
+        self.assertTrue(procs.run(["true"], timeout=10).ok)
+        self.assertEqual(child.wait(timeout=10), 3)
+
+
 if __name__ == "__main__":
     unittest.main()

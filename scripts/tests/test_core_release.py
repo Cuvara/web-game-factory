@@ -201,6 +201,12 @@ class DirtyCheckout(ReleaseCase):
         self.assertEqual(result.outcome, StepOutcome.BLOCKED)
         self.assertIn("verified-dirty-tree", self.refusal_codes(result))
 
+    def test_a_verification_that_could_not_tell_whether_its_tree_was_clean_is_refused(self):
+        # verify records dirty=None when `git status` failed: unknown is not clean.
+        result = self.release(self.game.evidence(dirty=None))
+        self.assertEqual(result.outcome, StepOutcome.BLOCKED)
+        self.assertIn("verified-tree-unknown", self.refusal_codes(result))
+
 
 class ForbiddenContent(ReleaseCase):
     def reverify_and_release(self, flags=()):
@@ -334,11 +340,15 @@ class ContinueIn(ReleaseCase):
         api = self.api(["fail"])
         state = api.run(RunRequest(project_id="fixture-game"))
         self.assertEqual(state.status, RunStatus.FAILED)
-        state = api.run(RunRequest(run_id=state.run_id, scope="release"))
-        self.assertNotEqual(state.status, RunStatus.COMPLETED)
-        self.assertEqual(state.steps["release"].status, "FAILED")
-        self.assertIn("qa-not-passed", state.steps["release"].error)
-        self.assertIsNone(api.store.load(state.run_id).latest_artifact("release-manifest"))
+        # Two layers: the engine will not start `release` past a FAILED verify at all
+        # (EngineError), and the release step itself refuses a failed qa-report
+        # (qa-not-passed, covered by the step-level tests in this module).
+        from wgflib.workflow.engine import EngineError
+        with self.assertRaisesRegex(EngineError, "verify is FAILED"):
+            api.run(RunRequest(run_id=state.run_id, scope="release"))
+        state = api.store.load(state.run_id)
+        self.assertNotIn("release", {k for k, v in state.steps.items() if v.visits})
+        self.assertIsNone(state.latest_artifact("release-manifest"))
         self.assertEqual(self.game.pnpm_calls(), [])
 
     def test_release_run_after_a_passing_verification_drafts(self):

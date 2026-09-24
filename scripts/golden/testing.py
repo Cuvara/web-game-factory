@@ -304,6 +304,10 @@ def end_to_end_case(key):
             self.assertEqual(failed, [], self._explain())
             self.assertEqual(self.summary["run_status"], "COMPLETED", self._explain())
 
+        def test_the_build_was_really_reviewed(self):
+            self.assertEqual(self.summary["review_status"], "approved",
+                             "a golden run passes only through an approving review")
+
         def test_the_engine_is_the_games_everywhere(self):
             self.assertTrue(self.summary["engine"]["consistent"], self.summary["engine"])
             self.assertEqual(self.summary["engine"]["expected"], game.engine)

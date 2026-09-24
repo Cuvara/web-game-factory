@@ -567,5 +567,19 @@ workflow:
             parse_definition(document, "<test>")
 
 
+class EventLogLoss(EngineCase):
+    """Decisions are corroborated from events.jsonl, so a log that cannot be written is a
+    failed run, never a quiet COMPLETED with nothing on disk."""
+
+    def test_a_run_that_cannot_write_its_event_log_fails_and_says_why(self):
+        def full(record):
+            raise OSError(28, "No space left on device")
+        self.store.append_event = full
+        state = self.engine(LINEAR).start()
+        self.assertEqual(state.status, RunStatus.FAILED)
+        self.assertIn("event log could not be written", state.message)
+        self.assertIn("No space left", state.message)
+
+
 if __name__ == "__main__":
     unittest.main()

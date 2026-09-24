@@ -209,7 +209,12 @@ def evidence_refusals(refs, loaded, run_id):
         out.extend(Refusal(FAILED, LINEAGE, p) for p in problems)
     problems, _ = review_status(refs, loaded)
     out.extend(problems)
-    if (vr.get("commit") or {}).get("dirty"):
+    if (vr.get("commit") or {}).get("dirty") is None:
+        out.append(Refusal(BLOCKED, "verified-tree-unknown",
+                           "the verification could not establish whether its working tree "
+                           "was clean (git status failed), so no commit is known to "
+                           "reproduce what it verified. Re-run verify."))
+    elif (vr.get("commit") or {}).get("dirty"):
         out.append(Refusal(BLOCKED, "verified-dirty-tree",
                            "the verification ran on a working tree with uncommitted changes, "
                            "which no commit reproduces. Commit (or discard) them and re-run "

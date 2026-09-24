@@ -238,6 +238,40 @@ class HumanGate(EngineCase):
         state = engine.resume(run.run_id, decision="approve", decided_by="automation")
         self.assertEqual(state.status, RunStatus.WAITING)
 
+    def test_a_rejected_gate_cannot_be_stepped_over_by_naming_a_later_step(self):
+        engine = self.engine(CHECKPOINT.replace("GATE", "G2"))
+        run = engine.start()
+        state = engine.resume(run.run_id, decision="reject")
+        self.assertEqual(state.status, RunStatus.BLOCKED)
+        with self.assertRaisesRegex(EngineError, "review is BLOCKED"):
+            engine.continue_in(run.run_id, "design")
+        with self.assertRaisesRegex(EngineError, "review is BLOCKED"):
+            engine.resume(run.run_id, from_step="design")
+        self.assertNotIn("design", self.script.executed())
+
+    def test_a_pending_irreversible_gate_cannot_be_stepped_over(self):
+        engine = self.engine(CHECKPOINT.replace("GATE", "G4"))
+        run = engine.start()
+        self.assertEqual(run.status, RunStatus.WAITING)
+        with self.assertRaisesRegex(EngineError, "review is WAITING"):
+            engine.continue_in(run.run_id, "design")
+        self.assertNotIn("design", self.script.executed())
+
+    def test_a_gate_this_run_never_reached_cannot_be_stepped_over(self):
+        engine = self.engine(CHECKPOINT.replace("GATE", "G3"))
+        run = engine.start(scope="strategy")
+        self.assertEqual(run.status, RunStatus.COMPLETED)
+        with self.assertRaisesRegex(EngineError, r"gate G3\) has not been passed"):
+            engine.continue_in(run.run_id, "design")
+
+    def test_an_approved_gate_lets_a_later_step_run_again(self):
+        engine = self.engine(CHECKPOINT.replace("GATE", "G2"))
+        run = engine.start()
+        engine.resume(run.run_id, decision="approve")
+        state = engine.continue_in(run.run_id, "design", force=True)
+        self.assertEqual(state.status, RunStatus.COMPLETED)
+        self.assertEqual(self.script.executed().count("design"), 2)
+
 
 class MaxVisits(EngineCase):
     def test_a_loop_blocks_at_its_limit_instead_of_spinning(self):
@@ -326,6 +360,24 @@ class StaleRunResume(EngineCase):
         self.assertEqual(self.script.executed(), ["b", "c"])
         self.assertEqual(state.steps["a"].executions, 1)
         self.assertFalse(os.path.exists(os.path.join(self.store.run_dir(run_id), "lock")))
+
+    def test_a_crash_after_a_step_succeeded_does_not_execute_it_again(self):
+        # The driver recorded b's SUCCESS, then died before the cursor moved on.
+        engine = self.engine(LINEAR)
+        run = engine.start(scope="a")
+        engine.continue_in(run.run_id, "b")
+        state = self.store.load(run.run_id)
+        self.assertEqual(state.steps["b"].status, StepStatus.SUCCESS)
+        state.status, state.cursor, state.scope, state.exit = (
+            RunStatus.RUNNING, "b", ["a", "b", "c"], None)
+        self.store.save(state)
+        with open(os.path.join(self.store.run_dir(run.run_id), "lock"), "w") as handle:
+            handle.write(f"{DEAD_PID}\n")
+        self.script.calls.clear()
+        state = engine.resume(run.run_id)
+        self.assertEqual(state.status, RunStatus.COMPLETED)
+        self.assertEqual(self.script.executed(), ["c"])
+        self.assertEqual(state.steps["b"].executions, 1)
 
 
 class ConcurrentRunLock(EngineCase):

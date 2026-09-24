@@ -1,7 +1,7 @@
 """The web-game-template revision this Factory expects, and a checkout of exactly it.
 
 The template is a separate repository (the source of truth for template code, the example
-games, platform adapters and the PixiJS/Three.js support). The Factory never copies its
+games, platform adapters and engine support). The Factory never copies its
 source; it pins one commit in `workspace/config/template.lock.json` and everything that has
 to read template files - the golden runs, the SDK inspector's tests, the release and
 hashing differential tests - reads a checkout of that commit, never "whatever the sibling

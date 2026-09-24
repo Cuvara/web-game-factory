@@ -65,6 +65,10 @@ UNSCHEMATIZED = {
     # Raw evidence snapshots are the discovery module's own input format (read by
     # wgf_discovery/evidence.py); claims cite them. They are not artifacts.
     os.path.join("research", "snapshots"),
+    # Installation configuration (factory.yaml, the template lock) is read by the tooling
+    # that owns it (wgflib.workflow.config, wgflib.template) and validated there; it is
+    # not an artifact and has no artifact schema.
+    "config",
 }
 
 REFERENCE_FILES = (

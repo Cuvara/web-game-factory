@@ -119,8 +119,7 @@ agents:
       - core/reference/platforms/
       - core/templates/release-report.md
     produces: [scaffold-record, release-manifest, platform-publication]
-    consumes: [tech-plan, qa-report, verification-report, sdk-report, prototype-report,
-               review-report, scaffold-record]
+    consumes: [tech-plan, qa-report, verification-report, sdk-report, prototype-report, review-report, scaffold-record]
 
   - id: liveops
     role: liveops

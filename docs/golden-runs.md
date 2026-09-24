@@ -193,7 +193,14 @@ They do **not** prove:
 ## Repeatability
 
 Given the same template commit, fixtures and Factory code, two runs agree on everything but
-what is inherently per-run. See the results section for the last measured comparison.
+what is inherently per-run. `scripts/golden/compare.py a.json b.json` checks it.
+
+Measured 2026-09-24 (WSL2, warm pnpm store, Chromium 1243): each run 220-350 s wall
+clock; the time is `develop` (checks incl. the e2e smoke, 30-180 s) and `verify`
+(45-170 s). Every other step is under 10 s. Two consecutive runs of each game compared
+`REPEATABLE`: identical step outcomes, engine records, research/opportunity hashes, files per
+commit, package content digests, evidence statuses (`PASS_MOCK` overall; poki portal
+`BLOCKED_EXTERNAL`), verification counts and browser results.
 
 Legitimately different between two runs:
 

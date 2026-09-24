@@ -366,7 +366,7 @@ def end_to_end_case(key):
         def test_no_process_outlived_the_run(self):
             self.assertEqual(self.summary["leftover_processes"], [])
             self.assertEqual(summary.leftover_processes(self.workdir), [])
-            self.assertEqual(procs.live_groups(), [])
+            self.assertFalse(procs.live_groups())
 
         def test_the_run_passed(self):
             self.assertTrue(self.summary["passed"], self._explain())

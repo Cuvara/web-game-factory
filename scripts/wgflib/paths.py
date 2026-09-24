@@ -28,6 +28,17 @@ CONFIG = os.path.join(WORKSPACE, "config")
 TEMPLATE = os.path.join(os.path.dirname(ROOT), "web-game-template")
 
 
+def checkout_path(root, name):
+    """`<root>/<name>` for a repository name read from an artifact, refusing any name that
+    is not one plain directory entry. scaffold-record's pattern admits `.` and `..`, which
+    would make a step review, verify or release the checkouts directory or its parent."""
+    if (not isinstance(name, str) or not name or name in (".", "..")
+            or any(c in name for c in "/\\\0") or name != name.strip()
+            or any(ord(c) < 32 for c in name)):
+        raise ValueError(f"repository name {name!r} is not a single directory name")
+    return os.path.normpath(os.path.join(root, name))
+
+
 def display(path):
     """A path as it should appear in output: repo-relative, forward slashes."""
     try:

@@ -389,7 +389,15 @@ reversible gates the workflow's own checkpoints name (`G2` for `new-game`) unles
 `--hold-gates`. A checkpoint with no gate is never auto-approved. **G4, G6 and G7 are never auto-approved and never accept a non-human
 decision here**, whatever config says; the list is read from `irreversible: true` in
 `core/lifecycle/gates.yaml`. This mirrors the rule `decision-record.schema.json` and
-`wgf-state.py` already enforce.
+`wgf-state.py` already enforce. The comparison ignores case and surrounding space (`g4` is
+G4), and a gate `gates.yaml` does not define is never auto-approved either.
+
+Who decided is recorded as `decided_by`. A `--decision` given to the CLI is `human`, unless
+the command runs inside a process tree a step started (it, or one of its ancestors, carries
+`WGF_PROC_TAG`): a developer or reviewer agent answering its own run is `automation`, and
+G4/G6/G7 refuse it. And a decision is only *used* when `events.jsonl` holds the
+`DECISION_RECORDED` event the engine emitted with it — one written into `state.json` alone
+answers nothing, and the checkpoint waits again (`wgflib/workflow/integrity.py`).
 
 ## 10. Events and logs
 
@@ -662,6 +670,15 @@ The engine executes no code it was not given by the installation:
   a malformed shape (a list where a target belongs, `on:` that is not a mapping) is a
   `DefinitionError` listing it — never an exception from inside the parser.
 - Decisions, `decided_by` and notes are checked before a run is touched (see §7).
+- `resume` and `continue_in` refuse a `state.json` the engine could not have written
+  (`integrity.state_problems`): an unknown status, a cursor naming no step, negative or
+  non-integer counters, `loop_base` above `visits`, an artifact version that is not at its
+  canonical location or not numbered 1..n, a step's outputs naming a version state no
+  longer records (a failed report's ref deleted to expose the passing one before it), or a
+  decision for a visit that never happened. This catches inconsistent edits. A writer who
+  rewrites state, artifacts and events *consistently* is not detectable locally; the
+  Security category of the Core Acceptance Suite (`test_core_security.py`) lists what is
+  and is not defended.
 - The kernel and CLI contain no `subprocess`, `eval`, `exec`, `shell=True` or `pickle`;
   `Security.test_the_kernel_executes_nothing` enforces it. `--mock-plan @FILE` reads a file
   the person running the command named.

@@ -74,29 +74,50 @@ checkout. The checkout is **fingerprinted** before and after the reviewer runs
   `package.json`, the lockfiles, `.npmrc`, `.gitignore`, `game.config.yaml`, the
   tsconfig/vite/vitest/playwright/eslint/prettier configs, `tests/`, `.github/` and
   `.husky/`. A reviewer that also edited `.gitignore` to hide its change is still caught.
-- `.git/config` and `.git/hooks/`. A hook is code that runs on the next commit.
-- The set of top-level ignored entries. A new `dist/` counts as a write.
-- The Factory's own `guarded_paths`: by default `core/workflows/` and `workspace/config/`.
-  These decide what a review is worth.
+- The git metadata that changes what git or the next commit does: `.git/config`, `hooks/`,
+  `info/` (exclude, attributes), `objects/info/` (alternates, grafts), submodules' config
+  and hooks, and in-progress operation state (`MERGE_HEAD`, `rebase-*`, `sequencer/`). A
+  hook is code that runs on the next commit; an `info/exclude` line hides a file.
+- The set of top-level ignored entries. A new `dist/` counts as a write, and so does a
+  deleted one.
+- Every file *inside* the ignored entries that already existed (`node_modules/`, `dist/`),
+  by lstat identity: inode, size, mtime and ctime. A write changes ctime and an
+  unprivileged process cannot set it back, so editing a dependency and restoring its mtime
+  is still caught. `fingerprint_ignored: false` turns this off where the walk is too slow.
+- The Factory's own `guarded_paths`: by default `core/` (workflows, gates, contracts),
+  `scripts/`, `bin/` and `workspace/config/`. These decide what a review, and every later
+  check, is worth.
+
+Every git command the step runs is hardened (`wgflib/gitsafe.py`): `core.fsmonitor`,
+hooks and every filter driver the checkout's config defines are disabled, and after the
+first call the git directory and work tree are pinned. Without that, a reviewer - or the
+developer before it - that writes `core.fsmonitor` or a `filter.*.process` into
+`.git/config` gets the Factory to run a command outside any sandbox the agent was in, and a
+`core.worktree` pointing elsewhere turns the restore's `clean -fd` on another directory.
 
 **Any difference** fails the review. Each change is listed in
 `review-report.isolation.violations` with `path`, `change`, `scope` (`checkout` or
 `factory`) and `sensitive`. The checkout is then put back:
 
+0. Write back the git metadata from memory, before git reads it again.
 1. Restore the symbolic ref.
 2. Restore every ref.
 3. `reset --hard` to the recorded `HEAD`.
 4. `clean -fd`. Never `-x`, so `node_modules` survives.
-5. Remove any new ignored entries.
+5. Remove any new ignored entries, and files added inside existing ones.
 6. Write back the bytes of the fixed-list, git-metadata and guarded files, which were kept in
    memory.
 
 The checkout is then fingerprinted again. `isolation.restored` records whether it now
 matches. If it does not, the step is `BLOCKED`.
 
-**What it cannot see.** Changes *inside* an ignored entry that already existed
-(`node_modules/`, `dist/`) are not seen. Neither is anything outside the checkout and the
-guarded paths. Fingerprinting detects and undoes changes; it does not sandbox the reviewer. A
+A file *modified* inside an existing ignored entry cannot be put back - its bytes were never
+kept - so that review is always `BLOCKED` for a person.
+
+**What it cannot see.** Anything outside the checkout and the guarded paths, and a process
+the reviewer left running that writes after the second snapshot and escaped
+`wgflib.procs`' cleanup (one that detached itself *and* cleared its environment; see
+docs/agent-lifecycle.md). Fingerprinting detects and undoes changes; it does not sandbox the reviewer. A
 reviewer that must not be able to reach the network or your home directory needs an OS-level
 sandbox around its argv. That belongs in the installation's config.
 
@@ -139,7 +160,8 @@ factory:
       timeout_seconds: 1800         # wall clock
       idle_timeout_seconds: 600     # no stdout/stderr for this long
     # checkouts: ..                 # default: factory.develop.checkouts
-    guarded_paths: [core/workflows, workspace/config]
+    guarded_paths: [core, scripts, bin, workspace/config]
+    fingerprint_ignored: true     # lstat inside existing ignored entries (node_modules)
 ```
 
 `argv` placeholders:

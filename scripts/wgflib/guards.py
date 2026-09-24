@@ -302,13 +302,24 @@ def plan_fits_timebox(context):
     )
 
 
+def supported_engines():
+    """The engines the tech-plan contract allows. The schema is the one list; the guard
+    does not keep a second copy that could drift from it."""
+    path = os.path.join(paths.ARTIFACTS, "tech-plan.schema.json")
+    with open(path, encoding="utf-8") as handle:
+        schema = json.load(handle)
+    return tuple(schema["properties"]["engine"]["properties"]["type"]["enum"])
+
+
 @guard("engine_selected")
 def engine_selected(context):
     plan = context.entity.artifact("tech-plan")
     engine = plan.get("engine") or {}
     kind = engine.get("type")
-    if kind not in ("pixijs", "threejs"):
-        return red(f"engine.type is {kind!r}; PixiJS for 2D, Three.js for 3D, nothing else")
+    engines = supported_engines()
+    if kind not in engines:
+        return red(f"engine.type is {kind!r}; the tech-plan contract allows only "
+                   f"{', '.join(engines)}")
     if not (engine.get("rationale") or "").strip():
         return red(f"{kind} selected with no written rationale")
     return green(f"{kind} with a rationale", engine=kind)

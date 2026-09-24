@@ -424,9 +424,9 @@ class Schema(unittest.TestCase):
                 for n in ("design-2d.json", "design-3d.json")]
 
     @unittest.skipIf(_jsonschema_lite() is None, "wgflib.jsonschema_lite is not available")
-    def test_validates_with_jsonschema_lite(self):  # pragma: no cover - depends on merge order
-        lite = _jsonschema_lite()
-        validate = getattr(lite, "validate_artifact", None) or getattr(lite, "validate")
+    def test_validates_with_jsonschema_lite(self):
+        from wgflib.workflow.contracts import ArtifactContracts
+        validate = ArtifactContracts()  # full draft 2020-12 validation via jsonschema_lite
         for artifact in self.artifacts():
             errors = validate("tech-plan", artifact)
             self.assertFalse(errors, errors)

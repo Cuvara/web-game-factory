@@ -242,7 +242,7 @@ class AgentLoop(unittest.TestCase):
                        "checks": [], "developer": developer_cfg}
         develop_cfg.update(develop or {})
         config = FactoryConfig({
-            "storage": {"fsync": False}, "checkpoints": {"auto_approve": ["G2"]},
+            "storage": {"fsync": False}, "checkpoints": {"auto_approve": ["G2", "G3"]},
             "execution": {"max_attempts": 2, "backoff": "none", "delay_seconds": 0,
                           **(execution or {})},
             "develop": develop_cfg,

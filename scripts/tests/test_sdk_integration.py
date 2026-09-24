@@ -18,6 +18,7 @@ import json
 import os
 import re
 import shutil
+import subprocess
 import sys
 import tempfile
 import textwrap
@@ -45,12 +46,37 @@ from wgf_sdk.step import SdkStep  # noqa: E402
 CONFORMANCE = os.path.join(HERE, "fixtures", "sdk-conformance.json")
 
 
+IDENTITY = ["-c", "user.name=Test", "-c", "user.email=test@example.invalid"]
+
+
+def git(root, *args, check=True):
+    """Real git: the step establishes, and makes, its commit in the synthetic repository."""
+    done = subprocess.run(["git", *IDENTITY, *args], cwd=root, capture_output=True, text=True)
+    if check and done.returncode != 0:
+        raise AssertionError(f"git {' '.join(args)}: {done.stderr}")
+    return done
+
+
+def commit_checkout(root, message="feat(game): what develop committed"):
+    """Commit whatever the test wrote, as the develop step would have. Returns HEAD."""
+    if not os.path.isdir(os.path.join(root, ".git")):
+        git(root, "init", "-q")
+        write(root, ".gitignore", "node_modules/\n/build/\n")
+    if git(root, "status", "--porcelain").stdout.strip() or \
+            git(root, "rev-parse", "HEAD", check=False).returncode != 0:
+        git(root, "add", "--all")
+        git(root, "commit", "-q", "--no-verify", "-m", message)
+    return git(root, "rev-parse", "HEAD").stdout.strip()
+
+
 class Conformance(evidence.ConformanceRunner):
-    """The conformance phase's evidence: the real suite's report, never a pnpm run."""
+    """The conformance phase's evidence: the real suite's report, never a pnpm run. It ran
+    where the checkout's HEAD is, as the real runner's `git rev-parse HEAD` says."""
 
     def run(self, game_repo, browser=False):
         with open(CONFORMANCE, encoding="utf-8") as handle:
-            return evidence.ConformanceRun(json.load(handle), "c" * 40)
+            head = git(game_repo, "rev-parse", "HEAD", check=False).stdout.strip() or None
+            return evidence.ConformanceRun(json.load(handle), head)
 
 
 class Step(SdkStep):
@@ -229,13 +255,14 @@ def make_repo(root, scene=True, node_modules=True, main=MAIN_TS, game_config=GAM
         write(root, "src/game/run-scene.ts", SCENE_TS)
     if node_modules:
         os.makedirs(os.path.join(root, "node_modules"), exist_ok=True)
+    commit_checkout(root)
     return root
 
 
 # -- fakes --------------------------------------------------------------------------------------
 
 class FakeRunner:
-    """node, pnpm and git, scripted. Records every command."""
+    """node and pnpm, scripted; git real (or absent, `git=False`). Records every command."""
 
     def __init__(self, failing_scenarios=(), tsc_output=None, git=True, pnpm=True):
         self.calls = []
@@ -249,9 +276,8 @@ class FakeRunner:
         if argv[0] == "git":
             if not self.git:
                 return None
-            if argv[1] == "rev-parse":
-                return CommandResult(0, "a" * 40 + "\n")
-            return CommandResult(0, " M src/main.ts\n")
+            done = git(cwd, *argv[1:], check=False)
+            return CommandResult(done.returncode, done.stdout, done.stderr)
         if not self.pnpm:
             return None
         if "vitest" in argv:
@@ -338,8 +364,10 @@ class SdkCase(unittest.TestCase):
         self.design = fixture("game-design")
         self.scaffold = fixture("scaffold-record")
 
-    def execute(self, runner=None, params=None, sdk=None, **inputs):
+    def execute(self, runner=None, params=None, sdk=None, commit_first=True, **inputs):
         runner = runner or FakeRunner()
+        if os.path.isdir(self.repo) and commit_first:
+            self.base = commit_checkout(self.repo)
         step = Step(FakeDefinition({"game_repo": self.repo, **(params or {})}))
         step.integration_runner_factory = lambda: runner
         artifacts = {"game_design": self.design, "scaffold_record": self.scaffold}
@@ -508,8 +536,14 @@ class Integration(SdkCase):
         self.assertEqual(report["integration"]["tests"]["status"], "passed")
         self.assertEqual([s["id"] for s in report["integration"]["tests"]["scenarios"]],
                          list(SCENARIOS))
-        self.assertEqual(report["integration"]["repository_state"], "uncommitted-changes")
-        self.assertEqual(report["build_ref"]["commit_sha"], "c" * 40)  # where conformance ran
+        # Committed once, keyed, on the commit it was given; the evidence is about that commit.
+        self.assertEqual(report["integration"]["repository_state"], "clean")
+        head = git(self.repo, "rev-parse", "HEAD").stdout.strip()
+        self.assertEqual(report["build_ref"], {"commit_sha": head, "base_commit_sha": self.base,
+                                               "sdk_commits": [head]})
+        self.assertEqual(git(self.repo, "rev-parse", "HEAD~1").stdout.strip(), self.base)
+        self.assertIn("Wgf-Sdk-Key: local:sdk:1",
+                      git(self.repo, "log", "-1", "--format=%B").stdout)
 
     def test_a_self_hosted_platform_needs_the_game_to_wire_a_tracker(self):
         make_repo(self.repo)
@@ -535,7 +569,7 @@ class Integration(SdkCase):
         report = self.report(self.execute())
         self.assertEqual(ArtifactContracts()("sdk-report", report), [])
         self.assertEqual(report["provenance"]["content_hash"], content_hash(report))
-        self.assertEqual(report["provenance"]["schema_version"], "1.1.0")
+        self.assertEqual(report["provenance"]["schema_version"], "1.2.0")
         self.assertEqual(report["provenance"]["produced_by"], {"role": "sdk",
                                                                "actor": "automation"})
         self.assertEqual([i["artifact_type"] for i in report["provenance"]["inputs"]],
@@ -717,6 +751,95 @@ class Seam(SdkCase):
                          [f["path"] for f in report["integration"]["files"]])
 
 
+def prototype_at(commit):
+    report = fixture("prototype-report")
+    report["build_ref"] = {"commit_sha": commit}
+    return report
+
+
+class Commits(SdkCase):
+    """The integration is committed once, keyed, on exactly develop's commit - or refused."""
+
+    def head(self):
+        return git(self.repo, "rev-parse", "HEAD").stdout.strip()
+
+    def test_builds_on_the_prototype_commit_and_records_it_as_the_base(self):
+        make_repo(self.repo)
+        base = self.head()
+        result = self.execute(prototype_report=prototype_at(base))
+        self.assertEqual(result.outcome, StepOutcome.SUCCESS, result.error or result.message)
+        build_ref = self.report(result)["build_ref"]
+        self.assertEqual(build_ref, {"commit_sha": self.head(), "base_commit_sha": base,
+                                     "sdk_commits": [self.head()]})
+        self.assertNotEqual(self.head(), base)
+        self.assertEqual(git(self.repo, "status", "--porcelain").stdout, "")
+
+    def test_a_retry_finds_its_commit_instead_of_committing_again(self):
+        make_repo(self.repo)
+        base = self.head()
+        first = self.report(self.execute(prototype_report=prototype_at(base)))["build_ref"]
+        again = self.execute(prototype_report=prototype_at(base))
+        self.assertEqual(again.outcome, StepOutcome.SUCCESS, again.error or again.message)
+        self.assertEqual(self.report(again)["build_ref"], first)
+        self.assertEqual(git(self.repo, "rev-list", "--count", f"{base}..HEAD").stdout.strip(),
+                         "1")
+
+    def test_an_integration_already_in_place_commits_nothing(self):
+        make_repo(self.repo)
+        self.execute()
+        # develop's next commit already carries the integration (e.g. a later loop).
+        commit_checkout(self.repo, "feat(game): a later development commit")
+        base = self.head()
+        result = self.execute(prototype_report=prototype_at(base))
+        self.assertEqual(result.outcome, StepOutcome.SUCCESS, result.error or result.message)
+        self.assertEqual(self.head(), base)
+        self.assertEqual(self.report(result)["build_ref"],
+                         {"commit_sha": base, "base_commit_sha": base, "sdk_commits": []})
+
+    def test_a_commit_between_develop_and_sdk_is_refused(self):
+        make_repo(self.repo)
+        base = self.head()
+        write(self.repo, "src/game/extra.ts", "export const unreviewed = true;\n")
+        commit_checkout(self.repo, "fix: slipped in after review")
+        result = self.execute(prototype_report=prototype_at(base))
+        self.assertEqual(result.outcome, StepOutcome.BLOCKED)
+        self.assertIn("commit-lineage-mismatch", result.message)
+        self.assertEqual(result.artifacts, [])
+
+    def test_uncommitted_changes_it_did_not_make_are_refused(self):
+        make_repo(self.repo)
+        base = self.head()
+        write(self.repo, "src/game/extra.ts", "export const uncommitted = true;\n")
+        result = self.execute(prototype_report=prototype_at(base), commit_first=False)
+        self.assertEqual(result.outcome, StepOutcome.BLOCKED)
+        self.assertIn("src/game/extra.ts", result.message)
+        self.assertEqual(self.head(), base)
+
+    def test_a_prototype_report_without_a_commit_blocks(self):
+        make_repo(self.repo)
+        for placeholder in ("0" * 40, "unknown"):
+            result = self.execute(prototype_report=prototype_at(placeholder))
+            self.assertEqual(result.outcome, StepOutcome.BLOCKED, placeholder)
+            self.assertIn("names no build commit", result.message)
+
+    def test_a_failed_integration_is_not_committed(self):
+        make_repo(self.repo)
+        base = self.head()
+        result = self.execute(FakeRunner(failing_scenarios={"reward-callback"}),
+                              prototype_report=prototype_at(base))
+        self.assertEqual(result.outcome, StepOutcome.FAILED)
+        self.assertEqual(self.head(), base)
+        self.assertEqual(self.report(result)["build_ref"],
+                         {"commit_sha": base, "base_commit_sha": base, "sdk_commits": []})
+
+    def test_nothing_is_pushed(self):
+        make_repo(self.repo)
+        self.execute(prototype_report=prototype_at(self.head()))
+        for call in self.runner.calls:
+            if call[0] == "git":
+                self.assertNotIn(call[1], ("push", "fetch", "pull", "remote", "reset"), call)
+
+
 class FailurePaths(SdkCase):
     def test_without_a_design_the_step_only_verifies(self):
         make_repo(self.repo)
@@ -803,10 +926,14 @@ class FailurePaths(SdkCase):
         self.assertEqual(result.outcome, StepOutcome.FAILED)
         self.assertEqual(self.report(result)["integration"]["tests"]["typecheck"], "failed")
 
-    def test_the_commit_is_where_the_conformance_suite_ran(self):
+    def test_without_git_the_commit_cannot_be_established_and_it_blocks(self):
+        # Formerly the report fell back to where the conformance suite said it ran, or to
+        # "unknown". A commit nobody can read is not a commit a release can pin.
         make_repo(self.repo)
-        report = self.report(self.execute(FakeRunner(git=False)))
-        self.assertEqual(report["build_ref"]["commit_sha"], "c" * 40)
+        result = self.execute(FakeRunner(git=False))
+        self.assertEqual(result.outcome, StepOutcome.BLOCKED)
+        self.assertEqual(result.artifacts, [])
+        self.assertIn("cannot be established", result.message)
 
 
 class Runner(unittest.TestCase):

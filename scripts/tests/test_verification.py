@@ -781,12 +781,19 @@ FIXTURES = %r
 SEEN = []
 
 
-def artifact(artifact_type, body, n):
+def pins(inputs):
+    # The engine checks lineage: an output pins exactly the versions its step consumed.
+    return [{"artifact_id": inputs.load(t)["provenance"]["artifact_id"], "artifact_type": t,
+             "content_hash": ref.content_hash} for t, ref in sorted(inputs.refs.items())]
+
+
+def artifact(artifact_type, body, n, inputs=None):
     content = {"provenance": {
         "artifact_id": "wgf:%%s:fixture-game:20260901-%%02d" %% (artifact_type, n),
         "artifact_type": artifact_type, "schema_version": "1.0.0",
         "produced_by": {"role": "gameplay", "actor": "automation"},
-        "produced_at": "2026-09-01T00:00:00Z", "inputs": [], "content_hash": "",
+        "produced_at": "2026-09-01T00:00:00Z",
+        "inputs": pins(inputs) if inputs is not None else [], "content_hash": "",
         "status": "draft"}}
     content.update(copy.deepcopy(body))
     content["provenance"]["content_hash"] = content_hash(content)
@@ -806,8 +813,8 @@ class Develop(WorkflowStep):
         SEEN.append(None if qa is None else [d["id"] for d in qa["blocking_defects"]])
         sdk = load("sdk-report.json")
         return StepResult.success([artifact("prototype-report", load("prototype-report.json"),
-                                            context.execution),
-                                   artifact("sdk-report", sdk, context.execution)])
+                                            context.execution, inputs),
+                                   artifact("sdk-report", sdk, context.execution, inputs)])
 
 
 class Release(WorkflowStep):
@@ -816,7 +823,7 @@ class Release(WorkflowStep):
     def execute(self, inputs, context):
         assert inputs.load("qa-report")["verdict"] == "pass"
         return StepResult.success([artifact("release-manifest", load("release-manifest.json"),
-                                            1)])
+                                            1, inputs)])
 
 
 def register(registry):

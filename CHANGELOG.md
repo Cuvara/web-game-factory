@@ -203,6 +203,31 @@ numbering: `core/` is the contract, and schemas carry their own versions.
 
 ### Changed
 
+- **Commit lineage: a real run can release.** The pipeline develop → review → sdk → verify →
+  release now names one chain of commits, and every step that reads it applies one rule
+  (docs/core-contracts.md §5, `scripts/wgf_verification/lineage.py`). The `sdk` step commits
+  its integration once, locally, keyed by the idempotency key in a `Wgf-Sdk-Key` trailer
+  (reusing develop's keyed-commit mechanism), and never pushes; it refuses (`BLOCKED`) a
+  checkout whose HEAD is not the prototype-report's commit or this run's sdk commits on it,
+  and uncommitted changes it did not make. `sdk-report.build_ref` gains `base_commit_sha` and
+  `sdk_commits` (**sdk-report 1.2.0, additive**). verify's `source.upstream-commits` and
+  release both require: sdk-report commit == verified commit == HEAD; prototype-report commit
+  == sdk base; `git log base..sdk` holds only this run's sdk commits — otherwise
+  `commit-lineage-mismatch`. release now takes `review-report` as an input (workflow
+  `new-game`, and `release:draft` added to its consumers): an approval must be of exactly the
+  prototype commit, a request for changes refuses (`review-not-approved`), and a skipped
+  review is recorded as `evidence.review.status: skipped` — never as approved
+  (**release-manifest 1.2.0, additive**: `evidence.review`). Placeholder commits are gone:
+  develop returns `BLOCKED` instead of `"0"*40`, sdk `BLOCKED` instead of `"unknown"`, and
+  release refuses either as `commit-unknown`. The engine now enforces artifact lineage: with
+  a validator, an output declaring `provenance.inputs` must pin exactly the versions its step
+  consumed (`contracts.check_lineage`, plus no pin of a declared input the step was not
+  given), else a non-retryable `FAILED`. Proved by `scripts/tests/test_core_lineage.py`.
+  *Existing artifacts:* sdk-reports and release-manifests from before still validate; an
+  sdk-report without `base_commit_sha` is read as having made no commit, so it must name the
+  prototype's commit. A prototype-report or sdk-report naming a placeholder commit can no
+  longer be released from: re-run develop (and sdk) so they commit.
+
 - **Verification no longer passes on stale or unowned evidence.** An sdk-report or
   prototype-report naming another commit than the one under test is now a required,
   `BLOCKED` `source.upstream-commits` check (was a non-blocking warning), and SDK checks

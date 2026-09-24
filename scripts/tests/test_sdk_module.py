@@ -14,6 +14,7 @@ import copy
 import json
 import os
 import shutil
+import subprocess
 import sys
 import tempfile
 import textwrap
@@ -36,7 +37,19 @@ from wgf_sdk.step import SdkStep  # noqa: E402
 
 FIXTURE = os.path.join(HERE, "fixtures", "sdk-conformance.json")
 NOW = "2026-09-23T12:00:00Z"
-COMMIT = "d7fa6930000000000000000000000000000000aa"
+IDENTITY = ["-c", "user.name=Test", "-c", "user.email=test@example.invalid"]
+
+
+def git(repo, *args):
+    """Real git in the synthetic game repository: the step establishes its commit from it."""
+    return subprocess.run(["git", *IDENTITY, *args], cwd=repo, check=True,
+                          capture_output=True, text=True).stdout.strip()
+
+
+def commit_all(repo, message="fixture: the game as develop committed it"):
+    git(repo, "add", "--all")
+    git(repo, "commit", "--allow-empty", "--no-verify", "-q", "-m", message)
+    return git(repo, "rev-parse", "HEAD")
 
 
 def game_config(platforms, ad_kinds=("interstitial", "rewarded")):
@@ -58,7 +71,9 @@ class FakeRunner(evidence.ConformanceRunner):
         FakeRunner.calls.append((game_repo, browser))
         if FakeRunner.error:
             raise evidence.EvidenceError(FakeRunner.error)
-        return evidence.ConformanceRun(copy.deepcopy(FakeRunner.report), COMMIT,
+        # Where the suite ran: the checkout's HEAD, as `git rev-parse HEAD` reports it.
+        return evidence.ConformanceRun(copy.deepcopy(FakeRunner.report),
+                                       git(game_repo, "rev-parse", "HEAD"),
                                        FakeRunner.browser if browser else None)
 
 
@@ -100,11 +115,14 @@ class Case(unittest.TestCase):
     def setUp(self):
         self.repo = tempfile.mkdtemp(prefix="wgf-sdk-game-")
         self.addCleanup(shutil.rmtree, self.repo, ignore_errors=True)
+        git(self.repo, "init", "-q")
+        self.commit = commit_all(self.repo, "chore: initial")
         FakeRunner.calls, FakeRunner.report, FakeRunner.browser, FakeRunner.error = [], load_fixture(), None, None
 
     def configure(self, platforms, **kwargs):
         with open(os.path.join(self.repo, "game.config.yaml"), "w", encoding="utf-8") as handle:
             handle.write(game_config(platforms, **kwargs))
+        self.commit = commit_all(self.repo)
 
     def run_step(self, params=None, config=None):
         params = {"game_repo": self.repo, **(params or {})}
@@ -133,14 +151,17 @@ class FromRealEvidence(Case):
             for name in ("init", "sdk-unavailable", "init-failure", "pause-resume", "interstitial",
                          "rewarded", "storage", "game-binding"):
                 self.assertEqual(features[name]["status"], "working", (platform_id, name))
-                self.assertIn(COMMIT, features[name]["observed_by"])
+                self.assertIn(self.commit, features[name]["observed_by"])
 
     def test_the_report_is_schema_shaped_and_pinned(self):
         self.configure([("yandex", "required")])
         content = self.run_step().artifacts[0].content
         self.assertEqual(ArtifactContracts()("sdk-report", content), [])
         self.assertEqual(content["provenance"]["content_hash"], content_hash(content))
-        self.assertEqual(content["build_ref"], {"commit_sha": COMMIT})
+        # Nothing was integrated, so nothing was committed: the verified commit is the base.
+        self.assertEqual(content["build_ref"], {"commit_sha": self.commit,
+                                                "base_commit_sha": self.commit,
+                                                "sdk_commits": []})
         self.assertEqual(content["provenance"]["produced_by"]["role"], "sdk")
 
     def test_ad_kinds_the_title_did_not_commit_to_are_not_required(self):
@@ -327,10 +348,13 @@ class Schema(Case):
     def test_emitted_reports_validate_with_ajv(self):
         import subprocess
         paths = []
+        # Outside the checkout: an untracked file in it is a change the sdk step did not make.
+        out = tempfile.mkdtemp(prefix="wgf-sdk-reports-")
+        self.addCleanup(shutil.rmtree, out, ignore_errors=True)
         for platforms in ([("yandex", "required"), ("poki", "optional")],
                           [("crazygames", "required"), ("gamevui", "optional")]):
             self.configure(platforms)
-            path = os.path.join(self.repo, f"report-{len(paths)}.json")
+            path = os.path.join(out, f"report-{len(paths)}.json")
             with open(path, "w", encoding="utf-8") as handle:
                 json.dump(self.run_step().artifacts[0].content, handle)
             paths.append(path)

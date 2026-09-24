@@ -23,8 +23,21 @@
       "type": "object",
       "required": ["commit_sha"],
       "properties": {
-        "commit_sha": { "type": "string" },
-        "url": { "type": "string" }
+        "commit_sha": {
+          "type": "string",
+          "description": "The commit the report is about: the sdk step's own integration commit when it made one, else the HEAD it verified."
+        },
+        "url": { "type": "string" },
+        "base_commit_sha": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{40}$",
+          "description": "Since 1.2.0. The commit the integration was made on: the prototype-report's build_ref.commit_sha. Equal to commit_sha when the step committed nothing. Absent in older reports, which are read as base == commit_sha."
+        },
+        "sdk_commits": {
+          "type": "array",
+          "items": { "type": "string", "pattern": "^[0-9a-f]{40}$" },
+          "description": "Since 1.2.0. The commits the sdk step made between base_commit_sha and commit_sha, oldest first, each carrying a `Wgf-Sdk-Key: <run>:<step>:<visit>` trailer. Empty when it committed nothing. git log base..commit must list exactly these."
+        }
       },
       "additionalProperties": false
     },

@@ -12,8 +12,10 @@ Three mechanisms, all in `scripts/wgflib/`:
 | Lineage | `workflow/contracts.py` `check_lineage` | `provenance.inputs` pins exactly the versions of the inputs a step consumed |
 
 The engine calls `ArtifactContracts` on every artifact a step produces (the API wires it in);
-a problem is a non-retryable `FAILED` and nothing is written. Calling it on inputs, and calling
-`check_lineage` on outputs, is the engine's decision (see *Gaps*).
+a problem is a non-retryable `FAILED` and nothing is written. With a validator configured it
+also re-checks every input before the step runs, and calls `check_lineage` on every output
+that declares `provenance.inputs` (§3). Build commits have a lineage of their own, across
+develop, review, sdk, verify and release: §5.
 
 The proof is `scripts/tests/test_core_contracts.py`, the CONTRACTS category of the Core
 Acceptance Suite.
@@ -119,6 +121,18 @@ Pins of types the step did not consume (claims, artifacts carried forward from f
 upstream) are left alone: nothing at this boundary can check them. Consumed items with no
 content hash (untyped artifacts) are skipped.
 
+**In the engine.** When an `artifact_validator` is configured and an output's
+`provenance.inputs` is a list, the engine checks it against the refs the execution actually
+consumed (`step_state.consumed`, resolved to `ArtifactRef`s with their content hashes). On
+top of `check_lineage` it refuses a pin of a type the step *declares* as an input but was not
+given on this visit — an optional input absent from the run (develop's `qa-report` and
+`review-report` on its first visit) that the output nevertheless claims to derive from.
+Optional inputs are otherwise handled correctly by `check_lineage` as it stands: an absent
+input is not consumed, so nothing requires a pin of it; a present one is consumed and must be
+pinned at the version given. Any problem is a non-retryable `FAILED` naming the output and
+the pin, and nothing is written. Every real module and the mocks pin what they consume;
+`scripts/tests/test_core_lineage.py` is the proof.
+
 `test_the_worked_example_lineage_closes` checks that every pin in `workspace/` names an
 artifact that is there, at the pinned hash; the mock tests check every run artifact's lineage
 against what its producer consumed.
@@ -148,10 +162,10 @@ boundary (§4.2).
 | 3 | design → init, assets, develop, sdk, verify | `game-design.schema.json` | 1.1.0 | init: `title_id`, `consistency.status` (= pass), `monetization.placements[].platforms`, `platform_constraints_applied[].platform_id`, `fantasy`, `core_loop`; assets: `asset_requirements[]`, `art_direction`, `audio_direction`, `ux.screens`, `scope.{asset_budget,locales}`, `monetization.placements[].kind`; develop: `scope.*`, `session.*`, `ux.*`, `monetization.placements[]`, `fantasy`, `core_loop`, `pillars`, `controls`, `difficulty`, `progression`; sdk: `monetization.placements[]`, `retention.{hooks,targets}`; verify: `controls`, `session.end_condition`, `progression`, `retention.progression_loop`, `monetization.placements[]`, `scope.locales` | pins title-strategy | init: missing → WAITING, bad design → FAILED; **no schema_version check in init or sdk**; assets refuses only a *newer* major |
 | 4 | init → assets, develop, sdk, verify | `scaffold-record.schema.json` | 1.0.0 | assets: `game_config.platforms[].{id,role}`; develop: `title_id`, `repository.{name,owner,url}`; sdk: `repository.name`, `game_config.platforms[].id`; verify: `repository.name`, `game_config.platforms` | pins game-design; `idempotency_key` (`wgf-init:<run>:<step>`), `template.commit_sha` (only when created), `outcome` created/reused | develop: missing → WAITING; no checkout → BLOCKED |
 | 5 | assets → develop, verify | `asset-manifest.schema.json` | 1.1.0 | develop: `items[].{id,label,type,source,status,license,scope_tier,notes}`; verify: `items[].{id,status}`, `complete` | pins game-design (+ scaffold-record when present) | develop: missing → WAITING |
-| 6 | develop → sdk, verify | `prototype-report.schema.json` | 1.0.0 | sdk: `title_id`, `build_ref.{commit_sha,url}`; verify: `build_ref.commit_sha` | pins every consumed ref (incl. a discarded passing qa-report); `build_ref.commit_sha` (falls back to `"0"*40`), `context.idempotency_key` in the commit | sdk: all inputs optional, no WAITING path |
-| 7 | sdk → verify | `sdk-report.schema.json` | 1.0.0 / 1.1.0 (1.1.0 when integration ran) | `platforms[].{platform_id,features[].{feature,status}}`, `build_ref.commit_sha` | pins every ref; `build_ref.commit_sha` falls back to `"unknown"` | verify: major ≠ 1 → FAILED; missing inputs only logged |
+| 6 | develop → review, sdk, verify, release | `prototype-report.schema.json` | 1.0.0 | sdk: `title_id`, `build_ref.{commit_sha,url}`; verify, release: `build_ref.commit_sha` | pins every consumed ref (incl. a discarded passing qa-report); `build_ref.commit_sha` is the keyed develop commit or HEAD — no HEAD is BLOCKED, never a placeholder | sdk: all inputs optional, no WAITING path; a prototype commit that is not HEAD (or HEAD's base) → BLOCKED |
+| 7 | sdk → verify, release | `sdk-report.schema.json` | 1.2.0 | `platforms[].{platform_id,features[].{feature,status}}`, `build_ref.{commit_sha,base_commit_sha,sdk_commits}` | pins every ref; `build_ref.commit_sha` is the commit verified (its own keyed commit, or HEAD), `base_commit_sha` the prototype's; no readable HEAD is BLOCKED, never `"unknown"` | verify: major ≠ 1 → FAILED; lineage broken → `source.upstream-commits` BLOCKED |
 | 8 | verify → develop (on `fail`), release | `qa-report.schema.json` (+ `verification-report.schema.json`) | 1.0.0 | develop: `verdict`, `blocking_defects[].{id,severity,summary,repro}`; release (mock): pins only | both pin every loaded input; qa-report also pins the verification-report; `commit.sha`, `release_id`, `build_ref.artifact_hash` | FAIL → FAILED route `fail`; BLOCKED unrouted |
-| 9 | release (mock only) → $end | `release-manifest.schema.json` | 1.0.0 (mock) | — | pins qa-report | — |
+| 9 | release → $end | `release-manifest.schema.json` | 1.2.0 | — | pins every consumed ref (qa-report, verification-report, sdk-report, prototype-report, scaffold-record, review-report); `evidence.commit_lineage`, `evidence.review` | — |
 
 ### 4.2 Target boundaries (not built yet)
 
@@ -167,9 +181,8 @@ Ambiguous or unsafe, in order of risk. None is a schema violation — every arti
 modules emit under the test suite validates — they are what a valid artifact can still get
 wrong.
 
-1. **Lineage is not enforced in the engine.** `check_lineage` exists; nothing calls it at
-   runtime, and inputs are not re-validated when loaded. An artifact that pins the wrong
-   version of its input is persisted. *Engine (Team A).*
+1. ~~**Lineage is not enforced in the engine.**~~ Closed: the engine calls `check_lineage`
+   on every output that declares `provenance.inputs` (§3), and re-checks inputs.
 2. **No schema declares its own version.** `provenance.schema_version` is a free semver each
    producer hardcodes (1.0.0 or 1.1.0 above); consumers check only the major, some not at all
    (init, sdk), and assets accepts `0.x`. A consumer cannot know which minor it is reading.
@@ -183,12 +196,70 @@ wrong.
 5. **`game-design.build_spec` has no consumer.** Downstream steps read `ux.screens`,
    `asset_requirements` and `monetization.placements`, so the 1.1.0 build spec is not what
    gets built from.
-6. **Commit lineage degrades silently**: `prototype-report.build_ref.commit_sha` may be
-   `"0"*40`, `sdk-report`'s may be `"unknown"`, and verify treats a stale upstream commit as a
-   WARNING. A release cannot pin a commit that is a placeholder.
+6. ~~**Commit lineage degrades silently.**~~ Closed: develop and sdk return BLOCKED instead
+   of a placeholder commit, sdk commits its integration, and verify and release apply one
+   commit lineage rule (§5).
 7. **Workflow and `x-wgf` disagree on who produces and consumes.** `asset-manifest`'s
    producer is `title:design` but the `assets` step serves `title:prototype`; `game-design`'s
    consumers omit `title:scaffolding`, which the `init` step reads it at; `research-report`
    lists `title:strategy` as a consumer but the strategy step does not take it.
 8. **`develop` treats a declared input as optional.** Without `title-strategy` its report's
    kill criteria are silently empty.
+
+---
+
+## 5. Commit lineage
+
+Artifact lineage (§3) says which *versions of artifacts* an artifact was derived from. Commit
+lineage says which *commits* the evidence of one build may name, and how they must relate.
+It is the reason a real run can release: develop commits, review reads that commit, sdk
+commits its integration on top of it, verify and release are about exactly the result.
+
+```
+develop   commit P   (Wgf-Develop-Key: <run>:develop:<visit>)   prototype-report.build_ref.commit_sha = P
+review    reads P                                               review-report.reviewed_commit = P
+sdk       commit S on P (Wgf-Sdk-Key: <run>:sdk:<visit>)        sdk-report.build_ref = {commit_sha: S,
+          or no commit (S = P) when nothing changed                 base_commit_sha: P, sdk_commits: [S]}
+verify    at HEAD = S                                           verification-report.commit.sha = S
+release   at HEAD = S, clean tree, verified bundle              release-manifest.commit_sha = S
+```
+
+**The rule.** With `P` the prototype-report's commit, `B` the sdk-report's
+`base_commit_sha`, `S` its `commit_sha`, `V` the verified commit (verification-report
+`commit.sha`, qa-report `build_ref.commit_sha`) and `H` the checkout's HEAD:
+
+1. `S == V == H`. The SDK evidence, the verification and the release are about one commit.
+2. `P == B`. sdk built on the commit develop made — the one review read.
+3. `B..S` is exactly the sdk step's commits: `S` descends from `B`
+   (`git merge-base --is-ancestor B S`), and every commit in `git log B..S` carries a
+   `Wgf-Sdk-Key:` trailer whose key starts with this run's id; when the sdk-report lists
+   `sdk_commits`, git's list and the report's agree.
+4. When the run holds a review-report, it approved exactly `P` (and, when it pins a
+   prototype-report, the run's newest one). `request-changes` or `no-verdict` refuses.
+   `skipped` (no reviewer configured) does not refuse: the release manifest records
+   `evidence.review.status: skipped` and the step's message says the build is UNREVIEWED.
+   It is never recorded as approved.
+5. No placeholder is a commit: a missing sha, `unknown`, or 40 zeros refuses. develop and
+   sdk return `BLOCKED` when they cannot establish a commit, rather than emit one.
+6. When git cannot read the history rule 3 needs, the rule does not hold. Nothing is trusted
+   on the reports' say-so.
+
+An sdk-report without `base_commit_sha` (schema < 1.2.0) is read as `B == S`: it claims no
+commits of its own, so rule 2 becomes `P == S`. Without an sdk-report, `P == V == H`.
+
+Anything else — a human or agent commit between develop's and sdk's (unreviewed code riding
+along), sdk evidence about another commit, an sdk commit keyed by another run, an approval of
+another commit — is `commit-lineage-mismatch`, with a message naming the commits.
+
+**Where it is enforced.**
+
+| Where | How | Outcome |
+|---|---|---|
+| `sdk` (`wgf_sdk/commit.py`) | before writing: HEAD is `P` or `P` + this run's sdk commits; no uncommitted change outside the integration's files | `BLOCKED` |
+| `verify` (`source.upstream-commits`) | rules 1–3, 5, 6 with the checkout's git, `V = H` | `BLOCKED`, message starts `commit-lineage-mismatch` |
+| `release` (`wgf_release/lineage.py`) | rules 1, 2, 4, 5 from the reports before anything else; then `H`, and rule 3 with the checkout's git | `FAILED` (not retryable), refusal code `commit-lineage-mismatch` / `commit-unknown` / `review-not-approved` |
+
+The rule is implemented once, in `scripts/wgf_verification/lineage.py`
+(`lineage_problems`, `review_problems`); verify and release pass it their own
+`git(*args) -> (ok, stdout)`. The git-level proof is
+`scripts/tests/test_core_lineage.py` (`CommitLineage`).

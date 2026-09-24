@@ -30,12 +30,23 @@ Outcomes (docs/workflow-module-contract.md §7):
     no packages/platform-sdk in the game repository          BLOCKED (integration phase)
     the integration's own mock suite or typecheck failed     FAILED, not retryable, sdk-report
                                                              persisted as evidence
+    no readable git HEAD, a prototype-report naming no
+    commit, HEAD not the prototype commit (or this run's
+    sdk commits on it), uncommitted changes the
+    integration did not make                                 BLOCKED (commit.py)
+    the conformance suite ran at another commit than HEAD    FAILED, not retryable
     otherwise                                                SUCCESS; optional platforms that
                                                              are not working are named in the
                                                              message and metadata
 
 A `working` feature is one whose every conformance scenario passed. A skipped scenario (no
 adapter on this ref) is `not-started`, never `working`. The step publishes nothing.
+
+Commits (commit.py, docs/core-contracts.md §5): a successful integration that changed the
+tree is committed once, locally, keyed by the idempotency key in a `Wgf-Sdk-Key` trailer,
+and the conformance suite then runs at that commit. The sdk-report's `build_ref` names the
+commit it verified (`commit_sha`), the commit it built on (`base_commit_sha`, the
+prototype-report's) and the commits it made between them (`sdk_commits`). Nothing is pushed.
 """
 
 import datetime
@@ -45,15 +56,17 @@ from wgflib import paths
 from wgflib.hashing import content_hash
 from wgflib.workflow import ArtifactOutput, StepResult, WorkflowStep
 
+from wgf_verification.lineage import same_commit
+
+from . import commit as sdk_commit
 from . import evidence as ev
 from .integration import IntegrationPhase, PhaseBlocked
-from .integration import SCHEMA_VERSION as INTEGRATED_SCHEMA_VERSION
 from .plan import FEATURES, PlanError, integration_plan, load_game_config
 from .runner import CommandRunner
 
 __all__ = ["SdkStep", "register", "SCHEMA_VERSION", "ROLE"]
 
-SCHEMA_VERSION = "1.0.0"
+SCHEMA_VERSION = "1.2.0"
 ROLE = "sdk"
 OBSERVED_BY = "web-game-template SDK conformance suite (tests/sdk, fake portal SDK)"
 
@@ -218,19 +231,51 @@ class SdkStep(WorkflowStep):
         except PlanError as exc:
             return StepResult.blocked(str(exc))
 
-        prototype = inputs.load("prototype-report") if "prototype-report" in inputs else {}
+        has_prototype = "prototype-report" in inputs
+        prototype = inputs.load("prototype-report") if has_prototype else {}
         title_id = ((design or {}).get("title_id") or (prototype or {}).get("title_id")
                     or (config.get("game") or {}).get("id") or context.project_id)
+
+        # Where the build stands before anything is written: the commit the evidence will be
+        # about must be established, and must be develop's (or this run's sdk commits on it).
+        run_id = getattr(context, "run_id", None)
+        key = getattr(context, "idempotency_key", None) or \
+            f"{run_id or 'local'}:{getattr(context, 'current_step', None) or 'sdk'}:" \
+            f"{getattr(context, 'visit', None) or context.execution}"
+        integration_runner = self.integration_runner_factory()
+        git = sdk_commit.SdkGit(game_repo, integration_runner,
+                                author=self._setting(context, "commit_author"))
+        prototype_commit = ((prototype or {}).get("build_ref") or {}).get("commit_sha")
+        try:
+            head, base, own = sdk_commit.prepare(git, prototype_commit, has_prototype, run_id)
+        except sdk_commit.CommitRefused as exc:
+            return StepResult.blocked(str(exc))
 
         integrated = None
         if design and scaffold:
             phase = IntegrationPhase(lambda key, default=None: self._setting(context, key, default),
-                                     self.integration_runner_factory())
+                                     integration_runner)
             try:
                 integrated = phase.run(game_repo, design, scaffold, title_id)
             except PhaseBlocked as exc:
                 return StepResult.blocked(str(exc))
             context.logger.info("sdk integration", tests=integrated["integration"]["tests"]["status"])
+            if integrated["integration"]["tests"]["status"] != "failed":
+                try:
+                    sha, created = sdk_commit.commit(
+                        git, key, title_id, integrated["integration"]["files"],
+                        integrated["integration"]["tests"])
+                except sdk_commit.CommitRefused as exc:
+                    return StepResult.blocked(str(exc))
+                if created:
+                    context.logger.info("sdk integration committed", commit=sha, key=key)
+                    own = own + [sha]
+                integrated["integration"]["repository_state"] = (
+                    "clean" if not git.dirty_paths() else "uncommitted-changes")
+        head = git.head()
+        if not head:
+            return StepResult.blocked(f"{game_repo}: HEAD became unreadable during the "
+                                      "integration; the commit cannot be established")
 
         report_path = self._setting(context, "report")
         try:
@@ -245,8 +290,14 @@ class SdkStep(WorkflowStep):
             return StepResult.failed("the conformance report is not trustworthy: " + "; ".join(problems),
                                      retryable=False)
 
-        build_commit = ((prototype or {}).get("build_ref") or {}).get("commit_sha")
-        commit = run.commit or build_commit or (integrated or {}).get("commit") or "unknown"
+        commit = head
+        if run.commit and not same_commit(run.commit, head):
+            return StepResult.failed(
+                f"the conformance suite ran at {run.commit[:12]}, but the checkout's HEAD is "
+                f"{head[:12]}: the checkout moved while the step ran", retryable=False)
+        tests_failed = bool(integrated) and \
+            integrated["integration"]["tests"]["status"] == "failed"
+        lineage = {"base_commit_sha": base, "sdk_commits": list(own)}
 
         entries, blocking, degraded = [], [], []
         for plan in plans:
@@ -277,8 +328,10 @@ class SdkStep(WorkflowStep):
                              + ("passed" if run.browser["passed"] else "FAILED"))
                 if not run.browser["passed"] and status == "working":
                     status = "partial"
-            if build_commit and run.commit and build_commit != run.commit:
-                notes.append(f"conformance ran at {run.commit}, the prototype build is {build_commit}")
+            if not same_commit(base, commit):
+                notes.append(f"integrated on {base[:12]} and committed as {commit[:12]}")
+            if tests_failed:
+                notes.append("the failed integration is left uncommitted in the working tree")
             entry = {"platform_id": plan.id, "profile_version": plan.version, "status": status,
                      "features": items}
             if notes:
@@ -292,9 +345,10 @@ class SdkStep(WorkflowStep):
 
         now = self.clock()
         artifact = self._artifact(title_id, commit, entries, inputs, prototype, now, context,
-                                  integrated)
+                                  integrated, lineage)
         metadata = {"platforms": {e["platform_id"]: e["status"] for e in entries},
-                    "commit": commit, "browser": None if run.browser is None else run.browser["passed"]}
+                    "commit": commit, "base_commit": base, "sdk_commits": list(own) or None,
+                    "browser": None if run.browser is None else run.browser["passed"]}
         metadata = {k: v for k, v in metadata.items() if v is not None}
         output = ArtifactOutput("sdk-report", artifact, metadata=metadata)
         context.logger.info("sdk conformance read", platforms=metadata["platforms"], commit=commit)
@@ -313,11 +367,11 @@ class SdkStep(WorkflowStep):
             if not degraded else f"required platforms working; optional not working: {', '.join(degraded)}")
 
     def _artifact(self, title_id, commit, entries, inputs, prototype, now, context,
-                  integrated=None):
+                  integrated=None, lineage=None):
         provenance = {
             "artifact_id": f"wgf:sdk-report:{title_id}:{now[:10].replace('-', '')}-{min(context.execution, 99):02d}",
             "artifact_type": "sdk-report",
-            "schema_version": INTEGRATED_SCHEMA_VERSION if integrated else SCHEMA_VERSION,
+            "schema_version": SCHEMA_VERSION,
             "title_id": title_id,
             "produced_by": {"role": ROLE, "actor": "automation"},
             "produced_at": now,
@@ -331,7 +385,7 @@ class SdkStep(WorkflowStep):
                 provenance["inputs"].append({"artifact_id": source["artifact_id"],
                                              "artifact_type": input_type,
                                              "content_hash": ref.content_hash})
-        build_ref = {"commit_sha": commit}
+        build_ref = {"commit_sha": commit, **(lineage or {})}
         url = ((prototype or {}).get("build_ref") or {}).get("url")
         if url:
             build_ref["url"] = url

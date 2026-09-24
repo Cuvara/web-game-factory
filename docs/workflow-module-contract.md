@@ -159,7 +159,7 @@ reading, and `DocumentedIoContract` fails if the two disagree.
 | `review` | `review` | `prototype-report`, `game-design`, `scaffold-record` | `review-report` |
 | `sdk` | `sdk` | `game-design`, `scaffold-record`, `prototype-report` | `sdk-report` |
 | `verify` | `verify` | `prototype-report`, `sdk-report`, `game-design`, `scaffold-record`, `asset-manifest` | `verification-report`, `qa-report` |
-| `release` | `release` | `qa-report`, `verification-report`, `sdk-report`, `prototype-report`, `scaffold-record` | `release-manifest` |
+| `release` | `release` | `qa-report`, `verification-report`, `sdk-report`, `prototype-report`, `scaffold-record`, `review-report` | `release-manifest` |
 <!-- io-contract:end -->
 
 `develop` declares `qa-report` so that on a verify → develop loop it receives the failing

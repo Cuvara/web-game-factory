@@ -187,9 +187,27 @@ Step     PENDING → RUNNING → SUCCESS | FAILED | BLOCKED | WAITING      (+ SK
 ```
 
 Every step keeps `attempts` (this visit), `executions` (whole run), `visits` (times entered),
-timestamps, duration, last route, error and outputs. `state.json` is the whole truth; `wgf
-status` renders it and holds nothing of its own. A run that is `RUNNING` on disk with no
-process holding its lock is a crashed run, and is resumable.
+timestamps, duration, last route, error and outputs, and — for the execution in progress —
+`pid` (the child process it waits on), `last_activity_at` and `last_event`, fed by
+`context.progress` and by every `wgflib.procs.run` the step makes. `state.json` is the whole
+truth; `wgf status` renders it and holds nothing of its own. A run that is `RUNNING` on disk
+with no process holding its lock is a crashed run, and is resumable.
+
+### Liveness
+
+`wgf status` adds one derived word, computed by the pure `model.derive_liveness(state,
+lock_owner, now, hung_after_seconds)` and never stored:
+
+| Liveness | Means | What to do |
+|---|---|---|
+| `running` | `RUNNING`, a live process holds the lock, activity within the threshold | wait |
+| `hung` | `RUNNING`, lock held, no sign of life for longer than `factory.execution.hung_after_seconds` (default 300) | inspect the child `pid`; `wgf cancel` terminates its tree |
+| `stale` | `RUNNING` on disk but no live process holds the lock: the driver crashed | `wgf <cmd> --resume <run>` |
+| `pending` `waiting` `paused` `blocked` `failed` `completed` `cancelled` | the run status itself | as the status says |
+
+"Activity" is the newest of the step's `last_activity_at`, its `started_at` and the run's
+`updated_at`. Heartbeats from a child process arrive every `heartbeat_seconds` and are
+persisted at most every 5 s, so a threshold well above both is what makes `hung` mean hung.
 
 ## 5. Artifact flow
 
@@ -201,11 +219,16 @@ metadata=None)`; the engine checks it against its contract, writes it to
 {"id": "qa-report", "type": "qa-report", "version": 2,
  "location": "artifacts/qa-report/v2.json", "checksum": "sha256:…",
  "content_hash": "sha256:…", "schema_version": "1.0.0",
- "produced_by": "verify", "created_at": "…", "metadata": {…}}
+ "produced_by": "verify", "created_at": "…", "metadata": {…}, "seq": 12}
 ```
 
 - `version` counts productions of that id in the run; every version is kept, and a second
-  one is emitted as `ARTIFACT_UPDATED`.
+  one is emitted as `ARTIFACT_UPDATED`. It is always one more than the versions state has
+  recorded — see *Persistence and atomicity* below for what that means after a crash.
+- `seq` orders every artifact in the run by production. "The newest artifact of a type" —
+  what a step's `inputs` resolve to — is the highest `seq`, not the latest timestamp: two
+  artifacts can be written in the same millisecond, and a clock can step backwards. Refs
+  from before `seq` existed sort first, then by `created_at`.
 - `schema_version` is the contract version the content claims (`provenance.schema_version`).
 - `checksum` is over the file bytes and is verified on every read.
 - `content_hash` is the Factory's canonical digest (`provenance.schema.json#/$defs/hash`) —
@@ -217,6 +240,47 @@ Before writing, the engine applies `contracts.ArtifactContracts`: the type must 
 schema (or be listed as untyped), the content must have every required top-level key and no
 forbidden one, and provenance must name the type and reproduce its hash. A violation is a
 non-retryable `FAILED` and nothing is written. Full JSON Schema validation remains ajv's job.
+
+The same boundary is checked on the way **in**. Before a step executes, every input it
+resolved is read back — its checksum verified — and, when the engine has a validator,
+checked against its contract again (a run resumed under a newer definition or schema may
+hold inputs that no longer satisfy it). An input that is missing, changed on disk or fails
+its contract fails the step non-retryably before it runs, with a message naming the input
+type, `id@vN`, the step that produced it and the problems. A validator that raises is
+reported the same way instead of escaping the engine, and so is a step class whose
+constructor raises.
+
+### Persistence and atomicity
+
+| What | How it is written | What a crash can leave |
+|---|---|---|
+| `state.json`, `artifacts/<id>/v<n>.json`, `LATEST`, `pause`/`cancel` | to `<name>.tmp`, flushed, fsync'd (`storage.fsync`), renamed over the target, directory fsync'd | the old file or the new one; possibly a `.tmp` beside it |
+| `events.jsonl` | appended | a partial last line |
+| `lock` | `O_EXCL` create, then the pid | an empty lock file |
+
+- **One save per execution.** A step's artifact files are written first; then its artifact
+  refs, status and trail entry are saved in a single `state.json` write; only then are the
+  `ARTIFACT_*` and `STEP_*` events emitted. A crash between the file writes and that save
+  leaves files state does not know about (orphans) and a log that does not mention them.
+  Resume re-executes the step, which writes the same version number again, replacing the
+  orphan, and records it once — with a `STEP_LOG` warning that an unrecorded file was
+  replaced. A failure to write an artifact (disk full) is a retryable `FAILED` that
+  records nothing.
+- **Unreadable state is an error, not a guess.** `load` of a truncated or non-object
+  `state.json` raises `StoreError` naming the file, and says so if a `state.json.tmp` from an
+  interrupted write sits beside it. `wgf runs` lists such a run as `UNREADABLE` instead of
+  hiding it.
+- **A torn log is readable.** `read_events` skips a line that is not a JSON event object and
+  reports it (`wgf logs` prints a warning on stderr); the next append starts on a fresh line,
+  so the torn line never swallows a later event. State is never derived from events, so
+  duplicate or lost event lines cannot change a run.
+- **The lock.** A lock naming a live process — or this process, while it drives the run on
+  any thread — is refused (`RunLocked`); there is no reentrant acquire. A lock whose owner is
+  dead, or an empty one older than 5 s, is stale and is taken over — but only under a second
+  `O_EXCL` guard (`lock.takeover`) and only after re-reading it there, so two processes that
+  both saw the same dead owner cannot both end up holding the run. `release` never removes a
+  lock it does not own. `wgf pause` / `wgf cancel` of a run nobody drives change its state
+  while holding the lock; of a driven run, they leave a request file for the driver.
 
 The mock steps emit schema-valid instances of all nine output types, with provenance whose
 `inputs` pin what they consumed by hash. The step-by-step input/output contract is in
@@ -243,9 +307,19 @@ step gets a fresh attempt budget and every step a fresh loop budget. A run start
 `--mock` resumes with the mocks; a run remembers its own definition, so fixture workflows
 resume too.
 
+Resume refuses a run another live process — or another thread of this one — is driving
+(`RunLocked`), before changing anything. A `stale` run (its driver died) is resumed by taking
+over the dead lock; the step that was interrupted runs again, nothing before it does. A pause
+requested of a driver that then died is cleared by the resume, which is its answer; a pending
+cancel is still honoured.
+
 `--run <run-id>` is the other way to continue: it runs a command's slice *inside* an existing
 run, reusing its artifacts, and skips any step in that slice that already succeeded (`--force`
-to redo). `wgf init --run <id>` twice executes `init` once.
+to redo). `wgf init --run <id>` twice executes `init` once. It refuses a `RUNNING` run (resume
+it) and a cancelled one, and like resume it grants every step a fresh loop budget.
+
+`--decision` must be a plain label (letters, digits, `- _ . :`, at most 64 characters) and a
+note must contain no NUL; anything else is refused before the run is touched.
 
 **The engine guarantees state-level idempotency. The step implementation is responsible for
 side-effect idempotency.** The engine cannot make creating a repository or uploading a file
@@ -273,7 +347,16 @@ the run as `BLOCKED` with a `loop limit` message instead of looping; a person re
 grants every step a fresh budget. For `new-game` that is at most three develop → sdk →
 verify passes per start or resume. Retries are bounded separately by `max_attempts`, and no
 outcome but a retryable `FAILED` is ever retried, so there is no unbounded path. The graph is not assumed to be linear: any step can route
-anywhere, and a human checkpoint with more than two choices is a branch.
+anywhere, and a human checkpoint with more than two choices is a branch. When `--run` skips
+completed steps, each is skipped at most once per drive and every entry after the first
+counts against `max_visits`, so even a cycle of `next:` edges through completed steps ends
+`BLOCKED` rather than spinning.
+
+**Cancel.** `wgf cancel` of a driven run is honoured between steps *and* while a step runs:
+the step's child processes started through `wgflib.procs` poll `context.should_stop()` and
+are terminated, tree and all; when the step returns, the engine does not retry it (whatever
+it returned) and ends the run `CANCELLED` — never `FAILED`. The interrupted step keeps its
+reported status with the message `cancelled while running`.
 
 ## 9. Human checkpoints
 
@@ -328,7 +411,7 @@ which is the structured log:
 | `WORKFLOW_BLOCKED` | `message` (a blocked step, a rejection, or the loop limit) |
 | `WORKFLOW_COMPLETED` | `exit`: `{step, route, outcome, next}` |
 | `WORKFLOW_FAILED` | `message` |
-| `WORKFLOW_CANCELLED` | — |
+| `WORKFLOW_CANCELLED` | — (`step_id` is the cursor when the cancel was honoured) |
 | `STEP_STARTED` | `type`, `visit` |
 | `STEP_COMPLETED` | `route`, `message`, `outputs`, `result` (the step's own small data) |
 | `STEP_FAILED` | `will_retry`, `route`, `outputs` |
@@ -336,7 +419,7 @@ which is the structured log:
 | `STEP_SKIPPED` | `reason` |
 | `STEP_WAITING` | `message`, `result` |
 | `STEP_BLOCKED` | `message`, `result` |
-| `STEP_LOG` | top-level `level`, `message`; `data` is the logged fields |
+| `STEP_LOG` | top-level `level`, `message`; `data` is the logged fields (the engine itself logs one `warning` when it replaces an unrecorded artifact file: `data.artifact` = `id@vN`) |
 | `STEP_PROGRESS` | `kind` (`started spawned heartbeat timeout idle-timeout cancelled cleanup exited`), plus `pid`, `elapsed_s`, `idle_s`, `killed`, `returncode` as they apply |
 | `TRANSITION` | `route`, `outcome`, `kind` (`goto end abort block wait`), `to` |
 | `DECISION_RECORDED` | `decision`, `decided_by`, `decided_at`, `visit`, `note` |
@@ -349,7 +432,8 @@ subscriber; a UI, a monitor or an agent host subscribes the same way without the
 changing, and a failing subscriber never stops a run.
 
 `wgf status` renders `state.json`; `wgf logs` renders `events.jsonl`. Neither reconstructs
-anything from console output.
+anything from console output. An `ARTIFACT_*` event is emitted only after the state that
+records the artifact is saved, so the log never names an artifact state does not hold.
 
 ## 11. CLI
 
@@ -362,8 +446,43 @@ wgf <cmd> --mock --mock-plan '{"verify": ["fail"]}'   script placeholder outcome
 wgf <cmd> --mock --hold-gates                          stop at checkpoints
 wgf status [RUN] [--json]    wgf logs [RUN] [--json] [--step S]    wgf runs
 wgf pause RUN                wgf cancel RUN
+wgf test-core [--only CATEGORY]... [--json]            the Core Acceptance Suite
 common: --store DIR  --config PATH  --workflow ID|PATH  --json  --quiet
 ```
+
+`wgf status` ends with the current step — the cursor, or the last step executed once the
+run has finished:
+
+```
+Step:     develop  attempt 2, visit 1  RUNNING
+Liveness: running  (driver pid 41022; child pid 41090; last event heartbeat)
+Started:  2026-09-24T04:04:31.611Z   elapsed 3m12s
+Activity: 2026-09-24T04:07:40.020Z   3s ago
+```
+
+`--json` prints `state.json` plus a `liveness` object with `run_id`, `run_status`,
+`liveness`, `driver_pid` (the lock owner), `step`, `attempt`, `visit`, `status`,
+`started_at`, `last_activity_at`, `pid`, `last_event`, `elapsed_seconds`, `idle_seconds` and
+`hung_after_seconds`. `RunState.from_dict` ignores the extra key.
+
+### `wgf test-core`
+
+Runs the Core Acceptance Suite category by category — `WORKFLOW`, `AGENTS`, `CONTRACTS`,
+`VERIFY`, `RELEASE`, `2D GOLDEN`, `3D GOLDEN`, `PROCESS CLEANUP`, `SECURITY` — and prints a
+table of results and counts. The category → test-module mapping is data, in
+`scripts/tests/core_suite.py`.
+
+| Result | When |
+|---|---|
+| `PASS` | tests ran and none failed or errored |
+| `FAIL` | any failure or error, including a module that does not import |
+| `SKIP` | zero tests ran, or every test that ran was skipped |
+| `MISSING` | a module the mapping names does not exist yet |
+
+The exit status is `1` if any category is `FAIL` or `MISSING` — an incomplete suite can
+never look green — else `0`. `--only WORKFLOW` (repeatable, case-insensitive) runs a subset;
+`--json` prints `{"ok", "categories": [...]}` with the same counts and the failure
+tracebacks. It runs in-process with `unittest`; nothing is installed.
 
 The run commands are generated from the workflow's own step ids and group names:
 `new-game` is the workflow, `plan` is a group (`strategy → strategy-review → design`), the
@@ -421,7 +540,8 @@ wgf new-game --mock --hold-gates                                            # WA
 factory:
   workflow:    {default: new-game}
   execution:   {max_attempts: 3, backoff: exponential, delay_seconds: 2,
-                max_delay_seconds: 60, max_visits: 5}
+                max_delay_seconds: 60, max_visits: 5,
+                hung_after_seconds: 300}      # when `wgf status` calls a quiet step hung
   agents:      {default: local}
   storage:     {directory: .factory, fsync: true}
   steps:       {modules: [wgf_discovery, wgf_strategy, wgf_init, wgf_assets, wgf_develop,
@@ -512,8 +632,12 @@ python -m unittest discover scripts/tests
 | `test_workflow_cli.py` | `wgf` as a subprocess with the real mocks: `new-game --mock`, every individual command, chaining slices in one run, retry, permanent failure + resume, verification loop, human checkpoint, status and logs |
 | `test_workflow_contracts.py` | The gate before module work: an external module plugged in through config; artifact contract (versions, consumption, invalid and untyped artifacts, path-shaped ids); lifecycle separation; security; every run status; configuration-driven routing; event contract; one engine behind every command; docs match the workflow |
 | `fixtures/workflows/` | The acceptance workflows: `verify-loop`, `human-checkpoint`, `retry` |
+| `test_core_workflow.py` | Core v1 acceptance, one named scenario per class: happy path, failure, retry, resume, pause, cancel (between steps, and mid child process), human gate, max_visits, verify→develop loop, stale-run resume, concurrent-run lock refusal, determinism; input contracts, continue_in, liveness, `wgf status` and `wgf test-core` |
+| `test_core_persistence.py` | Interrupted writes (rename/fsync failing), unreadable state, torn and duplicated event logs, a crash between an artifact write and the state save, lock takeover races, hostile run/artifact ids, decisions and definitions |
+| `core_suite.py` | The Core Acceptance Suite mapping `wgf test-core` runs (data, not tests) |
 
-All deterministic and offline.
+All deterministic and offline. The cancel test starts a real `sleep`; the lock-race test
+starts six Python processes.
 
 ## Security
 
@@ -525,8 +649,16 @@ The engine executes no code it was not given by the installation:
   object-construction path.
 - The only import of configurable code is `factory.steps.modules`, in the installation's own
   config file, and each entry must be a dotted Python identifier.
-- Run ids and artifact ids become directory names, so both are validated before they touch a
-  path; `..` and separators are refused.
+- Run ids and artifact ids become directory names, so both are validated (whole-string
+  match, so a trailing newline is refused too) before they touch a path; `..`, separators,
+  NUL and whitespace are refused. An artifact `location` read back from `state.json` must be
+  `artifacts/<id>/v<n>.json`, so an edited state file cannot point a read outside the run.
+  A `LATEST` pointer that is not a valid run id is ignored. Request files are a closed set
+  (`pause`, `cancel`).
+- Step ids, types, stages and route labels in a definition are whole-string matched too, and
+  a malformed shape (a list where a target belongs, `on:` that is not a mapping) is a
+  `DefinitionError` listing it — never an exception from inside the parser.
+- Decisions, `decided_by` and notes are checked before a run is touched (see §7).
 - The kernel and CLI contain no `subprocess`, `eval`, `exec`, `shell=True` or `pickle`;
   `Security.test_the_kernel_executes_nothing` enforces it. `--mock-plan @FILE` reads a file
   the person running the command named.
@@ -534,6 +666,14 @@ The engine executes no code it was not given by the installation:
 ## Known limits
 
 - **Single machine.** The lock is a pid file; two hosts sharing a store are not coordinated.
+  One residual window remains in the takeover: a process killed *inside* the guarded
+  re-check (microseconds) leaves a `lock.takeover` naming a dead pid, which the next taker
+  clears unguarded. A pid reused by an unrelated process makes a dead driver's lock look
+  live; `wgf status` then says `running` or `hung`, and removing the lock file by hand is the
+  way out.
+- **Orphaned grandchildren of a killed driver.** `wgflib.procs` takes a step's process tree
+  down on every exit it sees, including Ctrl-C; a driver killed with SIGKILL cannot, and a
+  resumed step does not look for survivors of the previous execution.
 - **Steps run in-process and sequentially.** The definition format permits branching but not
   parallel fan-out; nothing in this phase needs it.
 - **Artifact checks are structural.** Top-level required and forbidden keys and provenance

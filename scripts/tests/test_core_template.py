@@ -143,7 +143,15 @@ class TheFactoryContainsNoGameSource(unittest.TestCase):
     # The sdk step's integration layer (gameplay seam + its SDK-mock suite), written into a
     # game by scripts/wgf_sdk/integrate.py. Game- and renderer-agnostic platform wiring the
     # Factory generates, not a game: it names no game, scene or engine.
-    ALLOWED_PREFIXES = ("scripts/wgf_sdk/game/",)
+    ALLOWED_PREFIXES = (
+        "scripts/wgf_sdk/game/",
+        # The sdk module's own browser e2e harness: a stand-in run loop and a smoke spec,
+        # copied into a scratch copy of the template by scripts/wgf_sdk/e2e.py; never a game.
+        "scripts/wgf_sdk/e2e/",
+        # One-line synthetic stand-ins the verification tests inspect (an asset path, a
+        # bundle, two no-op scripts) - fixtures for the checks, not a game.
+        "scripts/tests/fixtures/verification/",
+    )
     SKIP_DIRS = {".git", "node_modules", "__pycache__", ".factory", ".claude"}
 
     def test_no_game_source_is_tracked_in_the_factory(self):

@@ -542,7 +542,7 @@ def _commands(argv):
     return api.definition().commands()
 
 
-def main(argv=None):
+def main(argv=None, cli=False):
     argv = list(sys.argv[1:] if argv is None else argv)
     try:
         commands = _commands(argv)
@@ -551,6 +551,12 @@ def main(argv=None):
         return EXIT_USAGE
     parser = build_parser(commands)
     args = parser.parse_args(argv)
+    if cli and getattr(args, "handler", None) is not cmd_test_core:
+        # Orphans reparent to wgf, not init: a daemon that detaches and clears its
+        # environment is still ended with its step. Not under test-core, whose tests
+        # start children of their own in this process.
+        from wgflib import procs as _procs
+        _procs.install_subreaper()
     if not getattr(args, "handler", None):
         parser.print_help()
         return EXIT_USAGE
@@ -569,9 +575,4 @@ if __name__ == "__main__":
     # resumable: `wgf status` reports it stale and `wgf resume` continues it.
     from wgflib import procs as _procs
     _procs.install_signal_cleanup()
-    # Orphans reparent to wgf, not init: a daemon that detaches and clears its environment
-    # is still ended with its step.
-    # Not under test-core: its tests start children of their own in this process.
-    if sys.argv[1:2] != ["test-core"]:
-        _procs.install_subreaper()
-    sys.exit(main())
+    sys.exit(main(cli=True))

@@ -137,7 +137,11 @@ Lifecycle events are persisted at once. Heartbeats are persisted at most every
   (`test_core_security.ReviewerLeftovers`). A library caller that does not opt in, and any
   platform without `prctl`, still has the limit. The subreaper assumes every child of the
   process comes from `wgflib.procs` — true for the CLI, enforced by
-  `test_core_process.EveryChildGoesThroughProcs`.
+  `test_core_process.EveryChildGoesThroughProcs`. Only orphans outside the Factory's own
+  session are swept, so a plain child some other code started (and waits on) keeps its exit
+  status — unless that code gave it a session of its own (`start_new_session=True`), which
+  the sweep cannot tell from an orphan. The CLI does not install the subreaper for
+  `wgf test-core`, whose tests start children in-process.
 - **A descendant running as another user** (sudo, setuid) cannot be signalled, and its
   `/proc/<pid>/environ` cannot be read.
 - **SIGKILL of the Factory process, or a machine crash**, skips all cleanup. The orphans

@@ -580,6 +580,26 @@ class EventLogLoss(EngineCase):
         self.assertIn("event log could not be written", state.message)
         self.assertIn("No space left", state.message)
 
+    def test_losing_only_the_final_event_still_fails_the_run(self):
+        original = self.store.append_event
+
+        def last_one_lost(record):
+            if record.get("event") == Events.WORKFLOW_COMPLETED:
+                raise OSError(28, "No space left on device")
+            original(record)
+        self.store.append_event = last_one_lost
+        state = self.engine(LINEAR).start()
+        self.assertEqual(state.status, RunStatus.FAILED)
+        self.assertEqual(self.store.load(state.run_id).status, RunStatus.FAILED)
+
+    def test_a_recovered_log_does_not_fail_the_next_run_on_the_same_engine(self):
+        original = self.store.append_event
+        self.store.append_event = lambda record: (_ for _ in ()).throw(OSError(28, "full"))
+        engine = self.engine(LINEAR)
+        self.assertEqual(engine.start().status, RunStatus.FAILED)
+        self.store.append_event = original
+        self.assertEqual(engine.start().status, RunStatus.COMPLETED)
+
 
 if __name__ == "__main__":
     unittest.main()

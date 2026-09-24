@@ -713,15 +713,19 @@ The engine executes no code it was not given by the installation:
 
 `continue_in` (`wgf <step> --run <id>`) and `resume --from <step>` start a step inside an
 existing run. Both refuse (EngineError, nothing executes) when any step before it in the
-definition is BLOCKED, WAITING or FAILED in that run, or when a step before it whose `with:`
-names a `gate` has not succeeded in that run. That is what keeps `wgf init --run <id>` from
+definition is BLOCKED, WAITING or FAILED in that run, or when a gate before it has not
+passed in that run. A gate is a step whose `with:` names a `gate`, or whose implementation
+declares `gates_the_run = True` (the human checkpoint does). A gate has passed only if its
+last success comes after the last success of every step before it: an approval covers the
+work that existed when it was given, not a strategy or tech plan regenerated afterwards. That is what keeps `wgf init --run <id>` from
 scaffolding a repository after G3 was rejected, or while G4 is unanswered. A fresh run of a
 single step (`wgf verify`) has no upstream in its run and is not affected; each module still
 refuses inputs it cannot trust.
 
 A resume whose cursor sits on a step already recorded as SUCCESS - the driver died between
 recording the success and moving on - follows that step's recorded route without executing
-it again. Only a run BLOCKED at the loop limit re-enters its cursor step ("one more pass").
+it again; when that route ends the run, resume returns it COMPLETED without driving anything.
+Only a run BLOCKED at the loop limit re-enters its cursor step ("one more pass").
 
 A run whose event log cannot be written (disk full, permissions) ends FAILED with the reason:
 decisions are corroborated from `events.jsonl`, so carrying on would silently ignore them.

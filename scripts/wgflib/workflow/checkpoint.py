@@ -71,6 +71,9 @@ def may_auto_approve(gate, allowed):
 
 class HumanCheckpointStep(WorkflowStep):
     type = "human-checkpoint"
+    # Holds the run for a decision: the engine will not start a later step of the run
+    # past one of these that has not passed (engine._refuse_unmet_upstream).
+    gates_the_run = True
 
     def execute(self, inputs, context):
         gate = self.params.get("gate")

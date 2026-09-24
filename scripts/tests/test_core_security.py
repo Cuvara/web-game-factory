@@ -962,7 +962,11 @@ class SilentFailures(EngineCase):
             original(record)
         self.store.append_event = lossy
         state = engine.resume(run.run_id, decision="approve")
-        self.assertEqual(state.status, RunStatus.WAITING)
+        # Fails closed, and says why: the uncorroborated decision is never acted on, and
+        # a run that cannot write its event log stops instead of waiting in silence.
+        self.assertEqual(state.status, RunStatus.FAILED)
+        self.assertIn("event log could not be written", state.message)
+        self.assertNotIn("design", self.script.executed())
         self.assertTrue(engine.bus.errors)
 
 

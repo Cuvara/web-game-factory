@@ -136,6 +136,7 @@ class WorkflowEngine:
 
     def start(self, scope=None, start_at=None, project_id=None, params=None):
         """Create a run over `scope` (a workflow, group or step id) and drive it."""
+        self.event_log_error = None
         scope_ids = self.definition.resolve_scope(scope)
         if start_at is None:
             start_at = (
@@ -173,10 +174,16 @@ class WorkflowEngine:
         `from_step` moves the cursor first (re-running that step and everything after it).
         `decision` answers a step that is WAITING, typically a human checkpoint.
         """
+        self.event_log_error = None  # per call: a recovered log does not fail later runs
         if decision is not None:
             check_decision(decision, decided_by, note)
         with self._holding(run_id):
             state = self._prepare_resume(run_id, from_step, decision, decided_by, note)
+        if state.cursor is None or state.status in RunStatus.TERMINAL:
+            # Advancing past a step that had already succeeded ended the run: there is
+            # nothing to drive, and driving would overwrite the terminal state.
+            self.store.release(run_id)
+            return state
         return self._drive(state, held=True)
 
     def _load_checked(self, run_id):
@@ -260,6 +267,17 @@ class WorkflowEngine:
         state.status = RunStatus.RUNNING
         self._follow(state, step_def, result.routing_key, StepOutcome.SUCCESS, route)
 
+    def _is_gate(self, step_def):
+        """A step that holds the run for a decision: one whose `with:` names a gate, or
+        whose implementation says it gates the run (`gates_the_run = True`)."""
+        if (step_def.params or {}).get("gate"):
+            return True
+        try:
+            implementation = self.registry.resolve(step_def.type)
+        except RegistryError:
+            return False
+        return bool(getattr(implementation, "gates_the_run", False))
+
     def _refuse_unmet_upstream(self, state, target):
         """Refuse to start `target` inside a run whose earlier steps did not get it there.
 
@@ -271,16 +289,32 @@ class WorkflowEngine:
         ids = self.definition.step_ids
         if target not in ids:
             return
+        last_success = {}
+        for index, entry in enumerate(state.trail):
+            if entry.get("outcome") == StepOutcome.SUCCESS:
+                last_success[entry.get("step")] = index
         problems = []
-        for step_id in ids[:ids.index(target)]:
+        upstream = ids[:ids.index(target)]
+        for position, step_id in enumerate(upstream):
             step_def = self.definition.step(step_id)
             step_state = state.steps.get(step_id)
             status = step_state.status if step_state is not None else None
-            gate = (step_def.params or {}).get("gate")
             if status in (StepStatus.BLOCKED, StepStatus.WAITING, StepStatus.FAILED):
                 problems.append(f"{step_id} is {status}")
-            elif gate and status != StepStatus.SUCCESS:
-                problems.append(f"{step_id} (gate {gate}) has not been passed in this run")
+                continue
+            if not self._is_gate(step_def):
+                continue
+            label = (step_def.params or {}).get("gate") or "checkpoint"
+            if status != StepStatus.SUCCESS or step_id not in last_success:
+                problems.append(f"{step_id} (gate {label}) has not been passed in this run")
+                continue
+            # An approval covers what existed when it was given. A step before the gate
+            # that succeeded again afterwards produced something nobody approved.
+            newer = [u for u in upstream[:position]
+                     if last_success.get(u, -1) > last_success[step_id]]
+            if newer:
+                problems.append(f"{step_id} (gate {label}) approved work that "
+                                f"{', '.join(newer)} has since replaced; pass it again")
         if problems:
             raise EngineError(
                 f"run {state.run_id}: will not start {target} past unmet upstream step(s): "
@@ -292,6 +326,7 @@ class WorkflowEngine:
         Steps in `scope` that already succeeded are skipped (STEP_SKIPPED) unless `force`,
         which is what keeps `wgf init --run <id>` from scaffolding a second repository.
         """
+        self.event_log_error = None
         with self._holding(run_id):
             state = self._prepare_continue(run_id, scope, force)
         return self._drive(state, skip_completed=not force, enter_first=True, held=True)
@@ -926,6 +961,11 @@ class WorkflowEngine:
         self._save(state)
         self._emit(state, event, status=status, step_id=state.cursor,
                    data=_compact({"message": message, "reason": reason, "exit": state.exit}))
+        if self.event_log_error and state.status == RunStatus.COMPLETED:
+            # The terminal event itself could not be written.
+            state.status = RunStatus.FAILED
+            state.message = f"the event log could not be written ({self.event_log_error})"
+            self._save(state)
         return True
 
     # -- plumbing -----------------------------------------------------------------------

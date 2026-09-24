@@ -264,6 +264,20 @@ class HumanGate(EngineCase):
         with self.assertRaisesRegex(EngineError, r"gate G3\) has not been passed"):
             engine.continue_in(run.run_id, "design")
 
+    def test_an_approval_does_not_cover_work_redone_after_it(self):
+        engine = self.engine(CHECKPOINT.replace("GATE", "G3"))
+        run = engine.start()
+        engine.resume(run.run_id, decision="approve")
+        engine.continue_in(run.run_id, "strategy", force=True)  # new, unreviewed strategy
+        with self.assertRaisesRegex(EngineError, "strategy has since replaced"):
+            engine.continue_in(run.run_id, "design", force=True)
+
+    def test_a_checkpoint_without_a_named_gate_still_gates(self):
+        engine = self.engine(CHECKPOINT.replace("{gate: GATE, ", "{"))
+        run = engine.start(scope="strategy")
+        with self.assertRaisesRegex(EngineError, "gate checkpoint\\) has not been passed"):
+            engine.continue_in(run.run_id, "design")
+
     def test_an_approved_gate_lets_a_later_step_run_again(self):
         engine = self.engine(CHECKPOINT.replace("GATE", "G2"))
         run = engine.start()
@@ -378,6 +392,24 @@ class StaleRunResume(EngineCase):
         self.assertEqual(state.status, RunStatus.COMPLETED)
         self.assertEqual(self.script.executed(), ["c"])
         self.assertEqual(state.steps["b"].executions, 1)
+
+
+    def test_a_crash_after_the_last_step_succeeded_completes_on_resume(self):
+        engine = self.engine(LINEAR)
+        run = engine.start()
+        state = self.store.load(run.run_id)
+        self.assertEqual(state.status, RunStatus.COMPLETED)
+        state.status, state.cursor, state.exit = RunStatus.RUNNING, "c", None
+        self.store.save(state)
+        with open(os.path.join(self.store.run_dir(run.run_id), "lock"), "w") as handle:
+            handle.write(f"{DEAD_PID}\n")
+        self.script.calls.clear()
+        state = engine.resume(run.run_id)
+        self.assertEqual((state.status, state.cursor), (RunStatus.COMPLETED, None))
+        self.assertEqual(self.script.executed(), [])
+        on_disk = self.store.load(run.run_id)
+        self.assertEqual(on_disk.status, RunStatus.COMPLETED)
+        self.assertFalse(os.path.exists(os.path.join(self.store.run_dir(run.run_id), "lock")))
 
 
 class ConcurrentRunLock(EngineCase):

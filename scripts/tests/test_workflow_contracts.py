@@ -308,6 +308,15 @@ class SchematizedArtifacts(unittest.TestCase):
         edited["title_id"] = "something-else"
         self.assertIn("does not reproduce", " ".join(self.contracts("game-design", edited)))
 
+    def test_nested_violations_are_caught_not_just_the_top_level(self):
+        # The engine used to check only top-level keys; this passed it.
+        nested = copy.deepcopy(self.valid)
+        nested["provenance"]["status"] = "approved"
+        nested["provenance"]["content_hash"] = content_hash(nested)
+        problems = self.contracts("game-design", nested)
+        self.assertEqual(len(problems), 1)
+        self.assertTrue(problems[0].startswith("game-design: /provenance/status: "))
+
     def test_non_object_content(self):
         self.assertEqual(len(self.contracts("game-design", ["not", "an", "object"])), 1)
 

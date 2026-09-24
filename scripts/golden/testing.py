@@ -156,9 +156,13 @@ def fast_case(key):
             if not _template_has_examples():
                 self.skipTest(f"no template examples at {harness.TEMPLATE_DIR}")
             port = replay_developer.load_port(key)
-            # The overlays ship with the pinned template commit; the Factory holds none.
+            if not harness.PORTS_DIR:
+                self.skipTest("the golden ports commit cannot be checked out")
+            # The overlays ship with the template's golden-ports commit; the Factory holds none.
             self.assertEqual(port["overlays"][-1], game.port)
-            files = dict(replay_developer.port_files(port, harness.TEMPLATE_DIR))
+            files = dict(replay_developer.port_files(port, harness.PORTS_DIR))
+            # The Factory's seam wiring replaces the overlay's own default integration.
+            self.assertNotIn("src/platform/default-integration.ts", files)
             engine_dir = briefs.ENGINE_DIRS[game.engine] + "/"
             for relative, source in files.items():
                 for prefix in briefs.PROTECTED_PATHS:
@@ -181,15 +185,15 @@ def fast_case(key):
                             self.assertTrue(relative.startswith(engine_dir), relative)
             main = files["src/main.ts"]
             with open(main, encoding="utf-8") as handle:
-                text = handle.read()
+                text = replay_developer.seam_main(handle.read())
             self.assertNotRegex(text, r"\bBootScene\b")
-            # The template's own boot lines, which the sdk step patches, are kept verbatim.
-            self.assertIn('import { createPlatform } from "@wgf/platform-sdk";\n', text)
-            self.assertIn("  const platform = createPlatform(primaryPlatform().id, "
-                          "{ namespace: config.game.id });\n  await platform.initialize();\n",
-                          text)
+            # Moved onto the seam as any developer must: the develop step's rule, applied.
+            from wgflib import gameseam
+            scratch = os.path.join(self.workdir, "seam-check")
+            _write(scratch, "src/main.ts", text)
+            self.assertEqual(gameseam.seam_problems(scratch), [])
+            self.assertIn("  const platform = await createGamePlatform();\n", text)
             self.assertIn("  const game = new Game();\n", text)
-            self.assertIn("new DefaultGameIntegration(", text)
             self.assertIn(game.scene_id, port["scene_id"])
 
         def test_replay_refuses_a_brief_for_the_other_engine(self):
@@ -201,7 +205,8 @@ def fast_case(key):
             with open(os.path.join(brief_dir, "brief.md"), "w", encoding="utf-8") as handle:
                 handle.write("# brief\n")
             with self.assertRaises(replay_developer.ReplayError) as caught:
-                replay_developer.replay(key, os.path.join(brief_dir, "brief.md"), self.workdir)
+                replay_developer.replay(key, os.path.join(brief_dir, "brief.md"), self.workdir,
+                                        self.workdir)
             self.assertIn("will not pretend", str(caught.exception))
 
         def test_report_is_honest_about_what_the_replay_does_not_cover(self):

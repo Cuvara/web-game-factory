@@ -83,6 +83,13 @@ def __getattr__(name):
             return template_dir()
         except template.TemplateError:
             return ""
+    # `harness.PORTS_DIR`: a checkout of the lock's golden_ports commit, the replay's
+    # fixtures; "" when it cannot be obtained.
+    if name == "PORTS_DIR":
+        try:
+            return template.golden_ports_checkout()
+        except template.TemplateError:
+            return ""
     raise AttributeError(name)
 
 
@@ -191,7 +198,7 @@ def build_config(game, workdir, template_dir=None, python=None):
                 "kind": "command",
                 "argv": [python, os.path.join(HERE, "replay_developer.py"),
                          "--game", game.key, "--brief", "{brief}", "--repo", "{repo}",
-                         "--key", "{key}"],
+                         "--ports", template.golden_ports_checkout(), "--key", "{key}"],
                 "timeout_seconds": 1800,
             },
         },

@@ -14,6 +14,9 @@ working copy happens to be at".
                    3. otherwise one is cloned: from the sibling ../web-game-template when it
                       holds the commit (offline), else from the lock's URL.
     drift()      where the sibling working copy stands relative to the pin (informational).
+    golden_ports_checkout()
+                 a checkout of the lock's `golden_ports` commit: the golden runs' replay
+                 fixtures, which the pinned release does not ship. Never a game's template.
 
 Adopting another template revision is deliberate: run the golden runs with
 WGF_TEMPLATE_COMMIT=<sha>, make them pass, then change the lock in the same commit.
@@ -28,7 +31,8 @@ import tempfile
 from . import paths, procs
 
 __all__ = ["LOCK", "TemplateError", "TemplateDrift", "load_lock", "expected_commit",
-           "checkout", "ensure_dependencies", "drift", "head_of"]
+           "checkout", "ensure_dependencies", "drift", "head_of", "golden_ports_commit",
+           "golden_ports_checkout"]
 
 LOCK = os.path.join(paths.ROOT, "workspace", "config", "template.lock.json")
 _SHA = re.compile(r"^[0-9a-f]{40}$")
@@ -67,6 +71,28 @@ def expected_commit(lock=None):
                                 f"not {override!r}")
         return override
     return (lock or load_lock())["commit"]
+
+
+def golden_ports_commit(lock=None):
+    """The commit holding the golden runs' ports (lock["golden_ports"]["commit"])."""
+    ports = (lock or load_lock()).get("golden_ports") or {}
+    commit = ports.get("commit")
+    if not isinstance(commit, str) or not _SHA.match(commit):
+        raise TemplateError(f"{paths.display(LOCK)}: golden_ports.commit must be a full "
+                            f"40-hex sha, not {commit!r}")
+    return commit
+
+
+def golden_ports_checkout():
+    """A checkout of the golden ports commit (cached like the pin). Never offered through
+    WGF_TEMPLATE_DIR, which names the pinned revision only."""
+    commit = golden_ports_commit()
+    offered = os.environ.pop("WGF_TEMPLATE_DIR", None)
+    try:
+        return checkout(commit)
+    finally:
+        if offered is not None:
+            os.environ["WGF_TEMPLATE_DIR"] = offered
 
 
 def _git(args, cwd=None, timeout=300):

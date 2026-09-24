@@ -1,0 +1,42 @@
+# Golden run fixture - the 3D (Three.js) candidate catalog.
+#
+# The research step's `catalog` setting points here for the 3D golden run, so the market scan
+# screens exactly one archetype: the shape of web-game-template's examples/neon-drift-arena.
+# Same fields and the same honesty as scripts/wgf_discovery/archetypes.yaml - every number is
+# an estimate - but frozen, so the golden run does not change when the real catalog does.
+#
+# Steering through a legitimate input: `rendering: 3d` is the catalog's own field, and the
+# wording ("3d", "arena", "drive") is what the design module's archetype selection reads.
+# The design derives the engine; nothing here names one.
+
+version: 1.0.0
+
+archetypes:
+  - id: neon-arena-drive
+    title: Neon Drift Arena
+    genre: arcade
+    subgenre: driving
+    market_tags: [arcade, driving, racing, casual]
+    core_mechanic: drive a neon craft down a 3d arena and steer between walls that rush toward it
+    fantasy: threading a glowing craft through a closing arena at rising speed
+    core_loop: drive into the arena, steer between the walls, score climbs with every wall cleared, the arena speeds up, crash, drive again
+    session_seconds: 180
+    replayability: medium
+    retention_design: personal best score and rising arena speed
+    technical_complexity: s
+    asset_complexity: xs
+    dev_speed_days: 9
+    asset_cost_usd: 100
+    bundle_mb: 8
+    rendering: 3d
+    text_heavy: false
+    multiplayer: false
+    needs_cloud_save: false
+    mobile_ready: true
+    monetization:
+      primary: rewarded
+      secondary: [interstitial]
+      rationale: A crash is the rewarded moment (revive once per drive); an interstitial fits the break before the next drive.
+    priors: {monetization_fit: 0.6, retention_potential: 0.45, session_quality: 0.65, technical_risk: 0.3, performance_risk: 0.35, iterability: 0.7}
+    risks:
+      - {description: 3D rendering on low-end mobile browsers is the constraint that bites; low-poly procedural geometry keeps it small., severity: medium}

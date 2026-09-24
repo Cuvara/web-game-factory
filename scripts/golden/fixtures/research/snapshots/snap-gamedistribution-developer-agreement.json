@@ -1,0 +1,36 @@
+{
+  "id": "snap-gamedistribution-developer-agreement",
+  "source_uri": "https://static.gamedistribution.com/terms/developer.html",
+  "source_kind": "portal-docs",
+  "title": "Developer Game License Agreement",
+  "observed_at": "2026-09-23T00:00:00Z",
+  "retrieved_via": "web-fetch",
+  "platform": "gamedistribution",
+  "observations": [
+    {
+      "statement": "GameDistribution's developer agreement requires implementing its SDK before upload, or publishing is denied.",
+      "excerpt": "2.6.3 before uploading the Games, implement the SDK in the Games as instructed by the Distributor; failure to do this will result in a denied request for publishing;",
+      "subject": { "platform": "gamedistribution", "dimension": "technical_risk" },
+      "facts": { "sdk_required": true },
+      "tags": ["sdk", "legal-terms"]
+    },
+    {
+      "statement": "GameDistribution's developer agreement entitles the developer to a 33% share of Net Revenue.",
+      "excerpt": "the Developer is entitled to a revenue share of 33% (thirty three percent) of the Net Revenue",
+      "subject": { "platform": "gamedistribution", "dimension": "monetization_fit" },
+      "tags": ["revenue-share", "legal-terms"]
+    },
+    {
+      "statement": "GameDistribution serves advertisements within games through its SDK.",
+      "excerpt": "Distributor shall use commercially reasonable efforts to serve the advertisements within the Games through use of the SDK",
+      "subject": { "platform": "gamedistribution", "dimension": "monetization_fit" },
+      "tags": ["ads", "legal-terms"]
+    },
+    {
+      "statement": "GameDistribution pays the developer revenue share within 60 days after the monthly report becomes available.",
+      "excerpt": "Within 60 days after the report for the preceding calendar month becoming available, the Distributor will pay the Developer Revenue Share",
+      "subject": { "platform": "gamedistribution", "dimension": "monetization_fit" },
+      "tags": ["payment-terms", "legal-terms"]
+    }
+  ]
+}

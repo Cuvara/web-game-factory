@@ -1,0 +1,128 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>Neon Drift Arena</title>
+    <!--
+      GOLDEN-RUN REPLAY: the template's index.html with the overlay of
+      examples/neon-drift-arena/index.html, written by the Factory's replay developer.
+    -->
+    <style>
+      html,
+      body {
+        margin: 0;
+        width: 100%;
+        height: 100%;
+        overflow: hidden;
+        overscroll-behavior: none;
+        background: #05060f;
+        color: #eaf6ff;
+        font:
+          16px/1.4 system-ui,
+          -apple-system,
+          "Segoe UI",
+          Roboto,
+          sans-serif;
+        user-select: none;
+        -webkit-user-select: none;
+        -webkit-tap-highlight-color: transparent;
+        touch-action: none;
+      }
+      #game {
+        position: fixed;
+        inset: 0;
+      }
+      #game canvas {
+        display: block;
+        width: 100%;
+        height: 100%;
+      }
+      #hud {
+        position: absolute;
+        bottom: 4px;
+        right: 8px;
+        opacity: 0.4;
+        font-size: 11px;
+        pointer-events: none;
+      }
+      #ui {
+        position: fixed;
+        inset: 0;
+        pointer-events: none;
+      }
+      #score-hud {
+        position: absolute;
+        top: max(10px, env(safe-area-inset-top));
+        left: max(12px, env(safe-area-inset-left));
+        right: max(12px, env(safe-area-inset-right));
+        display: flex;
+        gap: 16px;
+        font-weight: 700;
+        text-shadow:
+          0 0 8px #0af,
+          0 1px 2px #000;
+      }
+      .screen {
+        position: absolute;
+        inset: 0;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 16px;
+        padding: 24px;
+        box-sizing: border-box;
+        text-align: center;
+        background: rgba(5, 6, 15, 0.72);
+        pointer-events: auto;
+      }
+      [hidden] {
+        display: none !important;
+      }
+      h1 {
+        margin: 0;
+        font-size: clamp(30px, 8vmin, 60px);
+        color: #33ffd6;
+        text-shadow: 0 0 18px #0fffce;
+      }
+      p {
+        margin: 0;
+        max-width: 34em;
+        color: #b7c7e0;
+      }
+      button {
+        pointer-events: auto;
+        min-width: 44px;
+        min-height: 44px;
+        padding: 12px 26px;
+        border: 0;
+        border-radius: 12px;
+        font: inherit;
+        font-weight: 800;
+        color: #05060f;
+        background: #33ffd6;
+        cursor: pointer;
+      }
+      button.secondary {
+        background: #ff5cf0;
+      }
+      button.pause {
+        position: absolute;
+        top: max(6px, env(safe-area-inset-top));
+        right: 8px;
+        padding: 6px 12px;
+      }
+      .note {
+        min-height: 1.4em;
+        color: #ffb3b3;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="game"></div>
+    <div id="ui"></div>
+    <div id="hud" data-scene="none">neon-drift-arena</div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

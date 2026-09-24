@@ -1,0 +1,18 @@
+{
+  "boot.title": "Neon Drift Arena",
+  "boot.failed": "Ошибка загрузки",
+  "title.heading": "Neon Drift Arena",
+  "title.rules": "Управляйте стрелками, A/D или движением указателя. Проводите корабль между неоновыми стенами.",
+  "title.play": "Поехали",
+  "hud.score": "Очки",
+  "hud.best": "Рекорд",
+  "hud.pause": "Пауза",
+  "pause.heading": "Пауза",
+  "pause.resume": "Продолжить",
+  "over.heading": "Авария",
+  "over.score": "Очки",
+  "over.best": "Рекорд",
+  "over.revive": "Смотреть рекламу и продолжить",
+  "over.restart": "Ещё заезд",
+  "note.no-ad": "Реклама недоступна - начните новый заезд."
+}

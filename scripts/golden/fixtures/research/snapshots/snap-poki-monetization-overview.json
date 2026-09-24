@@ -1,0 +1,38 @@
+{
+  "id": "snap-poki-monetization-overview",
+  "source_uri": "https://developers.poki.com/guide/how-monetization-works",
+  "source_kind": "portal-docs",
+  "title": "Monetization overview | Poki Documentation",
+  "observed_at": "2026-09-23T00:00:00Z",
+  "retrieved_via": "web-fetch",
+  "platform": "poki",
+  "observations": [
+    {
+      "statement": "Games on Poki earn only through in-game ads served by the Poki SDK, with no in-app purchases and no third-party ad systems.",
+      "excerpt": "Games on Poki earn through in-game ads, served entirely by the Poki SDK. There are no in-app purchases and no third-party ad systems to integrate.",
+      "subject": { "platform": "poki", "dimension": "monetization_fit" },
+      "facts": { "iap": false, "sdk_required": true },
+      "tags": ["ads-only"]
+    },
+    {
+      "statement": "Poki supports midroll ads signalled by commercialBreak(), with Poki deciding when an ad is actually shown.",
+      "excerpt": "Midroll ads run at natural breaks in the session: between levels, after a game over, when leaving a pause. Your game signals opportunities with commercialBreak() ; Poki's system decides when a player is actually ready to see one, so not every call shows an ad.",
+      "subject": { "platform": "poki", "dimension": "monetization_fit" },
+      "facts": { "ads.interstitial": true },
+      "tags": ["midroll", "commercialBreak"]
+    },
+    {
+      "statement": "Poki supports player-initiated rewarded videos triggered with rewardedBreak(), which must never block core gameplay.",
+      "excerpt": "Rewarded videos are the player's choice: watch an ad, get an in-game benefit. Your game triggers them with rewardedBreak() on an explicit player action. Rewarded content is always an optional extra and never blocks core gameplay.",
+      "subject": { "platform": "poki", "dimension": "monetization_fit" },
+      "facts": { "ads.rewarded": true },
+      "tags": ["rewarded", "rewardedBreak"]
+    },
+    {
+      "statement": "Games supporting portrait mode become eligible for Gamebar Display ads, a mobile title-bar format.",
+      "excerpt": "Games that support portrait mode also become eligible for Gamebar Display ads , a mobile format in the title bar that earns extra without any work from you.",
+      "subject": { "platform": "poki", "dimension": "monetization_fit" },
+      "tags": ["portrait", "display-ads", "mobile"]
+    }
+  ]
+}

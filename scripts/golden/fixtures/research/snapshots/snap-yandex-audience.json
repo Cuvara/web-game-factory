@@ -1,0 +1,42 @@
+{
+  "id": "snap-yandex-audience",
+  "source_uri": "https://yandex.com/dev/games/doc/en/",
+  "source_kind": "portal-docs",
+  "title": "Advantages of Yandex Games | Yandex Games SDK",
+  "observed_at": "2026-09-23T00:00:00Z",
+  "retrieved_via": "web-fetch",
+  "platform": "yandex",
+  "observations": [
+    {
+      "statement": "Yandex Games reports that 60% of its audience is in Russia and CIS and 40% in other countries.",
+      "excerpt": "Geography: Russia and CIS — 60% Other countries — 40%",
+      "subject": { "platform": "yandex", "dimension": "platform_fit" },
+      "tags": ["audience", "geography", "self-reported"]
+    },
+    {
+      "statement": "Yandex Games reports its platform split as phones 50%, computers 40%, tablets and TVs 10%.",
+      "excerpt": "Platforms: Phones — 50% Computers — 40% Tablets and TVs — 10%",
+      "subject": { "platform": "yandex", "dimension": "platform_fit" },
+      "facts": { "mobile_support_expected": true },
+      "tags": ["audience", "devices", "self-reported"]
+    },
+    {
+      "statement": "Yandex Games reports average player time on the platform of 55 minutes.",
+      "excerpt": "Average player time on the platform — 55 minutes.",
+      "subject": { "platform": "yandex", "dimension": "session_quality" },
+      "tags": ["audience", "time-on-platform", "self-reported"]
+    },
+    {
+      "statement": "Yandex Games reports that the 35–44 age group makes up 49% of its players.",
+      "excerpt": "Age of players: 55+ — 20% 45–54 — 7% 35–44 — 49% 25–34 — 13% 0–24 — 11%",
+      "subject": { "platform": "yandex", "dimension": "platform_fit" },
+      "tags": ["audience", "age", "self-reported"]
+    },
+    {
+      "statement": "Yandex states its publishing requirements are lower than Google Play and other platforms.",
+      "excerpt": "Publishing requirements on Yandex Games are lower than on Google Play and other platforms.",
+      "subject": { "platform": "yandex", "dimension": "time_to_market" },
+      "tags": ["barrier-to-entry"]
+    }
+  ]
+}

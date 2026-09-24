@@ -273,6 +273,8 @@ seen by the engine — validate what you write there with ajv.
 - `docs/agent-lifecycle.md` — process ownership, heartbeat, liveness, cancellation
 - `docs/golden-runs.md` — the 2D and 3D regression runs
 - `docs/core-v1.md` — what Core v1 guarantees, and how module work is validated against it
+- `docs/claude-capabilities.md` — agent-host capability audit: what the Factory enforces vs
+  the host's argv, verified headless developer/reviewer config, live evidence
 - `docs/development.md` — working on the Factory
 
 Documentation that contradicts a machine file is worse than none, because people believe it.

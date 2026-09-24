@@ -210,6 +210,20 @@ numbering: `core/` is the contract, and schemas carry their own versions.
 
 ### Changed
 
+- **Agent-host capability audit (docs/claude-capabilities.md).**
+  - `workspace/config/factory.yaml` `review.guarded_paths` is back to the module default,
+    `[core, scripts, bin, workspace/config]`. It had narrowed it to
+    `[core/workflows, workspace/config]`, which undid the widening from the security pass.
+    A test now pins it.
+  - The file gains commented, verified headless developer/reviewer argvs for the one host
+    audited. The active defaults (`handoff` / `none`) are unchanged.
+  - Adapter binding 1.1.0: `architect` produces `review-report` as the read-only reviewer
+    in `title:prototype`. `gameplay` and `release` consume what their steps read. Both
+    plugins are regenerated.
+  - `test_core_agents` gains `LiveDeveloperAndReviewer` (opt-in). `LiveReviewer` could not
+    pass against a competent live host and is fixed.
+  - No existing artifact is affected.
+
 - **Commit lineage: a real run can release.** The pipeline develop → review → sdk → verify →
   release now names one chain of commits, and every step that reads it applies one rule
   (docs/core-contracts.md §5, `scripts/wgf_verification/lineage.py`). The `sdk` step commits

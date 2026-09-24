@@ -272,6 +272,16 @@ class HumanGate(EngineCase):
         with self.assertRaisesRegex(EngineError, "strategy has since replaced"):
             engine.continue_in(run.run_id, "design", force=True)
 
+    def test_a_whole_run_continued_after_upstream_work_is_redone_asks_the_gate_again(self):
+        engine = self.engine(CHECKPOINT.replace("GATE", "G3"))
+        run = engine.start()
+        engine.resume(run.run_id, decision="approve")
+        engine.continue_in(run.run_id, "strategy", force=True)
+        self.script.calls.clear()
+        state = engine.continue_in(run.run_id, "gated")  # skip mode over the whole workflow
+        self.assertEqual((state.status, state.cursor), (RunStatus.WAITING, "review"))
+        self.assertNotIn("design", self.script.executed())
+
     def test_a_checkpoint_without_a_named_gate_still_gates(self):
         engine = self.engine(CHECKPOINT.replace("{gate: GATE, ", "{"))
         run = engine.start(scope="strategy")

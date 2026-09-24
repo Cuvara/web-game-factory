@@ -278,6 +278,23 @@ class WorkflowEngine:
             return False
         return bool(getattr(implementation, "gates_the_run", False))
 
+    @staticmethod
+    def _last_successes(state):
+        last = {}
+        for index, entry in enumerate(state.trail):
+            if entry.get("outcome") == StepOutcome.SUCCESS:
+                last[entry.get("step")] = index
+        return last
+
+    def _gate_superseded(self, state, gate_id):
+        """The steps before `gate_id` that succeeded again after its last success: work the
+        gate's approval never covered. [] when the approval is current (or never given)."""
+        last = self._last_successes(state)
+        if gate_id not in last:
+            return []
+        ids = self.definition.step_ids
+        return [u for u in ids[:ids.index(gate_id)] if last.get(u, -1) > last[gate_id]]
+
     def _refuse_unmet_upstream(self, state, target):
         """Refuse to start `target` inside a run whose earlier steps did not get it there.
 
@@ -289,10 +306,7 @@ class WorkflowEngine:
         ids = self.definition.step_ids
         if target not in ids:
             return
-        last_success = {}
-        for index, entry in enumerate(state.trail):
-            if entry.get("outcome") == StepOutcome.SUCCESS:
-                last_success[entry.get("step")] = index
+        last_success = self._last_successes(state)
         problems = []
         upstream = ids[:ids.index(target)]
         for position, step_id in enumerate(upstream):
@@ -310,8 +324,7 @@ class WorkflowEngine:
                 continue
             # An approval covers what existed when it was given. A step before the gate
             # that succeeded again afterwards produced something nobody approved.
-            newer = [u for u in upstream[:position]
-                     if last_success.get(u, -1) > last_success[step_id]]
+            newer = self._gate_superseded(state, step_id)
             if newer:
                 problems.append(f"{step_id} (gate {label}) approved work that "
                                 f"{', '.join(newer)} has since replaced; pass it again")
@@ -468,7 +481,13 @@ class WorkflowEngine:
                 step_def = self.definition.step(step_id)
                 step_state = state.step(step_id)
 
-                if skip and step_state.status == StepStatus.SUCCESS and step_id not in skipped:
+                stale_gate = (skip and step_state.status == StepStatus.SUCCESS
+                              and self._is_gate(step_def) and self._gate_superseded(state, step_id))
+                if stale_gate:
+                    # Its approval predates work redone upstream: not "already completed".
+                    # A new visit, so the old decision (bound to its visit) cannot answer it.
+                    needs_enter = True
+                elif skip and step_state.status == StepStatus.SUCCESS and step_id not in skipped:
                     skipped.add(step_id)
                     self._emit(state, Events.STEP_SKIPPED, step_id=step_id,
                                data={"reason": "already completed in this run"})

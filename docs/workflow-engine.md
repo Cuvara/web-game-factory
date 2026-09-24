@@ -717,7 +717,10 @@ definition is BLOCKED, WAITING or FAILED in that run, or when a gate before it h
 passed in that run. A gate is a step whose `with:` names a `gate`, or whose implementation
 declares `gates_the_run = True` (the human checkpoint does). A gate has passed only if its
 last success comes after the last success of every step before it: an approval covers the
-work that existed when it was given, not a strategy or tech plan regenerated afterwards. That is what keeps `wgf init --run <id>` from
+work that existed when it was given, not a strategy or tech plan regenerated afterwards. The same
+test applies when a whole run is continued (`wgf new-game --run <id>`): a gate whose approval
+predates redone upstream work is not skipped as "already completed" but entered again, and
+waits for a new decision. That is what keeps `wgf init --run <id>` from
 scaffolding a repository after G3 was rejected, or while G4 is unanswered. A fresh run of a
 single step (`wgf verify`) has no upstream in its run and is not affected; each module still
 refuses inputs it cannot trust.

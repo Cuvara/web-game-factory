@@ -31,7 +31,7 @@ factory:
   # implementation with its placeholder for that run.
   #   wgf_strategy   the `strategy` step (scripts/wgf_strategy/)
   steps:
-    modules: [wgf_discovery, wgf_strategy, wgf_init, wgf_assets, wgf_develop, wgf_verification, wgf_design, wgf_sdk]
+    modules: [wgf_discovery, wgf_strategy, wgf_init, wgf_assets, wgf_develop, wgf_review, wgf_verification, wgf_design, wgf_sdk]
 
   # The init module (scripts/wgf_init, docs/init-module.md): creates each game's repository
   # from the template with `gh`, clones it, and checks the template's infrastructure arrived.
@@ -85,6 +85,21 @@ factory:
     check_timeout_seconds: 900
     commit: true                # one local commit per visit, keyed by the idempotency key
     build_url: null             # e.g. "https://{branch}.{name}.pages.dev"; default links the commit
+
+  # The review module (scripts/wgf_review, docs/review-module.md): an independent reviewer
+  # reads each development commit and approves it or requests changes, which the workflow
+  # routes back to develop. The reviewer is read-only - the checkout is fingerprinted before
+  # and after, and any change fails the review and is undone. `none` records a skipped
+  # review, never an approval.
+  review:
+    reviewer:
+      kind: none                # none | command: run argv unattended, read-only
+      argv: []                  # command only: {repo} {verdict} {brief} {commit} {prompt}
+      timeout_seconds: 1800
+      idle_timeout_seconds: 600 # no output for this long ends the reviewer's process tree
+      verdict_from: file        # file: it writes {verdict} | stdout: it prints the JSON last
+    # checkouts: ..             # default: factory.develop.checkouts
+    guarded_paths: [core/workflows, workspace/config]
 
   # The discovery module (scripts/wgf_discovery) implements `research`. Every key is
   # optional; see scripts/wgf_discovery/step.py. Evidence snapshots live in

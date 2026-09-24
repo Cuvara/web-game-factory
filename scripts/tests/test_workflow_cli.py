@@ -33,7 +33,7 @@ from wgflib.workflow.model import RunStatus  # noqa: E402
 from wgflib.workflow.store import RunStore  # noqa: E402
 
 NEW_GAME = ["research", "strategy", "strategy-review", "design", "init", "assets", "develop",
-            "sdk", "verify", "release"]
+            "review", "sdk", "verify", "release"]
 SCHEMATIZED = {
     "research": "opportunity",
     "strategy": "title-strategy",
@@ -202,7 +202,8 @@ class FailureAndResume(CliCase):
         state = self.state()
         self.assertEqual(state["status"], "COMPLETED")
         self.assertEqual([t["step"] for t in state["trail"]][6:],
-                         ["develop", "sdk", "verify", "develop", "sdk", "verify", "release"])
+                         ["develop", "review", "sdk", "verify", "develop", "review", "sdk",
+                          "verify", "release"])
         self.assertEqual(self.artifact(state, "qa-report", 1)["verdict"], "fail")
         self.assertEqual(self.artifact(state, "qa-report", 2)["verdict"], "pass")
         self.assertEqual(self.artifact(state, "prototype-report", 2)["iteration"], 2)
@@ -371,7 +372,8 @@ class RunStatesThroughTheCli(CliCase):
         self.wgf("new-game", "--resume", before["run_id"], "--quiet")
         after = self.state(before["run_id"])
         self.assertEqual(succeeded(after), sorted(succeeded(before) +
-                                                  ["develop", "sdk", "verify", "release"]))
+                                                  ["develop", "review", "sdk", "verify",
+                                                   "release"]))
 
     def test_mock_auto_approves_only_the_workflows_own_checkpoint(self):
         self.wgf("new-game", "--mock", "--quiet")

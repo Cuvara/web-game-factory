@@ -3,7 +3,8 @@
 The executable backbone of the Factory: a small kernel that runs a workflow definition step by
 step, persists every change, and can be stopped, resumed, retried and routed without anyone
 calling a step by hand. It ships with a placeholder for every step type. Discovery, strategy,
-design, init ([init-module.md](init-module.md)), assets, development, SDK and verification
+design, init ([init-module.md](init-module.md)), assets, development, review
+([review-module.md](review-module.md)), SDK and verification
 ([verification-module.md](verification-module.md)) are real modules that plug into it;
 `release` is still a placeholder —
 **[workflow-module-contract.md](workflow-module-contract.md) is what they implement against.**
@@ -50,9 +51,10 @@ python -m unittest discover scripts/tests   # includes the acceptance tests belo
       EventBus ──► store (events.jsonl = structured log)
                └─► CLI progress, and later a UI / monitor / agent host
 
-  research → strategy → [G2 checkpoint] → design → init → assets → develop → sdk → verify → release
-                                                                   ▲                   │ fail
-                                                                   └───────────────────┘
+  research → strategy → [G2 checkpoint] → design → init → assets → develop → review → sdk → verify → release
+                                                                   ▲ ▲ request-  │              │ fail
+                                                                   │ └─ changes ─┘              │
+                                                                   └────────────────────────────┘
                                                                                         │ pass
                                                                                         ▼
                                release-manifest (draft) ─► game repo CI ─► G5 ─► G6 ─► publish
@@ -270,8 +272,9 @@ the run instead of guessing. A loop is just a route that points backwards:
 **Loop safety.** Every step has `max_visits` (new-game: 3, from `defaults`; installation
 default 5). Entering a step more often than that since the run last started or resumed stops
 the run as `BLOCKED` with a `loop limit` message instead of looping; a person resuming it
-grants every step a fresh budget. For `new-game` that is at most three develop → sdk →
-verify passes per start or resume. Retries are bounded separately by `max_attempts`, and no
+grants every step a fresh budget. For `new-game` that is at most three develop → review →
+sdk → verify passes per start or resume, and a reviewer that never approves blocks the run
+on its third request for changes instead of looping. Retries are bounded separately by `max_attempts`, and no
 outcome but a retryable `FAILED` is ever retried, so there is no unbounded path. The graph is not assumed to be linear: any step can route
 anywhere, and a human checkpoint with more than two choices is a branch.
 

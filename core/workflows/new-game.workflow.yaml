@@ -87,11 +87,22 @@ workflow:
     - id: develop
       type: develop
       stage: title:prototype
-      description: Build the game. Re-entered with the failing qa-report when verification fails.
+      description: Build the game. Re-entered with the failing qa-report when verification fails, or with the review-report when review requests changes.
       # scaffold-record says which repository to build in; title-strategy carries the
       # questions the prototype must answer and the kill criteria its report must list.
-      inputs: [game-design, asset-manifest, scaffold-record, title-strategy, qa-report]
+      inputs: [game-design, asset-manifest, scaffold-record, title-strategy, qa-report, review-report]
       outputs: [prototype-report]
+
+    # An independent reviewer reads the commit develop made; it may not change it. Approve
+    # continues; request-changes (FAILED, route `request-changes`) goes back to develop with
+    # the blockers. Unrouted, a request for changes would fail the run, never continue.
+    - id: review
+      type: review
+      stage: title:prototype
+      inputs: [prototype-report, game-design, scaffold-record]
+      outputs: [review-report]
+      on:
+        request-changes: develop
 
     # Integrates the template's platform SDK into the game the design and init produced:
     # it reads the design's placements, and writes into the repository init created.

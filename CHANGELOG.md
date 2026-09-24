@@ -10,6 +10,27 @@ numbering: `core/` is the contract, and schemas carry their own versions.
 
 ### Added
 
+- **Review module (`scripts/wgf_review`, step type `review`) and the `review-report`
+  artifact.** An independent reviewer reads every development commit and approves it or
+  requests changes with named blockers. The loop is data: `new-game` now runs
+  `develop → review → sdk`, with `review` `on: {request-changes: develop}`, and
+  `max_visits` bounds it. Request-changes is `FAILED` with a route and not retryable, so
+  a workflow that forgot to route it fails closed. The reviewer is read-only and that is
+  enforced: HEAD, refs, index, every tracked and untracked file, package/lock/test/config
+  paths, `.git/config`/hooks and the Factory's `core/workflows` + `workspace/config` are
+  fingerprinted before and after. Any change fails the review
+  (`reviewer-isolation-violation`) and is undone. Verdicts are validated strictly
+  (`malformed-verdict`). Timeouts and crashes are retryable and end the whole process tree
+  through `wgflib.procs`. `kind: none` records `skipped`, never an approval. `develop`
+  now takes `review-report` as an input: a request for changes to the commit it starts
+  from puts the blockers first in the next brief (`review_blockers`). It also gains an
+  optional `developer.idle_timeout_seconds`. Proved by
+  `scripts/tests/test_core_agents.py`, the AGENTS category of the Core Acceptance Suite,
+  with real subprocesses, real git and the real engine. See `docs/review-module.md`.
+  *Existing artifacts:* none change. Existing runs of `new-game` resume into a workflow
+  that has one more step. Installations must add `wgf_review` to `factory.steps.modules`
+  (done in the shipped config) or run it with `--mock`.
+
 - **Assets module (`scripts/wgf_assets`, step type `assets`).** Turns a game design into an
   asset manifest and the files behind it: inspects `game_design.asset_requirements` (or
   derives a baseline), classifies each against the new `core/reference/asset-policy.yaml`,

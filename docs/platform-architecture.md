@@ -195,8 +195,11 @@ only where the game plays audio. Without a game-design and a scaffold-record in 
 
 **The integration is committed, once.** Before writing anything the step establishes the
 commit it builds on: the checkout's HEAD must be the prototype-report's commit (or a
-descendant made only by this run's sdk commits, on a retry or resume), and the tree may hold
-no uncommitted change outside the files the integration owns. Otherwise it is `BLOCKED` —
+descendant made only by commits this step recorded in its ledger in the run directory, on a
+retry or resume — never by a commit whose trailer merely says so), and the tree may hold no
+uncommitted change: not outside the files the integration owns, and not in them either,
+unless an earlier attempt of the same visit left them (they are then reset to HEAD and
+regenerated, so a hand edit to `src/main.ts` is never folded into the sdk commit). Otherwise it is `BLOCKED` —
 integrating on top of an unreviewed commit, or verifying someone's uncommitted edit as if it
 were the build, is what this prevents. After a successful integration (files written, its
 suite and typecheck not failed) that changed the tree, it makes one local commit keyed by

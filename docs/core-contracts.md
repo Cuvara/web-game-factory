@@ -231,9 +231,13 @@ release   at HEAD = S, clean tree, verified bundle              release-manifest
 1. `S == V == H`. The SDK evidence, the verification and the release are about one commit.
 2. `P == B`. sdk built on the commit develop made — the one review read.
 3. `B..S` is exactly the sdk step's commits: `S` descends from `B`
-   (`git merge-base --is-ancestor B S`), and every commit in `git log B..S` carries a
-   `Wgf-Sdk-Key:` trailer whose key starts with this run's id; when the sdk-report lists
-   `sdk_commits`, git's list and the report's agree.
+   (`git merge-base --is-ancestor B S`), `git log B..S` is exactly the sdk-report's
+   `sdk_commits` (required whenever `B != S`), and each carries a `Wgf-Sdk-Key:` trailer
+   whose key starts with this run's id. **A trailer is never what makes a commit sdk's**:
+   the key derives from the run id, which every developer command is given, so anyone who
+   can commit can forge one. The record is the sdk-report (held by the run, pinned by hash
+   downstream), and the sdk step itself decides from a ledger it keeps in the run directory
+   (`<run dir>/sdk/<step>.commits.json`), outside the checkout.
 4. When the run holds a review-report, it approved exactly `P` (and, when it pins a
    prototype-report, the run's newest one). `request-changes` or `no-verdict` refuses.
    `skipped` (no reviewer configured) does not refuse: the release manifest records
@@ -255,7 +259,7 @@ another commit — is `commit-lineage-mismatch`, with a message naming the commi
 
 | Where | How | Outcome |
 |---|---|---|
-| `sdk` (`wgf_sdk/commit.py`) | before writing: HEAD is `P` or `P` + this run's sdk commits; no uncommitted change outside the integration's files | `BLOCKED` |
+| `sdk` (`wgf_sdk/commit.py`) | before writing: HEAD is `P` or `P` + commits its ledger records (a forged trailer is foreign); no uncommitted change outside the integration's files, and none to its own files unless this visit already started (then they are reset to HEAD and regenerated, so a hand edit never survives into its commit) | `BLOCKED` |
 | `verify` (`source.upstream-commits`) | rules 1–3, 5, 6 with the checkout's git, `V = H` | `BLOCKED`, message starts `commit-lineage-mismatch` |
 | `release` (`wgf_release/lineage.py`) | rules 1, 2, 4, 5 from the reports before anything else; then `H`, and rule 3 with the checkout's git | `FAILED` (not retryable), refusal code `commit-lineage-mismatch` / `commit-unknown` / `review-not-approved` |
 

@@ -291,6 +291,16 @@ class CommitLineage(ReleaseCase):
         self.assertTrue(any("lists sdk commits" in p for p in problems), problems)
         self.assertEqual(self.release(evidence).outcome, "SUCCESS")
 
+    def test_trailers_alone_do_not_make_a_commit_sdk_s(self):
+        # The key derives from the run id, which developers are given: the sdk-report's
+        # record of its commits is required, not the trailers git shows.
+        self.build()
+        problems = lineage_problems(
+            verified=self.sdk, prototype_commit=self.prototype, sdk_report={"build_ref": {
+                "commit_sha": self.sdk, "base_commit_sha": self.prototype}},
+            git=GitCall(self.game.root), run_id="run-1")
+        self.assertTrue(any("names no sdk_commits" in p for p in problems), problems)
+
     def test_a_reviewer_approved_commit_other_than_the_prototype_is_refused(self):
         evidence = self.build(reviewed="b" * 40)
         result = self.release(evidence)

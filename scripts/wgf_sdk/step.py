@@ -246,8 +246,15 @@ class SdkStep(WorkflowStep):
         git = sdk_commit.SdkGit(game_repo, integration_runner,
                                 author=self._setting(context, "commit_author"))
         prototype_commit = ((prototype or {}).get("build_ref") or {}).get("commit_sha")
+        # Which commits are this step's is recorded outside the checkout, in the run
+        # directory: a commit trailer can be forged by anyone who can commit.
+        run_dir = getattr(context, "run_dir", None)
+        ledger = sdk_commit.Ledger(os.path.join(
+            run_dir, "sdk", f"{getattr(context, 'current_step', None) or 'sdk'}.commits.json")) \
+            if run_dir else None
         try:
-            head, base, own = sdk_commit.prepare(git, prototype_commit, has_prototype, run_id)
+            head, base, own = sdk_commit.prepare(git, prototype_commit, has_prototype, run_id,
+                                                 ledger=ledger, key=key)
         except sdk_commit.CommitRefused as exc:
             return StepResult.blocked(str(exc))
 
@@ -255,6 +262,8 @@ class SdkStep(WorkflowStep):
         if design and scaffold:
             phase = IntegrationPhase(lambda key, default=None: self._setting(context, key, default),
                                      integration_runner)
+            if ledger is not None:
+                ledger.start(key)
             try:
                 integrated = phase.run(game_repo, design, scaffold, title_id)
             except PhaseBlocked as exc:
@@ -264,7 +273,7 @@ class SdkStep(WorkflowStep):
                 try:
                     sha, created = sdk_commit.commit(
                         git, key, title_id, integrated["integration"]["files"],
-                        integrated["integration"]["tests"])
+                        integrated["integration"]["tests"], ledger=ledger)
                 except sdk_commit.CommitRefused as exc:
                     return StepResult.blocked(str(exc))
                 if created:

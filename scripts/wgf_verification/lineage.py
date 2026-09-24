@@ -12,9 +12,10 @@ release must be about exactly the result. The rule (docs/core-contracts.md §5):
 
     1. S == V (== H)        the SDK evidence, the verification and the release are one build
     2. P == B               sdk built on the commit develop made, not on something else
-    3. B..S is exactly sdk's keyed commits: every commit in `git log B..S` carries a
-       `Wgf-Sdk-Key: <run_id>:...` trailer (this run's, when the run is known), S descends
-       from B, and when the sdk-report lists its commits the two lists agree
+    3. B..S is exactly sdk's commits: S descends from B, `git log B..S` is exactly the
+       sdk-report's `sdk_commits` (the record, held by the run and pinned by hash), and
+       each of them also carries a `Wgf-Sdk-Key: <run_id>:...` trailer. A trailer alone
+       proves nothing: the key derives from the run id, which developers are given
     4. no placeholder anywhere: "unknown", 40 zeros or a missing sha is not a commit
 
 An sdk-report without `base_commit_sha` (schema 1.0/1.1, before sdk committed) is read as
@@ -159,7 +160,13 @@ def lineage_problems(*, verified, prototype_commit, sdk_report, git, run_id=None
             + ", ".join(_short(s) for s in intruders)
             + ". Unreviewed code cannot ride along to a release; re-run develop, review, sdk "
               "and verify from the commit that should ship")
-    if isinstance(listed, list):
+    if not isinstance(listed, list):
+        # The report is the record: it is held by the run and pinned by hash downstream,
+        # where a trailer in git can be written by anyone who can commit.
+        problems.append(f"the sdk-report names no sdk_commits between {_short(base)} and "
+                        f"{_short(sdk_commit)}: which commits are the sdk step's cannot be "
+                        "told from trailers alone")
+    else:
         found = [sha for sha, _ in commits]
         if len(found) != len(listed) or any(not any(same_commit(f, l) for l in listed)
                                             for f in found):

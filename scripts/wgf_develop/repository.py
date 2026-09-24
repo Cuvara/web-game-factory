@@ -85,8 +85,17 @@ class GitRepo:
         # step keys its integration commits with its own (wgf_sdk/commit.py).
         self.trailer = trailer
 
+    # The checkout's .git/config is written by the developer agent. Its fsmonitor would run
+    # on every `git status` and its hooks on commit - in the Factory's process, outside any
+    # sandbox the agent had. Filter drivers are left alone: a repository may rely on them
+    # (git-lfs) to commit correctly. wgflib/gitsafe.py has the full treatment for
+    # inspection-only callers.
+    SAFE_CONFIG = ("-c", "core.fsmonitor=false", "-c", f"core.hooksPath={os.devnull}",
+                   "-c", "gc.auto=0", "-c", "maintenance.auto=false")
+
     def _git(self, *args, check=True):
-        result = self.runner.run(["git", *args], cwd=self.root, timeout=120)
+        result = self.runner.run(["git", *self.SAFE_CONFIG, *args], cwd=self.root,
+                                 timeout=120)
         if check and not result.ok:
             raise GitError(f"git {' '.join(args)} failed: {result.tail(800).strip()}")
         return result

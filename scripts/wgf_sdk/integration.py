@@ -156,7 +156,8 @@ class IntegrationPhase:
         if problems:
             raise SeamMissing("the build does not boot through the integration seam, so the "
                               "platform SDK cannot be integrated: " + "; ".join(problems))
-        seam = integrate.scan_seam(repo)
+        seam = integrate.scan_seam(repo, self._runner)
+        notes.append(f"seam calls read by: {seam['scanner']}")
         self._seam_placements(seam, placements, declared, placement_records, plan_placements)
         for call in seam["unresolved"]:
             placement_records.append({

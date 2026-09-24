@@ -299,6 +299,8 @@ class FakeRunner:
             with open(output, "w", encoding="utf-8") as handle:
                 json.dump({"testResults": [{"assertionResults": results}]}, handle)
             return CommandResult(1 if self.failing else 0, "", "")
+        if argv[0] == "node" and argv[1] == integrate.SEAM_SCANNER:
+            return None  # no node here: the step falls back to the regex reading, and says so
         if "tsc" in argv:
             if self.tsc_output:
                 return CommandResult(2, self.tsc_output, "")
@@ -854,6 +856,113 @@ class SeamPlacementIds(SdkCase):
         self.assertEqual(ArtifactContracts()("sdk-report", report), [])
         rewarded = self.feature(report, "yandex", "rewarded")
         self.assertEqual(rewarded["status"], "working")
+
+
+TYPED_SCENE_TS = """\
+import type { GameIntegration } from "./integration.js";
+
+const REWARDED_PLACEMENT = "extra-moves";
+const PLACEMENTS = { exit: "result-exit" } as const;
+
+interface Context {
+  readonly integration: GameIntegration;
+}
+
+export class PlayScene {
+  readonly #ctx: Context;
+  constructor(ctx: Context) {
+    this.#ctx = ctx;
+  }
+
+  /** The rewarded placement, granted only when `GameIntegration.rewarded()` resolves true. */
+  async fail(): Promise<void> {
+    this.#ctx.integration.gameplayStop();
+    if (await this.#ctx.integration.rewarded(REWARDED_PLACEMENT)) {
+      this.#ctx.integration.gameplayStart();
+      return;
+    }
+    await this.#ctx.integration.interstitial(PLACEMENTS.exit);
+    await this.#ctx.integration.interstitial(String(Date.now()));
+  }
+}
+"""
+
+
+def _pinned_typescript():
+    template, why = pinned_template.checkout()
+    if not template:
+        return None, why
+    path = os.path.join(template, "node_modules", "typescript")
+    if not os.path.isdir(path) or not shutil.which("node"):
+        return None, "the pinned template has no installed typescript, or no node"
+    return path, None
+
+
+_TS, _TS_WHY = _pinned_typescript()
+
+
+@unittest.skipUnless(_TS, _TS_WHY)
+class TypedSeamScanner(unittest.TestCase):
+    """The seam scanner on the TypeScript compiler, with the pinned template's TypeScript.
+
+    The real acceptance run's game reached its seam through a context object
+    (`this.#ctx.integration.rewarded(REWARDED_PLACEMENT)`): no import of the seam in that
+    file, a named id - invisible to the regex reading, so every ad feature read "not
+    called" - and a doc comment naming `GameIntegration.rewarded()` read as a call."""
+
+    def setUp(self):
+        self.repo = tempfile.mkdtemp(prefix="wgf-seam-ts-")
+        self.addCleanup(shutil.rmtree, self.repo, ignore_errors=True)
+        from wgf_develop.brief import INTEGRATION_CONTRACT
+        write(self.repo, "package.json", "{}\n")
+        write(self.repo, "tsconfig.json", json.dumps({
+            "compilerOptions": {"strict": True, "target": "ES2020", "module": "ESNext",
+                                "moduleResolution": "bundler", "noEmit": True},
+            "include": ["src"]}))
+        write(self.repo, "src/game/integration.ts",
+              INTEGRATION_CONTRACT.replace('import type { EventProperties } from '
+                                          '"@wgf/analytics-sdk";\n',
+                                          "type EventProperties = Record<string, unknown>;\n"))
+        write(self.repo, "src/game/play-scene.ts", TYPED_SCENE_TS)
+        write(self.repo, "src/platform/integration.ts",
+              "export const x = { rewarded: (_: string) => 1 };\nx.rewarded('not-the-game');\n")
+        os.makedirs(os.path.join(self.repo, "node_modules"))
+        os.symlink(_TS, os.path.join(self.repo, "node_modules", "typescript"))
+
+    @staticmethod
+    def at(fragment):
+        """src/game/play-scene.ts:<line> of the first line of the fixture containing it."""
+        lines = TYPED_SCENE_TS.splitlines()
+        return f"src/game/play-scene.ts:{next(i for i, l in enumerate(lines, 1) if fragment in l)}"
+
+    def test_calls_through_any_receiver_with_named_ids(self):
+        from wgf_sdk.runner import CommandRunner
+        seam = integrate.scan_seam(self.repo, CommandRunner())
+        self.assertTrue(seam["scanner"].startswith("typescript "), seam["scanner"])
+        self.assertEqual(seam["placements"], {
+            "rewarded": {"extra-moves": [self.at(".rewarded(REWARDED_PLACEMENT)")]},
+            "interstitial": {"result-exit": [self.at(".interstitial(PLACEMENTS.exit)")]}})
+        # The computed id is reported, the doc comment is not a call, src/platform is not
+        # the game.
+        self.assertEqual(seam["unresolved"], [{"call": "interstitial",
+                                               "argument": "String(Date.now())",
+                                               "where": self.at("String(Date.now())")}])
+        self.assertEqual(seam["calls"]["gameplayStop"], [self.at(".gameplayStop()")])
+        self.assertEqual(seam["calls"]["gameplayStart"], [self.at(".gameplayStart()")])
+        self.assertNotIn(self.at("/** The rewarded placement"),
+                         [w for ws in seam["calls"].values() for w in ws])
+
+    def test_the_regex_fallback_says_what_it_cannot_see(self):
+        class NoNode:
+            def run(self, argv, cwd, timeout):
+                return None
+        seam = integrate.scan_seam(self.repo, NoNode())
+        self.assertIn("regex", seam["scanner"])
+        self.assertIn("could not run", seam["scanner"])
+        # It reads this file (it imports the seam): the computed id is reported, and the doc
+        # comment naming `GameIntegration.rewarded()` is not a call.
+        self.assertEqual([u["argument"] for u in seam["unresolved"]], ["String(Date.now())"])
+        self.assertEqual(set(seam["placements"]["rewarded"]), {"extra-moves"})
 
 
 def prototype_at(commit):

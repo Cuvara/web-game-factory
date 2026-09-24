@@ -149,6 +149,9 @@ class TheFactoryContainsNoGameSource(unittest.TestCase):
         # into every game before it is built: platform plumbing on the template's own API,
         # with no game in it. The sdk step replaces it with scripts/wgf_sdk/game's version.
         "scripts/wgf_develop/seam/",
+        # The sdk step's seam scanner: reads a game's calls with the game repository's own
+        # TypeScript compiler (scripts/wgf_sdk/integrate.py). Factory tooling, no game in it.
+        "scripts/wgf_sdk/tools/",
         # The sdk module's own browser e2e harness: a stand-in run loop and a smoke spec,
         # copied into a scratch copy of the template by scripts/wgf_sdk/e2e.py; never a game.
         "scripts/wgf_sdk/e2e/",

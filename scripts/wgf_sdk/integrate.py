@@ -287,8 +287,62 @@ def _string_constants(text):
     return found
 
 
-def scan_seam(repo):
+SEAM_SCANNER = os.path.join(HERE, "tools", "seam-calls.mjs")
+_PLACEMENT_METHODS = ("canOfferRewarded", "rewarded", "interstitial")
+
+
+def scan_seam(repo, runner=None):
     """What the game calls on its seam, outside src/platform/ (where the wiring lives).
+
+    Read by the TypeScript compiler (tools/seam-calls.mjs, with the game repository's own
+    TypeScript) when `runner` can run it: a call is a seam call when the checker resolves the
+    method to GameIntegration, however the receiver is named or passed around, and a
+    placement id is the argument's string-literal type. Otherwise - no node, no TypeScript
+    installed - the regular-expression reading below, which the result's `scanner` says.
+    """
+    if runner is not None:
+        typed = _scan_seam_typed(repo, runner)
+        if typed is not None:
+            return typed
+        fallback = scan_seam_regex(repo)
+        fallback["scanner"] = ("regex (the TypeScript seam scanner could not run in the game "
+                               "repository; calls reached through a variable the regex cannot "
+                               "see are missed)")
+        return fallback
+    return scan_seam_regex(repo)
+
+
+def _scan_seam_typed(repo, runner):
+    result = runner.run(["node", SEAM_SCANNER, repo], repo, 300)
+    if result is None or result.returncode != 0:
+        return None
+    try:
+        data = json.loads(result.stdout.strip().splitlines()[-1])
+    except (ValueError, IndexError):
+        return None
+    if not isinstance(data, dict) or data.get("scanner") != "typescript":
+        return None
+    placements = {"rewarded": {}, "interstitial": {}}
+    calls, unresolved = {}, []
+    for call in data.get("calls") or []:
+        method, where = call.get("method"), call.get("where")
+        calls.setdefault(method, []).append(where)
+        if method not in _PLACEMENT_METHODS:
+            continue
+        kind = "interstitial" if method == "interstitial" else "rewarded"
+        ids = call.get("placements")
+        if not ids:
+            unresolved.append({"call": method, "argument": call.get("argument") or "",
+                               "where": where})
+            continue
+        for placement in ids:
+            placements[kind].setdefault(placement, []).append(where)
+    return {"placements": placements, "calls": calls, "unresolved": unresolved,
+            "scanner": f"typescript {data.get('version')}"}
+
+
+def scan_seam_regex(repo):
+    """What the game calls on its seam, read with regular expressions (the fallback).
 
     Returns {"placements": {kind: {id: [file:line]}}, "calls": {name: [file:line]},
     "unresolved": [{"call", "argument", "where"}]}, kind being "rewarded" (from
@@ -310,10 +364,13 @@ def scan_seam(repo):
     for _, text in sources:
         for name, value in _string_constants(_COMMENTS.sub("", text)).items():
             shared.setdefault(name, value)
-    for relative, text in sources:
+    for relative, raw in sources:
+        # Comments blanked, offsets kept: a doc comment naming `GameIntegration.rewarded()`
+        # is not a call (the real acceptance run's game had one).
+        text = _COMMENTS.sub(lambda m: re.sub(r"[^\n]", " ", m.group(0)), raw)
         if not _IMPORTS_SEAM.search(text) and "GameIntegration" not in text:
             continue
-        local = dict(shared, **_string_constants(_COMMENTS.sub("", text)))
+        local = dict(shared, **_string_constants(text))
 
         def where(offset):
             return f"{relative}:{text.count(chr(10), 0, offset) + 1}"
@@ -335,4 +392,5 @@ def scan_seam(repo):
         for pattern in (_SEAM_GAMEPLAY, _SEAM_STORAGE):
             for match in pattern.finditer(text):
                 calls.setdefault(match.group(1), []).append(where(match.start()))
-    return {"placements": placements, "calls": calls, "unresolved": unresolved}
+    return {"placements": placements, "calls": calls, "unresolved": unresolved,
+            "scanner": "regex"}

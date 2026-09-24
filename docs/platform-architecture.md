@@ -171,7 +171,16 @@ does not import and call `createGamePlatform` and `createGameIntegration` from
 `./platform/integration.js`, or that calls `createPlatform` itself, is refused - `FAILED`,
 not retryable, nothing written. (Before 1.1, the step patched main.ts with regular
 expressions keyed to the template's boot lines, and reported "skipped" when a template
-release changed them.) The game's calls do not change. Its placement ids (`rewarded("revive-after-crash")`) are
+release changed them.) The game's calls do not change.
+
+Which seam calls the game makes, and with which placement ids, is read by the TypeScript
+compiler (`scripts/wgf_sdk/tools/seam-calls.mjs`, run with the game repository's own
+TypeScript): a call counts when the checker resolves its method to `GameIntegration`,
+however the receiver is named or passed around (a context object, a field), and a placement
+id is the argument's string-literal type, so `const` names and `as const` members resolve
+exactly. A computed id is listed as a placement that is not integrated, never dropped. Only
+when node or TypeScript is missing does the step fall back to a regular-expression reading,
+and the report's notes say which scanner ran. Its placement ids (`rewarded("revive-after-crash")`) are
 read from the source, attached to the design's moments like triggers are, and put in the
 plan; an id at a moment where the design placed nothing stays a plain natural break, never
 an ad the design did not ask for.

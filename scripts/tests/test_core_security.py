@@ -588,6 +588,35 @@ class ReviewerIsolation(unittest.TestCase):
         problems = self.assert_caught("node_modules/dep/index.js", restorable=False)
         self.assertTrue(problems)  # its bytes were never kept: a person must look
 
+    def test_another_project_linking_the_same_store_file_is_not_a_write(self):
+        # pnpm hard-links node_modules files from its machine-wide store. Another project's
+        # install linking the same file moves the shared inode's ctime; nothing was written.
+        # Found by the real acceptance run: 10716 "modified" node_modules files, no writer.
+        store = os.path.join(self.scratch, "store-file.js")
+        with open(store, "w") as handle:
+            handle.write("module.exports = 'shared';\n")
+        linked = os.path.join(self.root, "node_modules", "shared", "index.js")
+        os.makedirs(os.path.dirname(linked))
+        os.link(store, linked)
+        self.before = isolation.take(self.git, [self.factory])
+        time.sleep(0.01)
+        os.link(store, os.path.join(self.scratch, "another-project-link.js"))  # ctime moves
+        self.assertEqual(self.violations(), [])
+
+    def test_a_write_to_a_hard_linked_file_is_still_caught(self):
+        store = os.path.join(self.scratch, "store-file.js")
+        with open(store, "w") as handle:
+            handle.write("module.exports = 'shared';\n")
+        linked = os.path.join(self.root, "node_modules", "shared", "index.js")
+        os.makedirs(os.path.dirname(linked))
+        os.link(store, linked)
+        self.before = isolation.take(self.git, [self.factory])
+        time.sleep(0.01)
+        with open(linked, "a") as handle:
+            handle.write("// tampered\n")
+        self.assertTrue(any("node_modules/shared/index.js" in v["path"]
+                            for v in self.violations()))
+
     def test_a_file_added_inside_an_existing_ignored_directory_is_caught_and_removed(self):
         self.write("node_modules/dep/postinstall.js", "require('child_process')\n")
         self.assert_caught("node_modules/dep/postinstall.js")

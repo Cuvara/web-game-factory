@@ -1,0 +1,63 @@
+{
+  "id": "snap-poki-requirements",
+  "source_uri": "https://developers.poki.com/guide/requirements-quality",
+  "source_kind": "portal-docs",
+  "title": "Requirements | Poki Documentation",
+  "observed_at": "2026-09-23T00:00:00Z",
+  "retrieved_via": "web-fetch",
+  "platform": "poki",
+  "observations": [
+    {
+      "statement": "Poki lists desktop, mobile and tablet support as a hard requirement.",
+      "excerpt": "Desktop, mobile, and tablet support. Poki players play on everything. On mobile, cover the full screen in portrait or landscape, or both for the best experience. Force mobile control schemes on tablets.",
+      "subject": { "platform": "poki", "dimension": "platform_fit" },
+      "facts": { "mobile_support_expected": true },
+      "tags": ["hard-requirement", "mobile"]
+    },
+    {
+      "statement": "Poki blocks all external requests by default, so fonts, assets and libraries must be bundled into the build.",
+      "excerpt": "No external requests. Poki blocks all external requests by default. Bundle fonts, assets, and libraries into your build.",
+      "subject": { "platform": "poki", "dimension": "technical_risk" },
+      "tags": ["hard-requirement", "csp"]
+    },
+    {
+      "statement": "Poki forbids external ad systems and outgoing links; its SDK handles ads.",
+      "excerpt": "No branding or external ads. Remove splash screens and outgoing links; your studio logo is welcome on the loading screen. Poki's SDK handles ads, so no other ad systems are allowed.",
+      "subject": { "platform": "poki", "dimension": "monetization_fit" },
+      "facts": { "sdk_required": true },
+      "tags": ["hard-requirement", "ads"]
+    },
+    {
+      "statement": "Poki requires games to stay playable with an ad blocker active.",
+      "excerpt": "No ad block prevention. Your game must stay playable with an ad blocker active. Messaging regarding ad blockers is handled on Poki's side.",
+      "subject": { "platform": "poki", "dimension": "technical_risk" },
+      "tags": ["hard-requirement", "adblock"]
+    },
+    {
+      "statement": "Poki advises small file size because players tend to leave if loading takes more than 10 seconds; it does not state a numeric MB limit on this page.",
+      "excerpt": "Small file size. Players tend to move to another game if loading takes more than 10 seconds, and they load from everywhere in the world.",
+      "subject": { "platform": "poki", "dimension": "performance_risk" },
+      "tags": ["load-time"]
+    },
+    {
+      "statement": "In-app purchases are not available on Poki; its ad system is the only monetization.",
+      "excerpt": "In-app purchases are not available. Poki's ad system is the only form of monetization.",
+      "subject": { "platform": "poki", "dimension": "monetization_fit" },
+      "facts": { "iap": false },
+      "tags": ["iap"]
+    },
+    {
+      "statement": "Poki requires rewarded buttons to carry a video icon and never be green.",
+      "excerpt": "Misleading buttons. Rewarded buttons must carry a clear video icon, must never be green, and must never be positioned to trick the player into clicking them.",
+      "subject": { "platform": "poki", "dimension": "scope_complexity" },
+      "facts": { "ads.rewarded": true },
+      "tags": ["rewarded", "ui-rule"]
+    },
+    {
+      "statement": "External link buttons on Poki must use PokiSDK.openExternalLink rather than navigating directly.",
+      "excerpt": "External Links: Any buttons that open external links when clicked (for example opening a YouTube channel or Discord community page) are required to fire the following SDK rather than directly leading to the URL. PokiSDK.openExternalLink('URL');",
+      "subject": { "platform": "poki", "dimension": "technical_risk" },
+      "tags": ["external-links", "sdk"]
+    }
+  ]
+}

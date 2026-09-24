@@ -1,0 +1,56 @@
+{
+  "id": "snap-crazygames-ad-requirements",
+  "source_uri": "https://docs.crazygames.com/requirements/ads/",
+  "source_kind": "portal-docs",
+  "title": "Advertisement - CrazyGames Documentation",
+  "observed_at": "2026-09-23T00:00:00Z",
+  "retrieved_via": "web-fetch",
+  "platform": "crazygames",
+  "observations": [
+    {
+      "statement": "CrazyGames offers midgame video ads, rewarded ads and in-game banners through its SDK.",
+      "excerpt": "These types of advertisements are available through the CrazyGames SDK: Video ads Midgame ads: between levels or stages Rewarded ads: when giving a reward (CrazyGames provides fallback banners) In-game banners",
+      "subject": { "platform": "crazygames", "dimension": "monetization_fit" },
+      "facts": { "ads.interstitial": true, "ads.rewarded": true, "ads.banner": true },
+      "tags": ["ad-formats"]
+    },
+    {
+      "statement": "Only ads requested through the CrazyGames SDK are allowed.",
+      "excerpt": "Only Ads requested through the CrazyGames SDK are allowed.",
+      "subject": { "platform": "crazygames", "dimension": "monetization_fit" },
+      "facts": { "sdk_required": true },
+      "tags": ["ads"]
+    },
+    {
+      "statement": "During Basic Launch, ads on CrazyGames are disabled and no revenue is shared.",
+      "excerpt": "If your game is currently in the Basic Launch phase: Advertisements will be disabled; no revenue will be shared.",
+      "subject": { "platform": "crazygames", "dimension": "monetization_fit" },
+      "tags": ["basic-launch"]
+    },
+    {
+      "statement": "CrazyGames caps midroll frequency at one every 3 minutes, managed by the SDK.",
+      "excerpt": "We take care automatically of how often a midgame ad is shown, taking into account the start of the game, the midroll frequency (max 1 every 3 minutes) and interplay with rewarded ads",
+      "subject": { "platform": "crazygames", "dimension": "monetization_fit" },
+      "tags": ["midroll-frequency"]
+    },
+    {
+      "statement": "CrazyGames forbids levels that can only be completed through a rewarded ad.",
+      "excerpt": "Poorly designed levels that can only be completed by a rewarded ad are not acceptable.",
+      "subject": { "platform": "crazygames", "dimension": "scope_complexity" },
+      "tags": ["rewarded", "design-rule"]
+    },
+    {
+      "statement": "In-game banners on CrazyGames are allowed only on useful screens open at least 5 seconds on average.",
+      "excerpt": "In-game banners are only allowed on useful screens with content that are open for at least 5 seconds on average.",
+      "subject": { "platform": "crazygames", "dimension": "monetization_fit" },
+      "facts": { "ads.banner": true },
+      "tags": ["banner-rules"]
+    },
+    {
+      "statement": "Players with ad blockers must be able to play CrazyGames games normally.",
+      "excerpt": "Players with AdBlocker should be able to play the game normally: It is never allowed to block players with AdBlockers from playing, or penalize players with certain disadvantages",
+      "subject": { "platform": "crazygames", "dimension": "technical_risk" },
+      "tags": ["adblock"]
+    }
+  ]
+}

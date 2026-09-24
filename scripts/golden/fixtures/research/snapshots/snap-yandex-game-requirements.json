@@ -1,0 +1,63 @@
+{
+  "id": "snap-yandex-game-requirements",
+  "source_uri": "https://yandex.com/dev/games/doc/en/concepts/requirements",
+  "source_kind": "portal-docs",
+  "title": "Game requirements | Yandex Games SDK",
+  "observed_at": "2026-09-23T00:00:00Z",
+  "retrieved_via": "web-fetch",
+  "platform": "yandex",
+  "observations": [
+    {
+      "statement": "Yandex Games moderation usually takes 3–5 working days.",
+      "excerpt": "Moderation usually takes 3–5 working days.",
+      "subject": { "platform": "yandex", "dimension": "time_to_market" },
+      "facts": { "review_days": [3, 5] },
+      "tags": ["moderation", "working-days"]
+    },
+    {
+      "statement": "Yandex Games requires LoadingAPI.ready() to be called at the moment the user can start playing.",
+      "excerpt": "At the moment when the user can start playing the game, the LoadingAPI.ready() method from Game Ready must be called.",
+      "subject": { "platform": "yandex", "dimension": "technical_risk" },
+      "facts": { "sdk_required": true },
+      "tags": ["sdk", "loading-api"]
+    },
+    {
+      "statement": "The total size of all game files on Yandex Games must not exceed 100 MB uncompressed.",
+      "excerpt": "The total size of all game files does not exceed 100 MB in uncompressed form.",
+      "subject": { "platform": "yandex", "dimension": "technical_risk" },
+      "facts": { "max_bundle_mb": 100 },
+      "tags": ["file-size", "total-not-initial"]
+    },
+    {
+      "statement": "On Yandex Games, payments are only made through the Yandex Games SDK and no external purchases are allowed.",
+      "excerpt": "Payments are only made through the Yandex Games SDK . There are no microtransactions or external purchases of any kind.",
+      "subject": { "platform": "yandex", "dimension": "monetization_fit" },
+      "tags": ["payments"]
+    },
+    {
+      "statement": "Yandex Games requires ads to be called only via its SDK, with no third-party advertisers.",
+      "excerpt": "Ads are only called via the Yandex Games SDK . There are no ads from third-party advertisers, including static ad images and text.",
+      "subject": { "platform": "yandex", "dimension": "monetization_fit" },
+      "tags": ["ads"]
+    },
+    {
+      "statement": "Yandex Games allows only sticky banners as additional ad units and prohibits custom RTB banners.",
+      "excerpt": "Additional ad units can only be sticky banners. Custom RTB banners are prohibited.",
+      "subject": { "platform": "yandex", "dimension": "monetization_fit" },
+      "facts": { "ads.banner": true },
+      "tags": ["banner"]
+    },
+    {
+      "statement": "Yandex Games requires built-in automatic language detection via its SDK.",
+      "excerpt": "The game has built-in automatic language detection via Yandex Games SDK .",
+      "subject": { "platform": "yandex", "dimension": "scope_complexity" },
+      "tags": ["localization", "language-detection"]
+    },
+    {
+      "statement": "A Yandex game whose rating stays at 30 or below (or is absent) for 3 weeks is unpublished.",
+      "excerpt": "The game Rating is above 30. If the game’s rating remains at 30 or below (or is absent) for 3 weeks , it will be unpublished.",
+      "subject": { "platform": "yandex", "dimension": "retention_potential" },
+      "tags": ["rating-threshold", "delisting-risk"]
+    }
+  ]
+}

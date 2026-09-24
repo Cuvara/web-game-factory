@@ -1,0 +1,59 @@
+{
+  "id": "snap-poki-puzzle-category",
+  "source_uri": "https://poki.com/en/puzzle",
+  "source_kind": "portal-listing",
+  "title": "Play Puzzle Games: Think, Solve & Beat Every Level",
+  "observed_at": "2026-09-23T00:00:00Z",
+  "retrieved_via": "web-fetch",
+  "platform": "poki",
+  "observations": [
+    {
+      "statement": "Poki's puzzle category page states it offers 250+ free puzzle games.",
+      "excerpt": "Play 250+ free puzzle games on Poki with types like block games, jigsaws, number puzzles and many more.",
+      "subject": { "platform": "poki", "dimension": "competition", "genre": "puzzle" },
+      "facts": { "category": { "name": "Puzzle Games", "genre": "puzzle", "game_count": 250 } },
+      "tags": ["category-size", "lower-bound"]
+    },
+    {
+      "statement": "There Is No Game is listed first among the 5 most popular puzzle games on Poki, rated 4.4.",
+      "excerpt": "Here are the 5 most popular puzzle games on Poki right now. There Is No Game - 4.4⭐",
+      "subject": { "platform": "poki", "dimension": "competition", "genre": "puzzle" },
+      "facts": { "reference_title": { "name": "There Is No Game", "genre": "puzzle", "list": "category:puzzle most-popular" } },
+      "tags": ["reference-title"]
+    },
+    {
+      "statement": "Blocky Blast Puzzle is listed among the 5 most popular puzzle games on Poki, rated 4.3.",
+      "excerpt": "Blocky Blast Puzzle - 4.3⭐",
+      "subject": { "platform": "poki", "dimension": "competition", "genre": "block-puzzle" },
+      "facts": { "reference_title": { "name": "Blocky Blast Puzzle", "genre": "block-puzzle", "list": "category:puzzle most-popular" } },
+      "tags": ["reference-title"]
+    },
+    {
+      "statement": "Bubble Shooter is listed among the 5 most popular puzzle games on Poki, rated 4.3.",
+      "excerpt": "Bubble Shooter - 4.3⭐",
+      "subject": { "platform": "poki", "dimension": "competition", "genre": "puzzle" },
+      "facts": { "reference_title": { "name": "Bubble Shooter", "genre": "puzzle", "list": "category:puzzle most-popular" } },
+      "tags": ["reference-title"]
+    },
+    {
+      "statement": "Poki lists 2048, Merge Rot and Watermelon Drop as top merge puzzle games.",
+      "excerpt": "In 2048, you merge numbers together with the goal of building up to the 2048 tile. Top games: 2048, Merge Rot, Watermelon Drop",
+      "subject": { "platform": "poki", "dimension": "competition", "genre": "merge" },
+      "facts": { "reference_title": { "name": "2048", "genre": "merge", "list": "category:puzzle merge-puzzles-top" } },
+      "tags": ["reference-title"]
+    },
+    {
+      "statement": "Water Color Sort is listed on Poki as a relaxing puzzle game with no timers or penalties.",
+      "excerpt": "Water Color Sort Sort colors at your own pace with no timers or penalties",
+      "subject": { "platform": "poki", "dimension": "session_quality", "genre": "sorting" },
+      "facts": { "reference_title": { "name": "Water Color Sort", "genre": "sorting", "list": "category:puzzle relaxing" } },
+      "tags": ["reference-title"]
+    },
+    {
+      "statement": "Poki's top category navigation includes Car, 2 Player, Action, Skill, Multiplayer, Adventure, .io, Puzzle, Dress Up, Brain and Sports games.",
+      "excerpt": "Car Games 2 Player Games Action Games Skill Games Multiplayer Games Adventure Games .io Games Puzzle Games Dress Up Games Brain Games Sports Games",
+      "subject": { "platform": "poki", "dimension": "platform_fit" },
+      "tags": ["category-navigation"]
+    }
+  ]
+}

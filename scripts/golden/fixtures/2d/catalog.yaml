@@ -1,0 +1,43 @@
+# Golden run fixture - the 2D (PixiJS) candidate catalog.
+#
+# The research step's `catalog` setting points here for the 2D golden run, so the market scan
+# screens exactly one archetype: the shape of web-game-template's examples/tower-merge-rush.
+# Same fields and the same honesty as scripts/wgf_discovery/archetypes.yaml - every number is
+# an estimate - but frozen, so the golden run does not change when the real catalog does.
+#
+# It is steering through a legitimate input: the scan still screens it against the frozen
+# evidence in ../research/snapshots and can still refuse it. Nothing here names an engine;
+# `rendering: 2d` is the catalog's own field, and the design module derives the engine from
+# the strategy the scan leads to.
+
+version: 1.0.0
+
+archetypes:
+  - id: tower-merge
+    title: Tower Merge Rush
+    genre: puzzle
+    subgenre: merge
+    market_tags: [puzzle, merge, casual]
+    core_mechanic: drop numbered tower pieces onto a seven-column track; equal neighbours merge into the next level and the merge cascades
+    fantasy: turning a crowded track into one tall tower with a chain of satisfying merges
+    core_loop: pick a column, drop the piece, chain merges for points, the next piece ramps up, the board fills, retry for a higher score
+    session_seconds: 240
+    replayability: high
+    retention_design: personal best score and a rising piece level
+    technical_complexity: xs
+    asset_complexity: xs
+    dev_speed_days: 7
+    asset_cost_usd: 100
+    bundle_mb: 6
+    rendering: 2d
+    text_heavy: false
+    multiplayer: false
+    needs_cloud_save: false
+    mobile_ready: true
+    monetization:
+      primary: rewarded
+      secondary: [interstitial]
+      rationale: A full board is a natural rewarded moment (continue with the board cleared); an interstitial fits the break before the next run.
+    priors: {monetization_fit: 0.7, retention_potential: 0.55, session_quality: 0.7, technical_risk: 0.1, performance_risk: 0.1, iterability: 0.8}
+    risks:
+      - {description: A well-served genre; differentiation rests on feel and polish rather than novelty., severity: medium}

@@ -1,0 +1,48 @@
+{
+  "id": "snap-crazygames-gameplay-requirements",
+  "source_uri": "https://docs.crazygames.com/requirements/gameplay/",
+  "source_kind": "portal-docs",
+  "title": "Gameplay - CrazyGames Documentation",
+  "observed_at": "2026-09-23T00:00:00Z",
+  "retrieved_via": "web-fetch",
+  "platform": "crazygames",
+  "observations": [
+    {
+      "statement": "CrazyGames requires English localization.",
+      "excerpt": "Language Support: The game must have English localization",
+      "subject": { "platform": "crazygames", "dimension": "platform_fit" },
+      "facts": { "locales_required": ["en"] },
+      "tags": ["localization"]
+    },
+    {
+      "statement": "CrazyGames' audience is aged 13 or more and games must be PEGI 12 compliant.",
+      "excerpt": "CrazyGames is a website for an audience aged 13 or more. Your game must be PEGI 12 compliant.",
+      "subject": { "platform": "crazygames", "dimension": "platform_fit" },
+      "tags": ["age-rating", "pegi12"]
+    },
+    {
+      "statement": "For Full Implementation, CrazyGames requires new users to land in gameplay immediately, or within at most 1 click.",
+      "excerpt": "Games should land new users in gameplay immediately. If this is not feasible given the game specifics, a maximum of 1 click is allowed.",
+      "subject": { "platform": "crazygames", "dimension": "session_quality" },
+      "tags": ["onboarding"]
+    },
+    {
+      "statement": "CrazyGames prohibits custom in-game fullscreen buttons.",
+      "excerpt": "Fullscreen mode is automatically provided by CrazyGames. Custom in-game fullscreen buttons are prohibited, as they can interfere with other features (e.g. monetization).",
+      "subject": { "platform": "crazygames", "dimension": "technical_risk" },
+      "tags": ["fullscreen"]
+    },
+    {
+      "statement": "CrazyGames disallows cross-promotion of external or internal games/platforms.",
+      "excerpt": "No Cross-Promotion: The game should not include cross-promotions for external or internal games/platforms.",
+      "subject": { "platform": "crazygames", "dimension": "distribution_potential" },
+      "tags": ["cross-promotion", "external-links"]
+    },
+    {
+      "statement": "CrazyGames requires game physics to behave consistently across monitor refresh rates such as 144 Hz and 165 Hz.",
+      "excerpt": "Consistent Physics: The game's physics must perform consistently across different monitor refresh rates (e.g. 144 Hz, 165 Hz)",
+      "subject": { "platform": "crazygames", "dimension": "technical_risk", "genre": "physics" },
+      "tags": ["frame-rate-independence"]
+    }
+  ]
+}

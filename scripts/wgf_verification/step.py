@@ -62,6 +62,8 @@ class VerifyStep(WorkflowStep):
             session = VerificationSession(root, self.runner_factory(), params=self.params,
                                           inputs=loaded, config=context.config,
                                           logger=context.logger)
+            # The lineage rule accepts only this run's sdk commits between develop's and sdk's.
+            session.run_id = getattr(context, "run_id", None)
             checks = run_checks(session, where)
 
         title_id = self._title_id(loaded, session, context)

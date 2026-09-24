@@ -9,7 +9,7 @@
     "kind": "artifact",
     "format": "json",
     "producer": "title:prototype",
-    "consumers": ["title:prototype", "title:prototype-review"],
+    "consumers": ["title:prototype", "title:prototype-review", "release:draft"],
     "repo_path": "workspace/titles/<title-id>/review-report.json"
   },
 

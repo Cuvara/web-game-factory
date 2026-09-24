@@ -137,7 +137,7 @@ is not integrated, and a wired game on a failing adapter is not working. The ste
 | the game repository | `packages/platform-sdk` (API, registry, adapter capabilities), `game.config.yaml`, `src/` |
 
 It writes three files and one patch into the game repository, convergently — a second run
-changes nothing:
+changes nothing — and commits them (below):
 
 - `src/platform/gameplay.ts` — `bootPlatform()` and `PlatformGameplay`: the hooks scenes call
   (`runStarted`, `continueFrom`, `gameOver`, `levelComplete`, `pause`/`resume`,
@@ -192,6 +192,22 @@ a portal accepted anything. Analytics is required of the game only where the ada
 analytics is self-hosted (the portals that sell ads measure play themselves), and muting
 only where the game plays audio. Without a game-design and a scaffold-record in the run
 (`wgf sdk` on its own), only the conformance phase runs.
+
+**The integration is committed, once.** Before writing anything the step establishes the
+commit it builds on: the checkout's HEAD must be the prototype-report's commit (or a
+descendant made only by this run's sdk commits, on a retry or resume), and the tree may hold
+no uncommitted change outside the files the integration owns. Otherwise it is `BLOCKED` —
+integrating on top of an unreviewed commit, or verifying someone's uncommitted edit as if it
+were the build, is what this prevents. After a successful integration (files written, its
+suite and typecheck not failed) that changed the tree, it makes one local commit keyed by
+the idempotency key in a `Wgf-Sdk-Key: <run>:<step>:<visit>` trailer (the develop step's
+mechanism, `wgf_develop/repository.py`), then runs the conformance suite at that commit. A
+re-executed visit finds its commit instead of making another; an integration already in place
+commits nothing; a failed one is left uncommitted and reported. Nothing is pushed. The
+sdk-report's `build_ref` records `commit_sha` (what was verified), `base_commit_sha` (the
+prototype-report's commit) and `sdk_commits` (what the step made between them). A checkout
+whose commit cannot be read is `BLOCKED` — never reported as `unknown`
+(`scripts/wgf_sdk/commit.py`; the lineage rule is docs/core-contracts.md §5).
 
 `python -m wgf_sdk.e2e` (from `scripts/`) checks the whole path on a real template revision:
 the step, the template's own tests, typecheck and lint, then a production build per platform

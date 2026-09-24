@@ -39,21 +39,22 @@ from wgflib.yamllite import YamlError, load_file
 from wgf_verification.checks.platform import same_commit
 from wgf_verification.session import locate_checkout
 
-from .lineage import BLOCKED, FAILED, Refusal, commit_lineage, evidence_refusals
+from .lineage import (BLOCKED, FAILED, Refusal, checkout_lineage, commit_lineage,
+                      evidence_refusals, review_status)
 from .package import RULES, audit_package, file_sha256
 from .runner import ReleaseRunner, describe
 from .schema import SchemaValidator
 
 __all__ = ["ReleaseStep", "SCHEMA_VERSION", "ROLE", "bundle_digest"]
 
-SCHEMA_VERSION = "1.1.0"
+SCHEMA_VERSION = "1.2.0"
 ROLE = "release"
 READABLE_MAJOR = "1"
 RELEASE_ID = re.compile(r"^r([0-9]+)$")
 SEMVER = re.compile(r"^[0-9]+\.[0-9]+\.[0-9]+$")
 DEFAULT_TIMEOUTS = {"git": 30, "package": 900, "manifest": 300}
 INPUTS = ("qa-report", "verification-report", "sdk-report", "prototype-report",
-          "scaffold-record")
+          "scaffold-record", "review-report")
 
 
 def utc_now():
@@ -131,7 +132,8 @@ class ReleaseStep(WorkflowStep):
                                           env, section="release")
             if root is None:
                 raise _Refused([Refusal(BLOCKED, "no-checkout", where.summary)])
-            head = self._checkout_state(runner, root, loaded, timeouts)
+            head = self._checkout_state(runner, root, loaded, timeouts,
+                                        getattr(context, "run_id", None))
             game_config = self._game_config(root)
             release_id = self._release_id(root, head, settings)
             version = self._version(root, game_config, settings)
@@ -151,12 +153,15 @@ class ReleaseStep(WorkflowStep):
                             packages=[p["filename"] for p in artifact["packages"]])
         platforms = ", ".join(f"{p['platform_id']} {p['evidence_status']}/"
                               f"portal {p['portal_status']}" for p in evidence["platforms"])
+        review = evidence["review"]["status"]
         message = (f"release {release_id} drafted at {head[:12]}: {len(artifact['packages'])} "
                    f"package(s), evidence {evidence['status']}"
                    + (f" ({platforms})" if platforms else "")
+                   + ("; UNREVIEWED (review skipped)" if review == "skipped" else
+                      "; no review in this run" if review == "absent" else "; review approved")
                    + "; nothing published")
         metadata = {"release_id": release_id, "commit": head, "state": "draft",
-                    "evidence_status": evidence["status"],
+                    "evidence_status": evidence["status"], "review": review,
                     "packages": {p["filename"]: p["checksum"] for p in artifact["packages"]}}
         return StepResult.success([ArtifactOutput("release-manifest", artifact,
                                                   metadata=metadata)], message=message)
@@ -176,7 +181,7 @@ class ReleaseStep(WorkflowStep):
     def _git(self, runner, root, timeouts, *args):
         return runner.run(["git", *args], root, timeouts["git"])
 
-    def _checkout_state(self, runner, root, loaded, timeouts):
+    def _checkout_state(self, runner, root, loaded, timeouts, run_id=None):
         refusals = []
         head_result = self._git(runner, root, timeouts, "rev-parse", "HEAD")
         head = (head_result.stdout or "").strip() if head_result.ok else None
@@ -184,12 +189,12 @@ class ReleaseStep(WorkflowStep):
             raise _Refused([Refusal(BLOCKED, "no-commit",
                                     f"{root} is not a readable git repository: "
                                     + describe(head_result))])
-        for source, sha in commit_lineage(loaded):
-            if sha and not same_commit(sha, head):
-                refusals.append(Refusal(FAILED, "commit-lineage-mismatch",
-                                        f"{source} describes {sha[:12]}, but the checkout's "
-                                        f"HEAD is {head[:12]}: the checkout moved after "
-                                        "verification. Re-run verify at HEAD."))
+
+        def git(*args):
+            result = self._git(runner, root, timeouts, *args)
+            return result.ok, result.stdout or ""
+
+        refusals.extend(checkout_lineage(loaded, head, git, run_id))
         status = self._git(runner, root, timeouts, "status", "--porcelain",
                            "--untracked-files=all")
         if not status.ok:
@@ -492,6 +497,7 @@ class ReleaseStep(WorkflowStep):
                 "commit_lineage": [{"source": s, "commit_sha": sha}
                                    for s, sha in commit_lineage(loaded)]
                                   + [{"source": "checkout", "commit_sha": head}],
+                "review": review_status(refs, loaded)[1],
                 "bundle_hash": vr["build_artifact"]["content_hash"],
                 "platforms": platforms,
                 "package_audit": {"status": "PASS", "rules": list(RULES)},

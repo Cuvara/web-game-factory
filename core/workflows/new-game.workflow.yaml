@@ -149,6 +149,6 @@ workflow:
     - id: release
       type: release
       stage: release:draft
-      inputs: [qa-report, verification-report, sdk-report, prototype-report, scaffold-record]
+      inputs: [qa-report, verification-report, sdk-report, prototype-report, scaffold-record, review-report]
       outputs: [release-manifest]
       next: $end

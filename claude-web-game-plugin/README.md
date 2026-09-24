@@ -88,6 +88,14 @@ Surfaces are generated from that manifest by `scripts/gen-adapters.sh`. Re-run i
 editing the manifest; it overwrites `agents/`, `commands/` and `skills/` and leaves this
 README and `CONFORMANCE.md` alone.
 
+## Claude Code as the Factory's developer or reviewer
+
+Separate from the plugin: the `wgf` engine can run Claude Code headless (`claude -p`) as the
+unattended `develop` developer and the read-only `review` reviewer. That is installation
+config, never core. The verified argvs are commented in `workspace/config/factory.yaml`
+(`factory.develop.developer`, `factory.review.reviewer`); what each flag enforces, what the
+Factory enforces independently, and the live evidence are in `docs/claude-capabilities.md`.
+
 ## Start here
 
 Read `core/README.md`, then `core/lifecycle/title.machine.yaml`. Those two files are enough

@@ -13,6 +13,7 @@ You are the **gameplay** role as defined by Web Game Factory core.
 2. `core/lifecycle/stages/prototype.md`
 3. `core/lifecycle/stages/production.md`
 4. `core/artifacts/prototype-report.schema.json`
+5. `core/artifacts/review-report.schema.json`
 
 Core is authoritative. Where this file and core disagree, core wins — report the conflict
 rather than resolving it yourself.
@@ -21,6 +22,6 @@ rather than resolving it yourself.
 
 - Resolve core paths relative to the factory repository root; this plugin sits beside `core/`.
 - Write artifacts to the `repo_path` given in each schema's `x-wgf` block.
-- Work the plan's tasks in dependency order and satisfy both acceptance criteria and tests. Scope, monetization, platform strategy, core gameplay and architecture change only through the production change process.
+- Work the plan's tasks in dependency order and satisfy both acceptance criteria and tests. When the brief opens with blockers from code review or verification, fix those first. Scope, monetization, platform strategy, core gameplay and architecture change only through the production change process.
 - Do not advance the lifecycle. Emit your artifacts and stop — transitions are commands and
   gates are human decisions.

@@ -18,7 +18,7 @@
 # Each adapter carries a CONFORMANCE.md mapping every surface id below to its file, so
 # reviewing adapter completeness is a two-file diff rather than a directory crawl.
 
-version: 1.0.0
+version: 1.1.0
 
 surface_kinds:
   agent: A persistent role the runtime can delegate to.
@@ -72,13 +72,18 @@ agents:
   - id: architect
     role: architect
     owns: [title:tech-plan]
+    # A contributor to title:prototype (title.machine.yaml): the independent, read-only
+    # review of each development commit. Never the implementer that wrote the commit.
+    works_in: [title:prototype]
     must_read:
       - core/roles/architect.md
       - core/lifecycle/stages/tech-plan.md
       - core/artifacts/tech-plan.schema.json
       - core/templates/tech-plan.md
-    produces: [tech-plan]
-    consumes: [game-design, title-strategy, asset-manifest]
+      - core/lifecycle/stages/prototype.md
+      - core/artifacts/review-report.schema.json
+    produces: [tech-plan, review-report]
+    consumes: [game-design, title-strategy, asset-manifest, prototype-report]
 
   - id: qa
     role: qa
@@ -110,10 +115,12 @@ agents:
       - core/lifecycle/stages/publish.md
       - core/artifacts/release-manifest.schema.json
       - core/artifacts/platform-publication.schema.json
+      - core/artifacts/review-report.schema.json
       - core/reference/platforms/
       - core/templates/release-report.md
     produces: [scaffold-record, release-manifest, platform-publication]
-    consumes: [tech-plan, qa-report]
+    consumes: [tech-plan, qa-report, verification-report, sdk-report, prototype-report,
+               review-report, scaffold-record]
 
   - id: liveops
     role: liveops
@@ -135,8 +142,9 @@ agents:
       - core/lifecycle/stages/prototype.md
       - core/lifecycle/stages/production.md
       - core/artifacts/prototype-report.schema.json
+      - core/artifacts/review-report.schema.json
     produces: [prototype-report]
-    consumes: [tech-plan, game-design]
+    consumes: [tech-plan, game-design, review-report, qa-report]
 
   - id: ui
     role: ui
@@ -205,6 +213,9 @@ commands:
     triggers: "title: prototype -> prototype-review"
     role: gameplay
     gate: null
+    note: >
+      Includes the develop/review loop. The code review of each development commit
+      (review-report) happens inside this transition; it is not the G4 `review` command.
   - id: review
     triggers: "title: prototype-review -> {production | prototype | abandoned}"
     role: portfolio-owner

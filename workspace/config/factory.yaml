@@ -108,6 +108,52 @@ factory:
       kind: handoff             # handoff: brief, wait for --decision done | command: run argv unattended
       argv: []                  # command only: {brief} {repo} {key} {prompt} are substituted
       timeout_seconds: 5400
+    # Unattended developer on Claude Code's headless mode. Checked against CLI 2.1.281 and
+    # run live through the real develop step (docs/claude-capabilities.md). The Factory
+    # enforces the timeouts, the process tree and the keyed commit; everything in argv is
+    # the agent host's own restriction, not the Factory's.
+    #   --setting-sources project   ignore the operator's personal settings, whose allow
+    #                               rules would widen what is below
+    #   --tools                     the only tools that exist in the session
+    #   --allowedTools              what runs without a prompt: Edit/Write only inside the
+    #                               checkout (the cwd), Bash only for pnpm and read-only git
+    #   --disallowedTools           git that moves history, refs or config, and the network
+    #                               tools; deny wins over allow. The Factory commits, not the agent
+    #   --permission-mode dontAsk   anything not pre-approved is refused, never prompted
+    #   stream-json --verbose       output while it works, so idle_timeout_seconds catches a
+    #                               hung agent, not a quiet one (text mode prints only at exit)
+    #   --max-turns/--max-budget-usd  the host's own bound, under the Factory's timeouts
+    # `pnpm *` also admits `pnpm exec` and `pnpm dlx`: arbitrary code in the checkout. Wrap the
+    # argv in an OS sandbox if the developer must not reach the network or $HOME.
+    # developer:
+    #   kind: command
+    #   argv:
+    #     - claude
+    #     - -p
+    #     - "{prompt}"
+    #     - --model
+    #     - sonnet
+    #     - --setting-sources
+    #     - project
+    #     - --strict-mcp-config
+    #     - --tools
+    #     - "Read,Edit,Write,Glob,Grep,Bash"
+    #     - --allowedTools
+    #     - "Read,Glob,Grep,Edit(./**),Write(./**),Bash(pnpm *),Bash(git status *),Bash(git diff *),Bash(git log *),Bash(git show *)"
+    #     - --disallowedTools
+    #     - "WebFetch,WebSearch,Bash(git commit *),Bash(git push *),Bash(git reset *),Bash(git checkout *),Bash(git switch *),Bash(git rebase *),Bash(git stash *),Bash(git tag *),Bash(git branch *),Bash(git clean *),Bash(git config *),Bash(git remote *),Bash(git * --output*)"
+    #     - --permission-mode
+    #     - dontAsk
+    #     - --no-session-persistence
+    #     - --output-format
+    #     - stream-json
+    #     - --verbose
+    #     - --max-turns
+    #     - "200"
+    #     - --max-budget-usd
+    #     - "25"
+    #   timeout_seconds: 5400
+    #   idle_timeout_seconds: 900
     checks: [install, conformance, typecheck, lint, unit, build, smoke]
     check_timeout_seconds: 900
     commit: true                # one local commit per visit, keyed by the idempotency key
@@ -125,8 +171,55 @@ factory:
       timeout_seconds: 1800
       idle_timeout_seconds: 600 # no output for this long ends the reviewer's process tree
       verdict_from: file        # file: it writes {verdict} | stdout: it prints the JSON last
+    # Read-only reviewer on Claude Code's headless mode. Checked against CLI 2.1.281 and run
+    # live through the real review step (docs/claude-capabilities.md). Two independent
+    # layers: the host refuses writes (below), and the Factory fingerprints the checkout and
+    # guarded_paths before and after, failing and undoing any review that changed anything.
+    #   --safe-mode                 no hooks, plugins, MCP servers or CLAUDE.md: nothing the
+    #                               developer committed (a .claude/settings.json hook, a
+    #                               CLAUDE.md) runs in or instructs the reviewer
+    #   --tools Read,Glob,Grep,Bash Edit, Write and NotebookEdit do not exist in the session
+    #   --allowedTools              reads, and git diff/log/show only
+    #   --disallowedTools           `git ... --output=<file>` is the one read-only git write
+    #   --permission-mode dontAsk   every other command (echo >, sed -i, touch, git commit) is
+    #                               refused without a prompt
+    #   --output-format text        verdict_from: stdout takes the last JSON object printed;
+    #                               json/stream-json would wrap it and fail as malformed.
+    #                               Text prints only at exit, so no idle timeout: rely on
+    #                               timeout_seconds
+    # reviewer:
+    #   kind: command
+    #   verdict_from: stdout
+    #   argv:
+    #     - claude
+    #     - -p
+    #     - "{prompt}"
+    #     - --model
+    #     - sonnet
+    #     - --safe-mode
+    #     - --strict-mcp-config
+    #     - --tools
+    #     - "Read,Glob,Grep,Bash"
+    #     - --allowedTools
+    #     - "Read,Glob,Grep,Bash(git diff *),Bash(git log *),Bash(git show *)"
+    #     - --disallowedTools
+    #     - "Edit,Write,NotebookEdit,WebFetch,WebSearch,Bash(git * --output*),Bash(git *--output=*)"
+    #     - --permission-mode
+    #     - dontAsk
+    #     - --no-session-persistence
+    #     - --output-format
+    #     - text
+    #     - --max-turns
+    #     - "60"
+    #     - --max-budget-usd
+    #     - "5"
+    #   timeout_seconds: 1800
+    #   idle_timeout_seconds: null
     # checkouts: ..             # default: factory.develop.checkouts
-    guarded_paths: [core/workflows, workspace/config]
+    # The Factory's own code, gates, contracts and this config: what decides what a review,
+    # and every later check, is worth. Keep at least the module default
+    # (scripts/wgf_review/settings.py); a narrower list lets a reviewer rewrite its judge.
+    guarded_paths: [core, scripts, bin, workspace/config]
 
   # The discovery module (scripts/wgf_discovery) implements `research`. Every key is
   # optional; see scripts/wgf_discovery/step.py. Evidence snapshots live in

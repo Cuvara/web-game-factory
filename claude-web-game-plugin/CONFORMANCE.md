@@ -59,6 +59,28 @@ Regenerate the surfaces with `scripts/gen-adapters.sh`, then update this table.
 | `release` | `claude-web-game-plugin/skills/release/SKILL.md` | covered |
 | `threejs` | `claude-web-game-plugin/skills/threejs/SKILL.md` | covered |
 
+## Core v1 freeze: surfaces brought in line (binding manifest 1.1.0)
+
+The generated files had no textual drift, but the binding had not caught up with the
+steps Core v1 added. Now:
+
+- `architect` also works in `title:prototype` as the **read-only code reviewer** of each
+  development commit: produces `review-report`, must-reads `core/lifecycle/stages/prototype.md`
+  and `core/artifacts/review-report.schema.json` (the `review` step, `scripts/wgf_review`,
+  records its role as `architect`).
+- `gameplay` consumes `review-report` and `qa-report` (the develop brief's "fix first"
+  blockers) and must-reads the review-report schema.
+- `release` consumes what the `release` step reads - `verification-report`, `sdk-report`,
+  `prototype-report`, `review-report`, `scaffold-record` - and must-reads the review-report
+  schema (the manifest carries the review status).
+- `/wgf-prototype` says the develop/review loop runs inside it; `/wgf-review` says it is the
+  G4 kill gate, not the code review.
+- `tech-plan` is already covered by `architect` and `/wgf-plan`.
+
+Running Claude Code *as* the Factory's unattended developer or reviewer is installation
+config, not an adapter surface: see `workspace/config/factory.yaml` and
+`docs/claude-capabilities.md`.
+
 ## Not covered, deliberately
 
 - **`workflows/` tree** — removed. A per-provider copy of a workflow duplicates

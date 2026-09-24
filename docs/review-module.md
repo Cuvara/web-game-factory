@@ -200,6 +200,13 @@ reviewer:
 Check the host's own documentation for its read-only mode. Whether the host honours it or
 not, the fingerprint still applies.
 
+The two lines above are shapes, not a hardened config. `--permission-mode plan` alone still
+loads the checkout's own `.claude/settings.json` and `CLAUDE.md`, which the developer wrote.
+The Claude Code reviewer argv that was checked against the CLI and run live (`--safe-mode`,
+`--tools` without Edit/Write, `--permission-mode dontAsk`, a deny rule for
+`git … --output=`) is the commented `factory.review.reviewer` block in
+`workspace/config/factory.yaml`. The evidence is in `docs/claude-capabilities.md`.
+
 ## How develop consumes it
 
 `develop` declares `review-report` as an input and reads the newest one. It uses it only when
@@ -271,3 +278,11 @@ python3 -m unittest test_core_agents.LiveReviewer -v
 The argv takes the same placeholders as the config. `WGF_LIVE_VERDICT_FROM` defaults to
 `stdout`. Set it to `file` for a host that can write `{verdict}` itself. Only the reviewer is live. The
 developer is still the scripted one, so the bug and the fix are deterministic.
+
+`LiveDeveloperAndReviewer` makes the developer live too. `WGF_LIVE_DEVELOPER_ARGV` is a JSON
+argv that may use `{brief}`. The scripted part only writes the conformance scaffolding and
+plants the bug, then `exec`s the host, so the host is the develop step's own child. The host
+edits `src/game/app.ts` on visit 1. The live reviewer requests changes, and the host fixes
+the blockers on visit 2. The test then asserts that the commit lineage and isolation held
+and that the run completed. Set `WGF_LIVE_KEEP=<dir>` to keep the run's logs and verdicts.
+The argvs used for the recorded run are in `docs/claude-capabilities.md`.

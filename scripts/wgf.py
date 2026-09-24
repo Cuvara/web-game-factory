@@ -564,4 +564,9 @@ def main(argv=None):
 
 
 if __name__ == "__main__":
+    # SIGTERM/SIGHUP unwind through SystemExit, so every child tree a step owns is
+    # terminated instead of being orphaned (wgflib/procs.py). The run itself is left
+    # resumable: `wgf status` reports it stale and `wgf resume` continues it.
+    from wgflib import procs as _procs
+    _procs.install_signal_cleanup()
     sys.exit(main())

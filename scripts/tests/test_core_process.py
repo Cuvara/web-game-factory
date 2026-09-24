@@ -497,10 +497,8 @@ class InsideAWorkflowStep(ProcessCase):
         self.assertNoSurvivors(result.tag, [pids["c"], pids["g"]])
         kinds = [e["data"]["kind"] for e in events if e["event"] == Events.STEP_PROGRESS]
         self.assertIn("cancelled", kinds)
-        # The engine honours the cancel request once the step returns (Team A's change);
-        # until it does, the run ends FAILED on the step's own failure. Either way the tree
-        # is gone, which is what this suite is about.
-        self.assertIn(box["state"].status, (RunStatus.CANCELLED, RunStatus.FAILED))
+        # The engine honours the cancel request once the step returns: no retry, CANCELLED.
+        self.assertEqual(box["state"].status, RunStatus.CANCELLED)
 
 
 # -- live: the template's own toolchain ---------------------------------------------------

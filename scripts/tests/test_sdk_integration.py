@@ -806,6 +806,56 @@ class Seam(SdkCase):
         self.assertEqual(set(actions.values()), {"unchanged"})
 
 
+SEAM_CONSTANTS_TS = """\
+import type { GameIntegration } from "./integration.js";
+
+// Named ids, as a developer writes them (the real acceptance run's game did exactly this).
+const REVIVE = "revive-after-crash";
+const PLACEMENTS = { retry: 'retry-break', level: "between-levels" } as const;
+
+export async function onCrash(seam: GameIntegration): Promise<void> {
+  seam.gameplayStop();
+  if (seam.canOfferRewarded(REVIVE) && (await seam
+    .rewarded(REVIVE))) {
+    seam.gameplayStart();
+    return;
+  }
+  await seam.interstitial(PLACEMENTS.retry);
+  await seam.interstitial(pickPlacement());
+}
+
+function pickPlacement(): string {
+  return "somewhere";
+}
+"""
+
+
+class SeamPlacementIds(SdkCase):
+    """Placement ids behind names are the game's ids all the same."""
+
+    def test_named_ids_reach_the_plan_and_unresolvable_ones_are_reported(self):
+        make_repo(self.repo, scene=False, main=MAIN_TS.replace(
+            'import { bindPlatform } from "./platform/bind.js";\n',
+            'import { bindPlatform } from "./platform/bind.js";\n'
+            'import { onCrash } from "./game/run-scene.js";\n').replace(
+            "  void integration;\n", "  void onCrash(integration);\n"))
+        write(self.repo, "src/game/run-scene.ts", SEAM_CONSTANTS_TS)
+        report = self.report(self.execute())
+        placements = {p["id"]: p for p in report["integration"]["placements"]}
+        self.assertTrue(placements["revive-after-crash"]["integrated"])
+        self.assertTrue(placements["retry-break"]["integrated"])
+        plan = read(self.repo, "src/platform/integration-plan.ts")
+        self.assertIn('id: "revive-after-crash"', plan)
+        self.assertIn('id: "retry-break"', plan)
+        # A call whose id no static read can establish is reported, never silently dropped.
+        unresolved = placements["unresolved:pickPlacement()"]
+        self.assertFalse(unresolved["integrated"])
+        self.assertIn("run-scene.ts", unresolved["note"])
+        self.assertEqual(ArtifactContracts()("sdk-report", report), [])
+        rewarded = self.feature(report, "yandex", "rewarded")
+        self.assertEqual(rewarded["status"], "working")
+
+
 def prototype_at(commit):
     report = fixture("prototype-report")
     report["build_ref"] = {"commit_sha": commit}

@@ -238,38 +238,101 @@ def scan_hooks(repo):
 
 # -- the develop step's seam ----------------------------------------------------------------
 
-_SEAM_PLACEMENT = re.compile(r"\.\s*(canOfferRewarded|rewarded|interstitial)\s*\(\s*\"([^\"]+)\"")
+# A seam call's placement id: a string literal, or a name the game declared as one
+# (`const REWARDED_PLACEMENT = "extra-moves"`, `PLACEMENTS.rewarded` from a const object
+# literal). A developer naming its ids is ordinary code; reading only literals made every
+# such call invisible, and the plan - which the integrated seam looks ids up in - then
+# carried none of them, so the game's ads never ran. Found by the real acceptance run.
+_ID = r"[A-Za-z_$][\w$]*"
+_SEAM_CALL = re.compile(r"\.\s*(canOfferRewarded|rewarded|interstitial)\s*\(")
+_PLACEMENT_ARG = re.compile(
+    rf"\s*(?:\"([^\"\n]+)\"|'([^'\n]+)'|({_ID}(?:\s*\.\s*{_ID})?))\s*[,)]")
+_STRING_CONST = re.compile(
+    rf"\bconst\s+({_ID})\s*(?::\s*string\s*)?=\s*(?:\"([^\"\n]*)\"|'([^'\n]*)')")
+_OBJECT_CONST = re.compile(rf"\bconst\s+({_ID})\s*(?::[^=]+)?=\s*\{{([^{{}}]*)\}}", re.S)
+_OBJECT_MEMBER = re.compile(rf"({_ID})\s*:\s*(?:\"([^\"\n]*)\"|'([^'\n]*)')")
 _SEAM_GAMEPLAY = re.compile(r"\.\s*(gameplayStart|gameplayStop)\s*\(")
 _SEAM_STORAGE = re.compile(r"\.\s*(save|load)\s*\(")
 _IMPORTS_SEAM = re.compile(r'from\s+"[./]*(?:game/)?integration\.js"')
+_COMMENTS = re.compile(r"//[^\n]*|/\*.*?\*/", re.S)
+
+
+def _first_argument(text, start):
+    """The source text of a call's first argument; `start` is just after its '('."""
+    depth, index = 0, start
+    while index < len(text) and index - start < 200:
+        char = text[index]
+        if char in "([{":
+            depth += 1
+        elif char in ")]}":
+            if depth == 0:
+                break
+            depth -= 1
+        elif char == "," and depth == 0:
+            break
+        index += 1
+    return " ".join(text[start:index].split())
+
+
+def _string_constants(text):
+    """{name: value} of the string constants `text` declares, and {"OBJ.key": value} of the
+    string members of its const object literals."""
+    found = {}
+    for match in _STRING_CONST.finditer(text):
+        found[match.group(1)] = match.group(2) if match.group(2) is not None else match.group(3)
+    for match in _OBJECT_CONST.finditer(text):
+        for member in _OBJECT_MEMBER.finditer(match.group(2)):
+            value = member.group(2) if member.group(2) is not None else member.group(3)
+            found[f"{match.group(1)}.{member.group(1)}"] = value
+    return found
 
 
 def scan_seam(repo):
     """What the game calls on its seam, outside src/platform/ (where the wiring lives).
 
-    Returns {"placements": {kind: {id: [file:line]}}, "calls": {name: [file:line]}}, kind
-    being "rewarded" (from canOfferRewarded or rewarded) or "interstitial".
+    Returns {"placements": {kind: {id: [file:line]}}, "calls": {name: [file:line]},
+    "unresolved": [{"call", "argument", "where"}]}, kind being "rewarded" (from
+    canOfferRewarded or rewarded) or "interstitial". A placement argument that is a name is
+    resolved through the string constants the file declares, then those of every other
+    game file; one that still cannot be read is listed in `unresolved`, never dropped.
     """
     placements = {"rewarded": {}, "interstitial": {}}
-    calls = {}
+    calls, unresolved = {}, []
     declaration = os.path.normpath(os.path.join(repo, *SEAM_DECLARATION.split("/")))
+    sources = []
     for path in _source_files(repo):
         relative = os.path.relpath(path, repo).replace(os.sep, "/")
         if path == declaration or relative.startswith("src/platform/"):
             continue
         with open(path, encoding="utf-8") as handle:
-            text = handle.read()
+            sources.append((relative, handle.read()))
+    shared = {}
+    for _, text in sources:
+        for name, value in _string_constants(_COMMENTS.sub("", text)).items():
+            shared.setdefault(name, value)
+    for relative, text in sources:
         if not _IMPORTS_SEAM.search(text) and "GameIntegration" not in text:
             continue
+        local = dict(shared, **_string_constants(_COMMENTS.sub("", text)))
 
         def where(offset):
             return f"{relative}:{text.count(chr(10), 0, offset) + 1}"
 
-        for match in _SEAM_PLACEMENT.finditer(text):
-            kind = "interstitial" if match.group(1) == "interstitial" else "rewarded"
-            placements[kind].setdefault(match.group(2), []).append(where(match.start()))
-            calls.setdefault(match.group(1), []).append(where(match.start()))
+        for match in _SEAM_CALL.finditer(text):
+            call = match.group(1)
+            kind = "interstitial" if call == "interstitial" else "rewarded"
+            calls.setdefault(call, []).append(where(match.start()))
+            argument = _PLACEMENT_ARG.match(text, match.end())
+            name = re.sub(r"\s+", "", argument.group(3) or "") if argument else ""
+            placement = (argument.group(1) or argument.group(2) or local.get(name)
+                         if argument else None)
+            if not placement:
+                unresolved.append({"call": call,
+                                   "argument": name or _first_argument(text, match.end()),
+                                   "where": where(match.start())})
+                continue
+            placements[kind].setdefault(placement, []).append(where(match.start()))
         for pattern in (_SEAM_GAMEPLAY, _SEAM_STORAGE):
             for match in pattern.finditer(text):
                 calls.setdefault(match.group(1), []).append(where(match.start()))
-    return {"placements": placements, "calls": calls}
+    return {"placements": placements, "calls": calls, "unresolved": unresolved}

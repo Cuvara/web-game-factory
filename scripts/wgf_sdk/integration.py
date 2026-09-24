@@ -158,6 +158,17 @@ class IntegrationPhase:
                               "platform SDK cannot be integrated: " + "; ".join(problems))
         seam = integrate.scan_seam(repo)
         self._seam_placements(seam, placements, declared, placement_records, plan_placements)
+        for call in seam["unresolved"]:
+            placement_records.append({
+                "id": f"unresolved:{call['argument']}",
+                "kind": "interstitial" if call["call"] == "interstitial" else "rewarded",
+                "trigger": f"game placement at {call['where']}",
+                "integrated": False,
+                "note": (f"{call['call']}({call['argument']}) at {call['where']}: the placement "
+                         "id is neither a string literal nor a string constant the game "
+                         "declares, so it cannot be put in the plan - at runtime the seam "
+                         "finds no moment for it and shows nothing. Pass a literal or a "
+                         "`const` string.")})
 
         # The side effect, convergent: a re-run finds and leaves what it wrote.
         plan = {

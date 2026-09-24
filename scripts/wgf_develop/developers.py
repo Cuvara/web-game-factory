@@ -14,8 +14,12 @@
 `argv` placeholders, substituted per element: {brief} (absolute path of brief.md), {repo}
 (the checkout), {key} (the idempotency key) and {prompt} (a one-paragraph instruction to
 read and implement the brief).
+
+`timeout_seconds` bounds the whole run; `idle_timeout_seconds` (optional) ends a developer
+that has written nothing to stdout or stderr for that long - a hung agent, not a slow one.
 """
 
+import inspect
 import os
 
 __all__ = ["Outcome", "HandoffDeveloper", "CommandDeveloper", "create_developer",
@@ -77,16 +81,32 @@ class CommandDeveloper:
         values["prompt"] = PROMPT.format(**values)
         argv = [part.format(**values) for part in self.settings.developer["argv"]]
         timeout = float(self.settings.developer.get("timeout_seconds") or 5400)
+        idle = self.settings.developer.get("idle_timeout_seconds")
+        idle = float(idle) if idle else None
         context.logger.info("develop command", argv0=os.path.basename(argv[0]),
-                            timeout_s=timeout)
-        result = self.runner.run(argv, cwd=checkout, timeout=timeout)
+                            timeout_s=timeout, idle_timeout_s=idle)
+        kwargs = {}
+        if idle is not None and _accepts(self.runner.run, "idle_timeout"):
+            kwargs["idle_timeout"] = idle
+        result = self.runner.run(argv, cwd=checkout, timeout=timeout, **kwargs)
         if result.timed_out:
             return Outcome(Outcome.FAILED, f"developer command timed out after {timeout:.0f}s",
                            result.tail())
+        if getattr(result, "idle_timed_out", False):
+            return Outcome(Outcome.FAILED, f"developer command wrote nothing for {idle:.0f}s "
+                           f"and was ended", result.tail())
         if not result.ok:
             return Outcome(Outcome.FAILED, f"developer command exited {result.returncode}",
                            result.tail())
         return Outcome(Outcome.DONE, "developer command completed", result.tail())
+
+
+def _accepts(function, name):
+    try:
+        parameters = inspect.signature(function).parameters
+    except (TypeError, ValueError):
+        return False
+    return name in parameters or any(p.kind == p.VAR_KEYWORD for p in parameters.values())
 
 
 def create_developer(settings, runner):

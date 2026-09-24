@@ -114,7 +114,8 @@ def _pin(artifact_type, content, ref):
 
 
 def build_brief(*, title_id, engine, iteration, key, baseline, design, assets, scaffold,
-                strategy=None, qa=None, previous_checks=None, refs=None, skills=None):
+                strategy=None, qa=None, previous_checks=None, refs=None, skills=None,
+                review=None):
     """The brief as data. `render_markdown` turns it into the document a developer reads."""
     refs = refs or {}
     tiers = (design.get("scope") or {}).get("tiers") or {}
@@ -135,6 +136,14 @@ def build_brief(*, title_id, engine, iteration, key, baseline, design, assets, s
     for defect in (qa or {}).get("blocking_defects") or []:
         defects.append({k: defect.get(k) for k in ("id", "severity", "summary", "repro")
                         if defect.get(k)})
+    # A review that requested changes to the commit this visit starts from: its blockers
+    # are the first thing to fix. The step decides whether a review applies; this only
+    # carries what it was given.
+    review_blockers = [
+        {k: blocker.get(k) for k in ("id", "file", "line", "summary", "severity")
+         if blocker.get(k) is not None}
+        for blocker in (review or {}).get("blockers") or []
+    ]
     failures = [
         {"check": c.get("id"), "summary": c.get("summary"), "output_tail": c.get("output_tail")}
         for c in (previous_checks or {}).get("checks") or []
@@ -157,7 +166,7 @@ def build_brief(*, title_id, engine, iteration, key, baseline, design, assets, s
             _pin(t, c, refs.get(t))
             for t, c in (("game-design", design), ("asset-manifest", assets),
                          ("scaffold-record", scaffold), ("title-strategy", strategy),
-                         ("qa-report", qa))
+                         ("qa-report", qa), ("review-report", review))
             if c
         ],
         "design": {
@@ -188,6 +197,8 @@ def build_brief(*, title_id, engine, iteration, key, baseline, design, assets, s
         "required_systems": [{"id": n, "acceptance": a} for n, a in REQUIRED_SYSTEMS],
         "protected_paths": list(PROTECTED_PATHS),
         "qa_defects": defects,
+        "review_blockers": review_blockers,
+        "reviewed_commit": (review or {}).get("reviewed_commit") if review_blockers else None,
         "previous_failures": failures,
         "skills": {k: host_skills[k] for k in ("ui", engine) if k in host_skills},
         "report_path": REPORT_PATH,
@@ -345,6 +356,19 @@ def render_markdown(brief):
         for defect in brief["qa_defects"]:
             add(f"- `{defect.get('id')}` ({defect.get('severity')}): {defect.get('summary')}"
                 + (f" Repro: {defect['repro']}" if defect.get("repro") else ""))
+        add("")
+
+    if brief.get("review_blockers"):
+        add("## Fix first: blockers from code review\n")
+        add(f"An independent review of `{(brief.get('reviewed_commit') or '')[:12]}` "
+            "requested changes. Fix every blocker below; the next review checks each one "
+            "again, and a blocker that is still there sends the build back here.\n")
+        for blocker in brief["review_blockers"]:
+            where = blocker.get("file") or "(whole build)"
+            if blocker.get("file") and blocker.get("line"):
+                where += f":{blocker['line']}"
+            add(f"- `{blocker.get('id')}` ({blocker.get('severity')}) {where}: "
+                f"{blocker.get('summary')}")
         add("")
 
     if brief["previous_failures"]:

@@ -531,7 +531,7 @@ class ThroughTheEngine(unittest.TestCase):
         definition = load_definition("new-game")
         step = next(s for s in definition.steps if s.id == "develop")
         self.assertEqual(set(step.inputs), {"game-design", "asset-manifest", "scaffold-record",
-                                            "title-strategy", "qa-report"})
+                                            "title-strategy", "qa-report", "review-report"})
         self.assertEqual(list(step.outputs), ["prototype-report"])
 
 

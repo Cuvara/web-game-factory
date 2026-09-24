@@ -2,7 +2,7 @@
 
 **Machine** title · **State** `prototype` · **Kind** AI-assisted · **Role** gameplay
 **Contributors** ui, asset, architect, sdk
-**Inputs** `tech-plan`, `game-design`, `title-strategy`, `scaffold-record` · **Outputs** `prototype-report`, `sdk-report`, `asset-manifest` (updated)
+**Inputs** `tech-plan`, `game-design`, `title-strategy`, `scaffold-record`, `review-report` (on a review loop) · **Outputs** `prototype-report`, `review-report`, `sdk-report`, `asset-manifest` (updated)
 
 ## What a prototype is for
 
@@ -33,6 +33,12 @@ technical demonstration that a mechanic runs.
    how titles discover at release that the ad placement does not fit the loop — which is a
    design failure found at the most expensive possible moment.
 3. Run CI continuously. It is a guard, not a stage.
+   **Have every development commit reviewed by someone who did not write it.** The reviewer
+   reads the commit and returns a `review-report`: `approve`, or `request-changes` with
+   named blockers that the next development iteration fixes first. The reviewer changes
+   nothing - not source, not tests, not the package manifest or configuration - and a
+   review that did is discarded and undone. A skipped review is recorded as skipped, never
+   as an approval.
 4. Measure performance on the planned device classes, especially the low end of mobile.
 5. **Playtest with people who have not seen it.** Internal sessions cannot tell you whether
    the game is understandable, which is one of the things this stage exists to establish.

@@ -35,6 +35,33 @@ the file read, the test or scenario observed. A check without evidence is refuse
 The verdict is derived: `FAIL` if a required check failed, else `BLOCKED` if one could not be
 established, else `PASS`. Warnings never change it.
 
+## Evidence statuses
+
+The status routes; the **evidence status** says what may be claimed afterwards. Every check,
+every platform, the verification-report and the qa-report carry one
+(`core/artifacts/shared/evidence.schema.json`):
+
+| Evidence status | Means | From status |
+|---|---|---|
+| `PASS` | observed against the real thing: an exit code, a report file this run wrote, a browser run of the built bundle | `PASS` |
+| `PASS_MOCK` | observed only against a stand-in — an SDK feature exercised against a mocked or fake portal SDK | `PASS`, weakened |
+| `BLOCKED_EXTERNAL` | needs an outside party (a portal's own QA) and there is no evidence from it | `BLOCKED`/`WARNING`, weakened |
+| `UNVERIFIED` | not established | `BLOCKED`, `WARNING` |
+| `FAIL` | the requirement does not hold | `FAIL` |
+
+A check may only *weaken* the default for its status, and it is derived on every read, so a
+check whose status later turns to `FAIL` cannot keep a stale `PASS_MOCK`. The report's
+`evidence_status` is the weakest among the required checks. `PASS_MOCK` is never summed,
+reported or promoted as `PASS`: the qa-report carries it, and the release step copies it into
+the release-manifest unchanged.
+
+An SDK feature is live evidence only when its `observed_by` says it was observed on the
+**live portal** and does not also say mock, fake, stub or "not observed on the". Everything a
+local run produces today is `PASS_MOCK`. Per platform, `portal_status` is `BLOCKED_EXTERNAL`
+unless every SDK check about it passed on live evidence (`PASS`), and `NOT_APPLICABLE` when
+the pinned profile's `review.process` is `none`. None of this reads a platform id: it is the
+same rule for every target.
+
 ## Routing is the workflow's
 
 The step returns a result; the workflow file decides where it goes.
@@ -52,12 +79,12 @@ whatever blocked it is fixed.
 
 | Category | Checks | Evidence from |
 |---|---|---|
-| source | `checkout`, `commit`, `clean-tree`, `upstream-commits` | git; prototype-report / sdk-report `build_ref` |
+| source | `checkout`, `commit`, `clean-tree`, `upstream-commits` | git; prototype-report / sdk-report `build_ref` — a report about another commit **blocks** (`upstream-commits` is required whenever there is a report to compare) |
 | build | `install`, `build`, `bundle`, `asset-resolution` | lockfile install; `build.command` from game.config.yaml; the output directory, digested; every local URL the built HTML/CSS/JS names |
 | code | `typecheck`, `lint`, `unit`, `integration` | the repository's scripts — the names the template's CI gives qa-report suites |
 | gameplay | `boot`, `loading`, `start`, `input`, `core-loop`, `progression`, `game-over`, `restart`, `pause-resume`, `responsive` | a browser against the built bundle — see below |
 | policy | `runtime-facts`, `assertions:<platform>`, `asset-licenses` | `test:verify`; the template's `collect-facts.mjs` / `evaluate-assertions.mjs` against the **pinned** profile; the asset manifest |
-| platform | `profile:<p>`, `sdk-init:<p>`, `hooks:<p>`, `requirements:<p>`, `fallback` | vendored `config/platforms/`; sdk-report per platform and feature; declared ad kinds; shipped locales; a boot with no portal SDK present |
+| platform | `profile:<p>`, `sdk-init:<p>`, `hooks:<p>`, `requirements:<p>`, `fallback` | vendored `config/platforms/`; sdk-report per platform and feature (`BLOCKED` when it names another commit; `PASS_MOCK` unless observed live); declared ad kinds; shipped locales; a boot with no portal SDK present |
 | assets | `manifest`, `missing`, `formats`, `paths`, `loading` | asset-manifest vs files named after each item id under `public/`, `src/assets/`, `assets/`; extensions per asset type; asset paths in `src/`; failed requests while playing |
 
 A check that depends on another (nothing is played until it builds) is `BLOCKED` with a
@@ -76,6 +103,22 @@ ad interrupts play. `with: {gameplay: {required: [...]}}` overrides the set.
 
 A required aspect nothing exercised is `FAIL`, not `BLOCKED`: the fix is a test in the game
 repository, which is development's work, so it loops back there.
+
+## Evidence is this run's, and pinned
+
+A PASS rests on what this verification ran or read, never on an upstream report's say-so —
+a prototype-report claiming its tests pass is not evidence; `code.unit` runs them.
+
+- Files a command is expected to write (`build/runtime-facts.json`,
+  `build/facts/<p>.json`, `build/assertions/<p>.json`, the Playwright JSON report) are
+  deleted before the command runs, so an earlier run's output is never read as this one's.
+- An assertion evaluator that exits non-zero without a blocking breach is `FAIL`; so is a
+  Playwright run that exits non-zero while its report shows no failing test.
+- The Playwright report, assertion results, runtime facts and a recorded session are pinned
+  by sha256 (`evidence[].content_hash`); every test result carries its report's hash.
+- A recorded scenario that cites a `screenshot` is counted only if the file exists, and then
+  with its sha256 (`data.screenshot_hash`). A passing scenario citing a missing screenshot is
+  a claim without its evidence and is ignored.
 
 ## Gameplay: Playwright MCP, with a fallback
 
@@ -113,6 +156,9 @@ None found is a single `BLOCKED` `source.checkout` check — reported, not raise
 
 ## Side effects and idempotency
 
+Both reports carry `workflow` (run id, step, visit, execution), which the release step uses
+to refuse a qa-report from another run.
+
 Verification installs dependencies and builds in the checkout, and writes under `build/`
 there (`build/verification/playwright-e2e.json`, the template's facts and assertion
 results). These reproduce rather than accumulate: running it twice on the same commit yields
@@ -126,7 +172,7 @@ the same checks. It never pushes, publishes or contacts a portal.
 | `browser` | `auto` | `auto`, `recorded`, `repository` |
 | `gameplay_session` | `build/verification/gameplay-session.json` | Recorded session path, relative to the checkout |
 | `gameplay.required` | from the design | Aspects that must pass |
-| `release_id` | `candidate-<commit>` | Written to both reports |
+| `release_id` | `candidate-<commit>` | Written to both reports (the release step allocates the real `r<n>`) |
 | `timeouts` | install 900, build 600, script 600, browser 900, git 30 | Seconds, per command kind |
 
 ## Tests
@@ -138,3 +184,7 @@ artifacts. A scripted runner plays every command, so the suite is offline and ne
 package manager or browser. It covers each outcome, each check category, both gameplay
 drivers, the verify → develop → verify → release loop through the real engine, and — with
 `WGF_AJV=1` — validates the emitted reports with ajv.
+
+`scripts/tests/test_core_verify.py` is the VERIFY category of the Core v1 freeze: valid game
+evidence passes; missing evidence, a failed browser test, invalid SDK evidence and evidence
+about the wrong commit do not; `PASS_MOCK` is never promoted.

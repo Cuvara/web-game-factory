@@ -11,6 +11,11 @@ examples/neon-drift-arena, Three.js 3D - both shipped inside every repository cr
 the template) into the layout the development brief asks for, and reports honestly what the
 port does and does not cover of the design.
 
+The Factory holds no game source. The hand-made adaptation lives in web-game-template next
+to each example (examples/<example>/wgf-golden/, examples/wgf-golden-shared/), so it is in
+every repository created from the pinned template commit, and this script reads it from the
+game repository itself. What the Factory keeps is the mapping: fixtures/<game>/port.json.
+
 What it does, in order:
 
 1. Reads the brief (brief.md, and brief.json beside it). Refuses (exit 3) if the brief's
@@ -19,16 +24,21 @@ What it does, in order:
 2. Copies the example's portable files from the repository's own examples/ directory (pure
    rules, the engine view, input, unit tests), with import paths adapted to src/ and a
    provenance header. See fixtures/<game>/port.json.
-3. Writes the adaptation under fixtures/<game>/port/ and fixtures/shared/port/: main.ts on
-   the template's boot sequence, the scene wired to the integration seam, UI, audio,
-   locales, index.html and a browser test tagged by gameplay aspect.
+3. Copies the adaptation from the repository's port overlays (port.json `overlays`:
+   examples/wgf-golden-shared/, then examples/<example>/wgf-golden/) onto the repository
+   root: main.ts on the template's boot sequence, the scene wired to the integration seam,
+   UI, audio, locales, index.html and a browser test tagged by gameplay aspect. Refuses
+   (exit 3) if an overlay is missing: the repository was created from a template commit
+   that does not ship the ports.
 4. Writes src/game/integration.ts from the interface in the brief, verbatim.
 5. Adds the engine package the example itself depends on (pixi.js / three) to package.json
    at the version the example pins, and updates the lockfile offline
    (`pnpm install --offline`) - the store already holds it, since the template's own
    examples install it.
-6. Points the template's smoke test at the game's scene id (it asserted the removed boot
-   scene) and removes the template's boot scene.
+6. Points the template's smoke test at the game's scene id (it asserted the boot scene's),
+   and removes whatever port.json lists under `remove` (nothing today: main.ts no
+   longer starts the template's boot scene, but the template's own SDK matrix harness
+   imports it, so it stays).
 7. Writes docs/development/report.json: every required system, every MVP item of the brief
    verbatim with an honest status (a design item the example does not cover is `partial` or
    `cut`, never `built`), every placement, and the assets - all placeholders.
@@ -52,7 +62,8 @@ if SCRIPTS not in sys.path:
 from wgflib import procs  # noqa: E402
 
 FIXTURES = os.path.join(HERE, "fixtures")
-SHARED_PORT = os.path.join(FIXTURES, "shared", "port")
+# An overlay's own README says what the directory is; it is not written into the game.
+OVERLAY_SKIP = ("README.md",)
 REPORT_PATH = "docs/development/report.json"
 INTEGRATION_PATH = "src/game/integration.ts"
 SMOKE_SPEC = "tests/e2e/smoke.spec.ts"
@@ -106,16 +117,25 @@ def load_port(game_key):
         return json.load(handle)
 
 
-def port_files(game_key):
-    """(relative path, absolute source) for every overlay file, game-specific winning."""
+def port_files(port, repo):
+    """(relative path, absolute source) for every file of the port's overlays in `repo` (a
+    game repository, or a checkout of the template), a later overlay winning."""
     files = {}
-    for root in (SHARED_PORT, os.path.join(FIXTURES, game_key, "port")):
+    for overlay in port["overlays"]:
+        root = os.path.join(repo, *overlay.split("/"))
+        if not os.path.isdir(root):
+            raise ReplayError(f"{overlay}/ does not exist in {repo}: the repository was not "
+                              f"created from a template commit that ships the golden ports")
         for directory, dirs, names in os.walk(root):
             dirs.sort()
             for name in sorted(names):
                 source = os.path.join(directory, name)
                 relative = os.path.relpath(source, root).replace(os.sep, "/")
+                if relative in OVERLAY_SKIP:
+                    continue
                 files[relative] = source
+    if not files:
+        raise ReplayError(f"the port overlays {port['overlays']} are empty in {repo}")
     return sorted(files.items())
 
 
@@ -252,6 +272,7 @@ def build_report(brief, port, written):
         "replay": {
             "developer": REPLAY_LABEL,
             "example": f"examples/{port['example']}",
+            "overlays": list(port["overlays"]),
             "files": sorted(written),
         },
     }
@@ -271,16 +292,21 @@ def replay(game_key, brief_md_path, repo):
     log(f"{REPLAY_LABEL}")
     log(f"replaying examples/{port['example']} into {repo} (engine {port['engine']})")
 
+    # Both are planned before anything is written: a missing example file or overlay refuses
+    # the replay with the repository untouched.
+    copies = plan_copies(port, repo)
+    overlay_files = port_files(port, repo)
+    contract = integration_contract(brief_md)
     written = []
-    for relative, text in plan_copies(port, repo):
+    for relative, text in copies:
         write(os.path.join(repo, *relative.split("/")), text)
         written.append(relative)
-    for relative, source in port_files(game_key):
+    for relative, source in overlay_files:
         target = os.path.join(repo, *relative.split("/"))
         os.makedirs(os.path.dirname(target), exist_ok=True)
         shutil.copyfile(source, target)
         written.append(relative)
-    write(os.path.join(repo, *INTEGRATION_PATH.split("/")), integration_contract(brief_md))
+    write(os.path.join(repo, *INTEGRATION_PATH.split("/")), contract)
     written.append(INTEGRATION_PATH)
 
     for relative in port.get("remove") or []:

@@ -26,7 +26,7 @@ class Game:
         self.example = example          # web-game-template examples/<example>
         self.scene_id = scene_id        # the id the ported scene publishes to #hud[data-scene]
         self.catalog = catalog          # the research step's candidate catalog
-        self.port = port                # scripts/golden/fixtures/<key>/port
+        self.port = port                # the port overlay, relative to the game repository
 
     @property
     def dimension(self):
@@ -41,7 +41,7 @@ GAMES = {
         example="tower-merge-rush",
         scene_id="tower-merge-rush",
         catalog=os.path.join(FIXTURES, "2d", "catalog.yaml"),
-        port=os.path.join(FIXTURES, "2d", "port"),
+        port="examples/tower-merge-rush/wgf-golden",
     ),
     "3d": Game(
         key="3d",
@@ -50,7 +50,7 @@ GAMES = {
         example="neon-drift-arena",
         scene_id="neon-drift-arena",
         catalog=os.path.join(FIXTURES, "3d", "catalog.yaml"),
-        port=os.path.join(FIXTURES, "3d", "port"),
+        port="examples/neon-drift-arena/wgf-golden",
     ),
 }
 

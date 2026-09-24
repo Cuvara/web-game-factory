@@ -1,5 +1,6 @@
 {
-  "comment": "Golden-run replay of examples/neon-drift-arena. Read by scripts/golden/replay_developer.py. `copy` entries are taken from the game repository's own examples/ directory (the template ships them) and written with a provenance header; everything under port/ and ../shared/port/ is the hand-made adaptation to the template layout the development brief asks for.",
+  "comment": "Golden-run replay of examples/neon-drift-arena. Read by scripts/golden/replay_developer.py. This file is a mapping only: the Factory holds no game source. `copy` entries are taken from the game repository's own examples/neon-drift-arena/ (the template ships them) and written with a provenance header. `overlays` are directories of the game repository - shipped by the pinned web-game-template commit - holding the hand-made adaptation to the template layout the development brief asks for; each is copied onto the repository root in order (a later one wins), its README.md excepted. The template's boot scene (src/game/boot-scene.ts) is left in place: main.ts no longer starts it, and the template's own SDK matrix harness (tests/sdk-matrix/main.ts) imports it.",
+  "overlays": ["examples/wgf-golden-shared", "examples/neon-drift-arena/wgf-golden"],
   "example": "neon-drift-arena",
   "engine": "threejs",
   "scene_id": "neon-drift-arena",
@@ -11,7 +12,6 @@
     {"from": "tests/unit/simulation.test.ts", "to": "tests/unit/neon-drift-arena-simulation.test.ts"}
   ],
   "engine_dependencies": ["three", "@types/three"],
-  "remove": ["src/game/boot-scene.ts"],
   "placements": [
     {"id": "revive-game-over", "kind": "rewarded"},
     {"id": "restart-game-over", "kind": "interstitial"}

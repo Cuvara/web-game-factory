@@ -8,8 +8,9 @@ Two canonical, repeatable, **real** regression runs of the one shared `new-game`
 | 3D | Neon Drift Arena (`neon-drift-arena`) | Three.js | `web-game-template/examples/neon-drift-arena` |
 
 Both go through the same workflow file, the same engine and the same modules — no `--mock`,
-no engine branching. The only differences are data in `scripts/golden/games.py` and the
-fixtures under `scripts/golden/fixtures/<2d|3d>/`. That is the point: the pair proves the
+no engine branching. The only differences are data in `scripts/golden/games.py`, the
+fixtures under `scripts/golden/fixtures/<2d|3d>/` (a catalog and the port mapping) and the
+port each game's template example carries. That is the point: the pair proves the
 Factory is renderer-agnostic.
 
 ```
@@ -70,22 +71,35 @@ still alive in the work directory. `passed` is true only if every step reached i
 outcome, release drafted a manifest whose zip hashes reproduce, and the engine is the same
 everywhere. `browser_passed` is reported beside it; the CLI and the tests require both.
 
-## The template is pinned
+## The template is pinned — and holds the ports
 
-A golden run creates its game from web-game-template at one commit,
-`golden/harness.py` `VALIDATED_TEMPLATE_REF` (5eb698f, the commit Core v1 was validated on),
-not at whatever the sibling checkout's HEAD is. The regression baseline therefore moves only
-when someone moves it: adopting a newer template means running both golden runs with
-`WGF_GOLDEN_TEMPLATE_REF=<commit>` (or `HEAD`), making them pass, and changing that one line
-in the same commit. The summary records `template_ref`.
+A golden run creates its game from web-game-template at the one commit the Factory pins,
+`workspace/config/template.lock.json`, through `scripts/wgflib/template.py` — never at
+whatever the sibling checkout's HEAD is. The regression baseline therefore moves only when
+someone moves it: adopting a newer template means running both golden runs with
+`WGF_TEMPLATE_COMMIT=<sha>` (`WGF_GOLDEN_TEMPLATE_REF` is the older spelling), making them
+pass, and changing the lock in the same commit. The summary records `template_ref`.
 
-`WGF_GOLDEN_TEMPLATE_REF=HEAD` is also the drift check. On 2026-09-24 the sibling template's
-main was fast-forwarded to 1f5dee2 (a real GameVui adapter; `GenericWebPlatform` takes its
-capabilities through its constructor). Against it both golden runs fail at `develop`
-(`pnpm run typecheck: exit 2` — the replay port targets the older API), and
-`test_sdk_integration.InspectSdk.test_the_sibling_template_is_readable` fails because the sdk
-step's source inspector cannot read those adapters' capabilities. Both are module work
-(`wgf_sdk`, the golden port), done one module at a time after the freeze.
+The Factory holds no game source, so the hand-made part of each replay lives in the template,
+beside the example it adapts, on the pinned commit:
+
+| Template path | What |
+|---|---|
+| `examples/tower-merge-rush/wgf-golden/` | the 2D port: `src/main.ts`, `src/game/app.ts`, UI, input, the PixiJS view wrapper, `index.html`, `en`/`ru` locales, the tagged browser spec |
+| `examples/neon-drift-arena/wgf-golden/` | the 3D port: the same set for the Three.js game |
+| `examples/wgf-golden-shared/` | shared by both: the default `GameIntegration` implementation, the audio service |
+
+Each has a README saying what it is. They sit in the template's layout (`src/...` relative to
+the directory), are laid onto a game repository's root by the replay developer, and only
+typecheck there: the template's root `tsconfig.json` excludes `examples/wgf-golden-shared`,
+and its `examples/*/src` / `examples/*/tests` globs do not reach `examples/*/wgf-golden/`, so
+the template's own lint, typecheck and tests still pass. A pinned commit that does not ship
+them makes the replay refuse (exit 3) and the fast tests fail.
+
+The ports were adapted to template 1f5dee2 (a real GameVui adapter; `GenericWebPlatform`
+takes its capabilities through its constructor) with one change: the template's own SDK
+matrix harness (`tests/sdk-matrix/main.ts`) now imports `src/game/boot-scene.ts`, so the
+replay no longer deletes that file — `main.ts` just does not start it.
 
 ## How a run is isolated and steered
 
@@ -131,8 +145,10 @@ ports a known-good example into the layout the brief requires:
 1. refuses a brief whose engine is not the replayed game's;
 2. copies the portable example files **from the repository's own `examples/`** (rules or
    simulation, the engine view, input, unit tests) with import paths adapted and a
-   provenance header (`fixtures/<game>/port.json`);
-3. writes the hand-made adaptation (`fixtures/<game>/port/`, `fixtures/shared/port/`):
+   provenance header (the mapping: `fixtures/<game>/port.json`);
+3. copies the hand-made adaptation, also **from the repository itself** — port.json's
+   `overlays`, `examples/wgf-golden-shared/` then `examples/<example>/wgf-golden/`, laid onto
+   the repository root (their READMEs excepted):
    `main.ts` on the template's unchanged boot lines, the scene calling the brief's
    `GameIntegration` seam instead of `platform.showRewarded` / `withAdBreak`, a default seam
    implementation, UI and pause screens, a small audio service, `en`/`ru` locales,
@@ -141,8 +157,9 @@ ports a known-good example into the layout the brief requires:
 4. writes `src/game/integration.ts` verbatim from the brief;
 5. adds the engine package the example pins (`pixi.js`, or `three` + `@types/three`) and
    updates the lockfile offline;
-6. points the template smoke's `data-scene` assertion at the game's scene, removes the
-   template boot scene;
+6. points the template smoke's `data-scene` assertion at the game's scene (the template
+   boot scene file stays: `main.ts` no longer starts it, and the template's SDK matrix
+   harness imports it);
 7. writes `docs/development/report.json` honestly: a design MVP item the example does not
    cover is `partial` or `cut` and becomes a scope delta (the 2D design is a swap-based
    level puzzle; the replayed game is drop-and-merge, so "Swap and resolve" is `partial`,
@@ -152,9 +169,10 @@ ports a known-good example into the layout the brief requires:
 The develop step then runs its real checks — install, conformance, typecheck, lint, unit,
 build, smoke — and commits.
 
-Every file written into a game carries a `GOLDEN-RUN REPLAY` header. The adaptation under
-`scripts/golden/fixtures/*/port/` is TypeScript kept in this repository as **test fixture
-data** for the harness; it is not Factory code and no Factory module imports it.
+Every file written into a game carries a `GOLDEN-RUN REPLAY` header. The Factory keeps
+only data about the replay — `fixtures/<game>/port.json` (copy and replace rules, overlays,
+MVP notes, placements, known issues) — and no game source: the adaptation itself is template
+code, versioned with the template and pinned with it.
 
 ## The golden reviewer — not an AI reviewer
 

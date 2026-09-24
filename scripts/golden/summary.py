@@ -117,8 +117,9 @@ def _release(repo, manifest):
     base = os.path.join(repo, "release", release_id)
     manifest_path = os.path.join(base, "manifest.json")
     targets = manifest.get("target_platforms") or []
-    primary = next((t.get("platform_id") for t in targets if t.get("role") == "required"),
-                   targets[0].get("platform_id") if targets else None)
+    ids = [t.get("id") or t.get("platform_id") for t in targets]
+    primary = next((i for i, t in zip(ids, targets) if t.get("role") == "required"),
+                   ids[0] if ids else None)
     packages = []
     for package in manifest.get("packages") or []:
         path = os.path.join(base, package.get("filename") or "")
@@ -171,6 +172,9 @@ def _repository(repo):
     log = _git(repo, "log", "--format=%H%x09%s") or ""
     commits = [dict(zip(("sha", "subject"), line.split("\t", 1)))
                for line in log.splitlines() if line.strip()]
+    for commit in commits:
+        files = _git(repo, "show", "--name-only", "--format=", commit["sha"]) or ""
+        commit["files"] = sorted(f for f in files.splitlines() if f.strip())
     status = _git(repo, "status", "--porcelain", "--untracked-files=all") or ""
     return {"path": repo, "head": commits[0]["sha"] if commits else None,
             "commits": commits, "dirty_paths": status.splitlines()[:50],

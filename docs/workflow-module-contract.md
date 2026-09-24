@@ -159,7 +159,7 @@ reading, and `DocumentedIoContract` fails if the two disagree.
 | `review` | `review` | `prototype-report`, `game-design`, `scaffold-record` | `review-report` |
 | `sdk` | `sdk` | `game-design`, `scaffold-record`, `prototype-report` | `sdk-report` |
 | `verify` | `verify` | `prototype-report`, `sdk-report`, `game-design`, `scaffold-record`, `asset-manifest` | `verification-report`, `qa-report` |
-| `release` | `release` | `qa-report` | `release-manifest` |
+| `release` | `release` | `qa-report`, `verification-report`, `sdk-report`, `prototype-report`, `scaffold-record` | `release-manifest` |
 <!-- io-contract:end -->
 
 `develop` declares `qa-report` so that on a verify → develop loop it receives the failing
@@ -171,8 +171,10 @@ changes to the commit develop made, the next brief leads with the reviewer's blo
 questions and kill criteria its `prototype-report` must list. `verify` emits the
 `verification-report` — every check with its evidence — and the `qa-report` computed from it;
 see [verification-module.md](verification-module.md). `release` produces a
-`release-manifest` in state `draft` and stops: building, packaging and publishing are the game
-repository's CI, behind G5 and G6.
+`release-manifest` in state `draft` and stops: it refuses unless the newest qa-report passed
+and every report and the clean checkout name one commit, packages with the game repository's
+own scripts, and never publishes; see [release-module.md](release-module.md). Publishing is
+behind G5 and G6.
 
 Routing, retry and gates for each step are in the workflow file; read it, not a copy.
 

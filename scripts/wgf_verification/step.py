@@ -78,24 +78,29 @@ class VerifyStep(WorkflowStep):
 
         verification = build_verification_report(
             title_id=title_id, checks=checks, session=session, pinned=pinned,
-            produced_at=produced_at, sequence=context.execution, release_id=release_id)
+            produced_at=produced_at, sequence=context.execution, release_id=release_id,
+            context=context)
         qa = build_qa_report(
             title_id=title_id, release_id=release_id, checks=checks, session=session,
             verification=verification, produced_at=produced_at, sequence=context.execution,
-            pinned=pinned)
+            pinned=pinned, context=context)
 
         verdict = verification["verdict"]
         summary = verification["summary"]
         message = (f"verification {verdict}: {summary['PASS']} pass, {summary['FAIL']} fail, "
-                   f"{summary['BLOCKED']} blocked, {summary['WARNING']} warning")
+                   f"{summary['BLOCKED']} blocked, {summary['WARNING']} warning; evidence "
+                   f"{verification['evidence_status']}")
         context.logger.info("verification finished", verdict=verdict,
                             failed=verification["failed_checks"] or None,
                             blocked=verification["blocked_checks"] or None)
-        metadata = {"verdict": verdict, "commit": verification["commit"]["sha"],
+        metadata = {"verdict": verdict, "evidence_status": verification["evidence_status"],
+                    "commit": verification["commit"]["sha"],
                     "failed": len(verification["failed_checks"]),
                     "blocked": len(verification["blocked_checks"])}
         artifacts = [ArtifactOutput("verification-report", verification, metadata=metadata),
-                     ArtifactOutput("qa-report", qa, metadata={"verdict": qa["verdict"]})]
+                     ArtifactOutput("qa-report", qa, metadata={
+                         "verdict": qa["verdict"], "evidence_status": qa["evidence_status"],
+                         "commit": qa["build_ref"]["commit_sha"]})]
 
         if verdict == FAIL:
             failing = [c["id"] for c in verification["checks"]

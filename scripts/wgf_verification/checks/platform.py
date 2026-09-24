@@ -8,10 +8,43 @@ claims otherwise.
 """
 
 import os
+import re
 
-from ..model import BLOCKED, FAIL, PASS, WARNING, Check, Evidence
+from ..model import BLOCKED, FAIL, PASS, PASS_MOCK, WARNING, Check, Evidence
 
-__all__ = ["check_platform", "check_policy"]
+__all__ = ["check_platform", "check_policy", "sdk_evidence_status", "live_observation",
+           "same_commit"]
+
+# An SDK feature is live evidence only when whoever observed it says, in so many words, that
+# it was observed on the live portal - and does not also say it was a stand-in. Everything
+# else a local run can produce (conformance suites against fake portal SDKs, SDK-mock unit
+# suites, a browser with mocked portal scripts) is PASS_MOCK. Platform-agnostic on purpose:
+# it reads the observation's wording, never a platform id.
+_LIVE = re.compile(r"\blive[- ]portal\b", re.I)
+_STAND_IN = re.compile(r"mock|fake|stub|simulat|emulat|not observed on the", re.I)
+
+
+def live_observation(observed_by):
+    text = str(observed_by or "")
+    return bool(_LIVE.search(text)) and not _STAND_IN.search(text)
+
+
+def sdk_evidence_status(features):
+    """PASS when every working feature was observed live (or nothing needed observing),
+    PASS_MOCK when any working feature was observed only against a stand-in."""
+    working = [f for f in features if f.get("status") == "working"]
+    if any(not live_observation(f.get("observed_by")) for f in working):
+        return PASS_MOCK
+    return PASS
+
+
+def same_commit(a, b):
+    """Two commit names denote the same commit (either may be abbreviated to 7+ chars)."""
+    if not a or not b:
+        return False
+    if min(len(a), len(b)) < 7:
+        return a == b
+    return a.startswith(b) or b.startswith(a)
 
 AD_FEATURES = ("rewarded", "interstitial", "banner")
 RUNTIME_FACTS = "build/runtime-facts.json"
@@ -85,12 +118,25 @@ def _per_platform(session, platform):
                                        path=source)], **common)
 
     report, entry = _sdk_entry(session, pid)
+    reported = ((report or {}).get("build_ref") or {}).get("commit_sha")
     if report is None:
         for cid, title in ((f"platform.sdk-init:{pid}", "Platform SDK initializes"),
                            (f"platform.hooks:{pid}", "Platform integration hooks")):
             yield Check(cid, title=title, status=BLOCKED,
                         message="no sdk-report in this run: SDK integration is unverified",
                         evidence=[Evidence("observation", "sdk-report input is missing")],
+                        **common)
+    elif not same_commit(reported, session.commit):
+        # SDK evidence about another commit says nothing about this one.
+        for cid, title in ((f"platform.sdk-init:{pid}", "Platform SDK initializes"),
+                           (f"platform.hooks:{pid}", "Platform integration hooks")):
+            yield Check(cid, title=title, status=BLOCKED,
+                        message=f"the sdk-report describes commit {reported or 'unknown'}, "
+                                f"not the commit under test {session.commit or 'unknown'}",
+                        evidence=[Evidence("artifact", "sdk-report.build_ref.commit_sha = "
+                                                       f"{reported or 'missing'}"),
+                                  Evidence("reference", "see source.upstream-commits",
+                                           check_ref="source.upstream-commits")],
                         **common)
     else:
         yield _sdk_init(pid, entry, common)
@@ -119,9 +165,12 @@ def _sdk_init(pid, entry, common):
                      evidence=[Evidence("artifact", f"sdk-report {pid} has no init feature")],
                      **common)
     ok = init.get("status") in ("working", "not-required")
+    strength = sdk_evidence_status([init]) if ok else None
     return Check(f"platform.sdk-init:{pid}", title=title, status=PASS if ok else FAIL,
-                 message=f"init is {init.get('status')}", evidence=[_feature_evidence(pid, init)],
-                 **common)
+                 message=f"init is {init.get('status')}"
+                         + (" (observed against a stand-in portal SDK only)"
+                            if strength == PASS_MOCK else ""),
+                 evidence=[_feature_evidence(pid, init)], evidence_status=strength, **common)
 
 
 def _hooks(session, pid, entry, common):
@@ -143,9 +192,12 @@ def _hooks(session, pid, entry, common):
     if problems:
         return Check(f"platform.hooks:{pid}", title=title, status=FAIL,
                      message="; ".join(problems), evidence=evidence, **common)
+    strength = sdk_evidence_status([f for name, f in features.items() if name != "init"])
     return Check(f"platform.hooks:{pid}", title=title, status=PASS,
-                 message=f"{len(features) - ('init' in features)} hook(s) working or not required",
-                 evidence=evidence, **common)
+                 message=f"{len(features) - ('init' in features)} hook(s) working or not required"
+                         + (" (observed against stand-in portal SDKs only)"
+                            if strength == PASS_MOCK else ""),
+                 evidence=evidence, evidence_status=strength, **common)
 
 
 def _local_requirements(session, pid, profile, source, common):
@@ -224,6 +276,8 @@ def _runtime_facts(session):
                      BLOCKED if required else WARNING, required=required,
                      message="package.json has no test:verify script to measure runtime facts",
                      evidence=[Evidence("file", "no test:verify script", path="package.json")])
+    # Never read a previous run's measurements: the file must be written by this run.
+    session.remove(RUNTIME_FACTS)
     result = session.run(session.script_command("test:verify"), "browser")
     evidence = [Evidence.of_command(result)]
     facts = session.read_json(RUNTIME_FACTS) if result.ok else None
@@ -231,7 +285,8 @@ def _runtime_facts(session):
         session.runtime_facts = facts
         perf = (facts.get("package") or {}).get("perf") or {}
         evidence.append(Evidence("file", "measured: " + ", ".join(
-            f"{k}={v}" for k, v in sorted(perf.items())), path=RUNTIME_FACTS, data=facts))
+            f"{k}={v}" for k, v in sorted(perf.items())), path=RUNTIME_FACTS, data=facts,
+            content_hash=session.file_hash(RUNTIME_FACTS)))
         return Check("policy.runtime-facts", "policy", title, PASS, required=required,
                      message="runtime facts measured against the built bundle",
                      evidence=evidence)
@@ -254,6 +309,10 @@ def _assertions(session, platform):
                                         path="scripts/verify")], **common)
     facts_out = f"build/facts/{pid}.json"
     results_out = f"build/assertions/{pid}.json"
+    # Results left by an earlier run are not evidence about this one: an evaluation that
+    # wrote nothing must not be read as the previous run's clean results.
+    session.remove(facts_out)
+    session.remove(results_out)
     collect = session.run(["node", COLLECT_FACTS, "--platform", pid, "--out", facts_out])
     evidence = [Evidence.of_command(collect)]
     if not collect.ok:
@@ -275,7 +334,15 @@ def _assertions(session, platform):
     warnings = [r for r in results if r.get("breached") and r.get("severity") != "blocking"]
     evidence.append(Evidence("file", f"{len(results)} assertion(s): {len(blocking)} blocking "
                                      f"breach(es), {len(warnings)} warning(s)",
-                             path=results_out, data={"results": results}))
+                             path=results_out, data={"results": results},
+                             content_hash=session.file_hash(results_out)))
+    if not evaluate.ok and not blocking:
+        # The evaluator failed without reporting a breach that explains it: its results are
+        # not a clean bill.
+        status = BLOCKED if evaluate.unavailable else FAIL
+        return Check(cid, title=title, status=status, evidence=evidence, **common,
+                     message="the evaluator exited non-zero without a blocking breach: "
+                             + evaluate.describe())
     if blocking:
         return Check(cid, title=title, status=FAIL, evidence=evidence, **common,
                      message="breached: " + ", ".join(

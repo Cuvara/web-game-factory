@@ -27,11 +27,11 @@ factory:
     fsync: true                 # flush state.json to disk before the atomic rename
 
   # Python modules that register real step implementations: each exposes register(registry).
-  # Steps no module implements yet (release) still need --mock, which replaces every
-  # implementation with its placeholder for that run.
+  # `--mock` replaces every implementation with its placeholder for that run.
   #   wgf_strategy   the `strategy` step (scripts/wgf_strategy/)
+  #   wgf_release    the `release` step (scripts/wgf_release/, docs/release-module.md)
   steps:
-    modules: [wgf_discovery, wgf_strategy, wgf_init, wgf_assets, wgf_develop, wgf_review, wgf_verification, wgf_design, wgf_sdk, wgf_techplan]
+    modules: [wgf_discovery, wgf_strategy, wgf_init, wgf_assets, wgf_develop, wgf_review, wgf_verification, wgf_design, wgf_sdk, wgf_techplan, wgf_release]
 
   # The tech-plan module (scripts/wgf_techplan, docs/techplan-module.md): engine from the
   # design, pinned platforms from the strategy, a heuristic dev plan. Every key is optional.
@@ -69,6 +69,15 @@ factory:
   # verify step's `with: repo_dir`, else WGF_GAME_REPO, else <checkouts>/<repository name
   # from the run's scaffold-record>.
   verification:
+    checkouts: ..
+
+  # The release module (scripts/wgf_release, docs/release-module.md): drafts a release from a
+  # verified commit with the game repository's own release:package / release:manifest, and
+  # never pushes, tags or publishes. The checkout is the release step's `with: repo_dir`,
+  # else WGF_GAME_REPO, else <checkouts>/<repository name from the run's scaffold-record>.
+  # A step's `with:` overrides any key: release_id (default: the next r<n>, or the one this
+  # commit already has), version (default: game.version), kind, timeouts.
+  release:
     checkouts: ..
 
   # The assets step (scripts/wgf_assets). Every key is optional; a step's `with:` block

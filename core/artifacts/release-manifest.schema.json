@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://webgamefactory.dev/schemas/artifacts/release-manifest.schema.json",
   "title": "Release Manifest",
-  "description": "An immutable, versioned description of one shipment.\n\nImmutability is the point. Once frozen at RC, a release manifest never changes — any correction produces a new release. That is what makes rollback possible as an operation rather than a rebuild: rolling back means re-publishing a previous manifest, which only works if manifests are retained and trustworthy.\n\nTarget platforms carry their role (required/optional) HERE rather than in the strategy, because which platforms must succeed is a per-release policy: r1 may ship Yandex-only and r2 may add CrazyGames.",
+  "description": "An immutable, versioned description of one shipment.\n\nImmutability is the point. Once frozen at RC, a release manifest never changes — any correction produces a new release. That is what makes rollback possible as an operation rather than a rebuild: rolling back means re-publishing a previous manifest, which only works if manifests are retained and trustworthy.\n\nTarget platforms carry their role (required/optional) HERE rather than in the strategy, because which platforms must succeed is a per-release policy: r1 may ship Yandex-only and r2 may add CrazyGames.\n\nSince 1.1.0 a manifest the Factory drafts also says what it rests on: the qa-report and verification-report it was cleared by, the commit every upstream report named, the evidence status per platform (PASS_MOCK and BLOCKED_EXTERNAL are carried as such, never upgraded), the audit of every package, the template revision, and the workflow run that produced it. All of it is optional, so a 1.0.0 manifest written by a game repository's own tooling still validates.",
 
   "x-wgf": {
     "id": "release-manifest",
@@ -60,7 +60,12 @@
           "platform_id": { "type": "string" },
           "filename": { "type": "string" },
           "size_mb": { "type": "number" },
-          "checksum": { "$ref": "./shared/provenance.schema.json#/$defs/hash" }
+          "checksum": { "$ref": "./shared/provenance.schema.json#/$defs/hash" },
+          "content_digest": {
+            "$ref": "./shared/provenance.schema.json#/$defs/hash",
+            "description": "Since 1.1.0. sha256 over the archive's entry names and the sha256 of each entry's bytes, in name order. Unlike `checksum` it does not change with file timestamps or compression, so it identifies what ships even when the archive bytes are not reproducible."
+          },
+          "files": { "type": "integer", "minimum": 0, "description": "Since 1.1.0. Entries in the archive." }
         },
         "additionalProperties": false
       }
@@ -120,7 +125,108 @@
       "description": "The known-good manifest to re-publish. Named in advance, at G6, rather than found under pressure."
     },
 
-    "frozen_at": { "type": ["string", "null"], "format": "date-time" }
+    "frozen_at": { "type": ["string", "null"], "format": "date-time" },
+
+    "workflow": {
+      "$ref": "./shared/evidence.schema.json#/$defs/workflowRef",
+      "description": "Since 1.1.0. The Factory workflow run and step execution that drafted this manifest."
+    },
+
+    "template": {
+      "type": "object",
+      "description": "Since 1.1.0. The web-game-template revision the game was generated from, and where the version was read.",
+      "properties": {
+        "repository": { "type": "string" },
+        "commit_sha": { "type": "string" },
+        "version": { "type": "string" },
+        "source": { "type": "string", "description": "Where `version` came from: a template marker, the inherited CHANGELOG, or package.json." }
+      },
+      "additionalProperties": false
+    },
+
+    "evidence": {
+      "type": "object",
+      "description": "Since 1.1.0. What this release was cleared by. A draft is only produced from a passing qa-report of the newest verification, whose commit every upstream report and the checkout share.",
+      "required": ["status", "qa_report", "verification_report", "commit_lineage", "platforms"],
+      "properties": {
+        "status": {
+          "$ref": "./shared/evidence.schema.json#/$defs/evidenceStatus",
+          "description": "The verification's own evidence status. PASS_MOCK when anything required was observed only against a stand-in."
+        },
+        "qa_report": { "$ref": "#/$defs/clearedBy" },
+        "verification_report": { "$ref": "#/$defs/clearedBy" },
+        "commit_lineage": {
+          "type": "array",
+          "description": "Every commit named by the evidence and the checkout. All equal, or there is no manifest.",
+          "items": {
+            "type": "object",
+            "required": ["source", "commit_sha"],
+            "properties": {
+              "source": { "type": "string", "description": "An artifact type, or `checkout` for the repository's HEAD." },
+              "commit_sha": { "type": "string" }
+            },
+            "additionalProperties": false
+          }
+        },
+        "bundle_hash": {
+          "$ref": "./shared/provenance.schema.json#/$defs/hash",
+          "description": "The digest of the built bundle that was verified and then packaged: the verification-report's build_artifact.content_hash, recomputed from the checkout before packaging."
+        },
+        "platforms": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["platform_id", "role", "evidence_status", "portal_status", "external_approval"],
+            "properties": {
+              "platform_id": { "type": "string" },
+              "role": { "enum": ["required", "optional"] },
+              "readiness": { "enum": ["ready", "not-ready", "unverified"] },
+              "evidence_status": { "$ref": "./shared/evidence.schema.json#/$defs/evidenceStatus" },
+              "portal_status": { "$ref": "./shared/evidence.schema.json#/$defs/portalStatus" },
+              "external_approval": { "const": "not-claimed" }
+            },
+            "additionalProperties": false
+          }
+        },
+        "package_audit": {
+          "type": "object",
+          "description": "What every package was checked for before this manifest was written. A draft exists only when every rule held.",
+          "required": ["status", "rules"],
+          "properties": {
+            "status": { "const": "PASS" },
+            "rules": { "type": "array", "items": { "type": "string" } }
+          },
+          "additionalProperties": false
+        },
+        "reproducibility": {
+          "type": "object",
+          "properties": {
+            "archive_bytes": { "enum": ["reproducible", "timestamp-dependent", "unknown"] },
+            "note": { "type": "string" }
+          },
+          "additionalProperties": false
+        },
+        "source_manifest_hash": {
+          "$ref": "./shared/provenance.schema.json#/$defs/hash",
+          "description": "content_hash of the manifest the game repository's own tooling wrote, which this one extends."
+        }
+      },
+      "additionalProperties": false
+    }
   },
-  "additionalProperties": false
+  "additionalProperties": false,
+
+  "$defs": {
+    "clearedBy": {
+      "type": "object",
+      "required": ["artifact_id", "content_hash", "verdict"],
+      "properties": {
+        "artifact_id": { "$ref": "./shared/provenance.schema.json#/$defs/artifactId" },
+        "content_hash": { "$ref": "./shared/provenance.schema.json#/$defs/hash" },
+        "verdict": { "type": "string" },
+        "evidence_status": { "$ref": "./shared/evidence.schema.json#/$defs/evidenceStatus" }
+      },
+      "additionalProperties": false
+    }
+  }
 }

@@ -5,6 +5,7 @@ import re
 import shlex
 
 from ..model import BLOCKED, FAIL, PASS, WARNING, Check, Evidence
+from .platform import same_commit
 
 __all__ = ["check_source", "check_build"]
 
@@ -47,12 +48,20 @@ def check_source(session):
 
 
 def _upstream_commits(session):
-    """Were the upstream reports made against the commit being verified?"""
+    """Were the upstream reports made against the commit being verified?
+
+    Required when there is something to compare: an sdk-report or prototype-report about
+    another commit is evidence about another build, and a verification that consumed it
+    cannot vouch for this one. BLOCKED rather than FAIL - the game is not at fault, the
+    evidence is stale - so the run stops for someone to re-run the steps that produce it.
+    """
     seen = []
     for artifact_type in ("prototype-report", "sdk-report"):
-        sha = ((session.inputs.get(artifact_type) or {}).get("build_ref") or {}).get("commit_sha")
-        if sha:
-            seen.append((artifact_type, sha))
+        content = session.inputs.get(artifact_type)
+        if content is None:
+            continue
+        sha = ((content or {}).get("build_ref") or {}).get("commit_sha")
+        seen.append((artifact_type, sha))
     title = "Upstream reports describe this commit"
     if not seen:
         return Check("source.upstream-commits", "source", title, WARNING, required=False,
@@ -60,16 +69,17 @@ def _upstream_commits(session):
                      evidence=[Evidence("observation", "no upstream build_ref to compare")])
     if not session.commit:
         return session.blocked_by("source.commit", id="source.upstream-commits",
-                                  category="source", title=title, required=False)
-    stale = [(t, sha) for t, sha in seen if not session.commit.startswith(sha)
-             and not sha.startswith(session.commit)]
-    evidence = [Evidence("reference", f"{t}.build_ref.commit_sha = {sha}") for t, sha in seen]
+                                  category="source", title=title)
+    stale = [(t, sha) for t, sha in seen if not same_commit(sha, session.commit)]
+    evidence = [Evidence("reference", f"{t}.build_ref.commit_sha = {sha or 'missing'}")
+                for t, sha in seen]
     if stale:
-        return Check("source.upstream-commits", "source", title, WARNING, required=False,
+        return Check("source.upstream-commits", "source", title, BLOCKED,
                      message="evidence in " + ", ".join(t for t, _ in stale) +
-                             f" was produced against another commit than {session.commit[:12]}",
+                             f" was produced against another commit than {session.commit[:12]}"
+                             "; re-run the steps that produce it at this commit",
                      evidence=evidence)
-    return Check("source.upstream-commits", "source", title, PASS, required=False,
+    return Check("source.upstream-commits", "source", title, PASS,
                  message="all upstream reports name the commit under test", evidence=evidence)
 
 

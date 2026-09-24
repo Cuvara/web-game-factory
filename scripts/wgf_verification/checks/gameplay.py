@@ -124,13 +124,24 @@ class RecordedSessionDriver:
         seen.evidence.append(Evidence("file", f"gameplay session recorded by "
                                               f"{document.get('driver', self.id)} at "
                                               f"{document.get('recorded_at', 'unknown time')}",
-                                      path=self.path))
+                                      path=self.path, content_hash=session.file_hash(self.path)))
         for scenario in document["scenarios"]:
             status = PASS if scenario["status"] == "PASS" else FAIL
+            data = {k: scenario[k] for k in ("steps", "screenshot", "viewport") if k in scenario}
+            shot = scenario.get("screenshot")
+            if shot:
+                digest = session.file_hash(shot)
+                if digest is None and status == PASS:
+                    # A passing scenario that cites a screenshot nobody can find is a claim
+                    # without its evidence; it is not counted. A failing one still counts.
+                    seen.evidence.append(Evidence(
+                        "observation", f"{scenario['aspect']} scenario ignored: its screenshot "
+                                       f"{shot} does not exist", path=self.path))
+                    continue
+                if digest:
+                    data["screenshot_hash"] = digest
             evidence = Evidence("observation", scenario["observation"], path=self.path,
-                                data={k: scenario[k] for k in ("steps", "screenshot",
-                                                                "viewport") if k in scenario}
-                                or None)
+                                data=data or None)
             seen.aspects[scenario["aspect"]].append((status, evidence))
         if "failed_requests" in document:
             seen.failed_requests = list(document["failed_requests"])
@@ -199,7 +210,22 @@ class RepositoryPlaywrightDriver:
                 "the Playwright run produced no JSON report", [command_evidence],
                 blocked=bool(_MISSING_BROWSER.search(output)))
         seen = map_report(report, self.report_path)
+        report_hash = session.file_hash(self.report_path)
+        if report_hash:
+            seen.evidence.insert(0, Evidence("file", "Playwright JSON report written by this run",
+                                             path=self.report_path, content_hash=report_hash))
+            # Every test result is pinned to the report file it was read from.
+            for results in seen.aspects.values():
+                for _, evidence in results:
+                    evidence.content_hash = report_hash
         seen.evidence.insert(0, command_evidence)
+        if not result.ok and not (seen.counts or {}).get("failed"):
+            # The runner failed (global setup, web server, a crash after the last test) but
+            # the report shows no failing test. A green report from a red run is not evidence
+            # that the game plays.
+            raise DriverUnavailable(
+                f"the Playwright run failed ({result.describe()}) but its report shows no "
+                "failing test", seen.evidence, blocked=False)
         return seen
 
 

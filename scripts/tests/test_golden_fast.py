@@ -2,7 +2,10 @@
 
 The harness configuration, the frozen fixtures, the research -> G3 slice of the real
 workflow steering to the right engine, the replay developer's mapping onto the template's
-examples, the port's static conformance, and the golden reviewer on a throwaway repository.
+examples, the port overlays' static conformance, and the golden reviewer on a throwaway
+repository. The overlays (examples/*/wgf-golden, examples/wgf-golden-shared) are read from
+the pinned template checkout: the Factory holds no game source, and a pin that does not ship
+them fails here.
 
 Kept out of test_golden_2d/3d on purpose: those are the 2D/3D GOLDEN categories of
 `wgf test-core`, and a category that passed only these fast checks would read as PASS

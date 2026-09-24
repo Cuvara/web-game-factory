@@ -5,8 +5,8 @@ Two kinds, per golden game:
     Fast (always on, no node, no browser, ~seconds)
         the harness configuration, the frozen fixtures, the research -> G3 slice of the real
         workflow (the steering: the design must declare the game's engine), the replay
-        developer's file mapping against the template's examples, the port's static
-        conformance, and the golden reviewer on a throwaway repository.
+        developer's file mapping against the template's examples, the port overlays' static
+        conformance (read from the pinned template checkout, which ships them), and the golden reviewer on a throwaway repository.
 
     EndToEnd (only with WGF_GOLDEN=1; minutes)
         the whole golden run through the harness, then the summary asserted: every step at
@@ -37,8 +37,10 @@ PLACEHOLDER_ARGS = ("{brief}", "{repo}", "{key}", "{verdict}", "{commit}")
 
 
 def _template_has_examples():
-    return all(os.path.isdir(os.path.join(harness.TEMPLATE_DIR, "examples", g.example))
-               for g in games.GAMES.values())
+    template_dir = harness.TEMPLATE_DIR
+    return bool(template_dir) and all(
+        os.path.isdir(os.path.join(template_dir, "examples", g.example))
+        for g in games.GAMES.values())
 
 
 def fast_case(key):
@@ -151,8 +153,12 @@ def fast_case(key):
         def test_port_satisfies_the_develop_static_rules(self):
             from wgf_develop import brief as briefs
             from wgf_develop import checks
+            if not _template_has_examples():
+                self.skipTest(f"no template examples at {harness.TEMPLATE_DIR}")
             port = replay_developer.load_port(key)
-            files = dict(replay_developer.port_files(key))
+            # The overlays ship with the pinned template commit; the Factory holds none.
+            self.assertEqual(port["overlays"][-1], game.port)
+            files = dict(replay_developer.port_files(port, harness.TEMPLATE_DIR))
             engine_dir = briefs.ENGINE_DIRS[game.engine] + "/"
             for relative, source in files.items():
                 for prefix in briefs.PROTECTED_PATHS:

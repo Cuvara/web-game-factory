@@ -7,8 +7,8 @@ to a remote: publishing a branch is the game repository's CI, behind its own gat
 """
 
 import os
-import subprocess
 
+from wgflib import procs
 from wgflib.yamllite import YamlError, load_file
 
 __all__ = ["Runner", "RunResult", "GitRepo", "GitError", "read_game_config", "ENGINES",
@@ -25,47 +25,51 @@ _OUTPUT_TAIL = 6000
 
 
 class RunResult:
-    __slots__ = ("argv", "returncode", "output", "timed_out", "duration_s")
+    __slots__ = ("argv", "returncode", "output", "timed_out", "duration_s", "idle_timed_out",
+                 "cancelled", "killed")
 
-    def __init__(self, argv, returncode, output, timed_out=False, duration_s=0.0):
+    def __init__(self, argv, returncode, output, timed_out=False, duration_s=0.0,
+                 idle_timed_out=False, cancelled=False, killed=()):
         self.argv = list(argv)
         self.returncode = returncode
         self.output = output or ""
         self.timed_out = timed_out
         self.duration_s = duration_s
+        self.idle_timed_out = idle_timed_out  # no output for `idle_timeout` seconds
+        self.cancelled = cancelled            # the run was cancelled while this ran
+        self.killed = list(killed)            # descendants left behind, and terminated
 
     @property
     def ok(self):
-        return self.returncode == 0 and not self.timed_out
+        return (self.returncode == 0 and not self.timed_out and not self.idle_timed_out
+                and not self.cancelled)
 
     def tail(self, limit=_OUTPUT_TAIL):
         return self.output[-limit:]
 
 
 class Runner:
-    """Runs a process to completion, capturing combined output. Never raises for exit codes."""
+    """Runs a process to completion, capturing combined output. Never raises for exit codes.
 
-    def run(self, argv, cwd, timeout=None, env=None):
-        import time
+    The process and everything it starts are owned (wgflib.procs): whatever it leaves
+    running - a dev server, a watcher - is terminated when it exits, times out, goes quiet
+    for `idle_timeout` seconds, or the step is cancelled.
+    """
 
-        started = time.monotonic()
+    def run(self, argv, cwd, timeout=None, env=None, idle_timeout=None, log_path=None):
         merged = dict(os.environ)
         merged.update(env or {})
         merged.setdefault("CI", "1")  # no watch modes, no interactive prompts
-        try:
-            completed = subprocess.run(
-                argv, cwd=cwd, env=merged, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-                stdin=subprocess.DEVNULL, timeout=timeout, check=False,
-            )
-        except subprocess.TimeoutExpired as exc:
-            output = exc.output.decode("utf-8", "replace") if exc.output else ""
-            return RunResult(argv, None, output, timed_out=True,
-                             duration_s=time.monotonic() - started)
-        except FileNotFoundError as exc:
-            return RunResult(argv, 127, f"{exc}", duration_s=time.monotonic() - started)
-        return RunResult(argv, completed.returncode,
-                         completed.stdout.decode("utf-8", "replace"),
-                         duration_s=time.monotonic() - started)
+        done = procs.run(argv, cwd=cwd, env=merged, timeout=timeout, idle_timeout=idle_timeout,
+                         log_path=log_path, stderr_to_stdout=True)
+        if done.error is not None:
+            return RunResult(argv, 127, f"{done.exception or done.error}",
+                             duration_s=done.duration_s)
+        interrupted = done.timed_out or done.idle_timed_out or done.cancelled
+        return RunResult(argv, None if interrupted else done.returncode, done.stdout,
+                         timed_out=done.timed_out, duration_s=done.duration_s,
+                         idle_timed_out=done.idle_timed_out, cancelled=done.cancelled,
+                         killed=done.killed)
 
 
 class GitError(RuntimeError):

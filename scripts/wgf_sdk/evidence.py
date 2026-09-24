@@ -13,7 +13,8 @@ pipeline, behind G5 and G6, and never an SDK step's side effect.
 
 import json
 import os
-import subprocess
+
+from wgflib import procs
 
 __all__ = ["EvidenceError", "ConformanceRun", "ConformanceRunner", "PnpmRunner", "read_report",
            "summarize", "REPORT_PATH", "COMMANDS"]
@@ -49,17 +50,26 @@ class ConformanceRunner:
 
 
 class PnpmRunner(ConformanceRunner):
-    def __init__(self, timeout_s=900):
+    def __init__(self, timeout_s=900, log_path=None):
         self.timeout_s = timeout_s
+        self.log_path = log_path
 
     def _exec(self, name, game_repo):
-        try:
-            return subprocess.run(list(COMMANDS[name]), cwd=game_repo, capture_output=True, text=True,
-                                  timeout=self.timeout_s)
-        except FileNotFoundError as exc:
-            raise EvidenceError(f"{COMMANDS[name][0]} is not installed: {exc}") from None
-        except subprocess.TimeoutExpired:
-            raise EvidenceError(f"`{' '.join(COMMANDS[name])}` timed out after {self.timeout_s}s") from None
+        # An owned tree (wgflib.procs): the browser suite's preview server and Chromium are
+        # terminated with the command, on success as much as on a timeout or a cancel.
+        done = procs.run(list(COMMANDS[name]), cwd=game_repo, timeout=self.timeout_s,
+                         log_path=self.log_path)
+        if done.error is not None:
+            if isinstance(done.exception, FileNotFoundError):
+                raise EvidenceError(f"{COMMANDS[name][0]} is not installed: "
+                                    f"{done.exception}")
+            raise EvidenceError(f"`{' '.join(COMMANDS[name])}` could not be started: "
+                                f"{done.error}")
+        if done.timed_out:
+            raise EvidenceError(f"`{' '.join(COMMANDS[name])}` timed out after {self.timeout_s}s")
+        if done.cancelled or done.idle_timed_out:
+            raise EvidenceError(f"`{' '.join(COMMANDS[name])}` was stopped: {done.status}")
+        return done
 
     def run(self, game_repo, browser=False):
         commit = self._exec("commit", game_repo).stdout.strip() or None

@@ -27,7 +27,8 @@ from ..machine import load_gates
 from .model import StepResult
 from .step import WorkflowStep
 
-__all__ = ["HumanCheckpointStep", "irreversible_gates"]
+__all__ = ["HumanCheckpointStep", "irreversible_gates", "known_gates", "is_irreversible",
+           "may_auto_approve"]
 
 # Used only if gates.yaml cannot be read; the file is authoritative.
 _IRREVERSIBLE_FALLBACK = ("G4", "G6", "G7")
@@ -41,6 +42,31 @@ def irreversible_gates():
     return {gate_id for gate_id, gate in gates.items() if gate.get("irreversible")} or set(
         _IRREVERSIBLE_FALLBACK
     )
+
+
+def known_gates():
+    """Every gate id gates.yaml defines; empty when it cannot be read."""
+    try:
+        return set(load_gates())
+    except Exception:
+        return set()
+
+
+def _canonical(gate):
+    return gate.strip().upper() if isinstance(gate, str) else gate
+
+
+def is_irreversible(gate):
+    """True for G4/G6/G7 however the workflow spells them (`g4`, ` G4`)."""
+    return _canonical(gate) in {_canonical(g) for g in irreversible_gates()}
+
+
+def may_auto_approve(gate, allowed):
+    """Only a gate gates.yaml knows by exactly that id, that the run allows, and that is
+    reversible. A misspelt or unknown gate is never auto-approved: fail closed, a person
+    answers it."""
+    return (isinstance(gate, str) and gate in set(allowed or ())
+            and gate in known_gates() and not is_irreversible(gate))
 
 
 class HumanCheckpointStep(WorkflowStep):
@@ -59,7 +85,7 @@ class HumanCheckpointStep(WorkflowStep):
                     f"{choice!r} is not one of {', '.join(choices)}. {prompt}",
                     choices=choices, gate=gate,
                 )
-            if gate in irreversible_gates() and decision.get("decided_by") != "human":
+            if is_irreversible(gate) and decision.get("decided_by") != "human":
                 return StepResult.waiting_for_human(
                     f"{gate} is irreversible and needs a human decision. {prompt}",
                     choices=choices, gate=gate,
@@ -74,8 +100,10 @@ class HumanCheckpointStep(WorkflowStep):
             return StepResult.success(route=choice, message=f"{choice} at {self.id}",
                                       gate=gate, decided_by=decision.get("decided_by"))
 
-        auto = set(context.environment.get("auto_approve") or [])
-        if gate and gate in auto and gate not in irreversible_gates():
+        auto = context.environment.get("auto_approve") or []
+        if not isinstance(auto, (list, tuple)):
+            auto = []
+        if may_auto_approve(gate, auto):
             context.logger.info("auto-approved", gate=gate)
             return StepResult.success(route="approve", message=f"{gate} auto-approved",
                                       gate=gate, decided_by="automation")

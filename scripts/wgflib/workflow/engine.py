@@ -36,6 +36,7 @@ import secrets
 import time
 
 from .. import procs
+from . import integrity
 from ..hashing import CanonicalizationError, content_hash
 from .context import StepLogger, WorkflowContext
 from .definition import END, FAIL
@@ -172,12 +173,23 @@ class WorkflowEngine:
             state = self._prepare_resume(run_id, from_step, decision, decided_by, note)
         return self._drive(state, held=True)
 
-    def _prepare_resume(self, run_id, from_step, decision, decided_by, note):
+    def _load_checked(self, run_id):
+        """The run's state, refused if it is not one this engine could have written."""
         state = self.store.load(run_id)
         if state.workflow_id != self.definition.id:
             raise EngineError(
                 f"run {run_id} belongs to workflow {state.workflow_id}, not {self.definition.id}"
             )
+        problems = integrity.state_problems(state, self.definition)
+        if problems:
+            raise EngineError(
+                f"run {run_id}: state.json is inconsistent and will not be driven - "
+                + "; ".join(problems[:10])
+                + (f" (and {len(problems) - 10} more)" if len(problems) > 10 else ""))
+        return state
+
+    def _prepare_resume(self, run_id, from_step, decision, decided_by, note):
+        state = self._load_checked(run_id)
         if state.status not in RunStatus.RESUMABLE:
             raise EngineError(
                 f"run {run_id} is {state.status}; only "
@@ -230,11 +242,7 @@ class WorkflowEngine:
         return self._drive(state, skip_completed=not force, enter_first=True, held=True)
 
     def _prepare_continue(self, run_id, scope, force):
-        state = self.store.load(run_id)
-        if state.workflow_id != self.definition.id:
-            raise EngineError(
-                f"run {run_id} belongs to workflow {state.workflow_id}, not {self.definition.id}"
-            )
+        state = self._load_checked(run_id)
         if state.status == RunStatus.RUNNING:
             raise EngineError(f"run {run_id} is RUNNING; resume it instead")
         if state.status == RunStatus.CANCELLED:
@@ -563,6 +571,14 @@ class WorkflowEngine:
         decision = state.decisions.get(step_def.id)
         if decision and decision.get("visit") != step_state.visits:
             decision = None  # a decision answers one visit, not every later loop through
+        if decision and not integrity.decision_on_record(
+                self.store.read_events(state.run_id), step_def.id, decision):
+            # In state.json but never recorded through record_decision: injected, or its
+            # event was lost. Either way nobody is known to have decided; ask again.
+            self._emit(state, Events.STEP_LOG, step_id=step_def.id, level="warning",
+                       message="decision ignored: no matching DECISION_RECORDED event",
+                       data={"decision": decision.get("decision")})
+            decision = None
 
         base = {"workflow_id": state.workflow_id, "run_id": state.run_id,
                 "step_id": step_def.id, "attempt": step_state.attempts}

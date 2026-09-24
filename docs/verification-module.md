@@ -93,6 +93,13 @@ A check that depends on another (nothing is played until it builds) is `BLOCKED`
 Checks about an `optional` platform are not required: they decide that platform's readiness
 without blocking the release.
 
+Browser commands - the game's `test:e2e`, the runtime-facts `test:verify` - run behind a proxy
+that refuses every non-local request (`wgflib.netguard`, as the develop step's smoke does and
+the golden runs always have). A portal build would otherwise load the portal's real SDK from
+its CDN, and "no insecure requests" or time to interactive would measure the portal's CDN, not
+the game (a Poki build pulls an `http://` ad bridge). The portal SDK is refused as an ad
+blocker would refuse it; live portal behaviour stays `BLOCKED_EXTERNAL`.
+
 ### Which gameplay aspects are required
 
 Always `boot`, `loading`, `core-loop`, and `responsive` unless game.config.yaml sets

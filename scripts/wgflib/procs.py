@@ -27,6 +27,8 @@ Standard library only. No provider, tool or step is named here: argv is the call
 """
 
 import atexit
+import contextlib
+import contextvars
 import os
 import secrets
 import signal
@@ -36,7 +38,7 @@ import threading
 import time
 
 __all__ = ["run", "ProcessResult", "TAG_ENV", "tagged_pids", "terminate_tree",
-           "live_groups", "terminate_all"]
+           "live_groups", "terminate_all", "bound"]
 
 TAG_ENV = "WGF_PROC_TAG"
 POSIX = os.name == "posix"
@@ -247,6 +249,45 @@ def terminate_all(grace_seconds=2.0):
 atexit.register(terminate_all)
 
 
+# -- the step a process belongs to ---------------------------------------------------------
+
+# (on_event, should_stop) of the workflow step executing on this thread, set by the engine
+# around every execution. A module's runner calls run() without knowing about workflows and
+# still reports to, and is cancellable by, the step it runs under.
+_BOUND = contextvars.ContextVar("wgf_procs_bound", default=None)
+
+
+@contextlib.contextmanager
+def bound(on_event=None, should_stop=None):
+    """Within this block, every run() also reports to `on_event` and honours `should_stop`."""
+    token = _BOUND.set((on_event, should_stop))
+    try:
+        yield
+    finally:
+        _BOUND.reset(token)
+
+
+def _with_bound(on_event, should_stop):
+    outer = _BOUND.get()
+    if not outer:
+        return on_event, should_stop
+    outer_event, outer_stop = outer
+    events = [f for f in (on_event, outer_event) if f is not None]
+    stops = [f for f in (should_stop, outer_stop) if f is not None]
+
+    def fan_out(kind, **data):
+        for callback in events:
+            try:
+                callback(kind, **data)
+            except Exception:
+                pass
+
+    def any_stop():
+        return any(bool(stop()) for stop in stops)
+
+    return (fan_out if events else None), (any_stop if stops else None)
+
+
 # -- running --------------------------------------------------------------------------------
 
 class _Stream:
@@ -307,6 +348,7 @@ def run(argv, cwd=None, timeout=None, env=None, input=None, on_event=None, on_ou
     `log_path`      every line is also appended here, prefixed by stream.
     """
     argv = [str(part) for part in argv]
+    on_event, should_stop = _with_bound(on_event, should_stop)
     tag = secrets.token_hex(8)
     child_env = dict(os.environ if env is None else env)
     child_env[TAG_ENV] = tag

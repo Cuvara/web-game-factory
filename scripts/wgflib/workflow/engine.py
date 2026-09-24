@@ -26,6 +26,7 @@ import json
 import secrets
 import time
 
+from .. import procs
 from ..hashing import CanonicalizationError, content_hash
 from .context import StepLogger, WorkflowContext
 from .definition import END, FAIL
@@ -487,7 +488,10 @@ class WorkflowEngine:
         step_state.last_event = "started"
         step_state.last_activity_at = self.clock()
         try:
-            return self.runtime.run(Task(step, inputs, context))
+            # Any process the step starts through wgflib.procs reports to this step and is
+            # terminated, tree and all, by a cancel request.
+            with procs.bound(context.progress, context.should_stop):
+                return self.runtime.run(Task(step, inputs, context))
         finally:
             step_state.pid = None
 

@@ -113,9 +113,12 @@ workflow:
       on:
         fail: develop
 
+    # Drafts a release only from the newest passing qa-report, whose commit the
+    # verification-report, sdk-report, prototype-report and the clean checkout all share.
+    # scaffold-record says which repository, and which template revision it came from.
     - id: release
       type: release
       stage: release:draft
-      inputs: [qa-report]
+      inputs: [qa-report, verification-report, sdk-report, prototype-report, scaffold-record]
       outputs: [release-manifest]
       next: $end

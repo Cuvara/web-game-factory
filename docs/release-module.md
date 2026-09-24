@@ -1,0 +1,161 @@
+# Release Module
+
+The `release` step of `core/workflows/new-game.workflow.yaml` (stage `release:draft`): turn a
+verified commit into a **draft** release, and prove that the draft is what was verified.
+Implemented in `scripts/wgf_release/`, registered from `workspace/config/factory.yaml`,
+written against [workflow-module-contract.md](workflow-module-contract.md) without touching
+the kernel.
+
+```
+bin/wgf new-game                          # ... verify -> release, no --mock needed
+bin/wgf release --run <run-id>            # draft from the run's newest verification
+WGF_GAME_REPO=../neon-drift bin/wgf release --run <run-id>
+```
+
+It never pushes, tags, publishes or contacts a portal. A draft is the input to `release:qa`
+/ `rc` and the G5 and G6 gates, which are later and elsewhere.
+
+## What it produces
+
+| Where | What |
+|---|---|
+| the game repository, `release/<release-id>/` | `<platform>.zip` per target, `packages.json`, `checksums.txt` — written by the game's own `release:package` — and `manifest.json` |
+| the run | `release-manifest` (state `draft`), the same document as `release/<release-id>/manifest.json` |
+
+Release artifacts belong in the game repository (CLAUDE.md); the run holds the manifest so a
+gate can pin it by hash. The manifest is the one the game's `release:manifest` wrote, checked
+and then **extended** with what it rests on (schema 1.1.0, all optional fields):
+
+| Field | Holds |
+|---|---|
+| `provenance.inputs` | the qa-report, verification-report, sdk-report, prototype-report and scaffold-record it was drafted from, by content hash |
+| `evidence.qa_report`, `evidence.verification_report` | id, hash, verdict, evidence status |
+| `evidence.commit_lineage` | the commit each report names, and the checkout's HEAD — all equal |
+| `evidence.bundle_hash` | the digest of the bundle that was verified and packaged |
+| `evidence.platforms[]` | per target: readiness, `evidence_status`, `portal_status`, `external_approval: not-claimed` — carried from the verification exactly |
+| `evidence.package_audit` | the rules every package passed |
+| `evidence.reproducibility` | whether the archive bytes are reproducible, and why not |
+| `packages[].checksum` / `content_digest` / `files` | sha256 of the archive; sha256 over its entry names and contents; entry count |
+| `template` | template repository and commit (scaffold-record) and version, with where the version was read |
+| `workflow` | run id, workflow, step, visit, execution, idempotency key |
+
+## When it refuses
+
+Every precondition is checked before anything is packaged, and all failures are reported
+together. Nothing is returned as a `release-manifest` on a refusal: a draft that exists only
+when its preconditions held is what makes a draft mean something. The refusals are listed in
+`StepResult.data.refusals`, each with a stable `code`.
+
+| Code | Outcome | Means |
+|---|---|---|
+| `no-qa-report`, `no-verification-report` | BLOCKED | verification has not run in this run |
+| `qa-not-passed`, `verification-not-passed` | FAILED | the newest verification failed or was blocked |
+| `evidence-too-weak` | FAILED | its evidence is `UNVERIFIED`, `BLOCKED_EXTERNAL` or `FAIL`; a draft needs `PASS` or `PASS_MOCK` |
+| `evidence-status-missing` | FAILED | a 1.0.x verification: whether it passed on mocks cannot be told |
+| `stale-qa-report` | FAILED | the qa-report does not pin the run's newest verification-report, prototype-report or sdk-report — work happened after it |
+| `foreign-qa-report` | FAILED | the qa-report names another run |
+| `commit-lineage-mismatch`, `commit-unknown` | FAILED | the reports, or the reports and HEAD, name different commits |
+| `verified-dirty-tree` | BLOCKED | verification ran on uncommitted changes, which no commit reproduces |
+| `dirty-checkout` | BLOCKED | the checkout has uncommitted or untracked changes |
+| `bundle-not-verified` | BLOCKED | the build output on disk is not the bundle verification digested |
+| `no-checkout`, `no-commit` | BLOCKED | no game repository found, or not a git repository |
+| `package-failed`, `manifest-failed` | FAILED (BLOCKED if the tool is missing) | the game's release script failed |
+| `no-packages`, `package-missing`, `package-unlisted` | FAILED | the packages do not match the target platforms |
+| `checksum-mismatch` | FAILED | a recorded sha256 is not its file's |
+| `package-content` | FAILED | an archive breaks an audit rule, below |
+| `invalid-manifest` | FAILED | the game's manifest, or the drafted one, does not validate |
+| `bad-release-id`, `release-id-taken`, `bad-version`, `no-release-script`, `no-game-config` | FAILED | configuration |
+
+FAILED refusals are not retryable: they are facts about the evidence. BLOCKED ones need a
+person — run verify, commit, clean the tree — and the run resumes after.
+
+### `release --run` after a failed verification
+
+`--run` resolves each input to the newest artifact of its type, whatever it says. So a run
+whose verify **failed** still hands the release step that failing qa-report, and a run whose
+newest passing qa-report predates a later develop or sdk visit hands it a stale one. Both are
+refused (`qa-not-passed`, `stale-qa-report`); `test_core_release.ContinueIn` runs the first
+through the real engine.
+
+## The package audit
+
+Every archive is opened and checked; the rules are the same for every platform:
+
+- `index.html` at the archive root — a portal serves the root;
+- no sourcemaps (`*.map`);
+- no test files — `tests/`, `__tests__/`, `e2e/`, `*.test.*`, `*.spec.*`, test-runner configs
+  and reports;
+- no environment or secret files — `.env*`, `*.pem`, `*.key`, keystores, SSH keys,
+  `credentials.*`, `secrets.*`, `.npmrc`;
+- no secret-looking content in text entries — private-key blocks, cloud access key ids,
+  source-host, chat and live payment tokens, and string literals assigned to names like
+  `client_secret`, `access_token` or `password`. The patterns are specific on purpose: a false
+  positive stops a release;
+- no absolute or `..` entry names.
+
+## Commit lineage
+
+```
+prototype-report.build_ref.commit_sha ┐
+sdk-report.build_ref.commit_sha       ├─ all equal ─ git rev-parse HEAD (clean tree)
+verification-report.commit.sha        │
+qa-report.build_ref.commit_sha        ┘
+verification-report.build_artifact.content_hash ── equals ── digest of dist/ on disk
+```
+
+The second line is what ties the bytes about to be packaged to the bytes that were verified:
+the build output is git-ignored, so a clean tree alone says nothing about it. The step
+packages that bundle and never rebuilds it.
+
+## Reproducibility
+
+Running the step twice on the same commit and bundle gives identical archive hashes — the
+release id is reused (a commit keeps the `r<n>` it was given) and the same files are zipped.
+`test_core_release.Reproducibility` and the opt-in template test check it.
+
+A **rebuild** of identical content does not: web-game-template's `package.mjs` uses adm-zip,
+which stamps each entry with the file's modification time, and `vite build` rewrites every
+file. The step does not work around it (the template is another repository); it records it.
+`evidence.reproducibility.archive_bytes` is `timestamp-dependent` when entry timestamps
+follow the bundle's mtimes, and `packages[].content_digest` — over entry names and contents
+only — is the identity that survives a rebuild. The fix, if wanted, belongs in the template:
+normalize entry times (and order) in `package.mjs`.
+
+## Where the checkout comes from
+
+As verification: the step's `with: repo_dir`, else `WGF_GAME_REPO`, else
+`factory.release.checkouts` joined with the run's `scaffold-record.repository.name`. It never
+clones.
+
+## Parameters (`with:`, over `factory.release`)
+
+| Key | Default | |
+|---|---|---|
+| `repo_dir` | — | The checkout |
+| `release_id` | the id this commit already has, else the next `r<n>` under `release/` | Refused if it already holds another commit |
+| `version` | `game.version` in game.config.yaml, else package.json | semver |
+| `kind` | `initial` for `r1`, else `content` | |
+| `timeouts` | git 30, package 900, manifest 300 | seconds |
+
+## Evidence is carried, never upgraded
+
+The draft's `evidence.status` is the verification's own — `PASS_MOCK` whenever anything
+required was observed only against a stand-in, which today includes every SDK feature. Per
+platform, `evidence_status` and `portal_status` are copied as the verification wrote them:
+a portal's own QA stays `BLOCKED_EXTERNAL` until someone has evidence from the portal, and
+`external_approval` is always `not-claimed`. See
+[verification-module.md](verification-module.md#evidence-statuses).
+
+## Tests
+
+- `scripts/tests/test_release_module.py` — the step on its own, the audit, the engine.
+- `scripts/tests/test_core_release.py` — the RELEASE category: valid and invalid releases,
+  schema validity, hashes, lineage, before/after verify, stale evidence, dirty checkouts,
+  forbidden content, reproducibility, `release --run` after a failure.
+
+Both use real git repositories in temporary directories and a fake `pnpm`
+(`fixtures/release/fake-pnpm.py`) first on PATH that packages the way the template does.
+`WGF_AJV=1` validates a drafted manifest with ajv. `WGF_TEMPLATE_RELEASE_TEST=1` (with
+`WGF_TEMPLATE_DIR` when the template is not the sibling of this checkout) copies
+web-game-template, installs it offline, builds it, and runs its real release scripts through
+the step twice.

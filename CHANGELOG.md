@@ -10,6 +10,41 @@ numbering: `core/` is the contract, and schemas carry their own versions.
 
 ### Added
 
+- **Release module (`scripts/wgf_release`, step type `release`, stage `release:draft`).**
+  The `release` step is real: `wgf new-game` no longer needs `--mock` for it. It drafts a
+  release only when the newest qa-report in the run passed, pins the newest
+  verification-report, prototype-report and sdk-report by hash, and names the same commit as
+  each of them and as the checkout's HEAD; the checkout is clean and its bundle is the one
+  verification digested. It then runs the game repository's own `release:package` and
+  `release:manifest` (as owned process trees, `wgflib.procs`), checks every package's sha256
+  against its file, refuses archives with sourcemaps, test files, env/secret files or
+  secret-looking content or without `index.html` at their root, validates the manifest
+  against the schema, and returns it in state `draft`. It never pushes, tags, publishes or
+  contacts a portal. See `docs/release-module.md`. **Contract change:** the `release` step
+  now declares `verification-report`, `sdk-report`, `prototype-report` and
+  `scaffold-record` besides `qa-report`; `factory.release.checkouts` locates the game
+  repository.
+- **Evidence statuses.** `PASS`, `PASS_MOCK`, `BLOCKED_EXTERNAL`, `UNVERIFIED`, `FAIL`, in
+  the new shared primitive `core/artifacts/shared/evidence.schema.json`, alongside (not
+  instead of) the routing statuses. A check observed only against a stand-in — every SDK
+  feature exercised against a mocked portal SDK — is `PASS_MOCK`, and so is every
+  verification, qa-report, platform and release manifest resting on one; nothing promotes it
+  to `PASS`. A platform's own portal QA is `BLOCKED_EXTERNAL` unless its SDK evidence says it
+  was observed on the live portal (`NOT_APPLICABLE` for a profile whose review process is
+  `none`).
+
+  *Schema changes, all additive:* `verification-report` gains `evidence_status`,
+  `workflow`, `checks[].evidence_status`, `platform_readiness[].evidence_status` and
+  `portal_status`; `qa-report` gains `evidence_status`, `workflow` and
+  `platform_checks[].evidence_status` / `portal_status`; `release-manifest` gains
+  `workflow`, `template`, `evidence` (what the draft was cleared by: qa and verification
+  reports, commit lineage, bundle hash, per-platform evidence, package audit,
+  reproducibility) and `packages[].content_digest` / `files`. Reports the verify step writes
+  now declare `schema_version` 1.1.0; drafted manifests 1.1.0.
+
+  *Migration:* none for existing artifacts, which stay valid. A qa-report without
+  `evidence_status` (1.0.x) is refused by the release step: re-run verify.
+
 - **Assets module (`scripts/wgf_assets`, step type `assets`).** Turns a game design into an
   asset manifest and the files behind it: inspects `game_design.asset_requirements` (or
   derives a baseline), classifies each against the new `core/reference/asset-policy.yaml`,
@@ -109,6 +144,15 @@ numbering: `core/` is the contract, and schemas carry their own versions.
 
 ### Changed
 
+- **Verification no longer passes on stale or unowned evidence.** An sdk-report or
+  prototype-report naming another commit than the one under test is now a required,
+  `BLOCKED` `source.upstream-commits` check (was a non-blocking warning), and SDK checks
+  built on such an sdk-report are `BLOCKED`. Runtime facts and assertion results left by an
+  earlier run are deleted before the commands that write them, an assertion evaluator that
+  exits non-zero without a blocking breach is `FAIL`, a Playwright run that exits non-zero
+  with a green report is `FAIL`, a recorded scenario citing a screenshot that does not exist
+  is not counted, and the Playwright report, assertion results, runtime facts, recorded
+  session and screenshots are pinned by sha256 in the evidence.
 - **`sdk-report` 1.1.0**, additive: optional `sdk`, per-platform `adapter`, per-feature
   `required_by`/`hooks`/`fallback`, feature status `unsupported`, and an `integration` block
   (files, placements, game hooks, tests). Existing 1.0.0 reports still validate.

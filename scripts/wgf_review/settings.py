@@ -10,7 +10,8 @@
           verdict_from: file         # file: the reviewer writes {verdict}
                                      # stdout: it prints the JSON last; the step saves it
         checkouts: null              # default: factory.develop.checkouts, else ..
-        guarded_paths: [core/workflows, workspace/config]
+        guarded_paths: [core, scripts, bin, workspace/config]
+        fingerprint_ignored: true    # lstat everything inside pre-existing ignored entries
 
 `argv` placeholders, substituted per element: {repo} (the checkout, read-only), {verdict}
 (where to write the verdict JSON - outside the checkout), {brief} (the review brief),
@@ -20,8 +21,13 @@
 anywhere: the last JSON object on its stdout (bare, or in a ```json fence) is the verdict.
 
 `guarded_paths` are Factory paths - relative to the Factory root - that a reviewer must not
-touch either: the workflow definitions and this configuration, which decide what a review
-is worth. They are fingerprinted with the checkout.
+touch either: the Factory's code (scripts/, bin/), core/ (the workflow definitions, the
+gates and the contracts) and this configuration, which decide what a review - and every
+later check - is worth. They are fingerprinted with the checkout.
+
+`fingerprint_ignored` (default true) also lstats every file inside the checkout's
+pre-existing ignored entries (node_modules, dist), so an edit to a dependency is caught.
+Turn it off only where that walk is too slow; the review then cannot see those writes.
 """
 
 import copy
@@ -37,7 +43,8 @@ DEFAULTS = {
     "reviewer": {"kind": "none", "argv": [], "timeout_seconds": 1800,
                  "idle_timeout_seconds": 600, "verdict_from": "file"},
     "checkouts": None,
-    "guarded_paths": ["core/workflows", "workspace/config"],
+    "guarded_paths": ["core", "scripts", "bin", "workspace/config"],
+    "fingerprint_ignored": True,
 }
 
 
@@ -93,6 +100,10 @@ class Settings:
         guarded = data.get("guarded_paths") or []
         if not isinstance(guarded, list) or not all(isinstance(p, str) for p in guarded):
             raise SettingsError("factory.review.guarded_paths must be a list of paths")
+        fingerprint = data.get("fingerprint_ignored", True)
+        if not isinstance(fingerprint, bool):
+            raise SettingsError("factory.review.fingerprint_ignored must be true or false")
+        self.fingerprint_ignored = fingerprint
         self.guarded_paths = [os.path.normpath(p if os.path.isabs(p)
                                                else os.path.join(paths.ROOT, p))
                               for p in guarded]
@@ -111,4 +122,7 @@ class Settings:
         root = self.data.get("checkouts") or self._develop.get("checkouts") or ".."
         if not os.path.isabs(root):
             root = os.path.join(paths.ROOT, root)
-        return os.path.normpath(os.path.join(root, repository_name))
+        try:
+            return paths.checkout_path(root, repository_name)
+        except ValueError as exc:
+            raise SettingsError(str(exc))

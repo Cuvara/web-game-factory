@@ -12,14 +12,26 @@ fingerprints everything a reviewer could change and compares:
   * explicitly, whatever git's view: the package manifest, lockfiles, tests, CI and tool
     configuration - by path, so a reviewer that also edited .gitignore to hide them is
     still caught;
-  * .git/config and .git/hooks - a hook is code that runs on the next commit;
+  * the git metadata that changes what git or the next commit does: .git/config, hooks,
+    info/ (exclude, attributes, sparse-checkout), objects/info (alternates, grafts),
+    submodules' config, hooks and info, and in-progress operation state (MERGE_HEAD,
+    rebase-*, sequencer, ...) - a hook is code that runs on the next commit, an
+    info/exclude line hides a file from every other check;
   * the set of top-level ignored entries (a new one is a reviewer writing somewhere git
     was told to look away from);
-  * the Factory's own guarded paths: the workflow definitions and installation config.
+  * everything *inside* the ignored entries that already existed (node_modules, dist), by
+    lstat identity - inode, size, mtime and ctime. A write changes ctime, and ctime cannot
+    be set back by an unprivileged process, so a reviewer that edits a dependency in
+    node_modules and restores its mtime is still caught. Those bytes are not kept, so such
+    a change is reported and cannot be undone (the step BLOCKS). `fingerprint_ignored:
+    false` turns this off for checkouts where the walk is too slow;
+  * the Factory's own guarded paths: its code (scripts/, bin/), core/ (the workflow
+    definitions, the gates and the contracts) and the installation config.
 
-What it cannot see: changes *inside* an ignored entry that already existed (node_modules,
-dist), and anything outside the checkout and the guarded paths. docs/review-module.md
-says so.
+What it cannot see: anything outside the checkout and the guarded paths, and a process the
+reviewer left behind that writes after the second snapshot (wgflib.procs ends the
+reviewer's whole tree first; a descendant that detached itself *and* cleared its
+environment escapes that - see docs/agent-lifecycle.md). docs/review-module.md says so.
 
 Restoring is safe because the step refuses to review a dirty checkout: before the review
 the tree equals HEAD, so `reset --hard` to the recorded HEAD plus `clean -fd` (never -x)
@@ -33,7 +45,7 @@ import re
 import shutil
 import stat
 
-from wgflib import procs
+from wgflib import gitsafe, procs
 
 __all__ = ["Git", "GitError", "Snapshot", "take", "diff", "restore", "is_sensitive",
            "EXPLICIT_PATHS"]
@@ -55,8 +67,20 @@ _SENSITIVE = re.compile(
     r"|^(tests|test|e2e|\.github|\.husky)/|(^|/)__tests__/|\.(test|spec)\.[cm]?[jt]sx?$"
 )
 
-_SKIP_DIRS = {"node_modules", ".git"}
+_SKIP_DIRS = {"node_modules", ".git", "__pycache__"}
 _KEEP_BYTES = 4 * 1024 * 1024
+
+# Inside the git directory: what is fingerprinted (and kept, and written back). Objects
+# are content-addressed and adding one changes nothing; refs are compared through
+# for-each-ref; index, logs and ORIG_HEAD are rewritten by the restore itself.
+GIT_METADATA = (
+    "config", "config.worktree", "hooks", "info", "objects/info", "modules", "shallow",
+    "commondir", "MERGE_HEAD", "MERGE_MSG", "MERGE_MODE", "CHERRY_PICK_HEAD",
+    "REVERT_HEAD", "BISECT_START", "rebase-merge", "rebase-apply", "sequencer",
+)
+# Skipped while walking GIT_METADATA (a submodule's git dir under modules/ holds its own).
+_GIT_SKIP = {"objects", "logs", "refs", "index", "ORIG_HEAD", "FETCH_HEAD", "packed-refs",
+             "worktrees", "lfs"}
 
 
 def is_sensitive(path):
@@ -68,17 +92,24 @@ class GitError(RuntimeError):
 
 
 class Git:
-    """git in one checkout, through wgflib.procs like every process a step starts."""
+    """git in one checkout, through wgflib.procs like every process a step starts.
+
+    Hardened (wgflib.gitsafe): the checkout's own config cannot make these commands run
+    anything - no fsmonitor, hooks or filter drivers - and once the git directory has been
+    resolved it is pinned, with the work tree, so a reviewer that rewrites `core.worktree`
+    or replaces `.git` cannot aim the restore's `reset --hard` and `clean` elsewhere."""
 
     def __init__(self, root):
-        self.root = root
+        self.root = os.path.abspath(root)
+        self.pinned_git_dir = None
 
     def run(self, *args, check=True, raw=False):
-        env = dict(os.environ)
+        env = gitsafe.safe_env()
         env["GIT_OPTIONAL_LOCKS"] = "0"  # `status` must not rewrite the index it inspects
         env["GIT_TERMINAL_PROMPT"] = "0"
         env["LC_ALL"] = "C"
-        result = procs.run(["git", *args], cwd=self.root, env=env, timeout=120,
+        argv = gitsafe.hardened(args, self.root, self.pinned_git_dir)
+        result = procs.run(argv, cwd=self.root, env=env, timeout=120,
                            heartbeat_seconds=None, grace_seconds=1.0, poll_seconds=0.01)
         if check and not result.ok:
             raise GitError(f"git {' '.join(args)} failed: {result.tail(20)}")
@@ -98,7 +129,10 @@ class Git:
         return result.stdout.strip() if result.ok else None
 
     def git_dir(self):
-        return self.run("rev-parse", "--absolute-git-dir").strip()
+        """The absolute git directory - resolved once, then pinned for every later call."""
+        if self.pinned_git_dir is None:
+            self.pinned_git_dir = self.run("rev-parse", "--absolute-git-dir").strip()
+        return self.pinned_git_dir
 
     def status(self):
         return self.run("status", "--porcelain=v1", "-z", "--untracked-files=all",
@@ -129,13 +163,14 @@ def _digest_file(path):
                                           info.st_mode)
 
 
-def _walk(root, relative_to, keep):
-    """{relpath: digest} of every file under `root` (a file or a directory)."""
+def _walk(root, relative_to, keep, skip=_SKIP_DIRS):
+    """{relpath: digest} of every file under `root` (a file or a directory). Directories
+    and files named in `skip` are not descended into or fingerprinted below the root."""
     digests = {}
     if os.path.isdir(root) and not os.path.islink(root):
         for directory, dirs, files in os.walk(root):
-            dirs[:] = sorted(d for d in dirs if d not in _SKIP_DIRS)
-            for name in sorted(files):
+            dirs[:] = sorted(d for d in dirs if d not in skip)
+            for name in sorted(f for f in files if f not in skip):
                 path = os.path.join(directory, name)
                 rel = os.path.relpath(path, relative_to).replace(os.sep, "/")
                 digest, content = _digest_file(path)
@@ -153,6 +188,53 @@ def _walk(root, relative_to, keep):
     return digests
 
 
+def _identity(info):
+    """What changes when anything writes to, chmods, replaces or renames onto a file.
+    ctime is the part a writer cannot put back."""
+    return (f"{stat.S_IFMT(info.st_mode):o}:{stat.S_IMODE(info.st_mode):o}:{info.st_ino}:"
+            f"{info.st_size}:{info.st_mtime_ns}:{info.st_ctime_ns}")
+
+
+def _stat_walk(root, relative_to):
+    """{relpath: identity} of every non-directory under `root`, without reading any file
+    or following any symlink. Cheap enough for node_modules."""
+    found = {}
+    try:
+        info = os.lstat(root)
+    except OSError:
+        return found
+    if not stat.S_ISDIR(info.st_mode):
+        found[os.path.relpath(root, relative_to).replace(os.sep, "/")] = _identity(info)
+        return found
+    stack = [root]
+    while stack:
+        directory = stack.pop()
+        try:
+            entries = list(os.scandir(directory))
+        except OSError:
+            continue
+        for entry in entries:
+            try:
+                info = entry.stat(follow_symlinks=False)
+            except OSError:
+                continue
+            if stat.S_ISDIR(info.st_mode):
+                stack.append(entry.path)
+            else:
+                rel = os.path.relpath(entry.path, relative_to).replace(os.sep, "/")
+                found[rel] = _identity(info)
+    return found
+
+
+def _git_metadata(git_dir, keep):
+    """{path relative to the git dir: digest} of GIT_METADATA. Reads files; runs no git."""
+    digests = {}
+    for rel in GIT_METADATA:
+        digests.update(_walk(os.path.join(git_dir, *rel.split("/")), git_dir, keep,
+                             skip=_GIT_SKIP))
+    return digests
+
+
 class Snapshot:
     def __init__(self):
         self.head = None
@@ -162,17 +244,19 @@ class Snapshot:
         self.files = {}         # checkout files git sees: tracked + untracked-not-ignored
         self.explicit = {}      # EXPLICIT_PATHS, by path
         self.ignored = set()    # top-level ignored entries, collapsed
-        self.gitmeta = {}       # .git/config, .git/hooks/*
+        self.ignored_content = None  # relpath -> lstat identity inside them; None: not taken
+        self.gitmeta = {}       # GIT_METADATA, relative to the git directory
         self.factory = {}       # absolute path -> digest, for guarded Factory paths
         self.kept = {}          # ("explicit"|"gitmeta"|"factory", key) -> (bytes, mode)
         self.git_dir = None
 
     @property
     def checked_paths(self):
-        return len(set(self.files) | set(self.explicit)) + len(self.gitmeta) + len(self.factory)
+        return (len(set(self.files) | set(self.explicit)) + len(self.gitmeta)
+                + len(self.factory) + len(self.ignored_content or {}))
 
 
-def take(git, guarded_paths=()):
+def take(git, guarded_paths=(), fingerprint_ignored=True):
     snap = Snapshot()
     root = git.root
     snap.git_dir = git.git_dir()
@@ -199,10 +283,13 @@ def take(git, guarded_paths=()):
     ignored = git.run("ls-files", "-z", "--others", "--ignored", "--exclude-standard",
                       "--directory")
     snap.ignored = {p.rstrip("/") for p in ignored.split("\0") if p}
+    if fingerprint_ignored:
+        snap.ignored_content = {}
+        for entry in sorted(snap.ignored):
+            snap.ignored_content.update(_stat_walk(os.path.join(root, entry), root))
 
     keep = {}
-    for rel in ("config", "hooks"):
-        snap.gitmeta.update(_walk(os.path.join(snap.git_dir, rel), snap.git_dir, keep))
+    snap.gitmeta = _git_metadata(snap.git_dir, keep)
     snap.kept.update({("gitmeta", k): v for k, v in keep.items()})
 
     for guarded in guarded_paths:
@@ -258,6 +345,18 @@ def diff(before, after):
     for path in sorted(after.ignored - before.ignored):
         violations.append({"path": path, "change": "added", "scope": "checkout",
                            "sensitive": is_sensitive(path)})
+    for path in sorted(before.ignored - after.ignored):
+        violations.append({"path": path, "change": "deleted", "scope": "checkout",
+                           "sensitive": is_sensitive(path)})
+    if before.ignored_content is not None and after.ignored_content is not None:
+        # Inside entries that were ignored before and after; new and vanished entries are
+        # reported whole, above.
+        kept = before.ignored & after.ignored
+        inside = [change for change in _compare(before.ignored_content, after.ignored_content,
+                                                "checkout", lambda _: True)
+                  if any(change["path"] == entry or change["path"].startswith(entry + "/")
+                         for entry in kept)]
+        violations.extend(inside)
     for change in _compare(before.gitmeta, after.gitmeta, "checkout", lambda _: True):
         change["path"] = ".git/" + change["path"]
         change["change"] = "git-metadata"
@@ -300,10 +399,19 @@ def _restore_files(before, after, kind, root, kept):
 
 
 def restore(git, before, guarded_paths=()):
-    """Undo whatever the reviewer did. Returns (restored, problems)."""
+    """Undo whatever the reviewer did. Returns (restored, problems).
+
+    Git's own metadata is put back first, from memory and without running git, so that
+    nothing below runs under configuration the reviewer wrote. Content changed inside a
+    pre-existing ignored entry cannot be put back (its bytes were never kept): files added
+    there are removed, anything else is reported and the review BLOCKS."""
     problems = []
+    fingerprint_ignored = before.ignored_content is not None
     try:
-        after = take(git, guarded_paths)
+        if before.git_dir:
+            problems += _restore_files(before.gitmeta, _git_metadata(before.git_dir, {}),
+                                       "gitmeta", before.git_dir, before.kept)
+        after = take(git, guarded_paths, fingerprint_ignored)
         if after.branch != before.branch:
             if before.branch:
                 git.run("symbolic-ref", "HEAD", before.branch)
@@ -321,13 +429,16 @@ def restore(git, before, guarded_paths=()):
         git.run("clean", "-f", "-d", "-q")
         for path in sorted(after.ignored - before.ignored):
             _remove(os.path.join(git.root, path))
-        after = take(git, guarded_paths)
+        after = take(git, guarded_paths, fingerprint_ignored)
+        if fingerprint_ignored:
+            for path in sorted(set(after.ignored_content) - set(before.ignored_content)):
+                _remove(os.path.join(git.root, *path.split("/")))
         problems += _restore_files(before.explicit, after.explicit, "explicit", git.root,
                                    before.kept)
         problems += _restore_files(before.gitmeta, after.gitmeta, "gitmeta", before.git_dir,
                                    before.kept)
         problems += _restore_files(before.factory, after.factory, "factory", "/", before.kept)
-        remaining = diff(before, take(git, guarded_paths))
+        remaining = diff(before, take(git, guarded_paths, fingerprint_ignored))
         problems += [f"{v['path']}: still {v['change']} after restore" for v in remaining]
     except (GitError, OSError) as exc:
         problems.append(str(exc))

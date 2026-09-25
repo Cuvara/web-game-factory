@@ -149,6 +149,11 @@ def check_workflows(artifacts):
     return found
 
 
+# The x-wgf `producer` of an artifact a gate emits (decision-record.schema.json), rather than
+# one stage's: see check_contract_roles.
+GATE_PRODUCER = "gate"
+
+
 def load_contract_meta():
     """{artifact id: x-wgf block} for every top-level artifact schema."""
     meta = {}
@@ -167,17 +172,38 @@ def check_contract_roles(path, definition, meta=None):
       * every type a step outputs names the step's stage as its x-wgf `producer`;
       * every type a step takes as input lists the step's stage in its x-wgf `consumers`.
 
+    An artifact whose x-wgf `producer` is `gate` (GATE_PRODUCER: the decision-record) is
+    produced at whatever stage a gate sits, by the step that decides the gate. So:
+
+      * a step outputs a gate-produced type only if it names a gate (`with: gate`);
+      * a step that names a gate outputs every gate-produced type - a gate that emits no
+        decision-record is not auditable.
+
     Driven by the definition alone - no step type or id is named here. A step with no
-    inputs or outputs (a checkpoint) is checked for what it has. Untyped artifacts have no
-    x-wgf block and are left to the untyped-artifact report above. Returns the problems it
-    appended, for tests."""
+    inputs or outputs is checked for what it has. Untyped artifacts have no x-wgf block and
+    are left to the untyped-artifact report above. Returns the problems it appended, for
+    tests."""
     meta = load_contract_meta() if meta is None else meta
     found = []
+    gate_produced = sorted(aid for aid, block in meta.items()
+                           if block.get("producer") == GATE_PRODUCER)
     for step in definition.steps:
+        gate = (getattr(step, "params", None) or {}).get("gate")
+        if gate:
+            for aid in gate_produced:
+                if aid not in (step.outputs or ()):
+                    found.append(f"{path}: step '{step.id}' decides gate {gate} but does not "
+                                 f"output '{aid}' (x-wgf producer '{GATE_PRODUCER}')")
         if not step.stage:
             continue
         for aid in step.outputs or ():
             block = meta.get(aid)
+            if block is not None and block.get("producer") == GATE_PRODUCER:
+                if not gate:
+                    found.append(f"{path}: step '{step.id}' outputs '{aid}', which only a "
+                                 f"step deciding a gate produces (x-wgf producer "
+                                 f"'{GATE_PRODUCER}'), but names no gate")
+                continue
             if block is not None and block.get("producer") != step.stage:
                 found.append(f"{path}: step '{step.id}' outputs '{aid}' at stage "
                              f"'{step.stage}', but its x-wgf producer is "

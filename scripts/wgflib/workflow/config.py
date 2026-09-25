@@ -45,6 +45,11 @@ DEFAULTS = {
     # seconds) and a `wgf resume` finds it so. Both only ever apply to a reversible gate
     # gates.yaml defines; api.py refuses to start a run whose windows name any other.
     "checkpoints": {"auto_approve": [], "timeout_auto_approve": {}},
+    # The lifecycle bridge (wgflib/lifecycle_bridge.py): with `sync: true`, a gate decision
+    # of a run whose title has a cursor under `titles_directory` (default
+    # workspace/titles) is appended to the title's decisions/ and moves its cursor through
+    # wgf-state.py's own rules. Off by default; a run keeps the setting it started with.
+    "lifecycle": {"sync": False, "titles_directory": None},
 }
 
 
@@ -131,6 +136,27 @@ class FactoryConfig:
             except ConfigError as exc:
                 raise ConfigError(f"factory.checkpoints.timeout_auto_approve.{gate}: {exc}")
         return windows
+
+    @property
+    def lifecycle_sync(self):
+        """factory.lifecycle.sync: true or false (default). Fail closed: anything else raises
+        ConfigError - `"yes"` is not a way to turn on writes into workspace/."""
+        value = self.section("lifecycle").get("sync", False)
+        if value is None:
+            return False
+        if not isinstance(value, bool):
+            raise ConfigError(f"factory.lifecycle.sync is {value!r}; expected true or false")
+        return value
+
+    def lifecycle_titles_directory(self, base=None):
+        """Absolute directory of the title cursors the lifecycle bridge syncs: the setting,
+        relative to `base` (default the repository root), else workspace/titles."""
+        directory = self.section("lifecycle").get("titles_directory")
+        if not directory:
+            return paths.TITLES
+        if not isinstance(directory, str):
+            raise ConfigError("factory.lifecycle.titles_directory must be a path")
+        return os.path.abspath(os.path.join(base or paths.ROOT, directory))
 
     @property
     def max_visits(self):

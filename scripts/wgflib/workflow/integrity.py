@@ -34,6 +34,9 @@ found the file - before the engine acts on it:
     mock one, or adding G3 to `auto_approve`, by editing state.json alone is refused. The
     same holds for every other param - `on_hung` and `hung_output_seconds`, the hung-child
     watchdog a run snapshots at start, among them - and their shape is checked here too.
+    `lifecycle_sync` (factory.lifecycle.sync, snapshotted the same way) decides whether the
+    run's gate decisions are written into workspace/titles, so it can be neither turned on
+    nor off by an edit.
 
 Problems are reported as strings; the engine refuses to resume or continue a run that has
 any. Nothing here names a step type, a gate or a route.
@@ -50,7 +53,10 @@ __all__ = ["state_problems", "params_problems", "decision_on_record", "GUARDED_P
 # and an auto-approved gate was decided by nobody. A run created before the params were
 # recorded in WORKFLOW_STARTED has nothing to corroborate them with, so it is refused while
 # any of these is set (see params_problems).
-GUARDED_PARAMS = ("mock", "mock_plan", "auto_approve", "timeout_auto_approve")
+# `lifecycle_sync` is here for the other direction: it lets a run write into workspace/, so
+# it is never taken on the word of an edited state.json either.
+GUARDED_PARAMS = ("mock", "mock_plan", "auto_approve", "timeout_auto_approve",
+                  "lifecycle_sync")
 
 _COUNTERS = ("attempts", "executions", "visits", "loop_base")
 _DECISION_KEYS = ("decision", "decided_by", "decided_at", "visit", "note", "mode")
@@ -83,6 +89,10 @@ def state_problems(state, definition):
                 and all(isinstance(g, str) and _count(v) and v > 0 for g, v in windows.items())):
             problems.append("params.timeout_auto_approve is not a mapping of gate ids to "
                             "positive seconds")
+        sync = state.params.get("lifecycle_sync")
+        if sync is not None and sync is not True:
+            problems.append(f"params.lifecycle_sync {sync!r} is not true (a run that does not "
+                            f"sync records no lifecycle_sync at all)")
         on_hung = state.params.get("on_hung")
         if on_hung is not None and on_hung not in ON_HUNG:
             problems.append(f"params.on_hung {on_hung!r} is not one of {', '.join(ON_HUNG)}")

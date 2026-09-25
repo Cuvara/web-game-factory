@@ -93,9 +93,11 @@ class FactoryConfig:
         return bool(self.section("storage").get("fsync", True))
 
     def storage_directory(self, base=None):
-        """Absolute storage directory. Relative settings resolve against `base` (cwd)."""
+        """Absolute storage directory. A relative setting resolves against `base`, by default
+        the repository root - like every other path the config names - so `wgf` run from a
+        subdirectory finds the same store instead of starting a second one."""
         directory = self.section("storage").get("directory")
-        return os.path.abspath(os.path.join(base or os.getcwd(), directory))
+        return os.path.abspath(os.path.join(base or paths.ROOT, directory))
 
 
 def load_config(path=None):

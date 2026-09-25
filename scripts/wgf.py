@@ -6,28 +6,39 @@ Every command that does work is a slice of one workflow definition, executed by 
     wgf new-game [--mock]                the whole workflow
     wgf research | plan | init | assets | develop | sdk | verify | release [--mock]
                                          one step, or a group of steps (`plan`)
-    wgf <cmd> --resume <run-id>          continue a run from where it stopped
-    wgf <cmd> --resume <run-id> --decision approve
+    wgf resume <run-id> [--from STEP]    continue a run from where it stopped
+    wgf resume <run-id> --decision CHOICE [--note TEXT]
+    wgf decide <run-id> CHOICE [--note TEXT]
                                          answer a run waiting at a human checkpoint
+    wgf <cmd> --resume <run-id> [...]    the same as `wgf resume`, whatever <cmd> is
     wgf <cmd> --run <run-id>             run that slice inside an existing run, reusing its
                                          artifacts; steps it already completed are skipped
     wgf new-game --from develop          start a run at a later step
 
     wgf status [run-id]                  where a run stands (default: the latest run)
     wgf logs [run-id] [--json]           its events, which are also its structured log
-    wgf runs                             every run in the store
-    wgf pause <run-id> | cancel <run-id>
+    wgf runs [--waiting] [--json]        every run in the store; or only those waiting for
+                                         a decision, with the step, gate and choices
+    wgf pause <run-id> | cancel <run-id> neither imports a step module
     wgf test-core [--only CATEGORY] [--json]
                                          the Core Acceptance Suite, by category
 
 The run commands are generated from the default workflow's step ids and group names, so a
 step added to core/workflows/new-game.workflow.yaml is a command without touching this file.
 
-Exit status: 0 completed, 1 failed/blocked/cancelled or left its scope on a failure,
-2 usage, 3 waiting for a decision or input (or paused).
+A fresh single-step command (`wgf develop`) still creates a run of its own; when that run
+stops for inputs it does not hold, wgf names the latest run that holds them
+(`hint: wgf develop --run <run-id>`).
 
-Run from the web-game-factory repository root, as `python scripts/wgf.py ...` or via the
-`bin/wgf` shim.
+Exit status: 0 completed, 1 failed/blocked/cancelled or left its scope on a failure (or an
+OS error, such as a full disk), 2 usage - including a flag the command would otherwise
+ignore: --mock, --mock-plan, --hold-gates or --project with --resume or --run, --from with
+--run, --note without --decision - 3 waiting for a decision or input (or paused).
+`wgf status` exits with the same code for the run it shows, and 0 for one still RUNNING.
+
+Run as `python scripts/wgf.py ...` or via the `bin/wgf` shim. A relative
+factory.storage.directory resolves against the repository root, so every working directory
+finds the same store; `--store` resolves against the working directory, as typed.
 """
 
 import argparse
@@ -40,7 +51,8 @@ import unittest
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from wgflib.workflow.api import RunRequest, WorkflowAPI  # noqa: E402
+from wgflib.workflow.api import (  # noqa: E402
+    RunRequest, WorkflowAPI, missing_inputs, pending_decision)
 from wgflib.workflow.config import load_config  # noqa: E402
 from wgflib.workflow.definition import DefinitionError  # noqa: E402
 from wgflib.workflow.engine import EngineError  # noqa: E402
@@ -50,6 +62,10 @@ from wgflib.workflow.store import RunLocked, StoreError  # noqa: E402
 from wgflib.yamllite import YamlError, load as load_yaml  # noqa: E402
 
 EXIT_OK, EXIT_FAILED, EXIT_USAGE, EXIT_WAITING = 0, 1, 2, 3
+
+
+class UsageError(Exception):
+    """A command line wgf would not carry out as written: exit 2, nothing touched."""
 
 _UNICODE = {
     StepStatus.SUCCESS: "✓", StepStatus.FAILED: "✗", StepStatus.RUNNING: "▶",
@@ -156,20 +172,23 @@ def render_status(state, definition, live=None):
     if live is not None:
         lines.append("")
         lines.extend(render_liveness(live))
-    hint = _resume_hint(state, live)
+    hint = _resume_hint(state, live, definition)
     if hint:
         lines.append(hint)
     return "\n".join(lines)
 
 
-def _resume_hint(state, live=None):
-    command = f"wgf {state.workflow_id} --resume {state.run_id}"
+def _resume_hint(state, live=None, definition=None):
+    command = f"wgf resume {state.run_id}"
     if live is not None and live.get("liveness") == "stale":
-        return f"Resume: {command}   (its driver died)"
+        return (f"Resume: {command}   (its driver died; the same as "
+                f"wgf {state.workflow_id} --resume {state.run_id})")
     if state.status == RunStatus.WAITING:
-        step = state.steps.get(state.cursor)
-        if step and step.status == StepStatus.WAITING:
-            return f"Decide: {command} --decision approve|reject [--note TEXT]"
+        pending = pending_decision(state, definition)
+        if pending is not None:
+            choices = "|".join(pending["choices"] or ["CHOICE"])
+            gate = f"   (gate {pending['gate']})" if pending.get("gate") else ""
+            return f"Decide: wgf decide {state.run_id} {choices} [--note TEXT]{gate}"
         return f"Resume: {command}"
     if state.status in (RunStatus.FAILED, RunStatus.BLOCKED, RunStatus.PAUSED):
         return f"Resume: {command}   (after fixing the cause)"
@@ -248,6 +267,13 @@ def exit_code(state):
     return EXIT_FAILED
 
 
+def status_exit_code(state):
+    """`wgf status` mirrors the run it shows; a run still being driven has not failed."""
+    if state.status in (RunStatus.RUNNING, RunStatus.PENDING):
+        return EXIT_OK
+    return exit_code(state)
+
+
 # -- arguments ------------------------------------------------------------------------------
 
 
@@ -304,6 +330,26 @@ def build_parser(commands):
         run.add_argument("--quiet", action="store_true", help="print only the final status")
         run.set_defaults(handler=cmd_run, scope=name)
 
+    resume = sub.add_parser("resume", help="continue a stopped run")
+    _common(resume)
+    resume.add_argument("run", metavar="RUN_ID")
+    resume.add_argument("--from", metavar="STEP", dest="from_step",
+                        help="restart at this step")
+    resume.add_argument("--decision", metavar="CHOICE", help="answer a waiting checkpoint")
+    resume.add_argument("--note", metavar="TEXT", help="rationale recorded with --decision")
+    resume.add_argument("--json", action="store_true", help="print events as JSON lines")
+    resume.add_argument("--quiet", action="store_true", help="print only the final status")
+    resume.set_defaults(handler=cmd_resume)
+
+    decide = sub.add_parser("decide", help="answer a run waiting for a decision")
+    _common(decide)
+    decide.add_argument("run", metavar="RUN_ID")
+    decide.add_argument("choice", metavar="CHOICE", help="e.g. approve or reject")
+    decide.add_argument("--note", metavar="TEXT", help="rationale recorded with the decision")
+    decide.add_argument("--json", action="store_true", help="print events as JSON lines")
+    decide.add_argument("--quiet", action="store_true", help="print only the final status")
+    decide.set_defaults(handler=cmd_decide)
+
     status = sub.add_parser("status", help="show a run (default: latest)")
     _common(status)
     status.add_argument("run", nargs="?")
@@ -319,6 +365,9 @@ def build_parser(commands):
 
     runs = sub.add_parser("runs", help="list runs")
     _common(runs)
+    runs.add_argument("--waiting", action="store_true",
+                      help="only runs waiting for a decision, with the step, gate and choices")
+    runs.add_argument("--json", action="store_true")
     runs.set_defaults(handler=cmd_runs)
 
     core = sub.add_parser("test-core", help="run the Core Acceptance Suite")
@@ -343,14 +392,77 @@ def _api(args, subscribers=()):
 # -- commands -------------------------------------------------------------------------------
 
 
-def cmd_run(args):
-    if args.decision and not args.resume:
-        raise SystemExit("--decision needs --resume <run-id>")
-    if args.resume and args.run_id:
-        raise SystemExit("--resume and --run are exclusive")
-    if args.force and not args.run_id:
-        raise SystemExit("--force only applies with --run")
+# What only a new run takes. An existing run keeps the mocks, mock plan, gate policy and
+# project it was started with; given with --resume or --run, these would be ignored.
+_NEW_RUN_ONLY = (("mock", "--mock"), ("mock_plan", "--mock-plan"),
+                 ("hold_gates", "--hold-gates"), ("project", "--project"))
 
+_NOTE_NEEDS_DECISION = "--note is recorded with a decision; it needs --decision CHOICE"
+
+
+def _refuse_ignored_flags(args):
+    """Refuse a flag the command would otherwise silently ignore."""
+    if args.decision and not args.resume:
+        raise UsageError("--decision needs --resume <run-id> (or: wgf decide <run-id> CHOICE)")
+    if args.note is not None and not args.decision:
+        raise UsageError(_NOTE_NEEDS_DECISION)
+    if args.resume and args.run_id:
+        raise UsageError("--resume and --run are exclusive")
+    if args.force and not args.run_id:
+        raise UsageError("--force only applies with --run")
+    if args.run_id and args.from_step:
+        raise UsageError(f"--from does not apply with --run, which runs this command's own "
+                         f"steps; to restart at a step: wgf resume {args.run_id} --from STEP")
+    existing = args.resume or args.run_id
+    given = [flag for attr, flag in _NEW_RUN_ONLY if getattr(args, attr)]
+    if existing and given:
+        raise UsageError(
+            f"{', '.join(given)} only {'applies' if len(given) == 1 else 'apply'} to a new "
+            f"run; {'--resume' if args.resume else '--run'} continues {existing} with the "
+            f"settings it was started with")
+
+
+def _drive(api, args, request):
+    """Run `request` and print where the run ended. Returns the RunState."""
+    state = api.run(request)
+    if not args.json:
+        definition = api.definition_for(state)
+        print()
+        print(render_status(state, definition))
+        if state.status == RunStatus.COMPLETED and exit_code(state) == EXIT_OK:
+            print("\nWorkflow completed successfully.")
+    return state
+
+
+def _missing_input_hint(api, args, state):
+    """For a fresh slice that stopped because the run it created holds none of its inputs.
+
+    Running a step on its own is legitimate - `wgf verify` against nothing upstream - so the
+    run stands; but the person most likely meant it to run inside the run holding them.
+    """
+    if state.status not in (RunStatus.WAITING, RunStatus.BLOCKED):
+        return None
+    definition = api.definition_for(state)
+    if args.scope == definition.id or pending_decision(state, definition) is not None:
+        return None
+    last = next((entry.get("outcome") for entry in reversed(state.trail)
+                 if entry.get("step") == state.cursor), None)
+    if last not in (StepOutcome.WAITING_FOR_INPUT, StepOutcome.BLOCKED):
+        return None
+    missing = missing_inputs(state, definition)
+    if not missing:
+        return None
+    holder = api.latest_run_holding(missing, state.workflow_id, exclude=state.run_id)
+    needs = f"{state.cursor} needs {', '.join(missing)}, which this new run does not hold"
+    if holder is None:
+        return (f"hint: {needs}, and no other run does either; produce them first, or run "
+                f"it inside the run that will: wgf {args.scope} --run <run-id>")
+    return (f"hint: {needs}; the latest run holding them is {holder.run_id}: "
+            f"wgf {args.scope} --run {holder.run_id}")
+
+
+def cmd_run(args):
+    _refuse_ignored_flags(args)
     progress = Progress(sys.stdout, as_json=args.json)
     api = _api(args, subscribers=() if args.quiet else (progress,))
     request = RunRequest(
@@ -359,14 +471,48 @@ def cmd_run(args):
         decision=args.decision, note=args.note, project_id=args.project,
         hold_gates=args.hold_gates,
     )
-    state = api.run(request)
-    if not args.json:
-        definition = api.definition_for(state)
-        print()
-        print(render_status(state, definition))
-        if state.status == RunStatus.COMPLETED and exit_code(state) == EXIT_OK:
-            print("\nWorkflow completed successfully.")
+    state = _drive(api, args, request)
+    if not (args.resume or args.run_id):
+        hint = _missing_input_hint(api, args, state)
+        if hint:
+            print(hint, file=sys.stderr)
     return exit_code(state)
+
+
+def cmd_resume(args):
+    if args.note is not None and not args.decision:
+        raise UsageError(_NOTE_NEEDS_DECISION)
+    progress = Progress(sys.stdout, as_json=args.json)
+    api = _api(args, subscribers=() if args.quiet else (progress,))
+    request = RunRequest(resume=args.run, from_step=args.from_step,
+                         decision=args.decision, note=args.note)
+    return exit_code(_drive(api, args, request))
+
+
+def cmd_decide(args):
+    """`wgf resume RUN --decision CHOICE`, for a run that is waiting for one.
+
+    The decision goes through the engine's resume like any other: the visit it answers, its
+    DECISION_RECORDED event and the rule that only a person decides G4/G6/G7 are the
+    engine's and the checkpoint's, not this command's. `decided_by` is default_decider()'s.
+    """
+    progress = Progress(sys.stdout, as_json=args.json)
+    api = _api(args, subscribers=() if args.quiet else (progress,))
+    state = api.store.load(args.run)
+    step = state.steps.get(state.cursor) if state.cursor else None
+    if state.status != RunStatus.WAITING or step is None or step.status != StepStatus.WAITING:
+        where = f" at {state.cursor} ({step.status})" if step is not None else ""
+        raise UsageError(f"run {args.run} is {state.status}{where}, not waiting for a "
+                         f"decision; see wgf status {args.run}")
+    pending = api.pending(state)
+    if pending is None:
+        raise UsageError(f"run {args.run} is waiting at {state.cursor} for input, not for a "
+                         f"decision; provide it, then wgf resume {args.run}")
+    if pending["choices"] and args.choice not in pending["choices"]:
+        raise UsageError(f"{args.choice!r} is not a choice at {state.cursor}: "
+                         f"{', '.join(pending['choices'])}")
+    request = RunRequest(resume=args.run, decision=args.choice, note=args.note)
+    return exit_code(_drive(api, args, request))
 
 
 def cmd_status(args):
@@ -381,7 +527,7 @@ def cmd_status(args):
         print(json.dumps(dict(state.to_dict(), liveness=live), indent=2, ensure_ascii=False))
     else:
         print(render_status(state, definition, live))
-    return EXIT_OK
+    return status_exit_code(state)
 
 
 def _warn(problems):
@@ -404,16 +550,43 @@ def cmd_logs(args):
     return EXIT_OK
 
 
+def _run_row(state, pending=None):
+    return {"run_id": state.run_id, "status": state.status, "workflow_id": state.workflow_id,
+            "project_id": state.project_id, "created_at": state.created_at,
+            "updated_at": state.updated_at, "cursor": state.cursor, "waiting": pending}
+
+
 def cmd_runs(args):
     problems = []
-    runs = _api(args).runs(problems)
-    for state in runs:
-        print(f"{state.run_id:<40} {state.status:<10} {state.workflow_id:<12} "
-              f"{state.created_at}  {state.cursor or ''}")
-    for run_id, _message in problems:
-        print(f"{run_id:<40} {'UNREADABLE':<10}")
-    if not runs and not problems:
-        print("no runs")
+    api = _api(args)
+    if args.waiting:
+        found = api.waiting(problems)
+        rows = [_run_row(state, pending) for state, pending in found]
+    else:
+        found = api.runs(problems)
+        rows = [_run_row(state) for state in found]
+    if args.json:
+        print(json.dumps({"runs": rows, "unreadable": [
+            {"run_id": run_id, "message": message} for run_id, message in problems]},
+            indent=2, ensure_ascii=False))
+    elif args.waiting:
+        for row in rows:
+            pending = row["waiting"]
+            print(f"{row['run_id']:<40} {pending['step']:<18} {pending['gate'] or '-':<5} "
+                  f"{'|'.join(pending['choices'] or []) or '-'}")
+        if rows:
+            print("\nDecide: wgf decide <run-id> <choice> [--note TEXT]")
+        elif not problems:
+            print("no runs waiting for a decision")
+    else:
+        for row in rows:
+            print(f"{row['run_id']:<40} {row['status']:<10} {row['workflow_id']:<12} "
+                  f"{row['created_at']}  {row['cursor'] or ''}")
+        if not rows and not problems:
+            print("no runs")
+    if not args.json:
+        for run_id, _message in problems:
+            print(f"{run_id:<40} {'UNREADABLE':<10}")
     _warn(problems)
     return EXIT_OK
 
@@ -562,17 +735,22 @@ def main(argv=None, cli=False):
         return EXIT_USAGE
     try:
         return args.handler(args)
-    except (EngineError, RegistryError, StoreError, RunLocked, KeyError, ValueError,
-            DefinitionError) as exc:
+    except (UsageError, EngineError, RegistryError, StoreError, RunLocked, KeyError,
+            ValueError, DefinitionError) as exc:
         message = exc.args[0] if isinstance(exc, KeyError) and exc.args else exc
         print(f"wgf: {message}", file=sys.stderr)
         return EXIT_USAGE
+    except OSError as exc:
+        # A full disk, a read-only store, a permission: the environment, not the command
+        # line. One line, no traceback; the run is left as its last save recorded it.
+        print(f"wgf: {exc}", file=sys.stderr)
+        return EXIT_FAILED
 
 
 if __name__ == "__main__":
     # SIGTERM/SIGHUP unwind through SystemExit, so every child tree a step owns is
     # terminated instead of being orphaned (wgflib/procs.py). The run itself is left
-    # resumable: `wgf status` reports it stale and `wgf resume` continues it.
+    # resumable: `wgf status` reports it stale and `wgf resume <run-id>` continues it.
     from wgflib import procs as _procs
     _procs.install_signal_cleanup()
     sys.exit(main(cli=True))

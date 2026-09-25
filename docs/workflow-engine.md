@@ -204,7 +204,7 @@ lock_owner, now, hung_after_seconds)` and never stored:
 |---|---|---|
 | `running` | `RUNNING`, a live process holds the lock, activity within the threshold | wait |
 | `hung` | `RUNNING`, lock held, no sign of life for longer than `factory.execution.hung_after_seconds` (default 300) | inspect the child `pid`; `wgf cancel` terminates its tree |
-| `stale` | `RUNNING` on disk but no live process holds the lock: the driver crashed | `wgf <cmd> --resume <run>` |
+| `stale` | `RUNNING` on disk but no live process holds the lock: the driver crashed | `wgf resume <run>` |
 | `pending` `waiting` `paused` `blocked` `failed` `completed` `cancelled` | the run status itself | as the status says |
 
 "Activity" is the newest of the step's `last_activity_at`, its `started_at` and the run's
@@ -299,10 +299,20 @@ skip the waiting: a placeholder that fails instantly teaches nothing by sleeping
 ## 7. Resume
 
 ```bash
-wgf new-game --resume <run-id>                       # continue from the stopped step
-wgf new-game --resume <run-id> --from develop        # rerun from a given step
-wgf new-game --resume <run-id> --decision approve    # answer a waiting checkpoint
+wgf resume <run-id>                                  # continue from the stopped step
+wgf resume <run-id> --from develop                   # rerun from a given step
+wgf decide <run-id> approve [--note TEXT]            # answer a waiting checkpoint
+wgf resume <run-id> --decision approve               # the same, spelled as a resume
+wgf runs --waiting                                   # every run waiting for a decision
 ```
+
+`wgf <cmd> --resume <run-id>` still works and is the same as `wgf resume <run-id>`: which
+`<cmd>` is typed makes no difference to a resume. `wgf decide` refuses, with exit 2 and
+nothing touched, a run whose cursor step is not `WAITING`, one waiting for input rather than
+a decision, and a choice the checkpoint does not offer. Otherwise it is exactly
+`resume --decision`: the decision goes through the engine's resume, so it answers only the
+current visit, is recorded with its `DECISION_RECORDED` event, and `decided_by` is derived
+(see §9) - there is no flag to set it.
 
 Resume continues from the cursor. Steps that succeeded are not executed again; the stopped
 step gets a fresh attempt budget and every step a fresh loop budget. A run started with
@@ -319,6 +329,16 @@ cancel is still honoured.
 run, reusing its artifacts, and skips any step in that slice that already succeeded (`--force`
 to redo). `wgf init --run <id>` twice executes `init` once. It refuses a `RUNNING` run (resume
 it) and a cancelled one, and like resume it grants every step a fresh loop budget.
+
+A run keeps the settings it was started with. So `--mock`, `--mock-plan`, `--hold-gates` and
+`--project` with `--resume` or `--run`, `--from` with `--run` (it runs the command's own
+steps; `wgf resume <id> --from STEP` restarts at one), and `--note` without `--decision` are
+refused with exit 2 instead of being silently ignored.
+
+A single-step command without `--run` (`wgf develop`) still starts a run of its own - a step
+run on its own is legitimate (§3). When that run stops `WAITING` for input or `BLOCKED`, and
+it lacks inputs the step declares, `wgf` prints on stderr the latest run of the same workflow
+holding the most of them: `hint: ... wgf develop --run <run-id>`.
 
 `--decision` must be a plain label (letters, digits, `- _ . :`, at most 64 characters) and a
 note must contain no NUL; anything else is refused before the run is touched.
@@ -375,8 +395,9 @@ is a workflow property rather than a business one.
   on: {}                 # e.g. rework: strategy
 ```
 
-With no decision recorded it returns `WAITING_FOR_HUMAN`; the run parks as `WAITING` and
-`wgf status` prints the command to answer it. `approve` (or any other choice) continues with
+With no decision recorded it returns `WAITING_FOR_HUMAN`; the run parks as `WAITING`,
+`wgf status` prints the command to answer it (`wgf decide <run-id> approve|reject`), and
+`wgf runs --waiting` lists it with its step, gate and choices. `approve` (or any other choice) continues with
 that choice as the route; `reject` is `BLOCKED` unless routed. A decision answers one visit,
 so a loop back through the checkpoint waits again.
 
@@ -392,8 +413,9 @@ decision here**, whatever config says; the list is read from `irreversible: true
 `wgf-state.py` already enforce. The comparison ignores case and surrounding space (`g4` is
 G4), and a gate `gates.yaml` does not define is never auto-approved either.
 
-Who decided is recorded as `decided_by`. A `--decision` given to the CLI is `human`, unless
-the command runs inside a process tree a step started (it, or one of its ancestors, carries
+Who decided is recorded as `decided_by`. A decision given to the CLI (`wgf decide`, or
+`--decision`) is `human`, unless the command runs inside a process tree a step started
+(it, or one of its ancestors, carries
 `WGF_PROC_TAG`): a developer or reviewer agent answering its own run is `automation`, and
 G4/G6/G7 refuse it. And a decision is only *used* when `events.jsonl` holds the
 `DECISION_RECORDED` event the engine emitted with it — one written into `state.json` alone
@@ -451,15 +473,36 @@ records the artifact is saved, so the log never names an artifact state does not
 ```
 wgf new-game [--mock] [--from STEP] [--project ID]    the whole workflow
 wgf research | plan | init | assets | develop | sdk | verify | release [--mock]
-wgf <cmd> --resume RUN [--from STEP] [--decision CHOICE --note TEXT]
+wgf resume RUN [--from STEP] [--decision CHOICE [--note TEXT]]
+wgf decide RUN CHOICE [--note TEXT]                    answer a waiting checkpoint
+wgf <cmd> --resume RUN [...]                           the same as `wgf resume RUN [...]`
 wgf <cmd> --run RUN [--force]                          a slice inside an existing run
 wgf <cmd> --mock --mock-plan '{"verify": ["fail"]}'   script placeholder outcomes
 wgf <cmd> --mock --hold-gates                          stop at checkpoints
-wgf status [RUN] [--json]    wgf logs [RUN] [--json] [--step S]    wgf runs
-wgf pause RUN                wgf cancel RUN
+wgf status [RUN] [--json]    wgf logs [RUN] [--json] [--step S]
+wgf runs [--waiting] [--json]                          --waiting: runs waiting for a decision
+wgf pause RUN                wgf cancel RUN            neither imports a step module
 wgf test-core [--only CATEGORY]... [--json]            the Core Acceptance Suite
 common: --store DIR  --config PATH  --workflow ID|PATH  --json  --quiet
 ```
+
+Exit status: `0` completed, `1` failed, blocked or cancelled (or an OS error such as a full
+disk or an unwritable store, reported on one line), `2` usage - including a flag that would
+be ignored (§7) - and `3` waiting for a decision or input, or paused. **`wgf status` exits
+with the code of the run it shows** (a `RUNNING` run is `0`), so a script can test a run
+without parsing it; it used to exit `0` for every run it could find. With no run to show it
+exits `2`.
+
+`wgf runs --waiting` lists the runs `WAITING` at a step that asked for a person (a human
+checkpoint, or a step returning `WAITING_FOR_HUMAN`), one per line: run, step, gate,
+choices. A run waiting for input is not listed. `--json` prints
+`{"runs": [{run_id, status, workflow_id, project_id, created_at, updated_at, cursor,
+waiting}], "unreadable": [...]}`, where `waiting` is `{step, gate, choices, prompt}` or
+`null`.
+
+`wgf pause` and `wgf cancel` build an engine from the store and the definition only: no step
+module in `factory.steps.modules` is imported, so one that fails to import cannot take away
+the way to stop a run.
 
 `wgf status` ends with the current step — the cursor, or the last step executed once the
 run has finished:
@@ -538,7 +581,7 @@ reproducible from the command line:
 
 ```bash
 wgf new-game --mock --mock-plan '{"develop": ["failed","failed","failed"]}'  # FAILED at develop
-wgf new-game --resume <run-id>                                              # completes; research..assets not rerun
+wgf resume <run-id>                                                         # completes; research..assets not rerun
 wgf new-game --mock --mock-plan '{"verify": ["fail"]}'                      # develop→sdk→verify loops once
 wgf new-game --mock --hold-gates                                            # WAITING at strategy-review
 ```
@@ -561,8 +604,11 @@ factory:
   checkpoints: {auto_approve: []}
 ```
 
-`storage.directory` resolves against the directory `wgf` is run from; `--store` overrides
-it. A module may read its own section from the same file — `factory.init` and
+A relative `storage.directory` resolves against the repository root, like every other path
+here, so `wgf` run from `scripts/` or anywhere else finds the same store (it used to resolve
+against the working directory, and running from a subdirectory started a second store). An
+absolute one is used as is. `--store` overrides it and, as typed on the command line,
+resolves against the working directory. A module may read its own section from the same file — `factory.init` and
 `factory.verification` configure those modules; the engine ignores keys it does not know.
 `.factory/` is git-ignored — run state is instance data.
 

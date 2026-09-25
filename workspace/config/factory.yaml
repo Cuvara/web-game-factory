@@ -233,10 +233,39 @@ factory:
   # The platform integration module (scripts/wgf_sdk, the `sdk` step). Every key is optional
   # and may be overridden per workflow step under `with:`.
   # The design module's author: who writes the creative draft before the module checks it.
-  # `archetype` is built in (offline, deterministic); an agent-host author registers its own
-  # name from its module. See scripts/wgf_design/authors.py.
+  # `archetype` is built in (offline, deterministic). `agent` (scripts/wgf_design/agent.py) runs
+  # an agent host that improves the archetype's draft; the module then applies exactly the
+  # same buildability and consistency checks to it. {request} {draft} {prompt} are
+  # substituted. Opt-in; uncomment and set `author: agent` to use it.
   design:
     author: archetype
+    # agent:
+    #   draft_from: stdout
+    #   argv:
+    #     - claude
+    #     - -p
+    #     - "{prompt}"
+    #     - --model
+    #     - sonnet
+    #     - --safe-mode
+    #     - --strict-mcp-config
+    #     - --tools
+    #     - "Read"
+    #     - --allowedTools
+    #     - "Read"
+    #     - --disallowedTools
+    #     - "Edit,Write,NotebookEdit,Bash,WebFetch,WebSearch"
+    #     - --permission-mode
+    #     - dontAsk
+    #     - --no-session-persistence
+    #     - --output-format
+    #     - text
+    #     - --max-turns
+    #     - "30"
+    #     - --max-budget-usd
+    #     - "5"
+    #   timeout_seconds: 1800
+    #   idle_timeout_seconds: null
 
   # The SDK module (scripts/wgf_sdk, the `sdk` step): integrates the template's platform SDK
   # into the game, then verifies it with the game repository's conformance suite. It runs

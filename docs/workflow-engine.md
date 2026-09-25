@@ -469,7 +469,7 @@ the run has passed and no later upstream work has superseded.
 - id: prototype-review
   type: human-checkpoint
   stage: title:prototype-review
-  inputs: [qa-report, verification-report, prototype-report]
+  inputs: [qa-report, verification-report, prototype-report, title-strategy, game-design]
   with: {gate: G4, choices: [pass, iterate, kill]}
   on: {iterate: develop, kill: $end}
 ```

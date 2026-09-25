@@ -67,7 +67,8 @@ class ParsesValidDefinitions(unittest.TestCase):
         self.assertEqual((g4.type, g4.params["gate"], g4.params["choices"]),
                          ("human-checkpoint", "G4", ["pass", "iterate", "kill"]))
         self.assertEqual(g4.on, {"iterate": "develop", "kill": "$end"})
-        self.assertEqual(g4.inputs, ["qa-report", "verification-report", "prototype-report"])
+        self.assertEqual(g4.inputs, ["qa-report", "verification-report", "prototype-report",
+                                     "title-strategy", "game-design"])
         self.assertEqual(definition.step("design").on, {"descope": "$fail"})
         self.assertEqual(definition.resolve_scope("plan"),
                          ["strategy", "strategy-review", "design", "tech-plan",

@@ -109,10 +109,11 @@ gates:
     irreversible: true
     irreversible_because: The abandon outcome kills the title.
     auto_approve_after: null
-    # The verified prototype: what the verify step produced for the build under review. A
-    # workflow's G4 checkpoint comes after verification passes, and a verification that
-    # runs again after a pass supersedes it.
-    required_artifacts: [qa-report, verification-report, prototype-report]
+    # The verified prototype - what the verify step produced for the build under review -
+    # judged against the terms of the bet: the kill criteria in title-strategy and the
+    # design they measure. A workflow's G4 checkpoint comes after verification passes, and
+    # a verification that runs again after a pass supersedes it.
+    required_artifacts: [qa-report, verification-report, prototype-report, title-strategy, game-design]
     required_predicates:
       - playable_build
     # The workflow checkpoint's choices are pass, iterate and kill; kill is `abandon`.

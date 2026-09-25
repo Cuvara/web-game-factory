@@ -11,7 +11,7 @@
     "version": "1.0.0",
     "template": "templates/tech-plan.md",
     "producer": "title:tech-plan",
-    "consumers": ["title:scaffolding", "title:prototype", "title:production", "release:qa", "release:draft"],
+    "consumers": ["title:tech-plan", "title:scaffolding", "title:prototype", "title:production", "release:qa", "release:draft"],
     "repo_path": "workspace/titles/<title-id>/tech-plan.json",
     "run_path": "<storage>/workflows/<run-id>/artifacts/tech-plan/v<n>.json",
     "rendered_to": "<game-repo>/docs/tech-plan.md",

@@ -194,3 +194,39 @@ class PlatformCheckTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class RequiredForGatesTest(unittest.TestCase):
+    """x-wgf.required_for_gates must equal what gates.yaml requires: gates.yaml is what a
+    checkpoint checks, and a schema that claims otherwise misleads every reader of it."""
+
+    def setUp(self):
+        self.base = tempfile.mkdtemp(prefix="wgf-integrity-gates-")
+        self.addCleanup(shutil.rmtree, self.base, ignore_errors=True)
+        write(os.path.join(self.base, "core", "lifecycle", "gates.yaml"),
+              "gates:\n  G1:\n    required_artifacts: [alpha]\n"
+              "  G2:\n    required_artifacts: [alpha, beta]\n")
+        self.cwd = os.getcwd()
+        os.chdir(self.base)
+        self.addCleanup(os.chdir, self.cwd)
+        self.module = load_check_integrity()
+        self.module.ERRORS.clear()
+
+    def schema(self, artifact_id, gates):
+        write(os.path.join(self.base, "core", "artifacts", f"{artifact_id}.schema.json"),
+              '{"x-wgf": {"id": "%s", "required_for_gates": %s}}'
+              % (artifact_id, str(list(gates)).replace("'", '"')))
+
+    def test_agreeing_copies_pass(self):
+        self.schema("alpha", ["G1", "G2"])
+        self.schema("beta", ["G2"])
+        self.module.check_required_for_gates()
+        self.assertEqual(self.module.ERRORS, [])
+
+    def test_a_stale_or_missing_gate_is_an_error(self):
+        self.schema("alpha", ["G1"])            # G2 requires it too
+        self.schema("beta", ["G2", "G3"])       # G3 does not require it
+        self.module.check_required_for_gates()
+        self.assertEqual(len(self.module.ERRORS), 2)
+        self.assertTrue(any("alpha" in e and "G2" in e for e in self.module.ERRORS))
+        self.assertTrue(any("beta" in e and "G3" in e for e in self.module.ERRORS))

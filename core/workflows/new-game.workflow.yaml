@@ -160,7 +160,8 @@ workflow:
         fail: develop
 
     # G4, the kill gate: a person judges the verified prototype - the qa-report,
-    # verification-report and prototype-report verify just produced - and nothing else
+    # verification-report and prototype-report verify just produced - against the terms of
+    # the bet (the kill criteria in title-strategy, the game-design they measure); nothing else
     # answers it (it is irreversible; automation's answer is refused). `pass` continues to
     # release. `iterate` sends the work back to develop: a success routed backwards, so the
     # run's lineage stands and the loop ends here again, at a new visit that needs a new
@@ -170,7 +171,7 @@ workflow:
     - id: prototype-review
       type: human-checkpoint
       stage: title:prototype-review
-      inputs: [qa-report, verification-report, prototype-report]
+      inputs: [qa-report, verification-report, prototype-report, title-strategy, game-design]
       with:
         gate: G4
         prompt: Judge the verified prototype against the kill criteria set at strategy - pass to release, iterate to develop again, or kill the title?

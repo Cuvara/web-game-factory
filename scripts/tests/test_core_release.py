@@ -41,6 +41,7 @@ from wgf_release.package import file_sha256  # noqa: E402
 from wgf_release.step import bundle_digest  # noqa: E402
 from wgflib import paths, provenance  # noqa: E402
 from wgflib.workflow import ArtifactOutput, StepOutcome, StepResult, WorkflowStep  # noqa: E402
+from wgflib.workflow import mock  # noqa: E402
 from wgflib.workflow.api import RunRequest, WorkflowAPI  # noqa: E402
 from wgflib.workflow.config import FactoryConfig  # noqa: E402
 from wgflib.workflow.model import RunStatus  # noqa: E402
@@ -310,7 +311,8 @@ class ContinueIn(ReleaseCase):
     G4 = ("    - id: prototype-review\n"
           "      type: human-checkpoint\n"
           "      stage: title:prototype-review\n"
-          "      inputs: [qa-report, verification-report, prototype-report]\n"
+          "      inputs: [qa-report, verification-report, prototype-report, title-strategy,"
+          " game-design]\n"
           "      with: {gate: G4, choices: [pass, iterate, kill]}\n"
           "      on: {iterate: verify, kill: $end}\n")
 
@@ -332,7 +334,13 @@ class ContinueIn(ReleaseCase):
                 return StepResult.success(outputs)
 
         module = type(sys)("wgf_release_continue_fakes")
-        module.register = lambda registry: registry.register(Verify.type, Verify)
+        def register(registry):
+            registry.register(Verify.type, Verify)
+            # G4 is also decided on the terms of the bet (gates.yaml): a mock plan step puts
+            # a title-strategy and a game-design in the run ahead of verification.
+            registry.register("test.plan", mock.MockDesignStep)
+
+        module.register = register
         sys.modules[module.__name__] = module
         self.addCleanup(sys.modules.pop, module.__name__, None)
         originals = ReleaseStep.__dict__["environ"], ReleaseStep.__dict__["clock"]
@@ -365,6 +373,10 @@ class ContinueIn(ReleaseCase):
                 """ % json.dumps(game.root))
             if g4:
                 text = text.replace("    - id: release\n", self.G4 + "    - id: release\n", 1)
+                text = text.replace("  start: verify\n", "  start: plan\n", 1).replace(
+                    "    - id: verify\n",
+                    "    - id: plan\n      type: test.plan\n      stage: title:design\n"
+                    "      outputs: [title-strategy, game-design]\n    - id: verify\n", 1)
             handle.write(text)
         config = FactoryConfig({"steps": {"modules": ["wgf_release", module.__name__]},
                                 "storage": {"fsync": False}, "execution": {"delay_seconds": 0}})

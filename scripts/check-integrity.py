@@ -63,6 +63,24 @@ def load_artifacts():
     return ids
 
 
+def check_required_for_gates():
+    """x-wgf.required_for_gates is a copy of gates.yaml's required_artifacts, kept on each
+    schema so a reader of one contract sees which gates it serves. gates.yaml is the
+    authority - it is what a checkpoint checks - so the copy must agree with it exactly."""
+    sys.path.insert(0, "scripts")
+    from wgflib.yamllite import load_file
+
+    gates = (load_file("core/lifecycle/gates.yaml") or {}).get("gates") or {}
+    required = {gate: set(spec.get("required_artifacts") or []) for gate, spec in gates.items()}
+    for path in sorted(glob.glob("core/artifacts/*.schema.json")):
+        meta = json.loads(read(path)).get("x-wgf") or {}
+        declared = set(meta.get("required_for_gates") or [])
+        actual = {gate for gate, ids in required.items() if meta.get("id") in ids}
+        if declared != actual:
+            ERRORS.append(f"{path}: x-wgf.required_for_gates {sorted(declared)} but "
+                          f"gates.yaml requires it for {sorted(actual)}")
+
+
 def load_roles():
     return set(re.findall(r"^  ([a-z][a-z0-9-]*):$", read("core/roles/roles.yaml"), re.M))
 
@@ -326,6 +344,7 @@ def main():
     gates = read("core/lifecycle/gates.yaml")
 
     check_machines(artifacts, roles, gates)
+    check_required_for_gates()
     workflows = check_workflows(artifacts)
     check_bindings(roles)
     check_charters()

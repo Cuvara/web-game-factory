@@ -159,7 +159,7 @@ reading, and `DocumentedIoContract` fails if the two disagree.
 | `review` | `review` | `prototype-report`, `game-design`, `scaffold-record` | `review-report` |
 | `sdk` | `sdk` | `game-design`, `scaffold-record`, `prototype-report` | `sdk-report` |
 | `verify` | `verify` | `prototype-report`, `sdk-report`, `game-design`, `scaffold-record`, `asset-manifest` | `verification-report`, `qa-report` |
-| `prototype-review` | `human-checkpoint` | `qa-report`, `verification-report`, `prototype-report` | — |
+| `prototype-review` | `human-checkpoint` | `qa-report`, `verification-report`, `prototype-report`, `title-strategy`, `game-design` | — |
 | `release` | `release` | `qa-report`, `verification-report`, `sdk-report`, `prototype-report`, `scaffold-record`, `review-report` | `release-manifest` |
 <!-- io-contract:end -->
 
@@ -186,20 +186,26 @@ Routing, retry and gates for each step are in the workflow file; read it, not a 
 ## 6. Artifact schemas
 
 Every type above has a schema in `core/artifacts/<type>.schema.json`, and its `x-wgf` block
-names producer, consumers and repository path. Before persisting an artifact the engine
-checks it against that schema's top level (`contracts.ArtifactContracts`):
+names producer, consumers, repository path, run-store path and contract version
+(`x-wgf.version`). check-integrity fails when a workflow step's stage is not the producer of
+what it outputs, or not among the consumers of what it reads. Before persisting an artifact
+the engine validates it against the full schema (`contracts.ArtifactContracts`, the draft
+2020-12 validator in `wgflib/jsonschema_lite.py`, differential-tested against ajv):
 
-- content is a JSON object with every `required` key, and no key the schema forbids;
+- content is a JSON object valid against the schema;
 - `provenance.artifact_type` equals the type;
+- `provenance.schema_version` has the major of the schema's `x-wgf.version`;
 - `provenance.content_hash` reproduces (`wgflib.hashing.content_hash`, the canonicalization
   on `provenance.schema.json#/$defs/hash`).
 
-A failure is a non-retryable `FAILED` and nothing is written. This is a structural check, not
-full JSON Schema validation — validate with ajv in the module's own tests (see §11).
+A failure is a non-retryable `FAILED` and nothing is written.
 
-Build provenance like the mock steps do (`wgflib/workflow/mock.py`): `artifact_id` in the
-`wgf:<type>:<scope>:<yyyymmdd>-<nn>` shape, `produced_by.role` from `core/roles/roles.yaml`,
-`inputs` pinning each consumed artifact by `content_hash`, then compute `content_hash` last.
+Build provenance with `wgflib/provenance.py`, as every module and the mock steps do:
+`build(artifact_type, artifact_id=..., produced_by=..., produced_at=..., inputs=...)` takes
+`schema_version` from the schema's `x-wgf.version`; `artifact_id(...)` gives the
+`wgf:<type>:<scope>:<yyyymmdd>-<nn>` shape; `producer(role)` a role from
+`core/roles/roles.yaml`; `pin_inputs(inputs)` pins each consumed artifact by `content_hash`;
+`seal(artifact)` computes `content_hash` last.
 
 **Versioning.** `ArtifactRef.version` counts productions within a run. The *contract* version
 is `provenance.schema_version`, copied to `ArtifactRef.schema_version`. Expectations:

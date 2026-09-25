@@ -15,7 +15,11 @@ Core changes are listed with their reason, as docs/core-v1.md requires.
 ### Changed - gate semantics (M4)
 - **G4 `prototype-review` is a real checkpoint** in `new-game`, after `verify` passes and
   before `release`, decided on the verified `qa-report`, `verification-report` and
-  `prototype-report`, with `pass` / `iterate` / `kill`. *Reason (core change,
+  `prototype-report` against the kill criteria and design (`title-strategy`, `game-design`),
+  with `pass` / `iterate` / `kill`. gates.yaml G4 `required_artifacts`, the title machine's
+  prototype-review inputs, the stage procedure and every schema's `required_for_gates` agree
+  on those five, and check-integrity now fails when a schema's `required_for_gates`
+  disagrees with gates.yaml. *Reason (core change,
   core/workflows + wgflib/workflow):* the workflow went from verify straight to release, so
   the one gate the factory exists for - the kill gate - was never asked. `iterate` returns
   to develop (a success routed back; lineage kept) and G4 asks again; `kill` ends the run

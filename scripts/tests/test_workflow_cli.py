@@ -524,9 +524,11 @@ class ResumeAndDecide(CliCase):
             # G4 is decided on the verified evidence (gates.yaml): a mock verify makes it.
             handle.write("workflow:\n  id: kill\n  version: 1\n  steps:\n"
                          "    - id: verify\n      type: verify\n"
-                         "      outputs: [prototype-report, verification-report, qa-report]\n"
+                         "      outputs: [prototype-report, verification-report, qa-report,"
+                         " title-strategy, game-design]\n"
                          "    - id: kill-review\n      type: human-checkpoint\n"
-                         "      inputs: [qa-report, verification-report, prototype-report]\n"
+                         "      inputs: [qa-report, verification-report, prototype-report,"
+                         " title-strategy, game-design]\n"
                          "      with: {gate: G4}\n")
         self.wgf("kill", "--workflow", workflow, "--mock", "--quiet", expect=3)
         run_id = self.state()["run_id"]

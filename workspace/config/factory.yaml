@@ -310,3 +310,9 @@ factory:
   # approve every reversible gate unless --hold-gates is given.
   checkpoints:
     auto_approve: []
+    # Reversible gates that approve themselves once they have waited this long (<n>s|m|h|d
+    # or seconds). Applied only by `wgf resume` (run it on a schedule for unattended
+    # approval); `wgf status` / `wgf runs --waiting` only report eligibility. Listing G4,
+    # G6, G7 or a gate gates.yaml does not define refuses every run. Snapshotted per run.
+    # timeout_auto_approve: {G2: 48h, G3: 48h}
+    timeout_auto_approve: {}

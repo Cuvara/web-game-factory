@@ -1527,7 +1527,8 @@ class GateAnsweredWithoutPassing(EngineCase):
             produced = {t for s in upstream for t in definition.step(s).outputs}
             self.assertEqual([t for t in required if t not in produced], [], gate)
         self.assertEqual(checkpoint.required_artifacts("G4"),
-                         ["qa-report", "verification-report", "prototype-report"])
+                         ["qa-report", "verification-report", "prototype-report",
+                          "title-strategy", "game-design"])
         self.assertNotIn("asset-manifest", checkpoint.required_artifacts("G3"))
         ids = definition.step_ids
         self.assertEqual(ids[ids.index("verify") + 1], "prototype-review")

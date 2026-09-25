@@ -336,9 +336,11 @@ class DecisionsFromInsideAStep(unittest.TestCase):
             # verification produces it, so the gate really asks for a decision.
             handle.write("workflow:\n  id: kill-gate\n  version: 1\n  steps:\n"
                          "    - id: verify\n      type: verify\n"
-                         "      outputs: [prototype-report, verification-report, qa-report]\n"
+                         "      outputs: [prototype-report, verification-report, qa-report,"
+                         " title-strategy, game-design]\n"
                          "    - id: prototype-review\n      type: human-checkpoint\n"
-                         "      inputs: [qa-report, verification-report, prototype-report]\n"
+                         "      inputs: [qa-report, verification-report, prototype-report,"
+                         " title-strategy, game-design]\n"
                          "      with: {gate: G4, choices: [approve, reject]}\n")
         store = os.path.join(scratch, "store")
 

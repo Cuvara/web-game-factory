@@ -1829,5 +1829,191 @@ class TimeoutApprovalThroughTheApi(_MockNewGame):
         self.assertEqual(after.cursor, "tech-plan-review")
 
 
+# -- M3: output liveness, the hung-child watchdog's params ------------------------------------
+
+class OutputLiveness(unittest.TestCase):
+    """A heartbeat shows the driver is alive, not that the child is working: a step whose
+    child has written nothing for hung_output_seconds reads hung ("output") even while
+    heartbeats keep arriving. derive_liveness stays pure."""
+
+    def state(self, output="2026-01-01T00:00:00.000Z", beat="2026-01-01T00:09:55.000Z",
+              pid=4242):
+        state = RunState(run_id="r1", workflow_id="w", workflow_version=1,
+                         status=RunStatus.RUNNING, cursor="build", scope=["build"],
+                         updated_at="2026-01-01T00:09:55.000Z")
+        state.steps["build"] = StepState(
+            status=StepStatus.RUNNING, attempts=1, visits=1,
+            started_at="2026-01-01T00:00:00.000Z", last_activity_at=beat, pid=pid,
+            last_event="heartbeat", last_output_at=output, last_heartbeat_at=beat)
+        return state
+
+    NOW = utc(2026, 1, 1, 0, 10, 0)
+
+    def test_a_silent_child_with_a_live_driver_reads_hung_output(self):
+        live = derive_liveness(self.state(), 77, self.NOW, 300, 120)
+        self.assertEqual((live["liveness"], live["hung_reason"]),
+                         (Liveness.HUNG, Liveness.OUTPUT))
+        self.assertEqual(live["idle_seconds"], 5.0)            # the driver is not idle
+        self.assertEqual(live["output_idle_seconds"], 600.0)   # the child is
+        self.assertEqual(live["last_output_at"], "2026-01-01T00:00:00.000Z")
+        self.assertEqual(live["last_heartbeat_at"], "2026-01-01T00:09:55.000Z")
+        self.assertEqual(live["hung_output_seconds"], 120)
+        # Under the threshold it is running; the default threshold (900 s) is not met yet.
+        self.assertEqual(derive_liveness(self.state(), 77, self.NOW, 300, 601)["liveness"],
+                         Liveness.RUNNING)
+        self.assertEqual(derive_liveness(self.state(), 77, self.NOW, 300)["liveness"],
+                         Liveness.RUNNING)
+
+    def test_a_chatty_child_stays_running(self):
+        state = self.state(output="2026-01-01T00:09:58.000Z")
+        live = derive_liveness(state, 77, self.NOW, 300, 120)
+        self.assertEqual((live["liveness"], live["hung_reason"]), (Liveness.RUNNING, None))
+
+    def test_no_child_or_no_heartbeat_is_never_output_hung(self):
+        # Between children (pid None) the step is Factory code; with heartbeats off there is
+        # nothing that says the driver is alive while the child is quiet.
+        self.assertEqual(derive_liveness(self.state(pid=None), 77, self.NOW, 300, 1)["liveness"],
+                         Liveness.RUNNING)
+        state = self.state()
+        state.steps["build"].last_heartbeat_at = None
+        self.assertEqual(derive_liveness(state, 77, self.NOW, 300, 1)["liveness"],
+                         Liveness.RUNNING)
+
+    def test_a_silent_driver_is_hung_for_the_driver_and_stale_wins(self):
+        live = derive_liveness(self.state(), 77, utc(2026, 1, 1, 0, 20, 0), 300, 120)
+        self.assertEqual((live["liveness"], live["hung_reason"]),
+                         (Liveness.HUNG, Liveness.DRIVER))
+        live = derive_liveness(self.state(), None, self.NOW, 300, 120)
+        self.assertEqual((live["liveness"], live["hung_reason"]), (Liveness.STALE, None))
+
+    def test_state_written_before_the_new_fields_derives_as_before(self):
+        old = {"status": StepStatus.RUNNING, "attempts": 2, "executions": 2, "visits": 1,
+               "loop_base": 0, "started_at": "2026-01-01T00:00:00.000Z",
+               "last_activity_at": "2026-01-01T00:04:00.000Z", "pid": 4242,
+               "last_event": "heartbeat", "outputs": [], "consumed": []}
+        step = StepState.from_dict(old)
+        self.assertIsNone(step.last_output_at)
+        self.assertIsNone(step.last_heartbeat_at)
+        self.assertIn("last_output_at", step.to_dict())
+        state = RunState(run_id="r1", workflow_id="w", workflow_version=1,
+                         status=RunStatus.RUNNING, cursor="build", scope=["build"],
+                         updated_at="2026-01-01T00:00:00.000Z", steps={"build": step})
+        # The same answers LivenessDerivation gets, whatever the output threshold.
+        for output in (1, 900):
+            self.assertEqual(derive_liveness(state, 77, utc(2026, 1, 1, 0, 5, 0), 300,
+                                             output)["liveness"], Liveness.RUNNING)
+            live = derive_liveness(state, 77, utc(2026, 1, 1, 0, 9, 1), 300, output)
+            self.assertEqual((live["liveness"], live["hung_reason"]),
+                             (Liveness.HUNG, Liveness.DRIVER))
+        self.assertIsNone(live["last_output_at"])
+
+    def test_status_text_names_the_case_and_wgf_cancel(self):
+        output = wgf.render_liveness(derive_liveness(self.state(), 77, self.NOW, 300, 120))
+        text = "\n".join(output)
+        self.assertIn("Liveness: hung", text)
+        self.assertIn("hung_output_seconds", text)
+        self.assertIn("child pid 4242", text)
+        self.assertIn("heartbeats arriving", text)
+        self.assertIn("wgf cancel r1", text)
+        driver = "\n".join(wgf.render_liveness(
+            derive_liveness(self.state(), 77, utc(2026, 1, 1, 0, 20, 0), 300, 120)))
+        self.assertIn("hung_after_seconds", driver)
+        self.assertIn("not even a heartbeat", driver)
+        self.assertIn("wgf cancel r1", driver)
+        self.assertNotIn("may be stuck. `wgf cancel", driver)
+
+    def test_config_keys(self):
+        self.assertEqual(FactoryConfig().hung_output_seconds, 900)
+        self.assertEqual(FactoryConfig().on_hung, "none")
+        config = FactoryConfig({"execution": {"hung_output_seconds": 42, "on_hung": "cancel"}})
+        self.assertEqual((config.hung_output_seconds, config.on_hung), (42, "cancel"))
+        for bad in (0, -5, True, "soon"):
+            self.assertEqual(FactoryConfig({"execution": {"hung_output_seconds": bad}})
+                             .hung_output_seconds, 900)
+        for bad in ("kill", "Cancel", 1, True):
+            with self.subTest(bad), self.assertRaises(ConfigError):
+                FactoryConfig({"execution": {"on_hung": bad}}).on_hung
+
+
+class WatchdogParams(EngineCase):
+    """on_hung is snapshotted into the run's params at start and corroborated on resume, like
+    auto_approve: a resume keeps the policy the run started with, and an edit is refused."""
+
+    WATCH = {"on_hung": "cancel", "hung_output_seconds": 900}
+
+    def edit_params(self, run_id, **changes):
+        state = self.store.load(run_id)
+        for key, value in changes.items():
+            if value is None:
+                state.params.pop(key, None)
+            else:
+                state.params[key] = value
+        self.store.save(state)
+
+    def waiting_run(self, params):
+        engine = self.engine(CHECKPOINT.replace("GATE", "G3"))
+        run = engine.start(params=dict(params))
+        self.assertEqual(run.status, RunStatus.WAITING)
+        return engine, run.run_id
+
+    def test_untouched_policy_resumes(self):
+        engine, run_id = self.waiting_run(self.WATCH)
+        state = engine.resume(run_id, decision="approve")
+        self.assertEqual(state.status, RunStatus.COMPLETED)
+        self.assertEqual(state.params, self.WATCH)
+
+    def test_an_edited_policy_is_refused_before_anything_runs(self):
+        edits = {
+            "watchdog removed": {"on_hung": None, "hung_output_seconds": None},
+            "watchdog turned off": {"on_hung": "none"},
+            "threshold raised": {"hung_output_seconds": 86400},
+        }
+        for label, change in edits.items():
+            with self.subTest(label):
+                engine, run_id = self.waiting_run(self.WATCH)
+                self.edit_params(run_id, **change)
+                self.script.calls.clear()
+                with self.assertRaises(EngineError) as caught:
+                    engine.resume(run_id, decision="approve")
+                self.assertIn("params.", str(caught.exception))
+                self.assertEqual(self.script.executed(), [])
+        engine, run_id = self.waiting_run({})
+        self.edit_params(run_id, on_hung="cancel", hung_output_seconds=1)
+        with self.assertRaises(EngineError):
+            engine.resume(run_id, decision="approve")
+
+    def test_a_malformed_policy_is_refused(self):
+        for params in ({"on_hung": "kill", "hung_output_seconds": 5},
+                       {"on_hung": "cancel"},
+                       {"on_hung": "cancel", "hung_output_seconds": 0},
+                       {"on_hung": "cancel", "hung_output_seconds": "5"}):
+            with self.subTest(params):
+                engine, run_id = self.waiting_run(params)
+                with self.assertRaises(EngineError) as caught:
+                    engine.resume(run_id, decision="approve")
+                self.assertIn("params.", str(caught.exception))
+
+    def test_the_api_snapshots_the_policy_and_refuses_an_unknown_one(self):
+        scratch = tempfile.mkdtemp(prefix="wgf-core-watch-")
+        self.addCleanup(shutil.rmtree, scratch, ignore_errors=True)
+
+        def api(execution):
+            return WorkflowAPI(config=FactoryConfig({"storage": {"fsync": False},
+                                                     "execution": execution}),
+                               store_dir=os.path.join(scratch, "store"))
+
+        state = api({"on_hung": "cancel", "hung_output_seconds": 120}).run(
+            RunRequest(scope="develop", mock=True))
+        self.assertEqual((state.params["on_hung"], state.params["hung_output_seconds"]),
+                         ("cancel", 120))
+        started = next(e for e in RunStore(os.path.join(scratch, "store"), fsync=False)
+                       .read_events(state.run_id) if e["event"] == Events.WORKFLOW_STARTED)
+        self.assertEqual(started["data"]["params"]["on_hung"], "cancel")
+        state = api({}).run(RunRequest(scope="develop", mock=True))
+        self.assertNotIn("on_hung", state.params)  # `none`: params as they always were
+        with self.assertRaises(ConfigError):
+            api({"on_hung": "kill"}).run(RunRequest(scope="develop", mock=True))
+
+
 if __name__ == "__main__":
     unittest.main()

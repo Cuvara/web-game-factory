@@ -198,18 +198,31 @@ with no process holding its lock is a crashed run, and is resumable.
 ### Liveness
 
 `wgf status` adds one derived word, computed by the pure `model.derive_liveness(state,
-lock_owner, now, hung_after_seconds)` and never stored:
+lock_owner, now, hung_after_seconds, hung_output_seconds)` and never stored:
 
 | Liveness | Means | What to do |
 |---|---|---|
-| `running` | `RUNNING`, a live process holds the lock, activity within the threshold | wait |
-| `hung` | `RUNNING`, lock held, no sign of life for longer than `factory.execution.hung_after_seconds` (default 300) | inspect the child `pid`; `wgf cancel` terminates its tree |
-| `stale` | `RUNNING` on disk but no live process holds the lock: the driver crashed | `wgf resume <run>` |
+| `running` | `RUNNING`, a live process holds the lock, activity within the thresholds | wait |
+| `hung` (`hung_reason: driver`) | `RUNNING`, lock held, nothing at all - not even a heartbeat - for longer than `factory.execution.hung_after_seconds` (default 300): the Factory process has stopped reporting | `wgf cancel` asks it to stop; if it never notices, end the driver pid and `wgf resume` |
+| `hung` (`hung_reason: output`) | `RUNNING`, lock held, heartbeats arriving, but the child the step waits on (`pid`) has written nothing for longer than `factory.execution.hung_output_seconds` (default 900) | inspect the child; `wgf cancel` terminates its tree |
+| `stale` | `RUNNING` on disk but no live process holds the lock: the driver crashed | `wgf resume <run>` (it first ends what the dead driver left running) |
 | `pending` `waiting` `paused` `blocked` `failed` `completed` `cancelled` | the run status itself | as the status says |
 
-"Activity" is the newest of the step's `last_activity_at`, its `started_at` and the run's
-`updated_at`. Heartbeats from a child process arrive every `heartbeat_seconds` and are
-persisted at most every 5 s, so a threshold well above both is what makes `hung` mean hung.
+The step state keeps three clocks. `last_activity_at` moves on every progress event,
+heartbeats included, so it says the *driver* is alive; `last_heartbeat_at` is the last
+heartbeat; `last_output_at` moves only when the child wrote something (a heartbeat carries
+`idle_s`, the seconds since it last did, and moves `last_output_at` to that moment) or on a
+lifecycle event (`started`, `spawned`, `exited`, …). "Activity" is the newest of
+`last_activity_at`, `started_at` and the run's `updated_at`. Output-hung needs a child
+`pid`, a heartbeat, and a `last_output_at`: a state written before those fields existed,
+a step between children, or heartbeats turned off derive exactly as before (driver-hung
+only). Heartbeats arrive every `heartbeat_seconds` and are persisted at most every 5 s, so
+thresholds well above both are what make `hung` mean hung. Status only looks: nothing is
+stopped by it. The one thing that acts on a silent child is the run's watchdog,
+`factory.execution.on_hung: cancel` (default `none`), snapshotted into the run's params at
+start - see docs/agent-lifecycle.md. `--json` adds `hung_reason`, `last_output_at`,
+`last_heartbeat_at`, `output_idle_seconds` and `hung_output_seconds` to the `liveness`
+object.
 
 ## 5. Artifact flow
 
@@ -873,8 +886,10 @@ The engine executes no code it was not given by the installation:
   holds only a pid, it still makes a dead driver's lock look live — `wgf status` then says
   `running` or `hung`, and removing the lock file by hand is the way out.
 - **Orphaned grandchildren of a killed driver.** `wgflib.procs` takes a step's process tree
-  down on every exit it sees, including Ctrl-C; a driver killed with SIGKILL cannot, and a
-  resumed step does not look for survivors of the previous execution.
+  down on every exit it sees, including Ctrl-C; a driver killed with SIGKILL cannot. Its
+  step's children carry the run in `WGF_PROC_RUN`, and resuming (or cancelling) the stale
+  run ends every one still alive before anything executes again - on Linux only, and not a
+  descendant that cleared its environment (docs/agent-lifecycle.md).
 - **Steps run in-process and sequentially.** The definition format permits branching but not
   parallel fan-out; nothing in this phase needs it.
 - **Artifact checks are structural.** Top-level required and forbidden keys and provenance

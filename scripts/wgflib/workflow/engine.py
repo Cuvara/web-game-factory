@@ -35,6 +35,12 @@ Invariants the engine keeps:
     versions the step consumed (contracts.check_lineage): a stale pin, or a pin of an
     artifact of a consumed type the step was not given, is a non-retryable FAILED and
     nothing is written.
+  * Every child process a step starts names the run (procs.RUN_ENV). Resuming or cancelling
+    a run that is RUNNING on disk with no live driver - one whose driver was SIGKILLed -
+    first ends every process still naming it, before anything executes again.
+  * A run started with `on_hung: cancel` has its step's child tree terminated once the
+    child has written nothing for `hung_output_seconds`; the step then ends, not retryably,
+    and a STEP_LOG warning says why.
 """
 
 import contextlib
@@ -59,6 +65,8 @@ from .model import (
     StepOutcome,
     StepResult,
     StepStatus,
+    format_timestamp,
+    parse_timestamp,
 )
 from .runtime import LocalRuntime, Task
 from .step import RegistryError, StepInputs
@@ -135,6 +143,8 @@ class WorkflowEngine:
         # without core/; the API always supplies contracts.ArtifactContracts.
         self.artifact_validator = artifact_validator
         self.event_log_error = None
+        # The executing step's hung-child watchdog ({} while none is armed); see _run_once.
+        self._watchdog = {}
         self.bus = EventBus(clock)
         self.bus.subscribe(self._persist_event)
         for subscriber in subscribers:
@@ -224,6 +234,10 @@ class WorkflowEngine:
                 f"{', '.join(RunStatus.RESUMABLE)} runs can be resumed"
             )
         data = {"from_status": state.status}
+        if state.status == RunStatus.RUNNING:
+            # RUNNING on disk while this process holds the lock: the driver that wrote it is
+            # dead. If it died by SIGKILL, the trees its step started are still running.
+            self._sweep_orphans(state)
         # Resuming is the answer to a pause; one requested of a driver that then died must
         # not immediately pause the run it was just asked to continue.
         self.store.clear_request(run_id, "pause")
@@ -514,12 +528,42 @@ class WorkflowEngine:
             state = self.store.load(run_id)
             if state.status in RunStatus.TERMINAL:
                 raise EngineError(f"run {run_id} is already {state.status}")
+            if state.status == RunStatus.RUNNING:
+                self._sweep_orphans(state)  # its driver is dead; so must its children be
             state.status = RunStatus.CANCELLED
             self._save(state)
             self._emit(state, Events.WORKFLOW_CANCELLED)
             return state
         finally:
             self.store.release(run_id)
+
+    # Seconds a swept orphan gets between SIGTERM and SIGKILL.
+    SWEEP_GRACE_SECONDS = 5.0
+
+    def run_token(self, run_id):
+        """The procs.RUN_ENV token children of this run's steps carry."""
+        return procs.run_token(run_id, self.store.directory)
+
+    def _sweep_orphans(self, state):
+        """End every process still carrying this run's token: the trees a driver that died
+        without cleanup (SIGKILL, a machine crash) left running. Only called while this
+        process holds the run's lock, so no live driver can own them. Logs what it ended,
+        or that it cannot look on this platform."""
+        step_id = state.cursor
+        token = self.run_token(state.run_id)
+        if not procs.can_sweep():
+            self._emit(state, Events.STEP_LOG, step_id=step_id, level="warning",
+                       message="cannot sweep processes a dead driver of this run left behind: "
+                               "no /proc on this platform; any it orphaned are still running",
+                       data={"run_token": token})
+            return []
+        ended = procs.sweep_run(token, self.SWEEP_GRACE_SECONDS) or []
+        if ended:
+            self._emit(state, Events.STEP_LOG, step_id=step_id, level="warning",
+                       message=f"terminated {len(ended)} process(es) a dead driver of this run "
+                               f"left running: {', '.join(map(str, ended))}",
+                       data={"pids": ended, "run_token": token})
+        return ended
 
     # -- the loop -----------------------------------------------------------------------
 
@@ -706,10 +750,18 @@ class WorkflowEngine:
                     result = StepResult(StepOutcome.FAILED,
                                         error=f"could not persist artifacts: {exc}")
             cancelled = self._cancel_requested(state)
+            watchdog = self._watchdog.get("tripped")
             if cancelled and result.outcome != StepOutcome.SUCCESS:
                 result = StepResult(
                     result.outcome, route=result.route, message="cancelled while running",
                     error=result.error, retryable=False, data=result.data)
+            elif watchdog and result.outcome != StepOutcome.SUCCESS:
+                # The watchdog ended a child that had gone silent; running it again would
+                # wait out the same silence. Not retried, and the message says why.
+                result = StepResult(
+                    result.outcome, route=result.route, message=watchdog,
+                    error=result.error or watchdog, retryable=False, data=result.data)
+                cancelled = True
             if result.outcome == StepOutcome.SUCCESS:
                 missing = [t for t in step_def.outputs if t not in {r.type for r in refs}]
                 if missing:
@@ -789,6 +841,7 @@ class WorkflowEngine:
         return False
 
     def _run_once(self, state, step_def, step_state):
+        self._watchdog = {}  # an execution that never reaches its step trips nothing
         try:
             step = self.registry.create(step_def)
         except RegistryError as exc:
@@ -840,6 +893,9 @@ class WorkflowEngine:
             return dict(self.record_decision(state, step_def.id, choice, decided_by, note,
                                              mode))
 
+        # This execution's hung-child watchdog: armed from the params the run started with,
+        # tripped by the progress recorder, read by should_stop and by _execute_visit.
+        self._watchdog = self._watchdog_policy(state)
         base = {"workflow_id": state.workflow_id, "run_id": state.run_id,
                 "step_id": step_def.id, "attempt": step_state.attempts}
         context = WorkflowContext(
@@ -865,7 +921,8 @@ class WorkflowEngine:
             run_dir=self.store.run_dir(state.run_id),
             mock=bool(state.params.get("mock")),
             progress=self._progress_recorder(state, step_def, step_state),
-            should_stop=lambda: self.store.requested(state.run_id, "cancel"),
+            should_stop=lambda: (bool(self._watchdog.get("tripped"))
+                                 or self.store.requested(state.run_id, "cancel")),
             now=self.clock(),
             waiting_since=step_state.waiting_since,
             record_decision=record,
@@ -873,11 +930,14 @@ class WorkflowEngine:
         )
         step_state.pid = None
         step_state.last_event = "started"
-        step_state.last_activity_at = self.clock()
+        step_state.last_activity_at = step_state.last_output_at = self.clock()
+        step_state.last_heartbeat_at = None
         try:
-            # Any process the step starts through wgflib.procs reports to this step and is
-            # terminated, tree and all, by a cancel request.
-            with procs.bound(context.progress, context.should_stop):
+            # Any process the step starts through wgflib.procs reports to this step, is
+            # terminated, tree and all, by a cancel request (or the watchdog), and names
+            # this run in its environment so that a later driver can find it.
+            with procs.bound(context.progress, context.should_stop,
+                             run=self.run_token(state.run_id)):
                 return self.runtime.run(Task(step, inputs, context))
         finally:
             step_state.pid = None
@@ -886,17 +946,42 @@ class WorkflowEngine:
     # (spawned, exited, timeout, cancelled, ...) are saved at once.
     PROGRESS_SAVE_SECONDS = 5.0
 
+    @staticmethod
+    def _watchdog_policy(state):
+        """{"after": seconds} when the run was started with `on_hung: cancel`, else {}.
+
+        From the run's params, never the live config: a resume keeps the policy the run
+        started under, and integrity.params_problems refuses one edited since."""
+        params = state.params if isinstance(state.params, dict) else {}
+        after = params.get("hung_output_seconds")
+        if (params.get("on_hung") != "cancel" or isinstance(after, bool)
+                or not isinstance(after, (int, float)) or after <= 0):
+            return {}
+        return {"after": after}
+
     def _progress_recorder(self, state, step_def, step_state):
         last_saved = {"at": None}
 
         def record(kind, **data):
             now = self.monotonic()
-            step_state.last_activity_at = self.clock()
+            stamp = self.clock()
+            step_state.last_activity_at = stamp
             step_state.last_event = kind
             if kind == "spawned" and data.get("pid"):
                 step_state.pid = data.get("pid")
             elif kind == "exited":
                 step_state.pid = None
+            idle = data.get("idle_s")
+            if kind == "heartbeat":
+                # A heartbeat proves the driver is alive, not that the child is working. It
+                # moves last_output_at only to when the child last wrote (`idle_s` ago).
+                step_state.last_heartbeat_at = stamp
+                wrote = _before(stamp, idle)
+                if wrote is not None and (step_state.last_output_at is None
+                                          or wrote > step_state.last_output_at):
+                    step_state.last_output_at = wrote
+            else:
+                step_state.last_output_at = stamp  # output, or a lifecycle event
             lifecycle = kind not in ("heartbeat", "output")
             if lifecycle or last_saved["at"] is None or (
                     now - last_saved["at"] >= self.PROGRESS_SAVE_SECONDS):
@@ -905,8 +990,27 @@ class WorkflowEngine:
                 self._emit(state, Events.STEP_PROGRESS, step_id=step_def.id,
                            attempt=step_state.attempts,
                            data=_compact({"kind": kind, **_jsonable(data)}))
+            self._watch(state, step_def, kind, data, idle)
 
         return record
+
+    def _watch(self, state, step_def, kind, data, idle):
+        """Trip the watchdog on a heartbeat whose child has been silent for too long. The
+        step's should_stop then turns true, and procs terminates the child's tree through
+        the same path a cancel takes."""
+        watchdog = self._watchdog
+        if (kind != "heartbeat" or not watchdog.get("after") or watchdog.get("tripped")
+                or isinstance(idle, bool) or not isinstance(idle, (int, float))
+                or idle <= watchdog["after"]):
+            return
+        watchdog["tripped"] = (
+            f"stopped by the hung-child watchdog: child pid {data.get('pid')} wrote nothing "
+            f"for {idle:.0f}s (factory.execution.on_hung: cancel, hung_output_seconds: "
+            f"{watchdog['after']})")
+        self._emit(state, Events.STEP_LOG, step_id=step_def.id, level="warning",
+                   message=watchdog["tripped"],
+                   data={"reason": "hung-output", "pid": data.get("pid"), "idle_s": idle,
+                         "hung_output_seconds": watchdog["after"]})
 
     def _validate(self, artifact_type, content):
         """The validator's problems, with a validator that raises reported as one."""
@@ -1190,6 +1294,15 @@ def _jsonable(value):
         return value
     except (TypeError, ValueError):
         return {"unserializable": type(value).__name__}
+
+
+def _before(stamp, seconds):
+    """The engine timestamp `seconds` before `stamp`, or None if either is unusable."""
+    moment = parse_timestamp(stamp)
+    if (moment is None or isinstance(seconds, bool) or not isinstance(seconds, (int, float))
+            or seconds < 0):
+        return None
+    return format_timestamp(moment - datetime.timedelta(seconds=seconds))
 
 
 def _compact(mapping):

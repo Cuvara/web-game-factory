@@ -31,6 +31,8 @@ __all__ = [
     "Liveness",
     "derive_liveness",
     "parse_timestamp",
+    "format_timestamp",
+    "DEFAULT_HUNG_OUTPUT_SECONDS",
 ]
 
 # Bumped when the persisted shape of RunState changes incompatibly. A run written under an
@@ -233,10 +235,16 @@ class StepState:
     outputs: list = field(default_factory=list)
     consumed: list = field(default_factory=list)
     # Liveness of the current execution, from WorkflowContext.progress: the child process
-    # the step is waiting on, when anything last showed signs of life, and what that was.
+    # the step is waiting on, when anything last showed signs of life (heartbeats included:
+    # the driver is alive), and what that was. `last_output_at` is when the step's children
+    # last wrote anything - or a lifecycle event happened (started, spawned, exited, ...) -
+    # which a heartbeat alone never moves forward; `last_heartbeat_at` is the last heartbeat.
+    # State written before these two existed has neither, and derives as it always did.
     pid: int = None
     last_activity_at: str = None
     last_event: str = None
+    last_output_at: str = None
+    last_heartbeat_at: str = None
     # When the current visit first returned a WAITING outcome, from the engine's clock. Kept
     # across resumes of the same visit, cleared when the step is entered again; corroborated
     # by the STEP_WAITING event that recorded it before anything relies on it
@@ -360,7 +368,7 @@ class Liveness:
     """
 
     RUNNING = "running"      # RUNNING, lock held, activity within the threshold
-    HUNG = "hung"            # RUNNING, lock held, nothing for longer than the threshold
+    HUNG = "hung"            # RUNNING, lock held, and one of HUNG_REASONS
     STALE = "stale"          # RUNNING on disk, nobody holds the lock: the driver crashed
     PENDING = "pending"
     WAITING = "waiting"
@@ -372,6 +380,20 @@ class Liveness:
 
     ALL = (RUNNING, HUNG, STALE, PENDING, WAITING, PAUSED, BLOCKED, FAILED, COMPLETED,
            CANCELLED)
+
+    # Why a run reads HUNG. DRIVER: nothing at all - not even a heartbeat - for longer than
+    # hung_after_seconds; the Factory process itself has stopped reporting. OUTPUT: the
+    # driver's heartbeats keep arriving, but the child it waits on has written nothing for
+    # longer than hung_output_seconds.
+    DRIVER = "driver"
+    OUTPUT = "output"
+    HUNG_REASONS = (DRIVER, OUTPUT)
+
+
+# factory.execution.hung_output_seconds when the configuration does not say. Above every idle
+# timeout a shipped module uses or recommends (the reviewer's 600 s default, the developer's
+# documented 900 s): a child that module policy still lets be quiet does not read as hung.
+DEFAULT_HUNG_OUTPUT_SECONDS = 900
 
 
 def parse_timestamp(value):
@@ -388,6 +410,12 @@ def parse_timestamp(value):
     return parsed
 
 
+def format_timestamp(moment):
+    """An aware datetime as an engine timestamp (UTC, milliseconds, `Z`)."""
+    moment = moment.astimezone(datetime.timezone.utc)
+    return moment.strftime("%Y-%m-%dT%H:%M:%S.") + f"{moment.microsecond // 1000:03d}Z"
+
+
 def _current_step(state):
     """(step id, StepState) the status is about: the cursor, else the last step executed."""
     if state.cursor and state.cursor in state.steps:
@@ -399,11 +427,20 @@ def _current_step(state):
     return state.cursor, None
 
 
-def derive_liveness(state, lock_owner, now, hung_after_seconds=300):
+def derive_liveness(state, lock_owner, now, hung_after_seconds=300,
+                    hung_output_seconds=DEFAULT_HUNG_OUTPUT_SECONDS):
     """Pure: a dict describing the current (or last) step and the run's liveness.
 
     `lock_owner` is the pid of the live process holding the run's lock, or None.
     `now` is an aware datetime. Nothing here reads a clock, a file or a process.
+
+    A RUNNING run with a live driver is HUNG when (`hung_reason`):
+      * "driver" - nothing, not even a heartbeat, for longer than `hung_after_seconds`; or
+      * "output" - the step is waiting on a child (`pid`), heartbeats say the driver is
+        alive, and neither the child's output nor a lifecycle event has moved
+        `last_output_at` for longer than `hung_output_seconds`.
+    A step whose state predates `last_output_at` (or that runs with heartbeats off) can
+    only be hung for the first reason.
     """
     step_id, step = _current_step(state)
     started = parse_timestamp(step.started_at) if step else None
@@ -416,11 +453,20 @@ def derive_liveness(state, lock_owner, now, hung_after_seconds=300):
     last_activity = max(stamps) if stamps else None
     idle = (now - last_activity).total_seconds() if last_activity else None
 
+    last_output = parse_timestamp(step.last_output_at) if step else None
+    last_beat = parse_timestamp(step.last_heartbeat_at) if step else None
+    output_idle = (now - last_output).total_seconds() if last_output else None
+
+    reason = None
     if state.status == RunStatus.RUNNING:
         if lock_owner is None:
             liveness = Liveness.STALE
         elif idle is not None and idle > hung_after_seconds:
-            liveness = Liveness.HUNG
+            liveness, reason = Liveness.HUNG, Liveness.DRIVER
+        elif (step is not None and step.status == StepStatus.RUNNING and step.pid
+              and last_beat is not None and output_idle is not None
+              and output_idle > hung_output_seconds):
+            liveness, reason = Liveness.HUNG, Liveness.OUTPUT
         else:
             liveness = Liveness.RUNNING
     else:
@@ -437,18 +483,21 @@ def derive_liveness(state, lock_owner, now, hung_after_seconds=300):
         "run_id": state.run_id,
         "run_status": state.status,
         "liveness": liveness,
+        "hung_reason": reason,
         "driver_pid": lock_owner,
         "step": step_id,
         "attempt": step.attempts if step else None,
         "visit": step.visits if step else None,
         "status": step.status if step else None,
         "started_at": step.started_at if step else None,
-        "last_activity_at": (last_activity.strftime("%Y-%m-%dT%H:%M:%S.")
-                             + f"{last_activity.microsecond // 1000:03d}Z"
-                             if last_activity else None),
+        "last_activity_at": format_timestamp(last_activity) if last_activity else None,
+        "last_output_at": format_timestamp(last_output) if last_output else None,
+        "last_heartbeat_at": format_timestamp(last_beat) if last_beat else None,
         "pid": step.pid if step else None,
         "last_event": step.last_event if step else None,
         "elapsed_seconds": round(elapsed, 3) if elapsed is not None else None,
         "idle_seconds": round(idle, 3) if idle is not None else None,
+        "output_idle_seconds": round(output_idle, 3) if output_idle is not None else None,
         "hung_after_seconds": hung_after_seconds,
+        "hung_output_seconds": hung_output_seconds,
     }

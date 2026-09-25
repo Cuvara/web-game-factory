@@ -75,13 +75,141 @@ def wav(seconds, frequency, *, rate=8000):
         envelope = 1.0 - n / count
         value = math.sin(2 * math.pi * frequency * n / rate) * envelope * 0.5
         samples.append(int(round(128 + value * 127)) & 0xFF)
-    data = bytes(samples)
+    return _riff(bytes(samples), rate)
+
+
+
+# -- shaped procedural audio ---------------------------------------------------------------
+#
+# A small jsfxr-style synthesiser: one oscillator (square, saw, sine or noise), an
+# attack/sustain/decay envelope, a pitch slide, vibrato and one arpeggio step, rendered mono
+# 8-bit PCM. Deterministic - noise comes from a seeded LCG, never from `random` - so the same
+# request always yields the same bytes and a golden run's package digests reproduce. Still a
+# placeholder: shaped so a playtest can hear a reward from a failure, not final audio.
+
+SYNTH_RATE = 22050
+
+# duration_s, wave, start_hz, end_hz, attack_s, sustain_s, vibrato (hz, depth), arp (at_s, x),
+# lowpass (0 = off; 0..1, lower is darker), volume
+SFX_PRESETS = {
+    "blip":    dict(wave="square", start=880, end=880, dur=0.09, attack=0.002, sustain=0.03),
+    "ui":      dict(wave="square", start=1320, end=990, dur=0.06, attack=0.001, sustain=0.01,
+                    volume=0.35),
+    "jump":    dict(wave="square", start=300, end=720, dur=0.2, attack=0.005, sustain=0.05),
+    "coin":    dict(wave="square", start=988, end=988, dur=0.22, attack=0.002, sustain=0.06,
+                    arp=(0.06, 4 / 3)),
+    "powerup": dict(wave="square", start=392, end=1175, dur=0.5, attack=0.01, sustain=0.2,
+                    vibrato=(12.0, 0.03)),
+    "hit":     dict(wave="noise", start=900, end=120, dur=0.22, attack=0.001, sustain=0.02,
+                    lowpass=0.35),
+    "whoosh":  dict(wave="noise", start=300, end=1400, dur=0.32, attack=0.12, sustain=0.05,
+                    lowpass=0.12, volume=0.5),
+    "lose":    dict(wave="saw", start=440, end=110, dur=0.7, attack=0.01, sustain=0.25,
+                    vibrato=(6.0, 0.05)),
+}
+
+
+def _lcg(seed):
+    state = (seed * 2654435761 + 1) & 0xFFFFFFFF
+    while True:
+        state = (1103515245 * state + 12345) & 0x7FFFFFFF
+        yield state / 0x3FFFFFFF - 1.0
+
+
+def _pcm8(values):
+    return bytes(max(0, min(255, int(round(128 + v * 127)))) for v in values)
+
+
+def _riff(data, rate):
     fmt = struct.pack("<HHIIHH", 1, 1, rate, rate, 1, 8)
     body = b"WAVE" + b"fmt " + struct.pack("<I", len(fmt)) + fmt
     body += b"data" + struct.pack("<I", len(data)) + data
     if len(data) % 2:
         body += b"\x00"
     return b"RIFF" + struct.pack("<I", len(body)) + body
+
+
+def _oscillator(wave, phase):
+    if wave == "square":
+        return 1.0 if phase < 0.5 else -1.0
+    if wave == "saw":
+        return 2.0 * phase - 1.0
+    return math.sin(2 * math.pi * phase)
+
+
+def synth(preset, variant=0, *, rate=SYNTH_RATE):
+    """One shaped sound effect as a WAV. `variant` detunes it slightly (at most about 7%),
+    so two requests on the same preset never produce the same bytes."""
+    p = SFX_PRESETS[preset]
+    detune = 1.0 + ((variant % 15) - 7) * 0.01
+    count = max(1, int(p["dur"] * rate))
+    attack = max(1, int(p.get("attack", 0.0) * rate))
+    sustain = int(p.get("sustain", 0.0) * rate)
+    vibrato_hz, vibrato_depth = p.get("vibrato", (0.0, 0.0))
+    arp_at, arp_x = p.get("arp", (None, 1.0))
+    lowpass = p.get("lowpass", 0.0)
+    volume = p.get("volume", 0.45)
+    noise = _lcg(variant + 1)
+    phase, smoothed, held, values = 0.0, 0.0, 0.0, []
+    for n in range(count):
+        t = n / rate
+        progress = n / count
+        freq = (p["start"] * (p["end"] / p["start"]) ** progress) * detune
+        if arp_at is not None and t >= arp_at:
+            freq *= arp_x
+        if vibrato_depth:
+            freq *= 1.0 + vibrato_depth * math.sin(2 * math.pi * vibrato_hz * t)
+        phase += freq / rate
+        if p["wave"] == "noise":
+            # Noise is held and re-sampled at the slid frequency: a falling "pitch" reads
+            # as a thud, a rising one as a whoosh.
+            if n == 0 or phase >= 1.0:
+                held = next(noise)
+            sample = held
+        else:
+            sample = _oscillator(p["wave"], phase % 1.0)
+        phase %= 1.0
+        if lowpass:
+            smoothed += lowpass * (sample - smoothed)
+            sample = smoothed
+        if n < attack:
+            envelope = n / attack
+        elif n < attack + sustain:
+            envelope = 1.0
+        else:
+            envelope = max(0.0, 1.0 - (n - attack - sustain) / max(1, count - attack - sustain))
+        values.append(sample * envelope * volume)
+    return _riff(_pcm8(values), rate)
+
+
+# Four chords (root offsets in semitones from A2) under an arpeggio: i - VI - III - VII.
+_PROGRESSION = ((0, (0, 3, 7)), (-4, (0, 4, 7)), (3, (0, 4, 7)), (-2, (0, 4, 7)))
+
+
+def music_loop(variant=0, *, rate=SYNTH_RATE, seconds=8.0, bpm=120):
+    """A short, seamless placeholder loop: a square bass and an eighth-note arpeggio over
+    four chords. `variant` transposes it (0-4 semitones) so two music items differ."""
+    count = int(seconds * rate)
+    per_chord = count // len(_PROGRESSION)
+    eighth = int(rate * 60 / bpm / 2)
+    shift = variant % 5
+    values = []
+    bass_phase = arp_phase = 0.0
+    for n in range(count):
+        index = min(len(_PROGRESSION) - 1, n // per_chord)
+        root, chord = _PROGRESSION[index]
+        step = (n % per_chord) // eighth
+        note = root + shift + chord[step % len(chord)] + 12 * (1 + (step // len(chord)) % 2)
+        bass_hz = 110.0 * 2 ** ((root + shift) / 12)
+        arp_hz = 110.0 * 2 ** (note / 12)
+        bass_phase = (bass_phase + bass_hz / rate) % 1.0
+        arp_phase = (arp_phase + arp_hz / rate) % 1.0
+        in_note = (n % eighth) / eighth
+        arp_env = max(0.0, 1.0 - in_note * 1.6)
+        bass = (1.0 if bass_phase < 0.5 else -1.0) * 0.18
+        arp = (1.0 if arp_phase < 0.25 else -1.0) * 0.16 * arp_env
+        values.append(bass + arp)
+    return _riff(_pcm8(values), rate)
 
 
 # -- glTF ----------------------------------------------------------------------------------

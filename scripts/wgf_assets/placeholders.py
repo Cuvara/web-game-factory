@@ -65,11 +65,37 @@ class PlaceholderBackend:
         pass
 
 
+# Which synthesiser preset a sound effect gets, by the words of its id, label and tags - the
+# first rule that matches wins. The fallback is a neutral blip.
+SFX_RULES = (
+    ("lose", {"lose", "lost", "fail", "failure", "gameover", "death", "die", "dead", "over"}),
+    ("hit", {"hit", "impact", "hurt", "crash", "explode", "explosion", "damage", "bump",
+             "thud", "collide", "collision", "break"}),
+    ("powerup", {"powerup", "power", "levelup", "level", "win", "victory", "fanfare",
+                 "unlock", "upgrade", "reward", "bonus", "best", "complete", "clear"}),
+    ("coin", {"coin", "collect", "pickup", "pick", "gem", "score", "point", "points",
+              "merge", "match", "combo", "gold", "star"}),
+    ("jump", {"jump", "bounce", "hop", "launch", "spring"}),
+    ("whoosh", {"whoosh", "swipe", "move", "dash", "slide", "swoosh", "lane", "swap",
+                "drop", "throw", "fly"}),
+    ("ui", {"ui", "tap", "click", "button", "menu", "select", "toggle", "confirm", "back"}),
+)
+
+
+def sfx_preset(req):
+    terms = set(req.terms)
+    for preset, words in SFX_RULES:
+        if terms & words:
+            return preset
+    return "blip"
+
+
 FONT_STACK = "system-ui, -apple-system, 'Segoe UI', Roboto, 'Noto Sans', sans-serif"
 
 
 class ProceduralBackend(PlaceholderBackend):
-    """Pure-Python placeholders for every kind: coloured PNGs, sine-tone WAVs, box GLBs,
+    """Pure-Python placeholders for every kind: coloured PNGs, shaped synthesised WAVs
+    (a preset per sound effect, a short loop for music), box GLBs,
     glTF materials, and a system font stack as a font's named fallback."""
 
     id = "procedural"
@@ -90,10 +116,16 @@ class ProceduralBackend(PlaceholderBackend):
             return make([GeneratedFile("png", image), GeneratedFile("json", atlas, ".atlas")],
                         generator=self.id, license=GENERATED_LICENSE)
         if kind in ("sfx", "music"):
-            seconds = 2.0 if kind == "music" else 0.2
-            frequency = 220 + zlib.crc32(req.id.encode()) % 660
-            return make([GeneratedFile("wav", encoders.wav(seconds, frequency))],
-                        generator=self.id, license=GENERATED_LICENSE)
+            # Shaped, not a bare tone: a preset picked from the request's words, detuned or
+            # transposed by the id so two items never share bytes (duplicate-content).
+            variant = zlib.crc32(req.id.encode())
+            if kind == "music":
+                data, notes = encoders.music_loop(variant), "Procedural loop placeholder."
+            else:
+                preset = sfx_preset(req)
+                data, notes = encoders.synth(preset, variant), f"Procedural '{preset}' sfx."
+            return make([GeneratedFile("wav", data)], generator=self.id,
+                        license=GENERATED_LICENSE, notes=notes)
         if kind == "material":
             return make([GeneratedFile("json", encoders.material_json(req.id, colour))],
                         generator=self.id, license=GENERATED_LICENSE)

@@ -69,8 +69,26 @@ the kind and returns a valid file wins. Every backend's availability and use is 
 `generation.backends`.
 
 - **`procedural`** — always available, standard library only, deterministic: coloured PNGs
-  (textures checkered and power-of-two), spritesheets with an atlas, sine-tone WAVs, GLB boxes,
-  environments and animated clips, glTF materials, and a system font stack for fonts.
+  (textures checkered and power-of-two), spritesheets with an atlas, shaped synthesised WAVs,
+  GLB boxes, environments and animated clips, glTF materials, and a system font stack for
+  fonts.
+
+  **Sound effects.** `encoders.synth` is a small jsfxr-style synthesiser: square, saw, sine or
+  noise, with an attack/sustain/decay envelope, a pitch slide, vibrato and an arpeggio step,
+  rendered mono 22 050 Hz 8-bit.
+  - The preset is picked from the words of the item's id, label and tags
+    (`placeholders.SFX_RULES`): `ui`, `coin`, `jump`, `hit`, `powerup`, `whoosh` or `lose`,
+    else `blip`.
+  - It is detuned by the id, so two items never share bytes.
+  - Noise comes from a seeded LCG, so output is deterministic and golden package digests
+    reproduce.
+
+  **Music.** `encoders.music_loop` is an 8 s square bass plus an eighth-note arpeggio over
+  four chords, transposed by the id.
+
+  Both are still placeholders (`placeholder: true`, `LicenseRef-factory-generated`, never
+  production-ready). They are shaped so a playtest can tell a reward from a failure
+  (`core/craft/audio.md`).
 - **`2d-assets-mcp`** — optional. A 2D asset generator run as an MCP server over stdio, used
   for sprites, backgrounds, UI, icons, VFX and textures when configured. Not configured, not on
   PATH, failing to start, erroring or returning a non-image: recorded, and the next backend is

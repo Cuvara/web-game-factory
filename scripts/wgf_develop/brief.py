@@ -121,10 +121,17 @@ BUILD_SPEC_SECTIONS = (
 BUILD_TIERS = (None, "mvp")
 DEV_PLAN_PHASES = (None, "prototype")
 
+# Host skills the brief recommends, by area. The `web-game-factory:` names are this Factory's
+# own plugin (claude-web-game-plugin), pointers into core/craft/; a host that loads the plugin
+# (the opt-in self-playtest developer passes --plugin-dir) has them. The generic ones are for
+# any host. The other engine's area is never recommended.
+PLUGIN = "web-game-factory"
 DEFAULT_SKILLS = {
-    "pixijs": ["the official PixiJS skills"],
-    "threejs": ["a Three.js game-development skill"],
-    "ui": ["a frontend-design skill, for menus, HUD and screens"],
+    "pixijs": [f"{PLUGIN}:pixijs", "the official PixiJS skills"],
+    "threejs": [f"{PLUGIN}:threejs", "a Three.js game-development skill"],
+    "ui": [f"{PLUGIN}:onboarding-ux", "a frontend-design skill, for menus, HUD and screens"],
+    "craft": [f"{PLUGIN}:game-feel", f"{PLUGIN}:core-loop", f"{PLUGIN}:web-performance",
+              f"{PLUGIN}:audio"],
 }
 
 
@@ -305,7 +312,9 @@ def build_brief(*, title_id, engine, iteration, key, baseline, design, assets, s
         "review_blockers": review_blockers,
         "reviewed_commit": (review or {}).get("reviewed_commit") if review_blockers else None,
         "previous_failures": failures,
-        "skills": {k: host_skills[k] for k in ("ui", engine) if k in host_skills},
+        # Every area but the other engine's: a configured area is recommended, not dropped.
+        "skills": {k: list(v) for k, v in host_skills.items()
+                   if v and not (k in ENGINE_DIRS and k != engine)},
         "report_path": REPORT_PATH,
         "self_playtest": bool(self_playtest),
         # What verification will demand browser evidence for (wgf_verification computes the
@@ -627,7 +636,9 @@ def render_markdown(brief):
     if brief["skills"]:
         add("## Host skills\n")
         add("If your host offers these, use them - but where one assumes a project layout, "
-            "the template wins:\n")
+            f"the template wins. `{PLUGIN}:` skills come from this Factory's own plugin, "
+            "which points at its craft playbooks (game feel, core loop, onboarding, "
+            "performance, audio):\n")
         for area, names in brief["skills"].items():
             add(f"- {area}: " + ", ".join(names))
         add("")

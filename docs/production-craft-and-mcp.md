@@ -21,7 +21,7 @@ pipeline configuration.
 | tech-plan → G3 | `wgf_techplan`, deterministic | Budgets, per `web-performance.md` |
 | init | `wgf_init` from the pinned template | – |
 | assets | `wgf_assets`: procedural placeholders; optional `2d-assets-mcp` stdio backend | `art-direction.md`, `audio.md` |
-| develop | an agent (`claude -p`) or a human handoff, from `docs/development/brief.md` | The brief names host skills (`factory.develop.skills`) |
+| develop | an agent (`claude -p`) or a human handoff, from `docs/development/brief.md` | The brief carries the build spec and plan (F1), points at `docs/GDD.md` (F3), and recommends the plugin's craft skills (F7) |
 | review | an agent, read-only | `gameplay-review.md` (interactive; see follow-up F2) |
 | sdk | `wgf_sdk` | – |
 | verify | `wgf_verification`: recorded gameplay session, or the repo's `@aspect` e2e | `playtesting.md` §A produces the recorded session |
@@ -117,4 +117,4 @@ golden runs, and several touch files the M1–M13 roadmap owns.
 | F4 | **Done.** The opt-in `agent` author (`factory.design.author: agent`) has an agent host improve the archetype's draft; the unchanged buildability and consistency checks judge it | `scripts/wgf_design/agent.py` | Design variety is no longer capped by four archetypes, and no check was weakened. It has not been run against a live host (UNVERIFIED_EXTERNAL) |
 | F5 | **Done.** Procedural sound effects are shaped by preset (a jsfxr-style synthesiser picked from the item's words), and music is a short bass-and-arpeggio loop; both deterministic and still placeholders | `scripts/wgf_assets/encoders.py`, `scripts/wgf_assets/placeholders.py` | Playtests can now hear a reward from a failure, at zero licence cost |
 | F6 | **Done (opt-in).** A commented developer block adds a localhost-only Playwright MCP (`workspace/config/mcp-playwright-localhost.json`) and `--plugin-dir claude-web-game-plugin` through a `{factory}` placeholder; `develop.self_playtest` adds a playtest section to the brief | `workspace/config/factory.yaml`, `scripts/wgf_develop/developers.py`, `settings.py`, `brief.py` | The developer can play its own build before reporting. Defaults are unchanged; the security review is in `docs/claude-capabilities.md`; not yet run live |
-| F7 | `factory.develop.skills` names generic external skills | `workspace/config/factory.yaml` / `wgf_develop/brief.py` defaults | Naming `game-feel`, `core-loop`, `web-performance` would matter once F6 loads the plugin |
+| F7 | **Done.** The brief's host skills name the plugin's craft skills (`web-game-factory:game-feel`, `core-loop`, `web-performance`, `audio`, `onboarding-ux`, the engine's skill) next to the generic ones; configured areas are kept and validated | `scripts/wgf_develop/brief.py`, `settings.py`, `workspace/config/factory.yaml` | A developer that loads the plugin (F6) is pointed at the craft playbooks |

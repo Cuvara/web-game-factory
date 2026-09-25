@@ -94,10 +94,21 @@ the game, regenerated on every visit and committed with the code it asked for. I
 `idle_timeout_seconds` (no output at all for that long — a hung agent, not a slow one).
 Either is a retryable `FAILED`.
 
-The provider, if any, is named only in the installation's `factory.yaml`. Host skills the
-brief recommends (PixiJS, Three.js, frontend design) are configured under
-`develop.skills`, and the brief says plainly that the template wins wherever a skill
-assumes another layout.
+The provider, if any, is named only in the installation's `factory.yaml`. The brief's
+"Host skills" section recommends skills by area (`brief.DEFAULT_SKILLS`):
+- this Factory's own plugin skills, pointers into `core/craft/`:
+  - `craft`: `web-game-factory:game-feel`, `core-loop`, `web-performance`, `audio`;
+  - `ui`: `web-game-factory:onboarding-ux`;
+  - the engine's area: `web-game-factory:pixijs` or `threejs`;
+- next to them, generic skills (the official PixiJS skills, a frontend-design skill).
+
+The other engine's area is never recommended.
+- **Configuring.** `develop.skills` merges over the defaults: an added area is kept, and an
+  area set to `[]` is dropped. A value that is not a map of area to a list of names is refused.
+- **Availability.** The plugin skills are available to a host that loads the plugin, as the
+  opt-in self-playtest developer does with `--plugin-dir`.
+- **Precedence.** The brief says plainly that the template wins wherever a skill assumes
+  another layout.
 
 ## Checks
 
@@ -146,7 +157,7 @@ factory:
     commit: true
     build_url: null             # "https://{branch}.{name}.pages.dev"; {owner} {sha} {short_sha}
     author: {name: ..., email: ...}   # when the checkout has no git identity
-    skills: {pixijs: [...], threejs: [...], ui: [...]}
+    skills: {craft: [...], ui: [...]}   # merged over DEFAULT_SKILLS; [] drops an area
     self_playtest: false        # true: the brief asks the developer to play its own build
 ```
 

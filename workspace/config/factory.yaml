@@ -208,6 +208,12 @@ factory:
     check_timeout_seconds: 900
     commit: true                # one local commit per visit, keyed by the idempotency key
     build_url: null             # e.g. "https://{branch}.{name}.pages.dev"; default links the commit
+    # Host skills the brief recommends, merged over the module's defaults
+    # (scripts/wgf_develop/brief.py DEFAULT_SKILLS): this Factory's plugin skills -
+    # web-game-factory:game-feel, core-loop, web-performance, audio, onboarding-ux, and the
+    # engine's pixijs/threejs - plus generic ones. Add an area, or set one to [] to drop it.
+    # skills:
+    #   craft: [web-game-factory:game-feel, web-game-factory:core-loop]
 
   # The review module (scripts/wgf_review, docs/review-module.md): an independent reviewer
   # reads each development commit and approves it or requests changes, which the workflow

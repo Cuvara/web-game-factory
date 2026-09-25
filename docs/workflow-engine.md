@@ -51,12 +51,13 @@ python -m unittest discover scripts/tests   # includes the acceptance tests belo
       EventBus ──► store (events.jsonl = structured log)
                └─► CLI progress, and later a UI / monitor / agent host
 
-  research → strategy → [G2] → design → tech-plan → [G3] → init → assets → develop → review → sdk → verify → [G4] → release
-                                                                             ▲ ▲ request-  │              │ fail │ │ kill → $end
-                                                                             │ └─ changes ─┘              │      │ │
-                                                                             ├────────────────────────────┘      │ │
-                                                                             └───────────── iterate ─────────────┘ │ pass
-                                                                                                                   ▼
+  research → strategy → [G2] → design → tech-plan → [G3] → init → assets → develop → review → sdk → sdk-review → verify → [G4] → release
+                                                                             ▲ ▲ request-  │           request-  │       │ fail │ │ kill → $end
+                                                                             │ ├─ changes ─┘           changes   │       │      │ │
+                                                                             │ └─────────────────────────────────┘       │      │ │
+                                                                             ├───────────────────────────────────────────┘      │ │
+                                                                             └───────────────────── iterate ────────────────────┘ │ pass
+                                                                                                                                  ▼
                                release-manifest (draft) ─► game repo CI ─► G5 ─► G6 ─► publish
                                ─────────── Factory ends here ───────────   (outside the engine)
 ```
@@ -719,7 +720,8 @@ Decide: wgf decide new-game-20260923-051421-470ce6 pass|iterate|kill [--note TEX
 
 A mock run approves its reversible gates (G2, G3) itself and stops at G4, which only a person
 decides. `wgf decide <run-id> pass` continues to `release` and completes; `iterate` loops
-develop → review → sdk → verify → G4; `kill` ends the run (exit `0`, `Ended: kill at G4`).
+develop → review → sdk → sdk-review → verify → G4; `kill` ends the run (exit `0`,
+`Ended: kill at G4`).
 
 `--mock-plan` scripts outcomes per step execution (`success`, `pass`, `fail`, `failed`,
 `fatal`, `blocked`, `waiting`, `raise`, or any route label), so every failure path is

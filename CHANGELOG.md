@@ -45,6 +45,48 @@ Core changes are listed with their reason, as docs/core-v1.md requires.
 - **`design.on.descope: $fail`**, explicit: a blocking design-consistency breach ends the
   run with the design's own message (it already did, unrouted).
 
+### Changed - the shipped commit is reviewed, and release refuses what was not (M7)
+- **`sdk-review`: the sdk commit is reviewed too** (P0-8). `new-game` gains a step after
+  `sdk`, before `verify`: `type: review`, `stage: title:prototype`, `with: subject:
+  sdk-report`, inputs `sdk-report`, `prototype-report`, `game-design`, `scaffold-record`.
+  The review step reads a generic `with: subject` (`prototype-report`, the default, or
+  `sdk-report`): the reviewed commit is that artifact's `build_ref.commit_sha`, which must
+  be HEAD; for the sdk subject the brief's change is prototype commit..sdk commit. Its
+  `request-changes` routes to `develop` - the developer fixes the game side, sdk integrates
+  again, both reviews run again, `max_visits` bounds it; a requested change never reaches
+  verify. Verdict files are now `<run>/review/<step>-<visit>-<attempt>.*`, so the two
+  reviews never overwrite each other. `sdk-report`'s x-wgf consumers gain
+  `title:prototype`. *Reason (core change, core/workflows + core/artifacts):* `review` read
+  develop's commit, then sdk committed integration code on top of it, and that unreviewed
+  sdk commit is what verify checked and release shipped.
+- **Release refuses an unreviewed or mis-reviewed build** (P0-9). The newest review-report
+  must approve exactly the commit being released (the sdk commit, HEAD), from a reviewer
+  that ran (`reviewer.kind: command`), pinning the run's newest prototype-report and
+  sdk-report. `skipped`/absent is `unreviewed` (FAILED, not retryable); an approval of
+  another commit - develop's alone included - or of an older report is
+  `review-commit-mismatch` (was `commit-lineage-mismatch`). New
+  `factory.release.allow_unreviewed` (default `false`, read only from config, never a
+  step's `with:`) drafts a skipped/absent review anyway, recorded as UNREVIEWED; it waives
+  nothing else. *Reason:* release recorded "UNREVIEWED" and shipped, and with the shipped
+  `review.reviewer.kind: none` every release was unreviewed.
+- **Release checks G4 itself** (M4 follow-up). `evidence_refusals` takes the engine's
+  `context.gates_passed` (a required keyword: no default) and refuses `g4-not-passed`
+  (BLOCKED) unless every gate in the release step's `with: required_gates` (default `[G4]`,
+  read only from the workflow, never from config) is passed and current. The step cannot
+  see its workflow definition and no engine change was in scope, so the workflow declares
+  what its release requires and the default fails closed; `test_workflow_definition` checks
+  every shipped workflow's release requires each irreversible gate it checkpoints.
+- `--mock`: the review mock approves the commit its subject names (`reviewer.kind: none`,
+  so no real release could accept it); the review-report fixture is `approve`.
+- *Migration:* **with the shipped `review.reviewer.kind: none`, every real release is now
+  refused (`unreviewed`)** - configure `factory.review.reviewer` (see the commented Claude
+  Code block in factory.yaml), or set `factory.release.allow_unreviewed: true` knowingly. A
+  custom workflow with a `release` step and no G4 checkpoint must add `with:
+  required_gates: []`; one that lists `review-report` as a release input should add a
+  review of the commit it ships. A run in flight past `sdk` when this lands has no
+  sdk-review: resume it `--from develop` (or `--from sdk-review` in a run whose sdk commit
+  is HEAD) to get the approval release now requires. Existing drafts are unaffected.
+
 ### Added
 - **Timeout auto-approval (M4).** `factory.checkpoints.timeout_auto_approve: {G2: 48h}`
   lets a reversible gate approve itself once it has waited that long. *Reason (core

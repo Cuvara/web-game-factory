@@ -4,7 +4,10 @@
     reviewer.py --game 2d|3d --repo <checkout> --verdict <path> --commit <sha> [--brief <md>]
 
 What `factory.review.reviewer: {kind: command}` runs in a golden run, through the real review
-step (docs/review-module.md), which fingerprints the checkout around it. It is NOT an AI
+step (docs/review-module.md), which fingerprints the checkout around it - twice: `review`
+hands it develop's commit, `sdk-review` the sdk step's integration commit on top, which is
+the one verified and shipped. Both are checked by the same rules, against the development
+brief's baseline, so the sdk commit is judged on everything it ships. It is NOT an AI
 reviewer and makes no judgement of quality or fun. It checks, from git objects only (it
 never runs `git status`, which may rewrite the index, and writes nothing but the verdict):
 

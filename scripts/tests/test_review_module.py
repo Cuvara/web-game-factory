@@ -440,5 +440,130 @@ class Report(unittest.TestCase):
         self.assertNotEqual(content_hash(tampered), artifact["provenance"]["content_hash"])
 
 
+# -- the subject: which commit a review step reviews ---------------------------------------
+
+HAS_GIT = shutil.which("git") is not None
+
+APPROVER = """
+import json, sys
+verdict_path, commit = sys.argv[1:3]
+with open(verdict_path, "w") as handle:
+    json.dump({"verdict": "approve", "commit": commit, "blockers": []}, handle)
+"""
+
+
+class _Logger:
+    def info(self, *args, **kwargs):
+        pass
+
+    debug = warning = error = info
+
+
+@unittest.skipUnless(HAS_GIT, "git is not installed")
+class Subject(unittest.TestCase):
+    """`with: subject` points the same step at develop's commit or the sdk commit on top."""
+
+    def setUp(self):
+        import subprocess
+        self.scratch = tempfile.mkdtemp(prefix="wgf-review-subject-")
+        self.addCleanup(shutil.rmtree, self.scratch, ignore_errors=True)
+        self.repo = os.path.join(self.scratch, "checkouts", "demo")
+        os.makedirs(self.repo)
+
+        def git(*args):
+            return subprocess.run(["git", "-c", "user.name=T", "-c", "user.email=t@e.invalid",
+                                   *args], cwd=self.repo, check=True, capture_output=True,
+                                  text=True).stdout.strip()
+
+        self.git = git
+        git("init", "-q", "-b", "main")
+        self.commit("src/main.ts", "export {};\n", "develop")
+        self.developed = git("rev-parse", "HEAD")
+        self.commit("src/platform/gameplay.ts", "export const sdk = 1;\n",
+                    "sdk: integrate\n\nWgf-Sdk-Key: run:sdk:1")
+        self.integrated = git("rev-parse", "HEAD")
+        self.approver = os.path.join(self.scratch, "approver.py")
+        with open(self.approver, "w") as handle:
+            handle.write(APPROVER)
+        self.run_dir = os.path.join(self.scratch, "run")
+        os.makedirs(self.run_dir)
+
+    def commit(self, relative, text, message):
+        path = os.path.join(self.repo, relative)
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "w") as handle:
+            handle.write(text)
+        self.git("add", "-A")
+        self.git("commit", "-q", "-m", message)
+
+    def review(self, subject=None, sdk_commit=None, drop=()):
+        import types
+        from wgf_review.step import ReviewStep
+        from wgflib.workflow.model import ArtifactRef
+        from wgflib.workflow.step import StepInputs
+        contents = {
+            "prototype-report": {"title_id": "demo",
+                                 "build_ref": {"commit_sha": self.developed}},
+            "sdk-report": {"title_id": "demo", "build_ref": {
+                "commit_sha": sdk_commit or self.integrated,
+                "base_commit_sha": self.developed}, "platforms": []},
+            "scaffold-record": {"title_id": "demo", "repository": {"name": "demo"}},
+        }
+        refs = {t: ArtifactRef(id=t, type=t, version=1, location=f"artifacts/{t}/v1.json",
+                               checksum="sha256:0", schema_version="1.0.0")
+                for t in contents if t not in drop}
+        inputs = StepInputs(refs, lambda ref: contents[ref.type], [])
+        config = {"review": {"checkouts": os.path.join(self.scratch, "checkouts"),
+                             "guarded_paths": [],
+                             "reviewer": {"kind": "command", "timeout_seconds": 30,
+                                          "argv": [sys.executable, self.approver,
+                                                   "{verdict}", "{commit}"]}}}
+        context = types.SimpleNamespace(config=config, run_dir=self.run_dir, visit=1,
+                                        attempt=1, execution=1, logger=_Logger())
+        params = {} if subject is None else {"subject": subject}
+        step_id = "review" if subject is None else "sdk-review"
+        step = ReviewStep(types.SimpleNamespace(id=step_id, type="review", params=params,
+                                                outputs=["review-report"], inputs=[]))
+        return step.execute(inputs, context)
+
+    def test_the_sdk_subject_reviews_the_sdk_commit_against_the_develop_commit(self):
+        result = self.review(subject="sdk-report")
+        self.assertEqual(result.outcome, "SUCCESS", result.error)
+        report_ = result.artifacts[0].content
+        self.assertEqual(report_["reviewed_commit"], self.integrated)
+        self.assertEqual(report_["baseline_commit"], self.developed)
+        with open(os.path.join(self.run_dir, "review", "sdk-review-1-1.brief.md")) as handle:
+            brief = handle.read()
+        self.assertIn(f"git diff {self.developed}..{self.integrated}", brief)
+        self.assertIn("committed on top of the development commit", brief)
+
+    def test_the_default_subject_is_the_develop_commit_which_is_no_longer_head(self):
+        # After sdk committed, HEAD is the sdk commit: reviewing develop's commit is refused,
+        # which is exactly why sdk-review reviews the sdk commit.
+        result = self.review()
+        self.assertEqual((result.outcome, result.retryable), ("FAILED", False))
+        self.assertIn("prototype-report is for", result.error)
+
+    def test_an_sdk_report_for_another_commit_than_head_is_refused(self):
+        result = self.review(subject="sdk-report", sdk_commit=self.developed)
+        self.assertEqual((result.outcome, result.retryable), ("FAILED", False))
+        self.assertIn("sdk-report is for", result.error)
+
+    def test_a_dirty_tree_blocks_the_sdk_review(self):
+        with open(os.path.join(self.repo, "src", "main.ts"), "a") as handle:
+            handle.write("// uncommitted\n")
+        self.assertEqual(self.review(subject="sdk-report").outcome, "BLOCKED")
+
+    def test_without_an_sdk_report_the_sdk_review_waits(self):
+        result = self.review(subject="sdk-report", drop=("sdk-report",))
+        self.assertEqual(result.outcome, "WAITING_FOR_INPUT")
+        self.assertIn("sdk-report", result.message)
+
+    def test_an_unknown_subject_is_refused(self):
+        result = self.review(subject="qa-report")
+        self.assertEqual((result.outcome, result.retryable), ("FAILED", False))
+        self.assertIn("subject", result.error)
+
+
 if __name__ == "__main__":
     unittest.main()

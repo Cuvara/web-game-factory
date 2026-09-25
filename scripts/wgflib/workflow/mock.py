@@ -155,11 +155,20 @@ class MockDevelopmentStep(MockStep):
 
 class MockReviewStep(MockStep):
     """`request-changes` in a mock plan is a review asking for changes: FAILED with that
-    route and not retryable, the same shape the real review step returns."""
+    route and not retryable, the same shape the real review step returns.
+
+    Otherwise it approves - so a mock run can reach release - exactly the commit the real
+    step would review: the build_ref.commit_sha of its `with: subject` (default
+    prototype-report; `sdk-review` names sdk-report). The approval names no reviewer
+    (`reviewer.kind: none`): no code was read, and a real release refuses an approval with
+    no reviewer behind it."""
 
     type, role = "review", "architect"
 
     def execute(self, inputs, context):
+        subject = (self.params or {}).get("subject") or "prototype-report"
+        loaded = inputs.load(subject) if subject in inputs else None
+        self._subject_commit = ((loaded or {}).get("build_ref") or {}).get("commit_sha")
         result = super().execute(inputs, context)
         if result.route == "request-changes":
             return StepResult("FAILED", route=result.route, artifacts=result.artifacts,
@@ -171,6 +180,8 @@ class MockReviewStep(MockStep):
             return
         body["iteration"] = context.visit
         body["attempt"] = context.attempt
+        if getattr(self, "_subject_commit", None):
+            body["reviewed_commit"] = self._subject_commit
         if entry == "request-changes":
             body["verdict"] = "request-changes"
             body["blockers"] = [{"id": f"mock-blocker-{context.execution}", "file": None,

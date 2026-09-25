@@ -14,10 +14,13 @@
 Outcomes (docs/workflow-module-contract.md §7, docs/release-module.md):
 
     no verification in the run, a dirty checkout or a
-    verified dirty tree, a bundle that is not the verified one   BLOCKED: a person acts first
+    verified dirty tree, a bundle that is not the verified one,
+    a required gate (G4) not passed or superseded                BLOCKED: a person acts first
     verification not passed, stale qa-report, commit lineage
-    broken, packaging failed, a package that may not ship,
-    a manifest that does not validate                            FAILED, not retryable
+    broken, the shipped commit not approved by the newest review
+    (`unreviewed`, `review-commit-mismatch`), packaging failed,
+    a package that may not ship, a manifest that does not
+    validate                                                     FAILED, not retryable
     otherwise                                                    SUCCESS, release-manifest
 
 On refusal nothing is packaged (for evidence refusals) and no release-manifest is returned:
@@ -41,8 +44,8 @@ from wgflib.yamllite import YamlError, load_file
 from wgf_verification.checks.platform import same_commit
 from wgf_verification.session import locate_checkout
 
-from .lineage import (BLOCKED, FAILED, Refusal, checkout_lineage, commit_lineage,
-                      evidence_refusals, review_status)
+from .lineage import (BLOCKED, DEFAULT_REQUIRED_GATES, FAILED, Refusal, checkout_lineage,
+                      commit_lineage, evidence_refusals, review_status)
 from .package import RULES, audit_package, file_sha256
 from .runner import ReleaseRunner, describe
 
@@ -143,8 +146,26 @@ class ReleaseStep(WorkflowStep):
             return StepResult.failed(str(exc), retryable=False)
         runner = self.runner_factory(env=game_env, hooks=hooks)
 
+        # Two policies, each read from exactly one place so neither can be loosened from the
+        # other: which gates must be passed is the workflow's (the release step's `with:
+        # required_gates`, default G4 - never factory config); whether an unreviewed build
+        # may be drafted is the installation's (factory.release.allow_unreviewed, default
+        # false - never a workflow's `with:`).
+        required_gates = (self.params or {}).get("required_gates", list(DEFAULT_REQUIRED_GATES))
+        if not isinstance(required_gates, list) or not all(isinstance(g, str) and g
+                                                           for g in required_gates):
+            return StepResult.failed("release `with: required_gates` must be a list of gate "
+                                     f"ids, not {required_gates!r}", retryable=False)
+        allow_unreviewed = ((context.config or {}).get("release") or {}).get(
+            "allow_unreviewed", False)
+        if not isinstance(allow_unreviewed, bool):
+            return StepResult.failed("factory.release.allow_unreviewed must be true or false, "
+                                     f"not {allow_unreviewed!r}", retryable=False)
         try:
-            refusals = evidence_refusals(inputs.refs, loaded, getattr(context, "run_id", None))
+            refusals = evidence_refusals(
+                inputs.refs, loaded, getattr(context, "run_id", None),
+                gates_passed=getattr(context, "gates_passed", None) or (),
+                required_gates=required_gates, allow_unreviewed=allow_unreviewed)
             if refusals:
                 raise _Refused(refusals)
             root, where = locate_checkout(settings, context.config, loaded.get("scaffold-record"),
@@ -182,8 +203,10 @@ class ReleaseStep(WorkflowStep):
         message = (f"release {release_id} drafted at {head[:12]}: {len(artifact['packages'])} "
                    f"package(s), evidence {evidence['status']}"
                    + (f" ({platforms})" if platforms else "")
-                   + ("; UNREVIEWED (review skipped)" if review == "skipped" else
-                      "; no review in this run" if review == "absent" else "; review approved")
+                   + ("; UNREVIEWED (review skipped; factory.release.allow_unreviewed)"
+                      if review == "skipped" else
+                      "; UNREVIEWED (no review in this run; factory.release.allow_unreviewed)"
+                      if review == "absent" else f"; review approved {head[:12]}")
                    + "; nothing published")
         metadata = {"release_id": release_id, "commit": head, "state": "draft",
                     "evidence_status": evidence["status"], "review": review,
@@ -519,7 +542,10 @@ class ReleaseStep(WorkflowStep):
                 "commit_lineage": [{"source": s, "commit_sha": sha}
                                    for s, sha in commit_lineage(loaded)]
                                   + [{"source": "checkout", "commit_sha": head}],
-                "review": review_status(refs, loaded)[1],
+                # evidence_refusals has already refused an unreviewed build unless the
+                # installation allowed one; here the review is only recorded, UNREVIEWED
+                # loudly when that is what it is.
+                "review": review_status(refs, loaded, allow_unreviewed=True)[1],
                 "bundle_hash": vr["build_artifact"]["content_hash"],
                 "platforms": platforms,
                 "package_audit": {"status": "PASS", "rules": list(RULES)},

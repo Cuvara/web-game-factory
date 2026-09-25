@@ -106,9 +106,19 @@ factory:
   # never pushes, tags or publishes. The checkout is the release step's `with: repo_dir`,
   # else WGF_GAME_REPO, else <checkouts>/<repository name from the run's scaffold-record>.
   # A step's `with:` overrides any key: release_id (default: the next r<n>, or the one this
-  # commit already has), version (default: game.version), kind, timeouts.
+  # commit already has), version (default: game.version), kind, timeouts. Two keys are read
+  # from one place only: `required_gates` from the workflow's `with:` (default [G4]), and
+  # `allow_unreviewed` from here.
   release:
     checkouts: ..
+    # Release refuses (`unreviewed`) unless the newest review-report approved exactly the
+    # commit it ships - the sdk commit, which the workflow's sdk-review reads. With the
+    # shipped `review.reviewer.kind: none` below, EVERY RELEASE IS REFUSED until a reviewer
+    # is configured: that is the intended fail-closed default. `true` is an explicit,
+    # recorded exception: a skipped or absent review is drafted anyway, and the manifest's
+    # evidence.review says UNREVIEWED. It never waives a request for changes, an approval
+    # of another commit, or G4.
+    allow_unreviewed: false
 
   # The assets step (scripts/wgf_assets). Every key is optional; a step's `with:` block
   # overrides any of them. See docs/assets-module.md.
@@ -213,10 +223,12 @@ factory:
     #                           # pinned the repository is then refused, never run
 
   # The review module (scripts/wgf_review, docs/review-module.md): an independent reviewer
-  # reads each development commit and approves it or requests changes, which the workflow
-  # routes back to develop. The reviewer is read-only - the checkout is fingerprinted before
-  # and after, and any change fails the review and is undone. `none` records a skipped
-  # review, never an approval.
+  # reads each development commit - and, as sdk-review, the sdk integration commit on top,
+  # which is what ships - and approves it or requests changes, which the workflow routes
+  # back to develop. The reviewer is read-only - the checkout is fingerprinted before and
+  # after, and any change fails the review and is undone. `none` records a skipped review,
+  # never an approval, and release then refuses the build (`unreviewed`) unless
+  # release.allow_unreviewed is true: configure a reviewer before expecting a release.
   review:
     reviewer:
       kind: none                # none | command: run argv unattended, read-only

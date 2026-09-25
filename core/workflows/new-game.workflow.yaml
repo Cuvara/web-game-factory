@@ -128,8 +128,9 @@ workflow:
       outputs: [prototype-report]
 
     # An independent reviewer reads the commit develop made; it may not change it. Approve
-    # continues; request-changes (FAILED, route `request-changes`) goes back to develop with
-    # the blockers. Unrouted, a request for changes would fail the run, never continue.
+    # continues to sdk (whose own commit sdk-review reads in turn); request-changes (FAILED,
+    # route `request-changes`) goes back to develop with the blockers. Unrouted, a request
+    # for changes would fail the run, never continue.
     - id: review
       type: review
       stage: title:prototype
@@ -145,6 +146,23 @@ workflow:
       stage: title:prototype
       inputs: [game-design, scaffold-record, prototype-report]
       outputs: [sdk-report]
+
+    # The sdk step commits integration code on top of the reviewed development commit, and
+    # that sdk commit is what verify checks and release ships. So it is reviewed too, by the
+    # same independent, read-only reviewer: the subject is the sdk-report's commit (HEAD
+    # after sdk), the change is prototype-report's commit..sdk commit. request-changes goes
+    # back to develop with the blockers - the developer fixes the game side, sdk integrates
+    # again, and both reviews run again; max_visits bounds the loop. A requested change
+    # never continues to verify.
+    - id: sdk-review
+      type: review
+      stage: title:prototype
+      inputs: [sdk-report, prototype-report, game-design, scaffold-record]
+      outputs: [review-report]
+      with:
+        subject: sdk-report
+      on:
+        request-changes: develop
 
     # Verification returns a result, not a destination: FAIL (route `fail`) goes back to
     # develop with the failing qa-report, PASS continues to the prototype review (G4), and
@@ -183,9 +201,16 @@ workflow:
     # Drafts a release only from the newest passing qa-report, whose commit the
     # verification-report, sdk-report, prototype-report and the clean checkout all share.
     # scaffold-record says which repository, and which template revision it came from.
+    # It also refuses unless the newest review-report approved exactly that commit (the sdk
+    # commit; factory.release.allow_unreviewed is the installation's explicit, recorded
+    # exception for a run with no reviewer), and unless every gate in `required_gates` is
+    # passed and current in this run. A workflow with no G4 checkpoint must say so with
+    # `required_gates: []`; omitted, the release step requires G4.
     - id: release
       type: release
       stage: release:draft
       inputs: [qa-report, verification-report, sdk-report, prototype-report, scaffold-record, review-report]
       outputs: [release-manifest]
+      with:
+        required_gates: [G4]
       next: $end

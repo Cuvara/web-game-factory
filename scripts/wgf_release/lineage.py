@@ -11,9 +11,13 @@ A draft release is only prepared from:
     §5): the qa-report's, the verification-report's and the sdk-report's commit are one,
     and - checked with the checkout - the repository's HEAD; the prototype-report's commit
     is the one sdk built on; the commits between them are exactly this run's sdk commits;
-  * a review, when the run holds one, that approved exactly the prototype-report's commit.
-    A skipped review (no reviewer configured) does not refuse, and is carried into the
-    manifest as `review: skipped` - never as an approval;
+  * a review: the newest review-report approved exactly the commit being shipped - the sdk
+    commit, which the workflow's `sdk-review` reads - and pins the run's newest
+    prototype-report and sdk-report. A skipped review (no reviewer configured) or none at
+    all is `unreviewed`, refused unless factory.release.allow_unreviewed is true, and then
+    carried into the manifest as UNREVIEWED - never as an approval;
+  * every gate the step's `required_gates` names (default G4), passed in this run and not
+    superseded by later work (`context.gates_passed`);
   * a verification of a clean tree: a verified working tree with uncommitted changes is not
     reproducible from any commit.
 
@@ -25,13 +29,24 @@ run verify, commit, clean the checkout (BLOCKED).
 from dataclasses import dataclass
 
 from wgf_verification.lineage import (CODE as LINEAGE, is_placeholder, lineage_problems,
-                                     review_problems, same_commit)
+                                     same_commit)
 
 __all__ = ["Refusal", "FAILED", "BLOCKED", "evidence_refusals", "commit_lineage",
-           "verified_commits", "checkout_lineage", "review_status", "ACCEPTED_EVIDENCE"]
+           "verified_commits", "checkout_lineage", "review_status", "gate_refusals",
+           "shipped_commit", "ACCEPTED_EVIDENCE", "DEFAULT_REQUIRED_GATES", "UNREVIEWED",
+           "REVIEW_MISMATCH"]
 
 FAILED, BLOCKED = "failed", "blocked"
 ACCEPTED_EVIDENCE = ("PASS", "PASS_MOCK")
+UNREVIEWED = "unreviewed"
+REVIEW_MISMATCH = "review-commit-mismatch"
+# The kill gate: nothing ships before a person has judged the verified prototype. A workflow
+# without a G4 checkpoint says so on its release step (`with: required_gates: []`).
+DEFAULT_REQUIRED_GATES = ("G4",)
+
+
+def _short(sha):
+    return (sha or "none")[:12]
 
 
 @dataclass
@@ -98,35 +113,122 @@ def checkout_lineage(loaded, head, git, run_id):
     return [Refusal(FAILED, LINEAGE, p) for p in problems]
 
 
-def review_status(refs, loaded):
-    """([Refusal], {status, ...}): the review, as the manifest records it."""
+def shipped_commit(loaded):
+    """The commit a release would ship: the verified one (qa-report, verification-report and
+    sdk-report name it; that they agree, and that it is HEAD, is checked separately). None
+    when the evidence names none."""
+    for _, sha in verified_commits(loaded):
+        if not is_placeholder(sha):
+            return sha
+    return None
+
+
+def review_status(refs, loaded, allow_unreviewed=False):
+    """([Refusal], {status, ...}): the review of the commit being shipped, as the manifest
+    records it.
+
+    The newest review-report must approve exactly the shipped commit - the sdk commit, which
+    `sdk-review` reads, not only the development commit `review` read before sdk committed
+    on top of it. `skipped` (no reviewer configured) and `absent` (no review-report) are
+    refused as `unreviewed`, unless the installation set factory.release.allow_unreviewed:
+    then they are carried into the manifest as UNREVIEWED, never as an approval. An approval
+    of another commit, or of an older prototype-report or sdk-report than the run's newest,
+    is refused whatever the setting: that is a review of a different build.
+    """
     review = loaded.get("review-report")
-    prototype_ref = (refs or {}).get("prototype-report")
-    problems, status = review_problems(
-        review, _build_commit(loaded, "prototype-report"),
-        getattr(prototype_ref, "content_hash", None))
-    record = {"status": status}
+    shipped = shipped_commit(loaded)
+    record = {}
+    refusals = []
+    if review is None:
+        status = "absent"
+    elif review.get("verdict") == "skipped":
+        status = "skipped"
+    elif review.get("verdict") != "approve":
+        status = "not-approved"
+    else:
+        status = "approved"
     if review is not None:
         record.update(verdict=review.get("verdict"),
                       reviewed_commit=review.get("reviewed_commit"),
                       artifact_id=(review.get("provenance") or {}).get("artifact_id"),
                       content_hash=getattr((refs or {}).get("review-report"), "content_hash",
                                            None))
-    if status == "skipped":
-        record["note"] = ("UNREVIEWED: no reviewer is configured, so nobody but its author "
-                          "read this build. This is not an approval.")
-    elif status == "absent":
-        record["note"] = "the run holds no review-report"
-    refusals = []
-    for problem in problems:
-        code = "review-not-approved" if status == "not-approved" else LINEAGE
-        refusals.append(Refusal(FAILED, code, problem))
+
+    if status in ("absent", "skipped"):
+        what = ("the run holds no review-report" if status == "absent" else
+                "no reviewer is configured (factory.review.reviewer.kind: none), so the "
+                "review was skipped")
+        if allow_unreviewed:
+            record["note"] = (f"UNREVIEWED: {what}; released only because "
+                              "factory.release.allow_unreviewed is true. Nobody but its "
+                              "author read this build. This is not an approval.")
+        else:
+            refusals.append(Refusal(
+                FAILED, UNREVIEWED,
+                f"{what}: nobody but its author read commit {_short(shipped)}. A release "
+                "ships only a commit an independent review approved. Configure "
+                "factory.review.reviewer and re-run from develop, or - as an explicit, "
+                "recorded exception - set factory.release.allow_unreviewed: true."))
+    elif status == "not-approved":
+        refusals.append(Refusal(
+            FAILED, "review-not-approved",
+            f"the newest review-report's verdict is {review.get('verdict')!r}: the build was "
+            "not approved"))
+    else:
+        reviewed = review.get("reviewed_commit")
+        if (review.get("reviewer") or {}).get("kind") != "command":
+            # Only a reviewer that ran can approve; an approval with no reviewer behind it
+            # (a --mock placeholder, a hand-written report) is not a review.
+            refusals.append(Refusal(
+                FAILED, "review-not-approved",
+                f"the newest review-report approves {_short(reviewed)} with no reviewer "
+                f"behind it (reviewer kind {(review.get('reviewer') or {}).get('kind')!r}): "
+                "that is not a review"))
+        if is_placeholder(reviewed) or is_placeholder(shipped) \
+                or not same_commit(reviewed, shipped):
+            refusals.append(Refusal(
+                FAILED, REVIEW_MISMATCH,
+                f"the newest review approved {_short(reviewed)}, but the commit being "
+                f"released is {_short(shipped)}: the approval is of another build (an "
+                "approval of the development commit does not cover the sdk commit made on "
+                "top of it; sdk-review must approve the sdk commit)"))
+        pinned = {}
+        for pin in (review.get("provenance") or {}).get("inputs") or []:
+            if isinstance(pin, dict):
+                pinned.setdefault(pin.get("artifact_type"), []).append(pin.get("content_hash"))
+        for artifact_type in ("prototype-report", "sdk-report"):
+            newest = getattr((refs or {}).get(artifact_type), "content_hash", None)
+            if newest and pinned.get(artifact_type) and newest not in pinned[artifact_type]:
+                refusals.append(Refusal(
+                    FAILED, REVIEW_MISMATCH,
+                    f"the newest review-report reviewed an older {artifact_type} than the "
+                    "run's newest"))
+        if refusals:
+            status = "mismatch"
+    record["status"] = status
     return refusals, {k: v for k, v in record.items() if v is not None}
 
 
-def evidence_refusals(refs, loaded, run_id):
+def gate_refusals(gates_passed, required_gates):
+    """[Refusal] for each gate in `required_gates` that this run has not passed, or whose
+    approval later work superseded (the engine's `context.gates_passed`)."""
+    passed = set(gates_passed or ())
+    return [Refusal(BLOCKED, f"{str(gate).lower()}-not-passed",
+                    f"{gate} has not been passed in this run, or a newer verification "
+                    f"superseded its decision: a release is drafted only after a person "
+                    f"passes {gate} on the evidence it ships. Resume the run and decide it.")
+            for gate in required_gates or () if gate not in passed]
+
+
+def evidence_refusals(refs, loaded, run_id, *, gates_passed,
+                      required_gates=DEFAULT_REQUIRED_GATES, allow_unreviewed=False):
     """Every precondition on the run's evidence that does not hold. `refs` are the newest
-    ArtifactRefs per type, `loaded` their contents."""
+    ArtifactRefs per type, `loaded` their contents.
+
+    `gates_passed` is the engine's `context.gates_passed` and has no default: a caller that
+    does not say which gates the run passed gets a TypeError, never a release. The review
+    rule and `allow_unreviewed` are review_status's; the gate rule is gate_refusals'.
+    """
     out = []
     qa, vr = loaded.get("qa-report"), loaded.get("verification-report")
     if qa is None:
@@ -207,8 +309,9 @@ def evidence_refusals(refs, loaded, run_id):
             has_prototype="prototype-report" in loaded, sdk_report=loaded.get("sdk-report"),
             git=None, run_id=run_id, history=False)
         out.extend(Refusal(FAILED, LINEAGE, p) for p in problems)
-    problems, _ = review_status(refs, loaded)
+    problems, _ = review_status(refs, loaded, allow_unreviewed=allow_unreviewed)
     out.extend(problems)
+    out.extend(gate_refusals(gates_passed, required_gates))
     if (vr.get("commit") or {}).get("dirty") is None:
         out.append(Refusal(BLOCKED, "verified-tree-unknown",
                            "the verification could not establish whether its working tree "

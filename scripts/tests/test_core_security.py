@@ -1210,7 +1210,8 @@ class FalsePass(unittest.TestCase):
         qa = read_json(os.path.join(fixtures, "qa-report.json"))
         vr = read_json(os.path.join(fixtures, "verification-report.json"))
         codes = {r.code for r in evidence_refusals({}, {"qa-report": qa,
-                                                        "verification-report": vr}, "run")}
+                                                        "verification-report": vr}, "run",
+                                                   gates_passed=["G4"])}
         self.assertIn("evidence-status-missing", codes)
         self.assertIn("no-verified-bundle", codes)
 
@@ -1229,8 +1230,14 @@ class FalsePass(unittest.TestCase):
             id="verification-report", type="verification-report", version=1,
             location="artifacts/verification-report/v1.json", checksum="sha256:0",
             content_hash=vr_hash)}
+        # An independent review approved the commit, and G4 is passed: the evidence alone
+        # is what these tests vary.
+        review = {"verdict": "approve", "reviewed_commit": SHA,
+                  "reviewer": {"kind": "command"}, "provenance": {"inputs": []}}
         return {r.code for r in evidence_refusals(refs, {"qa-report": qa,
-                                                         "verification-report": vr}, "run")}
+                                                         "verification-report": vr,
+                                                         "review-report": review}, "run",
+                                                  gates_passed=["G4"])}
 
     def test_release_preconditions_hold_for_a_clean_pass(self):
         self.assertEqual(self.release_codes(), set())

@@ -59,10 +59,22 @@ class ParsesValidDefinitions(unittest.TestCase):
         self.assertEqual(
             definition.step_ids,
             ["research", "strategy", "strategy-review", "design", "tech-plan",
-             "tech-plan-review", "init", "assets", "develop", "review", "sdk", "verify",
-             "prototype-review", "release"],
+             "tech-plan-review", "init", "assets", "develop", "review", "sdk", "sdk-review",
+             "verify", "prototype-review", "release"],
         )
         self.assertEqual(definition.step("verify").on, {"fail": "develop"})
+        # The commit that ships (sdk's) is reviewed like develop's, and a request for
+        # changes goes back to develop - never on to verify.
+        for step_id in ("review", "sdk-review"):
+            self.assertEqual(definition.step(step_id).type, "review")
+            self.assertEqual(definition.step(step_id).on, {"request-changes": "develop"})
+            self.assertEqual(definition.step(step_id).outputs, ["review-report"])
+        sdk_review = definition.step("sdk-review")
+        self.assertEqual(sdk_review.params.get("subject"), "sdk-report")
+        self.assertEqual(set(sdk_review.inputs), {"sdk-report", "prototype-report",
+                                                  "game-design", "scaffold-record"})
+        self.assertNotIn("subject", definition.step("review").params)
+        self.assertEqual(definition.step("release").params.get("required_gates"), ["G4"])
         g4 = definition.step("prototype-review")
         self.assertEqual((g4.type, g4.params["gate"], g4.params["choices"]),
                          ("human-checkpoint", "G4", ["pass", "iterate", "kill"]))
@@ -73,6 +85,28 @@ class ParsesValidDefinitions(unittest.TestCase):
         self.assertEqual(definition.resolve_scope("plan"),
                          ["strategy", "strategy-review", "design", "tech-plan",
                           "tech-plan-review"])
+
+    def test_every_shipped_release_requires_the_irreversible_gates_before_it(self):
+        # The release step cannot see its workflow; the workflow tells it which gates to
+        # require (`with: required_gates`, default [G4]). A shipped workflow may not leave
+        # out an irreversible gate it checkpoints before release.
+        from wgf_release.lineage import DEFAULT_REQUIRED_GATES
+        from wgflib.workflow.checkpoint import irreversible_gates
+        from wgflib.workflow.definition import WORKFLOWS
+        irreversible = set(irreversible_gates())
+        for name in sorted(os.listdir(WORKFLOWS)):
+            if not name.endswith(".workflow.yaml"):
+                continue
+            definition = load_definition(os.path.join(WORKFLOWS, name))
+            gates = []
+            for step in definition.steps:
+                gate = (step.params or {}).get("gate")
+                if step.type == "human-checkpoint" and gate in irreversible:
+                    gates.append(gate)
+                if step.type == "release":
+                    required = step.params.get("required_gates", list(DEFAULT_REQUIRED_GATES))
+                    with self.subTest(workflow=name, step=step.id):
+                        self.assertEqual(set(gates) - set(required), set())
 
     def test_every_fixture_workflow(self):
         for name in os.listdir(FIXTURES):

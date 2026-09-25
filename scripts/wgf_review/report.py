@@ -33,7 +33,10 @@ PROMPT_STDOUT = (
 
 
 def render_brief(*, title_id, commit, baseline, design, prototype, develop_brief,
-                 verdict_path, repo, to_stdout=False):
+                 verdict_path, repo, to_stdout=False, sdk=None):
+    """`sdk` is the sdk-report when the commit under review is the sdk step's (subject
+    sdk-report): the change is then the platform integration on top of `baseline`, the
+    development commit an earlier review read."""
     design = design or {}
     prototype = prototype or {}
     develop_brief = develop_brief or {}
@@ -48,6 +51,14 @@ def render_brief(*, title_id, commit, baseline, design, prototype, develop_brief
     if baseline and baseline != commit:
         add(f"- The change: `git diff {baseline}..{commit}` "
             f"(`git log --stat {baseline}..{commit}`)")
+    if sdk is not None:
+        add("- This is the platform SDK integration the Factory's sdk step committed on top "
+            f"of the development commit `{baseline or 'unknown'}`. This commit is the one that "
+            "is verified and shipped. Review the integration and whether it changed the game.")
+        platforms = [p.get("platform_id") for p in sdk.get("platforms") or []
+                     if isinstance(p, dict) and p.get("platform_id")]
+        if platforms:
+            add(f"- Platforms integrated: {', '.join(platforms)}")
     add("- What the developer was asked to build: `docs/development/brief.md` in the "
         "repository, and what it reported: `docs/development/report.json`.")
     add("")

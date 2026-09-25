@@ -78,7 +78,7 @@ _DECIDER = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.:@-]{0,127}")
 _NOTE_LIMIT = 4000
 
 
-def check_decision(decision, decided_by="human", note=None):
+def check_decision(decision, decided_by="human", note=None, mode=None):
     if not isinstance(decision, str) or not _DECISION.fullmatch(decision):
         raise EngineError(f"decision {decision!r} is not a plain choice label "
                           f"(letters, numbers, - _ . :; at most 64 characters)")
@@ -87,6 +87,8 @@ def check_decision(decision, decided_by="human", note=None):
     if note is not None and (not isinstance(note, str) or "\x00" in note
                              or len(note) > _NOTE_LIMIT):
         raise EngineError(f"note must be text without NUL, at most {_NOTE_LIMIT} characters")
+    if mode is not None and (not isinstance(mode, str) or not _DECISION.fullmatch(mode)):
+        raise EngineError(f"decision mode {mode!r} is not a plain label")
 
 
 def utc_now():
@@ -261,6 +263,10 @@ class WorkflowEngine:
                         return state
                     current = state.step(state.cursor)
             current.attempts = 0  # a resume is a fresh attempt budget, not a continuation
+            # The step a plain resume continues at must have been reachable: a run that stopped
+            # past a gate it never passed (one created before the gate was in its workflow)
+            # does not continue past it by being resumed.
+            self._refuse_unmet_upstream(state, state.cursor)
 
         self._require_implementations(state.scope)
 
@@ -299,6 +305,34 @@ class WorkflowEngine:
                 last[entry.get("step")] = index
         return last
 
+    def _gate_passed(self, state, gate_id):
+        """True when the gate's last success let the run go on past it: its recorded route
+        leads to a step after the gate. A choice that sends work back (iterate, rework) or
+        ends the run answered the gate without passing it."""
+        last = None
+        for entry in state.trail:
+            if entry.get("step") == gate_id and entry.get("outcome") == StepOutcome.SUCCESS:
+                last = entry
+        if last is None:
+            return False
+        key = last.get("route")
+        kind, target = self._route(
+            self.definition.step(gate_id),
+            StepResult(StepOutcome.SUCCESS, route=None if key in (None, "success") else key))
+        ids = self.definition.step_ids
+        return kind == "goto" and target in ids and ids.index(target) > ids.index(gate_id)
+
+    def gates_passed(self, state):
+        """The named gates (`with: gate`) this run has passed and no later upstream work has
+        superseded, in definition order."""
+        passed = []
+        for step_def in self.definition.steps:
+            label = (step_def.params or {}).get("gate")
+            if (label and self._is_gate(step_def) and self._gate_passed(state, step_def.id)
+                    and not self._gate_superseded(state, step_def.id)):
+                passed.append(label)
+        return passed
+
     def _gate_superseded(self, state, gate_id):
         """The steps before `gate_id` that succeeded again after its last success: work the
         gate's approval never covered. [] when the approval is current (or never given)."""
@@ -334,6 +368,11 @@ class WorkflowEngine:
             label = (step_def.params or {}).get("gate") or "checkpoint"
             if status != StepStatus.SUCCESS or step_id not in last_success:
                 problems.append(f"{step_id} (gate {label}) has not been passed in this run")
+                continue
+            if not self._gate_passed(state, step_id):
+                route = state.trail[last_success[step_id]].get("route")
+                problems.append(f"{step_id} (gate {label}) was last answered {route!r}, "
+                                f"which does not pass it")
                 continue
             # An approval covers what existed when it was given. A step before the gate
             # that succeeded again afterwards produced something nobody approved.
@@ -389,6 +428,14 @@ class WorkflowEngine:
             raise EngineError(f"run {run_id} is RUNNING; resume it instead")
         if state.status == RunStatus.CANCELLED:
             raise EngineError(f"run {run_id} was cancelled")
+        ended = state.exit or {}
+        if (state.status == RunStatus.COMPLETED and ended.get("next") == END
+                and ended.get("outcome") not in (None, StepOutcome.SUCCESS)):
+            # A step that stopped the run and was routed to its end - a gate's kill or
+            # rejection - ended it for good. That answer stays the run's last word.
+            raise EngineError(
+                f"run {run_id} was ended at {ended.get('step')} ({ended.get('route')}); it "
+                f"cannot be continued. Start a new run.")
         scope_ids = self.definition.resolve_scope(scope)
         self._require_implementations(scope_ids)
         self._refuse_unmet_upstream(state, scope_ids[0])
@@ -403,8 +450,9 @@ class WorkflowEngine:
                    data={"from_status": previous, "scope": scope_ids, "force": force})
         return state
 
-    def record_decision(self, state, step_id, decision, decided_by="human", note=None):
-        check_decision(decision, decided_by, note)
+    def record_decision(self, state, step_id, decision, decided_by="human", note=None,
+                        mode=None):
+        check_decision(decision, decided_by, note, mode)
         step = state.step(step_id)
         entry = {
             "decision": decision,
@@ -414,9 +462,12 @@ class WorkflowEngine:
         }
         if note:
             entry["note"] = note
+        if mode:
+            entry["mode"] = mode
         state.decisions[step_id] = entry
         self._save(state)
-        self._emit(state, Events.DECISION_RECORDED, step_id=step_id, data=entry)
+        self._emit(state, Events.DECISION_RECORDED, step_id=step_id, data=dict(entry))
+        return entry
 
     def request_pause(self, run_id):
         """Pause at the next step boundary; at once if nothing is driving the run."""
@@ -521,10 +572,13 @@ class WorkflowEngine:
                 step_state = state.step(step_id)
 
                 stale_gate = (skip and step_state.status == StepStatus.SUCCESS
-                              and self._is_gate(step_def) and self._gate_superseded(state, step_id))
+                              and self._is_gate(step_def)
+                              and (self._gate_superseded(state, step_id)
+                                   or not self._gate_passed(state, step_id)))
                 if stale_gate:
-                    # Its approval predates work redone upstream: not "already completed".
-                    # A new visit, so the old decision (bound to its visit) cannot answer it.
+                    # Its approval predates work redone upstream, or its last answer did not
+                    # pass it (work sent back): not "already completed". A new visit, so the
+                    # old decision (bound to its visit) cannot answer it.
                     needs_enter = True
                 elif skip and step_state.status == StepStatus.SUCCESS and step_id not in skipped:
                     skipped.add(step_id)
@@ -603,6 +657,7 @@ class WorkflowEngine:
         step_state.status = StepStatus.PENDING
         step_state.error = None
         step_state.message = None
+        step_state.waiting_since = None  # a new visit waits afresh
         if save:
             self._save(state)
         return True
@@ -666,6 +721,11 @@ class WorkflowEngine:
 
             step_state.status = _STEP_STATUS[result.outcome]
             step_state.finished_at = self.clock()
+            waiting = result.outcome in StepOutcome.WAITING
+            if waiting and step_state.waiting_since is None:
+                # The visit's wait begins now, by the engine's clock; a later execution of
+                # the same visit that waits again keeps it (a checkpoint's timeout).
+                step_state.waiting_since = step_state.finished_at
             step_state.duration_ms = duration_ms
             step_state.last_route = result.routing_key
             step_state.message = result.message
@@ -700,7 +760,9 @@ class WorkflowEngine:
                 data=_compact({"route": result.route, "message": result.message,
                                "result": _jsonable(result.data) or None,
                                "will_retry": will_retry if result.outcome == "FAILED" else None,
-                               "outputs": step_state.outputs if refs else None}),
+                               "outputs": step_state.outputs if refs else None,
+                               "visit": step_state.visits if waiting else None,
+                               "waiting_since": step_state.waiting_since if waiting else None}),
             )
             if not will_retry:
                 return result
@@ -763,6 +825,21 @@ class WorkflowEngine:
                        data={"decision": decision.get("decision")})
             decision = None
 
+        if step_state.waiting_since is not None and integrity.waiting_since(
+                state, self.definition, step_def.id,
+                self.store.read_events(state.run_id)) is None:
+            # Not corroborated by its STEP_WAITING event, or work upstream has succeeded
+            # since: what it waited on has changed, so the wait starts again.
+            self._emit(state, Events.STEP_LOG, step_id=step_def.id, level="info",
+                       message="wait restarted: upstream work is newer than it, or it is "
+                               "not on record",
+                       data={"waiting_since": step_state.waiting_since})
+            step_state.waiting_since = None
+
+        def record(choice, decided_by, note=None, mode=None):
+            return dict(self.record_decision(state, step_def.id, choice, decided_by, note,
+                                             mode))
+
         base = {"workflow_id": state.workflow_id, "run_id": state.run_id,
                 "step_id": step_def.id, "attempt": step_state.attempts}
         context = WorkflowContext(
@@ -789,6 +866,10 @@ class WorkflowEngine:
             mock=bool(state.params.get("mock")),
             progress=self._progress_recorder(state, step_def, step_state),
             should_stop=lambda: self.store.requested(state.run_id, "cancel"),
+            now=self.clock(),
+            waiting_since=step_state.waiting_since,
+            record_decision=record,
+            gates_passed=self.gates_passed(state),
         )
         step_state.pid = None
         step_state.last_event = "started"
@@ -1025,7 +1106,9 @@ class WorkflowEngine:
         if kind == "end":
             state.cursor = None
             state.exit = {"step": step_def.id, "route": key, "outcome": outcome, "next": END}
-            return self._finish(state, RunStatus.COMPLETED, Events.WORKFLOW_COMPLETED, None)
+            # A run a stopping result was routed to the end of (a gate's kill) says why.
+            return self._finish(state, RunStatus.COMPLETED, Events.WORKFLOW_COMPLETED,
+                                message if outcome != StepOutcome.SUCCESS else None)
         if kind == "abort":
             return self._finish(state, RunStatus.FAILED, Events.WORKFLOW_FAILED,
                                 message or f"{step_def.id} failed")

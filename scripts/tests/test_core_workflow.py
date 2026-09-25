@@ -18,6 +18,7 @@ import datetime
 import io
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -33,10 +34,13 @@ for _path in (SCRIPTS, HERE):
         sys.path.insert(0, _path)
 
 import wgf  # noqa: E402
-from test_workflow_engine import CHECKPOINT, LINEAR, LOOP, EngineCase  # noqa: E402
+from test_workflow_engine import (  # noqa: E402
+    CHECKPOINT, LINEAR, LOOP, EngineCase)
 from wgflib import procs  # noqa: E402
-from wgflib.workflow.config import FactoryConfig  # noqa: E402
-from wgflib.workflow.engine import EngineError  # noqa: E402
+from wgflib.workflow import checkpoint, integrity  # noqa: E402
+from wgflib.workflow.api import RunRequest, WorkflowAPI, ended_by_decision  # noqa: E402
+from wgflib.workflow.config import ConfigError, FactoryConfig  # noqa: E402
+from wgflib.workflow.engine import EngineError, WorkflowEngine  # noqa: E402
 from wgflib.workflow.events import Events  # noqa: E402
 from wgflib.workflow.model import (  # noqa: E402
     ArtifactOutput,
@@ -49,6 +53,7 @@ from wgflib.workflow.model import (  # noqa: E402
     StepStatus,
     derive_liveness,
 )
+from wgflib.workflow.step import WorkflowStep  # noqa: E402
 from wgflib.workflow.store import RunLocked, RunStore  # noqa: E402
 
 DEAD_PID = 999999999  # above any pid_max: never a live process
@@ -492,10 +497,11 @@ workflow:
     - id: verify
       type: verify
       inputs: [build]
-      outputs: [report]
+      outputs: [report, title-strategy]
       on: {fail: develop}
     - id: review
       type: human-checkpoint
+      inputs: [title-strategy]       # what G2 is decided on (gates.yaml)
       with: {gate: G2}
     - id: release
       type: release
@@ -1165,9 +1171,9 @@ class FromPastAGateThroughTheCli(unittest.TestCase):
 
     def test_new_game_from_strategy_is_allowed(self):
         code, _, err = self.wgf("new-game", "--mock", "--from", "strategy", "--quiet")
-        self.assertEqual(code, 0, err)
+        self.assertEqual(code, 3, err)  # runs to G4, which waits for a person
         (state,) = self.runs()
-        self.assertEqual(state.status, RunStatus.COMPLETED)
+        self.assertEqual((state.status, state.cursor), (RunStatus.WAITING, "prototype-review"))
         self.assertNotIn("research", state.steps)
 
     def test_a_fresh_single_step_command_is_unaffected(self):
@@ -1262,6 +1268,564 @@ class VisitInflation(EngineCase):
         self.assertEqual(self.script.executed(), ["b", "c"])
         self.assertEqual(state.steps["a"].executions, 1)
         self.assertEqual(state.steps["b"].visits, 1)
+
+
+# -- G4: the prototype review, between verify and release (M4a) ------------------------------
+
+
+class _MockNewGame(unittest.TestCase):
+    """The shipped new-game workflow, mock steps, in process: WorkflowAPI as `wgf` builds it."""
+
+    def setUp(self):
+        self.scratch = tempfile.mkdtemp(prefix="wgf-core-g4-")
+        self.addCleanup(shutil.rmtree, self.scratch, ignore_errors=True)
+        self.store_dir = os.path.join(self.scratch, "store")
+
+    def api(self, checkpoints=None, clock=None):
+        data = {"storage": {"fsync": False}}
+        if checkpoints is not None:
+            data["checkpoints"] = checkpoints
+        return WorkflowAPI(config=FactoryConfig(data), store_dir=self.store_dir, clock=clock)
+
+    def start(self, api=None, **request):
+        api = api or self.api()
+        return api, api.run(RunRequest(mock=True, **request))
+
+    @staticmethod
+    def executed(state):
+        return [entry["step"] for entry in state.trail]
+
+
+class PrototypeReviewGate(_MockNewGame):
+    """G4 `prototype-review`: after verify PASS, before release; only a person decides it."""
+
+    EVIDENCE = ("qa-report", "verification-report", "prototype-report")
+
+    def test_a_mock_new_game_stops_at_g4_after_verify_and_before_release(self):
+        api, state = self.start()
+        self.assertEqual((state.status, state.cursor), (RunStatus.WAITING, "prototype-review"))
+        executed = self.executed(state)
+        self.assertEqual(executed[-2:], ["verify", "prototype-review"])
+        self.assertNotIn("release", executed)
+        self.assertIsNone(state.latest_artifact("release-manifest"))
+        # G2 and G3 are reversible and a mock run approves them itself; G4 it never does.
+        self.assertEqual(state.steps["strategy-review"].status, StepStatus.SUCCESS)
+        self.assertEqual(state.steps["tech-plan-review"].status, StepStatus.SUCCESS)
+        pending = api.pending(state)
+        self.assertEqual((pending["gate"], pending["choices"]), ("G4", ["pass", "iterate", "kill"]))
+        self.assertIsNone(pending["timeout"])
+
+    def test_g4_consumes_the_evidence_verify_produced(self):
+        _, state = self.start()
+        consumed = set(state.steps["prototype-review"].consumed)
+        for artifact_type in self.EVIDENCE:
+            ref = state.latest_of_type(artifact_type)
+            self.assertIn(f"{ref.id}@v{ref.version}", consumed)
+        self.assertEqual(state.latest_of_type("qa-report").produced_by, "verify")
+
+    def test_pass_releases(self):
+        api, run = self.start()
+        state = api.run(RunRequest(resume=run.run_id, decision="pass", note="criteria hold",
+                                   decided_by="human"))
+        self.assertEqual(state.status, RunStatus.COMPLETED, state.message)
+        self.assertEqual(self.executed(state)[-2:], ["prototype-review", "release"])
+        self.assertIsNotNone(state.latest_artifact("release-manifest"))
+        self.assertEqual(state.decisions["prototype-review"]["decision"], "pass")
+        recorded = [e for e in api.store.read_events(run.run_id)
+                    if e["event"] == Events.DECISION_RECORDED
+                    and e.get("step_id") == "prototype-review"]
+        self.assertEqual([e["data"]["decided_by"] for e in recorded], ["human"])
+        self.assertIsNone(ended_by_decision(state))
+        self.assertEqual(wgf.exit_code(state), wgf.EXIT_OK)
+
+    def test_automation_cannot_answer_g4(self):
+        api, run = self.start()
+        for choice in ("pass", "kill", "iterate"):
+            state = api.run(RunRequest(resume=run.run_id, decision=choice,
+                                       decided_by="automation"))
+            self.assertEqual((state.status, state.cursor),
+                             (RunStatus.WAITING, "prototype-review"), choice)
+        self.assertNotIn("release", self.executed(state))
+        self.assertNotIn("develop", self.executed(state)[-3:])
+
+    def test_iterate_goes_back_to_develop_and_asks_again(self):
+        api, run = self.start()
+        first_qa = run.latest_of_type("qa-report")
+        state = api.run(RunRequest(resume=run.run_id, decision="iterate", decided_by="human",
+                                   note="the core loop is unclear"))
+        self.assertEqual((state.status, state.cursor), (RunStatus.WAITING, "prototype-review"))
+        executed = self.executed(state)
+        at = executed.index("prototype-review")
+        # waited, answered iterate, the loop, and waiting again
+        self.assertEqual(executed[at:], ["prototype-review", "prototype-review", "develop",
+                                         "review", "sdk", "verify", "prototype-review"])
+        self.assertEqual(state.steps["prototype-review"].visits, 2)
+        # The iterate answered visit 1; visit 2 needs a decision of its own.
+        self.assertEqual(state.decisions["prototype-review"]["visit"], 1)
+        # The lineage stands: new evidence is a new version, the old one is kept.
+        newest = state.latest_of_type("qa-report")
+        self.assertEqual(newest.version, first_qa.version + 1)
+        self.assertEqual(integrity.state_problems(state, api.definition_for(state)), [])
+        # Release is still impossible: G4's last answer did not pass it.
+        with self.assertRaisesRegex(EngineError, "prototype-review is WAITING"):
+            api.run(RunRequest(run_id=run.run_id, scope="release"))
+        state = api.run(RunRequest(resume=run.run_id, decision="pass", decided_by="human"))
+        self.assertEqual(state.status, RunStatus.COMPLETED, state.message)
+        release_consumed = state.steps["release"].consumed
+        self.assertIn(f"{newest.id}@v{newest.version}", release_consumed)
+
+    def test_kill_ends_the_run_auditably_and_releases_nothing(self):
+        api, run = self.start()
+        state = api.run(RunRequest(resume=run.run_id, decision="kill", decided_by="human",
+                                   note="kill criterion K1 breached"))
+        self.assertEqual(state.status, RunStatus.COMPLETED)
+        self.assertEqual(state.exit, {"step": "prototype-review", "route": "kill",
+                                      "outcome": StepOutcome.BLOCKED, "next": "$end"})
+        self.assertIn("killed at prototype-review (G4)", state.message)
+        self.assertEqual(state.steps["prototype-review"].status, StepStatus.BLOCKED)
+        self.assertNotIn("release", self.executed(state))
+        self.assertIsNone(state.latest_artifact("release-manifest"))
+        ended = ended_by_decision(state)
+        self.assertEqual((ended["decision"], ended["decided_by"]), ("kill", "human"))
+        events = api.store.read_events(run.run_id)
+        names = [e["event"] for e in events]
+        self.assertIn(Events.DECISION_RECORDED, names)
+        self.assertIn(Events.STEP_BLOCKED, names)
+        completed = [e for e in events if e["event"] == Events.WORKFLOW_COMPLETED][-1]
+        self.assertEqual(completed["data"]["exit"]["route"], "kill")
+        self.assertTrue(integrity.decision_on_record(events, "prototype-review",
+                                                     state.decisions["prototype-review"]))
+        # A kill is a legitimate end, not a failure: exit 0, and the status says so.
+        self.assertEqual(wgf.exit_code(state), wgf.EXIT_OK)
+        self.assertEqual(wgf.status_exit_code(state), wgf.EXIT_OK)
+        rendered = wgf.render_status(state, api.definition_for(state))
+        self.assertIn("Ended:  kill at G4 (prototype-review), decided by human", rendered)
+        # And final: nothing in this run can start again, release least of all.
+        for scope in ("release", "develop", "new-game"):
+            with self.assertRaisesRegex(EngineError, "cannot be continued"):
+                api.run(RunRequest(run_id=run.run_id, scope=scope))
+        with self.assertRaisesRegex(EngineError, "only .* runs can be resumed"):
+            api.run(RunRequest(resume=run.run_id, from_step="release"))
+
+    def test_resume_at_g4_without_a_decision_keeps_waiting(self):
+        api, run = self.start()
+        since = run.steps["prototype-review"].waiting_since
+        self.assertIsNotNone(since)
+        state = api.run(RunRequest(resume=run.run_id))
+        self.assertEqual((state.status, state.cursor), (RunStatus.WAITING, "prototype-review"))
+        self.assertEqual(state.steps["prototype-review"].visits, 1)
+        self.assertEqual(state.steps["prototype-review"].waiting_since, since)
+        self.assertEqual(self.executed(state).count("verify"), 1)
+        state = api.run(RunRequest(resume=run.run_id, decision="pass", decided_by="human"))
+        self.assertEqual(state.status, RunStatus.COMPLETED, state.message)
+
+    def test_verification_rerun_after_a_pass_asks_g4_again(self):
+        # Release fails after the pass; the person reruns verification: the pass covered the
+        # old evidence only, so G4 waits for a new decision before release can run again.
+        api, run = self.start(mock_plan={"release": ["fatal"]})
+        state = api.run(RunRequest(resume=run.run_id, decision="pass", decided_by="human"))
+        self.assertEqual((state.status, state.cursor), (RunStatus.FAILED, "release"))
+        state = api.run(RunRequest(resume=run.run_id, from_step="verify"))
+        self.assertEqual((state.status, state.cursor), (RunStatus.WAITING, "prototype-review"))
+        self.assertEqual(state.steps["prototype-review"].visits, 2)
+        self.assertEqual(self.executed(state).count("release"), 1)
+
+    def test_verification_rerun_after_a_completed_release_supersedes_the_pass(self):
+        api, run = self.start()
+        api.run(RunRequest(resume=run.run_id, decision="pass", decided_by="human"))
+        api.run(RunRequest(run_id=run.run_id, scope="verify", force=True))
+        with self.assertRaisesRegex(EngineError, "prototype-review \\(gate G4\\) approved work "
+                                                 "that verify has since replaced"):
+            api.run(RunRequest(run_id=run.run_id, scope="release", force=True))
+        # The whole workflow continued in skip mode reaches G4 and asks again.
+        state = api.run(RunRequest(run_id=run.run_id, scope="new-game"))
+        self.assertEqual((state.status, state.cursor), (RunStatus.WAITING, "prototype-review"))
+
+    def test_release_run_past_an_unanswered_g4_is_refused(self):
+        api, run = self.start()
+        with self.assertRaisesRegex(EngineError, "prototype-review is WAITING"):
+            api.run(RunRequest(run_id=run.run_id, scope="release"))
+        state = api.store.load(run.run_id)
+        self.assertNotIn("release", self.executed(state))
+
+    def test_a_new_run_from_release_is_refused(self):
+        with self.assertRaisesRegex(EngineError, "prototype-review \\(gate G4\\)"):
+            self.start(from_step="release")
+        self.assertEqual(RunStore(self.store_dir, fsync=False).list_runs(), [])
+
+    def test_g4_is_never_auto_approved_even_when_configured(self):
+        api = self.api(checkpoints={"auto_approve": ["G2", "G3", "G4"]})
+        _, state = self.start(api, hold_gates=True)
+        self.assertEqual((state.status, state.cursor), (RunStatus.WAITING, "prototype-review"))
+
+
+class GateAnsweredWithoutPassing(EngineCase):
+    """A gate whose last answer sent work back is answered, not passed."""
+
+    def test_a_later_step_is_refused_after_a_backward_answer(self):
+        engine = self.engine(CHECKPOINT.replace("GATE", "G4"))
+        run = engine.start()
+        self.script.set("strategy", StepResult.blocked("rework needs a person"))
+        state = engine.resume(run.run_id, decision="rework")
+        self.assertEqual(state.status, RunStatus.BLOCKED)
+        self.assertEqual(state.steps["review"].status, StepStatus.SUCCESS)
+        with self.assertRaisesRegex(EngineError, "was last answered 'rework', which does "
+                                                 "not pass it"):
+            engine.continue_in(run.run_id, "design")
+        self.assertNotIn("design", self.script.executed())
+        self.assertEqual(engine.gates_passed(state), [])
+
+    def test_a_run_stopped_past_a_gate_it_never_had_is_not_resumed_past_it(self):
+        # Started before the gate was in the workflow, and failed after where it now sits.
+        legacy = ("workflow:\n  id: gated\n  version: 1\n  steps:\n"
+                  "    - id: strategy\n      type: strategy\n"
+                  "    - id: design\n      type: design\n")
+        self.script.set("design", StepResult.failed("boom", retryable=False))
+        run = self.engine(legacy).start()
+        self.assertEqual((run.status, run.cursor), (RunStatus.FAILED, "design"))
+        engine = self.engine(CHECKPOINT.replace("GATE", "G4"))
+        with self.assertRaisesRegex(EngineError, "review \\(gate G4\\) has not been passed"):
+            engine.resume(run.run_id)
+        self.assertEqual(self.script.executed(), ["strategy", "design"])
+
+    def test_gates_passed_names_passed_current_gates(self):
+        engine = self.engine(CHECKPOINT.replace("GATE", "G2"))
+        run = engine.start()
+        state = engine.resume(run.run_id, decision="approve")
+        self.assertEqual(engine.gates_passed(state), ["G2"])
+        engine.continue_in(run.run_id, "strategy", force=True)
+        self.assertEqual(engine.gates_passed(self.store.load(run.run_id)), [])
+
+    def test_a_gate_waits_for_input_until_the_run_holds_what_it_is_decided_on(self):
+        text = ("workflow:\n  id: gated\n  version: 1\n  steps:\n"
+                "    - id: strategy\n      type: strategy\n      outputs: [qa-report]\n"
+                "    - id: review\n      type: human-checkpoint\n"
+                "      inputs: [qa-report, verification-report, prototype-report]\n"
+                "      with: {gate: G4, choices: [pass, iterate, kill]}\n"
+                "    - id: design\n      type: design\n")
+        engine = self.engine(text)
+        run = engine.start()
+        self.assertEqual(run.status, RunStatus.WAITING)
+        self.assertEqual(run.trail[-1]["outcome"], StepOutcome.WAITING_FOR_INPUT)
+        self.assertIn("verification-report, prototype-report", run.steps["review"].message)
+        # A decision does not stand in for missing evidence.
+        state = engine.resume(run.run_id, decision="pass")
+        self.assertEqual(state.trail[-1]["outcome"], StepOutcome.WAITING_FOR_INPUT)
+        self.assertNotIn("design", self.script.executed())
+
+    def test_the_shipped_gates_are_decided_on_what_gates_yaml_requires(self):
+        from wgflib.workflow.definition import load_definition
+        definition = load_definition("new-game")
+        gates = {step.params.get("gate"): step for step in definition.steps
+                 if step.type == checkpoint.HumanCheckpointStep.type}
+        self.assertEqual(set(gates), {"G2", "G3", "G4"})
+        for gate, step in gates.items():
+            required = checkpoint.required_artifacts(gate)
+            self.assertTrue(required, gate)
+            self.assertEqual([t for t in required if t not in step.inputs], [], gate)
+            upstream = definition.step_ids[:definition.step_ids.index(step.id)]
+            produced = {t for s in upstream for t in definition.step(s).outputs}
+            self.assertEqual([t for t in required if t not in produced], [], gate)
+        self.assertEqual(checkpoint.required_artifacts("G4"),
+                         ["qa-report", "verification-report", "prototype-report"])
+        self.assertNotIn("asset-manifest", checkpoint.required_artifacts("G3"))
+        ids = definition.step_ids
+        self.assertEqual(ids[ids.index("verify") + 1], "prototype-review")
+        self.assertEqual(ids[ids.index("prototype-review") + 1], "release")
+        g4 = definition.step("prototype-review")
+        self.assertEqual(g4.on, {"iterate": "develop", "kill": "$end"})
+        self.assertEqual(definition.step("design").on, {"descope": "$fail"})
+
+
+class DesignDescope(_MockNewGame):
+    def test_a_failed_descope_is_routed_to_fail_explicitly(self):
+        from wgflib.workflow.definition import load_definition
+        from wgflib.workflow.step import StepRegistry
+        definition = load_definition("new-game")
+        registry = StepRegistry()
+        checkpoint.register(registry)
+        from wgflib.workflow import mock as mocks
+        mocks.register(registry)
+
+        class Descope(WorkflowStep):
+            def execute(self, inputs, context):
+                return StepResult("FAILED", route="descope", retryable=False,
+                                  error="design consistency failed on R1: cut scope, do not "
+                                        "relax the rules")
+
+        registry.register("design", Descope)
+        engine = WorkflowEngine(definition, registry, RunStore(self.store_dir, fsync=False),
+                                artifact_validator=None)
+        state = engine.start(scope="plan", params={"mock": True, "auto_approve": ["G2"]})
+        self.assertEqual(state.status, RunStatus.FAILED)
+        self.assertIn("cut scope", state.message)
+        transition = [e for e in engine.store.read_events(state.run_id)
+                      if e["event"] == Events.TRANSITION and e.get("step_id") == "design"][-1]
+        self.assertEqual((transition["data"]["route"], transition["data"]["kind"]),
+                         ("descope", "abort"))
+        self.assertNotIn("tech-plan", self.executed(state))
+
+
+# -- timeout auto-approval (M4b) --------------------------------------------------------------
+
+
+class FrozenClock:
+    """The engine clock, set by the test: every call returns `now` until it is moved."""
+
+    def __init__(self, start="2026-03-01T00:00:00.000Z"):
+        self.now = datetime.datetime.fromisoformat(start.replace("Z", "+00:00"))
+
+    def __call__(self):
+        return checkpoint.stamp(self.now)
+
+    def advance(self, seconds):
+        self.now += datetime.timedelta(seconds=seconds)
+
+
+class TimeoutApproval(EngineCase):
+    """factory.checkpoints.timeout_auto_approve, as the run's params carry it: a reversible
+    gate approves itself on the first resume at or after waiting_since + window."""
+
+    WINDOW = 600
+
+    def setUp(self):
+        super().setUp()
+        self.clock = FrozenClock()
+
+    def gated(self, gate="G2"):
+        return self.engine(CHECKPOINT.replace("GATE", gate))
+
+    def waiting(self, gate="G2", windows=None):
+        engine = self.gated(gate)
+        params = {"timeout_auto_approve": windows if windows is not None
+                  else {gate: self.WINDOW}}
+        run = engine.start(params=params)
+        self.assertEqual((run.status, run.cursor), (RunStatus.WAITING, "review"))
+        return engine, run
+
+    def decisions(self, run_id):
+        return [e for e in self.store.read_events(run_id)
+                if e["event"] == Events.DECISION_RECORDED]
+
+    def test_the_wait_is_recorded_from_the_engine_clock(self):
+        engine, run = self.waiting()
+        self.assertEqual(run.steps["review"].waiting_since, "2026-03-01T00:00:00.000Z")
+        waited = [e for e in self.store.read_events(run.run_id)
+                  if e["event"] == Events.STEP_WAITING][-1]
+        self.assertEqual(waited["data"]["waiting_since"], "2026-03-01T00:00:00.000Z")
+        self.assertEqual(waited["data"]["visit"], 1)
+
+    def test_before_the_window_it_keeps_waiting_and_keeps_its_start(self):
+        engine, run = self.waiting()
+        self.clock.advance(self.WINDOW - 1)
+        state = engine.resume(run.run_id)
+        self.assertEqual((state.status, state.cursor), (RunStatus.WAITING, "review"))
+        self.assertEqual(state.steps["review"].waiting_since, "2026-03-01T00:00:00.000Z")
+        self.assertEqual(self.decisions(run.run_id), [])
+        self.assertIn("approves itself on the first `wgf resume` at or after "
+                      "2026-03-01T00:10:00.000Z", state.steps["review"].message)
+
+    def test_exactly_at_the_window_it_approves(self):
+        engine, run = self.waiting()
+        self.clock.advance(self.WINDOW)
+        state = engine.resume(run.run_id)
+        self.assertEqual(state.status, RunStatus.COMPLETED, state.message)
+        self.assertIn("design", self.script.executed())
+
+    def test_after_the_window_it_approves_and_the_approval_is_on_record(self):
+        engine, run = self.waiting()
+        self.clock.advance(self.WINDOW * 10)
+        state = engine.resume(run.run_id)
+        self.assertEqual(state.status, RunStatus.COMPLETED, state.message)
+        entry = state.decisions["review"]
+        self.assertEqual((entry["decision"], entry["decided_by"], entry["mode"], entry["visit"]),
+                         ("approve", "automation", "timeout", 1))
+        self.assertIn("unanswered since 2026-03-01T00:00:00.000Z", entry["note"])
+        (recorded,) = self.decisions(run.run_id)
+        self.assertEqual(recorded["data"], entry)
+        self.assertTrue(integrity.decision_on_record(self.store.read_events(run.run_id),
+                                                     "review", entry))
+        review = [t for t in state.trail if t["step"] == "review"]
+        self.assertEqual((review[-1]["outcome"], review[-1]["route"]),
+                         (StepOutcome.SUCCESS, "approve"))
+        self.assertEqual(integrity.state_problems(state, engine.definition), [])
+
+    def test_disabled_it_waits_for_ever(self):
+        engine, run = self.waiting(windows={})
+        self.clock.advance(365 * 86400)
+        self.assertEqual(engine.resume(run.run_id).status, RunStatus.WAITING)
+        self.assertEqual(self.decisions(run.run_id), [])
+
+    def test_an_irreversible_or_unknown_gate_never_times_out(self):
+        for gate in ("G4", "G6", "G7", "G9", "g2"):
+            with self.subTest(gate):
+                engine, run = self.waiting(gate=gate)
+                self.clock.advance(self.WINDOW * 10)
+                self.assertEqual(engine.resume(run.run_id).status, RunStatus.WAITING)
+                self.assertEqual(self.decisions(run.run_id), [])
+
+    def test_a_timeout_is_measured_per_visit(self):
+        engine, run = self.waiting()
+        self.clock.advance(60)
+        state = engine.resume(run.run_id, decision="rework")  # visit 2 begins now
+        self.assertEqual(state.steps["review"].visits, 2)
+        self.assertEqual(state.steps["review"].waiting_since, checkpoint.stamp(self.clock.now))
+        self.clock.advance(self.WINDOW - 60)  # the first visit's window has run out
+        self.assertEqual(engine.resume(run.run_id).status, RunStatus.WAITING)
+        self.clock.advance(60)
+        self.assertEqual(engine.resume(run.run_id).status, RunStatus.COMPLETED)
+
+    def test_upstream_work_redone_restarts_the_wait(self):
+        engine, run = self.waiting()
+        self.clock.advance(self.WINDOW - 10)
+        engine.continue_in(run.run_id, "strategy", force=True)  # a new strategy
+        self.clock.advance(20)  # past the old wait's window
+        state = engine.continue_in(run.run_id, "gated")
+        self.assertEqual((state.status, state.cursor), (RunStatus.WAITING, "review"))
+        self.assertEqual(state.steps["review"].waiting_since, checkpoint.stamp(self.clock.now))
+        self.assertEqual(self.decisions(run.run_id), [])
+        self.clock.advance(self.WINDOW)
+        self.assertEqual(engine.resume(run.run_id).status, RunStatus.COMPLETED)
+
+    def test_a_wait_upstream_work_overtook_is_not_relied_on(self):
+        # The same visit, with a success upstream after the wait began (a state the engine
+        # avoids by entering the gate again; checked anyway): the wait does not count.
+        engine, run = self.waiting()
+        state = self.store.load(run.run_id)
+        self.assertEqual(integrity.waiting_since(state, engine.definition, "review",
+                                                 self.store.read_events(run.run_id)),
+                         "2026-03-01T00:00:00.000Z")
+        state.trail.append({"step": "strategy", "visit": 1, "attempt": 1,
+                            "outcome": StepOutcome.SUCCESS, "route": "success",
+                            "consumed": [], "at": "2026-03-01T00:00:00.000Z"})
+        self.assertIsNone(integrity.waiting_since(state, engine.definition, "review",
+                                                  self.store.read_events(run.run_id)))
+
+    def test_a_backdated_wait_in_state_json_approves_nothing(self):
+        engine, run = self.waiting()
+        state = self.store.load(run.run_id)
+        state.steps["review"].waiting_since = "2020-01-01T00:00:00.000Z"
+        self.store.save(state)
+        self.clock.advance(60)
+        state = engine.resume(run.run_id)
+        self.assertEqual(state.status, RunStatus.WAITING)
+        self.assertEqual(self.decisions(run.run_id), [])
+        # The wait starts again, from now.
+        self.assertEqual(state.steps["review"].waiting_since, checkpoint.stamp(self.clock.now))
+
+    def test_windows_added_to_state_json_are_refused(self):
+        engine = self.gated()
+        run = engine.start()
+        state = self.store.load(run.run_id)
+        state.params["timeout_auto_approve"] = {"G2": 1}
+        self.store.save(state)
+        with self.assertRaisesRegex(EngineError, "timeout_auto_approve"):
+            engine.resume(run.run_id)
+
+
+class TimeoutApprovalThroughTheApi(_MockNewGame):
+    """The installation config snapshotted into the run; status reports, resume applies."""
+
+    def test_windows_are_snapshotted_into_the_run_params(self):
+        api = self.api(checkpoints={"timeout_auto_approve": {"G2": "48h", "G3": "30m"}})
+        _, state = self.start(api, hold_gates=True)
+        self.assertEqual(state.params["timeout_auto_approve"], {"G2": 172800, "G3": 1800})
+        started = [e for e in api.store.read_events(state.run_id)
+                   if e["event"] == Events.WORKFLOW_STARTED][0]
+        self.assertEqual(started["data"]["params"]["timeout_auto_approve"],
+                         {"G2": 172800, "G3": 1800})
+
+    def test_a_run_without_windows_never_times_out(self):
+        clock = FrozenClock()
+        api = self.api(clock=clock)
+        _, state = self.start(api, hold_gates=True)
+        self.assertNotIn("timeout_auto_approve", state.params)
+        clock.advance(365 * 86400)
+        state = api.run(RunRequest(resume=state.run_id))
+        self.assertEqual((state.status, state.cursor), (RunStatus.WAITING, "strategy-review"))
+
+    def test_an_irreversible_or_unknown_gate_in_the_config_is_refused(self):
+        for windows, named in (({"G2": "48h", "G4": "48h"}, "G4 (irreversible"),
+                               ({"G6": "1d"}, "G6 (irreversible"),
+                               ({"G9": "1h"}, "G9 (not a gate"),
+                               ({"g2": "1h"}, "g2 (not a gate")):
+            with self.subTest(windows):
+                api = self.api(checkpoints={"timeout_auto_approve": windows})
+                with self.assertRaisesRegex(ConfigError, re.escape(named)):
+                    self.start(api)
+                self.assertEqual(api.runs(), [])
+
+    def test_a_bad_window_is_refused(self):
+        for value in ("0h", "-1h", "1.5h", "soon", True, 0, [1]):
+            with self.subTest(value):
+                api = self.api(checkpoints={"timeout_auto_approve": {"G2": value}})
+                with self.assertRaises(ConfigError):
+                    self.start(api)
+
+    def test_status_reports_and_only_resume_approves(self):
+        clock = FrozenClock()
+        api = self.api(checkpoints={"timeout_auto_approve": {"G2": "10m"}}, clock=clock)
+        _, run = self.start(api, hold_gates=True)
+        self.assertEqual(run.cursor, "strategy-review")
+        state_file = os.path.join(api.store.run_dir(run.run_id), "state.json")
+        events_file = os.path.join(api.store.run_dir(run.run_id), "events.jsonl")
+
+        def snapshot():
+            with open(state_file, "rb") as a, open(events_file, "rb") as b:
+                return a.read(), b.read()
+
+        before = snapshot()
+        early = clock.now + datetime.timedelta(seconds=599)
+        due = clock.now + datetime.timedelta(seconds=600)
+        pending = api.pending(api.store.load(run.run_id), now=early)
+        self.assertEqual(pending["timeout"]["eligible"], False)
+        self.assertEqual(pending["timeout"]["eligible_at"], checkpoint.stamp(due))
+        (waiting_state, waiting_pending), = api.waiting(now=due)
+        self.assertEqual(waiting_pending["timeout"]["eligible"], True)
+        self.assertIn("eligible for timeout approval since " + checkpoint.stamp(due),
+                      wgf.render_timeout(waiting_pending["timeout"], run.run_id))
+        self.assertEqual(snapshot(), before)  # looking changed nothing
+        self.assertEqual(waiting_state.status, RunStatus.WAITING)
+
+        # The engine agrees with what status said, at both instants.
+        clock.now = early
+        state = api.run(RunRequest(resume=run.run_id))
+        self.assertEqual((state.status, state.cursor), (RunStatus.WAITING, "strategy-review"))
+        clock.now = due
+        state = api.run(RunRequest(resume=run.run_id))
+        self.assertEqual(state.steps["strategy-review"].status, StepStatus.SUCCESS)
+        self.assertEqual(state.decisions["strategy-review"]["mode"], "timeout")
+        self.assertEqual((state.status, state.cursor), (RunStatus.WAITING, "tech-plan-review"))
+        pending = api.pending(state, now=due + datetime.timedelta(days=30))
+        self.assertIsNone(pending["timeout"])  # G3 has no window
+
+    def test_status_and_runs_through_the_cli_report_without_approving(self):
+        config = os.path.join(self.scratch, "factory.yaml")
+        with open(config, "w", encoding="utf-8") as handle:
+            handle.write("factory:\n  storage:\n    fsync: false\n  checkpoints:\n"
+                         "    timeout_auto_approve: {G2: 1s}\n")
+
+        def run(*args):
+            out, err = io.StringIO(), io.StringIO()
+            with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+                code = wgf.main([*args, "--store", self.store_dir, "--config", config])
+            return code, out.getvalue(), err.getvalue()
+
+        code, _, err = run("new-game", "--mock", "--hold-gates", "--quiet")
+        self.assertEqual(code, wgf.EXIT_WAITING, err)
+        (state,) = RunStore(self.store_dir, fsync=False).list_runs()
+        time.sleep(1.2)
+        for _ in range(2):  # looking twice changes nothing
+            code, out, _ = run("status", state.run_id)
+            self.assertEqual(code, wgf.EXIT_WAITING)
+            self.assertIn("Timeout: G2 eligible for timeout approval since", out)
+            code, out, _ = run("runs", "--waiting")
+            self.assertIn("eligible for timeout approval since", out)
+        self.assertEqual(RunStore(self.store_dir, fsync=False).load(state.run_id).decisions, {})
+        code, out, _ = run("resume", state.run_id, "--quiet")
+        after = RunStore(self.store_dir, fsync=False).load(state.run_id)
+        self.assertEqual(after.decisions["strategy-review"]["mode"], "timeout")
+        self.assertEqual(after.cursor, "tech-plan-review")
 
 
 if __name__ == "__main__":

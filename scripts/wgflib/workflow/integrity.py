@@ -21,8 +21,14 @@ found the file - before the engine acts on it:
     (`decision_on_record`), so a decision injected into state.json alone answers nothing:
     the checkpoint waits for a person again.
 
-  * run params: `mock`, `mock_plan` and `auto_approve` decide which implementations run and
-    which gates approve themselves, and they are read from state.json on every resume. The
+  * a wait's start: `waiting_since` on a step starts a checkpoint's timeout, so it is only
+    *used* when events.jsonl holds the STEP_WAITING event that recorded it for that visit
+    (`waiting_since`), and only while no step upstream of it has succeeded again since -
+    backdating it in state.json alone approves nothing.
+
+  * run params: `mock`, `mock_plan`, `auto_approve` and `timeout_auto_approve` decide which
+    implementations run and which gates approve themselves, and they are read from
+    state.json on every resume. The
     engine records the params in the WORKFLOW_STARTED event too, and `params_problems`
     refuses a state whose params differ from that record - so turning a real run into a
     mock one, or adding G3 to `auto_approve`, by editing state.json alone is refused.
@@ -32,18 +38,19 @@ any. Nothing here names a step type, a gate or a route.
 """
 
 from .events import Events
-from .model import RunStatus, StepStatus
+from .model import RunStatus, StepOutcome, StepStatus, parse_timestamp
 
-__all__ = ["state_problems", "params_problems", "decision_on_record", "GUARDED_PARAMS"]
+__all__ = ["state_problems", "params_problems", "decision_on_record", "GUARDED_PARAMS",
+           "waiting_since"]
 
 # The params whose value weakens what a run proves: a mock run's artifacts are placeholders,
 # and an auto-approved gate was decided by nobody. A run created before the params were
 # recorded in WORKFLOW_STARTED has nothing to corroborate them with, so it is refused while
 # any of these is set (see params_problems).
-GUARDED_PARAMS = ("mock", "mock_plan", "auto_approve")
+GUARDED_PARAMS = ("mock", "mock_plan", "auto_approve", "timeout_auto_approve")
 
 _COUNTERS = ("attempts", "executions", "visits", "loop_base")
-_DECISION_KEYS = ("decision", "decided_by", "decided_at", "visit", "note")
+_DECISION_KEYS = ("decision", "decided_by", "decided_at", "visit", "note", "mode")
 
 
 def _count(value):
@@ -66,6 +73,13 @@ def state_problems(state, definition):
         problems.append("scope is not a list of step ids")
     if not isinstance(state.params, dict):
         problems.append("params is not a mapping")
+    else:
+        windows = state.params.get("timeout_auto_approve")
+        if windows is not None and not (
+                isinstance(windows, dict)
+                and all(isinstance(g, str) and _count(v) and v > 0 for g, v in windows.items())):
+            problems.append("params.timeout_auto_approve is not a mapping of gate ids to "
+                            "positive seconds")
 
     for step_id, step in (state.steps or {}).items():
         where = f"steps.{step_id}"
@@ -81,6 +95,8 @@ def state_problems(state, definition):
             value = getattr(step, name)
             if not isinstance(value, list) or not all(isinstance(v, str) for v in value):
                 problems.append(f"{where}.{name} is not a list of references")
+        if step.waiting_since is not None and parse_timestamp(step.waiting_since) is None:
+            problems.append(f"{where}.waiting_since {step.waiting_since!r} is not a timestamp")
 
     seqs = []
     for artifact_id, versions in (state.artifacts or {}).items():
@@ -131,7 +147,7 @@ def state_problems(state, definition):
                 continue
             try:
                 check_decision(entry.get("decision"), entry.get("decided_by"),
-                               entry.get("note"))
+                               entry.get("note"), entry.get("mode"))
             except EngineError as exc:
                 problems.append(f"{where}: {exc}")
             step = (state.steps or {}).get(step_id)
@@ -196,3 +212,44 @@ def decision_on_record(events, step_id, entry):
         if recorded == wanted:
             return True
     return False
+
+
+def _waiting_on_record(events, step_id, visit, since):
+    for event in events:
+        if event.get("event") != Events.STEP_WAITING or event.get("step_id") != step_id:
+            continue
+        data = event.get("data") or {}
+        if data.get("waiting_since") == since and data.get("visit") == visit:
+            return True
+    return False
+
+
+def waiting_since(state, definition, step_id, events):
+    """When `step_id`'s current visit started waiting, if that can be relied on; else None.
+
+    The engine records `waiting_since` in state and in the STEP_WAITING event of the same
+    visit. It is None here when state holds none, when no such event corroborates it (an
+    edit of state.json), or when a step before `step_id` in the definition has succeeded
+    since: whatever the wait was for has been replaced, so the wait starts again. Pure: the
+    engine and `wgf status` both ask it, so a resume and a status never disagree on it.
+    """
+    step = (state.steps or {}).get(step_id)
+    since = getattr(step, "waiting_since", None)
+    moment = parse_timestamp(since)
+    if moment is None or not _waiting_on_record(events, step_id, step.visits, since):
+        return None
+    # The trail entry of the execution that began the wait (the engine takes waiting_since
+    # from its `at`); order in the trail, not timestamps, says what happened after it.
+    trail = state.trail or []
+    began = next((i for i, entry in enumerate(trail)
+                  if entry.get("step") == step_id and entry.get("visit") == step.visits
+                  and entry.get("outcome") in StepOutcome.WAITING
+                  and entry.get("at") == since), None)
+    if began is None:
+        return None
+    ids = list(definition.step_ids) if definition is not None else []
+    upstream = set(ids[:ids.index(step_id)]) if step_id in ids else set()
+    if any(entry.get("step") in upstream and entry.get("outcome") == StepOutcome.SUCCESS
+           for entry in trail[began + 1:]):
+        return None
+    return since

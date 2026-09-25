@@ -134,16 +134,24 @@ workflow:
       type: release
 """
 
-CHECKPOINT = """
+# A checkpoint is decided on what gates.yaml says its gate requires (required_artifacts),
+# held by the run and listed as its inputs. `strategy` produces every type any gate these
+# tests name requires, so each test exercises the gate rule it is about, not a missing input.
+GATE_EVIDENCE = ("[title-strategy, game-design, tech-plan, qa-report, verification-report, "
+                 "prototype-report, release-manifest, performance-review]")
+
+CHECKPOINT = f"""
 workflow:
   id: gated
   version: 1
   steps:
     - id: strategy
       type: strategy
+      outputs: {GATE_EVIDENCE}
     - id: review
       type: human-checkpoint
-      with: {gate: GATE, choices: [approve, rework, reject]}
+      inputs: {GATE_EVIDENCE}
+      with: {{gate: GATE, choices: [approve, rework, reject]}}
       on:
         rework: strategy
     - id: design
@@ -458,7 +466,9 @@ class Routing(EngineCase):
             tok.string.strip("\"'") for tok in tokens if tok.type == tokenize.STRING
         }
         for step_type in ("research", "strategy", "design", "init", "assets", "develop",
-                          "sdk", "verify", "release", "fail", "pass", "approve", "reject"):
+                          "sdk", "verify", "release", "fail", "pass", "approve", "reject",
+                          "prototype-review", "iterate", "kill", "descope", "timeout",
+                          "G4"):
             self.assertNotIn(step_type, literals)
 
 

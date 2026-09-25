@@ -17,6 +17,13 @@
 # unrouted blocked blocks it; unrouted waiting parks it until resumed. Targets are step ids,
 # $end or $fail.
 #
+# Gates are checkpoints (`type: human-checkpoint`, `with: gate`). Each lists as `inputs` the
+# artifacts core/lifecycle/gates.yaml says it is decided on (`required_artifacts`); without
+# them it waits for input instead of asking anyone. G2 and G3 are reversible: an
+# installation may approve them itself (factory.checkpoints.auto_approve) or after a window
+# (factory.checkpoints.timeout_auto_approve, applied by `wgf resume`). G4 is irreversible:
+# only a person decides it, and nothing downstream of it runs until they pass it.
+#
 # `release` prepares a release - a release-manifest in state `draft` - and stops. Building,
 # packaging and publishing belong to the game repository's CI, behind G5 and G6.
 
@@ -56,6 +63,7 @@ workflow:
     - id: strategy-review
       type: human-checkpoint
       stage: title:strategy
+      inputs: [title-strategy]
       with:
         gate: G2
         prompt: Approve the title strategy before design starts?
@@ -66,6 +74,12 @@ workflow:
       stage: title:design
       inputs: [title-strategy]
       outputs: [game-design]
+      # A blocking design-consistency breach is FAILED with route `descope` and the design
+      # kept as evidence. Nothing in this workflow can act on a descope yet - strategy does
+      # not consume one - so it ends the run, explicitly: cut scope in the strategy, and
+      # start again. Never relax the rules to get past it.
+      on:
+        descope: $fail
 
     - id: tech-plan
       type: tech-plan
@@ -79,6 +93,7 @@ workflow:
     - id: tech-plan-review
       type: human-checkpoint
       stage: title:tech-plan
+      inputs: [game-design, tech-plan]
       with:
         gate: G3
         prompt: Approve the design and technical plan before the repository is created?
@@ -132,8 +147,9 @@ workflow:
       outputs: [sdk-report]
 
     # Verification returns a result, not a destination: FAIL (route `fail`) goes back to
-    # develop with the failing qa-report, PASS continues to release, and BLOCKED - a check
-    # that could not be established - is unrouted, so the run stops for a person.
+    # develop with the failing qa-report, PASS continues to the prototype review (G4), and
+    # BLOCKED - a check that could not be established - is unrouted, so the run stops for a
+    # person.
     - id: verify
       type: verify
       stage: release:qa
@@ -142,6 +158,26 @@ workflow:
       retry: {max_attempts: 2}
       on:
         fail: develop
+
+    # G4, the kill gate: a person judges the verified prototype - the qa-report,
+    # verification-report and prototype-report verify just produced - and nothing else
+    # answers it (it is irreversible; automation's answer is refused). `pass` continues to
+    # release. `iterate` sends the work back to develop: a success routed backwards, so the
+    # run's lineage stands and the loop ends here again, at a new visit that needs a new
+    # decision. `kill` is gates.yaml's `abandon`: it stops the run for good (BLOCKED,
+    # routed to $end), and the gate stays unpassed, so no later step of this run can start.
+    # Verification that runs again after a pass supersedes it: G4 is asked again.
+    - id: prototype-review
+      type: human-checkpoint
+      stage: title:prototype-review
+      inputs: [qa-report, verification-report, prototype-report]
+      with:
+        gate: G4
+        prompt: Judge the verified prototype against the kill criteria set at strategy - pass to release, iterate to develop again, or kill the title?
+        choices: [pass, iterate, kill]
+      on:
+        iterate: develop
+        kill: $end
 
     # Drafts a release only from the newest passing qa-report, whose commit the
     # verification-report, sdk-report, prototype-report and the clean checkout all share.

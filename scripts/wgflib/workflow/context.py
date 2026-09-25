@@ -43,12 +43,23 @@ class WorkflowContext:
 
     `previous_outputs` are the refs this step produced on its last successful execution in
     this run, for the same reason.
+
+    `now` is the engine's clock at this execution, and `waiting_since` when the current
+    visit first returned a WAITING outcome (None if it has not, or if work upstream has
+    succeeded again since). A step that waits for something with a deadline - a checkpoint's
+    timeout - measures it with these, never with its own clock. `record_decision(decision,
+    decided_by, note=None, mode=None)` records a decision on this step's current visit the
+    way a person's is recorded: in state and as a DECISION_RECORDED event.
+
+    `gates_passed` lists the gates (a checkpoint's `with: gate`) this run has passed and
+    whose approval no later upstream work has superseded, in definition order.
     """
 
     def __init__(self, *, workflow_id, workflow_version, run_id, project_id, step_id,
                  step_type, attempt, visit, execution, config, environment, params,
                  decision, previous_outputs, logger, emit, run_dir, mock,
-                 progress=None, should_stop=None):
+                 progress=None, should_stop=None, now=None, waiting_since=None,
+                 record_decision=None, gates_passed=()):
         self.workflow_id = workflow_id
         self.workflow_version = workflow_version
         self.run_id = run_id
@@ -69,6 +80,19 @@ class WorkflowContext:
         self.mock = mock
         self._progress = progress
         self._should_stop = should_stop
+        self.now = now
+        self.waiting_since = waiting_since
+        self._record_decision = record_decision
+        self.gates_passed = list(gates_passed or ())
+
+    def record_decision(self, decision, decided_by="automation", note=None, mode=None):
+        """Record `decision` on this step's current visit; returns the recorded entry.
+        Raises RuntimeError when the engine gave this context no way to record one."""
+        if self._record_decision is None:
+            raise RuntimeError("this context cannot record a decision")
+        entry = self._record_decision(decision, decided_by, note, mode)
+        self.decision = entry
+        return entry
 
     @property
     def idempotency_key(self):

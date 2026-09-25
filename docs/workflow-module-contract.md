@@ -149,18 +149,23 @@ reading, and `DocumentedIoContract` fails if the two disagree.
 |---|---|---|---|
 | `research` | `research` | — | `research-report`, `opportunity` |
 | `strategy` | `strategy` | `opportunity` | `title-strategy` |
-| `strategy-review` | `human-checkpoint` | — | — |
+| `strategy-review` | `human-checkpoint` | `title-strategy` | — |
 | `design` | `design` | `title-strategy` | `game-design` |
 | `tech-plan` | `tech-plan` | `game-design`, `title-strategy` | `tech-plan` |
-| `tech-plan-review` | `human-checkpoint` | — | — |
+| `tech-plan-review` | `human-checkpoint` | `game-design`, `tech-plan` | — |
 | `init` | `init` | `game-design`, `tech-plan` | `scaffold-record` |
 | `assets` | `assets` | `game-design`, `scaffold-record` | `asset-manifest` |
 | `develop` | `develop` | `game-design`, `asset-manifest`, `scaffold-record`, `title-strategy`, `qa-report`, `review-report` | `prototype-report` |
 | `review` | `review` | `prototype-report`, `game-design`, `scaffold-record` | `review-report` |
 | `sdk` | `sdk` | `game-design`, `scaffold-record`, `prototype-report` | `sdk-report` |
 | `verify` | `verify` | `prototype-report`, `sdk-report`, `game-design`, `scaffold-record`, `asset-manifest` | `verification-report`, `qa-report` |
+| `prototype-review` | `human-checkpoint` | `qa-report`, `verification-report`, `prototype-report` | — |
 | `release` | `release` | `qa-report`, `verification-report`, `sdk-report`, `prototype-report`, `scaffold-record`, `review-report` | `release-manifest` |
 <!-- io-contract:end -->
+
+A `human-checkpoint` lists the artifacts its gate is decided on (gates.yaml
+`required_artifacts`) and waits for input until the run holds them; `prototype-review` is
+G4, which only a person decides (pass / iterate / kill).
 
 `develop` declares `qa-report` so that on a verify → develop loop it receives the failing
 report; on its first visit that input is missing, which is expected. It declares

@@ -5,6 +5,7 @@ workflow, not of any business module. It carries no judgement of its own:
 
     - id: strategy-review
       type: human-checkpoint
+      inputs: [title-strategy]        # what the gate is decided on (see below)
       with:
         gate: G2                      # optional; ties the checkpoint to a lifecycle gate
         choices: [approve, reject]    # default
@@ -14,24 +15,52 @@ workflow, not of any business module. It carries no judgement of its own:
 
 With no decision recorded, it returns WAITING_FOR_HUMAN and the run parks as WAITING.
 `wgf <cmd> --resume <run> --decision approve` records one and re-executes it; `approve`
-(or any choice other than `reject`) is SUCCESS with that choice as the route, `reject` is
-BLOCKED with route `reject`, so an unrouted rejection stops the run instead of proceeding.
+(or any choice that does not stop the run) is SUCCESS with that choice as the route.
+`reject` and `kill` stop the run: BLOCKED with that choice as the route, so an unrouted one
+blocks the run instead of proceeding, and one routed to `$end` ends it - G4's `kill` - with
+the gate recorded as not passed, which the engine will not let a later step step over.
+
+A checkpoint tied to a gate is decided on what that gate requires: every artifact type in
+the gate's `required_artifacts` (core/lifecycle/gates.yaml) must be among the step's
+`inputs` and held by the run, else it returns WAITING_FOR_INPUT naming them - nobody is
+asked to decide on evidence the run does not have. The engine re-checks each input's
+checksum and contract before the checkpoint runs, as for any step.
 
 A gate may be auto-approved only when the run allows it (`auto_approve` in the run's
 environment) AND the gate is reversible per core/lifecycle/gates.yaml. G4, G6 and G7 are
 irreversible and never auto-approve here either, whatever the run asks for; that mirrors the
 rule decision-record.schema.json and wgf-state.py already enforce.
+
+A reversible gate may also approve itself on a timeout: when the run's params carry a
+window for it (`timeout_auto_approve`, snapshotted from factory.checkpoints when the run
+started) and the visit has waited at least that long - from `context.waiting_since`, which
+the engine records from its own clock when the visit first waits, to `context.now`. The
+approval is recorded through `context.record_decision` exactly like a person's (a
+DECISION_RECORDED event, `decided_by: automation`, `mode: timeout`) before the step returns
+SUCCESS route `approve`. It happens only when the checkpoint executes - on `wgf resume` -
+never when a run is merely looked at.
 """
 
+import datetime
+
 from ..machine import load_gates
-from .model import StepResult
+from .model import StepResult, parse_timestamp
 from .step import WorkflowStep
 
 __all__ = ["HumanCheckpointStep", "irreversible_gates", "known_gates", "is_irreversible",
-           "may_auto_approve"]
+           "may_auto_approve", "required_artifacts", "timeout_window", "timeout_due",
+           "STOP_CHOICES", "TIMEOUT_MODE"]
 
 # Used only if gates.yaml cannot be read; the file is authoritative.
 _IRREVERSIBLE_FALLBACK = ("G4", "G6", "G7")
+
+# Choices that stop the run instead of letting it continue: BLOCKED, routed by the choice.
+STOP_CHOICES = ("reject", "kill")
+
+# The `mode` of a decision the checkpoint records itself when a timeout window has run out,
+# and the choice it records.
+TIMEOUT_MODE = "timeout"
+_TIMEOUT_CHOICE = "approve"
 
 
 def irreversible_gates():
@@ -69,6 +98,53 @@ def may_auto_approve(gate, allowed):
             and gate in known_gates() and not is_irreversible(gate))
 
 
+def required_artifacts(gate):
+    """The artifact types gates.yaml says `gate` is decided on: [] for no gate or one
+    gates.yaml does not define, None when gates.yaml cannot be read (fail closed)."""
+    if not gate:
+        return []
+    try:
+        gates = load_gates()
+    except Exception:
+        return None
+    wanted = _canonical(gate)
+    for gate_id, spec in gates.items():
+        if _canonical(gate_id) == wanted:
+            return [t for t in (spec.get("required_artifacts") or []) if isinstance(t, str)]
+    return []
+
+
+def timeout_window(gate, environment):
+    """Seconds the run lets `gate` wait before it approves itself, or None.
+
+    Only from the run's own params (`timeout_auto_approve`, snapshotted at start), only for
+    a gate gates.yaml defines by exactly that id, and never for an irreversible one."""
+    windows = (environment or {}).get("timeout_auto_approve")
+    if not isinstance(windows, dict) or not isinstance(gate, str):
+        return None
+    seconds = windows.get(gate)
+    if isinstance(seconds, bool) or not isinstance(seconds, int) or seconds <= 0:
+        return None
+    if gate not in known_gates() or is_irreversible(gate):
+        return None
+    return seconds
+
+
+def timeout_due(gate, environment, waiting_since):
+    """The instant `gate`, waiting since `waiting_since`, becomes eligible for timeout
+    approval (an aware datetime), or None when it never does."""
+    seconds = timeout_window(gate, environment)
+    since = parse_timestamp(waiting_since)
+    if seconds is None or since is None:
+        return None
+    return since + datetime.timedelta(seconds=seconds)
+
+
+def stamp(moment):
+    """An aware datetime in the engine's timestamp format."""
+    return moment.strftime("%Y-%m-%dT%H:%M:%S.") + f"{moment.microsecond // 1000:03d}Z"
+
+
 class HumanCheckpointStep(WorkflowStep):
     type = "human-checkpoint"
     # Holds the run for a decision: the engine will not start a later step of the run
@@ -79,6 +155,19 @@ class HumanCheckpointStep(WorkflowStep):
         gate = self.params.get("gate")
         choices = list(self.params.get("choices") or ["approve", "reject"])
         prompt = self.params.get("prompt") or f"Decision required at {self.id}"
+
+        required = required_artifacts(gate)
+        if required is None:
+            return StepResult.waiting_for_input(
+                f"{gate}: core/lifecycle/gates.yaml cannot be read, so what the gate is "
+                f"decided on is unknown. {prompt}", gate=gate)
+        held = set((getattr(inputs, "refs", None) or {}).keys())
+        missing = [t for t in required if t not in held]
+        if missing:
+            return StepResult.waiting_for_input(
+                f"{gate} is decided on {', '.join(missing)}, which this run does not hold "
+                f"(gates.yaml required_artifacts; the checkpoint lists them as inputs). "
+                f"{prompt}", gate=gate, missing=missing)
 
         decision = context.decision
         if decision is not None:
@@ -93,15 +182,19 @@ class HumanCheckpointStep(WorkflowStep):
                     f"{gate} is irreversible and needs a human decision. {prompt}",
                     choices=choices, gate=gate,
                 )
-            if choice == "reject":
+            data = {"gate": gate, "decided_by": decision.get("decided_by")}
+            if decision.get("mode"):
+                data["mode"] = decision["mode"]
+            if choice in STOP_CHOICES:
+                verb = "rejected" if choice == "reject" else "killed"
+                where = self.id + (f" ({gate})" if gate else "")
                 return StepResult(
-                    "BLOCKED", route="reject",
-                    message=f"rejected at {self.id}"
+                    "BLOCKED", route=choice,
+                    message=f"{verb} at {where}"
                     + (f": {decision['note']}" if decision.get("note") else ""),
-                    data={"gate": gate, "decided_by": decision.get("decided_by")},
+                    data=dict(data, decision=choice),
                 )
-            return StepResult.success(route=choice, message=f"{choice} at {self.id}",
-                                      gate=gate, decided_by=decision.get("decided_by"))
+            return StepResult.success(route=choice, message=f"{choice} at {self.id}", **data)
 
         auto = context.environment.get("auto_approve") or []
         if not isinstance(auto, (list, tuple)):
@@ -111,6 +204,24 @@ class HumanCheckpointStep(WorkflowStep):
             return StepResult.success(route="approve", message=f"{gate} auto-approved",
                                       gate=gate, decided_by="automation")
 
+        since = getattr(context, "waiting_since", None)
+        due = timeout_due(gate, context.environment, since)
+        if due is not None and _TIMEOUT_CHOICE in choices:
+            now = parse_timestamp(getattr(context, "now", None))
+            record = getattr(context, "record_decision", None)
+            if now is not None and now >= due and callable(record):
+                window = timeout_window(gate, context.environment)
+                note = (f"{gate} approved on timeout: unanswered since {since}, window "
+                        f"{window}s, eligible since {stamp(due)}")
+                # Recorded like a person's decision, and before the result: the approval is
+                # on record (DECISION_RECORDED) whatever happens to this execution.
+                record(_TIMEOUT_CHOICE, decided_by="automation", note=note, mode=TIMEOUT_MODE)
+                context.logger.info("timeout-approved", gate=gate, waiting_since=since,
+                                    window_seconds=window)
+                return StepResult.success(route=_TIMEOUT_CHOICE, message=note, gate=gate,
+                                          decided_by="automation", mode=TIMEOUT_MODE)
+            prompt += (f" (unanswered, {gate} approves itself on the first `wgf resume` at or "
+                       f"after {stamp(due)})")
         return StepResult.waiting_for_human(prompt, choices=choices, gate=gate)
 
 

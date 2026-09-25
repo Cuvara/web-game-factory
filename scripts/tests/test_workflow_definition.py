@@ -60,9 +60,15 @@ class ParsesValidDefinitions(unittest.TestCase):
             definition.step_ids,
             ["research", "strategy", "strategy-review", "design", "tech-plan",
              "tech-plan-review", "init", "assets", "develop", "review", "sdk", "verify",
-             "release"],
+             "prototype-review", "release"],
         )
         self.assertEqual(definition.step("verify").on, {"fail": "develop"})
+        g4 = definition.step("prototype-review")
+        self.assertEqual((g4.type, g4.params["gate"], g4.params["choices"]),
+                         ("human-checkpoint", "G4", ["pass", "iterate", "kill"]))
+        self.assertEqual(g4.on, {"iterate": "develop", "kill": "$end"})
+        self.assertEqual(g4.inputs, ["qa-report", "verification-report", "prototype-report"])
+        self.assertEqual(definition.step("design").on, {"descope": "$fail"})
         self.assertEqual(definition.resolve_scope("plan"),
                          ["strategy", "strategy-review", "design", "tech-plan",
                           "tech-plan-review"])

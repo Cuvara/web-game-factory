@@ -332,8 +332,13 @@ class DecisionsFromInsideAStep(unittest.TestCase):
         self.addCleanup(shutil.rmtree, scratch, ignore_errors=True)
         workflow = os.path.join(scratch, "kill-gate.workflow.yaml")
         with open(workflow, "w", encoding="utf-8") as handle:
+            # G4 is decided on the verified evidence (gates.yaml required_artifacts): a mock
+            # verification produces it, so the gate really asks for a decision.
             handle.write("workflow:\n  id: kill-gate\n  version: 1\n  steps:\n"
+                         "    - id: verify\n      type: verify\n"
+                         "      outputs: [prototype-report, verification-report, qa-report]\n"
                          "    - id: prototype-review\n      type: human-checkpoint\n"
+                         "      inputs: [qa-report, verification-report, prototype-report]\n"
                          "      with: {gate: G4, choices: [approve, reject]}\n")
         store = os.path.join(scratch, "store")
 
@@ -341,8 +346,9 @@ class DecisionsFromInsideAStep(unittest.TestCase):
             return WorkflowAPI(config=FactoryConfig({"storage": {"fsync": False}}),
                                store_dir=store, workflow=workflow)
 
-        run = api().run(RunRequest())
+        run = api().run(RunRequest(mock=True))
         self.assertEqual(run.status, RunStatus.WAITING)
+        self.assertEqual(run.trail[-1]["outcome"], "WAITING_FOR_HUMAN")
         # The "agent": a child started the way every step starts children, calling the API
         # exactly as `wgf kill-gate --resume <id> --decision approve` does.
         agent = (f"import sys; sys.path.insert(0, {SCRIPTS!r})\n"

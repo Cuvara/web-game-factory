@@ -439,6 +439,7 @@ workflow:
       outputs: [tech-plan]
     - id: tech-plan-review
       type: human-checkpoint
+      inputs: [game-design, tech-plan]     # what G3 is decided on (gates.yaml)
       with:
         gate: G3
         prompt: Approve the plan?

@@ -51,12 +51,12 @@ python -m unittest discover scripts/tests   # includes the acceptance tests belo
       EventBus ──► store (events.jsonl = structured log)
                └─► CLI progress, and later a UI / monitor / agent host
 
-  research → strategy → [G2 checkpoint] → design → init → assets → develop → review → sdk → verify → release
-                                                                   ▲ ▲ request-  │              │ fail
-                                                                   │ └─ changes ─┘              │
-                                                                   └────────────────────────────┘
-                                                                                        │ pass
-                                                                                        ▼
+  research → strategy → [G2] → design → tech-plan → [G3] → init → assets → develop → review → sdk → verify → [G4] → release
+                                                                             ▲ ▲ request-  │              │ fail │ │ kill → $end
+                                                                             │ └─ changes ─┘              │      │ │
+                                                                             ├────────────────────────────┘      │ │
+                                                                             └───────────── iterate ─────────────┘ │ pass
+                                                                                                                   ▼
                                release-manifest (draft) ─► game repo CI ─► G5 ─► G6 ─► publish
                                ─────────── Factory ends here ───────────   (outside the engine)
 ```
@@ -307,16 +307,17 @@ constructor raises.
 
 ### Run params are corroborated
 
-`state.params` holds `mock`, `mock_plan` and `auto_approve`: which implementations run and
-which gates approve themselves. They are read from `state.json` on every resume, so the
+`state.params` holds `mock`, `mock_plan`, `auto_approve` and `timeout_auto_approve`: which
+implementations run and which gates approve themselves, at once or after a window (§9). They are read from `state.json` on every resume, so the
 engine also records them in `WORKFLOW_STARTED` (`data.params`), and `resume` / `continue_in`
 refuse a run whose `state.json` params differ from that record in any key
 (`integrity.params_problems`) — before anything runs or changes. Editing `state.json` to
-turn a real run into a mock one, or to add G3 to `auto_approve`, is refused.
+turn a real run into a mock one, to add G3 to `auto_approve`, or to give a gate a timeout
+window, is refused.
 
 A run created before params were recorded has a `WORKFLOW_STARTED` without `params` (or,
 if it crashed at creation, none). It is accepted only while none of `mock`, `mock_plan`,
-`auto_approve` is set: those are exactly what an edit would add, and nothing can vouch for
+`auto_approve`, `timeout_auto_approve` is set: those are exactly what an edit would add, and nothing can vouch for
 them. Such a run is refused with a message saying so; start a new run, or — if you know the
 state is untouched — remove those params to resume it as a real, fully gated run.
 
@@ -440,6 +441,56 @@ so a loop back through the checkpoint waits again.
 `WAITING_FOR_HUMAN` is not a failure: no `STEP_FAILED` or `WORKFLOW_FAILED` is emitted, and
 nothing is retried.
 
+**Decided on evidence.** A checkpoint with a `gate` is decided on that gate's
+`required_artifacts` in `core/lifecycle/gates.yaml`. Each must be one of the step's `inputs`
+and held by the run; otherwise the checkpoint returns `WAITING_FOR_INPUT` naming them, asks
+nobody, and `wgf decide` refuses the run as waiting for input. The engine re-checks each
+input (checksum, contract) before the checkpoint runs, as for any step. In `new-game`:
+G2 on `title-strategy`, G3 on `game-design` + `tech-plan` (not `asset-manifest`: assets are
+sourced after G3), G4 on `qa-report` + `verification-report` + `prototype-report`.
+
+**Choices that stop the run.** `reject` and `kill` return `BLOCKED` with the choice as the
+route: unrouted, the run blocks for a person; routed to `$end`, the run ends `COMPLETED`
+with `exit.outcome: BLOCKED`, `exit.route: <choice>` and the step's message ("killed at
+prototype-review (G4): …") as the run's message. A run ended that way is final: `--run`
+refuses to continue it, and resume refuses a `COMPLETED` run anyway. Any other choice is
+`SUCCESS` with the choice as the route.
+
+**Passing a gate.** A gate is passed when its last `SUCCESS` routed the run *forward* — to a
+step after the gate. A choice routed back (`iterate`, `rework`) answers the gate without
+passing it, as does one routed to `$end`. `_refuse_unmet_upstream` refuses a later step past
+a gate that is not passed, not just one that never succeeded, and `--run` in skip mode
+asks such a gate again instead of skipping it. `context.gates_passed` hands a step the gates
+the run has passed and no later upstream work has superseded.
+
+**G4, the prototype review** (`prototype-review`, between `verify` and `release`):
+
+```yaml
+- id: prototype-review
+  type: human-checkpoint
+  stage: title:prototype-review
+  inputs: [qa-report, verification-report, prototype-report]
+  with: {gate: G4, choices: [pass, iterate, kill]}
+  on: {iterate: develop, kill: $end}
+```
+
+`pass` continues to `release`. `iterate` goes back to `develop` (a new visit of each step of
+the loop; every artifact is a new version and the old ones stay, so the run's lineage is
+untouched) and ends at G4 again, whose new visit needs a new decision. `kill` (gates.yaml's
+`abandon` outcome) ends the run for good, audibly: a `DECISION_RECORDED` event, a
+`STEP_BLOCKED` at `prototype-review`, `WORKFLOW_COMPLETED` with `exit.route: kill`, and
+`wgf status` printing `Ended:  kill at G4 (prototype-review), decided by human at …`. A kill
+exits `0`: it is the gate doing its job, not a failure, and the command that recorded it did
+what it was asked (see §11). Release cannot run before a pass: normal routing reaches it only
+through `pass`; `wgf release --run <id>` is refused while G4 waits, was answered `iterate`,
+or was passed before verification ran again (`_gate_superseded`: G4 is asked again); a new
+run `--from release` is refused (it would step over G2, G3 and G4); and a fresh
+`wgf release` run holds no qa-report, which the release step refuses on its own.
+
+Because G4 is irreversible, a mock run (`--mock`) stops there `WAITING`: `wgf decide <id>
+pass` answers it — from a terminal, that is a person. `--mock` approves only the reversible
+gates its workflow names.
+
 A checkpoint tied to a reversible gate may be auto-approved when the run allows it —
 `factory.checkpoints.auto_approve` (empty by default), or, under `--mock`, only the
 reversible gates the workflow's own checkpoints name (`G2` for `new-game`) unless
@@ -456,6 +507,42 @@ Who decided is recorded as `decided_by`. A decision given to the CLI (`wgf decid
 G4/G6/G7 refuse it. And a decision is only *used* when `events.jsonl` holds the
 `DECISION_RECORDED` event the engine emitted with it — one written into `state.json` alone
 answers nothing, and the checkpoint waits again (`wgflib/workflow/integrity.py`).
+
+**Timeout approval.** A reversible gate may approve itself after waiting long enough, when
+the installation says so:
+
+```yaml
+factory:
+  checkpoints:
+    timeout_auto_approve: {G2: 48h, G3: 48h}     # <n>s|m|h|d, or seconds
+```
+
+Only gates listed there; not `gates.yaml`'s `auto_approve_after`, which is a recommendation.
+A run is refused at start (exit 2, nothing created) if the list names an irreversible gate
+or one `gates.yaml` does not define, or a window that is not a positive duration — fail
+closed. The windows are snapshotted into the run's params (`timeout_auto_approve`, in
+seconds) and corroborated on every resume like the other params, so a run keeps the windows
+it started under, and a run started before this existed has none and never times out.
+
+The engine records `waiting_since` on the step, from its own clock, when a visit first
+returns a `WAITING` outcome, and in that `STEP_WAITING` event (`data.waiting_since`,
+`data.visit`); a resume of the same visit keeps it, a new visit starts a new wait. It is
+used only when that event corroborates it and no step upstream of the gate has succeeded
+since (`integrity.waiting_since`) — backdating it in `state.json`, or redoing the work the
+gate is about, restarts the wait. The checkpoint gets it as `context.waiting_since`, and
+`context.now`.
+
+When the checkpoint executes and `now ≥ waiting_since + window` (exactly at counts), it
+records the approval through `context.record_decision` — the same path as a person's: a
+`DECISION_RECORDED` event with `decision: approve`, `decided_by: automation`, `mode:
+timeout` and a note giving the wait — and returns `SUCCESS` route `approve`.
+
+It executes only when the run is driven: **`wgf status` and `wgf runs --waiting` only
+report** ("Timeout: G2 eligible for timeout approval since …", `pending.timeout` in
+`--json`) and never change the run. The approval happens on the next `wgf resume <run-id>`.
+An installation that wants approvals to happen unattended runs `wgf resume` on a schedule
+for the runs `wgf runs --waiting --json` lists as eligible; the scheduler is not part of the
+engine.
 
 ## 10. Events and logs
 
@@ -478,7 +565,7 @@ which is the structured log:
 | `WORKFLOW_RESUMED` | `from_status`; `from_step`, `scope`, `force`, `definition_version` when relevant |
 | `WORKFLOW_PAUSED` | `reason` (`requested`, `waiting_for_human`, `waiting_for_input`), `next_step` or `message` |
 | `WORKFLOW_BLOCKED` | `message` (a blocked step, a rejection, or the loop limit) |
-| `WORKFLOW_COMPLETED` | `exit`: `{step, route, outcome, next}` |
+| `WORKFLOW_COMPLETED` | `exit`: `{step, route, outcome, next}`; `message` when a stopping result was routed to `$end` (G4's kill) |
 | `WORKFLOW_FAILED` | `message` |
 | `WORKFLOW_CANCELLED` | — (`step_id` is the cursor when the cancel was honoured) |
 | `STEP_STARTED` | `type`, `visit` |
@@ -486,12 +573,12 @@ which is the structured log:
 | `STEP_FAILED` | `will_retry`, `route`, `outputs` |
 | `STEP_RETRIED` | `delay_seconds`, `max_attempts` |
 | `STEP_SKIPPED` | `reason` |
-| `STEP_WAITING` | `message`, `result` |
+| `STEP_WAITING` | `message`, `result`, `visit`, `waiting_since` (when this visit began waiting) |
 | `STEP_BLOCKED` | `message`, `result` |
 | `STEP_LOG` | top-level `level`, `message`; `data` is the logged fields (the engine itself logs one `warning` when it replaces an unrecorded artifact file: `data.artifact` = `id@vN`) |
 | `STEP_PROGRESS` | `kind` (`started spawned heartbeat timeout idle-timeout cancelled cleanup exited`), plus `pid`, `elapsed_s`, `idle_s`, `killed`, `returncode` as they apply |
 | `TRANSITION` | `route`, `outcome`, `kind` (`goto end abort block wait`), `to` |
-| `DECISION_RECORDED` | `decision`, `decided_by`, `decided_at`, `visit`, `note` |
+| `DECISION_RECORDED` | `decision`, `decided_by`, `decided_at`, `visit`, `note`; `mode` (`timeout`) for a timeout approval |
 | `ARTIFACT_CREATED` | the `ArtifactRef` |
 | `ARTIFACT_UPDATED` | the `ArtifactRef` (version ≥ 2) |
 
@@ -522,19 +609,23 @@ wgf test-core [--only CATEGORY]... [--json]            the Core Acceptance Suite
 common: --store DIR  --config PATH  --workflow ID|PATH  --json  --quiet
 ```
 
-Exit status: `0` completed, `1` failed, blocked or cancelled (or an OS error such as a full
-disk or an unwritable store, reported on one line), `2` usage - including a flag that would
-be ignored (§7) - and `3` waiting for a decision or input, or paused. **`wgf status` exits
+Exit status: `0` completed - including a run a decision ended, G4's `kill` (the run is over
+by design; `wgf status` shows `Ended: kill at G4 …` and `--json` an `ended_by` object) - `1`
+failed, blocked or cancelled (or an OS error such as a full disk or an unwritable store,
+reported on one line), `2` usage - including a flag that would be ignored (§7) - and `3`
+waiting for a decision or input, or paused. **`wgf status` exits
 with the code of the run it shows** (a `RUNNING` run is `0`), so a script can test a run
 without parsing it; it used to exit `0` for every run it could find. With no run to show it
 exits `2`.
 
 `wgf runs --waiting` lists the runs `WAITING` at a step that asked for a person (a human
 checkpoint, or a step returning `WAITING_FOR_HUMAN`), one per line: run, step, gate,
-choices. A run waiting for input is not listed. `--json` prints
+choices, and for a gate with a timeout window when it approves itself on resume, or that it
+is eligible now. A run waiting for input is not listed. `--json` prints
 `{"runs": [{run_id, status, workflow_id, project_id, created_at, updated_at, cursor,
-waiting}], "unreadable": [...]}`, where `waiting` is `{step, gate, choices, prompt}` or
-`null`.
+waiting}], "unreadable": [...]}`, where `waiting` is `{step, gate, choices, prompt,
+timeout}` or `null`, and `timeout` is `null` or `{gate, window_seconds, waiting_since,
+eligible_at, eligible}`. Reporting it changes nothing (§9).
 
 `wgf pause` and `wgf cancel` build an engine from the store and the definition only: no step
 module in `factory.steps.modules` is imported, so one that fails to import cannot take away
@@ -553,7 +644,9 @@ Activity: 2026-09-24T04:07:40.020Z   3s ago
 `--json` prints `state.json` plus a `liveness` object with `run_id`, `run_status`,
 `liveness`, `driver_pid` (the lock owner), `step`, `attempt`, `visit`, `status`,
 `started_at`, `last_activity_at`, `pid`, `last_event`, `elapsed_seconds`, `idle_seconds` and
-`hung_after_seconds`. `RunState.from_dict` ignores the extra key.
+`hung_after_seconds`; `pending` (what `runs --waiting` shows for it, or `null`); and
+`ended_by` (`{step, decision, decided_by, decided_at, note, mode}` for a run a decision
+ended, else `null`). `RunState.from_dict` ignores the extra keys.
 
 ### `wgf test-core`
 
@@ -579,8 +672,8 @@ The run commands are generated from the workflow's own step ids and group names:
 rest are single steps. There is one `cmd_run`, one `WorkflowAPI.run`, one engine. Adding a
 step to the YAML adds a command.
 
-Exit status: `0` completed, `1` failed / blocked / cancelled (or a slice that left its scope on
-a failure), `2` usage, `3` waiting or paused.
+Exit status: `0` completed (or ended by a decision, G4's kill), `1` failed / blocked /
+cancelled (or a slice that left its scope on a failure), `2` usage, `3` waiting or paused.
 
 `wgf release` prepares a release — a `release-manifest` in state `draft` — and stops.
 Building, packaging and publishing are the game repository's CI, behind G5 and G6, and are
@@ -604,12 +697,16 @@ Run new-game-20260923-051421-470ce6: research -> strategy -> strategy-review -> 
 ✓ develop
 ✓ sdk
 ✓ verify
-✓ release
+⏸ prototype-review  Judge the verified prototype against the kill criteria …  <- next
+○ release
 
-Status: COMPLETED
-
-Workflow completed successfully.
+Status: WAITING
+Decide: wgf decide new-game-20260923-051421-470ce6 pass|iterate|kill [--note TEXT]   (gate G4)
 ```
+
+A mock run approves its reversible gates (G2, G3) itself and stops at G4, which only a person
+decides. `wgf decide <run-id> pass` continues to `release` and completes; `iterate` loops
+develop → review → sdk → verify → G4; `kill` ends the run (exit `0`, `Ended: kill at G4`).
 
 `--mock-plan` scripts outcomes per step execution (`success`, `pass`, `fail`, `failed`,
 `fatal`, `blocked`, `waiting`, `raise`, or any route label), so every failure path is
@@ -617,9 +714,10 @@ reproducible from the command line:
 
 ```bash
 wgf new-game --mock --mock-plan '{"develop": ["failed","failed","failed"]}'  # FAILED at develop
-wgf resume <run-id>                                                         # completes; research..assets not rerun
+wgf resume <run-id>                                                         # to G4; research..assets not rerun
 wgf new-game --mock --mock-plan '{"verify": ["fail"]}'                      # develop→sdk→verify loops once
 wgf new-game --mock --hold-gates                                            # WAITING at strategy-review
+wgf decide <run-id> pass                                                    # G4: release, completed
 ```
 
 ## 12. Configuration
@@ -637,7 +735,7 @@ factory:
   steps:       {modules: [wgf_discovery, wgf_strategy, wgf_init, wgf_assets, wgf_develop,
                           wgf_verification, wgf_design, wgf_sdk]}
   design:      {author: archetype}   # read by the design module, not the engine
-  checkpoints: {auto_approve: []}
+  checkpoints: {auto_approve: [], timeout_auto_approve: {}}   # e.g. {G2: 48h, G3: 48h}; §9
 ```
 
 A relative `storage.directory` resolves against the repository root, like every other path
@@ -725,7 +823,7 @@ python -m unittest discover scripts/tests
 | `test_workflow_cli.py` | `wgf` as a subprocess with the real mocks: `new-game --mock`, every individual command, chaining slices in one run, retry, permanent failure + resume, verification loop, human checkpoint, status and logs |
 | `test_workflow_contracts.py` | The gate before module work: an external module plugged in through config; artifact contract (versions, consumption, invalid and untyped artifacts, path-shaped ids); lifecycle separation; security; every run status; configuration-driven routing; event contract; one engine behind every command; docs match the workflow |
 | `fixtures/workflows/` | The acceptance workflows: `verify-loop`, `human-checkpoint`, `retry` |
-| `test_core_workflow.py` | Core v1 acceptance, one named scenario per class: happy path, failure, retry, resume, pause, cancel (between steps, and mid child process), human gate, max_visits, verify→develop loop, stale-run resume, concurrent-run lock refusal, determinism; input contracts, continue_in, liveness, `wgf status` and `wgf test-core` |
+| `test_core_workflow.py` | Core v1 acceptance, one named scenario per class: happy path, failure, retry, resume, pause, cancel (between steps, and mid child process), human gate, max_visits, verify→develop loop, stale-run resume, concurrent-run lock refusal, determinism; input contracts, continue_in, liveness, `wgf status` and `wgf test-core`; G4 (`PrototypeReviewGate`: pass, iterate, kill, resume at G4, stale evidence, release refused), gates decided on their required artifacts, and timeout approval (`TimeoutApproval*`: before, exactly at, after, disabled, irreversible/unknown gates, per visit, upstream change, tampering, status vs resume) |
 | `test_core_persistence.py` | Interrupted writes (rename/fsync failing), unreadable state, torn and duplicated event logs, a crash between an artifact write and the state save, lock takeover races, hostile run/artifact ids, decisions and definitions |
 | `core_suite.py` | The Core Acceptance Suite mapping `wgf test-core` runs (data, not tests) |
 

@@ -8,12 +8,14 @@ defaults below, which is what a fresh checkout and the test suite both get.
 
 import copy
 import os
+import re
 
 from .. import paths
 from ..yamllite import load_file
 from .definition import RetryPolicy
 
-__all__ = ["FactoryConfig", "load_config", "DEFAULT_CONFIG_PATH", "DEFAULTS"]
+__all__ = ["FactoryConfig", "load_config", "DEFAULT_CONFIG_PATH", "DEFAULTS", "ConfigError",
+           "parse_duration"]
 
 DEFAULT_CONFIG_PATH = os.path.join(paths.CONFIG, "factory.yaml")
 
@@ -31,8 +33,38 @@ DEFAULTS = {
     "agents": {"default": "local"},
     "storage": {"directory": ".factory", "fsync": True},
     "steps": {"modules": []},
-    "checkpoints": {"auto_approve": []},
+    # auto_approve: gates a run approves at once. timeout_auto_approve: {gate: window} - a
+    # gate that approves itself once it has waited that long ("48h", "30m", "2d", or
+    # seconds) and a `wgf resume` finds it so. Both only ever apply to a reversible gate
+    # gates.yaml defines; api.py refuses to start a run whose windows name any other.
+    "checkpoints": {"auto_approve": [], "timeout_auto_approve": {}},
 }
+
+
+class ConfigError(ValueError):
+    """A configuration value wgf will not act on."""
+
+
+_DURATION = re.compile(r"(\d+)\s*([smhd])")
+_UNIT_SECONDS = {"s": 1, "m": 60, "h": 3600, "d": 86400}
+
+
+def parse_duration(value):
+    """Seconds, as a positive int, from `48h`, `30m`, `2d`, `90s` or a positive integer of
+    seconds. Anything else - zero, a negative, a fraction, a bool - raises ConfigError."""
+    if isinstance(value, bool):
+        raise ConfigError(f"duration {value!r} is not a duration")
+    if isinstance(value, int):
+        seconds = value
+    elif isinstance(value, str) and _DURATION.fullmatch(value.strip()):
+        number, unit = _DURATION.fullmatch(value.strip()).groups()
+        seconds = int(number) * _UNIT_SECONDS[unit]
+    else:
+        raise ConfigError(f"duration {value!r} is not one of <n>s, <n>m, <n>h, <n>d or a "
+                          f"whole number of seconds")
+    if seconds <= 0:
+        raise ConfigError(f"duration {value!r} is not positive")
+    return seconds
 
 
 def _merge(base, override):
@@ -67,6 +99,26 @@ class FactoryConfig:
     @property
     def auto_approve(self):
         return list(self.section("checkpoints").get("auto_approve") or [])
+
+    @property
+    def timeout_auto_approve(self):
+        """{gate: seconds} from factory.checkpoints.timeout_auto_approve. Raises ConfigError
+        for a value that is not a mapping of gate ids to durations. Which gates may be
+        listed at all is checked where a run is started (api.timeout_windows)."""
+        raw = self.section("checkpoints").get("timeout_auto_approve") or {}
+        if not isinstance(raw, dict):
+            raise ConfigError("factory.checkpoints.timeout_auto_approve must be a mapping of "
+                              "gate ids to durations, e.g. {G2: 48h, G3: 48h}")
+        windows = {}
+        for gate, value in raw.items():
+            if not isinstance(gate, str):
+                raise ConfigError(f"factory.checkpoints.timeout_auto_approve: {gate!r} is "
+                                  f"not a gate id")
+            try:
+                windows[gate] = parse_duration(value)
+            except ConfigError as exc:
+                raise ConfigError(f"factory.checkpoints.timeout_auto_approve.{gate}: {exc}")
+        return windows
 
     @property
     def max_visits(self):

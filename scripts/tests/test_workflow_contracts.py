@@ -328,6 +328,8 @@ class LifecycleSeparation(ApiCase):
         before = tree_digest(paths.WORKSPACE)
         api = self.api()
         state = api.run(RunRequest(mock=True, project_id="neon-drift"))
+        self.assertEqual(state.cursor, "prototype-review")  # G4: a person decides it
+        state = api.run(RunRequest(resume=state.run_id, decision="pass", decided_by="human"))
         self.assertEqual(state.status, RunStatus.COMPLETED)
         self.assertEqual(tree_digest(paths.WORKSPACE), before)
 

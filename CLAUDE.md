@@ -46,11 +46,13 @@ python scripts/wgf-guard.py --title neon-drift --state prototype-review
 
 # The workflow engine. Every run command is a slice of core/workflows/new-game.workflow.yaml.
 bin/wgf research                          # real market scan: research-report + opportunity
-bin/wgf new-game --mock                   # research -> ... -> release, placeholder steps
+bin/wgf new-game --mock                   # research -> ... -> verify, then WAITING at G4
+bin/wgf decide <run-id> pass              # G4 (pass|iterate|kill): only a person decides it
 bin/wgf verify --mock                     # one step; `plan` = strategy, checkpoint, design
 bin/wgf resume <run-id> [--from STEP]     # = wgf <cmd> --resume <run-id>, which still works
 bin/wgf decide <run-id> approve [--note TEXT]   # answer a waiting checkpoint
-bin/wgf runs --waiting [--json]           # runs waiting for a decision: step, gate, choices
+bin/wgf runs --waiting [--json]           # runs waiting for a decision: step, gate, choices,
+                                          # timeout eligibility (reported; `resume` applies it)
 bin/wgf status [<run-id>] [--json]        # liveness: running | hung | stale; exits as the run
                                           # (0 ok/running, 1 failed, 3 waiting); also logs, runs, pause, cancel
 
@@ -140,11 +142,21 @@ Seven, defined as data in `core/lifecycle/gates.yaml`, tuned per installation in
 supervised or semi-autonomously without a rewrite.
 
 **G4 (kill), G6 (publish), G7 (spend) are irreversible and never auto-approve** —
-`decision-record.schema.json` rejects a non-human decision on them, so setting an
-auto-approval window for them in config has no effect. G1/G2/G3/G5 auto-approve on a timeout
-by design: seven gates against a 7–14 day cycle is a lot of human attention, and a factory
-whose gates cannot be cleared gets its gates removed by whoever is under pressure — including
-the three that matter.
+`decision-record.schema.json` rejects a non-human decision on them, and a run is refused at
+start if `factory.checkpoints.timeout_auto_approve` lists one. G1/G2/G3/G5 may auto-approve
+on a timeout by design: seven gates against a 7–14 day cycle is a lot of human attention, and
+a factory whose gates cannot be cleared gets its gates removed by whoever is under pressure —
+including the three that matter. An installation opts in per gate
+(`timeout_auto_approve: {G2: 48h, G3: 48h}`; gates.yaml's `auto_approve_after` is only the
+recommendation); a run snapshots the windows at start, and the approval is applied on
+`wgf resume` and recorded like a decision (`automation`, `mode: timeout`) — `wgf status`
+only reports eligibility.
+
+In `new-game`, G2, G3 and G4 are `human-checkpoint` steps decided on their gate's
+`required_artifacts`. G4 (`prototype-review`) sits after `verify` passes and before
+`release`: `pass` releases, `iterate` loops back to develop, `kill` ends the run (exit 0,
+`Ended: kill at G4`). Release cannot run until G4 passes, and a newer verification makes G4
+ask again. A `--mock` run therefore stops at G4.
 
 Every gate emits a `decision-record` pinning its subject by content hash.
 

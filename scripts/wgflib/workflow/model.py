@@ -237,6 +237,11 @@ class StepState:
     pid: int = None
     last_activity_at: str = None
     last_event: str = None
+    # When the current visit first returned a WAITING outcome, from the engine's clock. Kept
+    # across resumes of the same visit, cleared when the step is entered again; corroborated
+    # by the STEP_WAITING event that recorded it before anything relies on it
+    # (integrity.waiting_since_on_record). A checkpoint's timeout is measured from it.
+    waiting_since: str = None
 
     def to_dict(self):
         return dataclasses.asdict(self)

@@ -737,16 +737,22 @@ class MockOutputs(unittest.TestCase):
                 self.assertEqual(check_lineage(content, consumed), [])
         return seen
 
+    def pass_g4(self, state):
+        """A mock run stops at G4, which only a person decides: decide it as one."""
+        self.assertEqual((state.status, state.cursor), (RunStatus.WAITING, "prototype-review"))
+        return self.api.run(RunRequest(resume=state.run_id, decision="pass",
+                                       decided_by="human"))
+
     def test_a_full_mock_run_emits_only_valid_artifacts(self):
-        state = self.api.run(RunRequest(mock=True, project_id="contract-probe"))
+        state = self.pass_g4(self.api.run(RunRequest(mock=True, project_id="contract-probe")))
         self.assertEqual(state.status, RunStatus.COMPLETED)
         seen = self.audit(state)
         declared = {t for step in self.api.definition().steps for t in step.outputs}
         self.assertEqual(seen, declared)
 
     def test_the_verify_fail_loop_emits_only_valid_artifacts(self):
-        state = self.api.run(RunRequest(mock=True, project_id="contract-probe",
-                                        mock_plan={"verify": ["fail", "pass"]}))
+        state = self.pass_g4(self.api.run(RunRequest(mock=True, project_id="contract-probe",
+                                                     mock_plan={"verify": ["fail", "pass"]})))
         self.assertEqual(state.status, RunStatus.COMPLETED)
         self.audit(state)
         self.assertGreaterEqual(len(state.artifacts["qa-report"]), 2)

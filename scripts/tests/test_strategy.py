@@ -379,6 +379,9 @@ class ThroughEngine(unittest.TestCase):
         final = api.run(RunRequest(resume=state.run_id, decision="approve"))
         self.assertEqual(final.status, RunStatus.WAITING)  # G3, after the tech plan
         final = api.run(RunRequest(resume=state.run_id, decision="approve"))
+        # G4 after verification: only a person passes it, then the run releases.
+        self.assertEqual((final.status, final.cursor), (RunStatus.WAITING, "prototype-review"))
+        final = api.run(RunRequest(resume=state.run_id, decision="pass"))
         self.assertEqual(final.status, RunStatus.COMPLETED)
         self.assertEqual(final.steps["design"].consumed, ["title-strategy@v1"])
         design = api.store.read_artifact(final.run_id, final.latest_artifact("game-design"))
@@ -399,7 +402,9 @@ class ThroughEngine(unittest.TestCase):
 
     def test_a_configured_auto_approval_is_the_only_way_past_g2(self):
         final = self.api(auto_approve=["G2", "G3"]).run(RunRequest(project_id="neon-drift"))
-        self.assertEqual(final.status, RunStatus.COMPLETED)
+        # Past G2 and G3 unattended; G4 cannot be configured away and waits for a person.
+        self.assertEqual(final.steps["strategy-review"].status, StepStatus.SUCCESS)
+        self.assertEqual((final.status, final.cursor), (RunStatus.WAITING, "prototype-review"))
 
     def test_the_workflow_still_declares_the_checkpoint_after_strategy(self):
         definition = load_definition("new-game")

@@ -32,8 +32,11 @@ from wgflib.hashing import content_hash  # noqa: E402
 from wgflib.workflow.model import RunStatus  # noqa: E402
 from wgflib.workflow.store import RunStore  # noqa: E402
 
+# A mock new-game approves G2 and G3 itself and waits at G4 (prototype-review), which only a
+# person decides: its trail holds the wait and then the pass.
 NEW_GAME = ["research", "strategy", "strategy-review", "design", "tech-plan", "tech-plan-review",
-            "init", "assets", "develop", "review", "sdk", "verify", "release"]
+            "init", "assets", "develop", "review", "sdk", "verify", "prototype-review",
+            "prototype-review", "release"]
 SCHEMATIZED = {
     "research": "opportunity",
     "strategy": "title-strategy",
@@ -86,10 +89,21 @@ class CliCase(unittest.TestCase):
     def statuses(self, state):
         return {step: entry["status"] for step, entry in state["steps"].items()}
 
+    def pass_g4(self, run_id=None, expect=0, quiet=True):
+        """A mock new-game stops at G4 (irreversible: no mock or config approves it). Answer
+        it as the person at the terminal does - `wgf decide <run> pass`."""
+        run_id = run_id or self.state()["run_id"]
+        state = self.state(run_id)
+        self.assertEqual((state["status"], state["cursor"]), ("WAITING", "prototype-review"))
+        return self.wgf("decide", run_id, "pass", *(("--quiet",) if quiet else ()),
+                        expect=expect)
+
 
 class MockNewGame(CliCase):
     def test_runs_every_step_without_being_told_the_order(self):
-        done = self.wgf("new-game", "--mock")
+        done = self.wgf("new-game", "--mock", expect=3)
+        self.assertIn("pass|iterate|kill", done.stdout)
+        done = self.pass_g4(quiet=False)
         self.assertIn("Workflow completed successfully.", done.stdout)
         state = self.state()
         self.assertEqual(state["status"], "COMPLETED")
@@ -97,7 +111,8 @@ class MockNewGame(CliCase):
         self.assertEqual(set(self.statuses(state).values()), {"SUCCESS"})
 
     def test_emits_an_artifact_per_step_with_reproducible_provenance(self):
-        self.wgf("new-game", "--mock")
+        self.wgf("new-game", "--mock", expect=3)
+        self.pass_g4()
         state = self.state()
         for step, artifact_type in SCHEMATIZED.items():
             with self.subTest(step):
@@ -114,7 +129,8 @@ class MockNewGame(CliCase):
                 self.assertEqual([k for k in required if k not in artifact], [])
 
     def test_downstream_artifacts_pin_their_inputs_by_hash(self):
-        self.wgf("new-game", "--mock")
+        self.wgf("new-game", "--mock", expect=3)
+        self.pass_g4()
         state = self.state()
         opportunity = self.artifact(state, "opportunity")
         strategy = self.artifact(state, "title-strategy")
@@ -162,7 +178,8 @@ class IndividualCommands(CliCase):
         self.assertIn("STEP_SKIPPED", [e["event"] for e in events])
 
         # And the rest of the workflow, from where the slices left off.
-        self.wgf("new-game", "--run", run_id, "--quiet")
+        self.wgf("new-game", "--run", run_id, "--quiet", expect=3)
+        self.pass_g4(run_id)
         state = self.state(run_id)
         self.assertEqual(state["status"], "COMPLETED")
         self.assertEqual(state["steps"]["strategy"]["executions"], 1)
@@ -171,7 +188,9 @@ class IndividualCommands(CliCase):
 
 class FailureAndResume(CliCase):
     def test_retry_then_success(self):
-        self.wgf("new-game", "--mock", "--quiet", "--mock-plan", '{"develop": ["failed"]}')
+        self.wgf("new-game", "--mock", "--quiet", "--mock-plan", '{"develop": ["failed"]}',
+                 expect=3)
+        self.pass_g4()
         state = self.state()
         self.assertEqual(state["status"], "COMPLETED")
         self.assertEqual(state["steps"]["develop"]["executions"], 2)
@@ -192,7 +211,8 @@ class FailureAndResume(CliCase):
         self.assertEqual(names.count("STEP_RETRIED"), 2)
         self.assertEqual(names[-1], "WORKFLOW_FAILED")
 
-        self.wgf("new-game", "--resume", state["run_id"], "--quiet")
+        self.wgf("new-game", "--resume", state["run_id"], "--quiet", expect=3)
+        self.pass_g4(state["run_id"])
         resumed = self.state(state["run_id"])
         self.assertEqual(resumed["status"], "COMPLETED")
         for step in ("research", "strategy", "design", "init", "assets"):
@@ -200,12 +220,14 @@ class FailureAndResume(CliCase):
         self.assertEqual(resumed["steps"]["develop"]["executions"], 4)
 
     def test_verification_failure_loops_back_to_development(self):
-        self.wgf("new-game", "--mock", "--quiet", "--mock-plan", '{"verify": ["fail"]}')
+        self.wgf("new-game", "--mock", "--quiet", "--mock-plan", '{"verify": ["fail"]}',
+                 expect=3)
+        self.pass_g4()
         state = self.state()
         self.assertEqual(state["status"], "COMPLETED")
         self.assertEqual([t["step"] for t in state["trail"]][8:],
                          ["develop", "review", "sdk", "verify", "develop", "review", "sdk",
-                          "verify", "release"])
+                          "verify", "prototype-review", "prototype-review", "release"])
         self.assertEqual(self.artifact(state, "qa-report", 1)["verdict"], "fail")
         self.assertEqual(self.artifact(state, "qa-report", 2)["verdict"], "pass")
         self.assertEqual(self.artifact(state, "prototype-report", 2)["iteration"], 2)
@@ -226,7 +248,8 @@ class FailureAndResume(CliCase):
         self.assertNotIn("init", state["steps"])
 
         self.wgf("new-game", "--resume", state["run_id"], "--decision", "approve",
-                 "--note", "ok", "--quiet")
+                 "--note", "ok", "--quiet", expect=3)
+        self.pass_g4(state["run_id"])
         state = self.state(state["run_id"])
         self.assertEqual(state["status"], "COMPLETED")
         self.assertEqual(state["decisions"]["strategy-review"]["decided_by"], "human")
@@ -238,7 +261,8 @@ class FailureAndResume(CliCase):
         self.wgf("new-game", "--resume", run_id, "--decision", "reject", "--quiet", expect=1)
         self.assertEqual(self.state(run_id)["status"], "BLOCKED")
         self.wgf("new-game", "--resume", run_id, "--decision", "approve", "--quiet", expect=3)
-        self.wgf("new-game", "--resume", run_id, "--decision", "approve", "--quiet")
+        self.wgf("new-game", "--resume", run_id, "--decision", "approve", "--quiet", expect=3)
+        self.pass_g4(run_id)
         self.assertEqual(self.state(run_id)["status"], "COMPLETED")
 
 
@@ -363,7 +387,8 @@ class RunStatesThroughTheCli(CliCase):
         self.assertEqual(self.status_line(state["run_id"]), "Status: BLOCKED")
         self.assertIn("WORKFLOW_BLOCKED", self.wgf("logs", state["run_id"]).stdout)
 
-        self.wgf("new-game", "--resume", state["run_id"], "--quiet")
+        self.wgf("new-game", "--resume", state["run_id"], "--quiet", expect=3)
+        self.pass_g4(state["run_id"])
         self.assertEqual(self.state(state["run_id"])["status"], "COMPLETED")
 
     def test_waiting(self):
@@ -380,14 +405,15 @@ class RunStatesThroughTheCli(CliCase):
         self.assertEqual(succeeded(before),
                          sorted(["research", "strategy", "strategy-review", "design",
                                  "tech-plan", "tech-plan-review", "init", "assets"]))
-        self.wgf("new-game", "--resume", before["run_id"], "--quiet")
+        self.wgf("new-game", "--resume", before["run_id"], "--quiet", expect=3)
+        self.pass_g4(before["run_id"])
         after = self.state(before["run_id"])
         self.assertEqual(succeeded(after), sorted(succeeded(before) +
                                                   ["develop", "review", "sdk", "verify",
-                                                   "release"]))
+                                                   "prototype-review", "release"]))
 
     def test_mock_auto_approves_only_the_workflows_own_checkpoint(self):
-        self.wgf("new-game", "--mock", "--quiet")
+        self.wgf("new-game", "--mock", "--quiet", expect=3)  # G4 is never auto-approved
         self.assertEqual(self.state()["params"]["auto_approve"], ["G2", "G3"])
         self.wgf("new-game", "--mock", "--hold-gates", "--quiet", expect=3)
         self.assertNotIn("auto_approve", self.state()["params"])
@@ -408,21 +434,26 @@ class ResumeAndDecide(CliCase):
         self.wgf("new-game", "--mock", "--quiet", "--mock-plan",
                  '{"develop": ["failed", "failed", "failed"]}', expect=1)
         run_id = self.state()["run_id"]
-        self.wgf("resume", run_id, "--quiet")
+        self.wgf("resume", run_id, "--quiet", expect=3)
+        self.pass_g4(run_id)
         state = self.state(run_id)
         self.assertEqual(state["status"], "COMPLETED")
         self.assertEqual(state["steps"]["research"]["executions"], 1)
 
     def test_resume_from_a_step(self):
-        self.wgf("new-game", "--mock", "--quiet")
+        self.wgf("new-game", "--mock", "--quiet", expect=3)
+        self.pass_g4()
         run_id = self.state()["run_id"]
         # A completed run is not resumable; the engine says so, and nothing changes.
         self.assertIn("COMPLETED", self.wgf("resume", run_id, "--from", "verify",
                                             expect=2).stderr)
         self.wgf("new-game", "--mock", "--quiet", "--mock-plan",
-                 '{"release": ["fatal"]}', expect=1)
+                 '{"release": ["fatal"]}', expect=3)
+        self.pass_g4(expect=1)  # release fails
         run_id = self.state()["run_id"]
-        self.wgf("resume", run_id, "--from", "verify", "--quiet")
+        # Verification runs again, so G4's pass no longer covers it: asked again.
+        self.wgf("resume", run_id, "--from", "verify", "--quiet", expect=3)
+        self.pass_g4(run_id)
         state = self.state(run_id)
         self.assertEqual(state["status"], "COMPLETED")
         self.assertEqual(state["steps"]["verify"]["executions"], 2)
@@ -434,7 +465,9 @@ class ResumeAndDecide(CliCase):
                         expect=3)
         self.assertIn(f"wgf decide {run_id} approve|reject", done.stdout)  # G3 next
         self.assertEqual(self.state(run_id)["cursor"], "tech-plan-review")
-        self.wgf("decide", run_id, "approve", "--quiet")
+        done = self.wgf("decide", run_id, "approve", "--quiet", expect=3)
+        self.assertIn(f"wgf decide {run_id} pass|iterate|kill", done.stdout)  # G4 next
+        self.pass_g4(run_id)
         state = self.state(run_id)
         self.assertEqual(state["status"], "COMPLETED")
         for step in ("strategy-review", "tech-plan-review"):
@@ -443,7 +476,7 @@ class ResumeAndDecide(CliCase):
         self.assertEqual(state["decisions"]["strategy-review"]["note"], "looks right")
         recorded = [e["step_id"] for e in self.events(run_id)
                     if e["event"] == "DECISION_RECORDED"]
-        self.assertEqual(recorded, ["strategy-review", "tech-plan-review"])
+        self.assertEqual(recorded, ["strategy-review", "tech-plan-review", "prototype-review"])
 
     def test_resume_with_a_decision(self):
         run_id = self.held()
@@ -451,7 +484,8 @@ class ResumeAndDecide(CliCase):
         self.assertEqual(self.state(run_id)["status"], "BLOCKED")
 
     def test_decide_refuses_a_run_that_is_not_waiting(self):
-        self.wgf("new-game", "--mock", "--quiet")
+        self.wgf("new-game", "--mock", "--quiet", expect=3)
+        self.pass_g4()
         run_id = self.state()["run_id"]
         before = self.state(run_id)
         err = self.wgf("decide", run_id, "approve", expect=2).stderr
@@ -487,10 +521,12 @@ class ResumeAndDecide(CliCase):
     def test_an_irreversible_gate_refuses_automation_through_decide(self):
         workflow = os.path.join(self.scratch, "kill.workflow.yaml")
         with open(workflow, "w", encoding="utf-8") as handle:
+            # G4 is decided on the verified evidence (gates.yaml): a mock verify makes it.
             handle.write("workflow:\n  id: kill\n  version: 1\n  steps:\n"
-                         "    - id: research\n      type: research\n"
-                         "      outputs: [opportunity]\n"
+                         "    - id: verify\n      type: verify\n"
+                         "      outputs: [prototype-report, verification-report, qa-report]\n"
                          "    - id: kill-review\n      type: human-checkpoint\n"
+                         "      inputs: [qa-report, verification-report, prototype-report]\n"
                          "      with: {gate: G4}\n")
         self.wgf("kill", "--workflow", workflow, "--mock", "--quiet", expect=3)
         run_id = self.state()["run_id"]
@@ -552,7 +588,7 @@ class SingleStepHints(CliCase):
     """A fresh single-step run is kept, and named the run it probably belonged in."""
 
     def test_names_the_latest_run_holding_the_missing_inputs(self):
-        self.wgf("new-game", "--mock", "--quiet")
+        self.wgf("new-game", "--mock", "--quiet", expect=3)  # waiting at G4
         holder = self.state()["run_id"]
         done = self.wgf("develop", "--mock", "--quiet", "--mock-plan",
                         '{"develop": ["waiting"]}', expect=3)
@@ -576,7 +612,7 @@ class SingleStepHints(CliCase):
         self.wgf("new-game", "--mock", "--quiet", "--mock-plan", '{"verify": ["waiting"]}',
                  expect=3)
         self.assertNotIn("hint:", self.wgf("resume", self.state()["run_id"], "--quiet",
-                                           ).stderr)
+                                           expect=3).stderr)  # on to G4
 
 
 class StatusExitCode(CliCase):
@@ -628,7 +664,8 @@ class RunsListing(CliCase):
         self.assertEqual(listing["runs"][0]["waiting"],
                          {"step": "strategy-review", "gate": "G2",
                           "choices": ["approve", "reject"],
-                          "prompt": "Approve the title strategy before design starts?"})
+                          "prompt": "Approve the title strategy before design starts?",
+                          "timeout": None})
 
     def test_json_lists_every_run(self):
         self.wgf("research", "--mock", "--quiet")

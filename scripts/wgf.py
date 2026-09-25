@@ -54,7 +54,7 @@ import unittest
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from wgflib.workflow.api import (  # noqa: E402
-    RunRequest, WorkflowAPI, missing_inputs, pending_decision)
+    RunRequest, WorkflowAPI, ended_by_decision, missing_inputs, pending_decision)
 from wgflib.workflow.config import load_config  # noqa: E402
 from wgflib.workflow.definition import DefinitionError  # noqa: E402
 from wgflib.workflow.engine import EngineError  # noqa: E402
@@ -131,7 +131,47 @@ def render_liveness(live):
     return lines
 
 
-def render_status(state, definition, live=None):
+def _window(seconds):
+    for unit, size in (("d", 86400), ("h", 3600), ("m", 60)):
+        if seconds % size == 0:
+            return f"{seconds // size}{unit}"
+    return f"{seconds}s"
+
+
+def render_timeout(timeout, run_id):
+    """One line on a gate's timeout approval, or None. It only reports: the approval is
+    applied by the next `wgf resume`, never by looking at the run."""
+    if not timeout:
+        return None
+    window = _window(timeout["window_seconds"])
+    if not timeout.get("waiting_since"):
+        return (f"Timeout: {timeout['gate']} approves itself {window} after it starts waiting; "
+                f"`wgf resume {run_id}` starts the wait")
+    if timeout.get("eligible"):
+        return (f"Timeout: {timeout['gate']} eligible for timeout approval since "
+                f"{timeout['eligible_at']} (waiting since {timeout['waiting_since']}, window "
+                f"{window}); `wgf resume {run_id}` applies it")
+    return (f"Timeout: {timeout['gate']} approves itself on the first `wgf resume {run_id}` "
+            f"at or after {timeout['eligible_at']} (waiting since {timeout['waiting_since']}, "
+            f"window {window})")
+
+
+def render_ended(state, definition):
+    """How a run a decision ended - G4's kill - was ended, or None."""
+    ended = ended_by_decision(state)
+    if ended is None:
+        return None
+    gate = None
+    if definition is not None and definition.has_step(ended["step"]):
+        gate = (definition.step(ended["step"]).params or {}).get("gate")
+    where = f"{gate} ({ended['step']})" if gate else ended["step"]
+    how = f" on {ended['mode']}" if ended.get("mode") else ""
+    line = (f"Ended:  {ended['decision']} at {where}, decided by {ended['decided_by']}{how} "
+            f"at {ended['decided_at']}")
+    return line + (f": {ended['note']}" if ended.get("note") else "")
+
+
+def render_status(state, definition, live=None, pending=None):
     marks = _symbols()
     lines = [
         f"Workflow: {state.workflow_id} (v{state.workflow_version})",
@@ -168,24 +208,30 @@ def render_status(state, definition, live=None):
     lines.append(f"Status: {state.status}")
     if state.message:
         lines.append(f"        {state.message}")
+    ended = render_ended(state, definition)
+    if ended:
+        lines.append(ended)
     if state.exit and state.exit.get("next") not in (None, "$end"):
         lines.append(f"Next:   {state.exit['next']} (outside this run's scope; "
                      f"wgf {state.exit['next']} --run {state.run_id})")
     if live is not None:
         lines.append("")
         lines.extend(render_liveness(live))
-    hint = _resume_hint(state, live, definition)
+    timeout = render_timeout((pending or {}).get("timeout"), state.run_id)
+    if timeout:
+        lines.append(timeout)
+    hint = _resume_hint(state, live, definition, pending)
     if hint:
         lines.append(hint)
     return "\n".join(lines)
 
 
-def _resume_hint(state, live=None, definition=None):
+def _resume_hint(state, live=None, definition=None, pending=None):
     command = f"wgf resume {state.run_id}"
     if live is not None and live.get("liveness") == "stale":
         return f"Resume: {command}   (its driver died)"
     if state.status == RunStatus.WAITING:
-        pending = pending_decision(state, definition)
+        pending = pending or pending_decision(state, definition)
         if pending is not None:
             choices = "|".join(pending["choices"] or ["CHOICE"])
             gate = f"   (gate {pending['gate']})" if pending.get("gate") else ""
@@ -262,7 +308,11 @@ def render_logs(events, as_json):
 def exit_code(state):
     if state.status == RunStatus.COMPLETED:
         outcome = (state.exit or {}).get("outcome")
-        return EXIT_OK if outcome in (None, StepOutcome.SUCCESS) else EXIT_FAILED
+        if outcome in (None, StepOutcome.SUCCESS):
+            return EXIT_OK
+        # Ended by a decision - G4's kill - is a legitimate end, not a failure: the command
+        # did what was asked. `wgf status` says how it ended ("Ended: kill at G4 ...").
+        return EXIT_OK if ended_by_decision(state) else EXIT_FAILED
     if state.status in (RunStatus.WAITING, RunStatus.PAUSED):
         return EXIT_WAITING
     return EXIT_FAILED
@@ -438,8 +488,11 @@ def _drive(api, args, request):
     if not args.json:
         definition = api.definition_for(state)
         print()
-        print(render_status(state, definition))
-        if state.status == RunStatus.COMPLETED and exit_code(state) == EXIT_OK:
+        print(render_status(state, definition, pending=api.pending(state)))
+        ended = ended_by_decision(state)
+        if ended is not None:
+            print(f"\nWorkflow ended by a decision: {ended['decision']} at {ended['step']}.")
+        elif state.status == RunStatus.COMPLETED and exit_code(state) == EXIT_OK:
             print("\nWorkflow completed successfully.")
     return state
 
@@ -532,11 +585,16 @@ def cmd_status(args):
         print(f"no runs in {api.store.workflows}")
         return EXIT_USAGE
     live = api.liveness(state)
+    pending = api.pending(state)
     if args.json:
-        # The persisted state, plus the derived liveness under a key RunState ignores.
-        print(json.dumps(dict(state.to_dict(), liveness=live), indent=2, ensure_ascii=False))
+        # The persisted state, plus what is derived from it under keys RunState ignores:
+        # liveness, the decision it waits for (with any timeout eligibility), and the
+        # decision that ended it. Reading them changes nothing.
+        print(json.dumps(dict(state.to_dict(), liveness=live, pending=pending,
+                              ended_by=ended_by_decision(state)),
+                         indent=2, ensure_ascii=False))
     else:
-        print(render_status(state, definition, live))
+        print(render_status(state, definition, live, pending))
     return status_exit_code(state)
 
 
@@ -582,8 +640,14 @@ def cmd_runs(args):
     elif args.waiting:
         for row in rows:
             pending = row["waiting"]
+            timeout = pending.get("timeout") or {}
+            note = ""
+            if timeout.get("eligible"):
+                note = f"  eligible for timeout approval since {timeout['eligible_at']}"
+            elif timeout.get("eligible_at"):
+                note = f"  approves itself on resume at or after {timeout['eligible_at']}"
             print(f"{row['run_id']:<40} {pending['step']:<18} {pending['gate'] or '-':<5} "
-                  f"{'|'.join(pending['choices'] or []) or '-'}")
+                  f"{'|'.join(pending['choices'] or []) or '-'}{note}")
         if rows:
             print("\nDecide: wgf decide <run-id> <choice> [--note TEXT]")
         elif not problems:

@@ -11,8 +11,8 @@ import datetime
 import os
 
 from .. import paths, procs
-from . import checkpoint, mock
-from .config import load_config
+from . import checkpoint, integrity, mock
+from .config import ConfigError, load_config
 from .definition import WORKFLOWS, load_definition
 from .engine import WorkflowEngine
 from .events import Events
@@ -22,7 +22,8 @@ from .runtime import create_runtime
 from .step import StepRegistry
 from .store import RunStore
 
-__all__ = ["WorkflowAPI", "RunRequest", "pending_decision", "missing_inputs"]
+__all__ = ["WorkflowAPI", "RunRequest", "pending_decision", "missing_inputs",
+           "timeout_windows", "ended_by_decision"]
 
 
 def _no_sleep(_seconds):
@@ -82,14 +83,61 @@ def checkpoint_gates(definition):
     }
 
 
-def pending_decision(state, definition=None, events=()):
+def timeout_windows(config):
+    """factory.checkpoints.timeout_auto_approve as {gate: seconds}, checked against gates.yaml.
+
+    Fail closed: a gate gates.yaml does not define, or an irreversible one (G4, G6, G7),
+    listed there is refused with a ConfigError - a run is not started under a configuration
+    that asks for something the Factory will never do."""
+    windows = config.timeout_auto_approve
+    known = checkpoint.known_gates()
+    refused = []
+    for gate in sorted(windows):
+        if gate not in known:
+            refused.append(f"{gate} (not a gate core/lifecycle/gates.yaml defines)")
+        elif checkpoint.is_irreversible(gate):
+            refused.append(f"{gate} (irreversible: only a person decides it)")
+    if refused:
+        raise ConfigError(
+            "factory.checkpoints.timeout_auto_approve lists " + ", ".join(refused)
+            + "; remove it - no run starts under this configuration")
+    return windows
+
+
+def ended_by_decision(state):
+    """{"step", "decision", "decided_by", "decided_at", "note", "mode"} when the run ended
+    because a decision stopped it - a checkpoint answered with a stopping choice (G4's
+    kill, a reject) routed to `$end` - else None. Read-only."""
+    ended = state.exit or {}
+    if (state.status != RunStatus.COMPLETED or ended.get("next") != "$end"
+            or ended.get("outcome") in (None, StepOutcome.SUCCESS)):
+        return None
+    step_id = ended.get("step")
+    entry = (state.decisions or {}).get(step_id)
+    step = (state.steps or {}).get(step_id)
+    if (not isinstance(entry, dict) or step is None or entry.get("visit") != step.visits
+            or entry.get("decision") != ended.get("route")):
+        return None
+    return {"step": step_id, **{key: entry.get(key) for key in (
+        "decision", "decided_by", "decided_at", "note", "mode")}}
+
+
+def _utc(now):
+    return now or datetime.datetime.now(datetime.timezone.utc)
+
+
+def pending_decision(state, definition=None, events=(), now=None):
     """What a run is waiting for a person to decide, or None.
 
     A run waits for a decision when it is WAITING at a step that asked for a person
     (WAITING_FOR_HUMAN) - a human checkpoint above all - rather than for missing data
-    (WAITING_FOR_INPUT). Returns {"step", "gate", "choices", "prompt"}; gate, choices and
-    prompt are None when neither the definition nor the step's last STEP_WAITING event
-    says. Read-only: it answers nothing.
+    (WAITING_FOR_INPUT). Returns {"step", "gate", "choices", "prompt", "timeout"}; gate,
+    choices and prompt are None when neither the definition nor the step's last
+    STEP_WAITING event says. `timeout` is None, or - for a gate the run lets approve itself
+    on a timeout - {"gate", "window_seconds", "waiting_since", "eligible_at", "eligible"},
+    judged at `now` (an aware datetime; default the wall clock) from the same corroborated
+    waiting_since the engine uses. Read-only: it answers nothing, and an eligible gate is
+    approved only by the next `wgf resume`.
     """
     if state.status != RunStatus.WAITING or not state.cursor:
         return None
@@ -119,6 +167,18 @@ def pending_decision(state, definition=None, events=()):
                 if info["choices"] is None and isinstance(result.get("choices"), list):
                     info["choices"] = [str(c) for c in result["choices"]]
             break
+    info["timeout"] = None
+    gate = info["gate"]
+    window = checkpoint.timeout_window(gate, state.params if isinstance(state.params, dict)
+                                       else {})
+    if window is not None and is_checkpoint:
+        since = integrity.waiting_since(state, definition, state.cursor, list(events or ()))
+        due = checkpoint.timeout_due(gate, state.params, since)
+        info["timeout"] = {
+            "gate": gate, "window_seconds": window, "waiting_since": since,
+            "eligible_at": checkpoint.stamp(due) if due else None,
+            "eligible": bool(due and _utc(now) >= due),
+        }
     return info
 
 
@@ -259,6 +319,11 @@ class WorkflowAPI:
             auto |= checkpoint_gates(engine.definition) - checkpoint.irreversible_gates()
         if auto:
             params["auto_approve"] = sorted(auto)  # the checkpoint refuses irreversible ones
+        # Snapshotted like auto_approve: the run keeps the windows it started under, and a
+        # resume corroborates them against WORKFLOW_STARTED (integrity.params_problems).
+        windows = timeout_windows(self.config)
+        if windows:
+            params["timeout_auto_approve"] = dict(sorted(windows.items()))
 
         scope = request.scope
         if scope == engine.definition.id:
@@ -288,7 +353,7 @@ class WorkflowAPI:
     def runs(self, problems=None):
         return self.store.list_runs(problems)
 
-    def pending(self, state):
+    def pending(self, state, now=None):
         """pending_decision for `state`, against its definition and its recorded events.
         A definition that can no longer be found costs the gate and choices, not the run."""
         if state.status != RunStatus.WAITING:
@@ -297,13 +362,14 @@ class WorkflowAPI:
             definition = self.definition_for(state)
         except (OSError, ValueError):
             definition = None
-        return pending_decision(state, definition, self.store.read_events(state.run_id, []))
+        return pending_decision(state, definition, self.store.read_events(state.run_id, []),
+                                now=now)
 
-    def waiting(self, problems=None):
+    def waiting(self, problems=None, now=None):
         """[(state, pending)] for every run waiting for a decision, oldest first."""
         found = []
         for state in self.store.list_runs(problems):
-            info = self.pending(state)
+            info = self.pending(state, now=now)
             if info is not None:
                 found.append((state, info))
         return found

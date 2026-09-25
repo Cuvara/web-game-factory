@@ -1300,5 +1300,151 @@ class AjvSchemaLocal(LocalCase):
         self.execute_record()
 
 
+class ProfileIdentity(unittest.TestCase):
+    """A vendored profile is identified by id + version + content hash. Two documents can both
+    declare y8@1.0.0 (the template ships its own copies), so a version string alone must
+    never make a copy count as pinned, and every pin check compares hashes."""
+
+    FACTORY = "id: y8\nversion: 1.0.0\nname: the Factory's y8\n"
+    TEMPLATE = "id: y8\nversion: 1.0.0\nname: the template's y8\n"
+    PLATFORMS = [{"id": "y8", "profile": "y8@1.0.0", "role": "required"}]
+
+    def setUp(self):
+        from wgf_init import profiles
+        self.profiles = profiles
+        self.base = tempfile.mkdtemp(prefix="wgf-profiles-")
+        self.addCleanup(shutil.rmtree, self.base, ignore_errors=True)
+        self.source = os.path.join(self.base, "factory")
+        self.project = os.path.join(self.base, "game")
+        self.vendored = os.path.join(self.project, "config", "platforms")
+        os.makedirs(self.source)
+        os.makedirs(self.vendored)
+        self.write(os.path.join(self.source, "y8.yaml"), self.FACTORY)
+
+    @staticmethod
+    def write(path, text):
+        with open(path, "w", encoding="utf-8", newline="\n") as handle:
+            handle.write(text)
+
+    @staticmethod
+    def sha(text):
+        import hashlib
+        return "sha256:" + hashlib.sha256(text.encode("utf-8")).hexdigest()
+
+    def pinned(self, entries=None, raw=None):
+        """Write pinned.json (entries or raw text) if given; return its parsed content."""
+        path = os.path.join(self.vendored, "pinned.json")
+        if raw is not None:
+            self.write(path, raw)
+            return None
+        if entries is not None:
+            self.write(path, json.dumps({"source_repo": "web-game-template",
+                                         "profiles": entries}))
+        with open(path, encoding="utf-8") as handle:
+            return json.load(handle)
+
+    def vendor(self):
+        return self.profiles.vendor_profiles(self.project, self.PLATFORMS, self.source)
+
+    def verify(self, platforms=PLATFORMS):
+        return self.profiles.verify_pins(self.project, platforms, self.source)
+
+    def read_vendored(self):
+        with open(os.path.join(self.vendored, "y8.yaml"), encoding="utf-8") as handle:
+            return handle.read()
+
+    def test_a_same_version_copy_with_other_content_is_revendored(self):
+        # The template's y8@1.0.0, recorded consistently with its own bytes: by version it
+        # is "already pinned", by identity it is another document.
+        self.write(os.path.join(self.vendored, "y8.yaml"), self.TEMPLATE)
+        self.pinned([{"id": "y8", "version": "1.0.0", "file": "y8.yaml",
+                      "content_hash": self.sha(self.TEMPLATE)}])
+        self.assertTrue(self.verify(), "the pin check must see the template's copy")
+
+        touched = self.vendor()
+        self.assertEqual(touched, ["config/platforms/y8.yaml", "config/platforms/pinned.json"])
+        self.assertEqual(self.read_vendored(), self.FACTORY)
+        entry = self.pinned()["profiles"][0]
+        self.assertEqual(entry, {"id": "y8", "version": "1.0.0", "file": "y8.yaml",
+                                 "content_hash": self.sha(self.FACTORY)})
+        self.assertEqual(self.verify(), [])
+        self.assertEqual(self.pinned()["source_repo"], "web-game-template",
+                         "the rest of pinned.json survives")
+
+    def test_the_pin_check_detects_a_hash_mismatch_the_version_cannot(self):
+        self.vendor()
+        self.assertEqual(self.verify(), [])
+        # Same version, other bytes: a version-only check passes this.
+        self.write(os.path.join(self.vendored, "y8.yaml"), self.TEMPLATE)
+        problems = self.verify()
+        self.assertEqual(len(problems), 1, problems)
+        self.assertIn(self.sha(self.TEMPLATE), problems[0])
+        self.assertIn(self.sha(self.FACTORY), problems[0])
+
+    def test_a_pin_recorded_for_another_document_under_the_same_version_is_detected(self):
+        # Bytes and entry agree with each other, but not with the Factory's y8@1.0.0.
+        self.write(os.path.join(self.vendored, "y8.yaml"), self.TEMPLATE)
+        self.pinned([{"id": "y8", "version": "1.0.0", "file": "y8.yaml",
+                      "content_hash": self.sha(self.TEMPLATE)}])
+        problems = self.verify()
+        self.assertEqual(len(problems), 1, problems)
+        self.assertIn("two documents under one version", problems[0])
+        self.assertIn(self.sha(self.FACTORY), problems[0])
+
+    def test_an_older_pin_against_a_bumped_factory_profile_is_not_a_mismatch(self):
+        self.write(os.path.join(self.vendored, "y8.yaml"), self.TEMPLATE)
+        self.pinned([{"id": "y8", "version": "1.0.0", "file": "y8.yaml",
+                      "content_hash": self.sha(self.TEMPLATE)}])
+        self.write(os.path.join(self.source, "y8.yaml"),
+                   "id: y8\nversion: 1.1.0\nname: bumped\n")
+        self.assertEqual(self.verify(), [])
+
+    def test_an_entry_without_a_hash_is_unverified_and_revendored(self):
+        # A pinned.json entry that cannot prove its content is never trusted, and vendoring
+        # over it neither crashes nor keeps it.
+        self.write(os.path.join(self.vendored, "y8.yaml"), self.TEMPLATE)
+        self.pinned([{"id": "y8", "version": "1.0.0", "file": "y8.yaml"}])
+        self.assertIn("unverified", " ".join(self.verify()))
+        self.vendor()
+        self.assertEqual(self.read_vendored(), self.FACTORY)
+        self.assertEqual(self.pinned()["profiles"][0]["content_hash"], self.sha(self.FACTORY))
+        self.assertEqual(self.verify(), [])
+
+    def test_a_1_1_0_pinned_json_still_reads(self):
+        # 1.1.0 wrote exactly this entry shape; reading it back and re-vendoring are no-ops.
+        self.vendor()
+        self.assertEqual(set(self.pinned()["profiles"][0]),
+                         {"id", "version", "file", "content_hash"})
+        with open(os.path.join(self.vendored, "pinned.json"), "rb") as handle:
+            before = handle.read()
+        self.vendor()
+        with open(os.path.join(self.vendored, "pinned.json"), "rb") as handle:
+            self.assertEqual(handle.read(), before)
+        self.assertEqual(self.verify(), [])
+        self.assertEqual(self.profiles.verify_pins(self.project, None, self.source), [])
+
+    def test_a_malformed_pinned_json_is_replaced_not_a_crash(self):
+        for raw in ("[]", "{not json", json.dumps({"profiles": "y8"}),
+                    json.dumps({"profiles": [None, "y8", {"version": "1.0.0"}]})):
+            with self.subTest(raw=raw):
+                self.pinned(raw=raw)
+                self.assertTrue(self.verify())
+                self.vendor()
+                self.assertEqual(self.verify(), [])
+
+    def test_missing_pins_and_files_are_reported(self):
+        self.assertIn("missing or unreadable", " ".join(self.verify()))
+        self.vendor()
+        other = [{"id": "poki", "profile": "poki@1.0.0", "role": "optional"}]
+        self.assertIn("not listed", " ".join(self.verify(other)))
+        os.remove(os.path.join(self.vendored, "y8.yaml"))
+        self.assertIn("missing", " ".join(self.verify()))
+
+    def test_a_version_mismatch_is_still_reported(self):
+        self.vendor()
+        wrong = [{"id": "y8", "profile": "y8@2.0.0", "role": "required"}]
+        self.assertIn("not y8@2.0.0", " ".join(self.verify(wrong)))
+
+
 if __name__ == "__main__":
     unittest.main()

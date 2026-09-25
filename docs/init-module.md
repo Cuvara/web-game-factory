@@ -69,8 +69,16 @@ tech-plan ───────────────────────�
      every other field survive; the result is parsed back and must read exactly as the plan
      says with every other key unchanged, or it is not written (`FAILED`, not retryable).
    - The pinned profiles are copied byte-for-byte from `core/reference/platforms/` into
-     `config/platforms/`, and `pinned.json` lists each with its sha256. A pin that no longer
-     matches the Factory's profile is refused rather than vendored under the wrong version.
+     `config/platforms/`, and `pinned.json` lists each with its sha256. A profile's identity
+     is id + version + that `content_hash`, never the version string alone: the template
+     ships its own `config/platforms/*.yaml`, and some declare the same `id@version` as the
+     Factory's with other content. A copy counts as already pinned only when its bytes, its
+     `pinned.json` hash and the Factory's profile agree; a same-version copy with other bytes,
+     or an entry with no hash (unverified), is overwritten with the Factory's copy and
+     re-recorded. `profiles.verify_pins()` is the read-side check: it compares hashes, and
+     reports a pin whose hash differs from the Factory's profile at the same version. A pin
+     that no longer matches the Factory's profile version is refused rather than vendored
+     under the wrong version.
    - `game.id`/`game.name` are set from the repository name with exactly `bootstrap.yml`'s
      derivation, for either source (see *The bootstrap race*). With `source: local` there is
      no bootstrap workflow, so init also removes `bootstrap.yml`.

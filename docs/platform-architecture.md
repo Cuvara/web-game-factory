@@ -102,6 +102,14 @@ platforms:
   - { id: crazygames,  profile: crazygames@1.0.0,  role: optional }
 ```
 
+The pin names a version, but a profile's identity is id + version + content hash. Init
+vendors the Factory's copy into the game's `config/platforms/` and records its sha256 in
+`pinned.json`; a same-version copy with other bytes is replaced, not trusted, and pin checks
+compare the hash (see `docs/init-module.md`). Changing a profile's content therefore means a
+new version. `check-integrity.py` reads platform ids from the pinned template checkout (never
+the sibling working copy; skipped with a note when the pin is not cached) and warns, naming
+both sha256s, when the template ships a profile under a core `id@version` with other content.
+
 ---
 
 ## Platform SDK abstraction

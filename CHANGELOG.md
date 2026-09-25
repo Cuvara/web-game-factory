@@ -9,6 +9,22 @@ and `core/` is still the contract.
 
 ## [Unreleased]
 
+### Added
+
+- **The `agent` design author (F4)**, `scripts/wgf_design/agent.py`. It is opt-in
+  (`factory.design.author: agent`); the default stays `archetype`.
+  - An agent host improves the archetype's draft from a request holding the strategy, the
+    platform profiles and a starting draft.
+  - The design module then applies exactly the checks it applies to any author:
+    `finalize`, buildability, and the consistency rules including `descope`.
+  - A malformed draft is refused before `finalize` (not retryable). A failing or silent
+    host is retryable.
+  - The design is attributed `actor: ai`.
+  - The design step's brief now carries `config`, `run_dir`, `visit` and `attempt`.
+  - `factory.yaml` has a commented read-only host example.
+
+  *Migration:* none.
+
 ### Changed
 
 - **`docs/GDD.md` is rendered into the game repository (F3).** `game-design` declared

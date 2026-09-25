@@ -26,6 +26,17 @@ Core changes are listed with their reason, as docs/core-v1.md requires.
   Reviewer isolation moved to `wgflib/isolation.py`. *Migration:* a live agent host that
   authenticates through an environment variable needs it in `env_passthrough`; a developer
   that edited package.json scripts or wrote outside the writable paths now fails develop.
+- **Game code gets no Factory secrets (M1b).** The code the Factory runs inside a game
+  repository - the develop checks, verify's commands, the sdk conformance suite and release
+  packaging, all written or editable by the developer agent - ran with the Factory's whole
+  environment. It now gets `wgflib/agentenv.game_code_env`: the agents' allowlist (plus
+  `PLAYWRIGHT_*` and `COREPACK_*`, toolchain configuration) and the names in the new
+  `factory.agents.game_env_passthrough` (default `[]`) - never the agents'
+  `env_passthrough`. Core change (`wgflib/agentenv.py`): the allowlist is shared kernel
+  code, and one definition keeps the agents' and game code's rules from drifting.
+  *Migration:* an installation whose `pnpm install` (or build) reads a registry or other
+  credential from an environment variable must name it in `game_env_passthrough`;
+  credentials in `~/.npmrc` under HOME keep working.
 - **Run params are corroborated (M2).** `WORKFLOW_STARTED` records the run's params and
   resume refuses a state.json whose params differ. *Migration:* a run started before this
   change whose state claims `mock`, `mock_plan` or `auto_approve` is refused on resume;

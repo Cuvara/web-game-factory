@@ -27,6 +27,8 @@ a workflow that wants, say, a narrower check list.
       agents:
         env_passthrough: []        # what the developer's environment carries beyond
                                    # wgflib.agentenv's allowlist (the host's credential)
+        game_env_passthrough: []   # what the checks (game code: install, tests, build)
+                                   # get beyond the allowlist - never env_passthrough
       review:
         guarded_paths: [...]       # the Factory paths fingerprinted around the developer
 
@@ -90,11 +92,14 @@ def _merge(base, override):
 
 
 class Settings:
-    def __init__(self, data, env_passthrough=(), guarded_paths=None):
+    def __init__(self, data, env_passthrough=(), guarded_paths=None, game_env_passthrough=()):
         self.data = data
         # factory.agents.env_passthrough and factory.review.guarded_paths: installation
         # policy shared with the review step, read from their own sections.
         self.env_passthrough = list(env_passthrough or ())
+        # factory.agents.game_env_passthrough: what the checks - code the developer wrote,
+        # run by the Factory - get beyond the allowlist (checks.py, wgflib.agentenv).
+        self.game_env_passthrough = list(game_env_passthrough or ())
         self.guarded_paths = (list(guarded_paths) if guarded_paths is not None
                               else isolation.guarded_paths(None))
         checks = data.get("checks") or []
@@ -158,10 +163,11 @@ class Settings:
         _merge(data, {k: v for k, v in (params or {}).items() if k in DEFAULTS})
         try:
             passthrough = agentenv.passthrough(config)
+            game_passthrough = agentenv.game_passthrough(config)
             guarded = isolation.guarded_paths(config)
         except ValueError as exc:
             raise SettingsError(str(exc))
-        return cls(data, passthrough, guarded)
+        return cls(data, passthrough, guarded, game_passthrough)
 
     @property
     def commit(self):

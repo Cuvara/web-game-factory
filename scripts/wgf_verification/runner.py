@@ -2,14 +2,18 @@
 
 Everything the verification executes goes through a CommandRunner, so tests replace it with
 a scripted fake and never touch a package manager, a browser or the network.
+
+What it runs is the game repository's code - package.json scripts, tests, the Playwright
+webServer - which the developer agent wrote. Its environment is wgflib.agentenv's game-code
+allowlist, never the Factory's own: a runner given no `env` builds it from os.environ, and
+the step gives it `factory.agents.game_env_passthrough` too.
 """
 
-import os
 import shlex
 import time
 from dataclasses import dataclass, field
 
-from wgflib import procs
+from wgflib import agentenv, procs
 
 __all__ = ["CommandResult", "CommandRunner"]
 
@@ -70,7 +74,9 @@ class CommandRunner:
         self.log_path = log_path
 
     def run(self, command, cwd, timeout=None, env=None):
-        merged = dict(os.environ if self.env is None else self.env)
+        # `self.env` replaces the environment (a test's, or the step's game-code one); with
+        # none, the allowlist of os.environ - never all of it.
+        merged = dict(agentenv.game_code_env() if self.env is None else self.env)
         merged.update(env or {})
         # CI=1 makes the template's Playwright config refuse `.only` and never reuse a stray
         # dev server, which is the behaviour a verification wants.

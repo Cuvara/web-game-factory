@@ -161,6 +161,14 @@ The module verifies a local checkout and never clones. In order:
 
 None found is a single `BLOCKED` `source.checkout` check — reported, not raised.
 
+## The environment game code runs with
+
+Everything verification runs in the checkout - install, build, the package.json scripts,
+Playwright and its webServer, the template's fact collectors, and git - goes through
+`CommandRunner` with the game-code environment, never the Factory's: `wgflib/agentenv.py` `game_code_env`: the agents' allowlist (PATH, HOME, USER, LANG/LC_*, TERM, TMPDIR, SHELL, CI, the proxy variables, XDG_*, NODE_*, PNPM_*, npm_config_*, PLAYWRIGHT_*, COREPACK_* - minus any name that says it is a secret) plus `factory.agents.game_env_passthrough`. The
+refusing proxy (browser checks) and `CI=1` are layered on top. A runner built with no `env`
+still gets the allowlist of `os.environ`; a test that injects its own `env` keeps it.
+
 ## Side effects and idempotency
 
 Both reports carry `workflow` (run id, step, visit, execution), which the release step uses

@@ -26,6 +26,13 @@ set `=1` and both readings agree.
 | `WGF_TEMPLATE_CACHE` | `scripts/wgflib/template.py` | Where pinned template checkouts are cached, one directory per sha. | `~/.cache/wgf/templates` |
 | `WGF_HEARTBEAT_SECONDS` | `scripts/wgflib/procs.py` | Heartbeat interval for every owned child process (`STEP_PROGRESS`, `last_activity_at`). A positive number; anything else falls back to the default. | `15` |
 
+Agent processes and the game code the Factory runs (develop checks, verify, sdk, release
+packaging) do not see the Factory's environment: they get `scripts/wgflib/agentenv.py`'s
+allowlist, which carries no `WGF_*` variable but the `WGF_PROC_*` tags, plus what
+`factory.agents.env_passthrough` (agents) or `factory.agents.game_env_passthrough` (game
+code) names. A `WGF_*` variable listed below as read by a step is read by the Factory's own
+Python, not by its children.
+
 ## Set by the Factory for its children
 
 | Variable | Set by | Meaning |

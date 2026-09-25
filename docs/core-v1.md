@@ -50,10 +50,11 @@ RunStore  .factory/workflows/<run-id>/                        (session + env tag
 
 ```
 research → strategy → [G2] → design → tech-plan → [G3] → init → assets
-  → develop ⇄ review → sdk → verify ─fail→ develop
-                                   └─pass→ [G4] ─pass→ release (draft)
-                                             ├─iterate→ develop
-                                             └─kill→ $end (run ended by the decision)
+  → develop ⇄ review → sdk → sdk-review → verify ─fail→ develop
+             (request-changes → develop, from either review)
+                                                └─pass→ [G4] ─pass→ release (draft)
+                                                          ├─iterate→ develop
+                                                          └─kill→ $end (run ended by the decision)
 ```
 
 | Boundary | Artifact | Refused when |
@@ -65,9 +66,10 @@ research → strategy → [G2] → design → tech-plan → [G3] → init → as
 | init → develop | `scaffold-record` | infrastructure missing from the template copy |
 | develop → review | `prototype-report` | no real commit (no placeholder shas) |
 | review → sdk | `review-report` | reviewer changed anything, malformed verdict, wrong commit |
-| sdk → verify | `sdk-report` | integration not committed / not on the reviewed commit |
+| sdk → sdk-review | `sdk-report` | integration not committed / not on the reviewed commit |
+| sdk-review → verify | `review-report` (subject: the sdk commit) | as review → sdk, for the sdk commit |
 | verify → G4 | `qa-report`, `verification-report`, `prototype-report` | missing (G4 waits for input), fails its contract; only a person decides G4 |
-| G4 → release | `qa-report`, `verification-report` (after a G4 `pass`) | G4 not passed or superseded by a newer verification; not the newest visit, not passing, commit lineage broken, dirty tree |
+| G4 → release | `qa-report`, `verification-report` (after a G4 `pass`), the `review-report` approving the sdk commit | G4 not passed or superseded by a newer verification; not the newest visit, not passing, commit lineage broken, dirty tree; the shipped commit not approved by a review (`unreviewed` unless `factory.release.allow_unreviewed`) |
 
 Every boundary is enforced twice: the engine validates each **output** against its full schema
 before persisting it and each **input** again before the consuming step runs (a hand-edited or
@@ -86,7 +88,7 @@ full table with the fields each consumer reads.
 | Human gates | `human-checkpoint` waits, decided on its gate's `required_artifacts`; G4/G6/G7 never auto-approve and refuse `automation`; `wgf <step> --run` and `resume --from` refuse to start past an upstream step that is BLOCKED, WAITING or FAILED, or past a gate this run has not passed (a backward answer such as `iterate` does not pass it) | `HumanGate`, `PrototypeReviewGate`, `GateAnsweredWithoutPassing` |
 | Timeout approval | only reversible gates listed in `factory.checkpoints.timeout_auto_approve`, snapshotted into the run's params; measured from the engine-recorded, event-corroborated `waiting_since` of the visit; applied on `resume` and recorded as a `DECISION_RECORDED` (`automation`, `mode: timeout`); `status` only reports | `TimeoutApproval`, `TimeoutApprovalThroughTheApi` |
 | Event log is load-bearing | a run that cannot write `events.jsonl` ends FAILED with the reason, never COMPLETED | `test_core_persistence.EventLogLoss` |
-| No infinite loops | `max_visits` per step, including skipped and `--run` paths | `MaxVisits`, `VerifyDevelopLoop` |
+| No infinite loops | `max_visits` per step, including skipped and `--run` paths; `max_visits_by_route` per loop into a step, over the whole run (a resume refills only the route that stopped it); a run-level developer-session budget (`factory.develop.budget`) that no resume refills | `MaxVisits`, `VerifyDevelopLoop`, `RouteScopedLoops`, `test_develop_module.DevelopBudget` |
 | One driver per run | O_EXCL lock with guarded stale takeover | `ConcurrentRunLock` |
 | Atomic persistence | temp + fsync + rename for state, artifacts, pointers; torn event lines skipped and reported | `test_core_persistence` |
 
@@ -103,7 +105,9 @@ person via `handoff`). The provider is named only in installation config, never 
 - **Observability.** `STEP_PROGRESS` events (`spawned`, `heartbeat`, `timeout`,
   `idle-timeout`, `cancelled`, `cleanup`, `exited`) and `pid` / `last_activity_at` /
   `last_event` on the step state. `wgf status` derives liveness: `running` (lock held,
-  recent activity), `hung` (lock held, silent for `factory.execution.hung_after_seconds`),
+  recent activity), `hung` (lock held, and either no heartbeat for
+  `factory.execution.hung_after_seconds`, or heartbeats but no output from the child for
+  `hung_output_seconds`),
   `stale` (says RUNNING, driver dead — resume it).
 - **Reviewer isolation.** Enforced, not requested: the checkout, refs, index, hooks, config and
   the Factory's own workflow/config are fingerprinted before and after; any change fails the
@@ -111,7 +115,8 @@ person via `handoff`). The provider is named only in installation config, never 
   a sandbox — `docs/review-module.md` lists what it cannot see.
 - **Verdicts.** `approve` with blockers, `request-changes` without, a different commit, extra
   keys, no file: all `malformed-verdict`, never retried. `kind: none` records `skipped`,
-  never an approval, and release carries it as skipped.
+  never an approval; release refuses a build no review approved (`unreviewed`) unless the
+  installation sets `factory.release.allow_unreviewed`, and then records it as UNREVIEWED.
 
 Details: `docs/agent-lifecycle.md`, `docs/review-module.md`, `docs/development-module.md`.
 

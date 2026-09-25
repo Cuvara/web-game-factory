@@ -447,10 +447,13 @@ class AgentLoop(unittest.TestCase):
         with open(transcript, encoding="utf-8") as handle:
             self.assertIn("developer working", handle.read())
 
-    def test_a_reviewer_that_always_requests_changes_is_stopped_by_max_visits(self):
+    def test_a_reviewer_that_always_requests_changes_is_stopped_by_its_route_limit(self):
         state = self.run_workflow(reviewer_mode="always-request")
         self.assertEqual(state.status, RunStatus.BLOCKED, state.message)
         self.assertIn("loop limit", state.message)
+        # Stopped by review's own request-changes limit, not by a budget sdk-review shares.
+        self.assertEqual((state.blocked_reason["scope"], state.blocked_reason["limit_key"]),
+                         ("route", "review.request-changes"))
         self.assertEqual([t[1] for t in self.trail("review")], [1, 2, 3])
         self.assertEqual(len(self.developer_calls()), 3)
         self.assertNotIn("sdk", [t[0] for t in self.trail()])

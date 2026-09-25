@@ -54,12 +54,15 @@ class WorkflowContext:
     `gates_passed` lists the gates (a checkpoint's `with: gate`) this run has passed and
     whose approval no later upstream work has superseded, in definition order.
 
-    `entered_by` is the route that brought the run into this visit - the label or outcome
-    of the step before it (`fail`, `request-changes`, `success`, ...) - or None for a run's
-    first step, a `--from` or a resume's extra pass. `visit_budget` says what this visit
-    leaves of the step's visit limits: {"step": {"limit", "used", "remaining"}, "route":
-    None or {"route", "limit", "used", "remaining"}} (`max_visits`, `max_visits_by_route`),
-    counted since the run last started or resumed.
+    `entered_by` is the entry that brought the run into this visit, `<source>.<route>`: the
+    step before it and the label or outcome it routed by (`verify.fail`,
+    `review.request-changes`, `assets.success`, ...); a resume's extra pass after a loop
+    limit is counted under the entry that was stopped. None for a run's first step, a
+    `--from`, or the extra pass of a run blocked before `blocked_reason` was recorded. `visit_budget` says what this visit leaves
+    of the step's visit limits: {"step": {"limit", "used", "remaining"}, "route": None or
+    {"route", "limit_key", "limit", "used", "remaining"}} - `max_visits` since the run last
+    started or resumed, and the tightest `max_visits_by_route` limit counting this entry,
+    over the whole run.
 
     `read_events()` returns the run's recorded events (events.jsonl), oldest first, read
     fresh on every call: durable run history a step may count from - its own earlier

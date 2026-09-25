@@ -17,14 +17,16 @@ pipeline configuration.
 |---|---|---|
 | research | `wgf_discovery`: offline genre catalogue + `workspace/research/snapshots/` | Snapshots are the pipeline's research input. A competitive teardown (`core/craft/competitive-teardown.md`) done interactively is written as snapshots |
 | strategy → G2 | `wgf_strategy`, deterministic | Human review against `core-loop-and-difficulty.md` (testable fun hypothesis) |
-| design | `wgf_design` archetype author; `AgentAuthor` hook unregistered | `build_spec` slots, which the craft playbooks describe |
+| design | `wgf_design` archetype author; opt-in `agent` author (F4) | `build_spec` slots, which the craft playbooks describe |
 | tech-plan → G3 | `wgf_techplan`, deterministic | Budgets, per `web-performance.md` |
 | init | `wgf_init` from the pinned template | – |
 | assets | `wgf_assets`: procedural placeholders; optional `2d-assets-mcp` stdio backend | `art-direction.md`, `audio.md` |
 | develop | an agent (`claude -p`) or a human handoff, from `docs/development/brief.md` | The brief carries the build spec and plan (F1), points at `docs/GDD.md` (F3), and recommends the plugin's craft skills (F7) |
-| review | an agent, read-only | `gameplay-review.md` (interactive; see follow-up F2) |
+| review | an agent, read-only | The brief's gameplay lens and design-fidelity section (F2), condensed from `gameplay-review.md` |
 | sdk | `wgf_sdk` | – |
+| sdk-review | the same read-only reviewer, on the sdk commit | as review |
 | verify | `wgf_verification`: recorded gameplay session, or the repo's `@aspect` e2e | `playtesting.md` §A produces the recorded session |
+| prototype-review → G4 | a person (irreversible; never automated) | the kill criteria, judged on the verified prototype |
 | release | `wgf_release` | Store presentation, per `onboarding-and-portal-ux.md` |
 
 The plugin surfaces (`/wgf-*`, 11 agents, 21 skills) are how an interactive session
@@ -104,16 +106,16 @@ The developer and reviewer argvs in `workspace/config/factory.yaml` pass
 (`docs/claude-capabilities.md`), and widening it is a Factory change, not a production-layer
 one (follow-up F6).
 
-## 5. Follow-ups outside this layer (proposed, not done)
+## 5. Follow-ups outside this layer (all done)
 
-These are Factory step-module changes. Each needs its module tests, `wgf test-core` and both
-golden runs, and several touch files the M1–M13 roadmap owns.
+These were Factory step-module changes, each validated with its module tests, `wgf test-core`
+and both golden runs, and merged with the M1–M13 roadmap work.
 
 | # | Finding | Where | Why it matters |
 |---|---|---|---|
-| F1 | **Done.** The develop brief now carries the design's MVP-tier `build_spec` and the tech plan's prototype tasks (`tech-plan` is an optional develop input) | `scripts/wgf_develop/brief.py`, `core/workflows/new-game.workflow.yaml` | Was the biggest single quality leak. M1 still touches `brief.py` (`PROTECTED_PATHS`), so the two need to merge carefully |
+| F1 | **Done.** The develop brief now carries the design's MVP-tier `build_spec` and the tech plan's prototype tasks (`tech-plan` is an optional develop input) | `scripts/wgf_develop/brief.py`, `core/workflows/new-game.workflow.yaml` | Was the biggest single quality leak. Merged with M1's `brief.py` changes (writable paths, package rule) |
 | F2 | **Done.** The review brief's "Look for" list now carries a gameplay lens condensed from `core/craft/gameplay-review.md`, plus the design's MVP feedback and the plan's task acceptance criteria when the development brief carries them | `scripts/wgf_review/report.py` | The reviewer checks what players feel and what the design specified, not only code defects |
-| F3 | **Done.** `docs/GDD.md` (game-design's `rendered_to`) is rendered by the develop step on every visit and committed with the build | `scripts/wgf_develop/gdd.py`, `scripts/wgf_develop/step.py` | The developer and reviewer now have the readable design in the repo. `docs/tech-plan.md` is still not rendered |
+| F3 | **Done.** `docs/GDD.md` (game-design's `rendered_to`) is rendered by the develop step on every visit and committed with the build | `scripts/wgf_develop/gdd.py`, `scripts/wgf_develop/step.py` | The developer and reviewer now have the readable design in the repo. M1's commit scope accepts exactly `docs/GDD.md` (`scope.FACTORY_RENDERED`), which the step re-renders after the developer. `docs/tech-plan.md` is still not rendered |
 | F4 | **Done.** The opt-in `agent` author (`factory.design.author: agent`) has an agent host improve the archetype's draft; the unchanged buildability and consistency checks judge it | `scripts/wgf_design/agent.py` | Design variety is no longer capped by four archetypes, and no check was weakened. It has not been run against a live host (UNVERIFIED_EXTERNAL) |
 | F5 | **Done.** Procedural sound effects are shaped by preset (a jsfxr-style synthesiser picked from the item's words), and music is a short bass-and-arpeggio loop; both deterministic and still placeholders | `scripts/wgf_assets/encoders.py`, `scripts/wgf_assets/placeholders.py` | Playtests can now hear a reward from a failure, at zero licence cost |
 | F6 | **Done (opt-in).** A commented developer block adds a localhost-only Playwright MCP (`workspace/config/mcp-playwright-localhost.json`) and `--plugin-dir claude-web-game-plugin` through a `{factory}` placeholder; `develop.self_playtest` adds a playtest section to the brief | `workspace/config/factory.yaml`, `scripts/wgf_develop/developers.py`, `settings.py`, `brief.py` | The developer can play its own build before reporting. Defaults are unchanged; the security review is in `docs/claude-capabilities.md`; not yet run live |

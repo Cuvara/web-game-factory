@@ -1,7 +1,7 @@
 """The run's developer-session budget, enforced before every command developer session.
 
 A `command` developer is a paid agent session per attempt; loop limits bound the passes
-between resumes, but a resume refills them. This bounds the run: `factory.develop.budget`
+before a person looks, and a person resuming refills them. This bounds the run: `factory.develop.budget`
 (wgflib.budget), snapshotted into the run's params when it started, raised only by a
 person's BUDGET_RAISED event.
 

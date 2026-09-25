@@ -5,6 +5,11 @@ Core v1 (1.0.0) froze the workflow core. 1.1.0 is the release where that core, a
 drafted release — with a real Claude developer and a real, read-only Claude reviewer. This
 page is the acceptance record: what was run, on what, what it proved, and what it did not.
 
+> **A historical record of 1.1.0.** The flows below are the workflow as it was run then.
+> Since, `new-game` gained an `sdk-review` of the sdk commit (M7) and the G4 kill gate
+> between verify and release (M4): the same run today stops at G4 for a person, and release
+> refuses a build no review approved. See `docs/core-v1.md` for the current pipeline.
+
 Core v1's architecture is unchanged: the same workflow definition, engine, state machines,
 gates and contracts. Every change below is a fix in the module that owned the defect, each
 with a regression test, plus additive contract fields (no existing contract was weakened).

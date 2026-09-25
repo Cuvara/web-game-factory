@@ -3,7 +3,8 @@
 <!--
   A RENDERING of the tech-plan artifact. The artifact
   (workspace/titles/<title-id>/tech-plan.yaml) is authoritative.
-  Rendered into the game repository at docs/tech-plan.md during scaffolding.
+  Declared as the tech-plan's rendering in the game repository (docs/tech-plan.md). No
+  step renders it yet: the plan's tasks reach the developer through the development brief.
 -->
 
 **Title** {{title_id}} · **Engine** {{engine_type}} · **Timebox** {{timebox_days}} days

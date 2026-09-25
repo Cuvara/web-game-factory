@@ -33,7 +33,8 @@ code decides them:
 develop ──commit P──► review(P) ──approve──► sdk ──commit S──► sdk-review(S) ──approve──► verify → G4 → release(S)
    ▲                     │                                        │
    └──request-changes────┴──────────────request-changes───────────┘
-                             (bounded by max_visits: 3 per start or resume)
+              (each bounded by its own route limit on develop: review.request-changes: 2,
+               sdk-review.request-changes: 2, over the run)
 ```
 
 ### The subject: which commit is reviewed
@@ -54,11 +55,12 @@ game (the seam the integration calls) or in the integration the Factory generate
 template. The developer owns the first and can fix it; nothing can hand-edit the second,
 which sdk regenerates on every visit. Routing to `develop` re-runs the whole existing loop -
 develop (with the blockers leading its brief, since `reviewed_commit` is HEAD), review, sdk,
-sdk-review - bounded by `max_visits` like every other loop. Routing to `sdk` would re-run the
+sdk-review - bounded by develop's `sdk-review.request-changes` limit, apart from review's. Routing to `sdk` would re-run the
 same deterministic integration on the same commit and loop to the limit; routing to `verify`
 would carry a rejected build on. Unrouted, it would fail the run - also safe, but it would
 throw away a loop that already exists. A reviewer that never approves the integration stops
-the run at develop's visit limit.
+the run on its third request (`loop-limit`, `limit_key: sdk-review.request-changes`); a
+person resuming grants that loop one more pass.
 
 **Why a second review rather than trusting generated code.** The sdk integration is
 generated from Factory templates, and could be treated as Factory-owned and verified only by
@@ -89,8 +91,9 @@ request-changes were a `SUCCESS` with a route, a workflow that forgot to route i
 carry a rejected build into `sdk` and on toward release. As `FAILED` it fails closed:
 unrouted, it fails the run. Verification's `fail` has the same shape for the same reason.
 The engine needs nothing new. Routing a labelled `FAILED` is existing behaviour, and
-`max_visits` bounds the loop. A reviewer that never approves blocks the run on its third
-request with a `loop limit` message.
+develop's `max_visits_by_route` bounds the loop, one limit per reviewer. A reviewer that
+never approves blocks the run on its third request with a `loop limit` message and a
+structured `blocked_reason` naming its limit.
 
 ## Preconditions
 
@@ -351,7 +354,8 @@ The other tests are the rejection paths:
 - reviewer timeout. Retried, and the grandchild is verified dead.
 - reviewer idle timeout, and a reviewer crash.
 - developer timeout, developer failure, and an exhausted retry budget.
-- `max_visits` stopping a reviewer that never approves.
+- a reviewer that never approves, stopped by its own route limit
+  (`test_a_reviewer_that_always_requests_changes_is_stopped_by_its_route_limit`).
 - an uncommitted build.
 
 ```bash

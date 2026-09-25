@@ -34,7 +34,9 @@ Status values:
 | UNVERIFIED_EXTERNAL | 1: browser testing against a real template. The portal side of release is also external; it is noted in its row |
 | BROKEN | 0 open. Two found and fixed: the shipped config narrowed the reviewer's guarded paths (P1), and the opt-in `LiveReviewer` test could not pass against a competent host (P2) |
 
-Commands run for `VERIFIED`, all green, from `scripts/tests/` with `python3 -m unittest <module>`:
+Commands run for `VERIFIED`, all green, from `scripts/tests/` with `python3 -m unittest <module>`
+(test counts and the `file:line` references in the table below are as of that 1.1.x audit;
+the code has moved since - search by the names given):
 `test_core_agents` (31 tests, 3 opt-in skips), `test_develop_module`, `test_core_workflow`,
 `test_core_process`, `test_core_security` (74), `test_core_persistence`,
 `test_core_contracts`, `test_core_lineage`, `test_core_verify`, `test_core_release`,
@@ -64,19 +66,19 @@ golden-run work and use port 4173.
 | Isolated game checkout | `wgf_develop/settings.py:115` and `wgf_review/settings.py:120` → `wgflib.paths.checkout_path`; the review's verdict and brief must be outside the checkout (`wgf_review/step.py:126-130`) | Factory | `test_core_security.HostileIdentifiers`, `test_core_persistence.HostileIdentifiers`; live: the brief was read from the run directory, and the verdict was saved there | VERIFIED_LIVE |
 | Agent retries | Engine retry policy (`engine.py:577-579,640`); developer failure retryable (`developers.py:92-101`); reviewer timeout, idle and crash retryable (`wgf_review/step.py:248-266`) | Factory | `AgentLoop.test_a_developer_failure_is_retried_and_the_loop_recovers`, `test_an_exhausted_retry_budget_fails_the_run`, `test_a_crashing_reviewer_is_retried_then_fails_the_run`, `test_core_workflow.Retry` | VERIFIED |
 | Reviewer approval | `wgf_review/step.py:238-239`; strict verdict `verdict.py:60` | Factory | `AgentLoop.test_an_approving_reviewer_runs_once_and_the_run_completes`, `VerdictContract`; live visit 2 approve | VERIFIED_LIVE |
-| Reviewer rejection | `step.py:240-243`; malformed verdicts `step.py:226-234` | Factory | `AgentLoop.test_malformed_verdicts_are_rejected_and_never_retried`, `test_a_reviewer_that_always_requests_changes_is_stopped_by_max_visits`; live visit 1 request-changes | VERIFIED_LIVE |
+| Reviewer rejection | `step.py:240-243`; malformed verdicts `step.py:226-234` | Factory | `AgentLoop.test_malformed_verdicts_are_rejected_and_never_retried`, `test_a_reviewer_that_always_requests_changes_is_stopped_by_its_route_limit`; live visit 1 request-changes | VERIFIED_LIVE |
 | Developer retry after review | `wgf_develop/step.py:110-113` (blockers carried only for this HEAD); brief "Fix first: blockers from code review" (`brief.py:361-366`) | Factory | `AgentLoop.test_developer_reviewer_request_changes_developer_reviewer_approve` (brief carries the blocker); live: the host fixed all 4 blockers on visit 2 | VERIFIED_LIVE |
 | Resume / pause / cancel | `engine.py:171` (resume), `:399,544` (pause), `:427,523-533` (cancel); cancel ends a running child through `procs.bound` should_stop | Factory | `test_core_workflow.Resume`, `StaleRunResume`, `Pause`, `Cancel.test_cancel_terminates_a_running_child_process_and_is_not_retried`, `test_core_process.InsideAWorkflowStep.test_cancel_from_another_thread_ends_the_tree_and_the_step` | VERIFIED |
 | Heartbeats / status | `procs.run` events (`scripts/wgflib/procs.py:715`); `engine.py:738-754` `STEP_PROGRESS`; liveness `wgflib/workflow/api.py:212`; `wgf status` (`scripts/wgf.py:372`) | Factory | `test_core_process.InsideAWorkflowStep.test_heartbeat_and_liveness_reach_the_step_state`, `test_core_workflow.LivenessDerivation`, `StatusCommand`; live: `spawned`/`exited` events for `claude` in `events.jsonl` | VERIFIED_LIVE |
 | Timeout handling | `developers.py:83-97`; `wgf_review/step.py:255-262`; `procs.run(timeout=, idle_timeout=)` | Factory. Host `--max-turns` / `--max-budget-usd` sit under it | `AgentLoop.test_a_developer_timeout_fails_the_step_and_is_retried`, `test_a_reviewer_timeout_is_retried_and_its_tree_is_killed`, `test_a_silent_reviewer_hits_the_idle_timeout`, `test_core_process.IsEnded` | VERIFIED |
 | Process cleanup | `procs.py:255` `terminate_tree`, `:319` subreaper, `:430` signal cleanup (installed by `wgf.py:559,577`) | Factory | `test_core_process` (27), `test_core_security.ReviewerLeftovers`, `test_core_process.EveryChildGoesThroughProcs`; live: `killed_pids: []` on both reviews, and no `claude` left running | VERIFIED |
-| Evidence collection | Reviewer: `<run>/review/<visit>-<attempt>.{brief.md,log,verdict.json}` (`wgf_review/step.py`); `review-report` on every executed outcome. Developer: the whole transcript at `<run>/develop/<visit>-<attempt>.log` (`wgf_develop/developers.py`, `log_path=`), outside the checkout; `docs/development/checks.json` records the checks, including `isolation` and `commit-scope` refusals | Factory | `AgentLoop.*` (`assert_valid` on every report); `AgentLoop.test_an_approving_reviewer_runs_once_and_the_run_completes` (the developer transcript); live: logs and verdicts kept | VERIFIED_LIVE (reviewer); VERIFIED (developer transcript) |
+| Evidence collection | Reviewer: `<run>/review/<step>-<visit>-<attempt>.{brief.md,log,verdict.json}` (`wgf_review/step.py`; `<step>` is `review` or `sdk-review`); `review-report` on every executed outcome. Developer: the whole transcript at `<run>/develop/<visit>-<attempt>.log` (`wgf_develop/developers.py`, `log_path=`), outside the checkout; `docs/development/checks.json` records the checks, including `isolation` and `commit-scope` refusals | Factory | `AgentLoop.*` (`assert_valid` on every report); `AgentLoop.test_an_approving_reviewer_runs_once_and_the_run_completes` (the developer transcript); live: logs and verdicts kept | VERIFIED_LIVE (reviewer); VERIFIED (developer transcript) |
 | Structured agent reports | Developer: `docs/development/report.json` → `prototype-report` (`wgf_develop/checks.py` `read_report`, `report.py`); reviewer: verdict JSON (`verdict.py`), stdout extraction (`verdict.py:42`) | Factory: schema plus strict contract | `test_develop_module`, `VerdictContract`, `AgentLoop.test_a_sandboxed_reviewer_can_answer_on_stdout`; live: Haiku's stdout verdicts parsed (fenced JSON) | VERIFIED_LIVE |
-| Commit lineage | Develop keyed commit (`Wgf-Develop-Key`, `step.py:122,175`); review pins HEAD == prototype commit (`wgf_review/step.py:107-112`); `wgf_release/lineage.py:70,82`; `wgf_verification/lineage.py` | Factory | `test_core_lineage.CommitLineage`, `test_core_release.Lineage`, `test_core_verify.WrongCommit`; live: `reviewed_commit` equals each `prototype-report` commit | VERIFIED_LIVE |
+| Commit lineage | Develop keyed commit (`Wgf-Develop-Key`, `step.py:122,175`); review pins HEAD == its subject's commit - the prototype-report's for `review`, the sdk-report's for `sdk-review` (`wgf_review/step.py`, `with: subject`); `wgf_release/lineage.py:70,82`; `wgf_verification/lineage.py` | Factory | `test_core_lineage.CommitLineage`, `test_core_release.Lineage`, `test_core_verify.WrongCommit`; live: `reviewed_commit` equals each `prototype-report` commit | VERIFIED_LIVE |
 | SDK integration | `scripts/wgf_sdk/step.py:222`; commits on the reviewed commit (`wgf_sdk/commit.py:176`) | Factory | `test_sdk_module`, `test_sdk_integration` (real-template case skipped: no sibling template) | VERIFIED |
 | Browser testing | `wgf_verification` recorded session / Playwright suites; `wgf_sdk/e2e.py:186` | Factory runs the repository's Playwright | Opt-in only: `test_core_process.LiveTemplateSmoke` (`WGF_LIVE_PROCESS_TEST=1`), `test_sdk_module.AgainstTheRealTemplate`. Not run here: they need the sibling template plus browsers, and they share port 4173 with the golden runs. Offline logic: `test_verification` (recorded-session cases), `test_core_verify.FailedBrowserTest` | UNVERIFIED_EXTERNAL (the offline logic is VERIFIED) |
 | Verify | `scripts/wgf_verification/step.py:42` | Factory: evidence statuses, `PASS_MOCK` never promoted | `test_core_verify` (22), `test_verification` (43) | VERIFIED |
-| Release | `scripts/wgf_release/step.py:111`; review status `lineage.py:101` | Factory: refuses without passing verify, lineage, clean tree | `test_core_release` (33), `test_release_module` (15). Portal publish and QA are behind G6 and human, so `BLOCKED_EXTERNAL` | VERIFIED (drafting). Portal side: UNVERIFIED_EXTERNAL |
+| Release | `scripts/wgf_release/step.py:111`; review status `lineage.py:101` | Factory: refuses without passing verify, lineage, clean tree, a passed G4 (`g4-not-passed`), and a review approving the shipped sdk commit (`unreviewed` unless `factory.release.allow_unreviewed`; `review-commit-mismatch`) | `test_core_release` (33), `test_release_module` (15). Portal publish and QA are behind G6 and human, so `BLOCKED_EXTERNAL` | VERIFIED (drafting). Portal side: UNVERIFIED_EXTERNAL |
 
 ## The verified argvs
 
@@ -146,6 +148,18 @@ The rest of the security model is unchanged:
   allows only localhost at an exact version, with its output directory outside the
   checkout and the Factory.
 - No live developer run with the browser has been made yet.
+
+### Opt-in: the design agent (F4)
+
+`factory.design.author: agent` has an agent host improve the archetype's design draft
+(`scripts/wgf_design/agent.py`); a commented, read-only host argv is in `factory.yaml`
+(`design.agent`). What the Factory enforces: the host runs through `wgflib.procs` (timeout,
+idle timeout, whole-tree cleanup), with the same allowlisted environment as the developer and
+the reviewer (`agentenv.scrubbed` plus `factory.agents.env_passthrough`); its draft is judged
+by the unchanged design checks (shape, `finalize`, buildability, consistency), never by the
+agent. Tests: `test_design_agent` (including
+`test_the_host_gets_the_allowlisted_agent_environment`). **Status: VERIFIED offline,
+UNVERIFIED live** - no live design-agent run has been made.
 
 ## Live evidence
 

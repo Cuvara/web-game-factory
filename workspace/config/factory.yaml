@@ -295,7 +295,8 @@ factory:
     #                           # pinned the repository is then refused, never run
     # The run's budget for command-developer sessions (docs/development-module.md#budget).
     # Loop limits (the workflow's max_visits_by_route) are refilled by a person resuming the
-    # loop they stopped; this is not. Counted from the run's event log; develop BLOCKS - nothing spawned - once the
+    # loop they stopped; this is not.
+    # Counted from the run's event log; develop BLOCKS - nothing spawned - once the
     # sessions recorded reach max_sessions, or their recorded cost reaches max_cost.
     # Snapshotted when a run starts; raised only by a person: wgf resume <run>
     # --budget-sessions N | --budget-cost X. Absent: no budget. A handoff developer is a

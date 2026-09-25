@@ -54,7 +54,8 @@ bin/wgf decide <run-id> approve [--note TEXT]   # answer a waiting checkpoint
 bin/wgf runs --waiting [--json]           # runs waiting for a decision: step, gate, choices,
                                           # timeout eligibility (reported; `resume` applies it)
 bin/wgf status [<run-id>] [--json]        # liveness: running | hung | stale; exits as the run
-                                          # (0 ok/running, 1 failed, 3 waiting); also logs, runs, pause, cancel
+                                          # (0 ok/running/ended by G4 kill, 1 failed/blocked/
+                                          # cancelled, 3 waiting/paused); also logs, runs, pause, cancel
 
 # The Core Acceptance Suite: WORKFLOW, AGENTS, CONTRACTS, VERIFY, RELEASE, 2D/3D GOLDEN,
 # PROCESS CLEANUP, SECURITY. MISSING or FAIL exits 1; SKIP is never PASS: skipped tests are

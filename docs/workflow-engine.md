@@ -375,7 +375,9 @@ current visit, is recorded with its `DECISION_RECORDED` event, and `decided_by` 
 (see §9) - there is no flag to set it.
 
 Resume continues from the cursor. Steps that succeeded are not executed again; the stopped
-step gets a fresh attempt budget and every step a fresh loop budget. A run started with
+step gets a fresh attempt budget and every step a fresh `max_visits` budget; route budgets
+(`max_visits_by_route`) last the run, and a resume refills only the one that stopped it
+(§8). A run started with
 `--mock` resumes with the mocks; a run remembers its own definition, so fixture workflows
 resume too.
 
@@ -385,7 +387,10 @@ derived exactly as for a decision, before the run continues. It is refused - exi
 nothing recorded - from inside a step's process tree (`decided_by` automation: an agent does
 not raise its own budget), for a run started without that budget, and for a value that is
 not positive. A budget is never raised by editing `state.json`: its snapshot is a param,
-corroborated against `WORKFLOW_STARTED` like every other.
+corroborated against `WORKFLOW_STARTED` like every other. Nor by appending to
+`events.jsonl`: the engine writes the raise and the `WORKFLOW_RESUMED` after it with one
+`resume_nonce`, and a raise counts only when that resume record corroborates it
+(development-module.md#budget).
 
 Resume refuses a run another live process — or another thread of this one — is driving
 (`RunLocked`), before changing anything. A `stale` run (its driver died) is resumed by taking
@@ -396,7 +401,10 @@ cancel is still honoured.
 `--run <run-id>` is the other way to continue: it runs a command's slice *inside* an existing
 run, reusing its artifacts, and skips any step in that slice that already succeeded (`--force`
 to redo). `wgf init --run <id>` twice executes `init` once. It refuses a `RUNNING` run (resume
-it) and a cancelled one, and like resume it grants every step a fresh loop budget.
+it) and a cancelled one. Like `--from`, it is an explicit fresh start of that slice: every
+step gets a fresh `max_visits` budget and every route limit a fresh budget too (a plain
+resume refills only the route that stopped the run). The developer-session budget is never
+refilled by either.
 
 A run keeps the settings it was started with. So `--mock`, `--mock-plan`, `--hold-gates` and
 `--project` with `--resume` or `--run`, `--from` with `--run` (it runs the command's own
@@ -630,7 +638,7 @@ which is the structured log:
 | Event | `data` |
 |---|---|
 | `WORKFLOW_STARTED` | `scope`, `start`, `params` (the run's params, corroborated on resume) |
-| `WORKFLOW_RESUMED` | `from_status`; `from_step`, `scope`, `force`, `definition_version` when relevant; `loop_limit` (the `blocked_reason` it gave one more pass) |
+| `WORKFLOW_RESUMED` | `from_status`; `from_step`, `scope`, `force`, `definition_version` when relevant; `loop_limit` (the `blocked_reason` it gave one more pass); `resume_nonce` when it carries operator events |
 | `WORKFLOW_PAUSED` | `reason` (`requested`, `waiting_for_human`, `waiting_for_input`), `next_step` or `message` |
 | `WORKFLOW_BLOCKED` | `message` (a blocked step, a rejection, or the loop limit); `blocked` (the structured `blocked_reason`) at a loop limit |
 | `WORKFLOW_COMPLETED` | `exit`: `{step, route, outcome, next}`; `message` when a stopping result was routed to `$end` (G4's kill) |
@@ -649,7 +657,7 @@ which is the structured log:
 | `DECISION_RECORDED` | `decision`, `decided_by`, `decided_at`, `visit`, `note`; `mode` (`timeout`) for a timeout approval |
 | `ARTIFACT_CREATED` | the `ArtifactRef` |
 | `ARTIFACT_UPDATED` | the `ArtifactRef` (version ≥ 2) |
-| operator events | Not the engine's: a person's act recorded with `wgf resume` (`engine.resume(operator_events=...)`), `data` + `decided_by`, `decided_at`. Refused for automation and for any of the names above. Today one: `BUDGET_RAISED` (`max_sessions`, `max_cost`; `wgf resume --budget-sessions/--budget-cost`, wgflib/budget.py) |
+| operator events | Not the engine's: a person's act recorded with `wgf resume` (`engine.resume(operator_events=...)`), `data` + `decided_by`, `decided_at`, and the `resume_nonce` of the `WORKFLOW_RESUMED` that follows. Refused for automation and for any of the names above. Today one: `BUDGET_RAISED` (`max_sessions`, `max_cost`; `wgf resume --budget-sessions/--budget-cost`, wgflib/budget.py) |
 
 Consumers must ignore fields and events they do not know. `EventContract` fails if an event
 is added without being documented here. The CLI's progress output is just another
@@ -913,6 +921,8 @@ python -m unittest discover scripts/tests
 | `test_workflow_contracts.py` | The gate before module work: an external module plugged in through config; artifact contract (versions, consumption, invalid and untyped artifacts, path-shaped ids); lifecycle separation; security; every run status; configuration-driven routing; event contract; one engine behind every command; docs match the workflow |
 | `fixtures/workflows/` | The acceptance workflows: `verify-loop`, `human-checkpoint`, `retry` |
 | `test_core_workflow.py` | Core v1 acceptance, one named scenario per class: happy path, failure, retry, resume, pause, cancel (between steps, and mid child process), human gate, max_visits, verify→develop loop, stale-run resume, concurrent-run lock refusal, determinism; input contracts, continue_in, liveness, `wgf status` and `wgf test-core`; G4 (`PrototypeReviewGate`: pass, iterate, kill, resume at G4, stale evidence, release refused), gates decided on their required artifacts, and timeout approval (`TimeoutApproval*`: before, exactly at, after, disabled, irreversible/unknown gates, per visit, upstream change, tampering, status vs resume) |
+| `test_decisions.py` | Gate decision-records: the workflow-to-lifecycle vocabulary, records from a mock run, the lifecycle bridge and its evidence guards |
+| `test_checkout.py` | The one checkout resolver: precedence, legacy keys, the recorded path, the lock, and every step that reaches the game repository |
 | `test_core_persistence.py` | Interrupted writes (rename/fsync failing), unreadable state, torn and duplicated event logs, a crash between an artifact write and the state save, lock takeover races, hostile run/artifact ids, decisions and definitions |
 | `core_suite.py` | The Core Acceptance Suite mapping `wgf test-core` runs (data, not tests) |
 
@@ -970,11 +980,10 @@ The engine executes no code it was not given by the installation:
   descendant that cleared its environment (docs/agent-lifecycle.md).
 - **Steps run in-process and sequentially.** The definition format permits branching but not
   parallel fan-out; nothing in this phase needs it.
-- **Artifact checks are structural.** Top-level required and forbidden keys and provenance
-  only; nested shapes are ajv's job in each module's tests.
-- **Checkpoint decisions are recorded in run state, not as `decision-record` artifacts.** When
-  a checkpoint stands for a lifecycle gate, the real gate module should emit the decision
-  record and advance the entity through `wgf-state.py`.
+- **Checkpoint decisions do not move entities.** A gate checkpoint emits a
+  `decision-record` (`wgflib/workflow/decisions.py`); advancing the title through
+  `wgf-state.py` from a run is opt-in (`factory.lifecycle.sync`) and never done for a
+  `--mock` run.
 - **CLI test runtime** (~30 s for `test_workflow_cli.py`) is interpreter start-up: about
   0.25 s per `wgf` process, most of it importing modules from the Windows-mounted checkout,
   against about 0.4 s for a whole mock `new-game`. It is not engine cost. The tests read run

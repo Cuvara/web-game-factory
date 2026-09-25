@@ -86,10 +86,11 @@ the game, regenerated on every visit and committed with the code it asked for. I
   system, each MVP item, the placements, integration status, assets, scope deltas and
   known issues.
 - **Why this is another iteration** — on a visit a loop brought back (`brief.json` `loop`),
-  the route that did (`fail`, `request-changes`, `iterate`: the engine's
-  `context.entered_by`) and how many passes that route, and develop itself, have left before
+  the step and route that did (`verify.fail`, `review.request-changes`,
+  `sdk-review.request-changes`, `prototype-review.iterate`: the engine's
+  `context.entered_by`) and how many passes that loop, and develop itself, have left before
   the run stops for a person (`context.visit_budget`, from the workflow's
-  `max_visits_by_route`). Absent on a first visit.
+  `max_visits_by_route`). Absent on a first visit (entered by `<step>.success`).
 
 ## Developers
 

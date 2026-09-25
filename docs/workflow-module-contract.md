@@ -70,7 +70,8 @@ leaks into a retry.
 | `emit(event, **fields)` | A custom event on the run's bus, tagged with this step |
 | `run_dir` | The run's directory. For diagnostics only — never write state here |
 | `mock` | True in a `--mock` run |
-| `entered_by` | The step and route that brought the run into this visit (`verify.fail`, `review.request-changes`, `assets.success`, …), or `None` for a run's first step, `--from`, or a resume's extra pass |
+| `entered_by` | The step and route that brought the run into this visit (`verify.fail`, `review.request-changes`, `assets.success`, …); a resume's extra pass after a loop limit counts under the entry that was stopped. `None` for a run's first step, `--from`, or the extra pass of a run blocked before `blocked_reason` was recorded |
+| `gates_passed` | The gates (a checkpoint's `with: gate`) this run has passed and no later upstream work has superseded, in definition order |
 | `visit_budget` | What this visit leaves of the step's visit limits: `{"step": {limit, used, remaining}, "route": None \| {route, limit_key, limit, used, remaining}}` (`max_visits`, since the run last started or resumed; the tightest `max_visits_by_route` limit counting this entry, over the run) |
 | `read_events()` | The run's recorded events, oldest first, read fresh: durable history to count from (a budget), never to write |
 

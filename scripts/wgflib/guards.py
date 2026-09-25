@@ -19,6 +19,14 @@ Guards whose answer lives in the game repository (ci_green, playable_build, the 
 publication guards) are UNKNOWN from the Factory side until a repository is supplied. That is
 not a gap to paper over: the Factory deliberately holds no game source, and the two guards
 that do have implementations name them - web-game-template's ci.yml and verify.yml.
+
+Three of them can also be answered from what a workflow run's `verify` step recorded:
+`ci_green`, `verify_suite_green` and `playable_build` read the newest qa-report and
+verification-report of a run when the context carries that run's evidence (`RunEvidence`,
+found in the run store by title id, newest run first). The evidence is read as it was
+recorded, never strengthened: a pass that rests on PASS_MOCK evidence (a stand-in SDK) is
+not a pass here - the guard stays UNKNOWN and says so - and a mock run's placeholder reports
+answer nothing. Without evidence the guards are UNKNOWN exactly as before.
 """
 
 import datetime
@@ -31,7 +39,7 @@ from .criteria import Unevaluable, evaluate
 from .hashing import CanonicalizationError, content_hash
 from .workspace import WorkspaceError, all_title_states, load_scoring_model
 
-__all__ = ["Verdict", "GuardContext", "evaluate_guard", "known_guards"]
+__all__ = ["Verdict", "GuardContext", "RunEvidence", "evaluate_guard", "known_guards"]
 
 # Pre-live, non-terminal title states count against the WIP cap: work in flight is work the
 # portfolio owner has to clear gates for. `live` does not - a live title iterates on its own.
@@ -80,11 +88,13 @@ def unknown(reason, **measurements):
 class GuardContext:
     """What a guard is allowed to read."""
 
-    def __init__(self, entity, config=None, now=None, game_repo=None):
+    def __init__(self, entity, config=None, now=None, game_repo=None, evidence=None):
         self.entity = entity
         self.config = config or {}
         self.now = now or datetime.datetime.now(datetime.timezone.utc)
         self.game_repo = game_repo
+        # A RunEvidence, or None: what a workflow run's verify step recorded (see below).
+        self.evidence = evidence
 
     @property
     def overrun_tolerance(self):
@@ -93,6 +103,65 @@ class GuardContext:
     def scoring_model(self):
         model_id = self.config.get("default_scoring_model", "portfolio-default")
         return load_scoring_model(model_id)
+
+
+class RunEvidence:
+    """The newest qa-report and verification-report one workflow run holds.
+
+    `mock` is True for a run started with --mock: its reports are placeholders and the
+    evidence guards never read them as an answer. Contents are read through the run store,
+    so a report whose file changed after it was recorded is refused, not used."""
+
+    TYPES = ("qa-report", "verification-report")
+
+    def __init__(self, run_id, qa=None, verification=None, mock=False):
+        self.run_id = run_id
+        self.qa = qa
+        self.verification = verification
+        self.mock = bool(mock)
+
+    @property
+    def empty(self):
+        return self.qa is None and self.verification is None
+
+    @classmethod
+    def of_run(cls, store, state):
+        """The evidence `state` (a workflow RunState) holds in `store`; None when it holds
+        neither report. Raises the store's StoreError for a report changed on disk."""
+        found = {}
+        for artifact_type in cls.TYPES:
+            ref = state.latest_of_type(artifact_type)
+            if ref is not None:
+                found[artifact_type] = store.read_artifact(state.run_id, ref)
+        if not found:
+            return None
+        params = state.params if isinstance(state.params, dict) else {}
+        return cls(state.run_id, found.get("qa-report"), found.get("verification-report"),
+                   mock=bool(params.get("mock")))
+
+    @classmethod
+    def find(cls, title_id, store_dir=None):
+        """The evidence of the newest run (by last update) about `title_id` - its project
+        id, or the title its reports name - that holds a qa-report or a verification-report.
+        None when no run does. `store_dir` defaults to factory.storage.directory."""
+        from .workflow.config import load_config
+        from .workflow.store import RunStore, StoreError
+
+        store = RunStore(store_dir or load_config().storage_directory())
+        runs = sorted(store.list_runs(), key=lambda s: (s.updated_at or s.created_at or "",
+                                                        s.run_id), reverse=True)
+        for state in runs:
+            try:
+                evidence = cls.of_run(store, state)
+            except StoreError:
+                continue  # a report that changed on disk is nobody's evidence
+            if evidence is None:
+                continue
+            named = {(report or {}).get("title_id")
+                     for report in (evidence.qa, evidence.verification)}
+            if state.project_id == title_id or title_id in named:
+                return evidence
+        return None
 
 
 REGISTRY = {}
@@ -544,6 +613,112 @@ for _name, _what, _workflow in (
     ("metadata_and_locales_present", "per-platform metadata and locales", None),
 ):
     REGISTRY[_name] = _in_the_game_repository(_what, _workflow)
+
+
+# ----------------------------------- guards a workflow run's verify step can answer
+
+# The suites ci.yml runs (the machine's ci_green: lint, typecheck, unit, integration).
+CI_SUITES = ("lint", "typecheck", "unit", "integration")
+
+
+def _with_run_evidence(name, answer):
+    """`answer(context, evidence)` when the context carries a run's evidence, else the
+    game-repository implementation registered above (UNKNOWN)."""
+    fallback = REGISTRY[name]
+
+    def implementation(context):
+        evidence = getattr(context, "evidence", None)
+        if evidence is None or evidence.empty:
+            return fallback(context)
+        if evidence.mock:
+            return unknown(f"run {evidence.run_id} is a mock run: its reports are "
+                           f"placeholders, not evidence", run_id=evidence.run_id)
+        return answer(evidence)
+
+    REGISTRY[name] = implementation
+    return implementation
+
+
+def _verify_suite_green(evidence):
+    qa, report = evidence.qa, evidence.verification
+    where = {"run_id": evidence.run_id}
+    if report is not None:
+        verdict = report.get("verdict")
+        if verdict == "FAIL":
+            return red(f"verification-report verdict FAIL in run {evidence.run_id}: "
+                       f"{', '.join(report.get('failed_checks') or []) or 'unrecorded'}",
+                       **where)
+        if verdict != "PASS":
+            return unknown(f"verification-report verdict {verdict} in run "
+                           f"{evidence.run_id}: not established", **where)
+    if qa is None:
+        return unknown(f"run {evidence.run_id} holds no qa-report", **where)
+    if qa.get("verdict") == "fail":
+        return red(f"qa-report verdict fail in run {evidence.run_id} "
+                   f"({len(qa.get('blocking_defects') or [])} blocking defect(s))", **where)
+    # The weaker of what the two reports rest on; a report silent on it established nothing.
+    statuses = [qa.get("evidence_status")] + (
+        [report.get("evidence_status")] if report is not None else [])
+    status = next((s for s in statuses if s != "PASS"), "PASS")
+    if qa.get("verdict") == "pass" and status == "PASS":
+        return green(f"qa-report pass on PASS evidence in run {evidence.run_id}",
+                     evidence_status=status, **where)
+    # PASS_MOCK is not PASS: it was observed only against a stand-in. Carried as recorded;
+    # a report with no evidence_status (before qa-report 1.1.0) established nothing more.
+    return unknown(f"qa-report {qa.get('verdict')} rests on {status or 'unrecorded'} "
+                   f"evidence in run {evidence.run_id}; only PASS evidence is a pass",
+                   evidence_status=status, **where)
+
+
+def _ci_green(evidence):
+    qa = evidence.qa
+    where = {"run_id": evidence.run_id}
+    if qa is None:
+        return unknown(f"run {evidence.run_id} holds no qa-report", **where)
+    suites = [s for s in qa.get("suites") or [] if s.get("name") in CI_SUITES]
+    if not suites:
+        return unknown(f"the qa-report of run {evidence.run_id} records none of "
+                       f"{', '.join(CI_SUITES)}", **where)
+    failing = [s["name"] for s in suites if (s.get("failed") or 0) > 0]
+    if failing:
+        return red(f"failing suite(s) in run {evidence.run_id}: {', '.join(failing)}",
+                   failing=failing, **where)
+    ran = [s["name"] for s in suites if (s.get("passed") or 0) > 0]
+    if not ran:
+        return unknown(f"the CI suites of run {evidence.run_id} passed nothing", **where)
+    return green(f"{', '.join(ran)} green in run {evidence.run_id}", suites=ran, **where)
+
+
+def _playable_build(evidence):
+    report = evidence.verification
+    where = {"run_id": evidence.run_id}
+    if report is None:
+        return unknown(f"run {evidence.run_id} holds no verification-report", **where)
+    built = (report.get("build_artifact") or {}).get("status")
+    if built != "built":
+        return red(f"no build: the verification-report of run {evidence.run_id} records "
+                   f"build_artifact {built}", **where)
+    gameplay = [c for c in report.get("checks") or []
+                if c.get("category") == "gameplay" and c.get("required")]
+    if not gameplay:
+        return unknown(f"the verification-report of run {evidence.run_id} records no "
+                       f"required gameplay check: a build exists, nobody played it", **where)
+    failed = [c.get("id") for c in gameplay if c.get("status") == "FAIL"]
+    if failed:
+        return red(f"gameplay check(s) failed in run {evidence.run_id}: {', '.join(failed)}",
+                   **where)
+    weak = [f"{c.get('id')} ({c.get('evidence_status') or c.get('status')})" for c in gameplay
+            if c.get("status") != "PASS" or c.get("evidence_status", "PASS") != "PASS"]
+    if weak:
+        return unknown(f"gameplay not established on PASS evidence in run "
+                       f"{evidence.run_id}: {', '.join(weak)}", **where)
+    return green(f"built, and {len(gameplay)} required gameplay check(s) PASS in run "
+                 f"{evidence.run_id}", **where)
+
+
+_with_run_evidence("verify_suite_green", _verify_suite_green)
+_with_run_evidence("ci_green", _ci_green)
+_with_run_evidence("playable_build", _playable_build)
 
 
 @guard("platform_constraints_satisfied")

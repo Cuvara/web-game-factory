@@ -72,6 +72,14 @@ check only refuses a step that uses an artifact at a stage the contract does not
 Where a stage legitimately rewrites an artifact another stage first produced, it goes in
 `updated_by`.
 
+One producer is not a stage: `decision-record` has `producer: gate`, because a gate sits
+wherever its machine puts it. For such a type the check reads the other way round: a step
+may output it only if it names a gate (`with: gate`), and every step that names a gate must
+output it — a gate that emits no decision-record is not auditable. In `new-game`, G2, G3 and
+G4 do (see [factory-lifecycle.md](factory-lifecycle.md#every-gate-produces-an-artifact)).
+The engine never writes `repo_path` for it either; the optional lifecycle bridge
+(`factory.lifecycle.sync`) appends it to `workspace/titles/<id>/decisions/`.
+
 One file, so the contract and the schema cannot disagree. The previous structure kept them
 in parallel trees that had already drifted — 8 workflow directories against 6 contract
 directories, with `design` in one and `game-design` in the other — before any content
@@ -119,7 +127,7 @@ design:
 | `release-manifest` | release draft | QA, rc, validating, submitting, live | G5, G6 |
 | `platform-publication` | validating | submitting, partially-live, live | — |
 | `performance-review` | live | live, production, market-scan | G7 |
-| `decision-record` | every gate | audit, resume, portfolio learning | — |
+| `decision-record` | every gate (x-wgf `producer: gate`): a person via `wgf-state.py`, or a workflow checkpoint naming the gate, on every decided outcome | audit, resume, portfolio learning; the title's `decisions/` when `factory.lifecycle.sync` is on | — |
 
 **Reference types** (maintained, not stage-produced): `platform-profile`, `scoring-model`,
 `dimension-vocabulary`.

@@ -754,6 +754,35 @@ class ContractMetadata(unittest.TestCase):
         self.check(("title:beta", [], ["made"]))
         self.assertEqual(len(self.integrity.ERRORS), 1)
 
+    GATE_META = dict(META, record={"id": "record", "producer": "gate", "consumers": []})
+
+    def gated(self, *steps):
+        """Steps of (stage, gate or None, outputs)."""
+        from types import SimpleNamespace
+        definition = SimpleNamespace(steps=[SimpleNamespace(
+            id=f"s{index}", stage=stage, inputs=[], outputs=list(outputs),
+            params={"gate": gate} if gate else {})
+            for index, (stage, gate, outputs) in enumerate(steps)])
+        return self.integrity.check_contract_roles("w.yaml", definition, self.GATE_META)
+
+    def test_a_gate_produced_type_is_output_by_a_step_naming_a_gate_at_any_stage(self):
+        self.assertEqual(self.gated(("title:strategy", "G2", ["record"]),
+                                    ("title:prototype-review", "G4", ["record"])), [])
+
+    def test_a_step_naming_a_gate_must_output_the_record(self):
+        problems = self.gated(("title:strategy", "G2", []))
+        self.assertEqual(len(problems), 1)
+        self.assertIn("decides gate G2 but does not output 'record'", problems[0])
+
+    def test_only_a_step_naming_a_gate_may_output_the_record(self):
+        problems = self.gated(("title:strategy", None, ["record"]))
+        self.assertEqual(len(problems), 1)
+        self.assertIn("names no gate", problems[0])
+
+    def test_the_decision_record_is_gate_produced(self):
+        self.assertEqual(CONTRACTS.schemas["decision-record"]["x-wgf"]["producer"],
+                         self.integrity.GATE_PRODUCER)
+
     def test_prototype_review_consumes_the_verified_evidence(self):
         # The G4 checkpoint (title:prototype-review) reads what verify produced.
         for artifact_type in ("qa-report", "verification-report", "prototype-report"):

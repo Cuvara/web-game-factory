@@ -8,6 +8,7 @@ orchestration of its own to drift from the others.
 """
 
 import datetime
+import importlib
 import os
 
 from .. import paths, procs
@@ -276,6 +277,21 @@ class WorkflowAPI:
             **overrides,
         )
 
+    # The lifecycle bridge lives outside the kernel (it reads workspace/ and runs
+    # wgf-state.py's rules), so the kernel names it only here, and imports it only for a
+    # run that was started with lifecycle_sync on.
+    LIFECYCLE_BRIDGE = "wgflib.lifecycle_bridge"
+
+    def _attach_lifecycle(self, engine, params):
+        """Subscribe the lifecycle bridge to `engine` when the run's params (as it started)
+        say so. It reports through the engine's bus and never affects the run's outcome."""
+        if not (isinstance(params, dict) and params.get("lifecycle_sync") is True):
+            return engine
+        bridge = importlib.import_module(self.LIFECYCLE_BRIDGE).LifecycleBridge(
+            self.store, self.config.lifecycle_titles_directory())
+        engine.bus.subscribe(bridge.subscriber(engine.bus.emit))
+        return engine
+
     def control_engine(self, state):
         """An engine for pause and cancel, which touch only the store and the definition.
 
@@ -299,6 +315,9 @@ class WorkflowAPI:
             run_id = request.resume or request.run_id
             existing = self.store.load(run_id)
             engine = self.engine(bool(existing.params.get("mock")), self.definition_for(existing))
+            # From the params the run carries; the engine refuses to drive a state.json whose
+            # params differ from the ones it started with, so an edit cannot add or drop it.
+            self._attach_lifecycle(engine, existing.params)
             if request.resume:
                 decided_by = request.decided_by or default_decider()
                 return engine.resume(run_id, from_step=request.from_step,
@@ -331,6 +350,11 @@ class WorkflowAPI:
         if self.config.on_hung != "none":
             params["on_hung"] = self.config.on_hung
             params["hung_output_seconds"] = self.config.hung_output_seconds
+        # The lifecycle bridge, snapshotted the same way and recorded only when on: a run
+        # syncs its gate decisions into workspace/titles for its whole life, or never.
+        if self.config.lifecycle_sync:
+            params["lifecycle_sync"] = True
+            self._attach_lifecycle(engine, params)
 
         scope = request.scope
         if scope == engine.definition.id:

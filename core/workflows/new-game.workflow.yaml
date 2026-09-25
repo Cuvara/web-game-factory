@@ -23,6 +23,9 @@
 # installation may approve them itself (factory.checkpoints.auto_approve) or after a window
 # (factory.checkpoints.timeout_auto_approve, applied by `wgf resume`). G4 is irreversible:
 # only a person decides it, and nothing downstream of it runs until they pass it.
+# Every checkpoint outputs a decision-record (core/artifacts/decision-record.schema.json)
+# with each answer - approve, reject, pass, iterate, kill, or an approval on a timeout -
+# pinning by content hash exactly the inputs it was decided on.
 #
 # `release` prepares a release - a release-manifest in state `draft` - and stops. Building,
 # packaging and publishing belong to the game repository's CI, behind G5 and G6.
@@ -64,6 +67,7 @@ workflow:
       type: human-checkpoint
       stage: title:strategy
       inputs: [title-strategy]
+      outputs: [decision-record]
       with:
         gate: G2
         prompt: Approve the title strategy before design starts?
@@ -94,6 +98,7 @@ workflow:
       type: human-checkpoint
       stage: title:tech-plan
       inputs: [game-design, tech-plan]
+      outputs: [decision-record]
       with:
         gate: G3
         prompt: Approve the design and technical plan before the repository is created?
@@ -190,6 +195,7 @@ workflow:
       type: human-checkpoint
       stage: title:prototype-review
       inputs: [qa-report, verification-report, prototype-report, title-strategy, game-design]
+      outputs: [decision-record]
       with:
         gate: G4
         prompt: Judge the verified prototype against the kill criteria set at strategy - pass to release, iterate to develop again, or kill the title?

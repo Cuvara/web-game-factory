@@ -39,12 +39,21 @@ approval is recorded through `context.record_decision` exactly like a person's (
 DECISION_RECORDED event, `decided_by: automation`, `mode: timeout`) before the step returns
 SUCCESS route `approve`. It happens only when the checkpoint executes - on `wgf resume` -
 never when a run is merely looked at.
+
+A checkpoint that names a gate AND declares `outputs: [decision-record]` emits a
+schema-valid decision-record (wgflib/workflow/decisions.py) with every decided outcome -
+a person's choice, an installation's auto-approval, a timeout approval; SUCCESS and BLOCKED
+alike, so a rejection or a kill is on record as an artifact too - pinning by content hash
+exactly the inputs it consumed. Nothing is emitted while it waits. A decision that cannot be
+written as a record (a choice with no decision-record meaning, nothing pinnable to decide
+on) fails the step, not retryably: an unauditable gate does not let the run past it.
 """
 
 import datetime
 
 from ..machine import load_gates
-from .model import StepResult, parse_timestamp
+from . import decisions
+from .model import ArtifactOutput, StepResult, parse_timestamp
 from .step import WorkflowStep
 
 __all__ = ["HumanCheckpointStep", "irreversible_gates", "known_gates", "is_irreversible",
@@ -185,23 +194,38 @@ class HumanCheckpointStep(WorkflowStep):
             data = {"gate": gate, "decided_by": decision.get("decided_by")}
             if decision.get("mode"):
                 data["mode"] = decision["mode"]
+            record, problem = self._record(
+                gate, choice, inputs, context, decided_by=decision.get("decided_by"),
+                mode=decision.get("mode"), note=decision.get("note"),
+                decided_at=decision.get("decided_at") or context.now)
+            if problem:
+                return problem
             if choice in STOP_CHOICES:
                 verb = "rejected" if choice == "reject" else "killed"
                 where = self.id + (f" ({gate})" if gate else "")
                 return StepResult(
-                    "BLOCKED", route=choice,
+                    "BLOCKED", route=choice, artifacts=record,
                     message=f"{verb} at {where}"
                     + (f": {decision['note']}" if decision.get("note") else ""),
                     data=dict(data, decision=choice),
                 )
-            return StepResult.success(route=choice, message=f"{choice} at {self.id}", **data)
+            return StepResult.success(record, route=choice, message=f"{choice} at {self.id}",
+                                      **data)
 
         auto = context.environment.get("auto_approve") or []
         if not isinstance(auto, (list, tuple)):
             auto = []
         if may_auto_approve(gate, auto):
             context.logger.info("auto-approved", gate=gate)
-            return StepResult.success(route="approve", message=f"{gate} auto-approved",
+            record, problem = self._record(
+                gate, "approve", inputs, context, decided_by="automation", mode=None,
+                note=f"{gate} auto-approved: the run was started with {gate} in its "
+                     f"auto_approve list (factory.checkpoints.auto_approve, or a mock run's "
+                     f"own reversible gates)",
+                decided_at=context.now)
+            if problem:
+                return problem
+            return StepResult.success(record, route="approve", message=f"{gate} auto-approved",
                                       gate=gate, decided_by="automation")
 
         since = getattr(context, "waiting_since", None)
@@ -215,14 +239,41 @@ class HumanCheckpointStep(WorkflowStep):
                         f"{window}s, eligible since {stamp(due)}")
                 # Recorded like a person's decision, and before the result: the approval is
                 # on record (DECISION_RECORDED) whatever happens to this execution.
-                record(_TIMEOUT_CHOICE, decided_by="automation", note=note, mode=TIMEOUT_MODE)
+                entry = record(_TIMEOUT_CHOICE, decided_by="automation", note=note,
+                               mode=TIMEOUT_MODE) or {}
                 context.logger.info("timeout-approved", gate=gate, waiting_since=since,
                                     window_seconds=window)
-                return StepResult.success(route=_TIMEOUT_CHOICE, message=note, gate=gate,
-                                          decided_by="automation", mode=TIMEOUT_MODE)
+                artifacts, problem = self._record(
+                    gate, _TIMEOUT_CHOICE, inputs, context, decided_by="automation",
+                    mode=TIMEOUT_MODE, note=note,
+                    decided_at=entry.get("decided_at") or context.now)
+                if problem:
+                    return problem
+                return StepResult.success(artifacts, route=_TIMEOUT_CHOICE, message=note,
+                                          gate=gate, decided_by="automation",
+                                          mode=TIMEOUT_MODE)
             prompt += (f" (unanswered, {gate} approves itself on the first `wgf resume` at or "
                        f"after {stamp(due)})")
         return StepResult.waiting_for_human(prompt, choices=choices, gate=gate)
+
+    def _record(self, gate, choice, inputs, context, *, decided_by, mode, note, decided_at):
+        """([ArtifactOutput], None) - the decision-record this decision emits, or [] when the
+        checkpoint names no gate or does not declare one as an output - or (None, a FAILED
+        result) when the decision cannot be written as a valid record."""
+        declared = getattr(self.definition, "outputs", None) or ()
+        if not gate or decisions.ARTIFACT_TYPE not in declared:
+            return [], None
+        try:
+            record = decisions.build_record(
+                gate=gate, choice=choice, inputs=inputs, decided_by=decided_by, mode=mode,
+                note=note, decided_at=decided_at, sequence=context.execution,
+                project_id=context.project_id, required=required_artifacts(gate))
+        except (decisions.DecisionRecordError, ValueError) as exc:
+            return None, StepResult.failed(
+                f"{gate}: the decision {choice!r} cannot be recorded as a decision-record: "
+                f"{exc}", retryable=False, gate=gate)
+        return [ArtifactOutput(decisions.ARTIFACT_TYPE, record,
+                               name=decisions.output_name(self.id))], None
 
 
 def register(registry):

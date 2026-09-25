@@ -158,7 +158,17 @@ In `new-game`, G2, G3 and G4 are `human-checkpoint` steps decided on their gate'
 `Ended: kill at G4`). Release cannot run until G4 passes, and a newer verification makes G4
 ask again. A `--mock` run therefore stops at G4.
 
-Every gate emits a `decision-record` pinning its subject by content hash.
+Every gate emits a `decision-record` pinning its subject by content hash. Decided by hand,
+the person writes it and `wgf-state.py` refuses the gated edge without it. Decided in a run,
+the checkpoint emits it (`outputs: [decision-record]`, required of every step naming a gate
+by `check-integrity.py`) with every decided outcome - approve, reject, pass, iterate, kill
+(`abandon`), auto- and timeout-approval - never while waiting; its `subject` and
+`provenance.inputs` pin exactly the checkpoint's inputs (the gate's `required_artifacts`).
+The workflow-to-schema vocabulary is one table in `scripts/wgflib/workflow/decisions.py`.
+The run's records reach `workspace/titles/<id>/decisions/`, and move the title's cursor
+through `wgf-state.py`'s own guards and gate rules, only with `factory.lifecycle.sync: true`
+(off by default; `scripts/wgflib/lifecycle_bridge.py`); a refused move is a warning, never
+the run's outcome. See `docs/factory-lifecycle.md`.
 
 ## Invariants
 

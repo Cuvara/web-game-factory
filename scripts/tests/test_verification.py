@@ -750,6 +750,33 @@ class PlatformAndPolicy(VerificationCase):
         _, report, _ = self.verify()
         self.assertEqual(self.check(report, "platform.profile:generic-web")["status"], "FAIL")
 
+    def test_a_tampered_vendored_profile_fails_by_content_hash(self):
+        # Same id, same declared version, other bytes: two documents under one name. The
+        # profile is judged by content hash (wgf_init.profiles), never the version string.
+        with open(os.path.join(self.repo, "config/platforms/generic-web.yaml")) as handle:
+            text = handle.read()
+        self.write("config/platforms/generic-web.yaml", text + "\n# loosened by hand\n")
+        _, report, _ = self.verify()
+        check = self.check(report, "platform.profile:generic-web")
+        self.assertEqual(check["status"], "FAIL")
+        self.assertIn("content hash", check["message"])
+        self.assertIn("platform.profile:generic-web", report["failed_checks"])
+
+    def test_an_unlisted_vendored_profile_fails(self):
+        path = os.path.join(self.repo, "config/platforms/pinned.json")
+        with open(path) as handle:
+            pinned = json.load(handle)
+        pinned["profiles"] = []
+        self.write("config/platforms/pinned.json", json.dumps(pinned))
+        _, report, _ = self.verify()
+        self.assertEqual(self.check(report, "platform.profile:generic-web")["status"], "FAIL")
+
+    def test_a_verified_profile_is_recorded_with_its_content_hash(self):
+        _, report, _ = self.verify()
+        check = self.check(report, "platform.profile:generic-web")
+        self.assertEqual(check["status"], "PASS")
+        self.assertTrue(check["evidence"][0]["content_hash"].startswith("sha256:"))
+
     def test_the_fallback_path_is_the_local_boot(self):
         _, report, _ = self.verify()
         fallback = self.check(report, "platform.fallback")

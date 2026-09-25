@@ -8,7 +8,7 @@
     "id": "scaffold-record",
     "kind": "artifact",
     "format": "json",
-    "version": "1.1.0",
+    "version": "1.2.0",
     "producer": "title:scaffolding",
     "consumers": ["title:prototype", "title:production", "release:draft", "release:qa"],
     "repo_path": "workspace/titles/<title-id>/scaffold-record.json",
@@ -28,7 +28,12 @@
         "name": { "type": "string", "pattern": "^(?!\\.\\.?$)[A-Za-z0-9._-]+$", "description": "One directory entry: never . or .., which would make a consumer act on the checkouts directory or its parent." },
         "url": { "type": "string" },
         "default_branch": { "type": "string" },
-        "visibility": { "enum": ["private", "internal", "public"] }
+        "visibility": { "enum": ["private", "internal", "public"] },
+        "local_path": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Where scaffolding put the local checkout: relative to the Factory root (forward slashes) when it is beside the Factory - under the Factory's parent directory, the default layout - so a run resumed on another machine with the same layout finds it; absolute otherwise. Every step that works in the game repository reads it after an explicit step setting and the WGF_GAME_REPO environment variable, and falls back to the configured checkouts directory joined with `name` when the path does not exist where the run resumes. Absent in records written before 1.2.0, which resolve by that fallback."
+        }
       },
       "additionalProperties": false
     },

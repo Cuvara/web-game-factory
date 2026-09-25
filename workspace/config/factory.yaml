@@ -51,6 +51,21 @@ factory:
     game_env_passthrough: []
     # game_env_passthrough: [NPM_REGISTRY_TOKEN]
 
+  # Where game repositories are checked out: <checkouts>/<repository name>, relative to
+  # this repository's root (never the working directory). ONE directory for every step -
+  # init clones there; assets, develop, review, sdk, verify and release work there. Each
+  # step finds a title's checkout by one precedence (scripts/wgflib/checkout.py,
+  # docs/checkouts.md): the step's `with: repo_dir` (alias `game_repo`), else
+  # WGF_GAME_REPO, else the scaffold-record's repository.local_path (where init put it),
+  # else this directory + the repository name. The per-module keys this replaces
+  # (develop.checkouts, init.projects_dir, review.checkouts, sdk.games_dir,
+  # verification.checkouts, release.checkouts) still work, as deprecated aliases read in
+  # that order when this key is unset; any that disagree are warned about and ignored.
+  # While a step works in a checkout it holds an advisory lock on it (in
+  # <storage>/checkouts/): a second run reaching the same checkout is BLOCKED, naming the
+  # first.
+  checkouts: ..
+
   # Relative to the directory `wgf` is run from. Run state is instance data, never committed.
   storage:
     directory: .factory
@@ -87,30 +102,27 @@ factory:
     owner: Cuvara                       # who owns game repositories
     template: Cuvara/web-game-template  # never a blank repository
     visibility: private                 # private | internal | public
-    projects_dir: ..                    # local clones go in <projects_dir>/<title-id>,
-                                        # relative to this repository's root
+    # The local clone goes to <factory.checkouts>/<title-id> (or the step's with: repo_dir,
+    # or WGF_GAME_REPO), and its path is recorded in the scaffold-record for later steps.
     # Take over a repository or directory init did not create in this run. Leave false:
     # set it only to adopt a specific existing project, then set it back.
     adopt_existing: false
     populate_timeout_seconds: 60        # GitHub generates from a template asynchronously
 
   # The verification module (scripts/wgf_verification, docs/verification-module.md). It
-  # verifies a local checkout and never clones: the game repository is found from the
-  # verify step's `with: repo_dir`, else WGF_GAME_REPO, else <checkouts>/<repository name
-  # from the run's scaffold-record>.
-  verification:
-    checkouts: ..
+  # verifies a local checkout (found as every step finds it: factory.checkouts above) and
+  # never clones.
+  # verification: {}
 
   # The release module (scripts/wgf_release, docs/release-module.md): drafts a release from a
   # verified commit with the game repository's own release:package / release:manifest, and
-  # never pushes, tags or publishes. The checkout is the release step's `with: repo_dir`,
-  # else WGF_GAME_REPO, else <checkouts>/<repository name from the run's scaffold-record>.
+  # never pushes, tags or publishes. The checkout is found as every step finds it
+  # (factory.checkouts above).
   # A step's `with:` overrides any key: release_id (default: the next r<n>, or the one this
   # commit already has), version (default: game.version), kind, timeouts. Two keys are read
   # from one place only: `required_gates` from the workflow's `with:` (default [G4]), and
   # `allow_unreviewed` from here.
   release:
-    checkouts: ..
     # Release refuses (`unreviewed`) unless the newest review-report approved exactly the
     # commit it ships - the sdk commit, which the workflow's sdk-review reads. With the
     # shipped `review.reviewer.kind: none` below, EVERY RELEASE IS REFUSED until a reviewer
@@ -124,7 +136,10 @@ factory:
   # overrides any of them. See docs/assets-module.md.
   assets:
     # The game repository checkout assets are written into, under public/assets/.
-    # Default: .factory/assets/<title-id>, which is git-ignored scratch.
+    # Default: the run's checkout (factory.checkouts above, via the scaffold-record), so
+    # the files land where develop builds and commits them, and the develop brief lists
+    # each file's path. Without a scaffold-record, or before the checkout exists:
+    # .factory/assets/<title-id> under this repository's root - git-ignored scratch.
     # root: ../my-game
     libraries: []               # directories with an index.json of reusable, licensed assets
     placeholders:
@@ -139,11 +154,10 @@ factory:
     optimize: true              # lossless, and only on files the step writes
     fail_on: []                 # issue codes that fail the step, e.g. [license-restricted]
 
-  # The development module (scripts/wgf_develop, docs/development-module.md). Where the game
-  # repositories are checked out, who writes the game, and what must pass before a visit is
+  # The development module (scripts/wgf_develop, docs/development-module.md). Who writes
+  # the game in the checkout (factory.checkouts above), and what must pass before a visit is
   # committed. The module never clones, pushes or creates a repository.
   develop:
-    checkouts: ..               # <checkouts>/<scaffold-record repository.name>; relative to the Factory root
     developer:
       kind: handoff             # handoff: brief, wait for --decision done | command: run argv unattended
       argv: []                  # command only: {brief} {repo} {key} {prompt} are substituted
@@ -280,7 +294,6 @@ factory:
     #     - "5"
     #   timeout_seconds: 1800
     #   idle_timeout_seconds: null
-    # checkouts: ..             # default: factory.develop.checkouts
     # The Factory's own code, gates, contracts and this config: what decides what a review,
     # and every later check, is worth. Fingerprinted around the reviewer AND around the
     # develop step's developer and checks (scripts/wgflib/isolation.py). Keep at least the
@@ -307,11 +320,8 @@ factory:
   # tests against mocked portal SDKs; it never publishes. See docs/platform-architecture.md
   # and docs/platform-sdk-verification.md.
   sdk:
-    # Where the game repository is: game_repo, else WGF_GAME_REPO, else
-    # <games_dir>/<scaffold-record repository name>, else where init cloned it. With none
-    # found the step blocks ("platform not configured").
-    # game_repo: ../web-game-template
-    games_dir: ..
+    # The game repository is found as every step finds it (factory.checkouts above); with
+    # none there the step blocks ("platform not configured").
     browser: false              # also run the PixiJS/Three.js browser smoke
     # A portal that publishes no SDK runs on another adapter - explicitly, so a missing
     # adapter anywhere else still fails at boot. GameVui has no SDK, JavaScript API or

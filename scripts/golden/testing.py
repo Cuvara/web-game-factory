@@ -65,12 +65,14 @@ def fast_case(key):
             config = harness.build_config(game, self.workdir, harness.TEMPLATE_DIR)
             games_dir = os.path.join(self.workdir, "games")
             self.assertEqual(config["init"]["source"], "local")
-            self.assertEqual(config["init"]["projects_dir"], games_dir)
+            # One checkouts directory for every step (wgflib.checkout), and no deprecated
+            # per-module key left to disagree with it.
+            self.assertEqual(config["checkouts"], games_dir)
+            for section, key_name in (("init", "projects_dir"), ("develop", "checkouts"),
+                                      ("review", "checkouts"), ("verification", "checkouts"),
+                                      ("release", "checkouts"), ("sdk", "games_dir")):
+                self.assertNotIn(key_name, config.get(section) or {}, section)
             self.assertFalse(config["init"]["adopt_existing"])
-            for section, key_name in (("develop", "checkouts"), ("review", "checkouts"),
-                                      ("verification", "checkouts"), ("release", "checkouts"),
-                                      ("sdk", "games_dir")):
-                self.assertEqual(config[section][key_name], games_dir, section)
             self.assertEqual(config["assets"]["root"], os.path.join(games_dir, game.title_id))
             self.assertTrue(config["storage"]["directory"].startswith(self.workdir))
             self.assertFalse(config["discovery"]["live"])

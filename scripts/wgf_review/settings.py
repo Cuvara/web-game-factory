@@ -9,7 +9,7 @@
           idle_timeout_seconds: 600  # no output for this long ends the review
           verdict_from: file         # file: the reviewer writes {verdict}
                                      # stdout: it prints the JSON last; the step saves it
-        checkouts: null              # default: factory.develop.checkouts, else ..
+        checkouts: null              # deprecated: factory.checkouts (wgflib.checkout)
         guarded_paths: [core, scripts, bin, workspace/config]   # also the develop step's
         fingerprint_ignored: true    # lstat everything inside pre-existing ignored entries
       agents:
@@ -37,7 +37,7 @@ Turn it off only where that walk is too slow; the review then cannot see those w
 import copy
 import os
 
-from wgflib import agentenv, paths
+from wgflib import agentenv, checkout, paths
 from wgflib.isolation import DEFAULT_GUARDED_PATHS
 
 __all__ = ["Settings", "SettingsError", "DEFAULTS", "KINDS"]
@@ -127,14 +127,23 @@ class Settings:
             passthrough = agentenv.passthrough(config)
         except agentenv.ConfigError as exc:
             raise SettingsError(str(exc))
-        return cls(data, config.get("develop"), passthrough)
+        settings = cls(data, config.get("develop"), passthrough)
+        settings.config = config
+        settings.params = dict(params or {})
+        return settings
 
-    def checkout_for(self, repository_name):
-        # The same checkout develop built in, unless review is pointed elsewhere.
-        root = self.data.get("checkouts") or self._develop.get("checkouts") or ".."
-        if not os.path.isabs(root):
-            root = os.path.join(paths.ROOT, root)
+    def checkout_for(self, repository_name, scaffold=None, environ=None, logger=None):
+        """The checkout develop built in: wgflib.checkout's one precedence, the same for
+        every step - the step's `with: repo_dir`, WGF_GAME_REPO, the scaffold-record's
+        local_path, then factory.checkouts (review.checkouts and develop.checkouts are
+        deprecated aliases) + the name."""
+        return self.locate(repository_name, scaffold, environ, logger)[0]
+
+    def locate(self, repository_name, scaffold=None, environ=None, logger=None):
+        """(path, source) - checkout_for, and which rule named the path."""
         try:
-            return paths.checkout_path(root, repository_name)
-        except ValueError as exc:
+            return checkout.locate(getattr(self, "config", {}), scaffold, "review",
+                                   getattr(self, "params", {}), environ,
+                                   name=repository_name, logger=logger)
+        except checkout.CheckoutError as exc:
             raise SettingsError(str(exc))

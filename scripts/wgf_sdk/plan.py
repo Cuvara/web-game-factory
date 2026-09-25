@@ -14,6 +14,8 @@ import os
 from wgflib import paths
 from wgflib.yamllite import load_file
 
+from wgf_init.profiles import pin_identity
+
 __all__ = ["PlanError", "PlatformPlan", "load_game_config", "integration_plan", "FEATURES"]
 
 # The conformance suite's feature vocabulary, in report order.
@@ -79,7 +81,22 @@ def _profile(platform_id, version, directory):
     return profile
 
 
-def integration_plan(config, profiles_dir=None):
+def _vendored_identity(game_repo, entry, directory):
+    """The game's vendored copy of a pinned profile must be the Factory's, by content hash
+    (wgf_init.profiles.pin_identity), not merely declare the pinned version: two documents
+    can both say `<id>@1.0.0`. Returns the content hash the plan was built against."""
+    problems, content_hash, _vendored = pin_identity(game_repo, entry, directory)
+    if problems:
+        raise PlanError(
+            f"the game's pinned profile {entry.get('profile')} does not verify by content hash: "
+            + "; ".join(problems) + ". Re-pin through the tech plan (init re-vendors the "
+            "Factory's profile) rather than build against a profile nobody pinned")
+    return content_hash
+
+
+def integration_plan(config, profiles_dir=None, game_repo=None):
+    """One PlatformPlan per pinned platform. With `game_repo`, each platform's vendored
+    profile is verified by content hash first (a PlanError names what does not verify)."""
     directory = profiles_dir or paths.PLATFORMS
     ad_kinds = set((config.get("monetization") or {}).get("ad_kinds") or [])
     plans = []
@@ -90,6 +107,8 @@ def integration_plan(config, profiles_dir=None):
         if platform_id != entry["id"] or not version:
             raise PlanError(f"profile pin {entry['profile']!r} does not match platform {entry['id']!r}")
         profile = _profile(platform_id, version, directory)
+        if game_repo is not None:
+            _vendored_identity(game_repo, entry, directory)
         capabilities = profile.get("capabilities") or {}
         offered = set(capabilities.get("ads") or [])
         why = {feature: "every build" for feature in ALWAYS}

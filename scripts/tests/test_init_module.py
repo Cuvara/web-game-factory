@@ -340,7 +340,10 @@ class InitStepTest(InitCase):
         self.assertEqual(record["repository"],
                          {"owner": "acme", "name": "neon-drift", "default_branch": "main",
                           "url": "https://github.com/acme/neon-drift",
-                          "visibility": "private"})
+                          "visibility": "private",
+                          # Where init put it, for every later step (wgflib.checkout): a
+                          # temp dir is not beside the Factory, so absolute.
+                          "local_path": self.local})
         self.assertEqual(record["template"]["repository"], TEMPLATE)
         self.assertEqual(len(record["template"]["commit_sha"]), 40)
         self.assertEqual(record["idempotency_key"], "wgf-init:run-1:init")
@@ -818,6 +821,43 @@ class LocalCase(InitCase):
 
 
 class LocalSource(LocalCase):
+    def test_a_vendored_profile_that_does_not_verify_fails_init(self):
+        # verify_pins runs right after vendoring, by content hash: a copy that no longer
+        # is the Factory's profile is refused before anything is committed.
+        real = wgf_init.step.vendor_profiles
+
+        def tampering(project, platforms, source_dir=None):
+            touched = real(project, platforms, source_dir)
+            path = os.path.join(project, "config", "platforms", f"{platforms[0]['id']}.yaml")
+            with open(path, "ab") as handle:
+                handle.write(b"\n# edited after vendoring\n")
+            return touched
+
+        with mock.patch.object(wgf_init.step, "vendor_profiles", tampering):
+            result = self.execute()
+        self.assertEqual((result.outcome, result.retryable), (StepOutcome.FAILED, False))
+        self.assertIn("do not verify", result.error)
+        self.assertEqual(self.commits(), "1")  # the template's initial commit, nothing else
+
+    def test_the_record_names_the_checkout_and_every_step_resolves_it(self):
+        from wgflib import checkout
+        result = self.execute()
+        self.assertEqual(result.outcome, StepOutcome.SUCCESS, result.error)
+        record = result.artifacts[0].content
+        self.assertEqual(checkout.resolve(record["repository"]["local_path"]), self.local)
+        # A later step finds it by the record alone, whatever the checkouts directory says.
+        for section in ("develop", "review", "sdk", "verification", "release"):
+            self.assertEqual(checkout.locate({"checkouts": "/nowhere"}, record, section, {},
+                                             {})[0], self.local)
+
+    def test_wgf_game_repo_is_where_init_creates_the_project(self):
+        target = os.path.join(self.scratch, "from-env")
+        with mock.patch.dict(os.environ, {"WGF_GAME_REPO": target}):
+            result = self.execute()
+        self.assertEqual(result.outcome, StepOutcome.SUCCESS, result.error)
+        self.assertEqual(result.artifacts[0].metadata["local_path"], target)
+        self.assertTrue(os.path.isdir(os.path.join(target, ".git")))
+
     def test_creates_an_independent_project_offline_and_configures_it(self):
         result = self.execute()
         self.assertEqual(result.outcome, StepOutcome.SUCCESS, result.error)

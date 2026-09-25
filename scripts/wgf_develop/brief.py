@@ -12,6 +12,8 @@ integration seam the SDK module wires, and the development report this module ch
 
 import json
 
+from wgflib import template_contract as contract
+
 from wgf_verification.checks.gameplay import ASPECTS, required_aspects_for
 
 from .scope import DEFAULT_WRITABLE
@@ -61,17 +63,28 @@ REQUIRED_SYSTEMS = (
 # every later check runs (`pnpm run test` is whatever its `test` says) and tsconfig.json what
 # the typecheck covers: a build that rewrote either could pass develop, sdk and verify
 # without being checked at all.
-PROTECTED_PATHS = ("packages", "game.config.yaml", ".github", "scripts", "config/platforms",
-                   "playwright.config.ts", "vite.config.ts", "vitest.workspace.ts",
-                   "eslint.config.js", "tsconfig.base.json", "pnpm-workspace.yaml",
-                   "package.json", "tsconfig.json", "pnpm-lock.yaml")
+PROTECTED_PATHS = ("packages", contract.GAME_CONFIG, ".github", "scripts",
+                   contract.PLATFORM_PROFILES_DIR, contract.PLAYWRIGHT_CONFIG, "vite.config.ts",
+                   contract.VITEST_WORKSPACE, "eslint.config.js", "tsconfig.base.json",
+                   "pnpm-workspace.yaml", contract.PACKAGE_JSON, "tsconfig.json",
+                   contract.PNPM_LOCK)
 
 # Protected paths conformance compares by content rather than refusing any change to: a
 # dependency may be added to package.json (factory.develop.allowed_package_changes), and the
 # lockfile then follows it (checks.package_findings).
-STRUCTURAL_PATHS = ("package.json", "pnpm-lock.yaml")
+STRUCTURAL_PATHS = (contract.PACKAGE_JSON, contract.PNPM_LOCK)
 
-ENGINE_DIRS = {"pixijs": "src/rendering/pixijs", "threejs": "src/rendering/threejs"}
+# src/rendering/<engine>, per engine the template contract knows.
+ENGINE_DIRS = {engine: contract.rendering_dir(engine).rstrip("/") for engine in contract.ENGINES}
+
+
+def framework_package(engine):
+    """The npm name of an engine's renderer package, packages/<name>/ in the template."""
+    return "@wgf/" + contract.renderer_package(engine).rstrip("/").rsplit("/", 1)[-1]
+
+
+# The upstream library each engine's game code imports (not a template name).
+ENGINE_LIBRARIES = {"pixijs": "pixi.js", "threejs": "three"}
 
 INTEGRATION_CONTRACT = """\
 // src/game/integration.ts - the seam the integration (SDK) module wires. Game code calls
@@ -142,9 +155,15 @@ def build_brief(*, title_id, engine, iteration, key, baseline, design, assets, s
         for p in monetization.get("placements") or []
         if p.get("kind") != "iap"
     ]
+    # Each item's delivered files, as the manifest records them: paths relative to the game
+    # repository root (public/assets/... when the assets step wrote into the checkout), so
+    # the developer loads exactly those files and the development commit carries them.
     asset_items = [
-        {k: item.get(k) for k in ("id", "label", "type", "source", "status", "license",
-                                  "scope_tier", "notes") if item.get(k) is not None}
+        dict({k: item.get(k) for k in ("id", "label", "type", "source", "status", "license",
+                                       "scope_tier", "notes") if item.get(k) is not None},
+             **({"files": [f["path"] for f in item.get("files") or []
+                           if isinstance(f, dict) and isinstance(f.get("path"), str)]}
+                if item.get("files") else {}))
         for item in (assets or {}).get("items") or []
         if item.get("status") != "cut" and item.get("scope_tier") in (None, "mvp", "prototype")
     ]
@@ -253,9 +272,9 @@ def _bullets(items, empty="- (none)"):
 def render_markdown(brief):
     d = brief["design"]
     engine = brief["engine"]
-    other = "threejs" if engine == "pixijs" else "pixijs"
-    engine_pkg = "pixi.js" if engine == "pixijs" else "three"
-    framework = "@wgf/pixi-framework" if engine == "pixijs" else "@wgf/three-framework"
+    other = next((e for e in contract.ENGINES if e != engine), engine)
+    engine_pkg = ENGINE_LIBRARIES.get(engine, engine)
+    framework = framework_package(engine)
     session = d.get("session") or {}
     out = []
     add = out.append
@@ -372,10 +391,16 @@ def render_markdown(brief):
         add("From the asset manifest. `procedural` items are generated in code. Anything not "
             "yet delivered gets a clearly-marked placeholder loaded through the same path, "
             "reported as `placeholder`. Never ship an item without its recorded license.\n")
+        if any(a.get("files") for a in brief["assets"]):
+            add("Delivered files are listed by their path in this repository; load them from "
+                "there (they are already in the checkout, and the development commit includes "
+                "them).\n")
         for a in brief["assets"]:
             extra = ", ".join(f"{k}: {a[k]}" for k in ("type", "source", "status", "license")
                               if a.get(k))
             add(f"- `{a['id']}` {a.get('label', '')} ({extra})")
+            for path in a.get("files") or []:
+                add(f"  - `{path}`")
     else:
         add("- The manifest lists nothing for this tier.")
     add("")

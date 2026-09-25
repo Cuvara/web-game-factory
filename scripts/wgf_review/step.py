@@ -36,6 +36,7 @@ import os
 import time
 
 from wgflib import agentenv, isolation, procs
+from wgflib import checkout as checkout_lock
 from wgflib.workflow import ArtifactOutput, StepResult, WorkflowStep
 
 from .report import PROMPT, PROMPT_STDOUT, build_report, render_brief
@@ -68,6 +69,12 @@ class ReviewStep(WorkflowStep):
     clock = staticmethod(_utc_now)
 
     def execute(self, inputs, context):
+        # The checkout must hold still while it is reviewed: locked against another run for
+        # the whole step (wgflib.checkout). The same run's own hold never blocks it.
+        with checkout_lock.StepLease(context) as lease:
+            return self._execute(inputs, context, lease)
+
+    def _execute(self, inputs, context, lease):
         try:
             settings = Settings.resolve(context.config, self.params)
         except SettingsError as exc:
@@ -115,9 +122,14 @@ class ReviewStep(WorkflowStep):
 
         repository = scaffold.get("repository") or {}
         try:
-            checkout = settings.checkout_for(repository.get("name") or title_id)
+            checkout = settings.checkout_for(repository.get("name") or title_id, scaffold,
+                                             logger=context.logger)
         except SettingsError as exc:
             return StepResult.failed(f"scaffold-record: {exc}", retryable=False)
+        try:
+            lease.take(checkout)
+        except checkout_lock.CheckoutLocked as exc:
+            return StepResult.blocked(str(exc))
         git = isolation.Git(checkout)
         if not git.is_repository():
             return StepResult.blocked(

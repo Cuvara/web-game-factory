@@ -35,6 +35,7 @@ import datetime
 import json
 import os
 
+from wgflib import checkout as checkout_lock
 from wgflib import isolation
 from wgflib.workflow import ArtifactOutput, StepResult, WorkflowStep
 
@@ -140,6 +141,12 @@ class DevelopStep(WorkflowStep):
     clock = staticmethod(_utc_now)
 
     def execute(self, inputs, context):
+        # The developer, the checks and the commit all work in the checkout: locked against
+        # another run for the whole step (wgflib.checkout).
+        with checkout_lock.StepLease(context) as lease:
+            return self._execute(inputs, context, lease)
+
+    def _execute(self, inputs, context, lease):
         try:
             settings = Settings.resolve(context.config, self.params)
         except SettingsError as exc:
@@ -170,7 +177,15 @@ class DevelopStep(WorkflowStep):
         title_id = scaffold.get("title_id") or design.get("title_id")
 
         repository = (scaffold.get("repository") or {})
-        checkout = settings.checkout_for(repository.get("name") or title_id)
+        try:
+            checkout, where = settings.locate(repository.get("name") or title_id, scaffold,
+                                              logger=context.logger)
+        except SettingsError as exc:
+            return StepResult.failed(f"scaffold-record: {exc}", retryable=False)
+        try:
+            lease.take(checkout)
+        except checkout_lock.CheckoutLocked as exc:
+            return StepResult.blocked(str(exc))
         runner = self.runner_factory()
         git = GitRepo(checkout, runner, author=settings.data.get("author"),
                       allow_filters=settings.allow_filters)
@@ -179,8 +194,8 @@ class DevelopStep(WorkflowStep):
         if not git.is_repository():
             return StepResult.blocked(
                 f"the game repository {repository.get('owner')}/{repository.get('name')} is "
-                f"not checked out at {checkout}. Clone it there (or set "
-                f"factory.develop.checkouts) and resume.")
+                f"not checked out at {checkout} (from {where}). Clone it there (or name it: "
+                f"the step's with: repo_dir, WGF_GAME_REPO, or factory.checkouts) and resume.")
         try:
             game_config = read_game_config(checkout)
         except ValueError as exc:

@@ -152,8 +152,8 @@ Integration status and scope deltas come from the developer's report; MVP items 
 factory:
   steps:
     modules: [wgf_develop]
+  checkouts: ..                 # where game repositories are: docs/checkouts.md
   develop:
-    checkouts: ..               # <checkouts>/<repository.name>, relative to the Factory root
     developer: {kind: handoff}  # or {kind: command, argv: [...], timeout_seconds: 5400}
     checks: [install, conformance, typecheck, lint, unit, build, smoke]
     check_timeout_seconds: 900

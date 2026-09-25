@@ -12,11 +12,12 @@ them (`wgf sdk` on its own) the step verifies what is already there. A feature b
 report takes the worse status: an adapter that works in a game that does not call it is not
 working, and neither is a wired game on an adapter that fails.
 
-Where the game repository is: `with: {game_repo: <path>}` on the workflow step, else the
-WGF_GAME_REPO environment variable, else `factory.sdk.game_repo` in
-workspace/config/factory.yaml — the order the verify step uses — else
-`factory.sdk.games_dir`/<scaffold-record repository name>, else where the init module cloned
-it (`factory.init.projects_dir`/<title id>). `with: {browser: true}` (or
+Where the game repository is: wgflib.checkout's one precedence, the same for every step
+(docs/checkouts.md) - `with: {game_repo: <path>}` (or `repo_dir`) on the workflow step, else
+the WGF_GAME_REPO environment variable, else the scaffold-record's repository.local_path,
+else `factory.checkouts`/<scaffold-record repository name> (`factory.sdk.games_dir` and
+`factory.init.projects_dir` are deprecated aliases for factory.checkouts, and
+`factory.sdk.game_repo` for the step's `with:`). `with: {browser: true}` (or
 `factory.sdk.browser`) also runs the browser smoke. `with: {report: <path>}` reads an
 existing conformance report — a CI artifact, say — instead of running the suite.
 
@@ -55,7 +56,7 @@ prototype-report's) and the commits it made between them (`sdk_commits`). Nothin
 import datetime
 import os
 
-from wgflib import agentenv, paths, provenance
+from wgflib import agentenv, checkout, provenance
 from wgflib.workflow import ArtifactOutput, StepResult, WorkflowStep
 
 from wgf_verification.lineage import same_commit
@@ -204,43 +205,41 @@ class SdkStep(WorkflowStep):
         return _section(context.config, "sdk").get(key, default)
 
     def _game_repo(self, context, scaffold):
-        # Same order the verify step uses: the step's parameter, WGF_GAME_REPO, then config;
-        # then where the checkouts are, and where init cloned this one.
-        explicit = (self.params.get("game_repo") or os.environ.get("WGF_GAME_REPO")
-                    or _section(context.config, "sdk").get("game_repo"))
-        if explicit:
-            return os.path.abspath(os.path.expanduser(explicit))
-
-        def rooted(path):
-            return os.path.normpath(path if os.path.isabs(path)
-                                    else os.path.join(paths.ROOT, path))
-
-        candidates = []
-        games_dir = self._setting(context, "games_dir")
-        name = ((scaffold or {}).get("repository") or {}).get("name")
-        if games_dir and name:
-            try:
-                candidates.append(rooted(paths.checkout_path(games_dir, name)))
-            except ValueError:
-                pass  # not one directory entry: never resolved to a path
-        title = (scaffold or {}).get("title_id")
-        if title:
-            projects = _section(context.config, "init").get("projects_dir", "..")
-            candidates.append(rooted(os.path.join(projects, title)))
-        return next((c for c in candidates if os.path.isdir(c)), None)
+        """(path or None, why): wgflib.checkout's one precedence - the step's `with:
+        game_repo` (or repo_dir), WGF_GAME_REPO, the scaffold-record's local_path, then
+        factory.checkouts (sdk.games_dir and init.projects_dir are deprecated aliases) +
+        the repository name, else the title id. The first rule that names a path decides."""
+        name = (scaffold or {}).get("title_id")
+        try:
+            path, source = checkout.locate(context.config, scaffold, "sdk", self.params,
+                                           name=name, logger=context.logger)
+        except checkout.CheckoutError as exc:
+            return None, str(exc)
+        if not os.path.isdir(path):
+            return None, f"no game repository at {path} (from {source})"
+        return path, source
 
     def execute(self, inputs, context):
+        # The integration writes and commits in the checkout: locked against another run for
+        # the whole step (wgflib.checkout).
+        with checkout.StepLease(context) as lease:
+            return self._execute(inputs, context, lease)
+
+    def _execute(self, inputs, context, lease):
         design = inputs.load("game-design") if "game-design" in inputs else None
         scaffold = inputs.load("scaffold-record") if "scaffold-record" in inputs else None
-        game_repo = self._game_repo(context, scaffold)
+        game_repo, where = self._game_repo(context, scaffold)
         if not game_repo:
             return StepResult.blocked(
-                "platform not configured: no game repository (with: {game_repo} on the step, "
-                "WGF_GAME_REPO, factory.sdk.game_repo, or a checkout under factory.sdk.games_dir "
-                "or factory.init.projects_dir)")
+                f"platform not configured: {where}. Name the checkout with the step's with: "
+                "game_repo, WGF_GAME_REPO, or factory.checkouts (docs/checkouts.md)")
+        try:
+            lease.take(game_repo)
+        except checkout.CheckoutLocked as exc:
+            return StepResult.blocked(str(exc))
         try:
             config = load_game_config(game_repo)
-            plans = integration_plan(config, self.profiles_dir)
+            plans = integration_plan(config, self.profiles_dir, game_repo=game_repo)
         except PlanError as exc:
             return StepResult.blocked(str(exc))
 

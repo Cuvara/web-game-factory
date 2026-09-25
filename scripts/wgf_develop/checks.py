@@ -19,9 +19,11 @@ import os
 import re
 
 from wgflib import agentenv
+from wgflib import template_contract as contract
 from wgflib.netguard import RefusingProxy, sandbox_env
 
-from .brief import ENGINE_DIRS, PROTECTED_PATHS, REPORT_PATH, REQUIRED_SYSTEMS, STRUCTURAL_PATHS
+from .brief import (ENGINE_DIRS, PROTECTED_PATHS, REPORT_PATH, REQUIRED_SYSTEMS,
+                    STRUCTURAL_PATHS, framework_package)
 from .repository import ExactEnv
 from .seam import seam_findings
 from .settings import DEFAULTS, PACKAGE_FIELDS
@@ -35,14 +37,16 @@ __all__ = ["CheckResult", "run_checks", "conformance", "package_findings", "read
 _REGISTRY_RANGE = re.compile(r"^[A-Za-z0-9.*^~<>=| +-]+$")
 
 # The game repository's own scripts, from the template's package.json.
+# Script names are the template contract's (wgflib.template_contract), not copies of them.
+_PM = contract.PACKAGE_MANAGER
 TOOLCHAIN = {
-    "install": (["pnpm", "install", "--frozen-lockfile", "--prefer-offline"], None),
-    "format": (["pnpm", "run", "format"], "format"),
-    "typecheck": (["pnpm", "run", "typecheck"], "typecheck"),
-    "lint": (["pnpm", "run", "lint"], "lint"),
-    "unit": (["pnpm", "run", "test"], "test"),
-    "build": (["pnpm", "run", "build"], "build"),
-    "smoke": (["pnpm", "run", "test:e2e"], "test:e2e"),
+    "install": ([_PM, "install", "--frozen-lockfile", "--prefer-offline"], None),
+    "format": ([_PM, "run", contract.SCRIPT_FORMAT], contract.SCRIPT_FORMAT),
+    "typecheck": ([_PM, "run", contract.SCRIPT_TYPECHECK], contract.SCRIPT_TYPECHECK),
+    "lint": ([_PM, "run", contract.SCRIPT_LINT], contract.SCRIPT_LINT),
+    "unit": ([_PM, "run", contract.SCRIPT_TEST], contract.SCRIPT_TEST),
+    "build": ([_PM, "run", contract.SCRIPT_BUILD], contract.SCRIPT_BUILD),
+    "smoke": ([_PM, "run", contract.SCRIPT_TEST_E2E], contract.SCRIPT_TEST_E2E),
 }
 
 # Checks that run the built game in a browser. They run behind a proxy that refuses every
@@ -58,9 +62,12 @@ _UNAVAILABLE = {
                         re.I),
 }
 
+# Per engine: its upstream library's modules, and the template's renderer package for it.
+_ENGINE_LIBRARY_MODULES = {"pixijs": (r"pixi\.js", r"@pixi/.+"), "threejs": (r"three", r"three/.+")}
 ENGINE_MODULES = {
-    "pixijs": re.compile(r"""^(pixi\.js|@pixi/.+|@wgf/pixi-framework)$"""),
-    "threejs": re.compile(r"""^(three|three/.+|@wgf/three-framework)$"""),
+    engine: re.compile("^(" + "|".join(_ENGINE_LIBRARY_MODULES.get(engine, ())
+                                       + (re.escape(framework_package(engine)),)) + ")$")
+    for engine in contract.ENGINES
 }
 
 # Engines the template does not carry. Adding one is an architecture change, which is the
@@ -81,7 +88,11 @@ PORTAL_SDK = re.compile(
 )
 
 # The template's engine selector imports both frameworks, dynamically, by design.
-ENGINE_SELECTOR = "src/rendering/create-renderer.ts"
+# The game's entry point, from the same list.
+_ENTRY_POINT = next(path for path, what in contract.SOURCE_PATHS
+                    if what == "the game's entry point")
+ENGINE_SELECTOR = next(path for path, what in contract.SOURCE_PATHS
+                       if what == "the engine selector")
 
 _IMPORT = re.compile(
     r"""(?:^|[\s;])(?:import|export)\s[^'"]*?from\s*['"]([^'"]+)['"]|"""
@@ -120,7 +131,7 @@ class CheckResult:
 def _sources(root, base):
     top = os.path.join(root, base)
     for directory, dirs, files in os.walk(top):
-        dirs[:] = [d for d in dirs if d not in ("node_modules", "dist")]
+        dirs[:] = [d for d in dirs if d not in ("node_modules", contract.DEFAULT_OUTPUT_DIR)]
         for name in files:
             if name.endswith(_SOURCE):
                 path = os.path.join(directory, name)
@@ -192,8 +203,8 @@ def package_findings(root, git, baseline, allowed):
     {field: [add|change|remove]}), and an added version must be a registry range. Structure,
     not text: key order and formatting are the formatter's business."""
     findings = []
-    base_text = git.file_at(baseline, "package.json")
-    path = os.path.join(root, "package.json")
+    base_text = git.file_at(baseline, contract.PACKAGE_JSON)
+    path = os.path.join(root, contract.PACKAGE_JSON)
     current_text = _read(path) if os.path.exists(path) else None
     changed = False
     if base_text is None:
@@ -239,7 +250,7 @@ def package_findings(root, git, baseline, allowed):
                     changed = True
     # By git's own comparison, not by reading the file back through a process's output: a
     # lockfile can be larger than the output a process may keep.
-    if git.changed_since(baseline, "pnpm-lock.yaml") and not changed:
+    if git.changed_since(baseline, contract.PNPM_LOCK) and not changed:
         findings.append("pnpm-lock.yaml is template-owned and changed without an allowed "
                         "dependency change in package.json")
     return findings
@@ -272,12 +283,12 @@ def conformance(root, brief, git):
             findings.append(f"{relative} calls the platform's ad API directly; call the "
                             f"integration seam")
 
-    main = os.path.join(root, "src", "main.ts")
+    main = os.path.join(root, *_ENTRY_POINT.split("/"))
     if os.path.exists(main) and re.search(r"\bBootScene\b", _read(main)):
         findings.append("src/main.ts still starts the template's BootScene")
     findings.extend(seam_findings(root, git, brief.get("baseline_commit")))
 
-    package = os.path.join(root, "package.json")
+    package = os.path.join(root, contract.PACKAGE_JSON)
     if os.path.exists(package):
         try:
             manifest = json.loads(_read(package))
@@ -312,7 +323,7 @@ def conformance(root, brief, git):
 
 def _script_names(root):
     try:
-        return set((json.loads(_read(os.path.join(root, "package.json"))).get("scripts")
+        return set((json.loads(_read(os.path.join(root, contract.PACKAGE_JSON))).get("scripts")
                     or {}))
     except (OSError, ValueError):
         return set()

@@ -125,7 +125,7 @@ writes it, and passes an in-memory configuration to `WorkflowAPI` — the same a
 | Setting | Golden value | Why it is legitimate |
 |---|---|---|
 | `init.source` | `local`, `template_path` = the template checkout | no GitHub; `git archive` of the template's HEAD becomes the repo's initial commit ([init-module.md](init-module.md)) |
-| `*.checkouts`, `sdk.games_dir`, `init.projects_dir` | `<workdir>/games` | every module finds the same repository |
+| `checkouts` | `<workdir>/games` | every step finds the same repository ([checkouts.md](checkouts.md)); no deprecated per-module key is set |
 | `assets.root` | the game repository | the manifest's files land in the repo verify checks |
 | `discovery` | frozen snapshots (`fixtures/research`), a one-archetype catalog, no backlog, `as_of` fixed | the step's documented settings; the scan still screens and can refuse |
 | `develop.developer` | `command`: the replay developer | see below |

@@ -302,6 +302,9 @@ seen by the engine — validate what you write there with ajv.
 - `docs/techplan-module.md` — the `tech-plan` step: engine and platform pins, G3
 - `docs/release-module.md` — the `release` step: what it refuses, packaging checks
 - `docs/core-contracts.md` — every pipeline boundary, lineage rules, the validator
+- `docs/checkouts.md` — where the game checkout is: one precedence for every step
+  (`with:` → `WGF_GAME_REPO` → scaffold-record `local_path` → `factory.checkouts`), the
+  per-checkout lock, assets into `<checkout>/public/assets`
 - `docs/agent-lifecycle.md` — process ownership, heartbeat, liveness, cancellation
 - `docs/golden-runs.md` — the 2D and 3D regression runs
 - `docs/core-v1.md` — what Core v1 guarantees, and how module work is validated against it

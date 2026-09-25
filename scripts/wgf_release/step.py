@@ -35,7 +35,7 @@ import json
 import os
 import re
 
-from wgflib import agentenv, provenance
+from wgflib import agentenv, checkout, provenance
 from wgflib import template_contract as contract
 from wgflib.workflow import ArtifactOutput, StepOutcome, StepResult, WorkflowStep
 from wgflib.workflow.contracts import ArtifactContracts
@@ -124,6 +124,12 @@ class ReleaseStep(WorkflowStep):
     environ = None
 
     def execute(self, inputs, context):
+        # Packaging runs in the checkout and writes release/<id>/ there: locked against
+        # another run for the whole step (wgflib.checkout).
+        with checkout.StepLease(context) as lease:
+            return self._execute(inputs, context, lease)
+
+    def _execute(self, inputs, context, lease):
         for artifact_type, ref in sorted(inputs.refs.items()):
             major = str(ref.schema_version or READABLE_MAJOR).split(".", 1)[0]
             if major != READABLE_MAJOR:
@@ -168,10 +174,16 @@ class ReleaseStep(WorkflowStep):
                 required_gates=required_gates, allow_unreviewed=allow_unreviewed)
             if refusals:
                 raise _Refused(refusals)
-            root, where = locate_checkout(settings, context.config, loaded.get("scaffold-record"),
-                                          env, section="release")
+            # The step's own `with:` only: a factory.release key is not a checkout path.
+            root, where = locate_checkout(self.params or {}, context.config,
+                                          loaded.get("scaffold-record"), env,
+                                          section="release", logger=context.logger)
             if root is None:
                 raise _Refused([Refusal(BLOCKED, "no-checkout", where.summary)])
+            try:
+                lease.take(root)
+            except checkout.CheckoutLocked as exc:
+                raise _Refused([Refusal(BLOCKED, "checkout-in-use", str(exc))])
             head = self._checkout_state(runner, root, loaded, timeouts,
                                         getattr(context, "run_id", None))
             game_config = self._game_config(root)

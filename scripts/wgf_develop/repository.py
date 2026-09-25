@@ -19,13 +19,15 @@ the directory is pinned, and any change to it afterwards is refused, never run.
 import os
 
 from wgflib import gitsafe, procs
+from wgflib import template_contract as contract
 from wgflib.yamllite import YamlError, load_file
 
 __all__ = ["Runner", "RunResult", "GitRepo", "GitError", "ExactEnv", "read_game_config",
            "ENGINES", "KEY_TRAILER"]
 
-# 2D -> PixiJS, 3D -> Three.js. The template bundles exactly these two renderers.
-ENGINES = ("pixijs", "threejs")
+# 2D -> PixiJS, 3D -> Three.js. The template bundles exactly these two renderers: the
+# template contract's list (the tech-plan schema's engine.type enum), not a copy of it.
+ENGINES = contract.ENGINES
 
 # The commit trailer a development commit is keyed by. Finding it on a commit is how a
 # re-executed visit knows it already committed, instead of committing again.
@@ -291,13 +293,13 @@ class GitRepo:
 
 def read_game_config(root):
     """game.config.yaml from the checkout, or raise ValueError saying what is wrong."""
-    path = os.path.join(root, "game.config.yaml")
+    path = os.path.join(root, contract.GAME_CONFIG)
     if not os.path.exists(path):
         raise ValueError(f"{path} does not exist; the checkout is not a scaffolded game")
     try:
         document = load_file(path) or {}
     except YamlError as exc:
-        raise ValueError(f"game.config.yaml does not parse: {exc}")
+        raise ValueError(f"{contract.GAME_CONFIG} does not parse: {exc}")
     engine = (document.get("engine") or {}).get("type")
     if engine not in ENGINES:
         raise ValueError(

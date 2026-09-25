@@ -29,6 +29,7 @@ sys.path.insert(0, HERE)
 from wgf_release import ReleaseStep, register  # noqa: E402
 from wgf_release.package import audit_package  # noqa: E402
 from wgf_release.step import bundle_digest  # noqa: E402
+from wgflib import checkout  # noqa: E402
 from wgflib.hashing import content_hash  # noqa: E402
 from wgflib.workflow import StepOutcome, StepRegistry  # noqa: E402
 from wgflib.workflow.contracts import ArtifactContracts  # noqa: E402
@@ -430,6 +431,24 @@ class Drafting(ReleaseCase):
         context = Context(config={"release": {"checkouts": self.scratch}})
         result = instance.execute(Inputs(self.game.evidence()), context)
         self.assertEqual(result.outcome, StepOutcome.SUCCESS, result.error)
+
+    def test_another_run_in_the_checkout_blocks_and_packages_nothing(self):
+        # wgflib.checkout: packaging runs in the checkout; a second run there is refused.
+        storage = os.path.join(self.scratch, "store")
+        context = Context()
+        context.run_dir = os.path.join(storage, "workflows", context.run_id)
+        other = checkout.acquire(self.game.root, "run-other", storage)
+        self.addCleanup(other.release)
+        result = self.release(context=context)
+        self.assertEqual(result.outcome, StepOutcome.BLOCKED)
+        self.assertIn("checkout-in-use", self.refusal_codes(result))
+        self.assertIn("run-other", result.message or result.error)
+        self.assertEqual(self.game.pnpm_calls(), [])
+        other.release()
+        # The same run holding it (a continued run) is not in the way.
+        own = checkout.acquire(self.game.root, context.run_id, storage)
+        self.addCleanup(own.release)
+        self.assertEqual(self.release(context=context).outcome, StepOutcome.SUCCESS)
 
     def test_no_checkout_blocks(self):
         result = self.release(repo_dir=os.path.join(self.scratch, "absent"))

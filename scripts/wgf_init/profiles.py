@@ -25,8 +25,8 @@ import os
 from wgflib import paths
 from wgflib.yamllite import YamlError, load_file
 
-__all__ = ["ProfileError", "vendor_profiles", "verify_pins", "profile_digest",
-           "PROFILES_DIR", "PINNED"]
+__all__ = ["ProfileError", "vendor_profiles", "verify_pins", "pin_identity",
+           "profile_digest", "PROFILES_DIR", "PINNED"]
 
 PROFILES_DIR = "config/platforms"
 PINNED = "pinned.json"
@@ -204,3 +204,28 @@ def verify_pins(project, platforms=None, source_dir=None):
             problems.append(f"{pin} is pinned as {recorded}, but the Factory's {pin} is "
                             f"{profile_digest(factory)}: two documents under one version")
     return problems
+
+
+def pin_identity(project, platform, source_dir=None):
+    """(problems, content_hash or None, vendored) for one game.config.yaml platform entry:
+    what every reader of a game's pinned profile - verify, sdk - checks before trusting it.
+
+    A game that vendors the profile (the file is in config/platforms/, or pinned.json lists
+    the id - what init writes for every pinned platform) is held to verify_pins: version AND
+    content hash, against pinned.json and the Factory's profile. A game that vendors nothing
+    for it is judged by the Factory's own profile, whose hash is returned; it has no copy to
+    be tampered with, and the reader still compares the Factory profile's version to the
+    pin itself."""
+    source_dir = source_dir or paths.PLATFORMS
+    platform_id = str(platform.get("id") or str(platform.get("profile") or "").partition("@")[0])
+    target = os.path.join(project, *PROFILES_DIR.split("/"))
+    pinned = _load_pinned(os.path.join(target, PINNED))
+    listed = platform_id in _entries(pinned) if pinned is not None else False
+    vendored_path = os.path.join(target, f"{platform_id}.yaml")
+    if not listed and not os.path.isfile(vendored_path):
+        raw = _read_bytes(os.path.join(source_dir, f"{platform_id}.yaml"))
+        return [], (profile_digest(raw) if raw is not None else None), False
+    problems = verify_pins(project, [platform], source_dir)
+    entry = _entries(pinned or {}).get(platform_id) or {}
+    recorded = entry.get("content_hash") if not problems else None
+    return problems, recorded, True

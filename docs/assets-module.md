@@ -87,13 +87,24 @@ step module, and is named in the config.
 
 | Key | Default | |
 |---|---|---|
-| `root` | `.factory/assets/<title>` | the game repository checkout |
+| `root` | the run's game repository checkout | files go under `<root>/public/assets/`; see below |
 | `libraries` | `[]` | directories with an `index.json` (see `library.py`) |
 | `placeholders` | `{enabled: true, backends: [2d-assets-mcp, procedural]}` | plus a settings block per backend |
 | `optimize` | `true` | lossless, only on files the step writes — never on the design's own |
 | `dimension` | inferred | `2d` or `3d` |
 | `fail_on` | `[]` | issue codes that fail the step |
 | `strict` | `false` | fail on any error-severity issue |
+
+### Where the files go
+
+With a scaffold-record in the run and the game repository checked out, the files are written
+into the checkout - found as every step finds it ([checkouts.md](checkouts.md)) - under
+`public/assets/`. `public/` is one of develop's `writable_paths`, so the development commit
+carries them, and the develop brief lists every asset's repository-relative file paths
+(`public/assets/...`) for the developer to load. The step holds the checkout's lock while it
+writes; another run in it is `BLOCKED`. `root` overrides this (relative to the Factory
+root). Without a scaffold-record, or before the checkout exists, the files go to
+`.factory/assets/<title>` under the Factory root: git-ignored scratch no build sees.
 
 ## Outcomes
 

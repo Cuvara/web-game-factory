@@ -6,16 +6,19 @@ starts helpers is cleaned up whole, reports liveness to the step, and is cancell
 Tests replace the runner, or put a fake package manager first on PATH.
 """
 
-from wgflib import procs
+from wgflib import agentenv, procs
 
 __all__ = ["ReleaseRunner", "describe"]
 
 
 class ReleaseRunner:
-    """`run(argv, cwd, timeout) -> procs.ProcessResult`, tied to the executing step."""
+    """`run(argv, cwd, timeout) -> procs.ProcessResult`, tied to the executing step.
+
+    The packaging scripts are game code: with no `env`, the allowlist of os.environ
+    (wgflib.agentenv.game_code_env), never the Factory's whole environment."""
 
     def __init__(self, env=None, hooks=None):
-        self.env = env
+        self.env = agentenv.game_code_env() if env is None else env
         self.hooks = dict(hooks or {})
         self.calls = []
 

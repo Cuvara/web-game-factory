@@ -1349,5 +1349,192 @@ class Coupling(unittest.TestCase):
         self.assertEqual(guards.supported_engines(), ("pixijs", "threejs"))
 
 
+class GameCodeEnvironment(unittest.TestCase):
+    """Code the developer wrote - package.json scripts, tests, a build, a packaging script -
+    runs under the Factory with wgflib.agentenv's game-code allowlist: none of the Factory's
+    secrets, and not the agents' own passthrough either. Every channel the Factory uses to
+    run game code is attacked the same way: a fake tool on PATH writes its environment out."""
+
+    SECRET = "WGF_TEST_SECRET_TOKEN"
+    AGENT_ONLY = "WGF_TEST_AGENT_ONLY"        # factory.agents.env_passthrough
+    GAME_PASSED = "WGF_TEST_GAME_PASSED"      # factory.agents.game_env_passthrough
+    TOOL = """#!{python}
+import json, os, sys
+dump = os.path.join({dumps!r}, "%d-%s.json" % (len(os.listdir({dumps!r})),
+                    "-".join(a.replace(os.sep, "_") for a in sys.argv[1:3]) or "none"))
+with open(dump, "w") as handle:
+    json.dump(dict(os.environ), handle)
+{then}
+"""
+
+    def setUp(self):
+        self.scratch = tempfile.mkdtemp(prefix="wgf-sec-game-env-")
+        self.addCleanup(shutil.rmtree, self.scratch, ignore_errors=True)
+        self.dumps = os.path.join(self.scratch, "dumps")
+        self.bin = os.path.join(self.scratch, "bin")
+        os.makedirs(self.dumps)
+        os.makedirs(self.bin)
+        for name, value in ((self.SECRET, "s3cret"), ("GH_TOKEN", "ghp_x"),
+                            (self.AGENT_ONLY, "agent"), (self.GAME_PASSED, "yes"),
+                            ("PATH", self.bin + os.pathsep + os.environ.get("PATH", ""))):
+            previous = os.environ.get(name)
+            os.environ[name] = value
+            self.addCleanup(lambda n=name, p=previous: os.environ.pop(n, None) if p is None
+                            else os.environ.__setitem__(n, p))
+        self.config = {"agents": {"env_passthrough": [self.AGENT_ONLY],
+                                  "game_env_passthrough": [self.GAME_PASSED]}}
+
+    def tool(self, name, then="sys.exit(0)"):
+        path = os.path.join(self.bin, name)
+        with open(path, "w") as handle:
+            handle.write(self.TOOL.format(python=PY, dumps=self.dumps, then=then))
+        os.chmod(path, 0o755)
+
+    def seen(self):
+        names = sorted(os.listdir(self.dumps))
+        self.assertTrue(names, "no game-code command ran")
+        return [(name, read_json(os.path.join(self.dumps, name))) for name in names]
+
+    def assert_game_env(self, seen, proxied=None):
+        for name, env in seen:
+            for secret in (self.SECRET, "GH_TOKEN", self.AGENT_ONLY):
+                self.assertNotIn(secret, env, name)
+            self.assertEqual(env.get(self.GAME_PASSED), "yes", name)
+            self.assertIn("PATH", env, name)
+            self.assertIn("HOME", env, name)
+            if proxied is not None:
+                self.assertEqual(env.get("CI"), "1", name)
+            if proxied and proxied in name:
+                self.assertTrue(env.get("http_proxy", "").startswith("http://127.0.0.1:"),
+                                name)
+
+    def test_a_develop_check_sees_no_secret(self):
+        from wgf_develop.checks import run_checks
+        self.tool("pnpm")
+        root = os.path.join(self.scratch, "game")
+        os.makedirs(root)
+        with open(os.path.join(root, "package.json"), "w") as handle:
+            json.dump({"scripts": {"test": "x", "test:e2e": "x"}}, handle)
+        settings = DevelopSettings.resolve(self.config)
+        settings.checks = ["install", "unit", "smoke"]
+        results = run_checks(root, None, settings, DevelopRunner(), None)
+        self.assertEqual([r.status for r in results], ["passed"] * 3,
+                         [r.to_dict() for r in results])
+        seen = self.seen()
+        self.assertEqual(len(seen), 3)
+        # The smoke check still runs behind the refusing proxy, and CI=1 still applies.
+        self.assert_game_env(seen, proxied="test:e2e")
+
+    def test_a_verification_command_sees_no_secret(self):
+        import test_verification as verify_tests
+        from wgf_verification.runner import CommandRunner as VerifyRunner
+        from wgf_verification.step import VerifyStep
+        from wgflib.workflow.definition import StepDefinition
+        repo = os.path.join(self.scratch, "fixture-game")
+        shutil.copytree(os.path.join(verify_tests.FIXTURES, "game"), repo)
+        dump_tool = os.path.join(self.bin, "dump")
+        self.tool("dump")
+
+        class Dumping(VerifyRunner):
+            """The real runner and its environment; every command replaced by the dump."""
+
+            def run(self, command, cwd, timeout=None, env=None):
+                return super().run([dump_tool, *command[:2]], cwd, timeout, env)
+
+        runner = Dumping()
+        step = VerifyStep(StepDefinition({
+            "id": "verify", "type": "verify",
+            "inputs": ["prototype-report", "sdk-report", "game-design", "scaffold-record",
+                       "asset-manifest"],
+            "outputs": ["verification-report", "qa-report"], "with": {"repo_dir": repo}},
+            retry=None, max_visits=None))
+        step.runner_factory = lambda: runner
+        step.environ = {}
+        inputs = verify_tests.FakeInputs({
+            "sdk-report": verify_tests.fixture("inputs/sdk-report.json"),
+            "asset-manifest": verify_tests.fixture("inputs/asset-manifest.json")})
+        step.execute(inputs, verify_tests.FakeContext(config=self.config))
+        self.assert_game_env(self.seen())
+        # A runner nobody configured still never inherits the Factory's environment.
+        shutil.rmtree(self.dumps)
+        os.makedirs(self.dumps)
+        VerifyRunner().run([dump_tool, "default"], self.scratch)
+        (_, env), = self.seen()
+        self.assertNotIn(self.SECRET, env)
+        self.assertNotIn(self.GAME_PASSED, env)   # not configured: not passed
+
+    def test_an_sdk_evidence_command_sees_no_secret(self):
+        import test_sdk_module as sdk_tests
+        from wgf_sdk import evidence
+        report = sdk_tests.FIXTURE
+        self.tool("pnpm", then=(
+            "if 'sdk:conformance' in sys.argv:\n"
+            "    os.makedirs('build', exist_ok=True)\n"
+            f"    open({evidence.REPORT_PATH!r}, 'w').write(open({report!r}).read())"))
+        repo = os.path.join(self.scratch, "game")
+        os.makedirs(repo)
+        sdk_tests.git(repo, "init", "-q")
+        with open(os.path.join(repo, "game.config.yaml"), "w") as handle:
+            handle.write(sdk_tests.game_config([("yandex", "required")]))
+        with open(os.path.join(repo, ".gitignore"), "w") as handle:
+            handle.write("build/\n")
+        sdk_tests.commit_all(repo)
+
+        class Step(sdk_tests.SdkStep):
+            clock = staticmethod(lambda: sdk_tests.NOW)
+            runner_factory = evidence.PnpmRunner   # the real one: pnpm sdk:conformance
+
+        result = Step(sdk_tests.FakeDefinition({"game_repo": repo})).execute(
+            sdk_tests.FakeInputs(), sdk_tests.FakeContext(self.config))
+        self.assertEqual(result.outcome, StepOutcome.SUCCESS, result.error)
+        seen = self.seen()
+        self.assertTrue(any("sdk:conformance" in name for name, _ in seen), seen)
+        self.assert_game_env(seen)
+
+    @unittest.skipUnless(HAS_GIT, "git is not installed")
+    def test_a_release_packaging_command_sees_no_secret(self):
+        import test_release_module as release_tests
+        os.makedirs(os.path.join(self.scratch, "release"))
+        game = release_tests.GameRepository(os.path.join(self.scratch, "release"))
+        # The fake pnpm that packages, behind one that writes its environment out first.
+        self.tool("pnpm", then=(
+            f"os.execv(sys.executable, [sys.executable, {release_tests.FAKE_PNPM!r}, "
+            "*sys.argv[1:]])"))
+        os.environ.pop("WGF_GAME_REPO", None)
+        previous = os.environ.get("WGF_SCRIPTS")
+        os.environ["WGF_SCRIPTS"] = SCRIPTS
+        self.addCleanup(lambda: os.environ.pop("WGF_SCRIPTS", None) if previous is None
+                        else os.environ.__setitem__("WGF_SCRIPTS", previous))
+        config = {"agents": dict(self.config["agents"], game_env_passthrough=[
+            self.GAME_PASSED, "WGF_SCRIPTS"])}   # the fake pnpm imports wgflib from there
+        instance = release_tests.step(repo_dir=game.root)
+        instance.clock = staticmethod(lambda: release_tests.NOW)
+        self.assertIsNone(instance.environ)       # the Factory's path, not a test's env
+        result = instance.execute(release_tests.Inputs(game.evidence()),
+                                  release_tests.Context(config))
+        self.assertEqual(result.outcome, StepOutcome.SUCCESS, result.error)
+        seen = self.seen()
+        self.assertTrue(any("release:package" in name for name, _ in seen), seen)
+        self.assert_game_env(seen)
+
+    def test_the_game_code_passthrough_is_its_own_key(self):
+        env = {"PATH": "/bin", "HOME": "/h", "HOST_API_KEY": "k", "REGISTRY_TOKEN": "r",
+               "PLAYWRIGHT_BROWSERS_PATH": "/pw", "COREPACK_HOME": "/c",
+               "PLAYWRIGHT_SECRET_KEY": "x"}
+        config = {"agents": {"env_passthrough": ["HOST_API_KEY"],
+                             "game_env_passthrough": ["REGISTRY_TOKEN"]}}
+        self.assertEqual(agentenv.game_code_env(config, env),
+                         {"PATH": "/bin", "HOME": "/h", "REGISTRY_TOKEN": "r",
+                          "PLAYWRIGHT_BROWSERS_PATH": "/pw", "COREPACK_HOME": "/c"})
+        self.assertEqual(agentenv.game_code_env(None, env)["PATH"], "/bin")
+        self.assertEqual(agentenv.game_code_env(FactoryConfig(config), env)["REGISTRY_TOKEN"],
+                         "r")
+        for bad in ("a b", "", "X=1", 3):
+            with self.assertRaises(agentenv.ConfigError):
+                agentenv.game_code_env({"agents": {"game_env_passthrough": [bad]}}, env)
+        with self.assertRaises(DevelopSettingsError):
+            DevelopSettings.resolve({"agents": {"game_env_passthrough": "REGISTRY_TOKEN"}})
+
+
 if __name__ == "__main__":
     unittest.main()

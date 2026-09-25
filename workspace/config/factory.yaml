@@ -23,14 +23,22 @@ factory:
     # Agent processes (the develop step's developer command, the review step's reviewer)
     # start with an allowlisted environment, never the Factory's: PATH, HOME, USER, LANG,
     # LC_*, TERM, TMPDIR, SHELL, CI, the proxy variables, XDG_*, NODE_*, PNPM_*,
-    # npm_config_* (minus anything named like a secret), plus the WGF_PROC_* tags. The
-    # develop checks (pnpm install, test, build) keep the Factory's environment. Name here
-    # what else an agent needs -
+    # npm_config_*, PLAYWRIGHT_*, COREPACK_* (minus anything named like a secret), plus the
+    # WGF_PROC_* tags. Name here what else an agent needs -
     # an exact name, or a prefix ending in *. See scripts/wgflib/agentenv.py.
     env_passthrough: []
     # Claude Code logged in with `claude login` reads its credentials under HOME and needs
     # nothing here. Authenticated by key or token instead, it needs that one variable:
     # env_passthrough: [ANTHROPIC_API_KEY]      # or CLAUDE_CODE_OAUTH_TOKEN
+    # Game code - what the Factory runs inside a game repository: the develop checks
+    # (pnpm install, typecheck, lint, test, build, smoke), verify, the sdk conformance suite
+    # and release packaging - was written by the developer agent and gets the same allowlist,
+    # plus only what is named here. Deliberately separate from env_passthrough, so the agent
+    # host's credential never reaches game code. A registry credential normally lives in
+    # ~/.npmrc under HOME, which is passed; name one here only if the install step reads it
+    # from the environment:
+    game_env_passthrough: []
+    # game_env_passthrough: [NPM_REGISTRY_TOKEN]
 
   # Relative to the directory `wgf` is run from. Run state is instance data, never committed.
   storage:

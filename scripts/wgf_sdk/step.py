@@ -55,7 +55,7 @@ prototype-report's) and the commits it made between them (`sdk_commits`). Nothin
 import datetime
 import os
 
-from wgflib import paths
+from wgflib import agentenv, paths
 from wgflib.hashing import content_hash
 from wgflib.workflow import ArtifactOutput, StepResult, WorkflowStep
 
@@ -183,6 +183,14 @@ def _overlay(entry, integrated):
     entry["status"] = max(status, entry["status"], key=order.index)
 
 
+def _game_env(runner, env):
+    """Give a runner that has no environment of its own the game-code one (the allowlist
+    plus factory.agents.game_env_passthrough); a test's runner keeps what it has."""
+    if getattr(runner, "env", False) is None:
+        runner.env = env
+    return runner
+
+
 class SdkStep(WorkflowStep):
     type = "sdk"
 
@@ -248,7 +256,11 @@ class SdkStep(WorkflowStep):
         key = getattr(context, "idempotency_key", None) or \
             f"{run_id or 'local'}:{getattr(context, 'current_step', None) or 'sdk'}:" \
             f"{getattr(context, 'visit', None) or context.execution}"
-        integration_runner = self.integration_runner_factory()
+        try:
+            game_env = agentenv.game_code_env(context.config)
+        except agentenv.ConfigError as exc:
+            return StepResult.failed(str(exc), retryable=False)
+        integration_runner = _game_env(self.integration_runner_factory(), game_env)
         git = sdk_commit.SdkGit(game_repo, integration_runner,
                                 author=self._setting(context, "commit_author"))
         prototype_commit = ((prototype or {}).get("build_ref") or {}).get("commit_sha")
@@ -299,7 +311,8 @@ class SdkStep(WorkflowStep):
             if report_path:
                 run = ev.ConformanceRun(ev.read_report(report_path), None)
             else:
-                run = self.runner_factory().run(game_repo, browser=bool(self._setting(context, "browser")))
+                run = _game_env(self.runner_factory(), game_env).run(
+                    game_repo, browser=bool(self._setting(context, "browser")))
         except ev.EvidenceError as exc:
             return StepResult.failed(str(exc))
         observed, problems = ev.summarize(run.report)

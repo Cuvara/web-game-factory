@@ -145,6 +145,12 @@ As verification: the step's `with: repo_dir`, else `WGF_GAME_REPO`, else
 `factory.release.checkouts` joined with the run's `scaffold-record.repository.name`. It never
 clones.
 
+## The environment packaging runs with
+
+`release:package` and `release:manifest` are game code, and git runs through the same
+runner: the game-code environment, never the Factory's - `wgflib/agentenv.py` `game_code_env`: the agents' allowlist (PATH, HOME, USER, LANG/LC_*, TERM, TMPDIR, SHELL, CI, the proxy variables, XDG_*, NODE_*, PNPM_*, npm_config_*, PLAYWRIGHT_*, COREPACK_* - minus any name that says it is a secret) plus `factory.agents.game_env_passthrough`. The step's `environ`
+test seam, when set, is used as given.
+
 ## Parameters (`with:`, over `factory.release`)
 
 | Key | Default | |

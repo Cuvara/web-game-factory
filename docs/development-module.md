@@ -104,10 +104,14 @@ those paths plus an engine-package addition to `package.json` (`pixi.js`; `three
 
 Not covered: anything the developer writes outside the checkout and the guarded paths
 (`$HOME`, other repositories), and the network. Wrap the argv in an OS sandbox for those.
-The develop checks (`pnpm install`, `test`, `build`, ...) keep the Factory's environment:
-they are the repository's CI commands, and `install` may need a registry credential - but
-they run test code the developer wrote, so a secret in the Factory's environment is
-reachable from a check. Keep such secrets out of the environment `wgf` runs in.
+The develop checks (`pnpm install`, `typecheck`, `lint`, `test`, `build`, `smoke`) run code
+the developer wrote - package.json scripts, tests, the Playwright webServer - so they get
+the game-code environment, never the Factory's: `wgflib/agentenv.py` `game_code_env`: the agents' allowlist (PATH, HOME, USER, LANG/LC_*, TERM, TMPDIR, SHELL, CI, the proxy variables, XDG_*, NODE_*, PNPM_*, npm_config_*, PLAYWRIGHT_*, COREPACK_* - minus any name that says it is a secret) plus `factory.agents.game_env_passthrough`, with the refusing proxy and
+`CI=1` layered on top as before. `game_env_passthrough` is deliberately separate from
+`env_passthrough`: the agent host's credential never reaches game code. A registry
+credential normally lives in `~/.npmrc` under HOME, which is passed; an installation whose
+install step reads one from the environment names it in `game_env_passthrough`. The same
+environment is used by verify, sdk and release for the game code they run.
 
 ## Checks
 
@@ -162,6 +166,7 @@ factory:
     git: {allow_filters: false}       # true: commit through the repository's filters (git-lfs)
   agents:
     env_passthrough: []         # names (or PREFIX*) the developer's environment also carries
+    game_env_passthrough: []    # names (or PREFIX*) the checks - game code - also carry
   review:
     guarded_paths: [core, scripts, bin, workspace/config]  # also fingerprinted around develop
 ```

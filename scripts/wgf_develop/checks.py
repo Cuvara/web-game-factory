@@ -8,15 +8,21 @@ the same commands its CI runs - so a green here predicts a green there.
 Each check yields a `CheckResult` with status passed / failed / skipped. Skipped is only for
 something genuinely unavailable on this machine (no browser for Playwright), never for a
 failure, and the report says so.
+
+The toolchain checks run code the developer wrote (package.json scripts, tests, the
+Playwright webServer), so they get wgflib.agentenv's game-code environment - the allowlist
+plus `factory.agents.game_env_passthrough` - never the Factory's own.
 """
 
 import json
 import os
 import re
 
+from wgflib import agentenv
 from wgflib.netguard import RefusingProxy, sandbox_env
 
 from .brief import ENGINE_DIRS, PROTECTED_PATHS, REPORT_PATH, REQUIRED_SYSTEMS, STRUCTURAL_PATHS
+from .repository import ExactEnv
 from .seam import seam_findings
 from .settings import DEFAULTS, PACKAGE_FIELDS
 
@@ -333,10 +339,14 @@ def run_checks(root, brief, settings, runner, git, logger=None):
                 results.append(CheckResult(check_id, "skipped",
                                            f"package.json has no {script!r} script"))
                 continue
+            # Code the developer wrote: an allowlisted environment, never the Factory's.
+            env = agentenv.scrubbed(getattr(settings, "game_env_passthrough", ()))
             guard = RefusingProxy().start() if check_id in NETWORK_GUARDED else None
+            if guard:
+                env.update(sandbox_env(guard.url))
             try:
                 run = runner.run(argv, cwd=root, timeout=settings.check_timeout,
-                                 **({"env": sandbox_env(guard.url)} if guard else {}))
+                                 env=ExactEnv(env))
             finally:
                 refused = guard.summary() if guard else None
                 if guard:

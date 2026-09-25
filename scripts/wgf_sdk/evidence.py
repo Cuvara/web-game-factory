@@ -14,7 +14,7 @@ pipeline, behind G5 and G6, and never an SDK step's side effect.
 import json
 import os
 
-from wgflib import procs
+from wgflib import agentenv, procs
 from wgflib import template_contract as contract
 
 __all__ = ["EvidenceError", "ConformanceRun", "ConformanceRunner", "PnpmRunner", "read_report",
@@ -51,15 +51,17 @@ class ConformanceRunner:
 
 
 class PnpmRunner(ConformanceRunner):
-    def __init__(self, timeout_s=900, log_path=None):
+    def __init__(self, timeout_s=900, log_path=None, env=None):
         self.timeout_s = timeout_s
         self.log_path = log_path
+        self.env = env  # None: wgflib.agentenv's game-code allowlist of os.environ
 
     def _exec(self, name, game_repo):
         # An owned tree (wgflib.procs): the browser suite's preview server and Chromium are
         # terminated with the command, on success as much as on a timeout or a cancel.
+        env = agentenv.game_code_env() if self.env is None else self.env
         done = procs.run(list(COMMANDS[name]), cwd=game_repo, timeout=self.timeout_s,
-                         log_path=self.log_path)
+                         env=env, log_path=self.log_path)
         if done.error is not None:
             if isinstance(done.exception, FileNotFoundError):
                 raise EvidenceError(f"{COMMANDS[name][0]} is not installed: "

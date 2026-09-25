@@ -32,6 +32,7 @@ import json
 import os
 import re
 
+from wgflib import agentenv
 from wgflib import template_contract as contract
 from wgflib.hashing import content_hash
 from wgflib.workflow import ArtifactOutput, StepOutcome, StepResult, WorkflowStep
@@ -123,7 +124,14 @@ class ReleaseStep(WorkflowStep):
         timeouts.update(settings.get("timeouts") or {})
         env = dict(os.environ if self.environ is None else self.environ)
         hooks = context.process_hooks() if hasattr(context, "process_hooks") else {}
-        runner = self.runner_factory(env=env, hooks=hooks)
+        # The packaging scripts are game code: the allowlist plus game_env_passthrough, not
+        # the Factory's environment. A test's own `environ` is used as given.
+        try:
+            game_env = (agentenv.game_code_env(context.config, env) if self.environ is None
+                        else env)
+        except agentenv.ConfigError as exc:
+            return StepResult.failed(str(exc), retryable=False)
+        runner = self.runner_factory(env=game_env, hooks=hooks)
 
         try:
             refusals = evidence_refusals(inputs.refs, loaded, getattr(context, "run_id", None))

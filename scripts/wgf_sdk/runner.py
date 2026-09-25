@@ -9,7 +9,7 @@ import os
 import re
 import tempfile
 
-from wgflib import procs
+from wgflib import agentenv, procs
 from wgflib import template_contract as contract
 
 __all__ = ["CommandRunner", "CommandResult", "TEST_FILE", "TEST_DIR", "SCENARIOS", "run_tests",
@@ -32,13 +32,17 @@ class CommandResult:
 
 class CommandRunner:
     """Runs a command as an owned process tree (wgflib.procs), so a vitest worker pool or a
-    dev server it started never outlives it. `None` when the executable does not exist."""
+    dev server it started never outlives it. `None` when the executable does not exist.
+    It runs game code with wgflib.agentenv's game-code environment, never the Factory's:
+    `env` if given (the step's), else the allowlist of os.environ."""
 
-    def __init__(self, log_path=None):
+    def __init__(self, log_path=None, env=None):
         self.log_path = log_path
+        self.env = env
 
     def run(self, argv, cwd, timeout):
-        done = procs.run(argv, cwd=cwd, timeout=timeout, log_path=self.log_path)
+        env = agentenv.game_code_env() if self.env is None else self.env
+        done = procs.run(argv, cwd=cwd, timeout=timeout, env=env, log_path=self.log_path)
         if done.error is not None:
             if isinstance(done.exception, FileNotFoundError):
                 return None

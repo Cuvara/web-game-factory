@@ -27,6 +27,7 @@ import unittest
 
 from wgflib import paths, procs
 from wgflib.workflow.api import RunRequest
+from wgf_review import verdict as review_verdict
 
 from golden import games, harness, replay_developer, reviewer, summary
 
@@ -267,6 +268,24 @@ def fast_case(key):
             blockers, _ = reviewer.review(key, repo, head)
             ids = {b["id"].rsplit("-", 1)[0] for b in blockers}
             self.assertEqual(ids, {"allowed-paths", "no-portal-sdk", "ad-calls-in-seam"})
+
+            # A finding about the build as a whole (no tests changed since the baseline)
+            # still carries `file`, as null: the verdict contract requires the key on every
+            # blocker, and a verdict without it is discarded as malformed.
+            _write(repo, "docs/development/brief.json",
+                   json.dumps({"engine": game.engine, "baseline_commit": head}))
+            git("add", "-A")
+            git("commit", "-q", "-m", "no tests")
+            head = git("rev-parse", "HEAD").stdout.strip()
+            blockers, _ = reviewer.review(key, repo, head)
+            self.assertIn("tests-present", {b["id"].rsplit("-", 1)[0] for b in blockers})
+            self.assertTrue(all("file" in b for b in blockers), blockers)
+            verdict_path = os.path.join(self.workdir, "verdict.json")
+            _write(self.workdir, "verdict.json", json.dumps(
+                {"verdict": "request-changes", "commit": head, "blockers": blockers}))
+            parsed, problem = review_verdict.parse(verdict_path, head)
+            self.assertIsNone(problem)
+            self.assertEqual(len(parsed["blockers"]), len(blockers))
 
     Fast.__name__ = Fast.__qualname__ = f"Golden{key.upper()}Fast"
     return Fast

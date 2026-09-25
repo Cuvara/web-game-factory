@@ -170,9 +170,42 @@ factory:
 |---|---|
 | `{repo}` | the checkout |
 | `{verdict}` | the verdict path |
-| `{brief}` | the review brief: what to review, the previous blockers, the verdict contract |
+| `{brief}` | the review brief: what to review, the previous blockers, what the design and plan specified, what to look for (code and gameplay), the verdict contract |
 | `{commit}` | the sha under review |
 | `{prompt}` | a one-paragraph instruction to read the brief and write only the verdict |
+
+### What the brief asks
+
+`render_brief` (`scripts/wgf_review/report.py`) writes, in order:
+
+- what to review: the repository, the commit and the diff since the development baseline;
+- the core loop and MVP;
+- what development measured;
+- the previous review's blockers;
+- **what the design and plan specified**. This section appears only when the committed
+  `docs/development/brief.json` carries F1's `build_spec` / `dev_plan`. It lists:
+  - every MVP reward, failure and HUD `feedback` line;
+  - the tutorial approach;
+  - each prototype task with its acceptance criteria.
+
+  A missing feedback hook, or an unmet criterion on an MVP task, is a design-fidelity blocker;
+- **look for**: the code checks (logic defects, stubs and empty tests, template rules,
+  secrets and unknown hosts), then a **gameplay lens** (`GAMEPLAY_LENS`). The lens is a
+  condensed copy of `core/craft/gameplay-review.md`. It covers:
+  - restart that resets everything;
+  - elapsed-time movement with gap clamping;
+  - pause that stops simulation, timers, tweens and audio;
+  - no double run start or double-handled tap;
+  - listeners removed;
+  - tuning kept as data;
+  - no allocation in the frame loop;
+  - flash rate and audio only after a user gesture;
+  - aspect-tagged tests that reach their aspect.
+
+  On an MVP path a lens failure is a blocker; elsewhere it is at most minor. The lens is
+  restated rather than pointed at, because the reviewer runs in the game checkout, where the
+  Factory's `core/` is not a path it can rely on;
+- the verdict contract, which is unchanged.
 
 The same values are also in the environment as `WGF_REVIEW_REPO`, `WGF_REVIEW_VERDICT`,
 `WGF_REVIEW_BRIEF` and `WGF_REVIEW_COMMIT`.

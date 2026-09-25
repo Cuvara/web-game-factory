@@ -112,7 +112,7 @@ golden runs, and several touch files the M1–M13 roadmap owns.
 | # | Finding | Where | Why it matters |
 |---|---|---|---|
 | F1 | **Done.** The develop brief now carries the design's MVP-tier `build_spec` and the tech plan's prototype tasks (`tech-plan` is an optional develop input) | `scripts/wgf_develop/brief.py`, `core/workflows/new-game.workflow.yaml` | Was the biggest single quality leak. M1 still touches `brief.py` (`PROTECTED_PATHS`), so the two need to merge carefully |
-| F2 | The review brief's "Look for" list is code-only | `scripts/wgf_review/report.py` | Add the `core/craft/gameplay-review.md` lens, or point the brief at it |
+| F2 | **Done.** The review brief's "Look for" list now carries a gameplay lens condensed from `core/craft/gameplay-review.md`, plus the design's MVP feedback and the plan's task acceptance criteria when the development brief carries them | `scripts/wgf_review/report.py` | The reviewer checks what players feel and what the design specified, not only code defects |
 | F3 | `docs/GDD.md` is declared by `game-design.schema.json` (`rendered_to`) but never produced | a design or develop module | The developer and reviewer have no readable design in the repo |
 | F4 | No `AgentAuthor` is registered for design; the four archetypes cap design variety | `scripts/wgf_design/authors.py` | An agent author, validated by the existing buildability and consistency checks, would lift design quality without weakening them |
 | F5 | Procedural audio is pure sine tones | `scripts/wgf_assets/placeholders.py` | Shaped, jsfxr-style synthesis would meet the feedback bar in playtests at zero licence cost |

@@ -38,6 +38,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 SCRIPTS = os.path.dirname(HERE)
 ROOT = os.path.dirname(SCRIPTS)
 sys.path.insert(0, SCRIPTS)
+sys.path.insert(0, HERE)
 
 from wgflib import jsonschema_lite as js  # noqa: E402
 from wgflib import paths  # noqa: E402
@@ -53,6 +54,7 @@ from wgflib.workflow.contracts import (  # noqa: E402
 )
 from wgflib.workflow.model import ArtifactRef, RunStatus  # noqa: E402
 from wgflib.yamllite import load as load_yaml  # noqa: E402
+from testenv import enabled  # noqa: E402
 
 SHARED = os.path.join(paths.ARTIFACTS, "shared")
 SCHEMA_FILES = sorted(glob.glob(os.path.join(paths.ARTIFACTS, "**", "*.schema.json"),
@@ -756,7 +758,7 @@ AJV = ["npx", "--yes", "-p", "ajv-cli@5", "-p", "ajv-formats@2", "ajv"]
 
 
 def _ajv_available():
-    if os.environ.get("WGF_SKIP_AJV"):
+    if enabled("WGF_SKIP_AJV"):
         return False
     if not shutil.which("npx"):
         return False
@@ -791,7 +793,7 @@ def _seeds():
     return seeds
 
 
-@unittest.skipUnless(_ajv_available(), "npx/ajv unavailable (offline, or WGF_SKIP_AJV set)")
+@unittest.skipUnless(_ajv_available(), "npx/ajv unavailable (offline, or WGF_SKIP_AJV=1)")
 class AjvDifferential(unittest.TestCase):
     """Same verdict as ajv on every document of a seeded, deterministic mutation corpus.
 

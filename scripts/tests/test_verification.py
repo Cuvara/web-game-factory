@@ -26,6 +26,7 @@ sys.path.insert(0, SCRIPTS)
 sys.path.insert(0, HERE)
 
 from test_workflow_contracts import tree_digest  # noqa: E402
+from testenv import enabled  # noqa: E402
 from wgf_verification import VerifyStep, register  # noqa: E402
 from wgf_verification.checks.code import test_counts  # noqa: E402
 from wgf_verification.checks.gameplay import map_report, required_aspects  # noqa: E402
@@ -960,7 +961,7 @@ class ThroughTheEngine(VerificationCase):
 
 # -- the schema, with ajv when it is at hand --------------------------------------------------
 
-@unittest.skipUnless(os.environ.get("WGF_AJV"), "set WGF_AJV=1 to validate with ajv (npx)")
+@unittest.skipUnless(enabled("WGF_AJV"), "set WGF_AJV=1 to validate with ajv (npx)")
 class SchemaValidation(VerificationCase):
     def test_emitted_reports_validate(self):
         import subprocess

@@ -29,8 +29,9 @@ from wgflib import paths, procs
 from wgflib.workflow.api import RunRequest
 
 from golden import games, harness, replay_developer, reviewer, summary
+from testenv import enabled
 
-RUN_GOLDEN = os.environ.get("WGF_GOLDEN") == "1"
+RUN_GOLDEN = enabled("WGF_GOLDEN")
 SKIP_REASON = ("the golden runs are real pipelines (pnpm, vite, Playwright, Chromium; minutes "
                "each): set WGF_GOLDEN=1 to run them. A skip is not a pass.")
 PLACEHOLDER_ARGS = ("{brief}", "{repo}", "{key}", "{verdict}", "{commit}")
@@ -302,7 +303,7 @@ def end_to_end_case(key):
 
         @classmethod
         def tearDownClass(cls):
-            if cls.workdir and os.environ.get("WGF_GOLDEN_KEEP") != "1":
+            if cls.workdir and not enabled("WGF_GOLDEN_KEEP"):
                 shutil.rmtree(cls.workdir, ignore_errors=True)
 
         def _explain(self):

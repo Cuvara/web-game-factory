@@ -55,9 +55,10 @@ bin/wgf status [<run-id>] [--json]        # liveness: running | hung | stale; ex
                                           # (0 ok/running, 1 failed, 3 waiting); also logs, runs, pause, cancel
 
 # The Core Acceptance Suite: WORKFLOW, AGENTS, CONTRACTS, VERIFY, RELEASE, 2D/3D GOLDEN,
-# PROCESS CLEANUP, SECURITY. MISSING or FAIL exits non-zero; SKIP is never PASS.
-bin/wgf test-core [--only WORKFLOW] [--json]
-WGF_GOLDEN=1 bin/wgf test-core            # also runs the real 2D + 3D golden pipelines
+# PROCESS CLEANUP, SECURITY. MISSING or FAIL exits 1; SKIP is never PASS: skipped tests are
+# listed and the summary says INCOMPLETE. --strict also exits 4 on any skip.
+bin/wgf test-core [--only WORKFLOW] [--json] [--strict]
+WGF_GOLDEN=1 bin/wgf test-core --strict   # the release gate: real 2D + 3D goldens, no skips
 
 # Create or reconcile the organization's WGF_* secrets and variables for the game pipelines.
 # Idempotent, and the living inventory of what the org is supposed to hold. Needs admin:org.
@@ -296,6 +297,7 @@ seen by the engine — validate what you write there with ajv.
 - `docs/claude-capabilities.md` — agent-host capability audit: what the Factory enforces vs
   the host's argv, verified headless developer/reviewer config, live evidence
 - `docs/development.md` — working on the Factory
+- `docs/env-vars.md` — every `WGF_*` environment variable: runtime and test, who reads it, default
 
 Documentation that contradicts a machine file is worse than none, because people believe it.
 Update `docs/` when a machine, contract or role changes.

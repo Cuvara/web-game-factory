@@ -370,9 +370,17 @@ def build_parser(commands):
     runs.add_argument("--json", action="store_true")
     runs.set_defaults(handler=cmd_runs)
 
-    core = sub.add_parser("test-core", help="run the Core Acceptance Suite")
+    core = sub.add_parser(
+        "test-core", help="run the Core Acceptance Suite",
+        description="Exit status: 0 nothing failed (skips are listed, and the summary says "
+                    "INCOMPLETE), 1 a category FAILED or is MISSING, 4 with --strict: "
+                    "something was skipped. The release gate is "
+                    "`WGF_GOLDEN=1 bin/wgf test-core --strict`.")
     core.add_argument("--only", action="append", metavar="CATEGORY",
                       help="run only this category (repeatable), e.g. WORKFLOW")
+    core.add_argument("--strict", action="store_true",
+                      help="exit 4 if any category is SKIP or any test in a PASS category "
+                           "was skipped: the suite must have run in full")
     core.add_argument("--json", action="store_true")
     core.set_defaults(handler=cmd_test_core)
 
@@ -595,6 +603,9 @@ def cmd_runs(args):
 
 TESTS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "tests")
 PASS, FAIL, SKIP, MISSING = "PASS", "FAIL", "SKIP", "MISSING"
+# test-core --strict only: nothing failed, but the suite did not run in full. Distinct from
+# EXIT_FAILED, so a gate can tell "broken" from "not all of it was proved here".
+EXIT_INCOMPLETE = 4
 
 
 def load_core_suite(tests_dir=TESTS_DIR):
@@ -609,12 +620,14 @@ def run_core_suite(suite, tests_dir=TESTS_DIR, only=None, stream=None):
     """Run each category's test modules. Returns one row per category:
 
         {"category", "result", "tests", "passed", "failed", "errors", "skipped",
-         "missing": [module...], "details": [text...]}
+         "missing": [module...], "details": [text...],
+         "skips": [{"id": test id, "reason": skip reason}...]}
 
     MISSING - a named module does not exist (an incomplete suite never looks green);
     FAIL    - any failure or error, including a module that does not import;
     SKIP    - zero tests ran, or every test that ran was skipped;
-    PASS    - otherwise.
+    PASS    - otherwise. A PASS category can still hold skipped tests; `skips` names them,
+              so a partial run is never mistaken for a full one.
     """
     wanted = [name.upper() for name in only] if only else None
     unknown = [name for name in (wanted or []) if name not in suite]
@@ -628,7 +641,7 @@ def run_core_suite(suite, tests_dir=TESTS_DIR, only=None, stream=None):
         if wanted and category not in wanted:
             continue
         row = {"category": category, "result": None, "tests": 0, "passed": 0, "failed": 0,
-               "errors": 0, "skipped": 0, "missing": [], "details": []}
+               "errors": 0, "skipped": 0, "missing": [], "details": [], "skips": []}
         loader = unittest.TestLoader()
         tests = unittest.TestSuite()
         for name in modules:
@@ -646,6 +659,9 @@ def run_core_suite(suite, tests_dir=TESTS_DIR, only=None, stream=None):
                             - row["skipped"] - len(result.expectedFailures))
         row["details"] = [f"{test.id()}\n{text}" for test, text in
                           result.failures + result.errors]
+        # A class or module skipped in setUpClass/setUpModule is one entry, with its own id.
+        row["skips"] = [{"id": test.id(), "reason": str(reason)}
+                        for test, reason in result.skipped]
         if row["missing"]:
             row["result"] = MISSING
         elif row["failed"] or row["errors"]:
@@ -658,7 +674,62 @@ def run_core_suite(suite, tests_dir=TESTS_DIR, only=None, stream=None):
     return rows
 
 
-def render_core_table(rows):
+def core_completeness(rows):
+    """What did not run: {"complete", "skipped_categories", "skipped_in_pass"}.
+
+    Complete means no category is SKIP and no PASS category skipped a test. FAIL and MISSING
+    are not about completeness; they fail the suite on their own."""
+    skipped_categories = [r["category"] for r in rows if r["result"] == SKIP]
+    skipped_in_pass = sum(len(r.get("skips") or ()) for r in rows if r["result"] == PASS)
+    return {"complete": not skipped_categories and not skipped_in_pass,
+            "skipped_categories": skipped_categories, "skipped_in_pass": skipped_in_pass}
+
+
+def core_exit_code(rows, strict=False):
+    if any(r["result"] in (FAIL, MISSING) for r in rows):
+        return EXIT_FAILED
+    if strict and not core_completeness(rows)["complete"]:
+        return EXIT_INCOMPLETE
+    return EXIT_OK
+
+
+def _core_summary(rows, strict):
+    total = f"{sum(r['tests'] for r in rows)} tests"
+    if any(r["result"] in (FAIL, MISSING) for r in rows):
+        return f"Core Acceptance Suite: FAILED ({total})"
+    state = core_completeness(rows)
+    if state["complete"]:
+        return f"Core Acceptance Suite: OK ({total})"
+    parts = []
+    if state["skipped_categories"]:
+        parts.append("skipped: " + ", ".join(state["skipped_categories"]))
+    if state["skipped_in_pass"]:
+        parts.append(f"{state['skipped_in_pass']} "
+                     f"test{'s' if state['skipped_in_pass'] != 1 else ''} skipped in PASS "
+                     f"categories")
+    detail = "; ".join(parts)
+    if strict:
+        return f"Core Acceptance Suite: INCOMPLETE ({detail}; --strict; {total})"
+    return f"Core Acceptance Suite: OK (INCOMPLETE \u2014 {detail}; {total})"
+
+
+def render_core_skips(rows):
+    """The skipped tests, per category, grouped by reason: what was not proved, and why."""
+    lines = []
+    for r in rows:
+        if not r.get("skips"):
+            continue
+        by_reason = {}
+        for skip in r["skips"]:
+            by_reason.setdefault(skip["reason"], []).append(skip["id"])
+        lines.append(f"[{r['category']}] {len(r['skips'])} skipped")
+        for reason, ids in by_reason.items():
+            lines.append(f"  {reason} ({len(ids)})")
+            lines.extend(f"    {test_id}" for test_id in ids)
+    return lines
+
+
+def render_core_table(rows, strict=False):
     width = max([len(r["category"]) for r in rows] + [8])
     lines = [f"{'CATEGORY':<{width}}  RESULT   TESTS  PASS  FAIL  ERROR  SKIP",
              "-" * (width + 42)]
@@ -668,25 +739,28 @@ def render_core_table(rows):
         if r["missing"]:
             line += f"  missing: {', '.join(r['missing'])}"
         lines.append(line)
-    bad = [r for r in rows if r["result"] in (FAIL, MISSING)]
+    skips = render_core_skips(rows)
+    if skips:
+        lines += ["", "Skipped tests, by category and reason:"] + skips
     lines.append("")
-    lines.append("Core Acceptance Suite: " + ("FAILED" if bad else "OK")
-                 + f" ({sum(r['tests'] for r in rows)} tests)")
+    lines.append(_core_summary(rows, strict))
     return "\n".join(lines)
 
 
 def cmd_test_core(args):
     suite = load_core_suite()
     rows = run_core_suite(suite, only=args.only)
+    strict = bool(getattr(args, "strict", False))
+    code = core_exit_code(rows, strict)
     if args.json:
-        print(json.dumps({"ok": not any(r["result"] in (FAIL, MISSING) for r in rows),
+        print(json.dumps({"ok": code == EXIT_OK, "strict": strict, **core_completeness(rows),
                           "categories": rows}, indent=2, ensure_ascii=False))
     else:
-        print(render_core_table(rows))
+        print(render_core_table(rows, strict))
         for row in rows:
             for detail in row["details"]:
                 print(f"\n[{row['category']}] {detail}")
-    return EXIT_FAILED if any(r["result"] in (FAIL, MISSING) for r in rows) else EXIT_OK
+    return code
 
 
 def cmd_pause(args):

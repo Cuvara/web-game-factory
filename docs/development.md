@@ -115,6 +115,25 @@ Standard library only, no dependencies. Checks that:
 Run it after editing any machine, schema, role or binding. It catches the dangling-reference
 class that would otherwise only surface when an agent followed a path that does not exist.
 
+### Tests
+
+```bash
+python -m unittest discover scripts/tests    # everything; opt-in tests skip with a reason
+bin/wgf test-core                            # the Core Acceptance Suite, by category
+WGF_GOLDEN=1 bin/wgf test-core --strict      # the release gate: exits 4 if anything skipped
+```
+
+A skip is never a pass. `bin/wgf test-core` lists every skipped test by category and reason,
+and its summary says `OK (INCOMPLETE — …)` instead of `OK` when anything was skipped. It
+exits 0 unless a category is `FAIL` or `MISSING` (exit 1); `--strict` also turns any skip into
+exit 4. Semantics: [core-v1.md](core-v1.md#the-core-acceptance-suite).
+
+Opt-in tests read their flags through `scripts/tests/testenv.py`: `enabled("WGF_AJV")` is
+true only for the value `1`. Use it for any new flag. Every `WGF_*` variable, runtime or
+test, is listed in [env-vars.md](env-vars.md); add a row when you add one. A test that
+reads template files uses the pinned checkout (`scripts/tests/pinned_template.py`,
+`wgflib.template`), never a path from the environment.
+
 ## The workflow engine
 
 `scripts/wgf.py` (or `bin/wgf`) executes `core/workflows/*.workflow.yaml`. It is standard

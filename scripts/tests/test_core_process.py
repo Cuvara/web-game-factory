@@ -33,6 +33,7 @@ from unittest import mock
 HERE = os.path.dirname(os.path.abspath(__file__))
 SCRIPTS = os.path.dirname(HERE)
 sys.path.insert(0, SCRIPTS)
+sys.path.insert(0, HERE)
 
 from wgflib import procs  # noqa: E402
 from wgflib.workflow.definition import parse_definition  # noqa: E402
@@ -42,6 +43,7 @@ from wgflib.workflow.model import RunStatus, StepResult  # noqa: E402
 from wgflib.workflow.step import StepRegistry, WorkflowStep  # noqa: E402
 from wgflib.workflow.store import RunStore  # noqa: E402
 from wgflib.yamllite import load  # noqa: E402
+from testenv import enabled  # noqa: E402
 
 TREE = os.path.join(HERE, "fixtures", "proc_tree.py")
 HAVE_PROC = os.path.isdir("/proc")
@@ -505,7 +507,7 @@ class InsideAWorkflowStep(ProcessCase):
 
 def _pinned_template():
     # Only the opt-in live test reads the template; do not clone or install otherwise.
-    if os.environ.get("WGF_LIVE_PROCESS_TEST") != "1":
+    if not enabled("WGF_LIVE_PROCESS_TEST"):
         return ""
     sys.path.insert(0, HERE)
     import pinned_template
@@ -573,7 +575,7 @@ def _copy_template(target):
         dirs[:] = [d for d in dirs if d not in skip]
 
 
-@unittest.skipUnless(os.environ.get("WGF_LIVE_PROCESS_TEST") == "1",
+@unittest.skipUnless(enabled("WGF_LIVE_PROCESS_TEST"),
                      "set WGF_LIVE_PROCESS_TEST=1 to run the template's Playwright smoke")
 @unittest.skipUnless(HAVE_PROC, "counts servers through /proc")
 class LiveTemplateSmoke(unittest.TestCase):

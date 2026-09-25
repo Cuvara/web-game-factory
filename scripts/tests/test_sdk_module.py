@@ -3,7 +3,8 @@
 Evidence is a real conformance report produced by web-game-template's tests/sdk suite
 (fixtures/sdk-conformance.json, trimmed to the fields the module reads), so the mapping is
 tested against the shape the suite actually emits. The runner is faked: nothing here runs
-pnpm, reaches a portal, or publishes. One opt-in test (WGF_TEMPLATE_REPO) runs the real suite.
+pnpm, reaches a portal, or publishes. One opt-in test (WGF_TEMPLATE_SDK_TEST=1) runs the real
+suite in the pinned web-game-template checkout (wgflib.template), never in another revision.
 
 Run from the repository root:
 
@@ -25,6 +26,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 SCRIPTS = os.path.dirname(HERE)
 ROOT = os.path.dirname(SCRIPTS)
 sys.path.insert(0, SCRIPTS)
+sys.path.insert(0, HERE)
 
 from wgflib.hashing import content_hash  # noqa: E402
 from wgflib.workflow.api import RunRequest, WorkflowAPI  # noqa: E402
@@ -34,6 +36,7 @@ from wgflib.workflow.model import RunStatus, StepOutcome  # noqa: E402
 from wgf_sdk import evidence  # noqa: E402
 from wgf_sdk.plan import FEATURES, PlanError, integration_plan  # noqa: E402
 from wgf_sdk.step import SdkStep  # noqa: E402
+from testenv import enabled  # noqa: E402
 
 FIXTURE = os.path.join(HERE, "fixtures", "sdk-conformance.json")
 NOW = "2026-09-23T12:00:00Z"
@@ -371,16 +374,40 @@ class Schema(Case):
         self.assertEqual(done.returncode, 0, output)
 
 
-@unittest.skipUnless(os.environ.get("WGF_TEMPLATE_REPO"), "set WGF_TEMPLATE_REPO to run the real suite")
+def _pinned_template():
+    """(checkout, None) for the pinned web-game-template with node_modules, or (None, why).
+    Only the opt-in reads it: nothing is cloned or installed otherwise."""
+    if not enabled("WGF_TEMPLATE_SDK_TEST"):
+        return None, "set WGF_TEMPLATE_SDK_TEST=1 to run the real suite in the pinned template"
+    import pinned_template
+    return pinned_template.with_dependencies()
+
+
+TEMPLATE, _TEMPLATE_WHY = _pinned_template()
+
+
+@unittest.skipUnless(TEMPLATE and shutil.which("pnpm"), _TEMPLATE_WHY or "pnpm is not on PATH")
 class AgainstTheRealTemplate(unittest.TestCase):
-    """Opt-in: runs `pnpm sdk:conformance` in a web-game-template checkout (its own config)."""
+    """Opt-in: runs `pnpm sdk:conformance` in the checkout of the commit pinned in
+    workspace/config/template.lock.json (its own config), and nowhere else - a checkout at
+    another revision is refused by wgflib.template, not tested. The suite writes only its
+    report under build/, which the template ignores; no design or scaffold is given, so the
+    step integrates and commits nothing."""
 
     def test_the_real_suite_yields_a_working_report(self):
+        from wgflib import template
+
+        pinned = template.expected_commit()
+        self.assertEqual(template.head_of(TEMPLATE), pinned)
         step = type("RealClock", (SdkStep,), {"clock": staticmethod(lambda: NOW)})
-        result = step(FakeDefinition({"game_repo": os.environ["WGF_TEMPLATE_REPO"]})).execute(
+        result = step(FakeDefinition({"game_repo": TEMPLATE})).execute(
             FakeInputs(), FakeContext())
         self.assertEqual(result.outcome, StepOutcome.SUCCESS, result.error)
-        self.assertEqual(ArtifactContracts()("sdk-report", result.artifacts[0].content), [])
+        content = result.artifacts[0].content
+        self.assertEqual(ArtifactContracts()("sdk-report", content), [])
+        # The evidence is about the pinned commit, and the checkout is still at it.
+        self.assertEqual(content["build_ref"]["commit_sha"], pinned)
+        self.assertEqual(template.head_of(TEMPLATE), pinned)
 
 
 if __name__ == "__main__":

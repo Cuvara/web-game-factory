@@ -749,7 +749,8 @@ class StatusCommand(unittest.TestCase):
 
 
 class TestCoreCommand(unittest.TestCase):
-    """`wgf test-core` over a fake suite: every result, the counts and the exit code."""
+    """`wgf test-core` over a fake suite: every result, the counts, the skips and the exit
+    code - with and without --strict."""
 
     def setUp(self):
         self.tests_dir = tempfile.mkdtemp(prefix="wgf-core-suite-")
@@ -760,6 +761,12 @@ class TestCoreCommand(unittest.TestCase):
             "failing": "    def test_a(self): self.fail('no')\n    def test_b(self): pass\n",
             "skipping": "    @unittest.skip('later')\n    def test_a(self): pass\n",
             "empty": "    pass\n",
+            # One test ran and passed, three skipped for two reasons: the category is PASS,
+            # and the run is still incomplete.
+            "partial": ("    def test_a(self): pass\n"
+                        "    @unittest.skip('set WGF_X=1')\n    def test_b(self): pass\n"
+                        "    @unittest.skip('set WGF_X=1')\n    def test_c(self): pass\n"
+                        "    def test_d(self): self.skipTest('no npx')\n"),
         }
         for name, body in bodies.items():
             with open(os.path.join(self.tests_dir, f"{self.tag}_{name}.py"), "w") as handle:
@@ -777,13 +784,14 @@ class TestCoreCommand(unittest.TestCase):
         t = self.tag
         return {"GOOD": [f"{t}_passing"], "BAD": [f"{t}_failing", f"{t}_passing"],
                 "LATER": [f"{t}_skipping"], "NOTHING": [f"{t}_empty"],
-                "ABSENT": [f"{t}_passing", f"{t}_not_written_yet"]}
+                "ABSENT": [f"{t}_passing", f"{t}_not_written_yet"],
+                "PARTIAL": [f"{t}_partial", f"{t}_passing"]}
 
     def test_results_and_counts(self):
         rows = {r["category"]: r for r in wgf.run_core_suite(self.suite(), self.tests_dir)}
         self.assertEqual({k: r["result"] for k, r in rows.items()},
                          {"GOOD": "PASS", "BAD": "FAIL", "LATER": "SKIP", "NOTHING": "SKIP",
-                          "ABSENT": "MISSING"})
+                          "ABSENT": "MISSING", "PARTIAL": "PASS"})
         bad = rows["BAD"]
         self.assertEqual((bad["tests"], bad["passed"], bad["failed"]), (4, 3, 1))
         self.assertEqual(rows["ABSENT"]["missing"], [f"{self.tag}_not_written_yet"])
@@ -805,24 +813,124 @@ class TestCoreCommand(unittest.TestCase):
         self.assertIn("test_core_workflow", suite["WORKFLOW"])
         self.assertIn("test_core_persistence", suite["WORKFLOW"])
 
-    def test_exit_code_is_non_zero_when_anything_fails_or_is_missing(self):
-        original = wgf.load_core_suite
+    def main(self, *argv):
+        """(exit code, stdout) of `wgf test-core ...` over the fake suite."""
         suite = self.suite()
+        original, original_run = wgf.load_core_suite, wgf.run_core_suite
         wgf.load_core_suite = lambda: suite
-        original_run = wgf.run_core_suite
         wgf.run_core_suite = lambda s, only=None: original_run(s, self.tests_dir, only)
         try:
-            for only, code in ((["GOOD"], 0), (["LATER"], 0), (["BAD"], 1), (["ABSENT"], 1)):
-                with self.subTest(only):
-                    out = io.StringIO()
-                    args = ["test-core", "--json"] + [a for o in only for a in ("--only", o)]
-                    with contextlib.redirect_stdout(out):
-                        self.assertEqual(wgf.main(args), code)
-                    self.assertEqual(json.loads(out.getvalue())["ok"], code == 0)
+            out = io.StringIO()
+            with contextlib.redirect_stdout(out):
+                code = wgf.main(["test-core", *argv])
+            return code, out.getvalue()
         finally:
-            wgf.load_core_suite = original
-            wgf.run_core_suite = original_run
+            wgf.load_core_suite, wgf.run_core_suite = original, original_run
 
+    @staticmethod
+    def only(*categories):
+        return [a for c in categories for a in ("--only", c)]
+
+    def test_exit_code_is_non_zero_when_anything_fails_or_is_missing(self):
+        for only, code in ((["GOOD"], 0), (["LATER"], 0), (["PARTIAL"], 0), (["BAD"], 1),
+                           (["ABSENT"], 1)):
+            with self.subTest(only):
+                got, out = self.main("--json", *self.only(*only))
+                self.assertEqual(got, code)
+                self.assertEqual(json.loads(out)["ok"], code == 0)
+
+    def test_strict_fails_anything_incomplete_with_its_own_exit_code(self):
+        # 4 is not 1: skipped is "not proved here", failed is "broken". FAIL still wins.
+        self.assertNotEqual(wgf.EXIT_INCOMPLETE, wgf.EXIT_FAILED)
+        for only, code in ((["GOOD"], 0), (["LATER"], 4), (["NOTHING"], 4), (["PARTIAL"], 4),
+                           (["GOOD", "LATER"], 4), (["BAD", "LATER"], 1), (["ABSENT"], 1)):
+            with self.subTest(only):
+                got, out = self.main("--strict", "--json", *self.only(*only))
+                self.assertEqual(got, code)
+                report = json.loads(out)
+                self.assertEqual((report["ok"], report["strict"]), (code == 0, True))
+
+    def test_a_skip_never_reads_as_a_bare_ok(self):
+        code, out = self.main(*self.only("GOOD"))
+        self.assertEqual(code, 0)
+        self.assertEqual(out.strip().splitlines()[-1], "Core Acceptance Suite: OK (2 tests)")
+        self.assertNotIn("Skipped tests", out)
+
+        code, out = self.main(*self.only("GOOD", "LATER", "PARTIAL"))
+        self.assertEqual(code, 0)
+        summary = out.strip().splitlines()[-1]
+        self.assertTrue(summary.startswith("Core Acceptance Suite: OK (INCOMPLETE"), summary)
+        self.assertIn("skipped: LATER", summary)
+        self.assertIn("3 tests skipped in PASS categories", summary)
+
+        code, out = self.main("--strict", *self.only("GOOD", "LATER"))
+        self.assertEqual(code, 4)
+        summary = out.strip().splitlines()[-1]
+        self.assertTrue(summary.startswith("Core Acceptance Suite: INCOMPLETE ("), summary)
+        self.assertIn("--strict", summary)
+        self.assertNotIn("OK", summary)
+
+        code, out = self.main("--strict", *self.only("BAD", "LATER"))
+        self.assertEqual(code, 1)
+        # Failure details follow the table; the summary line is still the table's last.
+        self.assertIn("Core Acceptance Suite: FAILED (", out)
+        self.assertNotIn("Core Acceptance Suite: OK", out)
+        self.assertNotIn("Core Acceptance Suite: INCOMPLETE", out)
+
+    def test_skipped_tests_are_listed_by_category_and_reason(self):
+        rows = {r["category"]: r for r in wgf.run_core_suite(self.suite(), self.tests_dir,
+                                                              only=["PARTIAL", "LATER"])}
+        partial = rows["PARTIAL"]
+        self.assertEqual((partial["result"], partial["tests"], partial["passed"],
+                          partial["skipped"]), ("PASS", 6, 3, 3))
+        t = self.tag
+        self.assertEqual(sorted((s["id"], s["reason"]) for s in partial["skips"]),
+                         [(f"{t}_partial.T.test_b", "set WGF_X=1"),
+                          (f"{t}_partial.T.test_c", "set WGF_X=1"),
+                          (f"{t}_partial.T.test_d", "no npx")])
+        self.assertEqual(rows["LATER"]["skips"],
+                         [{"id": f"{t}_skipping.T.test_a", "reason": "later"}])
+        lines = wgf.render_core_skips(list(rows.values()))
+        self.assertIn("[PARTIAL] 3 skipped", lines)
+        self.assertIn("  set WGF_X=1 (2)", lines)
+        self.assertIn("  no npx (1)", lines)
+        self.assertIn(f"    {t}_partial.T.test_d", lines)
+        self.assertIn("[LATER] 1 skipped", lines)
+        # Each id sits under its own reason.
+        reason = lines.index("  no npx (1)")
+        self.assertEqual(lines[reason + 1], f"    {t}_partial.T.test_d")
+
+        code, out = self.main(*self.only("PARTIAL"))
+        self.assertIn("Skipped tests, by category and reason:", out)
+        self.assertIn(f"{t}_partial.T.test_b", out)
+
+    def test_json_names_every_skip_and_what_was_incomplete(self):
+        code, out = self.main("--json", *self.only("GOOD", "LATER", "PARTIAL"))
+        report = json.loads(out)
+        self.assertEqual(code, 0)
+        self.assertEqual((report["complete"], report["skipped_categories"],
+                          report["skipped_in_pass"], report["strict"]),
+                         (False, ["LATER"], 3, False))
+        by_category = {r["category"]: r for r in report["categories"]}
+        self.assertEqual(len(by_category["PARTIAL"]["skips"]), 3)
+        self.assertEqual(by_category["GOOD"]["skips"], [])
+        code, out = self.main("--json", *self.only("GOOD"))
+        self.assertEqual((json.loads(out)["complete"], json.loads(out)["skipped_categories"]),
+                         (True, []))
+
+    def test_a_class_skipped_in_set_up_class_is_listed(self):
+        with open(os.path.join(self.tests_dir, f"{self.tag}_classwide.py"), "w") as handle:
+            handle.write("import unittest\n\nclass T(unittest.TestCase):\n"
+                         "    @classmethod\n    def setUpClass(cls):\n"
+                         "        raise unittest.SkipTest('pinned template unavailable')\n"
+                         "    def test_a(self): pass\n    def test_b(self): pass\n")
+        rows = wgf.run_core_suite({"WHOLE": [f"{self.tag}_classwide", f"{self.tag}_passing"]},
+                                  self.tests_dir)
+        self.assertEqual(rows[0]["result"], "PASS")
+        self.assertEqual([s["reason"] for s in rows[0]["skips"]],
+                         ["pinned template unavailable"])
+        self.assertFalse(wgf.core_completeness(rows)["complete"])
+        self.assertEqual(wgf.core_exit_code(rows, strict=True), wgf.EXIT_INCOMPLETE)
 
 # -- run params, --from past a gate, cancel during backoff, visit inflation --------------
 

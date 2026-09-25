@@ -11,6 +11,14 @@ and `core/` is still the contract.
 
 ### Added
 
+- **Shaped procedural audio (F5).** The procedural backend's sound effects were a bare sine
+  tone. They now come from a deterministic jsfxr-style synthesiser (`encoders.synth`):
+  waveform, envelope, pitch slide, vibrato and arpeggio. The preset (ui, coin, jump, hit,
+  powerup, whoosh, lose, blip) is picked from the item's words and detuned by its id. Music
+  is an 8 s bass-and-arpeggio loop (`encoders.music_loop`). The files remain placeholders,
+  factory-generated and never production-ready, and each item's notes name its preset.
+  *Migration:* none; `encoders.wav` is kept.
+
 - **The `agent` design author (F4)**, `scripts/wgf_design/agent.py`. It is opt-in
   (`factory.design.author: agent`); the default stays `archetype`.
   - An agent host improves the archetype's draft from a request holding the strategy, the

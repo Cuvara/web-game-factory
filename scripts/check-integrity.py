@@ -22,12 +22,14 @@ Run from the web-game-factory repository root:
     python scripts/check-integrity.py
 """
 import glob
+import hashlib
 import json
 import os
 import re
 import sys
 
 ERRORS = []
+WARNINGS = []
 NOTES = []
 
 
@@ -147,18 +149,77 @@ def check_templates():
             ERRORS.append(f"{path}: missing template '{tmpl}'")
 
 
+def pinned_template():
+    """(directory, None) for a checkout of the pinned template commit that already exists,
+    else (None, why). Never clones and never reads the sibling working copy: this check must
+    stay fast and must not fail because the pin is not cached or the network is down.
+    `python3 scripts/wgf-template.py --path` obtains the checkout."""
+    sys.path.insert(0, "scripts")
+    from wgflib import template
+    try:
+        if os.environ.get("WGF_TEMPLATE_DIR"):
+            # template.checkout() uses an offered directory as is, or refuses it as drift.
+            return template.checkout(), None
+        commit = template.expected_commit()
+        # The cache location checkout() itself uses; only its fetch step is skipped here.
+        cached = os.path.join(template._cache_root(), commit)
+        if template.head_of(cached) == commit:
+            return cached, None
+        return None, f"web-game-template {commit[:12]} is not cached"
+    except template.TemplateError as exc:
+        return None, str(exc)
+
+
 def check_platforms():
-    """Platform ids in core must match the strings the template's game.config.yaml uses —
-    they are the same identifier crossing a repository boundary."""
+    """Platform ids in core must match the strings the pinned template's game.config.yaml
+    uses — they are the same identifier crossing a repository boundary. Read at the pin,
+    never from the sibling working copy, which may stand at any commit."""
     profiles = {os.path.basename(p)[:-5] for p in glob.glob("core/reference/platforms/*.yaml")}
-    config = "../web-game-template/game.config.yaml"
+    directory, why = pinned_template()
+    if directory is None:
+        NOTES.append(f"platform check skipped: pinned template not available ({why}; "
+                     "python3 scripts/wgf-template.py --path fetches it)")
+        return profiles
+    config = os.path.join(directory, "game.config.yaml")
     if not os.path.exists(config):
-        NOTES.append("web-game-template/game.config.yaml not found; skipped platform check")
+        ERRORS.append(f"pinned template {directory}: no game.config.yaml")
         return profiles
     for pid in re.findall(r"\{\s*id:\s*([a-z-]+)", read(config)):
         if pid not in profiles:
-            ERRORS.append(f"game.config.yaml: platform '{pid}' has no profile in core")
+            ERRORS.append(f"game.config.yaml (pinned template): platform '{pid}' has no "
+                          "profile in core")
+    check_template_profiles(directory, profiles)
     return profiles
+
+
+def check_template_profiles(directory, profiles):
+    """A profile is identified by id, version and content: a template copy that declares the
+    same id@version as a core profile must be byte-identical to it, or one name answers for
+    two documents. A divergence is a template-side defect the Factory cannot fix from here
+    (init re-vendors the core copy over it), so it is a WARNING, not a failure."""
+    from wgflib.yamllite import YamlError, load_file
+
+    for pid in sorted(profiles):
+        theirs = os.path.join(directory, "config", "platforms", f"{pid}.yaml")
+        if not os.path.isfile(theirs):
+            continue
+        ours = os.path.join("core", "reference", "platforms", f"{pid}.yaml")
+        try:
+            versions = [str((load_file(p) or {}).get("version")) for p in (ours, theirs)]
+        except (OSError, YamlError, ValueError) as exc:
+            WARNINGS.append(f"cannot compare {ours} with the pinned template's copy: {exc}")
+            continue
+        if versions[0] != versions[1]:
+            continue
+        digests = []
+        for path in (ours, theirs):
+            with open(path, "rb") as handle:
+                digests.append(hashlib.sha256(handle.read()).hexdigest())
+        if digests[0] != digests[1]:
+            WARNINGS.append(
+                f"{pid}@{versions[0]}: {ours} (sha256:{digests[0]}) differs from the pinned "
+                f"template's config/platforms/{pid}.yaml (sha256:{digests[1]}) under the same "
+                "version; template-side divergence, init vendors the core copy")
 
 
 def check_provider_independence():
@@ -234,6 +295,8 @@ def main():
         print(f"template    {pin['repository']}@{pin['commit'][:12]} ({pin['ref']})")
     for note in NOTES:
         print(f"note        {note}")
+    for warning in WARNINGS:
+        print(f"WARNING     {warning}")
     print()
 
     if ERRORS:

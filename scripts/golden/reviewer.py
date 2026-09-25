@@ -71,9 +71,10 @@ def review(game_key, repo, commit):
     blockers = []
 
     def block(check, summary, file=None, line=None):
-        entry = {"id": f"{check}-{len(blockers) + 1}", "summary": summary, "severity": "blocker"}
-        if file:
-            entry["file"] = file
+        # `file` is always present - null for a finding about the build as a whole - because
+        # the review verdict contract requires the key on every blocker.
+        entry = {"id": f"{check}-{len(blockers) + 1}", "file": file or None,
+                 "summary": summary, "severity": "blocker"}
         if line:
             entry["line"] = line
         blockers.append(entry)

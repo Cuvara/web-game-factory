@@ -11,6 +11,19 @@ and `core/` is still the contract.
 
 ### Changed
 
+- **The review brief adds a gameplay lens and a design-fidelity section (F2).** "Look for"
+  was code-only. It now also covers what players feel: restart state, frame-rate
+  independence, pause, double starts and taps, tuning as data, frame-loop allocation, flash
+  rate, audio unlock, and tests that reach their aspect. The lens is condensed from
+  `core/craft/gameplay-review.md`. When the committed development brief carries F1's
+  `build_spec` / `dev_plan`, the brief lists the MVP feedback, the tutorial approach and each
+  task's acceptance criteria to check against. *Migration:* none; the verdict contract is
+  unchanged.
+- **Golden reviewer: every blocker carries `file`** (null for a whole-build finding).
+  `scripts/golden/reviewer.py` omitted the key. `wgf_review.verdict.parse` rightly
+  discards such a verdict as malformed, which failed a golden run after a verify → develop
+  loop.
+
 - **The develop brief carries the design's `build_spec` and the approved plan's tasks**
   (core change: `core/workflows/new-game.workflow.yaml`). The design authored mechanics
   with rules and tuning, the difficulty curve, reward and failure feedback, tutorial steps

@@ -15,8 +15,15 @@ Factory is renderer-agnostic.
 
 ```
 research -> strategy -> G2 -> design -> tech-plan -> G3 -> init -> assets
-         -> develop -> review -> sdk -> verify -> release
+         -> develop -> review -> sdk -> verify -> G4 -> release
 ```
+
+G2 and G3 are auto-approved (reversible; configured below). G4 is irreversible, so the run
+stops there `WAITING`; the harness answers it `pass` through the API `wgf decide` uses,
+with `decided_by` left to `default_decider()` - `human`, because the person running the
+golden run is outside every step's process tree - and resumes. Its note says it is the
+harness operator's pass of a known-good port (`harness.G4_NOTE`). `games.EXPECTED_STEPS`
+lists all 14 steps, `prototype-review` included.
 
 ## Running them
 
@@ -120,7 +127,8 @@ writes it, and passes an in-memory configuration to `WorkflowAPI` — the same a
 | `develop.developer` | `command`: the replay developer | see below |
 | `review.reviewer` | `command`: the golden reviewer | see below |
 | `develop.author`, `sdk.commit_author` | `wgf-golden` | the machine may have no git identity; nothing is pushed |
-| `checkpoints.auto_approve` | `[G2, G3]` | both reversible; the engine refuses G4/G6/G7 whatever is listed, and the workflow reaches none |
+| `checkpoints.auto_approve` | `[G2, G3]` | both reversible; the engine refuses G4/G6/G7 whatever is listed |
+| G4 decision | `pass`, by the person running the harness (`decided_by: human`) | G4 is irreversible and cannot be configured; the harness decides it as `wgf decide` would, and a harness running inside a step's tree would be `automation` and refused |
 
 The engine is **steered through inputs, never forced**: the catalog's archetype wording
 ("merge", "puzzle" / "3d", "arena", "drive") leads the design module's own archetype

@@ -6,6 +6,8 @@
     commit lineage mismatch              -> refused
     release before verify                -> refused
     release after verify FAIL / BLOCKED  -> refused, also through `release --run`
+    release before G4 passes             -> refused through `release --run` and `--from`;
+                                            a kill ends the run, a pass releases
     stale qa-report                      -> refused
     dirty checkout                       -> refused
     sourcemap / test / secret in a zip   -> refused
@@ -304,7 +306,15 @@ class ContinueIn(ReleaseCase):
     """`wgf release --run <id>` picks the newest qa-report of the run. It must not release
     from one that failed, nor from an earlier passing one that newer work superseded."""
 
-    def api(self, plan):
+    # G4 between verify and release, as in new-game (only for the G4 tests below).
+    G4 = ("    - id: prototype-review\n"
+          "      type: human-checkpoint\n"
+          "      stage: title:prototype-review\n"
+          "      inputs: [qa-report, verification-report, prototype-report]\n"
+          "      with: {gate: G4, choices: [pass, iterate, kill]}\n"
+          "      on: {iterate: verify, kill: $end}\n")
+
+    def api(self, plan, g4=False):
         game = self.game
 
         class Verify(WorkflowStep):
@@ -332,7 +342,7 @@ class ContinueIn(ReleaseCase):
                         or setattr(ReleaseStep, "clock", originals[1]))
         path = os.path.join(self.scratch, "continue-release.workflow.yaml")
         with open(path, "w") as handle:
-            handle.write(textwrap.dedent("""\
+            text = textwrap.dedent("""\
                 workflow:
                   id: continue-release
                   version: 1
@@ -352,7 +362,10 @@ class ContinueIn(ReleaseCase):
                       with:
                         repo_dir: %s
                       next: $end
-                """ % json.dumps(game.root)))
+                """ % json.dumps(game.root))
+            if g4:
+                text = text.replace("    - id: release\n", self.G4 + "    - id: release\n", 1)
+            handle.write(text)
         config = FactoryConfig({"steps": {"modules": ["wgf_release", module.__name__]},
                                 "storage": {"fsync": False}, "execution": {"delay_seconds": 0}})
         return WorkflowAPI(config=config, store_dir=os.path.join(self.scratch, "store"),
@@ -378,6 +391,62 @@ class ContinueIn(ReleaseCase):
         state = api.run(RunRequest(project_id="fixture-game"))
         self.assertEqual(state.status, RunStatus.COMPLETED, state.to_dict())
         self.assertIsNotNone(api.store.load(state.run_id).latest_artifact("release-manifest"))
+
+
+class BehindG4(ContinueIn):
+    """Release is impossible until G4 (prototype-review) passes - through the engine, with
+    the real release step behind it."""
+
+    def assert_nothing_released(self, api, run_id):
+        state = api.store.load(run_id)
+        self.assertFalse(state.steps.get("release") and state.steps["release"].visits)
+        self.assertIsNone(state.latest_artifact("release-manifest"))
+        self.assertEqual(self.game.pnpm_calls(), [])
+
+    def test_release_run_past_an_unanswered_g4_is_refused(self):
+        from wgflib.workflow.engine import EngineError
+        api = self.api(["pass"], g4=True)
+        state = api.run(RunRequest(project_id="fixture-game"))
+        self.assertEqual((state.status, state.cursor), (RunStatus.WAITING, "prototype-review"))
+        with self.assertRaisesRegex(EngineError, "prototype-review is WAITING"):
+            api.run(RunRequest(run_id=state.run_id, scope="release"))
+        with self.assertRaisesRegex(EngineError, "prototype-review is WAITING"):
+            api.run(RunRequest(resume=state.run_id, from_step="release"))
+        self.assert_nothing_released(api, state.run_id)
+
+    def test_automation_cannot_pass_g4_for_release(self):
+        api = self.api(["pass"], g4=True)
+        state = api.run(RunRequest(project_id="fixture-game"))
+        state = api.run(RunRequest(resume=state.run_id, decision="pass",
+                                   decided_by="automation"))
+        self.assertEqual((state.status, state.cursor), (RunStatus.WAITING, "prototype-review"))
+        self.assert_nothing_released(api, state.run_id)
+
+    def test_a_killed_title_is_never_released(self):
+        from wgflib.workflow.engine import EngineError
+        api = self.api(["pass"], g4=True)
+        state = api.run(RunRequest(project_id="fixture-game"))
+        state = api.run(RunRequest(resume=state.run_id, decision="kill", decided_by="human"))
+        self.assertEqual((state.status, state.exit["route"]), (RunStatus.COMPLETED, "kill"))
+        with self.assertRaisesRegex(EngineError, "cannot be continued"):
+            api.run(RunRequest(run_id=state.run_id, scope="release"))
+        self.assert_nothing_released(api, state.run_id)
+
+    def test_a_pass_releases(self):
+        api = self.api(["pass"], g4=True)
+        state = api.run(RunRequest(project_id="fixture-game"))
+        state = api.run(RunRequest(resume=state.run_id, decision="pass", decided_by="human"))
+        self.assertEqual(state.status, RunStatus.COMPLETED, state.message)
+        self.assertIsNotNone(api.store.load(state.run_id).latest_artifact("release-manifest"))
+
+    def test_a_fresh_release_run_holds_no_evidence_and_is_refused(self):
+        api = self.api(["pass"], g4=True)
+        state = api.run(RunRequest(scope="release", project_id="fixture-game"))
+        self.assertEqual(state.status, RunStatus.BLOCKED, state.message)
+        self.assertIn("no-qa-report", state.steps["release"].message or "")
+        # The step ran - a fresh run has no gate before it in its own scope - and refused.
+        self.assertIsNone(api.store.load(state.run_id).latest_artifact("release-manifest"))
+        self.assertEqual(self.game.pnpm_calls(), [])
 
 
 # -- opt-in: the real template's release scripts --------------------------------------------

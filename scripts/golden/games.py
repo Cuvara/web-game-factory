@@ -69,6 +69,7 @@ EXPECTED_STEPS = (
     ("review", "SUCCESS"),
     ("sdk", "SUCCESS"),
     ("verify", "SUCCESS"),
+    ("prototype-review", "SUCCESS"),   # G4, passed by the harness as a person (harness.py)
     ("release", "SUCCESS"),
 )
 

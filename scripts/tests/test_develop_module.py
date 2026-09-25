@@ -767,6 +767,10 @@ class ThroughTheEngine(unittest.TestCase):
     def test_the_new_game_workflow_completes_with_the_real_develop_step(self):
         api, runner = self.api()
         state = api.run(RunRequest(project_id=TITLE))
+        # G4 waits for a person after verification; decide it as one.
+        self.assertEqual((state.status, state.cursor), (RunStatus.WAITING, "prototype-review"),
+                         state.message)
+        state = api.run(RunRequest(resume=state.run_id, decision="pass", decided_by="human"))
         self.assertEqual(state.status, RunStatus.COMPLETED, state.message)
         ref = state.latest_artifact("prototype-report")
         report = api.store.read_artifact(state.run_id, ref)

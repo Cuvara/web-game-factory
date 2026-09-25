@@ -22,8 +22,15 @@ import json
 import os
 import re
 import shutil
+import sys
 import tempfile
 import unittest
+
+# testenv lives in scripts/tests. test-core and `unittest discover` put that directory on
+# sys.path, `python -m unittest scripts.tests.test_golden_2d` does not: find it from here.
+_TESTS = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "tests")
+if _TESTS not in sys.path:
+    sys.path.insert(0, _TESTS)
 
 from wgflib import paths, procs
 from wgflib.workflow.api import RunRequest

@@ -159,7 +159,7 @@ wall.
 
 ## Gates
 
-| ID | Gate | Irreversible | Auto-approve |
+| ID | Gate | Irreversible | Auto-approve (recommended window) |
 |---|---|---|---|
 | G1 | Opportunity selection | no | 72h |
 | G2 | Strategy approval | no | 48h |
@@ -175,6 +175,42 @@ Definitions, required artifacts, predicates and what each presenter must show:
 Gates are **data**, so supervised and semi-autonomous operation differ by configuration
 rather than by code. The three irreversible gates cannot be configured to auto-approve —
 `decision-record.schema.json` rejects a non-human decision on them.
+
+The windows above are `gates.yaml`'s recommendation (`auto_approve_after`). An installation
+turns timeout approval on per gate in `workspace/config/factory.yaml`:
+
+```yaml
+factory:
+  checkpoints:
+    timeout_auto_approve: {G2: 48h, G3: 48h}
+```
+
+A run snapshots these windows when it starts. A reversible gate listed there that has waited
+its window approves itself on the next `wgf resume` of the run, recorded like a person's
+decision (`decided_by: automation`, `mode: timeout`); `wgf status` and `wgf runs --waiting`
+only report that a gate is eligible. A run is refused at start if the list names an
+irreversible gate or one `gates.yaml` does not define. Redoing the work a gate is about
+restarts its wait. See [workflow-engine.md §9](workflow-engine.md#9-human-checkpoints).
+
+### Gates inside the `new-game` workflow
+
+The workflow (`core/workflows/new-game.workflow.yaml`) holds three of them as
+`human-checkpoint` steps, each decided on its gate's `required_artifacts` and waiting for
+input — asking nobody — until the run holds them:
+
+| Step | Gate | After → before | Decided on | Choices |
+|---|---|---|---|---|
+| `strategy-review` | G2 | strategy → design | `title-strategy` | approve, reject |
+| `tech-plan-review` | G3 | tech-plan → init | `game-design`, `tech-plan` | approve, reject |
+| `prototype-review` | G4 | verify (PASS) → release | `qa-report`, `verification-report`, `prototype-report` | pass, iterate, kill |
+
+G4 judges the *verified* prototype: it runs only after verification passes, and a
+verification that runs again after a pass makes G4 ask again. `pass` continues to release;
+`iterate` sends the work back to develop and ends at G4 again; `kill` — the machine's
+`abandon` — ends the run: the decision is recorded (`DECISION_RECORDED`), the run is
+`COMPLETED` with `exit.route: kill`, `wgf status` says `Ended: kill at G4`, and nothing in
+the run can start again. Release is impossible until G4 passes. Only a person decides G4:
+a decision made from inside a step's process tree is `automation`, and is refused.
 
 ---
 

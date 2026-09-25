@@ -280,6 +280,11 @@ class AgentLoop(unittest.TestCase):
         self.api = API(config=config, store_dir=os.path.join(self.scratch, "store"),
                        sleep=lambda _s: None)
         self.state = self.api.run(RunRequest(project_id=TITLE))
+        if (self.state.status, self.state.cursor) == (RunStatus.WAITING, "prototype-review"):
+            # G4 after verification: irreversible, so no config passes it. The person
+            # running the test does, as `wgf decide <run> pass` would.
+            self.state = self.api.run(RunRequest(resume=self.state.run_id, decision="pass",
+                                                 decided_by="human"))
         return self.state
 
     def trail(self, step=None):

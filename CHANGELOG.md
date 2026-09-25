@@ -12,6 +12,47 @@ and `core/` is still the contract.
 Wave 1 of the v1.1 architectural audit (P0 safety, template contract, CLI, test honesty).
 Core changes are listed with their reason, as docs/core-v1.md requires.
 
+### Changed - gate semantics (M4)
+- **G4 `prototype-review` is a real checkpoint** in `new-game`, after `verify` passes and
+  before `release`, decided on the verified `qa-report`, `verification-report` and
+  `prototype-report`, with `pass` / `iterate` / `kill`. *Reason (core change,
+  core/workflows + wgflib/workflow):* the workflow went from verify straight to release, so
+  the one gate the factory exists for - the kill gate - was never asked. `iterate` returns
+  to develop (a success routed back; lineage kept) and G4 asks again; `kill` ends the run
+  (BLOCKED routed to `$end`: `DECISION_RECORDED`, `exit.route: kill`, `wgf status` "Ended:
+  kill at G4", exit 0) and the run cannot be continued. Only a person decides it.
+  *Migration:* `wgf new-game --mock` now stops `WAITING` at G4 - answer it with
+  `wgf decide <run-id> pass`; scripts that expected it to complete unattended must decide
+  G4. A run started before this change resumes under the current definition; one whose
+  cursor is already past verify (at release) is not sent back to G4 by a plain resume, but
+  `--run release` in it is refused until G4 is passed.
+- **A gate is passed only by a forward answer.** The engine refuses a later step past a
+  gate whose last answer routed backwards (`iterate`, `rework`) or ended the run, not only
+  past one never answered; `--run` in skip mode asks such a gate again. *Reason:* `iterate`
+  is a SUCCESS and would otherwise have counted as passing G4. `context.gates_passed` lists
+  the gates a run has passed (for steps that want to check).
+- **A checkpoint is decided on its gate's `required_artifacts`** (gates.yaml): without them
+  in the run, as the step's inputs, it waits for input and asks nobody. G2 and G3 now list
+  them as inputs. gates.yaml: G3 no longer requires `asset-manifest` (assets are sourced
+  after G3), G4 requires the verified evidence. *Migration:* a custom workflow whose gated
+  checkpoint does not list its gate's required artifacts as inputs now waits for input.
+- **Reject and kill stop the run**; a run a decision ended at `$end` exits 0 and shows
+  `Ended:` in `wgf status` (`ended_by` in `--json`), and `--run` refuses to continue it.
+- **`design.on.descope: $fail`**, explicit: a blocking design-consistency breach ends the
+  run with the design's own message (it already did, unrouted).
+
+### Added
+- **Timeout auto-approval (M4).** `factory.checkpoints.timeout_auto_approve: {G2: 48h}`
+  lets a reversible gate approve itself once it has waited that long. *Reason (core
+  change, wgflib/workflow):* gates.yaml's `auto_approve_after` was documented but never
+  implemented. Conservative by construction: only listed gates; an irreversible or unknown
+  gate listed refuses the run at start; the windows are snapshotted into the run's params
+  (corroborated on resume, and a run started before has none); `waiting_since` is recorded
+  per visit from the engine clock and corroborated by its `STEP_WAITING` event, and upstream
+  work redone restarts it; the approval is recorded as `DECISION_RECORDED`
+  (`decided_by: automation`, `mode: timeout`) and applied only by `wgf resume` - `wgf
+  status` and `wgf runs --waiting` report eligibility and change nothing.
+
 ### Security
 - **Developer boundary (M1).** develop's git runs hardened like the reviewer's
   (`wgflib/gitsafe`: pinned git dir and work tree, safe env, filter drivers neutralised

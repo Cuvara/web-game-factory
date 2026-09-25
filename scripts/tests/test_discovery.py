@@ -515,6 +515,8 @@ class EngineContract(Scratch):
         api = WorkflowAPI(config=FactoryConfig(self.config()),
                           store_dir=os.path.join(self.scratch, "store"))
         state = api.run(RunRequest(mock=True))
+        self.assertEqual((state.status, state.cursor), (RunStatus.WAITING, "prototype-review"))
+        state = api.run(RunRequest(resume=state.run_id, decision="pass", decided_by="human"))
         self.assertEqual(state.status, RunStatus.COMPLETED)
         report = api.store.read_artifact(state.run_id, state.latest_artifact("research-report"))
         self.assertEqual(report["id"], "rr-mock")
@@ -555,6 +557,10 @@ class Cli(Scratch):
 
     def test_wgf_new_game_mock(self):
         done = self.wgf("new-game", "--mock", config=self.CONFIG)
+        # A mock run stops at G4, which only a person decides; `wgf decide` from here is one.
+        self.assertEqual(done.returncode, 3, done.stdout + done.stderr)
+        run_id = done.stdout.split("Run:", 1)[1].split()[0]
+        done = self.wgf("decide", run_id, "pass", config=self.CONFIG)
         self.assertEqual(done.returncode, 0, done.stdout + done.stderr)
         self.assertIn("Workflow completed successfully.", done.stdout)
 

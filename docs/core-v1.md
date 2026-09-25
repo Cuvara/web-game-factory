@@ -51,7 +51,9 @@ RunStore  .factory/workflows/<run-id>/                        (session + env tag
 ```
 research → strategy → [G2] → design → tech-plan → [G3] → init → assets
   → develop ⇄ review → sdk → verify ─fail→ develop
-                                   └─pass→ release (draft)
+                                   └─pass→ [G4] ─pass→ release (draft)
+                                             ├─iterate→ develop
+                                             └─kill→ $end (run ended by the decision)
 ```
 
 | Boundary | Artifact | Refused when |
@@ -64,7 +66,8 @@ research → strategy → [G2] → design → tech-plan → [G3] → init → as
 | develop → review | `prototype-report` | no real commit (no placeholder shas) |
 | review → sdk | `review-report` | reviewer changed anything, malformed verdict, wrong commit |
 | sdk → verify | `sdk-report` | integration not committed / not on the reviewed commit |
-| verify → release | `qa-report`, `verification-report` | not the newest visit, not passing, commit lineage broken, dirty tree |
+| verify → G4 | `qa-report`, `verification-report`, `prototype-report` | missing (G4 waits for input), fails its contract; only a person decides G4 |
+| G4 → release | `qa-report`, `verification-report` (after a G4 `pass`) | G4 not passed or superseded by a newer verification; not the newest visit, not passing, commit lineage broken, dirty tree |
 
 Every boundary is enforced twice: the engine validates each **output** against its full schema
 before persisting it and each **input** again before the consuming step runs (a hand-edited or
@@ -80,7 +83,8 @@ full table with the fields each consumer reads.
 | Retry | FAILED + retryable, per-step policy with backoff | `Retry` |
 | Resume | state saved before and after every execution; a step recorded as succeeded is never executed again by `resume`, even if the driver died before the cursor moved (it follows the recorded route instead) | `Resume`, `StaleRunResume` |
 | Pause / cancel | request files honoured between steps; cancel also terminates a running child tree and ends CANCELLED | `Pause`, `Cancel` |
-| Human gates | `human-checkpoint` waits; G4/G6/G7 never auto-approve; `wgf <step> --run` and `resume --from` refuse to start past an upstream step that is BLOCKED, WAITING or FAILED, or past a gate this run has not passed | `HumanGate` |
+| Human gates | `human-checkpoint` waits, decided on its gate's `required_artifacts`; G4/G6/G7 never auto-approve and refuse `automation`; `wgf <step> --run` and `resume --from` refuse to start past an upstream step that is BLOCKED, WAITING or FAILED, or past a gate this run has not passed (a backward answer such as `iterate` does not pass it) | `HumanGate`, `PrototypeReviewGate`, `GateAnsweredWithoutPassing` |
+| Timeout approval | only reversible gates listed in `factory.checkpoints.timeout_auto_approve`, snapshotted into the run's params; measured from the engine-recorded, event-corroborated `waiting_since` of the visit; applied on `resume` and recorded as a `DECISION_RECORDED` (`automation`, `mode: timeout`); `status` only reports | `TimeoutApproval`, `TimeoutApprovalThroughTheApi` |
 | Event log is load-bearing | a run that cannot write `events.jsonl` ends FAILED with the reason, never COMPLETED | `test_core_persistence.EventLogLoss` |
 | No infinite loops | `max_visits` per step, including skipped and `--run` paths | `MaxVisits`, `VerifyDevelopLoop` |
 | One driver per run | O_EXCL lock with guarded stale takeover | `ConcurrentRunLock` |

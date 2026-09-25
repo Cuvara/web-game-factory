@@ -7,16 +7,20 @@ is not verified on that suite - BLOCKED - rather than silently passing it.
 
 import re
 
+from wgflib.template_contract import (PACKAGE_JSON, SCRIPT_LINT, SCRIPT_TEST,
+                                     SCRIPT_TEST_INTEGRATION, SCRIPT_TEST_UNIT,
+                                     SCRIPT_TYPECHECK)
+
 from ..model import BLOCKED, FAIL, PASS, WARNING, Check, Evidence
 
 __all__ = ["check_code", "CODE_CHECKS"]
 
 # (check id, title, scripts tried in order, required)
 CODE_CHECKS = (
-    ("code.typecheck", "Typecheck", ("typecheck",), True),
-    ("code.lint", "Lint", ("lint",), True),
-    ("code.unit", "Unit tests", ("test:unit", "test"), True),
-    ("code.integration", "Integration tests", ("test:integration",), False),
+    ("code.typecheck", "Typecheck", (SCRIPT_TYPECHECK,), True),
+    ("code.lint", "Lint", (SCRIPT_LINT,), True),
+    ("code.unit", "Unit tests", (SCRIPT_TEST_UNIT, SCRIPT_TEST), True),
+    ("code.integration", "Integration tests", (SCRIPT_TEST_INTEGRATION,), False),
 )
 
 _COUNT = re.compile(r"(\d+)\s+(passed|failed|skipped)", re.I)
@@ -48,7 +52,7 @@ def check_code(session):
                 check_id, "code", title, status, required=required,
                 message=f"package.json has no {' or '.join(scripts)} script",
                 evidence=[Evidence("file", f"no script {' / '.join(scripts)} in package.json",
-                                   path="package.json")])))
+                                   path=PACKAGE_JSON)])))
             continue
         result = session.run(session.script_command(script))
         counts = test_counts(result.stdout + "\n" + result.stderr)

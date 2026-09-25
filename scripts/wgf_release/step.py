@@ -32,6 +32,7 @@ import json
 import os
 import re
 
+from wgflib import template_contract as contract
 from wgflib.hashing import content_hash
 from wgflib.workflow import ArtifactOutput, StepOutcome, StepResult, WorkflowStep
 from wgflib.yamllite import YamlError, load_file
@@ -144,7 +145,7 @@ class ReleaseStep(WorkflowStep):
         except _Refused as refused:
             return self._refusal(refused.refusals, context)
 
-        path = os.path.join(root, "release", release_id, "manifest.json")
+        path = os.path.join(root, *contract.release_path(release_id, contract.RELEASE_MANIFEST))
         # temp + fsync + rename: a crash never leaves a torn manifest that a later run would
         # read as "no release here" and allocate the next id over.
         temporary = f"{path}.{os.getpid()}.tmp"
@@ -215,7 +216,7 @@ class ReleaseStep(WorkflowStep):
                     f"({'; '.join(c.strip() for c in changed[:5])}): a release is made from a "
                     "commit, not a working tree. Commit or discard them, then re-run verify."))
         verified = (loaded["verification-report"].get("build_artifact") or {})
-        out_dir = verified.get("path") or "dist"
+        out_dir = verified.get("path") or contract.DEFAULT_OUTPUT_DIR
         on_disk = bundle_digest(root, out_dir)
         if on_disk != verified.get("content_hash"):
             refusals.append(Refusal(
@@ -230,7 +231,7 @@ class ReleaseStep(WorkflowStep):
     @staticmethod
     def _game_config(root):
         try:
-            return load_file(os.path.join(root, "game.config.yaml")) or {}
+            return load_file(os.path.join(root, contract.GAME_CONFIG)) or {}
         except (OSError, YamlError, ValueError):
             raise _Refused([Refusal(FAILED, "no-game-config",
                                     "the checkout has no readable game.config.yaml")])
@@ -238,11 +239,11 @@ class ReleaseStep(WorkflowStep):
     @staticmethod
     def _existing(root):
         """{release id: manifest} for every release/r<n>/ in the checkout."""
-        base = os.path.join(root, "release")
+        base = os.path.join(root, contract.RELEASE_ROOT)
         found = {}
         for name in (os.listdir(base) if os.path.isdir(base) else []):
             if RELEASE_ID.match(name):
-                found[name] = _read_json(os.path.join(base, name, "manifest.json")) or {}
+                found[name] = _read_json(os.path.join(base, name, contract.RELEASE_MANIFEST)) or {}
         return found
 
     def _release_id(self, root, head, settings):
@@ -268,7 +269,7 @@ class ReleaseStep(WorkflowStep):
     @staticmethod
     def _version(root, game_config, settings):
         version = settings.get("version") or (game_config.get("game") or {}).get("version") \
-            or (_read_json(os.path.join(root, "package.json")) or {}).get("version")
+            or (_read_json(os.path.join(root, contract.PACKAGE_JSON)) or {}).get("version")
         if not version or not SEMVER.match(str(version)):
             raise _Refused([Refusal(FAILED, "bad-version",
                                     f"no semver version for the release (got {version!r}): set "
@@ -279,13 +280,13 @@ class ReleaseStep(WorkflowStep):
 
     @staticmethod
     def _script(root, name, *args):
-        package = _read_json(os.path.join(root, "package.json")) or {}
+        package = _read_json(os.path.join(root, contract.PACKAGE_JSON)) or {}
         if name not in (package.get("scripts") or {}):
             raise _Refused([Refusal(FAILED, "no-release-script",
                                     f"package.json has no {name} script: the game repository "
                                     "packages its own releases")])
         manager = "npm"
-        if os.path.exists(os.path.join(root, "pnpm-lock.yaml")) \
+        if os.path.exists(os.path.join(root, contract.PNPM_LOCK)) \
                 or str(package.get("packageManager", "")).startswith("pnpm"):
             manager = "pnpm"
         elif os.path.exists(os.path.join(root, "yarn.lock")):
@@ -295,10 +296,11 @@ class ReleaseStep(WorkflowStep):
     def _package(self, runner, root, release_id, version, settings, timeouts):
         kind = settings.get("kind") or ("initial" if release_id == "r1" else "content")
         steps = (
-            ("package", self._script(root, "release:package", "--release", release_id)),
-            ("manifest", self._script(root, "release:manifest", "--release", release_id,
-                                      "--version", version, "--kind", kind,
-                                      "--state", "draft")),
+            ("package", self._script(root, contract.SCRIPT_RELEASE_PACKAGE,
+                                     "--release", release_id)),
+            ("manifest", self._script(root, contract.SCRIPT_RELEASE_MANIFEST,
+                                      "--release", release_id, "--version", version,
+                                      "--kind", kind, "--state", "draft")),
         )
         for key, argv in steps:
             result = runner.run(argv, root, timeouts[key])
@@ -310,13 +312,13 @@ class ReleaseStep(WorkflowStep):
 
     def _collect(self, root, release_id, head, loaded, game_config):
         """The game's manifest and packages, checked. Refuses anything that may not ship."""
-        base = os.path.join(root, "release", release_id)
+        base = os.path.join(root, *contract.release_path(release_id))
         refusals = []
         self._stamps = set()
         verified_dir = (loaded["verification-report"].get("build_artifact") or {}) \
-            .get("path") or "dist"
-        listed = _read_json(os.path.join(base, "packages.json"))
-        manifest = _read_json(os.path.join(base, "manifest.json"))
+            .get("path") or contract.DEFAULT_OUTPUT_DIR
+        listed = _read_json(os.path.join(base, contract.RELEASE_PACKAGES))
+        manifest = _read_json(os.path.join(base, contract.RELEASE_MANIFEST))
         if not isinstance(listed, list) or not listed:
             raise _Refused([Refusal(FAILED, "no-packages",
                                     f"release/{release_id}/packages.json is missing or empty")])
@@ -408,7 +410,7 @@ class ReleaseStep(WorkflowStep):
         for key in ("repository", "commit_sha"):
             if recorded.get(key):
                 template[key] = recorded[key]
-        package = _read_json(os.path.join(root, "package.json")) or {}
+        package = _read_json(os.path.join(root, contract.PACKAGE_JSON)) or {}
         marker = (package.get("wgf") or {}).get("template") if isinstance(package.get("wgf"),
                                                                            dict) else None
         version, source = None, None
@@ -416,11 +418,12 @@ class ReleaseStep(WorkflowStep):
             version, source = str(marker["version"]), "package.json#wgf.template.version"
         if version is None:
             try:
-                with open(os.path.join(root, "CHANGELOG.md"), encoding="utf-8") as handle:
+                with open(os.path.join(root, contract.CHANGELOG), encoding="utf-8") as handle:
                     for line in handle:
                         found = re.match(r"^##\s*\[(\d+\.\d+\.\d+)\]", line)
                         if found:
-                            version, source = found.group(1), "CHANGELOG.md (first release heading)"
+                            version, source = (found.group(1),
+                                               f"{contract.CHANGELOG} (first release heading)")
                             break
             except OSError:
                 pass

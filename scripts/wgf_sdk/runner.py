@@ -10,6 +10,7 @@ import re
 import tempfile
 
 from wgflib import procs
+from wgflib import template_contract as contract
 
 __all__ = ["CommandRunner", "CommandResult", "TEST_FILE", "TEST_DIR", "SCENARIOS", "run_tests",
            "git_state"]
@@ -89,8 +90,8 @@ def run_tests(runner, repo, timeout=600, typecheck=True, touched=()):
 
     handle, output = tempfile.mkstemp(prefix="wgf-sdk-", suffix=".json")
     os.close(handle)
-    argv = ["pnpm", "exec", "vitest", "run", "--project", "unit", "--reporter=json",
-            f"--outputFile={output}", TEST_DIR]
+    argv = [contract.PACKAGE_MANAGER, "exec", contract.EXEC_VITEST, "run", "--project",
+            contract.VITEST_PROJECT_UNIT, "--reporter=json", f"--outputFile={output}", TEST_DIR]
     record = {"command": " ".join(argv[:6] + [TEST_DIR])}
     try:
         result = runner.run(argv, repo, timeout)
@@ -135,7 +136,8 @@ def _typecheck(runner, repo, timeout, touched, record):
     Errors elsewhere were there before this step and are not its to fix; they are noted,
     and do not fail the integration.
     """
-    checked = runner.run(["pnpm", "exec", "tsc", "-b"], repo, timeout)
+    checked = runner.run([contract.PACKAGE_MANAGER, "exec", contract.EXEC_TSC, "-b"], repo,
+                         timeout)
     if checked is None:
         record["typecheck"] = "not-run"
         return

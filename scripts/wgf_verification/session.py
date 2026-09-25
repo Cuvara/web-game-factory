@@ -10,6 +10,7 @@ import json
 import os
 
 from wgflib import paths
+from wgflib import template_contract as contract
 from wgflib.netguard import RefusingProxy, sandbox_env
 from wgflib.yamllite import YamlError, load_file
 
@@ -21,7 +22,7 @@ DEFAULT_TIMEOUTS = {"install": 900, "build": 600, "script": 600, "browser": 900,
 
 # Relative to the checkout. Written by whoever drove the game in a browser - typically an
 # agent with a Playwright browser tool - for this module to ingest. See gameplay.py.
-DEFAULT_SESSION_FILE = "build/verification/gameplay-session.json"
+DEFAULT_SESSION_FILE = contract.GAMEPLAY_SESSION
 
 
 def locate_checkout(params, config, scaffold, environ=None, section="verification"):
@@ -50,7 +51,7 @@ def locate_checkout(params, config, scaffold, environ=None, section="verificatio
 
     for source, candidate in candidates:
         path = os.path.abspath(os.path.expanduser(candidate))
-        if os.path.isfile(os.path.join(path, "package.json")):
+        if os.path.isfile(os.path.join(path, contract.PACKAGE_JSON)):
             return path, Evidence("reference", f"checkout from {source}: {path}", path=path)
         tried.append(f"{source}: {path}")
 
@@ -76,8 +77,8 @@ class VerificationSession:
         self.results = {}                   # check id -> Check
         self.timeouts = dict(DEFAULT_TIMEOUTS)
         self.timeouts.update(self.params.get("timeouts") or {})
-        self.package = self.read_json("package.json") or {}
-        self.game_config = self.read_yaml("game.config.yaml") or {}
+        self.package = self.read_json(contract.PACKAGE_JSON) or {}
+        self.game_config = self.read_yaml(contract.GAME_CONFIG) or {}
         self.commit = None
         self.dirty = None
         self.build_artifact = None
@@ -149,7 +150,8 @@ class VerificationSession:
 
     @property
     def output_dir(self):
-        return ((self.game_config.get("build") or {}).get("output")) or "dist"
+        return (((self.game_config.get("build") or {}).get("output"))
+                or contract.DEFAULT_OUTPUT_DIR)
 
     @property
     def platforms(self):
@@ -165,9 +167,10 @@ class VerificationSession:
 
     def profile(self, platform_id):
         """(profile, source): the vendored copy the game pins, else the Factory's own."""
-        vendored = self.read_yaml(f"config/platforms/{platform_id}.yaml")
+        vendored_path = contract.platform_profile_path(platform_id)
+        vendored = self.read_yaml(vendored_path)
         if vendored:
-            return vendored, f"config/platforms/{platform_id}.yaml"
+            return vendored, vendored_path
         core = os.path.join(paths.PLATFORMS, f"{platform_id}.yaml")
         if os.path.exists(core):
             try:
@@ -180,7 +183,7 @@ class VerificationSession:
 
     @property
     def package_manager(self):
-        if self.exists("pnpm-lock.yaml") or str(self.package.get("packageManager", "")) \
+        if self.exists(contract.PNPM_LOCK) or str(self.package.get("packageManager", "")) \
                 .startswith("pnpm"):
             return "pnpm"
         if self.exists("yarn.lock"):

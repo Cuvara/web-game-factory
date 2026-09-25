@@ -9,6 +9,54 @@ and `core/` is still the contract.
 
 ## [Unreleased]
 
+## [1.1.0] - 2026-09-25
+
+Factory v1, usable (`docs/v1-usable.md`). Core v1 against the latest **released**
+web-game-template, v1.1.0 (`bca41a97665f8a32d0f803d46a7bbd001ac94d41`), running one complete
+real workflow - research to a drafted release - with a real Claude developer and a real
+read-only Claude reviewer. Core v1's architecture is unchanged; contract changes are additive.
+Live portal behaviour, submission and publishing remain BLOCKED_EXTERNAL.
+
+### Added
+
+- **Platform profiles for Y8, GameDistribution and GameMonetize**
+  (`core/reference/platforms/`). The shared profile schema gains `requirements.game_id`
+  (`required | optional | none`), `game_id_pattern` and `hosting`. *Migration:* none; the
+  fields are optional.
+- **Portal registrations** - `workspace/titles/<title>/portals.yaml` - carried by the tech
+  plan into `game_config.platforms[].game_id` (and `hosting` / `game_url`); a required Game
+  ID that is missing blocks the tech plan. tech-plan schema: `game_id`, `hosting`,
+  `game_url` on platform entries. *Migration:* none.
+- **The integration seam module.** The develop step provides `src/game/integration.ts` and
+  `src/platform/integration.ts` (`createGamePlatform`, `createGameIntegration`) before a
+  game is built; the sdk step writes its integrated wiring over the latter as a whole file.
+  *Migration:* a game built before 1.1.0 does not boot through the seam, and the sdk step
+  now refuses it; rebuild it through develop.
+- **`wgflib.netguard`** (moved from the golden harness): the develop smoke check and
+  verify's browser commands run behind a refusing proxy, so no test contacts a portal.
+- scaffold-record `template.generated_from_sha` and `template.pin_commit`.
+
+### Changed
+
+- **Pinned to web-game-template v1.1.0**, a release, instead of the development commit
+  `22482b4`. The golden runs read their ports from a separately pinned fixture commit.
+- The tech plan's `repo_params.template_ref` is always `<repository>@<pinned sha>`; init
+  refuses a plan approved against another revision and brings a repository GitHub generated
+  from another revision to the pin with one local commit. *Migration:* a tech plan naming
+  `<template>@main` must be re-planned.
+- init writes `game.id`/`game.name` itself for either source (bootstrap's own derivation).
+- The sdk step never edits `src/main.ts`; it reads seam calls with the game's TypeScript
+  compiler, resolves named placement ids and reports unresolvable ones.
+- The develop brief states verification's evidence contract (aspect tags and the aspects
+  this build must prove); a retry after a failed developer is told to continue its work.
+- Shipped Claude developer example: `--max-turns 400`, `--max-budget-usd 40`.
+
+### Fixed
+
+- Reviewer isolation no longer reports pnpm-store hard links as reviewer writes.
+- A reviewer's fenced verdict after quoted code is found.
+- See `docs/v1-usable.md`, "What the real runs found and fixed".
+
 ## [1.0.0] - 2026-09-24
 
 Core v1, frozen (`docs/core-v1.md`). The executable workflow core - engine, persistence,

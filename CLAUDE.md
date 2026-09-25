@@ -11,8 +11,11 @@ JSON and YAML. It contains no game source code and never will.
 Games live in their own repositories, created from `web-game-template`
 (https://github.com/Cuvara/web-game-template) — the source of truth for template code, the
 example games (Tower Merge Rush, PixiJS; Neon Drift Arena, Three.js), platform adapters and
-engine support. The Factory never copies any of it. It pins **one template commit** in
-`workspace/config/template.lock.json`, and everything that reads template files (golden runs,
+engine support. The Factory never copies any of it. It pins **one template commit** - the
+latest template *release*, by tag and commit (1.1.0: `v1.1.0`, `bca41a9`) - in
+`workspace/config/template.lock.json`; init creates every game at exactly that tree, and the
+golden runs' replay ports, which the release does not ship, are pinned separately there as
+test fixtures (`golden_ports`). Everything that reads template files (golden runs,
 SDK inspector tests, hashing/YAML differential tests) reads a checkout of exactly that commit
 through `scripts/wgflib/template.py` — cached under `~/.cache/wgf/templates/<sha>`, cloned
 from the sibling `../web-game-template` when it holds the commit, else from GitHub. A
@@ -283,6 +286,8 @@ seen by the engine — validate what you write there with ajv.
 - `docs/agent-lifecycle.md` — process ownership, heartbeat, liveness, cancellation
 - `docs/golden-runs.md` — the 2D and 3D regression runs
 - `docs/core-v1.md` — what Core v1 guarantees, and how module work is validated against it
+- `docs/v1-usable.md` — 1.1.0: the real-Claude acceptance run against template v1.1.0, what
+  it found and fixed, PASS / PASS_MOCK / UNVERIFIED / BLOCKED_EXTERNAL
 - `docs/claude-capabilities.md` — agent-host capability audit: what the Factory enforces vs
   the host's argv, verified headless developer/reviewer config, live evidence
 - `docs/development.md` — working on the Factory

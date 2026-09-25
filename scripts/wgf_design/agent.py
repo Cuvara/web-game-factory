@@ -22,6 +22,10 @@ absorption and tier derivation (`finalize`), the buildability check and the cons
 including the `descope` route. An agent cannot mark its own homework, and nothing here
 relaxes a check to let its draft through.
 
+The host runs with the allowlisted agent environment (wgflib.agentenv), exactly as the
+developer and the reviewer do: nothing of the Factory's own environment beyond the
+allowlist and `factory.agents.env_passthrough` (where the host's credential is named).
+
 Outcomes: a draft whose shape is wrong (not JSON, a missing section) is an `AuthorError` -
 not retryable, the same draft would come back. A host that fails, times out or goes silent
 raises `AgentRunFailed`, which the engine retries like any other transient failure. Not
@@ -31,7 +35,7 @@ configured is an `AuthorError`.
 import json
 import os
 
-from wgflib import procs
+from wgflib import agentenv, procs
 
 from .authors import ArchetypeAuthor, AuthorError, DesignAuthor, register_author
 
@@ -151,6 +155,10 @@ class AgentAuthor(DesignAuthor):
         with open(request_path, "w", encoding="utf-8", newline="\n") as handle:
             json.dump(request, handle, indent=2, ensure_ascii=False, default=str)
 
+        try:
+            env = agentenv.scrubbed(agentenv.passthrough(brief.get("config")))
+        except ValueError as exc:
+            raise AuthorError(str(exc)) from exc
         values = {"request": request_path, "draft": draft_path}
         stdout_mode = settings["draft_from"] == "stdout"
         values["prompt"] = (PROMPT_STDOUT if stdout_mode else PROMPT).format(**values)
@@ -160,7 +168,8 @@ class AgentAuthor(DesignAuthor):
             raise AuthorError(f"factory.design.agent.argv has a placeholder this author does "
                               f"not provide ({exc}); use {{request}}, {{draft}}, {{prompt}}, "
                               f"and double any literal brace") from exc
-        result = procs.run(command, cwd=directory, timeout=settings.get("timeout_seconds"),
+        result = procs.run(command, cwd=directory, env=env,
+                           timeout=settings.get("timeout_seconds"),
                            idle_timeout=settings.get("idle_timeout_seconds"),
                            log_path=log_path, heartbeat_seconds=15.0)
         if not result.ok:

@@ -26,8 +26,13 @@ from wgflib.workflow.model import StepOutcome  # noqa: E402
 # The stand-in host. argv: <mode> <request> <draft>. It reads the request, edits the
 # starting draft as the mode says, and writes it (or prints it, or misbehaves).
 HOST = r'''
-import json, sys, time
+import json, os, sys, time
 mode, request_path, draft_path = sys.argv[1:4]
+if mode == "env":
+    # What the host was given: where the tests look for a leaked secret.
+    with open(os.path.join(os.path.dirname(draft_path), "env.json"), "w") as handle:
+        json.dump(sorted(os.environ), handle)
+    mode = "improve"
 with open(request_path, encoding="utf-8") as handle:
     request = json.load(handle)
 draft = request["starting_draft"]
@@ -160,6 +165,21 @@ class HostFailures(AgentCase):
                       {"argv": ["x", "{repo}"]}, {"argv": ["x", '{"inline": 1}']}):
             result = self.run_design({"design": {"author": "agent", "agent": agent}})
             self.assertEqual((result.outcome, result.retryable), (StepOutcome.FAILED, False))
+
+    def test_the_host_gets_the_allowlisted_agent_environment(self):
+        # As the developer and the reviewer: a Factory secret is not the host's to read,
+        # and only factory.agents.env_passthrough adds to the allowlist.
+        from unittest import mock
+        planted = {"WGF_TEST_SECRET_TOKEN": "s3cret", "GH_TOKEN": "gh", "HOST_CRED": "c"}
+        with mock.patch.dict(os.environ, planted):
+            config = self.config("env")
+            config["agents"] = {"env_passthrough": ["HOST_CRED"]}
+            result = self.run_design(config)
+        self.assertEqual(result.outcome, StepOutcome.SUCCESS, result.error)
+        with open(os.path.join(self.scratch, "run", "design", "env.json")) as handle:
+            names = set(json.load(handle))
+        self.assertIn("HOST_CRED", names)
+        self.assertFalse({"WGF_TEST_SECRET_TOKEN", "GH_TOKEN"} & names)
 
     def test_the_default_author_is_still_the_archetype(self):
         result = self.run_design({})

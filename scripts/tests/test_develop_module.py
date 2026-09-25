@@ -695,25 +695,30 @@ class Command(DevelopCase):
 
     def test_the_brief_says_which_route_brought_the_work_back_and_what_it_has_left(self):
         ctx = context(self.command_config(), key="run-1:develop:3", visit=3)
-        ctx.entered_by = "fail"
-        ctx.visit_budget = {"step": {"limit": 7, "used": 3, "remaining": 4},
-                            "route": {"route": "fail", "limit": 2, "used": 2, "remaining": 0}}
+        ctx.entered_by = "verify.fail"  # as the engine keys it: <source>.<route>
+        ctx.visit_budget = {"step": {"limit": 9, "used": 3, "remaining": 6},
+                            "route": {"route": "verify.fail", "limit_key": "fail",
+                                      "limit": 2, "used": 2, "remaining": 0}}
         result = step_with(FakeRunner(on_develop=write_game)).execute(inputs_for(), ctx)
         self.assertEqual(result.outcome, StepOutcome.SUCCESS, result.error)
         with open(os.path.join(self.repo, briefs.BRIEF_DIR, "brief.json")) as handle:
             loop = json.load(handle)["loop"]
-        self.assertEqual(loop["entered_by"], "fail")
+        self.assertEqual(loop["entered_by"], "verify.fail")
         self.assertEqual(loop["route_budget"]["remaining"], 0)
         with open(os.path.join(self.repo, briefs.BRIEF_DIR, "brief.md")) as handle:
             text = handle.read()
         self.assertIn("## Why this is another iteration", text)
-        self.assertIn("through `fail`: pass 2 of 2", text)
-        # A first visit says nothing of loops.
-        first = context(self.command_config(), key="run-2:develop:1")
-        first.entered_by = None
-        step_with(FakeRunner(on_develop=write_game)).execute(inputs_for(), first)
-        with open(os.path.join(self.repo, briefs.BRIEF_DIR, "brief.json")) as handle:
-            self.assertIsNone(json.load(handle)["loop"])
+        self.assertIn("through `verify.fail`: pass 2 of 2", text)
+        # A first visit says nothing of loops: entered by no route, or by ordinary
+        # progression from the step before (and, in an older run, a bare `success`).
+        for number, entered_by in enumerate((None, "assets.success", "success"), 2):
+            first = context(self.command_config(), key=f"run-{number}:develop:1")
+            first.entered_by = entered_by
+            step_with(FakeRunner(on_develop=write_game)).execute(inputs_for(), first)
+            with open(os.path.join(self.repo, briefs.BRIEF_DIR, "brief.json")) as handle:
+                self.assertIsNone(json.load(handle)["loop"], entered_by)
+            with open(os.path.join(self.repo, briefs.BRIEF_DIR, "brief.md")) as handle:
+                self.assertNotIn("another iteration", handle.read(), entered_by)
 
     def test_a_failing_developer_is_retryable(self):
         runner = FakeRunner(develop_exit=2)
@@ -1137,6 +1142,12 @@ class ThroughTheEngine(unittest.TestCase):
                          ["asset-manifest@v1", "game-design@v1", "scaffold-record@v1",
                           "tech-plan@v1", "title-strategy@v1"])
         self.assertEqual(len(runner.developer_calls()), 1)
+        # The engine entered develop from assets (`assets.success`): a first visit, whose
+        # brief says nothing of loops.
+        brief_path = os.path.join(self.scratch, "checkouts", TITLE, briefs.BRIEF_DIR,
+                                  "brief.json")
+        with open(brief_path, encoding="utf-8") as handle:
+            self.assertIsNone(json.load(handle)["loop"])
 
     def test_the_module_registers_by_config(self):
         registry = StepRegistry().load_modules(["wgf_develop"])

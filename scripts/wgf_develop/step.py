@@ -87,12 +87,14 @@ def _read_json(path):
 
 
 def _loop(context):
-    """How the run came back into develop, from the engine's context: the route
-    (`context.entered_by`) and what that route, and develop itself, have left of their visit
-    limits (`context.visit_budget`). None on a first visit, or a context that says nothing."""
+    """How the run came back into develop, from the engine's context: the entry
+    (`context.entered_by`, `<source>.<route>` such as `verify.fail`) and what the loop, and
+    develop itself, have left of their visit limits (`context.visit_budget`). None on a
+    first visit - entered by ordinary progression (`<step>.success`, or a bare `success` in
+    a run recorded before entries named their source) - or a context that says nothing."""
     route = getattr(context, "entered_by", None)
     budget = getattr(context, "visit_budget", None) or {}
-    if not route or route == "success":
+    if not route or route.rpartition(".")[2] == "success":
         return None
     return {"entered_by": route, "route_budget": budget.get("route"),
             "step_budget": budget.get("step")}

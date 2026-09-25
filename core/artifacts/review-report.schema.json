@@ -8,9 +8,11 @@
     "id": "review-report",
     "kind": "artifact",
     "format": "json",
+    "version": "1.0.0",
     "producer": "title:prototype",
     "consumers": ["title:prototype", "title:prototype-review", "release:draft"],
-    "repo_path": "workspace/titles/<title-id>/review-report.json"
+    "repo_path": "workspace/titles/<title-id>/review-report.json",
+    "run_path": "<storage>/workflows/<run-id>/artifacts/review-report/v<n>.json"
   },
 
   "type": "object",

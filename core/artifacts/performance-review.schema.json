@@ -8,6 +8,7 @@
     "id": "performance-review",
     "kind": "artifact",
     "format": "json",
+    "version": "1.0.0",
     "producer": "title:live",
     "consumers": ["title:live", "title:production", "portfolio:market-scan"],
     "repo_path": "workspace/titles/<title-id>/reviews/<review-id>.json",

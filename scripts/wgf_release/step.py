@@ -32,10 +32,10 @@ import json
 import os
 import re
 
-from wgflib import agentenv
+from wgflib import agentenv, provenance
 from wgflib import template_contract as contract
-from wgflib.hashing import content_hash
 from wgflib.workflow import ArtifactOutput, StepOutcome, StepResult, WorkflowStep
+from wgflib.workflow.contracts import ArtifactContracts
 from wgflib.yamllite import YamlError, load_file
 
 from wgf_verification.checks.platform import same_commit
@@ -45,11 +45,10 @@ from .lineage import (BLOCKED, FAILED, Refusal, checkout_lineage, commit_lineage
                       evidence_refusals, review_status)
 from .package import RULES, audit_package, file_sha256
 from .runner import ReleaseRunner, describe
-from .schema import SchemaValidator
 
 __all__ = ["ReleaseStep", "SCHEMA_VERSION", "ROLE", "bundle_digest"]
 
-SCHEMA_VERSION = "1.2.0"
+SCHEMA_VERSION = provenance.version_of("release-manifest")
 ROLE = "release"
 READABLE_MAJOR = "1"
 RELEASE_ID = re.compile(r"^r([0-9]+)$")
@@ -86,6 +85,17 @@ def bundle_digest(root, relative):
 
 def _slug(text):
     return re.sub(r"[^a-z0-9]+", "-", str(text or "").lower()).strip("-") or "untitled"
+
+
+_CONTRACTS = []
+
+
+def _contracts():
+    """The engine's artifact contracts (wgflib/workflow/contracts.py), loaded once: the full
+    schema through wgflib.jsonschema_lite, plus provenance identity, version and hash."""
+    if not _CONTRACTS:
+        _CONTRACTS.append(ArtifactContracts())
+    return _CONTRACTS[0]
 
 
 def _read_json(path):
@@ -371,7 +381,9 @@ class ReleaseStep(WorkflowStep):
             refusals.append(Refusal(FAILED, "package-missing",
                                     "no package for target platform(s): " + ", ".join(missing)))
 
-        problems = SchemaValidator().validate(manifest, "release-manifest")
+        # The full contract: the whole schema, the provenance identity, the contract's major
+        # version and the content hash - the same check the engine applies to the draft.
+        problems = _contracts().problems("release-manifest", manifest)
         if manifest.get("release_id") != release_id:
             problems.append(f"$.release_id is {manifest.get('release_id')!r}, not {release_id}")
         if not same_commit(str(manifest.get("commit_sha") or ""), head):
@@ -383,10 +395,6 @@ class ReleaseStep(WorkflowStep):
             if recorded.get(package["filename"]) != package["checksum"]:
                 problems.append(f"$.packages: {package['filename']} checksum "
                                 f"{recorded.get(package['filename'])} is not the file's")
-        provenance = manifest.get("provenance") or {}
-        if isinstance(provenance, dict) and provenance.get("content_hash") \
-                and provenance["content_hash"] != content_hash(manifest):
-            problems.append("$.provenance.content_hash does not reproduce")
         for problem in problems:
             refusals.append(Refusal(FAILED, "invalid-manifest",
                                     f"release/{release_id}/manifest.json: {problem}"))
@@ -476,19 +484,16 @@ class ReleaseStep(WorkflowStep):
         }.items() if v is not None}
 
         artifact = {
-            "provenance": {
-                "artifact_id": f"wgf:release-manifest:{_slug(title_id)}:"
-                               f"{produced_at[:10].replace('-', '')}-"
-                               f"{min(int(RELEASE_ID.match(release_id).group(1)), 99):02d}",
-                "artifact_type": "release-manifest",
-                "schema_version": SCHEMA_VERSION,
-                "title_id": title_id,
-                "produced_by": {"role": ROLE, "actor": "automation"},
-                "produced_at": produced_at,
-                "inputs": pinned,
-                "content_hash": "",
-                "status": "draft",
-            },
+            "provenance": provenance.build(
+                "release-manifest",
+                artifact_id=provenance.artifact_id(
+                    "release-manifest", _slug(title_id), produced_at,
+                    int(RELEASE_ID.match(release_id).group(1))),
+                produced_by=provenance.producer(ROLE),
+                produced_at=produced_at,
+                inputs=pinned,
+                schema_version=SCHEMA_VERSION,
+                title_id=title_id),
             "release_id": release_id,
             "title_id": title_id,
             "version": game_manifest["version"],
@@ -531,9 +536,9 @@ class ReleaseStep(WorkflowStep):
         source_hash = (game_manifest.get("provenance") or {}).get("content_hash")
         if source_hash:
             artifact["evidence"]["source_manifest_hash"] = source_hash
-        artifact["provenance"]["content_hash"] = content_hash(artifact)
+        provenance.seal(artifact)
 
-        problems = SchemaValidator().validate(artifact, "release-manifest")
+        problems = _contracts().problems("release-manifest", artifact)
         if problems:
             raise _Refused([Refusal(FAILED, "invalid-manifest",
                                     "the drafted release-manifest does not validate: " + p)

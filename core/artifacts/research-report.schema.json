@@ -8,9 +8,11 @@
     "id": "research-report",
     "kind": "artifact",
     "format": "json",
+    "version": "1.0.0",
     "producer": "portfolio:market-scan",
     "consumers": ["portfolio:scored", "title:strategy"],
     "repo_path": "workspace/research/reports/<report-id>.json",
+    "run_path": "<storage>/workflows/<run-id>/artifacts/research-report/v<n>.json",
     "required_for_gates": ["G1"]
   },
 

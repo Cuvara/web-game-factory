@@ -10,7 +10,11 @@ What it proves:
     additionalProperties, pattern (with the ECMA/Python differences), format, conditionals,
     composition, $ref across files - with a JSON pointer on every error, in a fixed order;
   * ArtifactContracts rejects wrong content, missing and malformed artifacts, hash and type
-    mismatches, and caps its diagnostics;
+    mismatches, a schema_version of another major than x-wgf.version, and caps its
+    diagnostics;
+  * every schema declares x-wgf.version, the shipped workflows agree with x-wgf producer and
+    consumers (the check-integrity.py rule), and wgflib/provenance.py builds valid
+    provenance at the schema's version for every emitting module;
   * check_lineage catches an artifact that pins something other than what was consumed;
   * every artifact a --mock run produces is schema-valid and its lineage closes;
   * where npx and ajv are available, the validator agrees with ajv on a corpus of valid and
@@ -24,6 +28,7 @@ its cache or the network. Run from the repository root:
 
 import copy
 import glob
+import importlib.util
 import json
 import math
 import os
@@ -41,7 +46,7 @@ sys.path.insert(0, SCRIPTS)
 sys.path.insert(0, HERE)
 
 from wgflib import jsonschema_lite as js  # noqa: E402
-from wgflib import paths  # noqa: E402
+from wgflib import paths, provenance  # noqa: E402
 from wgflib.hashing import content_hash  # noqa: E402
 from wgflib.workflow.api import RunRequest, WorkflowAPI  # noqa: E402
 from wgflib.workflow.config import FactoryConfig  # noqa: E402
@@ -633,6 +638,222 @@ class ContractRejections(unittest.TestCase):
             with self.subTest(artifact_type=artifact_type):
                 self.assertTrue(any("missing required" in p
                                     for p in CONTRACTS(artifact_type, {})))
+
+    def test_a_schema_version_of_another_major_is_refused(self):
+        declared = CONTRACTS.schemas["game-design"]["x-wgf"]["version"]
+        other = f"{int(declared.split('.')[0]) + 1}.0.0"
+        problems = self.rejected(
+            lambda d: d["provenance"].update(schema_version=other))
+        self.assertEqual(len(problems), 1, problems)
+        self.assertIn(f"/provenance/schema_version: {other} is major", problems[0])
+        self.assertIn(f"the contract is {declared}", problems[0])
+
+    def test_an_older_minor_of_the_same_major_is_still_readable(self):
+        # The worked example predates x-wgf.version and was written as 1.0.0.
+        self.assertEqual(self.valid["provenance"]["schema_version"], "1.0.0")
+        self.assertNotEqual(CONTRACTS.schemas["game-design"]["x-wgf"]["version"], "1.0.0")
+        self.assertEqual(CONTRACTS("game-design", self.valid), [])
+        for version in ("1.0.7", "1.99.0"):
+            broken = copy.deepcopy(self.valid)
+            broken["provenance"]["schema_version"] = version
+            rehash(broken)
+            self.assertEqual(CONTRACTS("game-design", broken), [], version)
+
+    def test_a_schema_without_a_version_is_not_version_checked(self):
+        schema = copy.deepcopy(CONTRACTS.schemas["game-design"])
+        del schema["x-wgf"]["version"]
+        contracts = ArtifactContracts(schemas={"game-design": schema},
+                                      registry=CONTRACTS.registry)
+        odd = copy.deepcopy(self.valid)
+        odd["provenance"]["schema_version"] = "7.0.0"
+        rehash(odd)
+        self.assertEqual(contracts("game-design", odd), [])
+
+
+# -- 4b. x-wgf: versions, and agreement with the workflows -------------------------------
+
+def _integrity_module():
+    spec = importlib.util.spec_from_file_location(
+        "check_integrity", os.path.join(SCRIPTS, "check-integrity.py"))
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+class ContractMetadata(unittest.TestCase):
+    """x-wgf is data other things are checked against, so it is checked too: every schema
+    declares a semver version, and every workflow's steps agree with producer/consumers."""
+
+    def setUp(self):
+        self.integrity = _integrity_module()
+        cwd = os.getcwd()
+        os.chdir(ROOT)  # check-integrity.py reads core/ relative to the repository root
+        self.addCleanup(os.chdir, cwd)
+
+    def test_every_top_level_schema_declares_a_semver_version(self):
+        for artifact_type, schema in CONTRACTS.schemas.items():
+            with self.subTest(artifact_type=artifact_type):
+                self.assertRegex(schema["x-wgf"].get("version") or "", r"^\d+\.\d+\.\d+$")
+
+    def test_the_shipped_workflows_agree_with_x_wgf(self):
+        from wgflib.workflow.definition import load_definition
+        meta = self.integrity.load_contract_meta()
+        for path in sorted(glob.glob(os.path.join("core", "workflows", "*.workflow.yaml"))):
+            with self.subTest(workflow=path):
+                self.assertEqual(self.integrity.check_contract_roles(
+                    path, load_definition(path), meta), [])
+
+    def test_check_integrity_passes_on_the_repository(self):
+        # Never fetches: an uncached template pin is a note, not a failure.
+        result = subprocess.run([sys.executable, os.path.join("scripts", "check-integrity.py")],
+                                capture_output=True, text=True, timeout=300)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("referential integrity: OK", result.stdout)
+
+    def workflow(self, *steps):
+        from types import SimpleNamespace
+        return SimpleNamespace(steps=[SimpleNamespace(
+            id=f"s{index}", stage=stage, inputs=list(inputs), outputs=list(outputs))
+            for index, (stage, inputs, outputs) in enumerate(steps)])
+
+    META = {
+        "made": {"id": "made", "producer": "title:alpha", "consumers": ["title:beta"]},
+        "used": {"id": "used", "producer": "title:zero", "consumers": ["title:alpha"]},
+    }
+
+    def check(self, *steps):
+        return self.integrity.check_contract_roles("w.yaml", self.workflow(*steps),
+                                                   self.META)
+
+    def test_agreement_passes(self):
+        self.assertEqual(self.check(("title:alpha", ["used"], ["made"]),
+                                    ("title:beta", ["made"], [])), [])
+
+    def test_an_output_at_a_stage_that_is_not_its_producer_is_an_error(self):
+        problems = self.check(("title:beta", [], ["made"]))
+        self.assertEqual(len(problems), 1)
+        self.assertIn("outputs 'made' at stage 'title:beta'", problems[0])
+        self.assertIn("producer is 'title:alpha'", problems[0])
+
+    def test_an_input_at_a_stage_its_consumers_omit_is_an_error(self):
+        problems = self.check(("title:gamma", ["made", "used"], []))
+        self.assertEqual(len(problems), 2)
+        self.assertTrue(all("which its x-wgf consumers do not list" in p for p in problems))
+
+    def test_a_step_without_inputs_or_outputs_is_fine(self):
+        # A checkpoint with nothing declared, and one that consumes evidence.
+        self.assertEqual(self.check(("title:alpha", [], []),
+                                    ("title:beta", ["made"], [])), [])
+
+    def test_untyped_artifacts_and_stageless_steps_are_left_to_other_checks(self):
+        self.assertEqual(self.check(("title:alpha", ["loose"], ["other-loose"]),
+                                    (None, ["made"], ["made"])), [])
+
+    def test_the_check_is_reported_as_an_error(self):
+        del self.integrity.ERRORS[:]
+        self.check(("title:beta", [], ["made"]))
+        self.assertEqual(len(self.integrity.ERRORS), 1)
+
+    def test_prototype_review_consumes_the_verified_evidence(self):
+        # The G4 checkpoint (title:prototype-review) reads what verify produced.
+        for artifact_type in ("qa-report", "verification-report", "prototype-report"):
+            with self.subTest(artifact_type=artifact_type):
+                self.assertIn("title:prototype-review",
+                              CONTRACTS.schemas[artifact_type]["x-wgf"]["consumers"])
+
+
+# -- 4c. the provenance builder ----------------------------------------------------------
+
+class ProvenanceBuilder(unittest.TestCase):
+    def test_the_version_comes_from_the_schema(self):
+        for artifact_type, schema in CONTRACTS.schemas.items():
+            with self.subTest(artifact_type=artifact_type):
+                self.assertEqual(provenance.version_of(artifact_type),
+                                 schema["x-wgf"]["version"])
+        with self.assertRaises(provenance.ProvenanceError):
+            provenance.version_of("no-such-artifact")
+
+    def test_a_built_artifact_passes_its_contract(self):
+        design = neon("game-design")
+        body = {k: v for k, v in design.items() if k != "provenance"}
+        now = "2026-09-25T10:00:00Z"
+        artifact = {"provenance": provenance.build(
+            "game-design",
+            artifact_id=provenance.artifact_id("game-design", "neon-drift", now, 3),
+            produced_by=provenance.producer("game-designer"),
+            produced_at=now,
+            inputs=design["provenance"]["inputs"],
+            opportunity_id=design["provenance"].get("opportunity_id"),
+            title_id="neon-drift")}
+        artifact.update(body)
+        provenance.seal(artifact)
+        self.assertEqual(CONTRACTS("game-design", artifact), [])
+        record = artifact["provenance"]
+        self.assertEqual(record["artifact_id"], "wgf:game-design:neon-drift:20260925-03")
+        self.assertEqual(record["schema_version"], provenance.version_of("game-design"))
+        self.assertEqual(record["produced_by"], {"role": "game-designer",
+                                                 "actor": "automation"})
+        self.assertEqual(record["status"], "draft")
+        self.assertEqual(record["content_hash"], content_hash(artifact))
+        self.assertEqual(list(record)[:3], ["artifact_id", "artifact_type", "schema_version"])
+
+    def test_optional_fields_and_explicit_versions(self):
+        record = provenance.build("qa-report", artifact_id="wgf:qa-report:x:20260101-01",
+                                  produced_by=provenance.producer("qa"),
+                                  produced_at="2026-01-01T00:00:00Z", schema_version="1.0.0")
+        self.assertEqual(record["schema_version"], "1.0.0")
+        self.assertNotIn("title_id", record)
+        self.assertNotIn("opportunity_id", record)
+        self.assertEqual(record["inputs"], [])
+        with self.assertRaises(provenance.ProvenanceError):
+            provenance.build("qa-report", artifact_id="x", produced_by={"role": "qa"},
+                             produced_at="t", schema_version="one")
+
+    def test_the_sequence_is_capped_at_99(self):
+        self.assertEqual(provenance.artifact_id("tech-plan", "t", "2026-01-02T00:00:00Z", 140),
+                         "wgf:tech-plan:t:20260102-99")
+
+    def test_pins_skip_what_cannot_be_pinned(self):
+        from types import SimpleNamespace
+        design = neon("game-design")
+        contents = {"game-design": design, "loose": {"a": 1}, "scaffold-record": design}
+        refs = {"game-design": SimpleNamespace(content_hash="sha256:" + "1" * 64),
+                "loose": SimpleNamespace(content_hash="sha256:" + "2" * 64),
+                "scaffold-record": SimpleNamespace(content_hash=None),
+                "tech-plan": None}
+        inputs = SimpleNamespace(refs=refs, load=contents.get)
+        self.assertEqual(provenance.pin_inputs(inputs), [{
+            "artifact_id": design["provenance"]["artifact_id"],
+            "artifact_type": "game-design", "content_hash": "sha256:" + "1" * 64}])
+        self.assertEqual(provenance.pin_inputs(inputs, types=("loose",)), [])
+
+    def test_every_emitting_module_writes_its_schema_version(self):
+        # Before x-wgf.version each module hard-coded its own; they now read the schema.
+        import wgf_assets.step
+        import wgf_design.step
+        import wgf_develop.report
+        import wgf_init.step
+        import wgf_release.step
+        import wgf_review.report
+        import wgf_sdk.integration
+        import wgf_sdk.step
+        import wgf_strategy.step
+        import wgf_techplan.step
+        import wgf_verification.report
+        for constant, artifact_type in (
+                (wgf_assets.step.MANIFEST_SCHEMA_VERSION, "asset-manifest"),
+                (wgf_design.step.SCHEMA_VERSION, "game-design"),
+                (wgf_develop.report.SCHEMA_VERSION, "prototype-report"),
+                (wgf_init.step.SCHEMA_VERSION, "scaffold-record"),
+                (wgf_release.step.SCHEMA_VERSION, "release-manifest"),
+                (wgf_review.report.SCHEMA_VERSION, "review-report"),
+                (wgf_sdk.integration.SCHEMA_VERSION, "sdk-report"),
+                (wgf_sdk.step.SCHEMA_VERSION, "sdk-report"),
+                (wgf_strategy.step.SCHEMA_VERSION, "title-strategy"),
+                (wgf_techplan.step.SCHEMA_VERSION, "tech-plan"),
+                (wgf_verification.report.SCHEMA_VERSION, "verification-report")):
+            with self.subTest(artifact_type=artifact_type):
+                self.assertEqual(constant, provenance.version_of(artifact_type))
 
 
 # -- 5. lineage --------------------------------------------------------------------------

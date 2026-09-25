@@ -8,9 +8,11 @@
     "id": "scaffold-record",
     "kind": "artifact",
     "format": "json",
+    "version": "1.1.0",
     "producer": "title:scaffolding",
-    "consumers": ["title:prototype", "title:production", "release:draft"],
-    "repo_path": "workspace/titles/<title-id>/scaffold-record.json"
+    "consumers": ["title:prototype", "title:production", "release:draft", "release:qa"],
+    "repo_path": "workspace/titles/<title-id>/scaffold-record.json",
+    "run_path": "<storage>/workflows/<run-id>/artifacts/scaffold-record/v<n>.json"
   },
 
   "type": "object",

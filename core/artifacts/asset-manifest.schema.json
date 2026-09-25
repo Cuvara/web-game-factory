@@ -8,10 +8,12 @@
     "id": "asset-manifest",
     "kind": "artifact",
     "format": "json",
-    "producer": "title:design",
-    "updated_by": ["title:tech-plan", "title:prototype", "title:production"],
+    "version": "1.1.0",
+    "producer": "title:prototype",
+    "updated_by": ["title:design", "title:tech-plan", "title:production"],
     "consumers": ["title:tech-plan", "title:prototype", "title:production", "release:qa", "release:draft"],
     "repo_path": "workspace/titles/<title-id>/asset-manifest.json",
+    "run_path": "<storage>/workflows/<run-id>/artifacts/asset-manifest/v<n>.json",
     "required_for_gates": ["G3"]
   },
 

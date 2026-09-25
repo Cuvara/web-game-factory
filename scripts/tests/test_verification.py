@@ -501,6 +501,40 @@ class Gameplay(VerificationCase):
         self.assertIn("recorded session not used", evidence)
         self.assertIn("not the commit under test", evidence)
 
+    def test_a_session_that_breaks_its_schema_is_not_used(self):
+        # Each passed the hand-written structural rules this module used to apply; the
+        # schema (validated by wgflib.jsonschema_lite) refuses them.
+        session = fixture("gameplay-session.json")
+        for changes, where in (
+                ({"recorded_at": "yesterday"}, "/recorded_at"),
+                ({"scenarios": [dict(session["scenarios"][0], score=3)]}, "/scenarios/0"),
+                ({"browsers": [{"browser": "chromium"}]}, "/browsers/0"),
+                ({"extra": True}, "/")):
+            with self.subTest(where=where):
+                self.record_session(**changes)
+                _, report, _ = self.verify()
+                self.assertEqual(report["gameplay_driver"]["id"], "repository-playwright")
+                evidence = json.dumps(self.check(report, "gameplay.game-over")["evidence"])
+                self.assertIn("not a valid gameplay session", evidence)
+                from wgf_verification.checks.gameplay import validate_session
+                problems = validate_session(dict(session, **changes))
+                self.assertTrue(any(p.startswith(where) for p in problems), problems)
+
+    def test_session_validation_keeps_the_rule_the_schema_cannot_state(self):
+        from wgf_verification.checks import gameplay
+        session = fixture("gameplay-session.json")
+        self.assertEqual(gameplay.validate_session(session), [])
+        # An aspect the schema's enum allows but the template contract does not know.
+        original = gameplay.ASPECTS
+        try:
+            gameplay.ASPECTS = tuple(a for a in original if a != "restart")
+            problems = gameplay.validate_session(session)
+        finally:
+            gameplay.ASPECTS = original
+        self.assertTrue(any("the template contract knows" in p for p in problems), problems)
+        self.assertTrue(gameplay.validate_session({"commit_sha": "a", "scenarios": [
+            {"aspect": "boot", "status": "PASS", "observation": ""}]}))
+
     def test_the_recorded_driver_can_be_required_and_then_blocks_without_a_session(self):
         result, report, _ = self.verify(browser="recorded")
         self.assertEqual(result.outcome, StepOutcome.BLOCKED)

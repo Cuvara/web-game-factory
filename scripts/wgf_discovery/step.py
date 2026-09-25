@@ -43,8 +43,7 @@ import json
 import os
 from datetime import datetime, timezone
 
-from wgflib import paths
-from wgflib.hashing import content_hash
+from wgflib import paths, provenance
 from wgflib.workflow import ArtifactOutput, StepResult, WorkflowStep
 from wgflib.workflow.model import StepOutcome
 from wgflib.yamllite import YamlError, load_file
@@ -62,7 +61,6 @@ from .evidence import (
 
 __all__ = ["ResearchStep", "DEFAULTS", "CATALOG"]
 
-SCHEMA_VERSION = "1.0.0"
 CATALOG = os.path.join(os.path.dirname(os.path.abspath(__file__)), "archetypes.yaml")
 CONTROL_PLATFORMS = ("generic-web",)
 
@@ -288,23 +286,15 @@ class ResearchStep(WorkflowStep):
 
     def _provenance(self, artifact_type, scope_slug, as_of_text, context, inputs=(),
                     opportunity_id=None):
-        provenance = {
-            "artifact_id": f"wgf:{artifact_type}:{scope_slug}:"
-                           f"{as_of_text[:10].replace('-', '')}-"
-                           f"{min(max(context.execution, 1), 99):02d}",
-            "artifact_type": artifact_type,
-            "schema_version": SCHEMA_VERSION,
-            "produced_by": {"role": self.role, "actor": "automation"},
-            "produced_at": as_of_text,
-            "inputs": list(inputs),
-            "content_hash": "",
-            "status": "draft",
-        }
-        if opportunity_id:
-            provenance["opportunity_id"] = opportunity_id
-        if context.project_id:
-            provenance["title_id"] = context.project_id
-        return provenance
+        return provenance.build(
+            artifact_type,
+            artifact_id=provenance.artifact_id(artifact_type, scope_slug, as_of_text,
+                                               max(context.execution, 1)),
+            produced_by=provenance.producer(self.role),
+            produced_at=as_of_text,
+            inputs=inputs,
+            opportunity_id=opportunity_id or None,
+            title_id=context.project_id or None)
 
     def _report(self, *, report_id, settings, scope, as_of_text, model, model_path, ttl,
                 collectors, corpus_hash, sources, profiles, claims, platforms, candidates,
@@ -372,8 +362,7 @@ class ResearchStep(WorkflowStep):
             },
             "gaps": [g.to_dict() for g in gaps],
         }
-        report["provenance"]["content_hash"] = content_hash(report)
-        return report
+        return provenance.seal(report)
 
     def _opportunity(self, chosen, report, profiles, context, as_of_text):
         archetype = chosen["_archetype"]
@@ -433,5 +422,4 @@ class ResearchStep(WorkflowStep):
             "latest_evaluation_id": None,
             "title_id": None,
         }
-        opportunity["provenance"]["content_hash"] = content_hash(opportunity)
-        return opportunity
+        return provenance.seal(opportunity)

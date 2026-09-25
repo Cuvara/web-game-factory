@@ -16,6 +16,7 @@ Template class runs the real web-game-template release scripts on a copy of the 
 checkout when WGF_TEMPLATE_RELEASE_TEST=1 and its node_modules exist.
 """
 
+import copy
 import json
 import os
 import shutil
@@ -30,13 +31,13 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.dirname(HERE))
 sys.path.insert(0, HERE)
 
-from test_release_module import (NOW, VALIDATOR, CONTRACTS, Context, GameRepository,  # noqa: E402
+from test_release_module import (NOW, CONTRACTS, Context, GameRepository,  # noqa: E402
                                  Inputs, ReleaseCase, git, pin, seal, step)
 from wgf_release import ReleaseStep  # noqa: E402
 from testenv import enabled  # noqa: E402
 from wgf_release.package import file_sha256  # noqa: E402
 from wgf_release.step import bundle_digest  # noqa: E402
-from wgflib import paths  # noqa: E402
+from wgflib import paths, provenance  # noqa: E402
 from wgflib.workflow import ArtifactOutput, StepOutcome, StepResult, WorkflowStep  # noqa: E402
 from wgflib.workflow.api import RunRequest, WorkflowAPI  # noqa: E402
 from wgflib.workflow.config import FactoryConfig  # noqa: E402
@@ -62,13 +63,21 @@ class ValidRelease(ReleaseCase):
 
     def test_the_manifest_is_schema_valid(self):
         manifest = self.release().artifacts[0].content
-        self.assertEqual(VALIDATOR.validate(manifest, "release-manifest"), [])
-        self.assertEqual(CONTRACTS("release-manifest", manifest), [])
-        # The validator is not a rubber stamp.
-        broken = dict(manifest, state="published")
-        self.assertTrue(VALIDATOR.validate(broken, "release-manifest"))
-        broken = dict(manifest, packages=[dict(manifest["packages"][0], checksum="md5:1")])
-        self.assertTrue(VALIDATOR.validate(broken, "release-manifest"))
+        self.assertEqual(CONTRACTS.problems("release-manifest", manifest), [])
+        # The full validator is not a rubber stamp: re-sealed, so only the schema can object.
+        broken = provenance.seal(dict(copy.deepcopy(manifest), state="published"))
+        self.assertTrue(any("/state" in p for p in
+                            CONTRACTS.problems("release-manifest", broken)))
+        broken = provenance.seal(dict(copy.deepcopy(manifest), packages=[
+            dict(manifest["packages"][0], checksum="md5:1")]))
+        self.assertTrue(any("/packages/0/checksum" in p for p in
+                            CONTRACTS.problems("release-manifest", broken)))
+        # ... and neither is the contract's major version.
+        broken = provenance.seal(copy.deepcopy(manifest))
+        broken["provenance"]["schema_version"] = "2.0.0"
+        provenance.seal(broken)
+        self.assertTrue(any("/provenance/schema_version" in p for p in
+                            CONTRACTS.problems("release-manifest", broken)))
 
     def test_package_hashes_are_recorded_and_match_the_files(self):
         manifest = self.release().artifacts[0].content
@@ -99,6 +108,18 @@ class InvalidRelease(ReleaseCase):
         result = self.release(flags=["no-manifest"])
         self.assertEqual(result.outcome, StepOutcome.FAILED)
         self.assertIn("invalid-manifest", self.refusal_codes(result))
+
+    def test_the_game_manifest_is_held_to_the_full_contract(self):
+        # Both pass a structural subset of the schema (a pattern-valid artifact_type, a
+        # date-time-shaped string); the full contract refuses them.
+        for flag, where in (("wrong-type", "/provenance/artifact_type"),
+                            ("impossible-date", "/provenance/produced_at")):
+            with self.subTest(flag=flag):
+                result = self.release(flags=[flag])
+                self.assertEqual(result.outcome, StepOutcome.FAILED)
+                self.assertFalse(result.retryable)
+                self.assertIn("invalid-manifest", self.refusal_codes(result))
+                self.assertIn(where, result.error)
 
 
 class Lineage(ReleaseCase):
@@ -425,7 +446,7 @@ class Template(unittest.TestCase):
         first = self.release()
         self.assertEqual(first.outcome, StepOutcome.SUCCESS, first.error)
         manifest = first.artifacts[0].content
-        self.assertEqual(VALIDATOR.validate(manifest, "release-manifest"), [])
+        self.assertEqual(CONTRACTS.problems("release-manifest", manifest), [])
         second = self.release()
         self.assertEqual(second.outcome, StepOutcome.SUCCESS, second.error)
         self.assertEqual([p["checksum"] for p in manifest["packages"]],

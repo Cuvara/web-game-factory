@@ -55,8 +55,7 @@ prototype-report's) and the commits it made between them (`sdk_commits`). Nothin
 import datetime
 import os
 
-from wgflib import agentenv, paths
-from wgflib.hashing import content_hash
+from wgflib import agentenv, paths, provenance
 from wgflib.workflow import ArtifactOutput, StepResult, WorkflowStep
 
 from wgf_verification.lineage import same_commit
@@ -69,7 +68,7 @@ from .runner import CommandRunner
 
 __all__ = ["SdkStep", "register", "SCHEMA_VERSION", "ROLE"]
 
-SCHEMA_VERSION = "1.2.0"
+SCHEMA_VERSION = provenance.version_of("sdk-report")
 ROLE = "sdk"
 OBSERVED_BY = "web-game-template SDK conformance suite (tests/sdk, fake portal SDK)"
 
@@ -398,34 +397,24 @@ class SdkStep(WorkflowStep):
 
     def _artifact(self, title_id, commit, entries, inputs, prototype, now, context,
                   integrated=None, lineage=None):
-        provenance = {
-            "artifact_id": f"wgf:sdk-report:{title_id}:{now[:10].replace('-', '')}-{min(context.execution, 99):02d}",
-            "artifact_type": "sdk-report",
-            "schema_version": SCHEMA_VERSION,
-            "title_id": title_id,
-            "produced_by": {"role": ROLE, "actor": "automation"},
-            "produced_at": now,
-            "inputs": [],
-            "content_hash": "",
-            "status": "draft",
-        }
-        for input_type, ref in sorted((getattr(inputs, "refs", None) or {}).items()):
-            source = (inputs.load(input_type) or {}).get("provenance") or {}
-            if ref is not None and ref.content_hash and source.get("artifact_id"):
-                provenance["inputs"].append({"artifact_id": source["artifact_id"],
-                                             "artifact_type": input_type,
-                                             "content_hash": ref.content_hash})
+        record = provenance.build(
+            "sdk-report",
+            artifact_id=provenance.artifact_id("sdk-report", title_id, now, context.execution),
+            produced_by=provenance.producer(ROLE),
+            produced_at=now,
+            inputs=provenance.pin_inputs(inputs),
+            schema_version=SCHEMA_VERSION,
+            title_id=title_id)
         build_ref = {"commit_sha": commit, **(lineage or {})}
         url = ((prototype or {}).get("build_ref") or {}).get("url")
         if url:
             build_ref["url"] = url
-        artifact = {"provenance": provenance, "title_id": title_id, "build_ref": build_ref,
+        artifact = {"provenance": record, "title_id": title_id, "build_ref": build_ref,
                     "platforms": entries}
         if integrated:
             artifact["sdk"] = integrated["sdk"]
             artifact["integration"] = integrated["integration"]
-        artifact["provenance"]["content_hash"] = content_hash(artifact)
-        return artifact
+        return provenance.seal(artifact)
 
 
 def register(registry):

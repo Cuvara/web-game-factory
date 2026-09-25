@@ -145,6 +145,8 @@ class DevelopStep(WorkflowStep):
                 baseline=baseline, design=design, assets=assets, scaffold=scaffold,
                 strategy=strategy, qa=qa, previous_checks=previous_checks,
                 refs=inputs.refs, skills=settings.skills, review=review,
+                mobile_test=bool((game_config.get("verification") or {}).get("mobile_test",
+                                                                            True)),
             )
             _write(brief_json, json.dumps(brief, indent=2, ensure_ascii=False) + "\n")
             _write(brief_md, briefs.render_markdown(brief))

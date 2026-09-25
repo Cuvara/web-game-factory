@@ -12,6 +12,8 @@ integration seam the SDK module wires, and the development report this module ch
 
 import json
 
+from wgf_verification.checks.gameplay import ASPECTS, required_aspects_for
+
 __all__ = ["REQUIRED_SYSTEMS", "INTEGRATION_CONTRACT", "REPORT_PATH", "BRIEF_DIR",
            "build_brief", "render_markdown", "PROTECTED_PATHS", "ENGINE_DIRS"]
 
@@ -115,7 +117,7 @@ def _pin(artifact_type, content, ref):
 
 def build_brief(*, title_id, engine, iteration, key, baseline, design, assets, scaffold,
                 strategy=None, qa=None, previous_checks=None, refs=None, skills=None,
-                review=None):
+                review=None, mobile_test=True):
     """The brief as data. `render_markdown` turns it into the document a developer reads."""
     refs = refs or {}
     tiers = (design.get("scope") or {}).get("tiers") or {}
@@ -202,6 +204,13 @@ def build_brief(*, title_id, engine, iteration, key, baseline, design, assets, s
         "previous_failures": failures,
         "skills": {k: host_skills[k] for k in ("ui", engine) if k in host_skills},
         "report_path": REPORT_PATH,
+        # What verification will demand browser evidence for (wgf_verification computes the
+        # same set from the same design): the developer is told up front, instead of
+        # learning it from a failed verification and a loop back here.
+        "verification_aspects": {
+            "vocabulary": list(ASPECTS),
+            "required": [a for a in ASPECTS if a in required_aspects_for(design, mobile_test)],
+        },
     }
 
 
@@ -357,6 +366,16 @@ def render_markdown(brief):
     add("- Extend `tests/e2e/smoke.spec.ts` (Playwright, desktop and mobile) so it plays: "
         "boot, start a run through real input, reach game over, restart - with no page "
         "errors. Keep the existing boot assertions.")
+    aspects = brief.get("verification_aspects") or {}
+    if aspects.get("required"):
+        add("- **Verification evidence.** Verification counts a gameplay aspect as proven only "
+            "by a passing Playwright test tagged with it in its title, e.g. "
+            "`test(\"a run reaches game over and restarts @game-over @restart\", ...)`. This "
+            "build must prove: " + " ".join(f"`@{a}`" for a in aspects["required"])
+            + ". (Vocabulary: " + " ".join(f"`@{a}`" for a in aspects["vocabulary"])
+            + ".) `@pause-resume`: pausing - the pause control, or the tab going hidden - "
+            "stops `#hud[data-steps]`, and resuming advances it again. `@progression`: the "
+            "difficulty or level advances in play.")
     add("- All of `pnpm typecheck`, `pnpm lint`, `pnpm test`, `pnpm build` and "
         "`pnpm test:e2e` must pass. Run `pnpm format:write` before you finish.")
     add("")

@@ -55,7 +55,11 @@ the game, regenerated on every visit and committed with the code it asked for. I
   so neither main.ts nor any game call changes. This is how development stays out of SDK
   work. A file that already exists (after the SDK step, the integrated wiring) is left as
   it is.
-- **Tests** — unit tests for the rules, and a browser smoke test that *plays*.
+- **Tests** — unit tests for the rules, and a browser smoke test that *plays*, with the
+  verification contract stated up front: every Playwright test is tagged with the gameplay
+  aspects it exercises (`@game-over @restart`), and the brief lists the aspects this build
+  must prove - computed by `wgf_verification`'s own `required_aspects_for(design)`, so the
+  brief and verification cannot disagree.
 - **Report back** — `docs/development/report.json`: the developer's own account of each
   system, each MVP item, the placements, integration status, assets, scope deltas and
   known issues.

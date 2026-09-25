@@ -293,6 +293,26 @@ class Handoff(DevelopCase):
         self.assertEqual(runner.calls, [])  # nothing ran, nothing committed
         self.assertEqual(len(self.commits()), 1)
 
+    def test_the_brief_names_what_verification_will_require(self):
+        # Each acceptance run's first verification failed "no repository-playwright evidence
+        # exercises progression / game-over / pause-resume": the brief never said how
+        # verification recognises evidence, so every run paid a verify -> develop loop.
+        from wgf_verification.checks.gameplay import required_aspects
+        from wgf_verification.session import VerificationSession
+        step_with(FakeRunner()).execute(inputs_for(), context(self.config()))
+        with open(os.path.join(self.repo, briefs.BRIEF_DIR, "brief.json")) as handle:
+            brief = json.load(handle)
+        with open(os.path.join(self.repo, briefs.BRIEF_DIR, "brief.md")) as handle:
+            text = handle.read()
+        session = VerificationSession(self.repo, None)
+        session.inputs = {"game-design": inputs_for().load("game-design")}
+        wanted = required_aspects(session)
+        self.assertEqual(set(brief["verification_aspects"]["required"]), wanted)
+        self.assertTrue({"game-over", "restart", "pause-resume"} <= wanted)
+        self.assertIn("**Verification evidence.**", text)
+        for aspect in wanted:
+            self.assertIn(f"`@{aspect}`", text)
+
     def test_resumed_with_done_checks_and_commits(self):
         step_with(FakeRunner()).execute(inputs_for(), context(self.config()))
         write_game(self.repo)

@@ -9,6 +9,20 @@ and `core/` is still the contract.
 
 ## [Unreleased]
 
+### Changed
+
+- **The develop brief carries the design's `build_spec` and the approved plan's tasks**
+  (core change: `core/workflows/new-game.workflow.yaml`). The design authored mechanics
+  with rules and tuning, the difficulty curve, reward and failure feedback, tutorial steps
+  and audio cues, and the tech plan authored tasks with acceptance criteria. None of it
+  reached the developer, whose brief held only the design's summary strings. `develop` now
+  takes `tech-plan` as an optional input. `brief.md` gains a "Build spec (MVP tier)" and a
+  "Development plan" section, and `brief.json` gains `build_spec` and `dev_plan`.
+  `sdk_touchpoints` stay with the sdk step and `assets` with the asset manifest. The
+  prototype-report now pins the tech plan it was briefed from. *Migration:* none; a run
+  without a tech plan, or a design without `build_spec`, briefs exactly as before. A run
+  resumed at develop under this definition consumes its existing tech plan.
+
 ### Added
 
 - **`core/craft/`: production craft playbooks.** What a *good* web game looks like inside

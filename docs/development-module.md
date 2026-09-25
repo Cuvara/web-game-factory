@@ -19,10 +19,11 @@ inputs ──► brief ──► developer ──► checks ──► commit ─
 
 | Input | Used for |
 |---|---|
-| `game-design` | core loop, controls, MVP / later tiers / out of scope, session targets, onboarding, screens, placements, art and audio direction |
+| `game-design` | core loop, controls, MVP / later tiers / out of scope, session targets, onboarding, screens, placements, art and audio direction; and its `build_spec`, MVP tier |
 | `asset-manifest` | the assets the MVP loads, their source, status and license |
 | `scaffold-record` | which repository to build in (`repository.name`) |
 | `title-strategy` | `prototype_must_prove` and `kill_criteria`, which the report must list — optional |
+| `tech-plan` | `dev_plan`: the prototype milestones and their tasks, with acceptance criteria and tests — optional (absent, the brief has no plan section) |
 | `qa-report` | on a verify → develop loop, the blocking defects the brief says to fix first |
 | `review-report` | on a review → develop loop, the reviewer's blockers the brief says to fix first — used only when it requests changes to the commit this visit starts from ([review-module.md](review-module.md)) |
 
@@ -42,6 +43,18 @@ the game, regenerated on every visit and committed with the code it asked for. I
   progression, UI, HUD, tutorial, game over, restart, asset loading, responsive layout,
   audio hooks — each with its acceptance line.
 - **Scope** — the MVP verbatim, the tiers that are *not now*, and what is out of scope.
+- **Build spec** — the design's `build_spec`, MVP tier only, every field: mechanics with
+  their rules and starting tuning, controls, player goals, game states, screens, HUD,
+  menus, tutorial, rewards and failure with their feedback, progression, difficulty curve
+  and assist, session beats, monetization touchpoints, audio cues, responsive behaviour and
+  visual identity. Entries of a later tier are dropped at any depth and named as left out on
+  purpose. `sdk_touchpoints` are not carried (the sdk step wires them; the developer calls
+  only the seam), nor `assets` (the asset manifest is what is delivered). The brief asks
+  for tuning as data in one module, and treats every `feedback` as MVP, not polish
+  (`core/craft/game-feel.md`). `brief.json` carries the same selection under `build_spec`.
+- **Development plan** — the approved tech plan's prototype milestones and their tasks in
+  dependency order, each with its acceptance criteria, tests and assets. Production and
+  hardening tasks are listed by id as later work. `brief.json`: `dev_plan`.
 - **The integration seam** — provided by the Factory, not written by the developer
   (`scripts/wgf_develop/seam.py`, `wgflib.gameseam`). Before the developer runs, the step
   writes `src/game/integration.ts` (the `GameIntegration` interface the game calls for

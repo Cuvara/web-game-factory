@@ -108,8 +108,9 @@ workflow:
       stage: title:prototype
       description: Build the game. Re-entered with the failing qa-report when verification fails, or with the review-report when review requests changes.
       # scaffold-record says which repository to build in; title-strategy carries the
-      # questions the prototype must answer and the kill criteria its report must list.
-      inputs: [game-design, asset-manifest, scaffold-record, title-strategy, qa-report, review-report]
+      # questions the prototype must answer and the kill criteria its report must list;
+      # tech-plan carries the approved prototype tasks and their acceptance criteria.
+      inputs: [game-design, asset-manifest, scaffold-record, title-strategy, tech-plan, qa-report, review-report]
       outputs: [prototype-report]
 
     # An independent reviewer reads the commit develop made; it may not change it. Approve

@@ -67,7 +67,7 @@ def inputs_for(types=("game-design", "asset-manifest", "scaffold-record", "title
                                schema_version=c["provenance"]["schema_version"])
             for t, c in contents.items()}
     declared = ("game-design", "asset-manifest", "scaffold-record", "title-strategy",
-                "qa-report")
+                "tech-plan", "qa-report")
     return StepInputs(refs, lambda ref: next(c for t, c in contents.items()
                                              if refs[t] is ref),
                       [t for t in declared if t not in contents])
@@ -272,6 +272,149 @@ class Inputs(DevelopCase):
         result = step_with(FakeRunner()).execute(
             inputs_for(), context(self.config(developer={"kind": "command", "argv": []})))
         self.assertEqual((result.outcome, result.retryable), (StepOutcome.FAILED, False))
+
+
+# A build_spec with an entry of every tier, nested tiers, and the two sections the brief
+# leaves out, so what the brief carries and what it drops are both visible.
+BUILD_SPEC = {
+    "mechanics": [
+        {"id": "lane-switch", "name": "Lane switching", "tier": "mvp",
+         "description": "Move one lane per input.",
+         "rules": ["Three lanes; the player starts in the middle one."],
+         "parameters": {"lanes": 3, "move_ms": 120}},
+        {"id": "dash", "name": "Dash", "tier": "post-mvp", "description": "Later.",
+         "rules": ["Not now."]},
+    ],
+    "menus": [{"id": "title-menu", "tier": "mvp", "screen": "title", "items": [
+        {"label": "Play", "action": "Enter play"},
+        {"label": "Settings", "action": "Open settings", "tier": "post-mvp"}]}],
+    "rewards": [{"id": "new-best", "tier": "mvp", "trigger": "Run ends above the best",
+                 "grants": "New best", "feedback": "Best counter bursts; a short fanfare."}],
+    "failure": {"condition": "Touch an obstacle.",
+                "feedback": "Hit-stop for 150 ms, screen shake.",
+                "retry": {"path": "Retry on the result card.", "time_to_retry_s": 1}},
+    "difficulty": {"model": "time-ramp", "curve": [
+        {"at": "0-20s", "description": "Forgiving opening.", "parameters": {"speed": 6.0}}]},
+    "sdk_touchpoints": [{"id": "sdk-init", "capability": "init", "tier": "mvp",
+                         "when": "At boot"}],
+    "assets": [{"id": "player", "type": "sprite", "tier": "mvp", "description": "Player"}],
+}
+
+DEV_PLAN = {
+    "est_days": 4,
+    "milestones": [
+        {"id": "M1", "label": "Playable core loop", "phase": "prototype", "est_days": 3,
+         "exit_criteria": ["A stranger plays a full session"]},
+        {"id": "M3", "label": "Platform hardening", "phase": "hardening", "est_days": 1,
+         "exit_criteria": ["Verify suite green"]},
+    ],
+    "tasks": [
+        {"id": "FEAT-002", "title": "Near-miss multiplier", "milestone": "M1",
+         "dependencies": ["FEAT-001"], "acceptance_criteria": ["Multiplier rises on a near miss"],
+         "tests": ["tests/unit/multiplier.test.ts"]},
+        {"id": "FEAT-001", "title": "Lane switching", "milestone": "M1",
+         "dependencies": ["CORE-001"], "acceptance_criteria": ["One input moves one lane"]},
+        {"id": "CORE-001", "title": "Boot on the template", "milestone": "M1",
+         "acceptance_criteria": ["The game boots through the seam"]},
+        {"id": "PLAT-001", "title": "Yandex", "milestone": "M3",
+         "acceptance_criteria": ["Profile assertions hold"]},
+    ],
+}
+
+
+def with_build_spec_and_plan():
+    design = fixture("game-design")
+    design["build_spec"] = BUILD_SPEC
+    design["provenance"]["content_hash"] = content_hash(design)
+    plan = fixture("tech-plan")
+    plan["dev_plan"] = DEV_PLAN
+    plan["provenance"]["content_hash"] = content_hash(plan)
+    return inputs_for(types=("game-design", "asset-manifest", "scaffold-record",
+                             "title-strategy", "tech-plan"),
+                      overrides={"game-design": design, "tech-plan": plan})
+
+
+class DesignAndPlanInTheBrief(DevelopCase):
+    """F1: the design's build_spec and the approved plan's tasks reach the developer."""
+
+    def brief(self, inputs):
+        result = step_with(FakeRunner()).execute(inputs, context(self.config()))
+        self.assertEqual(result.outcome, StepOutcome.WAITING_FOR_HUMAN, result.error)
+        with open(os.path.join(self.repo, briefs.BRIEF_DIR, "brief.json")) as handle:
+            data = json.load(handle)
+        with open(os.path.join(self.repo, briefs.BRIEF_DIR, "brief.md")) as handle:
+            return data, handle.read()
+
+    def test_the_mvp_build_spec_is_carried_whole(self):
+        data, text = self.brief(with_build_spec_and_plan())
+        sections = data["build_spec"]["sections"]
+        self.assertEqual([m["id"] for m in sections["mechanics"]], ["lane-switch"])
+        self.assertEqual(sections["mechanics"][0]["parameters"], {"lanes": 3, "move_ms": 120})
+        self.assertEqual([i["label"] for i in sections["menus"][0]["items"]], ["Play"])
+        self.assertEqual(sections["failure"], BUILD_SPEC["failure"])
+        self.assertEqual(sections["difficulty"], BUILD_SPEC["difficulty"])
+        self.assertNotIn("sdk_touchpoints", sections)
+        self.assertNotIn("assets", sections)
+        self.assertEqual(sorted(data["build_spec"]["omitted"]), ["assets", "sdk_touchpoints"])
+        self.assertIn("mechanics/dash (post-mvp)", data["build_spec"]["not_now"])
+        self.assertIn("menus/title-menu/items/Settings (post-mvp)",
+                      data["build_spec"]["not_now"])
+        for needle in ("## Build spec (MVP tier)", "Three lanes; the player starts in the middle",
+                       "move_ms: 120", "Best counter bursts; a short fanfare.",
+                       "Hit-stop for 150 ms, screen shake.", "time_to_retry_s: 1",
+                       "speed: 6.0", "one tuning module"):
+            self.assertIn(needle, text)
+        self.assertNotIn("Not now.", text)          # the post-mvp mechanic's rules
+        self.assertNotIn("At boot", text)           # sdk_touchpoints stay with the sdk step
+
+    def test_the_prototype_tasks_are_carried_in_dependency_order(self):
+        data, text = self.brief(with_build_spec_and_plan())
+        plan = data["dev_plan"]
+        self.assertEqual([t["id"] for t in plan["tasks"]], ["CORE-001", "FEAT-001", "FEAT-002"])
+        self.assertEqual([m["id"] for m in plan["milestones"]], ["M1"])
+        self.assertEqual(plan["later"], ["PLAT-001"])
+        self.assertEqual(plan["tasks"][2]["acceptance_criteria"],
+                         ["Multiplier rises on a near miss"])
+        self.assertIn("## Development plan (approved at G3)", text)
+        self.assertLess(text.index("### CORE-001"), text.index("### FEAT-001"))
+        self.assertLess(text.index("### FEAT-001"), text.index("### FEAT-002"))
+        for needle in ("Multiplier rises on a near miss", "`tests/unit/multiplier.test.ts`",
+                       "A stranger plays a full session", "Tasks of later milestones (not this build): "
+                       "`PLAT-001`"):
+            self.assertIn(needle, text)
+        self.assertNotIn("Profile assertions hold", text)
+
+    def test_the_tech_plan_is_pinned_like_every_input(self):
+        inputs = with_build_spec_and_plan()
+        data, text = self.brief(inputs)
+        pins = {p["artifact_type"]: p["content_hash"] for p in data["inputs"]}
+        self.assertEqual(pins["tech-plan"], inputs.refs["tech-plan"].content_hash)
+        self.assertIn("- Input: `tech-plan`", text)
+
+    def test_without_either_the_brief_is_unchanged(self):
+        data, text = self.brief(inputs_for())
+        self.assertIsNone(data["build_spec"])   # the fixture design predates build_spec
+        self.assertIsNone(data["dev_plan"])     # and the run holds no tech plan
+        self.assertNotIn("## Build spec", text)
+        self.assertNotIn("## Development plan", text)
+
+    def test_an_unreadable_tech_plan_major_is_refused(self):
+        plan = fixture("tech-plan")
+        plan["provenance"]["schema_version"] = "2.0.0"
+        result = step_with(FakeRunner()).execute(
+            inputs_for(types=("game-design", "asset-manifest", "scaffold-record", "tech-plan"),
+                       overrides={"tech-plan": plan}), context(self.config()))
+        self.assertEqual((result.outcome, result.retryable), (StepOutcome.FAILED, False))
+        self.assertIn("tech-plan", result.error)
+
+    def test_a_cycle_keeps_the_plan_order(self):
+        plan = {"dev_plan": {"milestones": [{"id": "M1", "phase": "prototype"}], "tasks": [
+            {"id": "A-1", "milestone": "M1", "dependencies": ["B-1"],
+             "acceptance_criteria": ["a"]},
+            {"id": "B-1", "milestone": "M1", "dependencies": ["A-1"],
+             "acceptance_criteria": ["b"]}]}}
+        self.assertEqual([t["id"] for t in briefs.select_dev_plan(plan)["tasks"]],
+                         ["A-1", "B-1"])
 
 
 class Handoff(DevelopCase):
@@ -665,10 +808,11 @@ class ThroughTheEngine(unittest.TestCase):
         self.assertEqual(report["provenance"]["produced_by"]["role"], "gameplay")
         pinned = {pin["artifact_type"] for pin in report["provenance"]["inputs"]}
         self.assertTrue({"game-design", "asset-manifest", "scaffold-record",
-                         "title-strategy"} <= pinned)
+                         "title-strategy", "tech-plan"} <= pinned)
+        # The approved tech plan is consumed (F1: its prototype tasks join the brief).
         self.assertEqual(sorted(state.steps["develop"].consumed),
                          ["asset-manifest@v1", "game-design@v1", "scaffold-record@v1",
-                          "title-strategy@v1"])
+                          "tech-plan@v1", "title-strategy@v1"])
         self.assertEqual(len(runner.developer_calls()), 1)
 
     def test_the_module_registers_by_config(self):
@@ -679,7 +823,8 @@ class ThroughTheEngine(unittest.TestCase):
         definition = load_definition("new-game")
         step = next(s for s in definition.steps if s.id == "develop")
         self.assertEqual(set(step.inputs), {"game-design", "asset-manifest", "scaffold-record",
-                                            "title-strategy", "qa-report", "review-report"})
+                                            "title-strategy", "tech-plan", "qa-report",
+                                            "review-report"})
         self.assertEqual(list(step.outputs), ["prototype-report"])
 
 

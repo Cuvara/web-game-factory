@@ -1,7 +1,9 @@
 """The `develop` step: brief -> developer -> checks -> commit -> prototype-report.
 
     inputs   game-design, asset-manifest, scaffold-record (required)
-             title-strategy (read when present), qa-report (on a verify -> develop loop),
+             title-strategy, tech-plan (read when present: the tech plan's prototype tasks
+             join the brief beside the design's build_spec),
+             qa-report (on a verify -> develop loop),
              review-report (on a review -> develop loop: its blockers lead the brief)
     output   prototype-report
     effect   one commit in the game repository per visit, keyed by the idempotency key
@@ -71,7 +73,8 @@ class DevelopStep(WorkflowStep):
         if missing:
             return StepResult.waiting_for_input(
                 f"develop needs {', '.join(missing)} in the run before it can brief a build")
-        for artifact_type in REQUIRED_INPUTS + ("title-strategy", "qa-report", "review-report"):
+        for artifact_type in REQUIRED_INPUTS + ("title-strategy", "tech-plan", "qa-report",
+                                                "review-report"):
             ref = inputs.refs.get(artifact_type)
             version = getattr(ref, "schema_version", None) or ""
             if ref is not None and version and version.split(".")[0] != SUPPORTED_MAJOR:
@@ -83,6 +86,7 @@ class DevelopStep(WorkflowStep):
         assets = inputs.load("asset-manifest")
         scaffold = inputs.load("scaffold-record")
         strategy = inputs.load("title-strategy") if "title-strategy" in inputs else None
+        tech_plan = inputs.load("tech-plan") if "tech-plan" in inputs else None
         qa = inputs.load("qa-report") if "qa-report" in inputs else None
         review = inputs.load("review-report") if "review-report" in inputs else None
         # A qa-report on the first visit is a leftover from an earlier release, not feedback
@@ -145,6 +149,7 @@ class DevelopStep(WorkflowStep):
                 baseline=baseline, design=design, assets=assets, scaffold=scaffold,
                 strategy=strategy, qa=qa, previous_checks=previous_checks,
                 refs=inputs.refs, skills=settings.skills, review=review,
+                tech_plan=tech_plan,
                 mobile_test=bool((game_config.get("verification") or {}).get("mobile_test",
                                                                             True)),
             )

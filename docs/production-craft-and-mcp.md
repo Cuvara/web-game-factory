@@ -111,7 +111,7 @@ golden runs, and several touch files the M1–M13 roadmap owns.
 
 | # | Finding | Where | Why it matters |
 |---|---|---|---|
-| F1 | The develop brief carries only summary strings from the design; `build_spec` (tuning, difficulty curve, reward and failure feedback, tutorial steps, audio cues) and the tech-plan tasks never reach the developer | `scripts/wgf_develop/brief.py` (`render_markdown`, Design section); `tech-plan` is not a develop input | The biggest single quality leak: the design authors the feel, and the developer never sees it. Collides with M1 on `brief.py` |
+| F1 | **Done.** The develop brief now carries the design's MVP-tier `build_spec` and the tech plan's prototype tasks (`tech-plan` is an optional develop input) | `scripts/wgf_develop/brief.py`, `core/workflows/new-game.workflow.yaml` | Was the biggest single quality leak. M1 still touches `brief.py` (`PROTECTED_PATHS`), so the two need to merge carefully |
 | F2 | The review brief's "Look for" list is code-only | `scripts/wgf_review/report.py` | Add the `core/craft/gameplay-review.md` lens, or point the brief at it |
 | F3 | `docs/GDD.md` is declared by `game-design.schema.json` (`rendered_to`) but never produced | a design or develop module | The developer and reviewer have no readable design in the repo |
 | F4 | No `AgentAuthor` is registered for design; the four archetypes cap design variety | `scripts/wgf_design/authors.py` | An agent author, validated by the existing buildability and consistency checks, would lift design quality without weakening them |

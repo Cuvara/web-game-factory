@@ -99,6 +99,17 @@ def fast_case(key):
             self.assertIn("not an AI developer", replay_developer.REPLAY_LABEL)
             self.assertIn("not an AI reviewer", reviewer.REVIEWER)
 
+        def test_a_golden_release_is_never_unreviewed(self):
+            # Both commits are reviewed - develop's and sdk's, the one that ships - and the
+            # release may not fall back to an unreviewed draft.
+            from wgflib.workflow.definition import load_definition
+            config = harness.build_config(game, self.workdir, harness.TEMPLATE_DIR)
+            self.assertIs(config["release"].get("allow_unreviewed", False), False)
+            self.assertEqual(harness.step_ids(), load_definition("new-game").step_ids)
+            ids = harness.step_ids()
+            self.assertEqual(ids[ids.index("sdk") + 1], "sdk-review")
+            self.assertEqual(dict(games.EXPECTED_STEPS)["sdk-review"], "SUCCESS")
+
         def test_the_installation_config_is_only_read(self):
             path = os.path.join(paths.CONFIG, "factory.yaml")
             with open(path, "rb") as handle:
@@ -263,6 +274,15 @@ def fast_case(key):
             _write(repo, "package.json", json.dumps({"dependencies": {dep: "1"}}))
             git("add", "-A")
             git("commit", "-q", "-m", "game")
+            head = git("rev-parse", "HEAD").stdout.strip()
+            blockers, _ = reviewer.review(key, repo, head)
+            self.assertEqual(blockers, [])
+
+            # sdk-review: the sdk step's integration commit on top is reviewed, and passes.
+            _write(repo, "src/platform/gameplay.ts", "export const integration = 1;\n")
+            _write(repo, "tests/unit/platform/gameplay-integration.test.ts", "export {};\n")
+            git("add", "-A")
+            git("commit", "-q", "-m", "sdk integration")
             head = git("rev-parse", "HEAD").stdout.strip()
             blockers, _ = reviewer.review(key, repo, head)
             self.assertEqual(blockers, [])

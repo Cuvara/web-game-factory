@@ -8,6 +8,10 @@
     release after verify FAIL / BLOCKED  -> refused, also through `release --run`
     release before G4 passes             -> refused through `release --run` and `--from`;
                                             a kill ends the run, a pass releases
+    release with G4 not passed/superseded -> g4-not-passed (the step's own check)
+    unreviewed (skipped / absent review) -> unreviewed, unless factory.release.allow_unreviewed
+    approval of another commit than the
+    one shipped (develop's, not sdk's)   -> review-commit-mismatch
     stale qa-report                      -> refused
     dirty checkout                       -> refused
     sourcemap / test / secret in a zip   -> refused
@@ -60,7 +64,9 @@ class ValidRelease(ReleaseCase):
         self.assertEqual(set(lineage.values()), {self.game.head})
         pinned = {p["artifact_type"] for p in manifest["provenance"]["inputs"]}
         self.assertEqual(pinned, {"qa-report", "verification-report", "sdk-report",
-                                  "prototype-report", "scaffold-record"})
+                                  "prototype-report", "scaffold-record", "review-report"})
+        self.assertEqual(manifest["evidence"]["review"]["status"], "approved")
+        self.assertEqual(manifest["evidence"]["review"]["reviewed_commit"], self.game.head)
         self.assertEqual(manifest["evidence"]["bundle_hash"],
                          bundle_digest(self.game.root, "dist"))
 
@@ -150,6 +156,87 @@ class Lineage(ReleaseCase):
         result = self.release(evidence)
         self.assertEqual(result.outcome, StepOutcome.BLOCKED)
         self.assertIn("bundle-not-verified", self.refusal_codes(result))
+
+
+class ReviewedAndPassed(ReleaseCase):
+    """Only a commit an independent review approved, behind a passed G4, is drafted."""
+
+    def test_a_skipped_review_is_refused_and_nothing_is_packaged(self):
+        result = self.release(self.game.evidence(review={"verdict": "skipped"}))
+        self.assertEqual((result.outcome, result.retryable), (StepOutcome.FAILED, False))
+        self.assertEqual(self.refusal_codes(result), {"unreviewed"})
+        self.assertEqual(self.game.pnpm_calls(), [])
+
+    def test_an_unreviewed_build_is_drafted_only_with_allow_unreviewed(self):
+        result = self.release(self.game.evidence(review={"verdict": "skipped"}),
+                              context=Context(config={"release": {"allow_unreviewed": True}}))
+        self.assertEqual(result.outcome, StepOutcome.SUCCESS, result.error)
+        review = result.artifacts[0].content["evidence"]["review"]
+        self.assertEqual(review["status"], "skipped")
+        self.assertIn("UNREVIEWED", review["note"])
+        self.assertIn("allow_unreviewed", review["note"])
+        self.assertIn("UNREVIEWED", result.message)
+
+    def test_an_approval_of_the_develop_commit_does_not_release_the_sdk_commit(self):
+        develop = self.game.head
+        sdk = self.game.commit("src/platform/gameplay.ts", "export const sdk = 1;\n")
+        evidence = self.game.evidence(commit=sdk, prototype_commit=develop, sdk_base=develop,
+                                      sdk_commits=[sdk],
+                                      review={"verdict": "approve", "reviewed_commit": develop})
+        result = self.release(evidence)
+        self.assertEqual((result.outcome, result.retryable), (StepOutcome.FAILED, False))
+        self.assertIn("review-commit-mismatch", self.refusal_codes(result))
+        self.assertEqual(self.game.pnpm_calls(), [])
+
+    def test_a_review_of_an_older_sdk_report_is_refused(self):
+        evidence = self.game.evidence()
+        older = self.game.evidence(sdk_commit=self.game.head)["sdk-report"]
+        older["platforms"][0]["status"] = "partial"
+        older = seal("sdk-report", {k: v for k, v in older.items() if k != "provenance"},
+                     schema_version="1.0.0")
+        # The approval names the shipped commit, but pins an sdk-report the run superseded.
+        evidence["review-report"] = seal(
+            "review-report", {k: v for k, v in evidence["review-report"].items()
+                              if k != "provenance"},
+            inputs=[pin(evidence["prototype-report"]), pin(older)], schema_version="1.0.0")
+        result = self.release(evidence)
+        self.assertIn("review-commit-mismatch", self.refusal_codes(result))
+        self.assertIn("older sdk-report", result.error)
+
+    def test_an_approval_with_no_reviewer_behind_it_is_refused(self):
+        # A --mock review approves with reviewer kind none; it is not a review.
+        evidence = self.game.evidence()
+        body = {k: v for k, v in evidence["review-report"].items() if k != "provenance"}
+        body["reviewer"] = {"kind": "none", "argv0": None, "exit_code": None,
+                            "status": None, "killed_pids": []}
+        evidence["review-report"] = seal(
+            "review-report", body, inputs=evidence["review-report"]["provenance"]["inputs"],
+            schema_version="1.0.0")
+        result = self.release(evidence, context=Context(
+            config={"release": {"allow_unreviewed": True}}))
+        self.assertEqual((result.outcome, result.retryable), (StepOutcome.FAILED, False))
+        self.assertIn("review-not-approved", self.refusal_codes(result))
+
+    def test_release_is_refused_until_g4_is_passed(self):
+        result = self.release(context=Context(gates_passed=()))
+        self.assertEqual(result.outcome, StepOutcome.BLOCKED)
+        self.assertEqual(self.refusal_codes(result), {"g4-not-passed"})
+        self.assertEqual(self.game.pnpm_calls(), [])
+        # Another gate passed is not G4.
+        result = self.release(context=Context(gates_passed=("G2", "G3")))
+        self.assertEqual(self.refusal_codes(result), {"g4-not-passed"})
+
+    def test_the_required_gates_are_the_workflow_s_and_cannot_be_loosened_from_config(self):
+        context = Context(gates_passed=(), config={"release": {"required_gates": []}})
+        self.assertEqual(self.refusal_codes(self.release(context=context)), {"g4-not-passed"})
+        # A workflow without a G4 checkpoint says so on its release step.
+        result = self.release(context=Context(gates_passed=()), required_gates=[])
+        self.assertEqual(result.outcome, StepOutcome.SUCCESS, result.error)
+
+    def test_malformed_required_gates_are_refused(self):
+        result = self.release(required_gates="G4")
+        self.assertEqual((result.outcome, result.retryable), (StepOutcome.FAILED, False))
+        self.assertIn("required_gates", result.error)
 
 
 class BeforeAndAfterVerify(ReleaseCase):
@@ -359,20 +446,23 @@ class ContinueIn(ReleaseCase):
                     - id: verify
                       type: test.verify
                       stage: release:qa
-                      outputs: [prototype-report, sdk-report, scaffold-record, verification-report, qa-report]
+                      outputs: [prototype-report, sdk-report, scaffold-record, verification-report, qa-report, review-report]
                       on:
                         fail: $fail
                     - id: release
                       type: release
                       stage: release:draft
-                      inputs: [qa-report, verification-report, sdk-report, prototype-report, scaffold-record]
+                      inputs: [qa-report, verification-report, sdk-report, prototype-report, scaffold-record, review-report]
                       outputs: [release-manifest]
                       with:
                         repo_dir: %s
+                        required_gates: []
                       next: $end
                 """ % json.dumps(game.root))
             if g4:
                 text = text.replace("    - id: release\n", self.G4 + "    - id: release\n", 1)
+                # With the checkpoint in the workflow, release requires G4 (its default).
+                text = text.replace("                        required_gates: []\n", "", 1)
                 text = text.replace("  start: verify\n", "  start: plan\n", 1).replace(
                     "    - id: verify\n",
                     "    - id: plan\n      type: test.plan\n      stage: title:design\n"

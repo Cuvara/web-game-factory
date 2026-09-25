@@ -83,6 +83,9 @@ def pin(artifact):
             "content_hash": artifact["provenance"]["content_hash"]}
 
 
+APPROVE = {"verdict": "approve"}
+
+
 class Inputs:
     """StepInputs over fully formed artifacts, newest per type."""
 
@@ -114,8 +117,11 @@ class Logger:
 
 
 class Context:
-    def __init__(self, config=None, run_id="run-1", visit=1):
+    # G4 passed, as the engine reports it once a person has passed the kill gate: every
+    # release in new-game happens behind it. A test of the gate itself passes others.
+    def __init__(self, config=None, run_id="run-1", visit=1, gates_passed=("G4",)):
         self.config = config or {}
+        self.gates_passed = list(gates_passed)
         self.run_id = run_id
         self.workflow_id = "new-game"
         self.current_step = "release"
@@ -207,11 +213,12 @@ class GameRepository:
     def evidence(self, *, commit=None, qa_verdict="pass", verdict="PASS",
                  evidence_status="PASS_MOCK", dirty=False, bundle_hash=None, run_id="run-1",
                  sdk_commit=None, prototype_commit=None, platforms=None, schema_version="1.1.0",
-                 drop=(), sdk_base=None, sdk_commits=None, review=None):
+                 drop=(), sdk_base=None, sdk_commits=None, review=APPROVE):
         """The artifacts a run holds after a verification of this repository.
 
         `sdk_base` (+ `sdk_commits`) makes a 1.2.0 sdk-report that integrated on that commit;
-        `review` ({verdict, reviewed_commit}) adds a review-report to the run.
+        `review` ({verdict, reviewed_commit}) is the run's newest review-report - by default
+        the sdk-review's approval of the shipped (sdk, verified) commit; None: no review.
         """
         commit = commit or self.head
         prototype = seal("prototype-report", {
@@ -291,13 +298,14 @@ class GameRepository:
                      "scaffold-record": scaffold, "verification-report": verification,
                      "qa-report": qa}
         if review is not None:
-            artifacts["review-report"] = review_report(prototype, **review)
+            artifacts["review-report"] = review_report(prototype, sdk, **review)
         return {t: a for t, a in artifacts.items() if t not in drop}
 
 
-def review_report(prototype, verdict="approve", reviewed_commit=None):
-    """A review-report of `prototype`'s commit (or of `reviewed_commit`)."""
-    commit = reviewed_commit or prototype["build_ref"]["commit_sha"]
+def review_report(prototype, sdk=None, verdict="approve", reviewed_commit=None):
+    """A review-report of the sdk-report's commit - what sdk-review reads - or, without an
+    sdk-report, of `prototype`'s; `reviewed_commit` overrides both. It pins what it read."""
+    commit = reviewed_commit or (sdk or prototype)["build_ref"]["commit_sha"]
     skipped = verdict == "skipped"
     return seal("review-report", {
         "title_id": "fixture-game", "reviewed_commit": commit, "baseline_commit": None,
@@ -310,7 +318,7 @@ def review_report(prototype, verdict="approve", reviewed_commit=None):
                      "status": None if skipped else "exited", "killed_pids": []},
         "isolation": {"checked_paths": 0, "violations": [], "intact": True, "restored": None},
         "iteration": 1, "attempt": 1, "duration_s": 0, "timed_out": False},
-        inputs=[pin(prototype)], schema_version="1.0.0")
+        inputs=[pin(a) for a in (prototype, sdk) if a is not None], schema_version="1.0.0")
 
 
 def step(**params):
@@ -483,14 +491,15 @@ class ThroughTheEngine(ReleaseCase):
                     - id: verify
                       type: test.verify
                       stage: release:qa
-                      outputs: [prototype-report, sdk-report, scaffold-record, verification-report, qa-report]
+                      outputs: [prototype-report, sdk-report, scaffold-record, verification-report, qa-report, review-report]
                     - id: release
                       type: release
                       stage: release:draft
-                      inputs: [qa-report, verification-report, sdk-report, prototype-report, scaffold-record]
+                      inputs: [qa-report, verification-report, sdk-report, prototype-report, scaffold-record, review-report]
                       outputs: [release-manifest]
                       with:
                         repo_dir: %s
+                        required_gates: []    # this workflow has no G4 checkpoint
                       next: $end
                 """ % json.dumps(self.game.root)))
         return path

@@ -13,9 +13,12 @@ evidence names follows one rule from develop to release.
     a human commit between develop's and sdk's    -> commit-lineage-mismatch (verify, release)
     an sdk commit keyed by another run            -> commit-lineage-mismatch
     sdk built on another commit than develop's     -> commit-lineage-mismatch
-    review approved another commit                 -> commit-lineage-mismatch
+    review approved another commit                 -> review-commit-mismatch
+    review approved only develop's commit, not sdk's -> review-commit-mismatch
     review requested changes                       -> review-not-approved
-    review skipped                                 -> released, carried as `skipped`
+    review skipped / absent                        -> unreviewed; released, carried as
+                                                      `skipped` / `absent`, only with
+                                                      factory.release.allow_unreviewed
     no git access                                  -> refused, never trusted
 
 The rule is docs/core-contracts.md §5. Offline; git is real, pnpm is a fake on PATH.
@@ -34,7 +37,7 @@ SCRIPTS = os.path.dirname(HERE)
 sys.path.insert(0, SCRIPTS)
 sys.path.insert(0, HERE)
 
-from test_release_module import ReleaseCase, git  # noqa: E402
+from test_release_module import Context, ReleaseCase, git  # noqa: E402
 from wgf_verification.checks.build import _upstream_commits  # noqa: E402
 from wgf_verification.lineage import SDK_KEY_TRAILER, lineage_problems  # noqa: E402
 from wgflib.hashing import content_hash  # noqa: E402
@@ -224,7 +227,8 @@ class Session:
 
 
 class CommitLineage(ReleaseCase):
-    """develop commits P; review reads P; sdk commits S on P; verify and release are of S."""
+    """develop commits P; review reads P; sdk commits S on P; sdk-review reads S; verify and
+    release are of S."""
 
     def build(self, *, intruder=False, sdk_run="run-1", review="approve", reviewed=None,
               base=None):
@@ -233,6 +237,8 @@ class CommitLineage(ReleaseCase):
             self.intruder = self.game.commit("src/game/extra.ts", "export const x = 1;\n",
                                              "fix: slipped in after review")
         self.sdk = sdk_commit(self.game.root, run_id=sdk_run)
+        if reviewed == "develop":                              # only review read P
+            reviewed = self.prototype
         review_arg = None if review is None else {"verdict": review,
                                                   "reviewed_commit": reviewed}
         return self.game.evidence(commit=self.sdk, prototype_commit=self.prototype,
@@ -255,7 +261,8 @@ class CommitLineage(ReleaseCase):
         self.assertEqual(lineage["sdk-report.base"], self.prototype)
         self.assertEqual(lineage["prototype-report"], self.prototype)
         self.assertEqual(manifest["evidence"]["review"]["status"], "approved")
-        self.assertEqual(manifest["evidence"]["review"]["reviewed_commit"], self.prototype)
+        # The approval that counts is sdk-review's, of the commit that ships.
+        self.assertEqual(manifest["evidence"]["review"]["reviewed_commit"], self.sdk)
 
     def test_an_intruding_non_sdk_commit_is_refused_by_verify_and_release(self):
         evidence = self.build(intruder=True)
@@ -301,19 +308,41 @@ class CommitLineage(ReleaseCase):
             git=GitCall(self.game.root), run_id="run-1")
         self.assertTrue(any("names no sdk_commits" in p for p in problems), problems)
 
-    def test_a_reviewer_approved_commit_other_than_the_prototype_is_refused(self):
+    def test_a_reviewer_approved_commit_other_than_the_shipped_one_is_refused(self):
         evidence = self.build(reviewed="b" * 40)
         result = self.release(evidence)
         self.assertEqual((result.outcome, result.retryable), ("FAILED", False))
-        self.assertIn("commit-lineage-mismatch", self.refusal_codes(result))
+        self.assertIn("review-commit-mismatch", self.refusal_codes(result))
         self.assertIn("review approved", result.error)
+
+    def test_an_approval_of_the_develop_commit_alone_does_not_release_the_sdk_commit(self):
+        # P0-8: review read P, sdk committed S on top, nobody read S.
+        evidence = self.build(reviewed="develop")
+        result = self.release(evidence)
+        self.assertEqual((result.outcome, result.retryable), ("FAILED", False))
+        self.assertEqual(self.refusal_codes(result), {"review-commit-mismatch"})
+        self.assertIn(self.sdk[:12], result.error)
+        self.assertEqual(self.game.pnpm_calls(), [], "nothing is packaged on refusal")
+        # Even an installation that allows unreviewed releases does not take a review of
+        # another commit for one of this commit.
+        allowed = self.release(evidence, context=Context(
+            config={"release": {"allow_unreviewed": True}}))
+        self.assertIn("review-commit-mismatch", self.refusal_codes(allowed))
 
     def test_a_review_that_requested_changes_is_refused(self):
         result = self.release(self.build(review="request-changes"))
         self.assertIn("review-not-approved", self.refusal_codes(result))
 
-    def test_a_skipped_review_is_carried_as_skipped_never_as_approved(self):
+    def test_a_skipped_review_is_refused_as_unreviewed(self):
         result = self.release(self.build(review="skipped"))
+        self.assertEqual((result.outcome, result.retryable), ("FAILED", False))
+        self.assertEqual(self.refusal_codes(result), {"unreviewed"})
+        self.assertIn("allow_unreviewed", result.error)
+        self.assertEqual(self.game.pnpm_calls(), [])
+
+    def test_a_skipped_review_is_carried_as_skipped_only_when_allowed(self):
+        result = self.release(self.build(review="skipped"), context=Context(
+            config={"release": {"allow_unreviewed": True}}))
         self.assertEqual(result.outcome, "SUCCESS", result.error)
         review = result.artifacts[0].content["evidence"]["review"]
         self.assertEqual(review["status"], "skipped")
@@ -321,10 +350,30 @@ class CommitLineage(ReleaseCase):
         self.assertIn("UNREVIEWED", result.message)
         self.assertEqual(result.artifacts[0].metadata["review"], "skipped")
 
-    def test_no_review_in_the_run_is_recorded_as_absent(self):
+    def test_no_review_in_the_run_is_refused_as_unreviewed(self):
         result = self.release(self.build(review=None))
+        self.assertEqual((result.outcome, result.retryable), ("FAILED", False))
+        self.assertEqual(self.refusal_codes(result), {"unreviewed"})
+
+    def test_no_review_in_the_run_is_recorded_as_absent_only_when_allowed(self):
+        result = self.release(self.build(review=None), context=Context(
+            config={"release": {"allow_unreviewed": True}}))
         self.assertEqual(result.outcome, "SUCCESS", result.error)
-        self.assertEqual(result.artifacts[0].content["evidence"]["review"]["status"], "absent")
+        review = result.artifacts[0].content["evidence"]["review"]
+        self.assertEqual(review["status"], "absent")
+        self.assertIn("UNREVIEWED", review["note"])
+        self.assertIn("UNREVIEWED", result.message)
+
+    def test_allow_unreviewed_must_be_a_boolean(self):
+        result = self.release(self.build(review=None), context=Context(
+            config={"release": {"allow_unreviewed": "yes"}}))
+        self.assertEqual((result.outcome, result.retryable), ("FAILED", False))
+        self.assertIn("allow_unreviewed", result.error)
+
+    def test_a_workflow_cannot_allow_an_unreviewed_release(self):
+        # The exception is the installation's (factory.release), never a step's `with:`.
+        result = self.release(self.build(review=None), allow_unreviewed=True)
+        self.assertEqual(self.refusal_codes(result), {"unreviewed"})
 
     def test_without_git_the_history_is_not_trusted(self):
         evidence = self.build()

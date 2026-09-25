@@ -35,8 +35,8 @@ from wgflib.workflow.store import RunStore  # noqa: E402
 # A mock new-game approves G2 and G3 itself and waits at G4 (prototype-review), which only a
 # person decides: its trail holds the wait and then the pass.
 NEW_GAME = ["research", "strategy", "strategy-review", "design", "tech-plan", "tech-plan-review",
-            "init", "assets", "develop", "review", "sdk", "verify", "prototype-review",
-            "prototype-review", "release"]
+            "init", "assets", "develop", "review", "sdk", "sdk-review", "verify",
+            "prototype-review", "prototype-review", "release"]
 SCHEMATIZED = {
     "research": "opportunity",
     "strategy": "title-strategy",
@@ -226,11 +226,36 @@ class FailureAndResume(CliCase):
         state = self.state()
         self.assertEqual(state["status"], "COMPLETED")
         self.assertEqual([t["step"] for t in state["trail"]][8:],
-                         ["develop", "review", "sdk", "verify", "develop", "review", "sdk",
-                          "verify", "prototype-review", "prototype-review", "release"])
+                         ["develop", "review", "sdk", "sdk-review", "verify", "develop",
+                          "review", "sdk", "sdk-review", "verify", "prototype-review",
+                          "prototype-review", "release"])
         self.assertEqual(self.artifact(state, "qa-report", 1)["verdict"], "fail")
         self.assertEqual(self.artifact(state, "qa-report", 2)["verdict"], "pass")
         self.assertEqual(self.artifact(state, "prototype-report", 2)["iteration"], 2)
+
+    def test_sdk_review_requesting_changes_loops_back_to_development(self):
+        # The sdk commit is reviewed too; a request for changes goes back to develop,
+        # never on to verify.
+        self.wgf("new-game", "--mock", "--quiet", "--mock-plan",
+                 '{"sdk-review": ["request-changes"]}', expect=3)
+        self.pass_g4()
+        state = self.state()
+        self.assertEqual(state["status"], "COMPLETED")
+        self.assertEqual([t["step"] for t in state["trail"]][8:],
+                         ["develop", "review", "sdk", "sdk-review", "develop", "review", "sdk",
+                          "sdk-review", "verify", "prototype-review", "prototype-review",
+                          "release"])
+        rejected = self.artifact(state, "review-report", 2)
+        self.assertEqual(rejected["verdict"], "request-changes")
+        # Both mock reviews approve the commit their subject names.
+        approved = self.artifact(state, "review-report", 4)
+        sdk = self.artifact(state, "sdk-report", 2)
+        self.assertEqual(approved["verdict"], "approve")
+        self.assertEqual(approved["reviewed_commit"], sdk["build_ref"]["commit_sha"])
+        develop_review = self.artifact(state, "review-report", 3)
+        prototype = self.artifact(state, "prototype-report", 2)
+        self.assertEqual(develop_review["reviewed_commit"],
+                         prototype["build_ref"]["commit_sha"])
 
     def test_human_checkpoint_waits_then_resumes(self):
         done = self.wgf("new-game", "--mock", "--hold-gates", expect=3)
@@ -409,8 +434,9 @@ class RunStatesThroughTheCli(CliCase):
         self.pass_g4(before["run_id"])
         after = self.state(before["run_id"])
         self.assertEqual(succeeded(after), sorted(succeeded(before) +
-                                                  ["develop", "review", "sdk", "verify",
-                                                   "prototype-review", "release"]))
+                                                  ["develop", "review", "sdk", "sdk-review",
+                                                   "verify", "prototype-review",
+                                                   "release"]))
 
     def test_mock_auto_approves_only_the_workflows_own_checkpoint(self):
         self.wgf("new-game", "--mock", "--quiet", expect=3)  # G4 is never auto-approved

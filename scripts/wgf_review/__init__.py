@@ -1,4 +1,4 @@
-"""The review module: an independent reviewer for every development commit.
+"""The review module: an independent reviewer for every commit that can ship.
 
 Registers the `review` step type. Declared in workspace/config/factory.yaml:
 
@@ -6,7 +6,9 @@ Registers the `review` step type. Declared in workspace/config/factory.yaml:
       steps:
         modules: [wgf_review]
 
-The step runs after `develop` has committed. It hands the reviewer the commit to review and
+The step runs after `develop` has committed and - as `sdk-review`, `with: subject:
+sdk-report` - again after `sdk` has committed its integration on top: the commit that is
+verified and shipped is reviewed too. It hands the reviewer the commit to review and
 a path - outside the game checkout - to write its verdict to, then checks two things the
 reviewer does not get to assert: that the checkout is exactly as it was before the review
 (the reviewer is read-only, and that is enforced by fingerprinting, not requested), and

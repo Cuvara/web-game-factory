@@ -1,6 +1,12 @@
 """The `review` step: fingerprint -> reviewer -> fingerprint -> verdict -> review-report.
 
-    inputs   prototype-report, scaffold-record (required); game-design (read when present)
+    inputs   prototype-report, scaffold-record (required); game-design (read when present);
+             with `subject: sdk-report`, the sdk-report too (required)
+    subject  `with: subject` names the artifact whose build_ref.commit_sha is reviewed:
+             prototype-report (the default: the commit develop made; the change is its
+             visit's baseline..commit) or sdk-report (the commit the sdk step made on top of
+             it - the one verify checks and release ships; the change is the
+             prototype-report's commit..sdk commit)
     output   review-report, on every outcome that ran a review - a failed review is evidence
     effect   none. The reviewer's only write is its verdict file, under the run directory.
 
@@ -11,9 +17,10 @@ Outcomes, per docs/workflow-module-contract.md section 7:
                         workflow routes it to develop; unrouted, it fails the run.
     FAILED final        isolation violated (checkout restored), malformed verdict, a
                         reviewer that could not start, a cancelled review, bad config, or a
-                        prototype-report for a commit that is not the checkout's HEAD
+                        subject (prototype-report / sdk-report) for a commit that is not the
+                        checkout's HEAD
     FAILED retryable    reviewer timed out, went idle, or exited non-zero
-    WAITING_FOR_INPUT   prototype-report or scaffold-record is not in the run
+    WAITING_FOR_INPUT   the subject, prototype-report or scaffold-record is not in the run
     BLOCKED             no checkout; the checkout is dirty; or a violation that could not
                         be undone - each needs a person before a review means anything
 
@@ -35,9 +42,12 @@ from .report import PROMPT, PROMPT_STDOUT, build_report, render_brief
 from .settings import Settings, SettingsError
 from .verdict import from_output, parse
 
-__all__ = ["ReviewStep", "REQUEST_CHANGES"]
+__all__ = ["ReviewStep", "REQUEST_CHANGES", "SUBJECTS"]
 
 REQUIRED_INPUTS = ("prototype-report", "scaffold-record")
+# What a review step may be pointed at (`with: subject`): an artifact whose
+# build_ref.commit_sha is a commit in the game repository. Default: prototype-report.
+SUBJECTS = ("prototype-report", "sdk-report")
 SUPPORTED_MAJOR = "1"
 REQUEST_CHANGES = "request-changes"
 DEVELOP_BRIEF = "docs/development/brief.json"
@@ -63,11 +73,18 @@ class ReviewStep(WorkflowStep):
         except SettingsError as exc:
             return StepResult.failed(str(exc), retryable=False)
 
-        missing = [t for t in REQUIRED_INPUTS if t not in inputs]
+        subject_type = (self.params or {}).get("subject") or "prototype-report"
+        if subject_type not in SUBJECTS:
+            return StepResult.failed(
+                f"review `with: subject` must be one of {', '.join(SUBJECTS)}, not "
+                f"{subject_type!r}", retryable=False)
+        required = REQUIRED_INPUTS + tuple(t for t in (subject_type,)
+                                           if t not in REQUIRED_INPUTS)
+        missing = [t for t in required if t not in inputs]
         if missing:
             return StepResult.waiting_for_input(
                 f"review needs {', '.join(missing)} in the run: there is nothing to review")
-        for artifact_type in REQUIRED_INPUTS + ("game-design",):
+        for artifact_type in required + ("game-design",):
             ref = inputs.refs.get(artifact_type)
             version = getattr(ref, "schema_version", None) or ""
             if ref is not None and version and version.split(".")[0] != SUPPORTED_MAJOR:
@@ -79,7 +96,9 @@ class ReviewStep(WorkflowStep):
         scaffold = inputs.load("scaffold-record")
         design = inputs.load("game-design") if "game-design" in inputs else None
         title_id = scaffold.get("title_id") or prototype.get("title_id")
-        subject = (prototype.get("build_ref") or {}).get("commit_sha") or ""
+        subject_artifact = inputs.load(subject_type)
+        subject = ((subject_artifact or {}).get("build_ref") or {}).get("commit_sha") or ""
+        developed = (prototype.get("build_ref") or {}).get("commit_sha") or None
         self._ctx = dict(title_id=title_id, context=context,
                          pins=self._pins(inputs), settings=settings)
 
@@ -106,8 +125,8 @@ class ReviewStep(WorkflowStep):
         head = git.head()
         if not head or head != subject:
             return StepResult.failed(
-                f"the prototype-report is for {subject[:12] or 'no commit'} but {checkout} is "
-                f"at {(head or 'no commit')[:12]}; review only what development committed",
+                f"the {subject_type} is for {subject[:12] or 'no commit'} but {checkout} is "
+                f"at {(head or 'no commit')[:12]}; review only the commit it describes",
                 retryable=False)
         dirty = git.dirty()
         if dirty:
@@ -118,7 +137,9 @@ class ReviewStep(WorkflowStep):
                 f"resume.")
 
         review_dir = os.path.join(context.run_dir, "review")
-        stem = f"{context.visit}-{context.attempt}"
+        # Keyed by step too: a workflow reviews more than one commit (review, sdk-review),
+        # and each verdict is kept beside the run.
+        stem = f"{self.id}-{context.visit}-{context.attempt}"
         verdict_path = os.path.join(review_dir, f"{stem}.verdict.json")
         brief_path = os.path.join(review_dir, f"{stem}.brief.md")
         log_path = os.path.join(review_dir, f"{stem}.log")
@@ -138,13 +159,17 @@ class ReviewStep(WorkflowStep):
                 develop_brief = json.load(handle)
         except (OSError, ValueError):
             pass
-        baseline = (develop_brief or {}).get("baseline_commit")
+        if subject_type == "sdk-report":
+            # The change under review is what sdk committed on top of development's commit.
+            baseline = developed
+        else:
+            baseline = (develop_brief or {}).get("baseline_commit")
         with open(brief_path, "w", encoding="utf-8", newline="\n") as handle:
-            handle.write(render_brief(title_id=title_id, commit=head, baseline=baseline,
-                                      design=design, prototype=prototype,
-                                      develop_brief=develop_brief, verdict_path=verdict_path,
-                                      repo=checkout,
-                                      to_stdout=settings.verdict_from == "stdout"))
+            handle.write(render_brief(
+                title_id=title_id, commit=head, baseline=baseline, design=design,
+                prototype=prototype, develop_brief=develop_brief, verdict_path=verdict_path,
+                repo=checkout, to_stdout=settings.verdict_from == "stdout",
+                sdk=subject_artifact if subject_type == "sdk-report" else None))
 
         values = {"repo": checkout, "verdict": verdict_path, "brief": brief_path,
                   "commit": head}

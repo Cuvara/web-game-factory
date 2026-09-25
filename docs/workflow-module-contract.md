@@ -158,6 +158,7 @@ reading, and `DocumentedIoContract` fails if the two disagree.
 | `develop` | `develop` | `game-design`, `asset-manifest`, `scaffold-record`, `title-strategy`, `qa-report`, `review-report` | `prototype-report` |
 | `review` | `review` | `prototype-report`, `game-design`, `scaffold-record` | `review-report` |
 | `sdk` | `sdk` | `game-design`, `scaffold-record`, `prototype-report` | `sdk-report` |
+| `sdk-review` | `review` | `sdk-report`, `prototype-report`, `game-design`, `scaffold-record` | `review-report` |
 | `verify` | `verify` | `prototype-report`, `sdk-report`, `game-design`, `scaffold-record`, `asset-manifest` | `verification-report`, `qa-report` |
 | `prototype-review` | `human-checkpoint` | `qa-report`, `verification-report`, `prototype-report`, `title-strategy`, `game-design` | — |
 | `release` | `release` | `qa-report`, `verification-report`, `sdk-report`, `prototype-report`, `scaffold-record`, `review-report` | `release-manifest` |
@@ -170,14 +171,17 @@ G4, which only a person decides (pass / iterate / kill).
 `develop` declares `qa-report` so that on a verify → develop loop it receives the failing
 report; on its first visit that input is missing, which is expected. It declares
 `review-report` for the same reason on a review → develop loop: when `review` requests
-changes to the commit develop made, the next brief leads with the reviewer's blockers
+changes to the commit develop made - or `sdk-review` to the commit sdk made on top of it,
+the one that ships - the next brief leads with the reviewer's blockers
 ([review-module.md](review-module.md)). It reads
 `scaffold-record` to find the game repository it builds in, and `title-strategy` for the
 questions and kill criteria its `prototype-report` must list. `verify` emits the
 `verification-report` — every check with its evidence — and the `qa-report` computed from it;
 see [verification-module.md](verification-module.md). `release` produces a
 `release-manifest` in state `draft` and stops: it refuses unless the newest qa-report passed
-and every report and the clean checkout name one commit, packages with the game repository's
+and every report and the clean checkout name one commit, the newest review-report approved
+exactly that commit (or the installation set `factory.release.allow_unreviewed`), and G4
+is passed; it packages with the game repository's
 own scripts, and never publishes; see [release-module.md](release-module.md). Publishing is
 behind G5 and G6.
 

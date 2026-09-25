@@ -11,7 +11,7 @@
     "version": "1.2.0",
     "producer": "title:prototype",
     "updated_by": ["title:production"],
-    "consumers": ["title:prototype-review", "release:qa", "release:validating", "release:draft"],
+    "consumers": ["title:prototype", "title:prototype-review", "release:qa", "release:validating", "release:draft"],
     "repo_path": "workspace/titles/<title-id>/sdk-report.json",
     "run_path": "<storage>/workflows/<run-id>/artifacts/sdk-report/v<n>.json"
   },

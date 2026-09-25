@@ -3,8 +3,11 @@
 `scripts/wgf_review/` registers the `review` step type. After `develop` commits a build,
 someone who did not write it reviews that commit. They **approve** it, or they **request
 changes** and name blockers. A request for changes goes back to `develop`, and the next
-brief starts with those blockers. The loop is data in `core/workflows/new-game.workflow.yaml`.
-No code decides it:
+brief starts with those blockers. The `sdk` step then commits the platform integration on
+top of the approved commit - and that sdk commit, not develop's, is what verify checks and
+release ships. So `new-game` reviews it too, with the same step type pointed at a different
+subject (`sdk-review`). The loops are data in `core/workflows/new-game.workflow.yaml`. No
+code decides them:
 
 ```yaml
 - id: review
@@ -14,19 +17,61 @@ No code decides it:
   outputs: [review-report]
   on:
     request-changes: develop
+
+- id: sdk-review
+  type: review
+  stage: title:prototype
+  inputs: [sdk-report, prototype-report, game-design, scaffold-record]
+  outputs: [review-report]
+  with:
+    subject: sdk-report
+  on:
+    request-changes: develop
 ```
 
 ```
-develop ──commit──► review ──approve──► sdk → verify → release
-   ▲                  │
-   └─request-changes──┘   (bounded by max_visits: 3 per start or resume)
+develop ──commit P──► review(P) ──approve──► sdk ──commit S──► sdk-review(S) ──approve──► verify → G4 → release(S)
+   ▲                     │                                        │
+   └──request-changes────┴──────────────request-changes───────────┘
+                             (bounded by max_visits: 3 per start or resume)
 ```
+
+### The subject: which commit is reviewed
+
+`with: subject` names the artifact whose `build_ref.commit_sha` is the commit under review:
+
+| `subject` | Commit reviewed | The change the brief shows | Also required |
+|---|---|---|---|
+| `prototype-report` (default) | develop's commit P | the development visit's `baseline_commit..P` (from the committed `docs/development/brief.json`) | - |
+| `sdk-report` | the sdk step's commit S (P itself when sdk had nothing to commit) | `P..S`, the integration sdk added; the brief says this is the commit that ships | `sdk-report` in the run |
+
+Anything else is `FAILED`, not retryable. Every other rule is the same for both subjects:
+the subject's commit must be the checkout's `HEAD` (after `sdk`, HEAD is the sdk commit),
+the tree must be clean, the reviewer is fingerprinted, and the verdict must name the commit.
+
+**Why `sdk-review` requests go to `develop`.** A blocker in the sdk commit is either in the
+game (the seam the integration calls) or in the integration the Factory generated from the
+template. The developer owns the first and can fix it; nothing can hand-edit the second,
+which sdk regenerates on every visit. Routing to `develop` re-runs the whole existing loop -
+develop (with the blockers leading its brief, since `reviewed_commit` is HEAD), review, sdk,
+sdk-review - bounded by `max_visits` like every other loop. Routing to `sdk` would re-run the
+same deterministic integration on the same commit and loop to the limit; routing to `verify`
+would carry a rejected build on. Unrouted, it would fail the run - also safe, but it would
+throw away a loop that already exists. A reviewer that never approves the integration stops
+the run at develop's visit limit.
+
+**Why a second review rather than trusting generated code.** The sdk integration is
+generated from Factory templates, and could be treated as Factory-owned and verified only by
+SDK conformance. But its commit also carries the game-specific wiring it plans from the
+design, it is the tree that ships, and the release rule is simplest when it is one sentence:
+*the newest review approved exactly the commit released*. See
+[release-module.md](release-module.md).
 
 ## Outcomes
 
 | Reviewer did | Step returns | Engine does |
 |---|---|---|
-| `approve`, checkout untouched | `SUCCESS` | continues to `sdk` |
+| `approve`, checkout untouched | `SUCCESS` | continues: `review` to `sdk`, `sdk-review` to `verify` |
 | `request-changes`, checkout untouched | `FAILED`, route `request-changes`, not retryable | routes to `develop` because the workflow says so |
 | changed anything it may only read | `FAILED` `reviewer-isolation-violation`, not retryable. The checkout is restored | run `FAILED` |
 | changed something that could not be put back | `BLOCKED` | a person looks |
@@ -34,7 +79,7 @@ develop ──commit──► review ──approve──► sdk → verify → r
 | timed out or went silent | `FAILED` `reviewer-timeout` / `reviewer-idle-timeout`, retryable. The process tree is ended | retried per policy, then run `FAILED` |
 | exited non-zero | `FAILED` `reviewer-crashed`, retryable | retried per policy |
 | could not start (bad argv) | `FAILED` `reviewer-not-started`, not retryable | run `FAILED` |
-| no reviewer configured (`kind: none`) | `SUCCESS`, verdict **`skipped`** | continues. The report and message both say the build is unreviewed |
+| no reviewer configured (`kind: none`) | `SUCCESS`, verdict **`skipped`** | continues. The report and message both say the build is unreviewed, and **release refuses it** (`unreviewed`) unless `factory.release.allow_unreviewed: true` |
 
 Every executed review emits a `review-report`, including failed ones. A rejected review is
 evidence.
@@ -49,15 +94,17 @@ request with a `loop limit` message.
 
 ## Preconditions
 
-The step refuses to review anything but exactly the commit `develop` made:
+The step refuses to review anything but exactly the commit its subject names - the commit
+`develop` made, or with `subject: sdk-report` the one `sdk` made:
 
-- `prototype-report.build_ref.commit_sha` must be the checkout's `HEAD`. If not: `FAILED`,
+- the subject's `build_ref.commit_sha` must be the checkout's `HEAD`. If not: `FAILED`,
   not retryable.
 - The checkout must be clean (`git status --porcelain --untracked-files=all`). If not:
   `BLOCKED`. There are two reasons. A review of a dirty tree is not a review of the commit.
   And the restore below is only exact when the tree equals `HEAD` beforehand.
 - The verdict and brief paths must be outside the checkout. They go under
-  `<run dir>/review/<visit>-<attempt>.{verdict.json,brief.md,log}`.
+  `<run dir>/review/<step id>-<visit>-<attempt>.{verdict.json,brief.md,log}` - one set per
+  review step, so `review` and `sdk-review` never overwrite each other's record.
 
 ## Isolation: enforced, not requested
 
@@ -228,9 +275,22 @@ all of these hold:
 Then the brief carries `review_blockers` (in `brief.json`) and a **"Fix first: blockers from
 code review"** section (in `brief.md`), and it pins the review-report as an input. An
 approval, a skipped or failed review, or a review of another commit carries nothing.
+A request from `sdk-review` qualifies the same way: its `reviewed_commit` is the sdk commit,
+which is HEAD when develop runs again, and develop builds on top of it.
 
 The next development commit is what the next review sees. Its brief lists the previous
-blockers for the reviewer to check again.
+blockers for the reviewer to check again; so does the next `sdk-review`'s.
+
+## How release consumes it
+
+Release reads the newest `review-report` - in `new-game`, `sdk-review`'s - and drafts only
+when it approves exactly the commit being released (the sdk commit, HEAD), by a reviewer
+that ran (`reviewer.kind: command`), pinning the run's newest prototype-report and
+sdk-report. An approval of develop's commit alone does not cover the sdk commit on top of
+it. `skipped` and absent reviews are refused as `unreviewed` unless the installation sets
+`factory.release.allow_unreviewed: true`. So the shipped default `reviewer.kind: none` makes
+every release refuse until a reviewer is configured: fail closed. See
+[release-module.md](release-module.md#when-it-refuses).
 
 ## Proof
 
@@ -246,7 +306,9 @@ The central test runs the whole loop:
 3. The workflow re-enters `develop`, and the brief carries the blocker.
 4. The developer fixes it.
 5. The reviewer approves.
-6. The run continues through `sdk`, `verify` and `release`.
+6. The run continues through `sdk`, `sdk-review` (the same reviewer approves the sdk
+   commit), `verify`, G4 (passed as a person) and `release`, which drafts from the
+   approved sdk commit.
 
 The other tests are the rejection paths:
 

@@ -12,8 +12,8 @@ What it does, in order:
 3. Runs the ONE shared `new-game` workflow through the real WorkflowAPI - the same
    assembly `wgf new-game` uses, without --mock, so every step is its real module:
    research -> strategy -> G2 -> design -> tech-plan -> G3 -> init -> assets -> develop ->
-   review -> sdk -> verify -> G4 -> release. The run stops WAITING at G4, which only a
-   person decides; the harness answers it `pass` (below) and resumes.
+   review -> sdk -> sdk-review -> verify -> G4 -> release. The run stops WAITING at G4,
+   which only a person decides; the harness answers it `pass` (below) and resumes.
 4. Browser-tests the resulting game on its own (browser.py), independently of the
    pipeline's own checks.
 5. Writes a summary: every step's outcome and duration, every artifact id@version with its
@@ -34,7 +34,10 @@ The overrides, and why each is legitimate:
     develop.developer            kind `command`: the REPLAY developer (replay_developer.py),
                                  which ports a known-good example game. It is not an agent.
     review.reviewer              kind `command`: the golden reviewer (reviewer.py), a
-                                 deterministic rule check. It is not an agent either.
+                                 deterministic rule check. It is not an agent either. It
+                                 reviews both commits: develop's (review) and sdk's
+                                 (sdk-review), the one release ships. release.allow_unreviewed
+                                 is never set: a golden run releases only an approved commit.
     checkpoints.auto_approve     [G2, G3]: both are reversible gates, which the engine lets
                                  an installation auto-approve. G4/G6/G7 never are.
 

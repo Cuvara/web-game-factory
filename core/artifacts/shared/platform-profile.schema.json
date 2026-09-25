@@ -81,7 +81,21 @@
         "https_only": { "type": "boolean" },
         "external_requests": { "enum": ["allowed", "restricted", "forbidden"] },
         "quality_guidelines": { "enum": ["enforced", "advisory", "none"] },
-        "no_external_links": { "type": "boolean" }
+        "no_external_links": { "type": "boolean" },
+        "game_id": {
+          "enum": ["required", "optional", "none"],
+          "description": "Whether the portal issues a per-title Game ID the build carries as game.config.yaml platforms[].game_id. required: the tech plan cannot target the platform without one, and blocks. optional: the build may take it from its environment instead. none (the meaning when absent): an entry for this platform must not carry one."
+        },
+        "game_id_pattern": {
+          "type": "string",
+          "description": "The shape of the portal's Game ID, as a regular expression the whole value must match. Checked when the tech plan takes a registration, long before a build would reject it."
+        },
+        "hosting": {
+          "type": "array",
+          "items": { "type": "string", "pattern": "^[a-z][a-z0-9-]*$" },
+          "minItems": 1,
+          "description": "Hosting modes the portal accepts, the first being its default, as game.config.yaml platforms[].hosting spells them. The tech plan writes hosting (and game_url) only for a non-default mode."
+        }
       },
       "additionalProperties": false
     },

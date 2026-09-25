@@ -121,13 +121,38 @@ no asset manifest; the lifecycle transition through `wgf-state.py` still evaluat
 No side effect outside the run: the same inputs, settings and clock give the same content
 hash.
 
+## Portal registrations
+
+Some portals issue a per-title Game ID the build must carry (`game.config.yaml`
+`platforms[].game_id`, read by the template's `platformOptions()`). It exists only once the
+title is registered on the portal, so it is instance data beside the title:
+
+```yaml
+# workspace/titles/<title-id>/portals.yaml
+gamedistribution: {game_id: 0123456789abcdef0123456789abcdef}
+gamemonetize: {game_id: my-title-0001}
+# gamedistribution: {game_id: ..., hosting: self-hosted, game_url: "https://..."}
+```
+
+The platform's profile decides (`requirements.game_id`, `game_id_pattern`, `hosting`):
+
+| Profile says | No registration | Registration |
+|---|---|---|
+| `required` (GameDistribution) | `BLOCKED`, naming the file to fill in | written into the entry, if it matches `game_id_pattern` |
+| `optional` (GameMonetize) | entry without `game_id`; the build may take it from its environment | written into the entry |
+| `none` / absent (every other portal) | — | `BLOCKED`: the template would reject it |
+
+A `hosting` other than the profile's first (default) mode is written with its `game_url`
+(https, required for `self-hosted`). init writes every one of these keys into
+`game.config.yaml` and reads them back (`docs/init-module.md`).
+
 ## Configuration
 
 `factory.techplan` in `workspace/config/factory.yaml`, every key optional:
 
 | Key | Default |
 |---|---|
-| `template_ref` | `factory.init.template` (or the basename of `template_path`) `@` `factory.init.template_ref` or `main` |
+| `template_ref` | the pin: `<repository>@<commit>` from `workspace/config/template.lock.json`. Anything else is `BLOCKED`: the plan approved at G3 names the exact revision init creates the game from |
 | `overrun_tolerance` | `overrun_tolerance` in `workspace/config/portfolio.yaml`, else 1.5 |
 | `estimates` | the table above |
 | `device_classes` | `mobile-mid` and `desktop` at 60 fps; `max_time_to_interactive_s` defaults to the design's `session.time_to_first_play_s` |

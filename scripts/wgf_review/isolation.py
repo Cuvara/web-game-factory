@@ -22,9 +22,12 @@ fingerprints everything a reviewer could change and compares:
   * everything *inside* the ignored entries that already existed (node_modules, dist), by
     lstat identity - inode, size, mtime and ctime. A write changes ctime, and ctime cannot
     be set back by an unprivileged process, so a reviewer that edits a dependency in
-    node_modules and restores its mtime is still caught. Those bytes are not kept, so such
-    a change is reported and cannot be undone (the step BLOCKS). `fingerprint_ignored:
-    false` turns this off for checkouts where the walk is too slow;
+    node_modules and restores its mtime is still caught. Except for a file with more than
+    one hard link: pnpm links node_modules files from its machine-wide content store, and
+    any other project's install linking the same package moves the shared inode's ctime
+    with no write at all - so for those, identity is inode, size and mtime. Those bytes are
+    not kept, so a change is reported and cannot be undone (the step BLOCKS).
+    `fingerprint_ignored: false` turns this off for checkouts where the walk is too slow;
   * the Factory's own guarded paths: its code (scripts/, bin/), core/ (the workflow
     definitions, the gates and the contracts) and the installation config.
 
@@ -190,9 +193,13 @@ def _walk(root, relative_to, keep, skip=_SKIP_DIRS):
 
 def _identity(info):
     """What changes when anything writes to, chmods, replaces or renames onto a file.
-    ctime is the part a writer cannot put back."""
+    ctime is the part a writer cannot put back - but a file with several hard links shares
+    its inode, and so its ctime, with every other link: in node_modules that is pnpm's
+    machine-wide store, which another project's install touches without writing a byte.
+    Such a file is judged by inode, size and mtime."""
+    shared = stat.S_ISREG(info.st_mode) and info.st_nlink > 1
     return (f"{stat.S_IFMT(info.st_mode):o}:{stat.S_IMODE(info.st_mode):o}:{info.st_ino}:"
-            f"{info.st_size}:{info.st_mtime_ns}:{info.st_ctime_ns}")
+            f"{info.st_size}:{info.st_mtime_ns}:{'shared' if shared else info.st_ctime_ns}")
 
 
 def _stat_walk(root, relative_to):

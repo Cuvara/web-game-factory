@@ -21,11 +21,13 @@ import datetime
 import os
 
 from wgflib import paths
+from wgflib import template as template_pin
 from wgflib.hashing import content_hash
 from wgflib.workflow import ArtifactOutput, StepResult, WorkflowStep
 from wgflib.yamllite import YamlError, load_file
 
 from .devplan import Estimates, build_dev_plan
+from .registration import RegistrationError, load_registrations, registered_entry
 from .selection import (DIMENSION_FOR_ENGINE, EngineError, PlatformError, pin_platforms,
                         select_engine, tightest_bundle_mb)
 
@@ -99,15 +101,18 @@ class TechPlanSettings:
         if set(build) - {"command", "output"} or not all(isinstance(v, str) for v in build.values()):
             raise SettingsError("factory.techplan.build takes command and output, both strings")
 
-        template_ref = section.get("template_ref")
-        if template_ref is None:
-            init = config.get("init") or {}
-            name = init.get("template") or os.path.basename(
-                os.path.normpath(init.get("template_path") or "web-game-template"))
-            template_ref = f"{name}@{init.get('template_ref') or 'main'}"
-        if not isinstance(template_ref, str) or "@" not in template_ref:
-            raise SettingsError("factory.techplan.template_ref must look like "
-                                "<template>@<ref>, e.g. my-org/web-game-template@main")
+        # The revision the plan is approved against at G3 is the one init creates the game
+        # from: the Factory's pin, never a branch name that moves after approval.
+        try:
+            lock = template_pin.load_lock()
+            pinned = f"{lock['repository']}@{template_pin.expected_commit(lock)}"
+        except template_pin.TemplateError as exc:
+            raise SettingsError(f"the Factory's template pin is unusable: {exc}")
+        template_ref = section.get("template_ref", pinned)
+        if template_ref != pinned:
+            raise SettingsError(f"factory.techplan.template_ref {template_ref!r} is not the "
+                                f"pinned template {pinned} "
+                                f"({paths.display(template_pin.LOCK)}); remove it")
 
         tolerance = section.get("overrun_tolerance", _portfolio_tolerance())
         if not isinstance(tolerance, (int, float)) or isinstance(tolerance, bool) or tolerance <= 0:
@@ -127,6 +132,7 @@ class TechPlanStep(WorkflowStep):
     clock = staticmethod(utc_now)
     platforms_dir = None
     asset_kinds = None
+    titles_dir = None  # where portals.yaml registrations live; a real run reads workspace/
 
     def execute(self, inputs, context):
         missing = [t for t in ("game-design", "title-strategy") if t in inputs.missing]
@@ -166,9 +172,16 @@ class TechPlanStep(WorkflowStep):
             platforms = pin_platforms(strategy, self.platforms_dir)
         except PlatformError as exc:
             return StepResult.blocked(str(exc))
+        try:
+            registrations = load_registrations(title_id, self.titles_dir)
+            entries = [registered_entry(p, registrations, title_id, self.titles_dir)
+                       for p in platforms]
+        except RegistrationError as exc:
+            return StepResult.blocked(str(exc))
 
         now = self.clock()
-        plan = self._plan(design, strategy, title_id, engine, rationale, platforms, settings)
+        plan = self._plan(design, strategy, title_id, engine, rationale, platforms, settings,
+                          entries)
         artifact = self._with_provenance(plan, inputs, title_id, now, context)
 
         total = plan["dev_plan"]["est_days"]
@@ -191,7 +204,8 @@ class TechPlanStep(WorkflowStep):
 
     # -- composition --------------------------------------------------------------------
 
-    def _plan(self, design, strategy, title_id, engine, rationale, platforms, settings):
+    def _plan(self, design, strategy, title_id, engine, rationale, platforms, settings,
+              entries=None):
         placements = (design.get("monetization") or {}).get("placements") or []
         kinds = [p.get("kind") for p in placements if isinstance(p, dict)]
         ad_kinds = [k for k in AD_KINDS if k in kinds]
@@ -210,7 +224,7 @@ class TechPlanStep(WorkflowStep):
         game_config = {
             "game": {"id": title_id, "name": _title_name(title_id), "version": "0.1.0"},
             "engine": {"type": engine},
-            "platforms": [p.entry() for p in platforms],
+            "platforms": entries or [p.entry() for p in platforms],
             "build": dict(settings.build),
             "monetization": {"ad_kinds": ad_kinds, "iap": iap},
             "verification": {"smoke_test": True, "performance_test": True, "mobile_test": True},

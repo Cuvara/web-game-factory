@@ -71,7 +71,7 @@ still alive in the work directory. `passed` is true only if every step reached i
 outcome, release drafted a manifest whose zip hashes reproduce, and the engine is the same
 everywhere. `browser_passed` is reported beside it; the CLI and the tests require both.
 
-## The template is pinned — and holds the ports
+## The template is pinned — the ports are pinned beside it
 
 A golden run creates its game from web-game-template at the one commit the Factory pins,
 `workspace/config/template.lock.json`, through `scripts/wgflib/template.py` — never at
@@ -81,19 +81,23 @@ someone moves it: adopting a newer template means running both golden runs with
 pass, and changing the lock in the same commit. The summary records `template_ref`.
 
 The Factory holds no game source, so the hand-made part of each replay lives in the template,
-beside the example it adapts, on the pinned commit:
+beside the example it adapts. The pinned **release** (v1.1.0) does not ship those ports: they
+are test fixtures, so the lock names them separately (`golden_ports`: template main
+`ea466d7`, which is v1.1.0 plus the ports), and the replay developer reads them from a
+checkout of that commit (`--ports`, `wgflib.template.golden_ports_checkout()`). The game
+repository itself is still created from the pinned release, exactly.
 
 | Template path | What |
 |---|---|
 | `examples/tower-merge-rush/wgf-golden/` | the 2D port: `src/main.ts`, `src/game/app.ts`, UI, input, the PixiJS view wrapper, `index.html`, `en`/`ru` locales, the tagged browser spec |
 | `examples/neon-drift-arena/wgf-golden/` | the 3D port: the same set for the Three.js game |
-| `examples/wgf-golden-shared/` | shared by both: the default `GameIntegration` implementation, the audio service |
+| `examples/wgf-golden-shared/` | shared by both: the audio service (its default `GameIntegration` implementation is no longer copied: the develop step provides the seam's wiring) |
 
 Each has a README saying what it is. They sit in the template's layout (`src/...` relative to
 the directory), are laid onto a game repository's root by the replay developer, and only
 typecheck there: the template's root `tsconfig.json` excludes `examples/wgf-golden-shared`,
 and its `examples/*/src` / `examples/*/tests` globs do not reach `examples/*/wgf-golden/`, so
-the template's own lint, typecheck and tests still pass. A pinned commit that does not ship
+the template's own lint, typecheck and tests still pass. A ports commit that does not ship
 them makes the replay refuse (exit 3) and the fast tests fail.
 
 The ports were adapted to template 1f5dee2 (a real GameVui adapter; `GenericWebPlatform`
@@ -146,15 +150,17 @@ ports a known-good example into the layout the brief requires:
 2. copies the portable example files **from the repository's own `examples/`** (rules or
    simulation, the engine view, input, unit tests) with import paths adapted and a
    provenance header (the mapping: `fixtures/<game>/port.json`);
-3. copies the hand-made adaptation, also **from the repository itself** — port.json's
+3. copies the hand-made adaptation **from the ports checkout** (`--ports`) — port.json's
    `overlays`, `examples/wgf-golden-shared/` then `examples/<example>/wgf-golden/`, laid onto
-   the repository root (their READMEs excepted):
-   `main.ts` on the template's unchanged boot lines, the scene calling the brief's
-   `GameIntegration` seam instead of `platform.showRewarded` / `withAdBreak`, a default seam
-   implementation, UI and pause screens, a small audio service, `en`/`ru` locales,
+   the repository root (their READMEs and the old default integration excepted): `main.ts`,
+   the scene calling the brief's `GameIntegration` seam instead of `platform.showRewarded` /
+   `withAdBreak`, UI and pause screens, a small audio service, `en`/`ru` locales,
    `index.html`, and a browser spec tagged `@boot @loading @start @input @core-loop
    @progression @game-over @restart @pause-resume @responsive`;
-4. writes `src/game/integration.ts` verbatim from the brief;
+4. moves that `main.ts` onto the seam the develop step already wrote, as the brief asks any
+   developer to: `await createGamePlatform()` for the platform, `createGameIntegration(game,
+   platform)` for the seam, no `createPlatform` (`SEAM_REWRITES`: each line must be found
+   exactly once, or the replay refuses). `src/game/integration.ts` is the develop step's;
 5. adds the engine package the example pins (`pixi.js`, or `three` + `@types/three`) and
    updates the lockfile offline;
 6. points the template smoke's `data-scene` assertion at the game's scene (the template
@@ -171,8 +177,8 @@ build, smoke — and commits.
 
 Every file written into a game carries a `GOLDEN-RUN REPLAY` header. The Factory keeps
 only data about the replay — `fixtures/<game>/port.json` (copy and replace rules, overlays,
-MVP notes, placements, known issues) — and no game source: the adaptation itself is template
-code, versioned with the template and pinned with it.
+MVP notes, placements, known issues) and the seam rewrites — and no game source: the
+adaptation itself is template code, versioned with the template and pinned in the lock.
 
 ## The golden reviewer — not an AI reviewer
 

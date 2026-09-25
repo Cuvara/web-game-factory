@@ -39,7 +39,18 @@
           "type": "string",
           "description": "owner/name for source github; the local template path, relative to the Factory root where possible, for source local."
         },
-        "commit_sha": { "type": "string" },
+        "commit_sha": {
+          "type": "string",
+          "description": "The template revision the project's tree holds: the Factory's pinned web-game-template commit."
+        },
+        "generated_from_sha": {
+          "type": "string",
+          "description": "source github: the tip of the template's default branch when GitHub generated the repository, which need not be the pinned commit."
+        },
+        "pin_commit": {
+          "type": "string",
+          "description": "source github: the local commit that brought a repository generated from another revision to commit_sha. Absent when it was generated at the pin."
+        },
         "source": {
           "enum": ["github", "local"],
           "description": "github: generated from the template repository on GitHub. local: cloned from a local checkout of the template at commit_sha, with no remote and no network - what offline and golden-regression runs use. Absent means github (records written before this field existed)."

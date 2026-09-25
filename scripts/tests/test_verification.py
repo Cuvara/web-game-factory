@@ -577,6 +577,40 @@ class Gameplay(VerificationCase):
         self.assertEqual(len(seen.aspects["restart"]), 1)
         self.assertEqual(seen.aspects["boot"], [])
 
+    def test_browser_commands_cannot_reach_a_portal(self):
+        # The acceptance run's lesson: a portal build's real SDK, loaded from its CDN during
+        # a browser suite, makes the game's own "no insecure requests" and the runtime facts
+        # measure the portal. Browser commands run behind the refusing proxy; others do not.
+        import urllib.error
+        import urllib.request
+        seen = {}
+
+        def browser(command, cwd, env):
+            seen["browser_env"] = dict(env or {})
+            opener = urllib.request.build_opener(urllib.request.ProxyHandler(
+                {"https": env["https_proxy"]} if env and "https_proxy" in env else {}))
+            try:
+                opener.open("https://game-cdn.poki.com/scripts/v2/poki-sdk.js", timeout=5)
+                seen["portal"] = "reached"
+            except urllib.error.URLError as exc:
+                seen["portal"] = str(exc.reason)
+            return ok()
+
+        def script(command, cwd, env):
+            seen["script_env"] = dict(env or {})
+            return ok()
+
+        runner = FakeRunner({"run test:verify": browser, "run lint": script})
+        session = VerificationSession(self.repo, runner)
+        session.run(session.script_command("test:verify"), "browser")
+        session.run(session.script_command("lint"))
+        self.assertIn("403", seen["portal"])
+        self.assertEqual(seen["browser_env"]["no_proxy"], "localhost,127.0.0.1,::1")
+        self.assertNotIn("https_proxy", seen["script_env"])
+        self.assertEqual(session.network_refusals[0]["refused_requests"], 1)
+        self.assertEqual(session.network_refusals[0]["targets"],
+                         ["CONNECT game-cdn.poki.com:443"])
+
     def test_required_aspects_follow_the_design(self):
         session = VerificationSession(self.repo, self.runner)
         self.assertEqual(required_aspects(session), {"boot", "loading", "core-loop", "responsive"})

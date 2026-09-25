@@ -10,6 +10,7 @@ import json
 import os
 
 from wgflib import paths
+from wgflib.netguard import RefusingProxy, sandbox_env
 from wgflib.yamllite import YamlError, load_file
 
 from .model import BLOCKED, Check, Evidence, PASS
@@ -67,6 +68,7 @@ class VerificationSession:
     def __init__(self, root, runner, *, params=None, inputs=None, config=None, logger=None):
         self.root = root
         self.runner = runner
+        self.network_refusals = []   # one wgflib.netguard summary per browser command
         self.params = dict(params or {})
         self.inputs = inputs or {}          # artifact type -> loaded content
         self.config = config or {}
@@ -210,10 +212,27 @@ class VerificationSession:
         return [manager, "exec", *command]
 
     def run(self, command, timeout_key="script", env=None):
+        """Run a command in the checkout. A browser command (the game's Playwright suites,
+        the runtime-facts run) goes through a proxy that refuses every non-local request
+        (wgflib.netguard): a portal build would otherwise load the portal's real SDK from its
+        CDN, and a verdict - "no insecure requests", time to interactive - would measure the
+        portal's CDN rather than the game. Refused requests are logged."""
         if self.logger:
             self.logger.info("verification command", command=" ".join(command))
-        return self.runner.run(command, cwd=self.root, timeout=self.timeouts[timeout_key],
-                               env=env)
+        guard = RefusingProxy().start() if timeout_key == "browser" else None
+        try:
+            return self.runner.run(command, cwd=self.root, timeout=self.timeouts[timeout_key],
+                                   env=dict(env or {}, **sandbox_env(guard.url)) if guard
+                                   else env)
+        finally:
+            if guard:
+                refused = guard.summary()
+                guard.stop()
+                self.network_refusals.append(refused)
+                if self.logger and refused["refused_requests"]:
+                    self.logger.info("network guarded", command=" ".join(command),
+                                     refused=refused["refused_requests"],
+                                     targets=refused["targets"][:5])
 
     # -- results --------------------------------------------------------------------------
 

@@ -22,6 +22,7 @@ import sys
 import tempfile
 import textwrap
 import unittest
+from unittest import mock
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 SCRIPTS = os.path.dirname(HERE)
@@ -49,6 +50,7 @@ from wgf_init import (  # noqa: E402
 )
 from wgf_init.tooling import parse_remote  # noqa: E402
 from wgflib import paths  # noqa: E402
+from wgflib import template as template_pin  # noqa: E402
 from wgflib.hashing import content_hash  # noqa: E402
 from wgflib.workflow import ArtifactOutput, StepResult, WorkflowStep  # noqa: E402
 from wgflib.workflow.api import RunRequest, WorkflowAPI  # noqa: E402
@@ -63,6 +65,9 @@ TEMPLATE = "acme/web-game-template"
 OWNER = "acme"
 REPO = "acme/neon-drift"
 NOW = "2026-09-23T10:00:00Z"
+# The template revision a fake-GitHub test is "pinned" to (workspace/config/template.lock.json
+# is patched per test; see InitCase.pin).
+FAKE_PIN = "0123456789abcdef0123456789abcdef01234567"
 
 GAME_CONFIG = textwrap.dedent("""\
     # Written by the Factory at scaffolding from tech_plan.repo_params.game_config.
@@ -107,10 +112,27 @@ def build_template_tree(root):
 
 
 class FakeGit(Git):
+    """No git at all. The fake GitHub generates at the pinned revision, so pin_tree has
+    nothing to do; GithubPin covers the real thing with real git."""
+
     def __init__(self):
         self.origins = {}
         self.pulls = []
         self.template_tree = None
+        self.pins = []
+
+    def find_commit(self, directory, trailers):
+        return None
+
+    def dirty(self, directory):
+        return False
+
+    def discard(self, directory):
+        raise AssertionError("a fake clone is never dirty")
+
+    def pin_tree(self, directory, url, commit, message, author=None):
+        self.pins.append((directory, url, commit))
+        return {"action": "generated-at-pin", "commit": None, "generated_tree": "fake"}
 
     def origin(self, directory):
         return self.origins.get(os.path.normpath(directory))
@@ -220,6 +242,20 @@ class InitCase(unittest.TestCase):
                          "populate_timeout_seconds": 4}
         self.definition = load_definition("new-game").step("init")
         self.design = load_design()
+        self.pin(FAKE_PIN)
+
+    def pin(self, commit, url=f"https://github.com/{TEMPLATE}.git"):
+        """Pin the Factory to `commit` of TEMPLATE for this test, whatever the real lock says
+        and whatever WGF_TEMPLATE_COMMIT is set to outside."""
+        lock = {"repository": TEMPLATE, "url": url, "commit": commit, "ref": "test",
+                "validated_on": "2026-09-24"}
+        patcher = mock.patch.object(template_pin, "load_lock", lambda path=None: dict(lock))
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        environment = mock.patch.dict(os.environ)
+        environment.start()
+        self.addCleanup(environment.stop)
+        os.environ.pop("WGF_TEMPLATE_COMMIT", None)
 
     @property
     def config(self):
@@ -368,7 +404,10 @@ class Idempotency(InitCase):
         self.assertEqual(len(self.github.calls_to("clone")), 1)
         self.assertEqual(first.artifacts[0].content["outcome"], "created")
         self.assertEqual(second.artifacts[0].content["outcome"], "reused")
-        self.assertNotIn("commit_sha", second.artifacts[0].content["template"])
+        # Reused or created, the project holds the pinned revision, and says so.
+        for result in (first, second):
+            self.assertEqual(result.artifacts[0].content["template"]["commit_sha"], FAKE_PIN)
+        self.assertEqual({pin[2] for pin in self.git.pins}, {FAKE_PIN})
 
     def test_a_crash_after_create_is_recovered_by_the_marker(self):
         # gh created the repository, then the process died before anything was persisted:
@@ -643,7 +682,18 @@ def tech_plan(engine="threejs"):
     return copy.deepcopy(_PLANS[engine])
 
 
-def inputs_with_plan(design, plan):
+def pinned_ref():
+    """`<repository>@<commit>` the (per-test patched) pin names: what a plan approved at G3
+    against the pinned template records as repo_params.template_ref."""
+    lock = template_pin.load_lock()
+    return f"{lock['repository']}@{template_pin.expected_commit(lock)}"
+
+
+def inputs_with_plan(design, plan, template_ref="pinned"):
+    if plan is not None:
+        plan = copy.deepcopy(plan)
+        plan["repo_params"]["template_ref"] = (pinned_ref() if template_ref == "pinned"
+                                               else template_ref)
     refs = {"game-design": ArtifactRef(
         id="game-design", type="game-design", version=1, location="x", checksum="x",
         content_hash=design["provenance"]["content_hash"])}
@@ -699,6 +749,27 @@ class GameConfigRewrite(unittest.TestCase):
         self.assertEqual(result["engine"], {"type": "threejs"})
         self.assertEqual(result["build"], {"command": "pnpm build"})
 
+    def test_portal_game_ids_reach_the_file(self):
+        # Before this, a plan's game_id was dropped on the floor: the line writer knew only
+        # id, profile and role, and a GameDistribution build then failed in the template.
+        platforms = [
+            {"id": "gamedistribution", "profile": "gamedistribution@1.0.0", "role": "required",
+             "game_id": "0123456789abcdef0123456789abcdef", "hosting": "self-hosted",
+             "game_url": "https://games.example.com/neon/?v=1"},
+            {"id": "gamemonetize", "profile": "gamemonetize@1.0.0", "role": "optional",
+             "game_id": "gm-title_0001"},
+            {"id": "y8", "profile": "y8@1.0.0", "role": "optional"},
+        ]
+        text = apply_game_config(GAME_CONFIG, dict(self.PLAN, platforms=platforms))
+        self.assertEqual(yaml_load(text)["platforms"], platforms)
+        self.assertEqual(apply_game_config(text, dict(self.PLAN, platforms=platforms)), text)
+
+    def test_a_platform_key_the_file_has_no_place_for_is_refused(self):
+        platforms = [{"id": "poki", "profile": "poki@1.0.0", "role": "required",
+                      "api_key": "secret"}]
+        with self.assertRaises(GameConfigError):
+            apply_game_config(GAME_CONFIG, dict(self.PLAN, platforms=platforms))
+
     def test_refuses_what_it_cannot_write_safely(self):
         with self.assertRaises(GameConfigError):
             apply_game_config(GAME_CONFIG, dict(self.PLAN, engine={"type": "unity"}))
@@ -726,6 +797,7 @@ class LocalCase(InitCase):
     def setUp(self):
         super().setUp()
         self.template = make_git_template(os.path.join(self.scratch, "local-template"))
+        self.pin(git(self.template, "rev-parse", "HEAD"))
         self.git = GitCli()
         self.settings = {"source": "local", "template_path": self.template,
                          "projects_dir": self.projects}
@@ -892,14 +964,74 @@ class LocalRefusals(LocalCase):
         self.assertEqual((result.outcome, result.retryable), (StepOutcome.FAILED, False))
         self.assertFalse(os.path.exists(self.local))
 
+    def test_a_plan_approved_against_another_template_revision_fails(self):
+        result = self.step().execute(
+            inputs_with_plan(self.design, self.plan,
+                             template_ref="Cuvara/web-game-template@main"),
+            Context(self.config))
+        self.assertEqual((result.outcome, result.retryable), (StepOutcome.FAILED, False))
+        self.assertIn("approved against", result.error)
+        self.assertFalse(os.path.exists(self.local))
+
+    def test_a_template_ref_other_than_the_pin_fails(self):
+        pinned = git(self.template, "rev-parse", "HEAD")
+        with open(os.path.join(self.template, "later.txt"), "w") as handle:
+            handle.write("after the pin")
+        git(self.template, "add", "later.txt")
+        git(self.template, "commit", "-q", "-m", "later")
+        self.settings["template_ref"] = "HEAD"  # the checkout moved on; the pin did not
+        result = self.execute()
+        self.assertEqual((result.outcome, result.retryable), (StepOutcome.FAILED, False))
+        self.assertIn(pinned, result.error)
+        self.assertFalse(os.path.exists(self.local))
+
+    def test_without_a_ref_the_pin_is_used_not_the_checkouts_head(self):
+        pinned = git(self.template, "rev-parse", "HEAD")
+        with open(os.path.join(self.template, "later.txt"), "w") as handle:
+            handle.write("after the pin")
+        git(self.template, "add", "later.txt")
+        git(self.template, "commit", "-q", "-m", "later")
+        record = self.execute().artifacts[0].content
+        self.assertEqual(record["template"]["commit_sha"], pinned)
+        self.assertFalse(os.path.exists(os.path.join(self.local, "later.txt")))
+
+    def test_a_template_path_without_the_pinned_commit_blocks(self):
+        self.pin("f" * 40)
+        result = self.execute()
+        self.assertEqual(result.outcome, StepOutcome.BLOCKED)
+        self.assertIn("f" * 40, result.message)
+        self.assertFalse(os.path.exists(self.local))
+
+    def test_a_project_made_at_another_revision_is_not_reused(self):
+        self.execute()
+        git(self.template, "commit", "-q", "--allow-empty", "-m", "re-pinned")
+        self.pin(git(self.template, "rev-parse", "HEAD"))
+        head = git(self.local, "rev-parse", "HEAD")
+        result = self.execute()
+        self.assertEqual((result.outcome, result.retryable), (StepOutcome.FAILED, False))
+        self.assertIn("pinned", result.error)
+        self.assertEqual(git(self.local, "rev-parse", "HEAD"), head)
+
+    def test_without_a_template_path_a_checkout_of_the_pin_is_used(self):
+        del self.settings["template_path"]
+        with mock.patch.object(template_pin, "checkout", return_value=self.template) as made:
+            result = self.execute()
+        self.assertEqual(result.outcome, StepOutcome.SUCCESS, result.error)
+        made.assert_called_once_with(git(self.template, "rev-parse", "HEAD"))
+        self.assertEqual(result.artifacts[0].content["template"]["commit_sha"],
+                         git(self.template, "rev-parse", "HEAD"))
+
     def test_local_settings(self):
         with self.assertRaises(SettingsError):
-            InitSettings.from_config({"init": {"source": "local"}})
+            InitSettings.from_config({"init": {"source": "local", "template_path": ""}})
         with self.assertRaises(SettingsError):
             InitSettings.from_config({"init": {"source": "ftp", "template_path": "x"}})
         settings = InitSettings.from_config({"init": {"source": "local",
                                                       "template_path": "../t"}})
-        self.assertEqual((settings.owner, settings.template_ref), (None, "HEAD"))
+        # No ref: the revision is the Factory's pin, never the checkout's HEAD.
+        self.assertEqual((settings.owner, settings.template_ref), (None, None))
+        self.assertIsNone(InitSettings.from_config(
+            {"init": {"source": "local"}}).template_dir())
 
 
 @unittest.skipUnless(GIT, "git is not installed")
@@ -912,12 +1044,19 @@ class GithubSourceWithAPlan(InitCase):
         with open(os.path.join(self.template_tree, ".github", "workflows", "bootstrap.yml"),
                   "w") as handle:
             handle.write(BOOTSTRAP_YML)
+        # The template tree as a repository, pinned at its only commit: GitHub generates at
+        # the pin here (GithubPin covers generation from another revision).
+        subprocess.run(["git", "init", "-q", "-b", "main", self.template_tree], check=True)
+        git(self.template_tree, "add", "--all")
+        git(self.template_tree, "commit", "-q", "-m", "template")
+        self.pin(git(self.template_tree, "rev-parse", "HEAD"), url=self.template_tree)
         self.git = GitCli()
         github = self.github
 
         def clone(full_name, destination):
             github._call("clone", full_name, destination)
-            shutil.copytree(github.template_tree, destination, dirs_exist_ok=True)
+            shutil.copytree(github.template_tree, destination, dirs_exist_ok=True,
+                            ignore=shutil.ignore_patterns(".git"))
             subprocess.run(["git", "init", "-q", "-b", "main", destination], check=True)
             git(destination, "add", "--all")
             git(destination, "commit", "-q", "-m", "Initial commit")
@@ -932,12 +1071,16 @@ class GithubSourceWithAPlan(InitCase):
         return step.execute(inputs_with_plan(self.design, self.plan),
                             context or Context(self.config))
 
-    def test_config_committed_locally_and_identity_left_to_bootstrap(self):
+    def test_config_and_identity_committed_locally(self):
+        # The identity used to be left to bootstrap.yml. When bootstrap cannot run (a new
+        # repository without the organization's bot credentials), the game kept the
+        # template's placeholder id, silently. init now writes bootstrap's own derivation.
         result = self.execute()
         self.assertEqual(result.outcome, StepOutcome.SUCCESS, result.error)
         document = yaml_load(read_text(self.local, "game.config.yaml"))
         self.assertEqual(document["engine"], {"type": "threejs"})
-        self.assertEqual(document["game"]["id"], "example-game")
+        self.assertEqual((document["game"]["id"], document["game"]["name"]),
+                         bootstrap_identity("neon-drift"))
         self.assertTrue(os.path.exists(os.path.join(self.local, ".github", "workflows",
                                                     "bootstrap.yml")))
         record = result.artifacts[0].content
@@ -952,6 +1095,133 @@ class GithubSourceWithAPlan(InitCase):
         self.assertEqual(again.artifacts[0].content["outcome"], "reused")
         self.assertEqual(git(self.local, "rev-list", "--count", "HEAD"), "2")
         self.assertEqual(len(self.github.calls_to("create")), 1)
+
+    def test_a_later_bootstrap_commit_rebases_cleanly_under_init_s(self):
+        # On GitHub, bootstrap.yml sets the same identity in its own commit and deletes
+        # itself. Its change and init's are identical lines, so pulling it rebases cleanly.
+        self.assertEqual(self.execute().outcome, StepOutcome.SUCCESS)
+        root = git(self.local, "rev-list", "--max-parents=0", "HEAD")
+        git(self.local, "checkout", "-q", "-b", "remote-main", root)
+        game_id, game_name = bootstrap_identity("neon-drift")
+        config = read_text(self.local, "game.config.yaml")
+        with open(os.path.join(self.local, "game.config.yaml"), "w") as handle:
+            handle.write(config.replace("id: example-game", f"id: {game_id}")
+                         .replace("name: Example Game", f"name: {game_name}"))
+        git(self.local, "rm", "-q", ".github/workflows/bootstrap.yml")
+        git(self.local, "commit", "-q", "-am", "chore: bootstrap")
+        git(self.local, "checkout", "-q", "main")
+        subprocess.run(["git", *IDENTITY, "-C", self.local, "rebase", "-q", "remote-main"],
+                       check=True, capture_output=True)
+        document = yaml_load(read_text(self.local, "game.config.yaml"))
+        self.assertEqual(document["game"]["id"], game_id)
+        self.assertEqual(git(self.local, "status", "--porcelain"), "")
+
+
+@unittest.skipUnless(GIT, "git is not installed")
+class GithubPin(InitCase):
+    """source github with real git: GitHub generates from the template's default branch as
+    it is at that moment; init must leave the clone holding the PINNED revision, keep the
+    bootstrap commit made on top of it, and fail loudly when it cannot."""
+
+    def setUp(self):
+        super().setUp()
+        self.template_repo = make_git_template(os.path.join(self.scratch, "template-repo"))
+        self.pinned = git(self.template_repo, "rev-parse", "HEAD")
+        self.pin(self.pinned, url=self.template_repo)
+        self.generate_from = "HEAD"   # what the template's default branch is at generation
+        self.bootstrap = True         # bootstrap.yml ran on GitHub before the clone
+        self.git = GitCli()
+        github, case = self.github, self
+
+        def clone(full_name, destination):
+            github._call("clone", full_name, destination)
+            os.makedirs(destination)
+            archive = subprocess.run(["git", "-C", case.template_repo, "archive", "--format=tar",
+                                      case.generate_from], capture_output=True, check=True)
+            subprocess.run(["tar", "-x", "-C", destination], input=archive.stdout, check=True)
+            subprocess.run(["git", "init", "-q", "-b", "main", destination], check=True)
+            git(destination, "add", "--all")
+            git(destination, "commit", "-q", "-m", "Initial commit")
+            if case.bootstrap:
+                config = read_text(destination, "game.config.yaml")
+                with open(os.path.join(destination, "game.config.yaml"), "w") as handle:
+                    handle.write(config.replace("id: example-game", "id: neon-drift"))
+                git(destination, "rm", "-q", ".github/workflows/bootstrap.yml")
+                git(destination, "commit", "-q", "-am", "chore: bootstrap")
+            git(destination, "remote", "add", "origin", f"https://github.com/{full_name}.git")
+
+        self.github.clone = clone
+        self.plan = tech_plan("threejs")
+
+    def execute(self, context=None):
+        step = InitStep(self.definition, github=self.github, git=self.git, clock=lambda: NOW,
+                        sleep=lambda _s: None)
+        return step.execute(inputs_with_plan(self.design, self.plan),
+                            context or Context(self.config))
+
+    def advance_default_branch(self, path="later.txt", text="after the pin\n"):
+        with open(os.path.join(self.template_repo, *path.split("/")), "w") as handle:
+            handle.write(text)
+        git(self.template_repo, "add", "--all")
+        git(self.template_repo, "commit", "-q", "-m", "later on the default branch")
+
+    def pin_commits(self):
+        return git(self.local, "log", "--format=%H", "--grep", "pin web-game-template").split()
+
+    def test_generated_at_the_pin_needs_no_pin_commit(self):
+        result = self.execute()
+        self.assertEqual(result.outcome, StepOutcome.SUCCESS, result.error)
+        record = result.artifacts[0].content
+        self.assertEqual(record["template"]["commit_sha"], self.pinned)
+        self.assertNotIn("pin_commit", record["template"])
+        self.assertEqual(self.pin_commits(), [])
+        self.assertEqual(ArtifactContracts()("scaffold-record", record), [])
+
+    def test_generated_from_a_later_default_branch_is_brought_to_the_pin(self):
+        self.advance_default_branch()
+        result = self.execute()
+        self.assertEqual(result.outcome, StepOutcome.SUCCESS, result.error)
+        record = result.artifacts[0].content
+        self.assertEqual(ArtifactContracts()("scaffold-record", record), [])
+        self.assertEqual(record["template"]["commit_sha"], self.pinned)
+        self.assertEqual(record["template"]["generated_from_sha"],
+                         "d4f6569bd21284bdf1d5708d42a4a0da8557916c")
+        [pin_commit] = self.pin_commits()
+        self.assertEqual(record["template"]["pin_commit"], pin_commit)
+        self.assertFalse(os.path.exists(os.path.join(self.local, "later.txt")))
+        # The pin commit's tree is the pinned template, apart from what bootstrap committed.
+        differs = set(git(self.local, "diff", "--name-only", self.pinned, pin_commit).split())
+        self.assertEqual(differs, {"game.config.yaml", ".github/workflows/bootstrap.yml"})
+        body = git(self.local, "log", "-1", "--format=%B", pin_commit)
+        self.assertIn(f"Wgf-Template: {TEMPLATE}@{self.pinned}", body)
+        self.assertIn("Wgf-Init-Key: wgf-init:run-1:init", body)
+        self.assertEqual(git(self.local, "status", "--porcelain"), "")
+        self.assertEqual(git(self.local, "branch", "-r"), "")  # nothing pushed
+
+        again = self.execute()
+        self.assertEqual(again.outcome, StepOutcome.SUCCESS, again.error)
+        self.assertEqual(again.artifacts[0].content["outcome"], "reused")
+        self.assertEqual(self.pin_commits(), [pin_commit])
+        self.assertEqual(again.artifacts[0].content["template"]["pin_commit"], pin_commit)
+
+    def test_a_pin_that_cannot_be_applied_fails_loudly(self):
+        # The default branch changed the line next to the one bootstrap edits on top of the
+        # root: the pin cannot be applied without overwriting one of the two changes.
+        self.advance_default_branch("game.config.yaml",
+                                    read_text(self.template_repo, "game.config.yaml")
+                                    .replace("name: Example Game", "name: Renamed Upstream"))
+        result = self.execute()
+        self.assertEqual((result.outcome, result.retryable), (StepOutcome.FAILED, False))
+        self.assertIn(self.pinned, result.error)
+        self.assertEqual(git(self.local, "status", "--porcelain"), "")  # nothing half-applied
+        self.assertEqual(self.pin_commits(), [])
+
+    def test_a_template_other_than_the_pinned_one_is_refused(self):
+        self.settings["template"] = "someone/else-template"
+        result = self.execute()
+        self.assertEqual((result.outcome, result.retryable), (StepOutcome.FAILED, False))
+        self.assertIn(TEMPLATE, result.error)
+        self.assertEqual(self.github.calls_to("create"), [])
 
 
 # -- against the real template -------------------------------------------------------------
@@ -983,6 +1253,7 @@ class RealTemplateLocalSource(LocalCase):
     def setUp(self):
         super().setUp()
         self.settings["template_path"] = REAL_TEMPLATE
+        self.pin(git(REAL_TEMPLATE, "rev-parse", "HEAD"))
 
     def test_a_3d_title_from_the_real_template(self):
         result = self.execute()

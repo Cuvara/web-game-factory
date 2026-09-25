@@ -36,16 +36,39 @@ CONTRACT = {
 }
 
 
-_FENCE = re.compile(r"```(?:json)?\s*\n(.*?)\n```", re.S)
+_OPEN = re.compile(r"^\s*```\s*([A-Za-z0-9_+-]*)\s*$")
+_CLOSE = re.compile(r"^\s*```\s*$")
+
+
+def _fenced_blocks(text):
+    """[(info, body)] of every fenced code block, in order, paired line by line.
+
+    A regular expression over the whole text pairs a block's CLOSING fence with the next
+    block's opening one: a reviewer that quotes code (```ts ... ```) before its verdict
+    (```json ... ```) then has its verdict read as prose. Found by the real acceptance run."""
+    blocks, info, body = [], None, []
+    for line in text.splitlines():
+        if info is None:
+            opened = _OPEN.match(line)
+            if opened:
+                info, body = opened.group(1).lower(), []
+        elif _CLOSE.match(line):
+            blocks.append((info, "\n".join(body)))
+            info = None
+        else:
+            body.append(line)
+    return blocks
 
 
 def from_output(text):
     """The last JSON object in a reviewer's stdout, as text, or None.
 
-    Tried in order: the whole output; the last ```json fence; the last line that is an
-    object on its own. Nothing is repaired - what comes back still goes through parse()."""
+    Tried in order: the whole output; the last ```json (or untagged) fence; the last line
+    that is an object on its own. Nothing is repaired - what comes back still goes through
+    parse()."""
     text = (text or "").strip()
-    candidates = [text] + list(reversed(_FENCE.findall(text)))
+    fences = [body for info, body in _fenced_blocks(text) if info in ("json", "")]
+    candidates = [text] + list(reversed(fences))
     candidates += [line.strip() for line in reversed(text.splitlines())
                    if line.strip().startswith("{")]
     for candidate in candidates:

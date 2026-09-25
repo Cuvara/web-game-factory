@@ -44,6 +44,12 @@ from wgflib.workflow.config import FactoryConfig  # noqa: E402
 from wgflib.workflow.contracts import ArtifactContracts  # noqa: E402
 from wgflib.workflow.model import RunStatus, StepOutcome  # noqa: E402
 
+# Every portal with a profile in core, generic-web (no portal) excepted: research summarizes
+# each one, so a new profile is covered the moment it lands.
+PORTALS = sorted(name[:-5] for name in os.listdir(os.path.join(ROOT, "core", "reference",
+                                                                "platforms"))
+                 if name.endswith(".yaml") and name != "generic-web.yaml")
+
 FIXTURES = os.path.join(HERE, "fixtures", "discovery")
 CORPUS = os.path.join(FIXTURES, "corpus")
 BACKLOG = os.path.join(FIXTURES, "backlog")
@@ -212,8 +218,9 @@ class ResearchReport(unittest.TestCase):
 
     def test_unverified_profiles_are_hypotheses_and_observations_replace_them(self):
         profile_claims = [c for c in self.report["claims"] if "platform-profile" in c["tags"]]
-        self.assertEqual({c["subject"]["platform"] for c in profile_claims},
-                         {"crazygames", "gamevui", "poki", "yandex"})
+        self.assertEqual({c["subject"]["platform"] for c in profile_claims}, set(PORTALS))
+        self.assertTrue({"crazygames", "gamevui", "poki", "yandex", "y8", "gamedistribution",
+                         "gamemonetize"} <= set(PORTALS))
         for claim in profile_claims:
             self.assertEqual(claim["tier"], "hypothesis")
         poki = next(c for c in profile_claims if c["subject"]["platform"] == "poki")
@@ -235,7 +242,8 @@ class ResearchReport(unittest.TestCase):
 
     def test_platform_summaries_cover_monetization_sdk_and_verification(self):
         platforms = {p["platform"]: p for p in self.report["platforms"]}
-        self.assertEqual(sorted(platforms), ["crazygames", "gamevui", "poki", "yandex"])
+        self.assertEqual(sorted(platforms), PORTALS)
+        self.assertFalse(platforms["gamemonetize"]["monetization"]["rewarded"])
         self.assertFalse(platforms["poki"]["monetization"]["iap"])
         self.assertFalse(platforms["gamevui"]["monetization"]["rewarded"])
         self.assertTrue(platforms["poki"]["constraints"]["web_exclusive"])

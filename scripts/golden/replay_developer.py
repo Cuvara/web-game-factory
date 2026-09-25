@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """The golden-run REPLAY developer: a deterministic stand-in for an agent developer.
 
-    replay_developer.py --game 2d|3d --brief <brief.md> --repo <checkout> [--key <key>]
+    replay_developer.py --game 2d|3d --brief <brief.md> --repo <checkout> --ports <dir>
+                        [--key <key>]
 
 It is what `factory.develop.developer: {kind: command}` runs in a golden run, through the
 real develop step and wgflib.procs, exactly where an agent host would run. It is NOT an AI
@@ -12,9 +13,12 @@ the template) into the layout the development brief asks for, and reports honest
 port does and does not cover of the design.
 
 The Factory holds no game source. The hand-made adaptation lives in web-game-template next
-to each example (examples/<example>/wgf-golden/, examples/wgf-golden-shared/), so it is in
-every repository created from the pinned template commit, and this script reads it from the
-game repository itself. What the Factory keeps is the mapping: fixtures/<game>/port.json.
+to each example (examples/<example>/wgf-golden/, examples/wgf-golden-shared/). The template
+RELEASE the Factory is pinned to does not ship it, so it is read from `--ports`: a checkout
+of the template commit workspace/config/template.lock.json names under `golden_ports` - test
+fixtures, never the revision a game is created from. The example games themselves are read
+from the game repository, which the pinned release does ship. What the Factory keeps is the
+mapping: fixtures/<game>/port.json.
 
 What it does, in order:
 
@@ -24,13 +28,17 @@ What it does, in order:
 2. Copies the example's portable files from the repository's own examples/ directory (pure
    rules, the engine view, input, unit tests), with import paths adapted to src/ and a
    provenance header. See fixtures/<game>/port.json.
-3. Copies the adaptation from the repository's port overlays (port.json `overlays`:
+3. Copies the adaptation from the port overlays in `--ports` (port.json `overlays`:
    examples/wgf-golden-shared/, then examples/<example>/wgf-golden/) onto the repository
    root: main.ts on the template's boot sequence, the scene wired to the integration seam,
    UI, audio, locales, index.html and a browser test tagged by gameplay aspect. Refuses
-   (exit 3) if an overlay is missing: the repository was created from a template commit
-   that does not ship the ports.
-4. Writes src/game/integration.ts from the interface in the brief, verbatim.
+   (exit 3) if an overlay is missing.
+4. Moves main.ts onto the seam the develop step provided (wgflib.gameseam), as the brief
+   asks any developer to: the platform from createGamePlatform(), the seam from
+   createGameIntegration(), no createPlatform. The overlay's own default integration is not
+   copied - the Factory's default wiring is already in the repository. Each rewrite must
+   find its line exactly once, or the replay refuses (exit 3). src/game/integration.ts is
+   the develop step's, and must already be there.
 5. Adds the engine package the example itself depends on (pixi.js / three) to package.json
    at the version the example pins, and updates the lockfile offline
    (`pnpm install --offline`) - the store already holds it, since the template's own
@@ -50,7 +58,6 @@ its checks and commits.
 import argparse
 import json
 import os
-import re
 import shutil
 import sys
 
@@ -62,8 +69,23 @@ if SCRIPTS not in sys.path:
 from wgflib import procs  # noqa: E402
 
 FIXTURES = os.path.join(HERE, "fixtures")
-# An overlay's own README says what the directory is; it is not written into the game.
-OVERLAY_SKIP = ("README.md",)
+# An overlay's own README says what the directory is; it is not written into the game. Its
+# default integration predates the Factory-provided seam wiring (wgflib.gameseam), which
+# the develop step has already written at src/platform/integration.ts.
+OVERLAY_SKIP = ("README.md", "src/platform/default-integration.ts")
+# The overlays' main.ts, moved onto the seam: (old, new), each found exactly once.
+SEAM_REWRITES = (
+    ('import { createPlatform } from "@wgf/platform-sdk";\n', ""),
+    ('import { config, primaryPlatform } from "./core/config.js";\n',
+     'import { config } from "./core/config.js";\n'),
+    ('import { DefaultGameIntegration } from "./platform/default-integration.js";\n',
+     'import { createGameIntegration, createGamePlatform } from "./platform/integration.js";\n'),
+    ("  const platform = createPlatform(primaryPlatform().id, { namespace: config.game.id });\n"
+     "  await platform.initialize();\n",
+     "  const platform = await createGamePlatform();\n"),
+    ("new DefaultGameIntegration(game, platform)", "createGameIntegration(game, platform)"),
+)
+MAIN_PATH = "src/main.ts"
 REPORT_PATH = "docs/development/report.json"
 INTEGRATION_PATH = "src/game/integration.ts"
 SMOKE_SPEC = "tests/e2e/smoke.spec.ts"
@@ -168,15 +190,14 @@ def plan_copies(port, repo):
     return planned
 
 
-def integration_contract(brief_md):
-    """The GameIntegration interface the brief states, verbatim."""
-    section = brief_md.split("## Integration seam", 1)
-    if len(section) != 2:
-        raise ReplayError("the brief has no 'Integration seam' section")
-    match = re.search(r"```ts\n(.*?)```", section[1], re.S)
-    if not match or "interface GameIntegration" not in match.group(1):
-        raise ReplayError("the brief's integration seam section has no GameIntegration block")
-    return match.group(1)
+def seam_main(text):
+    """The overlay's main.ts, booting through the Factory's seam instead of createPlatform."""
+    for old, new in SEAM_REWRITES:
+        if text.count(old) != 1:
+            raise ReplayError(f"the port's {MAIN_PATH} does not contain {old.strip()!r} "
+                              f"exactly once; update SEAM_REWRITES for the ports")
+        text = text.replace(old, new, 1)
+    return text
 
 
 def engine_dependencies(port, repo):
@@ -278,10 +299,10 @@ def build_report(brief, port, written):
     }
 
 
-def replay(game_key, brief_md_path, repo):
+def replay(game_key, brief_md_path, repo, ports):
     repo = os.path.abspath(repo)
+    ports = os.path.abspath(ports)
     port = load_port(game_key)
-    brief_md = read(brief_md_path)
     brief_json_path = os.path.join(os.path.dirname(brief_md_path), "brief.json")
     brief = json.loads(read(brief_json_path))
     if brief.get("engine") != port["engine"]:
@@ -295,8 +316,14 @@ def replay(game_key, brief_md_path, repo):
     # Both are planned before anything is written: a missing example file or overlay refuses
     # the replay with the repository untouched.
     copies = plan_copies(port, repo)
-    overlay_files = port_files(port, repo)
-    contract = integration_contract(brief_md)
+    overlay_files = port_files(port, ports)
+    if not os.path.exists(os.path.join(repo, *INTEGRATION_PATH.split("/"))):
+        raise ReplayError(f"{INTEGRATION_PATH} is not in the repository: the develop step "
+                          "provides the seam before any developer runs")
+    main_source = dict(overlay_files).get(MAIN_PATH)
+    if main_source is None:
+        raise ReplayError(f"the port overlays carry no {MAIN_PATH}")
+    main_text = seam_main(read(main_source))
     written = []
     for relative, text in copies:
         write(os.path.join(repo, *relative.split("/")), text)
@@ -304,10 +331,11 @@ def replay(game_key, brief_md_path, repo):
     for relative, source in overlay_files:
         target = os.path.join(repo, *relative.split("/"))
         os.makedirs(os.path.dirname(target), exist_ok=True)
-        shutil.copyfile(source, target)
+        if relative == MAIN_PATH:
+            write(target, main_text)
+        else:
+            shutil.copyfile(source, target)
         written.append(relative)
-    write(os.path.join(repo, *INTEGRATION_PATH.split("/")), contract)
-    written.append(INTEGRATION_PATH)
 
     for relative in port.get("remove") or []:
         path = os.path.join(repo, *relative.split("/"))
@@ -340,11 +368,13 @@ def main(argv=None):
     parser.add_argument("--game", required=True, choices=["2d", "3d"])
     parser.add_argument("--brief", required=True)
     parser.add_argument("--repo", required=True)
+    parser.add_argument("--ports", required=True,
+                        help="a checkout of the template commit holding the golden ports")
     parser.add_argument("--key", default=None, help="the develop step's idempotency key")
     args = parser.parse_args(argv)
     procs.install_signal_cleanup()
     try:
-        replay(args.game, args.brief, args.repo)
+        replay(args.game, args.brief, args.repo, args.ports)
     except ReplayError as exc:
         log(f"refused: {exc}")
         return 3

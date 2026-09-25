@@ -589,6 +589,26 @@ class VerdictContract(unittest.TestCase):
                 self.assertEqual(json.loads(verdicts.from_output(text))["verdict"], "approve")
         self.assertIsNone(verdicts.from_output("LGTM, ship it"))
 
+    def test_a_verdict_after_quoted_code_is_found(self):
+        # The real acceptance run's second review quoted code (```ts) before its fenced
+        # verdict; the old whole-text fence regex paired the ts block's closing fence with
+        # the json block's opening one, and a valid request-changes read as "no verdict".
+        verdict = {"verdict": "request-changes", "commit": self.HEAD,
+                   "blockers": [self.blocker(line=356)], "notes": "a regression"}
+        body = json.dumps(verdict, indent=2)
+        text = ("Looking at src/game/app.ts:\n\n```ts\nvoid this.#persist();\n"
+                "void this.#leaveResultCard(() => this.#returnToTitle());\n```\n\n"
+                "`#leaveResultCard` checks `canShowInterstitial` - see ```inline``` too.\n\n"
+                f"```json\n{body}\n```\n")
+        self.assertEqual(json.loads(verdicts.from_output(text)), verdict)
+        # A quoted code block alone is not a verdict, and neither is a ts block's content.
+        self.assertIsNone(verdicts.from_output("```ts\nconst x = {};\n```\n"))
+        # The last fenced verdict wins over an earlier one.
+        earlier = json.dumps(dict(verdict, verdict="approve", blockers=[]))
+        self.assertEqual(json.loads(verdicts.from_output(
+            f"```json\n{earlier}\n```\nOn reflection:\n```json\n{body}\n```"))["verdict"],
+            "request-changes")
+
     def test_refusals(self):
         base = {"verdict": "request-changes", "commit": self.HEAD}
         cases = [

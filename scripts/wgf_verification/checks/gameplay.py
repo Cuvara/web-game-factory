@@ -26,7 +26,8 @@ import re
 from ..model import BLOCKED, FAIL, PASS, WARNING, Check, Evidence
 from ..session import DEFAULT_SESSION_FILE
 
-__all__ = ["ASPECTS", "check_gameplay", "required_aspects", "RecordedSessionDriver",
+__all__ = ["ASPECTS", "check_gameplay", "required_aspects", "required_aspects_for",
+           "RecordedSessionDriver",
            "RepositoryPlaywrightDriver", "select_driver", "Observation", "map_report"]
 
 ASPECTS = ("boot", "loading", "start", "input", "core-loop", "progression", "game-over",
@@ -315,10 +316,16 @@ def required_aspects(session):
     override = (session.params.get("gameplay") or {}).get("required")
     if override is not None:
         return set(override)
+    return required_aspects_for(session.inputs.get("game-design"),
+                                session.verification_flag("mobile_test"))
+
+
+def required_aspects_for(design, mobile_test=True):
+    """The aspects a build of `design` must prove, from the design alone - what the develop
+    step's brief tells the developer to tag, so the two cannot disagree."""
     required = {"boot", "loading", "core-loop"}
-    if session.verification_flag("mobile_test"):
+    if mobile_test:
         required.add("responsive")
-    design = session.inputs.get("game-design")
     if design:
         required.add("start")
         if design.get("controls"):

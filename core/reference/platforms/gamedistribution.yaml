@@ -1,0 +1,110 @@
+# Platform profile — GameDistribution
+#
+# See yandex.yaml for how profiles are consumed. Upstreamed from web-game-template v1.1.0
+# (config/platforms/gamedistribution.yaml, "draft"), whose docs/platforms/gamedistribution.md
+# holds the audit.
+#
+# Sources:
+#   SDK      https://github.com/GameDistribution/GD-HTML5 (README, wiki) at 4873abe, 1.43.58
+#   Rules    https://static.gamedistribution.com/developer/developers-guidelines.html
+#
+# requirements.game_id: required — the portal issues a 32-hex Game ID per title, and a build
+# without one fails. It reaches game.config.yaml platforms[].game_id through the tech plan.
+# Figures the sources do not give are left null rather than guessed.
+
+id: gamedistribution
+name: GameDistribution
+version: 1.0.0
+status: unverified
+docs: https://github.com/GameDistribution/GD-HTML5/wiki
+
+# audience: not documented by the portal; left out rather than guessed.
+
+capabilities:
+  # Pre-roll and mid-roll interstitials are mandatory (Guidelines §2); rewarded is optional
+  # and needs the rewarded flag set for the game in the developer panel. Display ads exist
+  # but are not part of the template's contract.
+  ads: [interstitial, rewarded]
+  iap: false
+  cloud_saves: false
+  leaderboards: false
+  achievements: false
+  auth: none
+  # §7: "any types of cookies or trackers that are not directly from GD will not be
+  # permitted", including "External analytics from external Software Developer Kit."
+  analytics: platform-provided
+
+requirements:
+  # §4.1: "the default game language should always be English."
+  locales_required: [en]
+  locales_recommended: []
+  max_bundle_mb: null
+  orientation: [landscape, portrait]
+  # The SDK has no loading or game-ready call.
+  loading_api: none
+  offline_start: false
+  # §3.1: "Games must be HTTPS ready".
+  https_only: true
+  # §6: no outgoing links of any kind.
+  no_external_links: true
+  # Per title, from the developer panel; game.config.yaml platforms[].game_id.
+  game_id: required
+  game_id_pattern: "^[0-9A-Fa-f]{32}$"
+  # §3.1: "We do not permit external hosting of games, except for Real Multiplayer games."
+  # When GameDistribution agrees to it, the submission is a wrapper page that frames the
+  # game with gd_sdk_referrer_url (README, "Implementation self-hosted games").
+  hosting: [gamedistribution, self-hosted]
+
+ads:
+  # The SDK enforces the mid-roll interval itself ("we regulate the ad-interval through the
+  # SDK") — two minutes by default, set per game — and refuses an early request.
+  interstitial_min_interval_s: null
+  rewarded_available: true
+  banner_available: false
+  notes: >
+    showAd() only behind a player's input, outside gameplay, with the game paused and muted
+    between SDK_GAME_PAUSE and SDK_GAME_START. A reward only on SDK_REWARDED_WATCH_COMPLETE
+    ("users can only be given a reward when an impression is completed", §2.2.1). The pre-roll
+    must be viewed in full once from the developer panel before the SDK integration is
+    approved.
+
+metadata_requirements:
+  descriptions_locales: [en]
+  screenshots_min: 0
+  # "512×512, 512×384 and 200×120" thumbnails.
+  icon_required: true
+  age_rating_required: false
+
+review:
+  process: manual
+  common_rejections:
+    - No pre-roll or mid-roll, or an SDK integration never activated from the developer panel.
+    - Audio audible, or gameplay running, during an advertisement.
+    - A reward granted without a completed rewarded impression.
+    - Outgoing links, app-store references, third-party analytics or trackers.
+    - Default language other than English.
+
+assertions:
+  - id: gamedistribution_sdk_present
+    check: { left: package.platform_sdk, op: eq, right: gamedistribution }
+    severity: blocking
+  - id: gamedistribution_https_only
+    check: { left: package.insecure_requests, op: eq, right: 0 }
+    severity: blocking
+  - id: gamedistribution_english
+    check: { left: package.locales, op: in, right: [en] }
+    severity: blocking
+  - id: gamedistribution_no_banner_ads
+    check: { left: package.uses_banner_ads, op: eq, right: false }
+    severity: blocking
+  - id: gamedistribution_no_external_links
+    check: { left: package.external_links, op: eq, right: 0 }
+    severity: blocking
+
+scoring_hints:
+  platform_fit_favours:
+    - Casual titles with natural breaks for mid-rolls and a start button for the pre-roll.
+    - Mobile-compatible titles, which get priority placement (§3.4).
+  platform_fit_penalizes:
+    - IAP- or login-dependent designs (§7 forbids login without a separate agreement).
+    - Anything that needs its own analytics or backend.

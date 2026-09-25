@@ -5,12 +5,14 @@
 run from `scripts/`. For one web-game-template revision it:
 
     1. exports the revision into <work>/tree and installs its dependencies (pnpm)
-    2. makes it a develop-step game: the seam develop hands out (src/game/integration.ts,
-       from wgf_develop), a plain default implementation of it, and a stand-in gameplay
-       loop (e2e/run-loop.ts) that calls only the seam, with its own placement ids
-    3. runs the `sdk` step on it for real: the integration phase (inspection, plan, files,
-       main.ts and seam wiring, the integration's own vitest suite and typecheck) and the
-       conformance phase (the template's `pnpm sdk:conformance`, where the ref has it)
+    2. makes it a develop-step game: the seam the develop step provides (wgf_develop.seam:
+       the GameIntegration contract and its default wiring), the template's main.ts booting
+       through that seam instead of calling createPlatform, and a stand-in gameplay loop
+       (e2e/run-loop.ts) that calls only the seam, with its own placement ids. The template's
+       boot lines must be found as the pinned revision has them, or this fails.
+    3. runs the `sdk` step on it for real: the integration phase (inspection, plan, the
+       integrated wiring over the default, the integration's own vitest suite and
+       typecheck) and the conformance phase (the template's `pnpm sdk:conformance`)
     4. runs the template's own checks over the result: every unit and integration test,
        the typecheck and the lint
     5. for each engine and each target platform: writes game.config.yaml with that platform
@@ -42,7 +44,12 @@ from .inspect_sdk import inspect_sdk  # noqa: E402
 from .step import SdkStep  # noqa: E402
 
 E2E = os.path.join(HERE, "e2e")
-PLATFORMS = ("yandex", "crazygames", "poki", "gamevui")
+PLATFORMS = ("yandex", "crazygames", "poki", "gamevui", "y8", "gamedistribution", "gamemonetize")
+# Per-title settings a build for these portals needs. Test values only: the mocks accept any
+# well-formed id, and nothing here reaches a portal.
+GAME_IDS = {"gamedistribution": "0123456789abcdef0123456789abcdef",
+            "gamemonetize": "wgf-sdk-e2e-0001"}
+BUILD_ENV = {"y8": {"WGF_Y8_APP_ID": "wgf-sdk-e2e-app", "WGF_Y8_GAME_ID": "wgf-sdk-e2e"}}
 ENGINES = ("pixijs", "threejs")
 
 # A design with one rewarded and one interstitial placement on every platform: the widest
@@ -91,28 +98,49 @@ def prepare(template, ref, tree):
     return commit
 
 
-def install_fixtures(tree):
-    """Make the template a develop-step game: the seam, a default implementation, a loop."""
-    from wgf_develop.brief import INTEGRATION_CONTRACT  # the contract develop hands out
+# The template's own boot lines (src/main.ts at the pinned revision) that a develop-step
+# game replaces with the seam. Found exactly, or the harness fails: a template whose boot
+# changed needs this harness revisited, not silently skipped.
+_TEMPLATE_BOOT = (
+    "  const primary = primaryPlatform();\n"
+    "  const platform = createPlatform(primary.id, {\n"
+    "    ...platformOptions(primary),\n"
+    "    y8: platformConfig.y8,\n"
+    "  });\n"
+    "  await platform.initialize();\n"
+)
+_TEMPLATE_IMPORTS = (
+    ('import { createPlatform } from "@wgf/platform-sdk";\n', ""),
+    ('import platformConfig from "virtual:platform-config";\n', ""),
+    ('import { config, platformOptions, primaryPlatform } from "./core/config.js";\n',
+     'import { config } from "./core/config.js";\n'
+     'import { startRunLoop } from "./game/run-loop.js";\n'
+     'import { createGameIntegration, createGamePlatform } from "./platform/integration.js";\n'),
+)
 
-    with open(os.path.join(tree, "src", "game", "integration.ts"), "w",
-              encoding="utf-8") as handle:
-        handle.write(INTEGRATION_CONTRACT)
+
+def install_fixtures(tree):
+    """Make the template a develop-step game: the seam, main.ts on it, a stand-in loop."""
+    from wgf_develop.seam import ensure_seam  # what the develop step provides
+
+    ensure_seam(tree)
     shutil.copy(os.path.join(E2E, "run-loop.ts"), os.path.join(tree, "src", "game"))
-    shutil.copy(os.path.join(E2E, "default-integration.ts"),
-                os.path.join(tree, "src", "platform"))
     main = os.path.join(tree, "src", "main.ts")
     with open(main, encoding="utf-8") as handle:
-        lines = handle.read().splitlines(keepends=True)
-    last_import = max(i for i, line in enumerate(lines) if line.startswith("import "))
-    lines[last_import + 1:last_import + 1] = [
-        'import { DefaultIntegration } from "./platform/default-integration.js";\n',
-        'import { startRunLoop } from "./game/run-loop.js";\n',
-    ]
-    game = next(i for i, line in enumerate(lines) if "const game = new Game();" in line)
-    lines.insert(game + 1, "  startRunLoop(new DefaultIntegration(platform), game);\n")
+        text = handle.read()
+    for old, new in _TEMPLATE_IMPORTS + ((_TEMPLATE_BOOT,
+                                          "  const platform = await createGamePlatform();\n"),):
+        if text.count(old) != 1:
+            raise RuntimeError(f"the template's src/main.ts no longer has {old.strip()!r}; "
+                               "update scripts/wgf_sdk/e2e.py for this revision")
+        text = text.replace(old, new, 1)
+    anchor = "  const game = new Game();\n"
+    if text.count(anchor) != 1:
+        raise RuntimeError("the template's src/main.ts no longer constructs `new Game()`")
+    text = text.replace(anchor, anchor + "  startRunLoop(createGameIntegration(game, platform), "
+                                         "game);\n", 1)
     with open(main, "w", encoding="utf-8") as handle:
-        handle.write("".join(lines))
+        handle.write(text)
     os.makedirs(os.path.join(tree, "tests", "wgf-sdk-e2e"), exist_ok=True)
     shutil.copy(os.path.join(E2E, "smoke.spec.ts"),
                 os.path.join(tree, "tests", "wgf-sdk-e2e", "smoke.spec.ts"))
@@ -126,7 +154,8 @@ def write_config(tree, target, engine, platforms=PLATFORMS):
              "engine:", f"  type: {engine}", "platforms:"]
     for platform in entries:
         role = "required" if platform == target else "optional"
-        lines.append(f"  - {{ id: {platform}, profile: {platform}@1.0.0, role: {role} }}")
+        game_id = f", game_id: {GAME_IDS[platform]}" if platform in GAME_IDS else ""
+        lines.append(f"  - {{ id: {platform}, profile: {platform}@1.0.0, role: {role}{game_id} }}")
     lines += ["monetization:", "  ad_kinds: [rewarded, interstitial]", "  iap: false",
               "build:", "  command: pnpm build", "  output: dist",
               "verification:", "  smoke_test: true", "  performance_test: true",
@@ -269,7 +298,7 @@ def main(argv=None):
                 load_config().section("sdk").get("adapter_substitutes") or {})
             expect = "boot" if configured else "boot-failure"
             write_config(tree, platform, engine)
-            build = sh(["pnpm", "build"], tree, check=False)
+            build = sh(["pnpm", "build"], tree, check=False, env=BUILD_ENV.get(platform))
             entry = {"platform": platform, "engine": engine, "expect": expect,
                      "build": build.returncode}
             if build.returncode == 0:

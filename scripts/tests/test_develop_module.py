@@ -23,6 +23,7 @@ sys.path.insert(0, SCRIPTS)
 
 import wgf_develop  # noqa: E402
 from wgf_develop import brief as briefs  # noqa: E402
+from wgf_develop import seam  # noqa: E402
 from wgf_develop.checks import conformance  # noqa: E402
 from wgf_develop.repository import KEY_TRAILER, GitRepo, Runner, RunResult  # noqa: E402
 from wgf_develop.settings import Settings, SettingsError  # noqa: E402
@@ -122,16 +123,24 @@ def dev_report(brief):
     }
 
 
+# src/main.ts booting through the Factory's seam (wgflib.gameseam), as the brief asks.
+SEAM_MAIN = (
+    'import { createGameIntegration, createGamePlatform } from "./platform/integration.js";\n'
+    'import { PulseLanes } from "./game/app.js";\n'
+    "const platform = await createGamePlatform();\n"
+    "const integration = createGameIntegration(game, platform, { audio });\n")
+
+
 def write_game(root, extra=None):
-    """What a developer produces: the scaffold replaced, the seam, a view, the report."""
+    """What a developer produces: the scaffold replaced, main.ts on the seam the develop step
+    provided (src/game/integration.ts, src/platform/integration.ts - not the developer's to
+    write), a view, the report."""
     with open(os.path.join(root, briefs.BRIEF_DIR, "brief.json"), encoding="utf-8") as handle:
         brief = json.load(handle)
     files = {
-        "src/main.ts": 'import { PulseLanes } from "./game/app.js";\n',
+        "src/main.ts": SEAM_MAIN,
         "src/game/app.ts": 'import type { Game } from "@wgf/game-core";\nexport {};\n',
-        "src/game/integration.ts": "export interface GameIntegration {}\n",
         "src/rendering/pixijs/view.ts": 'import { Graphics } from "pixi.js";\nexport {};\n',
-        "src/platform/integration.ts": "platform.showRewarded();\n",
         briefs.REPORT_PATH: json.dumps(dev_report(brief)),
     }
     files.update(extra or {})
@@ -284,6 +293,26 @@ class Handoff(DevelopCase):
         self.assertEqual(runner.calls, [])  # nothing ran, nothing committed
         self.assertEqual(len(self.commits()), 1)
 
+    def test_the_brief_names_what_verification_will_require(self):
+        # Each acceptance run's first verification failed "no repository-playwright evidence
+        # exercises progression / game-over / pause-resume": the brief never said how
+        # verification recognises evidence, so every run paid a verify -> develop loop.
+        from wgf_verification.checks.gameplay import required_aspects
+        from wgf_verification.session import VerificationSession
+        step_with(FakeRunner()).execute(inputs_for(), context(self.config()))
+        with open(os.path.join(self.repo, briefs.BRIEF_DIR, "brief.json")) as handle:
+            brief = json.load(handle)
+        with open(os.path.join(self.repo, briefs.BRIEF_DIR, "brief.md")) as handle:
+            text = handle.read()
+        session = VerificationSession(self.repo, None)
+        session.inputs = {"game-design": inputs_for().load("game-design")}
+        wanted = required_aspects(session)
+        self.assertEqual(set(brief["verification_aspects"]["required"]), wanted)
+        self.assertTrue({"game-over", "restart", "pause-resume"} <= wanted)
+        self.assertIn("**Verification evidence.**", text)
+        for aspect in wanted:
+            self.assertIn(f"`@{aspect}`", text)
+
     def test_resumed_with_done_checks_and_commits(self):
         step_with(FakeRunner()).execute(inputs_for(), context(self.config()))
         write_game(self.repo)
@@ -342,6 +371,70 @@ class Command(DevelopCase):
         result = step_with(runner).execute(inputs_for(), context(self.command_config()))
         self.assertEqual((result.outcome, result.retryable), (StepOutcome.FAILED, True))
         self.assertEqual([c for c in runner.calls if c[0] == "pnpm"], [])
+
+    def test_the_retry_after_a_failed_developer_is_told_to_continue(self):
+        # The real acceptance run: the developer hit its turn limit half-way, and the retry,
+        # a new session whose brief mentioned no failure, took the tree for finished.
+        runner = FakeRunner(fail={"lint"}, on_develop=write_game)
+        step_with(runner).execute(inputs_for(), context(self.command_config()))  # attempt 1
+        failing = FakeRunner(develop_exit=1)
+        failed = step_with(failing).execute(inputs_for(), context(self.command_config(),
+                                                                  attempt=2))
+        self.assertEqual((failed.outcome, failed.retryable), (StepOutcome.FAILED, True))
+        seen = {}
+
+        def develop(cwd):
+            with open(os.path.join(cwd, briefs.BRIEF_DIR, "brief.md"), encoding="utf-8") as h:
+                seen["brief"] = h.read()
+            write_game(cwd)
+
+        step_with(FakeRunner(on_develop=develop)).execute(
+            inputs_for(), context(self.command_config(), attempt=3))
+        brief = seen["brief"]
+        self.assertIn("## Fix first: checks that failed on the previous attempt", brief)
+        self.assertIn("### developer", brief)
+        self.assertIn("ended before it finished (developer command exited 1)", brief)
+        self.assertIn("continue from it rather than starting over", brief)
+        self.assertIn("### lint", brief)  # attempt 1's failed check is not forgotten
+
+    def test_the_smoke_check_cannot_reach_a_portal(self):
+        # The real acceptance run: a Poki build's smoke loaded Poki's real SDK from its CDN,
+        # which pulled an http:// ad bridge, and the template's "makes no insecure requests"
+        # failed on the portal, not the game. The browser check now runs behind a refusing
+        # proxy; other checks do not.
+        import urllib.error
+        import urllib.request
+        seen = {}
+
+        class Portal(FakeRunner):
+            def run(self, argv, cwd, timeout=None, env=None):
+                if argv[:3] == ["pnpm", "run", "test:e2e"]:
+                    seen["env"] = dict(env or {})
+                    proxy = (env or {}).get("http_proxy")
+                    opener = urllib.request.build_opener(urllib.request.ProxyHandler(
+                        {"http": proxy} if proxy else {}))
+                    try:
+                        opener.open("http://imasdk.googleapis.com/js/core/bridge.html",
+                                    timeout=5)
+                        seen["portal"] = "reached"
+                    except urllib.error.HTTPError as exc:
+                        seen["portal"] = exc.code
+                    except OSError as exc:
+                        seen["portal"] = str(exc)
+                elif argv[:3] == ["pnpm", "run", "test"]:
+                    seen["unit_env"] = dict(env or {})
+                return super().run(argv, cwd, timeout, env)
+
+        runner = Portal(on_develop=write_game)
+        result = step_with(runner).execute(inputs_for(), context(self.command_config()))
+        self.assertEqual(result.outcome, StepOutcome.SUCCESS, result.error)
+        self.assertEqual(seen["portal"], 403)
+        self.assertEqual(seen["env"]["no_proxy"], "localhost,127.0.0.1,::1")
+        self.assertNotIn("http_proxy", seen["unit_env"])
+        with open(os.path.join(self.repo, briefs.BRIEF_DIR, "checks.json")) as handle:
+            smoke = next(c for c in json.load(handle)["checks"] if c["id"] == "smoke")
+        self.assertIn("network guarded: 1 request(s) refused", smoke["summary"])
+        self.assertIn("GET http://imasdk.googleapis.com", smoke["summary"])
 
     def test_failing_checks_are_retryable_and_emit_the_report(self):
         runner = FakeRunner(fail={"test"}, on_develop=write_game)
@@ -423,6 +516,7 @@ class Conformance(DevelopCase):
             "src/game/three.ts": 'import * as THREE from "three";\n',
             "src/game/ads.ts": "window.YaGames.init(); platform.showInterstitial();\n",
             "src/game/integration.ts": "export {};\n",
+            "src/game/boot.ts": 'const p = createPlatform("yandex", { namespace: "x" });\n',
             "packages/game-core/src/index.ts": "export const hacked = 1;\n",
             "package.json": json.dumps({"dependencies": {"phaser": "^3"}}),
             briefs.REPORT_PATH: json.dumps(report),
@@ -431,13 +525,67 @@ class Conformance(DevelopCase):
                        "src/game/three.ts imports three: engine is pixijs",
                        "src/game/ads.ts references a portal SDK",
                        "src/game/ads.ts calls the platform's ad API directly",
-                       "does not declare GameIntegration",
+                       "src/game/integration.ts belongs to the Factory and was edited",
+                       "src/game/boot.ts calls createPlatform directly",
                        "packages/game-core/src/index.ts is template-owned",
                        "package.json adds phaser",
                        "required system 'tutorial' is partial",
                        "MVP item not reported: 'Rewarded continue'",
                        "no rewarded placement reported"):
             self.assertIn(needle, found)
+
+    def test_the_seam_is_provided_before_the_developer_runs(self):
+        seen = {}
+
+        def develop(cwd):
+            for relative in seam.SEAM_FILES:
+                with open(os.path.join(cwd, relative), encoding="utf-8") as handle:
+                    seen[relative] = handle.read()
+
+        step_with(FakeRunner(on_develop=develop)).execute(
+            inputs_for(), context(self.config(developer={"kind": "command",
+                                                         "argv": ["dev", "{brief}"]})))
+        self.assertEqual(seen, seam.default_files())
+        self.assertIn("createGamePlatform", seen["src/platform/integration.ts"])
+        self.assertIn("interface GameIntegration", seen["src/game/integration.ts"])
+
+    def test_a_main_that_does_not_boot_through_the_seam_is_found(self):
+        found = "\n".join(self.violations({
+            "src/main.ts": 'import { createPlatform } from "@wgf/platform-sdk";\n'
+                           'const platform = createPlatform("yandex", { namespace: "x" });\n',
+        }))
+        self.assertIn('does not import createGamePlatform from "./platform/integration.js"',
+                      found)
+        self.assertIn("src/main.ts calls createPlatform directly", found)
+
+    def test_an_edited_seam_wiring_is_found(self):
+        found = "\n".join(self.violations({
+            "src/platform/integration.ts": "export const createGamePlatform = 1;\n",
+        }))
+        self.assertIn("src/platform/integration.ts belongs to the Factory and was edited", found)
+
+    def test_the_sdk_wiring_committed_earlier_is_the_baseline(self):
+        # After the sdk step, the wiring is its integrated version; a later develop visit
+        # must keep that, not the default and not an edit.
+        step_with(FakeRunner()).execute(inputs_for(), context(self.config()))
+        write_game(self.repo)
+        wiring = os.path.join(self.repo, "src/platform/integration.ts")
+        with open(wiring, "w") as handle:
+            handle.write("// integrated by the sdk step\n")
+        subprocess.run(["git", *IDENTITY, "-C", self.repo, "add", "-A"], check=True)
+        subprocess.run(["git", *IDENTITY, "-C", self.repo, "commit", "-qm", "sdk"], check=True)
+        head = subprocess.run(["git", "-C", self.repo, "rev-parse", "HEAD"], check=True,
+                              capture_output=True, text=True).stdout.strip()
+        with open(os.path.join(self.repo, briefs.BRIEF_DIR, "brief.json")) as handle:
+            brief = json.load(handle)
+        brief["baseline_commit"] = head
+        git_repo = GitRepo(self.repo, Runner())
+        self.assertEqual(seam.seam_findings(self.repo, git_repo, head), [])
+        self.assertEqual(seam.ensure_seam(self.repo), [])  # left alone, not reset to default
+        with open(wiring, "w") as handle:
+            handle.write("// edited by the developer\n")
+        self.assertIn("src/platform/integration.ts belongs to the Factory and was edited",
+                      "\n".join(seam.seam_findings(self.repo, git_repo, head)))
 
     def test_the_scaffold_scene_and_a_missing_report_are_found(self):
         found = "\n".join(self.violations({

@@ -122,7 +122,10 @@ factory:
     #   --permission-mode dontAsk   anything not pre-approved is refused, never prompted
     #   stream-json --verbose       output while it works, so idle_timeout_seconds catches a
     #                               hung agent, not a quiet one (text mode prints only at exit)
-    #   --max-turns/--max-budget-usd  the host's own bound, under the Factory's timeouts
+    #   --max-turns/--max-budget-usd  the host's own bound, under the Factory's timeouts. Sized
+    #                               so they do not cut a build short of timeout_seconds: on the
+    #                               v1 acceptance run a from-scratch build took 200 turns in
+    #                               26-44 min for US$10-15, and 200 ended two attempts half-way
     # `pnpm *` also admits `pnpm exec` and `pnpm dlx`: arbitrary code in the checkout. Wrap the
     # argv in an OS sandbox if the developer must not reach the network or $HOME.
     # developer:
@@ -149,9 +152,9 @@ factory:
     #     - stream-json
     #     - --verbose
     #     - --max-turns
-    #     - "200"
+    #     - "400"
     #     - --max-budget-usd
-    #     - "25"
+    #     - "40"
     #   timeout_seconds: 5400
     #   idle_timeout_seconds: 900
     checks: [install, conformance, typecheck, lint, unit, build, smoke]

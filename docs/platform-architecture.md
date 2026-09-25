@@ -50,10 +50,18 @@ assertions:
     severity: blocking
 ```
 
-Shipped profiles: `yandex`, `crazygames`, `gamevui`, `poki`, `generic-web`. All except
-`generic-web` are marked `status: unverified` — their figures are starting points to be
-corrected against each portal's own documentation. **Treat an unverified number as a
-hypothesis.**
+Shipped profiles: `yandex`, `crazygames`, `gamevui`, `poki`, `y8`, `gamedistribution`,
+`gamemonetize`, `generic-web`. All except `generic-web` are marked `status: unverified` —
+their figures are starting points to be corrected against each portal's own documentation.
+**Treat an unverified number as a hypothesis.** `y8` and `gamedistribution` were upstreamed
+from web-game-template v1.1.0's proposals, `gamemonetize` written from its audit
+(`docs/platforms/gamemonetize.md` there); figures the portals do not document are left out.
+
+`requirements.game_id` says whether the portal issues a per-title Game ID the build carries
+(`required`: GameDistribution; `optional`: GameMonetize; absent: none). The tech plan takes
+it from `workspace/titles/<title-id>/portals.yaml` and blocks when a required one is missing
+(`docs/techplan-module.md`, *Portal registrations*). Y8's App ID and Game ID are build-time
+environment (`WGF_Y8_APP_ID`, `WGF_Y8_GAME_ID`), never game.config.yaml.
 
 Platform ids must match the strings used in `web-game-template/game.config.yaml`.
 
@@ -148,15 +156,31 @@ changes nothing — and commits them (below):
 - `tests/unit/platform/gameplay-integration.test.ts` — SDK-mock suite, one block per
   situation: SDK available, SDK unavailable, SDK initialization failure, ad unavailable, ad
   closed early, reward callback, pause/resume, platform not configured.
-- `src/main.ts` — the template's boot routed through `bootPlatform`, and the
-  `PlatformGameplay` instance installed. Applied only when the template's lines are found
-  unchanged.
+- `src/platform/game-integration.ts` (+ its test) — `PlatformGameIntegration`, the game's
+  `GameIntegration` seam implemented on `PlatformGameplay`.
+- `src/platform/integration.ts` — the seam's wiring, written over the develop step's
+  default as a whole file with the same exports: `createGamePlatform()` boots through
+  `bootPlatform` with the template's own `createPlatform` options (`platformOptions(entry)`
+  + `virtual:platform-config`, so per-title Game IDs reach the adapter), and
+  `createGameIntegration()` installs `PlatformGameplay` and returns the
+  `PlatformGameIntegration`.
 
-When the game declares the develop step's seam (`src/game/integration.ts`, `interface
-GameIntegration` — see [development-module.md](development-module.md)), the step also writes
-`src/platform/game-integration.ts`, a `PlatformGameIntegration` built on `PlatformGameplay`,
-and replaces the construction of the developer's default implementation in `main.ts` with
-it. The game's calls do not change. Its placement ids (`rewarded("revive-after-crash")`) are
+`src/main.ts` is never edited: it already boots through the seam, because the develop step
+provided it and its conformance check requires it (`wgflib.gameseam`). A build whose main.ts
+does not import and call `createGamePlatform` and `createGameIntegration` from
+`./platform/integration.js`, or that calls `createPlatform` itself, is refused - `FAILED`,
+not retryable, nothing written. (Before 1.1, the step patched main.ts with regular
+expressions keyed to the template's boot lines, and reported "skipped" when a template
+release changed them.) The game's calls do not change.
+
+Which seam calls the game makes, and with which placement ids, is read by the TypeScript
+compiler (`scripts/wgf_sdk/tools/seam-calls.mjs`, run with the game repository's own
+TypeScript): a call counts when the checker resolves its method to `GameIntegration`,
+however the receiver is named or passed around (a context object, a field), and a placement
+id is the argument's string-literal type, so `const` names and `as const` members resolve
+exactly. A computed id is listed as a placement that is not integrated, never dropped. Only
+when node or TypeScript is missing does the step fall back to a regular-expression reading,
+and the report's notes say which scanner ran. Its placement ids (`rewarded("revive-after-crash")`) are
 read from the source, attached to the design's moments like triggers are, and put in the
 plan; an id at a moment where the design placed nothing stays a plain natural break, never
 an ad the design did not ask for.

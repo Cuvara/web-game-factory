@@ -124,11 +124,31 @@ async function gameOverFlow(gameplay: PlatformGameplay, acceptOffer: boolean): P
 }
 
 describe("sdk-available", () => {
+  it("the template's per-title portal settings reach the adapter unchanged", async () => {
+    // platformOptions(entry) carries GameDistribution's and GameMonetize's Game IDs from
+    // game.config.yaml; booting with only a namespace started those portals without them.
+    const seen: unknown[] = [];
+    const options = {
+      namespace: "test",
+      portalGameId: "gm-title-0001",
+      gamedistribution: { gameId: "0123456789abcdef0123456789abcdef" },
+      y8: { appId: "y8-app" },
+    };
+    await bootPlatform("gamemonetize", {
+      options,
+      plan: PLAN,
+      create: (_id, received) => {
+        seen.push(received);
+        return new GenericWebPlatform({ namespace: received.namespace });
+      },
+    });
+    expect(seen).toEqual([options]);
+  });
   it("boots on the target platform without degrading", async () => {
     const game = new Game();
     const { platform } = portal(game);
     const booted = await bootPlatform("yandex", {
-      namespace: "test",
+      options: { namespace: "test" },
       plan: PLAN,
       create: () => platform,
     });
@@ -218,11 +238,11 @@ describe("sdk-unavailable", () => {
   it("a portal without an SDK runs on its configured substitute adapter", async () => {
     const created: string[] = [];
     const booted = await bootPlatform("gamevui", {
-      namespace: "test",
+      options: { namespace: "test" },
       plan: PLAN,
       create: (id, options) => {
         created.push(id);
-        return new GenericWebPlatform(options);
+        return new GenericWebPlatform({ namespace: options.namespace });
       },
     });
     expect(created).toEqual(["generic-web"]);
@@ -236,7 +256,7 @@ describe("sdk-init-failure", () => {
     const failing = new GenericWebPlatform({ namespace: "test" });
     failing.initialize = (): Promise<void> => Promise.reject(new Error("sdk.js blocked"));
     const booted = await bootPlatform("yandex", {
-      namespace: "test",
+      options: { namespace: "test" },
       plan: PLAN,
       create: () => failing,
     });
@@ -250,7 +270,7 @@ describe("sdk-init-failure", () => {
     const failing = new GenericWebPlatform({ namespace: "test" });
     failing.initialize = (): Promise<void> => Promise.reject(new Error("no SDK"));
     const booted = await bootPlatform("poki", {
-      namespace: "test",
+      options: { namespace: "test" },
       plan: PLAN,
       create: () => failing,
     });
@@ -439,7 +459,7 @@ describe("platform-not-configured", () => {
   it("a platform with no adapter still fails loudly at boot", async () => {
     await expect(
       bootPlatform("crazygames", {
-        namespace: "test",
+        options: { namespace: "test" },
         plan: PLAN,
         create: (id) => {
           throw new Error(`Platform adapter "${id}" is not implemented yet.`);

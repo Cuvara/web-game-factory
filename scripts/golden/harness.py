@@ -83,6 +83,13 @@ def __getattr__(name):
             return template_dir()
         except template.TemplateError:
             return ""
+    # `harness.PORTS_DIR`: a checkout of the lock's golden_ports commit, the replay's
+    # fixtures; "" when it cannot be obtained.
+    if name == "PORTS_DIR":
+        try:
+            return template.golden_ports_checkout()
+        except template.TemplateError:
+            return ""
     raise AttributeError(name)
 
 
@@ -104,15 +111,7 @@ FOREIGN_ENV = ("WGF_GAME_REPO", "WGF_RESEARCH_LIVE", "WGF_GAME_CONFIG")
 # pnpm needs no network either: the store is warm and installs are --offline /
 # --prefer-offline. A guard, not a sandbox: a child that ignores proxy variables is not
 # stopped by it.
-NO_PROXY = "localhost,127.0.0.1,::1"
-PROXY_VARS = ("http_proxy", "https_proxy", "HTTP_PROXY", "HTTPS_PROXY", "all_proxy",
-              "ALL_PROXY")
-
-
-def sandbox_env(proxy_url):
-    env = {name: proxy_url for name in PROXY_VARS}
-    env.update({"no_proxy": NO_PROXY, "NO_PROXY": NO_PROXY})
-    return env
+from wgflib.netguard import NO_PROXY, PROXY_VARS, sandbox_env  # noqa: E402,F401
 
 
 class network_sandbox:
@@ -191,7 +190,7 @@ def build_config(game, workdir, template_dir=None, python=None):
                 "kind": "command",
                 "argv": [python, os.path.join(HERE, "replay_developer.py"),
                          "--game", game.key, "--brief", "{brief}", "--repo", "{repo}",
-                         "--key", "{key}"],
+                         "--ports", template.golden_ports_checkout(), "--key", "{key}"],
                 "timeout_seconds": 1800,
             },
         },

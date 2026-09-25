@@ -24,6 +24,8 @@ interface Wiring {
   /** The adapter id the probe reports. */
   readonly adapter: string;
   readonly rewarded: boolean;
+  /** Modes the template's mock for this portal can play; the others are skipped. */
+  readonly modes?: readonly Mode[];
   install(page: Page, mode: Mode): Promise<string>;
 }
 
@@ -31,6 +33,10 @@ const YANDEX_MOCK = "examples/yandex-compliance-demo/tests/e2e/mock-sdk.js";
 const POKI_MOCK = "tests/poki/mock-poki-sdk.js";
 const POKI_URL = "https://game-cdn.poki.com/scripts/v2/poki-sdk.js";
 const CRAZYGAMES_URL = "https://sdk.crazygames.com/crazygames-sdk-v3.js";
+const GAMEDISTRIBUTION_MOCK = "tests/gamedistribution/mock-gd-sdk.js";
+const GAMEDISTRIBUTION_URL = "https://html5.api.gamedistribution.com/main.min.js";
+const GAMEMONETIZE_URL = "https://api.gamemonetize.com/sdk.js";
+const Y8_URL = "https://cdn.y8.com/minimal-sdk/2-0/y8.min.js";
 
 const pick = (mode: Mode, table: Partial<Record<Mode, string>>, fallback: string): string =>
   table[mode] ?? fallback;
@@ -115,8 +121,88 @@ const WIRING: Record<string, Wiring> = {
       return `/?cgAdMs=50&cgAdDelayMs=10${query ? `&${query}` : ""}`;
     },
   },
+  gamedistribution: {
+    adapter: "gamedistribution",
+    rewarded: true,
+    async install(page, mode) {
+      const boot = mode === "init-failure" ? "error" : "ready";
+      const ad = pick(mode, { "closed-early": "closed-early", "ad-unavailable": "no-fill" }, "complete");
+      await page.addInitScript(
+        (config) => {
+          (window as unknown as { __gdMock: unknown }).__gdMock = config;
+        },
+        { boot, ad, adMs: 50 },
+      );
+      await page.route(GAMEDISTRIBUTION_URL, (route) =>
+        mode === "sdk-unavailable"
+          ? route.abort()
+          : route.fulfill({
+              contentType: "application/javascript",
+              body: readFileSync(GAMEDISTRIBUTION_MOCK, "utf8"),
+            }),
+      );
+      return "/";
+    },
+  },
+  gamemonetize: {
+    adapter: "gamemonetize",
+    rewarded: false,
+    modes: ["available", "ad-unavailable", "sdk-unavailable", "init-failure"],
+    async install(page, mode) {
+      // Only template revisions with the GameMonetize adapter carry its mock.
+      const mockModule = "../gamemonetize/mock-sdk.js";
+      const { MOCK_SDK_SOURCE } = (await import(/* @vite-ignore */ mockModule)) as {
+        MOCK_SDK_SOURCE: string;
+      };
+      await page.addInitScript(
+        (config) => {
+          (window as unknown as { __gmMock: unknown }).__gmMock = config;
+        },
+        {
+          sdk: mode === "init-failure" ? "init-error" : "ready",
+          ad: mode === "ad-unavailable" ? "no-fill" : "play",
+          readyDelayMs: 10,
+          adMs: 50,
+        },
+      );
+      await page.route(GAMEMONETIZE_URL, (route) =>
+        mode === "sdk-unavailable"
+          ? route.abort()
+          : route.fulfill({ contentType: "application/javascript", body: MOCK_SDK_SOURCE }),
+      );
+      return "/";
+    },
+  },
+  y8: {
+    adapter: "y8",
+    rewarded: true,
+    async install(page, mode) {
+      // Only template revisions with the Y8 adapter carry its mock.
+      const mockModule = "../y8/mock-y8-sdk.js";
+      const { createY8Mock } = (await import(/* @vite-ignore */ mockModule)) as {
+        createY8Mock: (...args: unknown[]) => unknown;
+      };
+      const ad = pick(mode, { "closed-early": "dismissed", "ad-unavailable": "noAdPreloaded" }, "viewed");
+      await page.addInitScript(
+        (config) => {
+          (window as unknown as { __y8Mock: unknown }).__y8Mock = config;
+        },
+        { ad, ...(mode === "init-failure" ? { init: "rejects" } : {}) },
+      );
+      await page.route(Y8_URL, (route) =>
+        mode === "sdk-unavailable"
+          ? route.abort()
+          : route.fulfill({
+              contentType: "application/javascript",
+              body: `(() => { window.__y8 = (${createY8Mock.toString()})(window, window.__y8Mock || {}); })();`,
+            }),
+      );
+      return "/";
+    },
+  },
   gamevui: {
-    adapter: "generic-web",
+    // The template's own SDK-free GameVui adapter (no portal SDK exists to call).
+    adapter: "gamevui",
     rewarded: false,
     async install() {
       return "/";
@@ -127,6 +213,10 @@ const WIRING: Record<string, Wiring> = {
 const wiring = WIRING[PLATFORM];
 
 async function boot(page: Page, mode: Mode): Promise<string[]> {
+  test.skip(
+    Boolean(wiring?.modes && !wiring.modes.includes(mode)),
+    `the ${PLATFORM} mock cannot play "${mode}"`,
+  );
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
   const path = wiring ? await wiring.install(page, mode) : "/";

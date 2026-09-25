@@ -144,6 +144,29 @@ class Git:
         unless it all worked."""
         raise NotImplementedError
 
+    # -- the pinned template revision (source: github) ------------------------------------
+
+    def dirty(self, directory):
+        """Whether the working tree or index differs from HEAD."""
+        raise NotImplementedError
+
+    def discard(self, directory):
+        """Throw away every uncommitted change, tracked or not."""
+        raise NotImplementedError
+
+    def pin_tree(self, directory, url, commit, message, author=None):
+        """Bring a repository GitHub generated from the template to the template's tree at
+        `commit`, keeping whatever was committed on top of the generated root (the
+        template's bootstrap commit).
+
+        GitHub generates from the template's default branch as it is at that moment, which
+        need not be the revision the Factory is pinned to. The difference between the
+        generated root and `commit` (fetched from `url`) is applied as ONE local commit with
+        `message`. Returns {"action": "generated-at-pin" | "pinned", "commit": <new commit
+        or None>, "generated_tree": <root tree>}. Raises ToolError(retryable=False) when the
+        result is not the pinned tree apart from the paths committed on top of the root."""
+        raise NotImplementedError
+
 
 def run_command(argv, cwd=None, timeout=300):
     """Run a command and return its stdout; raise ToolError on failure. No shell. The child
@@ -346,3 +369,56 @@ class GitCli(Git):
         finally:
             shutil.rmtree(staging, ignore_errors=True)
         return self.head(destination)
+
+    def dirty(self, directory):
+        return bool(self._git(directory, "status", "--porcelain", "--untracked-files=all").strip())
+
+    def discard(self, directory):
+        self._git(directory, "reset", "--quiet", "--hard", "HEAD")
+        self._git(directory, "clean", "--quiet", "-fdx", "-e", "node_modules")
+
+    def _names(self, directory, left, right):
+        out = self._git(directory, "diff", "--no-renames", "--name-only", left, right)
+        return {line for line in out.splitlines() if line}
+
+    def pin_tree(self, directory, url, commit, message, author=None):
+        try:
+            self._git(directory, "cat-file", "-e", f"{commit}^{{commit}}")
+        except ToolError:
+            # By sha, not by branch or tag: a tag can be moved, a sha cannot.
+            self._git(directory, "fetch", "--quiet", "--no-tags", url, commit)
+        roots = self._git(directory, "rev-list", "--max-parents=0", "HEAD").split()
+        if len(roots) != 1:
+            raise ToolError(f"{directory} has {len(roots)} root commits; a repository "
+                            "generated from the template has exactly one", retryable=False)
+        root = roots[0]
+        tree = self._git(directory, "rev-parse", f"{root}^{{tree}}").strip()
+        pinned_tree = self._git(directory, "rev-parse", f"{commit}^{{tree}}").strip()
+        if tree == pinned_tree:
+            return {"action": "generated-at-pin", "commit": None, "generated_tree": tree}
+
+        # What was committed on top of the generated root - the template's bootstrap commit
+        # on GitHub - stays; everything else becomes the pinned revision's.
+        on_top = self._names(directory, root, "HEAD")
+        patch = self._git(directory, "diff", "--binary", "--no-renames", root, commit)
+        handle, patch_path = tempfile.mkstemp(prefix="wgf-template-pin-", suffix=".patch")
+        try:
+            with os.fdopen(handle, "w", encoding="utf-8", newline="\n") as out:
+                out.write(patch)
+            try:
+                self._git(directory, "apply", "--index", "--3way", "--whitespace=nowarn",
+                          patch_path)
+            except ToolError as exc:
+                self.discard(directory)
+                raise ToolError(f"cannot bring {directory} to web-game-template {commit}: "
+                                f"{exc}", retryable=False)
+        finally:
+            os.remove(patch_path)
+        self._run(["git", *self._identity(author), "-C", directory, "commit", "--no-verify",
+                   "--quiet", "-m", message])
+        residue = sorted(self._names(directory, commit, "HEAD") - on_top)
+        if residue:
+            raise ToolError(f"{directory} differs from web-game-template {commit} after "
+                            f"pinning, outside what was committed on the generated root: "
+                            f"{', '.join(residue[:10])}", retryable=False)
+        return {"action": "pinned", "commit": self.head(directory), "generated_tree": tree}

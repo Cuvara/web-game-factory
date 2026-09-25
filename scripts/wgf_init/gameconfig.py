@@ -50,9 +50,24 @@ def _flow_list(values):
     return "[" + ", ".join(plain_scalar(v) for v in values) + "]"
 
 
+# The platforms[] keys the template reads, in the order they are written. game_id, hosting
+# and game_url are per-title portal settings (web-game-template src/core/game-config.ts);
+# an entry carries them only when the tech plan does.
+PLATFORM_KEYS = ("id", "profile", "role", "game_id", "hosting", "game_url")
+
+
+def _platform_entry(entry):
+    unknown = sorted(set(entry) - set(PLATFORM_KEYS))
+    if unknown:
+        raise GameConfigError(f"tech plan platform {entry.get('id')!r} carries "
+                              f"{', '.join(unknown)}, which game.config.yaml has no place for")
+    return {key: entry[key] for key in PLATFORM_KEYS if key in entry}
+
+
 def _platform_line(indent, entry):
-    return (f"{indent}- {{ id: {plain_scalar(entry['id'])}, "
-            f"profile: {plain_scalar(entry['profile'])}, role: {plain_scalar(entry['role'])} }}\n")
+    fields = ", ".join(f"{key}: {plain_scalar(value)}"
+                       for key, value in _platform_entry(entry).items())
+    return f"{indent}- {{ {fields} }}\n"
 
 
 def bootstrap_identity(repo_name):
@@ -213,8 +228,7 @@ def apply_game_config(text, game_config, identity=None):
         after = load(result) or {}
     except YamlError as exc:
         raise GameConfigError(f"rewritten game.config.yaml does not parse: {exc}")
-    expected_platforms = [{"id": p["id"], "profile": p["profile"], "role": p["role"]}
-                          for p in platforms]
+    expected_platforms = [_platform_entry(p) for p in platforms]
     problems = []
     if (after.get("engine") or {}).get("type") != engine:
         problems.append("engine.type")

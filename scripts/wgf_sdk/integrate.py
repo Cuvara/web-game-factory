@@ -1,17 +1,19 @@
 """The side effect: what the step writes into the game repository, and what it finds there.
 
-Three kinds of change, all convergent - running the step twice leaves the repository as
-running it once did, which is this module's idempotency (docs/workflow-module-contract.md
-§8). Nothing is committed or pushed; the game repository's own history is its owner's.
+Whole files only, all convergent - running the step twice leaves the repository as running
+it once did, which is this module's idempotency (docs/workflow-module-contract.md §8). No
+file the game wrote is edited: there is no patching of src/main.ts or of anything else.
 
 1. Files the step owns outright, copied from `game/` beside this file:
        src/platform/gameplay.ts                     the gameplay integration layer
        tests/unit/platform/gameplay-integration.test.ts   its SDK-mock suite
+       src/platform/game-integration.ts             the seam, implemented on it
+       tests/unit/platform/game-integration.test.ts
    and one it generates, src/platform/integration-plan.ts, from the game-design.
-2. One patch to src/main.ts, the template's boot sequence: boot through `bootPlatform`
-   (runtime SDK failure degrades instead of blanking the screen), and install the
-   `PlatformGameplay` instance scenes call. Applied only when the template's own lines are
-   found exactly; otherwise main.ts is left alone and the boot hook reported unwired.
+2. The seam's wiring, src/platform/integration.ts (wgflib.gameseam): the develop step
+   provided its default; this step writes the integrated version over it, same exports.
+   src/main.ts already boots through it - `seam_problems` says so, or the step refuses the
+   build rather than integrate a game that would never call the integration.
 3. Nothing else. Gameplay code - where the player dies, where a level ends - belongs to the
    develop step. This module reads it (`scan_hooks`) to report which moments are wired.
 """
@@ -20,18 +22,20 @@ import json
 import os
 import re
 
+from wgflib import gameseam
+
 __all__ = [
     "OWNED_FILES",
     "SEAM_FILES",
+    "WIRING_FILE",
     "has_seam",
+    "seam_problems",
     "write_seam_files",
-    "patch_seam",
+    "write_wiring",
     "scan_seam",
     "PLAN_FILE",
-    "MAIN_FILE",
     "write_owned_files",
     "write_plan",
-    "patch_main",
     "scan_hooks",
     "render_plan",
 ]
@@ -43,14 +47,14 @@ OWNED_FILES = (
     "src/platform/gameplay.ts",
     "tests/unit/platform/gameplay-integration.test.ts",
 )
-# Written only when the game declares the develop step's seam, src/game/integration.ts.
+# The seam implemented on the gameplay layer, for the develop step's src/game/integration.ts.
 SEAM_FILES = (
     "src/platform/game-integration.ts",
     "tests/unit/platform/game-integration.test.ts",
 )
-SEAM_DECLARATION = "src/game/integration.ts"
+SEAM_DECLARATION = gameseam.CONTRACT_PATH
+WIRING_FILE = gameseam.WIRING_PATH
 PLAN_FILE = "src/platform/integration-plan.ts"
-MAIN_FILE = "src/main.ts"
 PRINT_WIDTH = 100
 
 
@@ -79,6 +83,22 @@ def has_seam(repo):
 
 def write_seam_files(repo):
     return write_owned_files(repo, SEAM_FILES)
+
+
+def seam_problems(repo):
+    """Why the game cannot be integrated through its seam; [] when it can."""
+    problems = []
+    if not has_seam(repo):
+        problems.append(f"{SEAM_DECLARATION} does not declare GameIntegration")
+    if not os.path.exists(os.path.join(repo, *WIRING_FILE.split("/"))):
+        problems.append(f"{WIRING_FILE} (the seam's wiring, provided by the develop step) is "
+                        "missing")
+    return problems + gameseam.seam_problems(repo)
+
+
+def write_wiring(repo):
+    """The integrated wiring over the develop step's default: one whole file, same exports."""
+    return write_owned_files(repo, (WIRING_FILE,))[0]
 
 
 def write_owned_files(repo, files=OWNED_FILES):
@@ -136,86 +156,6 @@ def write_plan(repo, plan, source):
     return {"path": PLAN_FILE, "action": action}
 
 
-# -- main.ts --------------------------------------------------------------------------------
-
-_IMPORT_CREATE = re.compile(r'^import \{ createPlatform \} from "@wgf/platform-sdk";\n', re.M)
-_BOOT = re.compile(
-    r"^(?P<i>[ \t]*)const platform = createPlatform\((?P<id>[^,\n]+), \{ namespace: "
-    r"(?P<ns>[^}\n]+?) \}\);\n(?P=i)await platform\.initialize\(\);\n",
-    re.M,
-)
-_NEW_GAME = re.compile(r"^(?P<i>[ \t]*)const game = new Game\(\);\n", re.M)
-_START = re.compile(r"^(?P<i>[ \t]*)game\.start\(\);\n(?P=i)platform\.gameplayStart\(\);\n", re.M)
-
-
-def patch_main(repo):
-    """Route the template's boot through the integration. Returns a file record."""
-    path = os.path.join(repo, *MAIN_FILE.split("/"))
-    if not os.path.exists(path):
-        return {"path": MAIN_FILE, "action": "skipped", "note": "no src/main.ts"}
-    with open(path, encoding="utf-8") as handle:
-        text = handle.read()
-    if "bootPlatform(" in text:
-        return {"path": MAIN_FILE, "action": "unchanged"}
-
-    anchors = {"import": _IMPORT_CREATE.search(text), "boot": _BOOT.search(text),
-               "game": _NEW_GAME.search(text)}
-    missing = [name for name, match in anchors.items() if match is None]
-    # Optional: a template that starts gameplay at boot hands that to runStarted. One that
-    # waits for the player's first input (Poki asks for that) leaves it to the game.
-    starts_at_boot = _START.search(text) is not None
-    if missing:
-        return {"path": MAIN_FILE, "action": "skipped",
-                "note": "the template's boot sequence was not found unchanged (no match for: "
-                        + ", ".join(missing) + "); wire bootPlatform and PlatformGameplay "
-                        "by hand as src/platform/gameplay.ts describes"}
-
-    boot = anchors["boot"]
-    i = boot.group("i")
-    text = _BOOT.sub(
-        lambda m: (
-            f"{i}const booted = await bootPlatform({m.group('id')}, {{\n"
-            f"{i}  namespace: {m.group('ns')},\n"
-            f"{i}  plan: INTEGRATION_PLAN,\n"
-            f"{i}}});\n"
-            f"{i}const platform = booted.platform;\n"
-            f"{i}// The adapter's initialize() rejected: play on without it rather than show\n"
-            f"{i}// a blank page, and leave the reason where the verify suite can see it.\n"
-            f"{i}if (booted.degraded) console.warn(\"platform degraded\", booted.degraded);\n"
-        ),
-        text, count=1)
-    text = _NEW_GAME.sub(
-        lambda m: (
-            f"{m.group('i')}const game = new Game();\n"
-            + (f"{m.group('i')}const gameplay = installGameplay(\n"
-               f"{m.group('i')}  new PlatformGameplay(game, platform, INTEGRATION_PLAN, "
-               f"{{ target: booted.target }}),\n"
-               f"{m.group('i')});\n"
-               if starts_at_boot else
-               f"{m.group('i')}installGameplay(\n"
-               f"{m.group('i')}  new PlatformGameplay(game, platform, INTEGRATION_PLAN, "
-               f"{{ target: booted.target }}),\n"
-               f"{m.group('i')});\n")
-        ),
-        text, count=1)
-    if starts_at_boot:
-        text = _START.sub(
-            lambda m: f"{m.group('i')}game.start();\n{m.group('i')}gameplay.runStarted();\n",
-            text, count=1)
-    imports = (
-        'import { bootPlatform, installGameplay, PlatformGameplay } from '
-        '"./platform/gameplay.js";\n'
-        'import { INTEGRATION_PLAN } from "./platform/integration-plan.js";\n'
-    )
-    if "createPlatform" in _IMPORT_CREATE.sub("", text):
-        text = text.replace(anchors["import"].group(0), anchors["import"].group(0) + imports, 1)
-    else:
-        text = _IMPORT_CREATE.sub(lambda m: imports, text, count=1)
-    with open(path, "w", encoding="utf-8", newline="\n") as handle:
-        handle.write(text)
-    return {"path": MAIN_FILE, "action": "patched"}
-
-
 # -- reading the game -----------------------------------------------------------------------
 
 # Method names specific enough to recognise on any receiver - scenes hold the instance under
@@ -229,13 +169,16 @@ _DISTINCT_CALL = re.compile(
 _GENERIC_CALL = re.compile(r"\.\s*(save|load|pause|resume)\s*(?:<[^>]*>)?\(")
 _IMPORTS_GAMEPLAY = re.compile(r'from\s+"[./]*(?:platform/)?gameplay\.js"')
 _MAIN_CALLS = {
-    "boot": re.compile(r"\bbootPlatform\s*\("),
+    # The seam's wiring boots through bootPlatform; main.ts calls it as createGamePlatform.
+    "boot": re.compile(r"\b(?:createGamePlatform|bootPlatform)\s*\("),
     "loading-progress": re.compile(r"\.reportLoadingProgress\s*\("),
     "game-ready": re.compile(r"\.signalReady\s*\("),
     "platform-binding": re.compile(r"(?<!function )\bbindPlatform\s*\("),
     "audio-mute": re.compile(r"\bonAudioMutedChange\b"),
-    "tracker": re.compile(r"\bnew PlatformGameplay\s*\([^;]*\btracker\s*:", re.S),
-    "gameplay-audio": re.compile(r"\bnew PlatformGameplay\s*\([^;]*\baudio\s*:", re.S),
+    "tracker": re.compile(
+        r"\b(?:new PlatformGameplay|createGameIntegration)\s*\([^;]*\btracker\s*[:,}]", re.S),
+    "gameplay-audio": re.compile(
+        r"\b(?:new PlatformGameplay|createGameIntegration)\s*\([^;]*\baudio\s*[:,}]", re.S),
 }
 _HOOK_NAMES = {
     "runStarted": "run-start",
@@ -255,7 +198,7 @@ _HOOK_NAMES = {
 def _source_files(repo):
     root = os.path.join(repo, "src")
     skip = {os.path.normpath(os.path.join(repo, *p.split("/")))
-            for p in (*OWNED_FILES, *SEAM_FILES, PLAN_FILE)}
+            for p in (*OWNED_FILES, *SEAM_FILES, PLAN_FILE, WIRING_FILE)}
     for directory, dirs, files in os.walk(root):
         dirs.sort()
         for name in sorted(files):
@@ -295,115 +238,159 @@ def scan_hooks(repo):
 
 # -- the develop step's seam ----------------------------------------------------------------
 
-_SEAM_PLACEMENT = re.compile(r"\.\s*(canOfferRewarded|rewarded|interstitial)\s*\(\s*\"([^\"]+)\"")
+# A seam call's placement id: a string literal, or a name the game declared as one
+# (`const REWARDED_PLACEMENT = "extra-moves"`, `PLACEMENTS.rewarded` from a const object
+# literal). A developer naming its ids is ordinary code; reading only literals made every
+# such call invisible, and the plan - which the integrated seam looks ids up in - then
+# carried none of them, so the game's ads never ran. Found by the real acceptance run.
+_ID = r"[A-Za-z_$][\w$]*"
+_SEAM_CALL = re.compile(r"\.\s*(canOfferRewarded|rewarded|interstitial)\s*\(")
+_PLACEMENT_ARG = re.compile(
+    rf"\s*(?:\"([^\"\n]+)\"|'([^'\n]+)'|({_ID}(?:\s*\.\s*{_ID})?))\s*[,)]")
+_STRING_CONST = re.compile(
+    rf"\bconst\s+({_ID})\s*(?::\s*string\s*)?=\s*(?:\"([^\"\n]*)\"|'([^'\n]*)')")
+_OBJECT_CONST = re.compile(rf"\bconst\s+({_ID})\s*(?::[^=]+)?=\s*\{{([^{{}}]*)\}}", re.S)
+_OBJECT_MEMBER = re.compile(rf"({_ID})\s*:\s*(?:\"([^\"\n]*)\"|'([^'\n]*)')")
 _SEAM_GAMEPLAY = re.compile(r"\.\s*(gameplayStart|gameplayStop)\s*\(")
 _SEAM_STORAGE = re.compile(r"\.\s*(save|load)\s*\(")
 _IMPORTS_SEAM = re.compile(r'from\s+"[./]*(?:game/)?integration\.js"')
+_COMMENTS = re.compile(r"//[^\n]*|/\*.*?\*/", re.S)
 
 
-def scan_seam(repo):
+def _first_argument(text, start):
+    """The source text of a call's first argument; `start` is just after its '('."""
+    depth, index = 0, start
+    while index < len(text) and index - start < 200:
+        char = text[index]
+        if char in "([{":
+            depth += 1
+        elif char in ")]}":
+            if depth == 0:
+                break
+            depth -= 1
+        elif char == "," and depth == 0:
+            break
+        index += 1
+    return " ".join(text[start:index].split())
+
+
+def _string_constants(text):
+    """{name: value} of the string constants `text` declares, and {"OBJ.key": value} of the
+    string members of its const object literals."""
+    found = {}
+    for match in _STRING_CONST.finditer(text):
+        found[match.group(1)] = match.group(2) if match.group(2) is not None else match.group(3)
+    for match in _OBJECT_CONST.finditer(text):
+        for member in _OBJECT_MEMBER.finditer(match.group(2)):
+            value = member.group(2) if member.group(2) is not None else member.group(3)
+            found[f"{match.group(1)}.{member.group(1)}"] = value
+    return found
+
+
+SEAM_SCANNER = os.path.join(HERE, "tools", "seam-calls.mjs")
+_PLACEMENT_METHODS = ("canOfferRewarded", "rewarded", "interstitial")
+
+
+def scan_seam(repo, runner=None):
     """What the game calls on its seam, outside src/platform/ (where the wiring lives).
 
-    Returns {"placements": {kind: {id: [file:line]}}, "calls": {name: [file:line]}}, kind
-    being "rewarded" (from canOfferRewarded or rewarded) or "interstitial".
+    Read by the TypeScript compiler (tools/seam-calls.mjs, with the game repository's own
+    TypeScript) when `runner` can run it: a call is a seam call when the checker resolves the
+    method to GameIntegration, however the receiver is named or passed around, and a
+    placement id is the argument's string-literal type. Otherwise - no node, no TypeScript
+    installed - the regular-expression reading below, which the result's `scanner` says.
+    """
+    if runner is not None:
+        typed = _scan_seam_typed(repo, runner)
+        if typed is not None:
+            return typed
+        fallback = scan_seam_regex(repo)
+        fallback["scanner"] = ("regex (the TypeScript seam scanner could not run in the game "
+                               "repository; calls reached through a variable the regex cannot "
+                               "see are missed)")
+        return fallback
+    return scan_seam_regex(repo)
+
+
+def _scan_seam_typed(repo, runner):
+    result = runner.run(["node", SEAM_SCANNER, repo], repo, 300)
+    if result is None or result.returncode != 0:
+        return None
+    try:
+        data = json.loads(result.stdout.strip().splitlines()[-1])
+    except (ValueError, IndexError):
+        return None
+    if not isinstance(data, dict) or data.get("scanner") != "typescript":
+        return None
+    placements = {"rewarded": {}, "interstitial": {}}
+    calls, unresolved = {}, []
+    for call in data.get("calls") or []:
+        method, where = call.get("method"), call.get("where")
+        calls.setdefault(method, []).append(where)
+        if method not in _PLACEMENT_METHODS:
+            continue
+        kind = "interstitial" if method == "interstitial" else "rewarded"
+        ids = call.get("placements")
+        if not ids:
+            unresolved.append({"call": method, "argument": call.get("argument") or "",
+                               "where": where})
+            continue
+        for placement in ids:
+            placements[kind].setdefault(placement, []).append(where)
+    return {"placements": placements, "calls": calls, "unresolved": unresolved,
+            "scanner": f"typescript {data.get('version')}"}
+
+
+def scan_seam_regex(repo):
+    """What the game calls on its seam, read with regular expressions (the fallback).
+
+    Returns {"placements": {kind: {id: [file:line]}}, "calls": {name: [file:line]},
+    "unresolved": [{"call", "argument", "where"}]}, kind being "rewarded" (from
+    canOfferRewarded or rewarded) or "interstitial". A placement argument that is a name is
+    resolved through the string constants the file declares, then those of every other
+    game file; one that still cannot be read is listed in `unresolved`, never dropped.
     """
     placements = {"rewarded": {}, "interstitial": {}}
-    calls = {}
+    calls, unresolved = {}, []
     declaration = os.path.normpath(os.path.join(repo, *SEAM_DECLARATION.split("/")))
+    sources = []
     for path in _source_files(repo):
         relative = os.path.relpath(path, repo).replace(os.sep, "/")
         if path == declaration or relative.startswith("src/platform/"):
             continue
         with open(path, encoding="utf-8") as handle:
-            text = handle.read()
+            sources.append((relative, handle.read()))
+    shared = {}
+    for _, text in sources:
+        for name, value in _string_constants(_COMMENTS.sub("", text)).items():
+            shared.setdefault(name, value)
+    for relative, raw in sources:
+        # Comments blanked, offsets kept: a doc comment naming `GameIntegration.rewarded()`
+        # is not a call (the real acceptance run's game had one).
+        text = _COMMENTS.sub(lambda m: re.sub(r"[^\n]", " ", m.group(0)), raw)
         if not _IMPORTS_SEAM.search(text) and "GameIntegration" not in text:
             continue
+        local = dict(shared, **_string_constants(text))
 
         def where(offset):
             return f"{relative}:{text.count(chr(10), 0, offset) + 1}"
 
-        for match in _SEAM_PLACEMENT.finditer(text):
-            kind = "interstitial" if match.group(1) == "interstitial" else "rewarded"
-            placements[kind].setdefault(match.group(2), []).append(where(match.start()))
-            calls.setdefault(match.group(1), []).append(where(match.start()))
+        for match in _SEAM_CALL.finditer(text):
+            call = match.group(1)
+            kind = "interstitial" if call == "interstitial" else "rewarded"
+            calls.setdefault(call, []).append(where(match.start()))
+            argument = _PLACEMENT_ARG.match(text, match.end())
+            name = re.sub(r"\s+", "", argument.group(3) or "") if argument else ""
+            placement = (argument.group(1) or argument.group(2) or local.get(name)
+                         if argument else None)
+            if not placement:
+                unresolved.append({"call": call,
+                                   "argument": name or _first_argument(text, match.end()),
+                                   "where": where(match.start())})
+                continue
+            placements[kind].setdefault(placement, []).append(where(match.start()))
         for pattern in (_SEAM_GAMEPLAY, _SEAM_STORAGE):
             for match in pattern.finditer(text):
                 calls.setdefault(match.group(1), []).append(where(match.start()))
-    return {"placements": placements, "calls": calls}
-
-
-_DEFAULT_CLASS = re.compile(r"export\s+class\s+(\w+)\s+implements\s+[^{]*\bGameIntegration\b")
-_DEFAULT_FACTORY = re.compile(
-    r"export\s+(?:async\s+)?function\s+(\w+)\s*\([^)]*\)\s*:\s*GameIntegration\b")
-_SEAM_IMPORT = ('import { PlatformGameIntegration } from "./platform/game-integration.js";\n')
-
-
-def _call_span(text, start):
-    """End offset of the balanced call whose '(' is at or after `start`."""
-    depth, i = 0, text.index("(", start)
-    while i < len(text):
-        if text[i] == "(":
-            depth += 1
-        elif text[i] == ")":
-            depth -= 1
-            if depth == 0:
-                return i + 1
-        i += 1
-    return None
-
-
-def patch_seam(repo):
-    """Swap the develop step's default seam implementation in main.ts for the platform's."""
-    path = os.path.join(repo, *MAIN_FILE.split("/"))
-    record = {"path": MAIN_FILE + " (seam)", "action": "skipped"}
-    if not os.path.exists(path):
-        return dict(record, note="no src/main.ts")
-    with open(path, encoding="utf-8") as handle:
-        text = handle.read()
-    if "PlatformGameIntegration" in text:
-        return dict(record, action="unchanged")
-
-    default = None
-    platform_dir = os.path.join(repo, "src", "platform")
-    for name in sorted(os.listdir(platform_dir)) if os.path.isdir(platform_dir) else []:
-        if not name.endswith(".ts") or f"src/platform/{name}" in (*OWNED_FILES, *SEAM_FILES,
-                                                                   PLAN_FILE):
-            continue
-        with open(os.path.join(platform_dir, name), encoding="utf-8") as handle:
-            source = handle.read()
-        found = _DEFAULT_CLASS.search(source) or _DEFAULT_FACTORY.search(source)
-        if found:
-            default = (found.group(1), found.re is _DEFAULT_CLASS)
-            break
-    if default is None:
-        return dict(record, note="no default GameIntegration implementation under "
-                                 "src/platform/ to replace; construct PlatformGameIntegration "
-                                 "in main.ts by hand")
-    name, is_class = default
-    construction = re.search((r"\bnew\s+" if is_class else r"(?<![\w.])") + re.escape(name)
-                             + r"\s*\(", text)
-    if construction is None:
-        return dict(record, note=f"main.ts does not construct {name}; construct "
-                                 f"PlatformGameIntegration where the game gets its seam")
-    end = _call_span(text, construction.start())
-    text = text[:construction.start()] + "new PlatformGameIntegration()" + text[end:]
-    # The default's import goes if nothing else uses it; the platform's comes in.
-    if not re.search(r"\b" + re.escape(name) + r"\b",
-                     re.sub(r"^import [^;]*;\n", "", text, flags=re.M)):
-        text = re.sub(r"^import \{([^}]*)\} from ([^;]*);\n",
-                      lambda m: _drop_specifier(m, name), text, flags=re.M)
-    last_import = list(re.finditer(r"^import [^;]*;\n", text, re.M))[-1]
-    text = text[:last_import.end()] + _SEAM_IMPORT + text[last_import.end():]
-    with open(path, "w", encoding="utf-8", newline="\n") as handle:
-        handle.write(text)
-    return dict(record, action="patched", note=f"{name} replaced by PlatformGameIntegration")
-
-
-def _drop_specifier(match, name):
-    specifiers = [s.strip() for s in match.group(1).split(",") if s.strip()]
-    kept = [s for s in specifiers if re.sub(r"^type\s+", "", s).split(" as ")[-1] != name]
-    if len(kept) == len(specifiers):
-        return match.group(0)
-    if not kept:
-        return ""
-    return "import { " + ", ".join(kept) + " } from " + match.group(2) + ";\n"
+    return {"placements": placements, "calls": calls, "unresolved": unresolved,
+            "scanner": "regex"}

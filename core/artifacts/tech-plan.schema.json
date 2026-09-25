@@ -143,7 +143,21 @@
                     "type": "string",
                     "description": "Pinned as <platform-id>@<profile-version> so a build is reproducible against the compliance rules in force."
                   },
-                  "role": { "enum": ["required", "optional"] }
+                  "role": { "enum": ["required", "optional"] },
+                  "game_id": {
+                    "type": "string",
+                    "pattern": "^[A-Za-z0-9_-]{8,64}$",
+                    "description": "The Game ID the portal issued for this title, where the platform's profile has requirements.game_id. From workspace/titles/<title-id>/portals.yaml; never invented."
+                  },
+                  "hosting": {
+                    "type": "string",
+                    "description": "A non-default hosting mode from the profile's requirements.hosting. Absent means the portal's default."
+                  },
+                  "game_url": {
+                    "type": "string",
+                    "pattern": "^https://\\S+$",
+                    "description": "hosting self-hosted only: the https URL the portal's wrapper page frames."
+                  }
                 },
                 "additionalProperties": false
               }

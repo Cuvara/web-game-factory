@@ -28,7 +28,7 @@ from .design import classify_trigger, design_placements, required_features
 from .inspect_sdk import inspect_sdk
 from .runner import SCENARIOS, TEST_FILE, git_state, run_tests
 
-__all__ = ["IntegrationPhase", "PhaseBlocked", "FEATURES", "SCHEMA_VERSION"]
+__all__ = ["IntegrationPhase", "PhaseBlocked", "SeamMissing", "FEATURES", "SCHEMA_VERSION"]
 
 SCHEMA_VERSION = "1.1.0"
 
@@ -111,6 +111,12 @@ class PhaseBlocked(Exception):
     """The game cannot be integrated without an outside change."""
 
 
+class SeamMissing(Exception):
+    """The build does not boot through the integration seam (wgflib.gameseam). Integrating
+    it would write files nothing calls and report an SDK nobody uses; the build goes back to
+    whoever broke the develop step's contract. Not retryable: nothing here changes it."""
+
+
 class IntegrationPhase:
     """One integration of one game repository. `setting(key, default)` reads factory.sdk."""
 
@@ -146,10 +152,24 @@ class IntegrationPhase:
         self._forbid_moments(placements, target_ids)
         declared = (game_config.get("monetization") or {}).get("ad_kinds")
         placement_records, plan_placements = self._placements(placements, declared)
-        seam = integrate.scan_seam(repo) if integrate.has_seam(repo) else None
-        if seam:
-            self._seam_placements(seam, placements, declared, placement_records,
-                                  plan_placements)
+        problems = integrate.seam_problems(repo)
+        if problems:
+            raise SeamMissing("the build does not boot through the integration seam, so the "
+                              "platform SDK cannot be integrated: " + "; ".join(problems))
+        seam = integrate.scan_seam(repo, self._runner)
+        notes.append(f"seam calls read by: {seam['scanner']}")
+        self._seam_placements(seam, placements, declared, placement_records, plan_placements)
+        for call in seam["unresolved"]:
+            placement_records.append({
+                "id": f"unresolved:{call['argument']}",
+                "kind": "interstitial" if call["call"] == "interstitial" else "rewarded",
+                "trigger": f"game placement at {call['where']}",
+                "integrated": False,
+                "note": (f"{call['call']}({call['argument']}) at {call['where']}: the placement "
+                         "id is neither a string literal nor a string constant the game "
+                         "declares, so it cannot be put in the plan - at runtime the seam "
+                         "finds no moment for it and shows nothing. Pass a literal or a "
+                         "`const` string.")})
 
         # The side effect, convergent: a re-run finds and leaves what it wrote.
         plan = {
@@ -161,13 +181,10 @@ class IntegrationPhase:
         source = (design.get("provenance") or {}).get("artifact_id", "the game-design")
         files = integrate.write_owned_files(repo)
         files.append(integrate.write_plan(repo, plan, source))
-        files.append(integrate.patch_main(repo))
-        if seam:
-            files.extend(integrate.write_seam_files(repo))
-            files.append(integrate.patch_seam(repo))
+        files.extend(integrate.write_seam_files(repo))
+        files.append(integrate.write_wiring(repo))
         hooks = integrate.scan_hooks(repo)
-        if seam:
-            self._seam_hooks(seam, plan_placements, hooks)
+        self._seam_hooks(seam, plan_placements, hooks)
 
         if self._setting("run_tests", True):
             tests = run_tests(self._runner, repo,

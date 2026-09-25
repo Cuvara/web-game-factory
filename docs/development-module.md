@@ -42,11 +42,24 @@ the game, regenerated on every visit and committed with the code it asked for. I
   progression, UI, HUD, tutorial, game over, restart, asset loading, responsive layout,
   audio hooks — each with its acceptance line.
 - **Scope** — the MVP verbatim, the tiers that are *not now*, and what is out of scope.
-- **The integration seam** — `src/game/integration.ts`, an interface the game calls for
-  gameplay start/stop, rewarded and interstitial placements, analytics and saves. The
-  default implementation wraps the template's `Platform`; the SDK module rewires it
-  without the game changing a call. This is how development stays out of SDK work.
-- **Tests** — unit tests for the rules, and a browser smoke test that *plays*.
+- **The integration seam** — provided by the Factory, not written by the developer
+  (`scripts/wgf_develop/seam.py`, `wgflib.gameseam`). Before the developer runs, the step
+  writes `src/game/integration.ts` (the `GameIntegration` interface the game calls for
+  gameplay start/stop, rewarded and interstitial placements, analytics and saves) and
+  `src/platform/integration.ts`, its wiring: `createGamePlatform()` and
+  `createGameIntegration(game, platform, { audio, tracker })`, built only on the template's
+  API (`createPlatform` with `platformOptions(primary)` and `virtual:platform-config`,
+  `withAdBreak`, `Analytics`). The brief asks `src/main.ts` to get its platform and its seam
+  from those two functions and never to call `createPlatform`. The SDK module later writes
+  its integrated wiring over `src/platform/integration.ts` as a whole file - same exports -
+  so neither main.ts nor any game call changes. This is how development stays out of SDK
+  work. A file that already exists (after the SDK step, the integrated wiring) is left as
+  it is.
+- **Tests** — unit tests for the rules, and a browser smoke test that *plays*, with the
+  verification contract stated up front: every Playwright test is tagged with the gameplay
+  aspects it exercises (`@game-over @restart`), and the brief lists the aspects this build
+  must prove - computed by `wgf_verification`'s own `required_aspects_for(design)`, so the
+  brief and verification cannot disagree.
 - **Report back** — `docs/development/report.json`: the developer's own account of each
   system, each MVP item, the placements, integration status, assets, scope deltas and
   known issues.
@@ -74,10 +87,10 @@ Run in this order; `conformance` cannot be switched off.
 | Check | What |
 |---|---|
 | `install` | `pnpm install --frozen-lockfile`. A failure stops the rest |
-| `conformance` | Static: engine imports only in `src/rendering/<engine>/`, no other engine, no portal SDK identifiers, ad APIs called only from `src/platform/`, `BootScene` replaced, the seam present, template-owned paths unchanged since the visit began, and `report.json` complete — every required system `done`, every MVP item and placement reported |
+| `conformance` | Static: engine imports only in `src/rendering/<engine>/`, no other engine, no portal SDK identifiers, ad APIs called only from `src/platform/`, `BootScene` replaced, the seam files as the Factory provided them and `src/main.ts` booting through them (`wgflib.gameseam`), template-owned paths unchanged since the visit began, and `report.json` complete — every required system `done`, every MVP item and placement reported |
 | `format` | `pnpm format` — optional |
 | `typecheck`, `lint`, `unit`, `build` | the repository's own scripts, as CI runs them |
-| `smoke` | `pnpm test:e2e`. Skipped, and reported as skipped, only when no browser is installed |
+| `smoke` | `pnpm test:e2e`, behind a proxy that refuses every non-local request (`wgflib.netguard`): a portal build would otherwise load the portal's real SDK from its CDN - dev traffic to the portal, and a result that depends on it (a Poki build's own "makes no insecure requests" failed on Poki's http:// ad bridge). The game must boot and play with the SDK refused, as for an ad-blocker; the summary says what was refused. Skipped, and reported as skipped, only when no browser is installed |
 
 ## Idempotency
 

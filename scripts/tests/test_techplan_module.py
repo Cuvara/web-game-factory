@@ -274,6 +274,122 @@ class ThePlan(unittest.TestCase):
                            self.artifact["dev_plan"]["est_days"])
 
 
+# -- portal registrations and the template pin --------------------------------------------
+
+
+class PortalRegistrations(unittest.TestCase):
+    """requirements.game_id in a profile decides what a title's portals.yaml must carry, and
+    what reaches game.config.yaml platforms[] (the template reads game_id, hosting, game_url).
+    """
+
+    GD_ID = "0123456789abcdef0123456789abcdef"
+
+    def setUp(self):
+        self.titles = tempfile.mkdtemp(prefix="wgf-titles-")
+        self.addCleanup(shutil.rmtree, self.titles, ignore_errors=True)
+        self.design = designed("pixijs")
+
+    def register(self, text):
+        os.makedirs(os.path.join(self.titles, "neon-drift"), exist_ok=True)
+        with open(os.path.join(self.titles, "neon-drift", "portals.yaml"), "w") as handle:
+            handle.write(text)
+
+    def targeting(self, *extra):
+        strat = strategy()
+        for platform_id in extra:
+            version = load_file(os.path.join(paths.PLATFORMS, f"{platform_id}.yaml"))["version"]
+            strat["platform_set"].append({"id": platform_id, "profile_version": version,
+                                          "role": "optional"})
+        return rehash(strat)
+
+    def plan(self, strat):
+        titles = self.titles
+
+        class Step(Fixed):
+            titles_dir = titles
+
+        step = Step(_Definition("tech-plan", "tech-plan", ["game-design", "title-strategy"],
+                                ["tech-plan"]))
+        return step.execute(inputs(**{"game-design": self.design, "title-strategy": strat}),
+                            Context())
+
+    def entry(self, result, platform_id):
+        self.assertEqual(result.outcome, StepOutcome.SUCCESS, result.error or result.message)
+        artifact = result.artifacts[0].content
+        self.assertEqual(ArtifactContracts()("tech-plan", artifact), [])
+        return next(p for p in artifact["repo_params"]["game_config"]["platforms"]
+                    if p["id"] == platform_id)
+
+    def test_a_required_game_id_that_is_not_registered_blocks(self):
+        result = self.plan(self.targeting("gamedistribution"))
+        self.assertEqual(result.outcome, StepOutcome.BLOCKED)
+        self.assertIn("portals.yaml", result.message)
+        self.assertIn("gamedistribution", result.message)
+
+    def test_a_registered_game_id_reaches_the_game_config_entry(self):
+        self.register(f"gamedistribution: {{game_id: {self.GD_ID}}}\n")
+        entry = self.entry(self.plan(self.targeting("gamedistribution")), "gamedistribution")
+        self.assertEqual(entry, {"id": "gamedistribution", "profile": "gamedistribution@1.0.0",
+                                 "role": "optional", "game_id": self.GD_ID})
+
+    def test_an_optional_game_id_is_written_only_when_registered(self):
+        entry = self.entry(self.plan(self.targeting("gamemonetize")), "gamemonetize")
+        self.assertNotIn("game_id", entry)
+        self.register("gamemonetize: {game_id: gm-title-0001}\n")
+        entry = self.entry(self.plan(self.targeting("gamemonetize")), "gamemonetize")
+        self.assertEqual(entry["game_id"], "gm-title-0001")
+
+    def test_a_game_id_for_a_platform_that_takes_none_blocks(self):
+        self.register("y8: {game_id: abcdefgh}\n")
+        result = self.plan(self.targeting("y8"))
+        self.assertEqual(result.outcome, StepOutcome.BLOCKED)
+        self.assertIn("takes no game_id", result.message)
+
+    def test_a_game_id_of_the_wrong_shape_blocks(self):
+        self.register("gamedistribution: {game_id: not-a-32-hex-id}\n")
+        result = self.plan(self.targeting("gamedistribution"))
+        self.assertEqual(result.outcome, StepOutcome.BLOCKED)
+        self.assertIn("pattern", result.message)
+
+    def test_self_hosting_needs_an_https_game_url(self):
+        self.register(f"gamedistribution: {{game_id: {self.GD_ID}, hosting: self-hosted}}\n")
+        self.assertEqual(self.plan(self.targeting("gamedistribution")).outcome,
+                         StepOutcome.BLOCKED)
+        self.register(f"gamedistribution: {{game_id: {self.GD_ID}, hosting: self-hosted, "
+                      f"game_url: \"https://games.example.com/neon/\"}}\n")
+        entry = self.entry(self.plan(self.targeting("gamedistribution")), "gamedistribution")
+        self.assertEqual((entry["hosting"], entry["game_url"]),
+                         ("self-hosted", "https://games.example.com/neon/"))
+
+    def test_the_default_hosting_mode_is_not_written(self):
+        self.register(f"gamedistribution: {{game_id: {self.GD_ID}, "
+                      f"hosting: gamedistribution}}\n")
+        entry = self.entry(self.plan(self.targeting("gamedistribution")), "gamedistribution")
+        self.assertNotIn("hosting", entry)
+
+    def test_the_new_portals_plan_without_registrations_where_allowed(self):
+        for platform_id in ("y8", "gamemonetize"):
+            entry = self.entry(self.plan(self.targeting(platform_id)), platform_id)
+            self.assertEqual(set(entry), {"id", "profile", "role"})
+
+
+class TemplatePin(unittest.TestCase):
+    """The plan approved at G3 names the exact template revision init will create from."""
+
+    def test_the_plan_names_the_pinned_template_commit(self):
+        from wgflib import template as template_pin
+        lock = template_pin.load_lock()
+        artifact = plan(designed("pixijs")).artifacts[0].content
+        self.assertEqual(artifact["repo_params"]["template_ref"],
+                         f"{lock['repository']}@{template_pin.expected_commit(lock)}")
+
+    def test_a_configured_ref_other_than_the_pin_blocks(self):
+        result = plan(designed("pixijs"),
+                      config={"techplan": {"template_ref": "Cuvara/web-game-template@main"}})
+        self.assertEqual(result.outcome, StepOutcome.BLOCKED)
+        self.assertIn("not the pinned template", result.message)
+
+
 # -- outcomes ------------------------------------------------------------------------------
 
 

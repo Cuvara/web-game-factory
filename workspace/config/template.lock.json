@@ -1,8 +1,13 @@
 {
-  "about": "The web-game-template revision this Factory is validated against. Golden runs, the SDK inspector's tests and every test that reads template files use a checkout of exactly this commit (scripts/wgflib/template.py). Change it only in a commit where both golden runs pass on the new revision (WGF_TEMPLATE_COMMIT=<sha> WGF_GOLDEN=1 bin/wgf test-core). This commit is 1f5dee2 (web-game-template main, 2026-09-24) plus one commit adding the golden-run ports under examples/*/wgf-golden/ and examples/wgf-golden-shared/.",
+  "about": "The web-game-template revision this Factory is validated against: the latest RELEASE of the template, by tag and by the commit the tag points at. init creates every game from exactly this tree (a repository GitHub generates from another revision is brought to it by one local commit), the tech plan records it as repo_params.template_ref, and every test that reads template files uses a checkout of it (scripts/wgflib/template.py). Change it only in a commit where the Factory's acceptance runs pass on the new revision (WGF_TEMPLATE_COMMIT=<sha> bin/wgf test-core, then a real new-game run).",
   "repository": "Cuvara/web-game-template",
   "url": "https://github.com/Cuvara/web-game-template.git",
-  "commit": "22482b4eb81084a89ff8ecdeea9130f06ebb8026",
-  "ref": "wgf/golden-ports",
-  "validated_on": "2026-09-24"
+  "commit": "bca41a97665f8a32d0f803d46a7bbd001ac94d41",
+  "ref": "v1.1.0",
+  "validated_on": "2026-09-24",
+  "golden_ports": {
+    "about": "Test fixtures only, never a revision a game is created from: the golden runs' replay developer (scripts/golden/replay_developer.py) reads its hand-made ports (examples/*/wgf-golden/, examples/wgf-golden-shared/) from a checkout of this commit, because the pinned release above does not ship them. It is the template's main at the merge of those ports onto the release; outside them - and one tsconfig exclude for them - its tree is the release's.",
+    "commit": "ea466d77f611649a2ebe96dbfeecbe14deb50313",
+    "ref": "main"
+  }
 }

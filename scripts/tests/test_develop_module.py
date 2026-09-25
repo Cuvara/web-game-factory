@@ -23,6 +23,7 @@ sys.path.insert(0, SCRIPTS)
 
 import wgf_develop  # noqa: E402
 from wgf_develop import brief as briefs  # noqa: E402
+from wgf_develop import gdd  # noqa: E402
 from wgf_develop import seam  # noqa: E402
 from wgf_develop.checks import conformance  # noqa: E402
 from wgf_develop.repository import KEY_TRAILER, GitRepo, Runner, RunResult  # noqa: E402
@@ -415,6 +416,65 @@ class DesignAndPlanInTheBrief(DevelopCase):
              "acceptance_criteria": ["b"]}]}}
         self.assertEqual([t["id"] for t in briefs.select_dev_plan(plan)["tasks"]],
                          ["A-1", "B-1"])
+
+
+class GameDesignDocument(DevelopCase):
+    """F3: game-design's rendered_to, docs/GDD.md, produced in the game repository."""
+
+    def test_every_template_section_is_rendered(self):
+        inputs = with_build_spec_and_plan()
+        text = gdd.render_gdd(inputs.load("game-design"), inputs.load("title-strategy"))
+        for heading in ("## 1. Concept", "## 2. Core loop", "## 3. Session design",
+                        "## 4. Progression and economy", "## 5. Retention",
+                        "## 6. Monetization", "## 7. Scope", "## 8. UX and controls",
+                        "## 9. Difficulty", "## 10. Art and audio direction", "## 10a. Engine",
+                        "## 10b. Build specification — MVP", "## 10c. Post-MVP and optional",
+                        "## 11. Platform considerations", "## 12. Design consistency",
+                        "## 13. Open questions"):
+            self.assertIn(heading, text)
+        for needle in ("Three lanes; the player starts in the middle one.", "move_ms: 120",
+                       "Hit-stop for 150 ms, screen shake.", "mechanics/dash (post-mvp)"):
+            self.assertIn(needle, text)
+        self.assertNotIn("Not now.", text)  # the post-mvp mechanic's rules
+
+    def test_it_is_deterministic_and_pins_the_design(self):
+        inputs = with_build_spec_and_plan()
+        design = inputs.load("game-design")
+        one = gdd.render_gdd(design, None, "sha256:" + "1" * 64)
+        self.assertEqual(one, gdd.render_gdd(design, None, "sha256:" + "1" * 64))
+        self.assertIn("sha256:" + "1" * 64, one)
+        self.assertIn(design["provenance"]["artifact_id"], one)
+        self.assertIn(design["provenance"]["content_hash"], gdd.render_gdd(design))
+
+    def test_a_design_without_build_spec_still_renders(self):
+        text = gdd.render_gdd(fixture("game-design"))
+        self.assertIn("## 10b. Build specification — MVP", text)
+        self.assertIn("carries no build specification", text)
+        self.assertIn("## 13. Open questions", text)
+
+    def test_develop_writes_it_before_the_developer_runs(self):
+        inputs = with_build_spec_and_plan()
+        step_with(FakeRunner()).execute(inputs, context(self.config()))
+        with open(os.path.join(self.repo, gdd.GDD_PATH), encoding="utf-8") as handle:
+            text = handle.read()
+        self.assertEqual(text, gdd.render_gdd(inputs.load("game-design"),
+                                              inputs.load("title-strategy"),
+                                              inputs.refs["game-design"].content_hash))
+        with open(os.path.join(self.repo, briefs.BRIEF_DIR, "brief.md")) as handle:
+            self.assertIn("`docs/GDD.md`", handle.read())
+
+    def test_a_developer_edit_does_not_survive_into_the_commit(self):
+        inputs = with_build_spec_and_plan()
+        edit = lambda root: write_game(root, {gdd.GDD_PATH: "# edited by hand\n"})  # noqa: E731
+        result = step_with(FakeRunner(on_develop=edit)).execute(
+            inputs, context(self.command_config()))
+        self.assertEqual(result.outcome, StepOutcome.SUCCESS, result.error)
+        committed = subprocess.run(
+            ["git", "-C", self.repo, "show", f"HEAD:{gdd.GDD_PATH}"], capture_output=True,
+            text=True, check=True).stdout
+        self.assertEqual(committed, gdd.render_gdd(inputs.load("game-design"),
+                                                   inputs.load("title-strategy"),
+                                                   inputs.refs["game-design"].content_hash))
 
 
 class Handoff(DevelopCase):

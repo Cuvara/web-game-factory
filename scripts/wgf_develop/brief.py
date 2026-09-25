@@ -436,6 +436,8 @@ def render_markdown(brief):
     add("")
 
     add("## Design\n")
+    add("The whole design is in `docs/GDD.md`, rendered from the game-design artifact (the "
+        "Factory regenerates it every visit; do not edit it). The essentials:\n")
     for label, key in (("Fantasy", "fantasy"), ("Core loop", "core_loop"),
                        ("Controls", "controls"), ("Difficulty", "difficulty"),
                        ("Progression", "progression"),

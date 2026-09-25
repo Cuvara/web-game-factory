@@ -26,7 +26,9 @@ web-game-factory  →  tech-plan.repo_params  →  gh CLI  →  web-game-templat
    as pinned entries — `{id, profile, role}` — not bare strings, so the build stays
    reproducible against the compliance rules in force.
 3. Render `game-design` to `docs/GDD.md` and `tech-plan` to `docs/tech-plan.md` in the game
-   repo, so the coding agent has them locally.
+   repo, so the coding agent has them locally. In an engine run the development step renders
+   `docs/GDD.md` on every visit, so the file always matches the design the build is briefed
+   from; the tech plan's prototype tasks reach the developer through the development brief.
 4. Confirm CI is green on the untouched scaffold. A red pipeline before any game code
    exists is a template problem, and finding it now costs nothing.
 

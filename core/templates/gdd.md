@@ -8,7 +8,8 @@
   and coding agents can read the design as prose. If the two disagree, the artifact wins
   and this file is stale.
 
-  Rendered into the game repository at docs/GDD.md during scaffolding.
+  Rendered into the game repository at docs/GDD.md - in an engine run by the development
+  step, on every visit, so it tracks the design each build is briefed from.
 -->
 
 **Title** {{title_id}} · **Version** {{version}} · **Status** {{status}}

@@ -17,7 +17,8 @@ a workflow that wants, say, a narrower check list.
         check_timeout_seconds: 900
         commit: true
         build_url: null            # e.g. "https://{branch}.{name}.pages.dev"
-        skills: {}                 # per-engine host skill names the brief recommends
+        skills: {}                 # area -> host skill names the brief recommends, merged
+                                   # over the defaults (brief.DEFAULT_SKILLS); [] drops one
         self_playtest: false       # the brief asks the developer to play its own build in
                                    # a browser; only for a developer given a browser tool
 """
@@ -91,6 +92,13 @@ class Settings:
                     "for kind: command"
                 )
 
+        skills = data.get("skills") or {}
+        if not isinstance(skills, dict) or not all(
+                isinstance(area, str) and isinstance(names, list)
+                and all(isinstance(n, str) and n for n in names)
+                for area, names in skills.items()):
+            raise SettingsError("factory.develop.skills must map an area (pixijs, threejs, "
+                                "ui, craft, ...) to a list of skill names")
         if not isinstance(data.get("self_playtest", False), bool):
             raise SettingsError("factory.develop.self_playtest must be true or false")
 

@@ -11,6 +11,16 @@ and `core/` is still the contract.
 
 ### Added
 
+- **The developer brief recommends the plugin's craft skills (F7).**
+  - `brief.DEFAULT_SKILLS` names `web-game-factory:game-feel`, `core-loop`,
+    `web-performance`, `audio` (area `craft`), `onboarding-ux` (`ui`), and the engine's
+    `pixijs` / `threejs`, alongside the generic skills.
+  - Configured areas are no longer silently dropped: every area except the other engine's
+    reaches the brief. `[]` drops an area.
+  - `develop.skills` is validated.
+
+  *Migration:* none.
+
 - **Opt-in developer self-playtest (F6).** The defaults are unchanged: developer `handoff`,
   `self_playtest: false`.
   - `developer.argv` gains a `{factory}` placeholder (the Factory root, substituted once).

@@ -477,6 +477,55 @@ class GameDesignDocument(DevelopCase):
                                                    inputs.refs["game-design"].content_hash))
 
 
+class HostSkills(DevelopCase):
+    """F7: the brief recommends this Factory's own plugin skills, not only generic ones."""
+
+    def brief_json(self, **develop):
+        step_with(FakeRunner()).execute(inputs_for(), context(self.config(**develop)))
+        with open(os.path.join(self.repo, briefs.BRIEF_DIR, "brief.json")) as handle:
+            data = json.load(handle)
+        with open(os.path.join(self.repo, briefs.BRIEF_DIR, "brief.md")) as handle:
+            return data, handle.read()
+
+    def test_the_default_brief_names_the_craft_skills(self):
+        data, text = self.brief_json()
+        skills = data["skills"]
+        self.assertEqual(set(skills), {"pixijs", "ui", "craft"})  # the fixture is 2D
+        for name in ("web-game-factory:game-feel", "web-game-factory:core-loop",
+                     "web-game-factory:web-performance", "web-game-factory:audio"):
+            self.assertIn(name, skills["craft"])
+        self.assertIn("web-game-factory:pixijs", skills["pixijs"])
+        self.assertIn("web-game-factory:onboarding-ux", skills["ui"])
+        self.assertIn("## Host skills", text)
+        self.assertIn("web-game-factory:game-feel", text)
+        self.assertIn("this Factory's own plugin", text)
+
+    def test_the_other_engine_is_never_recommended(self):
+        data, text = self.brief_json()
+        self.assertNotIn("threejs", data["skills"])
+        self.assertNotIn("web-game-factory:threejs", text)
+
+    def test_a_configured_area_is_kept_and_an_empty_one_drops(self):
+        data, _ = self.brief_json(skills={"level-design": ["a level-design skill"],
+                                          "craft": []})
+        self.assertEqual(data["skills"]["level-design"], ["a level-design skill"])
+        self.assertNotIn("craft", data["skills"])
+        self.assertIn("ui", data["skills"])  # the defaults still apply around it
+
+    def test_invalid_skills_are_refused(self):
+        for skills in ("game-feel", {"craft": "game-feel"}, {"craft": [1]}, {"craft": [""]}):
+            with self.assertRaises(SettingsError, msg=repr(skills)):
+                Settings.resolve({"develop": {"skills": skills}})
+
+    def test_every_default_plugin_skill_exists_in_the_plugin(self):
+        root = os.path.join(ROOT, "claude-web-game-plugin", "skills")
+        for names in briefs.DEFAULT_SKILLS.values():
+            for name in names:
+                if name.startswith(briefs.PLUGIN + ":"):
+                    skill = name.split(":", 1)[1]
+                    self.assertTrue(os.path.isfile(os.path.join(root, skill, "SKILL.md")), name)
+
+
 class Handoff(DevelopCase):
     def test_writes_the_brief_and_waits_for_a_person(self):
         runner = FakeRunner()

@@ -569,6 +569,36 @@ class Command(DevelopCase):
         self.assertEqual(argv[:2], ["agent", "-p"])
         self.assertIn(os.path.join(self.repo, briefs.BRIEF_DIR, "brief.md"), argv[2])
 
+    def test_the_factory_root_is_substituted_once_verbatim(self):
+        # F6: host files that live in the Factory (an MCP config, a plugin directory) are
+        # named through {factory}, since the developer's cwd is the checkout.
+        from wgflib import paths
+        runner = FakeRunner(on_develop=write_game)
+        config = self.config(developer={"kind": "command", "argv": [
+            "agent", "--mcp-config", "{factory}/workspace/config/mcp/x.json", "{prompt}"]})
+        result = step_with(runner).execute(inputs_for(), context(config))
+        self.assertEqual(result.outcome, StepOutcome.SUCCESS, result.error)
+        argv = runner.developer_calls()[0]
+        self.assertEqual(argv[2], paths.ROOT + "/workspace/config/mcp/x.json")
+        self.assertNotIn("{factory}", " ".join(argv))
+
+    def test_self_playtest_is_opt_in(self):
+        step_with(FakeRunner()).execute(inputs_for(), context(self.config()))
+        with open(os.path.join(self.repo, briefs.BRIEF_DIR, "brief.md")) as handle:
+            self.assertNotIn("## Playtest your build", handle.read())
+        shutil.rmtree(os.path.join(self.repo, briefs.BRIEF_DIR))
+        step_with(FakeRunner()).execute(inputs_for(), context(
+            self.config(self_playtest=True), key="run-2:develop:1"))
+        with open(os.path.join(self.repo, briefs.BRIEF_DIR, "brief.md")) as handle:
+            text = handle.read()
+        for needle in ("## Playtest your build", "pnpm preview --port 4173 --strictPort",
+                       "never the dev server", "Stay on localhost", "not evidence"):
+            self.assertIn(needle, text)
+
+    def test_self_playtest_must_be_a_boolean(self):
+        with self.assertRaises(SettingsError):
+            Settings.resolve({"develop": {"self_playtest": "yes"}})
+
     def test_a_failing_developer_is_retryable(self):
         runner = FakeRunner(develop_exit=2)
         result = step_with(runner).execute(inputs_for(), context(self.command_config()))

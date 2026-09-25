@@ -11,6 +11,20 @@ and `core/` is still the contract.
 
 ### Added
 
+- **Opt-in developer self-playtest (F6).** The defaults are unchanged: developer `handoff`,
+  `self_playtest: false`.
+  - `developer.argv` gains a `{factory}` placeholder (the Factory root, substituted once).
+  - New `workspace/config/mcp-playwright-localhost.json`: `@playwright/mcp@0.0.82`, headless,
+    isolated, localhost origins only.
+  - New `develop.self_playtest` setting, which adds a "Playtest your build" section to the
+    brief.
+  - A second commented developer block in `factory.yaml` (`--- opt-in: self-playtest`) adds
+    `--mcp-config`, `--plugin-dir` and `Skill` / `mcp__playwright` to the verified argv,
+    keeping `--strict-mcp-config` and every restriction.
+  - `docs/claude-capabilities.md` records it as VERIFIED offline, UNVERIFIED live.
+
+  *Migration:* none.
+
 - **Shaped procedural audio (F5).** The procedural backend's sound effects were a bare sine
   tone. They now come from a deterministic jsfxr-style synthesiser (`encoders.synth`):
   waveform, envelope, pitch slide, vibrato and arpeggio. The preset (ui, coin, jump, hit,

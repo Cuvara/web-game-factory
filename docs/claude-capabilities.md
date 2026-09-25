@@ -87,7 +87,7 @@ against `claude --help` for 2.1.281, and every flag appears in a live run below.
 | `-p "{prompt}"` | ✓ | ✓ | headless; the Factory's prompt |
 | `--setting-sources project` | ✓ | | the operator's personal allow rules and hooks do not widen the session |
 | `--safe-mode` | | ✓ | no hooks, plugins, MCP or CLAUDE.md, so nothing the developer committed runs in or instructs the reviewer |
-| `--strict-mcp-config` | ✓ | ✓ | no MCP servers |
+| `--strict-mcp-config` | ✓ | ✓ | no MCP servers (the opt-in self-playtest block below: only its listed file) |
 | `--tools` | `Read,Edit,Write,Glob,Grep,Bash` | `Read,Glob,Grep,Bash` | tools outside the set do not exist |
 | `--allowedTools` | reads, `Edit(./**)`, `Write(./**)`, `Bash(pnpm *)`, read-only git | reads, `Bash(git diff/log/show *)` | pre-approved without a prompt |
 | `--disallowedTools` | network tools; git that moves history, refs or config; `git * --output*` | `Edit,Write,NotebookEdit`, network tools, `git * --output*` | deny beats allow |
@@ -103,6 +103,34 @@ Two configuration consequences:
 - `Bash(pnpm *)` also admits `pnpm exec` and `pnpm dlx`, which is arbitrary code in the
   checkout. The host rules scope files, not the network or `$HOME`. Wrap the argv in an OS
   sandbox if the developer needs that.
+
+### Opt-in: a developer that playtests its own build (F6)
+
+A second commented developer block sits under `--- opt-in: self-playtest` in
+`workspace/config/factory.yaml`, together with `self_playtest: true`. It is the verified
+developer argv above plus:
+
+| Flag or setting | Value | Why |
+|---|---|---|
+| `--mcp-config` | `{factory}/workspace/config/mcp-playwright-localhost.json` | one Playwright MCP server: `@playwright/mcp@0.0.82` (exact pin), `--headless`, `--isolated` (no profile on disk), `--allowed-origins http://localhost:4173;http://127.0.0.1:4173` |
+| `--strict-mcp-config` | kept | now means *only the listed file*, not "no MCP servers" |
+| `--plugin-dir` | `{factory}/claude-web-game-plugin` | the craft skills (game-feel, core-loop, web-performance, ...) |
+| `--tools` / `--allowedTools` | adds `Skill`, and `mcp__playwright` | the only additions; `Edit(./**)` / `Write(./**)` and every deny are unchanged |
+| `self_playtest: true` | develop setting | the brief gains "Playtest your build": `pnpm build`, `pnpm preview --port 4173 --strictPort`, play every required aspect against the minimum feedback bar, fix, stop the server |
+| `{factory}` | argv placeholder (`scripts/wgf_develop/developers.py`) | the Factory root. The developer's cwd is the checkout, and both files live in the guarded Factory tree, outside anything the developer may edit |
+
+The rest of the security model is unchanged:
+- **Browser.** It is limited to the local preview origins. The playtest is the developer's own
+  check, not evidence: verification still plays the build independently.
+- **Developer process.** It is still not network-guarded (pnpm needs the registry). The
+  sandbox note above applies unchanged.
+
+**Status: VERIFIED offline, UNVERIFIED live.**
+- Every flag exists in `claude --help` for 2.1.282 and in `@playwright/mcp@0.0.82 --help`.
+- `ShippedConfig` checks that the block loads, keeps `--strict-mcp-config`, points at files
+  that exist inside the Factory, keeps edits scoped to the checkout, and that the MCP file
+  allows only localhost at an exact version.
+- No live developer run with the browser has been made yet.
 
 ## Live evidence
 

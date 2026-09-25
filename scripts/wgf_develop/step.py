@@ -150,7 +150,7 @@ class DevelopStep(WorkflowStep):
                 baseline=baseline, design=design, assets=assets, scaffold=scaffold,
                 strategy=strategy, qa=qa, previous_checks=previous_checks,
                 refs=inputs.refs, skills=settings.skills, review=review,
-                tech_plan=tech_plan,
+                tech_plan=tech_plan, self_playtest=settings.self_playtest,
                 mobile_test=bool((game_config.get("verification") or {}).get("mobile_test",
                                                                             True)),
             )

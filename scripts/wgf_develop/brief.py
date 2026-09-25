@@ -215,7 +215,7 @@ def select_dev_plan(tech_plan):
 
 def build_brief(*, title_id, engine, iteration, key, baseline, design, assets, scaffold,
                 strategy=None, qa=None, previous_checks=None, refs=None, skills=None,
-                review=None, mobile_test=True, tech_plan=None):
+                review=None, mobile_test=True, tech_plan=None, self_playtest=False):
     """The brief as data. `render_markdown` turns it into the document a developer reads."""
     refs = refs or {}
     tiers = (design.get("scope") or {}).get("tiers") or {}
@@ -307,6 +307,7 @@ def build_brief(*, title_id, engine, iteration, key, baseline, design, assets, s
         "previous_failures": failures,
         "skills": {k: host_skills[k] for k in ("ui", engine) if k in host_skills},
         "report_path": REPORT_PATH,
+        "self_playtest": bool(self_playtest),
         # What verification will demand browser evidence for (wgf_verification computes the
         # same set from the same design): the developer is told up front, instead of
         # learning it from a failed verification and a loop back here.
@@ -576,6 +577,25 @@ def render_markdown(brief):
     add("- All of `pnpm typecheck`, `pnpm lint`, `pnpm test`, `pnpm build` and "
         "`pnpm test:e2e` must pass. Run `pnpm format:write` before you finish.")
     add("")
+
+    if brief.get("self_playtest"):
+        add("## Playtest your build\n")
+        add("This developer has a browser tool. Once the checks pass, play the game the way "
+            "a first-time player would, before you write the report:\n")
+        add("1. `pnpm build`, then serve the bundle with `pnpm preview --port 4173 "
+            "--strictPort` - the built game, never the dev server - and open "
+            "`http://localhost:4173`. Stay on localhost: the browser is limited to it, and "
+            "no portal SDK is contacted.")
+        add("2. Play through every aspect the verification section above requires. For "
+            "each, check the minimum feedback bar: every input acknowledged at once, every "
+            "reward noticed (motion and sound), every failure understood before any overlay "
+            "covers it, HUD values that animate when they change.")
+        add("3. Check the first thirty seconds against the design's session targets: first "
+            "play and first reward within their times, one tap to play, no wall of text.")
+        add("4. Fix what you find, rerun the checks, and stop the preview server.")
+        add("5. Record what you saw and fixed in the report's `known_issues` or "
+            "`scope_deltas`. This is your own check, not evidence: verification plays the "
+            "build independently.\n")
 
     if brief["qa_defects"]:
         add("## Fix first: blocking defects from verification\n")

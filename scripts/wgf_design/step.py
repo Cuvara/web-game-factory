@@ -23,7 +23,7 @@ Outcomes, per docs/workflow-module-contract.md §7:
 
 import datetime
 
-from wgflib.hashing import content_hash
+from wgflib import provenance
 from wgflib.workflow import ArtifactOutput, StepResult, WorkflowStep
 
 from . import consistency
@@ -33,7 +33,7 @@ from .platforms import PlatformError, load_platforms
 
 __all__ = ["DesignStep", "SCHEMA_VERSION", "ROLE"]
 
-SCHEMA_VERSION = "1.1.0"
+SCHEMA_VERSION = provenance.version_of("game-design")
 ROLE = "game-designer"
 READS_STRATEGY_MAJOR = "1"
 DEFAULT_AUTHOR = "archetype"
@@ -115,29 +115,19 @@ class DesignStep(WorkflowStep):
                               + (f", {len(warnings)} warning(s) for G3" if warnings else ""))
 
     def _with_provenance(self, design, strategy, ref, title_id, now, context, actor):
-        source = strategy.get("provenance") or {}
-        provenance = {
-            "artifact_id": f"wgf:game-design:{title_id}:{now[:10].replace('-', '')}-"
-                           f"{min(context.execution, 99):02d}",
-            "artifact_type": "game-design",
-            "schema_version": SCHEMA_VERSION,
-            "title_id": title_id,
-            "produced_by": {"role": ROLE, "actor": actor},
-            "produced_at": now,
-            "inputs": [],
-            "content_hash": "",
-            "status": "draft",
-        }
-        if strategy.get("opportunity_id"):
-            provenance["opportunity_id"] = strategy["opportunity_id"]
-        if source.get("artifact_id") and ref.content_hash:
-            provenance["inputs"].append({"artifact_id": source["artifact_id"],
-                                         "artifact_type": "title-strategy",
-                                         "content_hash": ref.content_hash})
-        artifact = {"provenance": provenance}
+        pinned = provenance.pin("title-strategy", strategy, ref.content_hash)
+        record = provenance.build(
+            "game-design",
+            artifact_id=provenance.artifact_id("game-design", title_id, now, context.execution),
+            produced_by=provenance.producer(ROLE, actor),
+            produced_at=now,
+            inputs=[pinned] if pinned else [],
+            schema_version=SCHEMA_VERSION,
+            opportunity_id=strategy.get("opportunity_id") or None,
+            title_id=title_id)
+        artifact = {"provenance": record}
         artifact.update(design)
-        artifact["provenance"]["content_hash"] = content_hash(artifact)
-        return artifact
+        return provenance.seal(artifact)
 
 
 def register(registry):

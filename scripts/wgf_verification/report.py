@@ -7,7 +7,7 @@ defects, performance - and is computed from the same checks, so the two cannot d
 
 import re
 
-from wgflib.hashing import content_hash
+from wgflib import provenance as _provenance
 
 from .model import (BLOCKED, BLOCKED_EXTERNAL, FAIL, PASS, PASS_MOCK, STATUSES, UNVERIFIED,
                     WARNING, evidence_status_of, overall_evidence_status, verdict_of, weakest)
@@ -17,7 +17,9 @@ __all__ = ["build_verification_report", "build_qa_report", "platform_readiness",
            "SCHEMA_VERSION", "ROLE"]
 
 # 1.1.0: evidence_status on checks, platforms and the report; portal_status; workflow.
-SCHEMA_VERSION = "1.1.0"
+# Each report is written under its own schema's x-wgf.version (wgflib/provenance.py);
+# this is the verification-report's.
+SCHEMA_VERSION = _provenance.version_of("verification-report")
 # portal_status for a platform whose profile says it has no review at all.
 NOT_APPLICABLE = "NOT_APPLICABLE"
 ROLE = "qa"
@@ -46,23 +48,18 @@ def _slug(text):
 
 
 def provenance(artifact_type, title_id, produced_at, sequence, inputs):
-    return {
-        "artifact_id": f"wgf:{artifact_type}:{_slug(title_id)}:"
-                       f"{produced_at[:10].replace('-', '')}-{min(max(sequence, 1), 99):02d}",
-        "artifact_type": artifact_type,
-        "schema_version": SCHEMA_VERSION,
-        "title_id": title_id,
-        "produced_by": {"role": ROLE, "actor": "automation"},
-        "produced_at": produced_at,
-        "inputs": list(inputs),
-        "content_hash": "",
-        "status": "draft",
-    }
+    return _provenance.build(
+        artifact_type,
+        artifact_id=_provenance.artifact_id(artifact_type, _slug(title_id), produced_at,
+                                            max(sequence, 1)),
+        produced_by=_provenance.producer(ROLE),
+        produced_at=produced_at,
+        inputs=list(inputs),
+        title_id=title_id)
 
 
 def _seal(artifact):
-    artifact["provenance"]["content_hash"] = content_hash(artifact)
-    return artifact
+    return _provenance.seal(artifact)
 
 
 def workflow_ref(context):

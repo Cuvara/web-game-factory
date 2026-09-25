@@ -8,9 +8,11 @@
     "id": "verification-report",
     "kind": "artifact",
     "format": "json",
+    "version": "1.1.0",
     "producer": "release:qa",
-    "consumers": ["release:rc", "title:production"],
+    "consumers": ["release:rc", "title:production", "title:prototype-review", "release:draft"],
     "repo_path": "<game-repo>/qa/<release-id>/verification.json",
+    "run_path": "<storage>/workflows/<run-id>/artifacts/verification-report/v<n>.json",
     "required_for_gates": ["G5"]
   },
 

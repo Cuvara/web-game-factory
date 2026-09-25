@@ -9,8 +9,7 @@ the run: re-executing it with the same input and clock yields the same artifact.
 import datetime
 import re
 
-from wgflib import paths
-from wgflib.hashing import content_hash
+from wgflib import paths, provenance
 from wgflib.workflow import ArtifactOutput, StepResult, WorkflowStep
 
 from .planner import Policy, StrategyRefused, plan_strategy
@@ -18,7 +17,8 @@ from .profiles import load_profiles
 
 __all__ = ["StrategyStep", "SCHEMA_VERSION", "READS_OPPORTUNITY_MAJOR"]
 
-SCHEMA_VERSION = "1.1.0"          # title-strategy: 1.1 added the optional planning fields
+# title-strategy 1.1 added the optional planning fields; the version is the schema's own.
+SCHEMA_VERSION = provenance.version_of("title-strategy")
 READS_OPPORTUNITY_MAJOR = 1       # the opportunity contract this step understands
 
 _SLUG = re.compile(r"^[a-z][a-z0-9-]*$")
@@ -94,28 +94,20 @@ class StrategyStep(WorkflowStep):
 
     def _artifact(self, body, opportunity, ref, context):
         now = self.clock()
-        pinned = []
-        provenance = opportunity.get("provenance") or {}
-        if provenance.get("artifact_id") and ref.content_hash:
-            pinned.append({"artifact_id": provenance["artifact_id"],
-                           "artifact_type": "opportunity",
-                           "content_hash": ref.content_hash})
+        produced_at = now.strftime("%Y-%m-%dT%H:%M:%SZ")
+        pinned = provenance.pin("opportunity", opportunity, ref.content_hash)
         artifact = {
-            "provenance": {
-                "artifact_id": f"wgf:title-strategy:{body['title_id']}:"
-                               f"{now.strftime('%Y%m%d')}-{min(context.execution, 99):02d}",
-                "artifact_type": "title-strategy",
-                "schema_version": SCHEMA_VERSION,
-                "opportunity_id": body["opportunity_id"],
-                "title_id": body["title_id"],
-                "produced_by": {"role": self.role, "actor": "automation"},
-                "produced_at": now.strftime("%Y-%m-%dT%H:%M:%SZ"),
-                "inputs": pinned,
-                "content_hash": "",
-                # Always a draft: G2 decides, not the step that wrote it.
-                "status": "draft",
-            },
+            # Always a draft: G2 decides, not the step that wrote it.
+            "provenance": provenance.build(
+                "title-strategy",
+                artifact_id=provenance.artifact_id("title-strategy", body["title_id"],
+                                                   produced_at, context.execution),
+                produced_by=provenance.producer(self.role),
+                produced_at=produced_at,
+                inputs=[pinned] if pinned else [],
+                schema_version=SCHEMA_VERSION,
+                opportunity_id=body["opportunity_id"],
+                title_id=body["title_id"]),
         }
         artifact.update(body)
-        artifact["provenance"]["content_hash"] = content_hash(artifact)
-        return artifact
+        return provenance.seal(artifact)

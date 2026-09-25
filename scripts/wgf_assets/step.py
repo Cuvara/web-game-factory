@@ -28,8 +28,7 @@ import datetime
 import os
 import re
 
-from wgflib import paths
-from wgflib.hashing import content_hash
+from wgflib import paths, provenance
 from wgflib.workflow import ArtifactOutput, StepResult, WorkflowStep
 from wgflib.yamllite import YamlError, load_file
 
@@ -41,7 +40,7 @@ from .requirements import RequirementError, inspect, slugify
 
 __all__ = ["AssetsStep", "MANIFEST_SCHEMA_VERSION", "resolve_settings"]
 
-MANIFEST_SCHEMA_VERSION = "1.1.0"
+MANIFEST_SCHEMA_VERSION = provenance.version_of("asset-manifest")
 READABLE_DESIGN_MAJOR = 1
 DEFAULT_BACKENDS = ["2d-assets-mcp", "procedural"]
 
@@ -205,28 +204,18 @@ class AssetsStep(WorkflowStep):
             pipeline["audio_format"] = list(spec.get("audio_format") or [])
 
         now = self.clock().astimezone(datetime.timezone.utc).replace(microsecond=0)
-        pinned = []
-        for input_type, ref in sorted(inputs.refs.items()):
-            content = inputs.load(input_type)
-            provenance = content.get("provenance") if isinstance(content, dict) else None
-            if provenance and ref.content_hash:
-                pinned.append({"artifact_id": provenance["artifact_id"],
-                               "artifact_type": input_type,
-                               "content_hash": ref.content_hash})
-
+        produced_at = now.strftime("%Y-%m-%dT%H:%M:%SZ")
         manifest = {
-            "provenance": {
-                "artifact_id": f"wgf:asset-manifest:{slug}:{now:%Y%m%d}-"
-                               f"{min(context.execution, 99):02d}",
-                "artifact_type": "asset-manifest",
-                "schema_version": MANIFEST_SCHEMA_VERSION,
-                "title_id": title_id,
-                "produced_by": {"role": self.role, "actor": "automation"},
-                "produced_at": now.strftime("%Y-%m-%dT%H:%M:%SZ"),
-                "inputs": pinned,
-                "content_hash": "",
-                "status": "draft",
-            },
+            "provenance": provenance.build(
+                "asset-manifest",
+                artifact_id=provenance.artifact_id("asset-manifest", slug, produced_at,
+                                                   context.execution),
+                produced_by=provenance.producer(self.role),
+                produced_at=produced_at,
+                inputs=provenance.pin_inputs(inputs),
+                schema_version=MANIFEST_SCHEMA_VERSION,
+                opportunity_id=(design.get("provenance") or {}).get("opportunity_id") or None,
+                title_id=title_id),
             "title_id": title_id,
             "items": items,
             "pipeline": pipeline,
@@ -238,8 +227,4 @@ class AssetsStep(WorkflowStep):
             "issues": issues,
             "generation": {"backends": result.backends},
         }
-        opportunity = ((design.get("provenance") or {}).get("opportunity_id"))
-        if opportunity:
-            manifest["provenance"]["opportunity_id"] = opportunity
-        manifest["provenance"]["content_hash"] = content_hash(manifest)
-        return manifest
+        return provenance.seal(manifest)

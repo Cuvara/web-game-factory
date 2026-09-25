@@ -12,11 +12,11 @@ What an automated development step can honestly say is narrow, and the report ke
   first-time playtests exist; the G4 decision belongs to a person with that evidence.
 """
 
-from wgflib.hashing import content_hash
+from wgflib import provenance
 
 __all__ = ["build_report", "SCHEMA_VERSION", "ROLE"]
 
-SCHEMA_VERSION = "1.0.0"
+SCHEMA_VERSION = provenance.version_of("prototype-report")
 ROLE = "gameplay"
 _STATUSES = ("working", "partial", "not-started")
 _DIRECTIONS = ("added", "cut", "deferred")
@@ -120,18 +120,15 @@ def build_report(*, title_id, brief, checks, dev_report, commit_sha, built_at, b
         }
 
     artifact = {
-        "provenance": {
-            "artifact_id": f"wgf:prototype-report:{title_id}:"
-                           f"{produced_at[:10].replace('-', '')}-{min(artifact_seq, 99):02d}",
-            "artifact_type": "prototype-report",
-            "schema_version": SCHEMA_VERSION,
-            "title_id": title_id,
-            "produced_by": {"role": ROLE, "actor": "automation"},
-            "produced_at": produced_at,
-            "inputs": pinned_inputs,
-            "content_hash": "",
-            "status": "draft",
-        },
+        "provenance": provenance.build(
+            "prototype-report",
+            artifact_id=provenance.artifact_id("prototype-report", title_id, produced_at,
+                                               artifact_seq),
+            produced_by=provenance.producer(ROLE),
+            produced_at=produced_at,
+            inputs=pinned_inputs,
+            schema_version=SCHEMA_VERSION,
+            title_id=title_id),
         "title_id": title_id,
         "build_ref": {"commit_sha": commit_sha, "url": build_url, "built_at": built_at},
         "iteration": max(1, int(iteration)),
@@ -147,5 +144,4 @@ def build_report(*, title_id, brief, checks, dev_report, commit_sha, built_at, b
         "scope_deltas": _scope_deltas(dev_report, brief),
         "recommendation": recommendation,
     }
-    artifact["provenance"]["content_hash"] = content_hash(artifact)
-    return artifact
+    return provenance.seal(artifact)

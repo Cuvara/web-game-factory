@@ -8,6 +8,7 @@
     "id": "platform-publication",
     "kind": "artifact",
     "format": "json",
+    "version": "1.0.0",
     "producer": "release:validating",
     "updated_by": ["release:submitting"],
     "consumers": ["release:submitting", "release:partially-live", "title:live"],

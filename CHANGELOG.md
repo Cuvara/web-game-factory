@@ -55,6 +55,30 @@ Core changes are listed with their reason, as docs/core-v1.md requires.
   same-version profile with other content, and `wgf_init.profiles.verify_pins` checks it.
   check-integrity reads platform ids from the pinned template, never the sibling, and warns
   on template profiles that diverge under the same version (M8).
+- **x-wgf agrees with the workflow (M9, P1-1).** check-integrity now fails when a workflow
+  step outputs an artifact whose `x-wgf.producer` is not the step's `stage`, or takes an
+  input whose `x-wgf.consumers` omit it. The 11 disagreements it found are fixed in
+  `core/artifacts/`: `asset-manifest`'s producer is `title:prototype` (the `assets` step;
+  `title:design` joins `updated_by`); consumers gained `title:scaffolding` (game-design),
+  `title:prototype` (qa-report, prototype-report), `release:qa` (prototype-report,
+  scaffold-record) and `release:draft` (qa-report, verification-report, sdk-report,
+  prototype-report), plus `title:prototype-review` on qa-report and verification-report for
+  the G4 checkpoint. *Core change, reason:* two statements of who produces and consumes an
+  artifact had drifted with nothing comparing them. *Migration:* none for artifacts; a
+  workflow that uses an artifact at a stage its schema does not name now fails the check.
+- **One validator for the release manifest (M9, P1-6).** `scripts/wgf_release/schema.py`, a
+  second, subset JSON Schema validator, is deleted; release validates the manifest it drafts
+  and the game repository's `manifest.json` with `ArtifactContracts` (full schema through
+  `jsonschema_lite`, provenance type, contract major, hash). A game manifest that only
+  passed the subset (wrong `artifact_type`, an impossible date) is now refused as
+  `invalid-manifest`. *Migration:* none for the template's make-manifest.mjs.
+- **Recorded gameplay sessions are validated against their schema (M9, P1-6).**
+  `wgf_verification/checks/gameplay.py` validates `build/verification/gameplay-session.json`
+  with `jsonschema_lite` against `shared/gameplay-session.schema.json` (formats, unknown
+  keys, browser entries) instead of a hand-written subset, and keeps the one rule the schema
+  cannot state (the aspect is one the template contract knows). *Migration:* a session with
+  keys the schema does not define is no longer used; verification falls back to the
+  repository's Playwright suites, as for any unusable session.
 
 ### Added
 - `wgflib/template_contract.py` (CONTRACT_VERSION 1.0.0): every path, npm script, CLI and
@@ -65,6 +89,27 @@ Core changes are listed with their reason, as docs/core-v1.md requires.
   anything was skipped, and every skipped test is listed by reason (M12).
 - `docs/env-vars.md`; `test_review_module.py`, `test_netguard.py`, `test_check_integrity.py`,
   `test_template_contract.py`.
+- **`x-wgf.version` and one provenance builder (M9, P1-6).** Every top-level schema declares
+  its contract version (semver) as `x-wgf.version`; check-integrity requires it.
+  `scripts/wgflib/provenance.py` (`build`, `artifact_id`, `producer`, `pin`, `pin_inputs`,
+  `seal`, `version_of`) replaces the provenance each step module and the mock steps
+  assembled by hand; `schema_version` is read from the schema. `ArtifactContracts` refuses
+  an artifact whose `provenance.schema_version` has another MAJOR than `x-wgf.version`.
+  Versions, set to what the producing module already emitted: asset-manifest 1.1.0,
+  game-design 1.1.0, qa-report 1.1.0, release-manifest 1.2.0, scaffold-record 1.1.0,
+  sdk-report 1.2.0, title-strategy 1.1.0, verification-report 1.1.0; decision-record,
+  evaluation, opportunity, performance-review, platform-publication, prototype-report,
+  research-report, review-report, state and tech-plan 1.0.0. *Core change, reason:* the
+  version a producer claimed was a per-module constant nothing checked (sdk carried two,
+  1.2.0 and 1.1.0). *Migration:* existing artifacts stay valid - only the major is compared,
+  and every artifact written so far is major 1. Mock runs now write each schema's version
+  instead of 1.0.0 for all, so new mock artifacts hash differently; real modules' output is
+  unchanged apart from key order inside `provenance`, which the content hash ignores.
+- **`x-wgf.run_path` (M9, P1-1).** Artifacts a workflow step produces name where an engine
+  run stores them, `<storage>/workflows/<run-id>/artifacts/<id>/v<n>.json`, next to
+  `repo_path`, their home in the methodology (workspace/ or the game repository), which the
+  engine never writes (docs/artifact-contracts.md). *Migration:* none; `repo_path` keeps its
+  meaning for adapters.
 
 ### Changed
 - `wgf status` exits with the run's code (1 failed/blocked/cancelled, 3 waiting/paused).

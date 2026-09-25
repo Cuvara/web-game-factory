@@ -53,6 +53,13 @@ def load_artifacts():
         stem = os.path.basename(path).replace(".schema.json", "")
         if meta["id"] != stem:
             ERRORS.append(f"{path}: x-wgf.id '{meta['id']}' != filename stem '{stem}'")
+        # The contract version producers write into provenance.schema_version, and the one
+        # the engine checks a written artifact's major against (wgflib/provenance.py). Shared
+        # schemas with an x-wgf block (claim, reference types) are not produced as workflow
+        # artifacts and carry no version.
+        if os.path.dirname(path) == "core/artifacts" and not re.fullmatch(r"[0-9]+\.[0-9]+\.[0-9]+", str(meta.get("version") or "")):
+            ERRORS.append(f"{path}: x-wgf.version {meta.get('version')!r} is not a semver "
+                          "MAJOR.MINOR.PATCH")
     return ids
 
 
@@ -120,6 +127,49 @@ def check_workflows(artifacts):
             gate = step.params.get("gate")
             if gate and not re.search(rf"^  {gate}:", read("core/lifecycle/gates.yaml"), re.M):
                 ERRORS.append(f"{path}: step '{step.id}' names unknown gate '{gate}'")
+        check_contract_roles(path, definition)
+    return found
+
+
+def load_contract_meta():
+    """{artifact id: x-wgf block} for every top-level artifact schema."""
+    meta = {}
+    for path in sorted(glob.glob("core/artifacts/*.schema.json")):
+        block = json.loads(read(path)).get("x-wgf")
+        if block and block.get("id"):
+            meta[block["id"]] = block
+    return meta
+
+
+def check_contract_roles(path, definition, meta=None):
+    """x-wgf says who produces and who consumes an artifact; a workflow step says the same
+    thing in `stage`, `outputs` and `inputs`. Two statements of one fact drift unless one is
+    checked against the other, so:
+
+      * every type a step outputs names the step's stage as its x-wgf `producer`;
+      * every type a step takes as input lists the step's stage in its x-wgf `consumers`.
+
+    Driven by the definition alone - no step type or id is named here. A step with no
+    inputs or outputs (a checkpoint) is checked for what it has. Untyped artifacts have no
+    x-wgf block and are left to the untyped-artifact report above. Returns the problems it
+    appended, for tests."""
+    meta = load_contract_meta() if meta is None else meta
+    found = []
+    for step in definition.steps:
+        if not step.stage:
+            continue
+        for aid in step.outputs or ():
+            block = meta.get(aid)
+            if block is not None and block.get("producer") != step.stage:
+                found.append(f"{path}: step '{step.id}' outputs '{aid}' at stage "
+                             f"'{step.stage}', but its x-wgf producer is "
+                             f"'{block.get('producer')}'")
+        for aid in step.inputs or ():
+            block = meta.get(aid)
+            if block is not None and step.stage not in (block.get("consumers") or ()):
+                found.append(f"{path}: step '{step.id}' takes '{aid}' at stage "
+                             f"'{step.stage}', which its x-wgf consumers do not list")
+    ERRORS.extend(found)
     return found
 
 

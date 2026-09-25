@@ -20,7 +20,7 @@ calls no portal; it does not clone, commit or push.
 import os
 import re
 
-from wgflib import paths
+from wgflib import paths, provenance
 from wgflib.yamllite import YamlError, load_file
 
 from . import integrate
@@ -30,7 +30,8 @@ from .runner import SCENARIOS, TEST_FILE, git_state, run_tests
 
 __all__ = ["IntegrationPhase", "PhaseBlocked", "SeamMissing", "FEATURES", "SCHEMA_VERSION"]
 
-SCHEMA_VERSION = "1.1.0"
+# The sdk-report contract version; the step writes it (wgflib/provenance.py).
+SCHEMA_VERSION = provenance.version_of("sdk-report")
 
 RUNTIME_AD_KINDS = ("rewarded", "interstitial")
 

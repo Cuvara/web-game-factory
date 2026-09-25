@@ -23,7 +23,9 @@ import json
 import os
 import re
 
+from wgflib import paths
 from wgflib import template_contract as contract
+from wgflib.jsonschema_lite import Registry, Validator, json_problems
 
 from ..model import BLOCKED, FAIL, PASS, WARNING, Check, Evidence
 from ..session import DEFAULT_SESSION_FILE
@@ -155,26 +157,35 @@ class RecordedSessionDriver:
         return seen
 
 
+SESSION_SCHEMA = os.path.join(paths.ARTIFACTS, "shared", "gameplay-session.schema.json")
+_SESSION_VALIDATOR = []
+
+
+def _session_validator():
+    """shared/gameplay-session.schema.json, compiled once by wgflib.jsonschema_lite."""
+    if not _SESSION_VALIDATOR:
+        with open(SESSION_SCHEMA, encoding="utf-8") as handle:
+            schema = json.load(handle)
+        _SESSION_VALIDATOR.append(Validator(schema, Registry()))
+    return _SESSION_VALIDATOR[0]
+
+
 def validate_session(document):
-    """The structural rules of gameplay-session.schema.json, checked without a validator."""
+    """[problem, ...] for a recorded session: the whole of
+    core/artifacts/shared/gameplay-session.schema.json (types, formats, enums, no unknown
+    keys), then what the schema cannot say - that every aspect is one the template contract
+    knows, since the schema's enum and contract.ASPECTS are two lists."""
     if not isinstance(document, dict):
         return ["not a JSON object"]
-    problems = []
-    for key in ("commit_sha", "scenarios"):
-        if key not in document:
-            problems.append(f"missing {key}")
+    malformed = json_problems(document)
+    if malformed:
+        return [f"{pointer or '/'}: not JSON - {reason}" for pointer, reason in malformed]
+    problems = [str(error) for error in _session_validator().iter_errors(document)]
     for index, scenario in enumerate(document.get("scenarios") or []):
-        if not isinstance(scenario, dict):
-            problems.append(f"scenarios[{index}] is not an object")
-            continue
-        if scenario.get("aspect") not in ASPECTS:
-            problems.append(f"scenarios[{index}].aspect {scenario.get('aspect')!r} is unknown")
-        if scenario.get("status") not in ("PASS", "FAIL"):
-            problems.append(f"scenarios[{index}].status must be PASS or FAIL")
-        if not scenario.get("observation"):
-            problems.append(f"scenarios[{index}] has no observation")
-    if not isinstance(document.get("commit_sha", ""), str):
-        problems.append("commit_sha must be a string")
+        if isinstance(scenario, dict) and "aspect" in scenario \
+                and scenario["aspect"] not in ASPECTS:
+            problems.append(f"/scenarios/{index}/aspect: {scenario['aspect']!r} is not an "
+                            "aspect the template contract knows")
     return problems
 
 

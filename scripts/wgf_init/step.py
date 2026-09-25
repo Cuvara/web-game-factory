@@ -37,9 +37,8 @@ import datetime
 import os
 import time
 
-from wgflib import paths
+from wgflib import paths, provenance
 from wgflib import template as template_pin
-from wgflib.hashing import content_hash
 from wgflib.workflow import ArtifactOutput, StepResult, WorkflowStep
 
 from .gameconfig import GameConfigError, apply_game_config, bootstrap_identity
@@ -56,7 +55,7 @@ from .tooling import (KEY_TRAILER, PLAN_TRAILER, TEMPLATE_TRAILER, GhCli, GitCli
 
 __all__ = ["InitStep", "InitSettings", "SettingsError", "SCHEMA_VERSION", "BOOTSTRAP"]
 
-SCHEMA_VERSION = "1.1.0"
+SCHEMA_VERSION = provenance.version_of("scaffold-record")
 ROLE = "release"  # core/roles/roles.yaml: release owns title:scaffolding
 VISIBILITIES = ("private", "internal", "public")
 SOURCES = ("github", "local")
@@ -605,19 +604,15 @@ class InitStep(WorkflowStep):
                       f"{template_sha[:12]}.")
 
         record = {
-            "provenance": {
-                "artifact_id": f"wgf:scaffold-record:{project.title_id}:"
-                               f"{produced_at[:10].replace('-', '')}-"
-                               f"{min(context.execution, 99):02d}",
-                "artifact_type": "scaffold-record",
-                "schema_version": SCHEMA_VERSION,
-                "title_id": project.title_id,
-                "produced_by": {"role": ROLE, "actor": "automation"},
-                "produced_at": produced_at,
-                "inputs": pinned,
-                "content_hash": "",
-                "status": "draft",
-            },
+            "provenance": provenance.build(
+                "scaffold-record",
+                artifact_id=provenance.artifact_id("scaffold-record", project.title_id,
+                                                   produced_at, context.execution),
+                produced_by=provenance.producer(ROLE),
+                produced_at=produced_at,
+                inputs=pinned,
+                schema_version=SCHEMA_VERSION,
+                title_id=project.title_id),
             "title_id": project.title_id,
             "repository": repo,
             "template": template,
@@ -626,5 +621,4 @@ class InitStep(WorkflowStep):
             "idempotency_key": self.marker(context),
             "notes": notes,
         }
-        record["provenance"]["content_hash"] = content_hash(record)
-        return record
+        return provenance.seal(record)

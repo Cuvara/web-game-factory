@@ -10,6 +10,7 @@
     "producer": "every transition in every machine",
     "consumers": ["portfolio", "title", "release", "platform-publication"],
     "format": "json",
+    "version": "1.0.0",
     "repo_path": "workspace/titles/<title-id>/state.json",
     "repo_path_by_machine": {
       "portfolio": "workspace/opportunities/<opportunity-id>/state.json",

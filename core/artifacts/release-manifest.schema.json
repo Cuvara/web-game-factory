@@ -8,11 +8,13 @@
     "id": "release-manifest",
     "kind": "artifact",
     "format": "json",
+    "version": "1.2.0",
     "template": "templates/release-report.md",
     "producer": "release:draft",
     "frozen_at": "release:rc",
     "consumers": ["release:qa", "release:rc", "release:validating", "release:submitting", "title:live"],
     "repo_path": "<game-repo>/release/<release-id>/manifest.json",
+    "run_path": "<storage>/workflows/<run-id>/artifacts/release-manifest/v<n>.json",
     "required_for_gates": ["G5", "G6"],
     "immutable": true
   },

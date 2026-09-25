@@ -8,6 +8,7 @@
     "id": "evaluation",
     "kind": "artifact",
     "format": "json",
+    "version": "1.0.0",
     "producer": "portfolio:scored",
     "consumers": ["portfolio:shortlisted", "title:concept", "title:strategy"],
     "repo_path": "workspace/opportunities/<opportunity-id>/evaluations/<evaluation-id>.json",

@@ -28,7 +28,6 @@ sys.path.insert(0, HERE)
 
 from wgf_release import ReleaseStep, register  # noqa: E402
 from wgf_release.package import audit_package  # noqa: E402
-from wgf_release.schema import SchemaValidator  # noqa: E402
 from wgf_release.step import bundle_digest  # noqa: E402
 from wgflib.hashing import content_hash  # noqa: E402
 from wgflib.workflow import StepOutcome, StepRegistry  # noqa: E402
@@ -39,7 +38,6 @@ from wgflib.workflow.model import ArtifactRef  # noqa: E402
 FAKE_PNPM = os.path.join(HERE, "fixtures", "release", "fake-pnpm.py")
 NOW = "2026-09-24T10:00:00Z"
 CONTRACTS = ArtifactContracts()
-VALIDATOR = SchemaValidator()
 
 GAME_CONFIG = textwrap.dedent("""\
     game:
@@ -339,8 +337,7 @@ class ReleaseCase(unittest.TestCase):
         result = instance.execute(Inputs(artifacts, missing), context or Context())
         if result.outcome == StepOutcome.SUCCESS:
             manifest = result.artifacts[0].content
-            self.assertEqual(CONTRACTS("release-manifest", manifest), [])
-            self.assertEqual(VALIDATOR.validate(manifest, "release-manifest"), [])
+            self.assertEqual(CONTRACTS.problems("release-manifest", manifest), [])
         else:
             self.assertEqual(result.artifacts, [], "a refused release produces no manifest")
         return result

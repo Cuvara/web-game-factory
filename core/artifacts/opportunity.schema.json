@@ -8,9 +8,11 @@
     "id": "opportunity",
     "kind": "artifact",
     "format": "json",
+    "version": "1.0.0",
     "producer": "portfolio:market-scan",
     "consumers": ["portfolio:scored", "portfolio:shortlisted", "title:concept", "title:strategy"],
     "repo_path": "workspace/opportunities/<opportunity-id>/opportunity.json",
+    "run_path": "<storage>/workflows/<run-id>/artifacts/opportunity/v<n>.json",
     "required_for_gates": ["G1"]
   },
 

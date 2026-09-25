@@ -12,6 +12,8 @@ release-manifest shape. FAKE_PNPM (comma-separated) breaks it on purpose:
     wrong-checksum    packages.json records a checksum that is not the file's
     bad-manifest      the manifest misses its changelog and has a non-semver version
     no-manifest       release:manifest writes nothing and exits 0
+    wrong-type        the manifest's provenance says it is a qa-report (hash reproduces)
+    impossible-date   the manifest was "produced" on 2026-02-30 (shaped like a date-time)
     nested            the bundle is packaged under a dist/ folder, not at the archive root
 
 Every invocation is appended to FAKE_PNPM_LOG as a JSON line when that is set.
@@ -125,6 +127,10 @@ def manifest(root, opts, config):
     if "bad-manifest" in FLAGS:
         del document["changelog"]
         document["version"] = "1.0"
+    if "wrong-type" in FLAGS:
+        document["provenance"]["artifact_type"] = "qa-report"
+    if "impossible-date" in FLAGS:
+        document["provenance"]["produced_at"] = "2026-02-30T00:00:00.000Z"
     document["provenance"]["content_hash"] = content_hash(document)
     with open(os.path.join(out, "manifest.json"), "w") as handle:
         json.dump(document, handle, indent=2)

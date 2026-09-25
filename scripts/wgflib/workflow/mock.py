@@ -30,7 +30,7 @@ import copy
 import json
 import os
 
-from ..hashing import content_hash
+from .. import provenance
 from .model import ArtifactOutput, StepResult
 from .step import WorkflowStep
 
@@ -39,7 +39,6 @@ __all__ = ["MockStep", "register", "MOCK_STEPS", "FIXTURES"]
 FIXTURES = os.path.join(os.path.dirname(os.path.abspath(__file__)), "fixtures")
 FIXTURE_SLUG = "mock-title"
 DEFAULT_EPOCH = "2026-01-01T00:00:00Z"
-SCHEMA_VERSION = "1.0.0"
 
 
 class MockStepError(RuntimeError):
@@ -96,34 +95,18 @@ class MockStep(WorkflowStep):
             body = json.loads(handle.read().replace(FIXTURE_SLUG, slug))
         self.customize(body, artifact_type, context, entry)
 
-        pinned = []
-        for input_type, ref in sorted(inputs.refs.items()):
-            content = inputs.load(input_type)
-            provenance = content.get("provenance") if isinstance(content, dict) else None
-            if provenance and ref.content_hash:
-                pinned.append({
-                    "artifact_id": provenance["artifact_id"],
-                    "artifact_type": input_type,
-                    "content_hash": ref.content_hash,
-                })
-
         sequence = min(context.execution, 99)
         artifact = {
-            "provenance": {
-                "artifact_id": f"wgf:{artifact_type}:{slug}:{epoch[:10].replace('-', '')}-"
-                               f"{sequence:02d}",
-                "artifact_type": artifact_type,
-                "schema_version": SCHEMA_VERSION,
-                "title_id": slug,
-                "produced_by": {"role": self.role, "actor": "automation"},
-                "produced_at": epoch,
-                "inputs": pinned,
-                "content_hash": "",
-                "status": "draft",
-            },
+            "provenance": provenance.build(
+                artifact_type,
+                artifact_id=provenance.artifact_id(artifact_type, slug, epoch, sequence),
+                produced_by=provenance.producer(self.role),
+                produced_at=epoch,
+                inputs=provenance.pin_inputs(inputs),
+                title_id=slug),
         }
         artifact.update(body)
-        artifact["provenance"]["content_hash"] = content_hash(artifact)
+        provenance.seal(artifact)
         return ArtifactOutput(artifact_type, artifact)
 
     def customize(self, body, artifact_type, context, entry):

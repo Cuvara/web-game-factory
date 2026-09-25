@@ -261,6 +261,11 @@ class AgentLoop(unittest.TestCase):
                           **(execution or {})},
             "develop": develop_cfg,
             "review": {"reviewer": review_cfg, "guarded_paths": [self.guarded]},
+            # Agents get an allowlisted environment (wgflib.agentenv): the scripted agents'
+            # own settings pass by prefix, and a live run names its host's credential in
+            # WGF_LIVE_ENV_PASSTHROUGH (comma-separated).
+            "agents": {"env_passthrough": ["WGF_TEST_*"] + [
+                n for n in os.environ.get("WGF_LIVE_ENV_PASSTHROUGH", "").split(",") if n]},
         })
 
         class API(WorkflowAPI):
@@ -365,6 +370,10 @@ class AgentLoop(unittest.TestCase):
         self.assertEqual(self.trail("review"), [("review", 1, 1, "SUCCESS", "success")])
         self.assertEqual(len(self.developer_calls()), 1)
         self.assertEqual(self.reports()[0]["verdict"], "approve")
+        # The developer's whole transcript is kept beside the run, outside the checkout.
+        transcript = os.path.join(self.api.store.run_dir(state.run_id), "develop", "1-1.log")
+        with open(transcript, encoding="utf-8") as handle:
+            self.assertIn("developer working", handle.read())
 
     def test_a_reviewer_that_always_requests_changes_is_stopped_by_max_visits(self):
         state = self.run_workflow(reviewer_mode="always-request")

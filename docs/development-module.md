@@ -36,7 +36,10 @@ the game, regenerated on every visit and committed with the code it asked for. I
 
 - **Ground rules** — the engine and where it may be imported (`src/rendering/<engine>/`
   only); the template-owned paths a game may not edit (`packages/`, `game.config.yaml`,
-  `.github/`, `scripts/`, the build and test configs); no portal SDK in game code; pause
+  `.github/`, `scripts/`, the build and test configs, `package.json`, `tsconfig.json`,
+  `pnpm-lock.yaml`) and the one exception - adding a dependency, as
+  `allowed_package_changes` permits; the paths a developer may write
+  (`writable_paths`), which are all the commit will hold; no portal SDK in game code; pause
   by reason; the `#hud` probe contract the release pipeline reads; strings via i18n.
 - **Required systems** — boot, game state, scenes, input, core loop, mechanics,
   progression, UI, HUD, tutorial, game over, restart, asset loading, responsive layout,
@@ -80,6 +83,32 @@ brief recommends (PixiJS, Three.js, frontend design) are configured under
 `develop.skills`, and the brief says plainly that the template wins wherever a skill
 assumes another layout.
 
+## The developer's boundary
+
+A `command` developer is an agent with the Factory user's file access; whatever the host's
+own flags restrict, `pnpm *` alone is arbitrary code. What the Factory enforces itself,
+whoever the developer is:
+
+| Boundary | How | On a breach |
+|---|---|---|
+| **Environment** | The developer command starts with an allowlist (`wgflib/agentenv.py`): PATH, HOME, USER, LANG/LC_*, TERM, TMPDIR, SHELL, CI, the proxy variables, XDG_*, NODE_*, PNPM_*, npm_config_* - minus any name that says it is a secret - plus `factory.agents.env_passthrough` and procs' WGF_PROC_* tags. Never the Factory's own tokens | — |
+| **The Factory's own paths** | `factory.review.guarded_paths` (default `core`, `scripts`, `bin`, `workspace/config` - the list the reviewer is held to) fingerprinted before the developer runs and compared after it and again after the checks, which run code it wrote (`wgflib/isolation.py`: `take_guarded`/`diff`/`restore_guarded`). The game checkout is not fingerprinted: writing it is the job | Restored, then `FAILED` not retryable (`BLOCKED` if it could not be restored); recorded as the `isolation` check in `checks.json`. The prototype-report schema has no checks field, so the artifact cannot carry it; no report is emitted for such a visit |
+| **Git** | Every git command is `wgflib.gitsafe.hardened`: the git directory resolved when the step starts - before any developer - and the work tree are named on every command, so `core.worktree` or a replaced `.git` gitfile cannot aim the Factory's commit elsewhere; fsmonitor, hooks, signing (`gpg.program`) and every filter driver are neutralised; the environment has no GIT_* redirection. `factory.develop.git.allow_filters: true` keeps the repository's filters for a git-lfs repository and refuses any filter configuration that changed after the pin | A changed filter config under `allow_filters`: `FAILED`, nothing run |
+| **`package.json`, `pnpm-lock.yaml`, `tsconfig.json`** | Protected. `package.json` is compared with the baseline commit's field by field: every field but `dependencies`/`devDependencies` must be unchanged (`scripts` above all - every later check runs them); in those two, only what `allowed_package_changes` permits (default: additions), each a registry version range, never a path, URL, git or `npm:` alias. The lockfile may change only together with an allowed dependency change. `tsconfig.json` may not change | A `conformance` finding: the checks fail, nothing is committed |
+| **The commit** | Exactly the changed paths under `writable_paths` (default `src/`, `tests/`, `public/`, `docs/development/`, `index.html`), plus `package.json`/`pnpm-lock.yaml` as above - never `git add --all`. Whatever the list says, a hidden path (`.claude/`, `.github/`, `.husky/`, `.env`, an editor's settings) or an agent instruction file (a capitalised `*.md`: the instruction-file convention agent hosts read) is refused. Checked after the developer - before minutes of checks - and again before the commit | `FAILED` not retryable, recorded as the `commit-scope` check in `checks.json`. Nothing is committed, and nothing is silently left behind to sit under every later check |
+
+Where the defaults come from: the template's layout, the brief (`docs/development/`), and
+the golden replay developer (`scripts/golden/replay_developer.py`), which writes exactly
+those paths plus an engine-package addition to `package.json` (`pixi.js`; `three` and
+`@types/three`) and the lockfile `pnpm install` updates to match.
+
+Not covered: anything the developer writes outside the checkout and the guarded paths
+(`$HOME`, other repositories), and the network. Wrap the argv in an OS sandbox for those.
+The develop checks (`pnpm install`, `test`, `build`, ...) keep the Factory's environment:
+they are the repository's CI commands, and `install` may need a registry credential - but
+they run test code the developer wrote, so a secret in the Factory's environment is
+reachable from a check. Keep such secrets out of the environment `wgf` runs in.
+
 ## Checks
 
 Run in this order; `conformance` cannot be switched off.
@@ -87,7 +116,7 @@ Run in this order; `conformance` cannot be switched off.
 | Check | What |
 |---|---|
 | `install` | `pnpm install --frozen-lockfile`. A failure stops the rest |
-| `conformance` | Static: engine imports only in `src/rendering/<engine>/`, no other engine, no portal SDK identifiers, ad APIs called only from `src/platform/`, `BootScene` replaced, the seam files as the Factory provided them and `src/main.ts` booting through them (`wgflib.gameseam`), template-owned paths unchanged since the visit began, and `report.json` complete — every required system `done`, every MVP item and placement reported |
+| `conformance` | Static: engine imports only in `src/rendering/<engine>/`, no other engine, no portal SDK identifiers, ad APIs called only from `src/platform/`, `BootScene` replaced, the seam files as the Factory provided them and `src/main.ts` booting through them (`wgflib.gameseam`), template-owned paths unchanged since the visit began, `package.json` changed only by allowed dependency changes and the lockfile only with them, and `report.json` complete — every required system `done`, every MVP item and placement reported |
 | `format` | `pnpm format` — optional |
 | `typecheck`, `lint`, `unit`, `build` | the repository's own scripts, as CI runs them |
 | `smoke` | `pnpm test:e2e`, behind a proxy that refuses every non-local request (`wgflib.netguard`): a portal build would otherwise load the portal's real SDK from its CDN - dev traffic to the portal, and a result that depends on it (a Poki build's own "makes no insecure requests" failed on Poki's http:// ad bridge). The game must boot and play with the SDK refused, as for an ad-blocker; the summary says what was refused. Skipped, and reported as skipped, only when no browser is installed |
@@ -128,6 +157,13 @@ factory:
     build_url: null             # "https://{branch}.{name}.pages.dev"; {owner} {sha} {short_sha}
     author: {name: ..., email: ...}   # when the checkout has no git identity
     skills: {pixijs: [...], threejs: [...], ui: [...]}
+    writable_paths: [src/, tests/, public/, docs/development/, index.html]
+    allowed_package_changes: {dependencies: [add], devDependencies: [add]}  # add|change|remove
+    git: {allow_filters: false}       # true: commit through the repository's filters (git-lfs)
+  agents:
+    env_passthrough: []         # names (or PREFIX*) the developer's environment also carries
+  review:
+    guarded_paths: [core, scripts, bin, workspace/config]  # also fingerprinted around develop
 ```
 
 ## Tests
@@ -136,5 +172,14 @@ factory:
 fake process runner: every outcome in contract §7 the step can produce, both developers,
 idempotency across re-execution and across visits, every conformance rule (and the
 template's own files not tripping them), and the full `new-game` workflow through the real
-engine with this module replacing the mock. `WGF_AJV=1` adds an ajv validation of an
-emitted report against the full schema.
+engine with this module replacing the mock, the package.json comparison, the commit scope
+and the boundary settings. `WGF_AJV=1` adds an ajv validation of an emitted report
+against the full schema.
+
+`scripts/tests/test_core_security.py` (`DeveloperBoundary`, `AgentEnvironment`) attacks
+the boundary through the real step: a planted `core.worktree`, a `filter.x.clean` that
+writes a marker, hooks, fsmonitor and a signing program; a `scripts.test` rewrite; a
+dependency from a path or URL; a lockfile changed alone; a `tsconfig.json` change;
+`.claude/settings.json`, instruction files and `.github/` refused; a guarded Factory file
+written by the developer, and by a check, detected and restored; a secret in the Factory's
+environment invisible to the developer and the reviewer.

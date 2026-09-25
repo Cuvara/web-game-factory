@@ -16,10 +16,17 @@ import re
 
 from wgflib.netguard import RefusingProxy, sandbox_env
 
-from .brief import ENGINE_DIRS, PROTECTED_PATHS, REPORT_PATH, REQUIRED_SYSTEMS
+from .brief import ENGINE_DIRS, PROTECTED_PATHS, REPORT_PATH, REQUIRED_SYSTEMS, STRUCTURAL_PATHS
 from .seam import seam_findings
+from .settings import DEFAULTS, PACKAGE_FIELDS
 
-__all__ = ["CheckResult", "run_checks", "conformance", "read_report", "TOOLCHAIN"]
+__all__ = ["CheckResult", "run_checks", "conformance", "package_findings", "read_report",
+           "TOOLCHAIN"]
+
+# A dependency a developer adds must come from the registry: a version range, never a path
+# (file:, link:), a URL, a git or GitHub reference, an alias (npm:) or a workspace package -
+# each of which puts code nobody pinned into the install.
+_REGISTRY_RANGE = re.compile(r"^[A-Za-z0-9.*^~<>=| +-]+$")
 
 # The game repository's own scripts, from the template's package.json.
 TOOLCHAIN = {
@@ -158,6 +165,80 @@ def _report_findings(report, brief):
     return findings
 
 
+def _json_object(text, label):
+    try:
+        value = json.loads(text)
+    except ValueError as exc:
+        return None, f"{label} is not JSON: {exc}"
+    if not isinstance(value, dict):
+        return None, f"{label} is not a JSON object"
+    return value, None
+
+
+def package_findings(root, git, baseline, allowed):
+    """package.json compared with the baseline commit's, field by field; pnpm-lock.yaml
+    allowed to differ only alongside an allowed dependency change.
+
+    Every field but `dependencies`/`devDependencies` must be exactly the baseline's - the
+    `scripts` above all, which are what install, typecheck, lint, test, build and the smoke
+    suite run here and in the sdk and verify steps. In the dependency maps, each addition,
+    version change and removal must be allowed for that map (`allowed`:
+    {field: [add|change|remove]}), and an added version must be a registry range. Structure,
+    not text: key order and formatting are the formatter's business."""
+    findings = []
+    base_text = git.file_at(baseline, "package.json")
+    path = os.path.join(root, "package.json")
+    current_text = _read(path) if os.path.exists(path) else None
+    changed = False
+    if base_text is None:
+        if current_text is not None:
+            findings.append("package.json was added; the template's package.json is the only "
+                            "one a game has")
+    elif current_text is None:
+        findings.append("package.json is template-owned and was deleted")
+    else:
+        base, problem = _json_object(base_text, "the baseline package.json")
+        current, current_problem = _json_object(current_text, "package.json")
+        if problem or current_problem:
+            if base_text != current_text:
+                findings.append(current_problem or f"package.json changed and {problem}")
+        else:
+            for key in sorted(set(base) | set(current)):
+                if key in PACKAGE_FIELDS or base.get(key) == current.get(key):
+                    continue
+                findings.append(f"package.json `{key}` is template-owned and was changed"
+                                + (" - every later check runs these scripts"
+                                   if key == "scripts" else ""))
+            for field in PACKAGE_FIELDS:
+                old, new = base.get(field) or {}, current.get(field) or {}
+                if not isinstance(new, dict):
+                    findings.append(f"package.json `{field}` is not an object")
+                    continue
+                permitted = set((allowed or {}).get(field) or ())
+                for name in sorted(set(old) | set(new)):
+                    if old.get(name) == new.get(name):
+                        continue
+                    kind = ("add" if name not in old else
+                            "remove" if name not in new else "change")
+                    if kind not in permitted:
+                        verb = {"add": "adds", "remove": "removes", "change": "changes"}[kind]
+                        findings.append(f"package.json {verb} {field} {name!r}; allowed "
+                                        f"{field} changes: {', '.join(sorted(permitted)) or 'none'}")
+                        continue
+                    if kind != "remove" and not (isinstance(new[name], str)
+                                                 and _REGISTRY_RANGE.match(new[name])):
+                        findings.append(f"package.json {field} {name!r} is {new[name]!r}, not a "
+                                        f"registry version range")
+                        continue
+                    changed = True
+    # By git's own comparison, not by reading the file back through a process's output: a
+    # lockfile can be larger than the output a process may keep.
+    if git.changed_since(baseline, "pnpm-lock.yaml") and not changed:
+        findings.append("pnpm-lock.yaml is template-owned and changed without an allowed "
+                        "dependency change in package.json")
+    return findings
+
+
 def conformance(root, brief, git):
     """Static rules. Returns a CheckResult."""
     findings = []
@@ -203,8 +284,12 @@ def conformance(root, brief, git):
                                     f"not carry")
 
     if brief.get("baseline_commit"):
-        for path in git.changed_since(brief["baseline_commit"], *PROTECTED_PATHS):
+        simple = [p for p in PROTECTED_PATHS if p not in STRUCTURAL_PATHS]
+        for path in git.changed_since(brief["baseline_commit"], *simple):
             findings.append(f"{path} is template-owned and was changed")
+        allowed = (brief["package_changes"] if "package_changes" in brief
+                   else DEFAULTS["allowed_package_changes"])  # a brief from before the key
+        findings.extend(package_findings(root, git, brief["baseline_commit"], allowed))
 
     report, problem = read_report(root)
     if problem:

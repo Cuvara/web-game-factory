@@ -14,8 +14,11 @@ import json
 
 from wgf_verification.checks.gameplay import ASPECTS, required_aspects_for
 
+from .scope import DEFAULT_WRITABLE
+
 __all__ = ["REQUIRED_SYSTEMS", "INTEGRATION_CONTRACT", "REPORT_PATH", "BRIEF_DIR",
-           "build_brief", "render_markdown", "PROTECTED_PATHS", "ENGINE_DIRS"]
+           "build_brief", "render_markdown", "PROTECTED_PATHS", "STRUCTURAL_PATHS",
+           "ENGINE_DIRS"]
 
 BRIEF_DIR = "docs/development"
 REPORT_PATH = f"{BRIEF_DIR}/report.json"
@@ -54,10 +57,19 @@ REQUIRED_SYSTEMS = (
 
 # Paths a game may not edit. packages/ is the template's (fix the template instead);
 # game.config.yaml is written from the approved tech plan; the pipelines and release tooling
-# are shared infrastructure whose behaviour gates depend on.
+# are shared infrastructure whose behaviour gates depend on. package.json names the scripts
+# every later check runs (`pnpm run test` is whatever its `test` says) and tsconfig.json what
+# the typecheck covers: a build that rewrote either could pass develop, sdk and verify
+# without being checked at all.
 PROTECTED_PATHS = ("packages", "game.config.yaml", ".github", "scripts", "config/platforms",
                    "playwright.config.ts", "vite.config.ts", "vitest.workspace.ts",
-                   "eslint.config.js", "tsconfig.base.json", "pnpm-workspace.yaml")
+                   "eslint.config.js", "tsconfig.base.json", "pnpm-workspace.yaml",
+                   "package.json", "tsconfig.json", "pnpm-lock.yaml")
+
+# Protected paths conformance compares by content rather than refusing any change to: a
+# dependency may be added to package.json (factory.develop.allowed_package_changes), and the
+# lockfile then follows it (checks.package_findings).
+STRUCTURAL_PATHS = ("package.json", "pnpm-lock.yaml")
 
 ENGINE_DIRS = {"pixijs": "src/rendering/pixijs", "threejs": "src/rendering/threejs"}
 
@@ -117,9 +129,11 @@ def _pin(artifact_type, content, ref):
 
 def build_brief(*, title_id, engine, iteration, key, baseline, design, assets, scaffold,
                 strategy=None, qa=None, previous_checks=None, refs=None, skills=None,
-                review=None, mobile_test=True):
+                review=None, mobile_test=True, writable_paths=None, package_changes=None):
     """The brief as data. `render_markdown` turns it into the document a developer reads."""
     refs = refs or {}
+    writable_paths = list(DEFAULT_WRITABLE if writable_paths is None else writable_paths)
+    package_changes = package_changes or {}
     tiers = (design.get("scope") or {}).get("tiers") or {}
     monetization = design.get("monetization") or {}
     placements = [
@@ -198,6 +212,10 @@ def build_brief(*, title_id, engine, iteration, key, baseline, design, assets, s
         "assets": asset_items,
         "required_systems": [{"id": n, "acceptance": a} for n, a in REQUIRED_SYSTEMS],
         "protected_paths": list(PROTECTED_PATHS),
+        # What the development commit may contain (scope.py), and how package.json may
+        # change (checks.package_findings). Anything else fails the step.
+        "writable_paths": list(writable_paths),
+        "package_changes": {k: list(v) for k, v in package_changes.items() if v},
         "qa_defects": defects,
         "review_blockers": review_blockers,
         "reviewed_commit": (review or {}).get("reviewed_commit") if review_blockers else None,
@@ -212,6 +230,19 @@ def build_brief(*, title_id, engine, iteration, key, baseline, design, assets, s
             "required": [a for a in ASPECTS if a in required_aspects_for(design, mobile_test)],
         },
     }
+
+
+def _package_rule(changes):
+    """The one exception to package.json being protected, as the installation allows it."""
+    verbs = {"add": "add", "change": "change the version of", "remove": "remove"}
+    allowed = [f"{' or '.join(verbs[c] for c in kinds if c in verbs)} a `{field}` entry"
+               for field, kinds in (changes or {}).items() if kinds]
+    if not allowed:
+        return ""
+    return (" The one exception: you may " + "; ".join(allowed) + " in `package.json` - a "
+            "registry version range, never a path, URL or protocol - and update "
+            "`pnpm-lock.yaml` to match. Nothing else in either file may change: not "
+            "`scripts`, not any other field.")
 
 
 def _bullets(items, empty="- (none)"):
@@ -255,7 +286,14 @@ def render_markdown(brief):
     add("3. The template is the infrastructure source of truth. Do not edit: "
         + ", ".join(f"`{p}`" for p in brief["protected_paths"])
         + ". If the template lacks something, stop and say so in `known_issues`; do not "
-          "patch around it.")
+          "patch around it." + _package_rule(brief.get("package_changes")))
+    if brief.get("writable_paths"):
+        add("   **Write only under** "
+            + ", ".join(f"`{p}`" for p in brief["writable_paths"])
+            + ". The Factory commits exactly those (and `package.json`/`pnpm-lock.yaml` as "
+              "above); any other file left in the tree - a hidden directory such as editor, "
+              "CI or agent-host settings, an instruction file, a stray script - fails the "
+              "step and is not committed.")
     add("4. **No platform SDK work.** Never import or reference a portal SDK, and never "
         "call `createPlatform`. Ads, analytics and saves go through the integration seam "
         "below, which the Factory provides and wires. The integration module replaces the "

@@ -23,8 +23,8 @@ sys.path.insert(0, SCRIPTS)
 
 import wgf_develop  # noqa: E402
 from wgf_develop import brief as briefs  # noqa: E402
-from wgf_develop import seam  # noqa: E402
-from wgf_develop.checks import conformance  # noqa: E402
+from wgf_develop import scope, seam  # noqa: E402
+from wgf_develop.checks import conformance, package_findings  # noqa: E402
 from wgf_develop.repository import KEY_TRAILER, GitRepo, Runner, RunResult  # noqa: E402
 from wgf_develop.settings import Settings, SettingsError  # noqa: E402
 from wgf_develop.step import DevelopStep  # noqa: E402
@@ -212,6 +212,11 @@ class DevelopCase(unittest.TestCase):
         self.git("add", "-A")
         self.git(*IDENTITY, "commit", "-q", "-m", "scaffold")
         self.baseline = self.git("rev-parse", "HEAD").strip()
+        self.guarded = os.path.join(tempfile.mkdtemp(prefix="wgf-develop-factory-"), "scripts")
+        self.addCleanup(shutil.rmtree, os.path.dirname(self.guarded), ignore_errors=True)
+        os.makedirs(self.guarded)
+        with open(os.path.join(self.guarded, "verify.py"), "w") as handle:
+            handle.write("PASS = False\n")
 
     def git(self, *args):
         return subprocess.run(["git", *args], cwd=self.repo, check=True, capture_output=True,
@@ -220,7 +225,9 @@ class DevelopCase(unittest.TestCase):
     def config(self, **develop):
         data = {"checkouts": self.scratch, "author": AUTHOR}
         data.update(develop)
-        return {"develop": data}
+        # The Factory paths fingerprinted around the developer: a stand-in, so a test can
+        # try writing one (and so each test does not read the whole Factory twice).
+        return {"develop": data, "review": {"guarded_paths": [self.guarded]}}
 
     def command_config(self, **extra):
         return self.config(developer={"kind": "command", "argv": ["agent", "-p", "{prompt}"]},
@@ -596,7 +603,108 @@ class Conformance(DevelopCase):
         self.assertIn("report.json was not written", found)
 
 
+class PackageAndScope(DevelopCase):
+    """package.json compared structurally; the commit scoped to what a developer may write."""
+
+    def manifest(self, edit):
+        path = os.path.join(self.repo, "package.json")
+        with open(path, encoding="utf-8") as handle:
+            data = json.load(handle)
+        edit(data)
+        with open(path, "w", encoding="utf-8") as handle:
+            json.dump(data, handle, indent=4)  # formatting is not a change
+
+    def findings(self, allowed=None):
+        return package_findings(self.repo, GitRepo(self.repo, Runner()), self.baseline,
+                                {"dependencies": ["add"], "devDependencies": ["add"]}
+                                if allowed is None else allowed)
+
+    def test_an_untouched_or_reformatted_manifest_passes(self):
+        self.assertEqual(self.findings(), [])
+        self.manifest(lambda d: None)
+        self.assertEqual(self.findings(), [])
+
+    def test_additions_pass_and_every_other_change_is_found(self):
+        self.manifest(lambda d: d["dependencies"].update({"pixi.js": "^8.6.0"}))
+        self.assertEqual(self.findings(), [])
+        self.assertIn("package.json adds dependencies 'pixi.js'; allowed dependencies "
+                      "changes: none", self.findings({}))
+        self.manifest(lambda d: d.update(name="renamed", pnpm={"overrides": {"a": "b"}}))
+        found = "\n".join(self.findings())
+        self.assertIn("package.json `name` is template-owned", found)
+        self.assertIn("package.json `pnpm` is template-owned", found)
+        self.manifest(lambda d: d["dependencies"].update({"@wgf/game-core": "^1.0.0"}))
+        self.assertIn("changes dependencies '@wgf/game-core'", "\n".join(self.findings()))
+        self.assertEqual([f for f in self.findings({"dependencies": ["add", "change"]})
+                          if "@wgf/game-core" in f], [])
+
+    def test_the_lockfile_follows_an_allowed_dependency_change_only(self):
+        with open(os.path.join(self.repo, "pnpm-lock.yaml"), "w") as handle:
+            handle.write("lockfileVersion: '9.0'\n")
+        self.assertIn("pnpm-lock.yaml is template-owned", "\n".join(self.findings()))
+        self.manifest(lambda d: d["dependencies"].update({"three": "^0.170.0"}))
+        self.assertEqual(self.findings(), [])
+
+    def test_the_scope(self):
+        allowed, refused = scope.partition([
+            ("??", "src/game/app.ts"), (" M", "package.json"), ("??", "index.html"),
+            ("??", "docs/development/report.json"), ("??", "public/locales/en.json"),
+            ("??", "tests/unit/a.test.ts"), ("??", ".claude/settings.json"),
+            ("??", "src/.cursor/rules"), ("??", "CLAUDE.md"), ("??", "tests/AGENTS.md"),
+            (" M", "README.md"), ("??", "docs/notes.md"), (" M", "tsconfig.json"),
+            ("??", "srcx/a.ts")])
+        self.assertEqual(allowed, ["docs/development/report.json", "index.html",
+                                   "package.json", "public/locales/en.json",
+                                   "src/game/app.ts", "tests/unit/a.test.ts"])
+        self.assertEqual([p for p, _ in refused],
+                         [".claude/settings.json", "CLAUDE.md", "README.md", "docs/notes.md",
+                          "src/.cursor/rules", "srcx/a.ts", "tests/AGENTS.md",
+                          "tsconfig.json"])
+
+    def test_a_rename_out_of_scope_is_seen_by_both_paths(self):
+        self.git("mv", "src/core/i18n.ts", "i18n.ts")
+        changes = GitRepo(self.repo, Runner()).changes()
+        self.assertEqual(sorted(p for _, p in changes), ["i18n.ts", "src/core/i18n.ts"])
+        _, refused = scope.partition(changes)
+        self.assertEqual([p for p, _ in refused], ["i18n.ts"])
+
+    def test_the_brief_says_what_may_be_written(self):
+        step_with(FakeRunner()).execute(inputs_for(), context(self.config()))
+        with open(os.path.join(self.repo, briefs.BRIEF_DIR, "brief.md")) as handle:
+            text = handle.read()
+        self.assertIn("**Write only under** `src/`, `tests/`, `public/`, "
+                      "`docs/development/`, `index.html`", text)
+        self.assertIn("you may add a `dependencies` entry; add a `devDependencies` entry", text)
+        for path in ("`package.json`", "`tsconfig.json`", "`pnpm-lock.yaml`"):
+            self.assertIn(path, text)
+
+    def test_a_filter_planted_by_the_developer_is_neutralised(self):
+        marker = os.path.join(self.scratch, "PWNED")
+        repo = GitRepo(self.repo, Runner())
+        self.assertTrue(repo.is_repository())  # pins the git directory
+        with open(os.path.join(self.repo, ".git", "info", "attributes"), "w") as handle:
+            handle.write("* filter=x\n")
+        self.git("config", "filter.x.clean", f"sh -c 'touch {marker}; cat'")
+        os.utime(os.path.join(self.repo, "src", "main.ts"), None)
+        repo.changes()
+        self.assertFalse(os.path.exists(marker))
+
+
 class Settings_(unittest.TestCase):
+    def test_the_boundary_settings_are_validated(self):
+        for develop in ({"writable_paths": ["../x"]}, {"writable_paths": [".claude/"]},
+                        {"writable_paths": ["/abs/"]}, {"writable_paths": []},
+                        {"allowed_package_changes": {"scripts": ["add"]}},
+                        {"allowed_package_changes": {"dependencies": ["rewrite"]}},
+                        {"git": {"allow_filters": "yes"}}):
+            with self.subTest(develop=develop):
+                with self.assertRaises(SettingsError):
+                    Settings.resolve({"develop": develop})
+        settings = Settings.resolve({})
+        self.assertEqual(settings.writable_paths, list(scope.DEFAULT_WRITABLE))
+        self.assertFalse(settings.allow_filters)
+        self.assertEqual(settings.env_passthrough, [])
+
     def test_defaults_and_ordering(self):
         settings = Settings.resolve({"develop": {"checks": ["smoke", "build", "lint"]}})
         # conformance is always on, and the list runs in dependency order.
@@ -652,6 +760,7 @@ class ThroughTheEngine(unittest.TestCase):
             "develop": {"checkouts": os.path.join(self.scratch, "checkouts"),
                         "author": AUTHOR,
                         "developer": {"kind": "command", "argv": ["agent", "{brief}"]}},
+            "review": {"guarded_paths": [os.path.join(self.scratch, "factory")]},
         })
         return API(config=config, store_dir=os.path.join(self.scratch, "store")), runner
 

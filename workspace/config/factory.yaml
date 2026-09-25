@@ -20,6 +20,17 @@ factory:
   # itself from a step module and is selected here by name.
   agents:
     default: local
+    # Agent processes (the develop step's developer command, the review step's reviewer)
+    # start with an allowlisted environment, never the Factory's: PATH, HOME, USER, LANG,
+    # LC_*, TERM, TMPDIR, SHELL, CI, the proxy variables, XDG_*, NODE_*, PNPM_*,
+    # npm_config_* (minus anything named like a secret), plus the WGF_PROC_* tags. The
+    # develop checks (pnpm install, test, build) keep the Factory's environment. Name here
+    # what else an agent needs -
+    # an exact name, or a prefix ending in *. See scripts/wgflib/agentenv.py.
+    env_passthrough: []
+    # Claude Code logged in with `claude login` reads its credentials under HOME and needs
+    # nothing here. Authenticated by key or token instead, it needs that one variable:
+    # env_passthrough: [ANTHROPIC_API_KEY]      # or CLAUDE_CODE_OAUTH_TOKEN
 
   # Relative to the directory `wgf` is run from. Run state is instance data, never committed.
   storage:
@@ -126,8 +137,15 @@ factory:
     #                               so they do not cut a build short of timeout_seconds: on the
     #                               v1 acceptance run a from-scratch build took 200 turns in
     #                               26-44 min for US$10-15, and 200 ended two attempts half-way
-    # `pnpm *` also admits `pnpm exec` and `pnpm dlx`: arbitrary code in the checkout. Wrap the
-    # argv in an OS sandbox if the developer must not reach the network or $HOME.
+    # `pnpm *` also admits `pnpm exec` and `pnpm dlx`: arbitrary code in the checkout. The
+    # Factory's own side of that boundary (docs/development-module.md): the developer gets
+    # the allowlisted environment above (factory.agents.env_passthrough); the Factory's
+    # guarded paths (factory.review.guarded_paths) are fingerprinted around it and its
+    # checks, and a change is undone and fails the step; the Factory's git names the git
+    # directory it resolved before the developer ran and runs no hook, fsmonitor, signer or
+    # filter the checkout's config names; and only writable_paths are committed. Anything
+    # else outside the checkout - $HOME, the network - is not watched: wrap the argv in an
+    # OS sandbox if the developer must not reach them.
     # developer:
     #   kind: command
     #   argv:
@@ -161,6 +179,19 @@ factory:
     check_timeout_seconds: 900
     commit: true                # one local commit per visit, keyed by the idempotency key
     build_url: null             # e.g. "https://{branch}.{name}.pages.dev"; default links the commit
+    # What the development commit may contain (scripts/wgf_develop/scope.py). A directory
+    # ends in /. Any other change left in the tree fails the step, not retryably; a hidden
+    # path (.claude/, .github/, .husky/, .env) or an agent instruction file (CLAUDE.md,
+    # AGENTS.md) is refused whatever this says.
+    # writable_paths: [src/, tests/, public/, docs/development/, index.html]
+    # package.json and pnpm-lock.yaml are template-owned except for these dependency
+    # changes (add | change | remove), each a registry version range; the lockfile may
+    # change only together with one. Every other field - scripts above all - must stay.
+    # allowed_package_changes: {dependencies: [add], devDependencies: [add]}
+    # git:
+    #   allow_filters: false    # true only for a repository that commits through its own
+    #                           # filters (git-lfs); a filter changed after the Factory
+    #                           # pinned the repository is then refused, never run
 
   # The review module (scripts/wgf_review, docs/review-module.md): an independent reviewer
   # reads each development commit and approves it or requests changes, which the workflow
@@ -220,8 +251,10 @@ factory:
     #   idle_timeout_seconds: null
     # checkouts: ..             # default: factory.develop.checkouts
     # The Factory's own code, gates, contracts and this config: what decides what a review,
-    # and every later check, is worth. Keep at least the module default
-    # (scripts/wgf_review/settings.py); a narrower list lets a reviewer rewrite its judge.
+    # and every later check, is worth. Fingerprinted around the reviewer AND around the
+    # develop step's developer and checks (scripts/wgflib/isolation.py). Keep at least the
+    # default (wgflib.isolation.DEFAULT_GUARDED_PATHS); a narrower list lets an agent rewrite
+    # its judge.
     guarded_paths: [core, scripts, bin, workspace/config]
 
   # The discovery module (scripts/wgf_discovery) implements `research`. Every key is

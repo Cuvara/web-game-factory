@@ -89,7 +89,8 @@ def render_brief(*, title_id, commit, baseline, design, prototype, develop_brief
         add(f"- The change: `git diff {baseline}..{commit}` "
             f"(`git log --stat {baseline}..{commit}`)")
     add("- What the developer was asked to build: `docs/development/brief.md` in the "
-        "repository, and what it reported: `docs/development/report.json`.")
+        "repository, and what it reported: `docs/development/report.json`. The whole "
+        "design, rendered for reading: `docs/GDD.md`.")
     add("")
     if design.get("core_loop"):
         add("## The game\n")

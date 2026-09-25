@@ -26,6 +26,7 @@ from wgflib.workflow import ArtifactOutput, StepResult, WorkflowStep
 
 from . import brief as briefs
 from .checks import read_report, run_checks
+from .gdd import GDD_PATH, render_gdd
 from .developers import Outcome, create_developer
 from .report import build_report
 from .seam import ensure_seam
@@ -155,6 +156,12 @@ class DevelopStep(WorkflowStep):
             )
             _write(brief_json, json.dumps(brief, indent=2, ensure_ascii=False) + "\n")
             _write(brief_md, briefs.render_markdown(brief))
+            # The design, readable in the repository (game-design's rendered_to). Written
+            # before the developer runs, so it can be read, and again after, so a hand edit
+            # never survives into this visit's commit.
+            gdd = render_gdd(design, strategy,
+                             getattr(inputs.refs.get("game-design"), "content_hash", None))
+            _write(os.path.join(checkout, GDD_PATH), gdd)
             written = ensure_seam(checkout)
             if written:
                 context.logger.info("integration seam provided", paths=written)
@@ -188,6 +195,7 @@ class DevelopStep(WorkflowStep):
                     }] + carried,
                 }, indent=2) + "\n")
                 return StepResult.failed(outcome.message, output_tail=outcome.output_tail)
+            _write(os.path.join(checkout, GDD_PATH), gdd)
 
         checks = run_checks(checkout, brief, settings, runner, git, logger=context.logger)
         green = all(not c.failed for c in checks)

@@ -11,6 +11,15 @@ and `core/` is still the contract.
 
 ### Changed
 
+- **`docs/GDD.md` is rendered into the game repository (F3).** `game-design` declared
+  `rendered_to: <game-repo>/docs/GDD.md`; nothing produced it. The develop step now writes
+  it (`scripts/wgf_develop/gdd.py`) in `core/templates/gdd.md`'s section structure, pinned to
+  the design's artifact id and content hash. It is written before the developer runs and again
+  after, so a hand edit never survives, and it is committed with each visit. The development
+  and review briefs point at it. The golden reviewer allows `docs/GDD.md`. The scaffolding
+  procedure and the GDD template now say who renders it. *Migration:* none. `docs/tech-plan.md`
+  is still not rendered; the tech plan reaches the developer through the brief (F1).
+
 - **The review brief adds a gameplay lens and a design-fidelity section (F2).** "Look for"
   was code-only. It now also covers what players feel: restart state, frame-rate
   independence, pause, double starts and taps, tuning as data, frame-loop allocation, flash

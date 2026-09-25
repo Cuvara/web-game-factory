@@ -52,6 +52,12 @@ the game, regenerated on every visit and committed with the code it asked for. I
   only the seam), nor `assets` (the asset manifest is what is delivered). The brief asks
   for tuning as data in one module, and treats every `feedback` as MVP, not polish
   (`core/craft/game-feel.md`). `brief.json` carries the same selection under `build_spec`.
+- **The design, in full** — `docs/GDD.md`, game-design's `rendered_to`, written by
+  `scripts/wgf_develop/gdd.py` in the section structure of `core/templates/gdd.md` (concept to
+  open questions, with the MVP build spec in 10b). It pins the design's artifact id and
+  content hash, is deterministic, and is written before the developer runs and again after,
+  so a hand edit never survives into the visit's commit. The brief's Design section and the
+  review brief point at it.
 - **Development plan** — the approved tech plan's prototype milestones and their tasks in
   dependency order, each with its acceptance criteria, tests and assets. Production and
   hardening tasks are listed by id as later work. `brief.json`: `dev_plan`.

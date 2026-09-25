@@ -13,9 +13,10 @@ import re
 from .. import paths
 from ..yamllite import load_file
 from .definition import RetryPolicy
+from .model import DEFAULT_HUNG_OUTPUT_SECONDS
 
 __all__ = ["FactoryConfig", "load_config", "DEFAULT_CONFIG_PATH", "DEFAULTS", "ConfigError",
-           "parse_duration"]
+           "parse_duration", "ON_HUNG"]
 
 DEFAULT_CONFIG_PATH = os.path.join(paths.CONFIG, "factory.yaml")
 
@@ -29,6 +30,12 @@ DEFAULTS = {
         "max_visits": 5,
         # `wgf status` calls a RUNNING step with no sign of life for longer than this hung.
         "hung_after_seconds": 300,
+        # ... and one whose child has written nothing for longer than this, while the
+        # driver's heartbeats keep arriving (model.DEFAULT_HUNG_OUTPUT_SECONDS says why 900).
+        "hung_output_seconds": DEFAULT_HUNG_OUTPUT_SECONDS,
+        # What the driving engine does about such a child: `none` (status reports it) or
+        # `cancel` (its tree is terminated and the step ends, not retryably).
+        "on_hung": "none",
     },
     "agents": {"default": "local"},
     "storage": {"directory": ".factory", "fsync": True},
@@ -43,6 +50,11 @@ DEFAULTS = {
 
 class ConfigError(ValueError):
     """A configuration value wgf will not act on."""
+
+
+# factory.execution.on_hung: what the driving engine does about a child that has written
+# nothing for hung_output_seconds.
+ON_HUNG = ("none", "cancel")
 
 
 _DURATION = re.compile(r"(\d+)\s*([smhd])")
@@ -129,6 +141,28 @@ class FactoryConfig:
         value = self.section("execution").get("hung_after_seconds", 300)
         if isinstance(value, bool) or not isinstance(value, (int, float)) or value <= 0:
             return 300
+        return value
+
+    @property
+    def hung_output_seconds(self):
+        """factory.execution.hung_output_seconds: a positive number, else the default."""
+        value = self.section("execution").get("hung_output_seconds",
+                                              DEFAULT_HUNG_OUTPUT_SECONDS)
+        if isinstance(value, bool) or not isinstance(value, (int, float)) or value <= 0:
+            return DEFAULT_HUNG_OUTPUT_SECONDS
+        return value
+
+    @property
+    def on_hung(self):
+        """factory.execution.on_hung, one of ON_HUNG. Fail closed: any other value raises
+        ConfigError rather than silently meaning `none` - a run is not started under a
+        watchdog policy nobody can tell apart from no watchdog."""
+        value = self.section("execution").get("on_hung", "none")
+        if value is None:
+            return "none"
+        if value not in ON_HUNG:
+            raise ConfigError(f"factory.execution.on_hung is {value!r}; expected one of "
+                              f"{', '.join(ON_HUNG)}")
         return value
 
     def retry_policy(self):

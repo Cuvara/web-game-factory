@@ -121,13 +121,27 @@ def render_liveness(live):
                  f"elapsed {_duration(live.get('elapsed_seconds'))}")
     lines.append(f"Activity: {live.get('last_activity_at') or '-'}   "
                  f"{_duration(live.get('idle_seconds'))} ago")
-    if live["liveness"] == "hung":
-        lines.append(f"          nothing for longer than {live['hung_after_seconds']}s "
-                     f"(factory.execution.hung_after_seconds); the step may be stuck. "
-                     f"`wgf cancel {live['run_id']}` terminates it.")
+    if live.get("last_output_at") and live.get("pid"):
+        lines.append(f"Output:   {live['last_output_at']}   "
+                     f"{_duration(live.get('output_idle_seconds'))} ago")
+    if live["liveness"] == "hung" and live.get("hung_reason") == "output":
+        lines.append(f"          the driver is alive (heartbeats arriving), but child pid "
+                     f"{live.get('pid')} has written nothing for longer than "
+                     f"{live.get('hung_output_seconds')}s "
+                     f"(factory.execution.hung_output_seconds). It may be stuck, or working "
+                     f"silently; nothing is stopped by looking. `wgf cancel {live['run_id']}` "
+                     f"terminates its tree.")
+    elif live["liveness"] == "hung":
+        lines.append(f"          the driver has recorded nothing, not even a heartbeat, for "
+                     f"longer than {live['hung_after_seconds']}s "
+                     f"(factory.execution.hung_after_seconds): the Factory process itself is "
+                     f"not reporting (blocked outside a child process, or suspended). "
+                     f"`wgf cancel {live['run_id']}` asks it to stop; if it never does, end "
+                     f"driver pid {live.get('driver_pid')} and resume.")
     elif live["liveness"] == "stale":
         lines.append("          RUNNING on disk but no live process holds the run: its driver "
-                     "crashed. Resume it to continue from this step.")
+                     "crashed. Resume it to continue from this step; resume (or cancel) "
+                     "first ends any process the dead driver's step left running.")
     return lines
 
 

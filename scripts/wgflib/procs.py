@@ -28,7 +28,11 @@ Everything a Factory step spawns goes through `run()` (to completion) or `spawn(
   * reports what is happening through `on_event(kind, **data)`: `spawned`, `heartbeat`
     (every `heartbeat_seconds`, default `$WGF_HEARTBEAT_SECONDS` or 15, with seconds since
     the child last wrote anything), `timeout`, `idle-timeout`, `cancelled`, `exited`,
-    `cleanup`. That is what lets a status command tell a working step from a hung one.
+    `cleanup`. That is what lets a status command tell a working step from a hung one;
+  * names the workflow run whose step owns the tree in `WGF_PROC_RUN` (a comma-separated list,
+    outermost run first, like the lineage), when the caller is `bound()` to one. A driver
+    killed with SIGKILL runs no cleanup at all; a later resume of the run finds and ends the
+    trees it orphaned through that name (`sweep_run`, Linux only).
 
 Nothing global is installed on import except an `atexit` hook that takes down trees this
 process still owns. A CLI entry point that wants SIGTERM/SIGHUP to clean up too calls
@@ -42,6 +46,7 @@ import codecs
 import collections
 import contextlib
 import contextvars
+import hashlib
 import os
 import secrets
 import signal
@@ -51,11 +56,14 @@ import threading
 import time
 
 __all__ = ["run", "spawn", "OwnedProcess", "ProcessResult", "TAG_ENV", "LINEAGE_ENV",
-           "HEARTBEAT_ENV", "tagged_pids", "terminate_tree", "live_groups", "terminate_all", "install_subreaper",
-           "bound", "install_signal_cleanup", "default_heartbeat_seconds", "pid_alive"]
+           "RUN_ENV", "HEARTBEAT_ENV", "tagged_pids", "terminate_tree", "live_groups",
+           "terminate_all", "install_subreaper", "bound", "install_signal_cleanup",
+           "default_heartbeat_seconds", "pid_alive", "run_token", "run_pids", "sweep_run",
+           "can_sweep"]
 
 TAG_ENV = "WGF_PROC_TAG"
 LINEAGE_ENV = "WGF_PROC_LINEAGE"
+RUN_ENV = "WGF_PROC_RUN"
 HEARTBEAT_ENV = "WGF_HEARTBEAT_SECONDS"
 POSIX = os.name == "posix"
 _PROC = "/proc"
@@ -159,10 +167,19 @@ def _carries(environ, tag):
     return False
 
 
-def tagged_pids(tag):
-    """Live pids whose environment carries `tag` (as WGF_PROC_TAG, or in WGF_PROC_LINEAGE
-    because a nested owner re-tagged its own children). Linux only; [] elsewhere."""
-    if not tag or not os.path.isdir(_PROC):
+def _carries_run(environ, token):
+    """True when a NUL-separated environment block names run `token` in WGF_PROC_RUN."""
+    prefix = f"{RUN_ENV}=".encode()
+    wanted = token.encode()
+    for entry in environ.split(b"\0"):
+        if entry.startswith(prefix) and wanted in entry[len(prefix):].split(b","):
+            return True
+    return False
+
+
+def _pids_whose_environ(matches):
+    """Live, non-zombie pids other than this one whose /proc environ satisfies `matches`."""
+    if not os.path.isdir(_PROC):
         return []
     me = os.getpid()
     found = []
@@ -174,9 +191,17 @@ def tagged_pids(tag):
         if not name.isdigit() or int(name) == me:
             continue
         environ = _read(os.path.join(_PROC, name, "environ"))
-        if environ and _carries(environ, tag) and not _is_zombie(int(name)):
+        if environ and matches(environ) and not _is_zombie(int(name)):
             found.append(int(name))
     return sorted(found)
+
+
+def tagged_pids(tag):
+    """Live pids whose environment carries `tag` (as WGF_PROC_TAG, or in WGF_PROC_LINEAGE
+    because a nested owner re-tagged its own children). Linux only; [] elsewhere."""
+    if not tag:
+        return []
+    return _pids_whose_environ(lambda environ: _carries(environ, tag))
 
 
 def _stat_fields(pid):
@@ -424,6 +449,88 @@ def terminate_all(grace_seconds=2.0):
 atexit.register(terminate_all)
 
 
+# -- a run's trees, after its driver died ------------------------------------------------------
+
+# SIGKILL of the process driving a workflow run runs no cleanup: no atexit, no signal handler,
+# and the subreaper dies with it. Every tree a step of the run started is orphaned, and nothing
+# the next driver reads names their pids. What survives is the environment: every child of a
+# step carries the run's token in WGF_PROC_RUN, so the driver that resumes the run can find
+# them and end them before it executes the step again.
+
+def run_token(run_id, scope=None):
+    """The WGF_PROC_RUN token of a run: `<run-id>@<12 hex digits of scope>`.
+
+    `scope` is what makes a run id unique - the directory the run store lives in. Two
+    checkouts (or two test suites) can hold a run called `run-1` at the same time, and a
+    sweep of one must never reach the other's children."""
+    digest = hashlib.sha256(os.path.abspath(scope or "").encode("utf-8")).hexdigest()[:12]
+    return f"{run_id}@{digest}"
+
+
+def can_sweep():
+    """True where a run's orphans can be found by their environment (Linux /proc)."""
+    return POSIX and os.path.isdir(_PROC)
+
+
+def _ancestors():
+    """This process and every process above it, by parent pid (Linux)."""
+    found = {os.getpid()}
+    pid = os.getpid()
+    while pid and pid > 1:
+        fields = _stat_fields(pid)
+        if not fields or len(fields) < 2 or not fields[1].isdigit():
+            break
+        pid = int(fields[1])
+        found.add(pid)
+    return found
+
+
+def run_pids(token):
+    """Live pids naming run `token` in WGF_PROC_RUN, never this process, one of its
+    ancestors, or a process of a tree this process owns right now. Linux only; []
+    elsewhere."""
+    if not token or not can_sweep():
+        return []
+    protected = _ancestors() | {pid for pid, _ in live_groups().values()}
+    live_tags = list(live_groups())
+
+    def matches(environ):
+        return _carries_run(environ, token) and not any(
+            _carries(environ, tag) for tag in live_tags)
+
+    return [pid for pid in _pids_whose_environ(matches) if pid not in protected]
+
+
+def sweep_run(token, grace_seconds=5.0):
+    """End every process still carrying run `token`: SIGTERM, `grace_seconds`, SIGKILL,
+    repeated for descendants that fork meanwhile. Returns the pids it found alive and
+    signalled, or None where it cannot look (no /proc). Processes that do not carry the
+    token - untagged ones, and those of any other run - are never signalled."""
+    if not can_sweep():
+        return None
+    targets = set(run_pids(token))
+    if not targets:
+        return []
+    _signal(sorted(targets), None, signal.SIGTERM)
+    deadline = time.monotonic() + max(0.0, grace_seconds)
+    while time.monotonic() < deadline:
+        targets.update(run_pids(token))
+        if not any(pid_alive(p) for p in targets):
+            return sorted(targets)
+        time.sleep(0.05)
+    for _ in range(5):
+        targets.update(run_pids(token))
+        survivors = sorted(p for p in targets if pid_alive(p))
+        if not survivors:
+            break
+        _signal(survivors, None, signal.SIGKILL)
+        for _ in range(20):
+            if not any(pid_alive(p) for p in survivors):
+                break
+            time.sleep(0.05)
+    return sorted(targets)
+
+
 _SIGNALS_INSTALLED = {"done": False, "exiting": False}
 
 
@@ -468,15 +575,21 @@ def install_signal_cleanup(signals=None):
 # around every execution. A module's runner calls run() without knowing about workflows and
 # still reports to, and is cancellable by, the step it runs under.
 _BOUND = contextvars.ContextVar("wgf_procs_bound", default=None)
+# The run_token() of the workflow run the executing step belongs to, if any.
+_RUN = contextvars.ContextVar("wgf_procs_run", default=None)
 
 
 @contextlib.contextmanager
-def bound(on_event=None, should_stop=None):
-    """Within this block, every run() also reports to `on_event` and honours `should_stop`."""
+def bound(on_event=None, should_stop=None, run=None):
+    """Within this block, every run() also reports to `on_event` and honours `should_stop`,
+    and every child run() or spawn() starts names `run` (a run_token) in WGF_PROC_RUN."""
     token = _BOUND.set((on_event, should_stop))
+    run_mark = _RUN.set(run) if run else None
     try:
         yield
     finally:
+        if run_mark is not None:
+            _RUN.reset(run_mark)
         _BOUND.reset(token)
 
 
@@ -509,6 +622,16 @@ def _child_env(env, tag):
     # A tree owned by a nested Factory process stays findable by every owner above it.
     base[LINEAGE_ENV] = ",".join(lineage + [tag])
     base[TAG_ENV] = tag
+    # The runs whose steps own this tree, outermost first: a run started by `wgf` inside
+    # another run's step is still found by a sweep of the outer run.
+    runs = [r for r in (os.environ.get(RUN_ENV) or "").split(",") if r]
+    current = _RUN.get()
+    if current and (not runs or runs[-1] != current):
+        runs.append(current)
+    if runs:
+        base[RUN_ENV] = ",".join(runs)
+    else:
+        base.pop(RUN_ENV, None)
     return base
 
 

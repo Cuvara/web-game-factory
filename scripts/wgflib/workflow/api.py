@@ -324,6 +324,13 @@ class WorkflowAPI:
         windows = timeout_windows(self.config)
         if windows:
             params["timeout_auto_approve"] = dict(sorted(windows.items()))
+        # The hung-child watchdog, snapshotted the same way: a resume keeps the policy the
+        # run started under, and an edit of it in state.json is refused. `none` - the
+        # default - records nothing, so runs without a watchdog carry the params they
+        # always did.
+        if self.config.on_hung != "none":
+            params["on_hung"] = self.config.on_hung
+            params["hung_output_seconds"] = self.config.hung_output_seconds
 
         scope = request.scope
         if scope == engine.definition.id:
@@ -339,10 +346,16 @@ class WorkflowAPI:
         return state, self.definition_for(state)
 
     def liveness(self, state, now=None):
-        """derive_liveness for `state`, against the lock as it is right now."""
+        """derive_liveness for `state`, against the lock as it is right now. The output
+        threshold is the one the run's watchdog was started with, when it has one, so
+        status and the watchdog agree; otherwise the configured one."""
         now = now or datetime.datetime.now(datetime.timezone.utc)
+        params = state.params if isinstance(state.params, dict) else {}
+        output = params.get("hung_output_seconds")
+        if isinstance(output, bool) or not isinstance(output, (int, float)) or output <= 0:
+            output = self.config.hung_output_seconds
         return derive_liveness(state, self.store.lock_owner(state.run_id), now,
-                               self.config.hung_after_seconds)
+                               self.config.hung_after_seconds, output)
 
     def events(self, run_id=None, problems=None):
         """(state, events). Unreadable event lines are skipped and added to `problems`."""

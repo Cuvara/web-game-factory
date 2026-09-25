@@ -15,6 +15,17 @@ factory:
     delay_seconds: 2            # before the first retry; doubles each time when exponential
     max_delay_seconds: 60
     max_visits: 5               # how often a loop may re-enter one step before the run blocks
+    # Liveness (docs/agent-lifecycle.md). `wgf status` calls a RUNNING step hung when its
+    # driver has recorded nothing, not even a heartbeat, for hung_after_seconds; or when the
+    # driver's heartbeats arrive but the child it waits on has written nothing for
+    # hung_output_seconds. Status only reports; on_hung decides whether the driving engine
+    # acts: `none`, or `cancel` - terminate the silent child's tree and end the step, not
+    # retryably (a STEP_LOG warning says why). A run keeps the on_hung policy it started
+    # with. Keep hung_output_seconds above every module idle_timeout_seconds below, or the
+    # watchdog pre-empts the module's own ending.
+    # hung_after_seconds: 300
+    # hung_output_seconds: 900
+    # on_hung: none             # none | cancel
 
   # Which runtime executes a step. Only `local` exists; an agent-host runtime registers
   # itself from a step module and is selected here by name.

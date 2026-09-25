@@ -107,8 +107,11 @@ class WorkflowContext:
         """Report liveness: a child process spawned, is still working (`heartbeat`), exited.
 
         The engine records the latest one on the step's state (`pid`, `last_activity_at`,
-        `last_event`) so `wgf status` can tell a working step from a hung one. Cheap to call
-        often; persisting is throttled by the engine, not here.
+        `last_event`, and `last_output_at` / `last_heartbeat_at`, kept apart because a
+        heartbeat shows the driver is alive, not that the child is doing anything) so
+        `wgf status` can tell a working step from a hung one. Cheap to call often;
+        persisting is throttled by the engine, not here. `should_stop` also turns true when
+        the run's hung-child watchdog (`on_hung: cancel`) fires.
         """
         if self._progress is not None:
             self._progress(kind, **data)

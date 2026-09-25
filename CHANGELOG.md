@@ -56,6 +56,27 @@ Core changes are listed with their reason, as docs/core-v1.md requires.
   work redone restarts it; the approval is recorded as `DECISION_RECORDED`
   (`decided_by: automation`, `mode: timeout`) and applied only by `wgf resume` - `wgf
   status` and `wgf runs --waiting` report eligibility and change nothing.
+- **A silent child reads `hung`, and can be stopped (M3, P0-13).** The step state keeps
+  `last_output_at` (the child wrote something, or a lifecycle event) and
+  `last_heartbeat_at` apart from `last_activity_at` (any event, heartbeats included), and
+  `wgf status` reads `hung` with `hung_reason: output` when heartbeats show the driver alive
+  but the child has written nothing for `factory.execution.hung_output_seconds` (default
+  900: above the reviewer's 600 s and the developer's documented 900 s idle timeouts), or
+  `hung_reason: driver` as before. The status text says which, and names `wgf cancel`.
+  Opt-in watchdog `factory.execution.on_hung: cancel` (default `none`): the driving engine
+  terminates such a child's tree through the cancel path, the step ends not retryably, and
+  a `STEP_LOG` warning says why; the policy is snapshotted into the run's params and
+  corroborated on resume. *Reason (core change, wgflib/procs + wgflib/workflow):* every
+  heartbeat refreshed `last_activity_at`, so a live but stuck child always read `running`
+  and nothing acted on `hung`. *Migration:* none; older `state.json` has neither new field
+  and derives as before, and a run started with `on_hung: none` records no new params.
+- **SIGKILL recovery (M3, P0-12).** Children of a step carry
+  `WGF_PROC_RUN=<run-id>@<store digest>`; resuming - or cancelling - a run that is
+  `RUNNING` with no live driver first terminates every process still naming that run
+  (Linux `/proc`; elsewhere a warning that it cannot) and logs the pids. Nothing untagged,
+  and nothing of another run or store, is touched. *Reason (core change, wgflib/procs +
+  wgflib/workflow):* a SIGKILLed driver runs no cleanup, so its trees were orphaned and no
+  later process knew their pids.
 
 ### Security
 - **Developer boundary (M1).** develop's git runs hardened like the reviewer's

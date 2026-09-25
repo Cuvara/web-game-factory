@@ -31,12 +31,15 @@ found the file - before the engine acts on it:
     state.json on every resume. The
     engine records the params in the WORKFLOW_STARTED event too, and `params_problems`
     refuses a state whose params differ from that record - so turning a real run into a
-    mock one, or adding G3 to `auto_approve`, by editing state.json alone is refused.
+    mock one, or adding G3 to `auto_approve`, by editing state.json alone is refused. The
+    same holds for every other param - `on_hung` and `hung_output_seconds`, the hung-child
+    watchdog a run snapshots at start, among them - and their shape is checked here too.
 
 Problems are reported as strings; the engine refuses to resume or continue a run that has
 any. Nothing here names a step type, a gate or a route.
 """
 
+from .config import ON_HUNG
 from .events import Events
 from .model import RunStatus, StepOutcome, StepStatus, parse_timestamp
 
@@ -80,6 +83,16 @@ def state_problems(state, definition):
                 and all(isinstance(g, str) and _count(v) and v > 0 for g, v in windows.items())):
             problems.append("params.timeout_auto_approve is not a mapping of gate ids to "
                             "positive seconds")
+        on_hung = state.params.get("on_hung")
+        if on_hung is not None and on_hung not in ON_HUNG:
+            problems.append(f"params.on_hung {on_hung!r} is not one of {', '.join(ON_HUNG)}")
+        output = state.params.get("hung_output_seconds")
+        if output is not None and (isinstance(output, bool)
+                                   or not isinstance(output, (int, float)) or output <= 0):
+            problems.append(f"params.hung_output_seconds {output!r} is not a positive number "
+                            f"of seconds")
+        if on_hung == "cancel" and output is None:
+            problems.append("params.on_hung is cancel without params.hung_output_seconds")
 
     for step_id, step in (state.steps or {}).items():
         where = f"steps.{step_id}"

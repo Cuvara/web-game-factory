@@ -1,7 +1,9 @@
 """The `develop` step: brief -> developer -> checks -> commit -> prototype-report.
 
     inputs   game-design, asset-manifest, scaffold-record (required)
-             title-strategy (read when present), qa-report (on a verify -> develop loop),
+             title-strategy, tech-plan (read when present: the tech plan's prototype tasks
+             join the brief beside the design's build_spec),
+             qa-report (on a verify -> develop loop),
              review-report (on a review -> develop loop: its blockers lead the brief)
     output   prototype-report
     effect   one commit in the game repository per visit, keyed by the idempotency key
@@ -24,6 +26,7 @@ from wgflib.workflow import ArtifactOutput, StepResult, WorkflowStep
 
 from . import brief as briefs
 from .checks import read_report, run_checks
+from .gdd import GDD_PATH, render_gdd
 from .developers import Outcome, create_developer
 from .report import build_report
 from .seam import ensure_seam
@@ -71,7 +74,8 @@ class DevelopStep(WorkflowStep):
         if missing:
             return StepResult.waiting_for_input(
                 f"develop needs {', '.join(missing)} in the run before it can brief a build")
-        for artifact_type in REQUIRED_INPUTS + ("title-strategy", "qa-report", "review-report"):
+        for artifact_type in REQUIRED_INPUTS + ("title-strategy", "tech-plan", "qa-report",
+                                                "review-report"):
             ref = inputs.refs.get(artifact_type)
             version = getattr(ref, "schema_version", None) or ""
             if ref is not None and version and version.split(".")[0] != SUPPORTED_MAJOR:
@@ -83,6 +87,7 @@ class DevelopStep(WorkflowStep):
         assets = inputs.load("asset-manifest")
         scaffold = inputs.load("scaffold-record")
         strategy = inputs.load("title-strategy") if "title-strategy" in inputs else None
+        tech_plan = inputs.load("tech-plan") if "tech-plan" in inputs else None
         qa = inputs.load("qa-report") if "qa-report" in inputs else None
         review = inputs.load("review-report") if "review-report" in inputs else None
         # A qa-report on the first visit is a leftover from an earlier release, not feedback
@@ -145,11 +150,18 @@ class DevelopStep(WorkflowStep):
                 baseline=baseline, design=design, assets=assets, scaffold=scaffold,
                 strategy=strategy, qa=qa, previous_checks=previous_checks,
                 refs=inputs.refs, skills=settings.skills, review=review,
+                tech_plan=tech_plan, self_playtest=settings.self_playtest,
                 mobile_test=bool((game_config.get("verification") or {}).get("mobile_test",
                                                                             True)),
             )
             _write(brief_json, json.dumps(brief, indent=2, ensure_ascii=False) + "\n")
             _write(brief_md, briefs.render_markdown(brief))
+            # The design, readable in the repository (game-design's rendered_to). Written
+            # before the developer runs, so it can be read, and again after, so a hand edit
+            # never survives into this visit's commit.
+            gdd = render_gdd(design, strategy,
+                             getattr(inputs.refs.get("game-design"), "content_hash", None))
+            _write(os.path.join(checkout, GDD_PATH), gdd)
             written = ensure_seam(checkout)
             if written:
                 context.logger.info("integration seam provided", paths=written)
@@ -183,6 +195,7 @@ class DevelopStep(WorkflowStep):
                     }] + carried,
                 }, indent=2) + "\n")
                 return StepResult.failed(outcome.message, output_tail=outcome.output_tail)
+            _write(os.path.join(checkout, GDD_PATH), gdd)
 
         checks = run_checks(checkout, brief, settings, runner, git, logger=context.logger)
         green = all(not c.failed for c in checks)

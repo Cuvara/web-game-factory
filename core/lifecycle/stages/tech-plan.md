@@ -56,6 +56,11 @@ tests:
 - **`repo_params`**, including the complete `game.config.yaml` content to be written at
   scaffolding, with platforms pinned as `<platform-id>@<profile-version>`.
 
+## Craft references
+
+`core/craft/web-performance.md` for budget defaults, including the ones `perf_budgets` has
+no field for; record those in the architecture notes.
+
 ## Gate G3
 
 Guards: `engine_selected`, `asset_manifest_present`, `plan_fits_timebox`. Design and plan

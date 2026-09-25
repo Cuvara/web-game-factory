@@ -610,6 +610,25 @@ selects another by name), derives scope tiers and SDK touchpoints, refuses a dra
 cannot be built without guessing, and evaluates the design-consistency rules. A blocking
 breach returns `FAILED` with route `descope` and the design persisted as evidence.
 
+The opt-in **`agent` author** (`scripts/wgf_design/agent.py`, `factory.design.author: agent`)
+lets an agent host write the draft:
+- **Request.** The author writes a request under `<run>/design/<visit>-<attempt>.request.json`.
+  It holds the strategy, the platform profiles, and the archetype's draft as a starting point
+  in exactly the required shape.
+- **Run and read.** It runs `factory.design.agent.argv`, with `{request}`, `{draft}` and
+  `{prompt}` substituted, through `wgflib.procs` with a timeout and a log. It reads the draft
+  back from `{draft}`, or with `draft_from: stdout` from the last JSON object printed.
+- **Shape check.** A draft that is not JSON or lacks a required section is an `AuthorError`
+  (not retryable). This check runs before `finalize`.
+- **Host failures.** A host that fails, times out or goes silent raises `AgentRunFailed`,
+  which the runtime retries.
+- **Checks unchanged.** Everything after the draft stays the same, so an agent's design passes
+  the same buildability and consistency checks as the archetype's. The `descope` route still
+  applies.
+- **Provenance.** The design's `produced_by.actor` is `ai`.
+
+`workspace/config/factory.yaml` carries a commented read-only host example.
+
 **`wgf_sdk`** (`scripts/wgf_sdk/`) implements `sdk`. With a game-design and a
 scaffold-record in the run it first integrates the template's platform SDK into the game —
 a gameplay layer, the develop step's seam and `main.ts` wired to the `Platform` interface,

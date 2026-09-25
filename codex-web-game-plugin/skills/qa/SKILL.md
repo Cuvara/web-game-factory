@@ -9,6 +9,7 @@ Test suites, device matrices, defect triage, and performance measurement.
 - `core/lifecycle/stages/qa.md`
 - `core/artifacts/verification-report.schema.json`
 - `core/artifacts/qa-report.schema.json`
+- `core/craft/playtesting.md`
 
 This skill is a pointer, not a copy. Read the paths above rather than relying on anything
 restated here; core is authoritative and this file is not a substitute for it.

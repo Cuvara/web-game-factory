@@ -19,10 +19,11 @@ inputs ──► brief ──► developer ──► checks ──► commit ─
 
 | Input | Used for |
 |---|---|
-| `game-design` | core loop, controls, MVP / later tiers / out of scope, session targets, onboarding, screens, placements, art and audio direction |
+| `game-design` | core loop, controls, MVP / later tiers / out of scope, session targets, onboarding, screens, placements, art and audio direction; and its `build_spec`, MVP tier |
 | `asset-manifest` | the assets the MVP loads, their source, status and license |
 | `scaffold-record` | which repository to build in (`repository.name`) |
 | `title-strategy` | `prototype_must_prove` and `kill_criteria`, which the report must list — optional |
+| `tech-plan` | `dev_plan`: the prototype milestones and their tasks, with acceptance criteria and tests — optional (absent, the brief has no plan section) |
 | `qa-report` | on a verify → develop loop, the blocking defects the brief says to fix first |
 | `review-report` | on a review → develop loop, the reviewer's blockers the brief says to fix first — used only when it requests changes to the commit this visit starts from ([review-module.md](review-module.md)) |
 
@@ -42,6 +43,24 @@ the game, regenerated on every visit and committed with the code it asked for. I
   progression, UI, HUD, tutorial, game over, restart, asset loading, responsive layout,
   audio hooks — each with its acceptance line.
 - **Scope** — the MVP verbatim, the tiers that are *not now*, and what is out of scope.
+- **Build spec** — the design's `build_spec`, MVP tier only, every field: mechanics with
+  their rules and starting tuning, controls, player goals, game states, screens, HUD,
+  menus, tutorial, rewards and failure with their feedback, progression, difficulty curve
+  and assist, session beats, monetization touchpoints, audio cues, responsive behaviour and
+  visual identity. Entries of a later tier are dropped at any depth and named as left out on
+  purpose. `sdk_touchpoints` are not carried (the sdk step wires them; the developer calls
+  only the seam), nor `assets` (the asset manifest is what is delivered). The brief asks
+  for tuning as data in one module, and treats every `feedback` as MVP, not polish
+  (`core/craft/game-feel.md`). `brief.json` carries the same selection under `build_spec`.
+- **The design, in full** — `docs/GDD.md`, game-design's `rendered_to`, written by
+  `scripts/wgf_develop/gdd.py` in the section structure of `core/templates/gdd.md` (concept to
+  open questions, with the MVP build spec in 10b). It pins the design's artifact id and
+  content hash, is deterministic, and is written before the developer runs and again after,
+  so a hand edit never survives into the visit's commit. The brief's Design section and the
+  review brief point at it.
+- **Development plan** — the approved tech plan's prototype milestones and their tasks in
+  dependency order, each with its acceptance criteria, tests and assets. Production and
+  hardening tasks are listed by id as later work. `brief.json`: `dev_plan`.
 - **The integration seam** — provided by the Factory, not written by the developer
   (`scripts/wgf_develop/seam.py`, `wgflib.gameseam`). Before the developer runs, the step
   writes `src/game/integration.ts` (the `GameIntegration` interface the game calls for
@@ -75,10 +94,21 @@ the game, regenerated on every visit and committed with the code it asked for. I
 `idle_timeout_seconds` (no output at all for that long — a hung agent, not a slow one).
 Either is a retryable `FAILED`.
 
-The provider, if any, is named only in the installation's `factory.yaml`. Host skills the
-brief recommends (PixiJS, Three.js, frontend design) are configured under
-`develop.skills`, and the brief says plainly that the template wins wherever a skill
-assumes another layout.
+The provider, if any, is named only in the installation's `factory.yaml`. The brief's
+"Host skills" section recommends skills by area (`brief.DEFAULT_SKILLS`):
+- this Factory's own plugin skills, pointers into `core/craft/`:
+  - `craft`: `web-game-factory:game-feel`, `core-loop`, `web-performance`, `audio`;
+  - `ui`: `web-game-factory:onboarding-ux`;
+  - the engine's area: `web-game-factory:pixijs` or `threejs`;
+- next to them, generic skills (the official PixiJS skills, a frontend-design skill).
+
+The other engine's area is never recommended.
+- **Configuring.** `develop.skills` merges over the defaults: an added area is kept, and an
+  area set to `[]` is dropped. A value that is not a map of area to a list of names is refused.
+- **Availability.** The plugin skills are available to a host that loads the plugin, as the
+  opt-in self-playtest developer does with `--plugin-dir`.
+- **Precedence.** The brief says plainly that the template wins wherever a skill assumes
+  another layout.
 
 ## Checks
 
@@ -127,8 +157,15 @@ factory:
     commit: true
     build_url: null             # "https://{branch}.{name}.pages.dev"; {owner} {sha} {short_sha}
     author: {name: ..., email: ...}   # when the checkout has no git identity
-    skills: {pixijs: [...], threejs: [...], ui: [...]}
+    skills: {craft: [...], ui: [...]}   # merged over DEFAULT_SKILLS; [] drops an area
+    self_playtest: false        # true: the brief asks the developer to play its own build
 ```
+
+`developer.argv` placeholders are `{brief}`, `{repo}`, `{key}`, `{prompt}` and `{factory}`,
+the Factory root, for host files kept in the Factory rather than the checkout. The opt-in
+self-playtest developer (F6) uses it for a localhost-only Playwright MCP config and this
+Factory's plugin. The commented block is in `workspace/config/factory.yaml`, and the flags
+and security notes are in [claude-capabilities.md](claude-capabilities.md).
 
 ## Tests
 

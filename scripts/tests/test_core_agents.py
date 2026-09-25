@@ -728,6 +728,71 @@ class ShippedConfig(unittest.TestCase):
         self.assertEqual(review.argv[review.argv.index("--output-format") + 1], "text")
 
 
+    def _opt_in_block(self):
+        """The commented self-playtest opt-in: `self_playtest` and a `developer` block after
+        the '--- opt-in: self-playtest' marker."""
+        from wgflib.yamllite import load
+        with open(self.PATH, encoding="utf-8") as handle:
+            lines = handle.read().splitlines()
+        marker = next(i for i, line in enumerate(lines) if "--- opt-in: self-playtest" in line)
+        start = next(i for i in range(marker, len(lines)) if lines[i] == "    # self_playtest: true")
+        out = []
+        for line in lines[start:]:
+            if not line.startswith("    # "):
+                break
+            out.append(line[len("    # "):])
+        return load("\n".join(out))
+
+    def test_the_self_playtest_opt_in_is_valid_and_keeps_the_restrictions(self):
+        from wgf_develop.settings import Settings as DevelopSettings
+        from wgflib import paths
+        dev = DevelopSettings.resolve({"develop": self._opt_in_block()})
+        self.assertTrue(dev.self_playtest)
+        self.assertEqual(dev.developer["kind"], "command")
+        values = {"brief": "B", "repo": "R", "key": "K", "prompt": "P", "factory": paths.ROOT}
+        argv = [part.format(**values) for part in dev.developer["argv"]]
+        self.assertEqual(argv[:3], ["claude", "-p", "P"])
+        self.assertIn("--strict-mcp-config", argv)  # only the listed MCP config loads
+        config = argv[argv.index("--mcp-config") + 1]
+        plugin = argv[argv.index("--plugin-dir") + 1]
+        self.assertTrue(os.path.isfile(config), config)
+        self.assertTrue(os.path.isfile(os.path.join(plugin, ".claude-plugin", "plugin.json")))
+        for path in (config, plugin):  # in the guarded Factory tree, never in a checkout
+            self.assertTrue(os.path.realpath(path).startswith(os.path.realpath(paths.ROOT)))
+        allowed = argv[argv.index("--allowedTools") + 1].split(",")
+        self.assertIn("mcp__playwright", allowed)
+        self.assertIn("Edit(./**)", allowed)
+        self.assertNotIn("Edit", allowed)  # edits stay scoped to the checkout
+        denied = argv[argv.index("--disallowedTools") + 1].split(",")
+        self.assertTrue({"WebFetch", "WebSearch", "Bash(git commit *)",
+                         "Bash(git push *)"} <= set(denied))
+        self.assertIn("dontAsk", argv)
+
+    def test_the_browser_is_limited_to_the_local_preview(self):
+        import json
+        path = os.path.join(SCRIPTS, os.pardir, "workspace", "config",
+                            "mcp-playwright-localhost.json")
+        with open(path, encoding="utf-8") as handle:
+            servers = json.load(handle)["mcpServers"]
+        self.assertEqual(list(servers), ["playwright"])
+        args = servers["playwright"]["args"]
+        package = next(a for a in args if a.startswith("@playwright/mcp@"))
+        version = package.rsplit("@", 1)[1]
+        self.assertRegex(version, r"^\d+\.\d+\.\d+$")  # pinned exactly, never latest/^/~
+        self.assertIn("--headless", args)
+        self.assertIn("--isolated", args)
+        origins = args[args.index("--allowed-origins") + 1].split(";")
+        self.assertTrue(origins)
+        for origin in origins:
+            self.assertRegex(origin, r"^http://(localhost|127\.0\.0\.1):\d+$")
+
+    def test_the_shipped_default_still_runs_no_agent_host_and_no_playtest(self):
+        from wgf_develop.settings import Settings as DevelopSettings
+        dev = DevelopSettings.resolve(self.config())
+        self.assertEqual(dev.developer["kind"], "handoff")
+        self.assertFalse(dev.self_playtest)
+
+
 @unittest.skipUnless(os.environ.get("WGF_LIVE_AGENT") == "1"
                      and os.environ.get("WGF_LIVE_REVIEWER_ARGV") and HAS_GIT,
                      "live: set WGF_LIVE_AGENT=1 and WGF_LIVE_REVIEWER_ARGV to a JSON argv")

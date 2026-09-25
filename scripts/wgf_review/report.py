@@ -10,6 +10,46 @@ __all__ = ["build_report", "render_brief", "PROMPT", "PROMPT_STDOUT", "SCHEMA_VE
            "ROLE"]
 
 SCHEMA_VERSION = "1.0.0"
+
+# The gameplay lens: defects players feel rather than see, all visible in source. Condensed
+# from core/craft/gameplay-review.md; restated here (not pointed at) because the reviewer
+# runs in the game checkout, where the Factory's core/ is not a path it can rely on.
+GAMEPLAY_LENS = (
+    "Restart resets everything: score, timers, difficulty step, spawned entities, tweens, "
+    "listeners and audio - watch for state in module-level variables or closures made once.",
+    "Movement, timers and spawns scale by elapsed time, never per frame, and a long gap (a "
+    "tab coming back) is clamped rather than simulated in one step.",
+    "Pause - the control, tab blur, an ad - stops the simulation, tweens, timers and audio, "
+    "and resume continues them; no wall-clock timers drive gameplay while paused.",
+    "Rapid taps on Play or Retry cannot start two runs or two loops; pointer and touch are "
+    "not both handled for one tap; listeners added per run or scene are removed on exit.",
+    "Tuning (the design's mechanic parameters and difficulty values) lives in data, not as "
+    "literals scattered through logic.",
+    "No allocation in the frame loop's hot paths; sprites, particles and meshes are pooled "
+    "or destroyed, 3D resources disposed.",
+    "No effect flashes more than 3 times a second; audio starts only after a user gesture "
+    "and respects mute.",
+    "Unit tests exercise the design's rules; a browser test tagged with an aspect actually "
+    "reaches it (a `@game-over` test that never loses is not evidence).",
+)
+
+
+def _feedback_lines(build_spec):
+    """The mvp feedback the design specified: what the player must be able to notice."""
+    sections = (build_spec or {}).get("sections") or {}
+    lines = []
+    for section in ("rewards", "hud"):
+        for entry in sections.get(section) or []:
+            if isinstance(entry, dict) and entry.get("feedback"):
+                lines.append(f"{section} `{entry.get('id')}`: {entry['feedback']}")
+    failure = sections.get("failure")
+    if isinstance(failure, dict) and failure.get("feedback"):
+        lines.append(f"failure: {failure['feedback']}")
+    tutorial = sections.get("tutorial")
+    if isinstance(tutorial, dict) and tutorial.get("approach"):
+        lines.append(f"tutorial: {tutorial['approach']}"
+                     + (f" - {tutorial['rationale']}" if tutorial.get("rationale") else ""))
+    return lines
 # The architect contributes to title:prototype and owns the plan the code is reviewed
 # against; the reviewer is never the gameplay implementer that wrote the commit.
 ROLE = "architect"
@@ -49,7 +89,8 @@ def render_brief(*, title_id, commit, baseline, design, prototype, develop_brief
         add(f"- The change: `git diff {baseline}..{commit}` "
             f"(`git log --stat {baseline}..{commit}`)")
     add("- What the developer was asked to build: `docs/development/brief.md` in the "
-        "repository, and what it reported: `docs/development/report.json`.")
+        "repository, and what it reported: `docs/development/report.json`. The whole "
+        "design, rendered for reading: `docs/GDD.md`.")
     add("")
     if design.get("core_loop"):
         add("## The game\n")
@@ -72,6 +113,24 @@ def render_brief(*, title_id, commit, baseline, design, prototype, develop_brief
             add(f"- `{blocker.get('id')}` ({blocker.get('severity')}) "
                 f"{blocker.get('file') or '(whole build)'}: {blocker.get('summary')}")
         add("")
+    feedback = _feedback_lines(develop_brief.get("build_spec"))
+    tasks = [t for t in ((develop_brief.get("dev_plan") or {}).get("tasks") or [])
+             if isinstance(t, dict)]
+    if feedback or tasks:
+        add("## What the design and plan specified\n")
+        add("From the brief the developer built against (`docs/development/brief.json`, "
+            "`build_spec` and `dev_plan`). Check the build against them: a missing feedback "
+            "hook, or an acceptance criterion an mvp task does not meet, is a design-fidelity "
+            "blocker.\n")
+        if feedback:
+            add("Feedback and teaching the player must be able to notice:\n")
+            add("\n".join(f"- {line}" for line in feedback) + "\n")
+        if tasks:
+            add("Development plan tasks and their acceptance criteria:\n")
+            for task in tasks:
+                add(f"- `{task.get('id')}` {task.get('title', '')}: "
+                    + "; ".join(task.get("acceptance_criteria") or []))
+            add("")
     add("## Look for\n")
     add("- Defects in the game logic: wrong rules, broken state transitions, crashes, "
         "unhandled input, restart that does not reset.")
@@ -80,6 +139,11 @@ def render_brief(*, title_id, commit, baseline, design, prototype, develop_brief
     add("- Template rules broken: edited template-owned paths, a second engine, a portal "
         "SDK called directly instead of through the integration seam.")
     add("- Secrets, network calls to unknown hosts, or code unrelated to the game.\n")
+    add("### Gameplay lens\n")
+    add("Defects players report as \"laggy\", \"unfair\" or \"it froze after the ad\". "
+        "You cannot play the build; each of these is visible in source. On an mvp path a "
+        "failure is a blocker; elsewhere it is at most minor.\n")
+    add("\n".join(f"- {item}" for item in GAMEPLAY_LENS) + "\n")
     add("Style preferences are not blockers. A blocker is something that must change "
         "before this build goes further.\n")
     add("## Your verdict\n")

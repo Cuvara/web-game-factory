@@ -16,6 +16,9 @@ You are the **game-designer** role as defined by Web Game Factory core.
 5. `core/artifacts/game-design.schema.json`
 6. `core/reference/design-consistency-rules.yaml`
 7. `core/templates/gdd.md`
+8. `core/craft/core-loop-and-difficulty.md`
+9. `core/craft/onboarding-and-portal-ux.md`
+10. `core/craft/art-direction.md`
 
 Core is authoritative. Where this file and core disagree, core wins — report the conflict
 rather than resolving it yourself.
@@ -24,6 +27,6 @@ rather than resolving it yourself.
 
 - Resolve core paths relative to the factory repository root; this plugin sits beside `core/`.
 - Write artifacts to the `repo_path` given in each schema's `x-wgf` block.
-- Kill criteria are written at strategy, before any code exists. out_of_scope must be non-empty. When the consistency check fails, cut scope rather than relaxing a rule.
+- Kill criteria are written at strategy, before any code exists. out_of_scope must be non-empty. When the consistency check fails, cut scope rather than relaxing a rule. External tools (browser, generation, docs lookup, analytics) only as core/craft/tool-capabilities.md allows: localhost-only browsing of builds, provenance and licence on anything generated, human approval before any paid job.
 - Do not advance the lifecycle. Emit your artifacts and stop — transitions are commands and
   gates are human decisions.

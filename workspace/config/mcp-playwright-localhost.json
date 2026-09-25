@@ -1,0 +1,17 @@
+{
+  "mcpServers": {
+    "playwright": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@playwright/mcp@0.0.82",
+        "--headless",
+        "--isolated",
+        "--browser",
+        "chromium",
+        "--allowed-origins",
+        "http://localhost:4173;http://127.0.0.1:4173"
+      ]
+    }
+  }
+}

@@ -8,6 +8,12 @@ repository records what each commit was asked to satisfy.
 It restates no schema. It selects from the game design what an implementer needs, applies
 the template's rules to it, and states the two contracts the developer owes back: the
 integration seam the SDK module wires, and the development report this module checks.
+
+Two selections are carried rather than summarised, because they are what the design and the
+plan exist to hand over: the design's `build_spec` (its MVP tier - mechanics with their
+rules and tuning, states, screens, HUD, tutorial, rewards and failure with their feedback,
+session beats, audio cues, responsive behaviour, visual identity), and the approved tech
+plan's prototype milestones and tasks, each with its acceptance criteria.
 """
 
 import json
@@ -15,7 +21,8 @@ import json
 from wgf_verification.checks.gameplay import ASPECTS, required_aspects_for
 
 __all__ = ["REQUIRED_SYSTEMS", "INTEGRATION_CONTRACT", "REPORT_PATH", "BRIEF_DIR",
-           "build_brief", "render_markdown", "PROTECTED_PATHS", "ENGINE_DIRS"]
+           "build_brief", "render_markdown", "PROTECTED_PATHS", "ENGINE_DIRS",
+           "select_build_spec", "select_dev_plan"]
 
 BRIEF_DIR = "docs/development"
 REPORT_PATH = f"{BRIEF_DIR}/report.json"
@@ -99,10 +106,32 @@ REPORT_CONTRACT = {
     "how_to_play": "One or two sentences a reviewer reads before opening the build.",
 }
 
+# build_spec sections the brief carries, in reading order. Two are left out on purpose:
+# `sdk_touchpoints` belong to the sdk step (ground rule 4: no platform SDK work here), and
+# `assets` are delivered through the asset manifest, which the brief lists on its own.
+BUILD_SPEC_SECTIONS = (
+    ("mechanics", "Mechanics"), ("controls", "Controls"), ("player_goals", "Player goals"),
+    ("game_states", "Game states"), ("screens", "Screens"), ("hud", "HUD"),
+    ("menus", "Menus"), ("tutorial", "Tutorial"), ("rewards", "Rewards"),
+    ("failure", "Failure and retry"), ("progression", "Progression"),
+    ("difficulty", "Difficulty"), ("session_flow", "Session flow"),
+    ("monetization_touchpoints", "Monetization touchpoints"), ("audio", "Audio"),
+    ("responsive", "Responsive"), ("visual_identity", "Visual identity"),
+)
+BUILD_TIERS = (None, "mvp")
+DEV_PLAN_PHASES = (None, "prototype")
+
+# Host skills the brief recommends, by area. The `web-game-factory:` names are this Factory's
+# own plugin (claude-web-game-plugin), pointers into core/craft/; a host that loads the plugin
+# (the opt-in self-playtest developer passes --plugin-dir) has them. The generic ones are for
+# any host. The other engine's area is never recommended.
+PLUGIN = "web-game-factory"
 DEFAULT_SKILLS = {
-    "pixijs": ["the official PixiJS skills"],
-    "threejs": ["a Three.js game-development skill"],
-    "ui": ["a frontend-design skill, for menus, HUD and screens"],
+    "pixijs": [f"{PLUGIN}:pixijs", "the official PixiJS skills"],
+    "threejs": [f"{PLUGIN}:threejs", "a Three.js game-development skill"],
+    "ui": [f"{PLUGIN}:onboarding-ux", "a frontend-design skill, for menus, HUD and screens"],
+    "craft": [f"{PLUGIN}:game-feel", f"{PLUGIN}:core-loop", f"{PLUGIN}:web-performance",
+              f"{PLUGIN}:audio"],
 }
 
 
@@ -115,9 +144,85 @@ def _pin(artifact_type, content, ref):
     }
 
 
+def _label(item):
+    return item.get("id") or item.get("label") or item.get("name") or "?"
+
+
+def _mvp_only(value, dropped, path):
+    """`value` without the entries tiered past the MVP, at any depth. Each dropped entry is
+    named in `dropped` by its path (e.g. `menus/title-menu/items/Settings (post-mvp)`), so the
+    brief can say it is left out on purpose rather than forgotten."""
+    if isinstance(value, dict):
+        return {k: _mvp_only(v, dropped, f"{path}/{k}") for k, v in value.items()}
+    if isinstance(value, list):
+        kept = []
+        for item in value:
+            if not isinstance(item, dict):
+                kept.append(item)
+            elif item.get("tier") not in BUILD_TIERS:
+                dropped.append(f"{path}/{_label(item)} ({item['tier']})")
+            else:
+                kept.append(_mvp_only(item, dropped, f"{path}/{_label(item)}"))
+        return kept
+    return value
+
+
+def select_build_spec(design):
+    """The design's build_spec as the developer builds it: the MVP tier, in reading order."""
+    spec = (design or {}).get("build_spec")
+    if not isinstance(spec, dict):
+        return None
+    dropped = []
+    sections = {key: _mvp_only(spec[key], dropped, key)
+                for key, _ in BUILD_SPEC_SECTIONS if key in spec}
+    return {"sections": sections, "not_now": dropped,
+            "omitted": [k for k in ("sdk_touchpoints", "assets") if k in spec]}
+
+
+def _dependency_order(tasks):
+    """Tasks in dependency order, stable otherwise. A dependency outside the list (a task of
+    another phase) does not hold a task back; a cycle keeps the plan's own order."""
+    ids = {t.get("id") for t in tasks}
+    placed, ordered, pending = set(), [], list(tasks)
+    while pending:
+        ready = [t for t in pending
+                 if all(d in placed or d not in ids for d in t.get("dependencies") or [])]
+        if not ready:
+            ordered.extend(pending)
+            break
+        for task in ready:
+            ordered.append(task)
+            placed.add(task.get("id"))
+        pending = [t for t in pending if t not in ready]
+    return ordered
+
+
+def select_dev_plan(tech_plan):
+    """The approved plan's prototype milestones and their tasks. Production and hardening
+    milestones (platform tasks, the verify suite) belong to later steps and stages."""
+    plan = (tech_plan or {}).get("dev_plan")
+    if not isinstance(plan, dict):
+        return None
+    milestones = [m for m in plan.get("milestones") or [] if m.get("phase") in DEV_PLAN_PHASES]
+    in_scope = {m.get("id") for m in milestones}
+    tasks = [
+        {k: t[k] for k in ("id", "title", "milestone", "description", "dependencies",
+                           "acceptance_criteria", "tests", "assets") if t.get(k)}
+        for t in plan.get("tasks") or []
+        if t.get("milestone") in in_scope and t.get("phase") in DEV_PLAN_PHASES
+    ]
+    return {
+        "milestones": [{k: m[k] for k in ("id", "label", "exit_criteria") if m.get(k)}
+                       for m in milestones],
+        "tasks": _dependency_order(tasks),
+        "later": sorted({t.get("id") for t in plan.get("tasks") or []}
+                        - {t["id"] for t in tasks} - {None}),
+    }
+
+
 def build_brief(*, title_id, engine, iteration, key, baseline, design, assets, scaffold,
                 strategy=None, qa=None, previous_checks=None, refs=None, skills=None,
-                review=None, mobile_test=True):
+                review=None, mobile_test=True, tech_plan=None, self_playtest=False):
     """The brief as data. `render_markdown` turns it into the document a developer reads."""
     refs = refs or {}
     tiers = (design.get("scope") or {}).get("tiers") or {}
@@ -168,7 +273,8 @@ def build_brief(*, title_id, engine, iteration, key, baseline, design, assets, s
             _pin(t, c, refs.get(t))
             for t, c in (("game-design", design), ("asset-manifest", assets),
                          ("scaffold-record", scaffold), ("title-strategy", strategy),
-                         ("qa-report", qa), ("review-report", review))
+                         ("tech-plan", tech_plan), ("qa-report", qa),
+                         ("review-report", review))
             if c
         ],
         "design": {
@@ -194,6 +300,10 @@ def build_brief(*, title_id, engine, iteration, key, baseline, design, assets, s
         "not_now": list(tiers.get("production") or []) + list(tiers.get("future") or []),
         "out_of_scope": [o.get("item") for o in tiers.get("out_of_scope") or []],
         "must_prove": list((strategy or {}).get("prototype_must_prove") or []),
+        # What the design and the approved plan hand over in detail; None when the design
+        # carries no build_spec (an older schema) or the run holds no tech plan.
+        "build_spec": select_build_spec(design),
+        "dev_plan": select_dev_plan(tech_plan),
         "placements": placements,
         "assets": asset_items,
         "required_systems": [{"id": n, "acceptance": a} for n, a in REQUIRED_SYSTEMS],
@@ -202,8 +312,11 @@ def build_brief(*, title_id, engine, iteration, key, baseline, design, assets, s
         "review_blockers": review_blockers,
         "reviewed_commit": (review or {}).get("reviewed_commit") if review_blockers else None,
         "previous_failures": failures,
-        "skills": {k: host_skills[k] for k in ("ui", engine) if k in host_skills},
+        # Every area but the other engine's: a configured area is recommended, not dropped.
+        "skills": {k: list(v) for k, v in host_skills.items()
+                   if v and not (k in ENGINE_DIRS and k != engine)},
         "report_path": REPORT_PATH,
+        "self_playtest": bool(self_playtest),
         # What verification will demand browser evidence for (wgf_verification computes the
         # same set from the same design): the developer is told up front, instead of
         # learning it from a failed verification and a loop back here.
@@ -212,6 +325,44 @@ def build_brief(*, title_id, engine, iteration, key, baseline, design, assets, s
             "required": [a for a in ASPECTS if a in required_aspects_for(design, mobile_test)],
         },
     }
+
+
+def _inline(value):
+    if isinstance(value, dict):
+        return "; ".join(f"{k}: {_inline(v)}" for k, v in value.items()
+                         if k != "tier" and v not in (None, "", [], {}))
+    if isinstance(value, list):
+        return " / ".join(_inline(v) for v in value)
+    if isinstance(value, bool):
+        return "yes" if value else "no"
+    return str(value)
+
+
+def _spec_lines(value):
+    """One build_spec section as markdown bullets: every field, nothing summarised."""
+    lines = []
+    if isinstance(value, list):
+        for item in value:
+            if isinstance(item, dict):
+                key = next((k for k in ("id", "name", "beat") if item.get(k)), None)
+                label = item[key] if key else ""
+                rest = {k: v for k, v in item.items() if k not in (key, "id", "tier")}
+                lines.append(f"- **{label}**: {_inline(rest)}" if label
+                             else f"- {_inline(rest)}")
+            else:
+                lines.append(f"- {_inline(item)}")
+    elif isinstance(value, dict):
+        for key, sub in value.items():
+            if sub in (None, "", [], {}):
+                continue
+            if isinstance(sub, list) and sub and all(isinstance(x, dict) for x in sub):
+                lines.append(f"- **{key}:**")
+                lines.extend(f"  - {_inline(x)}" for x in sub)
+            else:
+                lines.append(f"- **{key}:** {_inline(sub)}")
+    else:
+        lines.append(f"- {_inline(value)}")
+    return lines
 
 
 def _bullets(items, empty="- (none)"):
@@ -295,6 +446,8 @@ def render_markdown(brief):
     add("")
 
     add("## Design\n")
+    add("The whole design is in `docs/GDD.md`, rendered from the game-design artifact (the "
+        "Factory regenerates it every visit; do not edit it). The essentials:\n")
     for label, key in (("Fantasy", "fantasy"), ("Core loop", "core_loop"),
                        ("Controls", "controls"), ("Difficulty", "difficulty"),
                        ("Progression", "progression"),
@@ -316,6 +469,60 @@ def render_markdown(brief):
         if key in session:
             add(f"- **{label}:** {session[key]}")
     add("")
+
+    spec = brief.get("build_spec")
+    if spec and spec.get("sections"):
+        add("## Build spec (MVP tier)\n")
+        add("The design's `build_spec`, which is what the design exists to hand you: build "
+            "these exactly. Rules are testable statements - unit-test them. `parameters` and "
+            "difficulty values are starting tuning: keep them as data in `src/game/` (one "
+            "tuning module), never as literals in logic, so a playtest can change them. Every "
+            "reward, failure and HUD `feedback` is part of the MVP, not polish: a mechanic "
+            "the player cannot read cannot be judged. The same data is in `brief.json` under "
+            "`build_spec`.\n")
+        for key, label in BUILD_SPEC_SECTIONS:
+            if key in spec["sections"]:
+                add(f"### {label}\n")
+                add("\n".join(_spec_lines(spec["sections"][key])) or "- (none)")
+                add("")
+        if spec.get("not_now"):
+            add("Left out on purpose (a later tier - do not build):\n")
+            add(_bullets(spec["not_now"]))
+            add("")
+        why = {"sdk_touchpoints": "`sdk_touchpoints` (the integration step wires them; call "
+                                  "only the seam)",
+               "assets": "`assets` (the asset manifest below is what is delivered)"}
+        if spec.get("omitted"):
+            add("Not in this brief: " + " and ".join(why[k] for k in spec["omitted"]) + ".\n")
+
+    plan = brief.get("dev_plan")
+    if plan and plan.get("tasks"):
+        add("## Development plan (approved at G3)\n")
+        add("The tech plan's prototype milestones. Work the tasks in the order below (it "
+            "respects their dependencies); a task is done when every acceptance criterion "
+            "holds and its tests exist, not when the code runs. Name the task ids in "
+            "`scope_deltas` for anything you could not finish.\n")
+        for milestone in plan.get("milestones") or []:
+            add(f"- **{milestone.get('id')}** {milestone.get('label', '')}"
+                + (" - exit: " + "; ".join(milestone["exit_criteria"])
+                   if milestone.get("exit_criteria") else ""))
+        add("")
+        for task in plan["tasks"]:
+            add(f"### {task['id']}: {task.get('title', '')}\n")
+            if task.get("description"):
+                add(task["description"] + "\n")
+            if task.get("dependencies"):
+                add("- After: " + ", ".join(f"`{d}`" for d in task["dependencies"]))
+            add("- Acceptance:")
+            add("\n".join(f"  - {c}" for c in task.get("acceptance_criteria") or []))
+            if task.get("tests"):
+                add("- Tests: " + ", ".join(f"`{t}`" for t in task["tests"]))
+            if task.get("assets"):
+                add("- Assets: " + ", ".join(f"`{a}`" for a in task["assets"]))
+            add("")
+        if plan.get("later"):
+            add("Tasks of later milestones (not this build): " + ", ".join(
+                f"`{t}`" for t in plan["later"]) + "\n")
 
     add("## Monetization placements\n")
     if brief["placements"]:
@@ -380,6 +587,25 @@ def render_markdown(brief):
         "`pnpm test:e2e` must pass. Run `pnpm format:write` before you finish.")
     add("")
 
+    if brief.get("self_playtest"):
+        add("## Playtest your build\n")
+        add("This developer has a browser tool. Once the checks pass, play the game the way "
+            "a first-time player would, before you write the report:\n")
+        add("1. `pnpm build`, then serve the bundle with `pnpm preview --port 4173 "
+            "--strictPort` - the built game, never the dev server - and open "
+            "`http://localhost:4173`. Stay on localhost: the browser is limited to it, and "
+            "no portal SDK is contacted.")
+        add("2. Play through every aspect the verification section above requires. For "
+            "each, check the minimum feedback bar: every input acknowledged at once, every "
+            "reward noticed (motion and sound), every failure understood before any overlay "
+            "covers it, HUD values that animate when they change.")
+        add("3. Check the first thirty seconds against the design's session targets: first "
+            "play and first reward within their times, one tap to play, no wall of text.")
+        add("4. Fix what you find, rerun the checks, and stop the preview server.")
+        add("5. Record what you saw and fixed in the report's `known_issues` or "
+            "`scope_deltas`. This is your own check, not evidence: verification plays the "
+            "build independently.\n")
+
     if brief["qa_defects"]:
         add("## Fix first: blocking defects from verification\n")
         for defect in brief["qa_defects"]:
@@ -410,7 +636,9 @@ def render_markdown(brief):
     if brief["skills"]:
         add("## Host skills\n")
         add("If your host offers these, use them - but where one assumes a project layout, "
-            "the template wins:\n")
+            f"the template wins. `{PLUGIN}:` skills come from this Factory's own plugin, "
+            "which points at its craft playbooks (game feel, core loop, onboarding, "
+            "performance, audio):\n")
         for area, names in brief["skills"].items():
             add(f"- {area}: " + ", ".join(names))
         add("")

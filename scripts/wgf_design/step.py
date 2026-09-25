@@ -76,7 +76,13 @@ class DesignStep(WorkflowStep):
                        or ((context.config or {}).get("design") or {}).get("author")
                        or DEFAULT_AUTHOR)
         brief = {"title_id": title_id, "strategy": strategy, "platforms": platforms,
-                 "params": dict(self.params)}
+                 "params": dict(self.params),
+                 # For authors that run something (the `agent` author): where this
+                 # attempt's files go, and the installation's configuration.
+                 "config": context.config or {},
+                 "run_dir": getattr(context, "run_dir", None),
+                 "visit": getattr(context, "visit", 1),
+                 "attempt": getattr(context, "attempt", 1)}
         try:
             author = resolve_author(author_name)
             draft = author.draft(brief)

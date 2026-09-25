@@ -26,9 +26,16 @@ codex-web-game-plugin/
   AGENTS.md            — entry point and working rules
   agents/*.md          — 11 role definitions, one per non-human role
   commands/wgf-*.md    — 13 prompts, one per lifecycle transition
-  skills/*/SKILL.md    — 13 skills, reference capability loaded on demand
+  skills/*/SKILL.md    — 21 skills, reference capability loaded on demand
   CONFORMANCE.md       — surface-by-surface coverage against the binding manifest
 ```
+
+## Craft
+
+Eight skills point at `core/craft/`, the playbooks for what a *good* game looks like (feel,
+loop, onboarding, audio, art direction, performance, gameplay review, playtesting). External
+tools are limited by `core/craft/tool-capabilities.md`. The host-specific tool mapping is in
+`docs/production-craft-and-mcp.md`.
 
 ## Agents map to roles
 

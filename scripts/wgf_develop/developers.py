@@ -12,8 +12,10 @@
               attempt's brief carries the failure output.
 
 `argv` placeholders, substituted per element: {brief} (absolute path of brief.md), {repo}
-(the checkout), {key} (the idempotency key) and {prompt} (a one-paragraph instruction to
-read and implement the brief).
+(the checkout), {key} (the idempotency key), {factory} (the Factory root, for host files that
+live in the Factory rather than the checkout - an MCP config, a plugin directory - since the
+developer's cwd is the checkout) and {prompt} (a one-paragraph instruction to read and
+implement the brief). Each value is substituted once, verbatim; nothing is formatted twice.
 
 `timeout_seconds` bounds the whole run; `idle_timeout_seconds` (optional) ends a developer
 that has written nothing to stdout or stderr for that long - a hung agent, not a slow one.
@@ -21,6 +23,8 @@ that has written nothing to stdout or stderr for that long - a hung agent, not a
 
 import inspect
 import os
+
+from wgflib import paths
 
 __all__ = ["Outcome", "HandoffDeveloper", "CommandDeveloper", "create_developer",
            "DECLINE_DECISIONS", "PROMPT"]
@@ -77,7 +81,8 @@ class CommandDeveloper:
         self.runner = runner
 
     def develop(self, brief_path, checkout, context):
-        values = {"brief": brief_path, "repo": checkout, "key": context.idempotency_key}
+        values = {"brief": brief_path, "repo": checkout, "key": context.idempotency_key,
+                  "factory": paths.ROOT}
         values["prompt"] = PROMPT.format(**values)
         argv = [part.format(**values) for part in self.settings.developer["argv"]]
         timeout = float(self.settings.developer.get("timeout_seconds") or 5400)

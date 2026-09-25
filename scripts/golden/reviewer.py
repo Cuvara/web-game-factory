@@ -11,7 +11,8 @@ never runs `git status`, which may rewrite the index, and writes nothing but the
     commit-exists        the commit under review is a commit object, and is HEAD
     allowed-paths        the commit changes, since the brief's baseline, only paths a game may
                          change (src/, tests/, public/, index.html, docs/development/,
-                         package.json, pnpm-lock.yaml) and none the template owns
+                         docs/GDD.md - the design the develop step renders -, package.json,
+                         pnpm-lock.yaml) and none the template owns
     engine-dependencies  package.json adds no dependency but the design's engine packages
     no-portal-sdk        no portal SDK identifier or script URL anywhere in src/
     ad-calls-in-seam     showRewarded / showInterstitial only under src/platform/
@@ -40,6 +41,7 @@ REVIEWER = ("golden-run reviewer (scripts/golden/reviewer.py): deterministic rul
 
 ALLOWED = (re.compile(r"^src/"), re.compile(r"^tests/(unit|e2e)/"), re.compile(r"^public/"),
            re.compile(r"^index\.html$"), re.compile(r"^docs/development/"),
+           re.compile(r"^docs/GDD\.md$"),
            re.compile(r"^package\.json$"), re.compile(r"^pnpm-lock\.yaml$"))
 TEMPLATE_OWNED = ("packages/", "game.config.yaml", ".github/", "scripts/", "config/platforms/",
                   "playwright.config.ts", "vite.config.ts", "vitest.workspace.ts",
@@ -71,9 +73,10 @@ def review(game_key, repo, commit):
     blockers = []
 
     def block(check, summary, file=None, line=None):
-        entry = {"id": f"{check}-{len(blockers) + 1}", "summary": summary, "severity": "blocker"}
-        if file:
-            entry["file"] = file
+        # `file` is always present - null for a finding about the build as a whole - because
+        # the review verdict contract requires the key on every blocker.
+        entry = {"id": f"{check}-{len(blockers) + 1}", "file": file or None,
+                 "summary": summary, "severity": "blocker"}
         if line:
             entry["line"] = line
         blockers.append(entry)

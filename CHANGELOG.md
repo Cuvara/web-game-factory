@@ -9,6 +9,109 @@ and `core/` is still the contract.
 
 ## [Unreleased]
 
+### Added
+
+- **The developer brief recommends the plugin's craft skills (F7).**
+  - `brief.DEFAULT_SKILLS` names `web-game-factory:game-feel`, `core-loop`,
+    `web-performance`, `audio` (area `craft`), `onboarding-ux` (`ui`), and the engine's
+    `pixijs` / `threejs`, alongside the generic skills.
+  - Configured areas are no longer silently dropped: every area except the other engine's
+    reaches the brief. `[]` drops an area.
+  - `develop.skills` is validated.
+
+  *Migration:* none.
+
+- **Opt-in developer self-playtest (F6).** The defaults are unchanged: developer `handoff`,
+  `self_playtest: false`.
+  - `developer.argv` gains a `{factory}` placeholder (the Factory root, substituted once).
+  - New `workspace/config/mcp-playwright-localhost.json`: `@playwright/mcp@0.0.82`, headless,
+    isolated, localhost origins only.
+  - New `develop.self_playtest` setting, which adds a "Playtest your build" section to the
+    brief.
+  - A second commented developer block in `factory.yaml` (`--- opt-in: self-playtest`) adds
+    `--mcp-config`, `--plugin-dir` and `Skill` / `mcp__playwright` to the verified argv,
+    keeping `--strict-mcp-config` and every restriction.
+  - `docs/claude-capabilities.md` records it as VERIFIED offline, UNVERIFIED live.
+
+  *Migration:* none.
+
+- **Shaped procedural audio (F5).** The procedural backend's sound effects were a bare sine
+  tone. They now come from a deterministic jsfxr-style synthesiser (`encoders.synth`):
+  waveform, envelope, pitch slide, vibrato and arpeggio. The preset (ui, coin, jump, hit,
+  powerup, whoosh, lose, blip) is picked from the item's words and detuned by its id. Music
+  is an 8 s bass-and-arpeggio loop (`encoders.music_loop`). The files remain placeholders,
+  factory-generated and never production-ready, and each item's notes name its preset.
+  *Migration:* none; `encoders.wav` is kept.
+
+- **The `agent` design author (F4)**, `scripts/wgf_design/agent.py`. It is opt-in
+  (`factory.design.author: agent`); the default stays `archetype`.
+  - An agent host improves the archetype's draft from a request holding the strategy, the
+    platform profiles and a starting draft.
+  - The design module then applies exactly the checks it applies to any author:
+    `finalize`, buildability, and the consistency rules including `descope`.
+  - A malformed draft is refused before `finalize` (not retryable). A failing or silent
+    host is retryable.
+  - The design is attributed `actor: ai`.
+  - The design step's brief now carries `config`, `run_dir`, `visit` and `attempt`.
+  - `factory.yaml` has a commented read-only host example.
+
+  *Migration:* none.
+
+- **`core/craft/`: production craft playbooks.** What a *good* web game looks like inside
+  the fields the artifacts already have: core loop and difficulty, game feel (a minimum
+  feedback bar, distinct from polish), onboarding and portal UX, UI/HUD/mobile, audio, art
+  direction, accessibility, web performance, playtesting (agent playthrough, stranger
+  playtest and performance pass protocols), a gameplay-review checklist, competitive
+  teardowns, and provider-neutral tool capability classes with their limits. Stage files
+  `design`, `prototype`, `qa` and `tech-plan` point at them. `prototype.md` clarifies that
+  the feedback bar is not the polish it warns against. *Migration:* none; no field, state
+  or gate changed.
+- **Adapter binding 1.2.0.** Eight new skills (`core-loop`, `game-feel`, `onboarding-ux`,
+  `audio`, `art-direction`, `web-performance`, `gameplay-review`, `playtesting`). Existing
+  skills and agent must-read lists are widened to the playbooks; `gameplay` and `ui` now
+  read the game-design schema, and `asset` reads the asset policy. Skill entries list their
+  `reads:`, which the integrity check verifies. Claude plugin 0.4.0; both adapters
+  regenerated. *Migration:* none.
+- `docs/production-craft-and-mcp.md`: skills and MCP tools by phase, what belongs in host
+  configuration versus the repository, and Factory-module follow-ups found in the audit
+  (F1-F7, not implemented).
+
+### Changed
+
+- **`docs/GDD.md` is rendered into the game repository (F3).** `game-design` declared
+  `rendered_to: <game-repo>/docs/GDD.md`; nothing produced it. The develop step now writes
+  it (`scripts/wgf_develop/gdd.py`) in `core/templates/gdd.md`'s section structure, pinned to
+  the design's artifact id and content hash. It is written before the developer runs and again
+  after, so a hand edit never survives, and it is committed with each visit. The development
+  and review briefs point at it. The golden reviewer allows `docs/GDD.md`. The scaffolding
+  procedure and the GDD template now say who renders it. *Migration:* none. `docs/tech-plan.md`
+  is still not rendered; the tech plan reaches the developer through the brief (F1).
+
+- **The review brief adds a gameplay lens and a design-fidelity section (F2).** "Look for"
+  was code-only. It now also covers what players feel: restart state, frame-rate
+  independence, pause, double starts and taps, tuning as data, frame-loop allocation, flash
+  rate, audio unlock, and tests that reach their aspect. The lens is condensed from
+  `core/craft/gameplay-review.md`. When the committed development brief carries F1's
+  `build_spec` / `dev_plan`, the brief lists the MVP feedback, the tutorial approach and each
+  task's acceptance criteria to check against. *Migration:* none; the verdict contract is
+  unchanged.
+- **Golden reviewer: every blocker carries `file`** (null for a whole-build finding).
+  `scripts/golden/reviewer.py` omitted the key. `wgf_review.verdict.parse` rightly
+  discards such a verdict as malformed, which failed a golden run after a verify → develop
+  loop.
+
+- **The develop brief carries the design's `build_spec` and the approved plan's tasks**
+  (core change: `core/workflows/new-game.workflow.yaml`). The design authored mechanics
+  with rules and tuning, the difficulty curve, reward and failure feedback, tutorial steps
+  and audio cues, and the tech plan authored tasks with acceptance criteria. None of it
+  reached the developer, whose brief held only the design's summary strings. `develop` now
+  takes `tech-plan` as an optional input. `brief.md` gains a "Build spec (MVP tier)" and a
+  "Development plan" section, and `brief.json` gains `build_spec` and `dev_plan`.
+  `sdk_touchpoints` stay with the sdk step and `assets` with the asset manifest. The
+  prototype-report now pins the tech plan it was briefed from. *Migration:* none; a run
+  without a tech plan, or a design without `build_spec`, briefs exactly as before. A run
+  resumed at develop under this definition consumes its existing tech plan.
+
 ## [1.1.0] - 2026-09-25
 
 Factory v1, usable (`docs/v1-usable.md`). Core v1 against the latest **released**

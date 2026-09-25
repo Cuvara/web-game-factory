@@ -11,6 +11,7 @@ interpreter. The ajv check on emitted artifacts runs when WGF_AJV=1 (it needs np
 """
 
 import copy
+import struct
 import datetime
 import json
 import os
@@ -29,7 +30,7 @@ sys.path.insert(0, SCRIPTS)
 from wgf_assets import encoders, formats  # noqa: E402
 from wgf_assets.mcp import McpClient, McpError, McpPlaceholderBackend  # noqa: E402
 from wgf_assets.optimize import optimize  # noqa: E402
-from wgf_assets.placeholders import build_backends  # noqa: E402
+from wgf_assets.placeholders import build_backends, sfx_preset  # noqa: E402
 from wgf_assets.policy import load_policy  # noqa: E402
 from wgf_assets.requirements import RequirementError, inspect  # noqa: E402
 from wgf_assets.step import AssetsStep  # noqa: E402
@@ -261,6 +262,68 @@ class Formats(AssetsCase):
 
 
 # -- the pipeline, 2D and 3D -------------------------------------------------------------
+
+def wav_header(data):
+    """(channels, rate, bits, sample count) of a PCM WAV the encoders write."""
+    channels, rate = struct.unpack("<HI", data[22:28])
+    bits = struct.unpack("<H", data[34:36])[0]
+    size = struct.unpack("<I", data[40:44])[0]
+    return channels, rate, bits, size // (bits // 8) // channels
+
+
+class ShapedAudio(unittest.TestCase):
+    """F5: procedural audio is shaped by preset, not a bare sine tone."""
+
+    def test_every_preset_is_a_valid_short_mono_wav(self):
+        policy = load_policy()
+        for preset in encoders.SFX_PRESETS:
+            data = encoders.synth(preset, 7)
+            self.assertEqual(formats.sniff(data).format, "wav", preset)
+            channels, rate, bits, count = wav_header(data)
+            self.assertEqual((channels, rate, bits), (1, encoders.SYNTH_RATE, 8), preset)
+            self.assertTrue(0.04 <= count / rate <= 1.0, (preset, count / rate))
+            self.assertLess(len(data), policy.kinds["sfx"].max_bytes, preset)
+
+    def test_the_music_loop_is_a_valid_wav_within_policy(self):
+        data = encoders.music_loop(3)
+        channels, rate, bits, count = wav_header(data)
+        self.assertEqual((channels, bits), (1, 8))
+        self.assertAlmostEqual(count / rate, 8.0, delta=0.01)
+        self.assertLess(len(data), load_policy().kinds["music"].max_bytes)
+        self.assertNotEqual(data, encoders.music_loop(4))  # transposed, not identical
+
+    def test_synthesis_is_deterministic_and_the_variant_detunes(self):
+        for preset in encoders.SFX_PRESETS:
+            self.assertEqual(encoders.synth(preset, 11), encoders.synth(preset, 11))
+            self.assertNotEqual(encoders.synth(preset, 11), encoders.synth(preset, 12))
+        self.assertEqual(encoders.music_loop(2), encoders.music_loop(2))
+
+    def test_presets_sound_different(self):
+        sounds = {preset: encoders.synth(preset, 0) for preset in encoders.SFX_PRESETS}
+        self.assertEqual(len(set(sounds.values())), len(sounds))
+
+    def test_a_shaped_sound_has_an_envelope_not_a_constant_tone(self):
+        for preset in ("coin", "hit", "lose"):
+            data = encoders.synth(preset, 0)
+            samples = data[44:44 + wav_header(data)[3]]  # not the RIFF pad byte
+            quarter = len(samples) // 4
+            loud = lambda part: max(abs(b - 128) for b in part)  # noqa: E731
+            # Loud near the start, near silent at the end: an envelope, not a flat tone.
+            self.assertGreater(loud(samples[:quarter]), 4 * loud(samples[-(quarter // 4):]),
+                               preset)
+
+    def test_the_preset_follows_the_words_of_the_request(self):
+        def req(id, label="", tags=()):
+            return type("Req", (), {"terms": {w for w in (id + " " + label).replace(
+                "-", " ").lower().split()} | set(tags)})()
+        cases = {("sfx-ui-tap", "UI tap"): "ui", ("sfx-coin", "Coin pickup"): "coin",
+                 ("sfx-hit", "Impact"): "hit", ("sfx-jump", ""): "jump",
+                 ("sfx-level-complete", "Level complete"): "powerup",
+                 ("sfx-game-over", "Game over"): "lose", ("sfx-move", "Lane move"): "whoosh",
+                 ("sfx-misc", "Something"): "blip"}
+        for (id, label), preset in cases.items():
+            self.assertEqual(sfx_preset(req(id, label)), preset, id)
+
 
 class TwoD(AssetsCase):
     def test_every_2d_kind_gets_a_valid_placeholder(self):

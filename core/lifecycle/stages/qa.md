@@ -61,6 +61,12 @@ On top of the pipeline:
 - **Defects**, each with reproduction steps. A defect nobody can reproduce cannot be fixed
   or verified, only argued about.
 
+## Craft references
+
+`core/craft/playtesting.md` (the agent playthrough protocol that produces a gameplay
+session, and the performance pass), `core/craft/web-performance.md`,
+`core/craft/accessibility.md` (a flash-rate violation is blocking).
+
 ## Blocking vs accepted
 
 `blocking_defects` must be empty to reach RC. Everything else goes in `accepted_defects`

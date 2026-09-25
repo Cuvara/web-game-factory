@@ -23,6 +23,8 @@ import json
 import os
 import re
 
+from wgflib import template_contract as contract
+
 from ..model import BLOCKED, FAIL, PASS, WARNING, Check, Evidence
 from ..session import DEFAULT_SESSION_FILE
 
@@ -30,8 +32,8 @@ __all__ = ["ASPECTS", "check_gameplay", "required_aspects", "required_aspects_fo
            "RecordedSessionDriver",
            "RepositoryPlaywrightDriver", "select_driver", "Observation", "map_report"]
 
-ASPECTS = ("boot", "loading", "start", "input", "core-loop", "progression", "game-over",
-           "restart", "pause-resume", "responsive")
+# The @aspect tag vocabulary is part of the template contract: a game's suites use the words.
+ASPECTS = contract.ASPECTS
 
 TITLES = {
     "boot": "Boots without errors",
@@ -180,21 +182,22 @@ def validate_session(document):
 
 class RepositoryPlaywrightDriver:
     id = "repository-playwright"
-    report_path = "build/verification/playwright-e2e.json"
+    report_path = contract.PLAYWRIGHT_E2E_REPORT
 
     def available(self, session):
-        return session.has_script("test:e2e")
+        return session.has_script(contract.SCRIPT_TEST_E2E)
 
     def observe(self, session):
         if not self.available(session):
             raise DriverUnavailable("package.json has no test:e2e script",
-                                    [Evidence("file", "no test:e2e script", path="package.json")])
+                                    [Evidence("file", "no test:e2e script",
+                                              path=contract.PACKAGE_JSON)])
         report_file = session.path(self.report_path)
         if os.path.exists(report_file):
             os.remove(report_file)          # never read a previous run's report
         os.makedirs(os.path.dirname(report_file), exist_ok=True)
-        result = session.run(session.script_command("test:e2e", "--reporter=json"), "browser",
-                             env={"PLAYWRIGHT_JSON_OUTPUT_NAME": report_file})
+        result = session.run(session.script_command(contract.SCRIPT_TEST_E2E, "--reporter=json"),
+                             "browser", env={"PLAYWRIGHT_JSON_OUTPUT_NAME": report_file})
         command_evidence = Evidence.of_command(result)
         if result.unavailable:
             raise DriverUnavailable(result.describe(), [command_evidence])

@@ -10,6 +10,8 @@ claims otherwise.
 import os
 import re
 
+from wgflib import template_contract as contract
+
 from ..model import BLOCKED, FAIL, PASS, PASS_MOCK, WARNING, Check, Evidence
 from ..lineage import same_commit
 
@@ -40,9 +42,9 @@ def sdk_evidence_status(features):
 
 
 AD_FEATURES = ("rewarded", "interstitial", "banner")
-RUNTIME_FACTS = "build/runtime-facts.json"
-COLLECT_FACTS = "scripts/verify/collect-facts.mjs"
-EVALUATE = "scripts/verify/evaluate-assertions.mjs"
+RUNTIME_FACTS = contract.RUNTIME_FACTS
+COLLECT_FACTS = contract.COLLECT_FACTS
+EVALUATE = contract.EVALUATE_ASSERTIONS
 
 
 def _required(platform):
@@ -77,7 +79,7 @@ def check_platform(session):
             "platform.targets", "platform", "Target platforms declared", FAIL,
             message="game.config.yaml declares no platforms",
             evidence=[Evidence("file", "no platforms in game.config.yaml",
-                               path="game.config.yaml")])))
+                               path=contract.GAME_CONFIG)])))
         return out
     for platform in session.platforms:
         out += [session.record(check) for check in _per_platform(session, platform)]
@@ -264,14 +266,15 @@ def _runtime_facts(session):
     if not session.passed("build.build"):
         return session.blocked_by("build.build", id="policy.runtime-facts", category="policy",
                                   title=title, required=required)
-    if not session.has_script("test:verify"):
+    if not session.has_script(contract.SCRIPT_TEST_VERIFY):
         return Check("policy.runtime-facts", "policy", title,
                      BLOCKED if required else WARNING, required=required,
                      message="package.json has no test:verify script to measure runtime facts",
-                     evidence=[Evidence("file", "no test:verify script", path="package.json")])
+                     evidence=[Evidence("file", "no test:verify script",
+                                        path=contract.PACKAGE_JSON)])
     # Never read a previous run's measurements: the file must be written by this run.
     session.remove(RUNTIME_FACTS)
-    result = session.run(session.script_command("test:verify"), "browser")
+    result = session.run(session.script_command(contract.SCRIPT_TEST_VERIFY), "browser")
     evidence = [Evidence.of_command(result)]
     facts = session.read_json(RUNTIME_FACTS) if result.ok else None
     if facts is not None:
@@ -299,9 +302,9 @@ def _assertions(session, platform):
         return Check(cid, title=title, status=BLOCKED,
                      message=f"the repository has no {COLLECT_FACTS} / {EVALUATE}",
                      evidence=[Evidence("file", "assertion tooling missing",
-                                        path="scripts/verify")], **common)
-    facts_out = f"build/facts/{pid}.json"
-    results_out = f"build/assertions/{pid}.json"
+                                        path=COLLECT_FACTS.rsplit("/", 1)[0])], **common)
+    facts_out = contract.facts_path(pid)
+    results_out = contract.assertions_path(pid)
     # Results left by an earlier run are not evidence about this one: an evaluation that
     # wrote nothing must not be read as the previous run's clean results.
     session.remove(facts_out)

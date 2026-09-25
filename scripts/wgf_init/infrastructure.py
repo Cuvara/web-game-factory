@@ -12,46 +12,16 @@ import hashlib
 import os
 import re
 
+from wgflib.template_contract import ENGINES, GAME_CONFIG, INFRASTRUCTURE, PLATFORM_ROLES
 from wgflib.yamllite import YamlError, load_file
 
 __all__ = ["TEMPLATE_INFRASTRUCTURE", "GAME_CONFIG", "ENGINES", "missing_infrastructure",
            "read_game_config", "InfrastructureError"]
 
-GAME_CONFIG = "game.config.yaml"
+# The list itself is the template contract's (wgflib.template_contract), shared with the
+# drift test that holds it against the pinned template.
+TEMPLATE_INFRASTRUCTURE = INFRASTRUCTURE
 
-# (path, what it carries). A trailing slash means a non-empty directory.
-TEMPLATE_INFRASTRUCTURE = (
-    ("package.json", "workspace scripts: build, test, verify, release"),
-    ("pnpm-workspace.yaml", "the packages/ workspace"),
-    ("pnpm-lock.yaml", "pinned dependencies"),
-    ("tsconfig.base.json", "shared TypeScript configuration"),
-    ("vite.config.ts", "the build"),
-    ("vitest.workspace.ts", "unit and integration test projects"),
-    ("playwright.config.ts", "e2e and verify test projects"),
-    (GAME_CONFIG, "the game's link to its approved plan"),
-    ("packages/game-core/", "loop, scenes, events, pause, renderer seam"),
-    ("packages/platform-sdk/", "the platform abstraction and portal adapters"),
-    ("packages/analytics-sdk/", "the analytics event vocabulary"),
-    ("packages/pixi-framework/", "Renderer for engine.type: pixijs"),
-    ("packages/three-framework/", "Renderer for engine.type: threejs"),
-    ("config/platforms/", "platform profiles vendored at the pinned versions"),
-    ("scripts/_shared.mjs", "the game-repository side of the content hash"),
-    ("scripts/verify/", "package facts and the assertion evaluator"),
-    ("scripts/release/", "release packaging and manifest"),
-    ("scripts/publish/", "publication records"),
-    ("tests/unit/", "unit test layer"),
-    ("tests/integration/", "integration test layer"),
-    ("tests/e2e/", "end-to-end test layer"),
-    ("tests/verify/", "verify suite"),
-    (".github/workflows/ci.yml", "the ci_green guard"),
-    (".github/workflows/build.yml", "develop preview builds"),
-    (".github/workflows/verify.yml", "the verify_suite_green guard"),
-    (".github/workflows/release.yml", "release candidates"),
-    (".github/workflows/publish.yml", "gate G6"),
-    (".github/workflows/campaign.yml", "gate G7"),
-)
-
-ENGINES = ("pixijs", "threejs")
 _PROFILE = re.compile(r"^[a-z][a-z0-9-]*@[0-9]+\.[0-9]+\.[0-9]+$")
 
 
@@ -90,7 +60,7 @@ def read_game_config(root):
         if not (isinstance(entry, dict) and isinstance(entry.get("id"), str)
                 and _PROFILE.match(str(entry.get("profile", "")))
                 and str(entry.get("profile")).split("@")[0] == entry["id"]
-                and entry.get("role") in ("required", "optional")):
+                and entry.get("role") in PLATFORM_ROLES):
             raise InfrastructureError(f"{GAME_CONFIG} has an unpinned platform entry: {entry!r}")
         platforms.append({"id": entry["id"], "profile": entry["profile"], "role": entry["role"]})
 

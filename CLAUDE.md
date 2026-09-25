@@ -274,6 +274,8 @@ seen by the engine — validate what you write there with ajv.
 - `docs/artifact-contracts.md` — the artifacts
 - `docs/agent-architecture.md` — roles, agents, asset pipeline
 - `docs/platform-architecture.md` — profiles, SDK, publishing
+- `docs/template-contract.md` — every path, script, CLI, output and config key the Factory
+  assumes of a game repository (`wgflib/template_contract.py`), and the drift test against the pin
 - `docs/workflow-engine.md` — the `wgf` engine: definitions, steps, retry, resume, routing
 - `docs/workflow-module-contract.md` — what a step module implements; read before writing one
 - `docs/verification-module.md` — the `verify` step: checks, statuses, evidence, gameplay drivers

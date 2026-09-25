@@ -15,16 +15,17 @@ import json
 import os
 
 from wgflib import procs
+from wgflib import template_contract as contract
 
 __all__ = ["EvidenceError", "ConformanceRun", "ConformanceRunner", "PnpmRunner", "read_report",
            "summarize", "REPORT_PATH", "COMMANDS"]
 
-REPORT_PATH = os.path.join("build", "sdk-conformance.json")
+REPORT_PATH = os.path.join(*contract.SDK_CONFORMANCE_REPORT.split("/"))
 
 # The whole command surface. Nothing else can be run from this module.
 COMMANDS = {
-    "conformance": ("pnpm", "sdk:conformance"),
-    "browser": ("pnpm", "test:sdk:browser"),
+    "conformance": (contract.PACKAGE_MANAGER, contract.SCRIPT_SDK_CONFORMANCE),
+    "browser": (contract.PACKAGE_MANAGER, contract.SCRIPT_SDK_BROWSER),
     "commit": ("git", "rev-parse", "HEAD"),
 }
 
@@ -79,7 +80,8 @@ class PnpmRunner(ConformanceRunner):
         # means the suite did not run.
         if not os.path.exists(path):
             tail = (done.stdout + done.stderr)[-2000:]
-            raise EvidenceError(f"`pnpm sdk:conformance` wrote no {REPORT_PATH}:\n{tail}")
+            command = " ".join(COMMANDS["conformance"])
+            raise EvidenceError(f"`{command}` wrote no {REPORT_PATH}:\n{tail}")
         report = read_report(path)
         result = None
         if browser:

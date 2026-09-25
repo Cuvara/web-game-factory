@@ -48,8 +48,11 @@ python scripts/wgf-guard.py --title neon-drift --state prototype-review
 bin/wgf research                          # real market scan: research-report + opportunity
 bin/wgf new-game --mock                   # research -> ... -> release, placeholder steps
 bin/wgf verify --mock                     # one step; `plan` = strategy, checkpoint, design
-bin/wgf new-game --resume <run-id> [--decision approve]
-bin/wgf status [<run-id>] [--json]        # liveness: running | hung | stale; also logs, runs, pause, cancel
+bin/wgf resume <run-id> [--from STEP]     # = wgf <cmd> --resume <run-id>, which still works
+bin/wgf decide <run-id> approve [--note TEXT]   # answer a waiting checkpoint
+bin/wgf runs --waiting [--json]           # runs waiting for a decision: step, gate, choices
+bin/wgf status [<run-id>] [--json]        # liveness: running | hung | stale; exits as the run
+                                          # (0 ok/running, 1 failed, 3 waiting); also logs, runs, pause, cancel
 
 # The Core Acceptance Suite: WORKFLOW, AGENTS, CONTRACTS, VERIFY, RELEASE, 2D/3D GOLDEN,
 # PROCESS CLEANUP, SECURITY. MISSING or FAIL exits non-zero; SKIP is never PASS.

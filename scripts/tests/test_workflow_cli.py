@@ -57,10 +57,11 @@ class CliCase(unittest.TestCase):
         with open(self.config, "w", encoding="utf-8") as handle:
             handle.write("factory:\n  storage:\n    fsync: false\n")
 
-    def wgf(self, *args, expect=0):
-        command = [sys.executable, WGF, *args, "--store", self.store, "--config", self.config]
-        env = dict(os.environ, PYTHONIOENCODING="utf-8")
-        done = subprocess.run(command, cwd=ROOT, capture_output=True, text=True,
+    def wgf(self, *args, expect=0, env=None, cwd=ROOT, store=True):
+        command = [sys.executable, WGF, *args,
+                   *(("--store", self.store) if store else ()), "--config", self.config]
+        env = dict(os.environ, PYTHONIOENCODING="utf-8", **(env or {}))
+        done = subprocess.run(command, cwd=cwd, capture_output=True, text=True,
                               encoding="utf-8", env=env)
         if expect is not None:
             self.assertEqual(done.returncode, expect,
@@ -211,7 +212,7 @@ class FailureAndResume(CliCase):
 
     def test_human_checkpoint_waits_then_resumes(self):
         done = self.wgf("new-game", "--mock", "--hold-gates", expect=3)
-        self.assertIn("--decision", done.stdout)
+        self.assertIn(f"wgf decide {self.state()['run_id']} approve|reject", done.stdout)
         state = self.state()
         self.assertEqual(state["status"], "WAITING")
         self.assertEqual(state["cursor"], "strategy-review")
@@ -282,12 +283,12 @@ class StatusAndLogs(CliCase):
                  '{"develop": ["fatal"]}', expect=1)
         run_id = self.state()["run_id"]
         for args in ((), (run_id,)):
-            out = self.wgf("status", *args).stdout
+            out = self.wgf("status", *args, expect=1).stdout  # the run's own exit code
             self.assertIn(f"Run:      {run_id}", out)
             self.assertIn("Status: FAILED", out)
             self.assertIn("develop", out)
             self.assertIn("<- next", out)
-            self.assertIn(f"--resume {run_id}", out)
+            self.assertIn(f"wgf resume {run_id}", out)
 
     def test_logs_are_structured(self):
         self.wgf("research", "--mock", "--quiet")
@@ -323,7 +324,7 @@ class RunStatesThroughTheCli(CliCase):
         store.save(state)
 
     def status_line(self, run_id):
-        return [l for l in self.wgf("status", run_id).stdout.splitlines()
+        return [l for l in self.wgf("status", run_id, expect=None).stdout.splitlines()
                 if l.startswith("Status:")][0]
 
     def test_running_paused_and_resume_after_pause(self):
@@ -390,6 +391,321 @@ class RunStatesThroughTheCli(CliCase):
         self.assertEqual(self.state()["params"]["auto_approve"], ["G2", "G3"])
         self.wgf("new-game", "--mock", "--hold-gates", "--quiet", expect=3)
         self.assertNotIn("auto_approve", self.state()["params"])
+
+
+class ResumeAndDecide(CliCase):
+    """`wgf resume` and `wgf decide`: first-class commands over the engine's own resume."""
+
+    def held(self):
+        self.wgf("new-game", "--mock", "--hold-gates", "--quiet", expect=3)
+        return self.state()["run_id"]
+
+    def events(self, run_id):
+        return [json.loads(line) for line in
+                self.wgf("logs", run_id, "--json").stdout.splitlines()]
+
+    def test_resume_continues_a_failed_run(self):
+        self.wgf("new-game", "--mock", "--quiet", "--mock-plan",
+                 '{"develop": ["failed", "failed", "failed"]}', expect=1)
+        run_id = self.state()["run_id"]
+        self.wgf("resume", run_id, "--quiet")
+        state = self.state(run_id)
+        self.assertEqual(state["status"], "COMPLETED")
+        self.assertEqual(state["steps"]["research"]["executions"], 1)
+
+    def test_resume_from_a_step(self):
+        self.wgf("new-game", "--mock", "--quiet")
+        run_id = self.state()["run_id"]
+        # A completed run is not resumable; the engine says so, and nothing changes.
+        self.assertIn("COMPLETED", self.wgf("resume", run_id, "--from", "verify",
+                                            expect=2).stderr)
+        self.wgf("new-game", "--mock", "--quiet", "--mock-plan",
+                 '{"release": ["fatal"]}', expect=1)
+        run_id = self.state()["run_id"]
+        self.wgf("resume", run_id, "--from", "verify", "--quiet")
+        state = self.state(run_id)
+        self.assertEqual(state["status"], "COMPLETED")
+        self.assertEqual(state["steps"]["verify"]["executions"], 2)
+        self.assertEqual(state["steps"]["develop"]["executions"], 1)
+
+    def test_decide_answers_each_checkpoint_through_the_engine(self):
+        run_id = self.held()
+        done = self.wgf("decide", run_id, "approve", "--note", "looks right", "--quiet",
+                        expect=3)
+        self.assertIn(f"wgf decide {run_id} approve|reject", done.stdout)  # G3 next
+        self.assertEqual(self.state(run_id)["cursor"], "tech-plan-review")
+        self.wgf("decide", run_id, "approve", "--quiet")
+        state = self.state(run_id)
+        self.assertEqual(state["status"], "COMPLETED")
+        for step in ("strategy-review", "tech-plan-review"):
+            self.assertEqual(state["decisions"][step]["decided_by"], "human")
+            self.assertEqual(state["decisions"][step]["visit"], 1)
+        self.assertEqual(state["decisions"]["strategy-review"]["note"], "looks right")
+        recorded = [e["step_id"] for e in self.events(run_id)
+                    if e["event"] == "DECISION_RECORDED"]
+        self.assertEqual(recorded, ["strategy-review", "tech-plan-review"])
+
+    def test_resume_with_a_decision(self):
+        run_id = self.held()
+        self.wgf("resume", run_id, "--decision", "reject", "--note", "no", "--quiet", expect=1)
+        self.assertEqual(self.state(run_id)["status"], "BLOCKED")
+
+    def test_decide_refuses_a_run_that_is_not_waiting(self):
+        self.wgf("new-game", "--mock", "--quiet")
+        run_id = self.state()["run_id"]
+        before = self.state(run_id)
+        err = self.wgf("decide", run_id, "approve", expect=2).stderr
+        self.assertIn("not waiting for a decision", err)
+        self.assertEqual(self.state(run_id), before)
+        self.assertIn("no run", self.wgf("decide", "nope", "approve", expect=2).stderr)
+
+    def test_decide_refuses_a_choice_the_checkpoint_does_not_offer(self):
+        run_id = self.held()
+        self.assertIn("approve, reject",
+                      self.wgf("decide", run_id, "maybe", expect=2).stderr)
+        self.assertEqual(self.state(run_id)["decisions"], {})
+
+    def test_decide_refuses_a_step_waiting_for_input(self):
+        self.wgf("verify", "--mock", "--quiet", "--mock-plan", '{"verify": ["waiting"]}',
+                 expect=3)
+        run_id = self.state()["run_id"]
+        self.assertIn("for input", self.wgf("decide", run_id, "approve", expect=2).stderr)
+        self.assertIn(f"Resume: wgf resume {run_id}", self.wgf("status", run_id,
+                                                                expect=3).stdout)
+        self.assertEqual(self.state(run_id)["decisions"], {})
+
+    def test_decided_by_is_derived_not_given(self):
+        # Inside a step's process tree the decision is automation's: a reversible gate
+        # takes it, and it is recorded as such. There is no flag to say otherwise.
+        run_id = self.held()
+        self.wgf("decide", run_id, "approve", "--quiet", expect=3,
+                 env={"WGF_PROC_TAG": "test-m11"})
+        self.assertEqual(self.state(run_id)["decisions"]["strategy-review"]["decided_by"],
+                         "automation")
+        self.wgf("decide", run_id, "approve", "--decided-by", "human", expect=2)
+
+    def test_an_irreversible_gate_refuses_automation_through_decide(self):
+        workflow = os.path.join(self.scratch, "kill.workflow.yaml")
+        with open(workflow, "w", encoding="utf-8") as handle:
+            handle.write("workflow:\n  id: kill\n  version: 1\n  steps:\n"
+                         "    - id: research\n      type: research\n"
+                         "      outputs: [opportunity]\n"
+                         "    - id: kill-review\n      type: human-checkpoint\n"
+                         "      with: {gate: G4}\n")
+        self.wgf("kill", "--workflow", workflow, "--mock", "--quiet", expect=3)
+        run_id = self.state()["run_id"]
+        self.wgf("decide", run_id, "approve", "--workflow", workflow, "--quiet", expect=3,
+                 env={"WGF_PROC_TAG": "test-m11"})
+        state = self.state(run_id)
+        self.assertEqual(state["status"], "WAITING")
+        self.assertIn("irreversible", state["steps"]["kill-review"]["message"])
+        self.wgf("decide", run_id, "approve", "--workflow", workflow, "--quiet")
+        self.assertEqual(self.state(run_id)["status"], "COMPLETED")
+
+    def test_the_old_spelling_still_works(self):
+        run_id = self.held()
+        self.wgf("plan", "--resume", run_id, "--decision", "approve", "--quiet", expect=3)
+        self.assertEqual(self.state(run_id)["cursor"], "tech-plan-review")
+
+
+class IgnoredFlagsAreRefused(CliCase):
+    """A flag the command would silently drop is a usage error, before anything runs."""
+
+    def test_new_run_flags_with_resume_or_run(self):
+        self.wgf("new-game", "--mock", "--hold-gates", "--quiet", expect=3)
+        run_id = self.state()["run_id"]
+        before = self.state(run_id)
+        for continuing in ("--resume", "--run"):
+            for flags in (("--mock",), ("--mock-plan", '{"verify": ["fail"]}'),
+                          ("--hold-gates",), ("--project", "p1")):
+                with self.subTest(continuing, flag=flags[0]):
+                    err = self.wgf("new-game", continuing, run_id, *flags, expect=2).stderr
+                    self.assertIn(flags[0], err)
+                    self.assertIn("new run", err)
+        self.assertEqual(self.state(run_id), before)
+
+    def test_from_with_run(self):
+        self.wgf("plan", "--mock", "--quiet")
+        run_id = self.state()["run_id"]
+        err = self.wgf("init", "--run", run_id, "--from", "init", expect=2).stderr
+        self.assertIn("--from", err)
+        self.assertIn(f"wgf resume {run_id} --from", err)
+        self.assertNotIn("init", self.state(run_id)["steps"])
+
+    def test_note_without_decision(self):
+        self.wgf("new-game", "--mock", "--quiet", "--mock-plan", '{"develop": ["fatal"]}',
+                 expect=1)
+        run_id = self.state()["run_id"]
+        for args in (("new-game", "--resume", run_id, "--note", "x"),
+                     ("resume", run_id, "--note", "x"),
+                     ("research", "--mock", "--note", "x")):
+            with self.subTest(args):
+                self.assertIn("--note", self.wgf(*args, expect=2).stderr)
+        self.assertEqual(self.state(run_id)["status"], "FAILED")
+
+    def test_decision_without_resume_is_a_usage_error(self):
+        self.assertIn("wgf decide", self.wgf("research", "--mock", "--decision", "approve",
+                                             expect=2).stderr)
+
+
+class SingleStepHints(CliCase):
+    """A fresh single-step run is kept, and named the run it probably belonged in."""
+
+    def test_names_the_latest_run_holding_the_missing_inputs(self):
+        self.wgf("new-game", "--mock", "--quiet")
+        holder = self.state()["run_id"]
+        done = self.wgf("develop", "--mock", "--quiet", "--mock-plan",
+                        '{"develop": ["waiting"]}', expect=3)
+        self.assertIn("hint: develop needs", done.stderr)
+        self.assertIn(f"wgf develop --run {holder}", done.stderr)
+        fresh = self.state()
+        self.assertNotEqual(fresh["run_id"], holder)  # the standalone run still exists
+        self.assertEqual(fresh["scope"], ["develop"])
+
+        done = self.wgf("develop", "--mock", "--quiet", "--mock-plan",
+                        '{"develop": ["blocked"]}', expect=1)
+        self.assertIn(f"wgf develop --run {holder}", done.stderr)
+
+    def test_says_so_when_no_run_holds_them(self):
+        done = self.wgf("verify", "--mock", "--quiet", "--mock-plan",
+                        '{"verify": ["waiting"]}', expect=3)
+        self.assertIn("no other run does either", done.stderr)
+
+    def test_no_hint_when_the_step_did_its_work_or_was_continued(self):
+        self.assertNotIn("hint:", self.wgf("verify", "--mock", "--quiet").stderr)
+        self.wgf("new-game", "--mock", "--quiet", "--mock-plan", '{"verify": ["waiting"]}',
+                 expect=3)
+        self.assertNotIn("hint:", self.wgf("resume", self.state()["run_id"], "--quiet",
+                                           ).stderr)
+
+
+class StatusExitCode(CliCase):
+    """`wgf status` exits as the run it shows would: 0, 1 or 3; RUNNING is 0."""
+
+    def test_every_status(self):
+        self.wgf("research", "--mock", "--quiet")
+        completed = self.state()["run_id"]
+        self.wgf("research", "--mock", "--quiet", "--mock-plan", '{"research": ["fatal"]}',
+                 expect=1)
+        failed = self.state()["run_id"]
+        self.wgf("research", "--mock", "--quiet", "--mock-plan", '{"research": ["blocked"]}',
+                 expect=1)
+        blocked = self.state()["run_id"]
+        self.wgf("new-game", "--mock", "--hold-gates", "--quiet", expect=3)
+        waiting = self.state()["run_id"]
+        self.wgf("new-game", "--mock", "--hold-gates", "--quiet", expect=3)
+        cancelled = self.state()["run_id"]
+        self.wgf("cancel", cancelled)
+        self.wgf("init", "--mock", "--quiet")
+        running = self.state()["run_id"]
+        store = RunStore(self.store, fsync=False)
+        state = store.load(running)
+        state.status, state.cursor = RunStatus.RUNNING, "init"
+        store.save(state)
+        for run_id, code in ((completed, 0), (failed, 1), (blocked, 1), (waiting, 3),
+                             (cancelled, 1), (running, 0)):
+            with self.subTest(run_id=run_id):
+                self.wgf("status", run_id, expect=code)
+                self.wgf("status", run_id, "--json", expect=code)
+        self.wgf("pause", running)
+        self.wgf("status", running, expect=3)
+
+
+class RunsListing(CliCase):
+    def test_waiting_lists_only_runs_waiting_for_a_decision(self):
+        self.assertIn("no runs waiting", self.wgf("runs", "--waiting").stdout)
+        self.wgf("research", "--mock", "--quiet")
+        self.wgf("verify", "--mock", "--quiet", "--mock-plan", '{"verify": ["waiting"]}',
+                 expect=3)  # waiting for input, not for a decision
+        self.wgf("new-game", "--mock", "--hold-gates", "--quiet", expect=3)
+        held = self.state()["run_id"]
+        lines = self.wgf("runs", "--waiting").stdout.strip().splitlines()
+        self.assertEqual(len([l for l in lines if l.startswith("new-game-")]), 1)
+        self.assertEqual(lines[0].split(), [held, "strategy-review", "G2", "approve|reject"])
+
+        listing = json.loads(self.wgf("runs", "--waiting", "--json").stdout)
+        self.assertEqual([r["run_id"] for r in listing["runs"]], [held])
+        self.assertEqual(listing["runs"][0]["waiting"],
+                         {"step": "strategy-review", "gate": "G2",
+                          "choices": ["approve", "reject"],
+                          "prompt": "Approve the title strategy before design starts?"})
+
+    def test_json_lists_every_run(self):
+        self.wgf("research", "--mock", "--quiet")
+        self.wgf("verify", "--mock", "--quiet")
+        listing = json.loads(self.wgf("runs", "--json").stdout)
+        self.assertEqual(len(listing["runs"]), 2)
+        self.assertEqual({r["status"] for r in listing["runs"]}, {"COMPLETED"})
+        self.assertEqual(listing["unreadable"], [])
+
+
+class ControlWithoutStepModules(CliCase):
+    """pause and cancel need the store and the definition, never a step module."""
+
+    def test_pause_and_cancel_with_a_broken_module_configured(self):
+        modules = os.path.join(self.scratch, "modules")
+        os.makedirs(modules)
+        sentinel = os.path.join(self.scratch, "imported")
+        with open(os.path.join(modules, "wgf_m11_broken.py"), "w", encoding="utf-8") as handle:
+            handle.write("import os\nopen(os.environ['WGF_M11_SENTINEL'], 'w').close()\n"
+                         "raise RuntimeError('broken on purpose')\n")
+        self.wgf("new-game", "--mock", "--hold-gates", "--quiet", expect=3)
+        waiting = self.state()["run_id"]
+        self.wgf("init", "--mock", "--quiet")
+        running = self.state()["run_id"]
+        store = RunStore(self.store, fsync=False)
+        state = store.load(running)
+        state.status, state.cursor = RunStatus.RUNNING, "init"
+        store.save(state)
+
+        with open(self.config, "w", encoding="utf-8") as handle:
+            handle.write("factory:\n  storage:\n    fsync: false\n"
+                         "  steps:\n    modules: [wgf_m11_broken, wgf_m11_does_not_exist]\n")
+        env = {"PYTHONPATH": modules, "WGF_M11_SENTINEL": sentinel}
+        self.assertIn("PAUSED", self.wgf("pause", running, env=env).stdout)
+        self.assertIn("CANCELLED", self.wgf("cancel", waiting, env=env).stdout)
+        self.assertEqual(self.state(running)["status"], "PAUSED")
+        self.assertEqual(self.state(waiting)["status"], "CANCELLED")
+        self.assertFalse(os.path.exists(sentinel), "pause/cancel imported a step module")
+
+        # The same configuration does break a command that runs steps: the test is real.
+        self.wgf("resume", running, env=env, expect=None)
+        self.assertTrue(os.path.exists(sentinel))
+
+
+class Environment(CliCase):
+    def test_an_os_error_is_one_line_not_a_traceback(self):
+        blocker = os.path.join(self.scratch, "not-a-directory")
+        with open(blocker, "w", encoding="utf-8") as handle:
+            handle.write("x")
+        self.store = os.path.join(blocker, "store")
+        done = self.wgf("research", "--mock", "--quiet", expect=1)
+        self.assertNotIn("Traceback", done.stderr)
+        self.assertEqual(len(done.stderr.strip().splitlines()), 1, done.stderr)
+        self.assertTrue(done.stderr.startswith("wgf: "))
+
+    def test_storage_directory_resolves_against_the_repository_root(self):
+        from wgflib.workflow.config import FactoryConfig
+        self.assertEqual(FactoryConfig().storage_directory(), os.path.join(ROOT, ".factory"))
+        absolute = os.path.join(self.scratch, "abs")
+        self.assertEqual(FactoryConfig({"storage": {"directory": absolute}})
+                         .storage_directory(), absolute)
+
+        # A relative setting, from the root, from scripts/ and from elsewhere: one store.
+        relative = os.path.relpath(self.store, ROOT)
+        with open(self.config, "w", encoding="utf-8") as handle:
+            handle.write(f"factory:\n  storage:\n    fsync: false\n"
+                         f"    directory: {json.dumps(relative)}\n")
+        self.wgf("research", "--mock", "--quiet", store=False, cwd=SCRIPTS)
+        run_id = self.state()["run_id"]
+        for cwd in (ROOT, SCRIPTS, self.scratch):
+            with self.subTest(cwd=cwd):
+                self.assertIn(run_id, self.wgf("status", store=False, cwd=cwd).stdout)
+
+    def test_store_on_the_command_line_stays_relative_to_the_working_directory(self):
+        self.wgf("research", "--mock", "--quiet", "--store", "typed", store=False,
+                 cwd=self.scratch)
+        self.assertTrue(os.path.isdir(os.path.join(self.scratch, "typed", "workflows")))
 
 
 if __name__ == "__main__":

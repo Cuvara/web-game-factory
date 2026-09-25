@@ -15,13 +15,14 @@ from . import checkpoint, mock
 from .config import load_config
 from .definition import WORKFLOWS, load_definition
 from .engine import WorkflowEngine
+from .events import Events
 from .contracts import ArtifactContracts
-from .model import derive_liveness
+from .model import RunStatus, StepOutcome, StepStatus, derive_liveness
 from .runtime import create_runtime
 from .step import StepRegistry
 from .store import RunStore
 
-__all__ = ["WorkflowAPI", "RunRequest"]
+__all__ = ["WorkflowAPI", "RunRequest", "pending_decision", "missing_inputs"]
 
 
 def _no_sleep(_seconds):
@@ -79,6 +80,53 @@ def checkpoint_gates(definition):
         step.params["gate"] for step in definition.steps
         if step.type == checkpoint.HumanCheckpointStep.type and step.params.get("gate")
     }
+
+
+def pending_decision(state, definition=None, events=()):
+    """What a run is waiting for a person to decide, or None.
+
+    A run waits for a decision when it is WAITING at a step that asked for a person
+    (WAITING_FOR_HUMAN) - a human checkpoint above all - rather than for missing data
+    (WAITING_FOR_INPUT). Returns {"step", "gate", "choices", "prompt"}; gate, choices and
+    prompt are None when neither the definition nor the step's last STEP_WAITING event
+    says. Read-only: it answers nothing.
+    """
+    if state.status != RunStatus.WAITING or not state.cursor:
+        return None
+    step = state.steps.get(state.cursor)
+    if step is None or step.status != StepStatus.WAITING:
+        return None
+    step_def = None
+    if definition is not None and definition.has_step(state.cursor):
+        step_def = definition.step(state.cursor)
+    last = next((entry.get("outcome") for entry in reversed(state.trail)
+                 if entry.get("step") == state.cursor), None)
+    is_checkpoint = (step_def is not None
+                     and step_def.type == checkpoint.HumanCheckpointStep.type)
+    if last != StepOutcome.WAITING_FOR_HUMAN and not (last is None and is_checkpoint):
+        return None
+    info = {"step": state.cursor, "gate": None, "choices": None, "prompt": step.message}
+    if is_checkpoint:
+        params = step_def.params or {}
+        info["gate"] = params.get("gate")
+        info["choices"] = list(params.get("choices") or ["approve", "reject"])
+    for event in reversed(list(events or ())):
+        if event.get("event") == Events.STEP_WAITING and event.get("step_id") == state.cursor:
+            result = (event.get("data") or {}).get("result") or {}
+            if isinstance(result, dict):
+                if info["gate"] is None and isinstance(result.get("gate"), str):
+                    info["gate"] = result["gate"]
+                if info["choices"] is None and isinstance(result.get("choices"), list):
+                    info["choices"] = [str(c) for c in result["choices"]]
+            break
+    return info
+
+
+def missing_inputs(state, definition):
+    """The input types the run's cursor step declares and the run does not hold."""
+    if not state.cursor or not definition.has_step(state.cursor):
+        return []
+    return [t for t in definition.step(state.cursor).inputs if state.latest_of_type(t) is None]
 
 
 class RunRequest:
@@ -142,10 +190,11 @@ class WorkflowAPI:
             search=tuple(self.workflow_dirs),
         )
 
-    def registry(self, use_mock):
+    def registry(self, use_mock, load_modules=True):
         registry = StepRegistry()
         checkpoint.register(registry)
-        registry.load_modules(self.config.step_modules)
+        if load_modules:
+            registry.load_modules(self.config.step_modules)
         if use_mock:
             mock.register(registry)  # registered last, so mocks replace real modules
         return registry
@@ -165,6 +214,21 @@ class WorkflowAPI:
             subscribers=self.subscribers,
             artifact_validator=ArtifactContracts(untyped=definition.untyped_artifacts),
             **overrides,
+        )
+
+    def control_engine(self, state):
+        """An engine for pause and cancel, which touch only the store and the definition.
+
+        No step module is imported, no runtime or artifact contracts are built: one broken
+        module in factory.steps.modules must not take away the way to stop a run.
+        """
+        return WorkflowEngine(
+            self.definition_for(state),
+            self.registry(False, load_modules=False),
+            self.store,
+            config=self.config.data,
+            subscribers=self.subscribers,
+            **{k: v for k, v in self._overrides.items() if k == "clock"},
         )
 
     # -- operations ---------------------------------------------------------------------
@@ -224,12 +288,45 @@ class WorkflowAPI:
     def runs(self, problems=None):
         return self.store.list_runs(problems)
 
+    def pending(self, state):
+        """pending_decision for `state`, against its definition and its recorded events.
+        A definition that can no longer be found costs the gate and choices, not the run."""
+        if state.status != RunStatus.WAITING:
+            return None
+        try:
+            definition = self.definition_for(state)
+        except (OSError, ValueError):
+            definition = None
+        return pending_decision(state, definition, self.store.read_events(state.run_id, []))
+
+    def waiting(self, problems=None):
+        """[(state, pending)] for every run waiting for a decision, oldest first."""
+        found = []
+        for state in self.store.list_runs(problems):
+            info = self.pending(state)
+            if info is not None:
+                found.append((state, info))
+        return found
+
+    def latest_run_holding(self, artifact_types, workflow_id, exclude=None):
+        """The run of `workflow_id` a slice missing `artifact_types` most likely belongs in:
+        of the runs a slice could still run inside (not RUNNING, not CANCELLED), the one
+        holding the most of those types, the most recently updated on a tie. Not all: a
+        step's inputs include ones only a later loop produces (develop's qa-report). None
+        when no run holds any of them."""
+        best, best_key = None, None
+        for state in self.store.list_runs():
+            if (state.run_id == exclude or state.workflow_id != workflow_id
+                    or state.status in (RunStatus.RUNNING, RunStatus.CANCELLED)):
+                continue
+            held = sum(state.latest_of_type(t) is not None for t in artifact_types)
+            key = (held, state.updated_at or state.created_at or "", state.run_id)
+            if held and (best_key is None or key > best_key):
+                best, best_key = state, key
+        return best
+
     def pause(self, run_id):
-        state = self.store.load(run_id)
-        engine = self.engine(bool(state.params.get("mock")), self.definition_for(state))
-        return engine.request_pause(run_id)
+        return self.control_engine(self.store.load(run_id)).request_pause(run_id)
 
     def cancel(self, run_id):
-        state = self.store.load(run_id)
-        engine = self.engine(bool(state.params.get("mock")), self.definition_for(state))
-        return engine.request_cancel(run_id)
+        return self.control_engine(self.store.load(run_id)).request_cancel(run_id)

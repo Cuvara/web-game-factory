@@ -1359,7 +1359,7 @@ class PrototypeReviewGate(_MockNewGame):
         # waited, answered iterate, the loop, and waiting again
         self.assertEqual(executed[at:], ["prototype-review", "prototype-review", "develop",
                                          "review", "sdk", "sdk-review", "verify",
-                                          "prototype-review"])
+                                         "prototype-review"])
         self.assertEqual(state.steps["prototype-review"].visits, 2)
         # The iterate answered visit 1; visit 2 needs a decision of its own.
         self.assertEqual(state.decisions["prototype-review"]["visit"], 1)

@@ -20,6 +20,6 @@ rather than resolving it yourself.
 - Run from the factory repository root so relative core paths resolve.
 - Write artifacts to the `repo_path` given in each schema's `x-wgf` block.
 - Emit a plan before writing files; apply one patch per artifact.
-- Keep metrics, findings, hypotheses and experiments in their separate fields. Report per platform with sample size, never averaged. A projection is a hypothesis with a number attached; label it. Campaigns need a human-authorized ceiling.
+- Keep metrics, findings, hypotheses and experiments in their separate fields. Report per platform with sample size, never averaged. A projection is a hypothesis with a number attached; label it. Campaigns need a human-authorized ceiling. External tools (browser, generation, docs lookup, analytics) only as core/craft/tool-capabilities.md allows: localhost-only browsing of builds, provenance and licence on anything generated, human approval before any paid job.
 - Do not advance the lifecycle. Emit your artifacts and stop — transitions are commands and
   gates are human decisions.

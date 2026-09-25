@@ -236,6 +236,7 @@ regenerate — never encode it once per provider.
 | A new stage | `core/lifecycle/<machine>.machine.yaml` + `core/lifecycle/stages/<id>.md` |
 | A new platform | `core/reference/platforms/<id>.yaml` — one file, zero changes elsewhere |
 | A scoring change | A **new** versioned file in `core/reference/scoring/` |
+| Craft guidance (what a *good* game looks like) | `core/craft/<topic>.md`, provider-neutral, then point the surfaces at it in `adapter-binding.yaml` + `gen-adapters.sh` |
 | Provider-specific phrasing | The adapter, never `core/` |
 
 **Never edit a scoring model in place** — create `portfolio-default.v2.yaml`. An evaluation
@@ -290,6 +291,8 @@ seen by the engine — validate what you write there with ajv.
   it found and fixed, PASS / PASS_MOCK / UNVERIFIED / BLOCKED_EXTERNAL
 - `docs/claude-capabilities.md` — agent-host capability audit: what the Factory enforces vs
   the host's argv, verified headless developer/reviewer config, live evidence
+- `docs/production-craft-and-mcp.md` — `core/craft/` playbooks and skills by phase, MCP tools
+  by phase, host config vs repository, and the step-module follow-ups
 - `docs/development.md` — working on the Factory
 
 Documentation that contradicts a machine file is worse than none, because people believe it.

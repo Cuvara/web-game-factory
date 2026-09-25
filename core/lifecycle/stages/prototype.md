@@ -51,6 +51,12 @@ technical demonstration that a mechanic runs.
    - scope deltas: what was built that the plan did not call for, and what was not built
    - a recommendation: pass, iterate, or abandon
 
+## Craft references
+
+`core/craft/game-feel.md`, `core/craft/core-loop-and-difficulty.md`,
+`core/craft/onboarding-and-portal-ux.md`, `core/craft/playtesting.md` (agent playthrough and
+stranger playtest protocols), `core/craft/gameplay-review.md` (the reviewer's gameplay lens).
+
 ## Exit
 
 `ci_green` and `playable_build` → `prototype-review`. The build must be openable and
@@ -59,7 +65,9 @@ playable by a reviewer with no instructions.
 ## Failure modes
 
 - **Polishing instead of proving.** Art and juice make a prototype harder to kill without
-  making it more informative.
+  making it more informative. Feedback is not polish: the minimum feedback bar in
+  `core/craft/game-feel.md` (input acknowledged, reward noticed, failure understood) is part
+  of what a prototype must have, because a mechanic nobody can read cannot be judged.
 - **Building past the prototype scope tier.** Work not asked for is work that cannot be
   thrown away cheaply.
 - **Writing the report to survive the gate.** The report's value is entirely in its

@@ -70,6 +70,13 @@ consistency result is atomic.
 9. **Run the consistency check.** Evaluate `core/reference/design-consistency-rules.yaml`
    and write the result into `game_design.consistency`. This is the exit guard.
 
+## Craft references
+
+What *good* looks like inside `build_spec`: `core/craft/core-loop-and-difficulty.md`,
+`core/craft/game-feel.md`, `core/craft/onboarding-and-portal-ux.md`,
+`core/craft/ui-hud-mobile.md`, `core/craft/audio.md`, `core/craft/art-direction.md`,
+`core/craft/accessibility.md`.
+
 ## Exit
 
 - `design_consistent` and `platform_constraints_satisfied` → `tech-plan`

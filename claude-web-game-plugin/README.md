@@ -45,7 +45,7 @@ claude-web-game-plugin/
   .claude-plugin/plugin.json   — plugin manifest
   agents/*.md                  — 11 subagents, one per non-human role
   commands/wgf-*.md            — 13 slash commands, one per lifecycle transition
-  skills/*/SKILL.md            — 13 skills, reference capability loaded on demand
+  skills/*/SKILL.md            — 21 skills, reference capability loaded on demand
   CONFORMANCE.md               — surface-by-surface coverage against the binding manifest
 ```
 
@@ -95,6 +95,15 @@ unattended `develop` developer and the read-only `review` reviewer. That is inst
 config, never core. The verified argvs are commented in `workspace/config/factory.yaml`
 (`factory.develop.developer`, `factory.review.reviewer`); what each flag enforces, what the
 Factory enforces independently, and the live evidence are in `docs/claude-capabilities.md`.
+
+## Craft and MCP
+
+Eight of the skills (`core-loop`, `game-feel`, `onboarding-ux`, `audio`, `art-direction`,
+`web-performance`, `gameplay-review`, `playtesting`) point at `core/craft/`: what a *good*
+game looks like inside the fields the artifacts already have, as opposed to what passes
+the checks. Which MCP servers help at which phase, and how to configure them in Claude
+Desktop or Claude Code, is in `docs/production-craft-and-mcp.md`. The plugin ships no
+`.mcp.json` on purpose; MCP servers are host configuration.
 
 ## Start here
 

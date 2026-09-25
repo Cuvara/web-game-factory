@@ -184,6 +184,8 @@ core/
                     asset policy
   roles/            who is accountable for what
   templates/        document scaffolds for artifacts whose canonical form is prose
+  craft/            playbooks for what a *good* game looks like inside the artifacts' fields
+                    (feel, loop, onboarding, audio, art, accessibility, performance, play)
   bindings/         what an AI adapter must cover, provider-independently
   workflows/        executable workflow definitions (steps, routing, retry) - run by `wgf`
 ```

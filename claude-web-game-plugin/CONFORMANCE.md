@@ -41,23 +41,51 @@ Regenerate the surfaces with `scripts/gen-adapters.sh`, then update this table.
 | `/wgf-status` | `claude-web-game-plugin/commands/wgf-status.md` | covered |
 | `/wgf-strategy` | `claude-web-game-plugin/commands/wgf-strategy.md` | covered |
 
-## Skills (13 of 13)
+## Skills (21 of 21)
 
 | Skill | File | Status |
 |---|---|---|
 | `architecture` | `claude-web-game-plugin/skills/architecture/SKILL.md` | covered |
+| `art-direction` | `claude-web-game-plugin/skills/art-direction/SKILL.md` | covered |
 | `assets` | `claude-web-game-plugin/skills/assets/SKILL.md` | covered |
+| `audio` | `claude-web-game-plugin/skills/audio/SKILL.md` | covered |
+| `core-loop` | `claude-web-game-plugin/skills/core-loop/SKILL.md` | covered |
 | `development-planning` | `claude-web-game-plugin/skills/development-planning/SKILL.md` | covered |
 | `game-design` | `claude-web-game-plugin/skills/game-design/SKILL.md` | covered |
+| `game-feel` | `claude-web-game-plugin/skills/game-feel/SKILL.md` | covered |
+| `gameplay-review` | `claude-web-game-plugin/skills/gameplay-review/SKILL.md` | covered |
 | `localization` | `claude-web-game-plugin/skills/localization/SKILL.md` | covered |
 | `market-intelligence` | `claude-web-game-plugin/skills/market-intelligence/SKILL.md` | covered |
 | `monetization` | `claude-web-game-plugin/skills/monetization/SKILL.md` | covered |
+| `onboarding-ux` | `claude-web-game-plugin/skills/onboarding-ux/SKILL.md` | covered |
 | `opportunity-scoring` | `claude-web-game-plugin/skills/opportunity-scoring/SKILL.md` | covered |
 | `pixijs` | `claude-web-game-plugin/skills/pixijs/SKILL.md` | covered |
 | `platform-sdk` | `claude-web-game-plugin/skills/platform-sdk/SKILL.md` | covered |
+| `playtesting` | `claude-web-game-plugin/skills/playtesting/SKILL.md` | covered |
 | `qa` | `claude-web-game-plugin/skills/qa/SKILL.md` | covered |
 | `release` | `claude-web-game-plugin/skills/release/SKILL.md` | covered |
 | `threejs` | `claude-web-game-plugin/skills/threejs/SKILL.md` | covered |
+| `web-performance` | `claude-web-game-plugin/skills/web-performance/SKILL.md` | covered |
+
+## Production craft (binding manifest 1.2.0)
+
+The binding gained eight skills and wider must-read lists, all pointing into the new
+`core/craft/` playbooks (what a *good* game looks like inside the artifacts' existing
+fields). No agent, command, role, machine, gate or schema changed.
+
+- New skills: `art-direction`, `audio`, `core-loop`, `game-feel`, `gameplay-review`, `onboarding-ux`, `playtesting`, `web-performance`.
+- Existing skills widened: `game-design`, `monetization`, `architecture`, `pixijs`,
+  `threejs`, `assets`, `qa`, `release`, `market-intelligence`.
+- Agents: `gameplay` and `ui` now read the game-design schema and the feel/onboarding/UI
+  playbooks; `asset` reads `core/reference/asset-policy.yaml`, art direction and audio;
+  `qa` reads playtesting, web performance and accessibility; `architect` reads web
+  performance and the gameplay-review checklist; `game-designer`, `research`, `release` and
+  `sdk` gain their playbook.
+- Every agent's execution notes point at `core/craft/tool-capabilities.md` for external
+  tools. Concrete MCP servers are host configuration, mapped in
+  `docs/production-craft-and-mcp.md`, never adapter surfaces.
+- Skill entries in the binding now list their `reads:`, so `scripts/check-integrity.py`
+  verifies the skill paths too.
 
 ## Core v1 freeze: surfaces brought in line (binding manifest 1.1.0)
 

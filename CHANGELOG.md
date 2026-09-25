@@ -9,6 +9,27 @@ and `core/` is still the contract.
 
 ## [Unreleased]
 
+### Added
+
+- **`core/craft/`: production craft playbooks.** What a *good* web game looks like inside
+  the fields the artifacts already have: core loop and difficulty, game feel (a minimum
+  feedback bar, distinct from polish), onboarding and portal UX, UI/HUD/mobile, audio, art
+  direction, accessibility, web performance, playtesting (agent playthrough, stranger
+  playtest and performance pass protocols), a gameplay-review checklist, competitive
+  teardowns, and provider-neutral tool capability classes with their limits. Stage files
+  `design`, `prototype`, `qa` and `tech-plan` point at them. `prototype.md` clarifies that
+  the feedback bar is not the polish it warns against. *Migration:* none; no field, state
+  or gate changed.
+- **Adapter binding 1.2.0.** Eight new skills (`core-loop`, `game-feel`, `onboarding-ux`,
+  `audio`, `art-direction`, `web-performance`, `gameplay-review`, `playtesting`). Existing
+  skills and agent must-read lists are widened to the playbooks; `gameplay` and `ui` now
+  read the game-design schema, and `asset` reads the asset policy. Skill entries list their
+  `reads:`, which the integrity check verifies. Claude plugin 0.4.0; both adapters
+  regenerated. *Migration:* none.
+- `docs/production-craft-and-mcp.md`: skills and MCP tools by phase, what belongs in host
+  configuration versus the repository, and Factory-module follow-ups found in the audit
+  (F1-F7, not implemented).
+
 ## [1.1.0] - 2026-09-25
 
 Factory v1, usable (`docs/v1-usable.md`). Core v1 against the latest **released**

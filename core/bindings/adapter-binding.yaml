@@ -18,7 +18,7 @@
 # Each adapter carries a CONFORMANCE.md mapping every surface id below to its file, so
 # reviewing adapter completeness is a two-file diff rather than a directory crawl.
 
-version: 1.1.0
+version: 1.2.0
 
 surface_kinds:
   agent: A persistent role the runtime can delegate to.
@@ -39,6 +39,7 @@ agents:
       - core/artifacts/opportunity.schema.json
       - core/artifacts/research-report.schema.json
       - core/reference/dimensions.yaml
+      - core/craft/competitive-teardown.md
     produces: [claim, opportunity, research-report]
     consumes: []
 
@@ -66,6 +67,9 @@ agents:
       - core/artifacts/game-design.schema.json
       - core/reference/design-consistency-rules.yaml
       - core/templates/gdd.md
+      - core/craft/core-loop-and-difficulty.md
+      - core/craft/onboarding-and-portal-ux.md
+      - core/craft/art-direction.md
     produces: [title-strategy, game-design]
     consumes: [opportunity, evaluation, claim]
 
@@ -82,6 +86,8 @@ agents:
       - core/templates/tech-plan.md
       - core/lifecycle/stages/prototype.md
       - core/artifacts/review-report.schema.json
+      - core/craft/web-performance.md
+      - core/craft/gameplay-review.md
     produces: [tech-plan, review-report]
     consumes: [game-design, title-strategy, asset-manifest, prototype-report]
 
@@ -95,6 +101,9 @@ agents:
       - core/artifacts/verification-report.schema.json
       - core/artifacts/shared/gameplay-session.schema.json
       - core/templates/qa-report.md
+      - core/craft/playtesting.md
+      - core/craft/web-performance.md
+      - core/craft/accessibility.md
     produces: [verification-report, qa-report]
     consumes: [release-manifest, game-design, tech-plan, scaffold-record, asset-manifest, sdk-report]
 
@@ -118,6 +127,7 @@ agents:
       - core/artifacts/review-report.schema.json
       - core/reference/platforms/
       - core/templates/release-report.md
+      - core/craft/onboarding-and-portal-ux.md
     produces: [scaffold-record, release-manifest, platform-publication]
     consumes: [tech-plan, qa-report, verification-report, sdk-report, prototype-report, review-report, scaffold-record]
 
@@ -142,6 +152,9 @@ agents:
       - core/lifecycle/stages/production.md
       - core/artifacts/prototype-report.schema.json
       - core/artifacts/review-report.schema.json
+      - core/artifacts/game-design.schema.json
+      - core/craft/game-feel.md
+      - core/craft/core-loop-and-difficulty.md
     produces: [prototype-report]
     consumes: [tech-plan, game-design, review-report, qa-report]
 
@@ -151,6 +164,12 @@ agents:
     must_read:
       - core/roles/implementers.md
       - core/lifecycle/stages/production.md
+      - core/lifecycle/stages/prototype.md
+      - core/artifacts/game-design.schema.json
+      - core/craft/onboarding-and-portal-ux.md
+      - core/craft/ui-hud-mobile.md
+      - core/craft/accessibility.md
+      - core/craft/game-feel.md
     produces: []
     consumes: [game-design, tech-plan]
 
@@ -160,6 +179,9 @@ agents:
     must_read:
       - core/roles/implementers.md
       - core/artifacts/asset-manifest.schema.json
+      - core/reference/asset-policy.yaml
+      - core/craft/art-direction.md
+      - core/craft/audio.md
     produces: [asset-manifest]
     consumes: [game-design]
 
@@ -170,6 +192,7 @@ agents:
       - core/roles/implementers.md
       - core/reference/platforms/
       - core/artifacts/shared/platform-profile.schema.json
+      - core/craft/onboarding-and-portal-ux.md
     produces: [sdk-report]
     consumes: [tech-plan, game-design]
 
@@ -243,46 +266,193 @@ commands:
 skills:
   - id: market-intelligence
     supports: [research]
-    covers: Normalizing platform signal into tiered claims; evidence discipline.
+    covers: >
+      Normalizing platform signal into tiered claims and keeping evidence honest,
+      including competitive teardowns of how leading portal games actually play.
+    reads:
+      - core/lifecycle/stages/market-scan.md
+      - core/artifacts/shared/claim.schema.json
+      - core/craft/competitive-teardown.md
   - id: opportunity-scoring
     supports: [analysis]
-    covers: Scoring models, normalizers, vetoes, evidence coverage.
+    covers: >
+      Scoring models, normalizers, vetoes, and evidence coverage.
+    reads:
+      - core/lifecycle/stages/score-opportunity.md
+      - core/artifacts/shared/scoring-model.schema.json
+      - core/reference/scoring/portfolio-default.v1.yaml
   - id: game-design
     supports: [game-designer]
-    covers: Core loop, session, retention, scope tiers, consistency rules.
+    covers: >
+      Core loop, session structure, retention hooks, scope tiers, the build spec, and the
+      design consistency rules.
+    reads:
+      - core/lifecycle/stages/design.md
+      - core/artifacts/game-design.schema.json
+      - core/reference/design-consistency-rules.yaml
+      - core/craft/core-loop-and-difficulty.md
+      - core/craft/onboarding-and-portal-ux.md
+      - core/templates/gdd.md
+  - id: core-loop
+    supports: [game-designer, gameplay]
+    covers: >
+      Making the core loop worth repeating: decisions, risk and reward, mastery signals,
+      data-driven difficulty ramps, fast retry and session beats.
+    reads:
+      - core/craft/core-loop-and-difficulty.md
+      - core/artifacts/game-design.schema.json
+      - core/lifecycle/stages/strategy.md
+  - id: game-feel
+    supports: [gameplay, ui]
+    covers: >
+      Game feel and juice: the minimum feedback bar (input acknowledged, reward noticed,
+      failure understood), easing, hit-stop, shake and particle budgets, frame-rate
+      independence.
+    reads:
+      - core/craft/game-feel.md
+      - core/artifacts/game-design.schema.json
+  - id: onboarding-ux
+    supports: [ui, game-designer]
+    covers: >
+      The first 30 seconds on a web portal, tutorial approach, HUD and mobile touch
+      layout, accessibility baseline, and store presentation.
+    reads:
+      - core/craft/onboarding-and-portal-ux.md
+      - core/craft/ui-hud-mobile.md
+      - core/craft/accessibility.md
   - id: monetization
     supports: [game-designer, sdk]
-    covers: Placement design, platform ad capabilities and cadence limits.
+    covers: >
+      Placement design against platform ad capabilities and cadence limits, placed on beat
+      boundaries with stated player value.
+    reads:
+      - core/artifacts/game-design.schema.json
+      - core/reference/platforms/
+      - core/craft/onboarding-and-portal-ux.md
   - id: architecture
     supports: [architect]
-    covers: Engine selection, performance budgets, ownership split.
+    covers: >
+      Engine selection, performance budgets, and the generic/game/platform ownership
+      split.
+    reads:
+      - core/lifecycle/stages/tech-plan.md
+      - core/artifacts/tech-plan.schema.json
+      - core/craft/web-performance.md
   - id: development-planning
     supports: [architect]
-    covers: Milestones, tasks, acceptance criteria, test planning.
+    covers: >
+      Milestones, tasks, dependencies, acceptance criteria and test planning.
+    reads:
+      - core/artifacts/tech-plan.schema.json
+      - core/templates/tech-plan.md
+  - id: web-performance
+    supports: [architect, gameplay, qa]
+    covers: >
+      Web game performance: load and first-frame budgets, bundle splitting, atlases and
+      GPU-compressed assets, draw calls, memory, leaks on restart, low-end measurement.
+    reads:
+      - core/craft/web-performance.md
+      - core/artifacts/tech-plan.schema.json
   - id: pixijs
     supports: [gameplay, ui]
-    covers: 2D rendering, sprites, animation, particles.
+    covers: >
+      2D rendering with PixiJS: sprites, spritesheets, animation, particles, pooling and
+      batching.
+    reads:
+      - core/artifacts/tech-plan.schema.json
+      - core/craft/web-performance.md
+      - core/craft/game-feel.md
   - id: threejs
     supports: [gameplay]
-    covers: 3D scenes, GLB/GLTF, Draco/Meshopt, KTX2.
+    covers: >
+      3D with Three.js: scene management, GLB/GLTF, Draco/Meshopt, KTX2 textures,
+      disposal.
+    reads:
+      - core/artifacts/tech-plan.schema.json
+      - core/craft/web-performance.md
+      - core/craft/game-feel.md
   - id: assets
     supports: [asset]
-    covers: Asset manifest, sourcing, licensing, compression pipelines.
+    covers: >
+      Asset manifests, sourcing, licensing, provenance of generated assets, and
+      compression pipelines.
+    reads:
+      - core/artifacts/asset-manifest.schema.json
+      - core/reference/asset-policy.yaml
+      - core/craft/art-direction.md
+      - core/craft/audio.md
+  - id: art-direction
+    supports: [game-designer, asset]
+    covers: >
+      Turning the visual identity into a style sheet and keeping library, procedural and
+      generated assets coherent and readable.
+    reads:
+      - core/craft/art-direction.md
+      - core/lifecycle/stages/design.md
+      - core/reference/asset-policy.yaml
+  - id: audio
+    supports: [asset, gameplay]
+    covers: >
+      Game audio for the browser: unlock on first gesture, mute, cue lists per event, mix
+      and variation, size budgets.
+    reads:
+      - core/craft/audio.md
+      - core/reference/asset-policy.yaml
   - id: platform-sdk
     supports: [sdk]
-    covers: Platform abstraction, ads, cloud save, analytics wiring.
+    covers: >
+      The platform abstraction: ads, cloud save, leaderboards, analytics wiring.
+    reads:
+      - core/reference/platforms/
+      - core/artifacts/shared/platform-profile.schema.json
   - id: localization
     supports: [release, ui]
     covers: >
-      Required locales per platform, translation quality expectations, string extraction.
+      Required locales per platform, translation quality, string extraction.
       Exists because compliance and localization were previously assigned to nobody and
       were discovered at submission time.
+    reads:
+      - core/reference/platforms/
+      - core/artifacts/release-manifest.schema.json
+  - id: gameplay-review
+    supports: [architect]
+    covers: >
+      Reviewing a development commit read-only for the defects players feel: restart
+      state, frame-rate dependence, pause leakage, input handling, tuning as data, missing
+      feedback hooks.
+    reads:
+      - core/craft/gameplay-review.md
+      - core/lifecycle/stages/prototype.md
+      - core/artifacts/review-report.schema.json
+  - id: playtesting
+    supports: [qa, game-designer]
+    covers: >
+      Agent browser playthroughs that record a gameplay session, stranger playtest
+      protocol, and the performance pass that feed the prototype report and QA.
+    reads:
+      - core/craft/playtesting.md
+      - core/artifacts/shared/gameplay-session.schema.json
+      - core/artifacts/prototype-report.schema.json
+      - core/lifecycle/stages/prototype-review.md
   - id: qa
     supports: [qa]
-    covers: Test suites, device matrices, defect triage, performance measurement.
+    covers: >
+      Test suites, device matrices, defect triage, and performance measurement.
+    reads:
+      - core/lifecycle/stages/qa.md
+      - core/artifacts/verification-report.schema.json
+      - core/artifacts/qa-report.schema.json
+      - core/craft/playtesting.md
   - id: release
     supports: [release]
-    covers: Manifests, checksums, store metadata, platform assertions, submission.
+    covers: >
+      Manifests, checksums, store metadata and presentation, platform assertions, and
+      submission.
+    reads:
+      - core/lifecycle/stages/release-candidate.md
+      - core/lifecycle/stages/publish.md
+      - core/artifacts/release-manifest.schema.json
+      - core/craft/onboarding-and-portal-ux.md
 
 # ---------------------------------------------------------------------------
 # What an adapter must NOT do.

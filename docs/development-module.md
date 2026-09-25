@@ -66,6 +66,11 @@ the game, regenerated on every visit and committed with the code it asked for. I
 - **Report back** — `docs/development/report.json`: the developer's own account of each
   system, each MVP item, the placements, integration status, assets, scope deltas and
   known issues.
+- **Why this is another iteration** — on a visit a loop brought back (`brief.json` `loop`),
+  the route that did (`fail`, `request-changes`, `iterate`: the engine's
+  `context.entered_by`) and how many passes that route, and develop itself, have left before
+  the run stops for a person (`context.visit_budget`, from the workflow's
+  `max_visits_by_route`). Absent on a first visit.
 
 ## Developers
 
@@ -77,6 +82,10 @@ the game, regenerated on every visit and committed with the code it asked for. I
 `command` runs are bounded by `timeout_seconds` (wall clock) and, optionally,
 `idle_timeout_seconds` (no output at all for that long — a hung agent, not a slow one).
 Either is a retryable `FAILED`.
+
+A `command` developer is a paid agent session per attempt. Loop limits bound how often the
+work goes round between resumes; the run's [budget](#budget) bounds what the whole run may
+spend on those sessions.
 
 The provider, if any, is named only in the installation's `factory.yaml`. Host skills the
 brief recommends (PixiJS, Three.js, frontend design) are configured under
@@ -146,6 +155,62 @@ What an automated step can honestly claim is narrow, and the report keeps to it:
 Integration status and scope deltas come from the developer's report; MVP items reported
 `cut` or `deferred` and placeholder assets become scope deltas automatically.
 
+## Budget
+
+Loop limits (`max_visits`, `max_visits_by_route` in the workflow) bound the passes *per
+start or resume*, and every resume refills them - a person saying "one more pass". With a
+`command` developer each attempt of each visit is a paid agent session, so nothing there
+bounds a run. `factory.develop.budget` does:
+
+```yaml
+factory:
+  develop:
+    budget:
+      max_sessions: 12          # command-developer sessions in the whole run
+      max_cost: 60              # summed session cost, in the unit the host reports
+      cost_from:
+        jsonl_key: <key>        # read the cost from the transcript's JSON lines
+```
+
+Every key is optional; without `budget` there is none, as before. The installation's value
+is snapshotted into the run's params when the run starts (`develop_budget`, recorded in
+`WORKFLOW_STARTED` and corroborated on every resume), so a config change never reaches a
+running run and an edit of `state.json` is refused. A value the Factory cannot act on (not a
+positive number, an unknown key, `max_cost` without `cost_from`) refuses the run at start.
+
+**Sessions** are counted from the run's event log, never from memory or state, so neither a
+resume nor a crash gives one back. Before it spawns a command developer, develop emits a
+`STEP_LOG` with `data.budget: developer-session` and - when a budget is set - reads it back
+from `events.jsonl`; a session that cannot be shown on record is not started (`BLOCKED`).
+When the sessions already recorded reach `max_sessions`, develop returns `BLOCKED` - not
+retryable, no agent spawned - with `budget exhausted: N developer sessions used of N`. A
+handoff developer is a person, not a session: nothing is counted. A visit that already
+committed (a re-execution) spawns nothing and costs nothing.
+
+**Cost** is installation-configured, because the Factory names no provider: `cost_from:
+{jsonl_key: <key>}` reads the number under that key in the **last** JSON-object line of the
+session's transcript (`<run_dir>/develop/<visit>-<attempt>.log`) that holds the key -
+reading only what this session appended. After each session develop records a `STEP_LOG`
+with `data.budget: developer-cost` and the cost; when the recorded total reaches `max_cost`,
+the next session is refused like the session limit. A session with no readable cost (killed
+by a timeout, a host or output mode that reports none) is counted as a session, recorded with
+`known: false` and a warning, and left out of the sum - never guessed, never a failure. The
+agent host's own per-session flag (a maximum spend per session) therefore remains the bound
+on any single session; this is the bound on the run.
+
+For the headless host in `workspace/config/factory.yaml`'s commented example, the key is
+`total_cost_usd`: in `--output-format stream-json` the host's closing `result` line carries
+it (checked against the CLI binary, 2.1.282, which sets `total_cost_usd` on the `type:
+"result"` message; the host documents it as an estimate, not an invoice). A session the
+Factory's timeout kills never writes that line: its cost is unknown.
+
+**Raising** a budget is a person's act: `wgf resume <run-id> --budget-sessions N` and/or
+`--budget-cost X` records a `BUDGET_RAISED` event (`decided_by`, `decided_at`) and resumes.
+The effective limit is the largest of the snapshot and every raise a person recorded. It is
+refused from inside a step's process tree (`decided_by: automation` - an agent does not raise
+its own budget; the same rule as G4/G6/G7), for a run started without that limit, and for a
+value that is not positive; a `BUDGET_RAISED` recorded by automation counts for nothing.
+
 ## Configuration
 
 ```yaml
@@ -164,6 +229,10 @@ factory:
     writable_paths: [src/, tests/, public/, docs/development/, index.html]
     allowed_package_changes: {dependencies: [add], devDependencies: [add]}  # add|change|remove
     git: {allow_filters: false}       # true: commit through the repository's filters (git-lfs)
+    budget:                           # optional; see Budget. Snapshotted per run
+      max_sessions: 12
+      max_cost: 60
+      cost_from: {jsonl_key: <key>}
   agents:
     env_passthrough: []         # names (or PREFIX*) the developer's environment also carries
     game_env_passthrough: []    # names (or PREFIX*) the checks - game code - also carry
@@ -178,7 +247,10 @@ fake process runner: every outcome in contract §7 the step can produce, both de
 idempotency across re-execution and across visits, every conformance rule (and the
 template's own files not tripping them), and the full `new-game` workflow through the real
 engine with this module replacing the mock, the package.json comparison, the commit scope
-and the boundary settings. `WGF_AJV=1` adds an ajv validation of an emitted report
+and the boundary settings; the budget (`DevelopBudget`, `ReadCost`): sessions counted
+across a resume, `BLOCKED` at the limit with nothing spawned, a person's raise taking effect
+and one from inside a step refused, a cost summed from fake transcripts, an unknown cost
+tolerated; and the brief's loop provenance. `WGF_AJV=1` adds an ajv validation of an emitted report
 against the full schema.
 
 `scripts/tests/test_core_security.py` (`DeveloperBoundary`, `AgentEnvironment`) attacks

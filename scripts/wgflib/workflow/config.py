@@ -10,7 +10,7 @@ import copy
 import os
 import re
 
-from .. import paths
+from .. import budget, paths
 from ..yamllite import load_file
 from .definition import RetryPolicy
 from .model import DEFAULT_HUNG_OUTPUT_SECONDS
@@ -157,6 +157,16 @@ class FactoryConfig:
         if not isinstance(directory, str):
             raise ConfigError("factory.lifecycle.titles_directory must be a path")
         return os.path.abspath(os.path.join(base or paths.ROOT, directory))
+
+    @property
+    def develop_budget(self):
+        """factory.develop.budget as the snapshot a run records (wgflib.budget), or None for
+        no budget. Fail closed: a value that is not a budget raises ConfigError - a run is
+        not started under a limit nobody can tell apart from no limit."""
+        try:
+            return budget.parse(self.section("develop").get("budget"))
+        except budget.BudgetError as exc:
+            raise ConfigError(str(exc))
 
     @property
     def max_visits(self):

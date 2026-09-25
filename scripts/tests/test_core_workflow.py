@@ -2016,5 +2016,86 @@ class WatchdogParams(EngineCase):
             api({"on_hung": "kill"}).run(RunRequest(scope="develop", mock=True))
 
 
+# -- M13: loops into develop bounded per route; a run-level developer budget ------------------
+
+
+class RouteScopedLoops(_MockNewGame):
+    """new-game's four loops back into develop - review's and sdk-review's request-changes,
+    verify's fail, G4's iterate - each spend their own budget (max_visits_by_route)."""
+
+    def test_a_mock_new_game_still_stops_at_g4_and_completes_on_pass(self):
+        api, state = self.start()
+        self.assertEqual((state.status, state.cursor), (RunStatus.WAITING, "prototype-review"))
+        self.assertIsNone(state.blocked_reason)
+        state = api.run(RunRequest(resume=state.run_id, decision="pass", decided_by="human"))
+        self.assertEqual(state.status, RunStatus.COMPLETED, state.message)
+
+    def test_the_verify_loop_blocks_at_its_route_limit_with_a_structured_reason(self):
+        api, state = self.start(mock_plan={"verify": ["fail"] * 4})
+        self.assertEqual((state.status, state.cursor), (RunStatus.BLOCKED, "develop"))
+        self.assertEqual((state.blocked_reason["kind"], state.blocked_reason["route"],
+                          state.blocked_reason["scope"], state.blocked_reason["from"]),
+                         ("loop-limit", "fail", "route", "verify"))
+        # One more pass on resume: verify's fourth run fails once more (fail 1 of a fresh
+        # 2), its fifth passes, and the run waits at G4.
+        state = api.run(RunRequest(resume=state.run_id, decided_by="human"))
+        self.assertEqual((state.status, state.cursor), (RunStatus.WAITING, "prototype-review"),
+                         state.message)
+        self.assertEqual(state.steps["verify"].visits, 5)
+
+    def test_the_review_loop_does_not_spend_the_verify_loops_budget(self):
+        # Two requests for changes, then two failed verifications: under one shared
+        # max_visits of 3 the verify loop would have been starved; now both loops get theirs.
+        _, state = self.start(mock_plan={"review": ["request-changes"] * 2,
+                                         "verify": ["fail"] * 2})
+        self.assertEqual((state.status, state.cursor), (RunStatus.WAITING, "prototype-review"),
+                         state.message)
+        develop = state.steps["develop"]
+        self.assertEqual(develop.route_visits, {"success": 1, "request-changes": 2, "fail": 2})
+        self.assertEqual(develop.visits, 5)
+
+    def test_g4_iterate_has_its_own_budget(self):
+        api, state = self.start()
+        for _ in range(2):
+            state = api.run(RunRequest(resume=state.run_id, decision="iterate",
+                                       decided_by="human"))
+            self.assertEqual(state.cursor, "prototype-review", state.message)
+        self.assertEqual(state.steps["develop"].route_visits.get("iterate"), 2)
+        # A resume grants every route a fresh budget, so a third iterate is not refused by
+        # it: the loop limit is per start or resume, the session budget is per run.
+        state = api.run(RunRequest(resume=state.run_id, decision="iterate", decided_by="human"))
+        self.assertEqual(state.cursor, "prototype-review", state.message)
+
+    def test_a_run_blocked_before_blocked_reason_existed_still_resumes(self):
+        api, state = self.start(mock_plan={"verify": ["fail"] * 4})
+        path = os.path.join(api.store.run_dir(state.run_id), "state.json")
+        with open(path, encoding="utf-8") as handle:
+            data = json.load(handle)
+        data.pop("blocked_reason")
+        data["message"] = ("loop limit: develop has been entered 3 time(s) since the run last "
+                           "started or resumed (max_visits=3). Resume to allow more.")
+        for step in data["steps"].values():
+            for key in ("route_visits", "route_base", "entered_by"):
+                step.pop(key, None)
+        with open(path, "w", encoding="utf-8") as handle:
+            json.dump(data, handle)
+        state = api.run(RunRequest(resume=state.run_id, decided_by="human"))
+        self.assertEqual(state.cursor, "prototype-review", state.message)
+
+    def test_the_budget_is_snapshotted_and_corroborated_like_every_param(self):
+        api = WorkflowAPI(config=FactoryConfig({
+            "storage": {"fsync": False},
+            "develop": {"budget": {"max_sessions": 4, "max_cost": 20,
+                                   "cost_from": {"jsonl_key": "session_cost"}}}}),
+            store_dir=self.store_dir)
+        state = api.run(RunRequest(scope="develop", mock=True))
+        expected = {"max_sessions": 4, "max_cost": 20,
+                    "cost_from": {"jsonl_key": "session_cost"}}
+        self.assertEqual(state.params["develop_budget"], expected)
+        started = next(e for e in api.store.read_events(state.run_id)
+                       if e["event"] == Events.WORKFLOW_STARTED)
+        self.assertEqual(started["data"]["params"]["develop_budget"], expected)
+
+
 if __name__ == "__main__":
     unittest.main()

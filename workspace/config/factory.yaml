@@ -235,6 +235,21 @@ factory:
     #   allow_filters: false    # true only for a repository that commits through its own
     #                           # filters (git-lfs); a filter changed after the Factory
     #                           # pinned the repository is then refused, never run
+    # The run's budget for command-developer sessions (docs/development-module.md#budget).
+    # Loop limits (the workflow's max_visits_by_route) refill on every resume; this does
+    # not. Counted from the run's event log; develop BLOCKS - nothing spawned - once the
+    # sessions recorded reach max_sessions, or their recorded cost reaches max_cost.
+    # Snapshotted when a run starts; raised only by a person: wgf resume <run>
+    # --budget-sessions N | --budget-cost X. Absent: no budget. A handoff developer is a
+    # person and is never counted. A session whose cost cannot be read is counted as a
+    # session and reported as unknown: the host's own per-session flag (--max-budget-usd
+    # above) stays the bound on any one session.
+    # budget:
+    #   max_sessions: 12
+    #   max_cost: 60              # in the unit the host reports: US$ for the example above
+    #   cost_from:
+    #     jsonl_key: total_cost_usd   # stream-json's closing `result` line carries it; a
+    #                                 # session ended by a timeout writes none (unknown)
 
   # The review module (scripts/wgf_review, docs/review-module.md): an independent reviewer
   # reads each development commit - and, as sdk-review, the sdk integration commit on top,

@@ -36,12 +36,19 @@ found the file - before the engine acts on it:
     watchdog a run snapshots at start, among them - and their shape is checked here too.
     `lifecycle_sync` (factory.lifecycle.sync, snapshotted the same way) decides whether the
     run's gate decisions are written into workspace/titles, so it can be neither turned on
-    nor off by an edit.
+    nor off by an edit. `develop_budget` (factory.develop.budget, wgflib.budget) is the
+    run's developer-session budget: raised only by a person's BUDGET_RAISED event, never by
+    editing the snapshot.
+
+  * route-scoped visits: `route_visits` / `route_base` are counts per route, a base never
+    above its count, and together never more entries than `visits`; `blocked_reason` is
+    None or the structured reason the engine writes.
 
 Problems are reported as strings; the engine refuses to resume or continue a run that has
 any. Nothing here names a step type, a gate or a route.
 """
 
+from .. import budget
 from .config import ON_HUNG
 from .events import Events
 from .model import RunStatus, StepOutcome, StepStatus, parse_timestamp
@@ -103,6 +110,10 @@ def state_problems(state, definition):
                             f"of seconds")
         if on_hung == "cancel" and output is None:
             problems.append("params.on_hung is cancel without params.hung_output_seconds")
+        if budget.PARAM in state.params:
+            problems += budget.shape_problems(state.params[budget.PARAM],
+                                              f"params.{budget.PARAM}")
+    problems += _blocked_reason_problems(state, definition)
 
     for step_id, step in (state.steps or {}).items():
         where = f"steps.{step_id}"
@@ -120,6 +131,7 @@ def state_problems(state, definition):
                 problems.append(f"{where}.{name} is not a list of references")
         if step.waiting_since is not None and parse_timestamp(step.waiting_since) is None:
             problems.append(f"{where}.waiting_since {step.waiting_since!r} is not a timestamp")
+        problems += _route_problems(where, step)
 
     seqs = []
     for artifact_id, versions in (state.artifacts or {}).items():
@@ -178,6 +190,54 @@ def state_problems(state, definition):
             if not _count(visit) or step is None or not _count(step.visits) \
                     or visit > step.visits:
                 problems.append(f"{where}: visit {visit!r} is not a visit {step_id} has had")
+    return problems
+
+
+def _route_counts(value):
+    return isinstance(value, dict) and all(
+        isinstance(route, str) and route and _count(count) for route, count in value.items())
+
+
+def _route_problems(where, step):
+    problems = []
+    visits, base = step.route_visits, step.route_base
+    for name, value in (("route_visits", visits), ("route_base", base)):
+        if not _route_counts(value):
+            problems.append(f"{where}.{name} is not a mapping of routes to counts")
+    if problems:
+        return problems
+    for route, count in base.items():
+        if count > visits.get(route, 0):
+            problems.append(f"{where}.route_base.{route} {count} exceeds its route_visits "
+                            f"{visits.get(route, 0)}")
+    if _count(step.visits) and sum(visits.values()) > step.visits:
+        problems.append(f"{where}.route_visits count {sum(visits.values())} entries, more "
+                        f"than its visits {step.visits}")
+    if step.entered_by is not None and (not isinstance(step.entered_by, str)
+                                        or step.entered_by not in visits):
+        problems.append(f"{where}.entered_by {step.entered_by!r} is not a route it was "
+                        f"entered through")
+    return problems
+
+
+def _blocked_reason_problems(state, definition):
+    reason = state.blocked_reason
+    if reason is None:
+        return []
+    if not isinstance(reason, dict) or not isinstance(reason.get("kind"), str):
+        return ["blocked_reason is not a structured reason"]
+    problems = []
+    if state.status != RunStatus.BLOCKED:
+        problems.append(f"blocked_reason is set on a run that is {state.status}")
+    step_id = reason.get("step")
+    if not (isinstance(step_id, str) and definition.has_step(step_id)):
+        problems.append(f"blocked_reason.step {step_id!r} is not a step of workflow "
+                        f"{definition.id}")
+    elif step_id != state.cursor:
+        problems.append(f"blocked_reason.step {step_id!r} is not the run's cursor")
+    route = reason.get("route")
+    if route is not None and not isinstance(route, str):
+        problems.append(f"blocked_reason.route {route!r} is not a route")
     return problems
 
 

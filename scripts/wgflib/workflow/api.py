@@ -11,11 +11,11 @@ import datetime
 import importlib
 import os
 
-from .. import paths, procs
+from .. import budget, paths, procs
 from . import checkpoint, integrity, mock
 from .config import ConfigError, load_config
 from .definition import WORKFLOWS, load_definition
-from .engine import WorkflowEngine
+from .engine import EngineError, WorkflowEngine
 from .events import Events
 from .contracts import ArtifactContracts
 from .model import RunStatus, StepOutcome, StepStatus, derive_liveness
@@ -195,7 +195,7 @@ class RunRequest:
 
     def __init__(self, scope=None, mock=False, mock_plan=None, resume=None, from_step=None,
                  run_id=None, force=False, decision=None, note=None, project_id=None,
-                 hold_gates=False, decided_by=None):
+                 hold_gates=False, decided_by=None, budget_sessions=None, budget_cost=None):
         self.scope = scope
         self.mock = mock
         self.mock_plan = mock_plan
@@ -209,6 +209,9 @@ class RunRequest:
         self.hold_gates = hold_gates
         # None: default_decider() - "human", unless the command runs inside a step's tree.
         self.decided_by = decided_by
+        # With resume: raise the run's developer-session budget (wgflib.budget) to these.
+        self.budget_sessions = budget_sessions
+        self.budget_cost = budget_cost
 
 
 class WorkflowAPI:
@@ -318,11 +321,31 @@ class WorkflowAPI:
             # From the params the run carries; the engine refuses to drive a state.json whose
             # params differ from the ones it started with, so an edit cannot add or drop it.
             self._attach_lifecycle(engine, existing.params)
+            raising = request.budget_sessions is not None or request.budget_cost is not None
+            if raising and not request.resume:
+                raise EngineError("a budget is raised with resume: wgf resume <run-id> "
+                                  "--budget-sessions N | --budget-cost X")
             if request.resume:
                 decided_by = request.decided_by or default_decider()
+                operator_events = []
+                if raising:
+                    # A person's act, recorded as an event the develop step reads; never
+                    # an edit of the snapshot (which params corroboration refuses).
+                    if decided_by == "automation":
+                        raise EngineError(
+                            "budget raise refused: this command runs inside a Factory step's "
+                            "process tree (decided_by automation), and an agent does not "
+                            "raise its own budget. A person raises it, from outside the run.")
+                    try:
+                        raised = budget.check_raise(existing.params.get(budget.PARAM),
+                                                    request.budget_sessions,
+                                                    request.budget_cost)
+                    except budget.BudgetError as exc:
+                        raise EngineError(f"budget raise refused: {exc}")
+                    operator_events.append((budget.RAISED_EVENT, raised))
                 return engine.resume(run_id, from_step=request.from_step,
                                      decision=request.decision, decided_by=decided_by,
-                                     note=request.note)
+                                     note=request.note, operator_events=operator_events)
             return engine.continue_in(run_id, request.scope, force=request.force)
 
         params = {}
@@ -355,6 +378,12 @@ class WorkflowAPI:
         if self.config.lifecycle_sync:
             params["lifecycle_sync"] = True
             self._attach_lifecycle(engine, params)
+        # The developer-session budget (factory.develop.budget), snapshotted the same way:
+        # a resume keeps the budget the run started with - raised only by a person's
+        # BUDGET_RAISED event - and no budget records nothing.
+        develop_budget = self.config.develop_budget
+        if develop_budget is not None:
+            params[budget.PARAM] = develop_budget
 
         scope = request.scope
         if scope == engine.definition.id:

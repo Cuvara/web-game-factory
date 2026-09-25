@@ -208,6 +208,57 @@ class RefusesBrokenDefinitions(unittest.TestCase):
             self.assertIn("filename stem", str(caught.exception))
 
 
+ROUTED = """
+workflow:
+  id: routed
+  version: 1
+  steps:
+    - id: develop
+      type: develop
+      max_visits_by_route: LIMITS
+    - id: verify
+      type: verify
+      on:
+        fail: develop
+"""
+
+
+class RouteScopedVisitLimits(unittest.TestCase):
+    def test_a_route_into_the_step_parses(self):
+        step = parse(ROUTED.replace("LIMITS", "{fail: 2}")).step("develop")
+        self.assertEqual(step.max_visits_by_route, {"fail": 2})
+        self.assertEqual(parse(MINIMAL).step("a").max_visits_by_route, {})
+
+    def test_success_counts_as_a_route_into_the_step_after(self):
+        text = ROUTED.replace("max_visits_by_route: LIMITS", "").replace(
+            "      type: verify\n", "      type: verify\n      max_visits_by_route: "
+                                     "{success: 1}\n")
+        self.assertEqual(parse(text).step("verify").max_visits_by_route, {"success": 1})
+
+    def test_a_route_that_does_not_enter_the_step_is_refused(self):
+        for limits, needle in (("{request-changes: 2}", "no route into it"),
+                               ("{success: 2}", "no route into it"),
+                               ("{fail: 0}", "integer >= 1"),
+                               ("{fail: true}", "integer >= 1"),
+                               ("{fail: 1.5}", "integer >= 1"),
+                               ("[fail]", "must be a mapping")):
+            with self.assertRaises(DefinitionError, msg=limits) as caught:
+                parse(ROUTED.replace("LIMITS", limits))
+            self.assertIn(needle, str(caught.exception), limits)
+
+    def test_the_shipped_new_game_bounds_each_loop_into_develop(self):
+        definition = load_definition("new-game")
+        develop = definition.step("develop")
+        self.assertEqual(develop.max_visits_by_route,
+                         {"request-changes": 2, "fail": 2, "iterate": 2})
+        # develop's own limit never cuts a loop short of its route budget, and every step
+        # of the loop after develop is visited at most once per develop visit.
+        self.assertEqual(develop.max_visits, 1 + sum(develop.max_visits_by_route.values()))
+        for step_id in ("review", "sdk", "sdk-review", "verify", "prototype-review"):
+            self.assertGreaterEqual(definition.step(step_id).max_visits, develop.max_visits,
+                                    step_id)
+
+
 class RetryPolicyDelays(unittest.TestCase):
     def test_exponential_doubles_from_the_first_retry_and_caps(self):
         policy = RetryPolicy(max_attempts=6, backoff="exponential", delay_seconds=1,

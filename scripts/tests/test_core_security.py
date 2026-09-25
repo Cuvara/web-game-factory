@@ -1573,5 +1573,90 @@ class CheckoutResolution(unittest.TestCase):
                             {"WGF_GAME_REPO": "/srv/game"})
 
 
+# -- loop and session budgets (M13) ----------------------------------------------------------
+
+
+ROUTED_LOOP = LOOP.replace("    max_visits: 3\n", "    max_visits: 10\n").replace(
+    "      outputs: [build]\n", "      outputs: [build]\n      max_visits_by_route: {fail: 2}\n", 1)
+
+
+class BudgetTampering(StateCase):
+    """Neither the loop budget per route nor the developer-session budget is bought back by
+    editing state.json: route counters are integrity-checked like loop_base, and the budget
+    snapshot is corroborated against WORKFLOW_STARTED like every param."""
+
+    def defects(self):
+        return StepResult(StepOutcome.FAILED, route="fail", retryable=False, error="defects")
+
+    def route_blocked(self):
+        self.script.set("verify", *[self.defects()] * 5)
+        engine = self.engine(ROUTED_LOOP)
+        run = engine.start(params={"develop_budget": {"max_sessions": 3}})
+        self.assertEqual(run.blocked_reason["route"], "fail")
+        return engine, run
+
+    def test_raising_the_session_budget_in_state_json_is_refused(self):
+        engine, run = self.route_blocked()
+        self.tamper(run.run_id, lambda d: d["params"]["develop_budget"].update(max_sessions=99))
+        self.assert_refused(engine, run.run_id, "params.develop_budget")
+
+    def test_dropping_the_session_budget_from_state_json_is_refused(self):
+        engine, run = self.route_blocked()
+        self.tamper(run.run_id, lambda d: d["params"].pop("develop_budget"))
+        self.assert_refused(engine, run.run_id, "params.develop_budget")
+
+    def test_a_malformed_budget_is_refused(self):
+        self.script.set("verify", *[self.defects()] * 5)
+        engine = self.engine(ROUTED_LOOP)
+        run = engine.start(params={"develop_budget": {"max_sessions": -1}})
+        self.assert_refused(engine, run.run_id, "max_sessions")
+
+    def test_a_route_base_above_its_count_is_refused(self):
+        engine, run = self.route_blocked()
+        self.tamper(run.run_id,
+                    lambda d: d["steps"]["develop"].update(route_base={"fail": 50}))
+        self.assert_refused(engine, run.run_id, "route_base")
+
+    def test_route_counters_that_are_not_counts_are_refused(self):
+        engine, run = self.route_blocked()
+        self.tamper(run.run_id,
+                    lambda d: d["steps"]["develop"].update(route_visits={"fail": -3}))
+        self.assert_refused(engine, run.run_id, "route_visits")
+
+    def test_a_forged_blocked_reason_is_refused(self):
+        engine, run = self.route_blocked()
+        self.tamper(run.run_id, lambda d: d["blocked_reason"].update(step="release"))
+        self.assert_refused(engine, run.run_id, "blocked_reason")
+
+    def test_a_budget_raise_from_inside_a_step_is_refused(self):
+        engine, run = self.route_blocked()
+        # Inside a step's tree the command line is automation's (the CLI and API refusals
+        # on top of this are test_workflow_cli.BudgetRaise and test_develop_module)...
+        with mock_env_patch({"WGF_PROC_TAG": "a-step-child"}):
+            decider = api_module.default_decider()
+        self.assertEqual(decider, "automation")
+        # ...and the engine itself refuses automation's operator event, whoever calls it.
+        with self.assertRaisesRegex(EngineError, "automation"):
+            engine.resume(run.run_id, decided_by=decider,
+                          operator_events=[("BUDGET_RAISED", {"max_sessions": 100})])
+        self.assertFalse([e for e in self.store.read_events(run.run_id)
+                          if e["event"] == "BUDGET_RAISED"])
+
+    def test_a_raise_recorded_by_automation_counts_for_nothing(self):
+        from wgflib import budget
+        params = {"develop_budget": {"max_sessions": 2}}
+        events = [{"event": "BUDGET_RAISED", "data": {"max_sessions": 50,
+                                                      "decided_by": "automation"}},
+                  {"event": "BUDGET_RAISED", "data": {"max_sessions": 60}},
+                  {"event": "BUDGET_RAISED", "data": {"max_sessions": 1,
+                                                      "decided_by": "human"}}]
+        self.assertEqual(budget.effective(params, events)["max_sessions"], 2)
+
+
+def mock_env_patch(values):
+    from unittest import mock as _mock
+    return _mock.patch.dict(os.environ, values)
+
+
 if __name__ == "__main__":
     unittest.main()

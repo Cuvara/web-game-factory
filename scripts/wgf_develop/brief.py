@@ -142,7 +142,8 @@ def _pin(artifact_type, content, ref):
 
 def build_brief(*, title_id, engine, iteration, key, baseline, design, assets, scaffold,
                 strategy=None, qa=None, previous_checks=None, refs=None, skills=None,
-                review=None, mobile_test=True, writable_paths=None, package_changes=None):
+                review=None, mobile_test=True, writable_paths=None, package_changes=None,
+                loop=None):
     """The brief as data. `render_markdown` turns it into the document a developer reads."""
     refs = refs or {}
     writable_paths = list(DEFAULT_WRITABLE if writable_paths is None else writable_paths)
@@ -239,6 +240,9 @@ def build_brief(*, title_id, engine, iteration, key, baseline, design, assets, s
         "review_blockers": review_blockers,
         "reviewed_commit": (review or {}).get("reviewed_commit") if review_blockers else None,
         "previous_failures": failures,
+        # Which route brought the work back here, and what that route has left of its
+        # visit budget (the engine's max_visits_by_route); None on a first visit.
+        "loop": dict(loop) if loop else None,
         "skills": {k: host_skills[k] for k in ("ui", engine) if k in host_skills},
         "report_path": REPORT_PATH,
         # What verification will demand browser evidence for (wgf_verification computes the
@@ -442,6 +446,22 @@ def render_markdown(brief):
     add("- All of `pnpm typecheck`, `pnpm lint`, `pnpm test`, `pnpm build` and "
         "`pnpm test:e2e` must pass. Run `pnpm format:write` before you finish.")
     add("")
+
+    loop = brief.get("loop")
+    if loop:
+        add("## Why this is another iteration\n")
+        route_budget = loop.get("route_budget") or {}
+        step_budget = loop.get("step_budget") or {}
+        line = f"The run came back to development through `{loop['entered_by']}`"
+        if route_budget.get("limit"):
+            line += (f": pass {route_budget.get('used')} of {route_budget.get('limit')} this "
+                     f"route allows before the run stops for a person "
+                     f"({route_budget.get('remaining')} left after this one)")
+        add(line + ".")
+        if step_budget.get("limit"):
+            add(f"Development visits since the run last started or resumed: "
+                f"{step_budget.get('used')} of {step_budget.get('limit')}.")
+        add("Fix what sent it back first; a pass that does not fix it is one fewer left.\n")
 
     if brief["qa_defects"]:
         add("## Fix first: blocking defects from verification\n")

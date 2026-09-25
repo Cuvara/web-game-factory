@@ -8,6 +8,9 @@ Every command that does work is a slice of one workflow definition, executed by 
                                          one step, or a group of steps (`plan`)
     wgf resume <run-id> [--from STEP]    continue a run from where it stopped
     wgf resume <run-id> --decision CHOICE [--note TEXT]
+    wgf resume <run-id> --budget-sessions N [--budget-cost X]
+                                         raise the run's developer-session budget, as a
+                                         person (refused from inside a step's process tree)
     wgf decide <run-id> CHOICE [--note TEXT]
                                          answer a run waiting at a human checkpoint
     wgf <cmd> --resume <run-id> [...]    the same as `wgf resume`, whatever <cmd> is
@@ -402,6 +405,12 @@ def build_parser(commands):
                         help="restart at this step")
     resume.add_argument("--decision", metavar="CHOICE", help="answer a waiting checkpoint")
     resume.add_argument("--note", metavar="TEXT", help="rationale recorded with --decision")
+    resume.add_argument("--budget-sessions", metavar="N", type=int,
+                        help="raise the run's developer-session budget to N sessions "
+                             "(factory.develop.budget.max_sessions), recorded as BUDGET_RAISED")
+    resume.add_argument("--budget-cost", metavar="X", type=float,
+                        help="raise the run's developer cost budget to X "
+                             "(factory.develop.budget.max_cost), recorded as BUDGET_RAISED")
     resume.add_argument("--json", action="store_true", help="print events as JSON lines")
     resume.add_argument("--quiet", action="store_true", help="print only the final status")
     resume.set_defaults(handler=cmd_resume)
@@ -562,7 +571,8 @@ def cmd_resume(args):
     progress = Progress(sys.stdout, as_json=args.json)
     api = _api(args, subscribers=() if args.quiet else (progress,))
     request = RunRequest(resume=args.run, from_step=args.from_step,
-                         decision=args.decision, note=args.note)
+                         decision=args.decision, note=args.note,
+                         budget_sessions=args.budget_sessions, budget_cost=args.budget_cost)
     return exit_code(_drive(api, args, request))
 
 

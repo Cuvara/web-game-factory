@@ -621,5 +621,192 @@ class Store(EngineCase):
         self.assertEqual(self.store.latest().run_id, second.run_id)
 
 
+# Two loops into one step, each with its own budget (M13): review's request-changes and
+# verify's fail both go back to `develop`, whose overall max_visits leaves room for both.
+ROUTED = """
+workflow:
+  id: routed
+  version: 1
+  defaults:
+    retry: {max_attempts: 1}
+    max_visits: 10
+  steps:
+    - id: develop
+      type: develop
+      outputs: [build]
+      max_visits_by_route: {request-changes: 2, fail: 2}
+    - id: review
+      type: review
+      inputs: [build]
+      outputs: [notes]
+      on:
+        request-changes: develop
+    - id: verify
+      type: verify
+      inputs: [build]
+      outputs: [report]
+      on:
+        fail: develop
+    - id: release
+      type: release
+"""
+
+
+def request_changes():
+    return StepResult(StepOutcome.FAILED, route="request-changes", retryable=False,
+                      error="changes requested")
+
+
+def verify_fails():
+    return StepResult(StepOutcome.FAILED, route="fail", retryable=False, error="defects")
+
+
+class RouteScopedVisits(EngineCase):
+    def test_a_verify_loop_blocks_at_its_own_route_limit(self):
+        self.script.set("verify", *[verify_fails()] * 10)
+        state = self.engine(ROUTED).start()
+        self.assertEqual((state.status, state.cursor), (RunStatus.BLOCKED, "develop"))
+        self.assertIn("loop limit", state.message)
+        self.assertIn("'fail'", state.message)
+        self.assertEqual(self.script.executed().count("develop"), 3)  # first + 2 fails
+        self.assertEqual(state.steps["develop"].route_visits, {"fail": 2})
+        self.assertEqual(state.blocked_reason, {
+            "kind": "loop-limit", "step": "develop", "route": "fail", "scope": "route",
+            "limit": 2, "entered": 2, "from": "verify"})
+        blocked = [e for e in self.events if e["event"] == Events.WORKFLOW_BLOCKED][-1]
+        self.assertEqual(blocked["data"]["blocked"], state.blocked_reason)
+
+    def test_a_review_loop_blocks_at_its_own_route_limit(self):
+        self.script.set("review", *[request_changes()] * 10)
+        state = self.engine(ROUTED).start()
+        self.assertEqual(state.status, RunStatus.BLOCKED)
+        self.assertEqual(state.blocked_reason["route"], "request-changes")
+        self.assertEqual(state.blocked_reason["from"], "review")
+        self.assertEqual(self.script.executed().count("develop"), 3)
+        self.assertNotIn("verify", self.script.executed())
+
+    def test_one_route_spending_its_budget_leaves_the_other_untouched(self):
+        # Two requests for changes (the whole request-changes budget), then two failed
+        # verifications: the fail loop still gets both of its passes.
+        self.script.set("review", request_changes(), request_changes())
+        self.script.set("verify", verify_fails(), verify_fails())
+        state = self.engine(ROUTED).start()
+        self.assertEqual(state.status, RunStatus.COMPLETED, state.message)
+        self.assertEqual(state.steps["develop"].route_visits,
+                         {"request-changes": 2, "fail": 2})
+        self.assertEqual(state.steps["develop"].visits, 5)
+        # Under the old shared budget (max_visits 3) the fail loop would have been starved.
+        self.script.set("review", request_changes(), request_changes())
+        self.script.set("verify", verify_fails(), verify_fails())
+        starved = self.engine(ROUTED.replace("max_visits: 10", "max_visits: 3")).start()
+        self.assertEqual(starved.blocked_reason["scope"], "step")
+
+    def test_the_step_limit_still_holds(self):
+        self.script.set("verify", *[verify_fails()] * 10)
+        state = self.engine(ROUTED.replace("max_visits: 10", "max_visits: 2")).start()
+        self.assertEqual(state.status, RunStatus.BLOCKED)
+        self.assertEqual((state.blocked_reason["scope"], state.blocked_reason["limit"]),
+                         ("step", 2))
+        self.assertIn("max_visits=2", state.message)
+
+    def test_resume_after_a_route_limit_gives_one_more_pass_and_a_fresh_budget(self):
+        self.script.set("verify", *[verify_fails()] * 3)
+        engine = self.engine(ROUTED)
+        state = engine.start()
+        self.assertEqual(state.blocked_reason["route"], "fail")
+        resumed = engine.resume(state.run_id)
+        # One more pass through the stopped route (fail, 1 of a fresh 2), then verify's
+        # script is spent and it passes.
+        self.assertEqual(resumed.status, RunStatus.COMPLETED, resumed.message)
+        develop = resumed.steps["develop"]
+        self.assertEqual((develop.visits, develop.route_visits, develop.route_base),
+                         (4, {"fail": 3}, {"fail": 2}))
+        self.assertIsNone(resumed.blocked_reason)
+        resumed_event = [e for e in self.events if e["event"] == Events.WORKFLOW_RESUMED][-1]
+        self.assertEqual(resumed_event["data"]["loop_limit"]["route"], "fail")
+
+    def test_resume_is_decided_by_the_structured_reason_not_the_message(self):
+        self.script.set("verify", *[verify_fails()] * 3)
+        engine = self.engine(ROUTED)
+        state = engine.start()
+        saved = self.store.load(state.run_id)
+        saved.message = "something else entirely"
+        self.store.save(saved)
+        self.assertEqual(engine.resume(state.run_id).steps["develop"].visits, 4)
+
+    def test_an_old_run_blocked_by_message_alone_still_resumes(self):
+        self.script.set("verify", *[verify_fails()] * 3)
+        engine = self.engine(LOOP)
+        state = engine.start()
+        # As a run written before blocked_reason and route counters existed.
+        path = os.path.join(self.store.run_dir(state.run_id), "state.json")
+        with open(path, encoding="utf-8") as handle:
+            data = json.load(handle)
+        data.pop("blocked_reason")
+        for step in data["steps"].values():
+            for key in ("route_visits", "route_base", "entered_by"):
+                step.pop(key)
+        with open(path, "w", encoding="utf-8") as handle:
+            json.dump(data, handle)
+        resumed = engine.resume(state.run_id)
+        self.assertEqual(resumed.status, RunStatus.COMPLETED, resumed.message)
+        self.assertEqual(resumed.steps["develop"].visits, 4)
+
+    def test_a_step_is_told_which_route_brought_it_and_what_is_left(self):
+        seen = []
+
+        def record(inputs, context):
+            seen.append((context.entered_by, context.visit_budget["route"]))
+            return StepResult.success([ArtifactOutput("build", {})])
+
+        self.script.set("develop", record, record)
+        self.script.set("verify", verify_fails())
+        self.engine(ROUTED).start()
+        self.assertEqual(seen, [
+            (None, None),
+            ("fail", {"route": "fail", "limit": 2, "used": 1, "remaining": 1})])
+        started = [e["data"] for e in self.events
+                   if e["event"] == Events.STEP_STARTED and e.get("step_id") == "develop"]
+        self.assertEqual([d.get("entered_by") for d in started], [None, "fail"])
+
+    def test_a_step_can_read_the_runs_recorded_events(self):
+        counts = []
+        self.script.set("b", lambda inputs, context: (
+            counts.append(len(context.read_events())),
+            StepResult.success([ArtifactOutput("art-b", {})]))[1])
+        self.engine(LINEAR).start()
+        self.assertGreater(counts[0], 3)
+
+
+class OperatorEvents(EngineCase):
+    def blocked_run(self):
+        self.script.set("verify", *[verify_fails()] * 3)
+        engine = self.engine(ROUTED)
+        return engine, engine.start()
+
+    def test_a_person_records_one_with_a_resume(self):
+        engine, state = self.blocked_run()
+        engine.resume(state.run_id, operator_events=[("BUDGET_RAISED", {"max_sessions": 9})])
+        recorded = [e for e in self.store.read_events(state.run_id)
+                    if e["event"] == "BUDGET_RAISED"]
+        self.assertEqual(len(recorded), 1)
+        self.assertEqual(recorded[0]["data"]["max_sessions"], 9)
+        self.assertEqual(recorded[0]["data"]["decided_by"], "human")
+
+    def test_automation_and_the_engines_own_events_are_refused(self):
+        engine, state = self.blocked_run()
+        for event, data, decider in (("BUDGET_RAISED", {"max_sessions": 9}, "automation"),
+                                     ("DECISION_RECORDED", {"decision": "pass"}, "human"),
+                                     ("WORKFLOW_STARTED", {"params": {}}, "human"),
+                                     ("budget_raised", {"x": 1}, "human"),
+                                     ("BUDGET_RAISED", {"decided_by": "human"}, "human")):
+            with self.assertRaises(EngineError, msg=event):
+                engine.resume(state.run_id, operator_events=[(event, data)],
+                              decided_by=decider)
+        self.assertEqual(self.store.load(state.run_id).status, RunStatus.BLOCKED)
+        self.assertFalse([e for e in self.store.read_events(state.run_id)
+                          if e["event"] == "BUDGET_RAISED"])
+
+
 if __name__ == "__main__":
     unittest.main()

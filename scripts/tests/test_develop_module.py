@@ -412,6 +412,28 @@ class Command(DevelopCase):
         self.assertEqual(argv[:2], ["agent", "-p"])
         self.assertIn(os.path.join(self.repo, briefs.BRIEF_DIR, "brief.md"), argv[2])
 
+    def test_the_brief_says_which_route_brought_the_work_back_and_what_it_has_left(self):
+        ctx = context(self.command_config(), key="run-1:develop:3", visit=3)
+        ctx.entered_by = "fail"
+        ctx.visit_budget = {"step": {"limit": 7, "used": 3, "remaining": 4},
+                            "route": {"route": "fail", "limit": 2, "used": 2, "remaining": 0}}
+        result = step_with(FakeRunner(on_develop=write_game)).execute(inputs_for(), ctx)
+        self.assertEqual(result.outcome, StepOutcome.SUCCESS, result.error)
+        with open(os.path.join(self.repo, briefs.BRIEF_DIR, "brief.json")) as handle:
+            loop = json.load(handle)["loop"]
+        self.assertEqual(loop["entered_by"], "fail")
+        self.assertEqual(loop["route_budget"]["remaining"], 0)
+        with open(os.path.join(self.repo, briefs.BRIEF_DIR, "brief.md")) as handle:
+            text = handle.read()
+        self.assertIn("## Why this is another iteration", text)
+        self.assertIn("through `fail`: pass 2 of 2", text)
+        # A first visit says nothing of loops.
+        first = context(self.command_config(), key="run-2:develop:1")
+        first.entered_by = None
+        step_with(FakeRunner(on_develop=write_game)).execute(inputs_for(), first)
+        with open(os.path.join(self.repo, briefs.BRIEF_DIR, "brief.json")) as handle:
+            self.assertIsNone(json.load(handle)["loop"])
+
     def test_a_failing_developer_is_retryable(self):
         runner = FakeRunner(develop_exit=2)
         result = step_with(runner).execute(inputs_for(), context(self.command_config()))
@@ -833,6 +855,193 @@ class ThroughTheEngine(unittest.TestCase):
         self.assertEqual(set(step.inputs), {"game-design", "asset-manifest", "scaffold-record",
                                             "title-strategy", "qa-report", "review-report"})
         self.assertEqual(list(step.outputs), ["prototype-report"])
+
+
+class CostRunner(FakeRunner):
+    """A fake command developer that writes a transcript, as a host in a JSON-lines output
+    mode would: progress lines, then a last line reporting the session's cost under
+    `session_cost` - or, with cost=None, no cost at all. Records every spawn."""
+
+    def __init__(self, costs=(), **kwargs):
+        super().__init__(**kwargs)
+        self.costs = list(costs)
+        self.transcripts = []
+
+    def run(self, argv, cwd, timeout=None, env=None, log_path=None):
+        if argv[0] in ("git", "pnpm"):
+            return super().run(argv, cwd, timeout, env)
+        cost = self.costs.pop(0) if self.costs else None
+        if log_path:
+            self.transcripts.append(log_path)
+            with open(log_path, "a", encoding="utf-8") as handle:
+                handle.write('[stdout] {"type": "progress", "turn": 1}\n')
+                handle.write("[stdout] plain text the host printed\n")
+                handle.write('[stdout] {"type": "end"'
+                             + (f', "session_cost": {cost}' if cost is not None else "")
+                             + "}\n")
+        return super().run(argv, cwd, timeout, env)
+
+
+@unittest.skipUnless(HAS_GIT, "git is not installed")
+class DevelopBudget(unittest.TestCase):
+    """factory.develop.budget: a run-level bound on developer sessions that a resume does
+    not reset, counted from the run's event log (M13)."""
+
+    setUp = ThroughTheEngine.setUp
+
+    def api(self, budget=None, runner=None, attempts=3):
+        runner = runner or FakeRunner(on_develop=write_game)
+
+        class Step(DevelopStep):
+            runner_factory = staticmethod(lambda: runner)
+
+        class API(WorkflowAPI):
+            def registry(self, use_mock):
+                registry = StepRegistry()
+                register_checkpoint(registry)
+                mock.register(registry)
+                registry.register("develop", Step)
+                return registry
+
+        develop = {"checkouts": os.path.join(self.scratch, "checkouts"), "author": AUTHOR,
+                   "developer": {"kind": "command", "argv": ["agent", "{brief}"]}}
+        if budget is not None:
+            develop["budget"] = budget
+        config = FactoryConfig({
+            "storage": {"fsync": False}, "checkpoints": {"auto_approve": ["G2", "G3"]},
+            "execution": {"max_attempts": attempts, "backoff": "none"},
+            "develop": develop,
+            "review": {"guarded_paths": [os.path.join(self.scratch, "factory")]},
+        })
+        return API(config=config, store_dir=os.path.join(self.scratch, "store")), runner
+
+    def budget_events(self, api, run_id, kind):
+        return [e["data"] for e in api.store.read_events(run_id)
+                if e["event"] == "STEP_LOG" and (e.get("data") or {}).get("budget") == kind]
+
+    def test_no_budget_changes_nothing(self):
+        api, runner = self.api()
+        state = api.run(RunRequest(project_id=TITLE))
+        self.assertEqual(state.cursor, "prototype-review", state.message)
+        self.assertNotIn("develop_budget", state.params)
+        # Sessions are still recorded, for the record; nothing is enforced.
+        self.assertEqual(len(self.budget_events(api, state.run_id, "developer-session")), 1)
+
+    def test_blocked_at_the_limit_without_spawning_and_counted_across_a_resume(self):
+        api, runner = self.api({"max_sessions": 2}, FakeRunner(develop_exit=1))
+        state = api.run(RunRequest(project_id=TITLE))
+        self.assertEqual((state.status, state.cursor), (RunStatus.BLOCKED, "develop"))
+        self.assertIn("budget exhausted: 2 developer sessions used of 2",
+                      state.steps["develop"].message)
+        self.assertEqual(len(runner.developer_calls()), 2)
+        self.assertEqual(state.params["develop_budget"], {"max_sessions": 2})
+        # A resume refills loop and attempt budgets - not this one.
+        again = api.run(RunRequest(resume=state.run_id, decided_by="human"))
+        self.assertEqual(again.status, RunStatus.BLOCKED)
+        self.assertIn("budget exhausted: 2 developer sessions used of 2",
+                      again.steps["develop"].message)
+        self.assertEqual(len(runner.developer_calls()), 2)
+
+    def test_a_session_is_on_record_before_the_developer_is_spawned(self):
+        seen = []
+        api = None
+
+        def develop(cwd):
+            run_id = api.store.latest().run_id
+            seen.append(len(self.budget_events(api, run_id, "developer-session")))
+            write_game(cwd)
+
+        api, runner = self.api({"max_sessions": 5}, FakeRunner(on_develop=develop))
+        state = api.run(RunRequest(project_id=TITLE))
+        self.assertEqual(state.cursor, "prototype-review", state.message)
+        self.assertEqual(seen, [1])
+
+    def test_a_person_raises_the_budget_and_it_takes_effect(self):
+        api, runner = self.api({"max_sessions": 1}, FakeRunner(develop_exit=1))
+        state = api.run(RunRequest(project_id=TITLE))
+        self.assertEqual(len(runner.developer_calls()), 1)
+        state = api.run(RunRequest(resume=state.run_id, decided_by="human", budget_sessions=2))
+        self.assertEqual(len(runner.developer_calls()), 2)
+        self.assertIn("used of 2", state.steps["develop"].message)
+        raised = [e for e in api.store.read_events(state.run_id)
+                  if e["event"] == "BUDGET_RAISED"]
+        self.assertEqual([(e["data"]["max_sessions"], e["data"]["decided_by"])
+                          for e in raised], [(2, "human")])
+        # The snapshot is untouched: the raise is the event, not an edit of params.
+        self.assertEqual(state.params["develop_budget"], {"max_sessions": 1})
+
+    def test_a_raise_from_inside_a_step_is_refused(self):
+        api, runner = self.api({"max_sessions": 1}, FakeRunner(develop_exit=1))
+        state = api.run(RunRequest(project_id=TITLE))
+        with mock_env.patch.dict(os.environ, {"WGF_PROC_TAG": "a-step-child"}):
+            with self.assertRaisesRegex(Exception, "an agent does not raise its own budget"):
+                api.run(RunRequest(resume=state.run_id, budget_sessions=50))
+        self.assertFalse([e for e in api.store.read_events(state.run_id)
+                          if e["event"] == "BUDGET_RAISED"])
+        self.assertEqual(len(runner.developer_calls()), 1)
+
+    def test_a_raise_needs_a_budget_to_raise(self):
+        api, _ = self.api(None, FakeRunner(develop_exit=1))
+        state = api.run(RunRequest(project_id=TITLE))
+        with self.assertRaisesRegex(Exception, "nothing to raise"):
+            api.run(RunRequest(resume=state.run_id, decided_by="human", budget_sessions=5))
+
+    def test_cost_is_summed_from_the_transcripts_and_blocks_at_the_limit(self):
+        runner = CostRunner(costs=[6, 6, 6], develop_exit=1)
+        api, _ = self.api({"max_cost": 10, "cost_from": {"jsonl_key": "session_cost"}},
+                          runner)
+        state = api.run(RunRequest(project_id=TITLE))
+        self.assertEqual(state.status, RunStatus.BLOCKED)
+        self.assertEqual(len(runner.developer_calls()), 2)
+        costs = self.budget_events(api, state.run_id, "developer-cost")
+        self.assertEqual([c.get("cost") for c in costs], [6, 6])
+        self.assertIn("budget exhausted: developer cost 12 recorded of 10",
+                      state.steps["develop"].message)
+        # Each transcript is the run's, one per visit and attempt.
+        self.assertEqual([os.path.basename(p) for p in runner.transcripts],
+                         ["1-1.log", "1-2.log"])
+
+    def test_an_unknown_cost_is_reported_and_tolerated(self):
+        runner = CostRunner(costs=[None], on_develop=write_game)
+        api, _ = self.api({"max_cost": 10, "cost_from": {"jsonl_key": "session_cost"}},
+                          runner)
+        state = api.run(RunRequest(project_id=TITLE))
+        self.assertEqual(state.cursor, "prototype-review", state.message)
+        costs = self.budget_events(api, state.run_id, "developer-cost")
+        self.assertEqual(len(costs), 1)
+        self.assertNotIn("cost", costs[0])
+        self.assertFalse(costs[0]["known"])
+        warnings = [e for e in api.store.read_events(state.run_id)
+                    if e["event"] == "STEP_LOG" and e.get("level") == "warning"
+                    and "no readable cost" in (e.get("message") or "")]
+        self.assertEqual(len(warnings), 1)
+
+    def test_a_budget_the_factory_cannot_act_on_is_refused_at_start(self):
+        for budget in ({"max_sessions": 0}, {"max_sessions": "3"}, {"max_cost": 5},
+                       {"max_cost": 5, "cost_from": {"jsonl_key": ""}}, {"sessions": 3}):
+            api, _ = self.api(budget)
+            with self.assertRaises(ValueError, msg=budget):
+                api.run(RunRequest(project_id=TITLE))
+
+
+class ReadCost(unittest.TestCase):
+    def test_the_last_line_holding_the_key_past_the_offset(self):
+        with tempfile.TemporaryDirectory() as scratch:
+            path = os.path.join(scratch, "1-1.log")
+            with open(path, "w", encoding="utf-8") as handle:
+                handle.write('[stdout] {"cost": 9}\n')
+            offset = os.path.getsize(path)
+            with open(path, "a", encoding="utf-8") as handle:
+                handle.write('[stdout] {"cost": 1}\n[stderr] not json {\n'
+                             '[stdout] {"cost": 2.5, "other": true}\n[stdout] {"x": 1}\n')
+            from wgf_develop.budget import read_cost
+            self.assertEqual(read_cost(path, "cost", offset), 2.5)
+            self.assertEqual(read_cost(path, "cost", os.path.getsize(path)), None)
+            self.assertEqual(read_cost(path, "missing"), None)
+            self.assertEqual(read_cost(os.path.join(scratch, "none.log"), "cost"), None)
+            with open(path, "a", encoding="utf-8") as handle:
+                handle.write('[stdout] {"cost": "free"}\n')
+            self.assertIsNone(read_cost(path, "cost", offset))  # the last one says unknown
 
 
 @unittest.skipUnless(os.environ.get("WGF_AJV") == "1" and shutil.which("npx"),

@@ -11,8 +11,10 @@ Outcomes, per docs/workflow-module-contract.md section 7:
     SUCCESS            every check passed and the work is committed
     WAITING_FOR_INPUT  a required input is not in the run
     WAITING_FOR_HUMAN  handoff developer: the brief is out, or the last checks failed
-    BLOCKED            the game repository is not checked out where the config says; or a
-                       guarded Factory path was changed and could not be put back
+    BLOCKED            the game repository is not checked out where the config says; a
+                       guarded Factory path was changed and could not be put back; or the
+                       run's developer-session budget is spent (budget.py) - no agent is
+                       started, and only a person's `wgf resume --budget-sessions` raises it
     FAILED retryable   command developer failed, or its result failed a check
     FAILED final       bad input, bad config, the development was declined, a guarded
                        Factory path was changed (and restored), or the tree holds a change
@@ -41,6 +43,7 @@ from wgflib.workflow import ArtifactOutput, StepResult, WorkflowStep
 
 from . import brief as briefs
 from . import scope
+from .budget import Budget
 from .checks import read_report, run_checks
 from .developers import Outcome, create_developer
 from .report import build_report
@@ -78,6 +81,18 @@ def _read_json(path):
             return json.load(handle)
     except (OSError, ValueError):
         return None
+
+
+def _loop(context):
+    """How the run came back into develop, from the engine's context: the route
+    (`context.entered_by`) and what that route, and develop itself, have left of their visit
+    limits (`context.visit_budget`). None on a first visit, or a context that says nothing."""
+    route = getattr(context, "entered_by", None)
+    budget = getattr(context, "visit_budget", None) or {}
+    if not route or route == "success":
+        return None
+    return {"entered_by": route, "route_budget": budget.get("route"),
+            "step_budget": budget.get("step")}
 
 
 class _Guard:
@@ -255,6 +270,7 @@ class DevelopStep(WorkflowStep):
                                                                             True)),
                 writable_paths=settings.writable_paths,
                 package_changes=settings.package_changes,
+                loop=_loop(context),
             )
             _write(brief_json, json.dumps(brief, indent=2, ensure_ascii=False) + "\n")
             _write(brief_md, briefs.render_markdown(brief))
@@ -263,10 +279,28 @@ class DevelopStep(WorkflowStep):
                 context.logger.info("integration seam provided", paths=written)
 
             developer = create_developer(settings, runner)
+            budget, session = None, None
+            if developer.kind == "command":
+                # A paid agent session: counted against the run's budget from its event
+                # log - which a resume does not reset - and refused, before anything is
+                # spawned, once the budget is spent.
+                budget = Budget.load(context)
+                exhausted = budget.exhausted(context.run_id)
+                if exhausted:
+                    context.logger.warning("develop budget exhausted", **budget.summary())
+                    return StepResult.blocked(exhausted, budget=budget.summary())
             refused = guard.take()
             if refused is not None:
                 return refused
-            outcome = developer.develop(brief_md, checkout, context)
+            if budget is not None:
+                session, problem = budget.begin(context)
+                if problem:
+                    return StepResult.blocked(problem)
+            try:
+                outcome = developer.develop(brief_md, checkout, context)
+            finally:
+                if session is not None:
+                    budget.finish(context, session)
             if outcome.status == Outcome.WAITING:
                 return StepResult.waiting_for_human(outcome.message, brief=brief_md)
             if outcome.status == Outcome.DECLINED:

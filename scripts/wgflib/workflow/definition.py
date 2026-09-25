@@ -24,6 +24,9 @@ the CLI slices it, and neither of them contains a sequence of its own.
             fail: develop             # a route label the step returned
             blocked: $end             # or an outcome, lower-cased
           next: release               # where success goes; default is the next step listed
+        - id: develop
+          max_visits_by_route:        # optional: entries through one route, bounded apart
+            fail: 2                   # from the others (and from max_visits, which holds too)
 
 Routing, in order: the step's `route` label if it returned one and the definition maps it;
 else the outcome (`success`, `failed`, `blocked`, `waiting_for_input`, `waiting_for_human`)
@@ -34,6 +37,12 @@ verification step that returns FAILED/"fail" safe even in a definition that forg
 it.
 
 Targets are step ids, `$end` (the run completes) or `$fail` (the run fails).
+
+`max_visits_by_route` keys are the routes that can enter the step: a label (or outcome)
+some step's `on:` maps to it, or `success` when some step's success goes to it. Each value
+is a whole number >= 1. A step entered through such a route more often than that since the
+run last started or resumed blocks the run, whatever its overall `max_visits` still allows,
+so one loop into a step cannot spend the visits another loop into it needs.
 
 Nothing here executes anything.
 """
@@ -128,7 +137,7 @@ def _hashable_str(value):
 
 class StepDefinition:
     __slots__ = ("id", "type", "stage", "inputs", "outputs", "retry", "on", "next",
-                 "max_visits", "params", "description")
+                 "max_visits", "max_visits_by_route", "params", "description")
 
     def __init__(self, entry, retry, max_visits):
         self.id = entry.get("id")
@@ -141,6 +150,8 @@ class StepDefinition:
         self.on = dict(entry.get("on")) if isinstance(entry.get("on"), dict) else {}
         self.next = entry.get("next")
         self.max_visits = max_visits
+        by_route = entry.get("max_visits_by_route")
+        self.max_visits_by_route = dict(by_route) if isinstance(by_route, dict) else {}
         self.params = dict(entry.get("with")) if isinstance(entry.get("with"), dict) else {}
         self.description = entry.get("description")
 
@@ -287,6 +298,14 @@ def parse_definition(document, source="<memory>", base_retry=None, base_max_visi
         max_visits = entry.get("max_visits", visits_default)
         if isinstance(max_visits, bool) or not isinstance(max_visits, int) or max_visits < 1:
             problems.append(f"{where}: max_visits must be an integer >= 1")
+        by_route = entry.get("max_visits_by_route")
+        if by_route is not None and not isinstance(by_route, dict):
+            problems.append(f"{where}: max_visits_by_route must be a mapping of route -> "
+                            f"integer >= 1")
+        for route, limit in (by_route.items() if isinstance(by_route, dict) else ()):
+            if isinstance(limit, bool) or not isinstance(limit, int) or limit < 1:
+                problems.append(f"{where}: max_visits_by_route.{route} must be an integer "
+                                f">= 1")
         definition.steps.append(
             StepDefinition(entry, retry_default.merged(entry.get("retry")), max_visits)
         )
@@ -300,6 +319,26 @@ def parse_definition(document, source="<memory>", base_retry=None, base_max_visi
                 problems.append(
                     f"step {step.id!r}: {route} -> {target!r} is not a step id, {END} or {FAIL}"
                 )
+
+    # A route limit names a way into the step: a label some step's `on:` maps to it, or
+    # `success` when some step's success goes there. Anything else could never be counted,
+    # which is a typo, not a limit.
+    for step in definition.steps:
+        if not step.max_visits_by_route:
+            continue
+        entering = set()
+        for other in definition.steps:
+            entering |= {route for route, target in other.on.items() if target == step.id}
+            if isinstance(other.id, str) and "success" not in other.on and (
+                    other.next or (definition.following(other.id)
+                                   if other.id in definition.step_ids else None)) == step.id:
+                entering.add("success")
+        for route in step.max_visits_by_route:
+            if route not in entering:
+                problems.append(
+                    f"step {step.id!r}: max_visits_by_route names {route!r}, which is no "
+                    f"route into it (routes into it: "
+                    f"{', '.join(sorted(map(str, entering))) or 'none'})")
 
     groups = data.get("groups") or {}
     if not isinstance(groups, dict):

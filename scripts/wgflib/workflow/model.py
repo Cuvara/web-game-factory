@@ -219,6 +219,14 @@ class StepState:
     execution in the run and never resets. `visits` counts entries; the loop limit is
     measured against `visits - loop_base`, and a resume raises `loop_base` to `visits` so
     that a person resuming a loop-blocked run grants every step a fresh budget.
+
+    `route_visits` counts entries per route - the label or outcome that routed into the
+    step (`fail`, `request-changes`, `success`, ...) - over the whole run, and `route_base`
+    is each route's count when the budget was last reset, exactly as `loop_base` is for
+    `visits`: a step's `max_visits_by_route` is measured against the difference. Entries
+    with no route (a run's first step, `--from`, a resume's "one more pass" at a step
+    limit) are counted in `visits` only. `entered_by` is the route of the current visit.
+    State written before these existed has none of them, and reads as {} / None.
     """
 
     status: str = StepStatus.PENDING
@@ -226,6 +234,9 @@ class StepState:
     executions: int = 0
     visits: int = 0
     loop_base: int = 0
+    route_visits: dict = field(default_factory=dict)
+    route_base: dict = field(default_factory=dict)
+    entered_by: str = None
     started_at: str = None
     finished_at: str = None
     duration_ms: int = None
@@ -267,6 +278,11 @@ class RunState:
     `scope` is the set of step ids this run may execute - the whole workflow for
     `new-game`, a group for `plan`, a single step for `verify`. A transition to a step
     outside the scope ends the run; `exit` records where it would have gone.
+
+    `blocked_reason` says, as data, why the engine itself stopped the run BLOCKED - today
+    only `{"kind": "loop-limit", "step", "route", "scope": "step"|"route", "limit",
+    "entered", "from"}` - and is None otherwise. What resume does with a blocked run is
+    decided from it, never from the wording of `message`.
     """
 
     run_id: str
@@ -286,6 +302,7 @@ class RunState:
     params: dict = field(default_factory=dict)
     exit: dict = None
     message: str = None
+    blocked_reason: dict = None
     format: int = STATE_FORMAT
 
     def step(self, step_id):
@@ -325,6 +342,7 @@ class RunState:
             "created_at": self.created_at,
             "updated_at": self.updated_at,
             "message": self.message,
+            "blocked_reason": self.blocked_reason,
             "exit": self.exit,
             "params": self.params,
             "steps": {key: value.to_dict() for key, value in self.steps.items()},

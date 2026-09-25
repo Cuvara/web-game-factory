@@ -132,12 +132,17 @@ workflow:
       on:
         fail: develop                # route label -> target
       next: release                  # success target; default is the next step listed
+    - id: develop
+      max_visits: 7
+      max_visits_by_route:           # entries through one route, bounded apart (§8)
+        fail: 2
 ```
 
 Targets are step ids, `$end` (complete) or `$fail` (fail). Step types are kebab-case and
 may be namespaced by module (`discovery.research`); a type is only a registry key. The
 parser reports every problem at once: unknown targets, duplicate ids, groups naming unknown steps, malformed retry, an
-unqualified `stage`, a `start` that is not a step. `check-integrity.py` additionally checks
+unqualified `stage`, a `start` that is not a step, a `max_visits_by_route` key that is no
+route into its step or a limit that is not a whole number >= 1. `check-integrity.py` additionally checks
 that every stage resolves to a machine state or stage procedure, that every gate exists, and
 that every artifact type has a schema in `core/artifacts/` — or is listed under
 `untyped_artifacts`, a visible, temporary gap that the integrity check reports on every run
@@ -190,10 +195,13 @@ Step     PENDING → RUNNING → SUCCESS | FAILED | BLOCKED | WAITING      (+ SK
 ```
 
 Every step keeps `attempts` (this visit), `executions` (whole run), `visits` (times entered),
-timestamps, duration, last route, error and outputs, and — for the execution in progress —
+`route_visits` (times entered through each route: `{"success": 1, "fail": 2}`),
+`entered_by` (the route of the current visit), timestamps, duration, last route, error and outputs, and — for the execution in progress —
 `pid` (the child process it waits on), `last_activity_at` and `last_event`, fed by
 `context.progress` and by every `wgflib.procs.run` the step makes. `state.json` is the whole
-truth; `wgf status` renders it and holds nothing of its own. A run that is `RUNNING` on disk
+truth; `wgf status` renders it and holds nothing of its own. A run the engine itself stopped
+at a loop limit carries `blocked_reason: {"kind": "loop-limit", "step", "route", "scope":
+"step"|"route", "limit", "entered", "from"}`; every other stop leaves it null. A run that is `RUNNING` on disk
 with no process holding its lock is a crashed run, and is resumable.
 
 ### Liveness
@@ -370,6 +378,14 @@ step gets a fresh attempt budget and every step a fresh loop budget. A run start
 `--mock` resumes with the mocks; a run remembers its own definition, so fixture workflows
 resume too.
 
+`wgf resume <run-id> --budget-sessions N` (and/or `--budget-cost X`) also raises the run's
+developer-session budget: it records a `BUDGET_RAISED` operator event, with `decided_by`
+derived exactly as for a decision, before the run continues. It is refused - exit 2,
+nothing recorded - from inside a step's process tree (`decided_by` automation: an agent does
+not raise its own budget), for a run started without that budget, and for a value that is
+not positive. A budget is never raised by editing `state.json`: its snapshot is a param,
+corroborated against `WORKFLOW_STARTED` like every other.
+
 Resume refuses a run another live process — or another thread of this one — is driving
 (`RunLocked`), before changing anything. A `stale` run (its driver died) is resumed by taking
 over the dead lock; the step that was interrupted runs again, nothing before it does. A pause
@@ -417,9 +433,41 @@ the run instead of guessing. A loop is just a route that points backwards:
 **Loop safety.** Every step has `max_visits` (new-game: 3, from `defaults`; installation
 default 5). Entering a step more often than that since the run last started or resumed stops
 the run as `BLOCKED` with a `loop limit` message instead of looping; a person resuming it
-grants every step a fresh budget. For `new-game` that is at most three develop → review →
-sdk → verify passes per start or resume, and a reviewer that never approves blocks the run
-on its third request for changes instead of looping. Retries are bounded separately by `max_attempts`, and no
+grants every step a fresh budget.
+
+**Loops into one step, bounded apart.** Several loops can lead back into one step, and one
+shared `max_visits` lets one of them spend the passes another needs, with nothing saying
+which. A step may therefore declare `max_visits_by_route: {<route>: n}`: the route is the
+label or outcome that routed *into* it (`request-changes`, `fail`, `iterate`, or `success`
+for ordinary progression). Each entry is counted in `route_visits` under its route as well as
+in `visits`; entering through a route more than `n` times since the run last started or
+resumed blocks the run, whatever `max_visits` still allows (which keeps holding too). The
+engine names no route: every one comes from the workflow file, and the definition refuses a
+key that is no route into the step.
+
+new-game bounds develop's four loops this way: `request-changes: 2` (review's and
+sdk-review's requests for changes, which share the label), `fail: 2` (verify), `iterate: 2`
+(G4). develop's `max_visits` is 7 - the first visit plus every route's budget - so it is
+never what a loop meets first, and review, sdk, sdk-review, verify and prototype-review,
+each visited at most once per develop visit, carry 7 as well. A reviewer that never approves
+still blocks the run on its third request for changes; a verification that always fails,
+on its third failure; neither spends the other's budget. Per start or resume that is at most
+seven develop visits (each up to `max_attempts` developer attempts); what a whole run may
+spend on unattended developer sessions is bounded separately, by `factory.develop.budget`,
+which a resume does not reset ([development-module.md](development-module.md#budget)).
+
+**Why a run stopped, as data.** A loop-limit stop records `state.blocked_reason =
+{"kind": "loop-limit", "step": "develop", "route": "fail", "scope": "route", "limit": 2,
+"entered": 2, "from": "verify"}` (`scope: step` for `max_visits`), also in the
+`WORKFLOW_BLOCKED` event's `data.blocked`. Resume decides from it - never from the wording
+of the message - to re-enter the step for "one more pass", counted against the stopped
+route's fresh budget. A run blocked before `blocked_reason` existed said so only in its
+`loop limit` message, and that is still honoured for it. A step sees how it was entered:
+`context.entered_by` and `context.visit_budget` (`{"step": {limit, used, remaining},
+"route": null | {route, limit, used, remaining}}`); develop's brief uses them to say which
+loop brought the work back and how many passes that loop has left.
+
+Retries are bounded separately by `max_attempts`, and no
 outcome but a retryable `FAILED` is ever retried, so there is no unbounded path. The graph is not assumed to be linear: any step can route
 anywhere, and a human checkpoint with more than two choices is a branch. When `--run` skips
 completed steps, each is skipped at most once per drive and every entry after the first
@@ -576,13 +624,13 @@ which is the structured log:
 | Event | `data` |
 |---|---|
 | `WORKFLOW_STARTED` | `scope`, `start`, `params` (the run's params, corroborated on resume) |
-| `WORKFLOW_RESUMED` | `from_status`; `from_step`, `scope`, `force`, `definition_version` when relevant |
+| `WORKFLOW_RESUMED` | `from_status`; `from_step`, `scope`, `force`, `definition_version` when relevant; `loop_limit` (the `blocked_reason` it gave one more pass) |
 | `WORKFLOW_PAUSED` | `reason` (`requested`, `waiting_for_human`, `waiting_for_input`), `next_step` or `message` |
-| `WORKFLOW_BLOCKED` | `message` (a blocked step, a rejection, or the loop limit) |
+| `WORKFLOW_BLOCKED` | `message` (a blocked step, a rejection, or the loop limit); `blocked` (the structured `blocked_reason`) at a loop limit |
 | `WORKFLOW_COMPLETED` | `exit`: `{step, route, outcome, next}`; `message` when a stopping result was routed to `$end` (G4's kill) |
 | `WORKFLOW_FAILED` | `message` |
 | `WORKFLOW_CANCELLED` | — (`step_id` is the cursor when the cancel was honoured) |
-| `STEP_STARTED` | `type`, `visit` |
+| `STEP_STARTED` | `type`, `visit`; `entered_by` (the route into this visit) when it has one |
 | `STEP_COMPLETED` | `route`, `message`, `outputs`, `result` (the step's own small data) |
 | `STEP_FAILED` | `will_retry`, `route`, `outputs` |
 | `STEP_RETRIED` | `delay_seconds`, `max_attempts` |
@@ -595,6 +643,7 @@ which is the structured log:
 | `DECISION_RECORDED` | `decision`, `decided_by`, `decided_at`, `visit`, `note`; `mode` (`timeout`) for a timeout approval |
 | `ARTIFACT_CREATED` | the `ArtifactRef` |
 | `ARTIFACT_UPDATED` | the `ArtifactRef` (version ≥ 2) |
+| operator events | Not the engine's: a person's act recorded with `wgf resume` (`engine.resume(operator_events=...)`), `data` + `decided_by`, `decided_at`. Refused for automation and for any of the names above. Today one: `BUDGET_RAISED` (`max_sessions`, `max_cost`; `wgf resume --budget-sessions/--budget-cost`, wgflib/budget.py) |
 
 Consumers must ignore fields and events they do not know. `EventContract` fails if an event
 is added without being documented here. The CLI's progress output is just another
@@ -867,7 +916,9 @@ The engine executes no code it was not given by the installation:
 - Decisions, `decided_by` and notes are checked before a run is touched (see §7).
 - `resume` and `continue_in` refuse a `state.json` the engine could not have written
   (`integrity.state_problems`): an unknown status, a cursor naming no step, negative or
-  non-integer counters, `loop_base` above `visits`, an artifact version that is not at its
+  non-integer counters, `loop_base` above `visits`, route counters that are not counts or
+  a `route_base` above its count, a `blocked_reason` that names another step than the
+  cursor, a malformed `params.develop_budget`, an artifact version that is not at its
   canonical location or not numbered 1..n, a step's outputs naming a version state no
   longer records (a failed report's ref deleted to expose the passing one before it), or a
   decision for a visit that never happened. This catches inconsistent edits. A writer who

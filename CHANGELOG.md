@@ -122,6 +122,51 @@ Core changes are listed with their reason, as docs/core-v1.md requires.
   (`platform.profile:<id>`) and sdk (`wgf_init.profiles.verify_pins` / `pin_identity`).
 - `wgf_develop` reads its template literals from `wgflib/template_contract.py`.
 
+### Changed - loop and session budgets (M13)
+- **Loops into one step are bounded per route (P1-7).** A workflow step may declare
+  `max_visits_by_route: {<route>: n}`; entries through that route (the label or outcome
+  that routed into the step) are counted in the step's new `route_visits` and bounded apart
+  from each other, while `max_visits` still holds. new-game's develop takes
+  `request-changes: 2` (review and sdk-review), `fail: 2` (verify), `iterate: 2` (G4) per
+  start or resume, with `max_visits: 7` on develop and on every later step of the loop.
+  *Reason (core change, core/workflows + wgflib/workflow):* the four loops back into develop
+  shared develop's one `max_visits` of 3, so a review loop could spend the passes a failing
+  verification needed, and nothing said which loop had. The definition refuses a key that
+  is no route into its step; the engine names no route.
+- **Why a run stopped at a loop limit is data.** `state.blocked_reason = {kind: loop-limit,
+  step, route, scope: step|route, limit, entered, from}` (also `WORKFLOW_BLOCKED`
+  `data.blocked`), and resume's "one more pass" is decided from it instead of the message
+  prefix (P1-8). *Reason (core change, wgflib/workflow):* string coupling. Integrity checks
+  its shape and the route counters like `loop_base`.
+- **A run-level budget for developer sessions that resume does not reset.**
+  `factory.develop.budget: {max_sessions, max_cost, cost_from: {jsonl_key}}`, snapshotted
+  into run params (`develop_budget`, corroborated like every param). The develop step counts
+  command-developer sessions and their reported cost from the run's event log (STEP_LOG
+  `data.budget`) and returns `BLOCKED` - no agent spawned - with `budget exhausted: N
+  developer sessions used of N`, or on the cost limit. A session with no readable cost is
+  counted and reported as unknown; the host's per-session flag stays that session's bound.
+  *Reason (core change, wgflib/budget.py, wgflib/workflow/{config,api,integrity}.py):* every
+  resume refilled the loop budget, so with a command developer nothing capped a run's
+  sessions or spend.
+- **Raising a budget is a person's act:** `wgf resume <run> --budget-sessions N |
+  --budget-cost X` records a `BUDGET_RAISED` operator event (new generic
+  `engine.resume(operator_events=...)`: refused for `decided_by: automation` and for the
+  engine's own event names). Refused from inside a step's process tree.
+- A step's context gains `entered_by` (the route into this visit), `visit_budget` (what the
+  visit leaves of its limits) and `read_events()` (the run's recorded events);
+  `STEP_STARTED` carries `entered_by`. The develop brief says which loop brought the work
+  back and how many passes it has left (`brief.json` `loop`).
+- *Migration:* none required. A run started before this change has no `route_visits`,
+  `blocked_reason` or `develop_budget` and resumes as before (a loop-limit stop recorded only
+  in its message still gets its one more pass); it has no budget, since none was
+  snapshotted. `factory.develop.budget` applies to runs started after it is set.
+  `max_visits_by_route` counts only from this version: an old run's earlier loops are not
+  charged to any route. `wgf new-game --mock --mock-plan '{"verify": [fail x4]}'` now
+  blocks on develop's `fail` route (as before, after the third failed verification); a
+  review that always requests changes still blocks on the third request. Per start or
+  resume develop may now be visited up to 7 times instead of 3 when the loops mix - set
+  `factory.develop.budget` to bound what a command developer may spend in the run.
+
 ### Added
 - **Timeout auto-approval (M4).** `factory.checkpoints.timeout_auto_approve: {G2: 48h}`
   lets a reversible gate approve itself once it has waited that long. *Reason (core

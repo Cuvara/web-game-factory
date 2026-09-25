@@ -402,13 +402,19 @@ class RunStatesThroughTheCli(CliCase):
         self.wgf("new-game", "--resume", run_id, expect=2)
 
     def test_blocked_by_the_loop_limit_then_resumed(self):
-        # verify fails on every pass; new-game allows 3 visits per step before blocking.
+        # verify fails on every pass; new-game's develop takes two `fail` loops per start or
+        # resume (max_visits_by_route), and the third blocks - on that route, as data.
         done = self.wgf("new-game", "--mock", "--quiet", "--mock-plan",
                         '{"verify": ["fail", "fail", "fail", "fail"]}', expect=1)
         self.assertIn("loop limit", done.stdout)
         state = self.state()
         self.assertEqual(state["status"], "BLOCKED")
         self.assertEqual(state["steps"]["verify"]["visits"], 3)
+        self.assertEqual(state["blocked_reason"], {
+            "kind": "loop-limit", "step": "develop", "route": "fail", "scope": "route",
+            "limit": 2, "entered": 2, "from": "verify"})
+        # Entered once from assets (success), then twice through fail.
+        self.assertEqual(state["steps"]["develop"]["route_visits"], {"success": 1, "fail": 2})
         self.assertEqual(self.status_line(state["run_id"]), "Status: BLOCKED")
         self.assertIn("WORKFLOW_BLOCKED", self.wgf("logs", state["run_id"]).stdout)
 
@@ -570,6 +576,56 @@ class ResumeAndDecide(CliCase):
         run_id = self.held()
         self.wgf("plan", "--resume", run_id, "--decision", "approve", "--quiet", expect=3)
         self.assertEqual(self.state(run_id)["cursor"], "tech-plan-review")
+
+
+class BudgetRaise(CliCase):
+    """`wgf resume <run> --budget-sessions N | --budget-cost X`: a person raises the run's
+    developer-session budget, recorded as a BUDGET_RAISED event (M13)."""
+
+    def setUp(self):
+        super().setUp()
+        with open(self.config, "w", encoding="utf-8") as handle:
+            handle.write("factory:\n  storage:\n    fsync: false\n  develop:\n    budget:\n"
+                         "      max_sessions: 2\n")
+
+    def blocked_run(self):
+        self.wgf("new-game", "--mock", "--quiet", "--mock-plan",
+                 '{"verify": ["fail", "fail", "fail"]}', expect=1)
+        state = self.state()
+        self.assertEqual(state["params"]["develop_budget"], {"max_sessions": 2})
+        return state["run_id"]
+
+    def raises(self, run_id):
+        with open(os.path.join(self.store, "workflows", run_id, "events.jsonl"),
+                  encoding="utf-8") as handle:
+            return [json.loads(line) for line in handle if '"BUDGET_RAISED"' in line]
+
+    def test_a_person_raises_it_with_resume(self):
+        run_id = self.blocked_run()
+        self.wgf("resume", run_id, "--budget-sessions", "5", "--quiet", expect=3)
+        raised = self.raises(run_id)
+        self.assertEqual(len(raised), 1)
+        self.assertEqual((raised[0]["data"]["max_sessions"], raised[0]["data"]["decided_by"]),
+                         (5, "human"))
+
+    def test_refused_from_inside_a_step(self):
+        run_id = self.blocked_run()
+        done = self.wgf("resume", run_id, "--budget-sessions", "50", expect=2,
+                        env={"WGF_PROC_TAG": "0123456789abcdef"})
+        self.assertIn("an agent does not raise its own budget", done.stderr)
+        self.assertEqual(self.raises(run_id), [])
+        self.assertEqual(self.state(run_id)["status"], "BLOCKED")
+
+    def test_refused_when_the_run_has_no_such_budget(self):
+        run_id = self.blocked_run()
+        done = self.wgf("resume", run_id, "--budget-cost", "10", expect=2)
+        self.assertIn("nothing to raise", done.stderr)
+        self.assertEqual(self.raises(run_id), [])
+
+    def test_a_raise_is_a_positive_number(self):
+        run_id = self.blocked_run()
+        done = self.wgf("resume", run_id, "--budget-sessions", "0", expect=2)
+        self.assertIn("not a positive", done.stderr)
 
 
 class IgnoredFlagsAreRefused(CliCase):

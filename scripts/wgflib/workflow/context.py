@@ -53,13 +53,25 @@ class WorkflowContext:
 
     `gates_passed` lists the gates (a checkpoint's `with: gate`) this run has passed and
     whose approval no later upstream work has superseded, in definition order.
+
+    `entered_by` is the route that brought the run into this visit - the label or outcome
+    of the step before it (`fail`, `request-changes`, `success`, ...) - or None for a run's
+    first step, a `--from` or a resume's extra pass. `visit_budget` says what this visit
+    leaves of the step's visit limits: {"step": {"limit", "used", "remaining"}, "route":
+    None or {"route", "limit", "used", "remaining"}} (`max_visits`, `max_visits_by_route`),
+    counted since the run last started or resumed.
+
+    `read_events()` returns the run's recorded events (events.jsonl), oldest first, read
+    fresh on every call: durable run history a step may count from - its own earlier
+    executions, a person's recorded act - where nothing in memory survives a resume.
     """
 
     def __init__(self, *, workflow_id, workflow_version, run_id, project_id, step_id,
                  step_type, attempt, visit, execution, config, environment, params,
                  decision, previous_outputs, logger, emit, run_dir, mock,
                  progress=None, should_stop=None, now=None, waiting_since=None,
-                 record_decision=None, gates_passed=()):
+                 record_decision=None, gates_passed=(), entered_by=None,
+                 visit_budget=None, read_events=None):
         self.workflow_id = workflow_id
         self.workflow_version = workflow_version
         self.run_id = run_id
@@ -84,6 +96,13 @@ class WorkflowContext:
         self.waiting_since = waiting_since
         self._record_decision = record_decision
         self.gates_passed = list(gates_passed or ())
+        self.entered_by = entered_by
+        self.visit_budget = visit_budget
+        self._read_events = read_events
+
+    def read_events(self):
+        """The run's recorded events, oldest first; [] when the engine gave none."""
+        return list(self._read_events()) if self._read_events is not None else []
 
     def record_decision(self, decision, decided_by="automation", note=None, mode=None):
         """Record `decision` on this step's current visit; returns the recorded entry.

@@ -341,6 +341,15 @@ factory:
   # Checkpoint gates this installation lets a run approve without a person. Only reversible
   # gates are honoured; G4, G6 and G7 are refused whatever is listed here. `--mock` runs
   # approve every reversible gate unless --hold-gates is given.
+  # The lifecycle bridge (docs/factory-lifecycle.md): with sync on, each gate decision a run
+  # makes is appended to workspace/titles/<id>/decisions/ and moves the title's cursor through
+  # wgf-state.py's guards and gate rules (a refused move is a warning, never the run's
+  # outcome). Only for a run whose --project title already has a state.json; never a --mock
+  # run. A run keeps the setting it started with.
+  lifecycle:
+    sync: false
+    # titles_directory: workspace/titles
+
   checkpoints:
     auto_approve: []
     # Reversible gates that approve themselves once they have waited this long (<n>s|m|h|d

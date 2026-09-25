@@ -105,6 +105,23 @@ Core changes are listed with their reason, as docs/core-v1.md requires.
   `PASS_MOCK` never counts as a pass for `verify_suite_green` / `playable_build`.
 - `test_decisions` joins the WORKFLOW category of the Core Acceptance Suite.
 
+### Changed - one checkout resolver (M6)
+- **One checkout resolver (P0-14, P1-2, P1-3).** `wgflib/checkout.py`: every step that
+  touches the game repository finds it by `with: repo_dir|game_repo` -> `WGF_GAME_REPO` ->
+  scaffold-record `repository.local_path` -> `factory.checkouts` + name, relative paths
+  resolved against the Factory root (docs/checkouts.md). *Migration:* `factory.checkouts`
+  replaces `develop.checkouts`, `init.projects_dir`, `review.checkouts`, `sdk.games_dir`,
+  `verification.checkouts` and `release.checkouts` (deprecated aliases, warned when they
+  disagree); `WGF_GAME_REPO` now applies to develop and review too.
+- A per-checkout advisory lock (pid + start time) blocks a second live run from working in
+  the same tree while a step runs (`checkout-in-use`).
+- scaffold-record 1.2.0 adds an optional `repository.local_path`, written by init.
+- Assets default into `<checkout>/public/assets/`, which develop commits; the develop brief
+  lists every asset's repository-relative file paths.
+- Vendored platform profiles are verified by content hash in init, verify
+  (`platform.profile:<id>`) and sdk (`wgf_init.profiles.verify_pins` / `pin_identity`).
+- `wgf_develop` reads its template literals from `wgflib/template_contract.py`.
+
 ### Added
 - **Timeout auto-approval (M4).** `factory.checkpoints.timeout_auto_approve: {G2: 48h}`
   lets a reversible gate approve itself once it has waited that long. *Reason (core

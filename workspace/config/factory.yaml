@@ -157,6 +157,53 @@ factory:
     #     - "40"
     #   timeout_seconds: 5400
     #   idle_timeout_seconds: 900
+    #
+    # --- opt-in: self-playtest ---------------------------------------------------------------
+    # The same developer, able to play its own build: a Playwright MCP browser limited to the
+    # local preview (workspace/config/mcp-playwright-localhost.json: localhost origins only,
+    # headless, isolated profile, pinned version), and this Factory's plugin for the craft
+    # skills (game-feel, core-loop, web-performance, ...). self_playtest adds a "Playtest your
+    # build" section to the brief. {factory} is the Factory root: the developer's cwd is the
+    # checkout, and these files live in the guarded Factory tree, outside anything it may edit.
+    #   --strict-mcp-config         still set: only the one listed MCP config loads
+    #   Skill, mcp__playwright      the only additions to what runs without a prompt
+    # The browser is origin-limited; the developer process itself is not network-guarded
+    # (pnpm needs the registry). Flags checked against CLI 2.1.282 and @playwright/mcp 0.0.82;
+    # not yet run live (docs/claude-capabilities.md).
+    # self_playtest: true
+    # developer:
+    #   kind: command
+    #   argv:
+    #     - claude
+    #     - -p
+    #     - "{prompt}"
+    #     - --model
+    #     - sonnet
+    #     - --setting-sources
+    #     - project
+    #     - --strict-mcp-config
+    #     - --mcp-config
+    #     - "{factory}/workspace/config/mcp-playwright-localhost.json"
+    #     - --plugin-dir
+    #     - "{factory}/claude-web-game-plugin"
+    #     - --tools
+    #     - "Read,Edit,Write,Glob,Grep,Bash,Skill"
+    #     - --allowedTools
+    #     - "Read,Glob,Grep,Edit(./**),Write(./**),Bash(pnpm *),Bash(git status *),Bash(git diff *),Bash(git log *),Bash(git show *),Skill,mcp__playwright"
+    #     - --disallowedTools
+    #     - "WebFetch,WebSearch,Bash(git commit *),Bash(git push *),Bash(git reset *),Bash(git checkout *),Bash(git switch *),Bash(git rebase *),Bash(git stash *),Bash(git tag *),Bash(git branch *),Bash(git clean *),Bash(git config *),Bash(git remote *),Bash(git * --output*)"
+    #     - --permission-mode
+    #     - dontAsk
+    #     - --no-session-persistence
+    #     - --output-format
+    #     - stream-json
+    #     - --verbose
+    #     - --max-turns
+    #     - "400"
+    #     - --max-budget-usd
+    #     - "40"
+    #   timeout_seconds: 5400
+    #   idle_timeout_seconds: 900
     checks: [install, conformance, typecheck, lint, unit, build, smoke]
     check_timeout_seconds: 900
     commit: true                # one local commit per visit, keyed by the idempotency key

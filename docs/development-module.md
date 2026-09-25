@@ -147,7 +147,14 @@ factory:
     build_url: null             # "https://{branch}.{name}.pages.dev"; {owner} {sha} {short_sha}
     author: {name: ..., email: ...}   # when the checkout has no git identity
     skills: {pixijs: [...], threejs: [...], ui: [...]}
+    self_playtest: false        # true: the brief asks the developer to play its own build
 ```
+
+`developer.argv` placeholders are `{brief}`, `{repo}`, `{key}`, `{prompt}` and `{factory}`,
+the Factory root, for host files kept in the Factory rather than the checkout. The opt-in
+self-playtest developer (F6) uses it for a localhost-only Playwright MCP config and this
+Factory's plugin. The commented block is in `workspace/config/factory.yaml`, and the flags
+and security notes are in [claude-capabilities.md](claude-capabilities.md).
 
 ## Tests
 

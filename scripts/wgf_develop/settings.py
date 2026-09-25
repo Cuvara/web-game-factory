@@ -18,6 +18,8 @@ a workflow that wants, say, a narrower check list.
         commit: true
         build_url: null            # e.g. "https://{branch}.{name}.pages.dev"
         skills: {}                 # per-engine host skill names the brief recommends
+        self_playtest: false       # the brief asks the developer to play its own build in
+                                   # a browser; only for a developer given a browser tool
 """
 
 import copy
@@ -44,6 +46,7 @@ DEFAULTS = {
     "commit": True,
     "build_url": None,
     "skills": {},
+    "self_playtest": False,
 }
 
 
@@ -88,6 +91,9 @@ class Settings:
                     "for kind: command"
                 )
 
+        if not isinstance(data.get("self_playtest", False), bool):
+            raise SettingsError("factory.develop.self_playtest must be true or false")
+
     @classmethod
     def resolve(cls, config, params=None):
         """Defaults, then factory.develop, then the step's `with:` block."""
@@ -107,6 +113,10 @@ class Settings:
     @property
     def build_url(self):
         return self.data.get("build_url")
+
+    @property
+    def self_playtest(self):
+        return self.data.get("self_playtest") is True
 
     @property
     def skills(self):

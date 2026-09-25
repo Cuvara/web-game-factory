@@ -28,10 +28,9 @@ import json
 import os
 import time
 
-from wgflib import procs
+from wgflib import agentenv, isolation, procs
 from wgflib.workflow import ArtifactOutput, StepResult, WorkflowStep
 
-from . import isolation
 from .report import PROMPT, PROMPT_STDOUT, build_report, render_brief
 from .settings import Settings, SettingsError
 from .verdict import from_output, parse
@@ -152,7 +151,9 @@ class ReviewStep(WorkflowStep):
         values["prompt"] = (PROMPT_STDOUT if settings.verdict_from == "stdout"
                             else PROMPT).format(**values)
         argv = [part.format(**values) for part in settings.argv]
-        env = dict(os.environ)
+        # An allowlist, not the Factory's environment: the reviewer reads code a developer
+        # agent wrote, and gets no token it was not configured to need (wgflib.agentenv).
+        env = agentenv.scrubbed(settings.env_passthrough)
         env.update({"WGF_REVIEW_REPO": checkout, "WGF_REVIEW_VERDICT": verdict_path,
                     "WGF_REVIEW_BRIEF": brief_path, "WGF_REVIEW_COMMIT": head})
 

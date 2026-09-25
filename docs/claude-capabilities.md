@@ -8,8 +8,10 @@ is the only place outside `workspace/config/` that names the host. `core/` never
 Two layers, and they are kept apart on purpose:
 
 - **Factory-side** enforcement lives in `scripts/`. It holds whatever the agent does:
-  process ownership, timeouts, the keyed commit, reviewer isolation by fingerprint, verdict
-  strictness, commit lineage.
+  process ownership, timeouts, the keyed commit, reviewer isolation by fingerprint, the
+  developer's boundary (an allowlisted environment, the Factory's guarded paths
+  fingerprinted around it, hardened git, a commit of only the paths it may write, a
+  protected `package.json`), verdict strictness, commit lineage.
 - **Agent-host** enforcement is whatever the configured argv asks the host for: tool set,
   permission rules, permission mode. It is defence in depth. No Factory guarantee depends on
   it.
@@ -25,10 +27,10 @@ Status values:
 
 ## Summary
 
-| Status | Count (of 25 rows) |
+| Status | Count (of 28 rows) |
 |---|---|
 | VERIFIED_LIVE | 16 |
-| VERIFIED | 8 |
+| VERIFIED | 11 (three added with the developer-boundary hardening, 1.1.x; not yet run live) |
 | UNVERIFIED_EXTERNAL | 1: browser testing against a real template. The portal side of release is also external; it is noted in its row |
 | BROKEN | 0 open. Two found and fixed: the shipped config narrowed the reviewer's guarded paths (P1), and the opt-in `LiveReviewer` test could not pass against a competent host (P2) |
 
@@ -50,12 +52,15 @@ golden-run work and use port 4173.
 | Developer agent (unattended) | `scripts/wgf_develop/developers.py:71` `CommandDeveloper`; argv placeholders `:80-82`; `step.py:151` | Factory: argv run through `procs` in the checkout; outcome from the exit status | `test_core_agents.AgentLoop.*`; live: `LiveDeveloperAndReviewer` | VERIFIED_LIVE |
 | Developer via handoff | `developers.py:49` `HandoffDeveloper`; `step.py:153` | Factory: `WAITING_FOR_HUMAN` until `--decision done` | `test_develop_module` (handoff cases) | VERIFIED |
 | Reviewer agent | `scripts/wgf_review/step.py:61`; argv `:150-154`; `procs.run` `:169` | Factory | `test_core_agents.AgentLoop.test_developer_reviewer_request_changes_developer_reviewer_approve`; live: both live classes | VERIFIED_LIVE |
-| Read-only reviewer | Factory: `isolation.take/diff/restore` (`step.py:160,174-175,190`). Host: `--safe-mode --tools Read,Glob,Grep,Bash --permission-mode dontAsk` | Both, independently | Factory: `AgentLoop.test_a_reviewer_editing_*`, `test_a_reviewer_committing_*`, `test_core_security.ReviewerIsolation` (fake reviewers that do write). Host: probe (c) below | VERIFIED_LIVE |
+| Read-only reviewer | Factory: `isolation.take/diff/restore` (`scripts/wgflib/isolation.py`, called from `wgf_review/step.py`). Host: `--safe-mode --tools Read,Glob,Grep,Bash --permission-mode dontAsk` | Both, independently | Factory: `AgentLoop.test_a_reviewer_editing_*`, `test_a_reviewer_committing_*`, `test_core_security.ReviewerIsolation` (fake reviewers that do write). Host: probe (c) below | VERIFIED_LIVE |
 | Request-changes workflow | `wgf_review/step.py:240-243` (FAILED, route `request-changes`); routing is data in `core/workflows/new-game.workflow.yaml` (`review.on`) | Engine `_route` (`wgflib/workflow/engine.py:909`) | `AgentLoop.test_developer_reviewer_request_changes_developer_reviewer_approve`, `Registration.test_the_workflow_routes_request_changes_back_to_develop`; live run below | VERIFIED_LIVE |
 | Unattended Claude execution | argv in `workspace/config/factory.yaml` (commented `developer:` / `reviewer:`); stdin is `/dev/null` (`procs`) | Host: `-p`, `--permission-mode dontAsk` (no prompts); Factory: stdin closed, timeouts | `ShippedConfig.test_the_commented_agent_host_examples_are_valid_config`; live run below | VERIFIED_LIVE |
 | Scoped permissions | Developer `Edit(./**)`, `Write(./**)`, `Bash(pnpm *)`, read-only git; reviewer reads plus `git diff/log/show` | Host permission rules | Probes (c) and (d) below: a write outside the checkout was refused and a write inside was allowed; five Bash writes refused | VERIFIED_LIVE |
+| Agent environment | `scripts/wgflib/agentenv.py` `scrubbed`; developer `wgf_develop/developers.py` (`env=ExactEnv(...)`), reviewer `wgf_review/step.py` (`agentenv.scrubbed`); `factory.agents.env_passthrough` | Factory: an allowlist, never the Factory's environment; names that say secret dropped even under an allowed prefix | `test_core_security.AgentEnvironment` (a planted `WGF_TEST_SECRET_TOKEN`, `GH_TOKEN`, `npm_config__authToken` invisible to a real developer and reviewer process) | VERIFIED |
+| Developer write boundary | `wgf_develop/step.py` `_Guard`: `factory.review.guarded_paths` fingerprinted before the developer, compared after it and after the checks (`wgflib/isolation.py` `take_guarded`/`restore_guarded`) | Factory, whatever `Bash(pnpm *)` admits | `test_core_security.DeveloperBoundary.test_a_guarded_factory_path_written_by_the_developer_is_detected_and_restored`, `test_a_guarded_path_written_by_a_check_is_caught_too` | VERIFIED |
+| Development commit scope | `wgf_develop/scope.py` (`writable_paths`; hidden paths and instruction files refused), `repository.py` `commit_paths` (never `add --all`); `checks.py` `package_findings` (`package.json` field by field, lockfile only with an allowed dependency change); `brief.py` `PROTECTED_PATHS` (+ `package.json`, `tsconfig.json`, `pnpm-lock.yaml`) | Factory | `DeveloperBoundary.test_agent_host_settings_and_instruction_files_are_refused` (`.claude/settings.json`, `CLAUDE.md`, `.github/`, `.husky/`), `test_a_package_json_script_rewrite_is_caught`, `test_a_tsconfig_change_is_caught`, `test_a_dependency_from_a_path_or_url_is_refused`; `test_develop_module.PackageAndScope` | VERIFIED |
 | Tool / command restrictions | `--tools` (which tools exist), `--allowedTools`, `--disallowedTools` | Host. In the Factory, only the reviewer fingerprint catches a tool that wrote | Probe (c): the init event lists `tools: [Bash, Glob, Grep, Read]`, and a `Write` call fails with "No such tool available" | VERIFIED_LIVE |
-| Git safety restrictions | Host: deny `git commit/push/reset/checkout/.../config/remote`, `git * --output*`. Factory: the Factory commits (`wgf_develop/step.py:173-180`, keyed); every Factory git call hardened (`scripts/wgflib/gitsafe.py:82`); a reviewer commit is detected and undone | Both | Probe (c2): `git diff … --output=` was denied by the explicit rule and `git commit` was denied. Factory: `AgentLoop.test_a_reviewer_committing_is_rejected_and_head_restored`, `test_core_security.ReviewerIsolation.test_config_the_reviewer_writes_runs_no_command_in_the_factory`, `CommitsAfterReview` | VERIFIED_LIVE |
+| Git safety restrictions | Host: deny `git commit/push/reset/checkout/.../config/remote`, `git * --output*`. Factory: the Factory commits (`wgf_develop/step.py`, keyed, `commit_paths`); every Factory git call - the reviewer's and, since 1.1.x, the developer's commit path too (`wgf_develop/repository.py` `GitRepo`) - is hardened (`scripts/wgflib/gitsafe.py` `hardened`): git dir pinned before the developer runs, no hooks, fsmonitor, signing or filter drivers; a reviewer commit is detected and undone | Both | Probe (c2): `git diff … --output=` was denied by the explicit rule and `git commit` was denied. Factory: `AgentLoop.test_a_reviewer_committing_is_rejected_and_head_restored`, `test_core_security.ReviewerIsolation.test_config_the_reviewer_writes_runs_no_command_in_the_factory`, `CommitsAfterReview`, `DeveloperBoundary.test_a_planted_core_worktree_*`, `test_a_planted_clean_filter_never_runs`, `test_a_planted_hook_and_fsmonitor_never_run` | VERIFIED_LIVE (host); VERIFIED (developer-side hardening) |
 | Isolated game checkout | `wgf_develop/settings.py:115` and `wgf_review/settings.py:120` → `wgflib.paths.checkout_path`; the review's verdict and brief must be outside the checkout (`wgf_review/step.py:126-130`) | Factory | `test_core_security.HostileIdentifiers`, `test_core_persistence.HostileIdentifiers`; live: the brief was read from the run directory, and the verdict was saved there | VERIFIED_LIVE |
 | Agent retries | Engine retry policy (`engine.py:577-579,640`); developer failure retryable (`developers.py:92-101`); reviewer timeout, idle and crash retryable (`wgf_review/step.py:248-266`) | Factory | `AgentLoop.test_a_developer_failure_is_retried_and_the_loop_recovers`, `test_an_exhausted_retry_budget_fails_the_run`, `test_a_crashing_reviewer_is_retried_then_fails_the_run`, `test_core_workflow.Retry` | VERIFIED |
 | Reviewer approval | `wgf_review/step.py:238-239`; strict verdict `verdict.py:60` | Factory | `AgentLoop.test_an_approving_reviewer_runs_once_and_the_run_completes`, `VerdictContract`; live visit 2 approve | VERIFIED_LIVE |
@@ -65,7 +70,7 @@ golden-run work and use port 4173.
 | Heartbeats / status | `procs.run` events (`scripts/wgflib/procs.py:715`); `engine.py:738-754` `STEP_PROGRESS`; liveness `wgflib/workflow/api.py:212`; `wgf status` (`scripts/wgf.py:372`) | Factory | `test_core_process.InsideAWorkflowStep.test_heartbeat_and_liveness_reach_the_step_state`, `test_core_workflow.LivenessDerivation`, `StatusCommand`; live: `spawned`/`exited` events for `claude` in `events.jsonl` | VERIFIED_LIVE |
 | Timeout handling | `developers.py:83-97`; `wgf_review/step.py:255-262`; `procs.run(timeout=, idle_timeout=)` | Factory. Host `--max-turns` / `--max-budget-usd` sit under it | `AgentLoop.test_a_developer_timeout_fails_the_step_and_is_retried`, `test_a_reviewer_timeout_is_retried_and_its_tree_is_killed`, `test_a_silent_reviewer_hits_the_idle_timeout`, `test_core_process.IsEnded` | VERIFIED |
 | Process cleanup | `procs.py:255` `terminate_tree`, `:319` subreaper, `:430` signal cleanup (installed by `wgf.py:559,577`) | Factory | `test_core_process` (27), `test_core_security.ReviewerLeftovers`, `test_core_process.EveryChildGoesThroughProcs`; live: `killed_pids: []` on both reviews, and no `claude` left running | VERIFIED |
-| Evidence collection | Reviewer: `<run>/review/<visit>-<attempt>.{brief.md,log,verdict.json}` (`wgf_review/step.py:121-125,169-171,219-225`); `review-report` on every executed outcome | Factory | `AgentLoop.*` (`assert_valid` on every report); live: logs and verdicts kept | VERIFIED_LIVE (reviewer). Developer: see gap 1 |
+| Evidence collection | Reviewer: `<run>/review/<visit>-<attempt>.{brief.md,log,verdict.json}` (`wgf_review/step.py`); `review-report` on every executed outcome. Developer: the whole transcript at `<run>/develop/<visit>-<attempt>.log` (`wgf_develop/developers.py`, `log_path=`), outside the checkout; `docs/development/checks.json` records the checks, including `isolation` and `commit-scope` refusals | Factory | `AgentLoop.*` (`assert_valid` on every report); `AgentLoop.test_an_approving_reviewer_runs_once_and_the_run_completes` (the developer transcript); live: logs and verdicts kept | VERIFIED_LIVE (reviewer); VERIFIED (developer transcript) |
 | Structured agent reports | Developer: `docs/development/report.json` → `prototype-report` (`wgf_develop/checks.py` `read_report`, `report.py`); reviewer: verdict JSON (`verdict.py`), stdout extraction (`verdict.py:42`) | Factory: schema plus strict contract | `test_develop_module`, `VerdictContract`, `AgentLoop.test_a_sandboxed_reviewer_can_answer_on_stdout`; live: Haiku's stdout verdicts parsed (fenced JSON) | VERIFIED_LIVE |
 | Commit lineage | Develop keyed commit (`Wgf-Develop-Key`, `step.py:122,175`); review pins HEAD == prototype commit (`wgf_review/step.py:107-112`); `wgf_release/lineage.py:70,82`; `wgf_verification/lineage.py` | Factory | `test_core_lineage.CommitLineage`, `test_core_release.Lineage`, `test_core_verify.WrongCommit`; live: `reviewed_commit` equals each `prototype-report` commit | VERIFIED_LIVE |
 | SDK integration | `scripts/wgf_sdk/step.py:222`; commits on the reviewed commit (`wgf_sdk/commit.py:176`) | Factory | `test_sdk_module`, `test_sdk_integration` (real-template case skipped: no sibling template) | VERIFIED |
@@ -96,13 +101,20 @@ against `claude --help` for 2.1.281, and every flag appears in a live run below.
 | `--max-turns`, `--max-budget-usd` | ✓ | ✓ | the host's own bound, under the Factory's timeouts |
 | `--no-session-persistence` | ✓ | ✓ | no session files per run |
 
-Two configuration consequences:
+Configuration consequences:
 
 - In text mode the reviewer prints nothing until it exits. Its example therefore sets
   `idle_timeout_seconds: null`. The module default of 600 s would end a long, silent review.
 - `Bash(pnpm *)` also admits `pnpm exec` and `pnpm dlx`, which is arbitrary code in the
-  checkout. The host rules scope files, not the network or `$HOME`. Wrap the argv in an OS
-  sandbox if the developer needs that.
+  checkout. The host rules scope files, not the network or `$HOME`. What the Factory holds
+  regardless (docs/development-module.md, "The developer's boundary"): the environment is
+  an allowlist, the Factory's guarded paths are fingerprinted and restored, the Factory's
+  git runs nothing the checkout's config names, and only `writable_paths` are committed.
+  `$HOME` and the network stay unwatched: wrap the argv in an OS sandbox for those.
+- The agent host's credential must be named in `factory.agents.env_passthrough` if the
+  host authenticates by an environment variable (`ANTHROPIC_API_KEY`,
+  `CLAUDE_CODE_OAUTH_TOKEN`); a CLI logged in with `claude login` reads its credentials
+  under `HOME`, which is always passed.
 
 ## Live evidence
 
@@ -210,14 +222,20 @@ competent live host. See "The existing `LiveReviewer` test" above. The determini
 the Core v1 steps: no surface produced `review-report`, and `gameplay` and `release` did not
 consume what their steps read. See each plugin's `CONFORMANCE.md` (binding 1.1.0).
 
+**Fixed (developer boundary, 1.1.x).** The developer ran with the Factory's whole
+environment, its commit was `git add --all` through a git whose config the developer
+could write (`core.worktree`, filter drivers), `package.json`'s `scripts` - what every later
+check runs - were unprotected, and nothing watched the Factory's own paths around it. See
+the three rows added above and docs/development-module.md. The live runs above predate it;
+a live developer run with a scrubbed environment needs `env_passthrough` if the host
+authenticates by variable.
+
 **Gaps, reported rather than fixed (step modules):**
 
-1. *The developer's transcript is not kept.* `CommandDeveloper.develop`
-   (`scripts/wgf_develop/developers.py:91`) calls `self.runner.run(argv, cwd=…, timeout=…)`
-   without `log_path=`. The review step passes one (`wgf_review/step.py:169-171`). A
-   developer's output survives only as the failure tail. Proposed fix: pass
-   `log_path=os.path.join(context.run_dir, "develop", f"{context.visit}-{context.attempt}.log")`
-   when the runner accepts it, as is already done for `idle_timeout`.
+1. *Fixed: the developer's transcript is kept.* It was reported here as not kept; it is
+   written to `<run_dir>/develop/<visit>-<attempt>.log` (`scripts/wgf_develop/developers.py`,
+   `log_path=` when the runner accepts it), and
+   `AgentLoop.test_an_approving_reviewer_runs_once_and_the_run_completes` asserts it.
 2. *Nothing records who wrote each commit.* `prototype-report` has no field naming the
    developer argv0 or its exit status, while `review-report.reviewer` does. That is additive
    and optional, and it belongs to the develop module's schema.

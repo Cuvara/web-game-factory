@@ -63,7 +63,9 @@ The step refuses to review anything but exactly the commit `develop` made:
 
 The prompt tells the reviewer it is read-only. That request is not what protects the
 checkout. The checkout is **fingerprinted** before and after the reviewer runs
-(`isolation.py`). The fingerprint covers:
+(`scripts/wgflib/isolation.py` - in the kernel since the develop step fingerprints the same
+guarded paths around its developer, see [development-module.md](development-module.md);
+`scripts/wgf_review/isolation.py` only re-exports it). The fingerprint covers:
 
 - `HEAD`, the branch it points at, and every ref. This catches a reviewer that commits,
   resets, stashes, tags or switches branches.
@@ -85,12 +87,13 @@ checkout. The checkout is **fingerprinted** before and after the reviewer runs
   unprivileged process cannot set it back, so editing a dependency and restoring its mtime
   is still caught. `fingerprint_ignored: false` turns this off where the walk is too slow.
 - The Factory's own `guarded_paths`: by default `core/` (workflows, gates, contracts),
-  `scripts/`, `bin/` and `workspace/config/`. These decide what a review, and every later
-  check, is worth.
+  `scripts/`, `bin/` and `workspace/config/` (`wgflib.isolation.DEFAULT_GUARDED_PATHS`).
+  These decide what a review, and every later check, is worth. The develop step holds its
+  developer to the same list.
 
 Every git command the step runs is hardened (`wgflib/gitsafe.py`): `core.fsmonitor`,
-hooks and every filter driver the checkout's config defines are disabled, and after the
-first call the git directory and work tree are pinned. Without that, a reviewer - or the
+hooks, commit and log signing (`gpg.program`) and every filter driver the checkout's config
+defines are disabled, and after the first call the git directory and work tree are pinned. Without that, a reviewer - or the
 developer before it - that writes `core.fsmonitor` or a `filter.*.process` into
 `.git/config` gets the Factory to run a command outside any sandbox the agent was in, and a
 `core.worktree` pointing elsewhere turns the restore's `clean -fd` on another directory.
@@ -160,8 +163,10 @@ factory:
       timeout_seconds: 1800         # wall clock
       idle_timeout_seconds: 600     # no stdout/stderr for this long
     # checkouts: ..                 # default: factory.develop.checkouts
-    guarded_paths: [core, scripts, bin, workspace/config]
+    guarded_paths: [core, scripts, bin, workspace/config]   # the develop step's too
     fingerprint_ignored: true     # lstat inside existing ignored entries (node_modules)
+  agents:
+    env_passthrough: []           # what the reviewer's environment also carries
 ```
 
 `argv` placeholders:
@@ -175,7 +180,11 @@ factory:
 | `{prompt}` | a one-paragraph instruction to read the brief and write only the verdict |
 
 The same values are also in the environment as `WGF_REVIEW_REPO`, `WGF_REVIEW_VERDICT`,
-`WGF_REVIEW_BRIEF` and `WGF_REVIEW_COMMIT`.
+`WGF_REVIEW_BRIEF` and `WGF_REVIEW_COMMIT`. Otherwise the reviewer's environment is an
+allowlist (`wgflib/agentenv.py`: PATH, HOME, USER, LANG/LC_*, TERM, TMPDIR, SHELL, CI, the
+proxy variables, XDG_*, NODE_*, PNPM_*, npm_config_* minus secret-named ones), plus
+whatever `factory.agents.env_passthrough` names - typically the host's credential. The
+Factory's own tokens never reach it.
 
 The reviewer runs through `wgflib.procs.run`, as an owned process tree. Timeout, idle
 timeout and `wgf cancel` end the whole tree, and heartbeats show in `wgf status`.

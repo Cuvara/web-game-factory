@@ -17,10 +17,17 @@ read and implement the brief).
 
 `timeout_seconds` bounds the whole run; `idle_timeout_seconds` (optional) ends a developer
 that has written nothing to stdout or stderr for that long - a hung agent, not a slow one.
+
+The command runs with wgflib.agentenv's allowlisted environment plus
+`factory.agents.env_passthrough`, never with the Factory's own.
 """
 
 import inspect
 import os
+
+from wgflib import agentenv
+
+from .repository import ExactEnv
 
 __all__ = ["Outcome", "HandoffDeveloper", "CommandDeveloper", "create_developer",
            "DECLINE_DECISIONS", "PROMPT"]
@@ -97,6 +104,11 @@ class CommandDeveloper:
             kwargs["log_path"] = os.path.join(
                 log_dir, f"{context.visit}-{context.attempt}.log")
             context.logger.info("develop transcript", log=kwargs["log_path"])
+        # An allowlist, not the Factory's environment (wgflib.agentenv): the developer runs
+        # arbitrary code in the checkout and gets no token it was not configured to need.
+        if _accepts(self.runner.run, "env"):
+            kwargs["env"] = ExactEnv(agentenv.scrubbed(
+                getattr(self.settings, "env_passthrough", ())))
         result = self.runner.run(argv, cwd=checkout, timeout=timeout, **kwargs)
         if result.timed_out:
             return Outcome(Outcome.FAILED, f"developer command timed out after {timeout:.0f}s",

@@ -235,9 +235,16 @@ class RouteScopedVisitLimits(unittest.TestCase):
                                      "{success: 1}\n")
         self.assertEqual(parse(text).step("verify").max_visits_by_route, {"success": 1})
 
+    def test_a_route_qualified_by_its_source_step_parses(self):
+        step = parse(ROUTED.replace("LIMITS", "{verify.fail: 2}")).step("develop")
+        self.assertEqual(step.max_visits_by_route, {"verify.fail": 2})
+
     def test_a_route_that_does_not_enter_the_step_is_refused(self):
         for limits, needle in (("{request-changes: 2}", "no route into it"),
                                ("{success: 2}", "no route into it"),
+                               ("{develop.fail: 2}", "no route into it"),
+                               ("{nowhere.fail: 2}", "no route into it"),
+                               ("{verify.success: 2}", "no route into it"),
                                ("{fail: 0}", "integer >= 1"),
                                ("{fail: true}", "integer >= 1"),
                                ("{fail: 1.5}", "integer >= 1"),
@@ -249,8 +256,10 @@ class RouteScopedVisitLimits(unittest.TestCase):
     def test_the_shipped_new_game_bounds_each_loop_into_develop(self):
         definition = load_definition("new-game")
         develop = definition.step("develop")
+        # Each reviewer's requests for changes are bounded separately.
         self.assertEqual(develop.max_visits_by_route,
-                         {"request-changes": 2, "fail": 2, "iterate": 2})
+                         {"review.request-changes": 2, "sdk-review.request-changes": 2,
+                          "fail": 2, "iterate": 2})
         # develop's own limit never cuts a loop short of its route budget, and every step
         # of the loop after develop is visited at most once per develop visit.
         self.assertEqual(develop.max_visits, 1 + sum(develop.max_visits_by_route.values()))

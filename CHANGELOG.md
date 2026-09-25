@@ -126,9 +126,14 @@ Core changes are listed with their reason, as docs/core-v1.md requires.
 - **Loops into one step are bounded per route (P1-7).** A workflow step may declare
   `max_visits_by_route: {<route>: n}`; entries through that route (the label or outcome
   that routed into the step) are counted in the step's new `route_visits` and bounded apart
-  from each other, while `max_visits` still holds. new-game's develop takes
-  `request-changes: 2` (review and sdk-review), `fail: 2` (verify), `iterate: 2` (G4) per
-  start or resume, with `max_visits: 7` on develop and on every later step of the loop.
+  from each other, while `max_visits` still holds. A key is a route from any step or
+  `<source>.<route>` from one step; entries are counted per `<source>.<route>`. new-game's
+  develop takes `review.request-changes: 2`, `sdk-review.request-changes: 2`, `fail: 2`
+  (verify) and `iterate: 2` (G4) over the run, with `max_visits: 9` on develop and on every
+  later step of the loop. Route budgets last the run: resuming a run a route limit stopped
+  refills that limit only, and `--from` all of them (M13 review: the two reviewers had
+  shared one `request-changes` count, and every resume refilled every route, so G4's
+  `iterate` - always decided by a resume - was never bounded).
   *Reason (core change, core/workflows + wgflib/workflow):* the four loops back into develop
   shared develop's one `max_visits` of 3, so a review loop could spend the passes a failing
   verification needed, and nothing said which loop had. The definition refuses a key that
@@ -151,7 +156,13 @@ Core changes are listed with their reason, as docs/core-v1.md requires.
 - **Raising a budget is a person's act:** `wgf resume <run> --budget-sessions N |
   --budget-cost X` records a `BUDGET_RAISED` operator event (new generic
   `engine.resume(operator_events=...)`: refused for `decided_by: automation` and for the
-  engine's own event names). Refused from inside a step's process tree.
+  engine's own event names). Refused from inside a step's process tree. A raise counts only
+  when the engine's `WORKFLOW_RESUMED` corroborates it by `resume_nonce`, and the develop
+  step fails - not retried - when a developer session edited the event log, recording the
+  raises it forged so they never count (M13 review: any appended `BUDGET_RAISED` line naming
+  a person was honoured). `develop_budget` is a guarded param. *Residual:* no hash chain on
+  `events.jsonl`; the run directory lying outside every agent's write scope is the
+  containment.
 - A step's context gains `entered_by` (the route into this visit), `visit_budget` (what the
   visit leaves of its limits) and `read_events()` (the run's recorded events);
   `STEP_STARTED` carries `entered_by`. The develop brief says which loop brought the work
@@ -163,9 +174,10 @@ Core changes are listed with their reason, as docs/core-v1.md requires.
   `max_visits_by_route` counts only from this version: an old run's earlier loops are not
   charged to any route. `wgf new-game --mock --mock-plan '{"verify": [fail x4]}'` now
   blocks on develop's `fail` route (as before, after the third failed verification); a
-  review that always requests changes still blocks on the third request. Per start or
-  resume develop may now be visited up to 7 times instead of 3 when the loops mix - set
-  `factory.develop.budget` to bound what a command developer may spend in the run.
+  review that always requests changes still blocks on its third request, and a third G4
+  `iterate` now stops for a person. develop may be visited up to 9 times instead of 3 when
+  the loops mix - set `factory.develop.budget` to bound what a command developer may spend
+  in the run.
 
 ### Added
 - **Timeout auto-approval (M4).** `factory.checkpoints.timeout_auto_approve: {G2: 48h}`

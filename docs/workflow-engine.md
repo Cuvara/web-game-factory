@@ -133,9 +133,10 @@ workflow:
         fail: develop                # route label -> target
       next: release                  # success target; default is the next step listed
     - id: develop
-      max_visits: 7
+      max_visits: 9
       max_visits_by_route:           # entries through one route, bounded apart (§8)
-        fail: 2
+        fail: 2                      # from any step
+        review.request-changes: 2    # from that step only
 ```
 
 Targets are step ids, `$end` (complete) or `$fail` (fail). Step types are kebab-case and
@@ -437,34 +438,39 @@ grants every step a fresh budget.
 
 **Loops into one step, bounded apart.** Several loops can lead back into one step, and one
 shared `max_visits` lets one of them spend the passes another needs, with nothing saying
-which. A step may therefore declare `max_visits_by_route: {<route>: n}`: the route is the
-label or outcome that routed *into* it (`request-changes`, `fail`, `iterate`, or `success`
-for ordinary progression). Each entry is counted in `route_visits` under its route as well as
-in `visits`; entering through a route more than `n` times since the run last started or
-resumed blocks the run, whatever `max_visits` still allows (which keeps holding too). The
-engine names no route: every one comes from the workflow file, and the definition refuses a
-key that is no route into the step.
+which. A step may therefore declare `max_visits_by_route: {<key>: n}`. A key is the label
+or outcome that routed *into* the step (`request-changes`, `fail`, `iterate`, or `success`
+for ordinary progression), counting entries through it from any step, or
+`<source>.<route>`, counting only that step's (`review.request-changes`) - so two steps that
+route the same label back get a limit each. Each entry is counted in `route_visits` under
+`<source>.<route>` as well as in `visits`; entering through a limit's routes more than `n`
+times in the run blocks it, whatever `max_visits` still allows (which keeps holding too).
+Route budgets last the whole run: a G4 decision always arrives by resume, so a resume that
+refilled them would leave G4's `iterate` unbounded. Resuming a run a route limit stopped
+refills that limit alone (the person granting that loop more passes); `--from` refills
+every one. The engine names no route: every one comes from the workflow file, and the
+definition refuses a key that is no route into the step.
 
-new-game bounds develop's four loops this way: `request-changes: 2` (review's and
-sdk-review's requests for changes, which share the label), `fail: 2` (verify), `iterate: 2`
-(G4). develop's `max_visits` is 7 - the first visit plus every route's budget - so it is
-never what a loop meets first, and review, sdk, sdk-review, verify and prototype-review,
-each visited at most once per develop visit, carry 7 as well. A reviewer that never approves
-still blocks the run on its third request for changes; a verification that always fails,
-on its third failure; neither spends the other's budget. Per start or resume that is at most
-seven develop visits (each up to `max_attempts` developer attempts); what a whole run may
-spend on unattended developer sessions is bounded separately, by `factory.develop.budget`,
-which a resume does not reset ([development-module.md](development-module.md#budget)).
+new-game bounds develop's four loops this way: `review.request-changes: 2`,
+`sdk-review.request-changes: 2`, `fail: 2` (verify), `iterate: 2` (G4). develop's
+`max_visits` is 9 - the first visit plus every route's budget - so it is never what a loop
+meets first, and review, sdk, sdk-review, verify and prototype-review, each visited at most
+once per develop visit, carry 9 as well. A reviewer that never approves blocks the run on its
+own third request for changes; a verification that always fails, on its third failure; a
+third G4 iterate stops for a person too; none spends another's budget. What a whole run may
+spend on unattended developer sessions is bounded separately, by `factory.develop.budget`
+([development-module.md](development-module.md#budget)).
 
 **Why a run stopped, as data.** A loop-limit stop records `state.blocked_reason =
 {"kind": "loop-limit", "step": "develop", "route": "fail", "scope": "route", "limit": 2,
-"entered": 2, "from": "verify"}` (`scope: step` for `max_visits`), also in the
+"entered": 2, "from": "verify", "limit_key": "fail"}` (`scope: step` for `max_visits`;
+`limit_key` is the `max_visits_by_route` key that stopped it), also in the
 `WORKFLOW_BLOCKED` event's `data.blocked`. Resume decides from it - never from the wording
 of the message - to re-enter the step for "one more pass", counted against the stopped
 route's fresh budget. A run blocked before `blocked_reason` existed said so only in its
 `loop limit` message, and that is still honoured for it. A step sees how it was entered:
 `context.entered_by` and `context.visit_budget` (`{"step": {limit, used, remaining},
-"route": null | {route, limit, used, remaining}}`); develop's brief uses them to say which
+"route": null | {route, limit_key, limit, used, remaining}}`); develop's brief uses them to say which
 loop brought the work back and how many passes that loop has left.
 
 Retries are bounded separately by `max_attempts`, and no

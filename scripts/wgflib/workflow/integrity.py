@@ -63,7 +63,7 @@ __all__ = ["state_problems", "params_problems", "decision_on_record", "GUARDED_P
 # `lifecycle_sync` is here for the other direction: it lets a run write into workspace/, so
 # it is never taken on the word of an edited state.json either.
 GUARDED_PARAMS = ("mock", "mock_plan", "auto_approve", "timeout_auto_approve",
-                  "lifecycle_sync")
+                  "lifecycle_sync", "develop_budget")
 
 _COUNTERS = ("attempts", "executions", "visits", "loop_base")
 _DECISION_KEYS = ("decision", "decided_by", "decided_at", "visit", "note", "mode")
@@ -238,6 +238,19 @@ def _blocked_reason_problems(state, definition):
     route = reason.get("route")
     if route is not None and not isinstance(route, str):
         problems.append(f"blocked_reason.route {route!r} is not a route")
+    # The limit a resume refills must be one the step declares, and one that counts the
+    # entry the run was stopped at - never a way to refill another loop's budget.
+    limit_key = reason.get("limit_key")
+    if limit_key is not None and not problems:
+        limits = definition.step(step_id).max_visits_by_route
+        source = reason.get("from")
+        entry = f"{source}.{route}" if isinstance(source, str) and route else route
+        if (not isinstance(limit_key, str) or limit_key not in limits
+                or not isinstance(entry, str)
+                or not (limit_key == entry or ("." not in limit_key
+                                               and entry.rpartition(".")[2] == limit_key))):
+            problems.append(f"blocked_reason.limit_key {limit_key!r} is not a limit of "
+                            f"{step_id} that counts its route {route!r}")
     return problems
 
 

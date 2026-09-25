@@ -220,12 +220,14 @@ class StepState:
     measured against `visits - loop_base`, and a resume raises `loop_base` to `visits` so
     that a person resuming a loop-blocked run grants every step a fresh budget.
 
-    `route_visits` counts entries per route - the label or outcome that routed into the
-    step (`fail`, `request-changes`, `success`, ...) - over the whole run, and `route_base`
-    is each route's count when the budget was last reset, exactly as `loop_base` is for
-    `visits`: a step's `max_visits_by_route` is measured against the difference. Entries
-    with no route (a run's first step, `--from`, a resume's "one more pass" at a step
-    limit) are counted in `visits` only. `entered_by` is the route of the current visit.
+    `route_visits` counts entries per source step and route - `<source>.<route>`, the step
+    that routed here and the label or outcome it routed by (`verify.fail`,
+    `review.request-changes`, `assets.success`, ...) - over the whole run, and `route_base`
+    is each key's count when its budget was last refilled: a step's `max_visits_by_route`
+    limit is measured against the difference, summed over the keys it counts. Route budgets
+    last the run: a resume refills only the one that stopped it, `--from` all of them.
+    Entries with no route (a run's first step, `--from`, a resume's "one more pass" at a
+    step limit) are counted in `visits` only. `entered_by` is the key of the current visit.
     State written before these existed has none of them, and reads as {} / None.
     """
 

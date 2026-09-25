@@ -259,8 +259,15 @@ class WorkflowEngine:
         # not immediately pause the run it was just asked to continue.
         self.store.clear_request(run_id, "pause")
         limited = self._loop_limited(state)
+        # A resume is a fresh per-step visit budget. Route budgets are not refilled by it:
+        # they bound a loop over the whole run (a G4 decision always arrives by resume, so
+        # refilling them here made the `iterate` limit unreachable). The one exception is
+        # the route limit that stopped this run - resuming it is the person granting that
+        # loop more passes - and an explicit --from, a fresh start from that step.
         for step_state in state.steps.values():
-            _reset_loop_budget(step_state)  # a resume is a fresh loop budget
+            _reset_loop_budget(step_state, routes=from_step is not None)
+        if from_step is None and limited is not None and limited.get("scope") == "route":
+            self._refill_route(state, limited)
         if state.workflow_version != self.definition.version:
             data["definition_version"] = self.definition.version
             data["note"] = "resuming under a newer workflow definition"
@@ -285,7 +292,7 @@ class WorkflowEngine:
                     # stopped, so the pass counts against that route's fresh budget.
                     data["loop_limit"] = limited
                     self._enter(state, state.cursor, check_loop=False,
-                                route=limited.get("route"))
+                                route=limited.get("route"), source=limited.get("from"))
                 else:
                     # The driver died after recording this step's success and before moving
                     # the cursor on. The step is done: follow its recorded route instead of
@@ -306,11 +313,30 @@ class WorkflowEngine:
 
         if decision is not None:
             self.record_decision(state, state.cursor, decision, decided_by, note)
+        if operator_events:
+            # One nonce ties this resume's operator events to the WORKFLOW_RESUMED that
+            # follows them: a reader (wgflib.budget.effective) honours an operator event only
+            # when the engine's own resume record corroborates it, so a lone line appended
+            # to events.jsonl is not a person's act.
+            data["resume_nonce"] = secrets.token_hex(8)
         for event, event_data in operator_events:
-            self.record_operator_event(state, event, event_data, decided_by)
+            self.record_operator_event(state, event, event_data, decided_by,
+                                       resume_nonce=data["resume_nonce"])
 
         self._emit(state, Events.WORKFLOW_RESUMED, data=data)
         return state
+
+    def _refill_route(self, state, limited):
+        """Grant the route limit a loop-blocked run stopped at a fresh budget: every entry
+        key that limit counts starts from now."""
+        step_id = limited.get("step")
+        if step_id not in state.steps or not self.definition.has_step(step_id):
+            return
+        step_state = state.step(step_id)
+        limit_key = limited.get("limit_key") or limited.get("route")
+        for key in list(step_state.route_visits or {}):
+            if _limit_counts(limit_key, key):
+                step_state.route_base[key] = step_state.route_visits[key]
 
     @staticmethod
     def _loop_limited(state):
@@ -326,11 +352,14 @@ class WorkflowEngine:
             return {"kind": LOOP_LIMIT, "step": state.cursor, "legacy": True}
         return None
 
-    def record_operator_event(self, state, event, data, decided_by):
+    def record_operator_event(self, state, event, data, decided_by, resume_nonce=None):
         """Record `event` - a person's act on the run, not the engine's - with `data`,
-        `decided_by` and `decided_at`. The caller holds the run's lock (resume)."""
+        `decided_by`, `decided_at` and the `resume_nonce` of the WORKFLOW_RESUMED that
+        follows it. The caller holds the run's lock (resume)."""
         check_operator_event(event, data, decided_by)
         entry = dict(data, decided_by=decided_by, decided_at=self.clock())
+        if resume_nonce is not None:
+            entry["resume_nonce"] = resume_nonce
         self._emit(state, event, step_id=state.cursor, data=entry)
         return entry
     def _advance_past(self, state, step_id, step_state):
@@ -735,24 +764,26 @@ class WorkflowEngine:
             return True
         return False
 
-    def _enter(self, state, step_id, check_loop=True, save=True, route=None):
+    def _enter(self, state, step_id, check_loop=True, save=True, route=None, source=None):
         """Begin a new visit to `step_id`. Returns False if a loop limit forbids it.
 
         `route` is the routing key that led here (None for a run's first step, `--from`,
-        continue_in's first step); the visit is counted against it too, and the step's
-        `max_visits_by_route` for it applies alongside `max_visits`.
+        continue_in's first step) and `source` the step it came from; the visit is counted
+        under `<source>.<route>` (just `<route>` when the source is unknown), and every
+        `max_visits_by_route` limit that counts that entry applies alongside `max_visits`.
 
         `save=False` leaves the save to the caller, which moves the cursor in the same
         write: a visit counted on disk while the cursor still sits on the previous step
         would be counted again when resume follows that step's route (see `_follow`)."""
         step_def = self.definition.step(step_id)
         step_state = state.step(step_id)
-        if check_loop and self._visit_limit(step_def, step_state, route) is not None:
+        key = _entry_key(route, source)
+        if check_loop and self._visit_limit(step_def, step_state, key) is not None:
             return False
         step_state.visits += 1
-        if route is not None:
-            step_state.route_visits[route] = step_state.route_visits.get(route, 0) + 1
-        step_state.entered_by = route
+        if key is not None:
+            step_state.route_visits[key] = step_state.route_visits.get(key, 0) + 1
+        step_state.entered_by = key
         step_state.attempts = 0
         step_state.status = StepStatus.PENDING
         step_state.error = None
@@ -1262,7 +1293,8 @@ class WorkflowEngine:
             # The new visit and the cursor move are one write. Saved apart, a crash between
             # them left the visit counted with the cursor still on this step, and resume -
             # following this step's recorded route - entered the target a second time.
-            if enter and not self._enter(state, target, save=False, route=key):
+            if enter and not self._enter(state, target, save=False, route=key,
+                                         source=step_def.id):
                 return self._loop_limit(state, target, key, source=step_def.id)
             state.cursor = target
             self._save(state)
@@ -1283,19 +1315,21 @@ class WorkflowEngine:
                             message or f"{step_def.id} is waiting", reason=key)
 
     @staticmethod
-    def _visit_limit(step_def, step_state, route):
-        """(scope, limit, entered) of the first visit limit a new entry through `route`
-        would exceed - ("step", max_visits, ...) or ("route", max_visits_by_route[route],
-        ...) - or None when the entry is allowed."""
+    def _visit_limit(step_def, step_state, key):
+        """(scope, limit, entered, limit_key) of the first visit limit a new entry counted
+        under `key` (see `_entry_key`) would exceed - ("step", max_visits, ...) or ("route",
+        max_visits_by_route[limit_key], ...) - or None when the entry is allowed."""
         entered = step_state.visits - step_state.loop_base
         if entered >= step_def.max_visits:
-            return "step", step_def.max_visits, entered
-        limit = step_def.max_visits_by_route.get(route) if route is not None else None
-        if limit is not None:
-            entered = (step_state.route_visits.get(route, 0)
-                       - step_state.route_base.get(route, 0))
+            return "step", step_def.max_visits, entered, None
+        if key is None:
+            return None
+        for limit_key, limit in sorted(step_def.max_visits_by_route.items()):
+            if not _limit_counts(limit_key, key):
+                continue
+            entered = _route_used(step_state, limit_key)
             if entered >= limit:
-                return "route", limit, entered
+                return "route", limit, entered, limit_key
         return None
 
     @staticmethod
@@ -1305,26 +1339,33 @@ class WorkflowEngine:
         budget = {"step": {"limit": step_def.max_visits, "used": used,
                            "remaining": max(step_def.max_visits - used, 0)},
                   "route": None}
-        route = step_state.entered_by
-        limit = step_def.max_visits_by_route.get(route) if route is not None else None
-        if limit is not None:
-            used = step_state.route_visits.get(route, 0) - step_state.route_base.get(route, 0)
-            budget["route"] = {"route": route, "limit": limit, "used": used,
-                               "remaining": max(limit - used, 0)}
+        key = step_state.entered_by
+        if key is not None:
+            # The tightest limit counting this entry is the one the step can act on.
+            for limit_key, limit in sorted(step_def.max_visits_by_route.items()):
+                if not _limit_counts(limit_key, key):
+                    continue
+                used = _route_used(step_state, limit_key)
+                remaining = max(limit - used, 0)
+                if budget["route"] is None or remaining < budget["route"]["remaining"]:
+                    budget["route"] = {"route": key, "limit_key": limit_key, "limit": limit,
+                                       "used": used, "remaining": remaining}
         return budget
 
     def _loop_limit(self, state, target, route=None, source=None):
         state.cursor = target
         step_def = self.definition.step(target)
-        scope, limit, entered = (self._visit_limit(step_def, state.step(target), route)
-                                 or ("step", step_def.max_visits, step_def.max_visits))
+        scope, limit, entered, limit_key = (
+            self._visit_limit(step_def, state.step(target), _entry_key(route, source))
+            or ("step", step_def.max_visits, step_def.max_visits, None))
         reason = _compact({"kind": LOOP_LIMIT, "step": target, "route": route,
                            "scope": scope, "limit": limit, "entered": entered,
-                           "from": source})
+                           "from": source, "limit_key": limit_key})
         if scope == "route":
-            message = (f"loop limit: {target} has been entered through route {route!r} "
-                       f"{limit} time(s) since the run last started or resumed "
-                       f"(max_visits_by_route.{route}={limit}). Resume to allow more.")
+            message = (f"loop limit: {target} has been entered through "
+                       f"{limit_key!r} {limit} time(s) in this run "
+                       f"(max_visits_by_route.{limit_key}={limit}). Resume to grant that "
+                       f"loop more passes.")
         else:
             message = (f"loop limit: {target} has been entered {limit} time(s) since the "
                        f"run last started or resumed (max_visits={limit}). Resume to allow "
@@ -1390,10 +1431,35 @@ class _ContractViolation(Exception):
     pass
 
 
-def _reset_loop_budget(step_state):
-    """A fresh loop budget: every visit limit, per step and per route, counts from now."""
+def _reset_loop_budget(step_state, routes=True):
+    """A fresh loop budget: the per-step visit limit counts from now, and with `routes`
+    every per-route limit too."""
     step_state.loop_base = step_state.visits
-    step_state.route_base = dict(step_state.route_visits or {})
+    if routes:
+        step_state.route_base = dict(step_state.route_visits or {})
+
+
+def _entry_key(route, source):
+    """What an entry is counted under: `<source>.<route>`, or `<route>` when the step it
+    came from is unknown (a resume of a run blocked before sources were recorded)."""
+    if route is None:
+        return None
+    return f"{source}.{route}" if source else route
+
+
+def _limit_counts(limit_key, entry_key):
+    """Whether a `max_visits_by_route` key counts an entry key: `<source>.<route>` counts
+    exactly that source's entries; a bare `<route>` counts that route from any source."""
+    if limit_key == entry_key:
+        return True
+    return "." not in limit_key and entry_key.rpartition(".")[2] == limit_key
+
+
+def _route_used(step_state, limit_key):
+    """Entries a route limit has counted since its budget was last refilled."""
+    visits, base = step_state.route_visits or {}, step_state.route_base or {}
+    return sum(count - base.get(key, 0) for key, count in visits.items()
+               if _limit_counts(limit_key, key))
 
 
 def check_operator_event(event, data, decided_by):
@@ -1412,8 +1478,9 @@ def check_operator_event(event, data, decided_by):
         json.dumps(data)
     except (TypeError, ValueError):
         raise EngineError(f"operator event {event} data is not JSON")
-    if {"decided_by", "decided_at"} & set(data):
-        raise EngineError(f"operator event {event} data may not set decided_by/decided_at")
+    if {"decided_by", "decided_at", "resume_nonce"} & set(data):
+        raise EngineError(f"operator event {event} data may not set decided_by, decided_at "
+                          f"or resume_nonce")
     if not isinstance(decided_by, str) or not _DECIDER.fullmatch(decided_by):
         raise EngineError(f"decided_by {decided_by!r} is not a plain identifier")
     if decided_by == "automation":

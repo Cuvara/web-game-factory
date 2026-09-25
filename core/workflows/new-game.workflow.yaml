@@ -47,14 +47,16 @@ workflow:
 
   # Loops. Four routes lead back into develop: review's and sdk-review's request-changes,
   # verify's fail, and G4's iterate. Each has its own budget on develop
-  # (max_visits_by_route), counted since the run last started or resumed, so one loop
-  # cannot spend the passes another needs, and a run blocked at a limit says which route
-  # reached it (state.blocked_reason). develop's own max_visits is the first visit plus
-  # every route's budget, so it is never the limit a loop meets first; every step of the
-  # loop after develop is visited at most once per develop visit and carries the same
-  # bound. A person resuming a blocked run grants one more pass and a fresh budget for
-  # every route. What a whole run may spend on unattended developer sessions is bounded
-  # separately and is not reset by a resume: factory.develop.budget.
+  # (max_visits_by_route; `review.request-changes` counts only review's requests), counted
+  # over the whole run, so one loop cannot spend the passes another needs - and G4's
+  # iterate, which always arrives by a resume, is still bounded - and a run blocked at a
+  # limit says which route reached it (state.blocked_reason). develop's own max_visits is
+  # the first visit plus every route's budget, so it is never the limit a loop meets first;
+  # every step of the loop after develop is visited at most once per develop visit and
+  # carries the same bound. A person resuming a run blocked at a route limit grants that
+  # route one more pass and a fresh budget - that route only. What a whole run may spend on
+  # unattended developer sessions is bounded separately and is not reset by a resume:
+  # factory.develop.budget.
 
   groups:
     plan: [strategy, strategy-review, design, tech-plan, tech-plan-review]
@@ -142,12 +144,12 @@ workflow:
       # questions the prototype must answer and the kill criteria its report must list.
       inputs: [game-design, asset-manifest, scaffold-record, title-strategy, qa-report, review-report]
       outputs: [prototype-report]
-      # request-changes is shared by review and sdk-review: two requests for changes, from
-      # either reviewer, before a person looks. fail: two failed verifications. iterate: two
-      # G4 iterations. 7 = the first visit + 2 + 2 + 2.
-      max_visits: 7
+      # Two requests for changes from each reviewer, two failed verifications and two G4
+      # iterations before a person looks. 9 = the first visit + 2 + 2 + 2 + 2.
+      max_visits: 9
       max_visits_by_route:
-        request-changes: 2
+        review.request-changes: 2
+        sdk-review.request-changes: 2
         fail: 2
         iterate: 2
 
@@ -160,7 +162,7 @@ workflow:
       stage: title:prototype
       inputs: [prototype-report, game-design, scaffold-record]
       outputs: [review-report]
-      max_visits: 7
+      max_visits: 9
       on:
         request-changes: develop
 
@@ -171,21 +173,21 @@ workflow:
       stage: title:prototype
       inputs: [game-design, scaffold-record, prototype-report]
       outputs: [sdk-report]
-      max_visits: 7
+      max_visits: 9
 
     # The sdk step commits integration code on top of the reviewed development commit, and
     # that sdk commit is what verify checks and release ships. So it is reviewed too, by the
     # same independent, read-only reviewer: the subject is the sdk-report's commit (HEAD
     # after sdk), the change is prototype-report's commit..sdk commit. request-changes goes
     # back to develop with the blockers - the developer fixes the game side, sdk integrates
-    # again, and both reviews run again; develop's request-changes budget (shared with
-    # review) bounds the loop. A requested change never continues to verify.
+    # again, and both reviews run again; develop's own sdk-review.request-changes budget
+    # bounds the loop. A requested change never continues to verify.
     - id: sdk-review
       type: review
       stage: title:prototype
       inputs: [sdk-report, prototype-report, game-design, scaffold-record]
       outputs: [review-report]
-      max_visits: 7
+      max_visits: 9
       with:
         subject: sdk-report
       on:
@@ -201,7 +203,7 @@ workflow:
       inputs: [prototype-report, sdk-report, game-design, scaffold-record, asset-manifest]
       outputs: [verification-report, qa-report]
       retry: {max_attempts: 2}
-      max_visits: 7
+      max_visits: 9
       on:
         fail: develop
 
@@ -223,7 +225,7 @@ workflow:
         gate: G4
         prompt: Judge the verified prototype against the kill criteria set at strategy - pass to release, iterate to develop again, or kill the title?
         choices: [pass, iterate, kill]
-      max_visits: 7
+      max_visits: 9
       on:
         iterate: develop
         kill: $end

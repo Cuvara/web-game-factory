@@ -39,10 +39,14 @@ it.
 Targets are step ids, `$end` (the run completes) or `$fail` (the run fails).
 
 `max_visits_by_route` keys are the routes that can enter the step: a label (or outcome)
-some step's `on:` maps to it, or `success` when some step's success goes to it. Each value
-is a whole number >= 1. A step entered through such a route more often than that since the
-run last started or resumed blocks the run, whatever its overall `max_visits` still allows,
-so one loop into a step cannot spend the visits another loop into it needs.
+some step's `on:` maps to it, or `success` when some step's success goes to it - counted
+from any source step - or `<source>.<route>`, which counts only that step's entries through
+the route (two reviewers that both route `request-changes` back to the same step get a
+limit each). Each value is a whole number >= 1. A step entered through such a route more
+often than that in the run blocks the run, whatever its overall `max_visits` still allows,
+so one loop into a step cannot spend the visits another loop into it needs. Route budgets
+last the whole run: resuming a run a route limit stopped grants that limit a fresh budget,
+and only that one; `--from` starts every budget afresh.
 
 Nothing here executes anything.
 """
@@ -328,11 +332,14 @@ def parse_definition(document, source="<memory>", base_retry=None, base_max_visi
             continue
         entering = set()
         for other in definition.steps:
-            entering |= {route for route, target in other.on.items() if target == step.id}
+            routes = {route for route, target in other.on.items() if target == step.id}
             if isinstance(other.id, str) and "success" not in other.on and (
                     other.next or (definition.following(other.id)
                                    if other.id in definition.step_ids else None)) == step.id:
-                entering.add("success")
+                routes.add("success")
+            entering |= routes
+            # `<source>.<route>` limits only that step's entries through the route.
+            entering |= {f"{other.id}.{route}" for route in routes}
         for route in step.max_visits_by_route:
             if route not in entering:
                 problems.append(

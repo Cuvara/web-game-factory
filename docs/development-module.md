@@ -84,7 +84,7 @@ the game, regenerated on every visit and committed with the code it asked for. I
 Either is a retryable `FAILED`.
 
 A `command` developer is a paid agent session per attempt. Loop limits bound how often the
-work goes round between resumes; the run's [budget](#budget) bounds what the whole run may
+work goes round before a person looks; the run's [budget](#budget) bounds what the whole run may
 spend on those sessions.
 
 The provider, if any, is named only in the installation's `factory.yaml`. Host skills the
@@ -157,10 +157,10 @@ Integration status and scope deltas come from the developer's report; MVP items 
 
 ## Budget
 
-Loop limits (`max_visits`, `max_visits_by_route` in the workflow) bound the passes *per
-start or resume*, and every resume refills them - a person saying "one more pass". With a
-`command` developer each attempt of each visit is a paid agent session, so nothing there
-bounds a run. `factory.develop.budget` does:
+Loop limits bound passes, not spend: `max_visits` is refilled by every resume, and a
+route limit (`max_visits_by_route`) by a resume of the run it stopped - a person saying
+"one more pass". With a `command` developer each attempt of each visit is a paid agent
+session, so nothing there bounds a run. `factory.develop.budget` does:
 
 ```yaml
 factory:
@@ -210,6 +210,17 @@ The effective limit is the largest of the snapshot and every raise a person reco
 refused from inside a step's process tree (`decided_by: automation` - an agent does not raise
 its own budget; the same rule as G4/G6/G7), for a run started without that limit, and for a
 value that is not positive; a `BUDGET_RAISED` recorded by automation counts for nothing.
+
+A raise counts only when the engine's own resume record corroborates it: the engine writes
+the raise with a `resume_nonce` and the `WORKFLOW_RESUMED` right after it with the same one,
+so a line appended to `events.jsonl` by anything else is ignored. Around every command
+developer session the step compares the event log with what it was before the session: if
+earlier lines changed, or a `BUDGET_RAISED` or `WORKFLOW_RESUMED` was appended (no resume can
+happen while the step holds the run), the step fails, not retried, and records the forged
+raises (`STEP_LOG` `data.budget: event-log-tampered`, `data.forged`) so no later visit
+honours them. *Residual:* the log has no hash chain or secret. The containment is that the
+run directory (`.factory/`) lies outside the developer's checkout and its host write scope;
+a process that can write there undetected between sessions is outside this model.
 
 ## Configuration
 

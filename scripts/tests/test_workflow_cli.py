@@ -402,8 +402,8 @@ class RunStatesThroughTheCli(CliCase):
         self.wgf("new-game", "--resume", run_id, expect=2)
 
     def test_blocked_by_the_loop_limit_then_resumed(self):
-        # verify fails on every pass; new-game's develop takes two `fail` loops per start or
-        # resume (max_visits_by_route), and the third blocks - on that route, as data.
+        # verify fails on every pass; new-game's develop takes two `fail` loops per run
+        # (max_visits_by_route), and the third blocks - on that route, as data.
         done = self.wgf("new-game", "--mock", "--quiet", "--mock-plan",
                         '{"verify": ["fail", "fail", "fail", "fail"]}', expect=1)
         self.assertIn("loop limit", done.stdout)
@@ -412,9 +412,10 @@ class RunStatesThroughTheCli(CliCase):
         self.assertEqual(state["steps"]["verify"]["visits"], 3)
         self.assertEqual(state["blocked_reason"], {
             "kind": "loop-limit", "step": "develop", "route": "fail", "scope": "route",
-            "limit": 2, "entered": 2, "from": "verify"})
-        # Entered once from assets (success), then twice through fail.
-        self.assertEqual(state["steps"]["develop"]["route_visits"], {"success": 1, "fail": 2})
+            "limit": 2, "entered": 2, "from": "verify", "limit_key": "fail"})
+        # Entered once from assets (success), then twice through verify's fail.
+        self.assertEqual(state["steps"]["develop"]["route_visits"],
+                         {"assets.success": 1, "verify.fail": 2})
         self.assertEqual(self.status_line(state["run_id"]), "Status: BLOCKED")
         self.assertIn("WORKFLOW_BLOCKED", self.wgf("logs", state["run_id"]).stdout)
 

@@ -11,6 +11,9 @@ a resume nor a crash gives a session back:
     STEP_LOG  data.budget = "developer-session"   emitted - and read back from events.jsonl -
                                                   before the developer is spawned; a session
                                                   that cannot be recorded is not started
+    STEP_LOG  data.budget = "event-log-tampered"  after it, when the session edited the log:
+                                                  the step fails, and the raises it forged
+                                                  (data.forged) never count
     STEP_LOG  data.budget = "developer-cost"      after it, when `cost_from` is configured:
                                                   the cost it reported, or null (unknown)
 
@@ -167,6 +170,7 @@ class Budget:
         if self.active:
             reader = getattr(context, "read_events", None)
             events = list(reader()) if callable(reader) else []
+            record["events"] = events  # what `audit` compares the log against afterwards
             if not any(((e.get("data") or {}).get("nonce") == record["nonce"]
                         and (e.get("data") or {}).get("budget") == SESSION) for e in events):
                 return record, (
@@ -174,6 +178,25 @@ class Budget:
                     "it could not be counted against the run's budget; no agent was started. "
                     "Check that the run directory is writable, then resume.")
         return record, None
+
+    def audit(self, context, record):
+        """A FAILED message when the event log was edited while the session ran - its
+        earlier lines changed, or a budget raise or resume appended - else None. The raises
+        such an edit wrote are recorded as forged, so no later visit honours them either."""
+        before = record.get("events")
+        reader = getattr(context, "read_events", None)
+        if before is None or not callable(reader):
+            return None
+        problems, forged = run_budget.forged_raises(before, list(reader()))
+        if not problems:
+            return None
+        context.logger.error("run event log edited during a developer session",
+                             budget=run_budget.TAMPERED, forged=sorted(forged),
+                             session=record["session"], problems=problems)
+        return ("the run's event log was edited while the developer session ran ("
+                + "; ".join(problems) + "). The run's budget cannot be trusted from it; any "
+                "raise it wrote is recorded as forged and ignored. A person should inspect "
+                "the run before resuming it.")
 
     def finish(self, context, record):
         """Record what the session cost, when the installation says where to read it."""

@@ -980,6 +980,31 @@ class DevelopBudget(unittest.TestCase):
                           if e["event"] == "BUDGET_RAISED"])
         self.assertEqual(len(runner.developer_calls()), 1)
 
+    def test_a_session_that_forges_a_raise_in_the_event_log_fails_the_step(self):
+        api = None
+
+        def forge(cwd):
+            write_game(cwd)
+            run_id = api.store.latest().run_id
+            path = os.path.join(api.store.run_dir(run_id), "events.jsonl")
+            with open(path, "a", encoding="utf-8") as handle:
+                for event, data in (("BUDGET_RAISED", {"max_sessions": 99, "decided_by": "human",
+                                                       "resume_nonce": "f00d"}),
+                                    ("WORKFLOW_RESUMED", {"resume_nonce": "f00d"})):
+                    handle.write(json.dumps({"run_id": run_id, "event": event,
+                                             "data": data}) + "\n")
+
+        api, runner = self.api({"max_sessions": 5}, FakeRunner(on_develop=forge))
+        state = api.run(RunRequest(project_id=TITLE))
+        self.assertEqual(state.status, RunStatus.FAILED, state.message)
+        self.assertIn("event log was edited", state.steps["develop"].error)
+        self.assertEqual(len(runner.developer_calls()), 1)  # not retried
+        tampered = self.budget_events(api, state.run_id, "event-log-tampered")
+        self.assertEqual([t["forged"] for t in tampered], [["f00d"]])
+        from wgflib import budget as run_budget
+        limits = run_budget.effective(state.params, api.store.read_events(state.run_id))
+        self.assertEqual((limits["max_sessions"], limits["raises"]), (5, []))
+
     def test_a_raise_needs_a_budget_to_raise(self):
         api, _ = self.api(None, FakeRunner(develop_exit=1))
         state = api.run(RunRequest(project_id=TITLE))

@@ -458,18 +458,21 @@ class Routing(EngineCase):
         self.assertEqual(self.engine(text).start().status, RunStatus.FAILED)
 
     def test_engine_source_names_no_step_type(self):
-        """Business routing lives in workflow files. The engine must not special-case a step."""
-        path = os.path.join(SCRIPTS, "wgflib", "workflow", "engine.py")
-        with open(path, encoding="utf-8") as handle:
-            tokens = list(tokenize.generate_tokens(io.StringIO(handle.read()).readline))
-        literals = {
-            tok.string.strip("\"'") for tok in tokens if tok.type == tokenize.STRING
-        }
-        for step_type in ("research", "strategy", "design", "init", "assets", "develop",
-                          "sdk", "verify", "release", "fail", "pass", "approve", "reject",
-                          "prototype-review", "iterate", "kill", "descope", "timeout",
-                          "G4"):
-            self.assertNotIn(step_type, literals)
+        """Business routing lives in workflow files. The engine must not special-case a step
+        or a route - nor may the modules that validate definitions and recorded state."""
+        for name in ("engine.py", "definition.py", "integrity.py"):
+            path = os.path.join(SCRIPTS, "wgflib", "workflow", name)
+            with open(path, encoding="utf-8") as handle:
+                tokens = list(tokenize.generate_tokens(io.StringIO(handle.read()).readline))
+            literals = {
+                tok.string.strip("\"'") for tok in tokens if tok.type == tokenize.STRING
+            }
+            for step_type in ("research", "strategy", "design", "init", "assets", "develop",
+                              "sdk", "verify", "release", "fail", "pass", "approve", "reject",
+                              "prototype-review", "iterate", "kill", "descope", "timeout",
+                              "G4", "review", "sdk-review", "request-changes", "tech-plan",
+                              "strategy-review", "tech-plan-review"):
+                self.assertNotIn(step_type, literals, name)
 
 
 class Contracts(EngineCase):
@@ -669,10 +672,11 @@ class RouteScopedVisits(EngineCase):
         self.assertIn("loop limit", state.message)
         self.assertIn("'fail'", state.message)
         self.assertEqual(self.script.executed().count("develop"), 3)  # first + 2 fails
-        self.assertEqual(state.steps["develop"].route_visits, {"fail": 2})
+        # Counted per source and route; the bare `fail` limit counts it from any source.
+        self.assertEqual(state.steps["develop"].route_visits, {"verify.fail": 2})
         self.assertEqual(state.blocked_reason, {
             "kind": "loop-limit", "step": "develop", "route": "fail", "scope": "route",
-            "limit": 2, "entered": 2, "from": "verify"})
+            "limit": 2, "entered": 2, "from": "verify", "limit_key": "fail"})
         blocked = [e for e in self.events if e["event"] == Events.WORKFLOW_BLOCKED][-1]
         self.assertEqual(blocked["data"]["blocked"], state.blocked_reason)
 
@@ -693,7 +697,7 @@ class RouteScopedVisits(EngineCase):
         state = self.engine(ROUTED).start()
         self.assertEqual(state.status, RunStatus.COMPLETED, state.message)
         self.assertEqual(state.steps["develop"].route_visits,
-                         {"request-changes": 2, "fail": 2})
+                         {"review.request-changes": 2, "verify.fail": 2})
         self.assertEqual(state.steps["develop"].visits, 5)
         # Under the old shared budget (max_visits 3) the fail loop would have been starved.
         self.script.set("review", request_changes(), request_changes())
@@ -720,7 +724,7 @@ class RouteScopedVisits(EngineCase):
         self.assertEqual(resumed.status, RunStatus.COMPLETED, resumed.message)
         develop = resumed.steps["develop"]
         self.assertEqual((develop.visits, develop.route_visits, develop.route_base),
-                         (4, {"fail": 3}, {"fail": 2}))
+                         (4, {"verify.fail": 3}, {"verify.fail": 2}))
         self.assertIsNone(resumed.blocked_reason)
         resumed_event = [e for e in self.events if e["event"] == Events.WORKFLOW_RESUMED][-1]
         self.assertEqual(resumed_event["data"]["loop_limit"]["route"], "fail")
@@ -764,10 +768,11 @@ class RouteScopedVisits(EngineCase):
         self.engine(ROUTED).start()
         self.assertEqual(seen, [
             (None, None),
-            ("fail", {"route": "fail", "limit": 2, "used": 1, "remaining": 1})])
+            ("verify.fail", {"route": "verify.fail", "limit_key": "fail", "limit": 2,
+                             "used": 1, "remaining": 1})])
         started = [e["data"] for e in self.events
                    if e["event"] == Events.STEP_STARTED and e.get("step_id") == "develop"]
-        self.assertEqual([d.get("entered_by") for d in started], [None, "fail"])
+        self.assertEqual([d.get("entered_by") for d in started], [None, "verify.fail"])
 
     def test_a_step_can_read_the_runs_recorded_events(self):
         counts = []
@@ -792,6 +797,12 @@ class OperatorEvents(EngineCase):
         self.assertEqual(len(recorded), 1)
         self.assertEqual(recorded[0]["data"]["max_sessions"], 9)
         self.assertEqual(recorded[0]["data"]["decided_by"], "human")
+        # Tied to the engine's own resume record by a nonce, which is what makes it a
+        # person's act rather than a line appended to the log.
+        resumed = [e for e in self.store.read_events(state.run_id)
+                   if e["event"] == Events.WORKFLOW_RESUMED][-1]
+        self.assertTrue(recorded[0]["data"]["resume_nonce"])
+        self.assertEqual(recorded[0]["data"]["resume_nonce"], resumed["data"]["resume_nonce"])
 
     def test_automation_and_the_engines_own_events_are_refused(self):
         engine, state = self.blocked_run()
@@ -799,7 +810,9 @@ class OperatorEvents(EngineCase):
                                      ("DECISION_RECORDED", {"decision": "pass"}, "human"),
                                      ("WORKFLOW_STARTED", {"params": {}}, "human"),
                                      ("budget_raised", {"x": 1}, "human"),
-                                     ("BUDGET_RAISED", {"decided_by": "human"}, "human")):
+                                     ("BUDGET_RAISED", {"decided_by": "human"}, "human"),
+                                     ("BUDGET_RAISED", {"max_sessions": 9,
+                                                        "resume_nonce": "0" * 16}, "human")):
             with self.assertRaises(EngineError, msg=event):
                 engine.resume(state.run_id, operator_events=[(event, data)],
                               decided_by=decider)

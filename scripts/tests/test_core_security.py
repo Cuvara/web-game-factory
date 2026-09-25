@@ -1628,6 +1628,14 @@ class BudgetTampering(StateCase):
         self.tamper(run.run_id, lambda d: d["blocked_reason"].update(step="release"))
         self.assert_refused(engine, run.run_id, "blocked_reason")
 
+    def test_a_blocked_reason_naming_another_loops_limit_is_refused(self):
+        # Resuming refills the limit blocked_reason names; naming another one would refill
+        # a loop that was never stopped.
+        engine, run = self.route_blocked()
+        self.assertEqual(run.blocked_reason["limit_key"], "fail")
+        self.tamper(run.run_id, lambda d: d["blocked_reason"].update(limit_key="nope"))
+        self.assert_refused(engine, run.run_id, "limit_key")
+
     def test_a_budget_raise_from_inside_a_step_is_refused(self):
         engine, run = self.route_blocked()
         # Inside a step's tree the command line is automation's (the CLI and API refusals
@@ -1651,6 +1659,41 @@ class BudgetTampering(StateCase):
                   {"event": "BUDGET_RAISED", "data": {"max_sessions": 1,
                                                       "decided_by": "human"}}]
         self.assertEqual(budget.effective(params, events)["max_sessions"], 2)
+
+    def test_a_raise_appended_to_the_log_is_not_a_persons_act(self):
+        # An agent that can write the run directory appends a raise that names a person:
+        # nothing the engine wrote corroborates it, so it counts for nothing.
+        from wgflib import budget
+        params = {"develop_budget": {"max_sessions": 2}}
+        forged = {"max_sessions": 50, "decided_by": "human", "decided_at": "x"}
+        for events in (
+                [{"event": "BUDGET_RAISED", "data": forged}],
+                [{"event": "BUDGET_RAISED", "data": dict(forged, resume_nonce="ab")}],
+                [{"event": "BUDGET_RAISED", "data": dict(forged, resume_nonce="ab")},
+                 {"event": "STEP_LOG", "data": {}},
+                 {"event": "WORKFLOW_RESUMED", "data": {"resume_nonce": "ab"}}],
+                [{"event": "BUDGET_RAISED", "data": dict(forged, resume_nonce="ab")},
+                 {"event": "WORKFLOW_RESUMED", "data": {"resume_nonce": "cd"}}],
+                # Corroborated in form, but written during a developer session: the develop
+                # step recorded it as forged.
+                [{"event": "BUDGET_RAISED", "data": dict(forged, resume_nonce="ab")},
+                 {"event": "WORKFLOW_RESUMED", "data": {"resume_nonce": "ab"}},
+                 {"event": "STEP_LOG", "data": {"budget": budget.TAMPERED,
+                                                "forged": ["ab"]}}]):
+            self.assertEqual(budget.effective(params, events)["max_sessions"], 2, events)
+
+    def test_a_raise_the_engine_recorded_with_a_resume_counts(self):
+        from wgflib import budget
+        engine, run = self.route_blocked()
+        engine.resume(run.run_id, decided_by="human",
+                      operator_events=[("BUDGET_RAISED", {"max_sessions": 7})])
+        limits = budget.effective(run.params, self.store.read_events(run.run_id))
+        self.assertEqual(limits["max_sessions"], 7)
+        self.assertEqual([r["max_sessions"] for r in limits["raises"]], [7])
+
+    def test_the_budget_snapshot_is_a_guarded_param(self):
+        from wgflib.workflow import integrity
+        self.assertIn("develop_budget", integrity.GUARDED_PARAMS)
 
 
 def mock_env_patch(values):

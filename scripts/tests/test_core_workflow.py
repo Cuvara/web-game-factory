@@ -2051,20 +2051,48 @@ class RouteScopedLoops(_MockNewGame):
         self.assertEqual((state.status, state.cursor), (RunStatus.WAITING, "prototype-review"),
                          state.message)
         develop = state.steps["develop"]
-        self.assertEqual(develop.route_visits, {"success": 1, "request-changes": 2, "fail": 2})
+        self.assertEqual(develop.route_visits, {"assets.success": 1,
+                                                "review.request-changes": 2, "verify.fail": 2})
         self.assertEqual(develop.visits, 5)
 
-    def test_g4_iterate_has_its_own_budget(self):
+    def test_review_and_sdk_review_each_have_their_own_budget(self):
+        # Both reviewers route request-changes back to develop; each spends its own limit.
+        _, state = self.start(mock_plan={"review": ["request-changes"] * 2,
+                                         "sdk-review": ["request-changes"] * 2})
+        self.assertEqual((state.status, state.cursor), (RunStatus.WAITING, "prototype-review"),
+                         state.message)
+        self.assertEqual(state.steps["develop"].route_visits,
+                         {"assets.success": 1, "review.request-changes": 2,
+                          "sdk-review.request-changes": 2})
+        # A third request from one reviewer is that reviewer's limit, not a shared one.
+        _, state = self.start(mock_plan={"review": ["request-changes"] * 3,
+                                         "sdk-review": ["request-changes"] * 2})
+        self.assertEqual((state.status, state.cursor), (RunStatus.BLOCKED, "develop"))
+        self.assertEqual((state.blocked_reason["from"], state.blocked_reason["limit_key"]),
+                         ("review", "review.request-changes"))
+
+    def test_g4_iterate_is_bounded_across_the_resumes_that_carry_it(self):
+        # Every G4 decision arrives by a resume; the iterate budget lasts the whole run, so
+        # a resume does not refill it.
         api, state = self.start()
         for _ in range(2):
             state = api.run(RunRequest(resume=state.run_id, decision="iterate",
                                        decided_by="human"))
             self.assertEqual(state.cursor, "prototype-review", state.message)
-        self.assertEqual(state.steps["develop"].route_visits.get("iterate"), 2)
-        # A resume grants every route a fresh budget, so a third iterate is not refused by
-        # it: the loop limit is per start or resume, the session budget is per run.
+        self.assertEqual(state.steps["develop"].route_visits.get("prototype-review.iterate"),
+                         2)
         state = api.run(RunRequest(resume=state.run_id, decision="iterate", decided_by="human"))
-        self.assertEqual(state.cursor, "prototype-review", state.message)
+        self.assertEqual((state.status, state.cursor), (RunStatus.BLOCKED, "develop"),
+                         state.message)
+        self.assertEqual((state.blocked_reason["kind"], state.blocked_reason["limit_key"],
+                          state.blocked_reason["from"]),
+                         ("loop-limit", "iterate", "prototype-review"))
+        # A person resuming grants that loop one more pass, and G4 is asked again.
+        state = api.run(RunRequest(resume=state.run_id, decided_by="human"))
+        self.assertEqual((state.status, state.cursor), (RunStatus.WAITING, "prototype-review"),
+                         state.message)
+        self.assertEqual(state.steps["develop"].route_visits.get("prototype-review.iterate"),
+                         3)
 
     def test_a_run_blocked_before_blocked_reason_existed_still_resumes(self):
         api, state = self.start(mock_plan={"verify": ["fail"] * 4})

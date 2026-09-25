@@ -301,6 +301,10 @@ class DevelopStep(WorkflowStep):
             finally:
                 if session is not None:
                     budget.finish(context, session)
+            if session is not None:
+                tampered = budget.audit(context, session)
+                if tampered:
+                    return StepResult.failed(tampered, retryable=False)
             if outcome.status == Outcome.WAITING:
                 return StepResult.waiting_for_human(outcome.message, brief=brief_md)
             if outcome.status == Outcome.DECLINED:

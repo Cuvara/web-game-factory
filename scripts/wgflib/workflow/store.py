@@ -5,27 +5,38 @@
         state.json          the RunState - rewritten atomically after every change
         events.jsonl        every event, append-only; also the structured log
         artifacts/<id>/v<n>.json
-        lock                present while a process is driving the run (its pid)
+        lock                present while a process is driving the run
+                            ("<pid> <start time>")
         pause | cancel      requests from another process, honoured between steps
 
 Atomicity, which is what resume depends on:
 
   * `state.json`, every artifact file, `LATEST` and the request files are written to a
-    `.tmp` sibling, flushed (and fsync'd when `fsync` is on), then renamed over the target.
-    A crash leaves the old file or the new one, never half of each; a `.tmp` left behind is
-    evidence of an interrupted write and is named in the error if the target is unreadable.
+    temporary sibling `.<name>.tmp.<pid>.<random>`, flushed (and fsync'd when `fsync` is
+    on), then renamed over the target. A crash leaves the old file or the new one, never
+    half of each. The name is unique per writer, so two processes writing one target at
+    once (two `wgf` commands both marking `LATEST`) never write, rename or remove each
+    other's temporary file; the last rename wins. A temporary file left behind is evidence
+    of an interrupted write and is named in the error if the target is unreadable.
   * `events.jsonl` is append-only. A crash mid-append can leave a partial last line;
     readers skip it and report it, and the next append starts on a fresh line, so the log
     never glues a new event onto a torn one.
   * The lock is created with O_EXCL. A lock whose owner is dead is taken over only under a
     second O_EXCL guard (`lock.takeover`) and only after re-reading it there, so two
     processes that both saw the same dead owner cannot both end up holding the run.
+  * The lock (and the guard) name their owner by pid *and* start time - field 22 of
+    `/proc/<pid>/stat`, where there is one. A pid alone is recycled: a driver that died
+    and whose pid now belongs to an unrelated process would look alive for ever, and its
+    run could never be resumed. An owner is live only if its pid is alive and, when both
+    start times are known, they match. A lock holding only a pid (written before start
+    times were recorded, or where /proc does not exist) is judged by the pid alone.
 """
 
 import hashlib
 import json
 import os
 import re
+import secrets
 import threading
 import time
 
@@ -49,6 +60,26 @@ _LOCATION = re.compile(r"artifacts/([a-z][a-z0-9-]{0,127})/v([1-9][0-9]{0,8})\.j
 # write); older, its creator died between the two and it is stale.
 LOCK_GRACE_SECONDS = 5.0
 
+# How far a file's mtime may disagree with time.time(). On some filesystems (WSL's drvfs,
+# network mounts) mtimes are coarse or skewed, so a lock created a moment ago can read as
+# older than the grace. An empty lock whose mtime age is within the grace plus this much is
+# therefore stale only once *this* taker has watched that same file stay empty for the
+# whole grace; one older than that (a creator that crashed long ago) is stale at once.
+LOCK_MTIME_SKEW_SECONDS = 2.0
+
+
+class _LockInfo(tuple):
+    """(owner pid or 0, mtime age in seconds, owner start time or None, file identity)."""
+    __slots__ = ()
+
+    def __new__(cls, owner, age, started=None, ident=None):
+        return super().__new__(cls, (owner, age, started, ident))
+
+    owner = property(lambda self: self[0])
+    age = property(lambda self: self[1])
+    started = property(lambda self: self[2])
+    ident = property(lambda self: self[3])
+
 
 def check_run_id(run_id):
     if not isinstance(run_id, str) or not _RUN_ID.fullmatch(run_id) or ".." in run_id:
@@ -66,6 +97,26 @@ class RunLocked(RuntimeError):
     """Another live process (or another thread of this one) is driving this run."""
 
 
+def _start_time(pid):
+    """The process's start time in clock ticks since boot (field 22 of /proc/<pid>/stat),
+    or None where it cannot be read - no /proc, or no such process. Together with the pid
+    it names one process: a recycled pid comes back with a different start time."""
+    try:
+        with open(f"/proc/{int(pid)}/stat", "rb") as handle:
+            raw = handle.read()
+        # The command name (field 2) is in parentheses and may itself hold spaces or ")".
+        fields = raw[raw.rindex(b")") + 1:].split()
+        return int(fields[19])  # fields[0] is field 3 (state), so field 22 is fields[19]
+    except (OSError, ValueError, IndexError, OverflowError):
+        return None
+
+
+def _holder_line():
+    """What a lock (or takeover guard) says about the process writing it."""
+    started = _start_time(os.getpid())
+    return f"{os.getpid()} {started}\n" if started is not None else f"{os.getpid()}\n"
+
+
 def _pid_alive(pid):
     try:
         os.kill(pid, 0)
@@ -76,6 +127,19 @@ def _pid_alive(pid):
     except (OSError, OverflowError, ValueError):
         return False
     return True
+
+
+def _temporaries(path):
+    """Temporary siblings an interrupted `_atomic_write` of `path` left behind, by name:
+    `.<name>.tmp.<pid>.<random>`, and the fixed `<name>.tmp` earlier versions wrote."""
+    directory, name = os.path.split(path)
+    try:
+        entries = os.listdir(directory)
+    except OSError:
+        return []
+    prefix = f".{name}.tmp."
+    return sorted(entry for entry in entries
+                  if entry == f"{name}.tmp" or entry.startswith(prefix))
 
 
 def _dump(value):
@@ -112,7 +176,11 @@ class RunStore:
 
     def _atomic_write(self, path, payload):
         """Write `payload` (bytes) to `path` so that a reader sees all of it or none of it."""
-        temporary = path + ".tmp"
+        directory, name = os.path.split(path)
+        # Unique per writer: a fixed `<name>.tmp` let two processes marking LATEST at once
+        # rename or remove the other's file mid-write and crash on the missing one.
+        temporary = os.path.join(
+            directory, f".{name}.tmp.{os.getpid()}.{secrets.token_hex(4)}")
         try:
             with open(temporary, "wb") as handle:
                 handle.write(payload)
@@ -170,9 +238,10 @@ class RunStore:
             return RunState.from_dict(data)
         except (ValueError, TypeError, KeyError, AttributeError) as exc:
             hint = ""
-            if os.path.exists(path + ".tmp"):
-                hint = (f"; an interrupted write left {os.path.basename(path)}.tmp beside it "
-                        f"- inspect both before deciding which to keep")
+            leftovers = _temporaries(path)
+            if leftovers:
+                hint = (f"; an interrupted write left {', '.join(leftovers)} beside it "
+                        f"- inspect them before deciding which to keep")
             raise StoreError(f"run {run_id}: unreadable state.json ({path}): {exc}{hint}")
         except OSError as exc:
             raise StoreError(f"run {run_id}: cannot read state.json: {exc}")
@@ -318,33 +387,70 @@ class RunStore:
 
     @staticmethod
     def _read_lock(path):
-        """(owner pid or 0, age in seconds), or None if there is no such file."""
+        """A _LockInfo, or None if there is no such file. A lock written before start
+        times were recorded holds only the pid, and reads with `started` None."""
         try:
             with open(path, encoding="utf-8") as handle:
                 text = handle.read()
-            age = time.time() - os.stat(path).st_mtime
+            stat = os.stat(path)
+            age = time.time() - stat.st_mtime
+            ident = (stat.st_dev, stat.st_ino, stat.st_mtime_ns)
         except FileNotFoundError:
             return None
         except OSError:
-            return 0, LOCK_GRACE_SECONDS + 1
+            return _LockInfo(0, LOCK_GRACE_SECONDS + LOCK_MTIME_SKEW_SECONDS + 1)
+        words = text.split()
         try:
-            owner = int(text.split()[0]) if text.strip() else 0
+            owner = int(words[0]) if words else 0
         except ValueError:
             owner = 0
-        return owner, age
+        try:
+            started = int(words[1]) if owner and len(words) > 1 else None
+        except ValueError:
+            started = None
+        return _LockInfo(owner, age, started, ident)
+
+    @staticmethod
+    def _empty_is_live(info, seen):
+        """Is an empty lock (or guard) still being written by its creator?
+
+        Younger than the grace by its mtime: yes. Older than the grace plus the mtime skew
+        allowance: no, its creator died. In between, the mtime alone cannot be trusted, so
+        it is live until this taker has seen the same file (`seen`: identity -> when first
+        seen, kept for one acquire) stay empty for the grace. Erring this way only makes a
+        taker wait longer; it never takes over a lock sooner than before.
+        """
+        if info.age < LOCK_GRACE_SECONDS:
+            return True
+        if seen is None or info.age >= LOCK_GRACE_SECONDS + LOCK_MTIME_SKEW_SECONDS:
+            return False
+        first = seen.setdefault(info.ident, time.monotonic())
+        return time.monotonic() - first < LOCK_GRACE_SECONDS
+
+    @staticmethod
+    def _holder_alive(owner, started):
+        """Is the process a lock names still the one that wrote it? A live pid whose start
+        time differs is a recycled pid, not the owner. Unknown start times (an old
+        pid-only lock, no /proc) leave the pid to decide, as it always did."""
+        if not _pid_alive(owner):
+            return False
+        if started is None:
+            return True
+        now = _start_time(owner)
+        return now is None or now == started
 
     @staticmethod
     def _key(path):
         return os.path.normcase(os.path.abspath(path))
 
-    def _owner_is_live(self, path, info):
+    def _owner_is_live(self, path, info, seen=None):
         """Is the lock described by `info` held by a live driver?"""
-        owner, age = info
+        owner, _age, started, _ident = info
         if not owner:
-            return age < LOCK_GRACE_SECONDS  # being written right now, or a crashed creator
+            return self._empty_is_live(info, seen)  # being written, or a crashed creator
         if owner == os.getpid():
             return self._key(path) in _HELD
-        return _pid_alive(owner)
+        return self._holder_alive(owner, started)
 
     def acquire(self, run_id):
         """Take the run's lock, or raise RunLocked. A lock whose owner is dead is taken over.
@@ -355,6 +461,7 @@ class RunStore:
         path = self._path(run_id, "lock")
         key = self._key(path)
         deadline = time.monotonic() + LOCK_GRACE_SECONDS + 1
+        seen = {}  # empty lock files this acquire has watched, by identity (_empty_is_live)
         with _HELD_LOCK:
             if key in _HELD:
                 raise RunLocked(f"run {run_id} is already being driven by this process")
@@ -365,7 +472,7 @@ class RunStore:
                     info = self._read_lock(path)
                     if info is None:
                         continue  # released between our create and our read
-                    if self._owner_is_live(path, info):
+                    if self._owner_is_live(path, info, seen):
                         if info[0]:
                             raise RunLocked(
                                 f"run {run_id} is being driven by process {info[0]}")
@@ -373,19 +480,19 @@ class RunStore:
                             raise RunLocked(f"run {run_id}: its lock is being taken")
                         time.sleep(0.01)
                         continue
-                    self._break_stale_lock(path)
+                    self._break_stale_lock(path, seen)
                     if time.monotonic() > deadline:
                         raise RunLocked(f"run {run_id}: could not take over its stale lock")
                     continue
                 with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
-                    handle.write(f"{os.getpid()}\n")
+                    handle.write(_holder_line())
                     handle.flush()
                     if self.fsync:
                         os.fsync(handle.fileno())
                 _HELD[key] = threading.get_ident()
                 return
 
-    def _break_stale_lock(self, path):
+    def _break_stale_lock(self, path, seen=None):
         """Remove a lock whose owner is dead - under a guard, after re-reading it.
 
         Without the guard, two processes that both read the same dead owner would both
@@ -401,9 +508,10 @@ class RunStore:
             info = self._read_lock(guard)
             if info is None:
                 return
-            owner, age = info
-            taker_alive = (owner and owner != os.getpid() and _pid_alive(owner)) or (
-                not owner and age < LOCK_GRACE_SECONDS)
+            owner, _age, started, _ident = info
+            taker_alive = (owner and owner != os.getpid()
+                           and self._holder_alive(owner, started)) or (
+                not owner and self._empty_is_live(info, seen))
             if taker_alive:
                 time.sleep(0.005)  # someone else is taking over; let them finish
                 return
@@ -415,9 +523,9 @@ class RunStore:
             return
         try:
             with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
-                handle.write(f"{os.getpid()}\n")
+                handle.write(_holder_line())
             info = self._read_lock(path)
-            if info is not None and not self._owner_is_live(path, info):
+            if info is not None and not self._owner_is_live(path, info, seen):
                 try:
                     os.remove(path)
                 except FileNotFoundError:

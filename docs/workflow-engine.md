@@ -256,9 +256,9 @@ constructor raises.
 
 | What | How it is written | What a crash can leave |
 |---|---|---|
-| `state.json`, `artifacts/<id>/v<n>.json`, `LATEST`, `pause`/`cancel` | to `<name>.tmp`, flushed, fsync'd (`storage.fsync`), renamed over the target, directory fsync'd | the old file or the new one; possibly a `.tmp` beside it |
+| `state.json`, `artifacts/<id>/v<n>.json`, `LATEST`, `pause`/`cancel` | to a temporary sibling unique to the writer (`.<name>.tmp.<pid>.<random>`), flushed, fsync'd (`storage.fsync`), renamed over the target, directory fsync'd | the old file or the new one; possibly a temporary file beside it |
 | `events.jsonl` | appended | a partial last line |
-| `lock` | `O_EXCL` create, then the pid | an empty lock file |
+| `lock` | `O_EXCL` create, then `<pid> <start time>` | an empty lock file |
 
 - **One save per execution.** A step's artifact files are written first; then its artifact
   refs, status and trail entry are saved in a single `state.json` write; only then are the
@@ -269,9 +269,18 @@ constructor raises.
   replaced. A failure to write an artifact (disk full) is a retryable `FAILED` that
   records nothing.
 - **Unreadable state is an error, not a guess.** `load` of a truncated or non-object
-  `state.json` raises `StoreError` naming the file, and says so if a `state.json.tmp` from an
-  interrupted write sits beside it. `wgf runs` lists such a run as `UNREADABLE` instead of
-  hiding it.
+  `state.json` raises `StoreError` naming the file, and names any temporary file an
+  interrupted write left beside it (`.state.json.tmp.<pid>.<random>`, or the fixed
+  `state.json.tmp` of earlier versions). `wgf runs` lists such a run as `UNREADABLE` instead
+  of hiding it.
+- **Concurrent writers of one file do not collide.** Each write has its own temporary
+  name, so two `wgf` commands marking `LATEST` at once each rename a complete file and the
+  last rename wins; with one fixed `.tmp` name, one could rename or remove the other's
+  file mid-write and fail with a traceback.
+- **A new visit is saved with the cursor move.** Following a route to a step counts its new
+  visit and moves the cursor onto it in one `state.json` write. Saved apart, a crash between
+  them left the visit counted with the cursor behind it, and resume — following the
+  finished step's route again — counted it twice, spending the loop budget.
 - **A torn log is readable.** `read_events` skips a line that is not a JSON event object and
   reports it (`wgf logs` prints a warning on stderr); the next append starts on a fresh line,
   so the torn line never swallows a later event. State is never derived from events, so
@@ -283,6 +292,33 @@ constructor raises.
   both saw the same dead owner cannot both end up holding the run. `release` never removes a
   lock it does not own. `wgf pause` / `wgf cancel` of a run nobody drives change its state
   while holding the lock; of a driven run, they leave a request file for the driver.
+- **A lock names one process, not just a pid.** The lock (and the takeover guard) hold
+  `<pid> <start time>`, the start time being field 22 of `/proc/<pid>/stat`. The owner is
+  live only if the pid is alive and, when both start times are known, they match — so a
+  dead driver whose pid the system has since given to an unrelated process is recognised
+  as dead, and its run can be resumed. A lock holding only a pid (written by an earlier
+  version) or a start time that cannot be read (no `/proc`) is judged by the pid alone,
+  exactly as before.
+- **An empty lock's grace does not trust a skewed mtime.** An empty lock (or guard) is
+  mid-creation while its mtime is younger than 5 s and stale once it is more than 7 s old.
+  In between — where a coarse or skewed mtime (WSL drvfs, network mounts) can make a
+  just-created file read as old — it is stale only after the taker has itself watched the
+  same file stay empty for the full 5 s. This only ever makes a taker wait longer.
+
+### Run params are corroborated
+
+`state.params` holds `mock`, `mock_plan` and `auto_approve`: which implementations run and
+which gates approve themselves. They are read from `state.json` on every resume, so the
+engine also records them in `WORKFLOW_STARTED` (`data.params`), and `resume` / `continue_in`
+refuse a run whose `state.json` params differ from that record in any key
+(`integrity.params_problems`) — before anything runs or changes. Editing `state.json` to
+turn a real run into a mock one, or to add G3 to `auto_approve`, is refused.
+
+A run created before params were recorded has a `WORKFLOW_STARTED` without `params` (or,
+if it crashed at creation, none). It is accepted only while none of `mock`, `mock_plan`,
+`auto_approve` is set: those are exactly what an edit would add, and nothing can vouch for
+them. Such a run is refused with a message saying so; start a new run, or — if you know the
+state is untouched — remove those params to resume it as a real, fully gated run.
 
 The mock steps emit schema-valid instances of all nine output types, with provenance whose
 `inputs` pin what they consumed by hash. The step-by-step input/output contract is in
@@ -438,7 +474,7 @@ which is the structured log:
 
 | Event | `data` |
 |---|---|
-| `WORKFLOW_STARTED` | `scope`, `start` |
+| `WORKFLOW_STARTED` | `scope`, `start`, `params` (the run's params, corroborated on resume) |
 | `WORKFLOW_RESUMED` | `from_status`; `from_step`, `scope`, `force`, `definition_version` when relevant |
 | `WORKFLOW_PAUSED` | `reason` (`requested`, `waiting_for_human`, `waiting_for_input`), `next_step` or `message` |
 | `WORKFLOW_BLOCKED` | `message` (a blocked step, a rejection, or the loop limit) |
@@ -734,9 +770,10 @@ The engine executes no code it was not given by the installation:
 - **Single machine.** The lock is a pid file; two hosts sharing a store are not coordinated.
   One residual window remains in the takeover: a process killed *inside* the guarded
   re-check (microseconds) leaves a `lock.takeover` naming a dead pid, which the next taker
-  clears unguarded. A pid reused by an unrelated process makes a dead driver's lock look
-  live; `wgf status` then says `running` or `hung`, and removing the lock file by hand is the
-  way out.
+  clears unguarded. A pid reused by an unrelated process is told apart by its start time
+  where `/proc` exists; without `/proc`, or for a lock written by an earlier version that
+  holds only a pid, it still makes a dead driver's lock look live — `wgf status` then says
+  `running` or `hung`, and removing the lock file by hand is the way out.
 - **Orphaned grandchildren of a killed driver.** `wgflib.procs` takes a step's process tree
   down on every exit it sees, including Ctrl-C; a driver killed with SIGKILL cannot, and a
   resumed step does not look for survivors of the previous execution.
@@ -767,9 +804,16 @@ work that existed when it was given, not a strategy or tech plan regenerated aft
 test applies when a whole run is continued (`wgf new-game --run <id>`): a gate whose approval
 predates redone upstream work is not skipped as "already completed" but entered again, and
 waits for a new decision. That is what keeps `wgf init --run <id>` from
-scaffolding a repository after G3 was rejected, or while G4 is unanswered. A fresh run of a
-single step (`wgf verify`) has no upstream in its run and is not affected; each module still
-refuses inputs it cannot trust.
+scaffolding a repository after G3 was rejected, or while G4 is unanswered.
+
+A fresh run has passed no gate, so a fresh run started with an explicit `--from` is refused
+(EngineError, no run is created) when a gate lies before that step inside the command's
+scope: `wgf new-game --from design` would step over G2, `wgf new-game --from init` over G2
+and G3, `wgf plan --from design` over G2. Start from the beginning, or resume a run that
+passed the gate with `--resume <run-id> --from <step>`. `wgf new-game --from strategy` has
+no gate before it and runs. A fresh run of a single step (`wgf verify`), or of a group from
+its first step, names no `--from` past a gate in its own scope and is not affected; each
+module still refuses inputs it cannot trust.
 
 A resume whose cursor sits on a step already recorded as SUCCESS - the driver died between
 recording the success and moving on - follows that step's recorded route without executing

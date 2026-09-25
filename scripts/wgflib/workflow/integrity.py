@@ -21,6 +21,12 @@ found the file - before the engine acts on it:
     (`decision_on_record`), so a decision injected into state.json alone answers nothing:
     the checkpoint waits for a person again.
 
+  * run params: `mock`, `mock_plan` and `auto_approve` decide which implementations run and
+    which gates approve themselves, and they are read from state.json on every resume. The
+    engine records the params in the WORKFLOW_STARTED event too, and `params_problems`
+    refuses a state whose params differ from that record - so turning a real run into a
+    mock one, or adding G3 to `auto_approve`, by editing state.json alone is refused.
+
 Problems are reported as strings; the engine refuses to resume or continue a run that has
 any. Nothing here names a step type, a gate or a route.
 """
@@ -28,7 +34,13 @@ any. Nothing here names a step type, a gate or a route.
 from .events import Events
 from .model import RunStatus, StepStatus
 
-__all__ = ["state_problems", "decision_on_record"]
+__all__ = ["state_problems", "params_problems", "decision_on_record", "GUARDED_PARAMS"]
+
+# The params whose value weakens what a run proves: a mock run's artifacts are placeholders,
+# and an auto-approved gate was decided by nobody. A run created before the params were
+# recorded in WORKFLOW_STARTED has nothing to corroborate them with, so it is refused while
+# any of these is set (see params_problems).
+GUARDED_PARAMS = ("mock", "mock_plan", "auto_approve")
 
 _COUNTERS = ("attempts", "executions", "visits", "loop_base")
 _DECISION_KEYS = ("decision", "decided_by", "decided_at", "visit", "note")
@@ -127,6 +139,49 @@ def state_problems(state, definition):
             if not _count(visit) or step is None or not _count(step.visits) \
                     or visit > step.visits:
                 problems.append(f"{where}: visit {visit!r} is not a visit {step_id} has had")
+    return problems
+
+
+def params_problems(state, events):
+    """Does state.json carry the params the run was started with? [] when it does.
+
+    The first WORKFLOW_STARTED event records `data.params`; state.params must equal it. A
+    run started before the params were recorded - no WORKFLOW_STARTED, or one without a
+    `params` key - is legacy: accepted only while no GUARDED_PARAMS value is set, because
+    such a value is exactly what an edit would add and nothing can vouch for it. Deleting
+    `params` from the event to pass as legacy therefore gains nothing but a real, fully
+    gated run.
+    """
+    params = state.params if isinstance(state.params, dict) else {}
+    started = [e for e in events if e.get("event") == Events.WORKFLOW_STARTED]
+    recorded = None
+    if started:
+        data = started[0].get("data")
+        if isinstance(data, dict) and "params" in data:
+            recorded = data["params"]
+    if recorded is None:
+        claimed = [key for key in GUARDED_PARAMS if params.get(key)]
+        if not claimed:
+            return []
+        return [
+            f"params {', '.join(claimed)} are set in state.json but the run's event log "
+            f"has no WORKFLOW_STARTED record of its params to corroborate them (a run "
+            f"created before params were recorded, or an edited state.json). Start a new "
+            f"run; or, if you know this state.json is untouched, remove "
+            f"{', '.join(claimed)} from its params to resume it as a real, fully gated run"]
+    problems = []
+    # A replayed log line repeats the event exactly and is harmless; a second start that
+    # records other params is not.
+    if any((e.get("data") or {}).get("params") != recorded for e in started[1:]
+           if isinstance(e.get("data"), dict)):
+        problems.append("events.jsonl holds WORKFLOW_STARTED events with different params")
+    if not isinstance(recorded, dict):
+        problems.append("WORKFLOW_STARTED records params that are not a mapping")
+        return problems
+    for key in sorted(set(params) | set(recorded)):
+        if params.get(key) != recorded.get(key) or (key in params) != (key in recorded):
+            problems.append(f"params.{key} is {params.get(key)!r} in state.json but the run "
+                            f"was started with {recorded.get(key)!r}")
     return problems
 
 

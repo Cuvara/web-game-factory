@@ -21,8 +21,14 @@ Invariants the engine keeps:
     artifact references, its step status and its trail entry are saved in one write, and
     the events describing them are emitted after it, so a crash never leaves state (or the
     log) naming an artifact the other does not.
-  * A cancel request stops the run as CANCELLED, whether it arrives between steps or while
-    a step runs; a step interrupted by it is never retried.
+  * A cancel request stops the run as CANCELLED, whether it arrives between steps, while
+    a step runs or while a step waits out its retry backoff; a step interrupted by it is
+    never retried.
+  * A new visit to a step and the cursor moving onto it are saved in one write, so a
+    crash can never count a visit that resume then counts again.
+  * A run's params (mock, auto_approve, ...) are recorded in WORKFLOW_STARTED, and a
+    state.json whose params disagree with that record is not driven.
+  * A fresh run started with an explicit `--from` does not step over a gate in its scope.
   * An input artifact is re-checked (checksum, and contract when a validator is set) before
     the step that consumes it runs; one that fails is a non-retryable FAILED naming it.
   * With a validator set, an output whose provenance carries `inputs` must pin exactly the
@@ -144,6 +150,8 @@ class WorkflowEngine:
             )
         elif start_at not in scope_ids:
             raise EngineError(f"--from {start_at!r} is not in scope {scope_ids}")
+        else:
+            self._refuse_gates_skipped_by_from(scope_ids, start_at)
         if scope in (None, self.definition.id) and start_at != self.definition.start:
             # `--from` on the whole workflow runs from there to the end, not the whole list.
             scope_ids = scope_ids[scope_ids.index(start_at):]
@@ -164,7 +172,11 @@ class WorkflowEngine:
             params=dict(params or {}),
         )
         self.store.create(state)
-        self._emit(state, Events.WORKFLOW_STARTED, data={"scope": scope_ids, "start": start_at})
+        # The params are recorded here as well as in state.json, so that resume can refuse a
+        # state.json whose params were edited afterwards (integrity.params_problems).
+        self._emit(state, Events.WORKFLOW_STARTED,
+                   data={"scope": scope_ids, "start": start_at,
+                         "params": copy.deepcopy(state.params)})
         self._enter(state, start_at, check_loop=False)
         return self._drive(state)
 
@@ -194,6 +206,7 @@ class WorkflowEngine:
                 f"run {run_id} belongs to workflow {state.workflow_id}, not {self.definition.id}"
             )
         problems = integrity.state_problems(state, self.definition)
+        problems += integrity.params_problems(state, self.store.read_events(run_id))
         if problems:
             raise EngineError(
                 f"run {run_id}: state.json is inconsistent and will not be driven - "
@@ -332,6 +345,32 @@ class WorkflowEngine:
             raise EngineError(
                 f"run {state.run_id}: will not start {target} past unmet upstream step(s): "
                 + "; ".join(problems) + ". Resume the run to answer them.")
+
+    def _refuse_gates_skipped_by_from(self, scope_ids, start_at):
+        """Refuse a fresh run whose explicit `--from` starts past a gate inside its scope.
+
+        A fresh run has passed no gate, so `wgf new-game --from design` would step over G2
+        exactly as `wgf design --run <id>` would in a run that never passed it. Only an
+        explicit `--from` is refused: a fresh run of a single step (`wgf verify`) or of a
+        group from its first step has no gate before it in its own scope - the step's
+        module still refuses inputs it cannot trust. What counts as a gate is `_is_gate`,
+        the same test `_refuse_unmet_upstream` applies inside an existing run.
+        """
+        ids = self.definition.step_ids  # definition order, whatever order a group lists
+        skipped = []
+        for step_id in ids[:ids.index(start_at)]:
+            if step_id not in scope_ids:
+                continue
+            step_def = self.definition.step(step_id)
+            if self._is_gate(step_def):
+                label = (step_def.params or {}).get("gate") or "checkpoint"
+                skipped.append(f"{step_id} (gate {label})")
+        if skipped:
+            raise EngineError(
+                f"will not start a new run at {start_at}: it would step over "
+                f"{', '.join(skipped)}, which a new run has not passed. Start from the "
+                f"beginning, or resume a run that passed it with --resume <run-id> "
+                f"--from {start_at}.")
 
     def continue_in(self, run_id, scope, force=False):
         """Run `scope` inside an existing run, reusing what the run already produced.
@@ -549,8 +588,12 @@ class WorkflowEngine:
             return True
         return False
 
-    def _enter(self, state, step_id, check_loop=True):
-        """Begin a new visit to `step_id`. Returns False if the loop limit forbids it."""
+    def _enter(self, state, step_id, check_loop=True, save=True):
+        """Begin a new visit to `step_id`. Returns False if the loop limit forbids it.
+
+        `save=False` leaves the save to the caller, which moves the cursor in the same
+        write: a visit counted on disk while the cursor still sits on the previous step
+        would be counted again when resume follows that step's route (see `_follow`)."""
         step_def = self.definition.step(step_id)
         step_state = state.step(step_id)
         if check_loop and step_state.visits - step_state.loop_base >= step_def.max_visits:
@@ -560,23 +603,29 @@ class WorkflowEngine:
         step_state.status = StepStatus.PENDING
         step_state.error = None
         step_state.message = None
-        self._save(state)
+        if save:
+            self._save(state)
         return True
 
     def _execute_visit(self, state, step_def):
         """Execute the cursor step, retrying FAILED results per the step's policy."""
         step_state = state.step(step_def.id)
         policy = step_def.retry
+        result = None
         while True:
-            step_state.attempts += 1
-            step_state.executions += 1
-            attempt = step_state.attempts
+            attempt = step_state.attempts + 1
             if attempt > 1:
                 delay = policy.delay_before(attempt)
                 self._emit(state, Events.STEP_RETRIED, step_id=step_def.id, attempt=attempt,
                            data={"delay_seconds": delay, "max_attempts": policy.max_attempts})
-                if delay:
-                    self.sleep(delay)
+                if delay and self._backoff(state, delay):
+                    # Cancelled while waiting: the attempt never begins. The previous one's
+                    # FAILED is what state records; the caller ends the run CANCELLED.
+                    return StepResult(StepOutcome.FAILED, retryable=False,
+                                      message="cancelled while waiting to retry",
+                                      error=result.error if result is not None else None)
+            step_state.attempts += 1
+            step_state.executions += 1
 
             step_state.status = StepStatus.RUNNING
             step_state.started_at = self.clock()
@@ -655,6 +704,27 @@ class WorkflowEngine:
             )
             if not will_retry:
                 return result
+
+    # A backoff is slept in slices of at most this long, checking for a cancel between them:
+    # the run's lock is held throughout, so a cancel is otherwise noticed only when a delay
+    # of up to a minute has run out.
+    BACKOFF_POLL_SECONDS = 2.0
+
+    def _backoff(self, state, delay):
+        """Sleep `delay` seconds before a retry. True if a cancel arrived meanwhile.
+
+        Sleeps through `self.sleep`, so an injected sleep still sees every second asked
+        for; the slices only bound how late a cancel is noticed."""
+        if self._cancel_requested(state):
+            return True
+        remaining = delay
+        while remaining > 0:
+            chunk = min(remaining, self.BACKOFF_POLL_SECONDS)
+            self.sleep(chunk)
+            remaining -= chunk
+            if self._cancel_requested(state):
+                return True
+        return False
 
     def _run_once(self, state, step_def, step_state):
         try:
@@ -944,7 +1014,10 @@ class WorkflowEngine:
             return self._finish(state, RunStatus.COMPLETED, Events.WORKFLOW_COMPLETED,
                                 f"left scope after {step_def.id} ({key}); next would be {target}")
         if kind == "goto":
-            if enter and not self._enter(state, target):
+            # The new visit and the cursor move are one write. Saved apart, a crash between
+            # them left the visit counted with the cursor still on this step, and resume -
+            # following this step's recorded route - entered the target a second time.
+            if enter and not self._enter(state, target, save=False):
                 return self._loop_limit(state, target)
             state.cursor = target
             self._save(state)

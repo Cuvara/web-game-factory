@@ -824,5 +824,332 @@ class TestCoreCommand(unittest.TestCase):
             wgf.run_core_suite = original_run
 
 
+# -- run params, --from past a gate, cancel during backoff, visit inflation --------------
+
+
+GROUPED = CHECKPOINT.replace("  version: 1\n", "  version: 1\n  groups:\n"
+                             "    plan: [strategy, review, design]\n", 1)
+
+
+class RunParamsIntegrity(EngineCase):
+    """state.params decide mock vs real and which gates approve themselves; resume reads
+    them from state.json, so they are corroborated against WORKFLOW_STARTED first."""
+
+    def gated(self, gate="G3"):
+        return self.engine(CHECKPOINT.replace("GATE", gate))
+
+    def edit_params(self, run_id, **changes):
+        state = self.store.load(run_id)
+        for key, value in changes.items():
+            if value is None:
+                state.params.pop(key, None)
+            else:
+                state.params[key] = value
+        self.store.save(state)
+
+    def rewrite_started(self, run_id, change):
+        """Rewrite events.jsonl with `change(record)` applied to WORKFLOW_STARTED; a
+        change returning None drops the event."""
+        path = os.path.join(self.store.run_dir(run_id), "events.jsonl")
+        records = self.store.read_events(run_id)
+        with open(path, "w", encoding="utf-8") as handle:
+            for record in records:
+                if record["event"] == Events.WORKFLOW_STARTED:
+                    record = change(record)
+                if record is not None:
+                    handle.write(json.dumps(record, sort_keys=True) + "\n")
+
+    def make_legacy(self, run_id):
+        """What a run created before params were recorded looks like."""
+        def strip(record):
+            record["data"].pop("params")
+            return record
+        self.rewrite_started(run_id, strip)
+
+    def test_workflow_started_records_the_params(self):
+        params = {"mock": True, "mock_plan": {"strategy": ["success"]}, "auto_approve": ["G2"]}
+        run = self.gated().start(params=params)
+        started = [e for e in self.store.read_events(run.run_id)
+                   if e["event"] == Events.WORKFLOW_STARTED]
+        self.assertEqual(len(started), 1)
+        self.assertEqual(started[0]["data"]["params"], params)
+
+    def test_untouched_params_resume_normally(self):
+        engine = self.gated()
+        run = engine.start(params={"auto_approve": ["G2"]})
+        self.assertEqual(run.status, RunStatus.WAITING)  # G3 is not in auto_approve
+        state = engine.resume(run.run_id, decision="approve")
+        self.assertEqual(state.status, RunStatus.COMPLETED)
+
+    def test_params_edited_in_state_json_are_refused_before_anything_runs(self):
+        edits = {
+            "auto-approve added": {"auto_approve": ["G3"]},
+            "real run turned mock": {"mock": True},
+            "mock plan injected": {"mock_plan": {"design": ["success"]}},
+            "unknown param added": {"extra": 1},
+        }
+        for label, change in edits.items():
+            with self.subTest(label):
+                engine = self.gated()
+                run = engine.start()
+                self.edit_params(run.run_id, **change)
+                before = self.store.load(run.run_id).to_dict()
+                calls = list(self.script.calls)
+                key = next(iter(change))
+                with self.assertRaisesRegex(EngineError, rf"params\.{key} .* started with"):
+                    engine.resume(run.run_id, decision="approve")
+                with self.assertRaisesRegex(EngineError, rf"params\.{key}"):
+                    engine.continue_in(run.run_id, "design")
+                self.assertEqual(self.store.load(run.run_id).to_dict(), before)
+                self.assertEqual(self.script.calls, calls)
+                self.assertFalse(self.store.is_held(run.run_id))
+
+    def test_removing_or_changing_a_recorded_param_is_refused(self):
+        for label, change in (("mock removed", {"mock": None}),
+                              ("auto_approve narrowed", {"auto_approve": []})):
+            with self.subTest(label):
+                engine = self.gated()
+                run = engine.start(params={"mock": True, "auto_approve": ["G2"]})
+                self.edit_params(run.run_id, **change)
+                with self.assertRaisesRegex(EngineError, "started with"):
+                    engine.resume(run.run_id, decision="approve")
+
+    def test_a_second_start_event_with_other_params_is_refused(self):
+        engine = self.gated()
+        run = engine.start()
+        path = os.path.join(self.store.run_dir(run.run_id), "events.jsonl")
+        forged = dict(self.store.read_events(run.run_id)[0])
+        forged["data"] = dict(forged["data"], params={"auto_approve": ["G3"]})
+        with open(path, "a", encoding="utf-8") as handle:
+            handle.write(json.dumps(forged) + "\n")
+        with self.assertRaisesRegex(EngineError, "different params"):
+            engine.resume(run.run_id, decision="approve")
+
+    def test_a_legacy_run_without_guarded_params_is_accepted(self):
+        engine = self.gated()
+        run = engine.start()
+        self.make_legacy(run.run_id)
+        state = engine.resume(run.run_id, decision="approve")
+        self.assertEqual(state.status, RunStatus.COMPLETED)
+
+    def test_a_legacy_run_with_no_start_event_at_all_is_accepted_when_plain(self):
+        engine = self.gated()
+        run = engine.start()
+        self.rewrite_started(run.run_id, lambda record: None)
+        state = engine.resume(run.run_id, decision="approve")
+        self.assertEqual(state.status, RunStatus.COMPLETED)
+
+    def test_a_legacy_run_with_falsy_guarded_params_is_accepted(self):
+        engine = self.gated()
+        run = engine.start(params={"mock": False, "auto_approve": []})
+        self.make_legacy(run.run_id)
+        self.assertEqual(engine.resume(run.run_id, decision="approve").status,
+                         RunStatus.COMPLETED)
+
+    def test_a_legacy_run_claiming_mock_or_auto_approve_is_refused_fail_closed(self):
+        for params in ({"mock": True}, {"auto_approve": ["G3"]},
+                       {"mock": True, "mock_plan": {"design": ["success"]}}):
+            with self.subTest(params):
+                engine = self.gated()
+                run = engine.start(params=params)
+                if params.get("auto_approve"):
+                    self.assertEqual(run.status, RunStatus.COMPLETED)
+                    continue  # auto-approved to the end; checked on a waiting run below
+                self.make_legacy(run.run_id)
+                with self.assertRaisesRegex(EngineError, "Start a new run") as caught:
+                    engine.resume(run.run_id, decision="approve")
+                for key in params:
+                    self.assertIn(key, str(caught.exception))
+                # The advice works: without the unverifiable params it resumes, gated.
+                for key in params:
+                    self.edit_params(run.run_id, **{key: None})
+                state = engine.resume(run.run_id, decision="approve")
+                self.assertEqual(state.status, RunStatus.COMPLETED)
+                self.assertEqual(state.decisions["review"]["decided_by"], "human")
+
+    def test_a_legacy_run_given_auto_approve_by_an_edit_is_refused(self):
+        engine = self.gated()
+        run = engine.start()
+        self.make_legacy(run.run_id)
+        self.edit_params(run.run_id, auto_approve=["G3"])
+        with self.assertRaisesRegex(EngineError, "auto_approve .*Start a new run"):
+            engine.resume(run.run_id)
+        self.assertEqual(self.store.load(run.run_id).status, RunStatus.WAITING)
+
+
+class FromPastAGate(EngineCase):
+    """A fresh run's explicit --from must not step over a gate inside its scope: a fresh
+    run has passed none. The narrow form of plan item P0-7, as decided by the lead."""
+
+    def test_from_past_a_gate_is_refused_and_creates_nothing(self):
+        engine = self.engine(CHECKPOINT.replace("GATE", "G2"))
+        with self.assertRaisesRegex(EngineError, r"step over review \(gate G2\)") as caught:
+            engine.start(start_at="design")
+        self.assertIn("--resume <run-id> --from design", str(caught.exception))
+        self.assertEqual(self.store.list_runs(), [])
+        self.assertEqual(self.script.executed(), [])
+
+    def test_from_before_every_gate_is_allowed(self):
+        engine = self.engine(CHECKPOINT.replace("GATE", "G2"))
+        run = engine.start(start_at="strategy")
+        self.assertEqual((run.status, run.cursor), (RunStatus.WAITING, "review"))
+
+    def test_from_past_a_gate_inside_a_group_is_refused(self):
+        engine = self.engine(GROUPED.replace("GATE", "G2"))
+        with self.assertRaisesRegex(EngineError, r"gate G2"):
+            engine.start(scope="plan", start_at="design")
+        self.assertEqual(self.store.list_runs(), [])
+
+    def test_a_checkpoint_without_a_named_gate_is_still_a_gate(self):
+        engine = self.engine(CHECKPOINT.replace("{gate: GATE, ", "{"))
+        with self.assertRaisesRegex(EngineError, r"gate checkpoint"):
+            engine.start(start_at="design")
+
+    def test_a_fresh_single_step_run_is_unaffected(self):
+        engine = self.engine(CHECKPOINT.replace("GATE", "G2"))
+        self.assertEqual(engine.start(scope="design").status, RunStatus.COMPLETED)
+        self.assertEqual(engine.start(scope="design", start_at="design").status,
+                         RunStatus.COMPLETED)
+
+
+class FromPastAGateThroughTheCli(unittest.TestCase):
+    """The same refusal on the shipped new-game workflow, through `wgf`."""
+
+    def setUp(self):
+        self.scratch = tempfile.mkdtemp(prefix="wgf-core-from-")
+        self.addCleanup(shutil.rmtree, self.scratch, ignore_errors=True)
+        self.store_dir = os.path.join(self.scratch, "store")
+        self.config = os.path.join(self.scratch, "factory.yaml")
+        with open(self.config, "w", encoding="utf-8") as handle:
+            handle.write("factory:\n  storage:\n    fsync: false\n")
+
+    def wgf(self, *args):
+        out, err = io.StringIO(), io.StringIO()
+        with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+            code = wgf.main([*args, "--store", self.store_dir, "--config", self.config])
+        return code, out.getvalue(), err.getvalue()
+
+    def runs(self):
+        return RunStore(self.store_dir, fsync=False).list_runs()
+
+    def test_new_game_from_design_is_refused(self):
+        code, _, err = self.wgf("new-game", "--mock", "--from", "design", "--quiet")
+        self.assertEqual(code, 2)
+        self.assertIn("strategy-review (gate G2)", err)
+        self.assertEqual(self.runs(), [])
+
+    def test_new_game_from_init_names_both_gates(self):
+        code, _, err = self.wgf("new-game", "--mock", "--from", "init", "--quiet")
+        self.assertEqual(code, 2)
+        self.assertIn("gate G2", err)
+        self.assertIn("gate G3", err)
+
+    def test_plan_from_design_is_refused(self):
+        code, _, err = self.wgf("plan", "--mock", "--from", "design", "--quiet")
+        self.assertEqual(code, 2)
+        self.assertIn("gate G2", err)
+        self.assertEqual(self.runs(), [])
+
+    def test_new_game_from_strategy_is_allowed(self):
+        code, _, err = self.wgf("new-game", "--mock", "--from", "strategy", "--quiet")
+        self.assertEqual(code, 0, err)
+        (state,) = self.runs()
+        self.assertEqual(state.status, RunStatus.COMPLETED)
+        self.assertNotIn("research", state.steps)
+
+    def test_a_fresh_single_step_command_is_unaffected(self):
+        code, _, err = self.wgf("verify", "--mock", "--quiet")
+        self.assertEqual(code, 0, err)
+
+
+BACKOFF = LINEAR.replace("delay_seconds: 1}", "delay_seconds: 7}")
+
+
+class CancelDuringBackoff(EngineCase):
+    """The backoff sleeps under the run's lock; a cancel must not wait for it to end."""
+
+    def cancelling_sleep(self, run_id, after):
+        def sleep(seconds):
+            self.sleeps.append(seconds)
+            if len(self.sleeps) == after:
+                self.store.request(run_id, "cancel")
+        return sleep
+
+    def test_a_cancel_during_backoff_ends_the_run_without_the_next_attempt(self):
+        engine = self.engine(BACKOFF)
+        engine.sleep = self.cancelling_sleep("run-1", after=2)
+        self.script.set("b", StepResult.failed("flaky"))
+        state = engine.start()
+        self.assertEqual(state.status, RunStatus.CANCELLED)
+        self.assertEqual(self.script.executed(), ["a", "b"])        # no second attempt
+        self.assertEqual(self.sleeps, [2.0, 2.0])                    # noticed within a slice
+        on_disk = self.store.load("run-1")
+        self.assertEqual(on_disk.status, RunStatus.CANCELLED)
+        self.assertEqual(on_disk.steps["b"].executions, 1)
+        self.assertEqual(on_disk.steps["b"].attempts, 1)
+        self.assertEqual(on_disk.steps["b"].status, StepStatus.FAILED)
+        started = [e for e in self.store.read_events("run-1")
+                   if e["event"] == Events.STEP_STARTED and e.get("step_id") == "b"]
+        self.assertEqual(len(started), 1)
+        self.assertFalse(self.store.requested("run-1", "cancel"))
+        self.assertFalse(self.store.is_held("run-1"))
+
+    def test_a_cancel_arriving_with_the_failure_skips_the_backoff(self):
+        engine = self.engine(BACKOFF)
+
+        def b(inputs, context):
+            self.store.request(context.run_id, "cancel")
+            return StepResult.failed("flaky")  # retryable, but cancelled while running
+
+        self.script.set("b", b)
+        state = engine.start()
+        self.assertEqual(state.status, RunStatus.CANCELLED)
+        self.assertEqual(self.sleeps, [])
+
+    def test_an_uncancelled_backoff_sleeps_its_whole_delay_in_bounded_slices(self):
+        self.script.set("b", StepResult.failed("flaky"))
+        state = self.engine(BACKOFF).start()
+        self.assertEqual(state.status, RunStatus.COMPLETED)
+        self.assertEqual(sum(self.sleeps), 7.0)
+        self.assertTrue(all(0 < s <= 2.0 for s in self.sleeps), self.sleeps)
+
+
+class Crash(BaseException):
+    """A simulated process death: nothing in the engine catches it."""
+
+
+class VisitInflation(EngineCase):
+    """A crash between counting a visit and moving the cursor must not cost a visit."""
+
+    def test_a_crash_while_following_a_route_does_not_burn_a_visit(self):
+        engine = self.engine(LINEAR)
+        real_save, fired = self.store.save, []
+
+        def save(state):
+            # The first save that puts the cursor on b: the driver dies right there.
+            if state.cursor == "b" and not fired:
+                fired.append(True)
+                raise Crash("killed while following a's route to b")
+            return real_save(state)
+
+        self.store.save = save
+        with self.assertRaises(Crash):
+            engine.start()
+        self.store.save = real_save
+
+        on_disk = self.store.load("run-1")
+        self.assertEqual((on_disk.cursor, on_disk.steps["a"].status), ("a", StepStatus.SUCCESS))
+        self.assertEqual(on_disk.step("b").visits, 0)  # nothing half-counted on disk
+
+        with open(os.path.join(self.store.run_dir("run-1"), "lock"), "w") as handle:
+            handle.write(f"{DEAD_PID}\n")
+        self.script.calls.clear()
+        state = self.engine(LINEAR).resume("run-1")
+        self.assertEqual(state.status, RunStatus.COMPLETED)
+        self.assertEqual(self.script.executed(), ["b", "c"])
+        self.assertEqual(state.steps["a"].executions, 1)
+        self.assertEqual(state.steps["b"].visits, 1)
+
+
 if __name__ == "__main__":
     unittest.main()

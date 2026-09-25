@@ -33,6 +33,7 @@ sys.path.insert(0, HERE)
 from test_release_module import (NOW, VALIDATOR, CONTRACTS, Context, GameRepository,  # noqa: E402
                                  Inputs, ReleaseCase, git, pin, seal, step)
 from wgf_release import ReleaseStep  # noqa: E402
+from testenv import enabled  # noqa: E402
 from wgf_release.package import file_sha256  # noqa: E402
 from wgf_release.step import bundle_digest  # noqa: E402
 from wgflib import paths  # noqa: E402
@@ -361,7 +362,7 @@ class ContinueIn(ReleaseCase):
 # -- opt-in: the real template's release scripts --------------------------------------------
 
 def _pinned_template():
-    if os.environ.get("WGF_TEMPLATE_RELEASE_TEST") != "1":
+    if not enabled("WGF_TEMPLATE_RELEASE_TEST"):
         return None, "set WGF_TEMPLATE_RELEASE_TEST=1 to run the template's release scripts"
     sys.path.insert(0, HERE)
     import pinned_template

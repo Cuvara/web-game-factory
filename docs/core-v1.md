@@ -124,6 +124,7 @@ exists. Release carries per-platform evidence unchanged into the manifest.
 ```bash
 bin/wgf test-core                 # fast categories; golden categories report SKIP
 WGF_GOLDEN=1 bin/wgf test-core    # everything, including both real pipelines (minutes)
+WGF_GOLDEN=1 bin/wgf test-core --strict   # the release gate: nothing may be skipped
 bin/wgf test-core --only SECURITY --json
 ```
 
@@ -140,8 +141,29 @@ bin/wgf test-core --only SECURITY --json
 | SECURITY | `test_core_security` | the adversarial pass, one test per attack |
 
 A category whose module is missing is `MISSING` and fails the suite; a category that ran
-nothing or only skips is `SKIP`, which is not `PASS`. The mapping is data in
+nothing or only skips is `SKIP`, which is not `PASS`. A `PASS` category can still contain
+skipped tests (an opt-in flag that is off, a missing `npx`). The mapping is data in
 `scripts/tests/core_suite.py`.
+
+What is skipped is never hidden. The output lists every skipped test by category, grouped
+by its skip reason, and `--json` adds a `skips` list (`id`, `reason`) to each category plus
+`complete`, `skipped_categories` and `skipped_in_pass`. The summary line says `OK` only when
+nothing was skipped. Otherwise it says, for example,
+`OK (INCOMPLETE — skipped: 2D GOLDEN, 3D GOLDEN; 12 tests skipped in PASS categories; …)`.
+
+| Exit | When |
+|---|---|
+| 0 | no category is `FAIL` or `MISSING`. Without `--strict`, skips do not change the exit code. |
+| 1 | a category is `FAIL` or `MISSING`, with or without `--strict` |
+| 4 | `--strict` only: nothing failed, but a category is `SKIP` or a `PASS` category skipped a test |
+
+Plain `bin/wgf test-core` is the everyday check: it is fast and exits 0 with the goldens
+skipped. **`WGF_GOLDEN=1 bin/wgf test-core --strict` is the release gate.** A skip there
+means something was not proved on this machine: enable its flag (see
+[env-vars.md](env-vars.md)) or install what it needs. Do not merge a skip as a pass. The
+live-agent, ajv and template opt-ins inside the fast categories count too, so a strict run
+needs them enabled (and `npx`, `pnpm` and the pinned template available), not only
+`WGF_GOLDEN=1`.
 
 ## Golden runs
 

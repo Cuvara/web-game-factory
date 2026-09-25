@@ -38,6 +38,7 @@ sys.path.insert(0, HERE)
 import wgf_discovery  # noqa: E402
 from wgf_discovery import evidence  # noqa: E402
 from wgf_discovery.step import ResearchStep  # noqa: E402
+from testenv import enabled  # noqa: E402
 from wgflib.hashing import content_hash  # noqa: E402
 from wgflib.workflow.api import RunRequest, WorkflowAPI  # noqa: E402
 from wgflib.workflow.config import FactoryConfig  # noqa: E402
@@ -567,7 +568,7 @@ class Cli(Scratch):
 # -- full schema validation, opt-in ---------------------------------------------------------
 
 
-@unittest.skipUnless(os.environ.get("WGF_AJV") == "1" and shutil.which("npx"),
+@unittest.skipUnless(enabled("WGF_AJV") and shutil.which("npx"),
                      "set WGF_AJV=1 to validate with ajv (needs npx; downloads ajv once)")
 class AjvSchema(Scratch):
     def validate(self, schema, content):

@@ -31,6 +31,7 @@ sys.path.insert(0, SCRIPTS)
 sys.path.insert(0, HERE)
 
 import pinned_template  # noqa: E402
+from testenv import enabled  # noqa: E402
 
 import wgf_init  # noqa: E402
 from test_workflow_contracts import tree_digest  # noqa: E402
@@ -1273,7 +1274,7 @@ class RealTemplateLocalSource(LocalCase):
         self.assertEqual(self.commits(), "2")
 
 
-@unittest.skipUnless(os.environ.get("WGF_AJV") and shutil.which("npx"),
+@unittest.skipUnless(enabled("WGF_AJV") and shutil.which("npx"),
                      "set WGF_AJV=1 to validate with ajv (needs npx)")
 class AjvSchema(InitCase):
     def test_the_scaffold_record_validates_against_its_schema(self):
@@ -1289,7 +1290,7 @@ class AjvSchema(InitCase):
         self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
 
 
-@unittest.skipUnless(GIT and os.environ.get("WGF_AJV") and shutil.which("npx"),
+@unittest.skipUnless(GIT and enabled("WGF_AJV") and shutil.which("npx"),
                      "set WGF_AJV=1 to validate with ajv (needs npx)")
 class AjvSchemaLocal(LocalCase):
     execute_record = AjvSchema.test_the_scaffold_record_validates_against_its_schema

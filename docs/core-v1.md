@@ -134,7 +134,7 @@ bin/wgf test-core --only SECURITY --json
 
 | Category | Modules | Proves |
 |---|---|---|
-| WORKFLOW | `test_core_workflow`, `test_core_persistence` | engine semantics and crash safety |
+| WORKFLOW | `test_core_workflow`, `test_core_persistence`, `test_decisions` | engine semantics, crash safety, gate decision-records |
 | AGENTS | `test_core_agents` | developer → reviewer → request-changes → developer → approve, isolation, verdicts, timeouts, retry budget, loop bound |
 | CONTRACTS | `test_core_contracts`, `test_core_lineage`, `test_core_template`, `test_golden_fast` | full schema validation, lineage pins, malformed/missing/tampered artifacts |
 | VERIFY | `test_core_verify` | PASS only from evidence; stale/missing/mocked evidence never PASS |

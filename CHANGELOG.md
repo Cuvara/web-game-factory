@@ -87,6 +87,24 @@ Core changes are listed with their reason, as docs/core-v1.md requires.
   sdk-review: resume it `--from develop` (or `--from sdk-review` in a run whose sdk commit
   is HEAD) to get the approval release now requires. Existing drafts are unaffected.
 
+### Changed - gates emit decision-records (M5)
+- **Workflow gates emit decision-records (P1-1, P0-11).** The G2, G3 and G4 checkpoints emit
+  a schema-valid `decision-record` on every decided outcome - a person's choice,
+  auto-approval, timeout approval, reject and kill - whose subject and provenance pin exactly
+  the evidence consumed. One table in `wgflib/workflow/decisions.py` maps workflow choices to
+  the schema (`kill` -> `abandon`). check-integrity requires every step naming a gate to
+  output a decision-record, and only such steps may. *Reason (core change):* CLAUDE.md said
+  every gate emits one; workflow gates did not. *Migration:* runs gain one
+  `decision-record-<step>` artifact per decided gate visit.
+- **Lifecycle bridge.** `factory.lifecycle.sync` (default off, snapshotted per run) appends a
+  run's decision-records to `workspace/titles/<id>/decisions/` and advances the title cursor
+  through `wgf-state.py`'s own guards and gate rules; a refused move is a warning, never the
+  run's outcome. Never for a `--mock` run.
+- **Guards read run evidence.** `ci_green`, `verify_suite_green` and `playable_build` can
+  answer from a run's qa-report and verification-report (`wgflib/guards.py` `RunEvidence`);
+  `PASS_MOCK` never counts as a pass for `verify_suite_green` / `playable_build`.
+- `test_decisions` joins the WORKFLOW category of the Core Acceptance Suite.
+
 ### Added
 - **Timeout auto-approval (M4).** `factory.checkpoints.timeout_auto_approve: {G2: 48h}`
   lets a reversible gate approve itself once it has waited that long. *Reason (core

@@ -20,8 +20,9 @@ Every command that does work is a slice of one workflow definition, executed by 
     wgf runs [--waiting] [--json]        every run in the store; or only those waiting for
                                          a decision, with the step, gate and choices
     wgf pause <run-id> | cancel <run-id> neither imports a step module
-    wgf test-core [--only CATEGORY] [--json]
-                                         the Core Acceptance Suite, by category
+    wgf test-core [--only CATEGORY] [--json] [--strict]
+                                         the Core Acceptance Suite, by category; --strict
+                                         fails (exit 4) when anything was skipped
 
 The run commands are generated from the default workflow's step ids and group names, so a
 step added to core/workflows/new-game.workflow.yaml is a command without touching this file.
@@ -35,6 +36,7 @@ OS error, such as a full disk), 2 usage - including a flag the command would oth
 ignore: --mock, --mock-plan, --hold-gates or --project with --resume or --run, --from with
 --run, --note without --decision - 3 waiting for a decision or input (or paused).
 `wgf status` exits with the same code for the run it shows, and 0 for one still RUNNING.
+`wgf test-core --strict` exits 4 when anything was skipped (1 still means a failure).
 
 Run as `python scripts/wgf.py ...` or via the `bin/wgf` shim. A relative
 factory.storage.directory resolves against the repository root, so every working directory
@@ -181,8 +183,7 @@ def render_status(state, definition, live=None):
 def _resume_hint(state, live=None, definition=None):
     command = f"wgf resume {state.run_id}"
     if live is not None and live.get("liveness") == "stale":
-        return (f"Resume: {command}   (its driver died; the same as "
-                f"wgf {state.workflow_id} --resume {state.run_id})")
+        return f"Resume: {command}   (its driver died)"
     if state.status == RunStatus.WAITING:
         pending = pending_decision(state, definition)
         if pending is not None:

@@ -538,7 +538,7 @@ class AgentLoop(unittest.TestCase):
         self.assertEqual(self.reports(), [])
 
 
-@unittest.skipUnless(os.environ.get("WGF_AJV") and shutil.which("npx") and HAS_GIT,
+@unittest.skipUnless(os.environ.get("WGF_AJV") == "1" and shutil.which("npx") and HAS_GIT,
                      "set WGF_AJV=1 to validate with ajv (needs npx; may download ajv-cli)")
 class Schema(AgentLoop):
     """Every review-report shape the loop emits, against the full JSON Schema."""

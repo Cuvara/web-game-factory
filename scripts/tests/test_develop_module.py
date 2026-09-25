@@ -792,7 +792,7 @@ class ThroughTheEngine(unittest.TestCase):
         self.assertEqual(list(step.outputs), ["prototype-report"])
 
 
-@unittest.skipUnless(os.environ.get("WGF_AJV") and shutil.which("npx"),
+@unittest.skipUnless(os.environ.get("WGF_AJV") == "1" and shutil.which("npx"),
                      "set WGF_AJV=1 to validate with ajv (needs npx; may download ajv-cli)")
 class Schema(DevelopCase):
     """§11.3: an emitted prototype-report against the full JSON Schema."""

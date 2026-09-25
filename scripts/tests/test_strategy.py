@@ -419,7 +419,7 @@ class Schema(unittest.TestCase):
            "-c", "ajv-formats", "--spec=draft2020", "--strict=false"]
 
     def test_emitted_artifacts_validate_with_ajv(self):
-        if os.environ.get("WGF_SKIP_AJV") or not shutil.which("npx"):
+        if os.environ.get("WGF_SKIP_AJV") == "1" or not shutil.which("npx"):
             self.skipTest("ajv unavailable (npx missing or WGF_SKIP_AJV set)")
         scratch = tempfile.mkdtemp(prefix="wgf-strategy-ajv-")
         self.addCleanup(shutil.rmtree, scratch, ignore_errors=True)

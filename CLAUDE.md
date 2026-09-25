@@ -161,7 +161,8 @@ drifted into four mutually inconsistent trees.
   encodes an ownership that changes.
 - **Stage IDs are local to their machine.** Qualify across machines: `title:design`,
   `portfolio:scored`, `release:rc`.
-- **Platform IDs match** `../web-game-template/game.config.yaml`, where entries are pinned
+- **Platform IDs match** `game.config.yaml` of the pinned template (read through
+  `scripts/wgflib/template.py`, never the sibling working copy), where entries are pinned
   objects (`{id, profile: <id>@<version>, role}`), not bare strings.
 - **A directory containing only a `README.md` must not exist.** Create a directory when its
   first real file does.

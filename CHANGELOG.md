@@ -9,6 +9,59 @@ and `core/` is still the contract.
 
 ## [Unreleased]
 
+Wave 1 of the v1.1 architectural audit (P0 safety, template contract, CLI, test honesty).
+Core changes are listed with their reason, as docs/core-v1.md requires.
+
+### Security
+- **Developer boundary (M1).** develop's git runs hardened like the reviewer's
+  (`wgflib/gitsafe`: pinned git dir and work tree, safe env, filter drivers neutralised
+  unless `factory.develop.git.allow_filters`, signing programs off). `package.json`,
+  `tsconfig.json` and `pnpm-lock.yaml` are protected: only dependency additions allowed by
+  `factory.develop.allowed_package_changes` pass conformance, so a developer can no longer
+  rewrite the `test`/`lint`/`test:e2e` scripts every later check runs. The Factory's guarded
+  paths are fingerprinted and restored around the developer. The commit is scoped to
+  `factory.develop.writable_paths`; hidden paths (`.claude/`, `.github/`, ...) and agent
+  instruction files are refused. Developer and reviewer processes get a scrubbed
+  environment (`wgflib/agentenv.py`; add names with `factory.agents.env_passthrough`).
+  Reviewer isolation moved to `wgflib/isolation.py`. *Migration:* a live agent host that
+  authenticates through an environment variable needs it in `env_passthrough`; a developer
+  that edited package.json scripts or wrote outside the writable paths now fails develop.
+- **Run params are corroborated (M2).** `WORKFLOW_STARTED` records the run's params and
+  resume refuses a state.json whose params differ. *Migration:* a run started before this
+  change whose state claims `mock`, `mock_plan` or `auto_approve` is refused on resume;
+  start a new run.
+- **`--from` cannot step over a gate (M2).** A fresh run started with an explicit `--from`
+  past a gate in its scope is refused (`wgf new-game --from design` skipped G2). Fresh
+  single-step runs (`wgf verify`) are unaffected.
+
+### Fixed
+- Run lock identity is pid + process start time, so a recycled pid no longer holds a dead
+  run; an empty lock tolerates mtime skew (M2).
+- Atomic writes use unique temp names; concurrent `LATEST` writes no longer race (M2).
+- A cancel is honoured while a step waits out its retry backoff; a crash between entering a
+  step and moving the cursor no longer burns a visit (M2).
+- Platform profiles are identified by id, version and content hash; init re-vendors a
+  same-version profile with other content, and `wgf_init.profiles.verify_pins` checks it.
+  check-integrity reads platform ids from the pinned template, never the sibling, and warns
+  on template profiles that diverge under the same version (M8).
+
+### Added
+- `wgflib/template_contract.py` (CONTRACT_VERSION 1.0.0): every path, npm script, CLI and
+  output the Factory assumes of a game repository, used by init, verification, sdk and
+  release, with a drift test against the pinned template (M10, `docs/template-contract.md`).
+- `wgf resume`, `wgf decide`, `wgf runs --waiting [--json]` (M11).
+- `wgf test-core --strict` (exit 4 on any skip); the summary never reads a bare OK when
+  anything was skipped, and every skipped test is listed by reason (M12).
+- `docs/env-vars.md`; `test_review_module.py`, `test_netguard.py`, `test_check_integrity.py`,
+  `test_template_contract.py`.
+
+### Changed
+- `wgf status` exits with the run's code (1 failed/blocked/cancelled, 3 waiting/paused).
+  Flags a command would silently ignore are refused (exit 2). pause/cancel import no step
+  module. A relative `factory.storage.directory` resolves against the repository root (M11).
+- Test opt-in flags mean exactly `=1`; `WGF_TEMPLATE_REPO` (a pin bypass) is removed, the
+  real SDK suite runs on the pinned checkout with `WGF_TEMPLATE_SDK_TEST=1` (M12).
+
 ## [1.1.0] - 2026-09-25
 
 Factory v1, usable (`docs/v1-usable.md`). Core v1 against the latest **released**

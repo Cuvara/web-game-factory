@@ -719,7 +719,7 @@ class StatusCommand(unittest.TestCase):
         self.assertIn("Step:     develop", out)
         self.assertIn("Liveness: stale", out)
         self.assertIn("child pid 4242", out)
-        self.assertIn(f"--resume {run_id}", out)
+        self.assertIn(f"wgf resume {run_id}", out)
 
         code, out, _ = self.wgf("status", run_id, "--json")
         live = json.loads(out)["liveness"]

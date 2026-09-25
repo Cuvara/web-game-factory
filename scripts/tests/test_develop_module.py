@@ -14,6 +14,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from unittest import mock as mock_env
 from types import SimpleNamespace
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -28,6 +29,7 @@ from wgf_develop.checks import conformance, package_findings  # noqa: E402
 from wgf_develop.repository import KEY_TRAILER, GitRepo, Runner, RunResult  # noqa: E402
 from wgf_develop.settings import Settings, SettingsError  # noqa: E402
 from wgf_develop.step import DevelopStep  # noqa: E402
+from wgflib import checkout as checkout_lock  # noqa: E402
 from wgflib.hashing import content_hash  # noqa: E402
 from wgflib.workflow import mock  # noqa: E402
 from wgflib.workflow.api import RunRequest, WorkflowAPI  # noqa: E402
@@ -235,6 +237,43 @@ class DevelopCase(unittest.TestCase):
 
     def commits(self):
         return self.git("log", "--format=%H").split()
+
+
+class Checkout(DevelopCase):
+    """wgflib.checkout: develop finds the checkout like every step, and holds it."""
+
+    def test_another_run_in_the_checkout_blocks_before_anything_is_written(self):
+        storage = os.path.join(self.scratch, "store")
+        ctx = context(self.command_config())
+        ctx.run_dir = os.path.join(storage, "workflows", ctx.run_id)
+        ctx.current_step = "develop"
+        other = checkout_lock.acquire(self.repo, "run-other", storage)
+        self.addCleanup(other.release)
+        runner = FakeRunner(on_develop=write_game)
+        result = step_with(runner).execute(inputs_for(), ctx)
+        self.assertEqual(result.outcome, StepOutcome.BLOCKED)
+        self.assertIn("run-other", result.message or result.error)
+        self.assertEqual(runner.calls, [])
+        self.assertEqual(self.git("status", "--porcelain"), "")
+        other.release()
+        result = step_with(FakeRunner(on_develop=write_game)).execute(inputs_for(), ctx)
+        self.assertEqual(result.outcome, StepOutcome.SUCCESS, result.error)
+
+    def test_wgf_game_repo_names_the_checkout_for_develop_too(self):
+        config = self.command_config(checkouts=os.path.join(self.scratch, "elsewhere"))
+        with mock_env.patch.dict(os.environ, {"WGF_GAME_REPO": self.repo}):
+            result = step_with(FakeRunner(on_develop=write_game)).execute(
+                inputs_for(), context(config))
+        self.assertEqual(result.outcome, StepOutcome.SUCCESS, result.error)
+
+    def test_a_scaffold_records_local_path_is_preferred(self):
+        config = self.command_config(checkouts=os.path.join(self.scratch, "elsewhere"))
+        record = fixture("scaffold-record")
+        record["repository"]["local_path"] = self.repo
+        record["provenance"]["content_hash"] = content_hash(record)
+        result = step_with(FakeRunner(on_develop=write_game)).execute(
+            inputs_for(overrides={"scaffold-record": record}), context(config))
+        self.assertEqual(result.outcome, StepOutcome.SUCCESS, result.error)
 
 
 class Inputs(DevelopCase):

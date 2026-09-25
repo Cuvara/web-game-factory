@@ -58,9 +58,13 @@ Moving the template pin therefore runs the contract as well: a template release 
 
 ## Not yet covered
 
-- `scripts/wgf_develop/` still carries its own copies of the paths, scripts and engines it
-  uses. It moves to the contract in a later module; until then, the drift test checks those
-  entries in the template, but not the develop module's copies.
+- `scripts/wgf_develop/` reads the engines, the rendering directories, the renderer
+  packages, the npm script names, the package manager, the engine selector and entry point,
+  `dist`, and `package.json` / `pnpm-lock.yaml` / `game.config.yaml` / `config/platforms` /
+  the Playwright and Vitest configs from the contract (test_checkout.DevelopLiterals). Still
+  literal there: the rest of `PROTECTED_PATHS` (`packages`, `.github`, `scripts`,
+  `vite.config.ts`, `eslint.config.js`, `tsconfig*.json`, `pnpm-workspace.yaml`) and the
+  upstream renderer library names (`pixi.js`, `three`), which are not template names.
 - The template does not yet publish its side of the contract. The intended follow-up is a
   machine-readable `wgf-interface.json` in the template (its version, scripts and paths), which
   init and verify would compare against `CONTRACT_VERSION` and these lists. It is a template

@@ -92,11 +92,19 @@ def _per_platform(session, platform):
     required = _required(platform)
     common = {"category": "platform", "required": required, "platform_id": pid}
 
-    # The profile the build is judged by: the pinned version, never the latest.
-    profile, source = session.profile(pid)
+    # The profile the build is judged by: the pinned one, by content hash - never the
+    # latest, and never a copy that only declares the pinned version.
+    profile, source, pin_problems, content_hash = session.profile_identity(pid)
     pinned = str(platform.get("profile") or "")
     pinned_version = pinned.split("@", 1)[1] if "@" in pinned else None
-    if profile is None:
+    if pin_problems:
+        yield Check(f"platform.profile:{pid}", title="Pinned platform profile", status=FAIL,
+                    message=f"game.config.yaml pins {pinned or pid}, but the game's vendored "
+                            "profile does not verify by content hash: "
+                            + "; ".join(pin_problems),
+                    evidence=[Evidence("file", problem, path=contract.platform_profile_path(pid))
+                              for problem in pin_problems], **common)
+    elif profile is None:
         yield Check(f"platform.profile:{pid}", title="Pinned platform profile", status=BLOCKED,
                     message=f"no profile for {pid} in config/platforms/ or the Factory",
                     evidence=[Evidence("observation", f"profile {pid} not found")], **common)
@@ -108,9 +116,12 @@ def _per_platform(session, platform):
                                        path=source)], **common)
     else:
         yield Check(f"platform.profile:{pid}", title="Pinned platform profile", status=PASS,
-                    message=f"{pid}@{profile.get('version')} from {source}",
+                    message=f"{pid}@{profile.get('version')} from {source}"
+                            + (f", {content_hash}" if content_hash else ""),
                     evidence=[Evidence("file", f"profile {pid}@{profile.get('version')}",
-                                       path=source)], **common)
+                                       path=source,
+                                       **({"content_hash": content_hash} if content_hash
+                                          else {}))], **common)
 
     report, entry = _sdk_entry(session, pid)
     reported = ((report or {}).get("build_ref") or {}).get("commit_sha")

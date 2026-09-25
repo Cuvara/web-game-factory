@@ -37,7 +37,7 @@ import datetime
 import os
 import time
 
-from wgflib import paths, provenance
+from wgflib import checkout, paths, provenance
 from wgflib import template as template_pin
 from wgflib.workflow import ArtifactOutput, StepResult, WorkflowStep
 
@@ -48,7 +48,7 @@ from .infrastructure import (
     missing_infrastructure,
     read_game_config,
 )
-from .profiles import ProfileError, vendor_profiles
+from .profiles import ProfileError, vendor_profiles, verify_pins
 from .project import REPO_NAME, DesignError, ProjectMetadata
 from .tooling import (KEY_TRAILER, PLAN_TRAILER, TEMPLATE_TRAILER, GhCli, GitCli, Repository,
                       ToolError)
@@ -83,9 +83,15 @@ class InitSettings:
         self.template_path = template_path
         self.template_ref = template_ref
         self.commit_author = commit_author or dict(DEFAULT_AUTHOR)
+        # Where the project goes is wgflib.checkout's one precedence, the one every later
+        # step reads it back with: set by from_config (and the step, for its `with:`).
+        self.config = {"init": {"projects_dir": projects_dir}} if projects_dir else {}
+        self.params = {}
+        self.environ = None
+        self.logger = None
 
     @classmethod
-    def from_config(cls, config):
+    def from_config(cls, config, params=None, environ=None):
         section = (config or {}).get("init") or {}
         source = section.get("source", "github")
         if source not in SOURCES:
@@ -129,14 +135,24 @@ class InitSettings:
         if author is not None and not (isinstance(author, dict) and set(author) <= {"name", "email"}
                                        and all(isinstance(v, str) for v in author.values())):
             raise SettingsError("factory.init.commit_author takes name and email")
-        return cls(owner, template, visibility, section.get("projects_dir", ".."), adopt,
-                   timeout, source, template_path, ref, author)
+        settings = cls(owner, template, visibility, section.get("projects_dir", ".."), adopt,
+                       timeout, source, template_path, ref, author)
+        settings.config = config or {}
+        settings.params = dict(params or {})
+        settings.environ = environ
+        return settings
 
     def local_path(self, repo_name):
-        base = self.projects_dir
-        if not os.path.isabs(base):
-            base = os.path.join(paths.ROOT, base)
-        return os.path.normpath(os.path.join(base, repo_name))
+        """Where the project `repo_name` is created: the step's `with: repo_dir`,
+        WGF_GAME_REPO, else factory.checkouts (init.projects_dir is its deprecated alias) +
+        the name - the precedence develop, review, sdk, verify and release read it back
+        with (wgflib.checkout)."""
+        try:
+            path, _source = checkout.locate(self.config, None, "init", self.params,
+                                            self.environ, name=repo_name, logger=self.logger)
+        except checkout.CheckoutError as exc:
+            raise SettingsError(str(exc))
+        return path
 
     def template_dir(self):
         """The local template checkout; None means "a checkout of the pinned revision"."""
@@ -172,6 +188,12 @@ class InitStep(WorkflowStep):
         self.sleep = sleep
 
     def execute(self, inputs, context):
+        # From the moment the project exists, the checkout is locked against another run
+        # until this step ends (wgflib.checkout).
+        with checkout.StepLease(context) as lease:
+            return self._execute(inputs, context, lease)
+
+    def _execute(self, inputs, context, lease):
         if "game-design" in inputs.missing:
             return StepResult.waiting_for_input("init needs a game-design; run design first")
         design = inputs.load("game-design")
@@ -180,9 +202,10 @@ class InitStep(WorkflowStep):
         except DesignError as exc:
             return StepResult.failed(str(exc), retryable=False)
         try:
-            settings = InitSettings.from_config(context.config)
+            settings = InitSettings.from_config(context.config, self.params)
         except SettingsError as exc:
             return StepResult.blocked(str(exc))
+        settings.logger = context.logger
         plan = None
         if "tech-plan" in inputs:
             plan = inputs.load("tech-plan")
@@ -199,10 +222,12 @@ class InitStep(WorkflowStep):
             if settings.source == "local":
                 repository, outcome, template_sha, local = self._local_source(
                     project, settings, pinned, context)
+                self._take(lease, local)
             else:
                 repository, outcome, generated_sha = self._repository(project, settings,
                                                                       context)
                 local = self._local_project(repository, settings, context)
+                self._take(lease, local)
                 pin = self._pin_github_project(local, settings, pinned, pinned_url,
                                                generated_sha, context)
                 template_sha = pinned
@@ -211,6 +236,8 @@ class InitStep(WorkflowStep):
             game_config = self._read_config(local)
         except _Refused as refused:
             return refused.result
+        except SettingsError as exc:
+            return StepResult.blocked(str(exc))
         except ToolError as exc:
             return StepResult.failed(str(exc), retryable=exc.retryable)
 
@@ -272,6 +299,13 @@ class InitStep(WorkflowStep):
 
     def marker(self, context):
         return f"wgf-init:{context.run_id}:{self.id}"
+
+    @staticmethod
+    def _take(lease, local):
+        try:
+            lease.take(local)
+        except checkout.CheckoutLocked as exc:
+            raise _Refused(StepResult.blocked(str(exc)))
 
     # -- the pinned template revision -------------------------------------------------------
 
@@ -381,7 +415,7 @@ class InitStep(WorkflowStep):
             raise _Refused(StepResult.blocked(
                 f"{local} already exists and is not a clone of {repository.full_name} "
                 f"(origin: {origin or 'none'}). Init never overwrites a directory: move it, "
-                "or set factory.init.projects_dir elsewhere."))
+                "or set factory.checkouts elsewhere."))
         if not self.git.has_commits(local):
             # Cloned by an earlier attempt before GitHub had finished generating it.
             self.git.pull(local, repository.default_branch or "main")
@@ -509,6 +543,14 @@ class InitStep(WorkflowStep):
                 candidates += vendor_profiles(local, game_config["platforms"], self.profiles_dir)
             except (GameConfigError, ProfileError) as exc:
                 raise _Refused(StepResult.failed(str(exc), retryable=False))
+            # What was just vendored is read back by identity - version AND content hash,
+            # against pinned.json and the Factory's profile - before anything is committed:
+            # verify and sdk will judge the build by these files.
+            problems = verify_pins(local, game_config["platforms"], self.profiles_dir)
+            if problems:
+                raise _Refused(StepResult.failed(
+                    "the vendored platform profiles do not verify: " + "; ".join(problems),
+                    retryable=False))
             if desired != current:
                 with open(path, "w", encoding="utf-8", newline="\n") as handle:
                     handle.write(desired)
@@ -557,7 +599,11 @@ class InitStep(WorkflowStep):
                                "artifact_type": artifact_type,
                                "content_hash": ref.content_hash})
 
-        repo = {"owner": repository.owner, "name": repository.name}
+        # Where the project is, for every later step (wgflib.checkout reads it after
+        # WGF_GAME_REPO): Factory-root-relative when it is beside the Factory, so a run
+        # resumed on another machine with the same layout finds it; absolute otherwise.
+        repo = {"owner": repository.owner, "name": repository.name,
+                "local_path": checkout.record_path(local)}
         if repository.url:
             repo["url"] = repository.url
         if repository.default_branch:

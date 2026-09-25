@@ -10,7 +10,7 @@ configured by `factory.init` there. See docs/init-module.md.
 
 from .gameconfig import GameConfigError, apply_game_config, bootstrap_identity
 from .infrastructure import TEMPLATE_INFRASTRUCTURE, missing_infrastructure, read_game_config
-from .profiles import ProfileError, vendor_profiles
+from .profiles import ProfileError, pin_identity, vendor_profiles, verify_pins
 from .project import DesignError, ProjectMetadata
 from .step import InitSettings, InitStep, SettingsError
 from .tooling import GhCli, GitCli, Git, GitHub, Repository, ToolError
@@ -22,6 +22,8 @@ __all__ = [
     "apply_game_config",
     "bootstrap_identity",
     "vendor_profiles",
+    "verify_pins",
+    "pin_identity",
     "GhCli",
     "Git",
     "GitCli",

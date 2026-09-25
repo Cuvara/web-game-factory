@@ -19,7 +19,7 @@ set `=1` and both readings agree.
 
 | Variable | Read by | Meaning | Default |
 |---|---|---|---|
-| `WGF_GAME_REPO` | `scripts/wgf_sdk/step.py`, `scripts/wgf_verification/session.py` | The game checkout the `sdk` and `verify` steps work on, when the step's own parameter (`game_repo` / `repo_dir`) is not set. Checked before `factory.<step>` configuration. | unset: resolved from the step parameter, then config, then the checkouts directory |
+| `WGF_GAME_REPO` | `scripts/wgflib/checkout.py` | The game checkout EVERY step that works in the game repository uses - init (where it creates the project), assets, develop, review, sdk, verify and release - when the step's own `with: repo_dir` / `game_repo` is not set. Checked before the scaffold-record's `local_path` and `factory.checkouts`. A relative path resolves against the Factory root ([checkouts.md](checkouts.md)). | unset: the scaffold-record's `local_path`, else `factory.checkouts` + the repository name |
 | `WGF_RESEARCH_LIVE` | `scripts/wgf_discovery/step.py` | `1` makes the `research` step fetch the pages in `probes.yaml` during the run, like `live: true` on the step. | off: evidence snapshots only |
 | `WGF_TEMPLATE_COMMIT` | `scripts/wgflib/template.py` | A deliberate override of the web-game-template commit in `workspace/config/template.lock.json`. Must be a full 40-hex sha. Used to validate a new pin before moving the lock. | the lock's `commit` |
 | `WGF_TEMPLATE_DIR` | `scripts/wgflib/template.py` | Offer an existing template checkout instead of the cache. Refused (`TemplateDrift`) unless its HEAD is exactly the expected commit; never moved. | unset: cache, then clone |

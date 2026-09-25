@@ -26,7 +26,8 @@ The overrides, and why each is legitimate:
 
     init.source: local           no GitHub: the repository is `git archive` of the template
                                  checkout, committed locally (docs/init-module.md)
-    *.checkouts / games_dir      every module finds the repository under <workdir>/games
+    checkouts                    every step finds the repository under <workdir>/games
+                                 (factory.checkouts: init clones there, and records it)
     assets.root                  assets are written into that repository's public/assets
     discovery.*                  the frozen evidence and a one-archetype catalog under
                                  fixtures/, and a fixed as_of - deterministic steering
@@ -185,11 +186,11 @@ def build_config(game, workdir, template_dir=None, python=None):
     config = base_config()
     overrides = {
         "storage": {"directory": os.path.join(workdir, "factory-store"), "fsync": True},
+        "checkouts": games_dir,
         "init": {
             "source": "local",
             "template_path": template_dir,
             "template_ref": template.expected_commit(),
-            "projects_dir": games_dir,
             "adopt_existing": False,
         },
         "discovery": {
@@ -202,7 +203,6 @@ def build_config(game, workdir, template_dir=None, python=None):
         },
         "assets": {"root": repo},
         "develop": {
-            "checkouts": games_dir,
             "author": dict(GOLDEN_AUTHOR),
             "developer": {
                 "kind": "command",
@@ -213,7 +213,6 @@ def build_config(game, workdir, template_dir=None, python=None):
             },
         },
         "review": {
-            "checkouts": games_dir,
             "reviewer": {
                 "kind": "command",
                 "argv": [python, os.path.join(HERE, "reviewer.py"),
@@ -224,9 +223,7 @@ def build_config(game, workdir, template_dir=None, python=None):
                 "verdict_from": "file",
             },
         },
-        "sdk": {"games_dir": games_dir, "commit_author": dict(GOLDEN_AUTHOR)},
-        "verification": {"checkouts": games_dir},
-        "release": {"checkouts": games_dir},
+        "sdk": {"commit_author": dict(GOLDEN_AUTHOR)},
         "checkpoints": {"auto_approve": list(AUTO_APPROVE)},
     }
     return _merge(config, overrides)

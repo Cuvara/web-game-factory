@@ -7,7 +7,7 @@ a workflow that wants, say, a narrower check list.
 
     factory:
       develop:
-        checkouts: ..              # game repositories live at <checkouts>/<repository.name>
+        checkouts: ..              # deprecated: factory.checkouts (wgflib.checkout)
         developer:
           kind: handoff            # handoff | command
           argv: []                 # command only; see developers.py for the placeholders
@@ -39,9 +39,8 @@ hidden path or an agent instruction file is refused whatever the list says.
 """
 
 import copy
-import os
 
-from wgflib import agentenv, isolation, paths
+from wgflib import agentenv, checkout, isolation
 
 from .scope import DEFAULT_WRITABLE, validate_writable
 
@@ -58,10 +57,9 @@ PACKAGE_FIELDS = ("dependencies", "devDependencies")
 PACKAGE_CHANGES = ("add", "change", "remove")
 
 DEFAULTS = {
-    # The sibling-directory convention web-game-template already follows: the Factory's
-    # parent directory. Relative values resolve against the Factory root, not the cwd, so
-    # the same config means the same place from wherever `wgf` is run.
-    "checkouts": "..",
+    # Where the checkout is comes from wgflib.checkout (factory.checkouts; this key is its
+    # deprecated alias). None here, so an unset key is not mistaken for a configured one.
+    "checkouts": None,
     "developer": {"kind": "handoff", "argv": [], "timeout_seconds": 5400,
                   "idle_timeout_seconds": None},
     "checks": ["install", "conformance", "typecheck", "lint", "unit", "build", "smoke"],
@@ -167,7 +165,10 @@ class Settings:
             guarded = isolation.guarded_paths(config)
         except ValueError as exc:
             raise SettingsError(str(exc))
-        return cls(data, passthrough, guarded, game_passthrough)
+        settings = cls(data, passthrough, guarded, game_passthrough)
+        settings.config = config or {}
+        settings.params = dict(params or {})
+        return settings
 
     @property
     def commit(self):
@@ -185,11 +186,17 @@ class Settings:
     def skills(self):
         return self.data.get("skills") or {}
 
-    def checkout_for(self, repository_name):
-        root = self.data.get("checkouts") or ".."
-        if not os.path.isabs(root):
-            root = os.path.join(paths.ROOT, root)
+    def checkout_for(self, repository_name, scaffold=None, environ=None, logger=None):
+        """The game repository checkout, by wgflib.checkout's one precedence - the step's
+        `with: repo_dir`, WGF_GAME_REPO, the scaffold-record's local_path, then
+        factory.checkouts (develop.checkouts is its deprecated alias) + the name."""
+        return self.locate(repository_name, scaffold, environ, logger)[0]
+
+    def locate(self, repository_name, scaffold=None, environ=None, logger=None):
+        """(path, source) - checkout_for, and which rule named the path."""
         try:
-            return paths.checkout_path(root, repository_name)
-        except ValueError as exc:
+            return checkout.locate(getattr(self, "config", {}), scaffold, "develop",
+                                   getattr(self, "params", {}), environ,
+                                   name=repository_name, logger=logger)
+        except checkout.CheckoutError as exc:
             raise SettingsError(str(exc))

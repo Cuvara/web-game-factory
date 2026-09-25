@@ -8,7 +8,14 @@ Settings come from `factory.assets` in workspace/config/factory.yaml, overridden
 step's `with:` block:
 
     root           where the game repository checkout is; files go under public/assets/.
-                   Default: .factory/assets/<title>, relative to the working directory.
+                   Default: the run's game repository checkout, found as every step finds
+                   it (wgflib.checkout: with: repo_dir, WGF_GAME_REPO, the scaffold-record's
+                   local_path, factory.checkouts + its name), so the files land in
+                   <checkout>/public/assets/ where develop builds and commits them. Without a
+                   scaffold-record, or when that checkout does not exist:
+                   .factory/assets/<title> under the Factory root - git-ignored scratch.
+                   Relative paths resolve against the Factory root, never the working
+                   directory.
     libraries      directories holding an index.json of reusable assets. Default: none.
     placeholders   {enabled: true, backends: [2d-assets-mcp, procedural], <backend>: {...}}
     optimize       lossless in-place optimization of files the step writes. Default: true.
@@ -28,7 +35,7 @@ import datetime
 import os
 import re
 
-from wgflib import paths, provenance
+from wgflib import checkout, paths, provenance
 from wgflib.workflow import ArtifactOutput, StepResult, WorkflowStep
 from wgflib.yamllite import YamlError, load_file
 
@@ -99,6 +106,39 @@ class AssetsStep(WorkflowStep):
         return datetime.datetime.now(datetime.timezone.utc)
 
     def execute(self, inputs, context):
+        # Writing into the game repository takes the checkout's lock (wgflib.checkout).
+        with checkout.StepLease(context) as lease:
+            return self._execute(inputs, context, lease)
+
+    def _asset_root(self, settings, scaffold, slug, context):
+        """(root, in the checkout?): where the asset files go - see the module docstring."""
+        if settings.get("root"):
+            root = checkout.resolve(settings["root"])
+            in_checkout = False
+            if scaffold is not None:
+                try:
+                    repo, _source = checkout.locate(context.config, scaffold, "assets",
+                                                    context.params or {})
+                    in_checkout = os.path.realpath(repo) == os.path.realpath(root)
+                except checkout.CheckoutError:
+                    pass
+            return root, in_checkout
+        if scaffold is not None:
+            try:
+                repo, source = checkout.locate(context.config, scaffold, "assets",
+                                               context.params or {}, logger=context.logger)
+            except checkout.CheckoutError as exc:
+                context.logger.warning("no game repository checkout for the assets",
+                                       problem=str(exc))
+            else:
+                if os.path.isdir(repo):
+                    return repo, True
+                context.logger.warning(
+                    "the game repository is not checked out; assets go to scratch",
+                    checkout=repo, source=source)
+        return os.path.join(paths.ROOT, ".factory", "assets", slug), False
+
+    def _execute(self, inputs, context, lease):
         if "game-design" not in inputs:
             return StepResult.waiting_for_input("the assets step needs a game-design")
         ref = inputs.refs["game-design"]
@@ -119,8 +159,13 @@ class AssetsStep(WorkflowStep):
 
         title_id = design.get("title_id") or context.project_id or "title"
         slug = slugify(title_id, "title")
-        root = settings.get("root") or os.path.join(".factory", "assets", slug)
-        store = AssetStore(os.path.abspath(root))
+        root, in_checkout = self._asset_root(settings, scaffold, slug, context)
+        if in_checkout:
+            try:
+                lease.take(root)
+            except checkout.CheckoutLocked as exc:
+                return StepResult.blocked(str(exc))
+        store = AssetStore(root)
         libraries, library_problems = open_libraries(settings["libraries"])
         for problem in library_problems:
             context.logger.warning("asset library unavailable", problem=problem)

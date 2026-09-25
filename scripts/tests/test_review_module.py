@@ -297,13 +297,22 @@ class CheckoutFor(unittest.TestCase):
         self.assertEqual(Settings.resolve({}).checkout_for("demo-game"),
                          os.path.normpath(os.path.join(paths.ROOT, "..", "demo-game")))
 
-    def test_develops_checkouts_unless_review_names_its_own(self):
+    def test_the_one_checkouts_directory_develop_uses(self):
+        # wgflib.checkout: one checkouts directory for every step. The deprecated
+        # develop.checkouts is read before review.checkouts, so review can no longer be
+        # pointed at another tree than the one develop built in; factory.checkouts wins.
         develop = {"develop": {"checkouts": "games"}}
         self.assertEqual(Settings.resolve(develop).checkout_for("demo"),
                          os.path.join(paths.ROOT, "games", "demo"))
         own = dict(develop, review={"checkouts": "/srv/review"})
         self.assertEqual(Settings.resolve(own).checkout_for("demo"),
+                         os.path.join(paths.ROOT, "games", "demo"))
+        only_review = {"review": {"checkouts": "/srv/review"}}
+        self.assertEqual(Settings.resolve(only_review).checkout_for("demo"),
                          os.path.normpath("/srv/review/demo"))
+        unified = dict(own, checkouts="/srv/games")
+        self.assertEqual(Settings.resolve(unified).checkout_for("demo"),
+                         os.path.normpath("/srv/games/demo"))
 
     def test_a_name_that_is_not_one_directory_entry_is_refused(self):
         resolved = Settings.resolve({})
@@ -536,6 +545,21 @@ class Subject(unittest.TestCase):
             brief = handle.read()
         self.assertIn(f"git diff {self.developed}..{self.integrated}", brief)
         self.assertIn("committed on top of the development commit", brief)
+
+    def test_another_run_in_the_checkout_blocks_the_review(self):
+        # wgflib.checkout: the checkout must hold still while it is reviewed.
+        from wgflib import checkout
+        storage = os.path.join(self.scratch, "store")
+        self.run_dir = os.path.join(storage, "workflows", "run-mine")
+        os.makedirs(self.run_dir)
+        other = checkout.acquire(self.repo, "run-other", storage)
+        self.addCleanup(other.release)
+        result = self.review(subject="sdk-report")
+        self.assertEqual(result.outcome, "BLOCKED")
+        self.assertIn("run-other", result.message or result.error)
+        self.assertFalse(os.path.exists(os.path.join(self.run_dir, "review")))
+        other.release()
+        self.assertEqual(self.review(subject="sdk-report").outcome, "SUCCESS")
 
     def test_the_default_subject_is_the_develop_commit_which_is_no_longer_head(self):
         # After sdk committed, HEAD is the sdk commit: reviewing develop's commit is refused,

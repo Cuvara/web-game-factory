@@ -209,7 +209,6 @@ factory:
       argv: [my-agent-host, --non-interactive, --cwd, "{repo}", "{prompt}"]
       timeout_seconds: 1800         # wall clock
       idle_timeout_seconds: 600     # no stdout/stderr for this long
-    # checkouts: ..                 # default: factory.develop.checkouts
     guarded_paths: [core, scripts, bin, workspace/config]   # the develop step's too
     fingerprint_ignored: true     # lstat inside existing ignored entries (node_modules)
   agents:

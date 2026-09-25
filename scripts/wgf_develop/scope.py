@@ -25,13 +25,15 @@ dependency addition to package.json and the lockfile that follows it.
 
 import re
 
+from wgflib import template_contract as contract
+
 __all__ = ["DEFAULT_WRITABLE", "PACKAGE_FILES", "refusal", "partition", "validate_writable"]
 
 DEFAULT_WRITABLE = ("src/", "tests/", "public/", "docs/development/", "index.html")
 
 # Writable only as far as checks.package_findings allows: dependency additions, and the
 # lockfile together with one.
-PACKAGE_FILES = ("package.json", "pnpm-lock.yaml")
+PACKAGE_FILES = (contract.PACKAGE_JSON, contract.PNPM_LOCK)
 
 # The instruction files agent hosts read from a repository: a capitalised name, optional
 # dotted qualifiers, .md (the convention, not any one host's file name).

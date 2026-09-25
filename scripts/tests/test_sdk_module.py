@@ -237,6 +237,25 @@ class FailurePaths(Case):
         self.assertEqual(result.outcome, StepOutcome.BLOCKED)
         self.assertIn("yandex@9.0.0", result.message or result.error)
 
+    def test_a_tampered_vendored_profile_blocks(self):
+        # The vendored copy must be the Factory's by content hash, not merely declare the
+        # pinned version (wgf_init.profiles.pin_identity).
+        from wgf_init.profiles import vendor_profiles
+        self.configure([("yandex", "required")])
+        vendor_profiles(self.repo, [{"id": "yandex", "profile": "yandex@1.0.0",
+                                     "role": "required"}])
+        self.commit = commit_all(self.repo)
+        result = self.run_step()
+        self.assertEqual(result.outcome, StepOutcome.SUCCESS, result.message or result.error)
+        with open(os.path.join(self.repo, "config", "platforms", "yandex.yaml"), "a") as handle:
+            handle.write("\n# edited\n")
+        self.commit = commit_all(self.repo)
+        FakeRunner.calls = []
+        result = self.run_step()
+        self.assertEqual(result.outcome, StepOutcome.BLOCKED)
+        self.assertIn("content hash", result.message or result.error)
+        self.assertEqual(FakeRunner.calls, [])
+
     def test_a_suite_that_could_not_run_is_retryable(self):
         self.configure([("yandex", "required")])
         FakeRunner.error = "pnpm is not installed"

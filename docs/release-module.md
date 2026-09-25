@@ -144,9 +144,11 @@ normalize entry times (and order) in `package.mjs`.
 
 ## Where the checkout comes from
 
-As verification: the step's `with: repo_dir`, else `WGF_GAME_REPO`, else
-`factory.release.checkouts` joined with the run's `scaffold-record.repository.name`. It never
-clones.
+As every step ([checkouts.md](checkouts.md)): the step's `with: repo_dir`, else
+`WGF_GAME_REPO`, else the scaffold-record's `repository.local_path`, else `factory.checkouts`
+(`factory.release.checkouts` is a deprecated alias) joined with its `repository.name`. It
+never clones. Packaging holds the checkout's lock: another run in it refuses the release
+(`checkout-in-use`, BLOCKED), naming that run.
 
 ## The environment packaging runs with
 

@@ -1551,5 +1551,27 @@ with open(dump, "w") as handle:
             DevelopSettings.resolve({"agents": {"game_env_passthrough": "REGISTRY_TOKEN"}})
 
 
+
+class CheckoutResolution(unittest.TestCase):
+    """wgflib.checkout (M6): no rule of the one precedence can point a step at the Factory,
+    and a hostile repository name is refused even when another rule would decide."""
+
+    def test_the_factory_tree_is_never_a_game_checkout(self):
+        from wgflib import checkout
+        for where in (paths.ROOT, os.path.dirname(paths.ROOT)):
+            with self.subTest(where=where):
+                with self.assertRaises(checkout.CheckoutError):
+                    checkout.locate({}, None, "develop", {}, {"WGF_GAME_REPO": where})
+                with self.assertRaises(checkout.CheckoutError):
+                    checkout.locate({}, {"repository": {"name": "x", "local_path": where}},
+                                    "release", {}, {})
+
+    def test_a_hostile_name_is_refused_even_under_wgf_game_repo(self):
+        from wgflib import checkout
+        with self.assertRaises(checkout.CheckoutError):
+            checkout.locate({}, {"repository": {"name": ".."}}, "sdk", {},
+                            {"WGF_GAME_REPO": "/srv/game"})
+
+
 if __name__ == "__main__":
     unittest.main()

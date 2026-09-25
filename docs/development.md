@@ -120,12 +120,12 @@ class that would otherwise only surface when an agent followed a path that does 
 ```bash
 python -m unittest discover scripts/tests    # everything; opt-in tests skip with a reason
 bin/wgf test-core                            # the Core Acceptance Suite, by category
-WGF_GOLDEN=1 bin/wgf test-core --strict      # the release gate: exits 4 if anything skipped
+WGF_GOLDEN=1 bin/wgf test-core --strict      # the release gate: exits 4 if a category is SKIP
 ```
 
 A skip is never a pass. `bin/wgf test-core` lists every skipped test by category and reason,
 and its summary says `OK (INCOMPLETE — …)` instead of `OK` when anything was skipped. It
-exits 0 unless a category is `FAIL` or `MISSING` (exit 1); `--strict` also turns any skip into
+exits 0 unless a category is `FAIL` or `MISSING` (exit 1); `--strict` also turns a `SKIP` category into
 exit 4. Semantics: [core-v1.md](core-v1.md#the-core-acceptance-suite).
 
 Opt-in tests read their flags through `scripts/tests/testenv.py`: `enabled("WGF_AJV")` is

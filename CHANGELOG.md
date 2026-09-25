@@ -50,7 +50,7 @@ Core changes are listed with their reason, as docs/core-v1.md requires.
   output the Factory assumes of a game repository, used by init, verification, sdk and
   release, with a drift test against the pinned template (M10, `docs/template-contract.md`).
 - `wgf resume`, `wgf decide`, `wgf runs --waiting [--json]` (M11).
-- `wgf test-core --strict` (exit 4 on any skip); the summary never reads a bare OK when
+- `wgf test-core --strict` (exit 4 on a SKIP category; opt-in tests skipped inside a PASS category are listed, not failed); the summary never reads a bare OK when
   anything was skipped, and every skipped test is listed by reason (M12).
 - `docs/env-vars.md`; `test_review_module.py`, `test_netguard.py`, `test_check_integrity.py`,
   `test_template_contract.py`.

@@ -124,7 +124,7 @@ exists. Release carries per-platform evidence unchanged into the manifest.
 ```bash
 bin/wgf test-core                 # fast categories; golden categories report SKIP
 WGF_GOLDEN=1 bin/wgf test-core    # everything, including both real pipelines (minutes)
-WGF_GOLDEN=1 bin/wgf test-core --strict   # the release gate: nothing may be skipped
+WGF_GOLDEN=1 bin/wgf test-core --strict   # the release gate: no category may be skipped
 bin/wgf test-core --only SECURITY --json
 ```
 
@@ -155,15 +155,17 @@ nothing was skipped. Otherwise it says, for example,
 |---|---|
 | 0 | no category is `FAIL` or `MISSING`. Without `--strict`, skips do not change the exit code. |
 | 1 | a category is `FAIL` or `MISSING`, with or without `--strict` |
-| 4 | `--strict` only: nothing failed, but a category is `SKIP` or a `PASS` category skipped a test |
+| 4 | `--strict` only: nothing failed, but a category is `SKIP` |
 
 Plain `bin/wgf test-core` is the everyday check: it is fast and exits 0 with the goldens
 skipped. **`WGF_GOLDEN=1 bin/wgf test-core --strict` is the release gate.** A skip there
-means something was not proved on this machine: enable its flag (see
-[env-vars.md](env-vars.md)) or install what it needs. Do not merge a skip as a pass. The
-live-agent, ajv and template opt-ins inside the fast categories count too, so a strict run
-needs them enabled (and `npx`, `pnpm` and the pinned template available), not only
-`WGF_GOLDEN=1`.
+means a whole category was not proved on this machine: enable its flag (see
+[env-vars.md](env-vars.md)) or install what it needs. Do not merge a skip as a pass. Tests
+skipped inside a `PASS` category - the live-agent, ajv and real-template-release opt-ins -
+are listed in the output but do not fail `--strict`: those categories were proved by their
+other tests, and requiring every opt-in would make the release gate depend on paid live
+agent runs. Run them deliberately (see [claude-capabilities.md](claude-capabilities.md))
+when the change touches what they cover.
 
 ## Golden runs
 

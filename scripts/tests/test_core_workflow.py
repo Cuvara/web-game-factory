@@ -839,10 +839,11 @@ class TestCoreCommand(unittest.TestCase):
                 self.assertEqual(got, code)
                 self.assertEqual(json.loads(out)["ok"], code == 0)
 
-    def test_strict_fails_anything_incomplete_with_its_own_exit_code(self):
-        # 4 is not 1: skipped is "not proved here", failed is "broken". FAIL still wins.
+    def test_strict_fails_a_skipped_category_with_its_own_exit_code(self):
+        # 4 is not 1: skipped is "not proved here", failed is "broken". FAIL still wins. A
+        # PASS category with opt-in tests skipped (PARTIAL) was proved; it is listed, not failed.
         self.assertNotEqual(wgf.EXIT_INCOMPLETE, wgf.EXIT_FAILED)
-        for only, code in ((["GOOD"], 0), (["LATER"], 4), (["NOTHING"], 4), (["PARTIAL"], 4),
+        for only, code in ((["GOOD"], 0), (["LATER"], 4), (["NOTHING"], 4), (["PARTIAL"], 0),
                            (["GOOD", "LATER"], 4), (["BAD", "LATER"], 1), (["ABSENT"], 1)):
             with self.subTest(only):
                 got, out = self.main("--strict", "--json", *self.only(*only))
@@ -930,7 +931,11 @@ class TestCoreCommand(unittest.TestCase):
         self.assertEqual([s["reason"] for s in rows[0]["skips"]],
                          ["pinned template unavailable"])
         self.assertFalse(wgf.core_completeness(rows)["complete"])
-        self.assertEqual(wgf.core_exit_code(rows, strict=True), wgf.EXIT_INCOMPLETE)
+        # Listed as incomplete, but the category itself ran: --strict does not fail it.
+        self.assertEqual(wgf.core_exit_code(rows, strict=True), wgf.EXIT_OK)
+        self.assertEqual(wgf.core_exit_code(rows + [dict(rows[0], category="GONE",
+                                                         result="SKIP")], strict=True),
+                         wgf.EXIT_INCOMPLETE)
 
 # -- run params, --from past a gate, cancel during backoff, visit inflation --------------
 

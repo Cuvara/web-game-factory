@@ -22,7 +22,7 @@ Every command that does work is a slice of one workflow definition, executed by 
     wgf pause <run-id> | cancel <run-id> neither imports a step module
     wgf test-core [--only CATEGORY] [--json] [--strict]
                                          the Core Acceptance Suite, by category; --strict
-                                         fails (exit 4) when anything was skipped
+                                         fails (exit 4) when a category was skipped
 
 The run commands are generated from the default workflow's step ids and group names, so a
 step added to core/workflows/new-game.workflow.yaml is a command without touching this file.
@@ -36,7 +36,7 @@ OS error, such as a full disk), 2 usage - including a flag the command would oth
 ignore: --mock, --mock-plan, --hold-gates or --project with --resume or --run, --from with
 --run, --note without --decision - 3 waiting for a decision or input (or paused).
 `wgf status` exits with the same code for the run it shows, and 0 for one still RUNNING.
-`wgf test-core --strict` exits 4 when anything was skipped (1 still means a failure).
+`wgf test-core --strict` exits 4 when a whole category was skipped (1 still means a failure).
 
 Run as `python scripts/wgf.py ...` or via the `bin/wgf` shim. A relative
 factory.storage.directory resolves against the repository root, so every working directory
@@ -375,13 +375,14 @@ def build_parser(commands):
         "test-core", help="run the Core Acceptance Suite",
         description="Exit status: 0 nothing failed (skips are listed, and the summary says "
                     "INCOMPLETE), 1 a category FAILED or is MISSING, 4 with --strict: "
-                    "something was skipped. The release gate is "
+                    "a whole category was skipped. The release gate is "
                     "`WGF_GOLDEN=1 bin/wgf test-core --strict`.")
     core.add_argument("--only", action="append", metavar="CATEGORY",
                       help="run only this category (repeatable), e.g. WORKFLOW")
     core.add_argument("--strict", action="store_true",
-                      help="exit 4 if any category is SKIP or any test in a PASS category "
-                           "was skipped: the suite must have run in full")
+                      help="exit 4 if any category is SKIP: every category must have run. "
+                           "Tests skipped inside a PASS category (opt-in live checks) are "
+                           "listed but do not fail it")
     core.add_argument("--json", action="store_true")
     core.set_defaults(handler=cmd_test_core)
 
@@ -604,7 +605,7 @@ def cmd_runs(args):
 
 TESTS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "tests")
 PASS, FAIL, SKIP, MISSING = "PASS", "FAIL", "SKIP", "MISSING"
-# test-core --strict only: nothing failed, but the suite did not run in full. Distinct from
+# test-core --strict only: nothing failed, but a whole category did not run. Distinct from
 # EXIT_FAILED, so a gate can tell "broken" from "not all of it was proved here".
 EXIT_INCOMPLETE = 4
 
@@ -687,9 +688,13 @@ def core_completeness(rows):
 
 
 def core_exit_code(rows, strict=False):
+    """--strict fails on a SKIP category - a part of Core the run did not prove at all. A
+    test skipped inside a PASS category is an opt-in check (a live agent, ajv, a real
+    template release) whose category was otherwise proved; it is listed, never hidden, but
+    requiring every opt-in would make the release gate depend on paid live agent runs."""
     if any(r["result"] in (FAIL, MISSING) for r in rows):
         return EXIT_FAILED
-    if strict and not core_completeness(rows)["complete"]:
+    if strict and core_completeness(rows)["skipped_categories"]:
         return EXIT_INCOMPLETE
     return EXIT_OK
 
@@ -709,7 +714,7 @@ def _core_summary(rows, strict):
                      f"test{'s' if state['skipped_in_pass'] != 1 else ''} skipped in PASS "
                      f"categories")
     detail = "; ".join(parts)
-    if strict:
+    if strict and state["skipped_categories"]:
         return f"Core Acceptance Suite: INCOMPLETE ({detail}; --strict; {total})"
     return f"Core Acceptance Suite: OK (INCOMPLETE \u2014 {detail}; {total})"
 

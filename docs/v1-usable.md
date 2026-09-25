@@ -120,10 +120,31 @@ workflow was then run again from a clean checkout.
 
 ## Tests
 
-| Suite | Before the acceptance run (`118e2ab`) | After (release commit) |
-|---|---|---|
-| `python -m unittest discover scripts/tests` | 1023 OK, 35 opt-in skips | see the release notes |
-| `WGF_GOLDEN=1 bin/wgf test-core` | 395 tests, 9/9 categories PASS (2D and 3D golden 10/10) | see the release notes |
-| `check-integrity.py`, `wgf-hash.py --check` | OK | see the release notes |
-| SDK browser e2e (`python -m wgf_sdk.e2e`), 7 platforms × 2 engines | PASS (during the work) | see the release notes |
-| web-game-template v1.1.0 `pnpm test` | — | see the release notes |
+Measured at `118e2ab`, the code 1.1.0 ships: the release commit (`5534d09`) changes only
+this page, `CHANGELOG.md`, `CLAUDE.md` and `VERSION`, so no suite was re-run for it and no
+other numbers exist. Nothing below was measured after the release commit.
+
+| Suite | At `118e2ab` |
+|---|---|
+| `python -m unittest discover scripts/tests` | 1023 OK, 35 opt-in skips |
+| `WGF_GOLDEN=1 bin/wgf test-core` | 395 tests, 9/9 categories PASS (2D and 3D golden 10/10) |
+| `check-integrity.py`, `wgf-hash.py --check` | OK |
+| SDK browser e2e (`python -m wgf_sdk.e2e`), 7 platforms × 2 engines | PASS, during the work that led to `118e2ab` |
+| web-game-template v1.1.0 `pnpm test` | not recorded |
+
+At `118e2ab`, `bin/wgf test-core` printed a bare `OK` even with categories skipped. It now
+says `INCOMPLETE` and lists every skipped test, and `WGF_GOLDEN=1 bin/wgf test-core --strict`
+is the release gate (see [core-v1.md](core-v1.md#the-core-acceptance-suite)).
+
+### Where the acceptance evidence is
+
+Not in this repository. The run's state, events, artifacts and step logs (the developer's
+transcript, the reviewer's verdict) were written to the run store of the fresh Factory clone
+the run was made from, `.factory/workflows/new-game-20260925-002051-0fecbd/` there, on the
+machine that ran it. `.factory/` is git-ignored, so none of it was committed, and a checkout
+of this repository does not hold it. The game side (commits `91e06d1` to `bc12f06`, and the
+`r1` release files in the checkout's ignored `release/`) is in that run's local
+`block-grid-puzzle` checkout; nothing was pushed to `Cuvara/block-grid-puzzle`. The tables
+on this page are the only record of the run that this repository keeps. A future acceptance
+run should commit a redacted summary of its run rather than rely on a store that is not
+versioned.

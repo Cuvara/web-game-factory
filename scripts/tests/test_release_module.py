@@ -28,8 +28,8 @@ sys.path.insert(0, HERE)
 
 from wgf_release import ReleaseStep, register  # noqa: E402
 from wgf_release.package import audit_package  # noqa: E402
-from wgf_release.schema import SchemaValidator  # noqa: E402
 from wgf_release.step import bundle_digest  # noqa: E402
+from wgflib import checkout  # noqa: E402
 from wgflib.hashing import content_hash  # noqa: E402
 from wgflib.workflow import StepOutcome, StepRegistry  # noqa: E402
 from wgflib.workflow.contracts import ArtifactContracts  # noqa: E402
@@ -39,7 +39,6 @@ from wgflib.workflow.model import ArtifactRef  # noqa: E402
 FAKE_PNPM = os.path.join(HERE, "fixtures", "release", "fake-pnpm.py")
 NOW = "2026-09-24T10:00:00Z"
 CONTRACTS = ArtifactContracts()
-VALIDATOR = SchemaValidator()
 
 GAME_CONFIG = textwrap.dedent("""\
     game:
@@ -85,6 +84,9 @@ def pin(artifact):
             "content_hash": artifact["provenance"]["content_hash"]}
 
 
+APPROVE = {"verdict": "approve"}
+
+
 class Inputs:
     """StepInputs over fully formed artifacts, newest per type."""
 
@@ -116,8 +118,11 @@ class Logger:
 
 
 class Context:
-    def __init__(self, config=None, run_id="run-1", visit=1):
+    # G4 passed, as the engine reports it once a person has passed the kill gate: every
+    # release in new-game happens behind it. A test of the gate itself passes others.
+    def __init__(self, config=None, run_id="run-1", visit=1, gates_passed=("G4",)):
         self.config = config or {}
+        self.gates_passed = list(gates_passed)
         self.run_id = run_id
         self.workflow_id = "new-game"
         self.current_step = "release"
@@ -209,11 +214,12 @@ class GameRepository:
     def evidence(self, *, commit=None, qa_verdict="pass", verdict="PASS",
                  evidence_status="PASS_MOCK", dirty=False, bundle_hash=None, run_id="run-1",
                  sdk_commit=None, prototype_commit=None, platforms=None, schema_version="1.1.0",
-                 drop=(), sdk_base=None, sdk_commits=None, review=None):
+                 drop=(), sdk_base=None, sdk_commits=None, review=APPROVE):
         """The artifacts a run holds after a verification of this repository.
 
         `sdk_base` (+ `sdk_commits`) makes a 1.2.0 sdk-report that integrated on that commit;
-        `review` ({verdict, reviewed_commit}) adds a review-report to the run.
+        `review` ({verdict, reviewed_commit}) is the run's newest review-report - by default
+        the sdk-review's approval of the shipped (sdk, verified) commit; None: no review.
         """
         commit = commit or self.head
         prototype = seal("prototype-report", {
@@ -293,13 +299,14 @@ class GameRepository:
                      "scaffold-record": scaffold, "verification-report": verification,
                      "qa-report": qa}
         if review is not None:
-            artifacts["review-report"] = review_report(prototype, **review)
+            artifacts["review-report"] = review_report(prototype, sdk, **review)
         return {t: a for t, a in artifacts.items() if t not in drop}
 
 
-def review_report(prototype, verdict="approve", reviewed_commit=None):
-    """A review-report of `prototype`'s commit (or of `reviewed_commit`)."""
-    commit = reviewed_commit or prototype["build_ref"]["commit_sha"]
+def review_report(prototype, sdk=None, verdict="approve", reviewed_commit=None):
+    """A review-report of the sdk-report's commit - what sdk-review reads - or, without an
+    sdk-report, of `prototype`'s; `reviewed_commit` overrides both. It pins what it read."""
+    commit = reviewed_commit or (sdk or prototype)["build_ref"]["commit_sha"]
     skipped = verdict == "skipped"
     return seal("review-report", {
         "title_id": "fixture-game", "reviewed_commit": commit, "baseline_commit": None,
@@ -312,7 +319,7 @@ def review_report(prototype, verdict="approve", reviewed_commit=None):
                      "status": None if skipped else "exited", "killed_pids": []},
         "isolation": {"checked_paths": 0, "violations": [], "intact": True, "restored": None},
         "iteration": 1, "attempt": 1, "duration_s": 0, "timed_out": False},
-        inputs=[pin(prototype)], schema_version="1.0.0")
+        inputs=[pin(a) for a in (prototype, sdk) if a is not None], schema_version="1.0.0")
 
 
 def step(**params):
@@ -339,8 +346,7 @@ class ReleaseCase(unittest.TestCase):
         result = instance.execute(Inputs(artifacts, missing), context or Context())
         if result.outcome == StepOutcome.SUCCESS:
             manifest = result.artifacts[0].content
-            self.assertEqual(CONTRACTS("release-manifest", manifest), [])
-            self.assertEqual(VALIDATOR.validate(manifest, "release-manifest"), [])
+            self.assertEqual(CONTRACTS.problems("release-manifest", manifest), [])
         else:
             self.assertEqual(result.artifacts, [], "a refused release produces no manifest")
         return result
@@ -426,6 +432,24 @@ class Drafting(ReleaseCase):
         result = instance.execute(Inputs(self.game.evidence()), context)
         self.assertEqual(result.outcome, StepOutcome.SUCCESS, result.error)
 
+    def test_another_run_in_the_checkout_blocks_and_packages_nothing(self):
+        # wgflib.checkout: packaging runs in the checkout; a second run there is refused.
+        storage = os.path.join(self.scratch, "store")
+        context = Context()
+        context.run_dir = os.path.join(storage, "workflows", context.run_id)
+        other = checkout.acquire(self.game.root, "run-other", storage)
+        self.addCleanup(other.release)
+        result = self.release(context=context)
+        self.assertEqual(result.outcome, StepOutcome.BLOCKED)
+        self.assertIn("checkout-in-use", self.refusal_codes(result))
+        self.assertIn("run-other", result.message or result.error)
+        self.assertEqual(self.game.pnpm_calls(), [])
+        other.release()
+        # The same run holding it (a continued run) is not in the way.
+        own = checkout.acquire(self.game.root, context.run_id, storage)
+        self.addCleanup(own.release)
+        self.assertEqual(self.release(context=context).outcome, StepOutcome.SUCCESS)
+
     def test_no_checkout_blocks(self):
         result = self.release(repo_dir=os.path.join(self.scratch, "absent"))
         self.assertEqual(result.outcome, StepOutcome.BLOCKED)
@@ -486,14 +510,15 @@ class ThroughTheEngine(ReleaseCase):
                     - id: verify
                       type: test.verify
                       stage: release:qa
-                      outputs: [prototype-report, sdk-report, scaffold-record, verification-report, qa-report]
+                      outputs: [prototype-report, sdk-report, scaffold-record, verification-report, qa-report, review-report]
                     - id: release
                       type: release
                       stage: release:draft
-                      inputs: [qa-report, verification-report, sdk-report, prototype-report, scaffold-record]
+                      inputs: [qa-report, verification-report, sdk-report, prototype-report, scaffold-record, review-report]
                       outputs: [release-manifest]
                       with:
                         repo_dir: %s
+                        required_gates: []    # this workflow has no G4 checkpoint
                       next: $end
                 """ % json.dumps(self.game.root)))
         return path

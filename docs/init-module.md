@@ -38,7 +38,7 @@ tech-plan ───────────────────────�
      template as its `templateRepository`, or it is refused — adopting is authorizable, a
      repository that did not come from the template is not. Then it waits for GitHub to
      finish generating the contents (`game.config.yaml` present), and clones with `gh repo
-     clone` into `<projects_dir>/<title-id>`. An existing clone of the same repository is
+     clone` into `<checkouts>/<title-id>` ([checkouts.md](checkouts.md)). An existing clone of the same repository is
      reused, and filled with `git pull --ff-only` if an earlier attempt cloned it empty.
      **Pinning.** GitHub generates from the template's default branch as it is at that
      moment, which need not be the pinned commit. Init fetches the pinned commit by sha and,
@@ -54,7 +54,7 @@ tech-plan ───────────────────────�
      tests' `wgflib.template.checkout()` does); a checkout without it is `BLOCKED`.
      `template_ref`, if set, must resolve to the pinned commit or the step `FAILS`.
      `git archive` of that commit is committed as the single initial commit of a new
-     repository at `<projects_dir>/<title-id>` — the same shape GitHub's "use this template"
+     repository at `<checkouts>/<title-id>` — the same shape GitHub's "use this template"
      produces, sharing no objects or history with the template. It is built in a staging
      directory and renamed into place, so a crash leaves nothing half-made at the path.
    Anything else at the path is refused.
@@ -69,8 +69,16 @@ tech-plan ───────────────────────�
      every other field survive; the result is parsed back and must read exactly as the plan
      says with every other key unchanged, or it is not written (`FAILED`, not retryable).
    - The pinned profiles are copied byte-for-byte from `core/reference/platforms/` into
-     `config/platforms/`, and `pinned.json` lists each with its sha256. A pin that no longer
-     matches the Factory's profile is refused rather than vendored under the wrong version.
+     `config/platforms/`, and `pinned.json` lists each with its sha256. A profile's identity
+     is id + version + that `content_hash`, never the version string alone: the template
+     ships its own `config/platforms/*.yaml`, and some declare the same `id@version` as the
+     Factory's with other content. A copy counts as already pinned only when its bytes, its
+     `pinned.json` hash and the Factory's profile agree; a same-version copy with other bytes,
+     or an entry with no hash (unverified), is overwritten with the Factory's copy and
+     re-recorded. `profiles.verify_pins()` is the read-side check: it compares hashes, and
+     reports a pin whose hash differs from the Factory's profile at the same version. A pin
+     that no longer matches the Factory's profile version is refused rather than vendored
+     under the wrong version.
    - `game.id`/`game.name` are set from the repository name with exactly `bootstrap.yml`'s
      derivation, for either source (see *The bootstrap race*). With `source: local` there is
      no bootstrap workflow, so init also removes `bootstrap.yml`.
@@ -158,10 +166,20 @@ reusing it — and even then only if it came from the configured template.
 | `template_path` | a checkout of the pin | `local` only: git checkout of the template holding the pinned commit; relative to the Factory's root |
 | `template_ref` | the pin | `local` only: if set, must resolve to the pinned commit |
 | `visibility` | `private` | `private`, `internal` or `public` |
-| `projects_dir` | `..` | Where local projects go; relative to the Factory's root |
+| `projects_dir` | — | Deprecated alias of `factory.checkouts` (below) |
 | `adopt_existing` | `false` | Authorize reusing a repository or directory this run did not create |
 | `populate_timeout_seconds` | `60` | `github` only: how long to wait for GitHub to generate the contents |
 | `commit_author` | `{name: wgf-init, email: wgf-init@users.noreply.invalid}` | Author of the configuration commit |
+
+Where the project goes is `factory.checkouts` (default `..`, relative to the Factory root)
+joined with the title id - or the step's `with: repo_dir`, or `WGF_GAME_REPO` - the
+precedence every later step reads it back with ([checkouts.md](checkouts.md)). The
+scaffold-record records it in `repository.local_path`: Factory-root-relative when the project
+is beside the Factory, so a run resumed on another machine with the same layout finds it;
+absolute otherwise. From the moment the project exists, init holds its checkout lock until
+the step ends. The vendored platform profiles are read back with `verify_pins` - version
+and content hash - right after vendoring; a copy that does not verify fails the step, not
+retryably, before anything is committed.
 
 Missing or invalid settings return `BLOCKED` before anything is contacted. For `github`,
 `gh` must be installed and authenticated (`gh auth status`); it is not configured by the

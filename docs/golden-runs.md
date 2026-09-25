@@ -15,8 +15,19 @@ Factory is renderer-agnostic.
 
 ```
 research -> strategy -> G2 -> design -> tech-plan -> G3 -> init -> assets
-         -> develop -> review -> sdk -> verify -> release
+         -> develop -> review -> sdk -> sdk-review -> verify -> G4 -> release
 ```
+
+G2 and G3 are auto-approved (reversible; configured below). G4 is irreversible, so the run
+stops there `WAITING`; the harness answers it `pass` through the API `wgf decide` uses,
+with `decided_by` left to `default_decider()` - `human`, because the person running the
+golden run is outside every step's process tree - and resumes. Its note says it is the
+harness operator's pass of a known-good port (`harness.G4_NOTE`). `games.EXPECTED_STEPS`
+lists all 15 steps, `prototype-review` and `sdk-review` included. The golden reviewer
+reviews both commits - develop's (`review`) and the sdk integration commit on top of it
+(`sdk-review`), which is the one verified and released - and the golden configuration never
+sets `release.allow_unreviewed`: a golden run releases only a commit the reviewer approved
+(`test_a_golden_release_is_never_unreviewed`).
 
 ## Running them
 
@@ -114,13 +125,14 @@ writes it, and passes an in-memory configuration to `WorkflowAPI` — the same a
 | Setting | Golden value | Why it is legitimate |
 |---|---|---|
 | `init.source` | `local`, `template_path` = the template checkout | no GitHub; `git archive` of the template's HEAD becomes the repo's initial commit ([init-module.md](init-module.md)) |
-| `*.checkouts`, `sdk.games_dir`, `init.projects_dir` | `<workdir>/games` | every module finds the same repository |
+| `checkouts` | `<workdir>/games` | every step finds the same repository ([checkouts.md](checkouts.md)); no deprecated per-module key is set |
 | `assets.root` | the game repository | the manifest's files land in the repo verify checks |
 | `discovery` | frozen snapshots (`fixtures/research`), a one-archetype catalog, no backlog, `as_of` fixed | the step's documented settings; the scan still screens and can refuse |
 | `develop.developer` | `command`: the replay developer | see below |
 | `review.reviewer` | `command`: the golden reviewer | see below |
 | `develop.author`, `sdk.commit_author` | `wgf-golden` | the machine may have no git identity; nothing is pushed |
-| `checkpoints.auto_approve` | `[G2, G3]` | both reversible; the engine refuses G4/G6/G7 whatever is listed, and the workflow reaches none |
+| `checkpoints.auto_approve` | `[G2, G3]` | both reversible; the engine refuses G4/G6/G7 whatever is listed |
+| G4 decision | `pass`, by the person running the harness (`decided_by: human`) | G4 is irreversible and cannot be configured; the harness decides it as `wgf decide` would, and a harness running inside a step's tree would be `automation` and refused |
 
 The engine is **steered through inputs, never forced**: the catalog's archetype wording
 ("merge", "puzzle" / "3d", "arena", "drive") leads the design module's own archetype

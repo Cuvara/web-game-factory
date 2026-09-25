@@ -84,8 +84,10 @@ In order:
    keys, no tuples, sets, bytes or other Python objects. Otherwise it cannot be written,
    hashed or read back as the same value, and nothing else is checked.
 3. **Provenance integrity** (when the schema requires provenance):
-   `/provenance/artifact_type` equals the type; `/provenance/content_hash` reproduces
-   (`wgflib.hashing.content_hash`).
+   `/provenance/artifact_type` equals the type; `/provenance/schema_version` has the MAJOR
+   of the schema's `x-wgf.version` (another minor is accepted, so an artifact written under
+   an older minor stays readable; a schema with no version is not checked);
+   `/provenance/content_hash` reproduces (`wgflib.hashing.content_hash`).
 4. **The full schema.**
 
 Problems read `"<type>: <json pointer>: <message>"`, e.g.
@@ -93,6 +95,36 @@ Problems read `"<type>: <json pointer>: <message>"`, e.g.
 (20) are returned, plus `"... and N more problems"`; the provenance integrity problems are
 always kept inside the cap. `contracts.problems(type, content)` returns them uncapped.
 `contracts.validator(type)` returns the compiled `Validator` for direct use.
+
+### Building provenance — `wgflib/provenance.py`
+
+Every step module (and the mock steps) builds `provenance` through one builder instead of
+assembling it by hand:
+
+```python
+from wgflib import provenance
+
+artifact = {"provenance": provenance.build(
+    "tech-plan",
+    artifact_id=provenance.artifact_id("tech-plan", title_id, now, context.execution),
+    produced_by=provenance.producer("architect"),       # actor defaults to automation
+    produced_at=now,
+    inputs=provenance.pin_inputs(inputs),                # or explicit artifactRefs
+    title_id=title_id)}                                  # opportunity_id=, status=, supersedes=
+artifact.update(body)
+provenance.seal(artifact)                                # records content_hash
+```
+
+`schema_version` defaults to the schema's `x-wgf.version` (`provenance.version_of(type)`);
+a module's `SCHEMA_VERSION` constant, where it still exports one, is read from there too.
+`artifact_id` is `wgf:<type>:<scope>:<yyyymmdd>-<min(sequence,99):02d>`. `pin_inputs` pins
+every consumed input that has provenance and a recorded hash, in type order.
+
+`release` validates the manifest it drafts, and the one the game repository's
+`release:manifest` script writes, with the same `ArtifactContracts` — there is no second
+validator. A recorded gameplay session (`build/verification/gameplay-session.json`) is
+validated by `jsonschema_lite` against `shared/gameplay-session.schema.json`, plus the one
+rule the schema cannot state: every aspect is one the template contract knows.
 
 ## 3. Lineage — `check_lineage(content, consumed)`
 
@@ -145,9 +177,9 @@ What crosses each step boundary of `core/workflows/new-game.workflow.yaml`, and 
 consumer actually reads (from the module source, not the schema). Every module pins its
 inputs as `{artifact_id: <input provenance.artifact_id>, artifact_type, content_hash:
 <ArtifactRef.content_hash>}`, and builds `artifact_id` as
-`wgf:<type>:<slug>:<yyyymmdd>-<min(execution,99):02d>` with `status: draft`. Schemas carry no
-version of their own: `provenance.schema_version` is what the producer claims, and each
-module hardcodes it (column *schema_version written*).
+`wgf:<type>:<slug>:<yyyymmdd>-<min(execution,99):02d>` with `status: draft`, all through
+`wgflib/provenance.py`. `provenance.schema_version` is the schema's `x-wgf.version` (column
+*schema_version written*), and the engine refuses another major.
 
 `tech-plan`, `review` and a real `release` step do not exist yet; their rows are the target
 boundary (§4.2).
@@ -161,11 +193,11 @@ boundary (§4.2).
 | 2 | strategy → design, develop | `title-strategy.schema.json` | 1.1.0 | design: `title_id`, `opportunity_id`, `platform_set[].{id,profile_version,role}`, `out_of_scope`, `prototype_must_prove`, `mvp`, `session.{target_seconds,first_session_seconds}`, `audience.{type,player_description}`, `monetization.{placements,class}`, `success_criteria[].{id,when}`, `kill_criteria[].{id,when.left}`, `one_liner`, `why_this_opportunity`; develop: `prototype_must_prove`, `kill_criteria[].id` | pins opportunity; copies `opportunity_id`, `title_id` | design: missing → WAITING; major ≠ 1 → FAILED; platform pin mismatch → BLOCKED; inconsistent → FAILED route `descope` with the artifact |
 | 3 | design → init, assets, develop, sdk, verify | `game-design.schema.json` | 1.1.0 | init: `title_id`, `consistency.status` (= pass), `monetization.placements[].platforms`, `platform_constraints_applied[].platform_id`, `fantasy`, `core_loop`; assets: `asset_requirements[]`, `art_direction`, `audio_direction`, `ux.screens`, `scope.{asset_budget,locales}`, `monetization.placements[].kind`; develop: `scope.*`, `session.*`, `ux.*`, `monetization.placements[]`, `fantasy`, `core_loop`, `pillars`, `controls`, `difficulty`, `progression`, `build_spec.*` except `sdk_touchpoints` and `assets` (MVP tier); sdk: `monetization.placements[]`, `retention.{hooks,targets}`; verify: `controls`, `session.end_condition`, `progression`, `retention.progression_loop`, `monetization.placements[]`, `scope.locales` | pins title-strategy | init: missing → WAITING, bad design → FAILED; **no schema_version check in init or sdk**; assets refuses only a *newer* major |
 | 3b | tech-plan → develop | `tech-plan.schema.json` | 1.0.0 | develop: `dev_plan.milestones[].{id,label,phase,exit_criteria}`, `dev_plan.tasks[].{id,title,milestone,phase,description,dependencies,acceptance_criteria,tests,assets}` | pinned in the brief and the prototype-report like every consumed ref | optional: absent → no plan section; major ≠ 1 → FAILED non-retryable |
-| 4 | init → assets, develop, sdk, verify | `scaffold-record.schema.json` | 1.0.0 | assets: `game_config.platforms[].{id,role}`; develop: `title_id`, `repository.{name,owner,url}`; sdk: `repository.name`, `game_config.platforms[].id`; verify: `repository.name`, `game_config.platforms` | pins game-design; `idempotency_key` (`wgf-init:<run>:<step>`), `template.commit_sha` (only when created), `outcome` created/reused | develop: missing → WAITING; no checkout → BLOCKED |
-| 5 | assets → develop, verify | `asset-manifest.schema.json` | 1.1.0 | develop: `items[].{id,label,type,source,status,license,scope_tier,notes}`; verify: `items[].{id,status}`, `complete` | pins game-design (+ scaffold-record when present) | develop: missing → WAITING |
+| 4 | init → assets, develop, sdk, verify | `scaffold-record.schema.json` | 1.2.0 | assets: `game_config.platforms[].{id,role}`, the checkout; develop: `title_id`, `repository.{name,owner,url}`; sdk: `repository.name`, `game_config.platforms[].id`; verify: `repository.name`, `game_config.platforms`; every step that works in the game repository: `repository.local_path` when present, else `repository.name` ([checkouts.md](checkouts.md)) | pins game-design; `idempotency_key` (`wgf-init:<run>:<step>`), `template.commit_sha` (only when created), `outcome` created/reused | develop: missing → WAITING; no checkout → BLOCKED |
+| 5 | assets → develop, verify | `asset-manifest.schema.json` | 1.1.0 | develop: `items[].{id,label,type,source,status,license,scope_tier,notes}`, `items[].files[].path` (listed in the brief); verify: `items[].{id,status}`, `complete` | pins game-design (+ scaffold-record when present) | develop: missing → WAITING |
 | 6 | develop → review, sdk, verify, release | `prototype-report.schema.json` | 1.0.0 | sdk: `title_id`, `build_ref.{commit_sha,url}`; verify, release: `build_ref.commit_sha` | pins every consumed ref (incl. a discarded passing qa-report); `build_ref.commit_sha` is the keyed develop commit or HEAD — no HEAD is BLOCKED, never a placeholder | sdk: all inputs optional, no WAITING path; a prototype commit that is not HEAD (or HEAD's base) → BLOCKED |
 | 7 | sdk → verify, release | `sdk-report.schema.json` | 1.2.0 | `platforms[].{platform_id,features[].{feature,status}}`, `build_ref.{commit_sha,base_commit_sha,sdk_commits}` | pins every ref; `build_ref.commit_sha` is the commit verified (its own keyed commit, or HEAD), `base_commit_sha` the prototype's; no readable HEAD is BLOCKED, never `"unknown"` | verify: major ≠ 1 → FAILED; lineage broken → `source.upstream-commits` BLOCKED |
-| 8 | verify → develop (on `fail`), release | `qa-report.schema.json` (+ `verification-report.schema.json`) | 1.0.0 | develop: `verdict`, `blocking_defects[].{id,severity,summary,repro}`; release (mock): pins only | both pin every loaded input; qa-report also pins the verification-report; `commit.sha`, `release_id`, `build_ref.artifact_hash` | FAIL → FAILED route `fail`; BLOCKED unrouted |
+| 8 | verify → develop (on `fail`), release | `qa-report.schema.json` (+ `verification-report.schema.json`) | 1.1.0 | develop: `verdict`, `blocking_defects[].{id,severity,summary,repro}`; release (mock): pins only | both pin every loaded input; qa-report also pins the verification-report; `commit.sha`, `release_id`, `build_ref.artifact_hash` | FAIL → FAILED route `fail`; BLOCKED unrouted |
 | 9 | release → $end | `release-manifest.schema.json` | 1.2.0 | — | pins every consumed ref (qa-report, verification-report, sdk-report, prototype-report, scaffold-record, review-report); `evidence.commit_lineage`, `evidence.review` | — |
 
 ### 4.2 Target boundaries (not built yet)
@@ -184,11 +216,10 @@ wrong.
 
 1. ~~**Lineage is not enforced in the engine.**~~ Closed: the engine calls `check_lineage`
    on every output that declares `provenance.inputs` (§3), and re-checks inputs.
-2. **No schema declares its own version.** `provenance.schema_version` is a free semver each
-   producer hardcodes (1.0.0 or 1.1.0 above); consumers check only the major, some not at all
-   (init, sdk), and assets accepts `0.x`. A consumer cannot know which minor it is reading.
-   *Recommendation: an `x-wgf.schema_version` per schema and a contract check that the
-   claimed version's major equals it.*
+2. ~~**No schema declares its own version.**~~ Closed: every schema declares
+   `x-wgf.version`, producers write it through `wgflib/provenance.py`, and the contract
+   check refuses another major (§2). Consumers that check a major themselves still do; init
+   and sdk rely on the engine's check.
 3. **The game repository's location is not in `scaffold-record`.** init records
    `repository.{owner,name,url}`; develop, sdk and verify each rebuild a local path from their
    own config key. Nothing makes them agree. *Team T is extending scaffold-record.*
@@ -200,10 +231,14 @@ wrong.
 6. ~~**Commit lineage degrades silently.**~~ Closed: develop and sdk return BLOCKED instead
    of a placeholder commit, sdk commits its integration, and verify and release apply one
    commit lineage rule (§5).
-7. **Workflow and `x-wgf` disagree on who produces and consumes.** `asset-manifest`'s
-   producer is `title:design` but the `assets` step serves `title:prototype`; `game-design`'s
-   consumers omit `title:scaffolding`, which the `init` step reads it at; `research-report`
-   lists `title:strategy` as a consumer but the strategy step does not take it.
+7. ~~**Workflow and `x-wgf` disagree on who produces and consumes.**~~ Closed:
+   `check-integrity.py` requires every step output's `producer` to be the step's stage and
+   every step input's `consumers` to list it (docs/artifact-contracts.md). `asset-manifest`'s
+   producer is now `title:prototype` (design, tech-plan and production are `updated_by`);
+   the missing consumers were added. Extra consumers are allowed: `research-report` still
+   lists `title:strategy`, which no workflow step reads it at. `title.machine.yaml` still
+   lists `asset-manifest` among the `design` state's outputs — the manual path — which no
+   check compares with `x-wgf`.
 8. **`develop` treats a declared input as optional.** Without `title-strategy` its report's
    kill criteria are silently empty.
 

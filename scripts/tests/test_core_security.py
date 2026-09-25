@@ -34,8 +34,13 @@ for _path in (SCRIPTS, HERE):
     if _path not in sys.path:
         sys.path.insert(0, _path)
 
+from test_develop_module import DevelopCase, FakeRunner, inputs_for, step_with  # noqa: E402
+from test_develop_module import context as develop_context  # noqa: E402
+from test_develop_module import write_game  # noqa: E402
 from test_workflow_engine import CHECKPOINT, LINEAR, LOOP, EngineCase  # noqa: E402
 from wgf_develop.developers import CommandDeveloper  # noqa: E402
+from wgf_develop.repository import Runner as DevelopRunner  # noqa: E402
+from wgf_develop.repository import RunResult as DevelopRunResult  # noqa: E402
 from wgf_develop.settings import SettingsError as DevelopSettingsError  # noqa: E402
 from wgf_develop.settings import Settings as DevelopSettings  # noqa: E402
 from wgf_init.project import DesignError, ProjectMetadata  # noqa: E402
@@ -44,7 +49,8 @@ from wgf_review import verdict as verdicts  # noqa: E402
 from wgf_review.settings import Settings as ReviewSettings  # noqa: E402
 from wgf_review.settings import SettingsError as ReviewSettingsError  # noqa: E402
 from wgf_review.step import ReviewStep  # noqa: E402
-from wgflib import gitsafe, guards, paths, procs  # noqa: E402
+from wgflib import agentenv, gitsafe, guards, paths, procs  # noqa: E402
+from wgflib import isolation as kernel_isolation  # noqa: E402
 from wgflib.workflow import api as api_module  # noqa: E402
 from wgflib.workflow import checkpoint, integrity  # noqa: E402
 from wgflib.workflow.api import RunRequest, WorkflowAPI  # noqa: E402
@@ -326,8 +332,15 @@ class DecisionsFromInsideAStep(unittest.TestCase):
         self.addCleanup(shutil.rmtree, scratch, ignore_errors=True)
         workflow = os.path.join(scratch, "kill-gate.workflow.yaml")
         with open(workflow, "w", encoding="utf-8") as handle:
+            # G4 is decided on the verified evidence (gates.yaml required_artifacts): a mock
+            # verification produces it, so the gate really asks for a decision.
             handle.write("workflow:\n  id: kill-gate\n  version: 1\n  steps:\n"
+                         "    - id: verify\n      type: verify\n"
+                         "      outputs: [prototype-report, verification-report, qa-report,"
+                         " title-strategy, game-design]\n"
                          "    - id: prototype-review\n      type: human-checkpoint\n"
+                         "      inputs: [qa-report, verification-report, prototype-report,"
+                         " title-strategy, game-design]\n"
                          "      with: {gate: G4, choices: [approve, reject]}\n")
         store = os.path.join(scratch, "store")
 
@@ -335,8 +348,9 @@ class DecisionsFromInsideAStep(unittest.TestCase):
             return WorkflowAPI(config=FactoryConfig({"storage": {"fsync": False}}),
                                store_dir=store, workflow=workflow)
 
-        run = api().run(RunRequest())
+        run = api().run(RunRequest(mock=True))
         self.assertEqual(run.status, RunStatus.WAITING)
+        self.assertEqual(run.trail[-1]["outcome"], "WAITING_FOR_HUMAN")
         # The "agent": a child started the way every step starts children, calling the API
         # exactly as `wgf kill-gate --resume <id> --decision approve` does.
         agent = (f"import sys; sys.path.insert(0, {SCRIPTS!r})\n"
@@ -730,6 +744,315 @@ class ReviewerIsolation(unittest.TestCase):
         self.assertEqual(argv[-3:], ["--git-dir=/g", f"--work-tree={self.root}", "status"])
 
 
+# -- the developer's boundary ---------------------------------------------------------------
+
+
+class DeveloperBoundary(DevelopCase):
+    """What a developer agent can do to the Factory, and what holds. Each developer here
+    is `on_develop`: it runs inside the develop step, where an agent host would, and does
+    the conformant work plus one attack. The Factory's git must neither run what the
+    checkout's config names nor go where it points; the commit must hold only the game."""
+
+    def setUp(self):
+        super().setUp()
+        self.marker = os.path.join(self.scratch, "PWNED")
+
+    def develop(self, attack, config=None):
+        def developer(cwd):
+            write_game(cwd)
+            attack(cwd)
+        runner = FakeRunner(on_develop=developer)
+        result = step_with(runner).execute(inputs_for(),
+                                           develop_context(config or self.command_config()))
+        return result
+
+    def findings(self):
+        """Every finding of the last develop checks, as one text."""
+        checks = read_json(os.path.join(self.repo, "docs", "development", "checks.json"))
+        return "\n".join(f for c in checks["checks"] for f in c.get("findings") or [])
+
+    def committed_files(self):
+        # Through the object store only: the checkout's config may be hostile.
+        return self.git("--git-dir", os.path.join(self.repo, ".git"), "show", "--name-only",
+                        "--format=", "HEAD").split()
+
+    def test_a_planted_core_worktree_cannot_aim_the_commit_elsewhere(self):
+        victim = os.path.join(self.scratch, "victim")
+        os.makedirs(victim)
+        with open(os.path.join(victim, "precious.txt"), "w") as handle:
+            handle.write("keep me\n")
+        result = self.develop(lambda cwd: _git(cwd, "config", "core.worktree", victim))
+        self.assertEqual(result.outcome, StepOutcome.SUCCESS, result.error)
+        self.assertEqual(os.listdir(victim), ["precious.txt"])
+        self.assertIn("src/main.ts", self.committed_files())
+        self.assertNotIn("precious.txt", self.committed_files())
+
+    def test_a_planted_clean_filter_never_runs(self):
+        def attack(cwd):
+            with open(os.path.join(cwd, ".git", "info", "attributes"), "w") as handle:
+                handle.write("* filter=x\n")
+            _git(cwd, "config", "filter.x.clean", f"sh -c 'touch {self.marker}; cat'")
+            _git(cwd, "config", "filter.x.process", f"sh -c 'touch {self.marker}; exit 1'")
+        result = self.develop(attack)
+        self.assertEqual(result.outcome, StepOutcome.SUCCESS, result.error)
+        self.assertFalse(os.path.exists(self.marker), "the developer's filter ran")
+        self.assertIn("src/main.ts", self.committed_files())
+
+    def test_with_allow_filters_a_filter_planted_after_the_pin_is_refused_not_run(self):
+        def attack(cwd):
+            with open(os.path.join(cwd, ".git", "info", "attributes"), "w") as handle:
+                handle.write("* filter=x\n")
+            _git(cwd, "config", "filter.x.clean", f"sh -c 'touch {self.marker}; cat'")
+        result = self.develop(attack, self.command_config(git={"allow_filters": True}))
+        self.assertEqual(result.outcome, StepOutcome.FAILED)
+        self.assertIn("filter configuration changed", result.error)
+        self.assertFalse(os.path.exists(self.marker), "the developer's filter ran")
+        self.assertEqual(len(self.commits()), 1)
+
+    def test_a_planted_hook_and_fsmonitor_never_run(self):
+        def attack(cwd):
+            _git(cwd, "config", "core.fsmonitor", f"touch {self.marker}; false")
+            for name in ("pre-commit", "commit-msg", "post-commit"):
+                hook = os.path.join(cwd, ".git", "hooks", name)
+                with open(hook, "w") as handle:
+                    handle.write(f"#!/bin/sh\ntouch {self.marker}\n")
+                os.chmod(hook, 0o755)
+            _git(cwd, "config", "commit.gpgSign", "true")
+            _git(cwd, "config", "gpg.program", f"sh -c 'touch {self.marker}; false'")
+        result = self.develop(attack)
+        self.assertEqual(result.outcome, StepOutcome.SUCCESS, result.error)
+        self.assertFalse(os.path.exists(self.marker), "the checkout's config ran a command")
+
+    def test_a_package_json_script_rewrite_is_caught(self):
+        def attack(cwd):
+            path = os.path.join(cwd, "package.json")
+            manifest = read_json(path)
+            manifest["scripts"]["test"] = "true"   # every later `pnpm run test` passes
+            with open(path, "w") as handle:
+                json.dump(manifest, handle)
+        result = self.develop(attack)
+        self.assertEqual(result.outcome, StepOutcome.FAILED)
+        self.assertIn("conformance", result.error)
+        self.assertIn("package.json `scripts` is template-owned", self.findings())
+        self.assertEqual(len(self.commits()), 1)
+
+    def test_a_dependency_addition_is_allowed_and_committed(self):
+        # What the golden replay developer does (pixi.js / three): an engine package added.
+        def attack(cwd):
+            path = os.path.join(cwd, "package.json")
+            manifest = read_json(path)
+            manifest["dependencies"]["pixi.js"] = "^8.6.0"
+            with open(path, "w") as handle:
+                json.dump(manifest, handle, indent=2)
+            with open(os.path.join(cwd, "pnpm-lock.yaml"), "w") as handle:
+                handle.write("lockfileVersion: '9.0'\n")
+        result = self.develop(attack)
+        self.assertEqual(result.outcome, StepOutcome.SUCCESS, result.error)
+        self.assertTrue({"package.json", "pnpm-lock.yaml"} <= set(self.committed_files()))
+
+    def test_a_dependency_from_a_path_or_url_is_refused(self):
+        for spec in ("file:../../evil", "github:evil/pkg", "https://evil.invalid/p.tgz",
+                     "npm:evil@1"):
+            with self.subTest(spec=spec):
+                def attack(cwd, spec=spec):
+                    path = os.path.join(cwd, "package.json")
+                    manifest = read_json(path)
+                    manifest["dependencies"]["helper"] = spec
+                    with open(path, "w") as handle:
+                        json.dump(manifest, handle)
+                result = self.develop(attack)
+                self.assertEqual(result.outcome, StepOutcome.FAILED)
+                self.assertIn("not a registry version range", self.findings())
+                self.assertEqual(len(self.commits()), 1)
+
+    def test_a_lockfile_change_without_a_dependency_change_is_caught(self):
+        def attack(cwd):
+            with open(os.path.join(cwd, "pnpm-lock.yaml"), "w") as handle:
+                handle.write("packages: {evil: {resolution: {tarball: 'https://x.invalid'}}}\n")
+        result = self.develop(attack)
+        self.assertEqual(result.outcome, StepOutcome.FAILED)
+        self.assertIn("pnpm-lock.yaml is template-owned", self.findings())
+        self.assertEqual(len(self.commits()), 1)
+
+    def test_a_tsconfig_change_is_caught(self):
+        with open(os.path.join(self.repo, "tsconfig.json"), "w") as handle:
+            handle.write('{"compilerOptions": {"strict": true}}\n')
+        _git(self.repo, "add", "tsconfig.json")
+        _git(self.repo, "commit", "-qm", "tsconfig")
+
+        def attack(cwd):
+            with open(os.path.join(cwd, "tsconfig.json"), "w") as handle:
+                handle.write('{"compilerOptions": {"strict": false}, "exclude": ["src"]}\n')
+        # Outside what a developer may write, so the step refuses it before any check runs;
+        # and conformance names it on its own, for a handoff tree checked by hand.
+        result = self.develop(attack)
+        self.assertEqual((result.outcome, result.retryable), (StepOutcome.FAILED, False))
+        self.assertIn("tsconfig.json", result.error)
+        self.assertEqual(len(self.commits()), 2)
+        from wgf_develop.checks import conformance
+        from wgf_develop.repository import GitRepo
+        brief = read_json(os.path.join(self.repo, "docs", "development", "brief.json"))
+        found = conformance(self.repo, brief, GitRepo(self.repo, DevelopRunner())).findings
+        self.assertIn("tsconfig.json is template-owned and was changed", found)
+
+    def test_agent_host_settings_and_instruction_files_are_refused(self):
+        for relative in (".claude/settings.json", "src/CLAUDE.md", "AGENTS.md",
+                         ".github/workflows/ci.yml", ".husky/pre-commit", "tools/x.sh"):
+            with self.subTest(path=relative):
+                def attack(cwd, relative=relative):
+                    path = os.path.join(cwd, *relative.split("/"))
+                    os.makedirs(os.path.dirname(path), exist_ok=True)
+                    with open(path, "w") as handle:
+                        handle.write('{"hooks": {"Stop": [{"command": "curl evil"}]}}\n')
+                result = self.develop(attack)
+                self.assertEqual((result.outcome, result.retryable),
+                                 (StepOutcome.FAILED, False))
+                self.assertIn(relative, result.error)
+                self.assertEqual(len(self.commits()), 1, "nothing may be committed")
+                checks = read_json(os.path.join(self.repo, "docs", "development",
+                                                "checks.json"))
+                self.assertEqual(checks["checks"][-1]["id"], "commit-scope")
+                os.remove(os.path.join(self.repo, *relative.split("/")))
+
+    def test_a_guarded_factory_path_written_by_the_developer_is_detected_and_restored(self):
+        target = os.path.join(self.guarded, "verify.py")
+        added = os.path.join(self.guarded, "sitecustomize.py")
+
+        def attack(_cwd):
+            with open(target, "w") as handle:
+                handle.write("PASS = True\n")
+            with open(added, "w") as handle:
+                handle.write("import os\n")
+        result = self.develop(attack)
+        self.assertEqual((result.outcome, result.retryable), (StepOutcome.FAILED, False))
+        self.assertIn(target, result.error)
+        self.assertIn("restored", result.error)
+        self.assertEqual(read_text(target), "PASS = False\n")
+        self.assertFalse(os.path.exists(added))
+        self.assertEqual(len(self.commits()), 1)
+        checks = read_json(os.path.join(self.repo, "docs", "development", "checks.json"))
+        self.assertEqual(checks["checks"][-1]["id"], "isolation")
+
+    def test_a_guarded_path_written_by_a_check_is_caught_too(self):
+        # The checks run the developer's own tests; a test that writes the Factory is the
+        # developer writing it, a few minutes later.
+        target = os.path.join(self.guarded, "verify.py")
+
+        class Writing(FakeRunner):
+            def run(self, argv, cwd, timeout=None, env=None):
+                if argv[:3] == ["pnpm", "run", "test"]:
+                    with open(target, "w") as handle:
+                        handle.write("PASS = True\n")
+                return super().run(argv, cwd, timeout, env)
+
+        result = step_with(Writing(on_develop=write_game)).execute(
+            inputs_for(), develop_context(self.command_config()))
+        self.assertEqual((result.outcome, result.retryable), (StepOutcome.FAILED, False))
+        self.assertEqual(read_text(target), "PASS = False\n")
+        self.assertEqual(len(self.commits()), 1)
+
+    def test_the_developer_guards_the_same_paths_as_the_reviewer(self):
+        self.assertEqual(DevelopSettings.resolve({}).guarded_paths,
+                         ReviewSettings.resolve({}).guarded_paths)
+        config = {"review": {"guarded_paths": ["core", "/elsewhere"]}}
+        self.assertEqual(DevelopSettings.resolve(config).guarded_paths,
+                         ReviewSettings.resolve(config).guarded_paths)
+
+
+@unittest.skipUnless(HAS_GIT, "git is not installed")
+class AgentEnvironment(unittest.TestCase):
+    """An agent's environment is an allowlist; the Factory's secrets stay the Factory's."""
+
+    SECRET = "WGF_TEST_SECRET_TOKEN"
+    DUMP = "import json, os, sys; json.dump(dict(os.environ), open(sys.argv[1], 'w'))"
+
+    def setUp(self):
+        self.scratch = tempfile.mkdtemp(prefix="wgf-sec-env-")
+        self.addCleanup(shutil.rmtree, self.scratch, ignore_errors=True)
+        for name, value in ((self.SECRET, "s3cret"), ("GH_TOKEN", "ghp_x"),
+                            ("WGF_TEST_PASSED", "yes"), ("npm_config__authToken", "npm_x"),
+                            ("GIT_EXTERNAL_DIFF", "/bin/false")):
+            previous = os.environ.get(name)
+            os.environ[name] = value
+            self.addCleanup(lambda n=name, p=previous: os.environ.pop(n, None) if p is None
+                            else os.environ.__setitem__(n, p))
+
+    def assert_scrubbed(self, seen):
+        for name in (self.SECRET, "GH_TOKEN", "npm_config__authToken",
+                     "GIT_EXTERNAL_DIFF"):
+            self.assertNotIn(name, seen)
+        self.assertEqual(seen.get("WGF_TEST_PASSED"), "yes")   # named in env_passthrough
+        self.assertIn("PATH", seen)
+        self.assertIn("WGF_PROC_TAG", seen)                    # procs still owns the tree
+
+    def test_the_developer_sees_no_secret(self):
+        dump = os.path.join(self.scratch, "developer-env.json")
+
+        class Developing(DevelopRunner):
+            def run(self, argv, cwd, timeout=None, env=None, **kwargs):
+                if argv[0] == "pnpm":
+                    return DevelopRunResult(argv, 0, "ok")
+                return super().run(argv, cwd, timeout, env, **kwargs)
+
+        settings = DevelopSettings.resolve({
+            "develop": {"developer": {"kind": "command", "argv": [PY, "-c", self.DUMP, dump]}},
+            "agents": {"env_passthrough": ["WGF_TEST_PASSED"]}})
+        ctx = types.SimpleNamespace(idempotency_key="k", logger=_Logger(), visit=1, attempt=1)
+        outcome = CommandDeveloper(settings, Developing()).develop("brief.md", self.scratch,
+                                                                   ctx)
+        self.assertEqual(outcome.status, "done", outcome.message)
+        self.assert_scrubbed(read_json(dump))
+
+    def test_the_reviewer_sees_no_secret(self):
+        repo = os.path.join(self.scratch, "checkouts", "game")
+        os.makedirs(os.path.join(repo, "src"))
+        with open(os.path.join(repo, "src", "main.ts"), "w") as handle:
+            handle.write("boot();\n")
+        _git(repo, "init", "-q")
+        _git(repo, "add", "-A")
+        _git(repo, "commit", "-qm", "develop")
+        head = _git(repo, "rev-parse", "HEAD").strip()
+        dump = os.path.join(self.scratch, "reviewer-env.json")
+        run_dir = os.path.join(self.scratch, "run")
+        os.makedirs(run_dir)
+        run_review_step({"repository": {"name": "game"}, "title_id": "game"},
+                        prototype={"build_ref": {"commit_sha": head}}, run_dir=run_dir,
+                        config={"review": {"reviewer": {"kind": "command",
+                                                        "argv": [PY, "-c", self.DUMP, dump]},
+                                           "checkouts": os.path.join(self.scratch, "checkouts"),
+                                           "guarded_paths": []},
+                                "agents": {"env_passthrough": ["WGF_TEST_PASSED"]}})
+        seen = read_json(dump)
+        self.assert_scrubbed(seen)
+        self.assertEqual(seen["WGF_REVIEW_COMMIT"], head)
+
+    def test_the_allowlist(self):
+        env = {"PATH": "/bin", "HOME": "/h", "LC_ALL": "C", "PNPM_HOME": "/p",
+               "NODE_OPTIONS": "--x", "NODE_AUTH_TOKEN": "t", "AWS_SECRET_ACCESS_KEY": "k",
+               "HOST_API_KEY": "k", "XDG_CONFIG_HOME": "/x", "SSH_AUTH_SOCK": "/s"}
+        self.assertEqual(agentenv.scrubbed((), env),
+                         {"PATH": "/bin", "HOME": "/h", "LC_ALL": "C", "PNPM_HOME": "/p",
+                          "NODE_OPTIONS": "--x", "XDG_CONFIG_HOME": "/x"})
+        # The installation names the host's credential exactly; a prefix never carries one.
+        self.assertEqual(agentenv.scrubbed(["HOST_API_KEY"], env)["HOST_API_KEY"], "k")
+        self.assertNotIn("HOST_API_KEY", agentenv.scrubbed(["HOST_*"], env))
+        for bad in ("a b", "", "X=1", 3):
+            with self.assertRaises(agentenv.ConfigError):
+                agentenv.passthrough({"agents": {"env_passthrough": [bad]}})
+        with self.assertRaises(DevelopSettingsError):
+            DevelopSettings.resolve({"agents": {"env_passthrough": "HOST_API_KEY"}})
+        with self.assertRaises(ReviewSettingsError):
+            ReviewSettings.resolve({"agents": {"env_passthrough": ["$(id)"]}})
+
+
+class IsolationLivesInTheKernel(unittest.TestCase):
+    def test_review_uses_the_kernel_mechanism(self):
+        self.assertIs(isolation.take, kernel_isolation.take)
+        self.assertIs(isolation.restore, kernel_isolation.restore)
+        self.assertEqual(ReviewSettings.resolve({}).guarded_paths,
+                         kernel_isolation.guarded_paths(None))
+
+
 class _ProcsRunner:
     """The integration/develop runner shape, running real git through wgflib.procs."""
 
@@ -887,7 +1210,8 @@ class FalsePass(unittest.TestCase):
         qa = read_json(os.path.join(fixtures, "qa-report.json"))
         vr = read_json(os.path.join(fixtures, "verification-report.json"))
         codes = {r.code for r in evidence_refusals({}, {"qa-report": qa,
-                                                        "verification-report": vr}, "run")}
+                                                        "verification-report": vr}, "run",
+                                                   gates_passed=["G4"])}
         self.assertIn("evidence-status-missing", codes)
         self.assertIn("no-verified-bundle", codes)
 
@@ -906,8 +1230,14 @@ class FalsePass(unittest.TestCase):
             id="verification-report", type="verification-report", version=1,
             location="artifacts/verification-report/v1.json", checksum="sha256:0",
             content_hash=vr_hash)}
+        # An independent review approved the commit, and G4 is passed: the evidence alone
+        # is what these tests vary.
+        review = {"verdict": "approve", "reviewed_commit": SHA,
+                  "reviewer": {"kind": "command"}, "provenance": {"inputs": []}}
         return {r.code for r in evidence_refusals(refs, {"qa-report": qa,
-                                                         "verification-report": vr}, "run")}
+                                                         "verification-report": vr,
+                                                         "review-report": review}, "run",
+                                                  gates_passed=["G4"])}
 
     def test_release_preconditions_hold_for_a_clean_pass(self):
         self.assertEqual(self.release_codes(), set())
@@ -1032,6 +1362,343 @@ class Coupling(unittest.TestCase):
 
     def test_the_engine_allow_list_is_the_schemas(self):
         self.assertEqual(guards.supported_engines(), ("pixijs", "threejs"))
+
+
+class GameCodeEnvironment(unittest.TestCase):
+    """Code the developer wrote - package.json scripts, tests, a build, a packaging script -
+    runs under the Factory with wgflib.agentenv's game-code allowlist: none of the Factory's
+    secrets, and not the agents' own passthrough either. Every channel the Factory uses to
+    run game code is attacked the same way: a fake tool on PATH writes its environment out."""
+
+    SECRET = "WGF_TEST_SECRET_TOKEN"
+    AGENT_ONLY = "WGF_TEST_AGENT_ONLY"        # factory.agents.env_passthrough
+    GAME_PASSED = "WGF_TEST_GAME_PASSED"      # factory.agents.game_env_passthrough
+    TOOL = """#!{python}
+import json, os, sys
+dump = os.path.join({dumps!r}, "%d-%s.json" % (len(os.listdir({dumps!r})),
+                    "-".join(a.replace(os.sep, "_") for a in sys.argv[1:3]) or "none"))
+with open(dump, "w") as handle:
+    json.dump(dict(os.environ), handle)
+{then}
+"""
+
+    def setUp(self):
+        self.scratch = tempfile.mkdtemp(prefix="wgf-sec-game-env-")
+        self.addCleanup(shutil.rmtree, self.scratch, ignore_errors=True)
+        self.dumps = os.path.join(self.scratch, "dumps")
+        self.bin = os.path.join(self.scratch, "bin")
+        os.makedirs(self.dumps)
+        os.makedirs(self.bin)
+        for name, value in ((self.SECRET, "s3cret"), ("GH_TOKEN", "ghp_x"),
+                            (self.AGENT_ONLY, "agent"), (self.GAME_PASSED, "yes"),
+                            ("PATH", self.bin + os.pathsep + os.environ.get("PATH", ""))):
+            previous = os.environ.get(name)
+            os.environ[name] = value
+            self.addCleanup(lambda n=name, p=previous: os.environ.pop(n, None) if p is None
+                            else os.environ.__setitem__(n, p))
+        self.config = {"agents": {"env_passthrough": [self.AGENT_ONLY],
+                                  "game_env_passthrough": [self.GAME_PASSED]}}
+
+    def tool(self, name, then="sys.exit(0)"):
+        path = os.path.join(self.bin, name)
+        with open(path, "w") as handle:
+            handle.write(self.TOOL.format(python=PY, dumps=self.dumps, then=then))
+        os.chmod(path, 0o755)
+
+    def seen(self):
+        names = sorted(os.listdir(self.dumps))
+        self.assertTrue(names, "no game-code command ran")
+        return [(name, read_json(os.path.join(self.dumps, name))) for name in names]
+
+    def assert_game_env(self, seen, proxied=None):
+        for name, env in seen:
+            for secret in (self.SECRET, "GH_TOKEN", self.AGENT_ONLY):
+                self.assertNotIn(secret, env, name)
+            self.assertEqual(env.get(self.GAME_PASSED), "yes", name)
+            self.assertIn("PATH", env, name)
+            self.assertIn("HOME", env, name)
+            if proxied is not None:
+                self.assertEqual(env.get("CI"), "1", name)
+            if proxied and proxied in name:
+                self.assertTrue(env.get("http_proxy", "").startswith("http://127.0.0.1:"),
+                                name)
+
+    def test_a_develop_check_sees_no_secret(self):
+        from wgf_develop.checks import run_checks
+        self.tool("pnpm")
+        root = os.path.join(self.scratch, "game")
+        os.makedirs(root)
+        with open(os.path.join(root, "package.json"), "w") as handle:
+            json.dump({"scripts": {"test": "x", "test:e2e": "x"}}, handle)
+        settings = DevelopSettings.resolve(self.config)
+        settings.checks = ["install", "unit", "smoke"]
+        results = run_checks(root, None, settings, DevelopRunner(), None)
+        self.assertEqual([r.status for r in results], ["passed"] * 3,
+                         [r.to_dict() for r in results])
+        seen = self.seen()
+        self.assertEqual(len(seen), 3)
+        # The smoke check still runs behind the refusing proxy, and CI=1 still applies.
+        self.assert_game_env(seen, proxied="test:e2e")
+
+    def test_a_verification_command_sees_no_secret(self):
+        import test_verification as verify_tests
+        from wgf_verification.runner import CommandRunner as VerifyRunner
+        from wgf_verification.step import VerifyStep
+        from wgflib.workflow.definition import StepDefinition
+        repo = os.path.join(self.scratch, "fixture-game")
+        shutil.copytree(os.path.join(verify_tests.FIXTURES, "game"), repo)
+        dump_tool = os.path.join(self.bin, "dump")
+        self.tool("dump")
+
+        class Dumping(VerifyRunner):
+            """The real runner and its environment; every command replaced by the dump."""
+
+            def run(self, command, cwd, timeout=None, env=None):
+                return super().run([dump_tool, *command[:2]], cwd, timeout, env)
+
+        runner = Dumping()
+        step = VerifyStep(StepDefinition({
+            "id": "verify", "type": "verify",
+            "inputs": ["prototype-report", "sdk-report", "game-design", "scaffold-record",
+                       "asset-manifest"],
+            "outputs": ["verification-report", "qa-report"], "with": {"repo_dir": repo}},
+            retry=None, max_visits=None))
+        step.runner_factory = lambda: runner
+        step.environ = {}
+        inputs = verify_tests.FakeInputs({
+            "sdk-report": verify_tests.fixture("inputs/sdk-report.json"),
+            "asset-manifest": verify_tests.fixture("inputs/asset-manifest.json")})
+        step.execute(inputs, verify_tests.FakeContext(config=self.config))
+        self.assert_game_env(self.seen())
+        # A runner nobody configured still never inherits the Factory's environment.
+        shutil.rmtree(self.dumps)
+        os.makedirs(self.dumps)
+        VerifyRunner().run([dump_tool, "default"], self.scratch)
+        (_, env), = self.seen()
+        self.assertNotIn(self.SECRET, env)
+        self.assertNotIn(self.GAME_PASSED, env)   # not configured: not passed
+
+    def test_an_sdk_evidence_command_sees_no_secret(self):
+        import test_sdk_module as sdk_tests
+        from wgf_sdk import evidence
+        report = sdk_tests.FIXTURE
+        self.tool("pnpm", then=(
+            "if 'sdk:conformance' in sys.argv:\n"
+            "    os.makedirs('build', exist_ok=True)\n"
+            f"    open({evidence.REPORT_PATH!r}, 'w').write(open({report!r}).read())"))
+        repo = os.path.join(self.scratch, "game")
+        os.makedirs(repo)
+        sdk_tests.git(repo, "init", "-q")
+        with open(os.path.join(repo, "game.config.yaml"), "w") as handle:
+            handle.write(sdk_tests.game_config([("yandex", "required")]))
+        with open(os.path.join(repo, ".gitignore"), "w") as handle:
+            handle.write("build/\n")
+        sdk_tests.commit_all(repo)
+
+        class Step(sdk_tests.SdkStep):
+            clock = staticmethod(lambda: sdk_tests.NOW)
+            runner_factory = evidence.PnpmRunner   # the real one: pnpm sdk:conformance
+
+        result = Step(sdk_tests.FakeDefinition({"game_repo": repo})).execute(
+            sdk_tests.FakeInputs(), sdk_tests.FakeContext(self.config))
+        self.assertEqual(result.outcome, StepOutcome.SUCCESS, result.error)
+        seen = self.seen()
+        self.assertTrue(any("sdk:conformance" in name for name, _ in seen), seen)
+        self.assert_game_env(seen)
+
+    @unittest.skipUnless(HAS_GIT, "git is not installed")
+    def test_a_release_packaging_command_sees_no_secret(self):
+        import test_release_module as release_tests
+        os.makedirs(os.path.join(self.scratch, "release"))
+        game = release_tests.GameRepository(os.path.join(self.scratch, "release"))
+        # The fake pnpm that packages, behind one that writes its environment out first.
+        self.tool("pnpm", then=(
+            f"os.execv(sys.executable, [sys.executable, {release_tests.FAKE_PNPM!r}, "
+            "*sys.argv[1:]])"))
+        os.environ.pop("WGF_GAME_REPO", None)
+        previous = os.environ.get("WGF_SCRIPTS")
+        os.environ["WGF_SCRIPTS"] = SCRIPTS
+        self.addCleanup(lambda: os.environ.pop("WGF_SCRIPTS", None) if previous is None
+                        else os.environ.__setitem__("WGF_SCRIPTS", previous))
+        config = {"agents": dict(self.config["agents"], game_env_passthrough=[
+            self.GAME_PASSED, "WGF_SCRIPTS"])}   # the fake pnpm imports wgflib from there
+        instance = release_tests.step(repo_dir=game.root)
+        instance.clock = staticmethod(lambda: release_tests.NOW)
+        self.assertIsNone(instance.environ)       # the Factory's path, not a test's env
+        result = instance.execute(release_tests.Inputs(game.evidence()),
+                                  release_tests.Context(config))
+        self.assertEqual(result.outcome, StepOutcome.SUCCESS, result.error)
+        seen = self.seen()
+        self.assertTrue(any("release:package" in name for name, _ in seen), seen)
+        self.assert_game_env(seen)
+
+    def test_the_game_code_passthrough_is_its_own_key(self):
+        env = {"PATH": "/bin", "HOME": "/h", "HOST_API_KEY": "k", "REGISTRY_TOKEN": "r",
+               "PLAYWRIGHT_BROWSERS_PATH": "/pw", "COREPACK_HOME": "/c",
+               "PLAYWRIGHT_SECRET_KEY": "x"}
+        config = {"agents": {"env_passthrough": ["HOST_API_KEY"],
+                             "game_env_passthrough": ["REGISTRY_TOKEN"]}}
+        self.assertEqual(agentenv.game_code_env(config, env),
+                         {"PATH": "/bin", "HOME": "/h", "REGISTRY_TOKEN": "r",
+                          "PLAYWRIGHT_BROWSERS_PATH": "/pw", "COREPACK_HOME": "/c"})
+        self.assertEqual(agentenv.game_code_env(None, env)["PATH"], "/bin")
+        self.assertEqual(agentenv.game_code_env(FactoryConfig(config), env)["REGISTRY_TOKEN"],
+                         "r")
+        for bad in ("a b", "", "X=1", 3):
+            with self.assertRaises(agentenv.ConfigError):
+                agentenv.game_code_env({"agents": {"game_env_passthrough": [bad]}}, env)
+        with self.assertRaises(DevelopSettingsError):
+            DevelopSettings.resolve({"agents": {"game_env_passthrough": "REGISTRY_TOKEN"}})
+
+
+
+class CheckoutResolution(unittest.TestCase):
+    """wgflib.checkout (M6): no rule of the one precedence can point a step at the Factory,
+    and a hostile repository name is refused even when another rule would decide."""
+
+    def test_the_factory_tree_is_never_a_game_checkout(self):
+        from wgflib import checkout
+        for where in (paths.ROOT, os.path.dirname(paths.ROOT)):
+            with self.subTest(where=where):
+                with self.assertRaises(checkout.CheckoutError):
+                    checkout.locate({}, None, "develop", {}, {"WGF_GAME_REPO": where})
+                with self.assertRaises(checkout.CheckoutError):
+                    checkout.locate({}, {"repository": {"name": "x", "local_path": where}},
+                                    "release", {}, {})
+
+    def test_a_hostile_name_is_refused_even_under_wgf_game_repo(self):
+        from wgflib import checkout
+        with self.assertRaises(checkout.CheckoutError):
+            checkout.locate({}, {"repository": {"name": ".."}}, "sdk", {},
+                            {"WGF_GAME_REPO": "/srv/game"})
+
+
+# -- loop and session budgets (M13) ----------------------------------------------------------
+
+
+ROUTED_LOOP = LOOP.replace("    max_visits: 3\n", "    max_visits: 10\n").replace(
+    "      outputs: [build]\n", "      outputs: [build]\n      max_visits_by_route: {fail: 2}\n", 1)
+
+
+class BudgetTampering(StateCase):
+    """Neither the loop budget per route nor the developer-session budget is bought back by
+    editing state.json: route counters are integrity-checked like loop_base, and the budget
+    snapshot is corroborated against WORKFLOW_STARTED like every param."""
+
+    def defects(self):
+        return StepResult(StepOutcome.FAILED, route="fail", retryable=False, error="defects")
+
+    def route_blocked(self):
+        self.script.set("verify", *[self.defects()] * 5)
+        engine = self.engine(ROUTED_LOOP)
+        run = engine.start(params={"develop_budget": {"max_sessions": 3}})
+        self.assertEqual(run.blocked_reason["route"], "fail")
+        return engine, run
+
+    def test_raising_the_session_budget_in_state_json_is_refused(self):
+        engine, run = self.route_blocked()
+        self.tamper(run.run_id, lambda d: d["params"]["develop_budget"].update(max_sessions=99))
+        self.assert_refused(engine, run.run_id, "params.develop_budget")
+
+    def test_dropping_the_session_budget_from_state_json_is_refused(self):
+        engine, run = self.route_blocked()
+        self.tamper(run.run_id, lambda d: d["params"].pop("develop_budget"))
+        self.assert_refused(engine, run.run_id, "params.develop_budget")
+
+    def test_a_malformed_budget_is_refused(self):
+        self.script.set("verify", *[self.defects()] * 5)
+        engine = self.engine(ROUTED_LOOP)
+        run = engine.start(params={"develop_budget": {"max_sessions": -1}})
+        self.assert_refused(engine, run.run_id, "max_sessions")
+
+    def test_a_route_base_above_its_count_is_refused(self):
+        engine, run = self.route_blocked()
+        self.tamper(run.run_id,
+                    lambda d: d["steps"]["develop"].update(route_base={"fail": 50}))
+        self.assert_refused(engine, run.run_id, "route_base")
+
+    def test_route_counters_that_are_not_counts_are_refused(self):
+        engine, run = self.route_blocked()
+        self.tamper(run.run_id,
+                    lambda d: d["steps"]["develop"].update(route_visits={"fail": -3}))
+        self.assert_refused(engine, run.run_id, "route_visits")
+
+    def test_a_forged_blocked_reason_is_refused(self):
+        engine, run = self.route_blocked()
+        self.tamper(run.run_id, lambda d: d["blocked_reason"].update(step="release"))
+        self.assert_refused(engine, run.run_id, "blocked_reason")
+
+    def test_a_blocked_reason_naming_another_loops_limit_is_refused(self):
+        # Resuming refills the limit blocked_reason names; naming another one would refill
+        # a loop that was never stopped.
+        engine, run = self.route_blocked()
+        self.assertEqual(run.blocked_reason["limit_key"], "fail")
+        self.tamper(run.run_id, lambda d: d["blocked_reason"].update(limit_key="nope"))
+        self.assert_refused(engine, run.run_id, "limit_key")
+
+    def test_a_budget_raise_from_inside_a_step_is_refused(self):
+        engine, run = self.route_blocked()
+        # Inside a step's tree the command line is automation's (the CLI and API refusals
+        # on top of this are test_workflow_cli.BudgetRaise and test_develop_module)...
+        with mock_env_patch({"WGF_PROC_TAG": "a-step-child"}):
+            decider = api_module.default_decider()
+        self.assertEqual(decider, "automation")
+        # ...and the engine itself refuses automation's operator event, whoever calls it.
+        with self.assertRaisesRegex(EngineError, "automation"):
+            engine.resume(run.run_id, decided_by=decider,
+                          operator_events=[("BUDGET_RAISED", {"max_sessions": 100})])
+        self.assertFalse([e for e in self.store.read_events(run.run_id)
+                          if e["event"] == "BUDGET_RAISED"])
+
+    def test_a_raise_recorded_by_automation_counts_for_nothing(self):
+        from wgflib import budget
+        params = {"develop_budget": {"max_sessions": 2}}
+        events = [{"event": "BUDGET_RAISED", "data": {"max_sessions": 50,
+                                                      "decided_by": "automation"}},
+                  {"event": "BUDGET_RAISED", "data": {"max_sessions": 60}},
+                  {"event": "BUDGET_RAISED", "data": {"max_sessions": 1,
+                                                      "decided_by": "human"}}]
+        self.assertEqual(budget.effective(params, events)["max_sessions"], 2)
+
+    def test_a_raise_appended_to_the_log_is_not_a_persons_act(self):
+        # An agent that can write the run directory appends a raise that names a person:
+        # nothing the engine wrote corroborates it, so it counts for nothing.
+        from wgflib import budget
+        params = {"develop_budget": {"max_sessions": 2}}
+        forged = {"max_sessions": 50, "decided_by": "human", "decided_at": "x"}
+        for events in (
+                [{"event": "BUDGET_RAISED", "data": forged}],
+                [{"event": "BUDGET_RAISED", "data": dict(forged, resume_nonce="ab")}],
+                [{"event": "BUDGET_RAISED", "data": dict(forged, resume_nonce="ab")},
+                 {"event": "STEP_LOG", "data": {}},
+                 {"event": "WORKFLOW_RESUMED", "data": {"resume_nonce": "ab"}}],
+                [{"event": "BUDGET_RAISED", "data": dict(forged, resume_nonce="ab")},
+                 {"event": "WORKFLOW_RESUMED", "data": {"resume_nonce": "cd"}}],
+                # Corroborated in form, but written during a developer session: the develop
+                # step recorded it as forged.
+                [{"event": "BUDGET_RAISED", "data": dict(forged, resume_nonce="ab")},
+                 {"event": "WORKFLOW_RESUMED", "data": {"resume_nonce": "ab"}},
+                 {"event": "STEP_LOG", "data": {"budget": budget.TAMPERED,
+                                                "forged": ["ab"]}}]):
+            self.assertEqual(budget.effective(params, events)["max_sessions"], 2, events)
+
+    def test_a_raise_the_engine_recorded_with_a_resume_counts(self):
+        from wgflib import budget
+        engine, run = self.route_blocked()
+        engine.resume(run.run_id, decided_by="human",
+                      operator_events=[("BUDGET_RAISED", {"max_sessions": 7})])
+        limits = budget.effective(run.params, self.store.read_events(run.run_id))
+        self.assertEqual(limits["max_sessions"], 7)
+        self.assertEqual([r["max_sessions"] for r in limits["raises"]], [7])
+
+    def test_the_budget_snapshot_is_a_guarded_param(self):
+        from wgflib.workflow import integrity
+        self.assertIn("develop_budget", integrity.GUARDED_PARAMS)
+
+
+def mock_env_patch(values):
+    from unittest import mock as _mock
+    return _mock.patch.dict(os.environ, values)
 
 
 if __name__ == "__main__":

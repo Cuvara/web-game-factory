@@ -8,6 +8,7 @@
     "id": "decision-record",
     "kind": "artifact",
     "format": "json",
+    "version": "1.0.0",
     "producer": "gate",
     "consumers": ["portfolio:approved", "title:design", "title:scaffolding", "title:production", "release:approved", "release:validating", "title:live"],
     "repo_path": "workspace/titles/<title-id>/decisions/<gate-id>-<yyyymmdd>.json",

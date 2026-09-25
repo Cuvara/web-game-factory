@@ -8,9 +8,11 @@
     "id": "title-strategy",
     "kind": "artifact",
     "format": "json",
+    "version": "1.1.0",
     "producer": "title:strategy",
-    "consumers": ["title:design", "title:tech-plan", "title:prototype", "title:prototype-review", "title:production", "title:live"],
+    "consumers": ["title:strategy", "title:design", "title:tech-plan", "title:prototype", "title:prototype-review", "title:production", "title:live"],
     "repo_path": "workspace/titles/<title-id>/title-strategy.json",
+    "run_path": "<storage>/workflows/<run-id>/artifacts/title-strategy/v<n>.json",
     "required_for_gates": ["G2", "G4"]
   },
 

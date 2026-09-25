@@ -68,7 +68,9 @@ EXPECTED_STEPS = (
     ("develop", "SUCCESS"),
     ("review", "SUCCESS"),
     ("sdk", "SUCCESS"),
+    ("sdk-review", "SUCCESS"),         # the sdk commit - the one that ships - reviewed too
     ("verify", "SUCCESS"),
+    ("prototype-review", "SUCCESS"),   # G4, passed by the harness as a person (harness.py)
     ("release", "SUCCESS"),
 )
 

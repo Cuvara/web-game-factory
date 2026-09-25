@@ -33,6 +33,7 @@ from unittest import mock
 HERE = os.path.dirname(os.path.abspath(__file__))
 SCRIPTS = os.path.dirname(HERE)
 sys.path.insert(0, SCRIPTS)
+sys.path.insert(0, HERE)
 
 from wgflib import procs  # noqa: E402
 from wgflib.workflow.definition import parse_definition  # noqa: E402
@@ -42,6 +43,7 @@ from wgflib.workflow.model import RunStatus, StepResult  # noqa: E402
 from wgflib.workflow.step import StepRegistry, WorkflowStep  # noqa: E402
 from wgflib.workflow.store import RunStore  # noqa: E402
 from wgflib.yamllite import load  # noqa: E402
+from testenv import enabled  # noqa: E402
 
 TREE = os.path.join(HERE, "fixtures", "proc_tree.py")
 HAVE_PROC = os.path.isdir("/proc")
@@ -505,7 +507,7 @@ class InsideAWorkflowStep(ProcessCase):
 
 def _pinned_template():
     # Only the opt-in live test reads the template; do not clone or install otherwise.
-    if os.environ.get("WGF_LIVE_PROCESS_TEST") != "1":
+    if not enabled("WGF_LIVE_PROCESS_TEST"):
         return ""
     sys.path.insert(0, HERE)
     import pinned_template
@@ -573,7 +575,7 @@ def _copy_template(target):
         dirs[:] = [d for d in dirs if d not in skip]
 
 
-@unittest.skipUnless(os.environ.get("WGF_LIVE_PROCESS_TEST") == "1",
+@unittest.skipUnless(enabled("WGF_LIVE_PROCESS_TEST"),
                      "set WGF_LIVE_PROCESS_TEST=1 to run the template's Playwright smoke")
 @unittest.skipUnless(HAVE_PROC, "counts servers through /proc")
 class LiveTemplateSmoke(unittest.TestCase):
@@ -674,6 +676,289 @@ class SubreaperLeavesOtherChildrenAlone(unittest.TestCase):
                                   "import sys, time; time.sleep(1.5); sys.exit(3)"])
         self.assertTrue(procs.run(["true"], timeout=10).ok)
         self.assertEqual(child.wait(timeout=10), 3)
+
+
+# -- M3: a silent child, the watchdog, and a driver killed by SIGKILL -------------------------
+
+import datetime  # noqa: E402
+
+from wgflib.workflow.model import derive_liveness  # noqa: E402
+
+RETRIED_STEP = """
+workflow:
+  id: procs
+  version: 1
+  defaults:
+    retry: {max_attempts: 3, backoff: none}
+  steps:
+    - id: work
+      type: work
+"""
+
+
+class SilentChildInAStep(ProcessCase):
+    """Heartbeats keep arriving while a child writes nothing; `wgf status` must still see
+    that the child is silent, and `on_hung: cancel` must end it."""
+
+    def engine(self, argv, returned, text=ONE_STEP):
+        store = RunStore(os.path.join(self.scratch, "store"), fsync=False)
+        events = []
+
+        class Work(WorkflowStep):
+            def execute(self, inputs, context):
+                result = procs.run(argv, timeout=60, grace_seconds=GRACE)
+                returned.append(result)
+                if result.ok:
+                    return StepResult.success()
+                return StepResult.failed(f"child {result.status}")
+
+        registry = StepRegistry()
+        registry.register("work", Work)
+        engine = WorkflowEngine(parse_definition(load(text), "<test>"), registry, store,
+                                run_id_factory=lambda _: "run-1",
+                                subscribers=[events.append])
+        engine.PROGRESS_SAVE_SECONDS = 0.0
+        return engine, store, events
+
+    def drive(self, engine, params=None):
+        box = {}
+
+        def target():
+            try:
+                box["state"] = engine.start(params=params)
+            except BaseException as exc:  # pragma: no cover - surfaced below
+                box["error"] = exc
+
+        thread = threading.Thread(target=target, daemon=True)
+        thread.start()
+        return thread, box
+
+    def liveness(self, store, threshold):
+        try:
+            state = store.load("run-1")
+        except Exception:
+            return None
+        now = datetime.datetime.now(datetime.timezone.utc)
+        return derive_liveness(state, store.lock_owner("run-1"), now, 300, threshold)
+
+    def test_a_silent_child_reads_hung_output_while_the_run_is_running(self):
+        returned = []
+        argv = [sys.executable, "-c", "import time; time.sleep(4)"]
+        with mock.patch.dict(os.environ, {procs.HEARTBEAT_ENV: "0.1"}):
+            engine, store, _events = self.engine(argv, returned)
+            thread, box = self.drive(engine)
+            seen = wait_for(lambda: (lambda live: live if live and live["liveness"] == "hung"
+                                     else None)(self.liveness(store, 1.0)), timeout=10)
+            thread.join(20)
+        self.assertIsNotNone(seen, "a silent child never read as hung")
+        self.assertEqual(seen["hung_reason"], "output")
+        self.assertEqual(seen["driver_pid"], os.getpid())
+        self.assertLess(seen["idle_seconds"], 1.0)  # heartbeats kept the driver fresh
+        self.assertGreater(seen["output_idle_seconds"], 1.0)
+        self.assertTrue(seen["pid"])
+        self.assertNotIn("error", box, box.get("error"))
+        self.assertEqual(box["state"].status, RunStatus.COMPLETED)  # status only looked
+
+    def test_a_chatty_child_stays_running(self):
+        returned = []
+        argv = [sys.executable, "-c",
+                "import time\nfor i in range(60):\n    print(i, flush=True)\n"
+                "    time.sleep(0.05)"]
+        samples = []
+        with mock.patch.dict(os.environ, {procs.HEARTBEAT_ENV: "0.1"}):
+            engine, store, _events = self.engine(argv, returned)
+            thread, box = self.drive(engine)
+            while thread.is_alive():
+                live = self.liveness(store, 1.0)
+                if live and live["run_status"] == RunStatus.RUNNING and live["pid"]:
+                    samples.append(live)
+                time.sleep(0.05)
+            thread.join(20)
+        self.assertNotIn("error", box, box.get("error"))
+        self.assertGreater(len(samples), 5, "never sampled the running step")
+        self.assertTrue(any(s["last_heartbeat_at"] for s in samples))
+        self.assertEqual({s["liveness"] for s in samples}, {"running"}, samples[-1])
+
+    def test_the_watchdog_cancels_a_silent_child_when_on_hung_is_cancel(self):
+        returned = []
+        with mock.patch.dict(os.environ, {procs.HEARTBEAT_ENV: "0.1"}):
+            engine, store, events = self.engine(self.tree("sleep"), returned, RETRIED_STEP)
+            thread, box = self.drive(engine, {"on_hung": "cancel", "hung_output_seconds": 0.5})
+            self.assertTrue(wait_for(lambda: {"c", "g"} <= set(roles(self.pidfile))))
+            pids = roles(self.pidfile)
+            thread.join(20)
+        self.assertFalse(thread.is_alive(), "the watchdog never ended the step")
+        self.assertNotIn("error", box, box.get("error"))
+        state = box["state"]
+        self.assertEqual(state.status, RunStatus.FAILED)  # resumable, not CANCELLED
+        step = state.steps["work"]
+        self.assertEqual(step.executions, 1, "a watchdog-ended step must not be retried")
+        self.assertIn("hung-child watchdog", step.message)
+        self.assertEqual(len(returned), 1)
+        self.assertTrue(returned[0].cancelled)
+        self.assertNoSurvivors(returned[0].tag, [pids["c"], pids["g"]])
+        logs = [e for e in events if e["event"] == Events.STEP_LOG
+                and (e.get("data") or {}).get("reason") == "hung-output"]
+        self.assertEqual(len(logs), 1, "the watchdog must say once why it stopped the step")
+        self.assertEqual(logs[0]["level"], "warning")
+        self.assertGreater(logs[0]["data"]["idle_s"], 0.5)
+        self.assertNotIn(Events.STEP_RETRIED, [e["event"] for e in events])
+
+    def test_no_watchdog_when_on_hung_is_none(self):
+        returned = []
+        argv = [sys.executable, "-c", "import time; time.sleep(1.5)"]
+        with mock.patch.dict(os.environ, {procs.HEARTBEAT_ENV: "0.1"}):
+            engine, store, events = self.engine(argv, returned)
+            thread, box = self.drive(engine, {"on_hung": "none", "hung_output_seconds": 0.3})
+            thread.join(20)
+        self.assertNotIn("error", box, box.get("error"))
+        self.assertEqual(box["state"].status, RunStatus.COMPLETED)
+        self.assertTrue(returned[0].ok)
+        self.assertFalse([e for e in events if e["event"] == Events.STEP_LOG
+                          and (e.get("data") or {}).get("reason") == "hung-output"])
+
+
+class RunTag(ProcessCase):
+    """A child of a step names its run in WGF_PROC_RUN; a nested run appends to it."""
+
+    PRINT = [sys.executable, "-c", "import os; print(os.environ.get('WGF_PROC_RUN'))"]
+
+    def test_bound_children_name_the_run_and_unbound_ones_none(self):
+        token = procs.run_token("run-1", self.scratch)
+        self.assertEqual(token, procs.run_token("run-1", self.scratch))
+        self.assertNotEqual(token, procs.run_token("run-1", self.scratch + "-other"))
+        with mock.patch.dict(os.environ):
+            os.environ.pop(procs.RUN_ENV, None)
+            with procs.bound(run=token):
+                self.assertEqual(procs.run(self.PRINT, timeout=30).stdout.strip(), token)
+            self.assertEqual(procs.run(self.PRINT, timeout=30).stdout.strip(), "None")
+            # A caller-supplied environment cannot pose as another run.
+            forged = dict(os.environ, **{procs.RUN_ENV: "other@000000000000"})
+            self.assertEqual(procs.run(self.PRINT, env=forged, timeout=30).stdout.strip(),
+                             "None")
+            os.environ[procs.RUN_ENV] = "outer@111111111111"
+            with procs.bound(run=token):
+                self.assertEqual(procs.run(self.PRINT, timeout=30).stdout.strip(),
+                                 f"outer@111111111111,{token}")
+
+
+# The driver a test kills with SIGKILL: one step whose child sleeps, silent, in its own
+# session, and writes its pid first.
+DRIVER = r'''
+import sys
+sys.path.insert(0, sys.argv[1])
+from wgflib import procs
+from wgflib.workflow.definition import parse_definition
+from wgflib.workflow.engine import WorkflowEngine
+from wgflib.workflow.model import StepResult
+from wgflib.workflow.step import StepRegistry, WorkflowStep
+from wgflib.workflow.store import RunStore
+from wgflib.yamllite import load
+
+store_dir, pidfile, definition = sys.argv[2], sys.argv[3], sys.argv[4]
+CHILD = ("import os, sys, time\n"
+         "open(sys.argv[1] + '.tmp', 'w').write(str(os.getpid()))\n"
+         "os.replace(sys.argv[1] + '.tmp', sys.argv[1])\n"
+         "time.sleep(120)")
+
+
+class Work(WorkflowStep):
+    def execute(self, inputs, context):
+        procs.run([sys.executable, "-c", CHILD, pidfile], timeout=300)
+        return StepResult.success()
+
+
+registry = StepRegistry()
+registry.register("work", Work)
+engine = WorkflowEngine(parse_definition(load(definition), "<test>"), registry,
+                        RunStore(store_dir, fsync=False), run_id_factory=lambda _: "run-1")
+engine.start()
+'''
+
+
+@unittest.skipUnless(HAVE_PROC and sys.platform.startswith("linux"),
+                     "finding orphans by their environment needs Linux /proc")
+class DriverKilledBySigkill(ProcessCase):
+    """SIGKILL of the driver runs no cleanup, so the step's child is orphaned. Resuming (or
+    cancelling) the stale run finds it by the run's token and ends it - and nothing else."""
+
+    def sleeper(self, env=None):
+        process = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(120)"],
+                                   env=env)
+        self.addCleanup(lambda: (process.kill(), process.wait()))
+        return process
+
+    def killed_driver(self):
+        store_dir = os.path.join(self.scratch, "store")
+        child_pidfile = os.path.join(self.scratch, "child.pid")
+        env = {k: v for k, v in os.environ.items()
+               if k not in (procs.TAG_ENV, procs.LINEAGE_ENV, procs.RUN_ENV)}
+        driver = subprocess.Popen([sys.executable, "-c", DRIVER, SCRIPTS, store_dir,
+                                   child_pidfile, ONE_STEP], env=env)
+        self.addCleanup(lambda: (driver.poll() is None and driver.kill(), driver.wait()))
+        self.assertTrue(wait_for(lambda: os.path.exists(child_pidfile), timeout=20),
+                        "the driver's step never started its child")
+        with open(child_pidfile, encoding="utf-8") as handle:
+            orphan = int(handle.read())
+        self.addCleanup(lambda: procs.pid_alive(orphan) and os.kill(orphan, signal.SIGKILL))
+        driver.send_signal(signal.SIGKILL)
+        driver.wait(10)
+        store = RunStore(store_dir, fsync=False)
+        self.assertEqual(store.load("run-1").status, RunStatus.RUNNING)
+        self.assertIsNone(store.lock_owner("run-1"), "the run should read stale")
+        time.sleep(0.3)
+        self.assertTrue(procs.pid_alive(orphan), "SIGKILL of the driver should orphan it")
+        return store, orphan
+
+    def engine(self, store, events):
+        class Quick(WorkflowStep):
+            def execute(self, inputs, context):
+                return StepResult.success()
+
+        registry = StepRegistry()
+        registry.register("work", Quick)
+        return WorkflowEngine(parse_definition(load(ONE_STEP), "<test>"), registry, store,
+                              subscribers=[events.append])
+
+    def neighbours(self, store):
+        """An untagged process, and one naming a run with the same id in another store."""
+        untagged = self.sleeper(env={k: v for k, v in os.environ.items()
+                                     if k != procs.RUN_ENV})
+        other = self.sleeper(env=dict(os.environ, **{
+            procs.RUN_ENV: procs.run_token("run-1", store.directory + "-elsewhere")}))
+        return untagged, other
+
+    def assertSwept(self, orphan, events, untagged, other):
+        self.assertTrue(wait_for(lambda: not procs.pid_alive(orphan), timeout=5),
+                        f"the orphaned child {orphan} survived")
+        logs = [e for e in events if e["event"] == Events.STEP_LOG
+                and orphan in ((e.get("data") or {}).get("pids") or [])]
+        self.assertEqual(len(logs), 1, "the sweep must log the pids it ended")
+        self.assertEqual(logs[0]["level"], "warning")
+        self.assertIn(str(orphan), logs[0]["message"])
+        for process in (untagged, other):
+            self.assertIsNone(process.poll(), "a process not tagged with this run was touched")
+            self.assertTrue(procs.pid_alive(process.pid))
+
+    def test_resume_ends_the_orphaned_child_before_running_the_step_again(self):
+        store, orphan = self.killed_driver()
+        untagged, other = self.neighbours(store)
+        events = []
+        state = self.engine(store, events).resume("run-1")
+        self.assertEqual(state.status, RunStatus.COMPLETED)
+        self.assertSwept(orphan, events, untagged, other)
+        kinds = [e["event"] for e in events]
+        swept = next(i for i, e in enumerate(events) if e["event"] == Events.STEP_LOG)
+        self.assertLess(swept, kinds.index(Events.STEP_STARTED),
+                        "the sweep must come before the step executes again")
+
+    def test_cancel_of_the_stale_run_ends_it_too(self):
+        store, orphan = self.killed_driver()
+        untagged, other = self.neighbours(store)
+        events = []
+        state = self.engine(store, events).request_cancel("run-1")
+        self.assertEqual(state.status, RunStatus.CANCELLED)
+        self.assertSwept(orphan, events, untagged, other)
 
 
 if __name__ == "__main__":

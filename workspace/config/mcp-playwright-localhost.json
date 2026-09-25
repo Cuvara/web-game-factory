@@ -10,7 +10,9 @@
         "--browser",
         "chromium",
         "--allowed-origins",
-        "http://localhost:4173;http://127.0.0.1:4173"
+        "http://localhost:4173;http://127.0.0.1:4173",
+        "--output-dir",
+        "/tmp/wgf-playwright-mcp"
       ]
     }
   }

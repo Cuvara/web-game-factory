@@ -8,7 +8,14 @@ Settings come from `factory.assets` in workspace/config/factory.yaml, overridden
 step's `with:` block:
 
     root           where the game repository checkout is; files go under public/assets/.
-                   Default: .factory/assets/<title>, relative to the working directory.
+                   Default: the run's game repository checkout, found as every step finds
+                   it (wgflib.checkout: with: repo_dir, WGF_GAME_REPO, the scaffold-record's
+                   local_path, factory.checkouts + its name), so the files land in
+                   <checkout>/public/assets/ where develop builds and commits them. Without a
+                   scaffold-record, or when that checkout does not exist:
+                   .factory/assets/<title> under the Factory root - git-ignored scratch.
+                   Relative paths resolve against the Factory root, never the working
+                   directory.
     libraries      directories holding an index.json of reusable assets. Default: none.
     placeholders   {enabled: true, backends: [2d-assets-mcp, procedural], <backend>: {...}}
     optimize       lossless in-place optimization of files the step writes. Default: true.
@@ -28,8 +35,7 @@ import datetime
 import os
 import re
 
-from wgflib import paths
-from wgflib.hashing import content_hash
+from wgflib import checkout, paths, provenance
 from wgflib.workflow import ArtifactOutput, StepResult, WorkflowStep
 from wgflib.yamllite import YamlError, load_file
 
@@ -41,7 +47,7 @@ from .requirements import RequirementError, inspect, slugify
 
 __all__ = ["AssetsStep", "MANIFEST_SCHEMA_VERSION", "resolve_settings"]
 
-MANIFEST_SCHEMA_VERSION = "1.1.0"
+MANIFEST_SCHEMA_VERSION = provenance.version_of("asset-manifest")
 READABLE_DESIGN_MAJOR = 1
 DEFAULT_BACKENDS = ["2d-assets-mcp", "procedural"]
 
@@ -100,6 +106,39 @@ class AssetsStep(WorkflowStep):
         return datetime.datetime.now(datetime.timezone.utc)
 
     def execute(self, inputs, context):
+        # Writing into the game repository takes the checkout's lock (wgflib.checkout).
+        with checkout.StepLease(context) as lease:
+            return self._execute(inputs, context, lease)
+
+    def _asset_root(self, settings, scaffold, slug, context):
+        """(root, in the checkout?): where the asset files go - see the module docstring."""
+        if settings.get("root"):
+            root = checkout.resolve(settings["root"])
+            in_checkout = False
+            if scaffold is not None:
+                try:
+                    repo, _source = checkout.locate(context.config, scaffold, "assets",
+                                                    context.params or {})
+                    in_checkout = os.path.realpath(repo) == os.path.realpath(root)
+                except checkout.CheckoutError:
+                    pass
+            return root, in_checkout
+        if scaffold is not None:
+            try:
+                repo, source = checkout.locate(context.config, scaffold, "assets",
+                                               context.params or {}, logger=context.logger)
+            except checkout.CheckoutError as exc:
+                context.logger.warning("no game repository checkout for the assets",
+                                       problem=str(exc))
+            else:
+                if os.path.isdir(repo):
+                    return repo, True
+                context.logger.warning(
+                    "the game repository is not checked out; assets go to scratch",
+                    checkout=repo, source=source)
+        return os.path.join(paths.ROOT, ".factory", "assets", slug), False
+
+    def _execute(self, inputs, context, lease):
         if "game-design" not in inputs:
             return StepResult.waiting_for_input("the assets step needs a game-design")
         ref = inputs.refs["game-design"]
@@ -120,8 +159,13 @@ class AssetsStep(WorkflowStep):
 
         title_id = design.get("title_id") or context.project_id or "title"
         slug = slugify(title_id, "title")
-        root = settings.get("root") or os.path.join(".factory", "assets", slug)
-        store = AssetStore(os.path.abspath(root))
+        root, in_checkout = self._asset_root(settings, scaffold, slug, context)
+        if in_checkout:
+            try:
+                lease.take(root)
+            except checkout.CheckoutLocked as exc:
+                return StepResult.blocked(str(exc))
+        store = AssetStore(root)
         libraries, library_problems = open_libraries(settings["libraries"])
         for problem in library_problems:
             context.logger.warning("asset library unavailable", problem=problem)
@@ -205,28 +249,18 @@ class AssetsStep(WorkflowStep):
             pipeline["audio_format"] = list(spec.get("audio_format") or [])
 
         now = self.clock().astimezone(datetime.timezone.utc).replace(microsecond=0)
-        pinned = []
-        for input_type, ref in sorted(inputs.refs.items()):
-            content = inputs.load(input_type)
-            provenance = content.get("provenance") if isinstance(content, dict) else None
-            if provenance and ref.content_hash:
-                pinned.append({"artifact_id": provenance["artifact_id"],
-                               "artifact_type": input_type,
-                               "content_hash": ref.content_hash})
-
+        produced_at = now.strftime("%Y-%m-%dT%H:%M:%SZ")
         manifest = {
-            "provenance": {
-                "artifact_id": f"wgf:asset-manifest:{slug}:{now:%Y%m%d}-"
-                               f"{min(context.execution, 99):02d}",
-                "artifact_type": "asset-manifest",
-                "schema_version": MANIFEST_SCHEMA_VERSION,
-                "title_id": title_id,
-                "produced_by": {"role": self.role, "actor": "automation"},
-                "produced_at": now.strftime("%Y-%m-%dT%H:%M:%SZ"),
-                "inputs": pinned,
-                "content_hash": "",
-                "status": "draft",
-            },
+            "provenance": provenance.build(
+                "asset-manifest",
+                artifact_id=provenance.artifact_id("asset-manifest", slug, produced_at,
+                                                   context.execution),
+                produced_by=provenance.producer(self.role),
+                produced_at=produced_at,
+                inputs=provenance.pin_inputs(inputs),
+                schema_version=MANIFEST_SCHEMA_VERSION,
+                opportunity_id=(design.get("provenance") or {}).get("opportunity_id") or None,
+                title_id=title_id),
             "title_id": title_id,
             "items": items,
             "pipeline": pipeline,
@@ -238,8 +272,4 @@ class AssetsStep(WorkflowStep):
             "issues": issues,
             "generation": {"backends": result.backends},
         }
-        opportunity = ((design.get("provenance") or {}).get("opportunity_id"))
-        if opportunity:
-            manifest["provenance"]["opportunity_id"] = opportunity
-        manifest["provenance"]["content_hash"] = content_hash(manifest)
-        return manifest
+        return provenance.seal(manifest)

@@ -9,9 +9,12 @@
           idle_timeout_seconds: 600  # no output for this long ends the review
           verdict_from: file         # file: the reviewer writes {verdict}
                                      # stdout: it prints the JSON last; the step saves it
-        checkouts: null              # default: factory.develop.checkouts, else ..
-        guarded_paths: [core, scripts, bin, workspace/config]
+        checkouts: null              # deprecated: factory.checkouts (wgflib.checkout)
+        guarded_paths: [core, scripts, bin, workspace/config]   # also the develop step's
         fingerprint_ignored: true    # lstat everything inside pre-existing ignored entries
+      agents:
+        env_passthrough: []          # what the reviewer's environment carries beyond
+                                     # wgflib.agentenv's allowlist (the host's credential)
 
 `argv` placeholders, substituted per element: {repo} (the checkout, read-only), {verdict}
 (where to write the verdict JSON - outside the checkout), {brief} (the review brief),
@@ -23,7 +26,8 @@ anywhere: the last JSON object on its stdout (bare, or in a ```json fence) is th
 `guarded_paths` are Factory paths - relative to the Factory root - that a reviewer must not
 touch either: the Factory's code (scripts/, bin/), core/ (the workflow definitions, the
 gates and the contracts) and this configuration, which decide what a review - and every
-later check - is worth. They are fingerprinted with the checkout.
+later check - is worth. They are fingerprinted with the checkout. The develop step
+fingerprints the same list around its developer and checks (wgflib/isolation.py).
 
 `fingerprint_ignored` (default true) also lstats every file inside the checkout's
 pre-existing ignored entries (node_modules, dist), so an edit to a dependency is caught.
@@ -33,7 +37,8 @@ Turn it off only where that walk is too slow; the review then cannot see those w
 import copy
 import os
 
-from wgflib import paths
+from wgflib import agentenv, checkout, paths
+from wgflib.isolation import DEFAULT_GUARDED_PATHS
 
 __all__ = ["Settings", "SettingsError", "DEFAULTS", "KINDS"]
 
@@ -43,7 +48,7 @@ DEFAULTS = {
     "reviewer": {"kind": "none", "argv": [], "timeout_seconds": 1800,
                  "idle_timeout_seconds": 600, "verdict_from": "file"},
     "checkouts": None,
-    "guarded_paths": ["core", "scripts", "bin", "workspace/config"],
+    "guarded_paths": list(DEFAULT_GUARDED_PATHS),
     "fingerprint_ignored": True,
 }
 
@@ -74,9 +79,12 @@ def _seconds(value, name, allow_none):
 
 
 class Settings:
-    def __init__(self, data, develop=None):
+    def __init__(self, data, develop=None, env_passthrough=()):
         self.data = data
         self._develop = develop or {}
+        # factory.agents.env_passthrough: what, beyond wgflib.agentenv's allowlist, the
+        # reviewer's environment carries. Nothing else of the Factory's environment does.
+        self.env_passthrough = list(env_passthrough or ())
         reviewer = data.get("reviewer") or {}
         self.reviewer = reviewer
         self.kind = reviewer.get("kind")
@@ -115,14 +123,27 @@ class Settings:
         data = copy.deepcopy(DEFAULTS)
         _merge(data, config.get("review") or {})
         _merge(data, {k: v for k, v in (params or {}).items() if k in DEFAULTS})
-        return cls(data, config.get("develop"))
-
-    def checkout_for(self, repository_name):
-        # The same checkout develop built in, unless review is pointed elsewhere.
-        root = self.data.get("checkouts") or self._develop.get("checkouts") or ".."
-        if not os.path.isabs(root):
-            root = os.path.join(paths.ROOT, root)
         try:
-            return paths.checkout_path(root, repository_name)
-        except ValueError as exc:
+            passthrough = agentenv.passthrough(config)
+        except agentenv.ConfigError as exc:
+            raise SettingsError(str(exc))
+        settings = cls(data, config.get("develop"), passthrough)
+        settings.config = config
+        settings.params = dict(params or {})
+        return settings
+
+    def checkout_for(self, repository_name, scaffold=None, environ=None, logger=None):
+        """The checkout develop built in: wgflib.checkout's one precedence, the same for
+        every step - the step's `with: repo_dir`, WGF_GAME_REPO, the scaffold-record's
+        local_path, then factory.checkouts (review.checkouts and develop.checkouts are
+        deprecated aliases) + the name."""
+        return self.locate(repository_name, scaffold, environ, logger)[0]
+
+    def locate(self, repository_name, scaffold=None, environ=None, logger=None):
+        """(path, source) - checkout_for, and which rule named the path."""
+        try:
+            return checkout.locate(getattr(self, "config", {}), scaffold, "review",
+                                   getattr(self, "params", {}), environ,
+                                   name=repository_name, logger=logger)
+        except checkout.CheckoutError as exc:
             raise SettingsError(str(exc))

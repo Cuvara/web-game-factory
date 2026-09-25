@@ -9,6 +9,314 @@ and `core/` is still the contract.
 
 ## [Unreleased]
 
+Wave 1 of the v1.1 architectural audit (P0 safety, template contract, CLI, test honesty).
+Core changes are listed with their reason, as docs/core-v1.md requires.
+
+### Changed - gate semantics (M4)
+- **G4 `prototype-review` is a real checkpoint** in `new-game`, after `verify` passes and
+  before `release`, decided on the verified `qa-report`, `verification-report` and
+  `prototype-report` against the kill criteria and design (`title-strategy`, `game-design`),
+  with `pass` / `iterate` / `kill`. gates.yaml G4 `required_artifacts`, the title machine's
+  prototype-review inputs, the stage procedure and every schema's `required_for_gates` agree
+  on those five, and check-integrity now fails when a schema's `required_for_gates`
+  disagrees with gates.yaml. *Reason (core change,
+  core/workflows + wgflib/workflow):* the workflow went from verify straight to release, so
+  the one gate the factory exists for - the kill gate - was never asked. `iterate` returns
+  to develop (a success routed back; lineage kept) and G4 asks again; `kill` ends the run
+  (BLOCKED routed to `$end`: `DECISION_RECORDED`, `exit.route: kill`, `wgf status` "Ended:
+  kill at G4", exit 0) and the run cannot be continued. Only a person decides it.
+  *Migration:* `wgf new-game --mock` now stops `WAITING` at G4 - answer it with
+  `wgf decide <run-id> pass`; scripts that expected it to complete unattended must decide
+  G4. A run started before this change resumes under the current definition; one whose
+  cursor is already past verify (at release) is not sent back to G4 by a plain resume, but
+  `--run release` in it is refused until G4 is passed.
+- **A gate is passed only by a forward answer.** The engine refuses a later step past a
+  gate whose last answer routed backwards (`iterate`, `rework`) or ended the run, not only
+  past one never answered; `--run` in skip mode asks such a gate again. *Reason:* `iterate`
+  is a SUCCESS and would otherwise have counted as passing G4. `context.gates_passed` lists
+  the gates a run has passed (for steps that want to check).
+- **A checkpoint is decided on its gate's `required_artifacts`** (gates.yaml): without them
+  in the run, as the step's inputs, it waits for input and asks nobody. G2 and G3 now list
+  them as inputs. gates.yaml: G3 no longer requires `asset-manifest` (assets are sourced
+  after G3), G4 requires the verified evidence. *Migration:* a custom workflow whose gated
+  checkpoint does not list its gate's required artifacts as inputs now waits for input.
+- **Reject and kill stop the run**; a run a decision ended at `$end` exits 0 and shows
+  `Ended:` in `wgf status` (`ended_by` in `--json`), and `--run` refuses to continue it.
+- **`design.on.descope: $fail`**, explicit: a blocking design-consistency breach ends the
+  run with the design's own message (it already did, unrouted).
+
+### Changed - the shipped commit is reviewed, and release refuses what was not (M7)
+- **`sdk-review`: the sdk commit is reviewed too** (P0-8). `new-game` gains a step after
+  `sdk`, before `verify`: `type: review`, `stage: title:prototype`, `with: subject:
+  sdk-report`, inputs `sdk-report`, `prototype-report`, `game-design`, `scaffold-record`.
+  The review step reads a generic `with: subject` (`prototype-report`, the default, or
+  `sdk-report`): the reviewed commit is that artifact's `build_ref.commit_sha`, which must
+  be HEAD; for the sdk subject the brief's change is prototype commit..sdk commit. Its
+  `request-changes` routes to `develop` - the developer fixes the game side, sdk integrates
+  again, both reviews run again, `max_visits` bounds it; a requested change never reaches
+  verify. Verdict files are now `<run>/review/<step>-<visit>-<attempt>.*`, so the two
+  reviews never overwrite each other. `sdk-report`'s x-wgf consumers gain
+  `title:prototype`. *Reason (core change, core/workflows + core/artifacts):* `review` read
+  develop's commit, then sdk committed integration code on top of it, and that unreviewed
+  sdk commit is what verify checked and release shipped.
+- **Release refuses an unreviewed or mis-reviewed build** (P0-9). The newest review-report
+  must approve exactly the commit being released (the sdk commit, HEAD), from a reviewer
+  that ran (`reviewer.kind: command`), pinning the run's newest prototype-report and
+  sdk-report. `skipped`/absent is `unreviewed` (FAILED, not retryable); an approval of
+  another commit - develop's alone included - or of an older report is
+  `review-commit-mismatch` (was `commit-lineage-mismatch`). New
+  `factory.release.allow_unreviewed` (default `false`, read only from config, never a
+  step's `with:`) drafts a skipped/absent review anyway, recorded as UNREVIEWED; it waives
+  nothing else. *Reason:* release recorded "UNREVIEWED" and shipped, and with the shipped
+  `review.reviewer.kind: none` every release was unreviewed.
+- **Release checks G4 itself** (M4 follow-up). `evidence_refusals` takes the engine's
+  `context.gates_passed` (a required keyword: no default) and refuses `g4-not-passed`
+  (BLOCKED) unless every gate in the release step's `with: required_gates` (default `[G4]`,
+  read only from the workflow, never from config) is passed and current. The step cannot
+  see its workflow definition and no engine change was in scope, so the workflow declares
+  what its release requires and the default fails closed; `test_workflow_definition` checks
+  every shipped workflow's release requires each irreversible gate it checkpoints.
+- `--mock`: the review mock approves the commit its subject names (`reviewer.kind: none`,
+  so no real release could accept it); the review-report fixture is `approve`.
+- *Migration:* **with the shipped `review.reviewer.kind: none`, every real release is now
+  refused (`unreviewed`)** - configure `factory.review.reviewer` (see the commented Claude
+  Code block in factory.yaml), or set `factory.release.allow_unreviewed: true` knowingly. A
+  custom workflow with a `release` step and no G4 checkpoint must add `with:
+  required_gates: []`; one that lists `review-report` as a release input should add a
+  review of the commit it ships. A run in flight past `sdk` when this lands has no
+  sdk-review: resume it `--from develop` (or `--from sdk-review` in a run whose sdk commit
+  is HEAD) to get the approval release now requires. Existing drafts are unaffected.
+
+### Changed - gates emit decision-records (M5)
+- **Workflow gates emit decision-records (P1-1, P0-11).** The G2, G3 and G4 checkpoints emit
+  a schema-valid `decision-record` on every decided outcome - a person's choice,
+  auto-approval, timeout approval, reject and kill - whose subject and provenance pin exactly
+  the evidence consumed. One table in `wgflib/workflow/decisions.py` maps workflow choices to
+  the schema (`kill` -> `abandon`). check-integrity requires every step naming a gate to
+  output a decision-record, and only such steps may. *Reason (core change):* CLAUDE.md said
+  every gate emits one; workflow gates did not. *Migration:* runs gain one
+  `decision-record-<step>` artifact per decided gate visit.
+- **Lifecycle bridge.** `factory.lifecycle.sync` (default off, snapshotted per run) appends a
+  run's decision-records to `workspace/titles/<id>/decisions/` and advances the title cursor
+  through `wgf-state.py`'s own guards and gate rules; a refused move is a warning, never the
+  run's outcome. Never for a `--mock` run.
+- **Guards read run evidence.** `ci_green`, `verify_suite_green` and `playable_build` can
+  answer from a run's qa-report and verification-report (`wgflib/guards.py` `RunEvidence`);
+  `PASS_MOCK` never counts as a pass for `verify_suite_green` / `playable_build`.
+- `test_decisions` joins the WORKFLOW category of the Core Acceptance Suite.
+
+### Changed - one checkout resolver (M6)
+- **One checkout resolver (P0-14, P1-2, P1-3).** `wgflib/checkout.py`: every step that
+  touches the game repository finds it by `with: repo_dir|game_repo` -> `WGF_GAME_REPO` ->
+  scaffold-record `repository.local_path` -> `factory.checkouts` + name, relative paths
+  resolved against the Factory root (docs/checkouts.md). *Migration:* `factory.checkouts`
+  replaces `develop.checkouts`, `init.projects_dir`, `review.checkouts`, `sdk.games_dir`,
+  `verification.checkouts` and `release.checkouts` (deprecated aliases, warned when they
+  disagree); `WGF_GAME_REPO` now applies to develop and review too.
+- A per-checkout advisory lock (pid + start time) blocks a second live run from working in
+  the same tree while a step runs (`checkout-in-use`).
+- scaffold-record 1.2.0 adds an optional `repository.local_path`, written by init.
+- Assets default into `<checkout>/public/assets/`, which develop commits; the develop brief
+  lists every asset's repository-relative file paths.
+- Vendored platform profiles are verified by content hash in init, verify
+  (`platform.profile:<id>`) and sdk (`wgf_init.profiles.verify_pins` / `pin_identity`).
+- `wgf_develop` reads its template literals from `wgflib/template_contract.py`.
+
+### Changed - loop and session budgets (M13)
+- **Loops into one step are bounded per route (P1-7).** A workflow step may declare
+  `max_visits_by_route: {<route>: n}`; entries through that route (the label or outcome
+  that routed into the step) are counted in the step's new `route_visits` and bounded apart
+  from each other, while `max_visits` still holds. A key is a route from any step or
+  `<source>.<route>` from one step; entries are counted per `<source>.<route>`. new-game's
+  develop takes `review.request-changes: 2`, `sdk-review.request-changes: 2`, `fail: 2`
+  (verify) and `iterate: 2` (G4) over the run, with `max_visits: 9` on develop and on every
+  later step of the loop. Route budgets last the run: resuming a run a route limit stopped
+  refills that limit only, and `--from` all of them (M13 review: the two reviewers had
+  shared one `request-changes` count, and every resume refilled every route, so G4's
+  `iterate` - always decided by a resume - was never bounded).
+  *Reason (core change, core/workflows + wgflib/workflow):* the four loops back into develop
+  shared develop's one `max_visits` of 3, so a review loop could spend the passes a failing
+  verification needed, and nothing said which loop had. The definition refuses a key that
+  is no route into its step; the engine names no route.
+- **Why a run stopped at a loop limit is data.** `state.blocked_reason = {kind: loop-limit,
+  step, route, scope: step|route, limit, entered, from}` (also `WORKFLOW_BLOCKED`
+  `data.blocked`), and resume's "one more pass" is decided from it instead of the message
+  prefix (P1-8). *Reason (core change, wgflib/workflow):* string coupling. Integrity checks
+  its shape and the route counters like `loop_base`.
+- **A run-level budget for developer sessions that resume does not reset.**
+  `factory.develop.budget: {max_sessions, max_cost, cost_from: {jsonl_key}}`, snapshotted
+  into run params (`develop_budget`, corroborated like every param). The develop step counts
+  command-developer sessions and their reported cost from the run's event log (STEP_LOG
+  `data.budget`) and returns `BLOCKED` - no agent spawned - with `budget exhausted: N
+  developer sessions used of N`, or on the cost limit. A session with no readable cost is
+  counted and reported as unknown; the host's per-session flag stays that session's bound.
+  *Reason (core change, wgflib/budget.py, wgflib/workflow/{config,api,integrity}.py):* every
+  resume refilled the loop budget, so with a command developer nothing capped a run's
+  sessions or spend.
+- **Raising a budget is a person's act:** `wgf resume <run> --budget-sessions N |
+  --budget-cost X` records a `BUDGET_RAISED` operator event (new generic
+  `engine.resume(operator_events=...)`: refused for `decided_by: automation` and for the
+  engine's own event names). Refused from inside a step's process tree. A raise counts only
+  when the engine's `WORKFLOW_RESUMED` corroborates it by `resume_nonce`, and the develop
+  step fails - not retried - when a developer session edited the event log, recording the
+  raises it forged so they never count (M13 review: any appended `BUDGET_RAISED` line naming
+  a person was honoured). `develop_budget` is a guarded param. *Residual:* no hash chain on
+  `events.jsonl`; the run directory lying outside every agent's write scope is the
+  containment.
+- A step's context gains `entered_by` (the route into this visit), `visit_budget` (what the
+  visit leaves of its limits) and `read_events()` (the run's recorded events);
+  `STEP_STARTED` carries `entered_by`. The develop brief says which loop brought the work
+  back and how many passes it has left (`brief.json` `loop`).
+- *Migration:* none required. A run started before this change has no `route_visits`,
+  `blocked_reason` or `develop_budget` and resumes as before (a loop-limit stop recorded only
+  in its message still gets its one more pass); it has no budget, since none was
+  snapshotted. `factory.develop.budget` applies to runs started after it is set.
+  `max_visits_by_route` counts only from this version: an old run's earlier loops are not
+  charged to any route. `wgf new-game --mock --mock-plan '{"verify": [fail x4]}'` now
+  blocks on develop's `fail` route (as before, after the third failed verification); a
+  review that always requests changes still blocks on its third request, and a third G4
+  `iterate` now stops for a person. develop may be visited up to 9 times instead of 3 when
+  the loops mix - set `factory.develop.budget` to bound what a command developer may spend
+  in the run.
+
+### Added
+- **Timeout auto-approval (M4).** `factory.checkpoints.timeout_auto_approve: {G2: 48h}`
+  lets a reversible gate approve itself once it has waited that long. *Reason (core
+  change, wgflib/workflow):* gates.yaml's `auto_approve_after` was documented but never
+  implemented. Conservative by construction: only listed gates; an irreversible or unknown
+  gate listed refuses the run at start; the windows are snapshotted into the run's params
+  (corroborated on resume, and a run started before has none); `waiting_since` is recorded
+  per visit from the engine clock and corroborated by its `STEP_WAITING` event, and upstream
+  work redone restarts it; the approval is recorded as `DECISION_RECORDED`
+  (`decided_by: automation`, `mode: timeout`) and applied only by `wgf resume` - `wgf
+  status` and `wgf runs --waiting` report eligibility and change nothing.
+- **A silent child reads `hung`, and can be stopped (M3, P0-13).** The step state keeps
+  `last_output_at` (the child wrote something, or a lifecycle event) and
+  `last_heartbeat_at` apart from `last_activity_at` (any event, heartbeats included), and
+  `wgf status` reads `hung` with `hung_reason: output` when heartbeats show the driver alive
+  but the child has written nothing for `factory.execution.hung_output_seconds` (default
+  900: above the reviewer's 600 s and the developer's documented 900 s idle timeouts), or
+  `hung_reason: driver` as before. The status text says which, and names `wgf cancel`.
+  Opt-in watchdog `factory.execution.on_hung: cancel` (default `none`): the driving engine
+  terminates such a child's tree through the cancel path, the step ends not retryably, and
+  a `STEP_LOG` warning says why; the policy is snapshotted into the run's params and
+  corroborated on resume. *Reason (core change, wgflib/procs + wgflib/workflow):* every
+  heartbeat refreshed `last_activity_at`, so a live but stuck child always read `running`
+  and nothing acted on `hung`. *Migration:* none; older `state.json` has neither new field
+  and derives as before, and a run started with `on_hung: none` records no new params.
+- **SIGKILL recovery (M3, P0-12).** Children of a step carry
+  `WGF_PROC_RUN=<run-id>@<store digest>`; resuming - or cancelling - a run that is
+  `RUNNING` with no live driver first terminates every process still naming that run
+  (Linux `/proc`; elsewhere a warning that it cannot) and logs the pids. Nothing untagged,
+  and nothing of another run or store, is touched. *Reason (core change, wgflib/procs +
+  wgflib/workflow):* a SIGKILLed driver runs no cleanup, so its trees were orphaned and no
+  later process knew their pids.
+
+### Security
+- **Developer boundary (M1).** develop's git runs hardened like the reviewer's
+  (`wgflib/gitsafe`: pinned git dir and work tree, safe env, filter drivers neutralised
+  unless `factory.develop.git.allow_filters`, signing programs off). `package.json`,
+  `tsconfig.json` and `pnpm-lock.yaml` are protected: only dependency additions allowed by
+  `factory.develop.allowed_package_changes` pass conformance, so a developer can no longer
+  rewrite the `test`/`lint`/`test:e2e` scripts every later check runs. The Factory's guarded
+  paths are fingerprinted and restored around the developer. The commit is scoped to
+  `factory.develop.writable_paths`; hidden paths (`.claude/`, `.github/`, ...) and agent
+  instruction files are refused. Developer and reviewer processes get a scrubbed
+  environment (`wgflib/agentenv.py`; add names with `factory.agents.env_passthrough`).
+  Reviewer isolation moved to `wgflib/isolation.py`. *Migration:* a live agent host that
+  authenticates through an environment variable needs it in `env_passthrough`; a developer
+  that edited package.json scripts or wrote outside the writable paths now fails develop.
+- **Game code gets no Factory secrets (M1b).** The code the Factory runs inside a game
+  repository - the develop checks, verify's commands, the sdk conformance suite and release
+  packaging, all written or editable by the developer agent - ran with the Factory's whole
+  environment. It now gets `wgflib/agentenv.game_code_env`: the agents' allowlist (plus
+  `PLAYWRIGHT_*` and `COREPACK_*`, toolchain configuration) and the names in the new
+  `factory.agents.game_env_passthrough` (default `[]`) - never the agents'
+  `env_passthrough`. Core change (`wgflib/agentenv.py`): the allowlist is shared kernel
+  code, and one definition keeps the agents' and game code's rules from drifting.
+  *Migration:* an installation whose `pnpm install` (or build) reads a registry or other
+  credential from an environment variable must name it in `game_env_passthrough`;
+  credentials in `~/.npmrc` under HOME keep working.
+- **Run params are corroborated (M2).** `WORKFLOW_STARTED` records the run's params and
+  resume refuses a state.json whose params differ. *Migration:* a run started before this
+  change whose state claims `mock`, `mock_plan` or `auto_approve` is refused on resume;
+  start a new run.
+- **`--from` cannot step over a gate (M2).** A fresh run started with an explicit `--from`
+  past a gate in its scope is refused (`wgf new-game --from design` skipped G2). Fresh
+  single-step runs (`wgf verify`) are unaffected.
+
+### Fixed
+- Run lock identity is pid + process start time, so a recycled pid no longer holds a dead
+  run; an empty lock tolerates mtime skew (M2).
+- Atomic writes use unique temp names; concurrent `LATEST` writes no longer race (M2).
+- A cancel is honoured while a step waits out its retry backoff; a crash between entering a
+  step and moving the cursor no longer burns a visit (M2).
+- Platform profiles are identified by id, version and content hash; init re-vendors a
+  same-version profile with other content, and `wgf_init.profiles.verify_pins` checks it.
+  check-integrity reads platform ids from the pinned template, never the sibling, and warns
+  on template profiles that diverge under the same version (M8).
+- **x-wgf agrees with the workflow (M9, P1-1).** check-integrity now fails when a workflow
+  step outputs an artifact whose `x-wgf.producer` is not the step's `stage`, or takes an
+  input whose `x-wgf.consumers` omit it. The 11 disagreements it found are fixed in
+  `core/artifacts/`: `asset-manifest`'s producer is `title:prototype` (the `assets` step;
+  `title:design` joins `updated_by`); consumers gained `title:scaffolding` (game-design),
+  `title:prototype` (qa-report, prototype-report), `release:qa` (prototype-report,
+  scaffold-record) and `release:draft` (qa-report, verification-report, sdk-report,
+  prototype-report), plus `title:prototype-review` on qa-report and verification-report for
+  the G4 checkpoint. *Core change, reason:* two statements of who produces and consumes an
+  artifact had drifted with nothing comparing them. *Migration:* none for artifacts; a
+  workflow that uses an artifact at a stage its schema does not name now fails the check.
+- **One validator for the release manifest (M9, P1-6).** `scripts/wgf_release/schema.py`, a
+  second, subset JSON Schema validator, is deleted; release validates the manifest it drafts
+  and the game repository's `manifest.json` with `ArtifactContracts` (full schema through
+  `jsonschema_lite`, provenance type, contract major, hash). A game manifest that only
+  passed the subset (wrong `artifact_type`, an impossible date) is now refused as
+  `invalid-manifest`. *Migration:* none for the template's make-manifest.mjs.
+- **Recorded gameplay sessions are validated against their schema (M9, P1-6).**
+  `wgf_verification/checks/gameplay.py` validates `build/verification/gameplay-session.json`
+  with `jsonschema_lite` against `shared/gameplay-session.schema.json` (formats, unknown
+  keys, browser entries) instead of a hand-written subset, and keeps the one rule the schema
+  cannot state (the aspect is one the template contract knows). *Migration:* a session with
+  keys the schema does not define is no longer used; verification falls back to the
+  repository's Playwright suites, as for any unusable session.
+
+### Added
+- `wgflib/template_contract.py` (CONTRACT_VERSION 1.0.0): every path, npm script, CLI and
+  output the Factory assumes of a game repository, used by init, verification, sdk and
+  release, with a drift test against the pinned template (M10, `docs/template-contract.md`).
+- `wgf resume`, `wgf decide`, `wgf runs --waiting [--json]` (M11).
+- `wgf test-core --strict` (exit 4 on a SKIP category; opt-in tests skipped inside a PASS category are listed, not failed); the summary never reads a bare OK when
+  anything was skipped, and every skipped test is listed by reason (M12).
+- `docs/env-vars.md`; `test_review_module.py`, `test_netguard.py`, `test_check_integrity.py`,
+  `test_template_contract.py`.
+- **`x-wgf.version` and one provenance builder (M9, P1-6).** Every top-level schema declares
+  its contract version (semver) as `x-wgf.version`; check-integrity requires it.
+  `scripts/wgflib/provenance.py` (`build`, `artifact_id`, `producer`, `pin`, `pin_inputs`,
+  `seal`, `version_of`) replaces the provenance each step module and the mock steps
+  assembled by hand; `schema_version` is read from the schema. `ArtifactContracts` refuses
+  an artifact whose `provenance.schema_version` has another MAJOR than `x-wgf.version`.
+  Versions, set to what the producing module already emitted: asset-manifest 1.1.0,
+  game-design 1.1.0, qa-report 1.1.0, release-manifest 1.2.0, scaffold-record 1.1.0,
+  sdk-report 1.2.0, title-strategy 1.1.0, verification-report 1.1.0; decision-record,
+  evaluation, opportunity, performance-review, platform-publication, prototype-report,
+  research-report, review-report, state and tech-plan 1.0.0. *Core change, reason:* the
+  version a producer claimed was a per-module constant nothing checked (sdk carried two,
+  1.2.0 and 1.1.0). *Migration:* existing artifacts stay valid - only the major is compared,
+  and every artifact written so far is major 1. Mock runs now write each schema's version
+  instead of 1.0.0 for all, so new mock artifacts hash differently; real modules' output is
+  unchanged apart from key order inside `provenance`, which the content hash ignores.
+- **`x-wgf.run_path` (M9, P1-1).** Artifacts a workflow step produces name where an engine
+  run stores them, `<storage>/workflows/<run-id>/artifacts/<id>/v<n>.json`, next to
+  `repo_path`, their home in the methodology (workspace/ or the game repository), which the
+  engine never writes (docs/artifact-contracts.md). *Migration:* none; `repo_path` keeps its
+  meaning for adapters.
+
+### Changed
+- `wgf status` exits with the run's code (1 failed/blocked/cancelled, 3 waiting/paused).
+  Flags a command would silently ignore are refused (exit 2). pause/cancel import no step
+  module. A relative `factory.storage.directory` resolves against the repository root (M11).
+- Test opt-in flags mean exactly `=1`; `WGF_TEMPLATE_REPO` (a pin bypass) is removed, the
+  real SDK suite runs on the pinned checkout with `WGF_TEMPLATE_SDK_TEST=1` (M12).
 ### Added
 
 - **The developer brief recommends the plugin's craft skills (F7).**

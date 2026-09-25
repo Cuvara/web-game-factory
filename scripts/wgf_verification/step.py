@@ -12,6 +12,7 @@ and on a verify -> develop loop the qa-report is what development receives.
 
 from datetime import datetime, timezone
 
+from wgflib import agentenv, checkout
 from wgflib.workflow import ArtifactOutput, StepOutcome, StepResult, WorkflowStep
 
 from .checks import run_checks
@@ -40,6 +41,13 @@ class VerifyStep(WorkflowStep):
     environ = None
 
     def execute(self, inputs, context):
+        # The checkout is locked against another run for the whole verification
+        # (wgflib.checkout): a build, a browser session and a commit read in a tree another
+        # run is changing say nothing about either run.
+        with checkout.StepLease(context) as lease:
+            return self._execute(inputs, context, lease)
+
+    def _execute(self, inputs, context, lease):
         for artifact_type, ref in sorted(inputs.refs.items()):
             major = str(ref.schema_version or READABLE_MAJOR).split(".", 1)[0]
             if major != READABLE_MAJOR:
@@ -47,19 +55,35 @@ class VerifyStep(WorkflowStep):
                     f"{artifact_type} has schema version {ref.schema_version}; this step reads "
                     f"{READABLE_MAJOR}.x", retryable=False)
 
+        try:
+            # What the game's code may see beyond the allowlist (wgflib.agentenv).
+            game_env = agentenv.game_code_env(context.config)
+        except agentenv.ConfigError as exc:
+            return StepResult.failed(str(exc), retryable=False)
+
         loaded = {t: inputs.load(t) for t in sorted(inputs.refs)}
         if inputs.missing:
             context.logger.info("verifying without some upstream artifacts",
                                 missing=inputs.missing)
 
         root, where = locate_checkout(self.params, context.config,
-                                      loaded.get("scaffold-record"), self.environ)
+                                      loaded.get("scaffold-record"), self.environ,
+                                      logger=context.logger)
+        if root is not None:
+            try:
+                lease.take(root)
+            except checkout.CheckoutLocked as exc:
+                return StepResult.blocked(str(exc))
         if root is None:
             session = None
             checks = [Check("source.checkout", "source", "Game repository checkout", BLOCKED,
                             message=where.summary, evidence=[where])]
         else:
-            session = VerificationSession(root, self.runner_factory(), params=self.params,
+            runner = self.runner_factory()
+            if isinstance(runner, CommandRunner) and runner.env is None:
+                # The game's code runs with the allowlist plus game_env_passthrough.
+                runner.env = game_env
+            session = VerificationSession(root, runner, params=self.params,
                                           inputs=loaded, config=context.config,
                                           logger=context.logger)
             # The lineage rule accepts only this run's sdk commits between develop's and sdk's.

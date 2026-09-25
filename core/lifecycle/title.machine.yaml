@@ -229,7 +229,7 @@ states:
     role: portfolio-owner
     contributors: [game-designer, qa]
     procedure: stages/prototype-review.md
-    inputs: [prototype-report, title-strategy, game-design]
+    inputs: [prototype-report, qa-report, verification-report, title-strategy, game-design]
     outputs: [decision-record]
     gate: G4
     description: >

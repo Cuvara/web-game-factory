@@ -46,15 +46,21 @@ python scripts/wgf-guard.py --title neon-drift --state prototype-review
 
 # The workflow engine. Every run command is a slice of core/workflows/new-game.workflow.yaml.
 bin/wgf research                          # real market scan: research-report + opportunity
-bin/wgf new-game --mock                   # research -> ... -> release, placeholder steps
+bin/wgf new-game --mock                   # research -> ... -> verify, then WAITING at G4
+bin/wgf decide <run-id> pass              # G4 (pass|iterate|kill): only a person decides it
 bin/wgf verify --mock                     # one step; `plan` = strategy, checkpoint, design
-bin/wgf new-game --resume <run-id> [--decision approve]
-bin/wgf status [<run-id>] [--json]        # liveness: running | hung | stale; also logs, runs, pause, cancel
+bin/wgf resume <run-id> [--from STEP]     # = wgf <cmd> --resume <run-id>, which still works
+bin/wgf decide <run-id> approve [--note TEXT]   # answer a waiting checkpoint
+bin/wgf runs --waiting [--json]           # runs waiting for a decision: step, gate, choices,
+                                          # timeout eligibility (reported; `resume` applies it)
+bin/wgf status [<run-id>] [--json]        # liveness: running | hung | stale; exits as the run
+                                          # (0 ok/running, 1 failed, 3 waiting); also logs, runs, pause, cancel
 
 # The Core Acceptance Suite: WORKFLOW, AGENTS, CONTRACTS, VERIFY, RELEASE, 2D/3D GOLDEN,
-# PROCESS CLEANUP, SECURITY. MISSING or FAIL exits non-zero; SKIP is never PASS.
-bin/wgf test-core [--only WORKFLOW] [--json]
-WGF_GOLDEN=1 bin/wgf test-core            # also runs the real 2D + 3D golden pipelines
+# PROCESS CLEANUP, SECURITY. MISSING or FAIL exits 1; SKIP is never PASS: skipped tests are
+# listed and the summary says INCOMPLETE. --strict also exits 4 on a skipped category.
+bin/wgf test-core [--only WORKFLOW] [--json] [--strict]
+WGF_GOLDEN=1 bin/wgf test-core --strict   # the release gate: real 2D + 3D goldens, no SKIP category
 
 # Create or reconcile the organization's WGF_* secrets and variables for the game pipelines.
 # Idempotent, and the living inventory of what the org is supposed to hold. Needs admin:org.
@@ -136,13 +142,33 @@ Seven, defined as data in `core/lifecycle/gates.yaml`, tuned per installation in
 supervised or semi-autonomously without a rewrite.
 
 **G4 (kill), G6 (publish), G7 (spend) are irreversible and never auto-approve** —
-`decision-record.schema.json` rejects a non-human decision on them, so setting an
-auto-approval window for them in config has no effect. G1/G2/G3/G5 auto-approve on a timeout
-by design: seven gates against a 7–14 day cycle is a lot of human attention, and a factory
-whose gates cannot be cleared gets its gates removed by whoever is under pressure — including
-the three that matter.
+`decision-record.schema.json` rejects a non-human decision on them, and a run is refused at
+start if `factory.checkpoints.timeout_auto_approve` lists one. G1/G2/G3/G5 may auto-approve
+on a timeout by design: seven gates against a 7–14 day cycle is a lot of human attention, and
+a factory whose gates cannot be cleared gets its gates removed by whoever is under pressure —
+including the three that matter. An installation opts in per gate
+(`timeout_auto_approve: {G2: 48h, G3: 48h}`; gates.yaml's `auto_approve_after` is only the
+recommendation); a run snapshots the windows at start, and the approval is applied on
+`wgf resume` and recorded like a decision (`automation`, `mode: timeout`) — `wgf status`
+only reports eligibility.
 
-Every gate emits a `decision-record` pinning its subject by content hash.
+In `new-game`, G2, G3 and G4 are `human-checkpoint` steps decided on their gate's
+`required_artifacts`. G4 (`prototype-review`) sits after `verify` passes and before
+`release`: `pass` releases, `iterate` loops back to develop, `kill` ends the run (exit 0,
+`Ended: kill at G4`). Release cannot run until G4 passes, and a newer verification makes G4
+ask again. A `--mock` run therefore stops at G4.
+
+Every gate emits a `decision-record` pinning its subject by content hash. Decided by hand,
+the person writes it and `wgf-state.py` refuses the gated edge without it. Decided in a run,
+the checkpoint emits it (`outputs: [decision-record]`, required of every step naming a gate
+by `check-integrity.py`) with every decided outcome - approve, reject, pass, iterate, kill
+(`abandon`), auto- and timeout-approval - never while waiting; its `subject` and
+`provenance.inputs` pin exactly the checkpoint's inputs (the gate's `required_artifacts`).
+The workflow-to-schema vocabulary is one table in `scripts/wgflib/workflow/decisions.py`.
+The run's records reach `workspace/titles/<id>/decisions/`, and move the title's cursor
+through `wgf-state.py`'s own guards and gate rules, only with `factory.lifecycle.sync: true`
+(off by default; `scripts/wgflib/lifecycle_bridge.py`); a refused move is a warning, never
+the run's outcome. See `docs/factory-lifecycle.md`.
 
 ## Invariants
 
@@ -157,7 +183,8 @@ drifted into four mutually inconsistent trees.
   encodes an ownership that changes.
 - **Stage IDs are local to their machine.** Qualify across machines: `title:design`,
   `portfolio:scored`, `release:rc`.
-- **Platform IDs match** `../web-game-template/game.config.yaml`, where entries are pinned
+- **Platform IDs match** `game.config.yaml` of the pinned template (read through
+  `scripts/wgflib/template.py`, never the sibling working copy), where entries are pinned
   objects (`{id, profile: <id>@<version>, role}`), not bare strings.
 - **A directory containing only a `README.md` must not exist.** Create a directory when its
   first real file does.
@@ -272,6 +299,8 @@ seen by the engine — validate what you write there with ajv.
 - `docs/artifact-contracts.md` — the artifacts
 - `docs/agent-architecture.md` — roles, agents, asset pipeline
 - `docs/platform-architecture.md` — profiles, SDK, publishing
+- `docs/template-contract.md` — every path, script, CLI, output and config key the Factory
+  assumes of a game repository (`wgflib/template_contract.py`), and the drift test against the pin
 - `docs/workflow-engine.md` — the `wgf` engine: definitions, steps, retry, resume, routing
 - `docs/workflow-module-contract.md` — what a step module implements; read before writing one
 - `docs/verification-module.md` — the `verify` step: checks, statuses, evidence, gameplay drivers
@@ -284,6 +313,9 @@ seen by the engine — validate what you write there with ajv.
 - `docs/techplan-module.md` — the `tech-plan` step: engine and platform pins, G3
 - `docs/release-module.md` — the `release` step: what it refuses, packaging checks
 - `docs/core-contracts.md` — every pipeline boundary, lineage rules, the validator
+- `docs/checkouts.md` — where the game checkout is: one precedence for every step
+  (`with:` → `WGF_GAME_REPO` → scaffold-record `local_path` → `factory.checkouts`), the
+  per-checkout lock, assets into `<checkout>/public/assets`
 - `docs/agent-lifecycle.md` — process ownership, heartbeat, liveness, cancellation
 - `docs/golden-runs.md` — the 2D and 3D regression runs
 - `docs/core-v1.md` — what Core v1 guarantees, and how module work is validated against it
@@ -294,6 +326,7 @@ seen by the engine — validate what you write there with ajv.
 - `docs/production-craft-and-mcp.md` — `core/craft/` playbooks and skills by phase, MCP tools
   by phase, host config vs repository, and the step-module follow-ups
 - `docs/development.md` — working on the Factory
+- `docs/env-vars.md` — every `WGF_*` environment variable: runtime and test, who reads it, default
 
 Documentation that contradicts a machine file is worse than none, because people believe it.
 Update `docs/` when a machine, contract or role changes.

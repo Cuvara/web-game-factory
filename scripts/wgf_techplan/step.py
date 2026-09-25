@@ -20,9 +20,8 @@ Outcomes, per docs/workflow-module-contract.md §7:
 import datetime
 import os
 
-from wgflib import paths
+from wgflib import paths, provenance
 from wgflib import template as template_pin
-from wgflib.hashing import content_hash
 from wgflib.workflow import ArtifactOutput, StepResult, WorkflowStep
 from wgflib.yamllite import YamlError, load_file
 
@@ -33,7 +32,7 @@ from .selection import (DIMENSION_FOR_ENGINE, EngineError, PlatformError, pin_pl
 
 __all__ = ["TechPlanStep", "TechPlanSettings", "SettingsError", "SCHEMA_VERSION", "ROLE"]
 
-SCHEMA_VERSION = "1.0.0"
+SCHEMA_VERSION = provenance.version_of("tech-plan")
 ROLE = "architect"  # core/roles/roles.yaml: architect owns title:tech-plan
 READS_MAJOR = "1"
 AD_KINDS = ("interstitial", "rewarded", "banner")
@@ -310,28 +309,21 @@ class TechPlanStep(WorkflowStep):
             content = inputs.load(artifact_type)
             source = content.get("provenance") or {}
             opportunity = opportunity or content.get("opportunity_id") or source.get("opportunity_id")
-            if source.get("artifact_id") and ref.content_hash:
-                pinned.append({"artifact_id": source["artifact_id"],
-                               "artifact_type": artifact_type,
-                               "content_hash": ref.content_hash})
-        provenance = {
-            "artifact_id": f"wgf:tech-plan:{title_id}:{now[:10].replace('-', '')}-"
-                           f"{min(context.execution, 99):02d}",
-            "artifact_type": "tech-plan",
-            "schema_version": SCHEMA_VERSION,
-            "title_id": title_id,
-            "produced_by": {"role": ROLE, "actor": "automation"},
-            "produced_at": now,
-            "inputs": pinned,
-            "content_hash": "",
-            "status": "draft",
-        }
-        if opportunity:
-            provenance["opportunity_id"] = opportunity
-        artifact = {"provenance": provenance}
+            entry = provenance.pin(artifact_type, content, ref.content_hash)
+            if entry:
+                pinned.append(entry)
+        record = provenance.build(
+            "tech-plan",
+            artifact_id=provenance.artifact_id("tech-plan", title_id, now, context.execution),
+            produced_by=provenance.producer(ROLE),
+            produced_at=now,
+            inputs=pinned,
+            schema_version=SCHEMA_VERSION,
+            opportunity_id=opportunity or None,
+            title_id=title_id)
+        artifact = {"provenance": record}
         artifact.update(plan)
-        artifact["provenance"]["content_hash"] = content_hash(artifact)
-        return artifact
+        return provenance.seal(artifact)
 
 
 def register(registry):

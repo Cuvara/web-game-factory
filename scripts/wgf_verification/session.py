@@ -9,9 +9,12 @@ import hashlib
 import json
 import os
 
-from wgflib import paths
+from wgflib import checkout, paths
+from wgflib import template_contract as contract
 from wgflib.netguard import RefusingProxy, sandbox_env
 from wgflib.yamllite import YamlError, load_file
+
+from wgf_init.profiles import pin_identity
 
 from .model import BLOCKED, Check, Evidence, PASS
 
@@ -21,47 +24,33 @@ DEFAULT_TIMEOUTS = {"install": 900, "build": 600, "script": 600, "browser": 900,
 
 # Relative to the checkout. Written by whoever drove the game in a browser - typically an
 # agent with a Playwright browser tool - for this module to ingest. See gameplay.py.
-DEFAULT_SESSION_FILE = "build/verification/gameplay-session.json"
+DEFAULT_SESSION_FILE = contract.GAMEPLAY_SESSION
 
 
-def locate_checkout(params, config, scaffold, environ=None, section="verification"):
+def locate_checkout(params, config, scaffold, environ=None, section="verification",
+                    logger=None):
     """(path or None, evidence). Where the game repository under test is checked out.
 
-    In order: the step's `with: repo_dir`, the WGF_GAME_REPO environment variable, then
-    `<section>.checkouts` in factory.yaml joined with the scaffold-record's repository
-    name. The module never clones: fetching code is not verification, and a checkout at an
-    unknown commit would make the report's commit meaningless.
+    wgflib.checkout.locate's one precedence, shared by every step: the step's `with:
+    repo_dir` (or `game_repo`), WGF_GAME_REPO, the scaffold-record's repository.local_path,
+    then the checkouts directory (factory.checkouts; `<section>.checkouts` is a deprecated
+    alias) joined with the scaffold-record's repository name. The first rule that names a
+    path decides; this module never falls through to another candidate, never clones:
+    fetching code is not verification, and a checkout at an unknown commit would make the
+    report's commit meaningless.
     """
-    environ = os.environ if environ is None else environ
-    tried = []
-    candidates = []
-    if params.get("repo_dir"):
-        candidates.append(("step parameter repo_dir", params["repo_dir"]))
-    if environ.get("WGF_GAME_REPO"):
-        candidates.append(("WGF_GAME_REPO", environ["WGF_GAME_REPO"]))
-    checkouts = ((config or {}).get(section) or {}).get("checkouts")
-    name = ((scaffold or {}).get("repository") or {}).get("name")
-    if checkouts and name:
-        try:
-            candidates.append((f"{section}.checkouts + scaffold-record repository",
-                               paths.checkout_path(checkouts, name)))
-        except ValueError:
-            pass  # not one directory entry: never resolved to a path
-
-    for source, candidate in candidates:
-        path = os.path.abspath(os.path.expanduser(candidate))
-        if os.path.isfile(os.path.join(path, "package.json")):
-            return path, Evidence("reference", f"checkout from {source}: {path}", path=path)
-        tried.append(f"{source}: {path}")
-
-    if not candidates:
-        summary = ("no checkout configured: set the step's repo_dir, WGF_GAME_REPO, or "
-                   f"{section}.checkouts in factory.yaml")
-        if not name:
-            summary += " (and no scaffold-record names the repository)"
-    else:
-        summary = "no game repository (package.json) at: " + "; ".join(tried)
-    return None, Evidence("observation", summary)
+    try:
+        path, source = checkout.locate(config, scaffold, section, params or {}, environ,
+                                       logger=logger)
+    except checkout.CheckoutError as exc:
+        summary = (f"no checkout: {exc}. Set the step's repo_dir, WGF_GAME_REPO, or "
+                   "factory.checkouts in factory.yaml")
+        return None, Evidence("observation", summary)
+    if os.path.isfile(os.path.join(path, contract.PACKAGE_JSON)):
+        return path, Evidence("reference", f"checkout from {source}: {path}", path=path)
+    return None, Evidence("observation",
+                          f"no game repository ({contract.PACKAGE_JSON}) at {path} "
+                          f"(from {source})")
 
 
 class VerificationSession:
@@ -76,8 +65,8 @@ class VerificationSession:
         self.results = {}                   # check id -> Check
         self.timeouts = dict(DEFAULT_TIMEOUTS)
         self.timeouts.update(self.params.get("timeouts") or {})
-        self.package = self.read_json("package.json") or {}
-        self.game_config = self.read_yaml("game.config.yaml") or {}
+        self.package = self.read_json(contract.PACKAGE_JSON) or {}
+        self.game_config = self.read_yaml(contract.GAME_CONFIG) or {}
         self.commit = None
         self.dirty = None
         self.build_artifact = None
@@ -149,7 +138,8 @@ class VerificationSession:
 
     @property
     def output_dir(self):
-        return ((self.game_config.get("build") or {}).get("output")) or "dist"
+        return (((self.game_config.get("build") or {}).get("output"))
+                or contract.DEFAULT_OUTPUT_DIR)
 
     @property
     def platforms(self):
@@ -163,24 +153,54 @@ class VerificationSession:
     def verification_flag(self, name, default=True):
         return bool((self.game_config.get("verification") or {}).get(name, default))
 
+    def profile_identity(self, platform_id):
+        """(profile, source, problems, content_hash) for a platform game.config.yaml pins.
+
+        The game's vendored copy (config/platforms/<id>.yaml) is used only when it verifies
+        by identity - version AND content hash, against pinned.json and the Factory's
+        profile (wgf_init.profiles.pin_identity) - never by the version string it declares:
+        two documents can both say `<id>@1.0.0`. A copy that does not verify is reported in
+        `problems` and not read; the Factory's own profile stands in when its version is the
+        pinned one, so the other checks are still judged by the real rules. A game that
+        vendors nothing for the platform is judged by the Factory's profile."""
+        cache = self.__dict__.setdefault("_profiles", {})
+        if platform_id in cache:
+            return cache[platform_id]
+        entry = next((p for p in self.platforms if p.get("id") == platform_id),
+                     {"id": platform_id})
+        problems, content_hash, vendored = pin_identity(self.root, entry)
+        pinned = str(entry.get("profile") or "")
+        pinned_version = pinned.split("@", 1)[1] if "@" in pinned else None
+        vendored_path = contract.platform_profile_path(platform_id)
+        result = (None, None, problems, content_hash)
+        if vendored and not problems:
+            profile = self.read_yaml(vendored_path)
+            if profile:
+                result = (profile, vendored_path, problems, content_hash)
+        if result[0] is None:
+            core = os.path.join(paths.PLATFORMS, f"{platform_id}.yaml")
+            if os.path.exists(core):
+                try:
+                    profile = load_file(core)
+                except (YamlError, ValueError):
+                    profile = None
+                if profile is not None and (not problems or pinned_version is None
+                                            or str(profile.get("version")) == pinned_version):
+                    result = (profile, paths.display(core), problems, content_hash)
+        cache[platform_id] = result
+        return result
+
     def profile(self, platform_id):
-        """(profile, source): the vendored copy the game pins, else the Factory's own."""
-        vendored = self.read_yaml(f"config/platforms/{platform_id}.yaml")
-        if vendored:
-            return vendored, f"config/platforms/{platform_id}.yaml"
-        core = os.path.join(paths.PLATFORMS, f"{platform_id}.yaml")
-        if os.path.exists(core):
-            try:
-                return load_file(core), paths.display(core)
-            except (YamlError, ValueError):
-                return None, None
-        return None, None
+        """(profile, source): the verified vendored copy the game pins, else the Factory's
+        own (profile_identity says which, and why)."""
+        profile, source, _problems, _hash = self.profile_identity(platform_id)
+        return profile, source
 
     # -- commands -------------------------------------------------------------------------
 
     @property
     def package_manager(self):
-        if self.exists("pnpm-lock.yaml") or str(self.package.get("packageManager", "")) \
+        if self.exists(contract.PNPM_LOCK) or str(self.package.get("packageManager", "")) \
                 .startswith("pnpm"):
             return "pnpm"
         if self.exists("yarn.lock"):

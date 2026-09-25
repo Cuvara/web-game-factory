@@ -14,6 +14,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from unittest import mock as mock_env
 from types import SimpleNamespace
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -23,12 +24,12 @@ sys.path.insert(0, SCRIPTS)
 
 import wgf_develop  # noqa: E402
 from wgf_develop import brief as briefs  # noqa: E402
-from wgf_develop import gdd  # noqa: E402
-from wgf_develop import seam  # noqa: E402
-from wgf_develop.checks import conformance  # noqa: E402
+from wgf_develop import gdd, scope, seam  # noqa: E402
+from wgf_develop.checks import conformance, package_findings  # noqa: E402
 from wgf_develop.repository import KEY_TRAILER, GitRepo, Runner, RunResult  # noqa: E402
 from wgf_develop.settings import Settings, SettingsError  # noqa: E402
 from wgf_develop.step import DevelopStep  # noqa: E402
+from wgflib import checkout as checkout_lock  # noqa: E402
 from wgflib.hashing import content_hash  # noqa: E402
 from wgflib.workflow import mock  # noqa: E402
 from wgflib.workflow.api import RunRequest, WorkflowAPI  # noqa: E402
@@ -213,6 +214,11 @@ class DevelopCase(unittest.TestCase):
         self.git("add", "-A")
         self.git(*IDENTITY, "commit", "-q", "-m", "scaffold")
         self.baseline = self.git("rev-parse", "HEAD").strip()
+        self.guarded = os.path.join(tempfile.mkdtemp(prefix="wgf-develop-factory-"), "scripts")
+        self.addCleanup(shutil.rmtree, os.path.dirname(self.guarded), ignore_errors=True)
+        os.makedirs(self.guarded)
+        with open(os.path.join(self.guarded, "verify.py"), "w") as handle:
+            handle.write("PASS = False\n")
 
     def git(self, *args):
         return subprocess.run(["git", *args], cwd=self.repo, check=True, capture_output=True,
@@ -221,7 +227,9 @@ class DevelopCase(unittest.TestCase):
     def config(self, **develop):
         data = {"checkouts": self.scratch, "author": AUTHOR}
         data.update(develop)
-        return {"develop": data}
+        # The Factory paths fingerprinted around the developer: a stand-in, so a test can
+        # try writing one (and so each test does not read the whole Factory twice).
+        return {"develop": data, "review": {"guarded_paths": [self.guarded]}}
 
     def command_config(self, **extra):
         return self.config(developer={"kind": "command", "argv": ["agent", "-p", "{prompt}"]},
@@ -229,6 +237,43 @@ class DevelopCase(unittest.TestCase):
 
     def commits(self):
         return self.git("log", "--format=%H").split()
+
+
+class Checkout(DevelopCase):
+    """wgflib.checkout: develop finds the checkout like every step, and holds it."""
+
+    def test_another_run_in_the_checkout_blocks_before_anything_is_written(self):
+        storage = os.path.join(self.scratch, "store")
+        ctx = context(self.command_config())
+        ctx.run_dir = os.path.join(storage, "workflows", ctx.run_id)
+        ctx.current_step = "develop"
+        other = checkout_lock.acquire(self.repo, "run-other", storage)
+        self.addCleanup(other.release)
+        runner = FakeRunner(on_develop=write_game)
+        result = step_with(runner).execute(inputs_for(), ctx)
+        self.assertEqual(result.outcome, StepOutcome.BLOCKED)
+        self.assertIn("run-other", result.message or result.error)
+        self.assertEqual(runner.calls, [])
+        self.assertEqual(self.git("status", "--porcelain"), "")
+        other.release()
+        result = step_with(FakeRunner(on_develop=write_game)).execute(inputs_for(), ctx)
+        self.assertEqual(result.outcome, StepOutcome.SUCCESS, result.error)
+
+    def test_wgf_game_repo_names_the_checkout_for_develop_too(self):
+        config = self.command_config(checkouts=os.path.join(self.scratch, "elsewhere"))
+        with mock_env.patch.dict(os.environ, {"WGF_GAME_REPO": self.repo}):
+            result = step_with(FakeRunner(on_develop=write_game)).execute(
+                inputs_for(), context(config))
+        self.assertEqual(result.outcome, StepOutcome.SUCCESS, result.error)
+
+    def test_a_scaffold_records_local_path_is_preferred(self):
+        config = self.command_config(checkouts=os.path.join(self.scratch, "elsewhere"))
+        record = fixture("scaffold-record")
+        record["repository"]["local_path"] = self.repo
+        record["provenance"]["content_hash"] = content_hash(record)
+        result = step_with(FakeRunner(on_develop=write_game)).execute(
+            inputs_for(overrides={"scaffold-record": record}), context(config))
+        self.assertEqual(result.outcome, StepOutcome.SUCCESS, result.error)
 
 
 class Inputs(DevelopCase):
@@ -648,6 +693,28 @@ class Command(DevelopCase):
         with self.assertRaises(SettingsError):
             Settings.resolve({"develop": {"self_playtest": "yes"}})
 
+    def test_the_brief_says_which_route_brought_the_work_back_and_what_it_has_left(self):
+        ctx = context(self.command_config(), key="run-1:develop:3", visit=3)
+        ctx.entered_by = "fail"
+        ctx.visit_budget = {"step": {"limit": 7, "used": 3, "remaining": 4},
+                            "route": {"route": "fail", "limit": 2, "used": 2, "remaining": 0}}
+        result = step_with(FakeRunner(on_develop=write_game)).execute(inputs_for(), ctx)
+        self.assertEqual(result.outcome, StepOutcome.SUCCESS, result.error)
+        with open(os.path.join(self.repo, briefs.BRIEF_DIR, "brief.json")) as handle:
+            loop = json.load(handle)["loop"]
+        self.assertEqual(loop["entered_by"], "fail")
+        self.assertEqual(loop["route_budget"]["remaining"], 0)
+        with open(os.path.join(self.repo, briefs.BRIEF_DIR, "brief.md")) as handle:
+            text = handle.read()
+        self.assertIn("## Why this is another iteration", text)
+        self.assertIn("through `fail`: pass 2 of 2", text)
+        # A first visit says nothing of loops.
+        first = context(self.command_config(), key="run-2:develop:1")
+        first.entered_by = None
+        step_with(FakeRunner(on_develop=write_game)).execute(inputs_for(), first)
+        with open(os.path.join(self.repo, briefs.BRIEF_DIR, "brief.json")) as handle:
+            self.assertIsNone(json.load(handle)["loop"])
+
     def test_a_failing_developer_is_retryable(self):
         runner = FakeRunner(develop_exit=2)
         result = step_with(runner).execute(inputs_for(), context(self.command_config()))
@@ -878,7 +945,119 @@ class Conformance(DevelopCase):
         self.assertIn("report.json was not written", found)
 
 
+class PackageAndScope(DevelopCase):
+    """package.json compared structurally; the commit scoped to what a developer may write."""
+
+    def manifest(self, edit):
+        path = os.path.join(self.repo, "package.json")
+        with open(path, encoding="utf-8") as handle:
+            data = json.load(handle)
+        edit(data)
+        with open(path, "w", encoding="utf-8") as handle:
+            json.dump(data, handle, indent=4)  # formatting is not a change
+
+    def findings(self, allowed=None):
+        return package_findings(self.repo, GitRepo(self.repo, Runner()), self.baseline,
+                                {"dependencies": ["add"], "devDependencies": ["add"]}
+                                if allowed is None else allowed)
+
+    def test_an_untouched_or_reformatted_manifest_passes(self):
+        self.assertEqual(self.findings(), [])
+        self.manifest(lambda d: None)
+        self.assertEqual(self.findings(), [])
+
+    def test_additions_pass_and_every_other_change_is_found(self):
+        self.manifest(lambda d: d["dependencies"].update({"pixi.js": "^8.6.0"}))
+        self.assertEqual(self.findings(), [])
+        self.assertIn("package.json adds dependencies 'pixi.js'; allowed dependencies "
+                      "changes: none", self.findings({}))
+        self.manifest(lambda d: d.update(name="renamed", pnpm={"overrides": {"a": "b"}}))
+        found = "\n".join(self.findings())
+        self.assertIn("package.json `name` is template-owned", found)
+        self.assertIn("package.json `pnpm` is template-owned", found)
+        self.manifest(lambda d: d["dependencies"].update({"@wgf/game-core": "^1.0.0"}))
+        self.assertIn("changes dependencies '@wgf/game-core'", "\n".join(self.findings()))
+        self.assertEqual([f for f in self.findings({"dependencies": ["add", "change"]})
+                          if "@wgf/game-core" in f], [])
+
+    def test_the_lockfile_follows_an_allowed_dependency_change_only(self):
+        with open(os.path.join(self.repo, "pnpm-lock.yaml"), "w") as handle:
+            handle.write("lockfileVersion: '9.0'\n")
+        self.assertIn("pnpm-lock.yaml is template-owned", "\n".join(self.findings()))
+        self.manifest(lambda d: d["dependencies"].update({"three": "^0.170.0"}))
+        self.assertEqual(self.findings(), [])
+
+    def test_the_scope(self):
+        allowed, refused = scope.partition([
+            ("??", "src/game/app.ts"), (" M", "package.json"), ("??", "index.html"),
+            ("??", "docs/development/report.json"), ("??", "public/locales/en.json"),
+            ("??", "tests/unit/a.test.ts"), ("??", ".claude/settings.json"),
+            ("??", "src/.cursor/rules"), ("??", "CLAUDE.md"), ("??", "tests/AGENTS.md"),
+            (" M", "README.md"), ("??", "docs/notes.md"), (" M", "tsconfig.json"),
+            ("??", "srcx/a.ts")])
+        self.assertEqual(allowed, ["docs/development/report.json", "index.html",
+                                   "package.json", "public/locales/en.json",
+                                   "src/game/app.ts", "tests/unit/a.test.ts"])
+        self.assertEqual([p for p, _ in refused],
+                         [".claude/settings.json", "CLAUDE.md", "README.md", "docs/notes.md",
+                          "src/.cursor/rules", "srcx/a.ts", "tests/AGENTS.md",
+                          "tsconfig.json"])
+
+    def test_the_rendered_gdd_is_the_one_factory_file_in_scope(self):
+        # F3's docs/GDD.md is accepted by exact path - it looks like an instruction file,
+        # but the step rewrites it after the developer - and nothing like it is.
+        self.assertEqual(scope.FACTORY_RENDERED, (gdd.GDD_PATH,))
+        allowed, refused = scope.partition([
+            ("??", "docs/GDD.md"), ("??", "docs/GDD.MD"), ("??", "docs/FOO.md"),
+            ("??", "docs/gdd.md"), ("??", "GDD.md"), ("??", "docs/.GDD.md"),
+            ("??", "src/docs/GDD.md")])
+        self.assertEqual(allowed, ["docs/GDD.md"])
+        self.assertEqual(len(refused), 6)
+
+    def test_a_rename_out_of_scope_is_seen_by_both_paths(self):
+        self.git("mv", "src/core/i18n.ts", "i18n.ts")
+        changes = GitRepo(self.repo, Runner()).changes()
+        self.assertEqual(sorted(p for _, p in changes), ["i18n.ts", "src/core/i18n.ts"])
+        _, refused = scope.partition(changes)
+        self.assertEqual([p for p, _ in refused], ["i18n.ts"])
+
+    def test_the_brief_says_what_may_be_written(self):
+        step_with(FakeRunner()).execute(inputs_for(), context(self.config()))
+        with open(os.path.join(self.repo, briefs.BRIEF_DIR, "brief.md")) as handle:
+            text = handle.read()
+        self.assertIn("**Write only under** `src/`, `tests/`, `public/`, "
+                      "`docs/development/`, `index.html`", text)
+        self.assertIn("you may add a `dependencies` entry; add a `devDependencies` entry", text)
+        for path in ("`package.json`", "`tsconfig.json`", "`pnpm-lock.yaml`"):
+            self.assertIn(path, text)
+
+    def test_a_filter_planted_by_the_developer_is_neutralised(self):
+        marker = os.path.join(self.scratch, "PWNED")
+        repo = GitRepo(self.repo, Runner())
+        self.assertTrue(repo.is_repository())  # pins the git directory
+        with open(os.path.join(self.repo, ".git", "info", "attributes"), "w") as handle:
+            handle.write("* filter=x\n")
+        self.git("config", "filter.x.clean", f"sh -c 'touch {marker}; cat'")
+        os.utime(os.path.join(self.repo, "src", "main.ts"), None)
+        repo.changes()
+        self.assertFalse(os.path.exists(marker))
+
+
 class Settings_(unittest.TestCase):
+    def test_the_boundary_settings_are_validated(self):
+        for develop in ({"writable_paths": ["../x"]}, {"writable_paths": [".claude/"]},
+                        {"writable_paths": ["/abs/"]}, {"writable_paths": []},
+                        {"allowed_package_changes": {"scripts": ["add"]}},
+                        {"allowed_package_changes": {"dependencies": ["rewrite"]}},
+                        {"git": {"allow_filters": "yes"}}):
+            with self.subTest(develop=develop):
+                with self.assertRaises(SettingsError):
+                    Settings.resolve({"develop": develop})
+        settings = Settings.resolve({})
+        self.assertEqual(settings.writable_paths, list(scope.DEFAULT_WRITABLE))
+        self.assertFalse(settings.allow_filters)
+        self.assertEqual(settings.env_passthrough, [])
+
     def test_defaults_and_ordering(self):
         settings = Settings.resolve({"develop": {"checks": ["smoke", "build", "lint"]}})
         # conformance is always on, and the list runs in dependency order.
@@ -934,12 +1113,17 @@ class ThroughTheEngine(unittest.TestCase):
             "develop": {"checkouts": os.path.join(self.scratch, "checkouts"),
                         "author": AUTHOR,
                         "developer": {"kind": "command", "argv": ["agent", "{brief}"]}},
+            "review": {"guarded_paths": [os.path.join(self.scratch, "factory")]},
         })
         return API(config=config, store_dir=os.path.join(self.scratch, "store")), runner
 
     def test_the_new_game_workflow_completes_with_the_real_develop_step(self):
         api, runner = self.api()
         state = api.run(RunRequest(project_id=TITLE))
+        # G4 waits for a person after verification; decide it as one.
+        self.assertEqual((state.status, state.cursor), (RunStatus.WAITING, "prototype-review"),
+                         state.message)
+        state = api.run(RunRequest(resume=state.run_id, decision="pass", decided_by="human"))
         self.assertEqual(state.status, RunStatus.COMPLETED, state.message)
         ref = state.latest_artifact("prototype-report")
         report = api.store.read_artifact(state.run_id, ref)
@@ -967,7 +1151,219 @@ class ThroughTheEngine(unittest.TestCase):
         self.assertEqual(list(step.outputs), ["prototype-report"])
 
 
-@unittest.skipUnless(os.environ.get("WGF_AJV") and shutil.which("npx"),
+class CostRunner(FakeRunner):
+    """A fake command developer that writes a transcript, as a host in a JSON-lines output
+    mode would: progress lines, then a last line reporting the session's cost under
+    `session_cost` - or, with cost=None, no cost at all. Records every spawn."""
+
+    def __init__(self, costs=(), **kwargs):
+        super().__init__(**kwargs)
+        self.costs = list(costs)
+        self.transcripts = []
+
+    def run(self, argv, cwd, timeout=None, env=None, log_path=None):
+        if argv[0] in ("git", "pnpm"):
+            return super().run(argv, cwd, timeout, env)
+        cost = self.costs.pop(0) if self.costs else None
+        if log_path:
+            self.transcripts.append(log_path)
+            with open(log_path, "a", encoding="utf-8") as handle:
+                handle.write('[stdout] {"type": "progress", "turn": 1}\n')
+                handle.write("[stdout] plain text the host printed\n")
+                handle.write('[stdout] {"type": "end"'
+                             + (f', "session_cost": {cost}' if cost is not None else "")
+                             + "}\n")
+        return super().run(argv, cwd, timeout, env)
+
+
+@unittest.skipUnless(HAS_GIT, "git is not installed")
+class DevelopBudget(unittest.TestCase):
+    """factory.develop.budget: a run-level bound on developer sessions that a resume does
+    not reset, counted from the run's event log (M13)."""
+
+    setUp = ThroughTheEngine.setUp
+
+    def api(self, budget=None, runner=None, attempts=3):
+        runner = runner or FakeRunner(on_develop=write_game)
+
+        class Step(DevelopStep):
+            runner_factory = staticmethod(lambda: runner)
+
+        class API(WorkflowAPI):
+            def registry(self, use_mock):
+                registry = StepRegistry()
+                register_checkpoint(registry)
+                mock.register(registry)
+                registry.register("develop", Step)
+                return registry
+
+        develop = {"checkouts": os.path.join(self.scratch, "checkouts"), "author": AUTHOR,
+                   "developer": {"kind": "command", "argv": ["agent", "{brief}"]}}
+        if budget is not None:
+            develop["budget"] = budget
+        config = FactoryConfig({
+            "storage": {"fsync": False}, "checkpoints": {"auto_approve": ["G2", "G3"]},
+            "execution": {"max_attempts": attempts, "backoff": "none"},
+            "develop": develop,
+            "review": {"guarded_paths": [os.path.join(self.scratch, "factory")]},
+        })
+        return API(config=config, store_dir=os.path.join(self.scratch, "store")), runner
+
+    def budget_events(self, api, run_id, kind):
+        return [e["data"] for e in api.store.read_events(run_id)
+                if e["event"] == "STEP_LOG" and (e.get("data") or {}).get("budget") == kind]
+
+    def test_no_budget_changes_nothing(self):
+        api, runner = self.api()
+        state = api.run(RunRequest(project_id=TITLE))
+        self.assertEqual(state.cursor, "prototype-review", state.message)
+        self.assertNotIn("develop_budget", state.params)
+        # Sessions are still recorded, for the record; nothing is enforced.
+        self.assertEqual(len(self.budget_events(api, state.run_id, "developer-session")), 1)
+
+    def test_blocked_at_the_limit_without_spawning_and_counted_across_a_resume(self):
+        api, runner = self.api({"max_sessions": 2}, FakeRunner(develop_exit=1))
+        state = api.run(RunRequest(project_id=TITLE))
+        self.assertEqual((state.status, state.cursor), (RunStatus.BLOCKED, "develop"))
+        self.assertIn("budget exhausted: 2 developer sessions used of 2",
+                      state.steps["develop"].message)
+        self.assertEqual(len(runner.developer_calls()), 2)
+        self.assertEqual(state.params["develop_budget"], {"max_sessions": 2})
+        # A resume refills loop and attempt budgets - not this one.
+        again = api.run(RunRequest(resume=state.run_id, decided_by="human"))
+        self.assertEqual(again.status, RunStatus.BLOCKED)
+        self.assertIn("budget exhausted: 2 developer sessions used of 2",
+                      again.steps["develop"].message)
+        self.assertEqual(len(runner.developer_calls()), 2)
+
+    def test_a_session_is_on_record_before_the_developer_is_spawned(self):
+        seen = []
+        api = None
+
+        def develop(cwd):
+            run_id = api.store.latest().run_id
+            seen.append(len(self.budget_events(api, run_id, "developer-session")))
+            write_game(cwd)
+
+        api, runner = self.api({"max_sessions": 5}, FakeRunner(on_develop=develop))
+        state = api.run(RunRequest(project_id=TITLE))
+        self.assertEqual(state.cursor, "prototype-review", state.message)
+        self.assertEqual(seen, [1])
+
+    def test_a_person_raises_the_budget_and_it_takes_effect(self):
+        api, runner = self.api({"max_sessions": 1}, FakeRunner(develop_exit=1))
+        state = api.run(RunRequest(project_id=TITLE))
+        self.assertEqual(len(runner.developer_calls()), 1)
+        state = api.run(RunRequest(resume=state.run_id, decided_by="human", budget_sessions=2))
+        self.assertEqual(len(runner.developer_calls()), 2)
+        self.assertIn("used of 2", state.steps["develop"].message)
+        raised = [e for e in api.store.read_events(state.run_id)
+                  if e["event"] == "BUDGET_RAISED"]
+        self.assertEqual([(e["data"]["max_sessions"], e["data"]["decided_by"])
+                          for e in raised], [(2, "human")])
+        # The snapshot is untouched: the raise is the event, not an edit of params.
+        self.assertEqual(state.params["develop_budget"], {"max_sessions": 1})
+
+    def test_a_raise_from_inside_a_step_is_refused(self):
+        api, runner = self.api({"max_sessions": 1}, FakeRunner(develop_exit=1))
+        state = api.run(RunRequest(project_id=TITLE))
+        with mock_env.patch.dict(os.environ, {"WGF_PROC_TAG": "a-step-child"}):
+            with self.assertRaisesRegex(Exception, "an agent does not raise its own budget"):
+                api.run(RunRequest(resume=state.run_id, budget_sessions=50))
+        self.assertFalse([e for e in api.store.read_events(state.run_id)
+                          if e["event"] == "BUDGET_RAISED"])
+        self.assertEqual(len(runner.developer_calls()), 1)
+
+    def test_a_session_that_forges_a_raise_in_the_event_log_fails_the_step(self):
+        api = None
+
+        def forge(cwd):
+            write_game(cwd)
+            run_id = api.store.latest().run_id
+            path = os.path.join(api.store.run_dir(run_id), "events.jsonl")
+            with open(path, "a", encoding="utf-8") as handle:
+                for event, data in (("BUDGET_RAISED", {"max_sessions": 99, "decided_by": "human",
+                                                       "resume_nonce": "f00d"}),
+                                    ("WORKFLOW_RESUMED", {"resume_nonce": "f00d"})):
+                    handle.write(json.dumps({"run_id": run_id, "event": event,
+                                             "data": data}) + "\n")
+
+        api, runner = self.api({"max_sessions": 5}, FakeRunner(on_develop=forge))
+        state = api.run(RunRequest(project_id=TITLE))
+        self.assertEqual(state.status, RunStatus.FAILED, state.message)
+        self.assertIn("event log was edited", state.steps["develop"].error)
+        self.assertEqual(len(runner.developer_calls()), 1)  # not retried
+        tampered = self.budget_events(api, state.run_id, "event-log-tampered")
+        self.assertEqual([t["forged"] for t in tampered], [["f00d"]])
+        from wgflib import budget as run_budget
+        limits = run_budget.effective(state.params, api.store.read_events(state.run_id))
+        self.assertEqual((limits["max_sessions"], limits["raises"]), (5, []))
+
+    def test_a_raise_needs_a_budget_to_raise(self):
+        api, _ = self.api(None, FakeRunner(develop_exit=1))
+        state = api.run(RunRequest(project_id=TITLE))
+        with self.assertRaisesRegex(Exception, "nothing to raise"):
+            api.run(RunRequest(resume=state.run_id, decided_by="human", budget_sessions=5))
+
+    def test_cost_is_summed_from_the_transcripts_and_blocks_at_the_limit(self):
+        runner = CostRunner(costs=[6, 6, 6], develop_exit=1)
+        api, _ = self.api({"max_cost": 10, "cost_from": {"jsonl_key": "session_cost"}},
+                          runner)
+        state = api.run(RunRequest(project_id=TITLE))
+        self.assertEqual(state.status, RunStatus.BLOCKED)
+        self.assertEqual(len(runner.developer_calls()), 2)
+        costs = self.budget_events(api, state.run_id, "developer-cost")
+        self.assertEqual([c.get("cost") for c in costs], [6, 6])
+        self.assertIn("budget exhausted: developer cost 12 recorded of 10",
+                      state.steps["develop"].message)
+        # Each transcript is the run's, one per visit and attempt.
+        self.assertEqual([os.path.basename(p) for p in runner.transcripts],
+                         ["1-1.log", "1-2.log"])
+
+    def test_an_unknown_cost_is_reported_and_tolerated(self):
+        runner = CostRunner(costs=[None], on_develop=write_game)
+        api, _ = self.api({"max_cost": 10, "cost_from": {"jsonl_key": "session_cost"}},
+                          runner)
+        state = api.run(RunRequest(project_id=TITLE))
+        self.assertEqual(state.cursor, "prototype-review", state.message)
+        costs = self.budget_events(api, state.run_id, "developer-cost")
+        self.assertEqual(len(costs), 1)
+        self.assertNotIn("cost", costs[0])
+        self.assertFalse(costs[0]["known"])
+        warnings = [e for e in api.store.read_events(state.run_id)
+                    if e["event"] == "STEP_LOG" and e.get("level") == "warning"
+                    and "no readable cost" in (e.get("message") or "")]
+        self.assertEqual(len(warnings), 1)
+
+    def test_a_budget_the_factory_cannot_act_on_is_refused_at_start(self):
+        for budget in ({"max_sessions": 0}, {"max_sessions": "3"}, {"max_cost": 5},
+                       {"max_cost": 5, "cost_from": {"jsonl_key": ""}}, {"sessions": 3}):
+            api, _ = self.api(budget)
+            with self.assertRaises(ValueError, msg=budget):
+                api.run(RunRequest(project_id=TITLE))
+
+
+class ReadCost(unittest.TestCase):
+    def test_the_last_line_holding_the_key_past_the_offset(self):
+        with tempfile.TemporaryDirectory() as scratch:
+            path = os.path.join(scratch, "1-1.log")
+            with open(path, "w", encoding="utf-8") as handle:
+                handle.write('[stdout] {"cost": 9}\n')
+            offset = os.path.getsize(path)
+            with open(path, "a", encoding="utf-8") as handle:
+                handle.write('[stdout] {"cost": 1}\n[stderr] not json {\n'
+                             '[stdout] {"cost": 2.5, "other": true}\n[stdout] {"x": 1}\n')
+            from wgf_develop.budget import read_cost
+            self.assertEqual(read_cost(path, "cost", offset), 2.5)
+            self.assertEqual(read_cost(path, "cost", os.path.getsize(path)), None)
+            self.assertEqual(read_cost(path, "missing"), None)
+            self.assertEqual(read_cost(os.path.join(scratch, "none.log"), "cost"), None)
+            with open(path, "a", encoding="utf-8") as handle:
+                handle.write('[stdout] {"cost": "free"}\n')
+            self.assertIsNone(read_cost(path, "cost", offset))  # the last one says unknown
+
+
+@unittest.skipUnless(os.environ.get("WGF_AJV") == "1" and shutil.which("npx"),
                      "set WGF_AJV=1 to validate with ajv (needs npx; may download ajv-cli)")
 class Schema(DevelopCase):
     """§11.3: an emitted prototype-report against the full JSON Schema."""

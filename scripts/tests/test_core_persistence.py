@@ -19,6 +19,7 @@ import subprocess
 import sys
 import tempfile
 import textwrap
+import threading
 import time
 import unittest
 from unittest import mock
@@ -350,7 +351,7 @@ class LockTakeover(EngineCase):
             with open(os.path.join(self.store.run_dir(run_id), name), "w") as handle:
                 handle.write(f"{DEAD_PID}\n")
         self.store.acquire(run_id)
-        self.assertEqual(read(self.lock(run_id)).strip(), str(os.getpid()))
+        self.assertEqual(read(self.lock(run_id)).split()[0], str(os.getpid()))
         self.assertFalse(os.path.exists(self.lock(run_id) + ".takeover"))
         self.store.release(run_id)
 
@@ -599,6 +600,234 @@ class EventLogLoss(EngineCase):
         self.assertEqual(engine.start().status, RunStatus.FAILED)
         self.store.append_event = original
         self.assertEqual(engine.start().status, RunStatus.COMPLETED)
+
+
+HAS_PROC_STAT = store_module._start_time(os.getpid()) is not None
+
+
+class LockIdentity(EngineCase):
+    """A lock names its owner by pid and start time; a recycled pid is not the owner."""
+
+    def lock(self, run_id):
+        return os.path.join(self.store.run_dir(run_id), "lock")
+
+    def run_id(self):
+        return self.engine(LINEAR).start(scope="a").run_id
+
+    def live_other_process(self):
+        process = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(30)"])
+        self.addCleanup(process.wait)
+        self.addCleanup(process.kill)
+        return process.pid
+
+    def write_lock(self, run_id, text, name="lock"):
+        with open(os.path.join(self.store.run_dir(run_id), name), "w") as handle:
+            handle.write(text)
+
+    @unittest.skipUnless(HAS_PROC_STAT, "needs /proc/<pid>/stat")
+    def test_the_lock_records_pid_and_start_time(self):
+        run_id = self.run_id()
+        self.store.acquire(run_id)
+        self.addCleanup(self.store.release, run_id)
+        self.assertEqual(read(self.lock(run_id)).split(),
+                         [str(os.getpid()), str(store_module._start_time(os.getpid()))])
+
+    @unittest.skipUnless(HAS_PROC_STAT, "needs /proc/<pid>/stat")
+    def test_start_time_is_field_22_even_with_a_hostile_command_name(self):
+        fake = os.path.join(self.scratch, "proc")
+        os.makedirs(os.path.join(fake, "77"))
+        fields = " ".join(str(n) for n in range(3, 53))  # field n holds n
+        with open(os.path.join(fake, "77", "stat"), "w") as handle:
+            handle.write(f"77 (evil) 1 2 (x) {fields}\n")
+        real_open = open
+
+        def fake_open(path, *args, **kwargs):
+            if path == "/proc/77/stat":
+                path = os.path.join(fake, "77", "stat")
+            return real_open(path, *args, **kwargs)
+
+        with mock.patch("builtins.open", fake_open):
+            self.assertEqual(store_module._start_time(77), 22)
+
+    @unittest.skipUnless(HAS_PROC_STAT, "needs /proc/<pid>/stat")
+    def test_a_live_pid_with_another_start_time_is_a_recycled_pid_and_stale(self):
+        run_id = self.run_id()
+        live = self.live_other_process()
+        started = None
+        for _ in range(100):  # the child's /proc entry can lag its fork by a moment
+            started = store_module._start_time(live)
+            if started is not None:
+                break
+            time.sleep(0.01)
+        self.write_lock(run_id, f"{live} {started + 1}\n")  # the dead driver's pid, reused
+        self.assertIsNone(self.store.lock_owner(run_id))
+        self.assertFalse(self.store.is_held(run_id))
+        self.store.acquire(run_id)                           # taken over, not refused
+        self.assertEqual(read(self.lock(run_id)).split()[0], str(os.getpid()))
+        self.store.release(run_id)
+
+    @unittest.skipUnless(HAS_PROC_STAT, "needs /proc/<pid>/stat")
+    def test_a_live_pid_with_its_own_start_time_is_the_owner(self):
+        run_id = self.run_id()
+        live = self.live_other_process()
+        started = None
+        for _ in range(100):
+            started = store_module._start_time(live)
+            if started is not None:
+                break
+            time.sleep(0.01)
+        self.write_lock(run_id, f"{live} {started}\n")
+        self.assertEqual(self.store.lock_owner(run_id), live)
+        with self.assertRaises(RunLocked):
+            self.store.acquire(run_id)
+        self.assertEqual(read(self.lock(run_id)).split(), [str(live), str(started)])
+
+    def test_a_legacy_pid_only_lock_of_a_live_process_is_still_refused(self):
+        run_id = self.run_id()
+        live = self.live_other_process()
+        self.write_lock(run_id, f"{live}\n")
+        self.assertEqual(self.store.lock_owner(run_id), live)
+        with self.assertRaises(RunLocked):
+            self.store.acquire(run_id)
+        self.assertEqual(read(self.lock(run_id)).strip(), str(live))
+
+    def test_a_legacy_pid_only_lock_of_a_dead_process_is_taken_over(self):
+        run_id = self.run_id()
+        self.write_lock(run_id, f"{DEAD_PID}\n")
+        self.store.acquire(run_id)
+        self.assertEqual(read(self.lock(run_id)).split()[0], str(os.getpid()))
+        self.store.release(run_id)
+
+    def test_an_unreadable_start_time_falls_back_to_the_pid(self):
+        run_id = self.run_id()
+        live = self.live_other_process()
+        self.write_lock(run_id, f"{live} not-a-number\n")
+        with self.assertRaises(RunLocked):
+            self.store.acquire(run_id)
+        with mock.patch.object(store_module, "_start_time", return_value=None):
+            self.write_lock(run_id, f"{live} 12345\n")  # no /proc: cannot compare
+            self.assertEqual(self.store.lock_owner(run_id), live)
+
+    def test_an_empty_lock_whose_mtime_reads_old_still_gets_its_grace(self):
+        # A coarse or skewed mtime (WSL drvfs) makes a lock created a moment ago read as
+        # older than the grace; it is still in progress until the taker has watched it.
+        run_id = self.run_id()
+        for name in ("lock", "lock.takeover"):
+            with self.subTest(name):
+                open(self.lock(run_id), "w").close()
+                if name == "lock.takeover":
+                    with open(self.lock(run_id), "w") as handle:
+                        handle.write(f"{DEAD_PID}\n")
+                    open(self.lock(run_id) + ".takeover", "w").close()
+                skewed = time.time() - 1.0
+                target = self.lock(run_id) + (".takeover" if name == "lock.takeover" else "")
+                os.utime(target, (skewed, skewed))
+                with mock.patch.object(store_module, "LOCK_GRACE_SECONDS", 0.3):
+                    began = time.monotonic()
+                    self.store.acquire(run_id)
+                    self.assertGreaterEqual(time.monotonic() - began, 0.3)
+                self.store.release(run_id)
+                self.assertFalse(os.path.exists(self.lock(run_id) + ".takeover"))
+
+    @unittest.skipUnless(HAS_PROC_STAT, "needs /proc/<pid>/stat")
+    def test_a_takeover_guard_left_by_a_recycled_pid_is_cleared(self):
+        run_id = self.run_id()
+        live = self.live_other_process()
+        started = None
+        for _ in range(100):
+            started = store_module._start_time(live)
+            if started is not None:
+                break
+            time.sleep(0.01)
+        self.write_lock(run_id, f"{DEAD_PID}\n")
+        self.write_lock(run_id, f"{live} {started + 1}\n", name="lock.takeover")
+        self.store.acquire(run_id)
+        self.assertEqual(read(self.lock(run_id)).split()[0], str(os.getpid()))
+        self.assertFalse(os.path.exists(self.lock(run_id) + ".takeover"))
+        self.store.release(run_id)
+
+
+class UniqueTemporaryNames(EngineCase):
+    """Every atomic write has its own temporary file, so concurrent writers of one target
+    (two `wgf` commands marking LATEST) cannot trip over each other's."""
+
+    def leftovers(self, directory):
+        found = []
+        for root, _dirs, files in os.walk(directory):
+            found += [os.path.join(root, f) for f in files if ".tmp" in f]
+        return found
+
+    def test_temporary_names_are_unique_hidden_siblings(self):
+        names = []
+        real_replace = store_module.os.replace
+
+        def replace(source, target):
+            names.append(source)
+            return real_replace(source, target)
+
+        with mock.patch.object(store_module.os, "replace", replace):
+            self.store.mark_latest("run-1")
+            self.store.mark_latest("run-1")
+        self.assertEqual(len(set(names)), 2)
+        for name in names:
+            base = os.path.basename(name)
+            self.assertTrue(base.startswith(f".LATEST.tmp.{os.getpid()}."), base)
+            self.assertEqual(os.path.dirname(name), self.store.workflows)
+
+    def test_concurrent_writers_of_one_target_do_not_collide(self):
+        os.makedirs(self.store.workflows, exist_ok=True)
+        errors, barrier = [], threading.Barrier(6)
+
+        def writer(n):
+            barrier.wait()
+            for _ in range(60):
+                try:
+                    self.store.mark_latest(f"run-{n}")
+                except Exception as exc:  # the fixed name raised FileNotFoundError here
+                    errors.append(exc)
+
+        threads = [threading.Thread(target=writer, args=(n,)) for n in range(6)]
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            thread.join(60)
+        self.assertEqual(errors, [])
+        self.assertIn(read(os.path.join(self.store.workflows, "LATEST")).strip(),
+                      {f"run-{n}" for n in range(6)})
+        self.assertEqual(self.leftovers(self.store.workflows), [])
+
+    def test_a_failed_write_leaves_no_temporary_behind(self):
+        run = self.engine(LINEAR).start(scope="a")
+        with mock.patch.object(store_module.os, "replace", side_effect=OSError("disk gone")):
+            for write in (lambda: self.store.save(self.store.load(run.run_id)),
+                          lambda: self.store.write_artifact(run.run_id, "art-a", 2, {}),
+                          lambda: self.store.mark_latest(run.run_id),
+                          lambda: self.store.request(run.run_id, "pause")):
+                with self.assertRaises(OSError):
+                    write()
+        self.assertEqual(self.leftovers(self.store.workflows), [])
+
+    def test_a_leftover_temporary_of_either_naming_is_named_by_load(self):
+        run = self.engine(LINEAR).start(scope="a")
+        directory = self.store.run_dir(run.run_id)
+        path = os.path.join(directory, "state.json")
+        text = read(path)
+        for leftover in (".state.json.tmp.4242.0badcafe", "state.json.tmp"):
+            with self.subTest(leftover):
+                with open(os.path.join(directory, leftover), "w", encoding="utf-8") as handle:
+                    handle.write(text)
+                with open(path, "w", encoding="utf-8") as handle:
+                    handle.write("")
+                with self.assertRaises(StoreError) as caught:
+                    self.store.load(run.run_id)
+                self.assertIn(leftover, str(caught.exception))
+                os.remove(os.path.join(directory, leftover))
+
+    def test_hidden_temporaries_are_not_mistaken_for_runs(self):
+        run = self.engine(LINEAR).start(scope="a")
+        with open(os.path.join(self.store.workflows, ".LATEST.tmp.1.abcd"), "w") as handle:
+            handle.write("x\n")
+        self.assertEqual([s.run_id for s in self.store.list_runs()], [run.run_id])
 
 
 if __name__ == "__main__":

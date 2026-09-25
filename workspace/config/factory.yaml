@@ -15,11 +15,56 @@ factory:
     delay_seconds: 2            # before the first retry; doubles each time when exponential
     max_delay_seconds: 60
     max_visits: 5               # how often a loop may re-enter one step before the run blocks
+    # Liveness (docs/agent-lifecycle.md). `wgf status` calls a RUNNING step hung when its
+    # driver has recorded nothing, not even a heartbeat, for hung_after_seconds; or when the
+    # driver's heartbeats arrive but the child it waits on has written nothing for
+    # hung_output_seconds. Status only reports; on_hung decides whether the driving engine
+    # acts: `none`, or `cancel` - terminate the silent child's tree and end the step, not
+    # retryably (a STEP_LOG warning says why). A run keeps the on_hung policy it started
+    # with. Keep hung_output_seconds above every module idle_timeout_seconds below, or the
+    # watchdog pre-empts the module's own ending.
+    # hung_after_seconds: 300
+    # hung_output_seconds: 900
+    # on_hung: none             # none | cancel
 
   # Which runtime executes a step. Only `local` exists; an agent-host runtime registers
   # itself from a step module and is selected here by name.
   agents:
     default: local
+    # Agent processes (the develop step's developer command, the review step's reviewer)
+    # start with an allowlisted environment, never the Factory's: PATH, HOME, USER, LANG,
+    # LC_*, TERM, TMPDIR, SHELL, CI, the proxy variables, XDG_*, NODE_*, PNPM_*,
+    # npm_config_*, PLAYWRIGHT_*, COREPACK_* (minus anything named like a secret), plus the
+    # WGF_PROC_* tags. Name here what else an agent needs -
+    # an exact name, or a prefix ending in *. See scripts/wgflib/agentenv.py.
+    env_passthrough: []
+    # Claude Code logged in with `claude login` reads its credentials under HOME and needs
+    # nothing here. Authenticated by key or token instead, it needs that one variable:
+    # env_passthrough: [ANTHROPIC_API_KEY]      # or CLAUDE_CODE_OAUTH_TOKEN
+    # Game code - what the Factory runs inside a game repository: the develop checks
+    # (pnpm install, typecheck, lint, test, build, smoke), verify, the sdk conformance suite
+    # and release packaging - was written by the developer agent and gets the same allowlist,
+    # plus only what is named here. Deliberately separate from env_passthrough, so the agent
+    # host's credential never reaches game code. A registry credential normally lives in
+    # ~/.npmrc under HOME, which is passed; name one here only if the install step reads it
+    # from the environment:
+    game_env_passthrough: []
+    # game_env_passthrough: [NPM_REGISTRY_TOKEN]
+
+  # Where game repositories are checked out: <checkouts>/<repository name>, relative to
+  # this repository's root (never the working directory). ONE directory for every step -
+  # init clones there; assets, develop, review, sdk, verify and release work there. Each
+  # step finds a title's checkout by one precedence (scripts/wgflib/checkout.py,
+  # docs/checkouts.md): the step's `with: repo_dir` (alias `game_repo`), else
+  # WGF_GAME_REPO, else the scaffold-record's repository.local_path (where init put it),
+  # else this directory + the repository name. The per-module keys this replaces
+  # (develop.checkouts, init.projects_dir, review.checkouts, sdk.games_dir,
+  # verification.checkouts, release.checkouts) still work, as deprecated aliases read in
+  # that order when this key is unset; any that disagree are warned about and ignored.
+  # While a step works in a checkout it holds an advisory lock on it (in
+  # <storage>/checkouts/): a second run reaching the same checkout is BLOCKED, naming the
+  # first.
+  checkouts: ..
 
   # Relative to the directory `wgf` is run from. Run state is instance data, never committed.
   storage:
@@ -57,34 +102,44 @@ factory:
     owner: Cuvara                       # who owns game repositories
     template: Cuvara/web-game-template  # never a blank repository
     visibility: private                 # private | internal | public
-    projects_dir: ..                    # local clones go in <projects_dir>/<title-id>,
-                                        # relative to this repository's root
+    # The local clone goes to <factory.checkouts>/<title-id> (or the step's with: repo_dir,
+    # or WGF_GAME_REPO), and its path is recorded in the scaffold-record for later steps.
     # Take over a repository or directory init did not create in this run. Leave false:
     # set it only to adopt a specific existing project, then set it back.
     adopt_existing: false
     populate_timeout_seconds: 60        # GitHub generates from a template asynchronously
 
   # The verification module (scripts/wgf_verification, docs/verification-module.md). It
-  # verifies a local checkout and never clones: the game repository is found from the
-  # verify step's `with: repo_dir`, else WGF_GAME_REPO, else <checkouts>/<repository name
-  # from the run's scaffold-record>.
-  verification:
-    checkouts: ..
+  # verifies a local checkout (found as every step finds it: factory.checkouts above) and
+  # never clones.
+  # verification: {}
 
   # The release module (scripts/wgf_release, docs/release-module.md): drafts a release from a
   # verified commit with the game repository's own release:package / release:manifest, and
-  # never pushes, tags or publishes. The checkout is the release step's `with: repo_dir`,
-  # else WGF_GAME_REPO, else <checkouts>/<repository name from the run's scaffold-record>.
+  # never pushes, tags or publishes. The checkout is found as every step finds it
+  # (factory.checkouts above).
   # A step's `with:` overrides any key: release_id (default: the next r<n>, or the one this
-  # commit already has), version (default: game.version), kind, timeouts.
+  # commit already has), version (default: game.version), kind, timeouts. Two keys are read
+  # from one place only: `required_gates` from the workflow's `with:` (default [G4]), and
+  # `allow_unreviewed` from here.
   release:
-    checkouts: ..
+    # Release refuses (`unreviewed`) unless the newest review-report approved exactly the
+    # commit it ships - the sdk commit, which the workflow's sdk-review reads. With the
+    # shipped `review.reviewer.kind: none` below, EVERY RELEASE IS REFUSED until a reviewer
+    # is configured: that is the intended fail-closed default. `true` is an explicit,
+    # recorded exception: a skipped or absent review is drafted anyway, and the manifest's
+    # evidence.review says UNREVIEWED. It never waives a request for changes, an approval
+    # of another commit, or G4.
+    allow_unreviewed: false
 
   # The assets step (scripts/wgf_assets). Every key is optional; a step's `with:` block
   # overrides any of them. See docs/assets-module.md.
   assets:
     # The game repository checkout assets are written into, under public/assets/.
-    # Default: .factory/assets/<title-id>, which is git-ignored scratch.
+    # Default: the run's checkout (factory.checkouts above, via the scaffold-record), so
+    # the files land where develop builds and commits them, and the develop brief lists
+    # each file's path. Without a scaffold-record, or before the checkout exists:
+    # .factory/assets/<title-id> under this repository's root - git-ignored scratch.
     # root: ../my-game
     libraries: []               # directories with an index.json of reusable, licensed assets
     placeholders:
@@ -99,11 +154,10 @@ factory:
     optimize: true              # lossless, and only on files the step writes
     fail_on: []                 # issue codes that fail the step, e.g. [license-restricted]
 
-  # The development module (scripts/wgf_develop, docs/development-module.md). Where the game
-  # repositories are checked out, who writes the game, and what must pass before a visit is
+  # The development module (scripts/wgf_develop, docs/development-module.md). Who writes
+  # the game in the checkout (factory.checkouts above), and what must pass before a visit is
   # committed. The module never clones, pushes or creates a repository.
   develop:
-    checkouts: ..               # <checkouts>/<scaffold-record repository.name>; relative to the Factory root
     developer:
       kind: handoff             # handoff: brief, wait for --decision done | command: run argv unattended
       argv: []                  # command only: {brief} {repo} {key} {prompt} are substituted
@@ -126,8 +180,15 @@ factory:
     #                               so they do not cut a build short of timeout_seconds: on the
     #                               v1 acceptance run a from-scratch build took 200 turns in
     #                               26-44 min for US$10-15, and 200 ended two attempts half-way
-    # `pnpm *` also admits `pnpm exec` and `pnpm dlx`: arbitrary code in the checkout. Wrap the
-    # argv in an OS sandbox if the developer must not reach the network or $HOME.
+    # `pnpm *` also admits `pnpm exec` and `pnpm dlx`: arbitrary code in the checkout. The
+    # Factory's own side of that boundary (docs/development-module.md): the developer gets
+    # the allowlisted environment above (factory.agents.env_passthrough); the Factory's
+    # guarded paths (factory.review.guarded_paths) are fingerprinted around it and its
+    # checks, and a change is undone and fails the step; the Factory's git names the git
+    # directory it resolved before the developer ran and runs no hook, fsmonitor, signer or
+    # filter the checkout's config names; and only writable_paths are committed. Anything
+    # else outside the checkout - $HOME, the network - is not watched: wrap the argv in an
+    # OS sandbox if the developer must not reach them.
     # developer:
     #   kind: command
     #   argv:
@@ -169,7 +230,11 @@ factory:
     #   Skill, mcp__playwright      the only additions to what runs without a prompt
     # The browser is origin-limited; the developer process itself is not network-guarded
     # (pnpm needs the registry). Flags checked against CLI 2.1.282 and @playwright/mcp 0.0.82;
-    # not yet run live (docs/claude-capabilities.md).
+    # not yet run live (docs/claude-capabilities.md). The developer's environment is
+    # allowlisted (factory.agents.env_passthrough): the host's credential must be named
+    # there, or the session cannot authenticate. The MCP config writes the browser's
+    # snapshots under /tmp (--output-dir), never into the checkout, whose hidden paths the
+    # development commit refuses.
     # self_playtest: true
     # developer:
     #   kind: command
@@ -214,12 +279,43 @@ factory:
     # engine's pixijs/threejs - plus generic ones. Add an area, or set one to [] to drop it.
     # skills:
     #   craft: [web-game-factory:game-feel, web-game-factory:core-loop]
+    # What the development commit may contain (scripts/wgf_develop/scope.py). A directory
+    # ends in /. Any other change left in the tree fails the step, not retryably; a hidden
+    # path (.claude/, .github/, .husky/, .env) or an agent instruction file (CLAUDE.md,
+    # AGENTS.md) is refused whatever this says. docs/GDD.md is the one Factory-rendered
+    # exception: the step writes it from the game-design artifact after the developer.
+    # writable_paths: [src/, tests/, public/, docs/development/, index.html]
+    # package.json and pnpm-lock.yaml are template-owned except for these dependency
+    # changes (add | change | remove), each a registry version range; the lockfile may
+    # change only together with one. Every other field - scripts above all - must stay.
+    # allowed_package_changes: {dependencies: [add], devDependencies: [add]}
+    # git:
+    #   allow_filters: false    # true only for a repository that commits through its own
+    #                           # filters (git-lfs); a filter changed after the Factory
+    #                           # pinned the repository is then refused, never run
+    # The run's budget for command-developer sessions (docs/development-module.md#budget).
+    # Loop limits (the workflow's max_visits_by_route) are refilled by a person resuming the
+    # loop they stopped; this is not. Counted from the run's event log; develop BLOCKS - nothing spawned - once the
+    # sessions recorded reach max_sessions, or their recorded cost reaches max_cost.
+    # Snapshotted when a run starts; raised only by a person: wgf resume <run>
+    # --budget-sessions N | --budget-cost X. Absent: no budget. A handoff developer is a
+    # person and is never counted. A session whose cost cannot be read is counted as a
+    # session and reported as unknown: the host's own per-session flag (--max-budget-usd
+    # above) stays the bound on any one session.
+    # budget:
+    #   max_sessions: 12
+    #   max_cost: 60              # in the unit the host reports: US$ for the example above
+    #   cost_from:
+    #     jsonl_key: total_cost_usd   # stream-json's closing `result` line carries it; a
+    #                                 # session ended by a timeout writes none (unknown)
 
   # The review module (scripts/wgf_review, docs/review-module.md): an independent reviewer
-  # reads each development commit and approves it or requests changes, which the workflow
-  # routes back to develop. The reviewer is read-only - the checkout is fingerprinted before
-  # and after, and any change fails the review and is undone. `none` records a skipped
-  # review, never an approval.
+  # reads each development commit - and, as sdk-review, the sdk integration commit on top,
+  # which is what ships - and approves it or requests changes, which the workflow routes
+  # back to develop. The reviewer is read-only - the checkout is fingerprinted before and
+  # after, and any change fails the review and is undone. `none` records a skipped review,
+  # never an approval, and release then refuses the build (`unreviewed`) unless
+  # release.allow_unreviewed is true: configure a reviewer before expecting a release.
   review:
     reviewer:
       kind: none                # none | command: run argv unattended, read-only
@@ -271,11 +367,13 @@ factory:
     #     - "5"
     #   timeout_seconds: 1800
     #   idle_timeout_seconds: null
-    # checkouts: ..             # default: factory.develop.checkouts
     # The Factory's own code, gates, contracts and this config: what decides what a review,
-    # and every later check, is worth. Keep at least the module default
-    # (scripts/wgf_review/settings.py); a narrower list lets a reviewer rewrite its judge.
-    guarded_paths: [core, scripts, bin, workspace/config]
+    # and every later check, is worth. Fingerprinted around the reviewer AND around the
+    # develop step's developer and checks (scripts/wgflib/isolation.py). Keep at least the
+    # default (wgflib.isolation.DEFAULT_GUARDED_PATHS); a narrower list lets an agent rewrite
+    # its judge. claude-web-game-plugin is here because the opt-in self-playtest developer
+    # loads its skills (--plugin-dir): instructions an agent must not be able to rewrite.
+    guarded_paths: [core, scripts, bin, workspace/config, claude-web-game-plugin]
 
   # The discovery module (scripts/wgf_discovery) implements `research`. Every key is
   # optional; see scripts/wgf_discovery/step.py. Evidence snapshots live in
@@ -325,11 +423,8 @@ factory:
   # tests against mocked portal SDKs; it never publishes. See docs/platform-architecture.md
   # and docs/platform-sdk-verification.md.
   sdk:
-    # Where the game repository is: game_repo, else WGF_GAME_REPO, else
-    # <games_dir>/<scaffold-record repository name>, else where init cloned it. With none
-    # found the step blocks ("platform not configured").
-    # game_repo: ../web-game-template
-    games_dir: ..
+    # The game repository is found as every step finds it (factory.checkouts above); with
+    # none there the step blocks ("platform not configured").
     browser: false              # also run the PixiJS/Three.js browser smoke
     # A portal that publishes no SDK runs on another adapter - explicitly, so a missing
     # adapter anywhere else still fails at boot. GameVui has no SDK, JavaScript API or
@@ -349,5 +444,20 @@ factory:
   # Checkpoint gates this installation lets a run approve without a person. Only reversible
   # gates are honoured; G4, G6 and G7 are refused whatever is listed here. `--mock` runs
   # approve every reversible gate unless --hold-gates is given.
+  # The lifecycle bridge (docs/factory-lifecycle.md): with sync on, each gate decision a run
+  # makes is appended to workspace/titles/<id>/decisions/ and moves the title's cursor through
+  # wgf-state.py's guards and gate rules (a refused move is a warning, never the run's
+  # outcome). Only for a run whose --project title already has a state.json; never a --mock
+  # run. A run keeps the setting it started with.
+  lifecycle:
+    sync: false
+    # titles_directory: workspace/titles
+
   checkpoints:
     auto_approve: []
+    # Reversible gates that approve themselves once they have waited this long (<n>s|m|h|d
+    # or seconds). Applied only by `wgf resume` (run it on a schedule for unattended
+    # approval); `wgf status` / `wgf runs --waiting` only report eligibility. Listing G4,
+    # G6, G7 or a gate gates.yaml does not define refuses every run. Snapshotted per run.
+    # timeout_auto_approve: {G2: 48h, G3: 48h}
+    timeout_auto_approve: {}

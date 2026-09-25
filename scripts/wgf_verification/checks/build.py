@@ -4,6 +4,8 @@ import os
 import re
 import shlex
 
+from wgflib.template_contract import SCRIPT_BUILD
+
 from ..model import BLOCKED, FAIL, PASS, WARNING, Check, Evidence
 from ..lineage import CODE, lineage_problems
 
@@ -131,7 +133,7 @@ def _install(session):
 
 def _build(session):
     configured = (session.game_config.get("build") or {}).get("command")
-    command = shlex.split(configured) if configured else session.script_command("build")
+    command = shlex.split(configured) if configured else session.script_command(SCRIPT_BUILD)
     result = session.run(command, "build")
     status = PASS if result.ok else (BLOCKED if result.unavailable else FAIL)
     return Check("build.build", "build", "Production build", status, message=result.describe(),

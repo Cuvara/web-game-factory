@@ -26,6 +26,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 SCRIPTS = os.path.dirname(HERE)
 ROOT = os.path.dirname(SCRIPTS)
 sys.path.insert(0, SCRIPTS)
+sys.path.insert(0, HERE)
 
 from wgf_assets import encoders, formats  # noqa: E402
 from wgf_assets.mcp import McpClient, McpError, McpPlaceholderBackend  # noqa: E402
@@ -34,6 +35,7 @@ from wgf_assets.placeholders import build_backends, sfx_preset  # noqa: E402
 from wgf_assets.policy import load_policy  # noqa: E402
 from wgf_assets.requirements import RequirementError, inspect  # noqa: E402
 from wgf_assets.step import AssetsStep  # noqa: E402
+from testenv import enabled  # noqa: E402
 from wgflib.hashing import content_hash  # noqa: E402
 from wgflib.workflow.api import RunRequest, WorkflowAPI  # noqa: E402
 from wgflib.workflow.config import FactoryConfig  # noqa: E402
@@ -844,7 +846,7 @@ class EngineContract(AssetsCase):
                                        state.run_id, state.latest_artifact("game-design")))
 
     def write_for_ajv(self, name, manifest, design):
-        if os.environ.get("WGF_AJV") != "1":
+        if not enabled("WGF_AJV"):
             return
         for artifact_type, content in (("asset-manifest", manifest), ("game-design", design)):
             path = os.path.join(self.scratch, f"{artifact_type}-{name}")

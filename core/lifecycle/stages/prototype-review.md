@@ -3,7 +3,7 @@
 **Machine** title · **State** `prototype-review` · **Gate** G4
 **Kind** human approval · **Approver** portfolio-owner
 **Presenters** game-designer, qa
-**Inputs** `prototype-report`, `title-strategy`, `game-design` · **Outputs** `decision-record`
+**Inputs** `prototype-report`, `qa-report`, `verification-report`, `title-strategy`, `game-design` · **Outputs** `decision-record`
 
 The kill gate. The most valuable gate in the factory.
 

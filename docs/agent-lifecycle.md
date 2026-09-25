@@ -13,6 +13,7 @@ Suite.
 | [Process ownership](#process-ownership) | What a step owns when it starts a process, and when it all ends |
 | [Heartbeat & liveness](#heartbeat--liveness) | How `wgf status` tells a working step from a hung one |
 | [Cancellation](#cancellation) | What a cancel, a timeout, Ctrl-C or `kill` does to the tree |
+| [SIGKILL recovery](#sigkill-recovery) | How a resume ends what a driver killed with SIGKILL left running |
 | [Known limits](#known-limits) | What the guarantees do not cover |
 
 ---
@@ -47,7 +48,9 @@ Both calls:
    survives fork, exec, `setsid()` and reparenting. On Linux, `procs.tagged_pids(tag)` reads
    `/proc/*/environ` and finds a descendant that left the group. Through the lineage it also
    finds a tree owned by a nested Factory process, such as an agent CLI that itself runs
-   `wgf`.
+   `wgf`. A child started while a workflow step executes also carries
+   `WGF_PROC_RUN=<run-id>@<store digest>`, which is how a later driver finds what a
+   SIGKILLed one left behind ([SIGKILL recovery](#sigkill-recovery)).
 3. **Clean up on every exit path.** That covers success, failure, timeout, idle timeout,
    cancellation, an exception or `KeyboardInterrupt` in the caller, and interpreter exit
    (`atexit`). Cleanup sends SIGTERM to the group and to every tagged pid, waits
@@ -100,17 +103,61 @@ runner knows nothing about workflows.
 | `exited` | Always last | `pid`, `status`, `returncode`, `duration_s` |
 
 On every event the engine updates the step state: `pid` is the child being waited on (or
-`null`), `last_activity_at` is when anything last happened, and `last_event` is the kind.
+`null`), `last_event` is the kind, and three clocks move separately, because a heartbeat
+proves the *driver* is alive, not that the child is doing anything:
+
+| Field | Moves on | Says |
+|---|---|---|
+| `last_activity_at` | every event, heartbeats included | the Factory process is reporting |
+| `last_heartbeat_at` | a heartbeat | the driver is polling a running child |
+| `last_output_at` | a lifecycle event (`started`, `spawned`, `exited`, …); on a heartbeat, to `now - idle_s` | when the child last wrote anything |
+
 Lifecycle events are persisted at once. Heartbeats are persisted at most every
-`WorkflowEngine.PROGRESS_SAVE_SECONDS` (5 s).
+`WorkflowEngine.PROGRESS_SAVE_SECONDS` (5 s). State written before `last_output_at` and
+`last_heartbeat_at` existed has neither and derives as it always did.
 
 - `heartbeat_seconds` defaults to `$WGF_HEARTBEAT_SECONDS`, or 15 when that is unset. `0`
-  turns heartbeats off.
-- A step with a recent `last_activity_at` is working. A step whose heartbeats keep arriving
-  while `idle_s` grows is waiting on a child that has gone quiet. `idle_timeout=` turns
-  that into an ending instead of a hang.
-- A step with no heartbeat at all for several intervals has hung in the Factory process
-  itself, not in a child.
+  turns heartbeats off - and with them everything below that needs `idle_s`.
+- `wgf status` (`model.derive_liveness`) reads a RUNNING run with a live driver as `hung`
+  in one of two cases, and says which (`hung_reason`):
+  - **`driver`**: nothing at all, not even a heartbeat, for longer than
+    `factory.execution.hung_after_seconds` (default 300). The Factory process has stopped
+    reporting - blocked outside a child process, or suspended. `wgf cancel` asks it to
+    stop, but a driver that is not polling never notices; end the driver pid and resume.
+  - **`output`**: the step is waiting on a child (`pid`), heartbeats are arriving, and
+    `last_output_at` is older than `factory.execution.hung_output_seconds` (default 900).
+    The child may be stuck, or working without writing; status cannot tell. `wgf cancel`
+    terminates its tree.
+- Status only reports. The default 900 s is above every idle timeout a shipped module uses
+  or recommends (the reviewer's 600 s, the developer's documented 900 s), so a child that
+  module policy still lets be quiet does not read as hung.
+- A module's own `idle_timeout=` is unchanged: it ends the child when there has been no
+  output for that long, and the module reports it in its own words.
+
+### The hung-child watchdog
+
+`factory.execution.on_hung` decides whether anything *acts* on an output-hung child:
+
+| Value | Effect |
+|---|---|
+| `none` (default) | nothing; `wgf status` reports it |
+| `cancel` | the **driving** engine terminates the child's tree once a heartbeat reports `idle_s` above `hung_output_seconds` |
+
+With `cancel`, the progress recorder trips a per-execution watchdog on that heartbeat and
+emits one `STEP_LOG` warning (`data.reason: hung-output`, `pid`, `idle_s`,
+`hung_output_seconds`). The step's `should_stop` turns true, so `procs.run` takes the same
+path a `wgf cancel` takes: SIGTERM to the tree, SIGKILL after the grace period, result
+`cancelled`. The step then ends with its own outcome made **not retryable**, its message
+naming the watchdog; with the default routing the run ends `FAILED` (resumable), not
+`CANCELLED`. A step that still returns `SUCCESS` keeps it, exactly as under a cancel.
+
+The policy is snapshotted into the run's params at start (`on_hung`, `hung_output_seconds`;
+nothing is recorded for `none`), so a resume keeps the policy the run started with, and
+`integrity.params_problems` refuses a `state.json` whose policy was edited since. An
+unknown `on_hung` value is a `ConfigError`: no run starts under it. Set
+`hung_output_seconds` above every module idle timeout you configure, or the watchdog
+pre-empts the module's own, better-worded, ending. It needs heartbeats (`idle_s`); with
+`heartbeat_seconds` 0 it never fires.
 
 ## Cancellation
 
@@ -121,7 +168,38 @@ Lifecycle events are persisted at once. Heartbeats are persisted at most every
 | `idle_timeout=` | The whole tree is terminated when there has been no output for that many seconds, and the result is `idle_timed_out`. |
 | Ctrl-C / `KeyboardInterrupt`, `SystemExit` | `procs.run` terminates the tree, then re-raises. A second interrupt that cuts cleanup short leaves the tree registered, and `atexit` finishes it. |
 | `kill <wgf pid>` (SIGTERM), a closed terminal (SIGHUP) | Children are in sessions of their own and **never receive these**. The CLI entry point must call `procs.install_signal_cleanup()` once, from the main thread. That turns SIGTERM and SIGHUP into `SystemExit(128 + signum)`, so every waiting `run()` unwinds and cleans up. It only replaces default handlers (a SIGHUP ignored under `nohup` stays ignored) and ignores a repeat of the signal while cleanup runs. Nothing is installed at import time. |
-| SIGKILL of the Factory process | Nothing runs, so there is no cleanup. See [Known limits](#known-limits). |
+| SIGKILL of the Factory process | Nothing runs, so there is no cleanup: the tree is orphaned and the run reads `stale`. The next `wgf resume` (or `wgf cancel`) of the run ends it; see [SIGKILL recovery](#sigkill-recovery). |
+| `factory.execution.on_hung: cancel` | The driving engine cancels a step whose child has written nothing for `hung_output_seconds`, as above; see [the watchdog](#the-hung-child-watchdog). |
+
+## SIGKILL recovery
+
+A driver killed with SIGKILL (or a machine that lost power) runs no `atexit`, no signal
+handler, and takes its subreaper with it. Every tree its step started keeps running,
+reparented to init, and `state.json` names at most the last child's `pid`, which may since
+have been recycled. What does survive is the environment. The engine binds every
+execution to its run (`procs.bound(..., run=token)`), and every child `procs` starts then
+carries:
+
+    WGF_PROC_RUN=<run-id>@<12 hex digits of the run store's directory>
+
+It is a comma list, outermost run first, like `WGF_PROC_LINEAGE`: a `wgf` started inside
+another run's step appends its own run, so a sweep of the outer run still finds the inner
+one's children. The store digest keeps two stores that both hold a `run-1` (two checkouts,
+two test suites) from reaching each other's processes. A caller-supplied environment
+cannot set it: `procs` writes it from its own binding, like the tag.
+
+When `resume` loads a run that is `RUNNING` on disk, it holds the run's lock - so no live
+driver owns it - and, **before** anything executes again, `procs.sweep_run(token)` ends
+every process whose `/proc/<pid>/environ` names that token: SIGTERM, 5 s
+(`WorkflowEngine.SWEEP_GRACE_SECONDS`), SIGKILL, repeated for anything that forks meanwhile.
+A `STEP_LOG` warning lists the pids (`data.pids`). `wgf cancel` of a stale `RUNNING` run
+does the same before it marks the run `CANCELLED`. The sweep never signals this process,
+one of its ancestors (an agent that runs `wgf resume` on its own run), a tree this process
+owns, or any process that does not carry the token - an untagged process, or one of
+another run, is never touched (`test_core_process.DriverKilledBySigkill`).
+
+Linux only. Without `/proc` the engine logs a `STEP_LOG` warning that it cannot sweep, and
+any orphan keeps running. A descendant that cleared its environment is not found either.
 
 ## Known limits
 
@@ -145,8 +223,10 @@ Lifecycle events are persisted at once. Heartbeats are persisted at most every
 - **A descendant running as another user** (sudo, setuid) cannot be signalled, and its
   `/proc/<pid>/environ` cannot be read.
 - **SIGKILL of the Factory process, or a machine crash**, skips all cleanup. The orphans
-  still carry their tag. On Linux `grep -l WGF_PROC_TAG= /proc/*/environ` finds them, and
-  `procs.terminate_tree(None, None, tag)` ends them.
+  still carry their tag and their run (`WGF_PROC_RUN`), and on Linux the next resume or
+  cancel of the run ends them ([SIGKILL recovery](#sigkill-recovery)). Until then they run
+  on; by hand, `grep -l WGF_PROC_RUN= /proc/*/environ` finds them. A driver of a run that
+  is never resumed or cancelled leaves them running.
 - **`atexit` does not run** after `os._exit` or a fatal signal that has no Python handler.
 - **Output is truncated to the last 4 MiB per stream.** A caller that needs a large
   artifact from a child has it write a file (as vitest's `--outputFile` does) instead of

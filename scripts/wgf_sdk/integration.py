@@ -20,8 +20,10 @@ calls no portal; it does not clone, commit or push.
 import os
 import re
 
-from wgflib import paths
+from wgflib import paths, provenance
 from wgflib.yamllite import YamlError, load_file
+
+from wgf_init.profiles import pin_identity
 
 from . import integrate
 from .design import classify_trigger, design_placements, required_features
@@ -30,7 +32,8 @@ from .runner import SCENARIOS, TEST_FILE, git_state, run_tests
 
 __all__ = ["IntegrationPhase", "PhaseBlocked", "SeamMissing", "FEATURES", "SCHEMA_VERSION"]
 
-SCHEMA_VERSION = "1.1.0"
+# The sdk-report contract version; the step writes it (wgflib/provenance.py).
+SCHEMA_VERSION = provenance.version_of("sdk-report")
 
 RUNTIME_AD_KINDS = ("rewarded", "interstitial")
 
@@ -126,6 +129,7 @@ class IntegrationPhase:
 
     def run(self, repo, design, scaffold, title_id):
         """Integrate. Returns {"sdk", "platforms": {id: entry}, "integration", "commit"}."""
+        self._repo = repo
         self._has_audio = _plays_audio(repo)
         sdk = inspect_sdk(repo)
         if sdk is None:
@@ -384,7 +388,9 @@ class IntegrationPhase:
 
         report = {"platform_id": platform_id, "profile_version": profile_version,
                   "status": status, "adapter": adapter_record, "features": features}
-        note = self._profile_note(platform_id, profile_version, adapter)
+        note = " ".join(part for part in (self._profile_identity(target),
+                                          self._profile_note(platform_id, profile_version,
+                                                             adapter)) if part) or None
         if not adapter.implemented:
             note = ("No adapter for this platform in the game's SDK revision: a build for it "
                     "fails at boot. " + (note or "")).strip()
@@ -474,6 +480,23 @@ class IntegrationPhase:
             record["note"] = ("local storage: the adapter has no cloud saves, so progress "
                               "stays on this device")
         return record
+
+    def _profile_identity(self, target):
+        """The profile this platform was integrated against, by content hash - a version
+        string alone names two documents when a same-version copy differs."""
+        repo = getattr(self, "_repo", None)
+        if not repo:
+            return None
+        problems, content_hash, vendored = pin_identity(repo, target)
+        pin = target.get("profile") or target.get("id")
+        if problems:
+            return f"Profile {pin} does not verify by content hash: {'; '.join(problems)}."
+        if not content_hash:
+            return None
+        where = ("vendored in config/platforms/, verified against pinned.json and the "
+                 "Factory's profile" if vendored else "the Factory's profile; the game "
+                 "vendors none")
+        return f"Profile {pin} is {content_hash} ({where})."
 
     def _profile_note(self, platform_id, profile_version, adapter):
         path = os.path.join(paths.PLATFORMS, f"{platform_id}.yaml")

@@ -22,16 +22,24 @@ import json
 import os
 import re
 import shutil
+import sys
 import tempfile
 import unittest
+
+# testenv lives in scripts/tests. test-core and `unittest discover` put that directory on
+# sys.path, `python -m unittest scripts.tests.test_golden_2d` does not: find it from here.
+_TESTS = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "tests")
+if _TESTS not in sys.path:
+    sys.path.insert(0, _TESTS)
 
 from wgflib import paths, procs
 from wgflib.workflow.api import RunRequest
 from wgf_review import verdict as review_verdict
 
 from golden import games, harness, replay_developer, reviewer, summary
+from testenv import enabled
 
-RUN_GOLDEN = os.environ.get("WGF_GOLDEN") == "1"
+RUN_GOLDEN = enabled("WGF_GOLDEN")
 SKIP_REASON = ("the golden runs are real pipelines (pnpm, vite, Playwright, Chromium; minutes "
                "each): set WGF_GOLDEN=1 to run them. A skip is not a pass.")
 PLACEHOLDER_ARGS = ("{brief}", "{repo}", "{key}", "{verdict}", "{commit}")
@@ -58,12 +66,14 @@ def fast_case(key):
             config = harness.build_config(game, self.workdir, harness.TEMPLATE_DIR)
             games_dir = os.path.join(self.workdir, "games")
             self.assertEqual(config["init"]["source"], "local")
-            self.assertEqual(config["init"]["projects_dir"], games_dir)
+            # One checkouts directory for every step (wgflib.checkout), and no deprecated
+            # per-module key left to disagree with it.
+            self.assertEqual(config["checkouts"], games_dir)
+            for section, key_name in (("init", "projects_dir"), ("develop", "checkouts"),
+                                      ("review", "checkouts"), ("verification", "checkouts"),
+                                      ("release", "checkouts"), ("sdk", "games_dir")):
+                self.assertNotIn(key_name, config.get(section) or {}, section)
             self.assertFalse(config["init"]["adopt_existing"])
-            for section, key_name in (("develop", "checkouts"), ("review", "checkouts"),
-                                      ("verification", "checkouts"), ("release", "checkouts"),
-                                      ("sdk", "games_dir")):
-                self.assertEqual(config[section][key_name], games_dir, section)
             self.assertEqual(config["assets"]["root"], os.path.join(games_dir, game.title_id))
             self.assertTrue(config["storage"]["directory"].startswith(self.workdir))
             self.assertFalse(config["discovery"]["live"])
@@ -91,6 +101,17 @@ def fast_case(key):
                 self.assertTrue(set(argv) & set(PLACEHOLDER_ARGS))
             self.assertIn("not an AI developer", replay_developer.REPLAY_LABEL)
             self.assertIn("not an AI reviewer", reviewer.REVIEWER)
+
+        def test_a_golden_release_is_never_unreviewed(self):
+            # Both commits are reviewed - develop's and sdk's, the one that ships - and the
+            # release may not fall back to an unreviewed draft.
+            from wgflib.workflow.definition import load_definition
+            config = harness.build_config(game, self.workdir, harness.TEMPLATE_DIR)
+            self.assertIs(config["release"].get("allow_unreviewed", False), False)
+            self.assertEqual(harness.step_ids(), load_definition("new-game").step_ids)
+            ids = harness.step_ids()
+            self.assertEqual(ids[ids.index("sdk") + 1], "sdk-review")
+            self.assertEqual(dict(games.EXPECTED_STEPS)["sdk-review"], "SUCCESS")
 
         def test_the_installation_config_is_only_read(self):
             path = os.path.join(paths.CONFIG, "factory.yaml")
@@ -260,6 +281,15 @@ def fast_case(key):
             blockers, _ = reviewer.review(key, repo, head)
             self.assertEqual(blockers, [])
 
+            # sdk-review: the sdk step's integration commit on top is reviewed, and passes.
+            _write(repo, "src/platform/gameplay.ts", "export const integration = 1;\n")
+            _write(repo, "tests/unit/platform/gameplay-integration.test.ts", "export {};\n")
+            git("add", "-A")
+            git("commit", "-q", "-m", "sdk integration")
+            head = git("rev-parse", "HEAD").stdout.strip()
+            blockers, _ = reviewer.review(key, repo, head)
+            self.assertEqual(blockers, [])
+
             _write(repo, "vite.config.ts", "export default { base: '/' };\n")
             _write(repo, "src/ads.ts", "window.PokiSDK.commercialBreak(); x.showRewarded();\n")
             git("add", "-A")
@@ -321,7 +351,7 @@ def end_to_end_case(key):
 
         @classmethod
         def tearDownClass(cls):
-            if cls.workdir and os.environ.get("WGF_GOLDEN_KEEP") != "1":
+            if cls.workdir and not enabled("WGF_GOLDEN_KEEP"):
                 shutil.rmtree(cls.workdir, ignore_errors=True)
 
         def _explain(self):

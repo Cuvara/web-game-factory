@@ -14,10 +14,13 @@
 Outcomes (docs/workflow-module-contract.md §7, docs/release-module.md):
 
     no verification in the run, a dirty checkout or a
-    verified dirty tree, a bundle that is not the verified one   BLOCKED: a person acts first
+    verified dirty tree, a bundle that is not the verified one,
+    a required gate (G4) not passed or superseded                BLOCKED: a person acts first
     verification not passed, stale qa-report, commit lineage
-    broken, packaging failed, a package that may not ship,
-    a manifest that does not validate                            FAILED, not retryable
+    broken, the shipped commit not approved by the newest review
+    (`unreviewed`, `review-commit-mismatch`), packaging failed,
+    a package that may not ship, a manifest that does not
+    validate                                                     FAILED, not retryable
     otherwise                                                    SUCCESS, release-manifest
 
 On refusal nothing is packaged (for evidence refusals) and no release-manifest is returned:
@@ -32,22 +35,23 @@ import json
 import os
 import re
 
-from wgflib.hashing import content_hash
+from wgflib import agentenv, checkout, provenance
+from wgflib import template_contract as contract
 from wgflib.workflow import ArtifactOutput, StepOutcome, StepResult, WorkflowStep
+from wgflib.workflow.contracts import ArtifactContracts
 from wgflib.yamllite import YamlError, load_file
 
 from wgf_verification.checks.platform import same_commit
 from wgf_verification.session import locate_checkout
 
-from .lineage import (BLOCKED, FAILED, Refusal, checkout_lineage, commit_lineage,
-                      evidence_refusals, review_status)
+from .lineage import (BLOCKED, DEFAULT_REQUIRED_GATES, FAILED, Refusal, checkout_lineage,
+                      commit_lineage, evidence_refusals, review_status)
 from .package import RULES, audit_package, file_sha256
 from .runner import ReleaseRunner, describe
-from .schema import SchemaValidator
 
 __all__ = ["ReleaseStep", "SCHEMA_VERSION", "ROLE", "bundle_digest"]
 
-SCHEMA_VERSION = "1.2.0"
+SCHEMA_VERSION = provenance.version_of("release-manifest")
 ROLE = "release"
 READABLE_MAJOR = "1"
 RELEASE_ID = re.compile(r"^r([0-9]+)$")
@@ -86,6 +90,17 @@ def _slug(text):
     return re.sub(r"[^a-z0-9]+", "-", str(text or "").lower()).strip("-") or "untitled"
 
 
+_CONTRACTS = []
+
+
+def _contracts():
+    """The engine's artifact contracts (wgflib/workflow/contracts.py), loaded once: the full
+    schema through wgflib.jsonschema_lite, plus provenance identity, version and hash."""
+    if not _CONTRACTS:
+        _CONTRACTS.append(ArtifactContracts())
+    return _CONTRACTS[0]
+
+
 def _read_json(path):
     try:
         with open(path, encoding="utf-8") as handle:
@@ -109,6 +124,12 @@ class ReleaseStep(WorkflowStep):
     environ = None
 
     def execute(self, inputs, context):
+        # Packaging runs in the checkout and writes release/<id>/ there: locked against
+        # another run for the whole step (wgflib.checkout).
+        with checkout.StepLease(context) as lease:
+            return self._execute(inputs, context, lease)
+
+    def _execute(self, inputs, context, lease):
         for artifact_type, ref in sorted(inputs.refs.items()):
             major = str(ref.schema_version or READABLE_MAJOR).split(".", 1)[0]
             if major != READABLE_MAJOR:
@@ -122,16 +143,47 @@ class ReleaseStep(WorkflowStep):
         timeouts.update(settings.get("timeouts") or {})
         env = dict(os.environ if self.environ is None else self.environ)
         hooks = context.process_hooks() if hasattr(context, "process_hooks") else {}
-        runner = self.runner_factory(env=env, hooks=hooks)
-
+        # The packaging scripts are game code: the allowlist plus game_env_passthrough, not
+        # the Factory's environment. A test's own `environ` is used as given.
         try:
-            refusals = evidence_refusals(inputs.refs, loaded, getattr(context, "run_id", None))
+            game_env = (agentenv.game_code_env(context.config, env) if self.environ is None
+                        else env)
+        except agentenv.ConfigError as exc:
+            return StepResult.failed(str(exc), retryable=False)
+        runner = self.runner_factory(env=game_env, hooks=hooks)
+
+        # Two policies, each read from exactly one place so neither can be loosened from the
+        # other: which gates must be passed is the workflow's (the release step's `with:
+        # required_gates`, default G4 - never factory config); whether an unreviewed build
+        # may be drafted is the installation's (factory.release.allow_unreviewed, default
+        # false - never a workflow's `with:`).
+        required_gates = (self.params or {}).get("required_gates", list(DEFAULT_REQUIRED_GATES))
+        if not isinstance(required_gates, list) or not all(isinstance(g, str) and g
+                                                           for g in required_gates):
+            return StepResult.failed("release `with: required_gates` must be a list of gate "
+                                     f"ids, not {required_gates!r}", retryable=False)
+        allow_unreviewed = ((context.config or {}).get("release") or {}).get(
+            "allow_unreviewed", False)
+        if not isinstance(allow_unreviewed, bool):
+            return StepResult.failed("factory.release.allow_unreviewed must be true or false, "
+                                     f"not {allow_unreviewed!r}", retryable=False)
+        try:
+            refusals = evidence_refusals(
+                inputs.refs, loaded, getattr(context, "run_id", None),
+                gates_passed=getattr(context, "gates_passed", None) or (),
+                required_gates=required_gates, allow_unreviewed=allow_unreviewed)
             if refusals:
                 raise _Refused(refusals)
-            root, where = locate_checkout(settings, context.config, loaded.get("scaffold-record"),
-                                          env, section="release")
+            # The step's own `with:` only: a factory.release key is not a checkout path.
+            root, where = locate_checkout(self.params or {}, context.config,
+                                          loaded.get("scaffold-record"), env,
+                                          section="release", logger=context.logger)
             if root is None:
                 raise _Refused([Refusal(BLOCKED, "no-checkout", where.summary)])
+            try:
+                lease.take(root)
+            except checkout.CheckoutLocked as exc:
+                raise _Refused([Refusal(BLOCKED, "checkout-in-use", str(exc))])
             head = self._checkout_state(runner, root, loaded, timeouts,
                                         getattr(context, "run_id", None))
             game_config = self._game_config(root)
@@ -144,7 +196,7 @@ class ReleaseStep(WorkflowStep):
         except _Refused as refused:
             return self._refusal(refused.refusals, context)
 
-        path = os.path.join(root, "release", release_id, "manifest.json")
+        path = os.path.join(root, *contract.release_path(release_id, contract.RELEASE_MANIFEST))
         # temp + fsync + rename: a crash never leaves a torn manifest that a later run would
         # read as "no release here" and allocate the next id over.
         temporary = f"{path}.{os.getpid()}.tmp"
@@ -163,8 +215,10 @@ class ReleaseStep(WorkflowStep):
         message = (f"release {release_id} drafted at {head[:12]}: {len(artifact['packages'])} "
                    f"package(s), evidence {evidence['status']}"
                    + (f" ({platforms})" if platforms else "")
-                   + ("; UNREVIEWED (review skipped)" if review == "skipped" else
-                      "; no review in this run" if review == "absent" else "; review approved")
+                   + ("; UNREVIEWED (review skipped; factory.release.allow_unreviewed)"
+                      if review == "skipped" else
+                      "; UNREVIEWED (no review in this run; factory.release.allow_unreviewed)"
+                      if review == "absent" else f"; review approved {head[:12]}")
                    + "; nothing published")
         metadata = {"release_id": release_id, "commit": head, "state": "draft",
                     "evidence_status": evidence["status"], "review": review,
@@ -215,7 +269,7 @@ class ReleaseStep(WorkflowStep):
                     f"({'; '.join(c.strip() for c in changed[:5])}): a release is made from a "
                     "commit, not a working tree. Commit or discard them, then re-run verify."))
         verified = (loaded["verification-report"].get("build_artifact") or {})
-        out_dir = verified.get("path") or "dist"
+        out_dir = verified.get("path") or contract.DEFAULT_OUTPUT_DIR
         on_disk = bundle_digest(root, out_dir)
         if on_disk != verified.get("content_hash"):
             refusals.append(Refusal(
@@ -230,7 +284,7 @@ class ReleaseStep(WorkflowStep):
     @staticmethod
     def _game_config(root):
         try:
-            return load_file(os.path.join(root, "game.config.yaml")) or {}
+            return load_file(os.path.join(root, contract.GAME_CONFIG)) or {}
         except (OSError, YamlError, ValueError):
             raise _Refused([Refusal(FAILED, "no-game-config",
                                     "the checkout has no readable game.config.yaml")])
@@ -238,11 +292,11 @@ class ReleaseStep(WorkflowStep):
     @staticmethod
     def _existing(root):
         """{release id: manifest} for every release/r<n>/ in the checkout."""
-        base = os.path.join(root, "release")
+        base = os.path.join(root, contract.RELEASE_ROOT)
         found = {}
         for name in (os.listdir(base) if os.path.isdir(base) else []):
             if RELEASE_ID.match(name):
-                found[name] = _read_json(os.path.join(base, name, "manifest.json")) or {}
+                found[name] = _read_json(os.path.join(base, name, contract.RELEASE_MANIFEST)) or {}
         return found
 
     def _release_id(self, root, head, settings):
@@ -268,7 +322,7 @@ class ReleaseStep(WorkflowStep):
     @staticmethod
     def _version(root, game_config, settings):
         version = settings.get("version") or (game_config.get("game") or {}).get("version") \
-            or (_read_json(os.path.join(root, "package.json")) or {}).get("version")
+            or (_read_json(os.path.join(root, contract.PACKAGE_JSON)) or {}).get("version")
         if not version or not SEMVER.match(str(version)):
             raise _Refused([Refusal(FAILED, "bad-version",
                                     f"no semver version for the release (got {version!r}): set "
@@ -279,13 +333,13 @@ class ReleaseStep(WorkflowStep):
 
     @staticmethod
     def _script(root, name, *args):
-        package = _read_json(os.path.join(root, "package.json")) or {}
+        package = _read_json(os.path.join(root, contract.PACKAGE_JSON)) or {}
         if name not in (package.get("scripts") or {}):
             raise _Refused([Refusal(FAILED, "no-release-script",
                                     f"package.json has no {name} script: the game repository "
                                     "packages its own releases")])
         manager = "npm"
-        if os.path.exists(os.path.join(root, "pnpm-lock.yaml")) \
+        if os.path.exists(os.path.join(root, contract.PNPM_LOCK)) \
                 or str(package.get("packageManager", "")).startswith("pnpm"):
             manager = "pnpm"
         elif os.path.exists(os.path.join(root, "yarn.lock")):
@@ -295,10 +349,11 @@ class ReleaseStep(WorkflowStep):
     def _package(self, runner, root, release_id, version, settings, timeouts):
         kind = settings.get("kind") or ("initial" if release_id == "r1" else "content")
         steps = (
-            ("package", self._script(root, "release:package", "--release", release_id)),
-            ("manifest", self._script(root, "release:manifest", "--release", release_id,
-                                      "--version", version, "--kind", kind,
-                                      "--state", "draft")),
+            ("package", self._script(root, contract.SCRIPT_RELEASE_PACKAGE,
+                                     "--release", release_id)),
+            ("manifest", self._script(root, contract.SCRIPT_RELEASE_MANIFEST,
+                                      "--release", release_id, "--version", version,
+                                      "--kind", kind, "--state", "draft")),
         )
         for key, argv in steps:
             result = runner.run(argv, root, timeouts[key])
@@ -310,13 +365,13 @@ class ReleaseStep(WorkflowStep):
 
     def _collect(self, root, release_id, head, loaded, game_config):
         """The game's manifest and packages, checked. Refuses anything that may not ship."""
-        base = os.path.join(root, "release", release_id)
+        base = os.path.join(root, *contract.release_path(release_id))
         refusals = []
         self._stamps = set()
         verified_dir = (loaded["verification-report"].get("build_artifact") or {}) \
-            .get("path") or "dist"
-        listed = _read_json(os.path.join(base, "packages.json"))
-        manifest = _read_json(os.path.join(base, "manifest.json"))
+            .get("path") or contract.DEFAULT_OUTPUT_DIR
+        listed = _read_json(os.path.join(base, contract.RELEASE_PACKAGES))
+        manifest = _read_json(os.path.join(base, contract.RELEASE_MANIFEST))
         if not isinstance(listed, list) or not listed:
             raise _Refused([Refusal(FAILED, "no-packages",
                                     f"release/{release_id}/packages.json is missing or empty")])
@@ -361,7 +416,9 @@ class ReleaseStep(WorkflowStep):
             refusals.append(Refusal(FAILED, "package-missing",
                                     "no package for target platform(s): " + ", ".join(missing)))
 
-        problems = SchemaValidator().validate(manifest, "release-manifest")
+        # The full contract: the whole schema, the provenance identity, the contract's major
+        # version and the content hash - the same check the engine applies to the draft.
+        problems = _contracts().problems("release-manifest", manifest)
         if manifest.get("release_id") != release_id:
             problems.append(f"$.release_id is {manifest.get('release_id')!r}, not {release_id}")
         if not same_commit(str(manifest.get("commit_sha") or ""), head):
@@ -373,10 +430,6 @@ class ReleaseStep(WorkflowStep):
             if recorded.get(package["filename"]) != package["checksum"]:
                 problems.append(f"$.packages: {package['filename']} checksum "
                                 f"{recorded.get(package['filename'])} is not the file's")
-        provenance = manifest.get("provenance") or {}
-        if isinstance(provenance, dict) and provenance.get("content_hash") \
-                and provenance["content_hash"] != content_hash(manifest):
-            problems.append("$.provenance.content_hash does not reproduce")
         for problem in problems:
             refusals.append(Refusal(FAILED, "invalid-manifest",
                                     f"release/{release_id}/manifest.json: {problem}"))
@@ -408,7 +461,7 @@ class ReleaseStep(WorkflowStep):
         for key in ("repository", "commit_sha"):
             if recorded.get(key):
                 template[key] = recorded[key]
-        package = _read_json(os.path.join(root, "package.json")) or {}
+        package = _read_json(os.path.join(root, contract.PACKAGE_JSON)) or {}
         marker = (package.get("wgf") or {}).get("template") if isinstance(package.get("wgf"),
                                                                            dict) else None
         version, source = None, None
@@ -416,11 +469,12 @@ class ReleaseStep(WorkflowStep):
             version, source = str(marker["version"]), "package.json#wgf.template.version"
         if version is None:
             try:
-                with open(os.path.join(root, "CHANGELOG.md"), encoding="utf-8") as handle:
+                with open(os.path.join(root, contract.CHANGELOG), encoding="utf-8") as handle:
                     for line in handle:
                         found = re.match(r"^##\s*\[(\d+\.\d+\.\d+)\]", line)
                         if found:
-                            version, source = found.group(1), "CHANGELOG.md (first release heading)"
+                            version, source = (found.group(1),
+                                               f"{contract.CHANGELOG} (first release heading)")
                             break
             except OSError:
                 pass
@@ -465,19 +519,16 @@ class ReleaseStep(WorkflowStep):
         }.items() if v is not None}
 
         artifact = {
-            "provenance": {
-                "artifact_id": f"wgf:release-manifest:{_slug(title_id)}:"
-                               f"{produced_at[:10].replace('-', '')}-"
-                               f"{min(int(RELEASE_ID.match(release_id).group(1)), 99):02d}",
-                "artifact_type": "release-manifest",
-                "schema_version": SCHEMA_VERSION,
-                "title_id": title_id,
-                "produced_by": {"role": ROLE, "actor": "automation"},
-                "produced_at": produced_at,
-                "inputs": pinned,
-                "content_hash": "",
-                "status": "draft",
-            },
+            "provenance": provenance.build(
+                "release-manifest",
+                artifact_id=provenance.artifact_id(
+                    "release-manifest", _slug(title_id), produced_at,
+                    int(RELEASE_ID.match(release_id).group(1))),
+                produced_by=provenance.producer(ROLE),
+                produced_at=produced_at,
+                inputs=pinned,
+                schema_version=SCHEMA_VERSION,
+                title_id=title_id),
             "release_id": release_id,
             "title_id": title_id,
             "version": game_manifest["version"],
@@ -503,7 +554,10 @@ class ReleaseStep(WorkflowStep):
                 "commit_lineage": [{"source": s, "commit_sha": sha}
                                    for s, sha in commit_lineage(loaded)]
                                   + [{"source": "checkout", "commit_sha": head}],
-                "review": review_status(refs, loaded)[1],
+                # evidence_refusals has already refused an unreviewed build unless the
+                # installation allowed one; here the review is only recorded, UNREVIEWED
+                # loudly when that is what it is.
+                "review": review_status(refs, loaded, allow_unreviewed=True)[1],
                 "bundle_hash": vr["build_artifact"]["content_hash"],
                 "platforms": platforms,
                 "package_audit": {"status": "PASS", "rules": list(RULES)},
@@ -520,9 +574,9 @@ class ReleaseStep(WorkflowStep):
         source_hash = (game_manifest.get("provenance") or {}).get("content_hash")
         if source_hash:
             artifact["evidence"]["source_manifest_hash"] = source_hash
-        artifact["provenance"]["content_hash"] = content_hash(artifact)
+        provenance.seal(artifact)
 
-        problems = SchemaValidator().validate(artifact, "release-manifest")
+        problems = _contracts().problems("release-manifest", artifact)
         if problems:
             raise _Refused([Refusal(FAILED, "invalid-manifest",
                                     "the drafted release-manifest does not validate: " + p)

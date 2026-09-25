@@ -8,10 +8,12 @@
     "id": "game-design",
     "kind": "artifact",
     "format": "json",
+    "version": "1.1.0",
     "template": "templates/gdd.md",
     "producer": "title:design",
-    "consumers": ["title:tech-plan", "title:prototype", "title:production", "release:qa"],
+    "consumers": ["title:tech-plan", "title:prototype", "title:prototype-review", "title:production", "release:qa", "title:scaffolding"],
     "repo_path": "workspace/titles/<title-id>/game-design.json",
+    "run_path": "<storage>/workflows/<run-id>/artifacts/game-design/v<n>.json",
     "rendered_to": "<game-repo>/docs/GDD.md",
     "required_for_gates": ["G3", "G4"]
   },

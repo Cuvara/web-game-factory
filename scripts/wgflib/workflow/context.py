@@ -43,12 +43,35 @@ class WorkflowContext:
 
     `previous_outputs` are the refs this step produced on its last successful execution in
     this run, for the same reason.
+
+    `now` is the engine's clock at this execution, and `waiting_since` when the current
+    visit first returned a WAITING outcome (None if it has not, or if work upstream has
+    succeeded again since). A step that waits for something with a deadline - a checkpoint's
+    timeout - measures it with these, never with its own clock. `record_decision(decision,
+    decided_by, note=None, mode=None)` records a decision on this step's current visit the
+    way a person's is recorded: in state and as a DECISION_RECORDED event.
+
+    `gates_passed` lists the gates (a checkpoint's `with: gate`) this run has passed and
+    whose approval no later upstream work has superseded, in definition order.
+
+    `entered_by` is the route that brought the run into this visit - the label or outcome
+    of the step before it (`fail`, `request-changes`, `success`, ...) - or None for a run's
+    first step, a `--from` or a resume's extra pass. `visit_budget` says what this visit
+    leaves of the step's visit limits: {"step": {"limit", "used", "remaining"}, "route":
+    None or {"route", "limit", "used", "remaining"}} (`max_visits`, `max_visits_by_route`),
+    counted since the run last started or resumed.
+
+    `read_events()` returns the run's recorded events (events.jsonl), oldest first, read
+    fresh on every call: durable run history a step may count from - its own earlier
+    executions, a person's recorded act - where nothing in memory survives a resume.
     """
 
     def __init__(self, *, workflow_id, workflow_version, run_id, project_id, step_id,
                  step_type, attempt, visit, execution, config, environment, params,
                  decision, previous_outputs, logger, emit, run_dir, mock,
-                 progress=None, should_stop=None):
+                 progress=None, should_stop=None, now=None, waiting_since=None,
+                 record_decision=None, gates_passed=(), entered_by=None,
+                 visit_budget=None, read_events=None):
         self.workflow_id = workflow_id
         self.workflow_version = workflow_version
         self.run_id = run_id
@@ -69,6 +92,26 @@ class WorkflowContext:
         self.mock = mock
         self._progress = progress
         self._should_stop = should_stop
+        self.now = now
+        self.waiting_since = waiting_since
+        self._record_decision = record_decision
+        self.gates_passed = list(gates_passed or ())
+        self.entered_by = entered_by
+        self.visit_budget = visit_budget
+        self._read_events = read_events
+
+    def read_events(self):
+        """The run's recorded events, oldest first; [] when the engine gave none."""
+        return list(self._read_events()) if self._read_events is not None else []
+
+    def record_decision(self, decision, decided_by="automation", note=None, mode=None):
+        """Record `decision` on this step's current visit; returns the recorded entry.
+        Raises RuntimeError when the engine gave this context no way to record one."""
+        if self._record_decision is None:
+            raise RuntimeError("this context cannot record a decision")
+        entry = self._record_decision(decision, decided_by, note, mode)
+        self.decision = entry
+        return entry
 
     @property
     def idempotency_key(self):
@@ -83,8 +126,11 @@ class WorkflowContext:
         """Report liveness: a child process spawned, is still working (`heartbeat`), exited.
 
         The engine records the latest one on the step's state (`pid`, `last_activity_at`,
-        `last_event`) so `wgf status` can tell a working step from a hung one. Cheap to call
-        often; persisting is throttled by the engine, not here.
+        `last_event`, and `last_output_at` / `last_heartbeat_at`, kept apart because a
+        heartbeat shows the driver is alive, not that the child is doing anything) so
+        `wgf status` can tell a working step from a hung one. Cheap to call often;
+        persisting is throttled by the engine, not here. `should_stop` also turns true when
+        the run's hung-child watchdog (`on_hung: cancel`) fires.
         """
         if self._progress is not None:
             self._progress(kind, **data)

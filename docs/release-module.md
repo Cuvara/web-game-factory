@@ -32,7 +32,7 @@ all optional fields):
 | `provenance.inputs` | the qa-report, verification-report, sdk-report, prototype-report, scaffold-record and review-report it was drafted from, by content hash |
 | `evidence.qa_report`, `evidence.verification_report` | id, hash, verdict, evidence status |
 | `evidence.commit_lineage` | the commit each report names, and the checkout's HEAD: the verified commit (qa-report, verification-report, sdk-report, checkout), and the commit develop made (`sdk-report.base`, `prototype-report`) — related by the lineage rule below |
-| `evidence.review` | `approved` (of exactly the prototype-report's commit), `skipped` (no reviewer configured: **UNREVIEWED**, never an approval — the step's message says so too) or `absent` (no review-report in the run), with the verdict, the reviewed commit and the review-report's id and hash |
+| `evidence.review` | `approved` (the newest review-report — `sdk-review`'s — approved exactly the commit shipped: the sdk commit, HEAD), or, only when `factory.release.allow_unreviewed: true`, `skipped` (no reviewer configured) or `absent` (no review-report in the run), both **UNREVIEWED** in the note and the step's message, never an approval; with the verdict, the reviewed commit and the review-report's id and hash |
 | `evidence.bundle_hash` | the digest of the bundle that was verified and packaged |
 | `evidence.platforms[]` | per target: readiness, `evidence_status`, `portal_status`, `external_approval: not-claimed` — carried from the verification exactly |
 | `evidence.package_audit` | the rules every package passed |
@@ -56,9 +56,12 @@ when its preconditions held is what makes a draft mean something. The refusals a
 | `evidence-status-missing` | FAILED | a 1.0.x verification: whether it passed on mocks cannot be told |
 | `stale-qa-report` | FAILED | the qa-report does not pin the run's newest verification-report, prototype-report or sdk-report — work happened after it |
 | `foreign-qa-report` | FAILED | the qa-report names another run |
-| `commit-lineage-mismatch` | FAILED | the evidence breaks the commit lineage rule: the verified reports or HEAD name different commits, sdk built on another commit than develop's, a commit between develop's and sdk's is not this run's keyed sdk commit, the review approved another commit, or the history cannot be read |
+| `commit-lineage-mismatch` | FAILED | the evidence breaks the commit lineage rule: the verified reports or HEAD name different commits, sdk built on another commit than develop's, a commit between develop's and sdk's is not this run's keyed sdk commit, or the history cannot be read |
 | `commit-unknown` | FAILED | a report names no commit, or a placeholder (`unknown`, 40 zeros) |
-| `review-not-approved` | FAILED | the run's newest review-report requested changes, or produced no verdict |
+| `review-not-approved` | FAILED | the run's newest review-report requested changes, produced no verdict, or approves with no reviewer behind it (`reviewer.kind` is not `command`: a `--mock` placeholder or a hand-written report) |
+| `unreviewed` | FAILED | the newest review-report is `skipped` (no reviewer configured) or the run holds none. Allowed only by `factory.release.allow_unreviewed: true`; the manifest then says UNREVIEWED |
+| `review-commit-mismatch` | FAILED | the newest approval is of another commit than the one shipped — e.g. only develop's commit, when sdk committed on top of it — or pins an older prototype-report or sdk-report than the run's newest. `allow_unreviewed` does not waive it |
+| `g4-not-passed` | BLOCKED | a gate the step's `required_gates` names (default `[G4]`) is not in `context.gates_passed`: not passed in this run, or superseded by a newer verification. A person decides it (`wgf decide`), then the run resumes |
 | `verified-dirty-tree` | BLOCKED | verification ran on uncommitted changes, which no commit reproduces |
 | `dirty-checkout` | BLOCKED | the checkout has uncommitted or untracked changes |
 | `bundle-not-verified` | BLOCKED | the build output on disk is not the bundle verification digested |
@@ -104,14 +107,14 @@ The rule is defined once, in `docs/core-contracts.md` §5, and implemented once,
 apply it.
 
 ```
-review-report.reviewed_commit (approve) ─┐
-prototype-report.build_ref.commit_sha ───┴─ equal ─ sdk-report.build_ref.base_commit_sha
+prototype-report.build_ref.commit_sha ───── equal ─ sdk-report.build_ref.base_commit_sha
                                                           │
                               git log base..sdk: only this run's `Wgf-Sdk-Key` commits
                                                           │
 sdk-report.build_ref.commit_sha       ┐                   ▼
-verification-report.commit.sha        ├─ all equal ─ git rev-parse HEAD (clean tree)
-qa-report.build_ref.commit_sha        ┘
+verification-report.commit.sha        │
+qa-report.build_ref.commit_sha        ├─ all equal ─ git rev-parse HEAD (clean tree)
+review-report.reviewed_commit         ┘  (the newest review-report, approve: sdk-review's)
 verification-report.build_artifact.content_hash ── equals ── digest of dist/ on disk
 ```
 
@@ -141,9 +144,17 @@ normalize entry times (and order) in `package.mjs`.
 
 ## Where the checkout comes from
 
-As verification: the step's `with: repo_dir`, else `WGF_GAME_REPO`, else
-`factory.release.checkouts` joined with the run's `scaffold-record.repository.name`. It never
-clones.
+As every step ([checkouts.md](checkouts.md)): the step's `with: repo_dir`, else
+`WGF_GAME_REPO`, else the scaffold-record's `repository.local_path`, else `factory.checkouts`
+(`factory.release.checkouts` is a deprecated alias) joined with its `repository.name`. It
+never clones. Packaging holds the checkout's lock: another run in it refuses the release
+(`checkout-in-use`, BLOCKED), naming that run.
+
+## The environment packaging runs with
+
+`release:package` and `release:manifest` are game code, and git runs through the same
+runner: the game-code environment, never the Factory's - `wgflib/agentenv.py` `game_code_env`: the agents' allowlist (PATH, HOME, USER, LANG/LC_*, TERM, TMPDIR, SHELL, CI, the proxy variables, XDG_*, NODE_*, PNPM_*, npm_config_*, PLAYWRIGHT_*, COREPACK_* - minus any name that says it is a secret) plus `factory.agents.game_env_passthrough`. The step's `environ`
+test seam, when set, is used as given.
 
 ## Parameters (`with:`, over `factory.release`)
 
@@ -154,6 +165,25 @@ clones.
 | `version` | `game.version` in game.config.yaml, else package.json | semver |
 | `kind` | `initial` for `r1`, else `content` | |
 | `timeouts` | git 30, package 900, manifest 300 | seconds |
+| `required_gates` | `[G4]` | Gates the run must have passed, current (`context.gates_passed`). **`with:` only** - never read from `factory.release`, so an installation cannot loosen what the workflow requires. A workflow with no G4 checkpoint (a test workflow) says so: `required_gates: []` |
+
+And one key read **only** from `factory.release`, never from `with:` - an installation's
+decision, not a workflow's:
+
+| Key | Default | |
+|---|---|---|
+| `allow_unreviewed` | `false` | `true` drafts a build whose newest review is `skipped` or absent, recorded as **UNREVIEWED** in `evidence.review.note` and the step's message. It never waives a review of another commit, a request for changes, or a gate |
+
+### Why the release step checks G4 itself
+
+The engine already refuses to start `release` past an unpassed gate in the same run
+(`wgf release --run`, `--from release`). The step checks again because it is the last
+place before a draft exists, and because the engine's answer can change after the fact:
+a newer verification supersedes a G4 pass (`context.gates_passed` then omits G4). The step
+cannot see the workflow definition, so it does not guess whether the run's workflow has a
+G4 checkpoint: the workflow says which gates its release requires, and the default is G4 -
+fail closed. `test_workflow_definition` checks that every shipped workflow's release step
+requires every irreversible gate checkpointed before it.
 
 ## Evidence is carried, never upgraded
 
@@ -169,7 +199,11 @@ a portal's own QA stays `BLOCKED_EXTERNAL` until someone has evidence from the p
 - `scripts/tests/test_release_module.py` — the step on its own, the audit, the engine.
 - `scripts/tests/test_core_release.py` — the RELEASE category: valid and invalid releases,
   schema validity, hashes, lineage, before/after verify, stale evidence, dirty checkouts,
-  forbidden content, reproducibility, `release --run` after a failure.
+  forbidden content, reproducibility, `release --run` after a failure, and
+  `ReviewedAndPassed`: unreviewed (and `allow_unreviewed`), an approval of the develop
+  commit only, a review of an older sdk-report, `g4-not-passed`.
+- `scripts/tests/test_core_lineage.py` — the same rules with a real sdk commit on top of
+  develop's.
 
 Both use real git repositories in temporary directories and a fake `pnpm`
 (`fixtures/release/fake-pnpm.py`) first on PATH that packages the way the template does.

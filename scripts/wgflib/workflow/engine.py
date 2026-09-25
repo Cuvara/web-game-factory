@@ -15,20 +15,35 @@ Invariants the engine keeps:
   * A step that succeeded is not executed again by `resume`. It is executed again only when
     the definition routes back to it (a loop) or the caller explicitly asks (`--from`).
   * A FAILED step is retried per its policy; no other outcome is retried.
-  * Revisiting a step is bounded by `max_visits`; exceeding it blocks the run rather than
-    looping forever.
+  * Revisiting a step is bounded by `max_visits`, and entering it through one route by
+    that route's `max_visits_by_route`; exceeding either blocks the run rather than looping
+    forever, with a structured `blocked_reason` (kind `loop-limit`) that resume acts on.
+  * An operator event (a raised budget, say) is recorded only as a person's act, while the
+    run's lock is held, and never under a name the engine's own events use.
   * Artifacts go to the store; state holds only references to them. An execution's
     artifact references, its step status and its trail entry are saved in one write, and
     the events describing them are emitted after it, so a crash never leaves state (or the
     log) naming an artifact the other does not.
-  * A cancel request stops the run as CANCELLED, whether it arrives between steps or while
-    a step runs; a step interrupted by it is never retried.
+  * A cancel request stops the run as CANCELLED, whether it arrives between steps, while
+    a step runs or while a step waits out its retry backoff; a step interrupted by it is
+    never retried.
+  * A new visit to a step and the cursor moving onto it are saved in one write, so a
+    crash can never count a visit that resume then counts again.
+  * A run's params (mock, auto_approve, ...) are recorded in WORKFLOW_STARTED, and a
+    state.json whose params disagree with that record is not driven.
+  * A fresh run started with an explicit `--from` does not step over a gate in its scope.
   * An input artifact is re-checked (checksum, and contract when a validator is set) before
     the step that consumes it runs; one that fails is a non-retryable FAILED naming it.
   * With a validator set, an output whose provenance carries `inputs` must pin exactly the
     versions the step consumed (contracts.check_lineage): a stale pin, or a pin of an
     artifact of a consumed type the step was not given, is a non-retryable FAILED and
     nothing is written.
+  * Every child process a step starts names the run (procs.RUN_ENV). Resuming or cancelling
+    a run that is RUNNING on disk with no live driver - one whose driver was SIGKILLed -
+    first ends every process still naming it, before anything executes again.
+  * A run started with `on_hung: cancel` has its step's child tree terminated once the
+    child has written nothing for `hung_output_seconds`; the step then ends, not retryably,
+    and a STEP_LOG warning says why.
 """
 
 import contextlib
@@ -53,12 +68,15 @@ from .model import (
     StepOutcome,
     StepResult,
     StepStatus,
+    format_timestamp,
+    parse_timestamp,
 )
 from .runtime import LocalRuntime, Task
 from .step import RegistryError, StepInputs
 from .store import ARTIFACT_ID, RunLocked, StoreError
 
-__all__ = ["WorkflowEngine", "EngineError", "utc_now", "check_decision"]
+__all__ = ["WorkflowEngine", "EngineError", "utc_now", "check_decision",
+           "check_operator_event", "LOOP_LIMIT"]
 
 
 class EngineError(RuntimeError):
@@ -68,11 +86,15 @@ class EngineError(RuntimeError):
 # A decision is a choice label, typed by a person or sent by automation. It is persisted and
 # echoed into logs and status, so it is refused unless it is a plain token.
 _DECISION = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.:-]{0,63}")
+_OPERATOR_EVENT = re.compile(r"[A-Z][A-Z0-9_]{2,63}")
+
+# state.blocked_reason["kind"] when the engine stopped a run at a visit limit.
+LOOP_LIMIT = "loop-limit"
 _DECIDER = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.:@-]{0,127}")
 _NOTE_LIMIT = 4000
 
 
-def check_decision(decision, decided_by="human", note=None):
+def check_decision(decision, decided_by="human", note=None, mode=None):
     if not isinstance(decision, str) or not _DECISION.fullmatch(decision):
         raise EngineError(f"decision {decision!r} is not a plain choice label "
                           f"(letters, numbers, - _ . :; at most 64 characters)")
@@ -81,6 +103,8 @@ def check_decision(decision, decided_by="human", note=None):
     if note is not None and (not isinstance(note, str) or "\x00" in note
                              or len(note) > _NOTE_LIMIT):
         raise EngineError(f"note must be text without NUL, at most {_NOTE_LIMIT} characters")
+    if mode is not None and (not isinstance(mode, str) or not _DECISION.fullmatch(mode)):
+        raise EngineError(f"decision mode {mode!r} is not a plain label")
 
 
 def utc_now():
@@ -127,6 +151,8 @@ class WorkflowEngine:
         # without core/; the API always supplies contracts.ArtifactContracts.
         self.artifact_validator = artifact_validator
         self.event_log_error = None
+        # The executing step's hung-child watchdog ({} while none is armed); see _run_once.
+        self._watchdog = {}
         self.bus = EventBus(clock)
         self.bus.subscribe(self._persist_event)
         for subscriber in subscribers:
@@ -144,6 +170,8 @@ class WorkflowEngine:
             )
         elif start_at not in scope_ids:
             raise EngineError(f"--from {start_at!r} is not in scope {scope_ids}")
+        else:
+            self._refuse_gates_skipped_by_from(scope_ids, start_at)
         if scope in (None, self.definition.id) and start_at != self.definition.start:
             # `--from` on the whole workflow runs from there to the end, not the whole list.
             scope_ids = scope_ids[scope_ids.index(start_at):]
@@ -164,21 +192,33 @@ class WorkflowEngine:
             params=dict(params or {}),
         )
         self.store.create(state)
-        self._emit(state, Events.WORKFLOW_STARTED, data={"scope": scope_ids, "start": start_at})
+        # The params are recorded here as well as in state.json, so that resume can refuse a
+        # state.json whose params were edited afterwards (integrity.params_problems).
+        self._emit(state, Events.WORKFLOW_STARTED,
+                   data={"scope": scope_ids, "start": start_at,
+                         "params": copy.deepcopy(state.params)})
         self._enter(state, start_at, check_loop=False)
         return self._drive(state)
 
-    def resume(self, run_id, from_step=None, decision=None, decided_by="human", note=None):
+    def resume(self, run_id, from_step=None, decision=None, decided_by="human", note=None,
+               operator_events=()):
         """Continue a run from where it stopped.
 
         `from_step` moves the cursor first (re-running that step and everything after it).
         `decision` answers a step that is WAITING, typically a human checkpoint.
+        `operator_events` are (event, data) pairs a person records with this resume - a
+        raised budget - emitted while the lock is held, just before WORKFLOW_RESUMED
+        (`record_operator_event`).
         """
         self.event_log_error = None  # per call: a recovered log does not fail later runs
         if decision is not None:
             check_decision(decision, decided_by, note)
+        operator_events = [tuple(item) for item in operator_events or ()]
+        for event, data in operator_events:
+            check_operator_event(event, data, decided_by)
         with self._holding(run_id):
-            state = self._prepare_resume(run_id, from_step, decision, decided_by, note)
+            state = self._prepare_resume(run_id, from_step, decision, decided_by, note,
+                                         operator_events)
         if state.cursor is None or state.status in RunStatus.TERMINAL:
             # Advancing past a step that had already succeeded ended the run: there is
             # nothing to drive, and driving would overwrite the terminal state.
@@ -194,6 +234,7 @@ class WorkflowEngine:
                 f"run {run_id} belongs to workflow {state.workflow_id}, not {self.definition.id}"
             )
         problems = integrity.state_problems(state, self.definition)
+        problems += integrity.params_problems(state, self.store.read_events(run_id))
         if problems:
             raise EngineError(
                 f"run {run_id}: state.json is inconsistent and will not be driven - "
@@ -201,7 +242,8 @@ class WorkflowEngine:
                 + (f" (and {len(problems) - 10} more)" if len(problems) > 10 else ""))
         return state
 
-    def _prepare_resume(self, run_id, from_step, decision, decided_by, note):
+    def _prepare_resume(self, run_id, from_step, decision, decided_by, note,
+                        operator_events=()):
         state = self._load_checked(run_id)
         if state.status not in RunStatus.RESUMABLE:
             raise EngineError(
@@ -209,11 +251,23 @@ class WorkflowEngine:
                 f"{', '.join(RunStatus.RESUMABLE)} runs can be resumed"
             )
         data = {"from_status": state.status}
+        if state.status == RunStatus.RUNNING:
+            # RUNNING on disk while this process holds the lock: the driver that wrote it is
+            # dead. If it died by SIGKILL, the trees its step started are still running.
+            self._sweep_orphans(state)
         # Resuming is the answer to a pause; one requested of a driver that then died must
         # not immediately pause the run it was just asked to continue.
         self.store.clear_request(run_id, "pause")
+        limited = self._loop_limited(state)
+        # A resume is a fresh per-step visit budget. Route budgets are not refilled by it:
+        # they bound a loop over the whole run (a G4 decision always arrives by resume, so
+        # refilling them here made the `iterate` limit unreachable). The one exception is
+        # the route limit that stopped this run - resuming it is the person granting that
+        # loop more passes - and an explicit --from, a fresh start from that step.
         for step_state in state.steps.values():
-            step_state.loop_base = step_state.visits  # a resume is a fresh loop budget
+            _reset_loop_budget(step_state, routes=from_step is not None)
+        if from_step is None and limited is not None and limited.get("scope") == "route":
+            self._refill_route(state, limited)
         if state.workflow_version != self.definition.version:
             data["definition_version"] = self.definition.version
             data["note"] = "resuming under a newer workflow definition"
@@ -232,11 +286,13 @@ class WorkflowEngine:
         else:
             current = state.step(state.cursor)
             if current.status in (StepStatus.SUCCESS, StepStatus.SKIPPED):
-                if state.status == RunStatus.BLOCKED and (state.message or "").startswith(
-                        "loop limit"):
+                if limited is not None:
                     # Stopped at the loop limit before the next visit could begin; resuming
-                    # is the human saying "one more pass".
-                    self._enter(state, state.cursor, check_loop=False)
+                    # is the human saying "one more pass" - through the route that was
+                    # stopped, so the pass counts against that route's fresh budget.
+                    data["loop_limit"] = limited
+                    self._enter(state, state.cursor, check_loop=False,
+                                route=limited.get("route"), source=limited.get("from"))
                 else:
                     # The driver died after recording this step's success and before moving
                     # the cursor on. The step is done: follow its recorded route instead of
@@ -248,15 +304,64 @@ class WorkflowEngine:
                         return state
                     current = state.step(state.cursor)
             current.attempts = 0  # a resume is a fresh attempt budget, not a continuation
+            # The step a plain resume continues at must have been reachable: a run that stopped
+            # past a gate it never passed (one created before the gate was in its workflow)
+            # does not continue past it by being resumed.
+            self._refuse_unmet_upstream(state, state.cursor)
 
         self._require_implementations(state.scope)
 
         if decision is not None:
             self.record_decision(state, state.cursor, decision, decided_by, note)
+        if operator_events:
+            # One nonce ties this resume's operator events to the WORKFLOW_RESUMED that
+            # follows them: a reader (wgflib.budget.effective) honours an operator event only
+            # when the engine's own resume record corroborates it, so a lone line appended
+            # to events.jsonl is not a person's act.
+            data["resume_nonce"] = secrets.token_hex(8)
+        for event, event_data in operator_events:
+            self.record_operator_event(state, event, event_data, decided_by,
+                                       resume_nonce=data["resume_nonce"])
 
         self._emit(state, Events.WORKFLOW_RESUMED, data=data)
         return state
 
+    def _refill_route(self, state, limited):
+        """Grant the route limit a loop-blocked run stopped at a fresh budget: every entry
+        key that limit counts starts from now."""
+        step_id = limited.get("step")
+        if step_id not in state.steps or not self.definition.has_step(step_id):
+            return
+        step_state = state.step(step_id)
+        limit_key = limited.get("limit_key") or limited.get("route")
+        for key in list(step_state.route_visits or {}):
+            if _limit_counts(limit_key, key):
+                step_state.route_base[key] = step_state.route_visits[key]
+
+    @staticmethod
+    def _loop_limited(state):
+        """The loop-limit reason a BLOCKED run stopped with, or None. Read from the
+        structured `blocked_reason`; a run blocked before that existed said so only in its
+        message, which is still honoured for it."""
+        if state.status != RunStatus.BLOCKED:
+            return None
+        reason = state.blocked_reason
+        if isinstance(reason, dict):
+            return dict(reason) if reason.get("kind") == LOOP_LIMIT else None
+        if (state.message or "").startswith("loop limit"):
+            return {"kind": LOOP_LIMIT, "step": state.cursor, "legacy": True}
+        return None
+
+    def record_operator_event(self, state, event, data, decided_by, resume_nonce=None):
+        """Record `event` - a person's act on the run, not the engine's - with `data`,
+        `decided_by`, `decided_at` and the `resume_nonce` of the WORKFLOW_RESUMED that
+        follows it. The caller holds the run's lock (resume)."""
+        check_operator_event(event, data, decided_by)
+        entry = dict(data, decided_by=decided_by, decided_at=self.clock())
+        if resume_nonce is not None:
+            entry["resume_nonce"] = resume_nonce
+        self._emit(state, event, step_id=state.cursor, data=entry)
+        return entry
     def _advance_past(self, state, step_id, step_state):
         """Move the cursor on from a step that already succeeded, along its recorded route."""
         step_def = self.definition.step(step_id)
@@ -285,6 +390,34 @@ class WorkflowEngine:
             if entry.get("outcome") == StepOutcome.SUCCESS:
                 last[entry.get("step")] = index
         return last
+
+    def _gate_passed(self, state, gate_id):
+        """True when the gate's last success let the run go on past it: its recorded route
+        leads to a step after the gate. A choice that sends work back (iterate, rework) or
+        ends the run answered the gate without passing it."""
+        last = None
+        for entry in state.trail:
+            if entry.get("step") == gate_id and entry.get("outcome") == StepOutcome.SUCCESS:
+                last = entry
+        if last is None:
+            return False
+        key = last.get("route")
+        kind, target = self._route(
+            self.definition.step(gate_id),
+            StepResult(StepOutcome.SUCCESS, route=None if key in (None, "success") else key))
+        ids = self.definition.step_ids
+        return kind == "goto" and target in ids and ids.index(target) > ids.index(gate_id)
+
+    def gates_passed(self, state):
+        """The named gates (`with: gate`) this run has passed and no later upstream work has
+        superseded, in definition order."""
+        passed = []
+        for step_def in self.definition.steps:
+            label = (step_def.params or {}).get("gate")
+            if (label and self._is_gate(step_def) and self._gate_passed(state, step_def.id)
+                    and not self._gate_superseded(state, step_def.id)):
+                passed.append(label)
+        return passed
 
     def _gate_superseded(self, state, gate_id):
         """The steps before `gate_id` that succeeded again after its last success: work the
@@ -322,6 +455,11 @@ class WorkflowEngine:
             if status != StepStatus.SUCCESS or step_id not in last_success:
                 problems.append(f"{step_id} (gate {label}) has not been passed in this run")
                 continue
+            if not self._gate_passed(state, step_id):
+                route = state.trail[last_success[step_id]].get("route")
+                problems.append(f"{step_id} (gate {label}) was last answered {route!r}, "
+                                f"which does not pass it")
+                continue
             # An approval covers what existed when it was given. A step before the gate
             # that succeeded again afterwards produced something nobody approved.
             newer = self._gate_superseded(state, step_id)
@@ -332,6 +470,32 @@ class WorkflowEngine:
             raise EngineError(
                 f"run {state.run_id}: will not start {target} past unmet upstream step(s): "
                 + "; ".join(problems) + ". Resume the run to answer them.")
+
+    def _refuse_gates_skipped_by_from(self, scope_ids, start_at):
+        """Refuse a fresh run whose explicit `--from` starts past a gate inside its scope.
+
+        A fresh run has passed no gate, so `wgf new-game --from design` would step over G2
+        exactly as `wgf design --run <id>` would in a run that never passed it. Only an
+        explicit `--from` is refused: a fresh run of a single step (`wgf verify`) or of a
+        group from its first step has no gate before it in its own scope - the step's
+        module still refuses inputs it cannot trust. What counts as a gate is `_is_gate`,
+        the same test `_refuse_unmet_upstream` applies inside an existing run.
+        """
+        ids = self.definition.step_ids  # definition order, whatever order a group lists
+        skipped = []
+        for step_id in ids[:ids.index(start_at)]:
+            if step_id not in scope_ids:
+                continue
+            step_def = self.definition.step(step_id)
+            if self._is_gate(step_def):
+                label = (step_def.params or {}).get("gate") or "checkpoint"
+                skipped.append(f"{step_id} (gate {label})")
+        if skipped:
+            raise EngineError(
+                f"will not start a new run at {start_at}: it would step over "
+                f"{', '.join(skipped)}, which a new run has not passed. Start from the "
+                f"beginning, or resume a run that passed it with --resume <run-id> "
+                f"--from {start_at}.")
 
     def continue_in(self, run_id, scope, force=False):
         """Run `scope` inside an existing run, reusing what the run already produced.
@@ -350,22 +514,32 @@ class WorkflowEngine:
             raise EngineError(f"run {run_id} is RUNNING; resume it instead")
         if state.status == RunStatus.CANCELLED:
             raise EngineError(f"run {run_id} was cancelled")
+        ended = state.exit or {}
+        if (state.status == RunStatus.COMPLETED and ended.get("next") == END
+                and ended.get("outcome") not in (None, StepOutcome.SUCCESS)):
+            # A step that stopped the run and was routed to its end - a gate's kill or
+            # rejection - ended it for good. That answer stays the run's last word.
+            raise EngineError(
+                f"run {run_id} was ended at {ended.get('step')} ({ended.get('route')}); it "
+                f"cannot be continued. Start a new run.")
         scope_ids = self.definition.resolve_scope(scope)
         self._require_implementations(scope_ids)
         self._refuse_unmet_upstream(state, scope_ids[0])
         for step_state in state.steps.values():
-            step_state.loop_base = step_state.visits  # an explicit command: a fresh budget
+            _reset_loop_budget(step_state)  # an explicit command: a fresh budget
         previous = state.status
         state.scope = scope_ids
         state.cursor = scope_ids[0]
         state.exit = None
         state.message = None
+        state.blocked_reason = None
         self._emit(state, Events.WORKFLOW_RESUMED,
                    data={"from_status": previous, "scope": scope_ids, "force": force})
         return state
 
-    def record_decision(self, state, step_id, decision, decided_by="human", note=None):
-        check_decision(decision, decided_by, note)
+    def record_decision(self, state, step_id, decision, decided_by="human", note=None,
+                        mode=None):
+        check_decision(decision, decided_by, note, mode)
         step = state.step(step_id)
         entry = {
             "decision": decision,
@@ -375,9 +549,12 @@ class WorkflowEngine:
         }
         if note:
             entry["note"] = note
+        if mode:
+            entry["mode"] = mode
         state.decisions[step_id] = entry
         self._save(state)
-        self._emit(state, Events.DECISION_RECORDED, step_id=step_id, data=entry)
+        self._emit(state, Events.DECISION_RECORDED, step_id=step_id, data=dict(entry))
+        return entry
 
     def request_pause(self, run_id):
         """Pause at the next step boundary; at once if nothing is driving the run."""
@@ -424,12 +601,43 @@ class WorkflowEngine:
             state = self.store.load(run_id)
             if state.status in RunStatus.TERMINAL:
                 raise EngineError(f"run {run_id} is already {state.status}")
+            if state.status == RunStatus.RUNNING:
+                self._sweep_orphans(state)  # its driver is dead; so must its children be
             state.status = RunStatus.CANCELLED
+            state.blocked_reason = None  # it is no longer blocked by anything
             self._save(state)
             self._emit(state, Events.WORKFLOW_CANCELLED)
             return state
         finally:
             self.store.release(run_id)
+
+    # Seconds a swept orphan gets between SIGTERM and SIGKILL.
+    SWEEP_GRACE_SECONDS = 5.0
+
+    def run_token(self, run_id):
+        """The procs.RUN_ENV token children of this run's steps carry."""
+        return procs.run_token(run_id, self.store.directory)
+
+    def _sweep_orphans(self, state):
+        """End every process still carrying this run's token: the trees a driver that died
+        without cleanup (SIGKILL, a machine crash) left running. Only called while this
+        process holds the run's lock, so no live driver can own them. Logs what it ended,
+        or that it cannot look on this platform."""
+        step_id = state.cursor
+        token = self.run_token(state.run_id)
+        if not procs.can_sweep():
+            self._emit(state, Events.STEP_LOG, step_id=step_id, level="warning",
+                       message="cannot sweep processes a dead driver of this run left behind: "
+                               "no /proc on this platform; any it orphaned are still running",
+                       data={"run_token": token})
+            return []
+        ended = procs.sweep_run(token, self.SWEEP_GRACE_SECONDS) or []
+        if ended:
+            self._emit(state, Events.STEP_LOG, step_id=step_id, level="warning",
+                       message=f"terminated {len(ended)} process(es) a dead driver of this run "
+                               f"left running: {', '.join(map(str, ended))}",
+                       data={"pids": ended, "run_token": token})
+        return ended
 
     # -- the loop -----------------------------------------------------------------------
 
@@ -467,11 +675,14 @@ class WorkflowEngine:
         # --from, continue_in) is exempt - every later one, including an entry deferred
         # past a skip, counts against max_visits, so no path through the graph is unbounded.
         needs_enter, check = enter_first, False
+        # The route a deferred entry (needs_enter) comes through; None for a drive's first.
+        route_in = None
         skipped = set()
         try:
             self.store.mark_latest(state.run_id)
             state.status = RunStatus.RUNNING
             state.message = None
+            state.blocked_reason = None
             self._save(state)
             while True:
                 if self._honour_requests(state):
@@ -482,10 +693,13 @@ class WorkflowEngine:
                 step_state = state.step(step_id)
 
                 stale_gate = (skip and step_state.status == StepStatus.SUCCESS
-                              and self._is_gate(step_def) and self._gate_superseded(state, step_id))
+                              and self._is_gate(step_def)
+                              and (self._gate_superseded(state, step_id)
+                                   or not self._gate_passed(state, step_id)))
                 if stale_gate:
-                    # Its approval predates work redone upstream: not "already completed".
-                    # A new visit, so the old decision (bound to its visit) cannot answer it.
+                    # Its approval predates work redone upstream, or its last answer did not
+                    # pass it (work sent back): not "already completed". A new visit, so the
+                    # old decision (bound to its visit) cannot answer it.
                     needs_enter = True
                 elif skip and step_state.status == StepStatus.SUCCESS and step_id not in skipped:
                     skipped.add(step_id)
@@ -496,13 +710,13 @@ class WorkflowEngine:
                                     ("goto", target) if target != END else ("end", END),
                                     enter=False):
                         return state
-                    needs_enter, check = True, True
+                    needs_enter, check, route_in = True, True, "success"
                     continue
                 if step_state.visits == 0 or needs_enter:
-                    if not self._enter(state, step_id, check_loop=check):
-                        self._loop_limit(state, step_id)
+                    if not self._enter(state, step_id, check_loop=check, route=route_in):
+                        self._loop_limit(state, step_id, route_in)
                         return state
-                needs_enter = False
+                needs_enter, route_in = False, None
 
                 result = self._execute_visit(state, step_def)
                 if self._honour_cancel(state):
@@ -517,6 +731,7 @@ class WorkflowEngine:
                                 message=result.message or result.error, enter=enter):
                     return state
                 needs_enter, check = not enter, True
+                route_in = result.routing_key if needs_enter else None
         finally:
             self.store.release(state.run_id)
 
@@ -549,42 +764,63 @@ class WorkflowEngine:
             return True
         return False
 
-    def _enter(self, state, step_id, check_loop=True):
-        """Begin a new visit to `step_id`. Returns False if the loop limit forbids it."""
+    def _enter(self, state, step_id, check_loop=True, save=True, route=None, source=None):
+        """Begin a new visit to `step_id`. Returns False if a loop limit forbids it.
+
+        `route` is the routing key that led here (None for a run's first step, `--from`,
+        continue_in's first step) and `source` the step it came from; the visit is counted
+        under `<source>.<route>` (just `<route>` when the source is unknown), and every
+        `max_visits_by_route` limit that counts that entry applies alongside `max_visits`.
+
+        `save=False` leaves the save to the caller, which moves the cursor in the same
+        write: a visit counted on disk while the cursor still sits on the previous step
+        would be counted again when resume follows that step's route (see `_follow`)."""
         step_def = self.definition.step(step_id)
         step_state = state.step(step_id)
-        if check_loop and step_state.visits - step_state.loop_base >= step_def.max_visits:
+        key = _entry_key(route, source)
+        if check_loop and self._visit_limit(step_def, step_state, key) is not None:
             return False
         step_state.visits += 1
+        if key is not None:
+            step_state.route_visits[key] = step_state.route_visits.get(key, 0) + 1
+        step_state.entered_by = key
         step_state.attempts = 0
         step_state.status = StepStatus.PENDING
         step_state.error = None
         step_state.message = None
-        self._save(state)
+        step_state.waiting_since = None  # a new visit waits afresh
+        if save:
+            self._save(state)
         return True
 
     def _execute_visit(self, state, step_def):
         """Execute the cursor step, retrying FAILED results per the step's policy."""
         step_state = state.step(step_def.id)
         policy = step_def.retry
+        result = None
         while True:
-            step_state.attempts += 1
-            step_state.executions += 1
-            attempt = step_state.attempts
+            attempt = step_state.attempts + 1
             if attempt > 1:
                 delay = policy.delay_before(attempt)
                 self._emit(state, Events.STEP_RETRIED, step_id=step_def.id, attempt=attempt,
                            data={"delay_seconds": delay, "max_attempts": policy.max_attempts})
-                if delay:
-                    self.sleep(delay)
+                if delay and self._backoff(state, delay):
+                    # Cancelled while waiting: the attempt never begins. The previous one's
+                    # FAILED is what state records; the caller ends the run CANCELLED.
+                    return StepResult(StepOutcome.FAILED, retryable=False,
+                                      message="cancelled while waiting to retry",
+                                      error=result.error if result is not None else None)
+            step_state.attempts += 1
+            step_state.executions += 1
 
             step_state.status = StepStatus.RUNNING
             step_state.started_at = self.clock()
             step_state.finished_at = None
             self._save(state)
             self._emit(state, Events.STEP_STARTED, step_id=step_def.id, attempt=attempt,
-                       status=StepStatus.RUNNING, data={"type": step_def.type,
-                                                        "visit": step_state.visits})
+                       status=StepStatus.RUNNING,
+                       data=_compact({"type": step_def.type, "visit": step_state.visits,
+                                      "entered_by": step_state.entered_by}))
 
             began = self.monotonic()
             result = self._run_once(state, step_def, step_state)
@@ -602,10 +838,18 @@ class WorkflowEngine:
                     result = StepResult(StepOutcome.FAILED,
                                         error=f"could not persist artifacts: {exc}")
             cancelled = self._cancel_requested(state)
+            watchdog = self._watchdog.get("tripped")
             if cancelled and result.outcome != StepOutcome.SUCCESS:
                 result = StepResult(
                     result.outcome, route=result.route, message="cancelled while running",
                     error=result.error, retryable=False, data=result.data)
+            elif watchdog and result.outcome != StepOutcome.SUCCESS:
+                # The watchdog ended a child that had gone silent; running it again would
+                # wait out the same silence. Not retried, and the message says why.
+                result = StepResult(
+                    result.outcome, route=result.route, message=watchdog,
+                    error=result.error or watchdog, retryable=False, data=result.data)
+                cancelled = True
             if result.outcome == StepOutcome.SUCCESS:
                 missing = [t for t in step_def.outputs if t not in {r.type for r in refs}]
                 if missing:
@@ -617,6 +861,11 @@ class WorkflowEngine:
 
             step_state.status = _STEP_STATUS[result.outcome]
             step_state.finished_at = self.clock()
+            waiting = result.outcome in StepOutcome.WAITING
+            if waiting and step_state.waiting_since is None:
+                # The visit's wait begins now, by the engine's clock; a later execution of
+                # the same visit that waits again keeps it (a checkpoint's timeout).
+                step_state.waiting_since = step_state.finished_at
             step_state.duration_ms = duration_ms
             step_state.last_route = result.routing_key
             step_state.message = result.message
@@ -651,12 +900,36 @@ class WorkflowEngine:
                 data=_compact({"route": result.route, "message": result.message,
                                "result": _jsonable(result.data) or None,
                                "will_retry": will_retry if result.outcome == "FAILED" else None,
-                               "outputs": step_state.outputs if refs else None}),
+                               "outputs": step_state.outputs if refs else None,
+                               "visit": step_state.visits if waiting else None,
+                               "waiting_since": step_state.waiting_since if waiting else None}),
             )
             if not will_retry:
                 return result
 
+    # A backoff is slept in slices of at most this long, checking for a cancel between them:
+    # the run's lock is held throughout, so a cancel is otherwise noticed only when a delay
+    # of up to a minute has run out.
+    BACKOFF_POLL_SECONDS = 2.0
+
+    def _backoff(self, state, delay):
+        """Sleep `delay` seconds before a retry. True if a cancel arrived meanwhile.
+
+        Sleeps through `self.sleep`, so an injected sleep still sees every second asked
+        for; the slices only bound how late a cancel is noticed."""
+        if self._cancel_requested(state):
+            return True
+        remaining = delay
+        while remaining > 0:
+            chunk = min(remaining, self.BACKOFF_POLL_SECONDS)
+            self.sleep(chunk)
+            remaining -= chunk
+            if self._cancel_requested(state):
+                return True
+        return False
+
     def _run_once(self, state, step_def, step_state):
+        self._watchdog = {}  # an execution that never reaches its step trips nothing
         try:
             step = self.registry.create(step_def)
         except RegistryError as exc:
@@ -693,6 +966,24 @@ class WorkflowEngine:
                        data={"decision": decision.get("decision")})
             decision = None
 
+        if step_state.waiting_since is not None and integrity.waiting_since(
+                state, self.definition, step_def.id,
+                self.store.read_events(state.run_id)) is None:
+            # Not corroborated by its STEP_WAITING event, or work upstream has succeeded
+            # since: what it waited on has changed, so the wait starts again.
+            self._emit(state, Events.STEP_LOG, step_id=step_def.id, level="info",
+                       message="wait restarted: upstream work is newer than it, or it is "
+                               "not on record",
+                       data={"waiting_since": step_state.waiting_since})
+            step_state.waiting_since = None
+
+        def record(choice, decided_by, note=None, mode=None):
+            return dict(self.record_decision(state, step_def.id, choice, decided_by, note,
+                                             mode))
+
+        # This execution's hung-child watchdog: armed from the params the run started with,
+        # tripped by the progress recorder, read by should_stop and by _execute_visit.
+        self._watchdog = self._watchdog_policy(state)
         base = {"workflow_id": state.workflow_id, "run_id": state.run_id,
                 "step_id": step_def.id, "attempt": step_state.attempts}
         context = WorkflowContext(
@@ -718,15 +1009,26 @@ class WorkflowEngine:
             run_dir=self.store.run_dir(state.run_id),
             mock=bool(state.params.get("mock")),
             progress=self._progress_recorder(state, step_def, step_state),
-            should_stop=lambda: self.store.requested(state.run_id, "cancel"),
+            should_stop=lambda: (bool(self._watchdog.get("tripped"))
+                                 or self.store.requested(state.run_id, "cancel")),
+            now=self.clock(),
+            waiting_since=step_state.waiting_since,
+            record_decision=record,
+            gates_passed=self.gates_passed(state),
+            entered_by=step_state.entered_by,
+            visit_budget=self._visit_budget(step_def, step_state),
+            read_events=lambda: self.store.read_events(state.run_id),
         )
         step_state.pid = None
         step_state.last_event = "started"
-        step_state.last_activity_at = self.clock()
+        step_state.last_activity_at = step_state.last_output_at = self.clock()
+        step_state.last_heartbeat_at = None
         try:
-            # Any process the step starts through wgflib.procs reports to this step and is
-            # terminated, tree and all, by a cancel request.
-            with procs.bound(context.progress, context.should_stop):
+            # Any process the step starts through wgflib.procs reports to this step, is
+            # terminated, tree and all, by a cancel request (or the watchdog), and names
+            # this run in its environment so that a later driver can find it.
+            with procs.bound(context.progress, context.should_stop,
+                             run=self.run_token(state.run_id)):
                 return self.runtime.run(Task(step, inputs, context))
         finally:
             step_state.pid = None
@@ -735,17 +1037,42 @@ class WorkflowEngine:
     # (spawned, exited, timeout, cancelled, ...) are saved at once.
     PROGRESS_SAVE_SECONDS = 5.0
 
+    @staticmethod
+    def _watchdog_policy(state):
+        """{"after": seconds} when the run was started with `on_hung: cancel`, else {}.
+
+        From the run's params, never the live config: a resume keeps the policy the run
+        started under, and integrity.params_problems refuses one edited since."""
+        params = state.params if isinstance(state.params, dict) else {}
+        after = params.get("hung_output_seconds")
+        if (params.get("on_hung") != "cancel" or isinstance(after, bool)
+                or not isinstance(after, (int, float)) or after <= 0):
+            return {}
+        return {"after": after}
+
     def _progress_recorder(self, state, step_def, step_state):
         last_saved = {"at": None}
 
         def record(kind, **data):
             now = self.monotonic()
-            step_state.last_activity_at = self.clock()
+            stamp = self.clock()
+            step_state.last_activity_at = stamp
             step_state.last_event = kind
             if kind == "spawned" and data.get("pid"):
                 step_state.pid = data.get("pid")
             elif kind == "exited":
                 step_state.pid = None
+            idle = data.get("idle_s")
+            if kind == "heartbeat":
+                # A heartbeat proves the driver is alive, not that the child is working. It
+                # moves last_output_at only to when the child last wrote (`idle_s` ago).
+                step_state.last_heartbeat_at = stamp
+                wrote = _before(stamp, idle)
+                if wrote is not None and (step_state.last_output_at is None
+                                          or wrote > step_state.last_output_at):
+                    step_state.last_output_at = wrote
+            else:
+                step_state.last_output_at = stamp  # output, or a lifecycle event
             lifecycle = kind not in ("heartbeat", "output")
             if lifecycle or last_saved["at"] is None or (
                     now - last_saved["at"] >= self.PROGRESS_SAVE_SECONDS):
@@ -754,8 +1081,27 @@ class WorkflowEngine:
                 self._emit(state, Events.STEP_PROGRESS, step_id=step_def.id,
                            attempt=step_state.attempts,
                            data=_compact({"kind": kind, **_jsonable(data)}))
+            self._watch(state, step_def, kind, data, idle)
 
         return record
+
+    def _watch(self, state, step_def, kind, data, idle):
+        """Trip the watchdog on a heartbeat whose child has been silent for too long. The
+        step's should_stop then turns true, and procs terminates the child's tree through
+        the same path a cancel takes."""
+        watchdog = self._watchdog
+        if (kind != "heartbeat" or not watchdog.get("after") or watchdog.get("tripped")
+                or isinstance(idle, bool) or not isinstance(idle, (int, float))
+                or idle <= watchdog["after"]):
+            return
+        watchdog["tripped"] = (
+            f"stopped by the hung-child watchdog: child pid {data.get('pid')} wrote nothing "
+            f"for {idle:.0f}s (factory.execution.on_hung: cancel, hung_output_seconds: "
+            f"{watchdog['after']})")
+        self._emit(state, Events.STEP_LOG, step_id=step_def.id, level="warning",
+                   message=watchdog["tripped"],
+                   data={"reason": "hung-output", "pid": data.get("pid"), "idle_s": idle,
+                         "hung_output_seconds": watchdog["after"]})
 
     def _validate(self, artifact_type, content):
         """The validator's problems, with a validator that raises reported as one."""
@@ -944,15 +1290,21 @@ class WorkflowEngine:
             return self._finish(state, RunStatus.COMPLETED, Events.WORKFLOW_COMPLETED,
                                 f"left scope after {step_def.id} ({key}); next would be {target}")
         if kind == "goto":
-            if enter and not self._enter(state, target):
-                return self._loop_limit(state, target)
+            # The new visit and the cursor move are one write. Saved apart, a crash between
+            # them left the visit counted with the cursor still on this step, and resume -
+            # following this step's recorded route - entered the target a second time.
+            if enter and not self._enter(state, target, save=False, route=key,
+                                         source=step_def.id):
+                return self._loop_limit(state, target, key, source=step_def.id)
             state.cursor = target
             self._save(state)
             return False
         if kind == "end":
             state.cursor = None
             state.exit = {"step": step_def.id, "route": key, "outcome": outcome, "next": END}
-            return self._finish(state, RunStatus.COMPLETED, Events.WORKFLOW_COMPLETED, None)
+            # A run a stopping result was routed to the end of (a gate's kill) says why.
+            return self._finish(state, RunStatus.COMPLETED, Events.WORKFLOW_COMPLETED,
+                                message if outcome != StepOutcome.SUCCESS else None)
         if kind == "abort":
             return self._finish(state, RunStatus.FAILED, Events.WORKFLOW_FAILED,
                                 message or f"{step_def.id} failed")
@@ -962,24 +1314,76 @@ class WorkflowEngine:
         return self._finish(state, RunStatus.WAITING, Events.WORKFLOW_PAUSED,
                             message or f"{step_def.id} is waiting", reason=key)
 
-    def _loop_limit(self, state, target):
-        state.cursor = target
-        limit = self.definition.step(target).max_visits
-        return self._finish(
-            state, RunStatus.BLOCKED, Events.WORKFLOW_BLOCKED,
-            f"loop limit: {target} has been entered {limit} time(s) since the run "
-            f"last started or resumed (max_visits={limit}). Resume to allow more.",
-        )
+    @staticmethod
+    def _visit_limit(step_def, step_state, key):
+        """(scope, limit, entered, limit_key) of the first visit limit a new entry counted
+        under `key` (see `_entry_key`) would exceed - ("step", max_visits, ...) or ("route",
+        max_visits_by_route[limit_key], ...) - or None when the entry is allowed."""
+        entered = step_state.visits - step_state.loop_base
+        if entered >= step_def.max_visits:
+            return "step", step_def.max_visits, entered, None
+        if key is None:
+            return None
+        for limit_key, limit in sorted(step_def.max_visits_by_route.items()):
+            if not _limit_counts(limit_key, key):
+                continue
+            entered = _route_used(step_state, limit_key)
+            if entered >= limit:
+                return "route", limit, entered, limit_key
+        return None
 
-    def _finish(self, state, status, event, message, reason=None):
+    @staticmethod
+    def _visit_budget(step_def, step_state):
+        """What this visit leaves of the step's visit limits, for the step to report."""
+        used = step_state.visits - step_state.loop_base
+        budget = {"step": {"limit": step_def.max_visits, "used": used,
+                           "remaining": max(step_def.max_visits - used, 0)},
+                  "route": None}
+        key = step_state.entered_by
+        if key is not None:
+            # The tightest limit counting this entry is the one the step can act on.
+            for limit_key, limit in sorted(step_def.max_visits_by_route.items()):
+                if not _limit_counts(limit_key, key):
+                    continue
+                used = _route_used(step_state, limit_key)
+                remaining = max(limit - used, 0)
+                if budget["route"] is None or remaining < budget["route"]["remaining"]:
+                    budget["route"] = {"route": key, "limit_key": limit_key, "limit": limit,
+                                       "used": used, "remaining": remaining}
+        return budget
+
+    def _loop_limit(self, state, target, route=None, source=None):
+        state.cursor = target
+        step_def = self.definition.step(target)
+        scope, limit, entered, limit_key = (
+            self._visit_limit(step_def, state.step(target), _entry_key(route, source))
+            or ("step", step_def.max_visits, step_def.max_visits, None))
+        reason = _compact({"kind": LOOP_LIMIT, "step": target, "route": route,
+                           "scope": scope, "limit": limit, "entered": entered,
+                           "from": source, "limit_key": limit_key})
+        if scope == "route":
+            message = (f"loop limit: {target} has been entered through "
+                       f"{limit_key!r} {limit} time(s) in this run "
+                       f"(max_visits_by_route.{limit_key}={limit}). Resume to grant that "
+                       f"loop more passes.")
+        else:
+            message = (f"loop limit: {target} has been entered {limit} time(s) since the "
+                       f"run last started or resumed (max_visits={limit}). Resume to allow "
+                       f"more.")
+        return self._finish(state, RunStatus.BLOCKED, Events.WORKFLOW_BLOCKED, message,
+                            blocked_reason=reason)
+
+    def _finish(self, state, status, event, message, reason=None, blocked_reason=None):
         if self.event_log_error and status == RunStatus.COMPLETED:
             status, event = RunStatus.FAILED, Events.WORKFLOW_FAILED
             message = f"the event log could not be written ({self.event_log_error})"
         state.status = status
         state.message = message
+        state.blocked_reason = blocked_reason if status == RunStatus.BLOCKED else None
         self._save(state)
         self._emit(state, event, status=status, step_id=state.cursor,
-                   data=_compact({"message": message, "reason": reason, "exit": state.exit}))
+                   data=_compact({"message": message, "reason": reason, "exit": state.exit,
+                                  "blocked": state.blocked_reason}))
         if self.event_log_error and state.status == RunStatus.COMPLETED:
             # The terminal event itself could not be written.
             state.status = RunStatus.FAILED
@@ -1027,6 +1431,64 @@ class _ContractViolation(Exception):
     pass
 
 
+def _reset_loop_budget(step_state, routes=True):
+    """A fresh loop budget: the per-step visit limit counts from now, and with `routes`
+    every per-route limit too."""
+    step_state.loop_base = step_state.visits
+    if routes:
+        step_state.route_base = dict(step_state.route_visits or {})
+
+
+def _entry_key(route, source):
+    """What an entry is counted under: `<source>.<route>`, or `<route>` when the step it
+    came from is unknown (a resume of a run blocked before sources were recorded)."""
+    if route is None:
+        return None
+    return f"{source}.{route}" if source else route
+
+
+def _limit_counts(limit_key, entry_key):
+    """Whether a `max_visits_by_route` key counts an entry key: `<source>.<route>` counts
+    exactly that source's entries; a bare `<route>` counts that route from any source."""
+    if limit_key == entry_key:
+        return True
+    return "." not in limit_key and entry_key.rpartition(".")[2] == limit_key
+
+
+def _route_used(step_state, limit_key):
+    """Entries a route limit has counted since its budget was last refilled."""
+    visits, base = step_state.route_visits or {}, step_state.route_base or {}
+    return sum(count - base.get(key, 0) for key, count in visits.items()
+               if _limit_counts(limit_key, key))
+
+
+def check_operator_event(event, data, decided_by):
+    """Refuse an operator event the engine will not record: a name that is not a plain
+    upper-case token or is one of the engine's own events (which it alone emits), data
+    that is not a small JSON mapping, or a decider that is not a person - automation (a
+    process inside the run's own tree) acting on its own run is exactly what these are
+    kept from."""
+    if not isinstance(event, str) or not _OPERATOR_EVENT.fullmatch(event):
+        raise EngineError(f"operator event {event!r} is not an upper-case event name")
+    if event in Events.all():
+        raise EngineError(f"operator event {event!r} is one of the engine's own events")
+    if not isinstance(data, dict) or not data:
+        raise EngineError(f"operator event {event} carries no data")
+    try:
+        json.dumps(data)
+    except (TypeError, ValueError):
+        raise EngineError(f"operator event {event} data is not JSON")
+    if {"decided_by", "decided_at", "resume_nonce"} & set(data):
+        raise EngineError(f"operator event {event} data may not set decided_by, decided_at "
+                          f"or resume_nonce")
+    if not isinstance(decided_by, str) or not _DECIDER.fullmatch(decided_by):
+        raise EngineError(f"decided_by {decided_by!r} is not a plain identifier")
+    if decided_by == "automation":
+        raise EngineError(
+            f"{event} refused: decided_by is automation - this command runs inside a "
+            f"Factory step's process tree. Only a person records it, from outside the run.")
+
+
 def _jsonable(value):
     """`value` if it survives JSON, else a note saying it did not. Events must persist."""
     try:
@@ -1034,6 +1496,15 @@ def _jsonable(value):
         return value
     except (TypeError, ValueError):
         return {"unserializable": type(value).__name__}
+
+
+def _before(stamp, seconds):
+    """The engine timestamp `seconds` before `stamp`, or None if either is unusable."""
+    moment = parse_timestamp(stamp)
+    if (moment is None or isinstance(seconds, bool) or not isinstance(seconds, (int, float))
+            or seconds < 0):
+        return None
+    return format_timestamp(moment - datetime.timedelta(seconds=seconds))
 
 
 def _compact(mapping):

@@ -22,12 +22,14 @@ Run from the web-game-factory repository root:
     python scripts/check-integrity.py
 """
 import glob
+import hashlib
 import json
 import os
 import re
 import sys
 
 ERRORS = []
+WARNINGS = []
 NOTES = []
 
 
@@ -51,7 +53,32 @@ def load_artifacts():
         stem = os.path.basename(path).replace(".schema.json", "")
         if meta["id"] != stem:
             ERRORS.append(f"{path}: x-wgf.id '{meta['id']}' != filename stem '{stem}'")
+        # The contract version producers write into provenance.schema_version, and the one
+        # the engine checks a written artifact's major against (wgflib/provenance.py). Shared
+        # schemas with an x-wgf block (claim, reference types) are not produced as workflow
+        # artifacts and carry no version.
+        if os.path.dirname(path) == "core/artifacts" and not re.fullmatch(r"[0-9]+\.[0-9]+\.[0-9]+", str(meta.get("version") or "")):
+            ERRORS.append(f"{path}: x-wgf.version {meta.get('version')!r} is not a semver "
+                          "MAJOR.MINOR.PATCH")
     return ids
+
+
+def check_required_for_gates():
+    """x-wgf.required_for_gates is a copy of gates.yaml's required_artifacts, kept on each
+    schema so a reader of one contract sees which gates it serves. gates.yaml is the
+    authority - it is what a checkpoint checks - so the copy must agree with it exactly."""
+    sys.path.insert(0, "scripts")
+    from wgflib.yamllite import load_file
+
+    gates = (load_file("core/lifecycle/gates.yaml") or {}).get("gates") or {}
+    required = {gate: set(spec.get("required_artifacts") or []) for gate, spec in gates.items()}
+    for path in sorted(glob.glob("core/artifacts/*.schema.json")):
+        meta = json.loads(read(path)).get("x-wgf") or {}
+        declared = set(meta.get("required_for_gates") or [])
+        actual = {gate for gate, ids in required.items() if meta.get("id") in ids}
+        if declared != actual:
+            ERRORS.append(f"{path}: x-wgf.required_for_gates {sorted(declared)} but "
+                          f"gates.yaml requires it for {sorted(actual)}")
 
 
 def load_roles():
@@ -118,6 +145,75 @@ def check_workflows(artifacts):
             gate = step.params.get("gate")
             if gate and not re.search(rf"^  {gate}:", read("core/lifecycle/gates.yaml"), re.M):
                 ERRORS.append(f"{path}: step '{step.id}' names unknown gate '{gate}'")
+        check_contract_roles(path, definition)
+    return found
+
+
+# The x-wgf `producer` of an artifact a gate emits (decision-record.schema.json), rather than
+# one stage's: see check_contract_roles.
+GATE_PRODUCER = "gate"
+
+
+def load_contract_meta():
+    """{artifact id: x-wgf block} for every top-level artifact schema."""
+    meta = {}
+    for path in sorted(glob.glob("core/artifacts/*.schema.json")):
+        block = json.loads(read(path)).get("x-wgf")
+        if block and block.get("id"):
+            meta[block["id"]] = block
+    return meta
+
+
+def check_contract_roles(path, definition, meta=None):
+    """x-wgf says who produces and who consumes an artifact; a workflow step says the same
+    thing in `stage`, `outputs` and `inputs`. Two statements of one fact drift unless one is
+    checked against the other, so:
+
+      * every type a step outputs names the step's stage as its x-wgf `producer`;
+      * every type a step takes as input lists the step's stage in its x-wgf `consumers`.
+
+    An artifact whose x-wgf `producer` is `gate` (GATE_PRODUCER: the decision-record) is
+    produced at whatever stage a gate sits, by the step that decides the gate. So:
+
+      * a step outputs a gate-produced type only if it names a gate (`with: gate`);
+      * a step that names a gate outputs every gate-produced type - a gate that emits no
+        decision-record is not auditable.
+
+    Driven by the definition alone - no step type or id is named here. A step with no
+    inputs or outputs is checked for what it has. Untyped artifacts have no x-wgf block and
+    are left to the untyped-artifact report above. Returns the problems it appended, for
+    tests."""
+    meta = load_contract_meta() if meta is None else meta
+    found = []
+    gate_produced = sorted(aid for aid, block in meta.items()
+                           if block.get("producer") == GATE_PRODUCER)
+    for step in definition.steps:
+        gate = (getattr(step, "params", None) or {}).get("gate")
+        if gate:
+            for aid in gate_produced:
+                if aid not in (step.outputs or ()):
+                    found.append(f"{path}: step '{step.id}' decides gate {gate} but does not "
+                                 f"output '{aid}' (x-wgf producer '{GATE_PRODUCER}')")
+        if not step.stage:
+            continue
+        for aid in step.outputs or ():
+            block = meta.get(aid)
+            if block is not None and block.get("producer") == GATE_PRODUCER:
+                if not gate:
+                    found.append(f"{path}: step '{step.id}' outputs '{aid}', which only a "
+                                 f"step deciding a gate produces (x-wgf producer "
+                                 f"'{GATE_PRODUCER}'), but names no gate")
+                continue
+            if block is not None and block.get("producer") != step.stage:
+                found.append(f"{path}: step '{step.id}' outputs '{aid}' at stage "
+                             f"'{step.stage}', but its x-wgf producer is "
+                             f"'{block.get('producer')}'")
+        for aid in step.inputs or ():
+            block = meta.get(aid)
+            if block is not None and step.stage not in (block.get("consumers") or ()):
+                found.append(f"{path}: step '{step.id}' takes '{aid}' at stage "
+                             f"'{step.stage}', which its x-wgf consumers do not list")
+    ERRORS.extend(found)
     return found
 
 
@@ -147,18 +243,77 @@ def check_templates():
             ERRORS.append(f"{path}: missing template '{tmpl}'")
 
 
+def pinned_template():
+    """(directory, None) for a checkout of the pinned template commit that already exists,
+    else (None, why). Never clones and never reads the sibling working copy: this check must
+    stay fast and must not fail because the pin is not cached or the network is down.
+    `python3 scripts/wgf-template.py --path` obtains the checkout."""
+    sys.path.insert(0, "scripts")
+    from wgflib import template
+    try:
+        if os.environ.get("WGF_TEMPLATE_DIR"):
+            # template.checkout() uses an offered directory as is, or refuses it as drift.
+            return template.checkout(), None
+        commit = template.expected_commit()
+        # The cache location checkout() itself uses; only its fetch step is skipped here.
+        cached = os.path.join(template._cache_root(), commit)
+        if template.head_of(cached) == commit:
+            return cached, None
+        return None, f"web-game-template {commit[:12]} is not cached"
+    except template.TemplateError as exc:
+        return None, str(exc)
+
+
 def check_platforms():
-    """Platform ids in core must match the strings the template's game.config.yaml uses —
-    they are the same identifier crossing a repository boundary."""
+    """Platform ids in core must match the strings the pinned template's game.config.yaml
+    uses — they are the same identifier crossing a repository boundary. Read at the pin,
+    never from the sibling working copy, which may stand at any commit."""
     profiles = {os.path.basename(p)[:-5] for p in glob.glob("core/reference/platforms/*.yaml")}
-    config = "../web-game-template/game.config.yaml"
+    directory, why = pinned_template()
+    if directory is None:
+        NOTES.append(f"platform check skipped: pinned template not available ({why}; "
+                     "python3 scripts/wgf-template.py --path fetches it)")
+        return profiles
+    config = os.path.join(directory, "game.config.yaml")
     if not os.path.exists(config):
-        NOTES.append("web-game-template/game.config.yaml not found; skipped platform check")
+        ERRORS.append(f"pinned template {directory}: no game.config.yaml")
         return profiles
     for pid in re.findall(r"\{\s*id:\s*([a-z-]+)", read(config)):
         if pid not in profiles:
-            ERRORS.append(f"game.config.yaml: platform '{pid}' has no profile in core")
+            ERRORS.append(f"game.config.yaml (pinned template): platform '{pid}' has no "
+                          "profile in core")
+    check_template_profiles(directory, profiles)
     return profiles
+
+
+def check_template_profiles(directory, profiles):
+    """A profile is identified by id, version and content: a template copy that declares the
+    same id@version as a core profile must be byte-identical to it, or one name answers for
+    two documents. A divergence is a template-side defect the Factory cannot fix from here
+    (init re-vendors the core copy over it), so it is a WARNING, not a failure."""
+    from wgflib.yamllite import YamlError, load_file
+
+    for pid in sorted(profiles):
+        theirs = os.path.join(directory, "config", "platforms", f"{pid}.yaml")
+        if not os.path.isfile(theirs):
+            continue
+        ours = os.path.join("core", "reference", "platforms", f"{pid}.yaml")
+        try:
+            versions = [str((load_file(p) or {}).get("version")) for p in (ours, theirs)]
+        except (OSError, YamlError, ValueError) as exc:
+            WARNINGS.append(f"cannot compare {ours} with the pinned template's copy: {exc}")
+            continue
+        if versions[0] != versions[1]:
+            continue
+        digests = []
+        for path in (ours, theirs):
+            with open(path, "rb") as handle:
+                digests.append(hashlib.sha256(handle.read()).hexdigest())
+        if digests[0] != digests[1]:
+            WARNINGS.append(
+                f"{pid}@{versions[0]}: {ours} (sha256:{digests[0]}) differs from the pinned "
+                f"template's config/platforms/{pid}.yaml (sha256:{digests[1]}) under the same "
+                "version; template-side divergence, init vendors the core copy")
 
 
 def check_provider_independence():
@@ -215,6 +370,7 @@ def main():
     gates = read("core/lifecycle/gates.yaml")
 
     check_machines(artifacts, roles, gates)
+    check_required_for_gates()
     workflows = check_workflows(artifacts)
     check_bindings(roles)
     check_charters()
@@ -234,6 +390,8 @@ def main():
         print(f"template    {pin['repository']}@{pin['commit'][:12]} ({pin['ref']})")
     for note in NOTES:
         print(f"note        {note}")
+    for warning in WARNINGS:
+        print(f"WARNING     {warning}")
     print()
 
     if ERRORS:

@@ -439,6 +439,7 @@ workflow:
       outputs: [tech-plan]
     - id: tech-plan-review
       type: human-checkpoint
+      inputs: [game-design, tech-plan]     # what G3 is decided on (gates.yaml)
       with:
         gate: G3
         prompt: Approve the plan?
@@ -547,7 +548,7 @@ class Schema(unittest.TestCase):
             errors = validate("tech-plan", artifact)
             self.assertFalse(errors, errors)
 
-    @unittest.skipUnless(os.environ.get("WGF_AJV") and shutil.which("npx"),
+    @unittest.skipUnless(os.environ.get("WGF_AJV") == "1" and shutil.which("npx"),
                          "set WGF_AJV=1 to validate with ajv (needs npx)")
     def test_validates_with_ajv(self):
         scratch = tempfile.mkdtemp(prefix="wgf-techplan-ajv-")

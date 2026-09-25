@@ -51,7 +51,9 @@ RunStore  .factory/workflows/<run-id>/                        (session + env tag
 ```
 research → strategy → [G2] → design → tech-plan → [G3] → init → assets
   → develop ⇄ review → sdk → verify ─fail→ develop
-                                   └─pass→ release (draft)
+                                   └─pass→ [G4] ─pass→ release (draft)
+                                             ├─iterate→ develop
+                                             └─kill→ $end (run ended by the decision)
 ```
 
 | Boundary | Artifact | Refused when |
@@ -64,7 +66,8 @@ research → strategy → [G2] → design → tech-plan → [G3] → init → as
 | develop → review | `prototype-report` | no real commit (no placeholder shas) |
 | review → sdk | `review-report` | reviewer changed anything, malformed verdict, wrong commit |
 | sdk → verify | `sdk-report` | integration not committed / not on the reviewed commit |
-| verify → release | `qa-report`, `verification-report` | not the newest visit, not passing, commit lineage broken, dirty tree |
+| verify → G4 | `qa-report`, `verification-report`, `prototype-report` | missing (G4 waits for input), fails its contract; only a person decides G4 |
+| G4 → release | `qa-report`, `verification-report` (after a G4 `pass`) | G4 not passed or superseded by a newer verification; not the newest visit, not passing, commit lineage broken, dirty tree |
 
 Every boundary is enforced twice: the engine validates each **output** against its full schema
 before persisting it and each **input** again before the consuming step runs (a hand-edited or
@@ -80,7 +83,8 @@ full table with the fields each consumer reads.
 | Retry | FAILED + retryable, per-step policy with backoff | `Retry` |
 | Resume | state saved before and after every execution; a step recorded as succeeded is never executed again by `resume`, even if the driver died before the cursor moved (it follows the recorded route instead) | `Resume`, `StaleRunResume` |
 | Pause / cancel | request files honoured between steps; cancel also terminates a running child tree and ends CANCELLED | `Pause`, `Cancel` |
-| Human gates | `human-checkpoint` waits; G4/G6/G7 never auto-approve; `wgf <step> --run` and `resume --from` refuse to start past an upstream step that is BLOCKED, WAITING or FAILED, or past a gate this run has not passed | `HumanGate` |
+| Human gates | `human-checkpoint` waits, decided on its gate's `required_artifacts`; G4/G6/G7 never auto-approve and refuse `automation`; `wgf <step> --run` and `resume --from` refuse to start past an upstream step that is BLOCKED, WAITING or FAILED, or past a gate this run has not passed (a backward answer such as `iterate` does not pass it) | `HumanGate`, `PrototypeReviewGate`, `GateAnsweredWithoutPassing` |
+| Timeout approval | only reversible gates listed in `factory.checkpoints.timeout_auto_approve`, snapshotted into the run's params; measured from the engine-recorded, event-corroborated `waiting_since` of the visit; applied on `resume` and recorded as a `DECISION_RECORDED` (`automation`, `mode: timeout`); `status` only reports | `TimeoutApproval`, `TimeoutApprovalThroughTheApi` |
 | Event log is load-bearing | a run that cannot write `events.jsonl` ends FAILED with the reason, never COMPLETED | `test_core_persistence.EventLogLoss` |
 | No infinite loops | `max_visits` per step, including skipped and `--run` paths | `MaxVisits`, `VerifyDevelopLoop` |
 | One driver per run | O_EXCL lock with guarded stale takeover | `ConcurrentRunLock` |
@@ -124,12 +128,13 @@ exists. Release carries per-platform evidence unchanged into the manifest.
 ```bash
 bin/wgf test-core                 # fast categories; golden categories report SKIP
 WGF_GOLDEN=1 bin/wgf test-core    # everything, including both real pipelines (minutes)
+WGF_GOLDEN=1 bin/wgf test-core --strict   # the release gate: no category may be skipped
 bin/wgf test-core --only SECURITY --json
 ```
 
 | Category | Modules | Proves |
 |---|---|---|
-| WORKFLOW | `test_core_workflow`, `test_core_persistence` | engine semantics and crash safety |
+| WORKFLOW | `test_core_workflow`, `test_core_persistence`, `test_decisions` | engine semantics, crash safety, gate decision-records |
 | AGENTS | `test_core_agents` | developer → reviewer → request-changes → developer → approve, isolation, verdicts, timeouts, retry budget, loop bound |
 | CONTRACTS | `test_core_contracts`, `test_core_lineage`, `test_core_template`, `test_golden_fast` | full schema validation, lineage pins, malformed/missing/tampered artifacts |
 | VERIFY | `test_core_verify` | PASS only from evidence; stale/missing/mocked evidence never PASS |
@@ -140,8 +145,31 @@ bin/wgf test-core --only SECURITY --json
 | SECURITY | `test_core_security` | the adversarial pass, one test per attack |
 
 A category whose module is missing is `MISSING` and fails the suite; a category that ran
-nothing or only skips is `SKIP`, which is not `PASS`. The mapping is data in
+nothing or only skips is `SKIP`, which is not `PASS`. A `PASS` category can still contain
+skipped tests (an opt-in flag that is off, a missing `npx`). The mapping is data in
 `scripts/tests/core_suite.py`.
+
+What is skipped is never hidden. The output lists every skipped test by category, grouped
+by its skip reason, and `--json` adds a `skips` list (`id`, `reason`) to each category plus
+`complete`, `skipped_categories` and `skipped_in_pass`. The summary line says `OK` only when
+nothing was skipped. Otherwise it says, for example,
+`OK (INCOMPLETE — skipped: 2D GOLDEN, 3D GOLDEN; 12 tests skipped in PASS categories; …)`.
+
+| Exit | When |
+|---|---|
+| 0 | no category is `FAIL` or `MISSING`. Without `--strict`, skips do not change the exit code. |
+| 1 | a category is `FAIL` or `MISSING`, with or without `--strict` |
+| 4 | `--strict` only: nothing failed, but a category is `SKIP` |
+
+Plain `bin/wgf test-core` is the everyday check: it is fast and exits 0 with the goldens
+skipped. **`WGF_GOLDEN=1 bin/wgf test-core --strict` is the release gate.** A skip there
+means a whole category was not proved on this machine: enable its flag (see
+[env-vars.md](env-vars.md)) or install what it needs. Do not merge a skip as a pass. Tests
+skipped inside a `PASS` category - the live-agent, ajv and real-template-release opt-ins -
+are listed in the output but do not fail `--strict`: those categories were proved by their
+other tests, and requiring every opt-in would make the release gate depend on paid live
+agent runs. Run them deliberately (see [claude-capabilities.md](claude-capabilities.md))
+when the change touches what they cover.
 
 ## Golden runs
 

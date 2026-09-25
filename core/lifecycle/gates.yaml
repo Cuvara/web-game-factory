@@ -18,6 +18,14 @@
 # portfolio.max_concurrent_titles exists. A factory whose gates cannot be cleared is a
 # factory that deadlocks, and a deadlocked factory tempts people to remove the gates that
 # actually matter.
+#
+# `auto_approve_after` is this file's recommendation, not a setting: an installation turns
+# timeout approval on per gate in workspace/config/factory.yaml
+# (factory.checkpoints.timeout_auto_approve), and the workflow engine refuses to start a run
+# whose list names an irreversible gate or one not defined here.
+#
+# `required_artifacts` is what a gate is decided on. A workflow checkpoint for the gate
+# lists them as its inputs, and waits for input - asks nobody - until the run holds them.
 
 version: 1.0.0
 
@@ -72,7 +80,10 @@ gates:
     question: Is this buildable in the timebox, and is the plan specific enough to hand to a coding agent?
     irreversible: false
     auto_approve_after: 48h
-    required_artifacts: [game-design, asset-manifest, tech-plan]
+    # Not asset-manifest: assets are sourced after G3, into the repository G3 lets init
+    # create. The title machine's asset_manifest_present guard still applies to the
+    # lifecycle transition (wgf-state.py), which is not decided inside a workflow run.
+    required_artifacts: [game-design, tech-plan]
     required_predicates:
       - design_consistent
       - engine_selected
@@ -98,9 +109,14 @@ gates:
     irreversible: true
     irreversible_because: The abandon outcome kills the title.
     auto_approve_after: null
-    required_artifacts: [prototype-report, title-strategy, game-design]
+    # The verified prototype - what the verify step produced for the build under review -
+    # judged against the terms of the bet: the kill criteria in title-strategy and the
+    # design they measure. A workflow's G4 checkpoint comes after verification passes, and
+    # a verification that runs again after a pass supersedes it.
+    required_artifacts: [qa-report, verification-report, prototype-report, title-strategy, game-design]
     required_predicates:
       - playable_build
+    # The workflow checkpoint's choices are pass, iterate and kill; kill is `abandon`.
     outcomes: [pass, iterate, abandon]
     presents:
       role: game-designer

@@ -12,7 +12,8 @@ What it does, in order:
 3. Runs the ONE shared `new-game` workflow through the real WorkflowAPI - the same
    assembly `wgf new-game` uses, without --mock, so every step is its real module:
    research -> strategy -> G2 -> design -> tech-plan -> G3 -> init -> assets -> develop ->
-   review -> sdk -> verify -> release.
+   review -> sdk -> sdk-review -> verify -> G4 -> release. The run stops WAITING at G4,
+   which only a person decides; the harness answers it `pass` (below) and resumes.
 4. Browser-tests the resulting game on its own (browser.py), independently of the
    pipeline's own checks.
 5. Writes a summary: every step's outcome and duration, every artifact id@version with its
@@ -25,7 +26,8 @@ The overrides, and why each is legitimate:
 
     init.source: local           no GitHub: the repository is `git archive` of the template
                                  checkout, committed locally (docs/init-module.md)
-    *.checkouts / games_dir      every module finds the repository under <workdir>/games
+    checkouts                    every step finds the repository under <workdir>/games
+                                 (factory.checkouts: init clones there, and records it)
     assets.root                  assets are written into that repository's public/assets
     discovery.*                  the frozen evidence and a one-archetype catalog under
                                  fixtures/, and a fixed as_of - deterministic steering
@@ -33,10 +35,20 @@ The overrides, and why each is legitimate:
     develop.developer            kind `command`: the REPLAY developer (replay_developer.py),
                                  which ports a known-good example game. It is not an agent.
     review.reviewer              kind `command`: the golden reviewer (reviewer.py), a
-                                 deterministic rule check. It is not an agent either.
+                                 deterministic rule check. It is not an agent either. It
+                                 reviews both commits: develop's (review) and sdk's
+                                 (sdk-review), the one release ships. release.allow_unreviewed
+                                 is never set: a golden run releases only an approved commit.
     checkpoints.auto_approve     [G2, G3]: both are reversible gates, which the engine lets
-                                 an installation auto-approve. G4/G6/G7 never are, and the
-                                 workflow reaches none of them.
+                                 an installation auto-approve. G4/G6/G7 never are.
+
+And one decision, not an override: G4 (prototype-review) is irreversible, so nothing in the
+configuration can approve it. The harness resumes the waiting run with `pass` through the
+same API `wgf decide` uses, with `decided_by` from default_decider() - `human`, because the
+person who started the golden run is outside every step's process tree; were the harness
+itself inside one, the decision would be `automation` and G4 would refuse it and keep
+waiting, failing the run. A golden run is a regression run of a known-good port, so the
+pass is that person's, stated in the decision's note (G4_NOTE).
 """
 
 import copy
@@ -98,6 +110,13 @@ def __getattr__(name):
 GOLDEN_AUTHOR = {"name": "wgf-golden", "email": "wgf-golden@users.noreply.invalid"}
 
 AUTO_APPROVE = ["G2", "G3"]  # reversible gates only; the engine refuses G4/G6/G7 anyway
+
+# The gate the harness answers as the person running it, and what it answers. At most this
+# many answers per run: a pass does not loop, so a second wait means something is wrong.
+G4_GATE, G4_DECISION = "G4", "pass"
+G4_NOTE = ("golden run: a regression run of a known-good example port; pass given by the "
+           "person running the golden harness")
+MAX_GATE_ANSWERS = 2
 
 # Environment variables that would point a module somewhere other than this run's checkout.
 FOREIGN_ENV = ("WGF_GAME_REPO", "WGF_RESEARCH_LIVE", "WGF_GAME_CONFIG")
@@ -167,11 +186,11 @@ def build_config(game, workdir, template_dir=None, python=None):
     config = base_config()
     overrides = {
         "storage": {"directory": os.path.join(workdir, "factory-store"), "fsync": True},
+        "checkouts": games_dir,
         "init": {
             "source": "local",
             "template_path": template_dir,
             "template_ref": template.expected_commit(),
-            "projects_dir": games_dir,
             "adopt_existing": False,
         },
         "discovery": {
@@ -184,7 +203,6 @@ def build_config(game, workdir, template_dir=None, python=None):
         },
         "assets": {"root": repo},
         "develop": {
-            "checkouts": games_dir,
             "author": dict(GOLDEN_AUTHOR),
             "developer": {
                 "kind": "command",
@@ -195,7 +213,6 @@ def build_config(game, workdir, template_dir=None, python=None):
             },
         },
         "review": {
-            "checkouts": games_dir,
             "reviewer": {
                 "kind": "command",
                 "argv": [python, os.path.join(HERE, "reviewer.py"),
@@ -206,9 +223,7 @@ def build_config(game, workdir, template_dir=None, python=None):
                 "verdict_from": "file",
             },
         },
-        "sdk": {"games_dir": games_dir, "commit_author": dict(GOLDEN_AUTHOR)},
-        "verification": {"checkouts": games_dir},
-        "release": {"checkouts": games_dir},
+        "sdk": {"commit_author": dict(GOLDEN_AUTHOR)},
         "checkpoints": {"auto_approve": list(AUTO_APPROVE)},
     }
     return _merge(config, overrides)
@@ -263,6 +278,13 @@ class GoldenRun:
             request = RunRequest(project_id=self.game.title_id)
         started = time.monotonic()
         state = api.run(request)
+        for _ in range(MAX_GATE_ANSWERS):
+            pending = api.pending(state)
+            if not pending or pending.get("gate") != G4_GATE:
+                break
+            # decided_by is left to default_decider(), as for `wgf decide`.
+            state = api.run(RunRequest(resume=state.run_id, decision=G4_DECISION,
+                                       note=G4_NOTE))
         return api, state, time.monotonic() - started
 
     def execute(self, resume=None, from_step=None):

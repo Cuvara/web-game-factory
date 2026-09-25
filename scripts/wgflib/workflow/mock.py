@@ -30,7 +30,7 @@ import copy
 import json
 import os
 
-from ..hashing import content_hash
+from .. import provenance
 from .model import ArtifactOutput, StepResult
 from .step import WorkflowStep
 
@@ -39,7 +39,6 @@ __all__ = ["MockStep", "register", "MOCK_STEPS", "FIXTURES"]
 FIXTURES = os.path.join(os.path.dirname(os.path.abspath(__file__)), "fixtures")
 FIXTURE_SLUG = "mock-title"
 DEFAULT_EPOCH = "2026-01-01T00:00:00Z"
-SCHEMA_VERSION = "1.0.0"
 
 
 class MockStepError(RuntimeError):
@@ -96,34 +95,18 @@ class MockStep(WorkflowStep):
             body = json.loads(handle.read().replace(FIXTURE_SLUG, slug))
         self.customize(body, artifact_type, context, entry)
 
-        pinned = []
-        for input_type, ref in sorted(inputs.refs.items()):
-            content = inputs.load(input_type)
-            provenance = content.get("provenance") if isinstance(content, dict) else None
-            if provenance and ref.content_hash:
-                pinned.append({
-                    "artifact_id": provenance["artifact_id"],
-                    "artifact_type": input_type,
-                    "content_hash": ref.content_hash,
-                })
-
         sequence = min(context.execution, 99)
         artifact = {
-            "provenance": {
-                "artifact_id": f"wgf:{artifact_type}:{slug}:{epoch[:10].replace('-', '')}-"
-                               f"{sequence:02d}",
-                "artifact_type": artifact_type,
-                "schema_version": SCHEMA_VERSION,
-                "title_id": slug,
-                "produced_by": {"role": self.role, "actor": "automation"},
-                "produced_at": epoch,
-                "inputs": pinned,
-                "content_hash": "",
-                "status": "draft",
-            },
+            "provenance": provenance.build(
+                artifact_type,
+                artifact_id=provenance.artifact_id(artifact_type, slug, epoch, sequence),
+                produced_by=provenance.producer(self.role),
+                produced_at=epoch,
+                inputs=provenance.pin_inputs(inputs),
+                title_id=slug),
         }
         artifact.update(body)
-        artifact["provenance"]["content_hash"] = content_hash(artifact)
+        provenance.seal(artifact)
         return ArtifactOutput(artifact_type, artifact)
 
     def customize(self, body, artifact_type, context, entry):
@@ -172,11 +155,20 @@ class MockDevelopmentStep(MockStep):
 
 class MockReviewStep(MockStep):
     """`request-changes` in a mock plan is a review asking for changes: FAILED with that
-    route and not retryable, the same shape the real review step returns."""
+    route and not retryable, the same shape the real review step returns.
+
+    Otherwise it approves - so a mock run can reach release - exactly the commit the real
+    step would review: the build_ref.commit_sha of its `with: subject` (default
+    prototype-report; `sdk-review` names sdk-report). The approval names no reviewer
+    (`reviewer.kind: none`): no code was read, and a real release refuses an approval with
+    no reviewer behind it."""
 
     type, role = "review", "architect"
 
     def execute(self, inputs, context):
+        subject = (self.params or {}).get("subject") or "prototype-report"
+        loaded = inputs.load(subject) if subject in inputs else None
+        self._subject_commit = ((loaded or {}).get("build_ref") or {}).get("commit_sha")
         result = super().execute(inputs, context)
         if result.route == "request-changes":
             return StepResult("FAILED", route=result.route, artifacts=result.artifacts,
@@ -188,6 +180,8 @@ class MockReviewStep(MockStep):
             return
         body["iteration"] = context.visit
         body["attempt"] = context.attempt
+        if getattr(self, "_subject_commit", None):
+            body["reviewed_commit"] = self._subject_commit
         if entry == "request-changes":
             body["verdict"] = "request-changes"
             body["blockers"] = [{"id": f"mock-blocker-{context.execution}", "file": None,

@@ -1,0 +1,17 @@
+{
+  "_comment": [
+    "Platform profiles vendored from the Factory, at the exact version game.config.yaml pins.",
+    "The .yaml files here are byte-identical copies of core/reference/platforms/<id>.yaml.",
+    "Written by the Factory at scaffolding; do not hand-edit."
+  ],
+  "source_repo": "web-game-factory",
+  "source_path": "core/reference/platforms",
+  "profiles": [
+    {
+      "id": "generic-web",
+      "version": "1.0.0",
+      "file": "generic-web.yaml",
+      "content_hash": "sha256:d33a9fd7fced439e503cf769036fefa3a0824c3c51cc862786630d807cf80f00"
+    }
+  ]
+}

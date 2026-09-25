@@ -2,14 +2,14 @@
 
 import json
 
-from wgflib.hashing import content_hash
+from wgflib import provenance
 
 from .verdict import CONTRACT
 
 __all__ = ["build_report", "render_brief", "PROMPT", "PROMPT_STDOUT", "SCHEMA_VERSION",
            "ROLE"]
 
-SCHEMA_VERSION = "1.0.0"
+SCHEMA_VERSION = provenance.version_of("review-report")
 
 # The gameplay lens: defects players feel rather than see, all visible in source. Condensed
 # from core/craft/gameplay-review.md; restated here (not pointed at) because the reviewer
@@ -73,7 +73,10 @@ PROMPT_STDOUT = (
 
 
 def render_brief(*, title_id, commit, baseline, design, prototype, develop_brief,
-                 verdict_path, repo, to_stdout=False):
+                 verdict_path, repo, to_stdout=False, sdk=None):
+    """`sdk` is the sdk-report when the commit under review is the sdk step's (subject
+    sdk-report): the change is then the platform integration on top of `baseline`, the
+    development commit an earlier review read."""
     design = design or {}
     prototype = prototype or {}
     develop_brief = develop_brief or {}
@@ -88,6 +91,14 @@ def render_brief(*, title_id, commit, baseline, design, prototype, develop_brief
     if baseline and baseline != commit:
         add(f"- The change: `git diff {baseline}..{commit}` "
             f"(`git log --stat {baseline}..{commit}`)")
+    if sdk is not None:
+        add("- This is the platform SDK integration the Factory's sdk step committed on top "
+            f"of the development commit `{baseline or 'unknown'}`. This commit is the one that "
+            "is verified and shipped. Review the integration and whether it changed the game.")
+        platforms = [p.get("platform_id") for p in sdk.get("platforms") or []
+                     if isinstance(p, dict) and p.get("platform_id")]
+        if platforms:
+            add(f"- Platforms integrated: {', '.join(platforms)}")
     add("- What the developer was asked to build: `docs/development/brief.md` in the "
         "repository, and what it reported: `docs/development/report.json`. The whole "
         "design, rendered for reading: `docs/GDD.md`.")
@@ -165,19 +176,16 @@ def build_report(*, title_id, commit, baseline, verdict, blockers, notes, failur
                  reviewer, isolation, iteration, attempt, duration_s, timed_out,
                  pinned_inputs, artifact_seq, produced_at):
     artifact = {
-        "provenance": {
-            "artifact_id": f"wgf:review-report:{title_id}:"
-                           f"{produced_at[:10].replace('-', '')}-{min(artifact_seq, 99):02d}",
-            "artifact_type": "review-report",
-            "schema_version": SCHEMA_VERSION,
-            "title_id": title_id,
-            "produced_by": {"role": ROLE, "actor": "ai" if reviewer.get("kind") == "command"
-                            else "automation"},
-            "produced_at": produced_at,
-            "inputs": pinned_inputs,
-            "content_hash": "",
-            "status": "draft",
-        },
+        "provenance": provenance.build(
+            "review-report",
+            artifact_id=provenance.artifact_id("review-report", title_id, produced_at,
+                                               artifact_seq),
+            produced_by=provenance.producer(
+                ROLE, "ai" if reviewer.get("kind") == "command" else "automation"),
+            produced_at=produced_at,
+            inputs=pinned_inputs,
+            schema_version=SCHEMA_VERSION,
+            title_id=title_id),
         "title_id": title_id,
         "reviewed_commit": commit,
         "baseline_commit": baseline,
@@ -194,5 +202,4 @@ def build_report(*, title_id, commit, baseline, verdict, blockers, notes, failur
     }
     if notes:
         artifact["notes"] = notes
-    artifact["provenance"]["content_hash"] = content_hash(artifact)
-    return artifact
+    return provenance.seal(artifact)

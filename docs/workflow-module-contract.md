@@ -70,6 +70,9 @@ leaks into a retry.
 | `emit(event, **fields)` | A custom event on the run's bus, tagged with this step |
 | `run_dir` | The run's directory. For diagnostics only — never write state here |
 | `mock` | True in a `--mock` run |
+| `entered_by` | The step and route that brought the run into this visit (`verify.fail`, `review.request-changes`, `assets.success`, …), or `None` for a run's first step, `--from`, or a resume's extra pass |
+| `visit_budget` | What this visit leaves of the step's visit limits: `{"step": {limit, used, remaining}, "route": None \| {route, limit_key, limit, used, remaining}}` (`max_visits`, since the run last started or resumed; the tightest `max_visits_by_route` limit counting this entry, over the run) |
+| `read_events()` | The run's recorded events, oldest first, read fresh: durable history to count from (a budget), never to write |
 
 ## 2. Registration
 
@@ -149,30 +152,41 @@ reading, and `DocumentedIoContract` fails if the two disagree.
 |---|---|---|---|
 | `research` | `research` | — | `research-report`, `opportunity` |
 | `strategy` | `strategy` | `opportunity` | `title-strategy` |
-| `strategy-review` | `human-checkpoint` | — | — |
+| `strategy-review` | `human-checkpoint` | `title-strategy` | `decision-record` |
 | `design` | `design` | `title-strategy` | `game-design` |
 | `tech-plan` | `tech-plan` | `game-design`, `title-strategy` | `tech-plan` |
-| `tech-plan-review` | `human-checkpoint` | — | — |
+| `tech-plan-review` | `human-checkpoint` | `game-design`, `tech-plan` | `decision-record` |
 | `init` | `init` | `game-design`, `tech-plan` | `scaffold-record` |
 | `assets` | `assets` | `game-design`, `scaffold-record` | `asset-manifest` |
 | `develop` | `develop` | `game-design`, `asset-manifest`, `scaffold-record`, `title-strategy`, `tech-plan`, `qa-report`, `review-report` | `prototype-report` |
 | `review` | `review` | `prototype-report`, `game-design`, `scaffold-record` | `review-report` |
 | `sdk` | `sdk` | `game-design`, `scaffold-record`, `prototype-report` | `sdk-report` |
+| `sdk-review` | `review` | `sdk-report`, `prototype-report`, `game-design`, `scaffold-record` | `review-report` |
 | `verify` | `verify` | `prototype-report`, `sdk-report`, `game-design`, `scaffold-record`, `asset-manifest` | `verification-report`, `qa-report` |
+| `prototype-review` | `human-checkpoint` | `qa-report`, `verification-report`, `prototype-report`, `title-strategy`, `game-design` | `decision-record` |
 | `release` | `release` | `qa-report`, `verification-report`, `sdk-report`, `prototype-report`, `scaffold-record`, `review-report` | `release-manifest` |
 <!-- io-contract:end -->
+
+A `human-checkpoint` lists the artifacts its gate is decided on (gates.yaml
+`required_artifacts`) and waits for input until the run holds them; `prototype-review` is
+G4, which only a person decides (pass / iterate / kill). Each one outputs a
+`decision-record` with every decided outcome (docs/factory-lifecycle.md), pinning exactly
+the inputs it consumed.
 
 `develop` declares `qa-report` so that on a verify → develop loop it receives the failing
 report; on its first visit that input is missing, which is expected. It declares
 `review-report` for the same reason on a review → develop loop: when `review` requests
-changes to the commit develop made, the next brief leads with the reviewer's blockers
+changes to the commit develop made - or `sdk-review` to the commit sdk made on top of it,
+the one that ships - the next brief leads with the reviewer's blockers
 ([review-module.md](review-module.md)). It reads
 `scaffold-record` to find the game repository it builds in, and `title-strategy` for the
 questions and kill criteria its `prototype-report` must list. `verify` emits the
 `verification-report` — every check with its evidence — and the `qa-report` computed from it;
 see [verification-module.md](verification-module.md). `release` produces a
 `release-manifest` in state `draft` and stops: it refuses unless the newest qa-report passed
-and every report and the clean checkout name one commit, packages with the game repository's
+and every report and the clean checkout name one commit, the newest review-report approved
+exactly that commit (or the installation set `factory.release.allow_unreviewed`), and G4
+is passed; it packages with the game repository's
 own scripts, and never publishes; see [release-module.md](release-module.md). Publishing is
 behind G5 and G6.
 
@@ -181,20 +195,26 @@ Routing, retry and gates for each step are in the workflow file; read it, not a 
 ## 6. Artifact schemas
 
 Every type above has a schema in `core/artifacts/<type>.schema.json`, and its `x-wgf` block
-names producer, consumers and repository path. Before persisting an artifact the engine
-checks it against that schema's top level (`contracts.ArtifactContracts`):
+names producer, consumers, repository path, run-store path and contract version
+(`x-wgf.version`). check-integrity fails when a workflow step's stage is not the producer of
+what it outputs, or not among the consumers of what it reads. Before persisting an artifact
+the engine validates it against the full schema (`contracts.ArtifactContracts`, the draft
+2020-12 validator in `wgflib/jsonschema_lite.py`, differential-tested against ajv):
 
-- content is a JSON object with every `required` key, and no key the schema forbids;
+- content is a JSON object valid against the schema;
 - `provenance.artifact_type` equals the type;
+- `provenance.schema_version` has the major of the schema's `x-wgf.version`;
 - `provenance.content_hash` reproduces (`wgflib.hashing.content_hash`, the canonicalization
   on `provenance.schema.json#/$defs/hash`).
 
-A failure is a non-retryable `FAILED` and nothing is written. This is a structural check, not
-full JSON Schema validation — validate with ajv in the module's own tests (see §11).
+A failure is a non-retryable `FAILED` and nothing is written.
 
-Build provenance like the mock steps do (`wgflib/workflow/mock.py`): `artifact_id` in the
-`wgf:<type>:<scope>:<yyyymmdd>-<nn>` shape, `produced_by.role` from `core/roles/roles.yaml`,
-`inputs` pinning each consumed artifact by `content_hash`, then compute `content_hash` last.
+Build provenance with `wgflib/provenance.py`, as every module and the mock steps do:
+`build(artifact_type, artifact_id=..., produced_by=..., produced_at=..., inputs=...)` takes
+`schema_version` from the schema's `x-wgf.version`; `artifact_id(...)` gives the
+`wgf:<type>:<scope>:<yyyymmdd>-<nn>` shape; `producer(role)` a role from
+`core/roles/roles.yaml`; `pin_inputs(inputs)` pins each consumed artifact by `content_hash`;
+`seal(artifact)` computes `content_hash` last.
 
 **Versioning.** `ArtifactRef.version` counts productions within a run. The *contract* version
 is `provenance.schema_version`, copied to `ArtifactRef.schema_version`. Expectations:

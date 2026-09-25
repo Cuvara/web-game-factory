@@ -38,6 +38,7 @@ sys.path.insert(0, HERE)
 import wgf_discovery  # noqa: E402
 from wgf_discovery import evidence  # noqa: E402
 from wgf_discovery.step import ResearchStep  # noqa: E402
+from testenv import enabled  # noqa: E402
 from wgflib.hashing import content_hash  # noqa: E402
 from wgflib.workflow.api import RunRequest, WorkflowAPI  # noqa: E402
 from wgflib.workflow.config import FactoryConfig  # noqa: E402
@@ -514,6 +515,8 @@ class EngineContract(Scratch):
         api = WorkflowAPI(config=FactoryConfig(self.config()),
                           store_dir=os.path.join(self.scratch, "store"))
         state = api.run(RunRequest(mock=True))
+        self.assertEqual((state.status, state.cursor), (RunStatus.WAITING, "prototype-review"))
+        state = api.run(RunRequest(resume=state.run_id, decision="pass", decided_by="human"))
         self.assertEqual(state.status, RunStatus.COMPLETED)
         report = api.store.read_artifact(state.run_id, state.latest_artifact("research-report"))
         self.assertEqual(report["id"], "rr-mock")
@@ -554,6 +557,10 @@ class Cli(Scratch):
 
     def test_wgf_new_game_mock(self):
         done = self.wgf("new-game", "--mock", config=self.CONFIG)
+        # A mock run stops at G4, which only a person decides; `wgf decide` from here is one.
+        self.assertEqual(done.returncode, 3, done.stdout + done.stderr)
+        run_id = done.stdout.split("Run:", 1)[1].split()[0]
+        done = self.wgf("decide", run_id, "pass", config=self.CONFIG)
         self.assertEqual(done.returncode, 0, done.stdout + done.stderr)
         self.assertIn("Workflow completed successfully.", done.stdout)
 
@@ -567,7 +574,7 @@ class Cli(Scratch):
 # -- full schema validation, opt-in ---------------------------------------------------------
 
 
-@unittest.skipUnless(os.environ.get("WGF_AJV") == "1" and shutil.which("npx"),
+@unittest.skipUnless(enabled("WGF_AJV") and shutil.which("npx"),
                      "set WGF_AJV=1 to validate with ajv (needs npx; downloads ajv once)")
 class AjvSchema(Scratch):
     def validate(self, schema, content):

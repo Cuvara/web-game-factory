@@ -6,28 +6,44 @@ Every command that does work is a slice of one workflow definition, executed by 
     wgf new-game [--mock]                the whole workflow
     wgf research | plan | init | assets | develop | sdk | verify | release [--mock]
                                          one step, or a group of steps (`plan`)
-    wgf <cmd> --resume <run-id>          continue a run from where it stopped
-    wgf <cmd> --resume <run-id> --decision approve
+    wgf resume <run-id> [--from STEP]    continue a run from where it stopped
+    wgf resume <run-id> --decision CHOICE [--note TEXT]
+    wgf resume <run-id> --budget-sessions N [--budget-cost X]
+                                         raise the run's developer-session budget, as a
+                                         person (refused from inside a step's process tree)
+    wgf decide <run-id> CHOICE [--note TEXT]
                                          answer a run waiting at a human checkpoint
+    wgf <cmd> --resume <run-id> [...]    the same as `wgf resume`, whatever <cmd> is
     wgf <cmd> --run <run-id>             run that slice inside an existing run, reusing its
                                          artifacts; steps it already completed are skipped
     wgf new-game --from develop          start a run at a later step
 
     wgf status [run-id]                  where a run stands (default: the latest run)
     wgf logs [run-id] [--json]           its events, which are also its structured log
-    wgf runs                             every run in the store
-    wgf pause <run-id> | cancel <run-id>
-    wgf test-core [--only CATEGORY] [--json]
-                                         the Core Acceptance Suite, by category
+    wgf runs [--waiting] [--json]        every run in the store; or only those waiting for
+                                         a decision, with the step, gate and choices
+    wgf pause <run-id> | cancel <run-id> neither imports a step module
+    wgf test-core [--only CATEGORY] [--json] [--strict]
+                                         the Core Acceptance Suite, by category; --strict
+                                         fails (exit 4) when a category was skipped
 
 The run commands are generated from the default workflow's step ids and group names, so a
 step added to core/workflows/new-game.workflow.yaml is a command without touching this file.
 
-Exit status: 0 completed, 1 failed/blocked/cancelled or left its scope on a failure,
-2 usage, 3 waiting for a decision or input (or paused).
+A fresh single-step command (`wgf develop`) still creates a run of its own; when that run
+stops for inputs it does not hold, wgf names the latest run that holds them
+(`hint: wgf develop --run <run-id>`).
 
-Run from the web-game-factory repository root, as `python scripts/wgf.py ...` or via the
-`bin/wgf` shim.
+Exit status: 0 completed, 1 failed/blocked/cancelled or left its scope on a failure (or an
+OS error, such as a full disk), 2 usage - including a flag the command would otherwise
+ignore: --mock, --mock-plan, --hold-gates or --project with --resume or --run, --from with
+--run, --note without --decision - 3 waiting for a decision or input (or paused).
+`wgf status` exits with the same code for the run it shows, and 0 for one still RUNNING.
+`wgf test-core --strict` exits 4 when a whole category was skipped (1 still means a failure).
+
+Run as `python scripts/wgf.py ...` or via the `bin/wgf` shim. A relative
+factory.storage.directory resolves against the repository root, so every working directory
+finds the same store; `--store` resolves against the working directory, as typed.
 """
 
 import argparse
@@ -40,7 +56,8 @@ import unittest
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from wgflib.workflow.api import RunRequest, WorkflowAPI  # noqa: E402
+from wgflib.workflow.api import (  # noqa: E402
+    RunRequest, WorkflowAPI, ended_by_decision, missing_inputs, pending_decision)
 from wgflib.workflow.config import load_config  # noqa: E402
 from wgflib.workflow.definition import DefinitionError  # noqa: E402
 from wgflib.workflow.engine import EngineError  # noqa: E402
@@ -50,6 +67,10 @@ from wgflib.workflow.store import RunLocked, StoreError  # noqa: E402
 from wgflib.yamllite import YamlError, load as load_yaml  # noqa: E402
 
 EXIT_OK, EXIT_FAILED, EXIT_USAGE, EXIT_WAITING = 0, 1, 2, 3
+
+
+class UsageError(Exception):
+    """A command line wgf would not carry out as written: exit 2, nothing touched."""
 
 _UNICODE = {
     StepStatus.SUCCESS: "✓", StepStatus.FAILED: "✗", StepStatus.RUNNING: "▶",
@@ -103,17 +124,71 @@ def render_liveness(live):
                  f"elapsed {_duration(live.get('elapsed_seconds'))}")
     lines.append(f"Activity: {live.get('last_activity_at') or '-'}   "
                  f"{_duration(live.get('idle_seconds'))} ago")
-    if live["liveness"] == "hung":
-        lines.append(f"          nothing for longer than {live['hung_after_seconds']}s "
-                     f"(factory.execution.hung_after_seconds); the step may be stuck. "
-                     f"`wgf cancel {live['run_id']}` terminates it.")
+    if live.get("last_output_at") and live.get("pid"):
+        lines.append(f"Output:   {live['last_output_at']}   "
+                     f"{_duration(live.get('output_idle_seconds'))} ago")
+    if live["liveness"] == "hung" and live.get("hung_reason") == "output":
+        lines.append(f"          the driver is alive (heartbeats arriving), but child pid "
+                     f"{live.get('pid')} has written nothing for longer than "
+                     f"{live.get('hung_output_seconds')}s "
+                     f"(factory.execution.hung_output_seconds). It may be stuck, or working "
+                     f"silently; nothing is stopped by looking. `wgf cancel {live['run_id']}` "
+                     f"terminates its tree.")
+    elif live["liveness"] == "hung":
+        lines.append(f"          the driver has recorded nothing, not even a heartbeat, for "
+                     f"longer than {live['hung_after_seconds']}s "
+                     f"(factory.execution.hung_after_seconds): the Factory process itself is "
+                     f"not reporting (blocked outside a child process, or suspended). "
+                     f"`wgf cancel {live['run_id']}` asks it to stop; if it never does, end "
+                     f"driver pid {live.get('driver_pid')} and resume.")
     elif live["liveness"] == "stale":
         lines.append("          RUNNING on disk but no live process holds the run: its driver "
-                     "crashed. Resume it to continue from this step.")
+                     "crashed. Resume it to continue from this step; resume (or cancel) "
+                     "first ends any process the dead driver's step left running.")
     return lines
 
 
-def render_status(state, definition, live=None):
+def _window(seconds):
+    for unit, size in (("d", 86400), ("h", 3600), ("m", 60)):
+        if seconds % size == 0:
+            return f"{seconds // size}{unit}"
+    return f"{seconds}s"
+
+
+def render_timeout(timeout, run_id):
+    """One line on a gate's timeout approval, or None. It only reports: the approval is
+    applied by the next `wgf resume`, never by looking at the run."""
+    if not timeout:
+        return None
+    window = _window(timeout["window_seconds"])
+    if not timeout.get("waiting_since"):
+        return (f"Timeout: {timeout['gate']} approves itself {window} after it starts waiting; "
+                f"`wgf resume {run_id}` starts the wait")
+    if timeout.get("eligible"):
+        return (f"Timeout: {timeout['gate']} eligible for timeout approval since "
+                f"{timeout['eligible_at']} (waiting since {timeout['waiting_since']}, window "
+                f"{window}); `wgf resume {run_id}` applies it")
+    return (f"Timeout: {timeout['gate']} approves itself on the first `wgf resume {run_id}` "
+            f"at or after {timeout['eligible_at']} (waiting since {timeout['waiting_since']}, "
+            f"window {window})")
+
+
+def render_ended(state, definition):
+    """How a run a decision ended - G4's kill - was ended, or None."""
+    ended = ended_by_decision(state)
+    if ended is None:
+        return None
+    gate = None
+    if definition is not None and definition.has_step(ended["step"]):
+        gate = (definition.step(ended["step"]).params or {}).get("gate")
+    where = f"{gate} ({ended['step']})" if gate else ended["step"]
+    how = f" on {ended['mode']}" if ended.get("mode") else ""
+    line = (f"Ended:  {ended['decision']} at {where}, decided by {ended['decided_by']}{how} "
+            f"at {ended['decided_at']}")
+    return line + (f": {ended['note']}" if ended.get("note") else "")
+
+
+def render_status(state, definition, live=None, pending=None):
     marks = _symbols()
     lines = [
         f"Workflow: {state.workflow_id} (v{state.workflow_version})",
@@ -150,26 +225,34 @@ def render_status(state, definition, live=None):
     lines.append(f"Status: {state.status}")
     if state.message:
         lines.append(f"        {state.message}")
+    ended = render_ended(state, definition)
+    if ended:
+        lines.append(ended)
     if state.exit and state.exit.get("next") not in (None, "$end"):
         lines.append(f"Next:   {state.exit['next']} (outside this run's scope; "
                      f"wgf {state.exit['next']} --run {state.run_id})")
     if live is not None:
         lines.append("")
         lines.extend(render_liveness(live))
-    hint = _resume_hint(state, live)
+    timeout = render_timeout((pending or {}).get("timeout"), state.run_id)
+    if timeout:
+        lines.append(timeout)
+    hint = _resume_hint(state, live, definition, pending)
     if hint:
         lines.append(hint)
     return "\n".join(lines)
 
 
-def _resume_hint(state, live=None):
-    command = f"wgf {state.workflow_id} --resume {state.run_id}"
+def _resume_hint(state, live=None, definition=None, pending=None):
+    command = f"wgf resume {state.run_id}"
     if live is not None and live.get("liveness") == "stale":
         return f"Resume: {command}   (its driver died)"
     if state.status == RunStatus.WAITING:
-        step = state.steps.get(state.cursor)
-        if step and step.status == StepStatus.WAITING:
-            return f"Decide: {command} --decision approve|reject [--note TEXT]"
+        pending = pending or pending_decision(state, definition)
+        if pending is not None:
+            choices = "|".join(pending["choices"] or ["CHOICE"])
+            gate = f"   (gate {pending['gate']})" if pending.get("gate") else ""
+            return f"Decide: wgf decide {state.run_id} {choices} [--note TEXT]{gate}"
         return f"Resume: {command}"
     if state.status in (RunStatus.FAILED, RunStatus.BLOCKED, RunStatus.PAUSED):
         return f"Resume: {command}   (after fixing the cause)"
@@ -242,10 +325,21 @@ def render_logs(events, as_json):
 def exit_code(state):
     if state.status == RunStatus.COMPLETED:
         outcome = (state.exit or {}).get("outcome")
-        return EXIT_OK if outcome in (None, StepOutcome.SUCCESS) else EXIT_FAILED
+        if outcome in (None, StepOutcome.SUCCESS):
+            return EXIT_OK
+        # Ended by a decision - G4's kill - is a legitimate end, not a failure: the command
+        # did what was asked. `wgf status` says how it ended ("Ended: kill at G4 ...").
+        return EXIT_OK if ended_by_decision(state) else EXIT_FAILED
     if state.status in (RunStatus.WAITING, RunStatus.PAUSED):
         return EXIT_WAITING
     return EXIT_FAILED
+
+
+def status_exit_code(state):
+    """`wgf status` mirrors the run it shows; a run still being driven has not failed."""
+    if state.status in (RunStatus.RUNNING, RunStatus.PENDING):
+        return EXIT_OK
+    return exit_code(state)
 
 
 # -- arguments ------------------------------------------------------------------------------
@@ -304,6 +398,32 @@ def build_parser(commands):
         run.add_argument("--quiet", action="store_true", help="print only the final status")
         run.set_defaults(handler=cmd_run, scope=name)
 
+    resume = sub.add_parser("resume", help="continue a stopped run")
+    _common(resume)
+    resume.add_argument("run", metavar="RUN_ID")
+    resume.add_argument("--from", metavar="STEP", dest="from_step",
+                        help="restart at this step")
+    resume.add_argument("--decision", metavar="CHOICE", help="answer a waiting checkpoint")
+    resume.add_argument("--note", metavar="TEXT", help="rationale recorded with --decision")
+    resume.add_argument("--budget-sessions", metavar="N", type=int,
+                        help="raise the run's developer-session budget to N sessions "
+                             "(factory.develop.budget.max_sessions), recorded as BUDGET_RAISED")
+    resume.add_argument("--budget-cost", metavar="X", type=float,
+                        help="raise the run's developer cost budget to X "
+                             "(factory.develop.budget.max_cost), recorded as BUDGET_RAISED")
+    resume.add_argument("--json", action="store_true", help="print events as JSON lines")
+    resume.add_argument("--quiet", action="store_true", help="print only the final status")
+    resume.set_defaults(handler=cmd_resume)
+
+    decide = sub.add_parser("decide", help="answer a run waiting for a decision")
+    _common(decide)
+    decide.add_argument("run", metavar="RUN_ID")
+    decide.add_argument("choice", metavar="CHOICE", help="e.g. approve or reject")
+    decide.add_argument("--note", metavar="TEXT", help="rationale recorded with the decision")
+    decide.add_argument("--json", action="store_true", help="print events as JSON lines")
+    decide.add_argument("--quiet", action="store_true", help="print only the final status")
+    decide.set_defaults(handler=cmd_decide)
+
     status = sub.add_parser("status", help="show a run (default: latest)")
     _common(status)
     status.add_argument("run", nargs="?")
@@ -319,11 +439,23 @@ def build_parser(commands):
 
     runs = sub.add_parser("runs", help="list runs")
     _common(runs)
+    runs.add_argument("--waiting", action="store_true",
+                      help="only runs waiting for a decision, with the step, gate and choices")
+    runs.add_argument("--json", action="store_true")
     runs.set_defaults(handler=cmd_runs)
 
-    core = sub.add_parser("test-core", help="run the Core Acceptance Suite")
+    core = sub.add_parser(
+        "test-core", help="run the Core Acceptance Suite",
+        description="Exit status: 0 nothing failed (skips are listed, and the summary says "
+                    "INCOMPLETE), 1 a category FAILED or is MISSING, 4 with --strict: "
+                    "a whole category was skipped. The release gate is "
+                    "`WGF_GOLDEN=1 bin/wgf test-core --strict`.")
     core.add_argument("--only", action="append", metavar="CATEGORY",
                       help="run only this category (repeatable), e.g. WORKFLOW")
+    core.add_argument("--strict", action="store_true",
+                      help="exit 4 if any category is SKIP: every category must have run. "
+                           "Tests skipped inside a PASS category (opt-in live checks) are "
+                           "listed but do not fail it")
     core.add_argument("--json", action="store_true")
     core.set_defaults(handler=cmd_test_core)
 
@@ -343,14 +475,80 @@ def _api(args, subscribers=()):
 # -- commands -------------------------------------------------------------------------------
 
 
-def cmd_run(args):
-    if args.decision and not args.resume:
-        raise SystemExit("--decision needs --resume <run-id>")
-    if args.resume and args.run_id:
-        raise SystemExit("--resume and --run are exclusive")
-    if args.force and not args.run_id:
-        raise SystemExit("--force only applies with --run")
+# What only a new run takes. An existing run keeps the mocks, mock plan, gate policy and
+# project it was started with; given with --resume or --run, these would be ignored.
+_NEW_RUN_ONLY = (("mock", "--mock"), ("mock_plan", "--mock-plan"),
+                 ("hold_gates", "--hold-gates"), ("project", "--project"))
 
+_NOTE_NEEDS_DECISION = "--note is recorded with a decision; it needs --decision CHOICE"
+
+
+def _refuse_ignored_flags(args):
+    """Refuse a flag the command would otherwise silently ignore."""
+    if args.decision and not args.resume:
+        raise UsageError("--decision needs --resume <run-id> (or: wgf decide <run-id> CHOICE)")
+    if args.note is not None and not args.decision:
+        raise UsageError(_NOTE_NEEDS_DECISION)
+    if args.resume and args.run_id:
+        raise UsageError("--resume and --run are exclusive")
+    if args.force and not args.run_id:
+        raise UsageError("--force only applies with --run")
+    if args.run_id and args.from_step:
+        raise UsageError(f"--from does not apply with --run, which runs this command's own "
+                         f"steps; to restart at a step: wgf resume {args.run_id} --from STEP")
+    existing = args.resume or args.run_id
+    given = [flag for attr, flag in _NEW_RUN_ONLY if getattr(args, attr)]
+    if existing and given:
+        raise UsageError(
+            f"{', '.join(given)} only {'applies' if len(given) == 1 else 'apply'} to a new "
+            f"run; {'--resume' if args.resume else '--run'} continues {existing} with the "
+            f"settings it was started with")
+
+
+def _drive(api, args, request):
+    """Run `request` and print where the run ended. Returns the RunState."""
+    state = api.run(request)
+    if not args.json:
+        definition = api.definition_for(state)
+        print()
+        print(render_status(state, definition, pending=api.pending(state)))
+        ended = ended_by_decision(state)
+        if ended is not None:
+            print(f"\nWorkflow ended by a decision: {ended['decision']} at {ended['step']}.")
+        elif state.status == RunStatus.COMPLETED and exit_code(state) == EXIT_OK:
+            print("\nWorkflow completed successfully.")
+    return state
+
+
+def _missing_input_hint(api, args, state):
+    """For a fresh slice that stopped because the run it created holds none of its inputs.
+
+    Running a step on its own is legitimate - `wgf verify` against nothing upstream - so the
+    run stands; but the person most likely meant it to run inside the run holding them.
+    """
+    if state.status not in (RunStatus.WAITING, RunStatus.BLOCKED):
+        return None
+    definition = api.definition_for(state)
+    if args.scope == definition.id or pending_decision(state, definition) is not None:
+        return None
+    last = next((entry.get("outcome") for entry in reversed(state.trail)
+                 if entry.get("step") == state.cursor), None)
+    if last not in (StepOutcome.WAITING_FOR_INPUT, StepOutcome.BLOCKED):
+        return None
+    missing = missing_inputs(state, definition)
+    if not missing:
+        return None
+    holder = api.latest_run_holding(missing, state.workflow_id, exclude=state.run_id)
+    needs = f"{state.cursor} needs {', '.join(missing)}, which this new run does not hold"
+    if holder is None:
+        return (f"hint: {needs}, and no other run does either; produce them first, or run "
+                f"it inside the run that will: wgf {args.scope} --run <run-id>")
+    return (f"hint: {needs}; the latest run holding them is {holder.run_id}: "
+            f"wgf {args.scope} --run {holder.run_id}")
+
+
+def cmd_run(args):
+    _refuse_ignored_flags(args)
     progress = Progress(sys.stdout, as_json=args.json)
     api = _api(args, subscribers=() if args.quiet else (progress,))
     request = RunRequest(
@@ -359,14 +557,49 @@ def cmd_run(args):
         decision=args.decision, note=args.note, project_id=args.project,
         hold_gates=args.hold_gates,
     )
-    state = api.run(request)
-    if not args.json:
-        definition = api.definition_for(state)
-        print()
-        print(render_status(state, definition))
-        if state.status == RunStatus.COMPLETED and exit_code(state) == EXIT_OK:
-            print("\nWorkflow completed successfully.")
+    state = _drive(api, args, request)
+    if not (args.resume or args.run_id):
+        hint = _missing_input_hint(api, args, state)
+        if hint:
+            print(hint, file=sys.stderr)
     return exit_code(state)
+
+
+def cmd_resume(args):
+    if args.note is not None and not args.decision:
+        raise UsageError(_NOTE_NEEDS_DECISION)
+    progress = Progress(sys.stdout, as_json=args.json)
+    api = _api(args, subscribers=() if args.quiet else (progress,))
+    request = RunRequest(resume=args.run, from_step=args.from_step,
+                         decision=args.decision, note=args.note,
+                         budget_sessions=args.budget_sessions, budget_cost=args.budget_cost)
+    return exit_code(_drive(api, args, request))
+
+
+def cmd_decide(args):
+    """`wgf resume RUN --decision CHOICE`, for a run that is waiting for one.
+
+    The decision goes through the engine's resume like any other: the visit it answers, its
+    DECISION_RECORDED event and the rule that only a person decides G4/G6/G7 are the
+    engine's and the checkpoint's, not this command's. `decided_by` is default_decider()'s.
+    """
+    progress = Progress(sys.stdout, as_json=args.json)
+    api = _api(args, subscribers=() if args.quiet else (progress,))
+    state = api.store.load(args.run)
+    step = state.steps.get(state.cursor) if state.cursor else None
+    if state.status != RunStatus.WAITING or step is None or step.status != StepStatus.WAITING:
+        where = f" at {state.cursor} ({step.status})" if step is not None else ""
+        raise UsageError(f"run {args.run} is {state.status}{where}, not waiting for a "
+                         f"decision; see wgf status {args.run}")
+    pending = api.pending(state)
+    if pending is None:
+        raise UsageError(f"run {args.run} is waiting at {state.cursor} for input, not for a "
+                         f"decision; provide it, then wgf resume {args.run}")
+    if pending["choices"] and args.choice not in pending["choices"]:
+        raise UsageError(f"{args.choice!r} is not a choice at {state.cursor}: "
+                         f"{', '.join(pending['choices'])}")
+    request = RunRequest(resume=args.run, decision=args.choice, note=args.note)
+    return exit_code(_drive(api, args, request))
 
 
 def cmd_status(args):
@@ -376,12 +609,17 @@ def cmd_status(args):
         print(f"no runs in {api.store.workflows}")
         return EXIT_USAGE
     live = api.liveness(state)
+    pending = api.pending(state)
     if args.json:
-        # The persisted state, plus the derived liveness under a key RunState ignores.
-        print(json.dumps(dict(state.to_dict(), liveness=live), indent=2, ensure_ascii=False))
+        # The persisted state, plus what is derived from it under keys RunState ignores:
+        # liveness, the decision it waits for (with any timeout eligibility), and the
+        # decision that ended it. Reading them changes nothing.
+        print(json.dumps(dict(state.to_dict(), liveness=live, pending=pending,
+                              ended_by=ended_by_decision(state)),
+                         indent=2, ensure_ascii=False))
     else:
-        print(render_status(state, definition, live))
-    return EXIT_OK
+        print(render_status(state, definition, live, pending))
+    return status_exit_code(state)
 
 
 def _warn(problems):
@@ -404,16 +642,49 @@ def cmd_logs(args):
     return EXIT_OK
 
 
+def _run_row(state, pending=None):
+    return {"run_id": state.run_id, "status": state.status, "workflow_id": state.workflow_id,
+            "project_id": state.project_id, "created_at": state.created_at,
+            "updated_at": state.updated_at, "cursor": state.cursor, "waiting": pending}
+
+
 def cmd_runs(args):
     problems = []
-    runs = _api(args).runs(problems)
-    for state in runs:
-        print(f"{state.run_id:<40} {state.status:<10} {state.workflow_id:<12} "
-              f"{state.created_at}  {state.cursor or ''}")
-    for run_id, _message in problems:
-        print(f"{run_id:<40} {'UNREADABLE':<10}")
-    if not runs and not problems:
-        print("no runs")
+    api = _api(args)
+    if args.waiting:
+        found = api.waiting(problems)
+        rows = [_run_row(state, pending) for state, pending in found]
+    else:
+        found = api.runs(problems)
+        rows = [_run_row(state) for state in found]
+    if args.json:
+        print(json.dumps({"runs": rows, "unreadable": [
+            {"run_id": run_id, "message": message} for run_id, message in problems]},
+            indent=2, ensure_ascii=False))
+    elif args.waiting:
+        for row in rows:
+            pending = row["waiting"]
+            timeout = pending.get("timeout") or {}
+            note = ""
+            if timeout.get("eligible"):
+                note = f"  eligible for timeout approval since {timeout['eligible_at']}"
+            elif timeout.get("eligible_at"):
+                note = f"  approves itself on resume at or after {timeout['eligible_at']}"
+            print(f"{row['run_id']:<40} {pending['step']:<18} {pending['gate'] or '-':<5} "
+                  f"{'|'.join(pending['choices'] or []) or '-'}{note}")
+        if rows:
+            print("\nDecide: wgf decide <run-id> <choice> [--note TEXT]")
+        elif not problems:
+            print("no runs waiting for a decision")
+    else:
+        for row in rows:
+            print(f"{row['run_id']:<40} {row['status']:<10} {row['workflow_id']:<12} "
+                  f"{row['created_at']}  {row['cursor'] or ''}")
+        if not rows and not problems:
+            print("no runs")
+    if not args.json:
+        for run_id, _message in problems:
+            print(f"{run_id:<40} {'UNREADABLE':<10}")
     _warn(problems)
     return EXIT_OK
 
@@ -422,6 +693,9 @@ def cmd_runs(args):
 
 TESTS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "tests")
 PASS, FAIL, SKIP, MISSING = "PASS", "FAIL", "SKIP", "MISSING"
+# test-core --strict only: nothing failed, but a whole category did not run. Distinct from
+# EXIT_FAILED, so a gate can tell "broken" from "not all of it was proved here".
+EXIT_INCOMPLETE = 4
 
 
 def load_core_suite(tests_dir=TESTS_DIR):
@@ -436,12 +710,14 @@ def run_core_suite(suite, tests_dir=TESTS_DIR, only=None, stream=None):
     """Run each category's test modules. Returns one row per category:
 
         {"category", "result", "tests", "passed", "failed", "errors", "skipped",
-         "missing": [module...], "details": [text...]}
+         "missing": [module...], "details": [text...],
+         "skips": [{"id": test id, "reason": skip reason}...]}
 
     MISSING - a named module does not exist (an incomplete suite never looks green);
     FAIL    - any failure or error, including a module that does not import;
     SKIP    - zero tests ran, or every test that ran was skipped;
-    PASS    - otherwise.
+    PASS    - otherwise. A PASS category can still hold skipped tests; `skips` names them,
+              so a partial run is never mistaken for a full one.
     """
     wanted = [name.upper() for name in only] if only else None
     unknown = [name for name in (wanted or []) if name not in suite]
@@ -455,7 +731,7 @@ def run_core_suite(suite, tests_dir=TESTS_DIR, only=None, stream=None):
         if wanted and category not in wanted:
             continue
         row = {"category": category, "result": None, "tests": 0, "passed": 0, "failed": 0,
-               "errors": 0, "skipped": 0, "missing": [], "details": []}
+               "errors": 0, "skipped": 0, "missing": [], "details": [], "skips": []}
         loader = unittest.TestLoader()
         tests = unittest.TestSuite()
         for name in modules:
@@ -473,6 +749,9 @@ def run_core_suite(suite, tests_dir=TESTS_DIR, only=None, stream=None):
                             - row["skipped"] - len(result.expectedFailures))
         row["details"] = [f"{test.id()}\n{text}" for test, text in
                           result.failures + result.errors]
+        # A class or module skipped in setUpClass/setUpModule is one entry, with its own id.
+        row["skips"] = [{"id": test.id(), "reason": str(reason)}
+                        for test, reason in result.skipped]
         if row["missing"]:
             row["result"] = MISSING
         elif row["failed"] or row["errors"]:
@@ -485,7 +764,66 @@ def run_core_suite(suite, tests_dir=TESTS_DIR, only=None, stream=None):
     return rows
 
 
-def render_core_table(rows):
+def core_completeness(rows):
+    """What did not run: {"complete", "skipped_categories", "skipped_in_pass"}.
+
+    Complete means no category is SKIP and no PASS category skipped a test. FAIL and MISSING
+    are not about completeness; they fail the suite on their own."""
+    skipped_categories = [r["category"] for r in rows if r["result"] == SKIP]
+    skipped_in_pass = sum(len(r.get("skips") or ()) for r in rows if r["result"] == PASS)
+    return {"complete": not skipped_categories and not skipped_in_pass,
+            "skipped_categories": skipped_categories, "skipped_in_pass": skipped_in_pass}
+
+
+def core_exit_code(rows, strict=False):
+    """--strict fails on a SKIP category - a part of Core the run did not prove at all. A
+    test skipped inside a PASS category is an opt-in check (a live agent, ajv, a real
+    template release) whose category was otherwise proved; it is listed, never hidden, but
+    requiring every opt-in would make the release gate depend on paid live agent runs."""
+    if any(r["result"] in (FAIL, MISSING) for r in rows):
+        return EXIT_FAILED
+    if strict and core_completeness(rows)["skipped_categories"]:
+        return EXIT_INCOMPLETE
+    return EXIT_OK
+
+
+def _core_summary(rows, strict):
+    total = f"{sum(r['tests'] for r in rows)} tests"
+    if any(r["result"] in (FAIL, MISSING) for r in rows):
+        return f"Core Acceptance Suite: FAILED ({total})"
+    state = core_completeness(rows)
+    if state["complete"]:
+        return f"Core Acceptance Suite: OK ({total})"
+    parts = []
+    if state["skipped_categories"]:
+        parts.append("skipped: " + ", ".join(state["skipped_categories"]))
+    if state["skipped_in_pass"]:
+        parts.append(f"{state['skipped_in_pass']} "
+                     f"test{'s' if state['skipped_in_pass'] != 1 else ''} skipped in PASS "
+                     f"categories")
+    detail = "; ".join(parts)
+    if strict and state["skipped_categories"]:
+        return f"Core Acceptance Suite: INCOMPLETE ({detail}; --strict; {total})"
+    return f"Core Acceptance Suite: OK (INCOMPLETE \u2014 {detail}; {total})"
+
+
+def render_core_skips(rows):
+    """The skipped tests, per category, grouped by reason: what was not proved, and why."""
+    lines = []
+    for r in rows:
+        if not r.get("skips"):
+            continue
+        by_reason = {}
+        for skip in r["skips"]:
+            by_reason.setdefault(skip["reason"], []).append(skip["id"])
+        lines.append(f"[{r['category']}] {len(r['skips'])} skipped")
+        for reason, ids in by_reason.items():
+            lines.append(f"  {reason} ({len(ids)})")
+            lines.extend(f"    {test_id}" for test_id in ids)
+    return lines
+
+
+def render_core_table(rows, strict=False):
     width = max([len(r["category"]) for r in rows] + [8])
     lines = [f"{'CATEGORY':<{width}}  RESULT   TESTS  PASS  FAIL  ERROR  SKIP",
              "-" * (width + 42)]
@@ -495,25 +833,28 @@ def render_core_table(rows):
         if r["missing"]:
             line += f"  missing: {', '.join(r['missing'])}"
         lines.append(line)
-    bad = [r for r in rows if r["result"] in (FAIL, MISSING)]
+    skips = render_core_skips(rows)
+    if skips:
+        lines += ["", "Skipped tests, by category and reason:"] + skips
     lines.append("")
-    lines.append("Core Acceptance Suite: " + ("FAILED" if bad else "OK")
-                 + f" ({sum(r['tests'] for r in rows)} tests)")
+    lines.append(_core_summary(rows, strict))
     return "\n".join(lines)
 
 
 def cmd_test_core(args):
     suite = load_core_suite()
     rows = run_core_suite(suite, only=args.only)
+    strict = bool(getattr(args, "strict", False))
+    code = core_exit_code(rows, strict)
     if args.json:
-        print(json.dumps({"ok": not any(r["result"] in (FAIL, MISSING) for r in rows),
+        print(json.dumps({"ok": code == EXIT_OK, "strict": strict, **core_completeness(rows),
                           "categories": rows}, indent=2, ensure_ascii=False))
     else:
-        print(render_core_table(rows))
+        print(render_core_table(rows, strict))
         for row in rows:
             for detail in row["details"]:
                 print(f"\n[{row['category']}] {detail}")
-    return EXIT_FAILED if any(r["result"] in (FAIL, MISSING) for r in rows) else EXIT_OK
+    return code
 
 
 def cmd_pause(args):
@@ -562,17 +903,22 @@ def main(argv=None, cli=False):
         return EXIT_USAGE
     try:
         return args.handler(args)
-    except (EngineError, RegistryError, StoreError, RunLocked, KeyError, ValueError,
-            DefinitionError) as exc:
+    except (UsageError, EngineError, RegistryError, StoreError, RunLocked, KeyError,
+            ValueError, DefinitionError) as exc:
         message = exc.args[0] if isinstance(exc, KeyError) and exc.args else exc
         print(f"wgf: {message}", file=sys.stderr)
         return EXIT_USAGE
+    except OSError as exc:
+        # A full disk, a read-only store, a permission: the environment, not the command
+        # line. One line, no traceback; the run is left as its last save recorded it.
+        print(f"wgf: {exc}", file=sys.stderr)
+        return EXIT_FAILED
 
 
 if __name__ == "__main__":
     # SIGTERM/SIGHUP unwind through SystemExit, so every child tree a step owns is
     # terminated instead of being orphaned (wgflib/procs.py). The run itself is left
-    # resumable: `wgf status` reports it stale and `wgf resume` continues it.
+    # resumable: `wgf status` reports it stale and `wgf resume <run-id>` continues it.
     from wgflib import procs as _procs
     _procs.install_signal_cleanup()
     sys.exit(main(cli=True))

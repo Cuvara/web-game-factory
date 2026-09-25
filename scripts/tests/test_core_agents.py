@@ -4,8 +4,10 @@ Nothing here is faked inside the Factory. The developer and the reviewer are rea
 processes - small Python scripts standing in for agent hosts - the game repository is a real
 git repository in a temp directory, and every run goes through the real WorkflowAPI and
 WorkflowEngine on the shipped core/workflows/new-game.workflow.yaml, with the real
-`develop` and `review` steps. The other steps are the engine's placeholders; develop's
-toolchain checks are configured off (conformance still runs) so the suite stays fast.
+`develop` and `review` steps - `review` and `sdk-review`, which reads the commit the sdk
+step made on top. The sdk step here is a scripted stand-in that makes a real keyed
+integration commit; the other steps are the engine's placeholders. develop's toolchain
+checks are configured off (conformance still runs) so the suite stays fast.
 
     python -m unittest scripts/tests/test_core_agents.py
 
@@ -129,6 +131,19 @@ if mode == "detect":
             if blockers else approve)
 elif mode == "approve":
     verdict(approve)
+elif mode == "reject-sdk-once":
+    # Requests changes to the first sdk integration commit it is shown (sdk-review), once;
+    # approves everything else. The marker lives beside the verdict, outside the checkout.
+    message = subprocess.run(["git", "log", "-1", "--format=%B", commit], cwd=repo,
+                             check=True, capture_output=True, text=True).stdout
+    marker = os.path.join(os.path.dirname(verdict_path), "sdk-rejected")
+    if "Wgf-Sdk-Key:" in message and not os.path.exists(marker):
+        open(marker, "w").close()
+        verdict({"verdict": "request-changes", "commit": commit, "blockers": [
+            {"id": "integration-reward", "file": "src/platform/gameplay.ts",
+             "severity": "blocker", "summary": "the integration drops the reward"}]})
+    else:
+        verdict(approve)
 elif mode == "always-request":
     verdict({"verdict": "request-changes", "commit": commit, "blockers": [
         {"id": "never-happy", "file": None, "summary": "try again", "severity": "major"}]})
@@ -188,6 +203,33 @@ def _alive(pid):
             return handle.read().rsplit(")", 1)[1].split()[0] not in ("Z", "X")
     except OSError:
         return True
+
+
+class ScriptedSdkStep(mock.MockSDKStep):
+    """The sdk step's history effect, for real: one keyed integration commit on top of the
+    development commit, reported the way wgf_sdk reports it. So `sdk-review` reviews a
+    different commit than `review` did - the one that ships."""
+
+    repo = None
+
+    def execute(self, inputs, context):
+        base = inputs.load("prototype-report")["build_ref"]["commit_sha"]
+        path = os.path.join(self.repo, "src", "platform", "gameplay.ts")
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "w", encoding="utf-8") as handle:
+            handle.write(f"// platform integration, sdk visit {context.visit}\nexport {{}};\n")
+        for args in (["add", "-A"],
+                     [*IDENTITY, "commit", "-q", "-m",
+                      f"sdk: integrate\n\nWgf-Sdk-Key: {context.idempotency_key}"]):
+            subprocess.run(["git", *args], cwd=self.repo, check=True, capture_output=True)
+        head = subprocess.run(["git", "rev-parse", "HEAD"], cwd=self.repo, check=True,
+                              capture_output=True, text=True).stdout.strip()
+        self._build_ref = {"commit_sha": head, "base_commit_sha": base, "sdk_commits": [head]}
+        return super().execute(inputs, context)
+
+    def customize(self, body, artifact_type, context, entry):
+        if artifact_type == "sdk-report":
+            body["build_ref"] = dict(self._build_ref)
 
 
 @unittest.skipUnless(HAS_GIT, "git is not installed")
@@ -261,7 +303,19 @@ class AgentLoop(unittest.TestCase):
                           **(execution or {})},
             "develop": develop_cfg,
             "review": {"reviewer": review_cfg, "guarded_paths": [self.guarded]},
+            # Agents get an allowlisted environment (wgflib.agentenv): the scripted agents'
+            # own settings pass by prefix, and a live run names its host's credential in
+            # WGF_LIVE_ENV_PASSTHROUGH (comma-separated).
+            "agents": {"env_passthrough": ["WGF_TEST_*"] + [
+                n for n in os.environ.get("WGF_LIVE_ENV_PASSTHROUGH", "").split(",") if n]},
         })
+
+        repo = self.repo
+
+        class Sdk(ScriptedSdkStep):
+            pass
+
+        Sdk.repo = repo
 
         class API(WorkflowAPI):
             def registry(self, use_mock):
@@ -269,12 +323,18 @@ class AgentLoop(unittest.TestCase):
                 register_checkpoint(registry)
                 mock.register(registry)
                 registry.register("develop", DevelopStep)  # later wins over the mock
+                registry.register("sdk", Sdk)
                 wgf_review.register(registry)
                 return registry
 
         self.api = API(config=config, store_dir=os.path.join(self.scratch, "store"),
                        sleep=lambda _s: None)
         self.state = self.api.run(RunRequest(project_id=TITLE))
+        if (self.state.status, self.state.cursor) == (RunStatus.WAITING, "prototype-review"):
+            # G4 after verification: irreversible, so no config passes it. The person
+            # running the test does, as `wgf decide <run> pass` would.
+            self.state = self.api.run(RunRequest(resume=self.state.run_id, decision="pass",
+                                                 decided_by="human"))
         return self.state
 
     def trail(self, step=None):
@@ -317,20 +377,22 @@ class AgentLoop(unittest.TestCase):
 
         # 1-4: the developer committed a build with a known bug; the reviewer found it.
         # 5: the workflow file - not code - sent it back to develop; 6-7: fixed, approved;
-        # 8: the run carried on past review to sdk, verify and release.
+        # 8: the run carried on past review to sdk, whose own commit sdk-review approved,
+        # then verify, G4 and release.
         steps = [(s, v, o, r) for s, v, _a, o, r in self.trail()
-                 if s in ("develop", "review", "sdk", "verify", "release")]
+                 if s in ("develop", "review", "sdk", "sdk-review", "verify", "release")]
         self.assertEqual(steps, [
             ("develop", 1, "SUCCESS", "success"),
             ("review", 1, "FAILED", "request-changes"),
             ("develop", 2, "SUCCESS", "success"),
             ("review", 2, "SUCCESS", "success"),
             ("sdk", 1, "SUCCESS", "success"),
+            ("sdk-review", 1, "SUCCESS", "success"),
             ("verify", 1, "SUCCESS", "success"),
             ("release", 1, "SUCCESS", "success"),
         ])
 
-        first, second = self.reports()
+        first, second, third = self.reports()
         prototypes = self.reports("prototype-report")
         for report in (first, second):
             self.assert_valid(report)
@@ -348,7 +410,22 @@ class AgentLoop(unittest.TestCase):
         self.assertEqual(second["reviewed_commit"], prototypes[1]["build_ref"]["commit_sha"])
         self.assertNotEqual(first["reviewed_commit"], second["reviewed_commit"])
         self.assertEqual(second["baseline_commit"], first["reviewed_commit"])
-        self.assertEqual(self.git("rev-parse", "HEAD"), second["reviewed_commit"])
+        # sdk-review saw the sdk commit on top of it - HEAD, the commit that ships - and the
+        # change it was shown is exactly the integration.
+        sdk = self.reports("sdk-report")[-1]["build_ref"]
+        self.assert_valid(third)
+        self.assertEqual(third["verdict"], "approve")
+        self.assertTrue(third["isolation"]["intact"])
+        self.assertEqual(third["reviewed_commit"], sdk["commit_sha"])
+        self.assertNotEqual(third["reviewed_commit"], second["reviewed_commit"])
+        self.assertEqual(third["baseline_commit"], second["reviewed_commit"])
+        self.assertEqual(self.git("rev-parse", "HEAD"), third["reviewed_commit"])
+        self.assertIn("sdk-report", {p["artifact_type"]
+                                     for p in third["provenance"]["inputs"]})
+        verdicts_dir = os.path.join(self.api.store.run_dir(state.run_id), "review")
+        self.assertTrue(os.path.exists(os.path.join(verdicts_dir, "review-2-1.verdict.json")))
+        self.assertTrue(os.path.exists(
+            os.path.join(verdicts_dir, "sdk-review-1-1.verdict.json")))
 
         # 5: the developer's second brief carried the reviewer's blocker.
         calls = self.developer_calls()
@@ -365,6 +442,10 @@ class AgentLoop(unittest.TestCase):
         self.assertEqual(self.trail("review"), [("review", 1, 1, "SUCCESS", "success")])
         self.assertEqual(len(self.developer_calls()), 1)
         self.assertEqual(self.reports()[0]["verdict"], "approve")
+        # The developer's whole transcript is kept beside the run, outside the checkout.
+        transcript = os.path.join(self.api.store.run_dir(state.run_id), "develop", "1-1.log")
+        with open(transcript, encoding="utf-8") as handle:
+            self.assertIn("developer working", handle.read())
 
     def test_a_reviewer_that_always_requests_changes_is_stopped_by_max_visits(self):
         state = self.run_workflow(reviewer_mode="always-request")
@@ -379,7 +460,33 @@ class AgentLoop(unittest.TestCase):
                                   reviewer={"verdict_from": "stdout"})
         self.assertEqual(state.status, RunStatus.COMPLETED, state.message)
         self.assertEqual([r["verdict"] for r in self.reports()],
-                         ["request-changes", "approve"])
+                         ["request-changes", "approve", "approve"])
+
+    def test_sdk_review_requesting_changes_goes_back_to_develop_never_to_verify(self):
+        state = self.run_workflow(reviewer_mode="reject-sdk-once")
+        self.assertEqual(state.status, RunStatus.COMPLETED, state.message)
+        steps = [(s, v, o, r) for s, v, _a, o, r in self.trail()
+                 if s in ("develop", "review", "sdk", "sdk-review", "verify")]
+        self.assertEqual(steps, [
+            ("develop", 1, "SUCCESS", "success"),
+            ("review", 1, "SUCCESS", "success"),
+            ("sdk", 1, "SUCCESS", "success"),
+            ("sdk-review", 1, "FAILED", "request-changes"),
+            ("develop", 2, "SUCCESS", "success"),
+            ("review", 2, "SUCCESS", "success"),
+            ("sdk", 2, "SUCCESS", "success"),
+            ("sdk-review", 2, "SUCCESS", "success"),
+            ("verify", 1, "SUCCESS", "success"),
+        ])
+        rejected = self.reports()[1]
+        self.assertEqual(rejected["verdict"], "request-changes")
+        # The developer's next brief led with the integration blocker: sdk-review's
+        # reviewed_commit was HEAD when develop ran again.
+        calls = self.developer_calls()
+        self.assertEqual([b["id"] for b in calls[1]["blockers"]], ["integration-reward"])
+        # The approval that the run carried on with is of the second sdk commit, HEAD.
+        self.assertEqual(self.reports()[-1]["reviewed_commit"], self.git("rev-parse", "HEAD"))
+        self.assertEqual(self.reports()[-1]["verdict"], "approve")
 
     def test_no_reviewer_is_recorded_as_skipped_never_as_approval(self):
         state = self.run_workflow(reviewer={"kind": "none", "argv": []})
@@ -529,7 +636,7 @@ class AgentLoop(unittest.TestCase):
         self.assertEqual(self.reports(), [])
 
 
-@unittest.skipUnless(os.environ.get("WGF_AJV") and shutil.which("npx") and HAS_GIT,
+@unittest.skipUnless(os.environ.get("WGF_AJV") == "1" and shutil.which("npx") and HAS_GIT,
                      "set WGF_AJV=1 to validate with ajv (needs npx; may download ajv-cli)")
 class Schema(AgentLoop):
     """Every review-report shape the loop emits, against the full JSON Schema."""
@@ -647,7 +754,10 @@ class Registration(unittest.TestCase):
         review = definition.step("review")
         self.assertEqual(ids[ids.index("develop") + 1], "review")
         self.assertEqual(ids[ids.index("review") + 1], "sdk")
+        self.assertEqual(ids[ids.index("sdk") + 1], "sdk-review")
+        self.assertEqual(ids[ids.index("sdk-review") + 1], "verify")
         self.assertEqual(review.on, {"request-changes": "develop"})
+        self.assertEqual(definition.step("sdk-review").on, {"request-changes": "develop"})
         self.assertEqual(set(review.inputs), {"prototype-report", "game-design",
                                               "scaffold-record"})
         self.assertEqual(list(review.outputs), ["review-report"])
@@ -785,6 +895,12 @@ class ShippedConfig(unittest.TestCase):
         self.assertTrue(origins)
         for origin in origins:
             self.assertRegex(origin, r"^http://(localhost|127\.0\.0\.1):\d+$")
+        # Snapshots land outside the checkout (whose hidden paths the development commit
+        # refuses) and outside the Factory.
+        from wgflib import paths
+        output = args[args.index("--output-dir") + 1]
+        self.assertTrue(os.path.isabs(output))
+        self.assertFalse(os.path.realpath(output).startswith(os.path.realpath(paths.ROOT)))
 
     def test_the_shipped_default_still_runs_no_agent_host_and_no_playtest(self):
         from wgf_develop.settings import Settings as DevelopSettings

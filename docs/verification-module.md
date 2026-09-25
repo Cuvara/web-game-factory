@@ -152,14 +152,35 @@ verification that claimed to know its outcome would be claiming something it can
 
 ## Where the checkout comes from
 
-The module verifies a local checkout and never clones. In order:
+The module verifies a local checkout and never clones. It finds it as every step does
+([checkouts.md](checkouts.md), `wgflib/checkout.py`):
 
-1. the verify step's `with: repo_dir`,
+1. the verify step's `with: repo_dir` (alias `game_repo`),
 2. `WGF_GAME_REPO`,
-3. `verification.checkouts` in `workspace/config/factory.yaml` (relative to where `wgf` runs)
-   joined with the run's `scaffold-record.repository.name`.
+3. the scaffold-record's `repository.local_path`, where init put it (skipped, with a
+   warning, when that path does not exist here),
+4. `factory.checkouts` joined with the run's `scaffold-record.repository.name`
+   (`verification.checkouts` is a deprecated alias).
 
-None found is a single `BLOCKED` `source.checkout` check — reported, not raised.
+Relative paths resolve against the Factory root. The first rule that names a path decides;
+no package.json there is a single `BLOCKED` `source.checkout` check — reported, not raised.
+While verify runs it holds the checkout's lock: another run in the same checkout is
+`BLOCKED`, naming it.
+
+`platform.profile:<id>` judges the game by the profile it pins **by content hash**: the
+vendored `config/platforms/<id>.yaml` must match its `pinned.json` entry and the Factory's
+profile at that version (`wgf_init.profiles.pin_identity`). A copy that only declares the
+pinned version - edited, or a same-version document from elsewhere - FAILs the check and is
+not read; the Factory's own profile stands in for the other checks. A game that vendors
+nothing for a platform is judged by the Factory's profile.
+
+## The environment game code runs with
+
+Everything verification runs in the checkout - install, build, the package.json scripts,
+Playwright and its webServer, the template's fact collectors, and git - goes through
+`CommandRunner` with the game-code environment, never the Factory's: `wgflib/agentenv.py` `game_code_env`: the agents' allowlist (PATH, HOME, USER, LANG/LC_*, TERM, TMPDIR, SHELL, CI, the proxy variables, XDG_*, NODE_*, PNPM_*, npm_config_*, PLAYWRIGHT_*, COREPACK_* - minus any name that says it is a secret) plus `factory.agents.game_env_passthrough`. The
+refusing proxy (browser checks) and `CI=1` are layered on top. A runner built with no `env`
+still gets the allowlist of `os.environ`; a test that injects its own `env` keeps it.
 
 ## Side effects and idempotency
 

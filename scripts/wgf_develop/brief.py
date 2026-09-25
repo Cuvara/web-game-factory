@@ -18,11 +18,15 @@ plan's prototype milestones and tasks, each with its acceptance criteria.
 
 import json
 
+from wgflib import template_contract as contract
+
 from wgf_verification.checks.gameplay import ASPECTS, required_aspects_for
 
+from .scope import DEFAULT_WRITABLE
+
 __all__ = ["REQUIRED_SYSTEMS", "INTEGRATION_CONTRACT", "REPORT_PATH", "BRIEF_DIR",
-           "build_brief", "render_markdown", "PROTECTED_PATHS", "ENGINE_DIRS",
-           "select_build_spec", "select_dev_plan"]
+           "build_brief", "render_markdown", "PROTECTED_PATHS", "STRUCTURAL_PATHS",
+           "ENGINE_DIRS", "select_build_spec", "select_dev_plan"]
 
 BRIEF_DIR = "docs/development"
 REPORT_PATH = f"{BRIEF_DIR}/report.json"
@@ -61,12 +65,32 @@ REQUIRED_SYSTEMS = (
 
 # Paths a game may not edit. packages/ is the template's (fix the template instead);
 # game.config.yaml is written from the approved tech plan; the pipelines and release tooling
-# are shared infrastructure whose behaviour gates depend on.
-PROTECTED_PATHS = ("packages", "game.config.yaml", ".github", "scripts", "config/platforms",
-                   "playwright.config.ts", "vite.config.ts", "vitest.workspace.ts",
-                   "eslint.config.js", "tsconfig.base.json", "pnpm-workspace.yaml")
+# are shared infrastructure whose behaviour gates depend on. package.json names the scripts
+# every later check runs (`pnpm run test` is whatever its `test` says) and tsconfig.json what
+# the typecheck covers: a build that rewrote either could pass develop, sdk and verify
+# without being checked at all.
+PROTECTED_PATHS = ("packages", contract.GAME_CONFIG, ".github", "scripts",
+                   contract.PLATFORM_PROFILES_DIR, contract.PLAYWRIGHT_CONFIG, "vite.config.ts",
+                   contract.VITEST_WORKSPACE, "eslint.config.js", "tsconfig.base.json",
+                   "pnpm-workspace.yaml", contract.PACKAGE_JSON, "tsconfig.json",
+                   contract.PNPM_LOCK)
 
-ENGINE_DIRS = {"pixijs": "src/rendering/pixijs", "threejs": "src/rendering/threejs"}
+# Protected paths conformance compares by content rather than refusing any change to: a
+# dependency may be added to package.json (factory.develop.allowed_package_changes), and the
+# lockfile then follows it (checks.package_findings).
+STRUCTURAL_PATHS = (contract.PACKAGE_JSON, contract.PNPM_LOCK)
+
+# src/rendering/<engine>, per engine the template contract knows.
+ENGINE_DIRS = {engine: contract.rendering_dir(engine).rstrip("/") for engine in contract.ENGINES}
+
+
+def framework_package(engine):
+    """The npm name of an engine's renderer package, packages/<name>/ in the template."""
+    return "@wgf/" + contract.renderer_package(engine).rstrip("/").rsplit("/", 1)[-1]
+
+
+# The upstream library each engine's game code imports (not a template name).
+ENGINE_LIBRARIES = {"pixijs": "pixi.js", "threejs": "three"}
 
 INTEGRATION_CONTRACT = """\
 // src/game/integration.ts - the seam the integration (SDK) module wires. Game code calls
@@ -222,9 +246,12 @@ def select_dev_plan(tech_plan):
 
 def build_brief(*, title_id, engine, iteration, key, baseline, design, assets, scaffold,
                 strategy=None, qa=None, previous_checks=None, refs=None, skills=None,
-                review=None, mobile_test=True, tech_plan=None, self_playtest=False):
+                review=None, mobile_test=True, tech_plan=None, self_playtest=False,
+                writable_paths=None, package_changes=None, loop=None):
     """The brief as data. `render_markdown` turns it into the document a developer reads."""
     refs = refs or {}
+    writable_paths = list(DEFAULT_WRITABLE if writable_paths is None else writable_paths)
+    package_changes = package_changes or {}
     tiers = (design.get("scope") or {}).get("tiers") or {}
     monetization = design.get("monetization") or {}
     placements = [
@@ -233,9 +260,15 @@ def build_brief(*, title_id, engine, iteration, key, baseline, design, assets, s
         for p in monetization.get("placements") or []
         if p.get("kind") != "iap"
     ]
+    # Each item's delivered files, as the manifest records them: paths relative to the game
+    # repository root (public/assets/... when the assets step wrote into the checkout), so
+    # the developer loads exactly those files and the development commit carries them.
     asset_items = [
-        {k: item.get(k) for k in ("id", "label", "type", "source", "status", "license",
-                                  "scope_tier", "notes") if item.get(k) is not None}
+        dict({k: item.get(k) for k in ("id", "label", "type", "source", "status", "license",
+                                       "scope_tier", "notes") if item.get(k) is not None},
+             **({"files": [f["path"] for f in item.get("files") or []
+                           if isinstance(f, dict) and isinstance(f.get("path"), str)]}
+                if item.get("files") else {}))
         for item in (assets or {}).get("items") or []
         if item.get("status") != "cut" and item.get("scope_tier") in (None, "mvp", "prototype")
     ]
@@ -308,10 +341,17 @@ def build_brief(*, title_id, engine, iteration, key, baseline, design, assets, s
         "assets": asset_items,
         "required_systems": [{"id": n, "acceptance": a} for n, a in REQUIRED_SYSTEMS],
         "protected_paths": list(PROTECTED_PATHS),
+        # What the development commit may contain (scope.py), and how package.json may
+        # change (checks.package_findings). Anything else fails the step.
+        "writable_paths": list(writable_paths),
+        "package_changes": {k: list(v) for k, v in package_changes.items() if v},
         "qa_defects": defects,
         "review_blockers": review_blockers,
         "reviewed_commit": (review or {}).get("reviewed_commit") if review_blockers else None,
         "previous_failures": failures,
+        # Which route brought the work back here, and what that route has left of its
+        # visit budget (the engine's max_visits_by_route); None on a first visit.
+        "loop": dict(loop) if loop else None,
         # Every area but the other engine's: a configured area is recommended, not dropped.
         "skills": {k: list(v) for k, v in host_skills.items()
                    if v and not (k in ENGINE_DIRS and k != engine)},
@@ -365,6 +405,19 @@ def _spec_lines(value):
     return lines
 
 
+def _package_rule(changes):
+    """The one exception to package.json being protected, as the installation allows it."""
+    verbs = {"add": "add", "change": "change the version of", "remove": "remove"}
+    allowed = [f"{' or '.join(verbs[c] for c in kinds if c in verbs)} a `{field}` entry"
+               for field, kinds in (changes or {}).items() if kinds]
+    if not allowed:
+        return ""
+    return (" The one exception: you may " + "; ".join(allowed) + " in `package.json` - a "
+            "registry version range, never a path, URL or protocol - and update "
+            "`pnpm-lock.yaml` to match. Nothing else in either file may change: not "
+            "`scripts`, not any other field.")
+
+
 def _bullets(items, empty="- (none)"):
     lines = [f"- {item}" for item in items if item]
     return "\n".join(lines) if lines else empty
@@ -373,9 +426,9 @@ def _bullets(items, empty="- (none)"):
 def render_markdown(brief):
     d = brief["design"]
     engine = brief["engine"]
-    other = "threejs" if engine == "pixijs" else "pixijs"
-    engine_pkg = "pixi.js" if engine == "pixijs" else "three"
-    framework = "@wgf/pixi-framework" if engine == "pixijs" else "@wgf/three-framework"
+    other = next((e for e in contract.ENGINES if e != engine), engine)
+    engine_pkg = ENGINE_LIBRARIES.get(engine, engine)
+    framework = framework_package(engine)
     session = d.get("session") or {}
     out = []
     add = out.append
@@ -406,7 +459,14 @@ def render_markdown(brief):
     add("3. The template is the infrastructure source of truth. Do not edit: "
         + ", ".join(f"`{p}`" for p in brief["protected_paths"])
         + ". If the template lacks something, stop and say so in `known_issues`; do not "
-          "patch around it.")
+          "patch around it." + _package_rule(brief.get("package_changes")))
+    if brief.get("writable_paths"):
+        add("   **Write only under** "
+            + ", ".join(f"`{p}`" for p in brief["writable_paths"])
+            + ". The Factory commits exactly those (and `package.json`/`pnpm-lock.yaml` as "
+              "above); any other file left in the tree - a hidden directory such as editor, "
+              "CI or agent-host settings, an instruction file, a stray script - fails the "
+              "step and is not committed.")
     add("4. **No platform SDK work.** Never import or reference a portal SDK, and never "
         "call `createPlatform`. Ads, analytics and saves go through the integration seam "
         "below, which the Factory provides and wires. The integration module replaces the "
@@ -541,10 +601,16 @@ def render_markdown(brief):
         add("From the asset manifest. `procedural` items are generated in code. Anything not "
             "yet delivered gets a clearly-marked placeholder loaded through the same path, "
             "reported as `placeholder`. Never ship an item without its recorded license.\n")
+        if any(a.get("files") for a in brief["assets"]):
+            add("Delivered files are listed by their path in this repository; load them from "
+                "there (they are already in the checkout, and the development commit includes "
+                "them).\n")
         for a in brief["assets"]:
             extra = ", ".join(f"{k}: {a[k]}" for k in ("type", "source", "status", "license")
                               if a.get(k))
             add(f"- `{a['id']}` {a.get('label', '')} ({extra})")
+            for path in a.get("files") or []:
+                add(f"  - `{path}`")
     else:
         add("- The manifest lists nothing for this tier.")
     add("")
@@ -605,6 +671,22 @@ def render_markdown(brief):
         add("5. Record what you saw and fixed in the report's `known_issues` or "
             "`scope_deltas`. This is your own check, not evidence: verification plays the "
             "build independently.\n")
+
+    loop = brief.get("loop")
+    if loop:
+        add("## Why this is another iteration\n")
+        route_budget = loop.get("route_budget") or {}
+        step_budget = loop.get("step_budget") or {}
+        line = f"The run came back to development through `{loop['entered_by']}`"
+        if route_budget.get("limit"):
+            line += (f": pass {route_budget.get('used')} of {route_budget.get('limit')} this "
+                     f"route allows before the run stops for a person "
+                     f"({route_budget.get('remaining')} left after this one)")
+        add(line + ".")
+        if step_budget.get("limit"):
+            add(f"Development visits since the run last started or resumed: "
+                f"{step_budget.get('used')} of {step_budget.get('limit')}.")
+        add("Fix what sent it back first; a pass that does not fix it is one fewer left.\n")
 
     if brief["qa_defects"]:
         add("## Fix first: blocking defects from verification\n")

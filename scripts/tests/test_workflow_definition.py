@@ -59,13 +59,54 @@ class ParsesValidDefinitions(unittest.TestCase):
         self.assertEqual(
             definition.step_ids,
             ["research", "strategy", "strategy-review", "design", "tech-plan",
-             "tech-plan-review", "init", "assets", "develop", "review", "sdk", "verify",
-             "release"],
+             "tech-plan-review", "init", "assets", "develop", "review", "sdk", "sdk-review",
+             "verify", "prototype-review", "release"],
         )
         self.assertEqual(definition.step("verify").on, {"fail": "develop"})
+        # The commit that ships (sdk's) is reviewed like develop's, and a request for
+        # changes goes back to develop - never on to verify.
+        for step_id in ("review", "sdk-review"):
+            self.assertEqual(definition.step(step_id).type, "review")
+            self.assertEqual(definition.step(step_id).on, {"request-changes": "develop"})
+            self.assertEqual(definition.step(step_id).outputs, ["review-report"])
+        sdk_review = definition.step("sdk-review")
+        self.assertEqual(sdk_review.params.get("subject"), "sdk-report")
+        self.assertEqual(set(sdk_review.inputs), {"sdk-report", "prototype-report",
+                                                  "game-design", "scaffold-record"})
+        self.assertNotIn("subject", definition.step("review").params)
+        self.assertEqual(definition.step("release").params.get("required_gates"), ["G4"])
+        g4 = definition.step("prototype-review")
+        self.assertEqual((g4.type, g4.params["gate"], g4.params["choices"]),
+                         ("human-checkpoint", "G4", ["pass", "iterate", "kill"]))
+        self.assertEqual(g4.on, {"iterate": "develop", "kill": "$end"})
+        self.assertEqual(g4.inputs, ["qa-report", "verification-report", "prototype-report",
+                                     "title-strategy", "game-design"])
+        self.assertEqual(definition.step("design").on, {"descope": "$fail"})
         self.assertEqual(definition.resolve_scope("plan"),
                          ["strategy", "strategy-review", "design", "tech-plan",
                           "tech-plan-review"])
+
+    def test_every_shipped_release_requires_the_irreversible_gates_before_it(self):
+        # The release step cannot see its workflow; the workflow tells it which gates to
+        # require (`with: required_gates`, default [G4]). A shipped workflow may not leave
+        # out an irreversible gate it checkpoints before release.
+        from wgf_release.lineage import DEFAULT_REQUIRED_GATES
+        from wgflib.workflow.checkpoint import irreversible_gates
+        from wgflib.workflow.definition import WORKFLOWS
+        irreversible = set(irreversible_gates())
+        for name in sorted(os.listdir(WORKFLOWS)):
+            if not name.endswith(".workflow.yaml"):
+                continue
+            definition = load_definition(os.path.join(WORKFLOWS, name))
+            gates = []
+            for step in definition.steps:
+                gate = (step.params or {}).get("gate")
+                if step.type == "human-checkpoint" and gate in irreversible:
+                    gates.append(gate)
+                if step.type == "release":
+                    required = step.params.get("required_gates", list(DEFAULT_REQUIRED_GATES))
+                    with self.subTest(workflow=name, step=step.id):
+                        self.assertEqual(set(gates) - set(required), set())
 
     def test_every_fixture_workflow(self):
         for name in os.listdir(FIXTURES):
@@ -165,6 +206,66 @@ class RefusesBrokenDefinitions(unittest.TestCase):
             with self.assertRaises(DefinitionError) as caught:
                 load_definition(path)
             self.assertIn("filename stem", str(caught.exception))
+
+
+ROUTED = """
+workflow:
+  id: routed
+  version: 1
+  steps:
+    - id: develop
+      type: develop
+      max_visits_by_route: LIMITS
+    - id: verify
+      type: verify
+      on:
+        fail: develop
+"""
+
+
+class RouteScopedVisitLimits(unittest.TestCase):
+    def test_a_route_into_the_step_parses(self):
+        step = parse(ROUTED.replace("LIMITS", "{fail: 2}")).step("develop")
+        self.assertEqual(step.max_visits_by_route, {"fail": 2})
+        self.assertEqual(parse(MINIMAL).step("a").max_visits_by_route, {})
+
+    def test_success_counts_as_a_route_into_the_step_after(self):
+        text = ROUTED.replace("max_visits_by_route: LIMITS", "").replace(
+            "      type: verify\n", "      type: verify\n      max_visits_by_route: "
+                                     "{success: 1}\n")
+        self.assertEqual(parse(text).step("verify").max_visits_by_route, {"success": 1})
+
+    def test_a_route_qualified_by_its_source_step_parses(self):
+        step = parse(ROUTED.replace("LIMITS", "{verify.fail: 2}")).step("develop")
+        self.assertEqual(step.max_visits_by_route, {"verify.fail": 2})
+
+    def test_a_route_that_does_not_enter_the_step_is_refused(self):
+        for limits, needle in (("{request-changes: 2}", "no route into it"),
+                               ("{success: 2}", "no route into it"),
+                               ("{develop.fail: 2}", "no route into it"),
+                               ("{nowhere.fail: 2}", "no route into it"),
+                               ("{verify.success: 2}", "no route into it"),
+                               ("{fail: 0}", "integer >= 1"),
+                               ("{fail: true}", "integer >= 1"),
+                               ("{fail: 1.5}", "integer >= 1"),
+                               ("[fail]", "must be a mapping")):
+            with self.assertRaises(DefinitionError, msg=limits) as caught:
+                parse(ROUTED.replace("LIMITS", limits))
+            self.assertIn(needle, str(caught.exception), limits)
+
+    def test_the_shipped_new_game_bounds_each_loop_into_develop(self):
+        definition = load_definition("new-game")
+        develop = definition.step("develop")
+        # Each reviewer's requests for changes are bounded separately.
+        self.assertEqual(develop.max_visits_by_route,
+                         {"review.request-changes": 2, "sdk-review.request-changes": 2,
+                          "fail": 2, "iterate": 2})
+        # develop's own limit never cuts a loop short of its route budget, and every step
+        # of the loop after develop is visited at most once per develop visit.
+        self.assertEqual(develop.max_visits, 1 + sum(develop.max_visits_by_route.values()))
+        for step_id in ("review", "sdk", "sdk-review", "verify", "prototype-review"):
+            self.assertGreaterEqual(definition.step(step_id).max_visits, develop.max_visits,
+                                    step_id)
 
 
 class RetryPolicyDelays(unittest.TestCase):

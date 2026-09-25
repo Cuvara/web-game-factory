@@ -6,6 +6,8 @@ by wgflib/jsonschema_lite.py, the Factory's stdlib draft 2020-12 validator. On t
 schema, two things no schema can say:
 
   * `provenance.artifact_type` equals the type the artifact is being checked as;
+  * `provenance.schema_version` has the MAJOR of the schema's `x-wgf.version` (another
+    minor is accepted, so artifacts written under an older minor stay readable);
   * `provenance.content_hash` reproduces under the canonicalization in wgflib/hashing.py.
 
 And before any of it, content must be a JSON object that JSON can represent (no NaN or
@@ -34,6 +36,7 @@ import os
 from .. import paths
 from ..hashing import CanonicalizationError, content_hash
 from ..jsonschema_lite import Registry, SchemaError, Validator, json_problems
+from ..provenance import major
 
 __all__ = ["ArtifactContracts", "load_schemas", "load_registry", "check_lineage",
            "MAX_PROBLEMS"]
@@ -144,6 +147,9 @@ class ArtifactContracts:
                     f"{artifact_type}: /provenance/artifact_type: is "
                     f"{provenance.get('artifact_type')!r}, not {artifact_type!r}"
                 )
+            problem = self._version_problem(artifact_type, schema, provenance)
+            if problem:
+                problems.append(problem)
             try:
                 digest = content_hash(content)
             except CanonicalizationError as exc:
@@ -155,6 +161,22 @@ class ArtifactContracts:
                         f"(recorded {provenance.get('content_hash')!r}, computed {digest})"
                     )
         return [f"{artifact_type}: {error}" for error in errors], problems
+
+    @staticmethod
+    def _version_problem(artifact_type, schema, provenance):
+        """A problem unless `provenance.schema_version` has the MAJOR of the schema's
+        `x-wgf.version`. Another minor or patch of the same major is compatible by
+        definition (wgflib/provenance.py), so older artifacts stay readable. A schema that
+        declares no version cannot be checked against; a malformed schema_version is the
+        schema's own pattern violation, reported there."""
+        declared = (schema.get("x-wgf") or {}).get("version")
+        claimed = provenance.get("schema_version")
+        expected, found = major(declared), major(claimed)
+        if expected is None or found is None or expected == found:
+            return None
+        return (f"{artifact_type}: /provenance/schema_version: {claimed} is major {found}, "
+                f"but the contract is {declared} (x-wgf.version); a producer must write "
+                f"the contract's major")
 
 
 # -- lineage -----------------------------------------------------------------------------

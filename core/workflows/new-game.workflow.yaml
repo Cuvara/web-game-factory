@@ -17,6 +17,16 @@
 # unrouted blocked blocks it; unrouted waiting parks it until resumed. Targets are step ids,
 # $end or $fail.
 #
+# Gates are checkpoints (`type: human-checkpoint`, `with: gate`). Each lists as `inputs` the
+# artifacts core/lifecycle/gates.yaml says it is decided on (`required_artifacts`); without
+# them it waits for input instead of asking anyone. G2 and G3 are reversible: an
+# installation may approve them itself (factory.checkpoints.auto_approve) or after a window
+# (factory.checkpoints.timeout_auto_approve, applied by `wgf resume`). G4 is irreversible:
+# only a person decides it, and nothing downstream of it runs until they pass it.
+# Every checkpoint outputs a decision-record (core/artifacts/decision-record.schema.json)
+# with each answer - approve, reject, pass, iterate, kill, or an approval on a timeout -
+# pinning by content hash exactly the inputs it was decided on.
+#
 # `release` prepares a release - a release-manifest in state `draft` - and stops. Building,
 # packaging and publishing belong to the game repository's CI, behind G5 and G6.
 
@@ -34,6 +44,19 @@ workflow:
   defaults:
     # Omitted keys fall back to factory.execution in workspace/config/factory.yaml.
     max_visits: 3
+
+  # Loops. Four routes lead back into develop: review's and sdk-review's request-changes,
+  # verify's fail, and G4's iterate. Each has its own budget on develop
+  # (max_visits_by_route; `review.request-changes` counts only review's requests), counted
+  # over the whole run, so one loop cannot spend the passes another needs - and G4's
+  # iterate, which always arrives by a resume, is still bounded - and a run blocked at a
+  # limit says which route reached it (state.blocked_reason). develop's own max_visits is
+  # the first visit plus every route's budget, so it is never the limit a loop meets first;
+  # every step of the loop after develop is visited at most once per develop visit and
+  # carries the same bound. A person resuming a run blocked at a route limit grants that
+  # route one more pass and a fresh budget - that route only. What a whole run may spend on
+  # unattended developer sessions is bounded separately and is not reset by a resume:
+  # factory.develop.budget.
 
   groups:
     plan: [strategy, strategy-review, design, tech-plan, tech-plan-review]
@@ -56,6 +79,8 @@ workflow:
     - id: strategy-review
       type: human-checkpoint
       stage: title:strategy
+      inputs: [title-strategy]
+      outputs: [decision-record]
       with:
         gate: G2
         prompt: Approve the title strategy before design starts?
@@ -66,6 +91,12 @@ workflow:
       stage: title:design
       inputs: [title-strategy]
       outputs: [game-design]
+      # A blocking design-consistency breach is FAILED with route `descope` and the design
+      # kept as evidence. Nothing in this workflow can act on a descope yet - strategy does
+      # not consume one - so it ends the run, explicitly: cut scope in the strategy, and
+      # start again. Never relax the rules to get past it.
+      on:
+        descope: $fail
 
     - id: tech-plan
       type: tech-plan
@@ -79,6 +110,8 @@ workflow:
     - id: tech-plan-review
       type: human-checkpoint
       stage: title:tech-plan
+      inputs: [game-design, tech-plan]
+      outputs: [decision-record]
       with:
         gate: G3
         prompt: Approve the design and technical plan before the repository is created?
@@ -112,15 +145,25 @@ workflow:
       # tech-plan carries the approved prototype tasks and their acceptance criteria.
       inputs: [game-design, asset-manifest, scaffold-record, title-strategy, tech-plan, qa-report, review-report]
       outputs: [prototype-report]
+      # Two requests for changes from each reviewer, two failed verifications and two G4
+      # iterations before a person looks. 9 = the first visit + 2 + 2 + 2 + 2.
+      max_visits: 9
+      max_visits_by_route:
+        review.request-changes: 2
+        sdk-review.request-changes: 2
+        fail: 2
+        iterate: 2
 
     # An independent reviewer reads the commit develop made; it may not change it. Approve
-    # continues; request-changes (FAILED, route `request-changes`) goes back to develop with
-    # the blockers. Unrouted, a request for changes would fail the run, never continue.
+    # continues to sdk (whose own commit sdk-review reads in turn); request-changes (FAILED,
+    # route `request-changes`) goes back to develop with the blockers. Unrouted, a request
+    # for changes would fail the run, never continue.
     - id: review
       type: review
       stage: title:prototype
       inputs: [prototype-report, game-design, scaffold-record]
       outputs: [review-report]
+      max_visits: 9
       on:
         request-changes: develop
 
@@ -131,25 +174,76 @@ workflow:
       stage: title:prototype
       inputs: [game-design, scaffold-record, prototype-report]
       outputs: [sdk-report]
+      max_visits: 9
+
+    # The sdk step commits integration code on top of the reviewed development commit, and
+    # that sdk commit is what verify checks and release ships. So it is reviewed too, by the
+    # same independent, read-only reviewer: the subject is the sdk-report's commit (HEAD
+    # after sdk), the change is prototype-report's commit..sdk commit. request-changes goes
+    # back to develop with the blockers - the developer fixes the game side, sdk integrates
+    # again, and both reviews run again; develop's own sdk-review.request-changes budget
+    # bounds the loop. A requested change never continues to verify.
+    - id: sdk-review
+      type: review
+      stage: title:prototype
+      inputs: [sdk-report, prototype-report, game-design, scaffold-record]
+      outputs: [review-report]
+      max_visits: 9
+      with:
+        subject: sdk-report
+      on:
+        request-changes: develop
 
     # Verification returns a result, not a destination: FAIL (route `fail`) goes back to
-    # develop with the failing qa-report, PASS continues to release, and BLOCKED - a check
-    # that could not be established - is unrouted, so the run stops for a person.
+    # develop with the failing qa-report, PASS continues to the prototype review (G4), and
+    # BLOCKED - a check that could not be established - is unrouted, so the run stops for a
+    # person.
     - id: verify
       type: verify
       stage: release:qa
       inputs: [prototype-report, sdk-report, game-design, scaffold-record, asset-manifest]
       outputs: [verification-report, qa-report]
       retry: {max_attempts: 2}
+      max_visits: 9
       on:
         fail: develop
+
+    # G4, the kill gate: a person judges the verified prototype - the qa-report,
+    # verification-report and prototype-report verify just produced - against the terms of
+    # the bet (the kill criteria in title-strategy, the game-design they measure); nothing else
+    # answers it (it is irreversible; automation's answer is refused). `pass` continues to
+    # release. `iterate` sends the work back to develop: a success routed backwards, so the
+    # run's lineage stands and the loop ends here again, at a new visit that needs a new
+    # decision. `kill` is gates.yaml's `abandon`: it stops the run for good (BLOCKED,
+    # routed to $end), and the gate stays unpassed, so no later step of this run can start.
+    # Verification that runs again after a pass supersedes it: G4 is asked again.
+    - id: prototype-review
+      type: human-checkpoint
+      stage: title:prototype-review
+      inputs: [qa-report, verification-report, prototype-report, title-strategy, game-design]
+      outputs: [decision-record]
+      with:
+        gate: G4
+        prompt: Judge the verified prototype against the kill criteria set at strategy - pass to release, iterate to develop again, or kill the title?
+        choices: [pass, iterate, kill]
+      max_visits: 9
+      on:
+        iterate: develop
+        kill: $end
 
     # Drafts a release only from the newest passing qa-report, whose commit the
     # verification-report, sdk-report, prototype-report and the clean checkout all share.
     # scaffold-record says which repository, and which template revision it came from.
+    # It also refuses unless the newest review-report approved exactly that commit (the sdk
+    # commit; factory.release.allow_unreviewed is the installation's explicit, recorded
+    # exception for a run with no reviewer), and unless every gate in `required_gates` is
+    # passed and current in this run. A workflow with no G4 checkpoint must say so with
+    # `required_gates: []`; omitted, the release step requires G4.
     - id: release
       type: release
       stage: release:draft
       inputs: [qa-report, verification-report, sdk-report, prototype-report, scaffold-record, review-report]
       outputs: [release-manifest]
+      with:
+        required_gates: [G4]
       next: $end

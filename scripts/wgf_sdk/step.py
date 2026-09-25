@@ -12,11 +12,12 @@ them (`wgf sdk` on its own) the step verifies what is already there. A feature b
 report takes the worse status: an adapter that works in a game that does not call it is not
 working, and neither is a wired game on an adapter that fails.
 
-Where the game repository is: `with: {game_repo: <path>}` on the workflow step, else the
-WGF_GAME_REPO environment variable, else `factory.sdk.game_repo` in
-workspace/config/factory.yaml — the order the verify step uses — else
-`factory.sdk.games_dir`/<scaffold-record repository name>, else where the init module cloned
-it (`factory.init.projects_dir`/<title id>). `with: {browser: true}` (or
+Where the game repository is: wgflib.checkout's one precedence, the same for every step
+(docs/checkouts.md) - `with: {game_repo: <path>}` (or `repo_dir`) on the workflow step, else
+the WGF_GAME_REPO environment variable, else the scaffold-record's repository.local_path,
+else `factory.checkouts`/<scaffold-record repository name> (`factory.sdk.games_dir` and
+`factory.init.projects_dir` are deprecated aliases for factory.checkouts, and
+`factory.sdk.game_repo` for the step's `with:`). `with: {browser: true}` (or
 `factory.sdk.browser`) also runs the browser smoke. `with: {report: <path>}` reads an
 existing conformance report — a CI artifact, say — instead of running the suite.
 
@@ -55,8 +56,7 @@ prototype-report's) and the commits it made between them (`sdk_commits`). Nothin
 import datetime
 import os
 
-from wgflib import paths
-from wgflib.hashing import content_hash
+from wgflib import agentenv, checkout, provenance
 from wgflib.workflow import ArtifactOutput, StepResult, WorkflowStep
 
 from wgf_verification.lineage import same_commit
@@ -69,7 +69,7 @@ from .runner import CommandRunner
 
 __all__ = ["SdkStep", "register", "SCHEMA_VERSION", "ROLE"]
 
-SCHEMA_VERSION = "1.2.0"
+SCHEMA_VERSION = provenance.version_of("sdk-report")
 ROLE = "sdk"
 OBSERVED_BY = "web-game-template SDK conformance suite (tests/sdk, fake portal SDK)"
 
@@ -183,6 +183,14 @@ def _overlay(entry, integrated):
     entry["status"] = max(status, entry["status"], key=order.index)
 
 
+def _game_env(runner, env):
+    """Give a runner that has no environment of its own the game-code one (the allowlist
+    plus factory.agents.game_env_passthrough); a test's runner keeps what it has."""
+    if getattr(runner, "env", False) is None:
+        runner.env = env
+    return runner
+
+
 class SdkStep(WorkflowStep):
     type = "sdk"
 
@@ -197,43 +205,41 @@ class SdkStep(WorkflowStep):
         return _section(context.config, "sdk").get(key, default)
 
     def _game_repo(self, context, scaffold):
-        # Same order the verify step uses: the step's parameter, WGF_GAME_REPO, then config;
-        # then where the checkouts are, and where init cloned this one.
-        explicit = (self.params.get("game_repo") or os.environ.get("WGF_GAME_REPO")
-                    or _section(context.config, "sdk").get("game_repo"))
-        if explicit:
-            return os.path.abspath(os.path.expanduser(explicit))
-
-        def rooted(path):
-            return os.path.normpath(path if os.path.isabs(path)
-                                    else os.path.join(paths.ROOT, path))
-
-        candidates = []
-        games_dir = self._setting(context, "games_dir")
-        name = ((scaffold or {}).get("repository") or {}).get("name")
-        if games_dir and name:
-            try:
-                candidates.append(rooted(paths.checkout_path(games_dir, name)))
-            except ValueError:
-                pass  # not one directory entry: never resolved to a path
-        title = (scaffold or {}).get("title_id")
-        if title:
-            projects = _section(context.config, "init").get("projects_dir", "..")
-            candidates.append(rooted(os.path.join(projects, title)))
-        return next((c for c in candidates if os.path.isdir(c)), None)
+        """(path or None, why): wgflib.checkout's one precedence - the step's `with:
+        game_repo` (or repo_dir), WGF_GAME_REPO, the scaffold-record's local_path, then
+        factory.checkouts (sdk.games_dir and init.projects_dir are deprecated aliases) +
+        the repository name, else the title id. The first rule that names a path decides."""
+        name = (scaffold or {}).get("title_id")
+        try:
+            path, source = checkout.locate(context.config, scaffold, "sdk", self.params,
+                                           name=name, logger=context.logger)
+        except checkout.CheckoutError as exc:
+            return None, str(exc)
+        if not os.path.isdir(path):
+            return None, f"no game repository at {path} (from {source})"
+        return path, source
 
     def execute(self, inputs, context):
+        # The integration writes and commits in the checkout: locked against another run for
+        # the whole step (wgflib.checkout).
+        with checkout.StepLease(context) as lease:
+            return self._execute(inputs, context, lease)
+
+    def _execute(self, inputs, context, lease):
         design = inputs.load("game-design") if "game-design" in inputs else None
         scaffold = inputs.load("scaffold-record") if "scaffold-record" in inputs else None
-        game_repo = self._game_repo(context, scaffold)
+        game_repo, where = self._game_repo(context, scaffold)
         if not game_repo:
             return StepResult.blocked(
-                "platform not configured: no game repository (with: {game_repo} on the step, "
-                "WGF_GAME_REPO, factory.sdk.game_repo, or a checkout under factory.sdk.games_dir "
-                "or factory.init.projects_dir)")
+                f"platform not configured: {where}. Name the checkout with the step's with: "
+                "game_repo, WGF_GAME_REPO, or factory.checkouts (docs/checkouts.md)")
+        try:
+            lease.take(game_repo)
+        except checkout.CheckoutLocked as exc:
+            return StepResult.blocked(str(exc))
         try:
             config = load_game_config(game_repo)
-            plans = integration_plan(config, self.profiles_dir)
+            plans = integration_plan(config, self.profiles_dir, game_repo=game_repo)
         except PlanError as exc:
             return StepResult.blocked(str(exc))
 
@@ -248,7 +254,11 @@ class SdkStep(WorkflowStep):
         key = getattr(context, "idempotency_key", None) or \
             f"{run_id or 'local'}:{getattr(context, 'current_step', None) or 'sdk'}:" \
             f"{getattr(context, 'visit', None) or context.execution}"
-        integration_runner = self.integration_runner_factory()
+        try:
+            game_env = agentenv.game_code_env(context.config)
+        except agentenv.ConfigError as exc:
+            return StepResult.failed(str(exc), retryable=False)
+        integration_runner = _game_env(self.integration_runner_factory(), game_env)
         git = sdk_commit.SdkGit(game_repo, integration_runner,
                                 author=self._setting(context, "commit_author"))
         prototype_commit = ((prototype or {}).get("build_ref") or {}).get("commit_sha")
@@ -299,7 +309,8 @@ class SdkStep(WorkflowStep):
             if report_path:
                 run = ev.ConformanceRun(ev.read_report(report_path), None)
             else:
-                run = self.runner_factory().run(game_repo, browser=bool(self._setting(context, "browser")))
+                run = _game_env(self.runner_factory(), game_env).run(
+                    game_repo, browser=bool(self._setting(context, "browser")))
         except ev.EvidenceError as exc:
             return StepResult.failed(str(exc))
         observed, problems = ev.summarize(run.report)
@@ -385,34 +396,24 @@ class SdkStep(WorkflowStep):
 
     def _artifact(self, title_id, commit, entries, inputs, prototype, now, context,
                   integrated=None, lineage=None):
-        provenance = {
-            "artifact_id": f"wgf:sdk-report:{title_id}:{now[:10].replace('-', '')}-{min(context.execution, 99):02d}",
-            "artifact_type": "sdk-report",
-            "schema_version": SCHEMA_VERSION,
-            "title_id": title_id,
-            "produced_by": {"role": ROLE, "actor": "automation"},
-            "produced_at": now,
-            "inputs": [],
-            "content_hash": "",
-            "status": "draft",
-        }
-        for input_type, ref in sorted((getattr(inputs, "refs", None) or {}).items()):
-            source = (inputs.load(input_type) or {}).get("provenance") or {}
-            if ref is not None and ref.content_hash and source.get("artifact_id"):
-                provenance["inputs"].append({"artifact_id": source["artifact_id"],
-                                             "artifact_type": input_type,
-                                             "content_hash": ref.content_hash})
+        record = provenance.build(
+            "sdk-report",
+            artifact_id=provenance.artifact_id("sdk-report", title_id, now, context.execution),
+            produced_by=provenance.producer(ROLE),
+            produced_at=now,
+            inputs=provenance.pin_inputs(inputs),
+            schema_version=SCHEMA_VERSION,
+            title_id=title_id)
         build_ref = {"commit_sha": commit, **(lineage or {})}
         url = ((prototype or {}).get("build_ref") or {}).get("url")
         if url:
             build_ref["url"] = url
-        artifact = {"provenance": provenance, "title_id": title_id, "build_ref": build_ref,
+        artifact = {"provenance": record, "title_id": title_id, "build_ref": build_ref,
                     "platforms": entries}
         if integrated:
             artifact["sdk"] = integrated["sdk"]
             artifact["integration"] = integrated["integration"]
-        artifact["provenance"]["content_hash"] = content_hash(artifact)
-        return artifact
+        return provenance.seal(artifact)
 
 
 def register(registry):

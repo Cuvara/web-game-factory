@@ -45,7 +45,28 @@ found and fixed, each with tests that fail on that candidate:
 
 ## Validation
 
-VALIDATION_RESULTS
+Run on the release commit `3f8d065` (2026-09-26), the whole ladder, one stage after
+another:
+
+| Check | Result |
+|---|---|
+| `python3 scripts/check-integrity.py` | OK |
+| `python3 scripts/wgf-hash.py --check workspace/` | OK |
+| `bash scripts/gen-adapters.sh` | no diff |
+| `python3 -m unittest discover scripts/tests` | 1520 OK, 36 skipped. The same 1520 also pass on Python 3.10 and 3.13 (`085ce9b`, the same code) |
+| `bin/wgf test-core` | OK, 621 tests (the golden categories skip without `WGF_GOLDEN=1`) |
+| `bin/wgf new-game --mock`, `bin/wgf decide <run> pass` | exit 3 at G4, then COMPLETED; `wgf status` shows `new-game (v2)` |
+| `WGF_GOLDEN=1 bin/wgf test-core --strict` | exit 0. All nine categories PASS: WORKFLOW 216/217, AGENTS 33/36, CONTRACTS 131, VERIFY 22, RELEASE 48/49, **2D GOLDEN 10/10**, **3D GOLDEN 10/10**, PROCESS CLEANUP 32/34, SECURITY 112 |
+| The two timing-sensitive tests (`SilentChildInAStep.test_a_chatty_child_stays_running`, `LifecycleSeparation.test_a_run_ending_in_every_status_leaves_title_state_alone`) | 5/5 each, run alone |
+
+The 7 tests skipped inside passing categories are all opt-in:
+- the live agent developer and reviewer (2);
+- ajv validation of emitted reviews and decision-records (2, `WGF_AJV=1`);
+- the template's release scripts (1);
+- the live Playwright smoke (2).
+
+The same ladder passed on `a38a5fc` (the release-audit fixes) and on `5b6ff1d`, the code of
+the first candidate `aff77a8` (which added only a handoff document).
 
 ## What the evidence does not cover
 

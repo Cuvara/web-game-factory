@@ -71,6 +71,7 @@ run at anything but its own checkout.
 | `WGF_LIVE_DEVELOPER_ARGV` | `test_core_agents` | JSON argv of a real developer for the live loop test. | unset: skipped |
 | `WGF_LIVE_VERDICT_FROM` | `test_core_agents` | `file` or `stdout`: how the live reviewer returns its verdict. | `stdout` |
 | `WGF_LIVE_TIMEOUT` | `test_core_agents` | Seconds a live agent may take. | `900` |
+| `WGF_LIVE_ENV_PASSTHROUGH` | `test_core_agents` | Comma-separated names added to the live agents' `factory.agents.env_passthrough` - the host credential when it is an environment variable (`ANTHROPIC_API_KEY`). | unset: none |
 | `WGF_LIVE_KEEP` | `test_core_agents` | A directory to copy a live run's scratch (logs, verdicts, checkout) into. | unset: discarded |
 
 `bin/wgf test-core` runs whatever these flags enable and lists every test they left skipped.

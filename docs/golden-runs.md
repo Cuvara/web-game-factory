@@ -43,14 +43,17 @@ WGF_GOLDEN=1 bin/wgf test-core --only "2D GOLDEN" --only "3D GOLDEN"
 python3 -m unittest scripts.tests.test_golden_fast              # always-on harness checks
 ```
 
-Needs: `git`, `node` + `pnpm` with a warm store (installs run `--offline` /
-`--prefer-offline`), Playwright's Chromium installed (the build the pinned template's
-Playwright version expects), and the pinned template commit. `scripts/wgflib/template.py`
-finds it in this order: `WGF_TEMPLATE_DIR` (refused unless it is at the pinned commit), the
-cache `~/.cache/wgf/templates/<sha>`, then a clone from the sibling `../web-game-template`
-when it holds the commit, else from GitHub (the lock's URL; the machine's git credentials). The work directory defaults to a fresh
-`mkdtemp(prefix="wgf-golden-")` under `$WGF_GOLDEN_DIR` or `/tmp` — keep it on a fast local
-file system, not a Windows mount.
+Needs: `git`, `node` + `pnpm`, network access to the npm registry before the run (each
+golden run first warms the pnpm store itself - `harness.warm_store`: the pinned template's
+dependencies, and a full online resolution of the engine package the replay adds - then runs
+offline, `--offline` / `--prefer-offline`), Playwright's Chromium installed (the build the
+pinned template's Playwright version expects), and the pinned template commit.
+`scripts/wgflib/template.py` finds it in this order: `WGF_TEMPLATE_DIR` (refused unless it
+is at the pinned commit), the cache `~/.cache/wgf/templates/<sha>`, then a clone from the
+sibling `../web-game-template` when it holds the commit, else from GitHub (the lock's URL;
+the machine's git credentials). The work directory defaults to a fresh `mkdtemp(prefix="wgf-
+golden-")` under `$WGF_GOLDEN_DIR` or `/tmp` — keep it on a fast local file system, not a
+Windows mount.
 
 **Run them one at a time.** The template's Playwright config serves on the fixed port 4173
 with `reuseExistingServer: false`; two runs at once collide there.

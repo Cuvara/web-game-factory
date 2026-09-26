@@ -24,7 +24,7 @@ sys.path.insert(0, SCRIPTS)
 
 import wgf_develop  # noqa: E402
 from wgf_develop import brief as briefs  # noqa: E402
-from wgf_develop import gdd, scope, seam  # noqa: E402
+from wgf_develop import gdd, safewrite, scope, seam  # noqa: E402
 from wgf_develop.checks import conformance, package_findings  # noqa: E402
 from wgf_develop.repository import KEY_TRAILER, GitRepo, Runner, RunResult  # noqa: E402
 from wgf_develop.settings import Settings, SettingsError  # noqa: E402
@@ -163,12 +163,14 @@ def write_game(root, extra=None):
 class FakeRunner(Runner):
     """Real git; scripted everything else."""
 
-    def __init__(self, fail=(), unavailable=(), on_develop=None, develop_exit=0):
+    def __init__(self, fail=(), unavailable=(), on_develop=None, develop_exit=0,
+                 on_check=None):
         self.calls = []
         self.fail = set(fail)
         self.unavailable = set(unavailable)
         self.on_develop = on_develop
         self.develop_exit = develop_exit
+        self.on_check = on_check  # (name, cwd): code a check runs - the developer's tests
 
     def run(self, argv, cwd, timeout=None, env=None):
         if argv[0] == "git":
@@ -176,6 +178,8 @@ class FakeRunner(Runner):
         self.calls.append(list(argv))
         if argv[0] == "pnpm":
             name = argv[2] if argv[1] == "run" else argv[1]
+            if self.on_check:
+                self.on_check(name, cwd)
             if name in self.unavailable:
                 return RunResult(argv, 1, "browserType.launch: Executable doesn't exist")
             return RunResult(argv, 1 if name in self.fail else 0, f"{name} output",
@@ -950,6 +954,122 @@ class Conformance(DevelopCase):
         self.assertIn("report.json was not written", found)
 
 
+class LinksInTheCheckout(DevelopCase):
+    """The Factory's own files in the checkout - the brief, docs/GDD.md, the seam,
+    checks.json - are written without following a link the developer left in their place: a
+    link to a Factory file (or to the run's event log) must not have the Factory write there
+    for it, before the guarded paths are fingerprinted or after they were last compared."""
+
+    VICTIM_TEXT = "PASS = False\n"
+
+    def victim(self):
+        return os.path.join(self.guarded, "verify.py")
+
+    def assert_victim_untouched(self):
+        with open(self.victim(), encoding="utf-8") as handle:
+            self.assertEqual(handle.read(), self.VICTIM_TEXT)
+
+    def run_develop(self, on_develop):
+        runner = FakeRunner(on_develop=on_develop)
+        return step_with(runner).execute(inputs_for(), context(self.command_config()))
+
+    def test_a_linked_gdd_is_replaced_never_written_through(self):
+        def develop(cwd):
+            write_game(cwd)
+            os.remove(os.path.join(cwd, gdd.GDD_PATH))
+            os.symlink(self.victim(), os.path.join(cwd, gdd.GDD_PATH))
+
+        result = self.run_develop(develop)
+        self.assertEqual(result.outcome, StepOutcome.SUCCESS, result.error)
+        self.assert_victim_untouched()
+        path = os.path.join(self.repo, gdd.GDD_PATH)
+        self.assertFalse(os.path.islink(path))
+        with open(path, encoding="utf-8") as handle:
+            self.assertTrue(handle.read().startswith("# Game Design Document"))
+        # Committed as the plain file the Factory rendered, not as a link.
+        mode = self.git("ls-tree", "HEAD", gdd.GDD_PATH).split()[0]
+        self.assertEqual(mode, "100644")
+
+    def test_a_hard_linked_gdd_does_not_carry_the_write_to_its_other_name(self):
+        # An unguarded target - as the run's own events.jsonl is - so nothing but the
+        # writer itself stands between the link and the write.
+        log = os.path.join(self.scratch, "events.jsonl")
+        with open(log, "w", encoding="utf-8") as handle:
+            handle.write('{"event": "STEP_LOG"}\n')
+
+        def develop(cwd):
+            write_game(cwd)
+            os.remove(os.path.join(cwd, gdd.GDD_PATH))
+            os.link(log, os.path.join(cwd, gdd.GDD_PATH))
+
+        self.run_develop(develop)
+        with open(log, encoding="utf-8") as handle:
+            self.assertEqual(handle.read(), '{"event": "STEP_LOG"}\n')
+
+    def test_a_linked_development_directory_fails_the_step_and_writes_nothing(self):
+        outside = os.path.join(self.scratch, "outside")
+        os.makedirs(outside)
+
+        def develop(cwd):
+            write_game(cwd)
+            shutil.rmtree(os.path.join(cwd, briefs.BRIEF_DIR))
+            os.symlink(outside, os.path.join(cwd, briefs.BRIEF_DIR))
+
+        result = self.run_develop(develop)
+        self.assertEqual((result.outcome, result.retryable), (StepOutcome.FAILED, False))
+        self.assertIn("not safe to write the Factory's files", result.error)
+        self.assertEqual(os.listdir(outside), [])
+
+    def test_a_linked_checks_record_is_replaced_never_written_through(self):
+        def develop(cwd):
+            write_game(cwd)
+            os.symlink(self.victim(), os.path.join(cwd, briefs.BRIEF_DIR, "checks.json"))
+
+        self.run_develop(develop)
+        self.assert_victim_untouched()
+        self.assertFalse(os.path.islink(os.path.join(self.repo, briefs.BRIEF_DIR,
+                                                     "checks.json")))
+
+    def test_a_dangling_seam_link_is_not_followed(self):
+        target = os.path.join(self.scratch, "planted.ts")
+        from wgflib import gameseam
+        path = os.path.join(self.repo, *gameseam.WIRING_PATH.split("/"))
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        if os.path.lexists(path):
+            os.remove(path)
+        os.symlink(target, path)
+        self.assertIn(gameseam.WIRING_PATH, seam.ensure_seam(self.repo))
+        self.assertFalse(os.path.lexists(target))
+        self.assertFalse(os.path.islink(path))
+
+    def test_the_rendered_gdd_must_be_a_plain_file_to_be_in_scope(self):
+        os.makedirs(os.path.join(self.repo, "docs"), exist_ok=True)
+        path = os.path.join(self.repo, gdd.GDD_PATH)
+        os.symlink(self.victim(), path)
+        record = dict(checkout=self.repo, key="k", engine="pixijs",
+                      checks_json=os.path.join(self.scratch, "unused.json"), logger=Log(),
+                      write=False)
+        settings = Settings.resolve(self.config())
+        step = step_with(FakeRunner())
+        refused = step._scope(GitRepo(self.repo, Runner()), settings, **record)
+        self.assertEqual(refused.outcome, StepOutcome.FAILED)
+        self.assertIn("symbolic link", refused.error)
+        os.remove(path)
+        with open(path, "w", encoding="utf-8") as handle:
+            handle.write("# rendered\n")
+        self.assertIsNone(step._scope(GitRepo(self.repo, Runner()), settings, **record))
+
+    def test_the_writer_stays_inside_the_checkout(self):
+        with self.assertRaises(safewrite.UnsafeCheckoutPath):
+            safewrite.write_text(self.repo, os.path.join(self.scratch, "elsewhere.txt"), "x")
+        with self.assertRaises(safewrite.UnsafeCheckoutPath):
+            safewrite.write_text(self.repo, self.repo, "x")
+        written = safewrite.write_text(self.repo, os.path.join(self.repo, "a", "b.txt"), "y")
+        with open(written, encoding="utf-8") as handle:
+            self.assertEqual(handle.read(), "y")
+        self.assertEqual([n for n in os.listdir(os.path.join(self.repo, "a"))], ["b.txt"])
+
+
 class PackageAndScope(DevelopCase):
     """package.json compared structurally; the commit scoped to what a developer may write."""
 
@@ -1285,30 +1405,63 @@ class DevelopBudget(unittest.TestCase):
                           if e["event"] == "BUDGET_RAISED"])
         self.assertEqual(len(runner.developer_calls()), 1)
 
+    def forge_a_raise(self, api):
+        run_id = api.store.latest().run_id
+        path = os.path.join(api.store.run_dir(run_id), "events.jsonl")
+        with open(path, "a", encoding="utf-8") as handle:
+            for event, data in (("BUDGET_RAISED", {"max_sessions": 99, "decided_by": "human",
+                                                   "resume_nonce": "f00d"}),
+                                ("WORKFLOW_RESUMED", {"resume_nonce": "f00d"})):
+                handle.write(json.dumps({"run_id": run_id, "event": event,
+                                         "data": data}) + "\n")
+
+    def assert_forgery_taken_out(self, api, runner, state):
+        self.assertEqual(state.status, RunStatus.FAILED, state.message)
+        self.assertIn("event log was changed while develop ran", state.steps["develop"].error)
+        self.assertEqual(len(runner.developer_calls()), 1)  # not retried
+        recorded = api.store.read_events(state.run_id)
+        self.assertFalse([e for e in recorded if (e.get("data") or {}).get("resume_nonce")
+                          == "f00d"])
+        from wgflib import budget as run_budget
+        limits = run_budget.effective(state.params, recorded)
+        self.assertEqual((limits["max_sessions"], limits["raises"]), (5, []))
+
     def test_a_session_that_forges_a_raise_in_the_event_log_fails_the_step(self):
         api = None
 
         def forge(cwd):
             write_game(cwd)
-            run_id = api.store.latest().run_id
-            path = os.path.join(api.store.run_dir(run_id), "events.jsonl")
-            with open(path, "a", encoding="utf-8") as handle:
-                for event, data in (("BUDGET_RAISED", {"max_sessions": 99, "decided_by": "human",
-                                                       "resume_nonce": "f00d"}),
-                                    ("WORKFLOW_RESUMED", {"resume_nonce": "f00d"})):
-                    handle.write(json.dumps({"run_id": run_id, "event": event,
-                                             "data": data}) + "\n")
+            self.forge_a_raise(api)
 
         api, runner = self.api({"max_sessions": 5}, FakeRunner(on_develop=forge))
-        state = api.run(RunRequest(project_id=TITLE))
-        self.assertEqual(state.status, RunStatus.FAILED, state.message)
-        self.assertIn("event log was edited", state.steps["develop"].error)
-        self.assertEqual(len(runner.developer_calls()), 1)  # not retried
-        tampered = self.budget_events(api, state.run_id, "event-log-tampered")
-        self.assertEqual([t["forged"] for t in tampered], [["f00d"]])
-        from wgflib import budget as run_budget
-        limits = run_budget.effective(state.params, api.store.read_events(state.run_id))
-        self.assertEqual((limits["max_sessions"], limits["raises"]), (5, []))
+        self.assert_forgery_taken_out(api, runner, api.run(RunRequest(project_id=TITLE)))
+
+    def test_a_check_that_forges_a_raise_is_caught_too(self):
+        # The checks run the developer's code (its tests, its build) after the session: the
+        # window a session-only audit left open.
+        api = None
+
+        forged = []
+
+        def forge(name, cwd):
+            if not forged:  # the first check the developer's code runs in
+                forged.append(name)
+                self.forge_a_raise(api)
+
+        api, runner = self.api({"max_sessions": 5},
+                               FakeRunner(on_develop=write_game, on_check=forge))
+        self.assert_forgery_taken_out(api, runner, api.run(RunRequest(project_id=TITLE)))
+        self.assertTrue(forged)
+
+    def test_a_negative_cost_lowers_nothing(self):
+        from wgf_develop.budget import Budget
+        limits = {"max_sessions": None, "max_cost": 10,
+                  "cost_from": {"jsonl_key": "session_cost"}, "raises": []}
+        events = [{"event": "STEP_LOG", "data": {"budget": "developer-cost", "cost": cost}}
+                  for cost in (6, -100, float("nan"), float("inf"), 6)]
+        budget = Budget(limits, events)
+        self.assertEqual((budget.cost, budget.unknown), (12, 3))
+        self.assertIn("budget exhausted", budget.exhausted("run-1"))
 
     def test_a_raise_needs_a_budget_to_raise(self):
         api, _ = self.api(None, FakeRunner(develop_exit=1))

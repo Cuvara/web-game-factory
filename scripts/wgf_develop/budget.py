@@ -1,9 +1,9 @@
 """The run's developer-session budget, enforced before every command developer session.
 
 A `command` developer is a paid agent session per attempt; loop limits bound the passes
-before a person looks, and a person resuming refills them. This bounds the run: `factory.develop.budget`
-(wgflib.budget), snapshotted into the run's params when it started, raised only by a
-person's BUDGET_RAISED event.
+before a person looks, and a person resuming refills them. This bounds the run:
+`factory.develop.budget` (wgflib.budget), snapshotted into the run's params when it started,
+raised only by a person's BUDGET_RAISED event.
 
 Everything is counted from the run's event log, never from memory or state.json, so neither
 a resume nor a crash gives a session back:
@@ -11,9 +11,6 @@ a resume nor a crash gives a session back:
     STEP_LOG  data.budget = "developer-session"   emitted - and read back from events.jsonl -
                                                   before the developer is spawned; a session
                                                   that cannot be recorded is not started
-    STEP_LOG  data.budget = "event-log-tampered"  after it, when the session edited the log:
-                                                  the step fails, and the raises it forged
-                                                  (data.forged) never count
     STEP_LOG  data.budget = "developer-cost"      after it, when `cost_from` is configured:
                                                   the cost it reported, or null (unknown)
 
@@ -23,6 +20,11 @@ from what this session appended. A session with no readable cost (killed, timed 
 that does not report one) is counted as a session and reported as unknown, never guessed,
 and never a failure: the agent host's own per-session flag remains the bound on a single
 session's spend. Handoff developers are people, not sessions: nothing is counted for them.
+
+The log is the engine's to keep: while it drives the run, anything another process writes to
+events.jsonl - a forged raise, a "refund" cost line, a truncation - is put back after the
+step that ran it, and the step fails (wgflib.workflow.store, seal_events). A recorded cost
+that is not a non-negative finite number lowers nothing.
 """
 
 import json
@@ -103,7 +105,10 @@ class Budget:
                 self.sessions += 1
             elif data.get("budget") == COST:
                 value = data.get("cost")
-                if isinstance(value, (int, float)) and not isinstance(value, bool):
+                # A cost is a non-negative, finite number (read_cost reports nothing else).
+                # Anything else - a negative "refund" above all - lowers nothing.
+                if (isinstance(value, (int, float)) and not isinstance(value, bool)
+                        and value >= 0 and value == value and value != float("inf")):
                     self.cost += value
                 else:
                     self.unknown += 1
@@ -170,7 +175,6 @@ class Budget:
         if self.active:
             reader = getattr(context, "read_events", None)
             events = list(reader()) if callable(reader) else []
-            record["events"] = events  # what `audit` compares the log against afterwards
             if not any(((e.get("data") or {}).get("nonce") == record["nonce"]
                         and (e.get("data") or {}).get("budget") == SESSION) for e in events):
                 return record, (
@@ -178,25 +182,6 @@ class Budget:
                     "it could not be counted against the run's budget; no agent was started. "
                     "Check that the run directory is writable, then resume.")
         return record, None
-
-    def audit(self, context, record):
-        """A FAILED message when the event log was edited while the session ran - its
-        earlier lines changed, or a budget raise or resume appended - else None. The raises
-        such an edit wrote are recorded as forged, so no later visit honours them either."""
-        before = record.get("events")
-        reader = getattr(context, "read_events", None)
-        if before is None or not callable(reader):
-            return None
-        problems, forged = run_budget.forged_raises(before, list(reader()))
-        if not problems:
-            return None
-        context.logger.error("run event log edited during a developer session",
-                             budget=run_budget.TAMPERED, forged=sorted(forged),
-                             session=record["session"], problems=problems)
-        return ("the run's event log was edited while the developer session ran ("
-                + "; ".join(problems) + "). The run's budget cannot be trusted from it; any "
-                "raise it wrote is recorded as forged and ignored. A person should inspect "
-                "the run before resuming it.")
 
     def finish(self, context, record):
         """Record what the session cost, when the installation says where to read it."""

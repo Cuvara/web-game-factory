@@ -678,6 +678,9 @@ class WorkflowEngine:
         # The route a deferred entry (needs_enter) comes through; None for a drive's first.
         route_in = None
         skipped = set()
+        # From here to the release this process is the run's only legitimate event writer:
+        # after each step the log must be exactly what it wrote (_run_once).
+        self.store.seal_events(state.run_id)
         try:
             self.store.mark_latest(state.run_id)
             state.status = RunStatus.RUNNING
@@ -733,6 +736,7 @@ class WorkflowEngine:
                 needs_enter, check = not enter, True
                 route_in = result.routing_key if needs_enter else None
         finally:
+            self.store.unseal_events(state.run_id)
             self.store.release(state.run_id)
 
     def _cancel_requested(self, state):
@@ -1029,9 +1033,23 @@ class WorkflowEngine:
             # this run in its environment so that a later driver can find it.
             with procs.bound(context.progress, context.should_stop,
                              run=self.run_token(state.run_id)):
-                return self.runtime.run(Task(step, inputs, context))
+                result = self.runtime.run(Task(step, inputs, context))
         finally:
             step_state.pid = None
+        # Every process the step started has ended (procs.bound). Anything in the run's
+        # event log this process did not write came from one of them - a step's agent, or
+        # code the step ran for it - and a line there can pass for a person's decision or
+        # budget raise. Put the log back as this process wrote it, and fail the step.
+        changed = self.store.event_log_changes(state.run_id)
+        if changed:
+            self.store.restore_events(state.run_id)
+            message = (f"the run's event log was changed while {step_def.id} ran ({changed}); "
+                       f"it was restored to what the engine recorded. Something the step ran "
+                       f"writes the run directory: inspect it before resuming.")
+            self._emit(state, Events.EVENT_LOG_RESTORED, step_id=step_def.id,
+                       data={"change": changed})
+            return StepResult(StepOutcome.FAILED, error=message, retryable=False)
+        return result
 
     # Liveness is saved at most this often from heartbeats and output; lifecycle events
     # (spawned, exited, timeout, cancelled, ...) are saved at once.

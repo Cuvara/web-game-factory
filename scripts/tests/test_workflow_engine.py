@@ -783,6 +783,71 @@ class RouteScopedVisits(EngineCase):
         self.assertGreater(counts[0], 3)
 
 
+class EventLogSeal(EngineCase):
+    """While a drive holds a run, the engine is the only writer of its events.jsonl. A line
+    anything else writes there during a step - a forged BUDGET_RAISED and the resume that
+    would corroborate it, above all - is found after the step, taken out, and fails it."""
+
+    def events_path(self, run_id):
+        return os.path.join(self.store.run_dir(run_id), "events.jsonl")
+
+    def step_that(self, act):
+        def run(inputs, context):
+            act(os.path.join(context.run_dir, "events.jsonl"))
+            return StepResult.success([ArtifactOutput("art-b", {})])
+        return run
+
+    def forge_a_raise(self, path):
+        with open(path, "a", encoding="utf-8") as handle:
+            for event, data in (("BUDGET_RAISED", {"max_sessions": 99, "decided_by": "human",
+                                                   "resume_nonce": "f00d"}),
+                                ("WORKFLOW_RESUMED", {"resume_nonce": "f00d"})):
+                handle.write(json.dumps({"run_id": "x", "event": event, "data": data}) + "\n")
+
+    def test_a_forged_raise_written_during_a_step_is_taken_out_and_fails_it(self):
+        self.script.set("b", self.step_that(self.forge_a_raise))
+        state = self.engine(LINEAR).start()
+        self.assertEqual(state.status, RunStatus.FAILED)
+        self.assertIn("event log was changed while b ran", state.steps["b"].error)
+        self.assertEqual(self.script.executed(), ["a", "b"])  # not retried, c never ran
+        recorded = self.store.read_events(state.run_id)
+        self.assertFalse([e for e in recorded
+                          if e["event"] in ("BUDGET_RAISED",) or
+                          (e.get("data") or {}).get("resume_nonce") == "f00d"])
+        restored = [e for e in recorded if e["event"] == Events.EVENT_LOG_RESTORED]
+        self.assertEqual(len(restored), 1)
+        self.assertIn("BUDGET_RAISED", restored[0]["data"]["change"])
+        from wgflib import budget
+        self.assertEqual(budget.effective({"develop_budget": {"max_sessions": 2}},
+                                          recorded)["max_sessions"], 2)
+
+    def test_a_truncated_log_is_put_back(self):
+        def truncate(path):
+            with open(path, "w", encoding="utf-8"):
+                pass
+
+        self.script.set("b", self.step_that(truncate))
+        state = self.engine(LINEAR).start()
+        self.assertEqual(state.status, RunStatus.FAILED)
+        self.assertIn("changed or removed", state.steps["b"].error)
+        names = [e["event"] for e in self.store.read_events(state.run_id)]
+        self.assertEqual(names[0], Events.WORKFLOW_STARTED)
+        self.assertIn(Events.STEP_COMPLETED, names)  # step a's record survived
+        self.assertEqual(names.count(Events.EVENT_LOG_RESTORED), 1)
+
+    def test_the_engines_own_lines_are_never_mistaken_for_a_change(self):
+        # A step that logs a lot (its own lines go through the engine) is not a tampering.
+        def chatty(inputs, context):
+            for n in range(50):
+                context.logger.info("line", n=n)
+            return StepResult.success([ArtifactOutput("art-b", {})])
+
+        self.script.set("b", chatty)
+        state = self.engine(LINEAR).start()
+        self.assertEqual(state.status, RunStatus.COMPLETED, state.message)
+        self.assertNotIn(Events.EVENT_LOG_RESTORED, self.names())
+
+
 class OperatorEvents(EngineCase):
     def blocked_run(self):
         self.script.set("verify", *[verify_fails()] * 3)

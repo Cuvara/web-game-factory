@@ -389,8 +389,9 @@ not raise its own budget), for a run started without that budget, and for a valu
 not positive. A budget is never raised by editing `state.json`: its snapshot is a param,
 corroborated against `WORKFLOW_STARTED` like every other. Nor by appending to
 `events.jsonl`: the engine writes the raise and the `WORKFLOW_RESUMED` after it with one
-`resume_nonce`, and a raise counts only when that resume record corroborates it
-(development-module.md#budget).
+`resume_nonce`, and a raise counts only when that resume record corroborates it; a whole
+forged pair written during a step is taken out again (below, and
+development-module.md#budget).
 
 Resume refuses a run another live process — or another thread of this one — is driving
 (`RunLocked`), before changing anything. A `stale` run (its driver died) is resumed by taking
@@ -655,6 +656,7 @@ which is the structured log:
 | `STEP_PROGRESS` | `kind` (`started spawned heartbeat timeout idle-timeout cancelled cleanup exited`), plus `pid`, `elapsed_s`, `idle_s`, `killed`, `returncode` as they apply |
 | `TRANSITION` | `route`, `outcome`, `kind` (`goto end abort block wait`), `to` |
 | `DECISION_RECORDED` | `decision`, `decided_by`, `decided_at`, `visit`, `note`; `mode` (`timeout`) for a timeout approval |
+| `EVENT_LOG_RESTORED` | `step_id`; `change`: what another process did to `events.jsonl` while that step ran (lines appended, or recorded lines changed or removed). The engine put the log back as it wrote it, and the step failed, not retried |
 | `ARTIFACT_CREATED` | the `ArtifactRef` |
 | `ARTIFACT_UPDATED` | the `ArtifactRef` (version ≥ 2) |
 | operator events | Not the engine's: a person's act recorded with `wgf resume` (`engine.resume(operator_events=...)`), `data` + `decided_by`, `decided_at`, and the `resume_nonce` of the `WORKFLOW_RESUMED` that follows. Refused for automation and for any of the names above. Today one: `BUDGET_RAISED` (`max_sessions`, `max_cost`; `wgf resume --budget-sessions/--budget-cost`, wgflib/budget.py) |
@@ -956,7 +958,12 @@ The engine executes no code it was not given by the installation:
   cursor, a malformed `params.develop_budget`, an artifact version that is not at its
   canonical location or not numbered 1..n, a step's outputs naming a version state no
   longer records (a failed report's ref deleted to expose the passing one before it), or a
-  decision for a visit that never happened. This catches inconsistent edits. A writer who
+  decision for a visit that never happened. This catches inconsistent edits.
+- While a drive holds a run, its `events.jsonl` is sealed: the engine keeps exactly what it
+  wrote, and after every step puts back anything another process appended, edited or
+  truncated (`EVENT_LOG_RESTORED`) and fails that step, not retried. A step's child process
+  therefore cannot leave a line that passes for a person's decision or budget raise.
+  A writer who
   rewrites state, artifacts and events *consistently* is not detectable locally; the
   Security category of the Core Acceptance Suite (`test_core_security.py`) lists what is
   and is not defended.

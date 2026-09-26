@@ -44,7 +44,7 @@ from wgflib import isolation
 from wgflib.workflow import ArtifactOutput, StepResult, WorkflowStep
 
 from . import brief as briefs
-from . import scope
+from . import safewrite, scope
 from .budget import Budget
 from .checks import read_report, run_checks
 from .gdd import GDD_PATH, render_gdd
@@ -64,16 +64,16 @@ def _utc_now():
     return datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
-def _write(path, text):
-    os.makedirs(os.path.dirname(path), exist_ok=True)
-    with open(path, "w", encoding="utf-8", newline="\n") as handle:
-        handle.write(text)
+def _write(checkout, path, text):
+    """A Factory file into the checkout: never through a link the developer left there
+    (safewrite). Raises UnsafeCheckoutPath, which fails the step."""
+    safewrite.write_text(checkout, path, text)
 
 
-def _record_checks(path, checked_at, key, engine, checks, green):
+def _record_checks(checkout, path, checked_at, key, engine, checks, green):
     """docs/development/checks.json: this visit's checks, which the next attempt's brief
     carries as failures to fix."""
-    _write(path, json.dumps({"idempotency_key": key, "engine": engine,
+    _write(checkout, path, json.dumps({"idempotency_key": key, "engine": engine,
                              "checked_at": checked_at, "green": green, "checks": checks},
                             indent=2) + "\n")
 
@@ -121,7 +121,7 @@ class _Guard:
                 f"developer could not be checked for writes to them: {exc}")
         return None
 
-    def check(self, *, key, engine, checks_json, logger, write, checks=()):
+    def check(self, *, checkout, key, engine, checks_json, logger, write, checks=()):
         """None when the guarded paths are as they were; else restore them and return the
         step's result: FAILED not retryable, or BLOCKED when they could not be put back."""
         if self.before is None:
@@ -144,7 +144,8 @@ class _Guard:
         logger.error("develop isolation violated", violations=len(violations),
                      restored=restored)
         if write:
-            _record_checks(checks_json, self.clock(), key, engine, [c.to_dict() for c in checks]
+            _record_checks(checkout, checks_json, self.clock(), key, engine,
+                           [c.to_dict() for c in checks]
                            + [{"id": "isolation", "status": "failed", "summary": message,
                                "findings": [f"{v['path']} ({v['change']})"
                                             for v in violations]}], False)
@@ -164,7 +165,17 @@ class DevelopStep(WorkflowStep):
         # The developer, the checks and the commit all work in the checkout: locked against
         # another run for the whole step (wgflib.checkout).
         with checkout_lock.StepLease(context) as lease:
-            return self._execute(inputs, context, lease)
+            try:
+                return self._execute(inputs, context, lease)
+            except safewrite.UnsafeCheckoutPath as exc:
+                # A link or a non-directory where the Factory writes its own files: left by
+                # the developer (or by hand). Writing through it would put the Factory's text
+                # wherever it points, outside every check - so nothing is written.
+                context.logger.error("develop refused an unsafe checkout path", error=str(exc))
+                return StepResult.failed(
+                    f"the checkout is not safe to write the Factory's files into: {exc}. "
+                    "Nothing was written there. Remove the link, then run develop again.",
+                    retryable=False)
 
     def _execute(self, inputs, context, lease):
         try:
@@ -251,7 +262,8 @@ class DevelopStep(WorkflowStep):
                 f"resume.")
         existing = _read_json(brief_json) or {}
         guard = _Guard(settings.guarded_paths, self.clock)
-        record = dict(key=key, engine=engine, checks_json=checks_json, logger=context.logger,
+        record = dict(checkout=checkout, key=key, engine=engine, checks_json=checks_json,
+                      logger=context.logger,
                       write=not committed)
         if committed:
             # This visit already committed. Do not develop again: re-check what is there
@@ -280,14 +292,14 @@ class DevelopStep(WorkflowStep):
                 package_changes=settings.package_changes,
                 loop=_loop(context),
             )
-            _write(brief_json, json.dumps(brief, indent=2, ensure_ascii=False) + "\n")
-            _write(brief_md, briefs.render_markdown(brief))
+            _write(checkout, brief_json, json.dumps(brief, indent=2, ensure_ascii=False) + "\n")
+            _write(checkout, brief_md, briefs.render_markdown(brief))
             # The design, readable in the repository (game-design's rendered_to). Written
             # before the developer runs, so it can be read, and again after, so a hand edit
             # never survives into this visit's commit.
             gdd = render_gdd(design, strategy,
                              getattr(inputs.refs.get("game-design"), "content_hash", None))
-            _write(os.path.join(checkout, GDD_PATH), gdd)
+            _write(checkout, os.path.join(checkout, GDD_PATH), gdd)
             written = ensure_seam(checkout)
             if written:
                 context.logger.info("integration seam provided", paths=written)
@@ -315,10 +327,6 @@ class DevelopStep(WorkflowStep):
             finally:
                 if session is not None:
                     budget.finish(context, session)
-            if session is not None:
-                tampered = budget.audit(context, session)
-                if tampered:
-                    return StepResult.failed(tampered, retryable=False)
             if outcome.status == Outcome.WAITING:
                 return StepResult.waiting_for_human(outcome.message, brief=brief_md)
             if outcome.status == Outcome.DECLINED:
@@ -344,9 +352,9 @@ class DevelopStep(WorkflowStep):
                                 "checkout: continue from it rather than starting over, "
                                 "finish every required system, make every check pass, "
                                 f"and write {briefs.REPORT_PATH}."),
-                }] + carried, False)
+                }] + carried, False, checkout)
                 return StepResult.failed(outcome.message, output_tail=outcome.output_tail)
-            _write(os.path.join(checkout, GDD_PATH), gdd)
+            _write(checkout, os.path.join(checkout, GDD_PATH), gdd)
             # Before the checks, which are minutes: a file that can never be committed
             # fails now, not after them.
             refused = self._scope(git, settings, **record)
@@ -363,7 +371,8 @@ class DevelopStep(WorkflowStep):
         if refused is not None:
             return refused
         if not committed:  # a committed visit's record is part of its commit; leave it be
-            self._record(checks_json, key, engine, [c.to_dict() for c in checks], green)
+            self._record(checks_json, key, engine, [c.to_dict() for c in checks], green,
+                         checkout)
 
         dev_report, _ = read_report(checkout)
         commit_sha = committed
@@ -424,17 +433,22 @@ class DevelopStep(WorkflowStep):
 
     # -- helpers -------------------------------------------------------------------------
 
-    def _record(self, checks_json, key, engine, checks, green):
-        _record_checks(checks_json, self.clock(), key, engine, checks, green)
+    def _record(self, checks_json, key, engine, checks, green, checkout):
+        _record_checks(checkout, checks_json, self.clock(), key, engine, checks, green)
 
-    def _scope(self, git, settings, *, key, engine, checks_json, logger, write, checks=()):
+    def _scope(self, git, settings, *, checkout, key, engine, checks_json, logger, write,
+               checks=()):
         """FAILED, not retryable, when the tree holds a change the development commit may
         not contain; None when every change is in scope."""
         try:
-            _, refused = scope.partition(git.changes(), settings.writable_paths)
+            allowed, refused = scope.partition(git.changes(), settings.writable_paths)
         except GitError as exc:
             return StepResult.failed(f"cannot read what the developer changed: {exc}",
                                      retryable=False)
+        # A Factory-rendered file is in scope by path because the step writes it - so it
+        # must be the plain file the step wrote, not a link the developer put in its place.
+        refused += [(path, problem) for path in allowed if path in scope.FACTORY_RENDERED
+                    for problem in [safewrite.regular_file_problem(checkout, path)] if problem]
         if not refused:
             return None
         listed = "; ".join(f"{path}: {why}" for path, why in refused[:8])
@@ -447,7 +461,7 @@ class DevelopStep(WorkflowStep):
         if write:
             self._record(checks_json, key, engine, [c.to_dict() for c in checks] + [{
                 "id": "commit-scope", "status": "failed", "summary": message,
-                "findings": [f"{path}: {why}" for path, why in refused]}], False)
+                "findings": [f"{path}: {why}" for path, why in refused]}], False, checkout)
         return StepResult.failed(message, retryable=False)
 
     @staticmethod

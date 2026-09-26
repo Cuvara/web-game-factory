@@ -40,6 +40,9 @@ class Events:
 
     TRANSITION = "TRANSITION"
     DECISION_RECORDED = "DECISION_RECORDED"
+    # The run's events.jsonl was changed by another process while a step ran, and the
+    # engine put back exactly what it had written (RunStore.seal_events).
+    EVENT_LOG_RESTORED = "EVENT_LOG_RESTORED"
 
     ARTIFACT_CREATED = "ARTIFACT_CREATED"
     ARTIFACT_UPDATED = "ARTIFACT_UPDATED"

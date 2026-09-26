@@ -142,17 +142,54 @@ added as a profile.
 
 ---
 
+## Install and upgrade
+
+**Requirements.** Python 3.10 or newer (the test suite passes on 3.10 through 3.13),
+standard library only - there is deliberately no toolchain, no package and no lockfile.
+`git`. For game repositories: `node` and `pnpm`, and Playwright's Chromium for browser
+verification and the golden runs. `gh`, authenticated, for `init` to create repositories on
+GitHub ([docs/init-module.md](docs/init-module.md)). Optional: `npx`, for the ajv schema
+checks; an agent host CLI, for a `command` developer or reviewer.
+
+**Install.** Clone this repository and run `bin/wgf` from its root (or put `bin/` on PATH).
+The pinned template commit (`workspace/config/template.lock.json`) is cloned on first use and
+cached under `~/.cache/wgf/templates/<sha>` - from a sibling `../web-game-template` when it
+holds the commit, otherwise from GitHub with the machine's git credentials. The Claude Code
+plugin installs from the marketplace at this repository's root
+([claude-web-game-plugin/README.md](claude-web-game-plugin/README.md)); for Codex, see
+[codex-web-game-plugin/AGENTS.md](codex-web-game-plugin/AGENTS.md).
+
+**First run.**
+
+```bash
+bin/wgf new-game --mock          # placeholder steps; stops WAITING at G4 (exit 3)
+bin/wgf decide <run-id> pass     # G4 is a person's decision
+bin/wgf test-core                # the Core Acceptance Suite
+```
+
+Real runs need `workspace/config/factory.yaml` configured: where game checkouts live
+(`checkouts`), a developer and a reviewer (the shipped reviewer is `none`, and release
+refuses a build no review approved), and `factory.agents.env_passthrough` for the agent
+host's credential.
+
+**Upgrading from 1.1.0.** 2.0.0 changes defaults a 1.1.0 installation relies on - the agent
+environment is an allowlist, the development commit is scoped, unreviewed releases are
+refused, `wgf status` exits as the run. Each has a way back: see **Breaking** and
+**Upgrading from 1.1.0** in [CHANGELOG.md](CHANGELOG.md).
+
+---
+
 ## Status
 
-Core methodology, artifact contracts, lifecycle machines, reference data and both AI adapters
-are implemented. Schemas are JSON Schema 2020-12, validated on demand with `npx ajv-cli`;
-there is deliberately no toolchain.
+The methodology, artifact contracts, lifecycle machines, reference data and both AI adapters
+are implemented; schemas are JSON Schema 2020-12. The workflow engine runs `new-game` from
+research to a drafted release with a real module behind every step, and stops for a person
+at G2, G3 and G4 (G4 is never automated). A release is drafted, not published: portal API
+integrations, publishing credentials and campaign automation are deliberately **not** built,
+and G5-G7 are decided outside a run (G6 and G7 only ever by a person).
 
-The workflow engine is executable: `bin/wgf new-game --mock` runs research through release
-preparation end to end, with retry, resume, failure routing and human checkpoints. Strategy is
-the first real module (`scripts/wgf_strategy/`); every other step is still a placeholder, and
-the discovery, design, asset, development, SDK and verification modules register against it
-later.
-
-Real portal API integrations, publishing credentials and campaign automation are deliberately
-**not** built. `web-game-template` remains a scaffold.
+The pipeline is proven end to end by the 2D and 3D golden runs, which use a replayed
+developer and a scripted reviewer ([docs/golden-runs.md](docs/golden-runs.md)). A live agent
+host as developer and reviewer is configurable and was verified for 1.1.0
+([docs/v1-usable.md](docs/v1-usable.md)); the opt-in design agent and developer self-playtest
+are verified offline only ([docs/claude-capabilities.md](docs/claude-capabilities.md)).

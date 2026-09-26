@@ -9,11 +9,56 @@ and `core/` is still the contract.
 
 ## [Unreleased]
 
-The v1.1 architectural audit - Wave 1 (P0 safety, template contract, CLI, test honesty),
-Wave 2 and Wave 3 (M1-M13) - and the game production workflow: the `core/craft/` playbooks,
-adapter binding 1.2.0 and the step-module follow-ups F1-F7. Entries name their module (M*,
-F*); core changes are listed with their reason, as docs/core-v1.md requires, and every entry
-keeps its migration note.
+## [2.0.0] - 2026-09-26
+
+Factory 2.0.0 (`docs/v2-release.md`): the release audit's fixes on top of everything since
+1.1.0, validated with both golden runs against the unchanged template pin (v1.1.0,
+`bca41a9`). A major version because defaults a 1.1.0 installation or script relied on
+changed - each listed under **Breaking** with how to keep working. No schema's required
+fields changed.
+
+Since 1.1.0: the architectural audit that followed it - Wave 1 (P0 safety, template
+contract, CLI, test honesty), Wave 2 and Wave 3 (M1-M13) - and the game production workflow:
+the `core/craft/` playbooks, adapter binding 1.2.0 (Claude plugin 0.4.0) and the step-module
+follow-ups F1-F7. Entries name their module (M*, F*); core changes are listed with their
+reason, as docs/core-v1.md requires. What a 1.1.0 installation, script or run meets unchanged
+is listed first, under **Breaking**, each with how to keep working; the entries below carry
+the detail and the migration notes.
+
+### Breaking
+
+Every one fails closed and has a way back; none changes a schema's required fields.
+
+| Change | Who notices | Keep working by |
+|---|---|---|
+| Developer and reviewer processes get an allowlisted environment, not the Factory's (M1) | A `command` developer or reviewer that authenticates from an environment variable (`ANTHROPIC_API_KEY`, ...) | Naming it in `factory.agents.env_passthrough` |
+| Code run in the game repository gets the allowlist too (M1b) | A `pnpm install` / build that reads a registry token from the environment | `factory.agents.game_env_passthrough`, or the credential in `~/.npmrc` |
+| The development commit holds only `writable_paths`; `package.json` may only gain dependencies; hidden paths and capitalised `*.md` are refused (M1). 1.1.0 committed `git add --all` | A developer that edits scripts, config or files outside `src/`, `tests/`, `public/`, `docs/development/`, `index.html` | `factory.develop.writable_paths`, `allowed_package_changes` |
+| Release refuses a build no review approved (M7). The shipped `review.reviewer.kind: none` therefore refuses every release | Anyone releasing without a reviewer | Configuring a reviewer, or `factory.release.allow_unreviewed: true` (carried as UNREVIEWED) |
+| `new-game` has G4 (`prototype-review`) and `sdk-review`; release requires G4 passed (M4, M7) | `wgf new-game --mock` now stops WAITING at G4 and exits 3; a run past sdk started under 1.1.0 is refused at release | `wgf decide <run-id> pass`; a custom workflow's release sets `required_gates: []` |
+| `wgf status` exits as the run: 1 failed/blocked/cancelled, 3 waiting/paused (M11) | Scripts running `wgf status && ...` | Reading `wgf status --json` `status` instead of the exit code |
+| Flag combinations that were silently ignored, and usage errors that exited 1, exit 2 (M11) | Scripts passing `--mock`/`--mock-plan`/`--hold-gates`/`--project` with `--resume`/`--run`, `--from` with `--run`, `--note` without `--decision`, `--decision` without `--resume` | Dropping the ignored flag |
+| A relative `factory.storage.directory` resolves against the repository root, not the working directory (M11) | Runs made under 1.1.0 from another directory are not found | `--store <dir>` or an absolute `storage.directory` |
+| Resuming a 1.1.0 run whose state claims `mock`, `mock_plan` or `auto_approve` is refused: its params were never recorded (M2) | Old mock or auto-approved runs | Starting a new run |
+| A gated checkpoint waits until its gate's `required_artifacts` are in the run (M4) | Custom workflows | Listing those artifacts as the checkpoint's inputs |
+| Release refusal code `commit-lineage-mismatch` is now `review-commit-mismatch`; reviewer evidence files are named `<step>-<visit>-<attempt>.*` (M7) | Scripts matching the code or hard-coded verdict paths | Matching the new names; `{verdict}` / `WGF_REVIEW_VERDICT` are unaffected |
+
+### Upgrading from 1.1.0
+
+1. Take the new `workspace/config/factory.yaml`, or merge it. Its top-level `checkouts: ..`
+   now decides where game checkouts are; a legacy key you customised (`develop.checkouts`,
+   `init.projects_dir`, ...) is still read, but set `checkouts` to that value.
+2. Name the agent host's credential in `factory.agents.env_passthrough`, and any registry
+   credential the game build reads from the environment in `game_env_passthrough`.
+3. Configure a reviewer (`factory.review.reviewer`), or accept unreviewed releases with
+   `factory.release.allow_unreviewed: true`.
+4. Optionally bound developer spend with `factory.develop.budget`: develop may now be
+   visited up to 9 times in a run (the loops are bounded per route, M13).
+5. Finish or restart 1.1.0 runs: they resume under the new definition - `new-game` is now
+   version 2, so the resume records `definition_version: 2` and says it continues under a
+   newer definition - and one already past sdk must pass sdk-review and G4 before release.
+6. Check scripts against the exit codes above (`wgf status`, exit 2 on refused flags,
+   `new-game --mock` exiting 3 at G4).
 
 ### Added
 
@@ -27,7 +72,8 @@ keeps its migration note.
   per visit from the engine clock and corroborated by its `STEP_WAITING` event, and upstream
   work redone restarts it; the approval is recorded as `DECISION_RECORDED`
   (`decided_by: automation`, `mode: timeout`) and applied only by `wgf resume` - `wgf
-  status` and `wgf runs --waiting` report eligibility and change nothing.
+  status` and `wgf runs --waiting` report eligibility and change nothing. *Migration:* none;
+  the default is no window, as before.
 - **A silent child reads `hung`, and can be stopped (M3, P0-13).** The step state keeps
   `last_output_at` (the child wrote something, or a lifecycle event) and
   `last_heartbeat_at` apart from `last_activity_at` (any event, heartbeats included), and
@@ -149,6 +195,12 @@ keeps its migration note.
 
 ### Changed
 
+#### Definition versions
+- `new-game.workflow.yaml` is `version: 2` and `gates.yaml` `1.1.0`: the workflow gained
+  sdk-review, G4 and per-route loop limits, and G3/G4 changed their required artifacts. A run
+  keeps the version it started under; resuming a version-1 run records `definition_version`
+  in `WORKFLOW_RESUMED`. *Migration:* none; `wgf status` shows `new-game (v2)`.
+
 #### Gate semantics (M4)
 - **G4 `prototype-review` is a real checkpoint** in `new-game`, after `verify` passes and
   before `release`, decided on the verified `qa-report`, `verification-report` and
@@ -171,14 +223,21 @@ keeps its migration note.
   gate whose last answer routed backwards (`iterate`, `rework`) or ended the run, not only
   past one never answered; `--run` in skip mode asks such a gate again. *Reason:* `iterate`
   is a SUCCESS and would otherwise have counted as passing G4. `context.gates_passed` lists
-  the gates a run has passed (for steps that want to check).
+  the gates a run has passed (for steps that want to check). *Migration:* none for a run that
+  answers its gates forward; a custom step that relied on passing a gate answered backwards
+  now waits for it again.
 - **A checkpoint is decided on its gate's `required_artifacts`** (gates.yaml): without them
   in the run, as the step's inputs, it waits for input and asks nobody. G2 and G3 now list
   them as inputs. gates.yaml: G3 no longer requires `asset-manifest` (assets are sourced
-  after G3), G4 requires the verified evidence. *Migration:* a custom workflow whose gated
-  checkpoint does not list its gate's required artifacts as inputs now waits for input.
+  after G3), G4 requires the verified evidence. Each schema's `x-wgf.required_for_gates`
+  now agrees with gates.yaml, which check-integrity enforces: `research-report` no longer
+  claims G1 (G1 is decided on `opportunity` and `evaluation`), `asset-manifest` no longer
+  claims G3, and `qa-report` / `verification-report` gain G4. *Migration:* a custom workflow
+  whose gated checkpoint does not list its gate's required artifacts as inputs now waits for
+  input.
 - **Reject and kill stop the run**; a run a decision ended at `$end` exits 0 and shows
   `Ended:` in `wgf status` (`ended_by` in `--json`), and `--run` refuses to continue it.
+  *Migration:* scripts that treated a rejected run as failed read `ended_by` instead.
 - **`design.on.descope: $fail`**, explicit: a blocking design-consistency breach ends the
   run with the design's own message (it already did, unrouted).
 
@@ -249,12 +308,16 @@ keeps its migration note.
   resolved against the Factory root (docs/checkouts.md). *Migration:* `factory.checkouts`
   replaces `develop.checkouts`, `init.projects_dir`, `review.checkouts`, `sdk.games_dir`,
   `verification.checkouts` and `release.checkouts` (deprecated aliases, warned when they
-  disagree); `WGF_GAME_REPO` now applies to develop and review too.
+  disagree), and the sdk step's `sdk.game_repo` (a checkout, honoured for sdk only, with a
+  warning); `WGF_GAME_REPO` now applies to every step that reaches the game repository -
+  init, assets, develop and review as well as sdk and verify. Unset it where only one step
+  should see it.
 - A per-checkout advisory lock (pid + start time) blocks a second live run from working in
   the same tree while a step runs (`checkout-in-use`).
 - scaffold-record 1.2.0 adds an optional `repository.local_path`, written by init.
 - Assets default into `<checkout>/public/assets/`, which develop commits; the develop brief
-  lists every asset's repository-relative file paths.
+  lists every asset's repository-relative file paths. *Migration:* set `assets.root` to keep
+  them elsewhere.
 - Vendored platform profiles are verified by content hash in init, verify
   (`platform.profile:<id>`) and sdk (`wgf_init.profiles.verify_pins` / `pin_identity`).
 - `wgf_develop` reads its template literals from `wgflib/template_contract.py`.
@@ -295,12 +358,10 @@ keeps its migration note.
   --budget-cost X` records a `BUDGET_RAISED` operator event (new generic
   `engine.resume(operator_events=...)`: refused for `decided_by: automation` and for the
   engine's own event names). Refused from inside a step's process tree. A raise counts only
-  when the engine's `WORKFLOW_RESUMED` corroborates it by `resume_nonce`, and the develop
-  step fails - not retried - when a developer session edited the event log, recording the
-  raises it forged so they never count (M13 review: any appended `BUDGET_RAISED` line naming
-  a person was honoured). `develop_budget` is a guarded param. *Residual:* no hash chain on
-  `events.jsonl`; the run directory lying outside every agent's write scope is the
-  containment.
+  when the engine's `WORKFLOW_RESUMED` corroborates it by `resume_nonce`, and whatever
+  another process writes to the run's event log during a step is taken out again (Security:
+  the event log is sealed while a drive holds the run). Before the M13 review, any appended
+  `BUDGET_RAISED` line naming a person was honoured. `develop_budget` is a guarded param.
 - A step's context gains `entered_by` (`<source>.<route>` of this visit, e.g. `verify.fail`), `visit_budget` (what the
   visit leaves of its limits) and `read_events()` (the run's recorded events);
   `STEP_STARTED` carries `entered_by`. The develop brief says which loop brought the work
@@ -320,8 +381,15 @@ keeps its migration note.
 
 #### CLI and test-core (M11, M12)
 - `wgf status` exits with the run's code (1 failed/blocked/cancelled, 3 waiting/paused).
-  Flags a command would silently ignore are refused (exit 2). pause/cancel import no step
-  module. A relative `factory.storage.directory` resolves against the repository root (M11).
+  Flags a command would silently ignore are refused (exit 2), and so are the usage errors
+  1.1.0 reported with exit 1 (`--decision` without `--resume`, `--resume` with `--run`,
+  `--force` without `--run`). An environment failure (a full disk, a read-only store) exits 1
+  with one line, no traceback. pause/cancel import no step module. A relative
+  `factory.storage.directory` resolves against the repository root, not the directory `wgf`
+  is run from (M11). *Migration:* see Breaking; runs made from another directory are reached
+  with `--store`.
+- `wgf sdk-review` and `wgf prototype-review` run those steps on their own, like every step
+  of the workflow (the commands are the workflow's step ids).
 - Test opt-in flags mean exactly `=1`; `WGF_TEMPLATE_REPO` (a pin bypass) is removed, the
   real SDK suite runs on the pinned checkout with `WGF_TEMPLATE_SDK_TEST=1` (M12).
 
@@ -395,10 +463,29 @@ keeps its migration note.
 - **`--from` cannot step over a gate (M2).** A fresh run started with an explicit `--from`
   past a gate in its scope is refused (`wgf new-game --from design` skipped G2). Fresh
   single-step runs (`wgf verify`) are unaffected.
-- **Budget raises are corroborated (M13 review).** A `BUDGET_RAISED` counts only when the
-  engine's `WORKFLOW_RESUMED` carries its `resume_nonce`; a developer session that edits the
-  run's event log fails the step, and the raises it forged never count. See the M13 entry
-  under Changed.
+- **The event log is sealed while a drive holds the run (M13 review, release audit).**
+  Decisions and budget raises are corroborated from `events.jsonl`, and while a drive holds
+  a run the engine is its only writer. After every step the engine compares the log with
+  exactly what it wrote: anything another process appended, edited or truncated - a forged
+  `BUDGET_RAISED` with the `WORKFLOW_RESUMED` that would corroborate it, a negative cost
+  line, forgotten sessions - is put back (`EVENT_LOG_RESTORED`) and the step fails, not
+  retried. That covers every step that runs a developer's or an agent's code, including the
+  develop checks that run its tests, which an earlier session-only audit did not. A raise
+  also needs its engine-written `resume_nonce`, and a cost that is not a non-negative finite
+  number lowers nothing. *Core change (wgflib/workflow/{store,engine,events}.py), reason:*
+  the only legitimate writer of a driven run's log is the engine, so anything else there
+  can only be a forgery, from whichever step ran it. *Residual:* no hash chain or secret; a
+  process that edits the run directory while no driver holds the run (one that escaped its
+  step's process tree) is outside this.
+- **The Factory never writes its files through links in the checkout (release audit).** The
+  develop step's brief, `docs/GDD.md`, integration seam and `checks.json`, and the sdk
+  step's integration files, were written with a plain open(): a symbolic or hard link the
+  developer left in their place had the Factory write its text to a Factory file or the
+  run's event log, where no guard comparison followed. They now go through
+  `wgf_develop/safewrite.py` - no linked directory, and the file's directory entry replaced
+  (temp file + rename), never written through - and the commit scope refuses a
+  `docs/GDD.md` that is not a plain file. An unsafe directory fails the step, not retried,
+  having written nothing. *Migration:* none.
 - **The design agent host gets the allowlisted environment (F4).** Like the developer and
   the reviewer: `wgflib.agentenv.scrubbed` plus `factory.agents.env_passthrough`, never the
   Factory's own environment.

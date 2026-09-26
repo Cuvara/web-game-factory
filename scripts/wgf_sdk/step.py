@@ -59,6 +59,7 @@ import os
 from wgflib import agentenv, checkout, provenance
 from wgflib.workflow import ArtifactOutput, StepResult, WorkflowStep
 
+from wgf_develop import safewrite
 from wgf_verification.lineage import same_commit
 
 from . import commit as sdk_commit
@@ -223,7 +224,15 @@ class SdkStep(WorkflowStep):
         # The integration writes and commits in the checkout: locked against another run for
         # the whole step (wgflib.checkout).
         with checkout.StepLease(context) as lease:
-            return self._execute(inputs, context, lease)
+            try:
+                return self._execute(inputs, context, lease)
+            except safewrite.UnsafeCheckoutPath as exc:
+                # A link or non-directory where the integration writes its files: writing
+                # through it would put the Factory's text wherever it points.
+                context.logger.error("sdk refused an unsafe checkout path", error=str(exc))
+                return StepResult.failed(
+                    f"the checkout is not safe to write the integration into: {exc}. Nothing "
+                    "was written there; remove the link and run sdk again.", retryable=False)
 
     def _execute(self, inputs, context, lease):
         design = inputs.load("game-design") if "game-design" in inputs else None

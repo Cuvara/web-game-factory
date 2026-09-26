@@ -32,7 +32,10 @@
 
 workflow:
   id: new-game
-  version: 1
+  # 2: the definition as of Factory 2.0.0 (sdk-review, G4, loop limits per route). A run
+  # records the version it started under; one resumed under a newer definition is marked
+  # (WORKFLOW_RESUMED `definition_version`).
+  version: 2
   description: Discover an opportunity, plan a title, build it, verify it and prepare its first release.
   start: research
 

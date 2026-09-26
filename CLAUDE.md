@@ -322,6 +322,8 @@ seen by the engine — validate what you write there with ajv.
 - `docs/core-v1.md` — what Core v1 guarantees, and how module work is validated against it
 - `docs/v1-usable.md` — 1.1.0: the real-Claude acceptance run against template v1.1.0, what
   it found and fixed, PASS / PASS_MOCK / UNVERIFIED / BLOCKED_EXTERNAL
+- `docs/v2-release.md` — 2.0.0: what was validated on which commit, the release audit's
+  fixes, and what the evidence does not cover (no live agent host, shimmed golden runs)
 - `docs/claude-capabilities.md` — agent-host capability audit: what the Factory enforces vs
   the host's argv, verified headless developer/reviewer config, live evidence
 - `docs/production-craft-and-mcp.md` — `core/craft/` playbooks and skills by phase, MCP tools

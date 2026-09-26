@@ -9,6 +9,14 @@ and `core/` is still the contract.
 
 ## [Unreleased]
 
+## [2.0.0] - 2026-09-26
+
+Factory 2.0.0 (`docs/v2-release.md`): the release audit's fixes on top of everything since
+1.1.0, validated with both golden runs against the unchanged template pin (v1.1.0,
+`bca41a9`). A major version because defaults a 1.1.0 installation or script relied on
+changed - each listed under **Breaking** with how to keep working. No schema's required
+fields changed.
+
 Since 1.1.0: the architectural audit that followed it - Wave 1 (P0 safety, template
 contract, CLI, test honesty), Wave 2 and Wave 3 (M1-M13) - and the game production workflow:
 the `core/craft/` playbooks, adapter binding 1.2.0 (Claude plugin 0.4.0) and the step-module

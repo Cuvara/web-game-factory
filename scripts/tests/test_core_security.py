@@ -1673,13 +1673,10 @@ class BudgetTampering(StateCase):
                  {"event": "STEP_LOG", "data": {}},
                  {"event": "WORKFLOW_RESUMED", "data": {"resume_nonce": "ab"}}],
                 [{"event": "BUDGET_RAISED", "data": dict(forged, resume_nonce="ab")},
-                 {"event": "WORKFLOW_RESUMED", "data": {"resume_nonce": "cd"}}],
-                # Corroborated in form, but written during a developer session: the develop
-                # step recorded it as forged.
-                [{"event": "BUDGET_RAISED", "data": dict(forged, resume_nonce="ab")},
-                 {"event": "WORKFLOW_RESUMED", "data": {"resume_nonce": "ab"}},
-                 {"event": "STEP_LOG", "data": {"budget": budget.TAMPERED,
-                                                "forged": ["ab"]}}]):
+                 {"event": "WORKFLOW_RESUMED", "data": {"resume_nonce": "cd"}}]):
+            # (A whole forged pair, corroborated in form, never stays in the log: the engine
+            # takes out whatever another process wrote there during a step -
+            # test_workflow_engine.EventLogSeal, DevelopBudget.)
             self.assertEqual(budget.effective(params, events)["max_sessions"], 2, events)
 
     def test_a_raise_the_engine_recorded_with_a_resume_counts(self):

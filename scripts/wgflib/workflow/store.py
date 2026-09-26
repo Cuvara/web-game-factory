@@ -160,6 +160,11 @@ class RunStore:
         # turn it off; on some filesystems it costs tens of milliseconds per save.
         self.fsync = fsync
         self.workflows = os.path.join(self.directory, "workflows")
+        # run_id -> the exact bytes events.jsonl should hold while this process drives the
+        # run (seal_events). Appends come from the driver's thread and from progress
+        # threads, so they and the record are kept in step under one lock.
+        self._sealed = {}
+        self._events_lock = threading.Lock()
 
     # -- layout -------------------------------------------------------------------------
 
@@ -289,16 +294,83 @@ class RunStore:
     def append_event(self, record):
         path = self._path(record["run_id"], "events.jsonl")
         line = (json.dumps(record, ensure_ascii=False, sort_keys=True) + "\n").encode("utf-8")
-        with open(path, "a+b") as handle:
-            # A crash mid-append leaves a line with no newline; start on a fresh one so the
-            # torn line stays one bad line instead of swallowing this event too.
-            handle.seek(0, os.SEEK_END)
-            if handle.tell() > 0:
-                handle.seek(-1, os.SEEK_END)
-                if handle.read(1) != b"\n":
-                    line = b"\n" + line
-            handle.seek(0, os.SEEK_END)
-            handle.write(line)
+        with self._events_lock:
+            with open(path, "a+b") as handle:
+                # A crash mid-append leaves a line with no newline; start on a fresh one so
+                # the torn line stays one bad line instead of swallowing this event too.
+                handle.seek(0, os.SEEK_END)
+                if handle.tell() > 0:
+                    handle.seek(-1, os.SEEK_END)
+                    if handle.read(1) != b"\n":
+                        line = b"\n" + line
+                handle.seek(0, os.SEEK_END)
+                handle.write(line)
+            sealed = self._sealed.get(record["run_id"])
+            if sealed is not None:
+                sealed += line
+
+    # -- the event log while a drive holds the run ----------------------------------------
+    #
+    # While a driver holds a run, this process is the only legitimate writer of its
+    # events.jsonl: every step's log line and progress event goes through the engine. So
+    # the engine seals the log when its drive begins, and after each step compares the file
+    # with exactly what it should hold: an append, an edit or a truncation by anything else
+    # - a step's child process, code the Factory ran for a step - is found, and put back.
+    # Decisions and budget raises are corroborated from this log; this is what keeps a line
+    # a step's process wrote from counting as a person's act.
+
+    def seal_events(self, run_id):
+        """Start holding what `run_id`'s events.jsonl is now, plus what this process appends."""
+        path = self._path(run_id, "events.jsonl")
+        with self._events_lock:
+            try:
+                with open(path, "rb") as handle:
+                    self._sealed[run_id] = bytearray(handle.read())
+            except FileNotFoundError:
+                self._sealed[run_id] = bytearray()
+
+    def unseal_events(self, run_id):
+        with self._events_lock:
+            self._sealed.pop(run_id, None)
+
+    def event_log_changes(self, run_id):
+        """None when the sealed log is exactly what this process wrote (or it is not sealed);
+        else a short description of what another process did to it."""
+        path = self._path(run_id, "events.jsonl")
+        with self._events_lock:
+            expected = self._sealed.get(run_id)
+            if expected is None:
+                return None
+            try:
+                with open(path, "rb") as handle:
+                    actual = handle.read()
+            except FileNotFoundError:
+                actual = b""
+            if actual == bytes(expected):
+                return None
+            if actual.startswith(bytes(expected)):
+                extra = actual[len(expected):]
+                names = []
+                for raw in extra.split(b"\n"):
+                    try:
+                        name = json.loads(raw.decode("utf-8")).get("event")
+                    except (ValueError, AttributeError):
+                        name = None
+                    if raw.strip():
+                        names.append(str(name) if name else "a line that is not an event")
+                return (f"{len(names)} line(s) appended by another process: "
+                        + ", ".join(sorted(set(names))))
+            return "lines this run had recorded were changed or removed"
+
+    def restore_events(self, run_id):
+        """Put back exactly what the sealed log should hold (temp file + rename)."""
+        path = self._path(run_id, "events.jsonl")
+        with self._events_lock:
+            expected = self._sealed.get(run_id)
+            if expected is None:
+                return False
+            self._atomic_write(path, bytes(expected))
+            return True
 
     def read_events(self, run_id, problems=None):
         """Every well-formed event. A line that is not a JSON object - typically the partial

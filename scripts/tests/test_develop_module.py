@@ -163,12 +163,14 @@ def write_game(root, extra=None):
 class FakeRunner(Runner):
     """Real git; scripted everything else."""
 
-    def __init__(self, fail=(), unavailable=(), on_develop=None, develop_exit=0):
+    def __init__(self, fail=(), unavailable=(), on_develop=None, develop_exit=0,
+                 on_check=None):
         self.calls = []
         self.fail = set(fail)
         self.unavailable = set(unavailable)
         self.on_develop = on_develop
         self.develop_exit = develop_exit
+        self.on_check = on_check  # (name, cwd): code a check runs - the developer's tests
 
     def run(self, argv, cwd, timeout=None, env=None):
         if argv[0] == "git":
@@ -176,6 +178,8 @@ class FakeRunner(Runner):
         self.calls.append(list(argv))
         if argv[0] == "pnpm":
             name = argv[2] if argv[1] == "run" else argv[1]
+            if self.on_check:
+                self.on_check(name, cwd)
             if name in self.unavailable:
                 return RunResult(argv, 1, "browserType.launch: Executable doesn't exist")
             return RunResult(argv, 1 if name in self.fail else 0, f"{name} output",
@@ -1401,30 +1405,63 @@ class DevelopBudget(unittest.TestCase):
                           if e["event"] == "BUDGET_RAISED"])
         self.assertEqual(len(runner.developer_calls()), 1)
 
+    def forge_a_raise(self, api):
+        run_id = api.store.latest().run_id
+        path = os.path.join(api.store.run_dir(run_id), "events.jsonl")
+        with open(path, "a", encoding="utf-8") as handle:
+            for event, data in (("BUDGET_RAISED", {"max_sessions": 99, "decided_by": "human",
+                                                   "resume_nonce": "f00d"}),
+                                ("WORKFLOW_RESUMED", {"resume_nonce": "f00d"})):
+                handle.write(json.dumps({"run_id": run_id, "event": event,
+                                         "data": data}) + "\n")
+
+    def assert_forgery_taken_out(self, api, runner, state):
+        self.assertEqual(state.status, RunStatus.FAILED, state.message)
+        self.assertIn("event log was changed while develop ran", state.steps["develop"].error)
+        self.assertEqual(len(runner.developer_calls()), 1)  # not retried
+        recorded = api.store.read_events(state.run_id)
+        self.assertFalse([e for e in recorded if (e.get("data") or {}).get("resume_nonce")
+                          == "f00d"])
+        from wgflib import budget as run_budget
+        limits = run_budget.effective(state.params, recorded)
+        self.assertEqual((limits["max_sessions"], limits["raises"]), (5, []))
+
     def test_a_session_that_forges_a_raise_in_the_event_log_fails_the_step(self):
         api = None
 
         def forge(cwd):
             write_game(cwd)
-            run_id = api.store.latest().run_id
-            path = os.path.join(api.store.run_dir(run_id), "events.jsonl")
-            with open(path, "a", encoding="utf-8") as handle:
-                for event, data in (("BUDGET_RAISED", {"max_sessions": 99, "decided_by": "human",
-                                                       "resume_nonce": "f00d"}),
-                                    ("WORKFLOW_RESUMED", {"resume_nonce": "f00d"})):
-                    handle.write(json.dumps({"run_id": run_id, "event": event,
-                                             "data": data}) + "\n")
+            self.forge_a_raise(api)
 
         api, runner = self.api({"max_sessions": 5}, FakeRunner(on_develop=forge))
-        state = api.run(RunRequest(project_id=TITLE))
-        self.assertEqual(state.status, RunStatus.FAILED, state.message)
-        self.assertIn("event log was edited", state.steps["develop"].error)
-        self.assertEqual(len(runner.developer_calls()), 1)  # not retried
-        tampered = self.budget_events(api, state.run_id, "event-log-tampered")
-        self.assertEqual([t["forged"] for t in tampered], [["f00d"]])
-        from wgflib import budget as run_budget
-        limits = run_budget.effective(state.params, api.store.read_events(state.run_id))
-        self.assertEqual((limits["max_sessions"], limits["raises"]), (5, []))
+        self.assert_forgery_taken_out(api, runner, api.run(RunRequest(project_id=TITLE)))
+
+    def test_a_check_that_forges_a_raise_is_caught_too(self):
+        # The checks run the developer's code (its tests, its build) after the session: the
+        # window a session-only audit left open.
+        api = None
+
+        forged = []
+
+        def forge(name, cwd):
+            if not forged:  # the first check the developer's code runs in
+                forged.append(name)
+                self.forge_a_raise(api)
+
+        api, runner = self.api({"max_sessions": 5},
+                               FakeRunner(on_develop=write_game, on_check=forge))
+        self.assert_forgery_taken_out(api, runner, api.run(RunRequest(project_id=TITLE)))
+        self.assertTrue(forged)
+
+    def test_a_negative_cost_lowers_nothing(self):
+        from wgf_develop.budget import Budget
+        limits = {"max_sessions": None, "max_cost": 10,
+                  "cost_from": {"jsonl_key": "session_cost"}, "raises": []}
+        events = [{"event": "STEP_LOG", "data": {"budget": "developer-cost", "cost": cost}}
+                  for cost in (6, -100, float("nan"), float("inf"), 6)]
+        budget = Budget(limits, events)
+        self.assertEqual((budget.cost, budget.unknown), (12, 3))
+        self.assertIn("budget exhausted", budget.exhausted("run-1"))
 
     def test_a_raise_needs_a_budget_to_raise(self):
         api, _ = self.api(None, FakeRunner(develop_exit=1))

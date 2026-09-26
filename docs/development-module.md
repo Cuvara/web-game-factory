@@ -133,6 +133,7 @@ whoever the developer is:
 |---|---|---|
 | **Environment** | The developer command starts with an allowlist (`wgflib/agentenv.py`): PATH, HOME, USER, LANG/LC_*, TERM, TMPDIR, SHELL, CI, the proxy variables, XDG_*, NODE_*, PNPM_*, npm_config_* - minus any name that says it is a secret - plus `factory.agents.env_passthrough` and procs' WGF_PROC_* tags. Never the Factory's own tokens | — |
 | **The Factory's own paths** | `factory.review.guarded_paths` (default `core`, `scripts`, `bin`, `workspace/config` - the list the reviewer is held to) fingerprinted before the developer runs and compared after it and again after the checks, which run code it wrote (`wgflib/isolation.py`: `take_guarded`/`diff`/`restore_guarded`). The game checkout is not fingerprinted: writing it is the job | Restored, then `FAILED` not retryable (`BLOCKED` if it could not be restored); recorded as the `isolation` check in `checks.json`. The prototype-report schema has no checks field, so the artifact cannot carry it; no report is emitted for such a visit |
+| **Links in the checkout** | The Factory's own files in the checkout - the brief, `docs/GDD.md`, the integration seam, `checks.json` (and the sdk step's integration files) - are written by `wgf_develop/safewrite.py`: never under a directory that is a link, and by replacing the file's directory entry (temp file + rename) rather than writing through it, so a symbolic or hard link the developer left there cannot aim the Factory's write at a Factory file or the run's event log. The commit scope also refuses a `docs/GDD.md` that is not a plain file | A link at a file: replaced, never followed. A linked or non-directory component: `FAILED` not retryable, nothing written |
 | **Git** | Every git command is `wgflib.gitsafe.hardened`: the git directory resolved when the step starts - before any developer - and the work tree are named on every command, so `core.worktree` or a replaced `.git` gitfile cannot aim the Factory's commit elsewhere; fsmonitor, hooks, signing (`gpg.program`) and every filter driver are neutralised; the environment has no GIT_* redirection. `factory.develop.git.allow_filters: true` keeps the repository's filters for a git-lfs repository and refuses any filter configuration that changed after the pin | A changed filter config under `allow_filters`: `FAILED`, nothing run |
 | **`package.json`, `pnpm-lock.yaml`, `tsconfig.json`** | Protected. `package.json` is compared with the baseline commit's field by field: every field but `dependencies`/`devDependencies` must be unchanged (`scripts` above all - every later check runs them); in those two, only what `allowed_package_changes` permits (default: additions), each a registry version range, never a path, URL, git or `npm:` alias. The lockfile may change only together with an allowed dependency change. `tsconfig.json` may not change | A `conformance` finding: the checks fail, nothing is committed |
 | **The commit** | Exactly the changed paths under `writable_paths` (default `src/`, `tests/`, `public/`, `docs/development/`, `index.html`), plus `package.json`/`pnpm-lock.yaml` as above - never `git add --all`. Whatever the list says, a hidden path (`.claude/`, `.github/`, `.husky/`, `.env`, an editor's settings) or an agent instruction file (a capitalised `*.md`: the instruction-file convention agent hosts read) is refused. The one exception is `docs/GDD.md` (`scope.FACTORY_RENDERED`, fixed, not configurable): the step renders it from game-design after the developer returns and before this check, so the committed file is always the Factory's rendering. Checked after the developer - before minutes of checks - and again before the commit | `FAILED` not retryable, recorded as the `commit-scope` check in `checks.json`. Nothing is committed, and nothing is silently left behind to sit under every later check |
@@ -242,16 +243,25 @@ refused from inside a step's process tree (`decided_by: automation` - an agent d
 its own budget; the same rule as G4/G6/G7), for a run started without that limit, and for a
 value that is not positive; a `BUDGET_RAISED` recorded by automation counts for nothing.
 
-A raise counts only when the engine's own resume record corroborates it: the engine writes
-the raise with a `resume_nonce` and the `WORKFLOW_RESUMED` right after it with the same one,
-so a line appended to `events.jsonl` by anything else is ignored. Around every command
-developer session the step compares the event log with what it was before the session: if
-earlier lines changed, or a `BUDGET_RAISED` or `WORKFLOW_RESUMED` was appended (no resume can
-happen while the step holds the run), the step fails, not retried, and records the forged
-raises (`STEP_LOG` `data.budget: event-log-tampered`, `data.forged`) so no later visit
-honours them. *Residual:* the log has no hash chain or secret. The containment is that the
-run directory (`.factory/`) lies outside the developer's checkout and its host write scope;
-a process that can write there undetected between sessions is outside this model.
+What is enforced, and what is not:
+- **Corroboration.** A raise counts only when the engine's own resume record corroborates
+  it: the engine writes the raise with a `resume_nonce` and the `WORKFLOW_RESUMED` right
+  after it with the same one. A lone `BUDGET_RAISED` line counts for nothing. The nonce is
+  not a secret: it keeps a stray line out, not a deliberate forgery.
+- **The log is the engine's while it drives the run.** Every step's log lines and progress
+  events go through the engine, so after every step it compares `events.jsonl` with exactly
+  what it wrote. Anything another process appended, edited or truncated there - a forged
+  raise-and-resume pair, a negative "refund" cost line, forgotten sessions - is put back as
+  the engine wrote it (`EVENT_LOG_RESTORED`), and that step fails, not retried. This covers
+  every step that runs a developer's or an agent's code: the developer session, the checks
+  that run its tests and build, review, sdk, verify and release.
+- **Costs.** A recorded cost that is not a non-negative, finite number lowers nothing; it
+  counts as an unknown cost.
+- *Residual:* the log has no hash chain or secret. A process that edits the run directory
+  while no driver holds the run - one that escaped its step's process tree, which
+  `wgflib.procs` ends - is outside this model. The containment is that the run directory
+  (`.factory/`) lies outside the developer's checkout and its host write scope, and an OS
+  sandbox around the developer command.
 
 ## Configuration
 

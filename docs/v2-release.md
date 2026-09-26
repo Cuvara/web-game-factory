@@ -123,6 +123,19 @@ were cloned from GitHub, and the store was warmed by the harness.
 - `WGF_TEMPLATE_RELEASE_TEST=1`: the template's real release scripts package a valid,
   reproducible draft.
 
+**Final ladder.** The whole ladder was run again on `54bc80e`, the pre-publish fixes plus this
+record:
+- integrity, content hashes and adapter regeneration clean;
+- unit 1522 OK / 36 skipped;
+- mock smoke through G4 to COMPLETED;
+- `WGF_GOLDEN=1 bin/wgf test-core --strict` exit 0, 9/9, 2D and 3D golden 10/10;
+- the timing-sensitive tests 5/5.
+
+The plain `bin/wgf test-core` run failed once, on a rounding-boundary assertion in the hung-
+output liveness test: the verdict is decided on the exact idle time, the report is rounded
+to the millisecond. The assertion was corrected (`6423155`), 5/5 alone, and `bin/wgf
+test-core` was OK on that commit.
+
 ## What the evidence does not cover
 
 - **The exact Playwright browser build** the template pins was not run; the shim stood in (above).

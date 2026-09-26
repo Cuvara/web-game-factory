@@ -18,14 +18,15 @@
   ],
   "mvp": {
     "Steering": {"status": "built", "notes": "Keyboard (arrows, A/D) and pointer steering from the example (src/input/steering.ts)."},
-    "Target gates": {"status": "partial", "notes": "Score climbs for every wall cleared, which plays like passing gates; there are no separate target gates in the replayed example."},
+    "Rushing walls": {"status": "built", "notes": "Walls spawn ahead at a fixed interval and rush toward the craft, each row with a gap (src/game/simulation.ts)."},
+    "Crash ends the run": {"status": "built", "notes": "Any wall overlap is a crash and ends the run; revive once with a rewarded ad or race again."},
+    "Speed ramp and score": {"status": "built", "notes": "Wall speed 8 rising 0.35 per second survived; score 10 per second plus 5 per wall cleared (the simulation defaults)."},
     "Game flow": {"status": "built", "notes": "Menu -> playing -> pause -> crash -> revive / race again."},
     "Kill and success criteria telemetry": {"status": "partial", "notes": "A run_over event (score) goes through the seam's track(); the default seam sends to NullSink until the integration wires a sink."},
     "Platform integration": {"status": "built", "notes": "Every platform call goes through src/game/integration.ts; the default implementation wraps the template's Platform and withAdBreak."},
     "Localization": {"status": "built", "notes": "All UI strings from public/locales/en.json and ru.json via src/core/i18n.ts."},
     "Rewarded placement": {"status": "built", "notes": "revive-game-over: continue the same run once, granted only when rewarded() resolves true."},
     "Interstitial placement": {"status": "built", "notes": "restart-game-over, at the break before the next drive; an unfilled ad never blocks the restart."},
-    "Core loop: drive into the arena, steer between the walls, score climbs with every wall cleared, the arena speeds up, crash, drive again": {"status": "built", "notes": "The example's seeded, deterministic simulation (src/game/simulation.ts)."},
     "One content set with a data-driven difficulty ramp": {"status": "built", "notes": "Walls get faster the longer the drive lasts (the simulation's speed ramp)."},
     "Score and personal best, persisted locally": {"status": "built", "notes": "Best score saved and loaded through the seam's save/load (platform storage)."},
     "Localization: ru, en": {"status": "built", "notes": "en.json and ru.json ship in public/locales/."}

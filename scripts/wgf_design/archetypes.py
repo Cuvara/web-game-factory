@@ -6,8 +6,13 @@ strategy (session length, platforms, exclusions), not a design in itself: the ar
 never decides monetization, locales or scope cuts - the strategy and the platform profiles
 do.
 
-Everything here is data. Selection is by keyword against the strategy's own words, and a
-workflow can pin one with `with: {archetype: <id>}`.
+Everything here is data. Selection reads the strategy's own words: first the archetype
+`signature` - the terms that name its core mechanic (drop into a column, swap to match, steer
+between walls) - against the strategy's concept (one-liner, core mechanic, core loop), then its
+broader `keywords` against the whole strategy. A workflow can pin one with
+`with: {archetype: <id>}`. Genre words alone ("merge", "puzzle", "3d") never decide it: two
+archetypes of one genre can be different games, and the design must describe the game the
+strategy approved (design-consistency rule `concept_mechanics_carried` checks it).
 
 Tiers use the game-design vocabulary: mvp, post-mvp, optional.
 """
@@ -20,6 +25,7 @@ ARCHETYPES = {
     "lane-runner": {
         "label": "Lane runner",
         "keywords": ["runner", "run", "lane", "dodge", "endless", "rhythm", "beat", "dash", "surf"],
+        "signature": ["lane", "lanes", "runner", "endless runner", "switch lane"],
         "dimension": "2d",
         "structure": "run",
         "camera": "Fixed, player anchored in the lower third, world scrolls toward the player.",
@@ -154,9 +160,140 @@ ARCHETYPES = {
         ],
     },
 
+    "drop-merge": {
+        "label": "Drop-merge puzzle",
+        "keywords": ["drop", "merge", "column", "columns", "track", "tower", "stack", "2048", "cascade", "puzzle"],
+        "signature": ["drop", "column", "columns", "track"],
+        "dimension": "2d",
+        "structure": "run",
+        "camera": "Fixed, the seven-column track centred, no scrolling.",
+        "orientation": "portrait",
+        "identity_affinity": ["paper-diorama", "riso-arcade", "lacquer-brass"],
+        "fantasy": "Turning a crowded track into one tall tower with a chain of merges you saw coming.",
+        "core_loop": "Pick a column -> drop the next piece there -> equal neighbours merge and cascade for points -> the next piece's level ramps up -> the track fills -> a full track ends the run -> retry for a higher score.",
+        "pillars": [
+            "One tap, one column: the player can always predict where a piece lands",
+            "Cascades are the reward, and they are loud",
+            "Back in a run within one second of the track filling",
+        ],
+        "run_seconds": 90,
+        "first_reward_s": 10,
+        "content_units": 4,
+        "content_unit_kind": "piece levels in the drop ramp",
+        "retention_hooks": ["progression", "streak"],
+        "return_reason": "I saw the cascade that would have saved that track, and I want to set it up again.",
+        "progression_model": "skill-only",
+        "difficulty_model": "time-ramp",
+        "mechanics": [
+            {"id": "track", "name": "Seven-column track", "tier": "mvp",
+             "description": "A single row of seven column cells; each cell is empty or holds one numbered piece.",
+             "rules": ["The track has seven columns and one row; a column holds at most one piece.",
+                       "A piece shows its level as a numeral and as a size or shape, never by colour alone.",
+                       "A new run starts with an empty track."],
+             "parameters": {"columns": 7}},
+            {"id": "drop", "name": "Drop a piece", "tier": "mvp",
+             "description": "The player drops the next numbered piece into the column they choose with one tap.",
+             "rules": ["The next piece's level is shown before it is dropped.",
+                       "A drop lands in the chosen column only if that column is empty; a drop onto a full column is refused and costs nothing.",
+                       "Every drop is resolved (merges and cascades) before the next drop is accepted."]},
+            {"id": "merge-cascade", "name": "Merge and cascade", "tier": "mvp",
+             "description": "Two horizontally adjacent pieces of the same level merge into one piece of the next level, and the merge cascades.",
+             "rules": ["Equal adjacent pieces merge into one piece of level + 1 in the left cell; the right cell empties.",
+                       "After a merge, pieces slide left to close the gap, so a newly adjacent equal pair merges too; this repeats until no pair is left.",
+                       "Each merge scores the level it produced."],
+             "parameters": {"score_per_merge": "the merged level"}},
+            {"id": "drop-ramp", "name": "Drop-level ramp", "tier": "mvp",
+             "description": "The level of the next piece rises with the number of merges made, so the track fills faster over time.",
+             "rules": ["The next piece's level is 1 + floor(merges / 4), capped at 4.",
+                       "The ramp is data-driven: one table, no hand-built levels."],
+             "parameters": {"merges_per_level_up": 4, "max_drop_level": 4}},
+            {"id": "full-track", "name": "Full track ends the run", "tier": "mvp",
+             "description": "The run ends when every column holds a piece and no merge is left.",
+             "rules": ["When no column is empty after a drop resolves, the run is over.",
+                       "The final score and the personal best are shown on the result card."]},
+        ],
+        "actions": [
+            {"id": "drop", "action": "Drop the next piece into a column", "tier": "mvp", "mechanic": "drop",
+             "touch": "Tap a column", "mouse": "Click a column",
+             "keyboard": "Keys 1-7 drop into that column; Space or Enter drops into the first empty column",
+             "gamepad": "D-pad picks a column, A drops"},
+        ],
+        "goals": {
+            "moment": "Drop the piece where it starts a cascade.",
+            "session": "Beat the personal best at least once.",
+            "long_term": "Keep a run going until the drop ramp reaches its top level.",
+        },
+        "progression_steps": [
+            {"id": "ramp-2", "tier": "mvp", "unlock_condition": "4 merges in one run", "grants": "Level-2 pieces join the drops"},
+            {"id": "ramp-3", "tier": "mvp", "unlock_condition": "8 merges in one run", "grants": "Level-3 pieces join the drops"},
+            {"id": "ramp-4", "tier": "mvp", "unlock_condition": "12 merges in one run", "grants": "Level-4 pieces, the top of the ramp"},
+        ],
+        "curve": [
+            {"at": "Merges 0-3", "description": "Level-1 drops only; almost every drop can merge, so a first-time player sees a cascade before the track fills.",
+             "parameters": {"drop_level": 1}},
+            {"at": "Merges 4-11", "description": "Drop level rises by one every four merges; the track fills faster.",
+             "parameters": {"merges_per_level_up": 4}},
+            {"at": "Merges 12+", "description": "Drop level held at its cap of 4; only planning keeps the track open.",
+             "parameters": {"max_drop_level": 4}},
+        ],
+        "assist": "After three runs that end before the first merge, the next run's first three drops are level 1.",
+        "failure_condition": "Every column holds a piece and no merge is left.",
+        "failure_feedback": "The full track flashes, the last piece shakes, and the result card shows score, merges and the best.",
+        "rewards": [
+            {"id": "merge", "tier": "mvp", "trigger": "A merge", "grants": "Score equal to the merged level",
+             "feedback": "The merged piece pops up a size; the score rolls up."},
+            {"id": "cascade", "tier": "mvp", "trigger": "Two or more merges from one drop",
+             "grants": "The cascade's merges all score", "feedback": "Each cascade step raises pitch; a word stamps on screen."},
+            {"id": "new-best", "tier": "mvp", "trigger": "Run ends above the personal best", "grants": "New best, saved",
+             "feedback": "Best counter bursts; fanfare."},
+        ],
+        "hud": [
+            {"id": "score", "tier": "mvp", "shows": "Score", "anchor": "top-center", "updates_on": "Each merge",
+             "feedback": "Rolls up"},
+            {"id": "next-piece", "tier": "mvp", "shows": "Level of the next piece to drop", "anchor": "top-right",
+             "updates_on": "Each drop", "feedback": "Grows when the ramp raises the level"},
+            {"id": "best", "tier": "mvp", "shows": "Personal best", "anchor": "top-left", "updates_on": "Run start and new best"},
+        ],
+        "tutorial": {
+            "approach": "diegetic",
+            "rationale": "Tap-a-column is self-explanatory once the columns read as targets; the first merge teaches the rest.",
+            "steps": [
+                {"id": "first-drop", "tier": "mvp", "trigger": "First run, first drop",
+                 "prompt": "The columns pulse and a hand taps one",
+                 "completes_on": "The first drop"},
+                {"id": "first-merge", "tier": "mvp", "trigger": "First run, second drop",
+                 "prompt": "The column beside the first piece glows: drop there to merge",
+                 "completes_on": "The first merge"},
+            ],
+        },
+        "assets": [
+            {"id": "pieces", "type": "sprite", "tier": "mvp", "description": "Tower pieces, one per level, with a merge state",
+             "count": 6, "source_preference": "procedural", "est_cost": 0, "spec": "Vector, 96px, level readable by numeral and size"},
+            {"id": "track-frame", "type": "ui", "tier": "mvp", "description": "Track frame and column backing",
+             "count": 1, "source_preference": "procedural", "est_cost": 0, "spec": "9-slice"},
+            {"id": "merge-vfx", "type": "vfx", "tier": "mvp", "description": "Merge burst and cascade streak",
+             "count": 2, "source_preference": "procedural", "est_cost": 0, "spec": "Particle presets"},
+        ],
+        "audio": [
+            {"id": "music-loop", "type": "music", "tier": "mvp", "description": "Calm loop",
+             "trigger": "Run start", "loop": True, "source_preference": "library", "est_cost": 40},
+            {"id": "sfx-drop", "type": "sfx", "tier": "mvp", "description": "Piece drop thunk", "trigger": "Drop",
+             "loop": False, "source_preference": "library", "est_cost": 5},
+            {"id": "sfx-merge", "type": "sfx", "tier": "mvp", "description": "Merge pop, pitched per cascade step",
+             "trigger": "Merge", "loop": False, "source_preference": "library", "est_cost": 5},
+        ],
+        "post_mvp": [
+            {"id": "next-two", "name": "Two-piece preview", "description": "Show the next two pieces instead of one."},
+        ],
+        "optional": [
+            {"id": "piece-skins", "name": "Piece skins", "description": "Cosmetic tower skins unlocked by best score."},
+        ],
+    },
+
     "merge-puzzle": {
         "label": "Grid puzzle",
         "keywords": ["puzzle", "match", "merge", "tile", "block", "grid", "swap", "sort", "connect", "board"],
+        "signature": ["swap", "match", "match-3", "grid", "board", "tile", "tiles"],
         "dimension": "2d",
         "structure": "level",
         "camera": "Fixed, board centred, no scrolling.",
@@ -282,9 +419,130 @@ ARCHETYPES = {
         ],
     },
 
+    "arena-dodge": {
+        "label": "3D arena dodger",
+        "keywords": ["3d", "three-dimensional", "arena", "drive", "driving", "dodge", "dodger", "walls", "wall", "obstacle", "obstacles", "steer", "endless", "neon"],
+        "signature": ["wall", "walls", "dodge", "dodger", "steer between", "rush toward", "obstacle", "obstacles"],
+        "dimension": "3d",
+        "structure": "run",
+        "camera": "Third-person chase camera, slightly high, locked behind the craft; no player camera control.",
+        "orientation": "landscape",
+        "identity_affinity": ["neon-night", "signal-brutal", "solar-bleach"],
+        "fantasy": "Threading a gap at a speed that should not be survivable.",
+        "core_loop": "Drive into the arena -> walls rush toward the craft -> steer between them -> score climbs with time and every wall cleared -> the walls speed up -> a crash ends the run -> drive again at once.",
+        "pillars": [
+            "The gap is always readable before it arrives",
+            "Every crash is the player's mistake, never the camera's",
+            "Back in a run within one second of crashing",
+        ],
+        "run_seconds": 60,
+        "first_reward_s": 10,
+        "content_units": 3,
+        "content_unit_kind": "speed tiers",
+        "retention_hooks": ["progression", "streak"],
+        "return_reason": "I know I can hold the line through one more speed-up.",
+        "progression_model": "skill-only",
+        "difficulty_model": "time-ramp",
+        "mechanics": [
+            {"id": "steering", "name": "Steering", "tier": "mvp",
+             "description": "The craft drives forward on its own; the player steers it left and right across the arena.",
+             "rules": ["The craft slides sideways at a fixed steer speed and cannot leave the arena's width.",
+                       "Forward speed is never player-controlled; the walls' speed carries the drive."],
+             "parameters": {"arena_half_width": 4, "steer_speed": 6}},
+            {"id": "walls", "name": "Rushing walls", "tier": "mvp",
+             "description": "Walls spawn ahead and rush toward the craft; the player steers between them.",
+             "rules": ["Walls spawn at a fixed distance ahead at a fixed interval and move toward the craft.",
+                       "Every wall row leaves a gap the craft can pass through.",
+                       "A wall that passes the craft without a hit counts as cleared."],
+             "parameters": {"spawn_interval_s": 0.9, "spawn_distance": 40}},
+            {"id": "crash", "name": "Crash ends the run", "tier": "mvp",
+             "description": "Hitting a wall is a crash, and a crash ends the run.",
+             "rules": ["Any overlap of the craft with a wall is a crash.",
+                       "The result card shows the score and the personal best."]},
+            {"id": "speed-ramp", "name": "Speed ramp and score", "tier": "mvp",
+             "description": "The walls speed up the longer the drive lasts; score climbs with time survived and every wall cleared.",
+             "rules": ["Wall speed starts at 8 arena units per second and rises by 0.35 every second survived.",
+                       "Score rises 10 per second survived plus 5 per wall cleared."],
+             "parameters": {"base_speed": 8, "speed_ramp_per_s": 0.35, "points_per_s": 10, "points_per_wall": 5}},
+        ],
+        "actions": [
+            {"id": "steer", "action": "Steer left or right", "tier": "mvp", "mechanic": "steering",
+             "touch": "Hold and drag: the craft follows the finger's horizontal position",
+             "mouse": "The craft follows the pointer's horizontal position",
+             "keyboard": "Left/Right arrows or A/D", "gamepad": "Left stick"},
+        ],
+        "goals": {
+            "moment": "Line up for the next gap.",
+            "session": "Beat the personal best.",
+            "long_term": "Survive into the third speed tier.",
+        },
+        "progression_steps": [
+            {"id": "tier-2", "tier": "mvp", "unlock_condition": "Survive 20 s in one run", "grants": "Speed tier 2 and its palette"},
+            {"id": "tier-3", "tier": "mvp", "unlock_condition": "Survive 45 s in one run", "grants": "Speed tier 3 and its palette"},
+        ],
+        "curve": [
+            {"at": "0-15 s", "description": "Slow walls and wide gaps, so a first-time player clears walls before crashing.",
+             "parameters": {"speed": 8}},
+            {"at": "15-45 s", "description": "Walls speed up 0.35 units per second each second.",
+             "parameters": {"speed_ramp_per_s": 0.35}},
+            {"at": "45 s+", "description": "The ramp continues; only reading gaps early keeps the run alive.",
+             "parameters": {}},
+        ],
+        "assist": "After three runs under 10 s, the next run's first 10 s use the opening speed.",
+        "failure_condition": "The craft crashes into a wall.",
+        "failure_feedback": "Hit-stop for 150 ms, the wall flashes, the camera pulls up, then the result card with score and best.",
+        "rewards": [
+            {"id": "wall-cleared", "tier": "mvp", "trigger": "A wall passes the craft without a hit", "grants": "Score +5",
+             "feedback": "The wall's edge flashes as it passes; a short whoosh."},
+            {"id": "tier-up", "tier": "mvp", "trigger": "Speed tier changes", "grants": "New palette",
+             "feedback": "The arena's neon shifts hue; a riser."},
+            {"id": "new-best", "tier": "mvp", "trigger": "Run ends above the personal best", "grants": "New best, saved",
+             "feedback": "Best counter bursts."},
+        ],
+        "hud": [
+            {"id": "score", "tier": "mvp", "shows": "Score", "anchor": "top-center", "updates_on": "Every frame",
+             "feedback": "Digits roll rather than jump"},
+            {"id": "best", "tier": "mvp", "shows": "Personal best", "anchor": "top-left", "updates_on": "Run start and new best"},
+        ],
+        "tutorial": {
+            "approach": "guided-first-run",
+            "rationale": "Steering is one idea; the first wall shows it once.",
+            "steps": [
+                {"id": "steer-prompt", "tier": "mvp", "trigger": "First run start",
+                 "prompt": "Left and right arrows glow; the first wall's gap sits off to one side",
+                 "completes_on": "The player clears the first wall"},
+            ],
+        },
+        "assets": [
+            {"id": "craft", "type": "model", "tier": "mvp", "description": "Player craft",
+             "count": 1, "source_preference": "procedural", "est_cost": 0, "spec": "Primitive geometry, emissive edges"},
+            {"id": "arena-kit", "type": "model", "tier": "mvp", "description": "Arena floor and side rails",
+             "count": 2, "source_preference": "procedural", "est_cost": 0, "spec": "Primitive geometry, vertex colours"},
+            {"id": "wall", "type": "model", "tier": "mvp", "description": "Neon wall segment",
+             "count": 1, "source_preference": "procedural", "est_cost": 0, "spec": "Box plus emissive material"},
+            {"id": "crash-vfx", "type": "vfx", "tier": "mvp", "description": "Crash burst",
+             "count": 1, "source_preference": "procedural", "est_cost": 0, "spec": "Instanced particles"},
+        ],
+        "audio": [
+            {"id": "music-drive", "type": "music", "tier": "mvp", "description": "Driving loop",
+             "trigger": "Run start", "loop": True, "source_preference": "library", "est_cost": 40},
+            {"id": "sfx-pass", "type": "sfx", "tier": "mvp", "description": "Wall pass whoosh", "trigger": "Wall cleared",
+             "loop": False, "source_preference": "library", "est_cost": 5},
+            {"id": "sfx-crash", "type": "sfx", "tier": "mvp", "description": "Crash impact", "trigger": "Crash",
+             "loop": False, "source_preference": "library", "est_cost": 5},
+        ],
+        "post_mvp": [
+            {"id": "moving-gaps", "name": "Moving gaps", "description": "Wall rows whose gap slides while they approach."},
+        ],
+        "optional": [
+            {"id": "craft-variants", "name": "Craft variants", "description": "Cosmetic crafts unlocked by best score."},
+        ],
+    },
+
     "arena-3d": {
         "label": "3D arena",
         "keywords": ["3d", "three-dimensional", "arena", "drive", "driving", "racing", "race", "flight", "fly", "voxel", "drift", "kart", "physics"],
+        "signature": ["gate", "gates", "checkpoint", "checkpoints", "time trial", "lap", "race", "racing", "clock"],
         "dimension": "3d",
         "structure": "run",
         "camera": "Third-person chase camera, slightly high, locked behind the player; no player camera control.",
@@ -310,7 +568,7 @@ ARCHETYPES = {
              "description": "The player vehicle accelerates automatically; the player only steers.",
              "rules": ["Forward speed ramps to max in 1.5 s and is never player-controlled in the MVP.",
                        "Steering input maps to yaw rate, not to position.",
-                       "Wall contact bounces the vehicle and removes 30% of speed; it never ends the run."],
+                       "Touching the arena edge bounces the vehicle and removes 30% of speed; it never ends the run."],
              "parameters": {"max_speed": 22.0, "yaw_rate_deg_s": 140, "wall_speed_loss": 0.3}},
             {"id": "checkpoints", "name": "Target gates", "tier": "mvp",
              "description": "Gates light up one at a time; passing the lit gate extends the clock.",
@@ -403,6 +661,7 @@ ARCHETYPES = {
     "one-touch": {
         "label": "One-touch timing",
         "keywords": ["tap", "one-touch", "one touch", "timing", "stack", "jump", "hop", "flap", "reflex", "arcade"],
+        "signature": ["timing", "one-touch", "one touch", "stack", "flap", "tap at"],
         "dimension": "2d",
         "structure": "run",
         "camera": "Fixed; the playfield scrolls vertically as the player climbs.",
@@ -526,22 +785,44 @@ def _text(strategy):
     return " ".join(parts).lower()
 
 
+def concept_text(strategy):
+    """The strategy's statement of the game itself: one-liner, core mechanic, core loop."""
+    concept = strategy.get("concept") or {}
+    parts = [strategy.get("one_liner", ""), concept.get("core_mechanic", ""), concept.get("core_loop", "")]
+    return " ".join(p for p in parts if p).lower()
+
+
+def _hits(terms, text):
+    """Terms present in `text` as whole words (a hyphen separates words: seven-column)."""
+    return [t for t in terms if re.search(r"(?<![a-z0-9])" + re.escape(t) + r"(?![a-z0-9])", text)]
+
+
 def select(strategy, pinned=None):
-    """Pick an archetype id for this strategy. Returns (id, reason)."""
+    """Pick an archetype id for this strategy. Returns (id, reason).
+
+    Signature hits in the concept rank first, keyword hits in the whole strategy second, and
+    declaration order breaks what is left, so the choice is stable.
+    """
     if pinned:
         if pinned not in ARCHETYPES:
             raise KeyError(f"unknown archetype {pinned!r}; known: {', '.join(sorted(ARCHETYPES))}")
         return pinned, "pinned by the workflow step"
 
     text = _text(strategy)
+    concept = concept_text(strategy)
     words = set(_WORD.findall(text))
     scores = {}
     for archetype_id, archetype in ARCHETYPES.items():
+        signature = _hits(archetype.get("signature") or [], concept)
         hits = [k for k in archetype["keywords"] if (k in words if " " not in k else k in text)]
-        if hits:
-            scores[archetype_id] = hits
+        if signature or hits:
+            scores[archetype_id] = (signature, hits)
     if not scores:
         return FALLBACK, "no archetype keyword in the strategy; fell back to the simplest shape"
-    # Most hits wins; ties break by declaration order, which is stable.
-    best = max(scores, key=lambda a: (len(scores[a]), -list(ARCHETYPES).index(a)))
-    return best, f"strategy mentions {', '.join(scores[best])}"
+    order = list(ARCHETYPES)
+    best = max(scores, key=lambda a: (len(scores[a][0]), len(scores[a][1]), -order.index(a)))
+    signature, hits = scores[best]
+    if signature:
+        return best, (f"strategy's concept names its core mechanic ({', '.join(signature)})"
+                      + (f" and mentions {', '.join(hits)}" if hits else ""))
+    return best, f"strategy mentions {', '.join(hits)}"

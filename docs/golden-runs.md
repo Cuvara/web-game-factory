@@ -184,10 +184,10 @@ ports a known-good example into the layout the brief requires:
    boot scene file stays: `main.ts` no longer starts it, and the template's SDK matrix
    harness imports it);
 7. writes `docs/development/report.json` honestly: a design MVP item the example does not
-   cover is `partial` or `cut` and becomes a scope delta (the 2D design is a swap-based
-   level puzzle; the replayed game is drop-and-merge, so "Swap and resolve" is `partial`,
-   "Level goal" `cut`), every asset is `placeholder`, and `known_issues[0]` says the build is
-   a replay.
+   cover is `partial` or `cut` and becomes a scope delta (since the concept-fidelity fix the
+   golden designs are the replayed games - `drop-merge` for Tower Merge Rush, `arena-dodge`
+   for Neon Drift Arena - so every mechanic is `built`; telemetry stays `partial`), every
+   asset is `placeholder`, and `known_issues[0]` says the build is a replay.
 
 The develop step then runs its real checks — install, conformance, typecheck, lint, unit,
 build, smoke — and commits.
@@ -274,11 +274,12 @@ with `bin/wgf new-game --config ... --store ...` and decides G2, G3 and G4 with 
 
 **Why not the replay.** The v2.0.1 candidate first planted a defect in the golden replay and
 let a live reviewer find it. The reviewer rejected the build on six design-fidelity blockers
-and never reached the defect, correctly: the golden 2D design is the design module's
+and never reached the defect, correctly: the golden 2D design was then the design module's
 `merge-puzzle` archetype - a 7x7 swap-and-match game with levels, goal colours and a move
-limit - while the replay is Tower Merge Rush, a drop-and-merge game. The golden runs pass
-because their scripted reviewer does not judge design fidelity (and the replay's report
-lists the gaps honestly); they prove the pipeline, not that the game matches its design.
+limit - while the strategy and the replay are Tower Merge Rush, a drop-and-merge game. That
+mismatch is fixed at its root (the design now follows the strategy's concept, and two
+blocking consistency rules refuse a design that drops or adds a core mechanic; see
+CHANGELOG), but the live build still builds from scratch: a replay is not an agent's work.
 
 ## Repeatability
 

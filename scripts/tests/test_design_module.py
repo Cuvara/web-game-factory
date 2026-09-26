@@ -212,9 +212,21 @@ class DesignFromWorkedExample(unittest.TestCase):
             self.assertIn(question, self.design["open_questions"])
 
 
+def coherent(archetype_id, **changes):
+    """The worked-example strategy restated so its concept IS the archetype's game: the concept
+    names the archetype's loop and its MVP mechanics, as a strategy for that game would."""
+    a = archetypes.ARCHETYPES[archetype_id]
+    mechanics = " ".join(m["description"] for m in a["mechanics"] if m["tier"] == "mvp")
+    concept = {"genre": "arcade", "core_mechanic": mechanics, "core_loop": a["core_loop"]}
+    return variant(one_liner=f"A {a['label'].lower()} game: {a['core_loop']}", concept=concept, **changes)
+
+
 class Choices(unittest.TestCase):
     def test_a_3d_strategy_gets_threejs(self):
-        result = run_step(variant(one_liner="A 3D drift racing arena where you steer through lit gates."))
+        strategy = variant(one_liner="A 3D drift racing arena where you steer through lit gates against the clock.",
+                           concept={"genre": "racing", "core_mechanic": "steer a craft through lit gates; each gate adds time to the clock",
+                                    "core_loop": "steer to the lit gate, pass it for time, the course tightens, the clock runs out, retry"})
+        result = run_step(strategy)
         design = result.artifacts[0].content
         self.assertEqual(result.outcome, StepOutcome.SUCCESS, result.error)
         self.assertEqual((design["engine"]["type"], design["engine"]["dimension"]), ("threejs", "3d"))
@@ -222,7 +234,7 @@ class Choices(unittest.TestCase):
         self.assertIn("model", {a["type"] for a in design["build_spec"]["assets"]})
 
     def test_the_step_can_pin_archetype_engine_and_identity(self):
-        result = run_step(load_strategy(), params={"archetype": "merge-puzzle", "identity": "lacquer-brass"})
+        result = run_step(coherent("merge-puzzle"), params={"archetype": "merge-puzzle", "identity": "lacquer-brass"})
         design = result.artifacts[0].content
         self.assertEqual(result.outcome, StepOutcome.SUCCESS, result.error)
         self.assertIn("level-complete", {s["id"] for s in design["build_spec"]["game_states"]})
@@ -230,17 +242,94 @@ class Choices(unittest.TestCase):
         pinned = run_step(load_strategy(), params={"engine": "threejs"}).artifacts[0].content
         self.assertEqual(pinned["engine"]["type"], "threejs")
 
+    def test_a_pinned_archetype_that_is_not_the_strategys_game_is_refused(self):
+        # Regression: a pin (or a keyword match) is not allowed to turn the approved game into
+        # another. The worked example is a lane-switching runner; a swap-to-match grid is not it.
+        result = run_step(load_strategy(), params={"archetype": "merge-puzzle"})
+        self.assertEqual(result.outcome, StepOutcome.FAILED)
+        self.assertIn("concept_mechanics_carried", result.error)
+        self.assertIn("design_adds_no_foreign_mechanic", result.error)
+
     def test_every_archetype_yields_a_buildable_passing_design(self):
         for archetype_id in archetypes.ARCHETYPES:
             with self.subTest(archetype=archetype_id):
-                result = run_step(load_strategy(), params={"archetype": archetype_id})
+                result = run_step(coherent(archetype_id), params={"archetype": archetype_id})
                 self.assertEqual(result.outcome, StepOutcome.SUCCESS, result.error)
                 self.assertEqual(compose.buildability(result.artifacts[0].content), [])
+
+    def test_each_archetype_is_selected_for_its_own_game(self):
+        for archetype_id in archetypes.ARCHETYPES:
+            with self.subTest(archetype=archetype_id):
+                self.assertEqual(archetypes.select(coherent(archetype_id))[0], archetype_id)
 
     def test_archetype_selection_follows_the_strategy_words(self):
         self.assertEqual(archetypes.select(load_strategy())[0], "lane-runner")
         self.assertEqual(archetypes.select({"one_liner": "Merge tiles on a grid"})[0], "merge-puzzle")
         self.assertEqual(archetypes.select({"one_liner": "Something new"})[0], archetypes.FALLBACK)
+
+    def test_a_drop_merge_concept_gets_a_drop_merge_design_not_a_swap_puzzle(self):
+        # Regression for the 2026-09-26 live run: a "merge" genre word picked the swap-and-match
+        # grid for a drop-into-a-column strategy, and the design passed its own checks.
+        strategy = variant(
+            one_liner="A merge game where the player drops numbered pieces onto a seven-column track.",
+            concept={"genre": "puzzle", "subgenre": "merge",
+                     "core_mechanic": "drop numbered tower pieces onto a seven-column track; equal neighbours merge into the next level and the merge cascades",
+                     "core_loop": "pick a column, drop the piece, chain merges for points, the next piece ramps up, the board fills, retry for a higher score"})
+        self.assertEqual(archetypes.select(strategy)[0], "drop-merge")
+        result = run_step(strategy)
+        self.assertEqual(result.outcome, StepOutcome.SUCCESS, result.error)
+        design = result.artifacts[0].content
+        breached = [r["criterion_id"] for r in design["consistency"]["rule_results"] if r["breached"]]
+        self.assertEqual(breached, [])
+        names = {f["name"] for f in design["features"] if f["tier"] == "mvp"}
+        self.assertTrue({"Seven-column track", "Drop a piece", "Merge and cascade"} <= names, names)
+        self.assertNotIn("swap", " ".join(a["action"].lower() for a in design["build_spec"]["controls"]["actions"]))
+
+    def test_a_wall_dodging_concept_gets_a_dodge_design_not_a_gate_clock(self):
+        strategy = variant(
+            one_liner="A driving game where the player steers a neon craft between walls that rush toward it.",
+            concept={"genre": "arcade", "subgenre": "driving",
+                     "core_mechanic": "drive a neon craft down a 3d arena and steer between walls that rush toward it",
+                     "core_loop": "drive into the arena, steer between the walls, score climbs with every wall cleared, the arena speeds up, crash, drive again"})
+        self.assertEqual(archetypes.select(strategy)[0], "arena-dodge")
+        result = run_step(strategy)
+        self.assertEqual(result.outcome, StepOutcome.SUCCESS, result.error)
+        design = result.artifacts[0].content
+        self.assertEqual(design["engine"]["type"], "threejs")
+        self.assertNotIn("clock", design["core_loop"].lower())
+
+
+class ConceptFidelity(unittest.TestCase):
+    """design-consistency-rules concept_mechanics_carried / design_adds_no_foreign_mechanic."""
+
+    TERMS = consistency.load_rules()["concept_terms"]
+
+    def view(self, design, strategy):
+        return consistency.concept_view(design, strategy, self.TERMS)
+
+    def test_a_mechanic_the_strategy_names_must_be_in_the_designs_own_text(self):
+        strategy = {"one_liner": "drop pieces into a column"}
+        design = {"core_loop": "swap two pieces", "features": [
+            {"id": "strategy-drop", "tier": "mvp", "name": "drop pieces into a column", "description": "x"},
+            {"id": "swap", "tier": "mvp", "name": "Swap", "description": "swap two",
+             "acceptance": ["Strategy MVP: drop pieces into a column."]}]}
+        view = self.view(design, strategy)
+        # Folded-in strategy text is not the design carrying the mechanic.
+        self.assertEqual(view["uncarried"], ["column", "drop"])
+        self.assertEqual(view["foreign"], ["swap"])
+
+    def test_a_faithful_design_carries_everything_and_adds_nothing(self):
+        strategy = {"one_liner": "drop pieces into a column; equal neighbours merge"}
+        design = {"core_loop": "drop into a column, neighbours merge", "features": [],
+                  "build_spec": {"controls": {"actions": [{"tier": "mvp", "action": "Drop", "touch": "Tap a column"}]}}}
+        view = self.view(design, strategy)
+        self.assertEqual((view["uncarried"], view["foreign"]), ([], []))
+
+    def test_words_are_matched_whole(self):
+        # "gateway" is not a gate; "seven-column" is a column.
+        found = consistency._terms_in("a gateway to a seven-column track", self.TERMS)
+        self.assertEqual(found, {"column"})
+
 
     def test_identity_is_stable_per_title(self):
         first = identity.choose("neon-drift", ["neon-night", "riso-arcade"])[0]

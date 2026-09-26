@@ -12,7 +12,7 @@
 # artifact plus the resolved platform profiles. Keep them few and obvious — a rule nobody
 # understands gets waived, and a waived rule is worse than no rule.
 
-version: 1.1.0
+version: 1.2.0
 
 rules:
   - id: rewarded_ads_need_reward_moments
@@ -78,6 +78,29 @@ rules:
       Designing around a placement a required portal does not offer forces either a
       redesign or dropping the platform, both late and both expensive.
 
+  - id: concept_mechanics_carried
+    label: The design's core mechanic is the one the strategy approved
+    severity: blocking
+    # `concept.*` is a projection (wgf_design consistency.concept_view): the concept terms
+    # below found in the strategy's concept (one-liner, core mechanic, core loop) and in the
+    # design's own statement of its game (core loop, the MVP mechanics it defines, the MVP
+    # controls). Text the design copies from the strategy MVP is not counted: a design that
+    # repeats "drop into a column" while defining a swap is still a swap game.
+    when: { left: concept.uncarried, op: neq, right: [] }
+    rationale: >
+      The design is what the developer builds and what the reviewer judges against. A design
+      that drops a mechanic the strategy approved describes a different game from the one
+      G2 approved, and the build is then either unfaithful to the design or to the strategy.
+
+  - id: design_adds_no_foreign_mechanic
+    label: The design introduces no core mechanic the strategy does not name
+    severity: blocking
+    when: { left: concept.foreign, op: neq, right: [] }
+    rationale: >
+      A swap-to-match design for a drop-and-merge strategy, or a checkpoint clock for a
+      dodge-the-walls strategy, keeps every word of the concept and still changes the game.
+      A mechanic the strategy does not name is a strategy change and goes back to G2.
+
   - id: first_reward_within_first_session
     label: First reward must land inside the first session
     severity: warning
@@ -112,6 +135,29 @@ rules:
     rationale: >
       An open-ended progression with no designed end state produces an endless content
       obligation, which is exactly what a 7-14 day production model cannot service.
+
+# The concept terms the two concept rules compare. Each entry is one mechanic; its words are
+# the ways a strategy or a design says it. Only mechanics that change what the game IS belong
+# here - never genre words (puzzle, arcade), feel words or platform words. A new archetype
+# whose mechanic is missing from this list is not checked for it, so add it here with the
+# archetype.
+concept_terms:
+  drop: [drop, drops, dropped, dropping]
+  swap: [swap, swaps, swapping, swapped]
+  match: [match, matches, match-3, line of three, lines of three]
+  merge: [merge, merges, merged, merging]
+  column: [column, columns]
+  lane: [lane, lanes]
+  steer: [steer, steers, steering]
+  wall: [wall, walls]
+  crash: [crash, crashes, crashed]
+  gate: [gate, gates, checkpoint, checkpoints]
+  clock: [clock, timer, countdown, time limit]
+  move-limit: [move limit, moves remaining, moves left]
+  jump: [jump, jumps, jumping, hop, hops]
+  shoot: [shoot, shoots, shooting]
+  timed-tap: [timed tap, sweep, sweeps]
+  lock: [lock, locks, locked]
 
 evaluation:
   pass_condition: No rule with severity=blocking is breached.

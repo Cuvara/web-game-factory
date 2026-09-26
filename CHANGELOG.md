@@ -58,14 +58,34 @@ live tests with the documented argvs.
   (every named path ships in the pinned template; every template file the seam imports is
   named).
 
-### Known
+### Fixed (design follows the strategy)
 
-- **The golden 2D design does not describe the game the golden replay builds.** Every
-  "merge/puzzle" candidate gets the design module's `merge-puzzle` archetype (a 7x7
-  swap-and-match level game); the replay is Tower Merge Rush (drop-and-merge). A live reviewer
-  rejected the replay on six design-fidelity blockers. The golden runs still prove the
-  pipeline - their scripted reviewer does not judge fidelity, and the replay reports the gaps
-  - not that the game matches its design ([golden-runs.md](docs/golden-runs.md#the-live-loop)).
+- **The design described a different game from the strategy it was built from, and passed
+  its own checks.** Root cause: the design module chose its archetype by counting genre
+  keywords over the whole strategy, and had one "merge" shape - a 7x7 swap-and-match level
+  game - so the approved drop-merge strategy (drop numbered pieces onto a seven-column track;
+  equal neighbours merge and cascade) got a swap design; the 3D strategy (steer between walls
+  that rush toward the craft; a crash ends the run) likewise got a checkpoint time trial.
+  Nothing compared the design with the strategy's concept. Fixed at three layers:
+  - two archetypes for the games those concepts describe: `drop-merge` and `arena-dodge`
+    (`wgf_design/archetypes.py`), with rules and numbers matching the pinned template's
+    Tower Merge Rush and Neon Drift Arena;
+  - selection reads each archetype's `signature` - the terms of its core mechanic - against
+    the strategy's concept first, genre keywords second;
+  - *Reason (core change, core/reference):* `design-consistency-rules.yaml` 1.2.0 adds two
+    **blocking** rules, `concept_mechanics_carried` and `design_adds_no_foreign_mechanic`,
+    over a `concept_terms` vocabulary: every core mechanic the strategy's concept names must
+    be in the design's own text (core loop, the MVP mechanics it defines, the MVP controls -
+    not text folded in from the strategy), and the design may add none the strategy does not
+    name. A pinned archetype that is not the strategy's game is now refused. The old golden
+    2D and 3D designs both fail them.
+  The golden replay ports map the new MVP features, all `built`; the replay's known issue
+  "the design is a swap-based level puzzle" is gone because it is no longer true.
+  *Migration:* a design made under 1.1.0 rules is not re-evaluated (artifacts are
+  immutable); a run that redoes `design` meets the new rules, and a strategy whose concept
+  no archetype carries now fails design instead of getting the nearest genre.
+  Regressions: `test_design_module.Choices` (one per golden concept, every archetype
+  selected for its own game, a contradicting pin refused) and `ConceptFidelity`.
 
 ## [2.0.0] - 2026-09-26
 

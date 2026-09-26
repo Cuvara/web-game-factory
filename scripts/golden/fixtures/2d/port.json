@@ -17,9 +17,11 @@
     {"id": "restart-game-over", "kind": "interstitial"}
   ],
   "mvp": {
-    "Board": {"status": "built", "notes": "The example's seven-column track (src/game/rules.ts)."},
-    "Swap and resolve": {"status": "partial", "notes": "Resolve is built: equal neighbours merge and cascade. Swap is not: the replayed example places pieces by dropping them into a column, not by swapping two."},
-    "Level goal": {"status": "cut", "notes": "The replayed example is run-based: a run ends when the track is full with no merge left. There are no per-level goals."},
+    "Seven-column track": {"status": "built", "notes": "The example's single-row track of seven columns (src/game/rules.ts COLUMNS)."},
+    "Drop a piece": {"status": "built", "notes": "Tap or click a column, keys 1-7, Space/Enter for the first open column; a drop onto a full column is refused (canDropAt)."},
+    "Merge and cascade": {"status": "built", "notes": "Equal horizontal neighbours merge into level + 1, the track compacts left and the merge cascades; each merge scores the level it made (resolveMerges)."},
+    "Drop-level ramp": {"status": "built", "notes": "The next piece's level is 1 + floor(merges / 4), capped at 4 (dropLevelForMerges)."},
+    "Full track ends the run": {"status": "built", "notes": "A drop that leaves no empty column ends the run (hasLegalMove); the result card shows score and best."},
     "Game flow": {"status": "built", "notes": "Title -> playing -> pause -> game over -> continue / double / restart."},
     "Kill and success criteria telemetry": {"status": "partial", "notes": "A run_over event (score, merges) goes through the seam's track(); the default seam sends to NullSink until the integration wires a sink."},
     "Platform integration": {"status": "built", "notes": "Every platform call goes through src/game/integration.ts; the default implementation wraps the template's Platform and withAdBreak."},
@@ -33,7 +35,6 @@
   "how_to_play": "Drop numbered towers onto a seven-column track by tapping a column or pressing 1-7; two equal levels side by side merge into the next level and cascade. The run ends when the track is full with no merge left.",
   "known_issues": [
     "This build is a deterministic REPLAY of web-game-template's examples/tower-merge-rush, ported into the template layout by the Factory's golden-run replay developer. It is not an AI-developed build and says nothing about an agent developer's ability.",
-    "The design is a swap-based level puzzle; the replayed game is a drop-and-merge run game. The deltas are listed per MVP item and in scope_deltas.",
     "Assets from the asset manifest are placeholders; the game draws everything procedurally and loads none of them."
   ]
 }

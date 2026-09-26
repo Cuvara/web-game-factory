@@ -19,10 +19,10 @@ time, the pinned template, the real develop checks, sdk, verify, G4, release - w
 
 Why from scratch. The v2.0.1 candidate first tried the golden replay with a defect planted in
 it. The live reviewer rejected that build on six design-fidelity blockers and never reached
-the defect: the golden 2D design is the design module's merge-puzzle archetype (a 7x7
-swap-and-match level game), and the replayed game is Tower Merge Rush, a different game. The
-golden runs pass because their scripted reviewer does not judge design fidelity. A build made
-from the brief is the only fixture a competent reviewer can legitimately approve.
+the defect: the golden 2D design was then the merge-puzzle archetype (a 7x7 swap-and-match
+level game), not the drop-and-merge game the strategy approved. The design now follows the
+strategy's concept (drop-merge), but a replay is still not an agent's work: the live build
+has the developer build the game from the brief, and the reviewer judge that.
 
 `record` - both argvs, verbatim, where they came from, and the host's version - goes into
 the evidence, so a paid run can be reproduced from the repository alone.

@@ -145,8 +145,10 @@ def warm_store(game_key):
     only, so on a machine that had never installed the engine package every golden run
     failed at develop (ERR_PNPM_NO_OFFLINE_META; found by the 2.0.0 clean-machine check).
     So: install the pinned template (wgflib.template.ensure_dependencies), then perform the
-    replay's own resolution once, online, in a throwaway copy. Idempotent and cheap on a
-    warm machine (--prefer-offline); the run itself stays offline."""
+    replay's own resolution once, online, in a throwaway copy - a full online resolution,
+    not --prefer-offline: that satisfies a dependency already in the store (fflate, under
+    @types/three) without fetching its metadata, and the offline resolution then fails on
+    it. Idempotent; the run itself stays offline."""
     from golden import replay_developer as replay
     source = template.checkout()
     template.ensure_dependencies(source)
@@ -157,8 +159,7 @@ def warm_store(game_key):
         shutil.copytree(source, copy, symlinks=True,
                         ignore=shutil.ignore_patterns("node_modules", ".git"))
         replay.add_dependencies(copy, deps)
-        done = procs.run(["pnpm", "install", "--prefer-offline", "--no-frozen-lockfile"],
-                         cwd=copy, timeout=1200)
+        done = procs.run(["pnpm", "install", "--no-frozen-lockfile"], cwd=copy, timeout=1200)
         if not done.ok:
             raise RuntimeError(f"golden: cannot warm the pnpm store for {game_key} "
                                f"({', '.join(sorted(deps))}): {done.tail(20)}")

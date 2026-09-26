@@ -754,7 +754,9 @@ class SilentChildInAStep(ProcessCase):
         self.assertEqual(seen["hung_reason"], "output")
         self.assertEqual(seen["driver_pid"], os.getpid())
         self.assertLess(seen["idle_seconds"], 1.0)  # heartbeats kept the driver fresh
-        self.assertGreater(seen["output_idle_seconds"], 1.0)
+        # "hung" is decided on the exact idle time (> 1.0); the report rounds it to the
+        # millisecond, so 1.0003 s reads 1.0. At least the threshold, never below it.
+        self.assertGreaterEqual(seen["output_idle_seconds"], 1.0)
         self.assertTrue(seen["pid"])
         self.assertNotIn("error", box, box.get("error"))
         self.assertEqual(box["state"].status, RunStatus.COMPLETED)  # status only looked

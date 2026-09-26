@@ -144,12 +144,12 @@ added as a profile.
 
 ## Install and upgrade
 
-**Requirements.** Python 3.10 or newer (the test suite passes on 3.10 through 3.13), standard library only - there is deliberately no
-toolchain, no package and no lockfile. `git`. For game repositories: `node` and `pnpm`, and
-Playwright's Chromium for browser verification and the golden runs. `gh`, authenticated,
-for `init` to create repositories on GitHub ([docs/init-module.md](docs/init-module.md)).
-Optional: `npx`, for the ajv schema checks; an agent host CLI, for a `command` developer or
-reviewer.
+**Requirements.** Python 3.10 or newer (the test suite passes on 3.10 through 3.13),
+standard library only - there is deliberately no toolchain, no package and no lockfile.
+`git`. For game repositories: `node` and `pnpm`, and Playwright's Chromium for browser
+verification and the golden runs. `gh`, authenticated, for `init` to create repositories on
+GitHub ([docs/init-module.md](docs/init-module.md)). Optional: `npx`, for the ajv schema
+checks; an agent host CLI, for a `command` developer or reviewer.
 
 **Install.** Clone this repository and run `bin/wgf` from its root (or put `bin/` on PATH).
 The pinned template commit (`workspace/config/template.lock.json`) is cloned on first use and

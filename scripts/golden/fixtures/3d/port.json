@@ -28,8 +28,7 @@
     "Rewarded placement": {"status": "built", "notes": "revive-game-over: continue the same run once, granted only when rewarded() resolves true."},
     "Interstitial placement": {"status": "built", "notes": "restart-game-over, at the break before the next drive; an unfilled ad never blocks the restart."},
     "One content set with a data-driven difficulty ramp": {"status": "built", "notes": "Walls get faster the longer the drive lasts (the simulation's speed ramp)."},
-    "Score and personal best, persisted locally": {"status": "built", "notes": "Best score saved and loaded through the seam's save/load (platform storage)."},
-    "Localization: ru, en": {"status": "built", "notes": "en.json and ru.json ship in public/locales/."}
+    "Score and personal best, persisted locally": {"status": "built", "notes": "Best score saved and loaded through the seam's save/load (platform storage)."}
   },
   "how_to_play": "Steer a neon craft with the arrow keys, A/D or the pointer and thread it between the walls rushing at you; the score climbs the longer you survive and the walls speed up. Crash and it is over - revive once or race again.",
   "known_issues": [

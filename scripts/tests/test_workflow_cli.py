@@ -832,3 +832,28 @@ class Environment(CliCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ProgressShowsWarnings(unittest.TestCase):
+    """A step's warning reaches the console: the tech plan's "plan exceeds the timebox; G3
+    decides" was only in the event log, and a G3 was once approved without anyone seeing it."""
+
+    def setUp(self):
+        import io
+        sys.path.insert(0, os.path.join(ROOT, "scripts"))
+        import importlib.util
+        spec = importlib.util.spec_from_file_location("wgf_cli", os.path.join(ROOT, "scripts", "wgf.py"))
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        self.progress = module.Progress(io.StringIO())
+
+    def test_a_warning_is_printed_with_its_facts(self):
+        line = self.progress.format({"event": "STEP_LOG", "step_id": "tech-plan", "level": "warning",
+                                     "message": "plan exceeds the timebox; G3 decides",
+                                     "data": {"est_days": 20.0, "allowed_days": 10.5}})
+        self.assertEqual(line, "  ! tech-plan: plan exceeds the timebox; G3 decides "
+                               "(allowed_days=10.5, est_days=20.0)")
+
+    def test_info_stays_in_the_log(self):
+        self.assertIsNone(self.progress.format({"event": "STEP_LOG", "step_id": "x", "level": "info",
+                                                "message": "tech plan composed"}))

@@ -29,8 +29,7 @@
     "Rewarded placement": {"status": "built", "notes": "continue-game-over (clear the track, keep the score, once per run) and double-score-game-over, granted only when rewarded() resolves true."},
     "Interstitial placement": {"status": "built", "notes": "restart-game-over, at the break before the next run; an unfilled ad never blocks the restart."},
     "One content set with a data-driven difficulty ramp": {"status": "built", "notes": "The next piece's level ramps with the merge count (dropLevelForMerges)."},
-    "Score and personal best, persisted locally": {"status": "built", "notes": "Best score saved and loaded through the seam's save/load (platform storage)."},
-    "Localization: en, ru": {"status": "built", "notes": "en.json and ru.json ship in public/locales/."}
+    "Score and personal best, persisted locally": {"status": "built", "notes": "Best score saved and loaded through the seam's save/load (platform storage)."}
   },
   "how_to_play": "Drop numbered towers onto a seven-column track by tapping a column or pressing 1-7; two equal levels side by side merge into the next level and cascade. The run ends when the track is full with no merge left.",
   "known_issues": [

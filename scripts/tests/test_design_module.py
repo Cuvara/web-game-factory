@@ -299,6 +299,18 @@ class Choices(unittest.TestCase):
         self.assertNotIn("clock", design["core_loop"].lower())
 
 
+class StrategyMvpFolding(unittest.TestCase):
+    def test_a_one_word_mvp_item_a_feature_covers_is_folded_not_duplicated(self):
+        # Regression: "Localization: en, ru" shares one significant word with the Localization
+        # feature and became a second Localization feature - and a second plan task.
+        strategy = coherent("drop-merge", mvp=["Localization: en, ru"])
+        design = run_step(strategy, params={"archetype": "drop-merge"}).artifacts[0].content
+        names = [f["name"] for f in design["features"]]
+        self.assertEqual([n for n in names if n.startswith("Localization")], ["Localization"])
+        localization = next(f for f in design["features"] if f["name"] == "Localization")
+        self.assertIn("Strategy MVP: Localization: en, ru.", localization["acceptance"])
+
+
 class ConceptFidelity(unittest.TestCase):
     """design-consistency-rules concept_mechanics_carried / design_adds_no_foreign_mechanic."""
 

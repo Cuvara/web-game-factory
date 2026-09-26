@@ -248,6 +248,38 @@ They do **not** prove:
 - **the GitHub path.** `init.source: local`; creating a repository with `gh` is outward-facing
   and is not exercised.
 
+## The live loop
+
+`scripts/golden/live.py` (`test_live_loop.LiveBuildConverges`, opt-in: `WGF_LIVE_AGENT=1`,
+costs money) asks what a golden run cannot: does a real developer -> reviewer loop
+**converge** on a game the developer builds from the Factory's own brief? It is the 2D golden
+pipeline - the frozen research inputs, so strategy, design and tech plan come out the same
+every run; the pinned template; the real develop checks, sdk, verify, G4 and release - with:
+
+- the developer and the reviewer `workspace/config/factory.yaml` documents, **verbatim**,
+  from develop visit 1, with the steps' own prompts: the developer builds the game from
+  scratch from the brief, the reviewer judges it against the design. No replay, no planted
+  defect, no prompt written for the test;
+- no refusing proxy: the hosts need their API, and the developer runs pnpm online.
+
+It passes only on convergence: the run COMPLETED, the last development commit approved by
+review and the sdk commit by sdk-review, every develop check green on it, only the
+developer's own files changed, every verdict trusted, no process left. It does not require a
+first review to request changes. A run keeps both argvs, where they came from and the host's
+version in `evidence/live-agents.json`.
+
+`python3 scripts/golden/live.py config --workdir DIR --human-gates` writes the same
+configuration as `DIR/factory.yaml`, with no gate auto-approved, for a run a person drives
+with `bin/wgf new-game --config ... --store ...` and decides G2, G3 and G4 with `wgf decide`.
+
+**Why not the replay.** The v2.0.1 candidate first planted a defect in the golden replay and
+let a live reviewer find it. The reviewer rejected the build on six design-fidelity blockers
+and never reached the defect, correctly: the golden 2D design is the design module's
+`merge-puzzle` archetype - a 7x7 swap-and-match game with levels, goal colours and a move
+limit - while the replay is Tower Merge Rush, a drop-and-merge game. The golden runs pass
+because their scripted reviewer does not judge design fidelity (and the replay's report
+lists the gaps honestly); they prove the pipeline, not that the game matches its design.
+
 ## Repeatability
 
 Given the same template commit, fixtures and Factory code, two runs agree on everything but

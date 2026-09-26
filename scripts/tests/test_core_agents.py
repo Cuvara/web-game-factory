@@ -11,8 +11,10 @@ checks are configured off (conformance still runs) so the suite stays fast.
 
     python -m unittest scripts/tests/test_core_agents.py
 
-The one live test runs a real agent host as the reviewer; it is skipped unless
-WGF_LIVE_AGENT=1 and WGF_LIVE_REVIEWER_ARGV (a JSON argv) are set. See docs/review-module.md.
+The one live test here runs a real agent host as the reviewer - the one
+workspace/config/factory.yaml documents, unless WGF_LIVE_REVIEWER_ARGV names another; it is
+skipped unless WGF_LIVE_AGENT=1. The live developer -> reviewer loop is test_live_loop, on a
+real game. See docs/review-module.md.
 """
 
 import json
@@ -73,17 +75,6 @@ if mode == "sleep":
 if mode == "fail" or (mode == "fail-once" and not calls):
     print("developer crashed", flush=True)
     sys.exit(3)
-if mode == "live-exec":
-    # The live developer: the conformance scaffolding is written mechanically (the first
-    # visit also plants the bug), then this process BECOMES the configured agent host, so
-    # the host is the develop step's own child. The host makes the change on visit 1 and
-    # fixes the reviewer's blockers on visit 2; nothing here touches score.ts after that.
-    argv = json.loads(os.environ["WGF_TEST_LIVE_DEV_ARGV"])
-    write_game(repo, {"src/game/score.ts": "export function score(lives: number): number {\n"
-                      "  return lives - 1; // BUG: can go negative\n}\n"}
-               if brief["iteration"] == 1 else None)
-    sys.stdout.flush()
-    os.execvp(argv[0], [part.replace("{brief}", brief_md) for part in argv])
 # Fixed when a review blocker names the bug - by the scripted reviewer's id, or by its file,
 # which is all a live reviewer (that picks its own ids) can be relied on to share.
 blocked = [b for b in brief.get("review_blockers") or []
@@ -767,12 +758,91 @@ class Registration(unittest.TestCase):
         self.assertIn("review-report", definition.step("develop").inputs)
 
 
+def evidence_dir(keep, test_id):
+    """A directory of its own under `keep` for one test's evidence: <keep>/<test id>, or
+    <test id>.2, .3 ... when an earlier run kept one there. Never an existing directory: git
+    writes its objects read-only, so copying a second run over a first fails (both live
+    tests in one invocation did, v2.0.0) - and would mix two runs' evidence if it did not."""
+    base = os.path.join(keep, test_id)
+    path, n = base, 1
+    while os.path.exists(path):
+        n += 1
+        path = f"{base}.{n}"
+    return path
+
+
 def keep_live_evidence(case):
     """WGF_LIVE_KEEP=<dir>: copy a live run's scratch (review logs, verdicts, the checkout)
-    there before it is removed - the transcript is the evidence of a paid run."""
+    to <dir>/<test id> before it is removed - the transcript is the evidence of a paid run."""
     keep = os.environ.get("WGF_LIVE_KEEP")
     if keep:
-        case.addCleanup(shutil.copytree, case.scratch, keep, symlinks=True, dirs_exist_ok=True)
+        case.addCleanup(lambda: shutil.copytree(case.scratch, evidence_dir(keep, case.id()),
+                                                symlinks=True))
+
+
+class LiveEvidence(unittest.TestCase):
+    """WGF_LIVE_KEEP with two live tests in one invocation: the second copy used to land on
+    the first's read-only git objects and error the test (v2.0.0 validation)."""
+
+    def setUp(self):
+        self.root = tempfile.mkdtemp(prefix="wgf-keep-")
+        self.addCleanup(shutil.rmtree, self.root, ignore_errors=True)
+        self.addCleanup(lambda: [os.chmod(os.path.join(d, n), 0o700)
+                                 for d, ds, fs in os.walk(self.root) for n in ds + fs])
+
+    def fake_case(self, test_id, marker):
+        scratch = os.path.join(self.root, "scratch-" + marker)
+        objects = os.path.join(scratch, "checkouts", TITLE, ".git", "objects", "ab")
+        os.makedirs(objects)
+        path = os.path.join(objects, "cdef")  # git writes its objects read-only
+        with open(path, "w") as handle:
+            handle.write(marker)
+        os.chmod(path, 0o444)
+        case = unittest.TestCase()
+        case.scratch = scratch
+        case.id = lambda: test_id
+        return case, "checkouts/" + TITLE + "/.git/objects/ab/cdef"
+
+    def keep(self, case):
+        with mock_environ(WGF_LIVE_KEEP=os.path.join(self.root, "keep")):
+            keep_live_evidence(case)
+        case.doCleanups()  # raises nothing: a failed copy would be an error here
+
+    def read(self, *parts):
+        with open(os.path.join(self.root, "keep", *parts)) as handle:
+            return handle.read()
+
+    def test_two_tests_keep_their_evidence_side_by_side(self):
+        first, relative = self.fake_case("test_core_agents.A.test_x", "first")
+        second, _ = self.fake_case("test_core_agents.B.test_y", "second")
+        self.keep(first)
+        self.keep(second)
+        self.assertEqual(self.read("test_core_agents.A.test_x", relative), "first")
+        self.assertEqual(self.read("test_core_agents.B.test_y", relative), "second")
+
+    def test_a_rerun_never_overwrites_an_earlier_run(self):
+        first, relative = self.fake_case("test_core_agents.A.test_x", "first")
+        again, _ = self.fake_case("test_core_agents.A.test_x", "again")
+        self.keep(first)
+        self.keep(again)
+        self.assertEqual(self.read("test_core_agents.A.test_x", relative), "first")
+        self.assertEqual(self.read("test_core_agents.A.test_x.2", relative), "again")
+
+
+class mock_environ:
+    def __init__(self, **values):
+        self.values = values
+
+    def __enter__(self):
+        self.saved = {k: os.environ.get(k) for k in self.values}
+        os.environ.update(self.values)
+
+    def __exit__(self, *exc):
+        for key, value in self.saved.items():
+            if value is None:
+                os.environ.pop(key, None)
+            else:
+                os.environ[key] = value
 
 
 class ShippedConfig(unittest.TestCase):
@@ -806,23 +876,14 @@ class ShippedConfig(unittest.TestCase):
     def test_the_commented_agent_host_examples_are_valid_config(self):
         # The documented developer/reviewer blocks, uncommented, must load and resolve, and
         # every argv element must survive the step's placeholder substitution.
-        from wgflib.yamllite import load
+        # The one parser the live tests read them with (golden.live), so what is checked
+        # here is what a live run executes.
+        from golden.live import shipped_agent_examples
         from wgf_develop.settings import Settings as DevelopSettings
         from wgf_review.settings import Settings as ReviewSettings
 
-        with open(self.PATH, encoding="utf-8") as handle:
-            lines = handle.read().splitlines()
-
-        def block(key):
-            start = next(i for i, line in enumerate(lines) if line == f"    # {key}:")
-            out = [f"{key}:"]
-            for line in lines[start + 1:]:
-                if not line.startswith("    #   "):
-                    break
-                out.append(line[len("    # "):])
-            return load("\n".join(out))
-
-        developer, reviewer = block("developer"), block("reviewer")
+        developer, reviewer = shipped_agent_examples(os.path.abspath(self.PATH))
+        developer, reviewer = {"developer": developer}, {"reviewer": reviewer}
         dev = DevelopSettings.resolve({"develop": developer})
         self.assertEqual(dev.developer["kind"], "command")
         review = ReviewSettings.resolve({"review": reviewer})
@@ -912,114 +973,82 @@ class ShippedConfig(unittest.TestCase):
         self.assertFalse(dev.self_playtest)
 
 
-@unittest.skipUnless(os.environ.get("WGF_LIVE_AGENT") == "1"
-                     and os.environ.get("WGF_LIVE_REVIEWER_ARGV") and HAS_GIT,
-                     "live: set WGF_LIVE_AGENT=1 and WGF_LIVE_REVIEWER_ARGV to a JSON argv")
-class LiveReviewer(AgentLoop):
-    """A real agent host reviews a tiny repository with a planted bug. Costs money."""
+def live_reviewer_config():
+    """The live reviewer: WGF_LIVE_REVIEWER_ARGV (a JSON argv) when set, else the reviewer
+    workspace/config/factory.yaml documents - verbatim, so a live run is reproducible from
+    the repository (golden.live.shipped_agent_examples). WGF_LIVE_VERDICT_FROM and
+    WGF_LIVE_TIMEOUT override the example's own."""
+    from golden.live import shipped_agent_examples
+    _, example = shipped_agent_examples()
+    argv = (json.loads(os.environ["WGF_LIVE_REVIEWER_ARGV"])
+            if os.environ.get("WGF_LIVE_REVIEWER_ARGV") else example["argv"])
+    timeout = float(os.environ.get("WGF_LIVE_TIMEOUT", example.get("timeout_seconds") or 900))
+    return {"argv": argv, "timeout_seconds": timeout, "idle_timeout_seconds": timeout,
+            "verdict_from": os.environ.get("WGF_LIVE_VERDICT_FROM",
+                                           example.get("verdict_from") or "stdout")}
 
-    def test_a_live_reviewer_returns_a_trusted_verdict(self):
+
+@unittest.skipUnless(os.environ.get("WGF_LIVE_AGENT") == "1" and HAS_GIT,
+                     "live: set WGF_LIVE_AGENT=1 (the reviewer is factory.yaml's documented "
+                     "one unless WGF_LIVE_REVIEWER_ARGV names another)")
+class LiveReviewer(AgentLoop):
+    """A real agent host reviews a tiny repository with a planted bug. Costs money.
+
+    What this proves: a live reviewer, isolated and read-only, FINDS a planted defect, and its
+    verdict is trusted - valid, bound to the commit, isolation intact, nothing left running -
+    and the blocker reaches the developer, whose fix the next review reads.
+
+    What it cannot prove, and no longer asserts: that the reviewer then clears the file. The
+    repository is a stub that does not implement the brief's design, and the reviewer is told
+    to judge the build against that design; a competent reviewer keeps a blocker on the stub's
+    score.ts ("no relation to the design's scoring") after the underflow is fixed, and is right
+    to (v2.0.0 validation). Asserting otherwise needed a prompt that narrowed the review, which
+    is not the shipped reviewer. Convergence is tested where it can legitimately happen:
+    test_live_loop (golden.live), on a game the live developer builds from the brief."""
+
+    def test_a_live_reviewer_finds_the_planted_bug_with_a_trusted_verdict(self):
         keep_live_evidence(self)
-        argv = json.loads(os.environ["WGF_LIVE_REVIEWER_ARGV"])
-        timeout = float(os.environ.get("WGF_LIVE_TIMEOUT", "900"))
-        state = self.run_workflow(dev_mode="bug-then-fix",
-                                  reviewer={"argv": argv, "timeout_seconds": timeout,
-                                            "idle_timeout_seconds": timeout,
-                                            "verdict_from": os.environ.get(
-                                                "WGF_LIVE_VERDICT_FROM", "stdout")},
+        state = self.run_workflow(dev_mode="bug-then-fix", reviewer=live_reviewer_config(),
                                   execution={"max_attempts": 1})
         reports = self.reports()
+        prototypes = self.reports("prototype-report")
         self.assertTrue(reports, state.message)
         for report in reports:
             self.assert_valid(report)
             self.assertTrue(report["isolation"]["intact"], report["isolation"])
             self.assertIn(report["verdict"], ("approve", "request-changes"),
                           report.get("failure"))
-        # A competent reviewer finds the planted underflow, and sees the fix. It may still
-        # request changes after that: the scripted game is a stub that does not meet the
-        # brief (empty seam, direct SDK call), and a live host says so. The earlier "and
-        # approves" asserted a pass no competent host could give, and a live reviewer's own
-        # blocker id never matched the scripted developer's, so the fix was never made either
-        # (both fixed at the Core v1 audit, docs/claude-capabilities.md).
+            self.assertEqual(report["reviewer"]["killed_pids"], [], report["reviewer"])
+
         def on_score(report):
             return [b for b in report["blockers"] if b.get("file") == "src/game/score.ts"]
 
+        # Found: the first review requests changes with a blocker on the planted bug's file.
+        first = prototypes[0]["build_ref"]["commit_sha"]
+        self.assertEqual(reports[0]["reviewed_commit"], first)
+        self.assertIn("// BUG: can go negative", self.git("show", f"{first}:src/game/score.ts"))
         self.assertEqual(reports[0]["verdict"], "request-changes")
         self.assertTrue(on_score(reports[0]), reports[0]["blockers"])
-        self.assertGreater(len(reports), 1, state.message)
-        for later in reports[1:]:
-            self.assertEqual(on_score(later), [], later["blockers"])
+        # Carried: the developer's next brief holds that blocker; its fix is committed, and
+        # the next review reads exactly that commit.
+        calls = self.developer_calls()
+        self.assertGreater(len(calls), 1, state.message)
+        self.assertTrue([b for b in calls[1]["blockers"]
+                         if b.get("file") == "src/game/score.ts"], calls[1])
+        second = prototypes[1]["build_ref"]["commit_sha"]
+        self.assertNotIn("// BUG", self.git("show", f"{second}:src/game/score.ts"))
+        self.assertEqual(reports[1]["reviewed_commit"], second)
+        # Ended: approved and completed, or held at the loop's bound - never past it.
         if state.status != RunStatus.COMPLETED:
             self.assertEqual(state.status, RunStatus.BLOCKED, state.message)
             self.assertIn("loop limit", state.message)
             self.assertEqual(reports[-1]["verdict"], "request-changes")
 
 
-@unittest.skipUnless(os.environ.get("WGF_LIVE_AGENT") == "1"
-                     and os.environ.get("WGF_LIVE_DEVELOPER_ARGV")
-                     and os.environ.get("WGF_LIVE_REVIEWER_ARGV") and HAS_GIT,
-                     "live: set WGF_LIVE_AGENT=1, WGF_LIVE_DEVELOPER_ARGV and "
-                     "WGF_LIVE_REVIEWER_ARGV to JSON argvs")
-class LiveDeveloperAndReviewer(AgentLoop):
-    """A real agent host develops AND a real one reviews, through the real engine. Costs money.
-
-    The developer argv may use {brief}; the conformance scaffolding around it is scripted
-    (see DEVELOPER's live-exec mode) so only the host's own edits are under test: an edit to
-    src/game/app.ts on visit 1, and the fix for the reviewer's blocker on visit 2."""
-
-    MARKER = "live-smoke: edited by the developer agent"
-
-    def test_live_developer_and_live_reviewer_loop(self):
-        timeout = float(os.environ.get("WGF_LIVE_TIMEOUT", "900"))
-        os.environ["WGF_TEST_LIVE_DEV_ARGV"] = os.environ["WGF_LIVE_DEVELOPER_ARGV"]
-        self.addCleanup(os.environ.pop, "WGF_TEST_LIVE_DEV_ARGV", None)
-        keep_live_evidence(self)
-        state = self.run_workflow(
-            dev_mode="live-exec",
-            developer={"timeout_seconds": timeout, "idle_timeout_seconds": timeout},
-            reviewer={"argv": json.loads(os.environ["WGF_LIVE_REVIEWER_ARGV"]),
-                      "timeout_seconds": timeout, "idle_timeout_seconds": timeout,
-                      "verdict_from": os.environ.get("WGF_LIVE_VERDICT_FROM", "stdout")},
-            execution={"max_attempts": 1})
-        reviews = self.reports()
-        prototypes = self.reports("prototype-report")
-        self.assertTrue(reviews, state.message)
-        for report in reviews:
-            self.assert_valid(report)
-            self.assertTrue(report["isolation"]["intact"], report["isolation"])
-            self.assertIn(report["verdict"], ("approve", "request-changes"),
-                          report.get("failure"))
-        # Visit 1: the host's own edit is in the commit develop made and review saw.
-        first = prototypes[0]["build_ref"]["commit_sha"]
-        self.assertEqual(reviews[0]["reviewed_commit"], first)
-        self.assertIn(self.MARKER, self.git("show", f"{first}:src/game/app.ts"))
-        # The reviewer found the planted bug; the host fixed it; the reviewer approved.
-        self.assertEqual(reviews[0]["verdict"], "request-changes")
-        self.assertEqual(reviews[-1]["verdict"], "approve")
-        self.assertEqual(state.status, RunStatus.COMPLETED, state.message)
-        last = prototypes[-1]["build_ref"]["commit_sha"]
-        self.assertNotEqual(first, last)
-        # The last development commit was approved by review; the last review of all is
-        # sdk-review (M7), of the sdk commit on top of it - the commit that ships - exactly as
-        # AgentLoop checks with scripted agents.
-        self.assertIn(last, [r["reviewed_commit"] for r in reviews[:-1]
-                             if r["verdict"] == "approve"])
-        sdk = self.reports("sdk-report")[-1]["build_ref"]["commit_sha"]
-        self.assertEqual(reviews[-1]["reviewed_commit"], sdk)
-        self.assertEqual(reviews[-1]["baseline_commit"], last)
-        self.assertEqual(self.git("rev-parse", "HEAD"), sdk)
-        self.assertNotIn("return lives - 1;", self.git("show", f"{last}:src/game/score.ts"))
-        self.assertEqual(self.git("status", "--porcelain"), "")
-        # Developer and reviewer are single, bounded processes: no stragglers were killed.
-        for report in reviews:
-            self.assertEqual(report["reviewer"]["killed_pids"], [], report["reviewer"])
-
-
 # Only the live classes run the loop against a live host; do not rerun AgentLoop's tests in
 # them.
 for _name in [n for n in dir(AgentLoop) if n.startswith("test_")]:
     setattr(LiveReviewer, _name, None)
-    setattr(LiveDeveloperAndReviewer, _name, None)
 
 
 if __name__ == "__main__":

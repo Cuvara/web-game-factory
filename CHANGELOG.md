@@ -9,6 +9,64 @@ and `core/` is still the contract.
 
 ## [Unreleased]
 
+Found by the fresh live-agent validation of the v2.0.0 tag (`5b74e30`), which failed both
+live tests with the documented argvs.
+
+### Fixed
+
+- **Live evidence is reproducible from the repository.** The 2.0.0 live runs used prompts
+  kept only as `...` excerpts in `docs/claude-capabilities.md` (a custom developer prompt,
+  and a reviewer `--append-system-prompt` that narrowed the review to one file); they could
+  not be rerun. The live tests now read the developer and reviewer argvs from the commented
+  examples in `workspace/config/factory.yaml`, verbatim (`golden.live.shipped_agent_examples`
+  - the parser `ShippedConfig` checks them with), use the steps' own prompts, and record both
+  argvs and the host's version in the run's evidence. `WGF_LIVE_DEVELOPER_ARGV` is no longer
+  read; `WGF_LIVE_REVIEWER_ARGV` becomes an optional override.
+- **`WGF_LIVE_KEEP` with both live tests in one invocation** errored the second test: it
+  copied its scratch over the first's, onto read-only git objects. Each test now keeps its
+  evidence in `<dir>/<test id>` (`.2`, `.3` ... on a rerun), never over an earlier run's.
+  Regression: `test_core_agents.LiveEvidence`.
+- **`LiveReviewer` asserted what a competent reviewer must not do.** After the scripted fix it
+  required no blocker on `src/game/score.ts`, but the fixture is a stub that does not implement
+  the brief's design, and the reviewer - told to judge against the design - correctly keeps a
+  blocker on it. It now asserts what the fixture can prove: the reviewer finds the planted
+  bug, every verdict is trusted, the blocker reaches the developer's next brief, and the next
+  review reads the fixing commit. The assertion was not weakened to pass: convergence moved to
+  a scenario where it can legitimately happen (below).
+- **`LiveDeveloperAndReviewer` removed**, for the same reason: on the stub, approval needed a
+  review narrowed by a prompt the shipped reviewer does not have.
+
+### Added
+
+- **The live build** (`scripts/golden/live.py`, `test_live_loop`, AGENTS category, opt-in
+  `WGF_LIVE_AGENT=1`, costs money): the golden 2D pipeline with the documented developer
+  building the game from scratch from the Factory's brief and the documented reviewer judging
+  it against the design, asserted to converge - completed, last development commit and sdk
+  commit approved, every develop check green, only the developer's own files changed,
+  isolation intact, no process left. `live.py config --human-gates` writes the same
+  configuration for a run a person drives with `bin/wgf` and decides G2, G3 and G4.
+  `GoldenRun.sandbox()` is the one seam it overrides (no refusing proxy: the hosts need their
+  API).
+- **"Which files are yours" in the development brief** (`wgf_develop.brief`): inside the
+  writable paths, the template's own source (`TEMPLATE_SOURCE`: `src/core/`,
+  `src/platform/bind.ts`, `src/rendering/create-renderer.ts`, `src/types/`) and the Factory's
+  seam are not the developer's; a missing or broken one goes in `known_issues`, never into a
+  patch, and review blockers are fixed only in the developer's own files. In the v2.0.0 live
+  run a developer "fixed" a blocker about the seam's imports by writing `src/platform/bind.ts`
+  and `src/core/config.ts`. Guidance only: conformance enforces what it did before.
+  Regressions: `test_develop_module.FileOwnershipInTheBrief`, `TemplateSourceShipsInThePin`
+  (every named path ships in the pinned template; every template file the seam imports is
+  named).
+
+### Known
+
+- **The golden 2D design does not describe the game the golden replay builds.** Every
+  "merge/puzzle" candidate gets the design module's `merge-puzzle` archetype (a 7x7
+  swap-and-match level game); the replay is Tower Merge Rush (drop-and-merge). A live reviewer
+  rejected the replay on six design-fidelity blockers. The golden runs still prove the
+  pipeline - their scripted reviewer does not judge fidelity, and the replay reports the gaps
+  - not that the game matches its design ([golden-runs.md](docs/golden-runs.md#the-live-loop)).
+
 ## [2.0.0] - 2026-09-26
 
 Factory 2.0.0 (`docs/v2-release.md`): the release audit's fixes on top of everything since

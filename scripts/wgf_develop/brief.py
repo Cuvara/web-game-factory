@@ -18,6 +18,7 @@ plan's prototype milestones and tasks, each with its acceptance criteria.
 
 import json
 
+from wgflib import gameseam
 from wgflib import template_contract as contract
 
 from wgf_verification.checks.gameplay import ASPECTS, required_aspects_for
@@ -26,7 +27,7 @@ from .scope import DEFAULT_WRITABLE
 
 __all__ = ["REQUIRED_SYSTEMS", "INTEGRATION_CONTRACT", "REPORT_PATH", "BRIEF_DIR",
            "build_brief", "render_markdown", "PROTECTED_PATHS", "STRUCTURAL_PATHS",
-           "ENGINE_DIRS", "select_build_spec", "select_dev_plan"]
+           "TEMPLATE_SOURCE", "ENGINE_DIRS", "select_build_spec", "select_dev_plan"]
 
 BRIEF_DIR = "docs/development"
 REPORT_PATH = f"{BRIEF_DIR}/report.json"
@@ -74,6 +75,19 @@ PROTECTED_PATHS = ("packages", contract.GAME_CONFIG, ".github", "scripts",
                    contract.VITEST_WORKSPACE, "eslint.config.js", "tsconfig.base.json",
                    "pnpm-workspace.yaml", contract.PACKAGE_JSON, "tsconfig.json",
                    contract.PNPM_LOCK)
+
+# Template source inside the writable src/: shipped by the template and imported by the game
+# and by the Factory's own seam wiring (src/platform/integration.ts imports ./bind.js and
+# ../core/config.js). Not the game's to edit, delete or recreate. The brief states it so a
+# developer fixing a review blocker knows where its files end; conformance does not compare
+# these (PROTECTED_PATHS and the seam are what it enforces).
+TEMPLATE_SOURCE = (
+    ("src/core/", "configuration, the game config, i18n and the verify probe"),
+    ("src/platform/bind.ts", "the template's platform binding; the Factory's seam wiring "
+                             "imports it"),
+    ("src/rendering/create-renderer.ts", "the engine selector"),
+    ("src/types/", "the template's type declarations"),
+)
 
 # Protected paths conformance compares by content rather than refusing any change to: a
 # dependency may be added to package.json (factory.develop.allowed_package_changes), and the
@@ -341,6 +355,10 @@ def build_brief(*, title_id, engine, iteration, key, baseline, design, assets, s
         "assets": asset_items,
         "required_systems": [{"id": n, "acceptance": a} for n, a in REQUIRED_SYSTEMS],
         "protected_paths": list(PROTECTED_PATHS),
+        # Inside the writable paths but not the developer's: the template's own source and
+        # the Factory's seam. Guidance for the developer (the seam is also enforced).
+        "template_source": [{"path": p, "why": why} for p, why in TEMPLATE_SOURCE],
+        "factory_owned": [gameseam.CONTRACT_PATH, gameseam.WIRING_PATH],
         # What the development commit may contain (scope.py), and how package.json may
         # change (checks.package_findings). Anything else fails the step.
         "writable_paths": list(writable_paths),
@@ -421,6 +439,39 @@ def _package_rule(changes):
 def _bullets(items, empty="- (none)"):
     lines = [f"- {item}" for item in items if item]
     return "\n".join(lines) if lines else empty
+
+
+def _ownership_section(brief):
+    """Where the developer's files end. The writable paths say what the Factory commits;
+    inside them sit the template's own source and the Factory's seam, which are not the
+    developer's. A developer fixing review blockers otherwise "fixes" a missing or broken
+    template file by writing it (the live loop did, v2.0.0)."""
+    lines = ["## Which files are yours\n"]
+    template_source = brief.get("template_source") or []
+    factory_owned = brief.get("factory_owned") or []
+    writable = brief.get("writable_paths") or []
+    if writable:
+        lines.append("- **Yours:** " + ", ".join(f"`{p}`" for p in writable)
+                     + (" - except the files below." if template_source or factory_owned
+                        else "."))
+    if template_source:
+        lines.append("- **The template's source - import it, never edit, delete or "
+                     "recreate it:** "
+                     + "; ".join(f"`{e['path']}` ({e['why']})" for e in template_source)
+                     + ".")
+    if factory_owned:
+        lines.append("- **The Factory's integration seam - never edit it:** "
+                     + ", ".join(f"`{p}`" for p in factory_owned)
+                     + ". The checks compare both byte for byte.")
+    lines.append("- **`src/main.ts`** is yours to wire the game into, but it is the template's "
+                 "boot sequence: keep its order (the `boot` system, and the integration seam "
+                 "section below).")
+    lines.append("- **Template-owned project files** (ground rule 3) are never yours; the "
+                 "checks fail the step on any change to them.")
+    lines.append("- If something you need is missing from, or wrong in, a file that is not "
+                 "yours, do not create or patch it: build what you can, and say what is "
+                 "missing in the report's `known_issues`.\n")
+    return "\n".join(lines)
 
 
 def render_markdown(brief):
@@ -615,6 +666,7 @@ def render_markdown(brief):
         add("- The manifest lists nothing for this tier.")
     add("")
 
+    add(_ownership_section(brief))
     add("## Integration seam (provided by the Factory - do not write or edit it)\n")
     add("Two files are already in the repository and belong to the Factory: "
         "`src/game/integration.ts` (the `GameIntegration` interface below) and "
@@ -699,7 +751,10 @@ def render_markdown(brief):
         add("## Fix first: blockers from code review\n")
         add(f"An independent review of `{(brief.get('reviewed_commit') or '')[:12]}` "
             "requested changes. Fix every blocker below; the next review checks each one "
-            "again, and a blocker that is still there sends the build back here.\n")
+            "again, and a blocker that is still there sends the build back here. Fix them in "
+            "the files that are yours (*Which files are yours*, above): where a blocker could "
+            "only be fixed in a file that is not, leave that file as it is and say so, with "
+            "the blocker's id, in `known_issues`.\n")
         for blocker in brief["review_blockers"]:
             where = blocker.get("file") or "(whole build)"
             if blocker.get("file") and blocker.get("line"):

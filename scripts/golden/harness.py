@@ -321,11 +321,15 @@ class GoldenRun:
                                        note=G4_NOTE))
         return api, state, time.monotonic() - started
 
+    def sandbox(self):
+        """What the pipeline runs inside: the refusing proxy (the run is offline)."""
+        return network_sandbox()
+
     def execute(self, resume=None, from_step=None):
         from golden import summary as summaries
         self.write_config()
         warm_store(self.game.key)  # online, before the run goes offline
-        with network_sandbox() as guard:
+        with self.sandbox() as guard:
             api, state, seconds = self.run_workflow(resume=resume, from_step=from_step)
             pipeline_network = guard.proxy.summary()
             browser = None

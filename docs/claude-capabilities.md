@@ -163,6 +163,28 @@ UNVERIFIED live** - no live design-agent run has been made.
 
 ## Live evidence
 
+**How to reproduce any live run from here on.** The live tests read the developer and
+reviewer argvs from the commented examples in `workspace/config/factory.yaml`, verbatim, and
+use the steps' own prompts; nothing is passed in an environment variable unless you choose to
+replace the reviewer (`WGF_LIVE_REVIEWER_ARGV`). A run keeps both argvs and the host's
+`--version` in its evidence (`evidence/live-agents.json`). See
+[review-module.md](review-module.md#the-live-tests):
+
+```bash
+cd scripts/tests
+WGF_LIVE_AGENT=1 WGF_LIVE_KEEP=/tmp/wgf-live python3 -m unittest \
+    test_core_agents.LiveReviewer test_live_loop.LiveBuildConverges -v
+```
+
+LIVE_RESULTS_PLACEHOLDER
+
+**The records below are historical and cannot be reproduced.** Their prompts survive only as
+the `...` excerpts shown: the developer's smoke prompt and the reviewer's
+`--append-system-prompt`, which narrowed the review to `src/game/score.ts`, were never kept
+in full. Rerun at the v2.0.0 tag with the documented argvs instead, `LiveDeveloperAndReviewer`
+and `LiveReviewer` both failed on a reviewer correctly judging the stub against the design.
+`LiveDeveloperAndReviewer` was removed in 2.0.1 and replaced by `test_live_loop`.
+
 **2.0.0 (2026-09-26).** Before the 2.0.0 tag the live suites were run again, against the
 allowlisted agent environment:
 - the host authenticated with an empty `factory.agents.env_passthrough`, since its login lives

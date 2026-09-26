@@ -9,6 +9,7 @@ while every other process (pnpm, the developer command) is a fake that records i
 
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -39,6 +40,9 @@ from wgflib.workflow.contracts import ArtifactContracts  # noqa: E402
 from wgflib.workflow.definition import load_definition  # noqa: E402
 from wgflib.workflow.model import RunStatus, StepOutcome  # noqa: E402
 from wgflib.workflow.step import StepInputs, StepRegistry  # noqa: E402
+
+sys.path.insert(0, HERE)  # pinned_template, when run as tests.test_develop_module
+import pinned_template  # noqa: E402
 
 FIXTURES = mock.FIXTURES
 HAS_GIT = shutil.which("git") is not None
@@ -465,6 +469,71 @@ class DesignAndPlanInTheBrief(DevelopCase):
              "acceptance_criteria": ["b"]}]}}
         self.assertEqual([t["id"] for t in briefs.select_dev_plan(plan)["tasks"]],
                          ["A-1", "B-1"])
+
+
+class FileOwnershipInTheBrief(DesignAndPlanInTheBrief):
+    """Where the developer's files end, inside the writable paths. The v2.0.0 live loop's
+    developer, fixing review blockers, wrote src/platform/bind.ts and src/core/config.ts -
+    template source the Factory's seam imports - because the brief never said whose they
+    were. Guidance only: what conformance enforces is unchanged (Conformance, below)."""
+
+    SEAM_WIRING = os.path.join(SCRIPTS, "wgf_develop", "seam", "src", "platform",
+                               "integration.ts")
+
+    # Re-running the inherited tests here would only repeat them.
+    test_the_mvp_build_spec_is_carried_whole = None
+    test_the_prototype_tasks_are_carried_in_dependency_order = None
+    test_the_tech_plan_is_pinned_like_every_input = None
+    test_without_either_the_brief_is_unchanged = None
+    test_an_unreadable_tech_plan_major_is_refused = None
+    test_a_cycle_keeps_the_plan_order = None
+
+    def test_the_brief_says_which_files_are_not_the_developers(self):
+        data, text = self.brief(inputs_for())
+        self.assertEqual([e["path"] for e in data["template_source"]],
+                         [p for p, _ in briefs.TEMPLATE_SOURCE])
+        self.assertEqual(data["factory_owned"], list(seam.SEAM_FILES))
+        section = text[text.index("## Which files are yours"):
+                       text.index("## Integration seam")]
+        for path in [p for p, _ in briefs.TEMPLATE_SOURCE] + list(seam.SEAM_FILES):
+            self.assertIn(f"`{path}`", section)
+        self.assertIn("never edit, delete or recreate", section)
+        self.assertIn("`known_issues`", section)
+
+    def test_every_template_file_the_seam_imports_is_named(self):
+        # The seam wiring the Factory writes imports template source by relative path; each
+        # must be named as not the developer's, or a developer told the import is broken
+        # "fixes" it by writing the template's file.
+        with open(self.SEAM_WIRING, encoding="utf-8") as handle:
+            imports = re.findall(r'from\s+"(\.{1,2}/[^"]+)"', handle.read())
+        self.assertTrue(imports)
+        named = [p for p, _ in briefs.TEMPLATE_SOURCE] + list(seam.SEAM_FILES)
+        for module in imports:
+            target = os.path.normpath(os.path.join("src/platform", module)).replace(os.sep, "/")
+            target = re.sub(r"\.js$", ".ts", target)
+            self.assertTrue(any(target == p or (p.endswith("/") and target.startswith(p))
+                                for p in named), f"{target} (imported by the seam) is not named")
+
+    def test_blockers_are_fixed_in_the_developers_own_files(self):
+        data, _ = self.brief(inputs_for())
+        data["review_blockers"] = [{"id": "boot-broken", "file": "src/platform/bind.ts",
+                                    "severity": "blocker", "summary": "missing"}]
+        data["reviewed_commit"] = "a" * 40
+        text = briefs.render_markdown(data)
+        blockers = text[text.index("## Fix first: blockers from code review"):]
+        self.assertIn("in the files that are yours", blockers)
+        self.assertIn("`known_issues`", blockers)
+        self.assertLess(text.index("## Which files are yours"),
+                        text.index("## Fix first: blockers from code review"))
+
+
+@unittest.skipUnless(pinned_template.checkout()[0], pinned_template.checkout()[1])
+class TemplateSourceShipsInThePin(unittest.TestCase):
+    def test_every_named_template_source_is_in_the_pinned_template(self):
+        root, _ = pinned_template.checkout()
+        for path, _ in briefs.TEMPLATE_SOURCE:
+            self.assertTrue(os.path.exists(os.path.join(root, *path.rstrip("/").split("/"))),
+                            f"{path} is not in the pinned template")
 
 
 class GameDesignDocument(DevelopCase):

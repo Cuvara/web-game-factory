@@ -42,6 +42,16 @@ the game, regenerated on every visit and committed with the code it asked for. I
   `allowed_package_changes` permits; the paths a developer may write
   (`writable_paths`), which are all the commit will hold; no portal SDK in game code; pause
   by reason; the `#hud` probe contract the release pipeline reads; strings via i18n.
+- **Which files are yours** — inside the writable paths, what is still not the developer's:
+  the template's own source (`brief.TEMPLATE_SOURCE`: `src/core/`, `src/platform/bind.ts`,
+  `src/rendering/create-renderer.ts`, `src/types/` - import it, never edit, delete or
+  recreate it; the Factory's seam wiring imports two of them), the Factory's seam files, and
+  `src/main.ts`'s boot order. Anything missing or wrong in a file that is not the
+  developer's goes in the report's `known_issues`, never into a patch; the review-blockers
+  section repeats that a blocker is fixed only in the developer's own files. This is
+  guidance: conformance enforces the protected paths and the seam as before, and does not
+  compare `TEMPLATE_SOURCE` (in the v2.0.0 live run a developer "fixed" a blocker about the
+  seam's imports by writing `src/platform/bind.ts` and `src/core/config.ts`).
 - **Required systems** — boot, game state, scenes, input, core loop, mechanics,
   progression, UI, HUD, tutorial, game over, restart, asset loading, responsive layout,
   audio hooks — each with its acceptance line.

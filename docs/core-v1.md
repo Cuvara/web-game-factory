@@ -140,7 +140,7 @@ bin/wgf test-core --only SECURITY --json
 | Category | Modules | Proves |
 |---|---|---|
 | WORKFLOW | `test_core_workflow`, `test_core_persistence`, `test_decisions` | engine semantics, crash safety, gate decision-records |
-| AGENTS | `test_core_agents` | developer → reviewer → request-changes → developer → approve, isolation, verdicts, timeouts, retry budget, loop bound |
+| AGENTS | `test_core_agents`, `test_live_loop` | developer → reviewer → request-changes → developer → approve, isolation, verdicts, timeouts, retry budget, loop bound; opt-in (`WGF_LIVE_AGENT=1`): the same loop converging with real agent hosts on a real game |
 | CONTRACTS | `test_core_contracts`, `test_core_lineage`, `test_core_template`, `test_golden_fast` | full schema validation, lineage pins, malformed/missing/tampered artifacts |
 | VERIFY | `test_core_verify` | PASS only from evidence; stale/missing/mocked evidence never PASS |
 | RELEASE | `test_core_release` | release gated by verify, commit lineage, package hygiene, hashes |

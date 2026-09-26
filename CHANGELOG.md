@@ -58,6 +58,27 @@ live tests with the documented argvs.
   (every named path ships in the pinned template; every template file the seam imports is
   named).
 
+### Fixed (found by the first clean production run and clean-machine gate after it)
+
+- **G3 was answered blind to its own timebox predicate.** The tech plan reports an overrun
+  only as a `STEP_LOG` warning ("plan exceeds the timebox; G3 decides"), which no console
+  printed: the stopped 2026-09-26 run's G3 was approved over 18.0 estimated days against
+  10.5 allowed. `wgf`'s console now prints warning- and error-level step logs with their
+  facts. (The kernel still decides nothing with them: it may not import the lifecycle
+  guards, and a checkpoint's inputs stay its gate's `required_artifacts`.)
+- **A one-word strategy MVP item became a duplicate feature.** "Localization: en, ru"
+  shares one significant word with the Localization feature and so never folded into it:
+  two Localization features, two plan tasks. An item whose significant words a feature
+  covers entirely is now folded. Regression: `test_design_module.StrategyMvpFolding`.
+- **Clean-machine golden runs broke when the registry moved.** The 2D golden failed at
+  develop from an empty HOME with `ERR_PNPM_NO_OFFLINE_META` for `earcut` after
+  `pixi.js@8.21.0` was published: the warm-up's online install reused the template
+  lockfile's `earcut@3.2.3` without fetching its metadata, and the replay's offline
+  resolution needed it. `golden.harness.warm_store` now resolves online without the
+  lockfile (metadata for the whole graph), then performs the replay's exact offline
+  resolution once in a second copy, so a store that cannot serve it fails before the
+  sandbox, naming the package.
+
 ### Fixed (design follows the strategy)
 
 - **The design described a different game from the strategy it was built from, and passed

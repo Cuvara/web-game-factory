@@ -999,7 +999,15 @@ class LiveDeveloperAndReviewer(AgentLoop):
         self.assertEqual(state.status, RunStatus.COMPLETED, state.message)
         last = prototypes[-1]["build_ref"]["commit_sha"]
         self.assertNotEqual(first, last)
-        self.assertEqual(reviews[-1]["reviewed_commit"], last)
+        # The last development commit was approved by review; the last review of all is
+        # sdk-review (M7), of the sdk commit on top of it - the commit that ships - exactly as
+        # AgentLoop checks with scripted agents.
+        self.assertIn(last, [r["reviewed_commit"] for r in reviews[:-1]
+                             if r["verdict"] == "approve"])
+        sdk = self.reports("sdk-report")[-1]["build_ref"]["commit_sha"]
+        self.assertEqual(reviews[-1]["reviewed_commit"], sdk)
+        self.assertEqual(reviews[-1]["baseline_commit"], last)
+        self.assertEqual(self.git("rev-parse", "HEAD"), sdk)
         self.assertNotIn("return lives - 1;", self.git("show", f"{last}:src/game/score.ts"))
         self.assertEqual(self.git("status", "--porcelain"), "")
         # Developer and reviewer are single, bounded processes: no stragglers were killed.

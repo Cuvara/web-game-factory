@@ -3,7 +3,7 @@
     {
       "verdict": "approve" | "request-changes",
       "commit":  "<the full sha that was reviewed - must equal HEAD>",
-      "blockers": [{"id": "...", "file": "src/..." | null, "line": 12,
+      "blockers": [{"id": "...", "file": "src/..." | null, "line": 12 (optional; null = none),
                     "summary": "...", "severity": "blocker|critical|major|minor"}],
       "notes":   "free text (optional)"
     }
@@ -30,8 +30,14 @@ _MAX_BYTES = 1024 * 1024
 CONTRACT = {
     "verdict": "approve | request-changes",
     "commit": "<the full 40-character sha you reviewed>",
+    # Both kinds of finding, so a reviewer sees how to write each: one at a place in the
+    # code, and one about the build as a whole - `file` null, no `line`. The live
+    # acceptance run's reviewer dropped `file` from a whole-build finding when the example
+    # showed only the first kind.
     "blockers": [{"id": "short-kebab-id", "file": "src/path/to/file.ts", "line": 1,
-                  "summary": "what is wrong and why it blocks", "severity": "blocker"}],
+                  "summary": "what is wrong and why it blocks", "severity": "blocker"},
+                 {"id": "another-id", "file": None,
+                  "summary": "a finding about the build as a whole", "severity": "major"}],
     "notes": "anything else worth saying (optional)",
 }
 
@@ -139,8 +145,11 @@ def parse(path, head):
             return None, f"{where}.summary must be a non-empty string"
         if blocker["severity"] not in SEVERITIES:
             return None, f"{where}.severity must be one of {', '.join(SEVERITIES)}"
-        if "line" in blocker and (not isinstance(blocker["line"], int)
-                                  or isinstance(blocker["line"], bool) or blocker["line"] < 1):
+        # `line` is optional; null says the same as leaving it out. Anything else must be a
+        # real line number.
+        if blocker.get("line") is not None and (not isinstance(blocker["line"], int)
+                                                or isinstance(blocker["line"], bool)
+                                                or blocker["line"] < 1):
             return None, f"{where}.line must be a positive integer"
     if data["verdict"] == "approve" and blockers:
         return None, "an approval cannot list blockers; request changes instead"

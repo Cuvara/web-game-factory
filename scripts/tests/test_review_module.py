@@ -182,6 +182,22 @@ class Refusals(VerdictCase):
             with self.subTest(fragment):
                 self.refused(dict(base, **extra), fragment)
 
+    def test_a_whole_build_finding_and_a_null_line_are_accepted(self):
+        # `file` null is a finding about the build as a whole; `line` null says what leaving
+        # it out says. Neither is read charitably: the verdict is still a request for
+        # changes, with every blocker intact.
+        data = {"verdict": "request-changes", "commit": HEAD,
+                "blockers": [blocker(id="a", file=None), blocker(id="b", line=None),
+                             blocker(id="c", line=12)]}
+        parsed, problem = self.parse(data)
+        self.assertIsNone(problem)
+        self.assertEqual([b["id"] for b in parsed["blockers"]], ["a", "b", "c"])
+
+    def test_the_brief_shows_a_whole_build_finding(self):
+        whole = [b for b in verdict.CONTRACT["blockers"] if b.get("file") is None]
+        self.assertTrue(whole, "the contract example shows only file-anchored findings")
+        self.assertNotIn("line", whole[0])
+
 
 class FromOutput(unittest.TestCase):
     """The last JSON object on a reviewer's stdout (verdict_from: stdout)."""

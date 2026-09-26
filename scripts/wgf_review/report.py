@@ -166,8 +166,9 @@ def render_brief(*, title_id, commit, baseline, design, prototype, develop_brief
     add("- `approve` with an empty `blockers` list, or `request-changes` with at least one "
         "blocker. Nothing in between: an approval with blockers is rejected.")
     add(f"- `commit` is `{commit}`, verbatim.")
-    add("- `severity` is one of blocker, critical, major, minor. `file` is relative to the "
-        "repository, or null for a finding about the build as a whole. `line` is optional.")
+    add("- `severity` is one of blocker, critical, major, minor. Every blocker has `file`: "
+        "relative to the repository, or null for a finding about the build as a whole - "
+        "never left out. `line` is optional: a positive line number, or omitted.")
     add("- No other keys. A malformed verdict is discarded, never read as an approval.")
     return "\n".join(out) + "\n"
 

@@ -66,7 +66,8 @@ factory:
   # first.
   checkouts: ..
 
-  # Relative to the directory `wgf` is run from. Run state is instance data, never committed.
+  # Relative to the repository root, wherever `wgf` is run from. Run state is instance data,
+  # never committed.
   storage:
     directory: .factory
     fsync: true                 # flush state.json to disk before the atomic rename

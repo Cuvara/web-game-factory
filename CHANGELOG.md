@@ -46,8 +46,9 @@ Every one fails closed and has a way back; none changes a schema's required fiel
    `factory.release.allow_unreviewed: true`.
 4. Optionally bound developer spend with `factory.develop.budget`: develop may now be
    visited up to 9 times in a run (the loops are bounded per route, M13).
-5. Finish or restart 1.1.0 runs: they resume under the new definition, and one already past
-   sdk must pass sdk-review and G4 before release.
+5. Finish or restart 1.1.0 runs: they resume under the new definition - `new-game` is now
+   version 2, so the resume records `definition_version: 2` and says it continues under a
+   newer definition - and one already past sdk must pass sdk-review and G4 before release.
 6. Check scripts against the exit codes above (`wgf status`, exit 2 on refused flags,
    `new-game --mock` exiting 3 at G4).
 
@@ -185,6 +186,12 @@ Every one fails closed and has a way back; none changes a schema's required fiel
   (F1-F7, since implemented: see the entries in this section and under Changed).
 
 ### Changed
+
+#### Definition versions
+- `new-game.workflow.yaml` is `version: 2` and `gates.yaml` `1.1.0`: the workflow gained
+  sdk-review, G4 and per-route loop limits, and G3/G4 changed their required artifacts. A run
+  keeps the version it started under; resuming a version-1 run records `definition_version`
+  in `WORKFLOW_RESUMED`. *Migration:* none; `wgf status` shows `new-game (v2)`.
 
 #### Gate semantics (M4)
 - **G4 `prototype-review` is a real checkpoint** in `new-game`, after `verify` passes and

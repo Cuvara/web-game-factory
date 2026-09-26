@@ -27,7 +27,7 @@
 # `required_artifacts` is what a gate is decided on. A workflow checkpoint for the gate
 # lists them as its inputs, and waits for input - asks nobody - until the run holds them.
 
-version: 1.0.0
+version: 1.1.0  # 1.1.0: G3 and G4 required_artifacts (Factory 2.0.0)
 
 defaults:
   approvers: [portfolio-owner]

@@ -13,6 +13,7 @@ import os
 
 from wgflib import gameseam
 
+from . import safewrite
 from .brief import INTEGRATION_CONTRACT
 
 __all__ = ["SEAM_FILES", "default_files", "ensure_seam", "seam_findings"]
@@ -43,11 +44,11 @@ def ensure_seam(root):
     written = []
     for relative, text in default_files().items():
         path = os.path.join(root, *relative.split("/"))
-        if os.path.exists(path):
+        # lexists: a dangling link is "there" too - and never written through
+        # (safewrite refuses a link in the directories, and replaces one at the file).
+        if os.path.lexists(path) and not os.path.islink(path):
             continue
-        os.makedirs(os.path.dirname(path), exist_ok=True)
-        with open(path, "w", encoding="utf-8", newline="\n") as handle:
-            handle.write(text)
+        safewrite.write_text(root, path, text)
         written.append(relative)
     return written
 

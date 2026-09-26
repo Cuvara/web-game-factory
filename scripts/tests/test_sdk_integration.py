@@ -1104,6 +1104,35 @@ class Commits(SdkCase):
 
 
 class FailurePaths(SdkCase):
+    def test_a_committed_link_in_place_of_an_owned_file_is_replaced_not_written_through(self):
+        # The developer may commit links under src/ (scope checks paths): the integration
+        # must put its text into the checkout, not wherever such a link points.
+        make_repo(self.repo)
+        victim = os.path.join(self.scratch, "outside.ts")
+        with open(victim, "w", encoding="utf-8") as handle:
+            handle.write("// not the Factory's to write\n")
+        owned = os.path.join(self.repo, *integrate.OWNED_FILES[0].split("/"))
+        os.makedirs(os.path.dirname(owned), exist_ok=True)
+        os.symlink(victim, owned)
+        result = self.execute()
+        self.assertEqual(result.outcome, StepOutcome.SUCCESS, result.error)
+        with open(victim, encoding="utf-8") as handle:
+            self.assertEqual(handle.read(), "// not the Factory's to write\n")
+        self.assertFalse(os.path.islink(owned))
+
+    def test_a_linked_directory_under_the_integration_fails_the_step(self):
+        make_repo(self.repo)
+        outside = os.path.join(self.scratch, "outside")
+        os.makedirs(outside)
+        linked = os.path.join(self.repo, *os.path.dirname(integrate.OWNED_FILES[1]).split("/"))
+        shutil.rmtree(linked, ignore_errors=True)
+        os.makedirs(os.path.dirname(linked), exist_ok=True)
+        os.symlink(outside, linked)
+        result = self.execute()
+        self.assertEqual((result.outcome, result.retryable), (StepOutcome.FAILED, False))
+        self.assertIn("not safe to write the integration", result.error)
+        self.assertEqual(os.listdir(outside), [])
+
     def test_without_a_design_the_step_only_verifies(self):
         make_repo(self.repo)
         step = Step(FakeDefinition({"game_repo": self.repo}))

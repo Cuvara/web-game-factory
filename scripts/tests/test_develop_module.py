@@ -24,7 +24,7 @@ sys.path.insert(0, SCRIPTS)
 
 import wgf_develop  # noqa: E402
 from wgf_develop import brief as briefs  # noqa: E402
-from wgf_develop import gdd, scope, seam  # noqa: E402
+from wgf_develop import gdd, safewrite, scope, seam  # noqa: E402
 from wgf_develop.checks import conformance, package_findings  # noqa: E402
 from wgf_develop.repository import KEY_TRAILER, GitRepo, Runner, RunResult  # noqa: E402
 from wgf_develop.settings import Settings, SettingsError  # noqa: E402
@@ -948,6 +948,122 @@ class Conformance(DevelopCase):
         }))
         self.assertIn("still starts the template's BootScene", found)
         self.assertIn("report.json was not written", found)
+
+
+class LinksInTheCheckout(DevelopCase):
+    """The Factory's own files in the checkout - the brief, docs/GDD.md, the seam,
+    checks.json - are written without following a link the developer left in their place: a
+    link to a Factory file (or to the run's event log) must not have the Factory write there
+    for it, before the guarded paths are fingerprinted or after they were last compared."""
+
+    VICTIM_TEXT = "PASS = False\n"
+
+    def victim(self):
+        return os.path.join(self.guarded, "verify.py")
+
+    def assert_victim_untouched(self):
+        with open(self.victim(), encoding="utf-8") as handle:
+            self.assertEqual(handle.read(), self.VICTIM_TEXT)
+
+    def run_develop(self, on_develop):
+        runner = FakeRunner(on_develop=on_develop)
+        return step_with(runner).execute(inputs_for(), context(self.command_config()))
+
+    def test_a_linked_gdd_is_replaced_never_written_through(self):
+        def develop(cwd):
+            write_game(cwd)
+            os.remove(os.path.join(cwd, gdd.GDD_PATH))
+            os.symlink(self.victim(), os.path.join(cwd, gdd.GDD_PATH))
+
+        result = self.run_develop(develop)
+        self.assertEqual(result.outcome, StepOutcome.SUCCESS, result.error)
+        self.assert_victim_untouched()
+        path = os.path.join(self.repo, gdd.GDD_PATH)
+        self.assertFalse(os.path.islink(path))
+        with open(path, encoding="utf-8") as handle:
+            self.assertTrue(handle.read().startswith("# Game Design Document"))
+        # Committed as the plain file the Factory rendered, not as a link.
+        mode = self.git("ls-tree", "HEAD", gdd.GDD_PATH).split()[0]
+        self.assertEqual(mode, "100644")
+
+    def test_a_hard_linked_gdd_does_not_carry_the_write_to_its_other_name(self):
+        # An unguarded target - as the run's own events.jsonl is - so nothing but the
+        # writer itself stands between the link and the write.
+        log = os.path.join(self.scratch, "events.jsonl")
+        with open(log, "w", encoding="utf-8") as handle:
+            handle.write('{"event": "STEP_LOG"}\n')
+
+        def develop(cwd):
+            write_game(cwd)
+            os.remove(os.path.join(cwd, gdd.GDD_PATH))
+            os.link(log, os.path.join(cwd, gdd.GDD_PATH))
+
+        self.run_develop(develop)
+        with open(log, encoding="utf-8") as handle:
+            self.assertEqual(handle.read(), '{"event": "STEP_LOG"}\n')
+
+    def test_a_linked_development_directory_fails_the_step_and_writes_nothing(self):
+        outside = os.path.join(self.scratch, "outside")
+        os.makedirs(outside)
+
+        def develop(cwd):
+            write_game(cwd)
+            shutil.rmtree(os.path.join(cwd, briefs.BRIEF_DIR))
+            os.symlink(outside, os.path.join(cwd, briefs.BRIEF_DIR))
+
+        result = self.run_develop(develop)
+        self.assertEqual((result.outcome, result.retryable), (StepOutcome.FAILED, False))
+        self.assertIn("not safe to write the Factory's files", result.error)
+        self.assertEqual(os.listdir(outside), [])
+
+    def test_a_linked_checks_record_is_replaced_never_written_through(self):
+        def develop(cwd):
+            write_game(cwd)
+            os.symlink(self.victim(), os.path.join(cwd, briefs.BRIEF_DIR, "checks.json"))
+
+        self.run_develop(develop)
+        self.assert_victim_untouched()
+        self.assertFalse(os.path.islink(os.path.join(self.repo, briefs.BRIEF_DIR,
+                                                     "checks.json")))
+
+    def test_a_dangling_seam_link_is_not_followed(self):
+        target = os.path.join(self.scratch, "planted.ts")
+        from wgflib import gameseam
+        path = os.path.join(self.repo, *gameseam.WIRING_PATH.split("/"))
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        if os.path.lexists(path):
+            os.remove(path)
+        os.symlink(target, path)
+        self.assertIn(gameseam.WIRING_PATH, seam.ensure_seam(self.repo))
+        self.assertFalse(os.path.lexists(target))
+        self.assertFalse(os.path.islink(path))
+
+    def test_the_rendered_gdd_must_be_a_plain_file_to_be_in_scope(self):
+        os.makedirs(os.path.join(self.repo, "docs"), exist_ok=True)
+        path = os.path.join(self.repo, gdd.GDD_PATH)
+        os.symlink(self.victim(), path)
+        record = dict(checkout=self.repo, key="k", engine="pixijs",
+                      checks_json=os.path.join(self.scratch, "unused.json"), logger=Log(),
+                      write=False)
+        settings = Settings.resolve(self.config())
+        step = step_with(FakeRunner())
+        refused = step._scope(GitRepo(self.repo, Runner()), settings, **record)
+        self.assertEqual(refused.outcome, StepOutcome.FAILED)
+        self.assertIn("symbolic link", refused.error)
+        os.remove(path)
+        with open(path, "w", encoding="utf-8") as handle:
+            handle.write("# rendered\n")
+        self.assertIsNone(step._scope(GitRepo(self.repo, Runner()), settings, **record))
+
+    def test_the_writer_stays_inside_the_checkout(self):
+        with self.assertRaises(safewrite.UnsafeCheckoutPath):
+            safewrite.write_text(self.repo, os.path.join(self.scratch, "elsewhere.txt"), "x")
+        with self.assertRaises(safewrite.UnsafeCheckoutPath):
+            safewrite.write_text(self.repo, self.repo, "x")
+        written = safewrite.write_text(self.repo, os.path.join(self.repo, "a", "b.txt"), "y")
+        with open(written, encoding="utf-8") as handle:
+            self.assertEqual(handle.read(), "y")
+        self.assertEqual([n for n in os.listdir(os.path.join(self.repo, "a"))], ["b.txt"])
 
 
 class PackageAndScope(DevelopCase):

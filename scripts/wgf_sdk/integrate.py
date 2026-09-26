@@ -22,6 +22,7 @@ import json
 import os
 import re
 
+from wgf_develop import safewrite
 from wgflib import gameseam
 
 __all__ = [
@@ -62,14 +63,15 @@ def _write_if_changed(repo, relative, text):
     """'created', 'updated' or 'unchanged'. Never rewrites identical content."""
     path = os.path.join(repo, *relative.split("/"))
     before = None
-    if os.path.exists(path):
+    # A link the developer committed in place of an sdk-owned file is replaced, never read
+    # as the file nor written through (wgf_develop.safewrite): the integration's text goes
+    # into the checkout, not wherever the link points.
+    if os.path.lexists(path) and not os.path.islink(path) and os.path.isfile(path):
         with open(path, encoding="utf-8") as handle:
             before = handle.read()
     if before == text:
         return "unchanged"
-    os.makedirs(os.path.dirname(path), exist_ok=True)
-    with open(path, "w", encoding="utf-8", newline="\n") as handle:
-        handle.write(text)
+    safewrite.write_text(repo, path, text)
     return "created" if before is None else "updated"
 
 

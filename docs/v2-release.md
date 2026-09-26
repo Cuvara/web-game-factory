@@ -68,28 +68,80 @@ The 7 tests skipped inside passing categories are all opt-in:
 The same ladder passed on `a38a5fc` (the release-audit fixes) and on `5b6ff1d`, the code of
 the first candidate `aff77a8` (which added only a handoff document).
 
+## Pre-publish checks (2026-09-26)
+
+The checks this record recommended before publishing were run on `main` + fixes
+(`claude/dazzling-faraday-duexam`, `b68d46e`). They found three defects, fixed before the tag:
+
+- **The live reviewer's verdict (`7c84c45`).** With the gameplay lens (F2), a reviewer reports
+  findings about the build as a whole, but the contract example showed only a file-anchored
+  blocker. The live reviewer twice left `file` out of such a finding, or wrote a `line` it did
+  not have, and the strict parser discarded a real request for changes. The example now shows
+  both kinds of finding, and `line: null` reads as no line. A missing `file` stays malformed.
+- **The live loop test (`e397ba6`)** still expected the last review to see the last
+  development commit. Since M7 the last review is sdk-review, of the shipped sdk commit. It now
+  asserts that, as the scripted loop test does.
+- **The golden runs on a clean machine (`64ab344`, `b68d46e`).** From an empty HOME both golden
+  runs failed at develop: the replay's offline install of the engine package needs registry
+  metadata a frozen install never caches (`ERR_PNPM_NO_OFFLINE_META`). The runs recorded above
+  had passed on a store warmed by hand. The harness now warms the store itself, online, before
+  its offline sandbox (`harness.warm_store`).
+
+**Live agent host.** Claude Code 2.1.283 was the host, on haiku, with the shipped developer and
+reviewer argvs (`workspace/config/factory.yaml`: every restriction flag unchanged; turn and
+budget caps lowered for cost). The developer prompt was the documented smoke-test recipe
+(claude-capabilities.md), with the reviewer told that only `src/game/score.ts` is under review.
+- **The allowlisted environment carries the host's login.** It authenticated with
+  `factory.agents.env_passthrough` empty: this container's host auth rides on the proxy
+  variables the allowlist keeps, and a CLI logged in on a workstation keeps its credentials
+  under `HOME`, which the allowlist also keeps. An API-key setup names `ANTHROPIC_API_KEY` in
+  `env_passthrough`.
+- **`LiveDeveloperAndReviewer`: 3 of 3 passed.** The real host edited, the Factory made the
+  scoped keyed commit, the real reviewer requested changes on the planted bug, the host fixed
+  it, review approved, sdk-review approved the shipped sdk commit, and the run COMPLETED. Every
+  review had isolation intact, and no process was left behind.
+- **`LiveReviewer`: 2 of 3 passed.** In the third, the reviewer accepted the underflow fix but
+  held a second finding against `score.ts` - the stub still scores by lives while the brief's
+  MVP asks for combo scoring. That is the design-fidelity lens judging the stub fixture against
+  the design, not a contract or pipeline failure.
+
+**Clean machine.** `WGF_GOLDEN=1 bin/wgf test-core --strict` from an empty `HOME` (no
+template cache, no pnpm store, no sibling template): the pinned template and the golden ports
+were cloned from GitHub, and the store was warmed by the harness.
+- **On `b68d46e`, two consecutive full runs passed:** exit 0, 9/9 categories, 2D and 3D golden
+  10/10. So did a separate 2D-then-3D run from another empty HOME.
+- **One earlier full run on the same commit failed the 3D golden run at develop.** Its evidence
+  was not kept, and the failure has not recurred since.
+- **The one remaining local deviation** is the browser: Playwright's own browser download is
+  not available here, so a `PLAYWRIGHT_BROWSERS_PATH` shim maps the build the template expects
+  (1243) onto the installed Chromium (1194).
+
+**Opt-in suites.** All ran and passed:
+- `WGF_AJV=1` on the whole unit suite: 1522 OK, the ajv cross-checks agreeing with the stdlib
+  validator;
+- `WGF_LIVE_PROCESS_TEST=1`: the template's Playwright smoke leaves no process behind, 2/2;
+- `WGF_TEMPLATE_RELEASE_TEST=1`: the template's real release scripts package a valid,
+  reproducible draft.
+
+**Final ladder.** The whole ladder was run again on `54bc80e`, the pre-publish fixes plus this
+record:
+- integrity, content hashes and adapter regeneration clean;
+- unit 1522 OK / 36 skipped;
+- mock smoke through G4 to COMPLETED;
+- `WGF_GOLDEN=1 bin/wgf test-core --strict` exit 0, 9/9, 2D and 3D golden 10/10;
+- the timing-sensitive tests 5/5.
+
+The plain `bin/wgf test-core` run failed once, on a rounding-boundary assertion in the hung-
+output liveness test: the verdict is decided on the exact idle time, the report is rounded
+to the millisecond. The assertion was corrected (`6423155`), 5/5 alone, and `bin/wgf
+test-core` was OK on that commit.
+
 ## What the evidence does not cover
 
-- **No live agent host in this release's runs.** The golden runs use a replayed developer and
-  a scripted reviewer. The live developer and reviewer path was verified for 1.1.0 (v1-usable.md).
-  2.0.0 changes what that host receives — an allowlisted environment
-  (`factory.agents.env_passthrough`), a scoped commit — and has not been run live.
+- **The exact Playwright browser build** the template pins was not run; the shim stood in (above).
 - **The opt-in design agent (F4) and developer self-playtest (F6)** are verified offline only
   ([claude-capabilities.md](claude-capabilities.md)).
-- **The golden runs used local workarounds:** a pnpm store warmed from the pinned template, and
-  a `PLAYWRIGHT_BROWSERS_PATH` shim mapping the Playwright build the template expects onto the
-  Chromium installed on the validation machine. Neither changed a test or a check. A run on a
-  clean machine is not recorded.
-- **Opt-in suites not run:** `WGF_LIVE_AGENT`, `WGF_AJV` (ajv against the stdlib validator),
-  `WGF_LIVE_PROCESS_TEST`, `WGF_TEMPLATE_RELEASE_TEST`.
+- **The live runs used haiku and the smoke-test prompts,** not a full game build with the
+  shipped prompts; the 1.1.0 acceptance run did that (v1-usable.md).
 - **Portal behaviour, submission and publishing** remain outside the Factory (BLOCKED_EXTERNAL,
   behind G6).
-
-## Recommended before publishing
-
-1. One live agent-host run (`WGF_LIVE_AGENT=1` with `WGF_LIVE_DEVELOPER_ARGV` /
-   `WGF_LIVE_REVIEWER_ARGV`), confirming authentication through
-   `factory.agents.env_passthrough` and a scoped development commit.
-2. `WGF_GOLDEN=1 bin/wgf test-core --strict` on a clean machine: no warmed store, and
-   Playwright's browsers installed for the template's own Playwright version.
-3. `WGF_AJV=1` and `WGF_LIVE_PROCESS_TEST=1` once.

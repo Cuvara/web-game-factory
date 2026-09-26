@@ -163,6 +163,16 @@ UNVERIFIED live** - no live design-agent run has been made.
 
 ## Live evidence
 
+**2.0.0 (2026-09-26).** Before the 2.0.0 tag the live suites were run again, against the
+allowlisted agent environment:
+- the host authenticated with an empty `factory.agents.env_passthrough`, since its login lives
+  under `HOME` or in the proxy variables the allowlist keeps;
+- `LiveDeveloperAndReviewer` passed 3/3, through review and sdk-review to COMPLETED;
+- `LiveReviewer` passed 2/3, the third holding a design-fidelity finding against the stub.
+
+The run found and fixed a verdict-contract defect with whole-build findings. Details:
+[v2-release.md](v2-release.md#pre-publish-checks-2026-09-26). The 1.1.x record follows.
+
 The CLI is Claude Code 2.1.281, authenticated. It made about 21 invocations, all with
 `--model haiku` (`claude-haiku-4-5-20251001`): 7 direct probes (US$0.01-0.05 each) and 14
 from engine runs. The total was well under US$2. No process was left running: every review

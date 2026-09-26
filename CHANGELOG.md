@@ -494,6 +494,13 @@ Every one fails closed and has a way back; none changes a schema's required fiel
   developer loads; the Playwright MCP writes its snapshots to `/tmp`, outside the checkout.
 
 ### Fixed
+- **Pre-publish checks (release record: docs/v2-release.md).** A live reviewer's whole-build
+  finding no longer fails the run. The verdict contract's example shows a finding with
+  `file: null` and no `line`, and `line: null` reads as no line; a missing `file` stays
+  malformed. The golden runs warm the pnpm store themselves, online, before their offline
+  sandbox, so they pass on a clean machine: from an empty HOME they failed at develop with
+  `ERR_PNPM_NO_OFFLINE_META`. The live developer-and-reviewer test expects sdk-review of the
+  shipped commit (M7). *Migration:* none.
 - Run lock identity is pid + process start time, so a recycled pid no longer holds a dead
   run; an empty lock tolerates mtime skew (M2).
 - Atomic writes use unique temp names; concurrent `LATEST` writes no longer race (M2).

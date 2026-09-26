@@ -71,7 +71,7 @@ from golden import games  # noqa: E402
 
 __all__ = ["template_dir", "make_workdir", "build_config", "GoldenRun", "Summary"]
 
-from wgflib import template  # noqa: E402
+from wgflib import procs, template  # noqa: E402
 
 # The template a golden run creates its game from: the commit pinned in
 # workspace/config/template.lock.json, as a checkout of exactly that commit
@@ -131,6 +131,40 @@ FOREIGN_ENV = ("WGF_GAME_REPO", "WGF_RESEARCH_LIVE", "WGF_GAME_CONFIG")
 # --prefer-offline. A guard, not a sandbox: a child that ignores proxy variables is not
 # stopped by it.
 from wgflib.netguard import NO_PROXY, PROXY_VARS, sandbox_env  # noqa: E402,F401
+
+
+def warm_store(game_key):
+    """Fetch, with network and before the sandbox, everything the run's offline installs will
+    ask the pnpm store for.
+
+    The run installs offline twice over: the template's own dependencies (the develop
+    checks, the browser capture: --frozen-lockfile --offline), and the replay developer's
+    engine package (pixi.js, or three + @types/three), added to package.json and resolved
+    with --offline --no-frozen-lockfile - which needs the registry metadata of the package
+    and all its dependencies, not only their tarballs. A frozen install caches tarballs
+    only, so on a machine that had never installed the engine package every golden run
+    failed at develop (ERR_PNPM_NO_OFFLINE_META; found by the 2.0.0 clean-machine check).
+    So: install the pinned template (wgflib.template.ensure_dependencies), then perform the
+    replay's own resolution once, online, in a throwaway copy - a full online resolution,
+    not --prefer-offline: that satisfies a dependency already in the store (fflate, under
+    @types/three) without fetching its metadata, and the offline resolution then fails on
+    it. Idempotent; the run itself stays offline."""
+    from golden import replay_developer as replay
+    source = template.checkout()
+    template.ensure_dependencies(source)
+    deps = replay.engine_dependencies(replay.load_port(game_key), source)
+    scratch = tempfile.mkdtemp(prefix="wgf-golden-warm-")
+    try:
+        copy = os.path.join(scratch, "template")
+        shutil.copytree(source, copy, symlinks=True,
+                        ignore=shutil.ignore_patterns("node_modules", ".git"))
+        replay.add_dependencies(copy, deps)
+        done = procs.run(["pnpm", "install", "--no-frozen-lockfile"], cwd=copy, timeout=1200)
+        if not done.ok:
+            raise RuntimeError(f"golden: cannot warm the pnpm store for {game_key} "
+                               f"({', '.join(sorted(deps))}): {done.tail(20)}")
+    finally:
+        shutil.rmtree(scratch, ignore_errors=True)
 
 
 class network_sandbox:
@@ -290,6 +324,7 @@ class GoldenRun:
     def execute(self, resume=None, from_step=None):
         from golden import summary as summaries
         self.write_config()
+        warm_store(self.game.key)  # online, before the run goes offline
         with network_sandbox() as guard:
             api, state, seconds = self.run_workflow(resume=resume, from_step=from_step)
             pipeline_network = guard.proxy.summary()

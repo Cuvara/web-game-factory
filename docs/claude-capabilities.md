@@ -30,12 +30,12 @@ Status values:
 | Status | Count (of 28 rows) |
 |---|---|
 | VERIFIED_LIVE | 16 |
-| VERIFIED | 11 (three added with the developer-boundary hardening, 1.1.x; not yet run live) |
+| VERIFIED | 11 (three added with the developer-boundary hardening after 1.1.0, released in 2.0.0; not yet run live) |
 | UNVERIFIED_EXTERNAL | 1: browser testing against a real template. The portal side of release is also external; it is noted in its row |
 | BROKEN | 0 open. Two found and fixed: the shipped config narrowed the reviewer's guarded paths (P1), and the opt-in `LiveReviewer` test could not pass against a competent host (P2) |
 
 Commands run for `VERIFIED`, all green, from `scripts/tests/` with `python3 -m unittest <module>`
-(test counts and the `file:line` references in the table below are as of that 1.1.x audit;
+(test counts and the `file:line` references in the table below are as of that audit, made after 1.1.0;
 the code has moved since - search by the names given):
 `test_core_agents` (31 tests, 3 opt-in skips), `test_develop_module`, `test_core_workflow`,
 `test_core_process`, `test_core_security` (74), `test_core_persistence`,
@@ -62,7 +62,7 @@ golden-run work and use port 4173.
 | Developer write boundary | `wgf_develop/step.py` `_Guard`: `factory.review.guarded_paths` fingerprinted before the developer, compared after it and after the checks (`wgflib/isolation.py` `take_guarded`/`restore_guarded`) | Factory, whatever `Bash(pnpm *)` admits | `test_core_security.DeveloperBoundary.test_a_guarded_factory_path_written_by_the_developer_is_detected_and_restored`, `test_a_guarded_path_written_by_a_check_is_caught_too` | VERIFIED |
 | Development commit scope | `wgf_develop/scope.py` (`writable_paths`; hidden paths and instruction files refused), `repository.py` `commit_paths` (never `add --all`); `checks.py` `package_findings` (`package.json` field by field, lockfile only with an allowed dependency change); `brief.py` `PROTECTED_PATHS` (+ `package.json`, `tsconfig.json`, `pnpm-lock.yaml`) | Factory | `DeveloperBoundary.test_agent_host_settings_and_instruction_files_are_refused` (`.claude/settings.json`, `CLAUDE.md`, `.github/`, `.husky/`), `test_a_package_json_script_rewrite_is_caught`, `test_a_tsconfig_change_is_caught`, `test_a_dependency_from_a_path_or_url_is_refused`; `test_develop_module.PackageAndScope` | VERIFIED |
 | Tool / command restrictions | `--tools` (which tools exist), `--allowedTools`, `--disallowedTools` | Host. In the Factory, only the reviewer fingerprint catches a tool that wrote | Probe (c): the init event lists `tools: [Bash, Glob, Grep, Read]`, and a `Write` call fails with "No such tool available" | VERIFIED_LIVE |
-| Git safety restrictions | Host: deny `git commit/push/reset/checkout/.../config/remote`, `git * --output*`. Factory: the Factory commits (`wgf_develop/step.py`, keyed, `commit_paths`); every Factory git call - the reviewer's and, since 1.1.x, the developer's commit path too (`wgf_develop/repository.py` `GitRepo`) - is hardened (`scripts/wgflib/gitsafe.py` `hardened`): git dir pinned before the developer runs, no hooks, fsmonitor, signing or filter drivers; a reviewer commit is detected and undone | Both | Probe (c2): `git diff … --output=` was denied by the explicit rule and `git commit` was denied. Factory: `AgentLoop.test_a_reviewer_committing_is_rejected_and_head_restored`, `test_core_security.ReviewerIsolation.test_config_the_reviewer_writes_runs_no_command_in_the_factory`, `CommitsAfterReview`, `DeveloperBoundary.test_a_planted_core_worktree_*`, `test_a_planted_clean_filter_never_runs`, `test_a_planted_hook_and_fsmonitor_never_run` | VERIFIED_LIVE (host); VERIFIED (developer-side hardening) |
+| Git safety restrictions | Host: deny `git commit/push/reset/checkout/.../config/remote`, `git * --output*`. Factory: the Factory commits (`wgf_develop/step.py`, keyed, `commit_paths`); every Factory git call - the reviewer's and, since 2.0.0, the developer's commit path too (`wgf_develop/repository.py` `GitRepo`) - is hardened (`scripts/wgflib/gitsafe.py` `hardened`): git dir pinned before the developer runs, no hooks, fsmonitor, signing or filter drivers; a reviewer commit is detected and undone | Both | Probe (c2): `git diff … --output=` was denied by the explicit rule and `git commit` was denied. Factory: `AgentLoop.test_a_reviewer_committing_is_rejected_and_head_restored`, `test_core_security.ReviewerIsolation.test_config_the_reviewer_writes_runs_no_command_in_the_factory`, `CommitsAfterReview`, `DeveloperBoundary.test_a_planted_core_worktree_*`, `test_a_planted_clean_filter_never_runs`, `test_a_planted_hook_and_fsmonitor_never_run` | VERIFIED_LIVE (host); VERIFIED (developer-side hardening) |
 | Isolated game checkout | `wgf_develop/settings.py:115` and `wgf_review/settings.py:120` → `wgflib.paths.checkout_path`; the review's verdict and brief must be outside the checkout (`wgf_review/step.py:126-130`) | Factory | `test_core_security.HostileIdentifiers`, `test_core_persistence.HostileIdentifiers`; live: the brief was read from the run directory, and the verdict was saved there | VERIFIED_LIVE |
 | Agent retries | Engine retry policy (`engine.py:577-579,640`); developer failure retryable (`developers.py:92-101`); reviewer timeout, idle and crash retryable (`wgf_review/step.py:248-266`) | Factory | `AgentLoop.test_a_developer_failure_is_retried_and_the_loop_recovers`, `test_an_exhausted_retry_budget_fails_the_run`, `test_a_crashing_reviewer_is_retried_then_fails_the_run`, `test_core_workflow.Retry` | VERIFIED |
 | Reviewer approval | `wgf_review/step.py:238-239`; strict verdict `verdict.py:60` | Factory | `AgentLoop.test_an_approving_reviewer_runs_once_and_the_run_completes`, `VerdictContract`; live visit 2 approve | VERIFIED_LIVE |
@@ -265,9 +265,9 @@ competent live host. See "The existing `LiveReviewer` test" above. The determini
 
 **Fixed (adapters).** Generation produced no textual drift, but the binding did not cover
 the Core v1 steps: no surface produced `review-report`, and `gameplay` and `release` did not
-consume what their steps read. See each plugin's `CONFORMANCE.md` (binding 1.1.0).
+consume what their steps read. See each plugin's `CONFORMANCE.md` (fixed in binding 1.1.0; the binding is 1.2.0 since 2.0.0).
 
-**Fixed (developer boundary, 1.1.x).** The developer ran with the Factory's whole
+**Fixed (developer boundary, 2.0.0).** The developer ran with the Factory's whole
 environment, its commit was `git add --all` through a git whose config the developer
 could write (`core.worktree`, filter drivers), `package.json`'s `scripts` - what every later
 check runs - were unprotected, and nothing watched the Factory's own paths around it. See

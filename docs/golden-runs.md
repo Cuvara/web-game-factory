@@ -271,6 +271,10 @@ version in `evidence/live-agents.json`.
 `python3 scripts/golden/live.py config --workdir DIR --human-gates` writes the same
 configuration as `DIR/factory.yaml`, with no gate auto-approved, for a run a person drives
 with `bin/wgf new-game --config ... --store ...` and decides G2, G3 and G4 with `wgf decide`.
+Both the live build and that configuration run under a developer budget,
+`golden.live.LIVE_BUDGET` (`factory.develop.budget`: 6 sessions, US$120 by the host's
+`total_cost_usd`), snapshotted when the run starts and recorded in `live-agents.json`; the
+host's own `--max-budget-usd` bounds only one session.
 
 **Why not the replay.** The v2.0.1 candidate first planted a defect in the golden replay and
 let a live reviewer find it. The reviewer rejected the build on six design-fidelity blockers

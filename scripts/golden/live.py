@@ -43,6 +43,11 @@ from wgflib.yamllite import load  # noqa: E402
 
 FACTORY_YAML = os.path.join(paths.CONFIG, "factory.yaml")
 GAME = "2d"
+# The run's developer budget (factory.develop.budget, docs/development-module.md#budget): a
+# live build pays per session, and the host's own per-session flag bounds only one session.
+# The post-2.0.0 production validation ran under exactly this; it was added to each run's
+# configuration by hand, so the repository could not reproduce it (found preparing 2.1.0).
+LIVE_BUDGET = {"max_sessions": 6, "max_cost": 120, "cost_from": {"jsonl_key": "total_cost_usd"}}
 
 
 class LiveSetupError(Exception):
@@ -87,6 +92,7 @@ def build_live_config(game, workdir, template_dir=None, examples=None, human_gat
     config = harness.build_config(game, workdir, template_dir)
     config["develop"]["developer"] = dict(developer)
     config["review"]["reviewer"] = dict(reviewer)
+    config["develop"]["budget"] = json.loads(json.dumps(LIVE_BUDGET))
     if human_gates:
         config["checkpoints"]["auto_approve"] = []
     # The host's credential, when it is an environment variable (WGF_LIVE_ENV_PASSTHROUGH,
@@ -98,6 +104,7 @@ def build_live_config(game, workdir, template_dir=None, examples=None, human_gat
     record = {"developer": developer, "reviewer": reviewer,
               "source": os.path.relpath(FACTORY_YAML, paths.ROOT),
               "auto_approved_gates": list(config["checkpoints"]["auto_approve"]),
+              "develop_budget": config["develop"]["budget"],
               "host_version": host_version(developer["argv"][0])}
     return config, record
 

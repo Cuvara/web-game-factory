@@ -22,6 +22,13 @@ live tests with the documented argvs.
   - the parser `ShippedConfig` checks them with), use the steps' own prompts, and record both
   argvs and the host's version in the run's evidence. `WGF_LIVE_DEVELOPER_ARGV` is no longer
   read; `WGF_LIVE_REVIEWER_ARGV` becomes an optional override.
+- **A live run started without a run budget.** The post-2.0.0 production validation records
+  every run under `develop.budget: {max_sessions: 6, max_cost: 120}`, but that was added to
+  each configuration by hand: `live.py config` wrote none, so a run started from the
+  repository alone had no run-level bound on paid developer sessions (only the host's
+  per-session `--max-budget-usd`). `golden.live.build_live_config` now writes
+  `LIVE_BUDGET` and records it in `live-agents.json`. Regression:
+  `test_live_loop.LiveConfig.test_a_live_run_starts_under_the_documented_developer_budget`.
 - **`WGF_LIVE_KEEP` with both live tests in one invocation** errored the second test: it
   copied its scratch over the first's, onto read-only git objects. Each test now keeps its
   evidence in `<dir>/<test id>` (`.2`, `.3` ... on a rerun), never over an earlier run's.

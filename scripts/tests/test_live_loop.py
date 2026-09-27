@@ -148,6 +148,25 @@ class LiveConfig(unittest.TestCase):
         self.assertEqual(load(os.path.join(self.workdir, "factory.yaml")).data["techplan"]["estimates"],
                          wanted)
 
+    def test_a_live_run_starts_under_the_documented_developer_budget(self):
+        # A live run pays per developer session. The budget is snapshotted when the run
+        # starts, so a configuration that omits it runs the whole loop with no run-level
+        # bound; the 2026-09-27 production run was started exactly so.
+        from wgflib import budget
+        from wgflib.workflow.config import load_config as load
+        config, record = self.build(human_gates=True)
+        self.assertEqual(config["develop"]["budget"], live.LIVE_BUDGET)
+        self.assertEqual(record["develop_budget"], live.LIVE_BUDGET)
+        done = subprocess.run([sys.executable, os.path.join(SCRIPTS, "golden", "live.py"),
+                               "config", "--workdir", self.workdir, "--human-gates"],
+                              capture_output=True, text=True, timeout=120)
+        self.assertEqual(done.returncode, 0, done.stderr)
+        loaded = load(os.path.join(self.workdir, "factory.yaml"))
+        self.assertEqual(loaded.develop_budget, budget.parse(live.LIVE_BUDGET))
+        self.assertIsNotNone(loaded.develop_budget)
+        with open(os.path.join(self.workdir, "evidence", "live-agents.json")) as handle:
+            self.assertEqual(json.load(handle)["develop_budget"], live.LIVE_BUDGET)
+
     def test_the_live_run_says_it_is_not_sandboxed(self):
         with live.LiveGoldenRun.sandbox(None) as guard:
             self.assertFalse(guard.proxy.summary()["sandboxed"])

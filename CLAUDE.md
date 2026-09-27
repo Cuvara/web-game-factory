@@ -324,8 +324,9 @@ seen by the engine — validate what you write there with ajv.
   it found and fixed, PASS / PASS_MOCK / UNVERIFIED / BLOCKED_EXTERNAL
 - `docs/v2-release.md` — 2.0.0: what was validated on which commit, the release audit's
   fixes, and what the evidence does not cover (no live agent host, shimmed golden runs)
-- `docs/v2.1-release.md` — 2.1.0: the post-2.0.0 live-validation fixes (PR #4), and 2.1.1:
-  the BootScene false positive; what was validated on which commit, what it does not cover
+- `docs/v2.1-release.md` — 2.1.0: the post-2.0.0 live-validation fixes (PR #4); 2.1.1: the
+  BootScene false positive; 2.1.2: the sdk step's own files; what was validated on which
+  commit, what it does not cover
 - `docs/claude-capabilities.md` — agent-host capability audit: what the Factory enforces vs
   the host's argv, verified headless developer/reviewer config, live evidence
 - `docs/production-craft-and-mcp.md` — `core/craft/` playbooks and skills by phase, MCP tools

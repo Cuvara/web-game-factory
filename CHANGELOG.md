@@ -9,6 +9,32 @@ and `core/` is still the contract.
 
 ## [Unreleased]
 
+## [2.1.2] - 2026-09-28
+
+A patch release (`docs/v2.1-release.md`, *2.1.2*): an ownership gap between the develop and
+sdk steps, found by the live production validation of 2.1.1. No configuration, schema or
+workflow change. **Upgrading:** nothing to configure; a game repository whose develop commits
+changed one of the sdk step's files now blocks at sdk instead of losing that change - move
+the work into the game's own files through develop.
+
+### Fixed
+
+- **The sdk step silently erased developer work in its own files.** It writes five files
+  whole on every run - `src/platform/gameplay.ts`, `src/platform/game-integration.ts`,
+  `src/platform/integration-plan.ts` and the two suites
+  `tests/unit/platform/gameplay-integration.test.ts` and
+  `tests/unit/platform/game-integration.test.ts` - but the brief named, and conformance
+  checked, only the two seam files. In the 2.1.1 production run a developer fixing an
+  sdk-review blocker added its regression test to the SDK-mock suite; the next sdk run
+  rewrote the file, sdk-review blocked the deleted test, and the loop - invisible to the
+  developer - used up the run's developer budget. Now `wgflib.gameseam.SDK_OWNED_PATHS` is the
+  one list: the brief names the files (`sdk_owned`; own code and tests go in files of the
+  game's own), develop's conformance refuses a change to any of them against the visit's
+  baseline commit, and the sdk step BLOCKS rather than overwrite one whose last change is a
+  commit its ledger does not record. A committed link at one of those paths therefore blocks
+  the sdk step instead of being replaced (its target is still never written). Regressions:
+  `test_develop_module.SdkOwnedFiles`, `test_sdk_integration.Commits`.
+
 ## [2.1.1] - 2026-09-28
 
 A patch release (`docs/v2.1-release.md`, *2.1.1*): one false positive in the develop step,

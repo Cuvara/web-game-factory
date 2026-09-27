@@ -858,6 +858,41 @@ class SeamPlacementIds(SdkCase):
         self.assertEqual(rewarded["status"], "working")
 
 
+class DesignTouchpointIds(unittest.TestCase):
+    """Regression, live build 2026-09-26: the developer called
+    `interstitial(INTERSTITIAL_PLACEMENT_ID)` with the design's own touchpoint id
+    `interstitial-between`, on leaving the result card - the design's game over. The sdk step
+    read the id's words ("between" -> level-complete), found no design interstitial there,
+    and failed the required platform as `partial`."""
+
+    DESIGN = {
+        "monetization": {"placements": [
+            {"kind": "rewarded", "trigger": "On a run-ending failure, offer one continue per run"},
+            {"kind": "interstitial", "trigger": "When the player leaves the result card (Retry or Menu)"},
+        ]},
+        "build_spec": {"monetization_touchpoints": [
+            {"id": "rewarded-continue", "kind": "rewarded",
+             "trigger": "On a run-ending failure, offer one continue per run"},
+            {"id": "interstitial-between", "kind": "interstitial",
+             "trigger": "When the player leaves the result card (Retry or Menu)"},
+        ]},
+    }
+
+    def test_the_designs_own_id_takes_its_touchpoints_moment(self):
+        from wgf_sdk.design import design_placements, touchpoint_moments
+        from wgf_sdk.integration import IntegrationPhase
+        self.assertEqual(classify_trigger("interstitial between"), "level-complete")
+        placements = design_placements(self.DESIGN)
+        seam = {"placements": {"interstitial": {"interstitial-between": ["src/game/controller.ts:205"]}}}
+        records, plan = [], []
+        IntegrationPhase._seam_placements(None, seam, placements, None, records, plan,
+                                          touchpoint_moments(self.DESIGN))
+        self.assertEqual(records[0]["moment"], "game-over")
+        self.assertTrue(records[0]["integrated"], records[0]["note"])
+        self.assertIn("the design's own placement id", records[0]["note"])
+        self.assertEqual(plan[0]["moment"], "game-over")
+
+
 TYPED_SCENE_TS = """\
 import type { GameIntegration } from "./integration.js";
 

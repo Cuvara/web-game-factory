@@ -26,7 +26,7 @@ from wgflib.yamllite import YamlError, load_file
 from wgf_init.profiles import pin_identity
 
 from . import integrate
-from .design import classify_trigger, design_placements, required_features
+from .design import classify_trigger, design_placements, required_features, touchpoint_moments
 from .inspect_sdk import inspect_sdk
 from .runner import SCENARIOS, TEST_FILE, git_state, run_tests
 
@@ -162,7 +162,8 @@ class IntegrationPhase:
                               "platform SDK cannot be integrated: " + "; ".join(problems))
         seam = integrate.scan_seam(repo, self._runner)
         notes.append(f"seam calls read by: {seam['scanner']}")
-        self._seam_placements(seam, placements, declared, placement_records, plan_placements)
+        self._seam_placements(seam, placements, declared, placement_records, plan_placements,
+                              touchpoint_moments(design))
         for call in seam["unresolved"]:
             placement_records.append({
                 "id": f"unresolved:{call['argument']}",
@@ -286,18 +287,24 @@ class IntegrationPhase:
             records.append(record)
         return records, plan
 
-    def _seam_placements(self, seam, placements, declared, records, plan):
+    def _seam_placements(self, seam, placements, declared, records, plan, touchpoints=None):
         """The game's own placement ids, attached to the design's moments.
 
-        An id is read like a trigger ("revive-after-crash" is a game over); failing that, it
-        takes the moment of the design's only placement of its kind. Its platforms and the
-        design's wording come from the design placement at that moment.
+        An id the design itself defines (build_spec.monetization_touchpoints) takes that
+        touchpoint's moment. Otherwise the id is read like a trigger ("revive-after-crash" is
+        a game over); failing that, it takes the moment of the design's only placement of its
+        kind. Its platforms and the design's wording come from the design placement at that
+        moment.
         """
+        touchpoints = touchpoints or {}
         for kind, ids in seam["placements"].items():
             design_moments = {p.moment for p in placements if p.kind == kind and p.moment}
             for placement_id, where in sorted(ids.items()):
-                moment = classify_trigger(placement_id.replace("-", " ").replace("_", " "))
-                how = "matched from the placement id"
+                moment = touchpoints.get((kind, placement_id))
+                how = "the design's own placement id"
+                if moment is None:
+                    moment = classify_trigger(placement_id.replace("-", " ").replace("_", " "))
+                    how = "matched from the placement id"
                 if moment is None and len(design_moments) == 1:
                     moment, how = next(iter(design_moments)), "the design's only " + kind
                 source = next((p for p in placements if p.kind == kind and p.moment == moment),

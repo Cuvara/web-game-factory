@@ -31,7 +31,7 @@ sys.path.insert(0, HERE)
 
 import pinned_template  # noqa: E402
 
-from wgflib import paths  # noqa: E402
+from wgflib import gameseam, paths  # noqa: E402
 from wgflib.hashing import content_hash  # noqa: E402
 from wgflib.workflow.api import RunRequest, WorkflowAPI  # noqa: E402
 from wgflib.workflow.config import FactoryConfig  # noqa: E402
@@ -1065,6 +1065,42 @@ class Commits(SdkCase):
         self.assertEqual(self.report(result)["build_ref"],
                          {"commit_sha": base, "base_commit_sha": base, "sdk_commits": []})
 
+    def test_a_clean_regeneration_after_a_develop_visit_is_valid(self):
+        # The loop the production runs take: sdk commits, develop commits game work beside
+        # the sdk's files (a test of its own included), sdk runs again on that commit.
+        make_repo(self.repo)
+        self.assertEqual(self.execute().outcome, StepOutcome.SUCCESS)
+        owned = {p: read(self.repo, p) for p in gameseam.SDK_OWNED_PATHS}
+        write(self.repo, "tests/unit/platform/mute-over-ad-break.test.ts", "export {};\n")
+        base = commit_checkout(self.repo, "feat(game): development iteration 2")
+        result = self.execute(prototype_report=prototype_at(base))
+        self.assertEqual(result.outcome, StepOutcome.SUCCESS, result.error or result.message)
+        self.assertEqual({p: read(self.repo, p) for p in gameseam.SDK_OWNED_PATHS}, owned)
+        self.assertEqual(read(self.repo, "tests/unit/platform/mute-over-ad-break.test.ts"),
+                         "export {};\n")
+
+    def test_a_develop_commit_to_an_sdk_file_blocks_instead_of_being_erased(self):
+        # The 2.1.1 production run: develop committed a regression test into the sdk's own
+        # suite; the next sdk run rewrote the file and the test was gone without a word.
+        make_repo(self.repo)
+        self.assertEqual(self.execute().outcome, StepOutcome.SUCCESS)
+        added = "\nit('keeps the player mute over an ad break', () => {});\n"
+        write(self.repo, TEST_FILE, read(self.repo, TEST_FILE) + added)
+        base = commit_checkout(self.repo, "feat(game): development iteration 3")
+        result = self.execute(prototype_report=prototype_at(base))
+        self.assertEqual(result.outcome, StepOutcome.BLOCKED)
+        self.assertIn(TEST_FILE, result.message)
+        self.assertIn(base[:12], result.message)
+        self.assertIn("would erase that work", result.message)
+        self.assertEqual(self.head(), base)
+        self.assertTrue(read(self.repo, TEST_FILE).endswith(added))
+        self.assertEqual(result.artifacts, [])
+
+    def test_the_files_it_writes_are_the_contracts_sdk_owned_paths(self):
+        self.assertEqual(set(integrate.OWNED_FILES + integrate.SEAM_FILES
+                             + (integrate.PLAN_FILE,)), set(gameseam.SDK_OWNED_PATHS))
+        self.assertIn(TEST_FILE, gameseam.SDK_OWNED_PATHS)
+
     def test_a_commit_between_develop_and_sdk_is_refused(self):
         make_repo(self.repo)
         base = self.head()
@@ -1159,9 +1195,11 @@ class Commits(SdkCase):
 
 
 class FailurePaths(SdkCase):
-    def test_a_committed_link_in_place_of_an_owned_file_is_replaced_not_written_through(self):
+    def test_a_committed_link_in_place_of_an_owned_file_is_never_written_through(self):
         # The developer may commit links under src/ (scope checks paths): the integration
-        # must put its text into the checkout, not wherever such a link points.
+        # must never put its text wherever such a link points. Since 2.1.2 a commit the sdk
+        # step did not make, changing one of its files, blocks the step before it writes
+        # anything (develop's conformance refuses the commit first).
         make_repo(self.repo)
         victim = os.path.join(self.scratch, "outside.ts")
         with open(victim, "w", encoding="utf-8") as handle:
@@ -1170,7 +1208,22 @@ class FailurePaths(SdkCase):
         os.makedirs(os.path.dirname(owned), exist_ok=True)
         os.symlink(victim, owned)
         result = self.execute()
-        self.assertEqual(result.outcome, StepOutcome.SUCCESS, result.error)
+        self.assertEqual(result.outcome, StepOutcome.BLOCKED, result.error)
+        self.assertIn(integrate.OWNED_FILES[0], result.message)
+        with open(victim, encoding="utf-8") as handle:
+            self.assertEqual(handle.read(), "// not the Factory's to write\n")
+
+    def test_an_uncommitted_link_in_place_of_an_owned_file_is_replaced_not_written_through(self):
+        # The write path itself (integrate._write_if_changed via safewrite): a link at an
+        # owned path is replaced, and the file it points at is never written.
+        make_repo(self.repo)
+        victim = os.path.join(self.scratch, "outside.ts")
+        with open(victim, "w", encoding="utf-8") as handle:
+            handle.write("// not the Factory's to write\n")
+        owned = os.path.join(self.repo, *integrate.OWNED_FILES[0].split("/"))
+        os.makedirs(os.path.dirname(owned), exist_ok=True)
+        os.symlink(victim, owned)
+        integrate.write_owned_files(self.repo)
         with open(victim, encoding="utf-8") as handle:
             self.assertEqual(handle.read(), "// not the Factory's to write\n")
         self.assertFalse(os.path.islink(owned))

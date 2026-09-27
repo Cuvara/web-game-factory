@@ -7,6 +7,12 @@ over it as a whole file. The developer writes neither and edits neither; src/mai
 through the wiring. A seam file that differs from what the Factory last put there, or a
 main.ts that does not use it, fails conformance - the sdk step could not integrate the
 build otherwise, and would have to say so much later.
+
+Five more files belong to the sdk step (gameseam.SDK_OWNED_PATHS), which writes each whole on
+every run. The developer creates, edits and deletes none of them: whatever it put there would
+be erased by the next sdk run - a regression test deleted after review approved it, found by
+the 2.1.1 production run. Each must read as the visit's baseline commit has it (absent when
+the sdk step has not run yet).
 """
 
 import os
@@ -16,7 +22,8 @@ from wgflib import gameseam
 from . import safewrite
 from .brief import INTEGRATION_CONTRACT
 
-__all__ = ["SEAM_FILES", "default_files", "ensure_seam", "seam_findings"]
+__all__ = ["SEAM_FILES", "default_files", "ensure_seam", "seam_findings",
+           "sdk_owned_findings"]
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 SEAM_FILES = (gameseam.CONTRACT_PATH, gameseam.WIRING_PATH)
@@ -68,4 +75,27 @@ def seam_findings(root, git, baseline):
             findings.append(f"{relative} belongs to the Factory and was edited; restore it and "
                             f"call the seam instead")
     findings.extend(gameseam.seam_problems(root))
+    return findings
+
+
+def sdk_owned_findings(root, git, baseline):
+    """Conformance findings for the sdk step's own files; [] when each reads as `baseline`
+    has it (or is absent where `baseline` has none)."""
+    findings = []
+    for relative in gameseam.SDK_OWNED_PATHS:
+        path = os.path.join(root, *relative.split("/"))
+        expected = git.file_at(baseline, relative) if baseline else None
+        present = os.path.lexists(path)
+        if expected is None and not present:
+            continue
+        if expected is None:
+            findings.append(f"{relative} belongs to the Factory's sdk step, which writes it "
+                            f"whole on every run; remove it and put your code or tests in a "
+                            f"file of your own")
+        elif not present or os.path.islink(path) or _read(path) != expected:
+            findings.append(f"{relative} belongs to the Factory's sdk step and was "
+                            f"{'deleted' if not present else 'edited'}; the next sdk run "
+                            f"rewrites it whole. Restore it as it is in "
+                            f"{str(baseline)[:12]} and put your code or tests in a file of "
+                            f"your own")
     return findings

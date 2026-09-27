@@ -173,6 +173,13 @@ changes nothing — and commits them (below):
   `createGameIntegration()` installs `PlatformGameplay` and returns the
   `PlatformGameIntegration`.
 
+The five files the step writes whole - all of the above but the wiring - are
+`wgflib.gameseam.SDK_OWNED_PATHS`, and they are the step's alone. The developer brief names
+them, develop's conformance refuses a developer change to any of them, and the step refuses to
+integrate (`BLOCKED`, nothing written) when the last commit to change one is not one its
+ledger records: rewriting it would erase that work without a word (a regression test added to
+the SDK-mock suite was, in the 2.1.1 production run).
+
 `src/main.ts` is never edited: it already boots through the seam, because the develop step
 provided it and its conformance check requires it (`wgflib.gameseam`). A build whose main.ts
 does not import and call `createGamePlatform` and `createGameIntegration` from

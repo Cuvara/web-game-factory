@@ -359,6 +359,9 @@ def build_brief(*, title_id, engine, iteration, key, baseline, design, assets, s
         # the Factory's seam. Guidance for the developer (the seam is also enforced).
         "template_source": [{"path": p, "why": why} for p, why in TEMPLATE_SOURCE],
         "factory_owned": [gameseam.CONTRACT_PATH, gameseam.WIRING_PATH],
+        # Written whole by the sdk step on every run: enforced by conformance
+        # (seam.sdk_owned_findings), stated here so a developer never puts work in them.
+        "sdk_owned": list(gameseam.SDK_OWNED_PATHS),
         # What the development commit may contain (scope.py), and how package.json may
         # change (checks.package_findings). Anything else fails the step.
         "writable_paths": list(writable_paths),
@@ -449,11 +452,12 @@ def _ownership_section(brief):
     lines = ["## Which files are yours\n"]
     template_source = brief.get("template_source") or []
     factory_owned = brief.get("factory_owned") or []
+    sdk_owned = brief.get("sdk_owned") or []
     writable = brief.get("writable_paths") or []
     if writable:
         lines.append("- **Yours:** " + ", ".join(f"`{p}`" for p in writable)
                      + (" - except the files below." if template_source or factory_owned
-                        else "."))
+                        or sdk_owned else "."))
     if template_source:
         lines.append("- **The template's source - import it, never edit, delete or "
                      "recreate it:** "
@@ -463,6 +467,15 @@ def _ownership_section(brief):
         lines.append("- **The Factory's integration seam - never edit it:** "
                      + ", ".join(f"`{p}`" for p in factory_owned)
                      + ". The checks compare both byte for byte.")
+    if sdk_owned:
+        lines.append("- **The Factory's sdk step - never create, edit or delete them:** "
+                     + ", ".join(f"`{p}`" for p in sdk_owned)
+                     + ". The sdk step writes each one whole every time it runs, so anything "
+                     "you put in them is erased - a test you add there is deleted. Your own "
+                     "code and tests go in files of your own (another name under "
+                     "`tests/unit/`, for example), even when a review blocker points at one "
+                     "of these files. The checks compare them with the commit this visit "
+                     "started from.")
     lines.append("- **`src/main.ts`** is yours to wire the game into, but it is the template's "
                  "boot sequence: keep its order (the `boot` system, and the integration seam "
                  "section below).")

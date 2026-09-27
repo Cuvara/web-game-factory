@@ -11,18 +11,34 @@ src/main.ts on the game's behalf: main.ts itself imports both functions from
 ./platform/integration.js and never constructs a platform directly. That import is the seam,
 and this module is the one definition of what "main.ts uses it" means, so the step that
 requires it (develop) and the step that relies on it (sdk) cannot disagree.
+
+The `sdk` step also owns five more files outright, `SDK_OWNED_PATHS`: it writes each one whole
+on every run, so anything else in them is lost the next time it runs. They are listed here,
+not in wgf_sdk, because the develop step enforces them (its brief names them; its conformance
+refuses a developer change to them) and wgf_sdk already depends on wgf_develop.
 """
 
 import os
 import re
 
-__all__ = ["CONTRACT_PATH", "WIRING_PATH", "MAIN_PATH", "WIRING_MODULE", "seam_problems"]
+__all__ = ["CONTRACT_PATH", "WIRING_PATH", "MAIN_PATH", "WIRING_MODULE", "SDK_OWNED_PATHS",
+           "seam_problems"]
 
 CONTRACT_PATH = "src/game/integration.ts"
 WIRING_PATH = "src/platform/integration.ts"
 MAIN_PATH = "src/main.ts"
 WIRING_MODULE = "./platform/integration.js"
 FUNCTIONS = ("createGamePlatform", "createGameIntegration")
+# Written whole by the sdk step on every run (wgf_sdk.integrate): the gameplay layer and its
+# SDK-mock suite, the seam implemented on it and its suite, and the generated placement plan.
+# A game's own code and tests go in other files.
+SDK_OWNED_PATHS = (
+    "src/platform/gameplay.ts",
+    "tests/unit/platform/gameplay-integration.test.ts",
+    "src/platform/game-integration.ts",
+    "tests/unit/platform/game-integration.test.ts",
+    "src/platform/integration-plan.ts",
+)
 
 _IMPORT = re.compile(r"import\s*\{([^}]*)\}\s*from\s*[\"']([^\"']+)[\"']", re.S)
 _COMMENT = re.compile(r"//[^\n]*|/\*.*?\*/", re.S)

@@ -79,6 +79,26 @@ live tests with the documented argvs.
   resolution once in a second copy, so a store that cannot serve it fails before the
   sandbox, naming the package.
 
+### Fixed (found by the live builds on the corrected design)
+
+- **The brief told the developer to break its own commit boundary.** It said "Run `pnpm
+  format:write` before you finish"; that is `prettier --write .`, the pinned template is not
+  prettier-clean (why the shipped checks leave `format` out), and a live developer's 61-minute
+  build was refused for 20 reformatted template files. The brief now says to format only the
+  files the developer created or changed. It also says scratch files go under `$TMPDIR`: a
+  later live developer left `scratch-sim.mjs` in the repository root and was refused.
+- **sdk read the design's own placement id as the wrong moment.** A game calling
+  `interstitial("interstitial-between")` - the design's touchpoint id, on leaving the result
+  card - was classified by the id's words ("between" -> level-complete) and the required
+  platform failed as `partial`. A design touchpoint id now takes that touchpoint's moment.
+- **sdk planned two placements for one moment.** The design-derived entry
+  (`rewarded-game-over`) stayed beside the game's own id at the same moment; the generated
+  runtime resolves by kind and moment, so ad telemetry went out under the unused id (found by
+  the live sdk-review). The game's own placement now supersedes it.
+
+Validation record, runs and the two decisions left to a person:
+[docs/handoff/2026-09-27-production-validation.md](docs/handoff/2026-09-27-production-validation.md).
+
 ### Fixed (design follows the strategy)
 
 - **The design described a different game from the strategy it was built from, and passed

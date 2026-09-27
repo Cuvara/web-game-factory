@@ -329,6 +329,8 @@ seen by the engine — validate what you write there with ajv.
 - `docs/production-craft-and-mcp.md` — `core/craft/` playbooks and skills by phase, MCP tools
   by phase, host config vs repository, and the step-module follow-ups
 - `docs/development.md` — working on the Factory
+- `docs/handoff/2026-09-27-production-validation.md` — post-2.0.0 validation: the live
+  builds, the G3 timebox rejection and the G4 hold, and the fixes they produced
 - `docs/env-vars.md` — every `WGF_*` environment variable: runtime and test, who reads it, default
 
 Documentation that contradicts a machine file is worse than none, because people believe it.

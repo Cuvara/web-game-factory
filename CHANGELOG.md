@@ -9,6 +9,27 @@ and `core/` is still the contract.
 
 ## [Unreleased]
 
+## [2.1.1] - 2026-09-28
+
+A patch release (`docs/v2.1-release.md`, *2.1.1*): one false positive in the develop step,
+found by the live production validation of 2.1.0. No configuration, schema or workflow
+change; nothing to do to upgrade.
+
+### Fixed
+
+- **The develop conformance check refused a game-owned `BootScene`.** It refused any
+  `src/main.ts` that contained the word `BootScene`, meaning to catch the template's scaffold
+  scene still being started. The 2.1.0 production run's developer replaced that scene as the
+  brief asks, with its own first scene - also named `BootScene`, in `src/scenes/boot-scene.ts`
+  - and all three develop attempts were refused on the class name; the run failed at develop
+  with a conformant build. The check now resolves each relative import in game source and
+  refuses one that resolves to the template's scene module, `src/game/boot-scene.ts` (static,
+  dynamic or re-exported; a re-export through another module was not caught before). The path
+  is in the template contract's `SOURCE_PATHS`, so the pin is drift-tested for it. The rule
+  is unchanged: a game does not start the template's `BootScene`. Regressions:
+  `test_develop_module.Conformance` (a game-owned `BootScene` passes; the template's scene
+  imported directly, without extension, dynamically or through another module is refused).
+
 ## [2.1.0] - 2026-09-27
 
 Factory 2.1.0 (`docs/v2.1-release.md`): the fixes found by live-agent and production

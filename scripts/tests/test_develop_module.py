@@ -514,6 +514,14 @@ class FileOwnershipInTheBrief(DesignAndPlanInTheBrief):
             self.assertTrue(any(target == p or (p.endswith("/") and target.startswith(p))
                                 for p in named), f"{target} (imported by the seam) is not named")
 
+    def test_the_brief_says_scratch_files_stay_out_of_the_checkout(self):
+        # Regression, live build 2026-09-27: a developer left scratch-sim.mjs in the
+        # repository root; develop refused the whole commit of the session that made it.
+        _, text = self.brief(inputs_for())
+        section = text[text.index("## Which files are yours"):text.index("## Integration seam")]
+        self.assertIn("Scratch files never go in the checkout", section)
+        self.assertIn("`$TMPDIR`", section)
+
     def test_the_brief_never_asks_for_a_whole_repository_format(self):
         # Regression, live build 2026-09-26: the brief said "Run `pnpm format:write` before
         # you finish"; the developer did, prettier rewrote 20 template files outside the

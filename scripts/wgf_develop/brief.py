@@ -468,6 +468,10 @@ def _ownership_section(brief):
                  "section below).")
     lines.append("- **Template-owned project files** (ground rule 3) are never yours; the "
                  "checks fail the step on any change to them.")
+    lines.append("- **Scratch files never go in the checkout.** A throwaway script, probe or "
+                 "experiment goes under `$TMPDIR` (or `/tmp`), never in the repository root "
+                 "or any path above: one file left outside the paths that are yours, even an "
+                 "untracked one, makes the develop step refuse the whole commit.")
     lines.append("- If something you need is missing from, or wrong in, a file that is not "
                  "yours, do not create or patch it: build what you can, and say what is "
                  "missing in the report's `known_issues`.\n")

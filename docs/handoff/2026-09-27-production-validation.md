@@ -61,6 +61,17 @@ agent-hours); (c) cut the strategy's MVP scope. Then:
 `python3 scripts/golden/live.py config --workdir DIR --human-gates` and
 `bin/wgf new-game --config DIR/factory.yaml --store DIR/factory-store --project tower-merge-rush`.
 
+## Calibration (the owner's decision on G3)
+
+The owner chose option (b). Evidence: live build `3c20a0`'s `events.jsonl` - develop
+5401 + 285 + 300 + 601 + 601 s and review 337 + 110 s = **2.12 agent-hours** for M1 (CORE-001
+and the 14 MVP features), which the default heuristic puts at **87.5 h**. Rule, fixed before
+computing it: f = K x measured / heuristic with K = 4 for the gate time, playtests and rework
+the agent clock does not see; f = 0.097, rounded to 0.1 and applied to every hour constant
+(`hours_per_day` stays 6). Written to `workspace/config/factory.yaml` with this derivation.
+It is not fitted: any K from about 1 to 40 clears 10.5 days. Limits: one concept, one run;
+recalibrate as runs accumulate.
+
 ## Live developer and reviewer (live build `3c20a0`, commit `ba9860c`)
 
 | Step | Result |

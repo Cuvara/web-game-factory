@@ -132,6 +132,22 @@ class LiveConfig(unittest.TestCase):
         with open(os.path.join(self.workdir, "evidence", "live-agents.json")) as handle:
             self.assertEqual(json.load(handle)["developer"], self.developer)
 
+    def test_the_installations_estimate_calibration_reaches_the_run(self):
+        # The production run's G3 reads plan_fits_timebox off these estimates: the run must
+        # use the calibration workspace/config/factory.yaml records, not the defaults.
+        from golden import harness
+        from wgflib.workflow.config import load_config as load
+        wanted = harness.base_config()["techplan"]["estimates"]
+        self.assertTrue(wanted)
+        config, _ = self.build(human_gates=True)
+        self.assertEqual(config["techplan"]["estimates"], wanted)
+        done = subprocess.run([sys.executable, os.path.join(SCRIPTS, "golden", "live.py"),
+                               "config", "--workdir", self.workdir, "--human-gates"],
+                              capture_output=True, text=True, timeout=120)
+        self.assertEqual(done.returncode, 0, done.stderr)
+        self.assertEqual(load(os.path.join(self.workdir, "factory.yaml")).data["techplan"]["estimates"],
+                         wanted)
+
     def test_the_live_run_says_it_is_not_sandboxed(self):
         with live.LiveGoldenRun.sandbox(None) as guard:
             self.assertFalse(guard.proxy.summary()["sandboxed"])

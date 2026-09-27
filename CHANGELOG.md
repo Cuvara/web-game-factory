@@ -79,6 +79,19 @@ live tests with the documented argvs.
   resolution once in a second copy, so a store that cannot serve it fails before the
   sandbox, naming the package.
 
+### Changed (installation calibration)
+
+- **`factory.techplan.estimates` is calibrated for this installation** in
+  `workspace/config/factory.yaml`, by the portfolio owner's decision after G3 rejected a plan
+  of 20.0 days against 10.5 allowed. The defaults put the drop-merge MVP at 87.5 h; the live
+  build `new-game-20260927-044345-3c20a0` took 2.12 agent-hours for it (develop + review,
+  from its event log). Rule fixed before the result: f = 4 x measured / heuristic = 0.097,
+  rounded to 0.1, applied to every hour constant; `hours_per_day` unchanged. Any factor from
+  about 1 to 40 would clear the allowance, so the outcome does not hinge on the choice.
+  Workspace data, not core; the defaults in `wgf_techplan/devplan.py` are unchanged, and the
+  golden and live configurations inherit the calibration. Derivation:
+  [docs/handoff/2026-09-27-production-validation.md](docs/handoff/2026-09-27-production-validation.md).
+
 ### Fixed (found by the live builds on the corrected design)
 
 - **The brief told the developer to break its own commit boundary.** It said "Run `pnpm

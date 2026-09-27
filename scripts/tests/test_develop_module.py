@@ -1048,6 +1048,33 @@ class Conformance(DevelopCase):
         self.assertIn("still starts the template's BootScene", found)
         self.assertIn("report.json was not written", found)
 
+    def test_the_template_scene_is_found_however_it_is_imported(self):
+        for main in ('import { BootScene } from "./game/boot-scene.js";\n',
+                     'import { BootScene as First } from "./game/boot-scene";\n',
+                     'const { BootScene } = await import("./game/boot-scene.js");\n',
+                     'import { Scene0 } from "./game/boot-scene.ts";\n'):
+            with self.subTest(main=main):
+                found = "\n".join(self.violations({"src/main.ts": main}))
+                self.assertIn("src/main.ts still starts the template's BootScene", found)
+
+    def test_the_template_scene_through_another_module_is_found(self):
+        found = "\n".join(self.violations({
+            "src/main.ts": 'import { First } from "./scenes/index.js";\n',
+            "src/scenes/index.ts": 'export { BootScene as First } from "../game/boot-scene.js";\n',
+        }))
+        self.assertIn("src/scenes/index.ts imports the template's BootScene", found)
+
+    def test_a_game_owned_boot_scene_is_not_the_templates(self):
+        # The 2.1.0 production run: the developer replaced the template's scene with its own
+        # class, also named BootScene, in its own module; the check refused all three
+        # attempts on the class name alone.
+        found = self.violations({
+            "src/main.ts": ('import { BootScene } from "./scenes/boot-scene.js";\n'
+                            'await game.changeScene(new BootScene({ ui }));\n'),
+            "src/scenes/boot-scene.ts": 'export class BootScene { readonly id = "boot"; }\n',
+        })
+        self.assertEqual([f for f in found if "BootScene" in f], [])
+
 
 class LinksInTheCheckout(DevelopCase):
     """The Factory's own files in the checkout - the brief, docs/GDD.md, the seam,

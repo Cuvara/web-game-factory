@@ -132,6 +132,7 @@ INFRASTRUCTURE = (
 SOURCE_PATHS = (
     ("src/main.ts", "the game's entry point"),
     ("src/rendering/create-renderer.ts", "the engine selector"),
+    ("src/game/boot-scene.ts", "the template's boot scene"),
     *((rendering_dir(engine), f"{engine} rendering") for engine in ENGINES),
     ("src/platform/", "the game's platform wiring"),
     ("tests/e2e/smoke.spec.ts", "the smoke suite the developer extends"),

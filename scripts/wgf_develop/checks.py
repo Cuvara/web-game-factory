@@ -16,6 +16,7 @@ plus `factory.agents.game_env_passthrough` - never the Factory's own.
 
 import json
 import os
+import posixpath
 import re
 
 from wgflib import agentenv
@@ -93,6 +94,11 @@ _ENTRY_POINT = next(path for path, what in contract.SOURCE_PATHS
                     if what == "the game's entry point")
 ENGINE_SELECTOR = next(path for path, what in contract.SOURCE_PATHS
                        if what == "the engine selector")
+# The template's scaffold scene. The game's first scene replaces it: no game source imports
+# it. What is checked is the module an import resolves to, not the class name - a game may
+# call its own first scene BootScene (found by the 2.1.0 production run, whose developer did).
+TEMPLATE_BOOT_SCENE = next(path for path, what in contract.SOURCE_PATHS
+                           if what == "the template's boot scene")
 
 _IMPORT = re.compile(
     r"""(?:^|[\s;])(?:import|export)\s[^'"]*?from\s*['"]([^'"]+)['"]|"""
@@ -101,6 +107,39 @@ _IMPORT = re.compile(
 )
 
 _SOURCE = (".ts", ".tsx", ".js", ".mjs", ".mts")
+
+
+def _import_target(importer, specifier):
+    """The checkout-relative module a relative import specifier names, without its source
+    extension (`./game/boot-scene.js` in src/main.ts -> src/game/boot-scene); None for a
+    package import."""
+    if not specifier.startswith("."):
+        return None
+    target = posixpath.normpath(posixpath.join(posixpath.dirname(importer), specifier))
+    stem, extension = posixpath.splitext(target)
+    return stem if extension in _SOURCE else target
+
+
+def _template_scene_findings(root):
+    """Game source that imports the template's BootScene module (static, dynamic or a
+    re-export). src/main.ts importing it is the template's boot sequence left in place."""
+    scene = posixpath.splitext(TEMPLATE_BOOT_SCENE)[0]
+    findings = []
+    for relative, path in _sources(root, "src"):
+        if relative == TEMPLATE_BOOT_SCENE:
+            continue
+        for match in _IMPORT.finditer(_read(path)):
+            module = next(group for group in match.groups() if group)
+            if _import_target(relative, module) != scene:
+                continue
+            if relative == _ENTRY_POINT:
+                findings.append(f"{relative} still starts the template's BootScene "
+                                f"({TEMPLATE_BOOT_SCENE}); your first scene replaces it")
+            else:
+                findings.append(f"{relative} imports the template's BootScene "
+                                f"({TEMPLATE_BOOT_SCENE}); your first scene replaces it")
+            break
+    return findings
 
 
 class CheckResult:
@@ -283,9 +322,7 @@ def conformance(root, brief, git):
             findings.append(f"{relative} calls the platform's ad API directly; call the "
                             f"integration seam")
 
-    main = os.path.join(root, *_ENTRY_POINT.split("/"))
-    if os.path.exists(main) and re.search(r"\bBootScene\b", _read(main)):
-        findings.append("src/main.ts still starts the template's BootScene")
+    findings.extend(_template_scene_findings(root))
     findings.extend(seam_findings(root, git, brief.get("baseline_commit")))
 
     package = os.path.join(root, contract.PACKAGE_JSON)

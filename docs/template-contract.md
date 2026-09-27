@@ -25,7 +25,7 @@ by the template's naming convention: `packages/<engine without "js">-framework/`
 | Kind | Names | Read by |
 |---|---|---|
 | Required paths (`INFRASTRUCTURE`) | root config, `packages/*`, `config/platforms/`, `scripts/{verify,release,publish}/`, `tests/{unit,integration,e2e,verify}/`, `.github/workflows/*` | init's `missing_infrastructure` |
-| Template source (`SOURCE_PATHS`) | `src/main.ts`, `src/rendering/*`, `src/platform/`, `tests/e2e/smoke.spec.ts`, platform-sdk `types.ts`/`registry.ts` | develop brief and checks, SDK inspector |
+| Template source (`SOURCE_PATHS`) | `src/main.ts`, `src/rendering/*`, `src/game/boot-scene.ts`, `src/platform/`, `tests/e2e/smoke.spec.ts`, platform-sdk `types.ts`/`registry.ts` | develop brief and checks, SDK inspector |
 | Package manager | `pnpm`, `pnpm-lock.yaml` | verify, sdk, release |
 | npm scripts (`NPM_SCRIPTS`) | `build`, `typecheck`, `lint`, `format`, `format:write`, `test`, `test:unit`, `test:integration`, `test:e2e`, `test:verify`, `sdk:conformance`, `test:sdk:browser`, `release:package`, `release:manifest` | verify, develop, sdk, release |
 | Forwarded flags (`SCRIPT_FLAGS`) | `release:package --release`; `release:manifest --release --version --kind --state` | release |

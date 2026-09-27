@@ -329,9 +329,26 @@ class IntegrationPhase:
                                             + ", ".join(where))
                 records.append(record)
                 if reason is None:
+                    self._supersede(kind, moment, placement_id, records, plan)
                     plan.append({"id": placement_id, "kind": kind, "moment": moment,
                                  "trigger": record["trigger"],
                                  "platforms": source.platforms if source else None})
+
+    @staticmethod
+    def _supersede(kind, moment, placement_id, records, plan):
+        """The game's own placement at a moment replaces the design-derived plan entry of that
+        kind and moment (`<kind>-<moment>`). The generated runtime resolves a call by kind and
+        moment, first match: two entries at one moment sent the game's rewarded and
+        interstitial telemetry out under the unused design-derived id (found by a live
+        sdk-review, 2026-09-26)."""
+        derived = f"{kind}-{moment}"
+        for entry in [e for e in plan if e["id"] == derived and e["kind"] == kind
+                      and e["moment"] == moment]:
+            plan.remove(entry)
+        for record in records:
+            if record.get("id") == derived and record.get("integrated"):
+                record["note"] = (f"carried by the game's own placement {placement_id} at "
+                                  f"{moment}; not planned twice")
 
     @staticmethod
     def _seam_hooks(seam, plan, hooks):

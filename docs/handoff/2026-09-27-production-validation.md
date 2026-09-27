@@ -4,10 +4,13 @@ Branch `fix/live-agent-reproducibility`, from the checkpoint `82738cf`. `v2.0.0`
 and `main` are untouched. This records what an autonomous validation attempt established,
 what it fixed, and where it stopped - and why it stopped there.
 
-**Status: BLOCKED on two decisions reserved for a person** (below). Everything a machine can
-legitimately establish was established: a coherent strategy and design, a live AI developer
-and reviewer converging on that design, the SDK integration and its review, and verification
-passing. No gate was approved against its own semantics.
+**Status: production run complete up to G4, which waits for a person.** After the owner
+calibrated the tech-plan estimates (below), a clean production run with human gates passed
+G2 and G3 on every evaluable predicate, the live developer built the game, the live reviewer
+approved it after one round of genuine fixes, the sdk commit was reviewed and approved, and
+verify passed. G4 - the kill gate - is left to the owner by decision: the methodology
+reserves it for a person, and its playtest-based kill criteria are unmeasured. There is no
+release draft until G4 passes; release cannot run before it.
 
 ## Runs
 
@@ -17,6 +20,7 @@ passing. No gate was approved against its own semantics.
 | `new-game-20260926-202029-b4b70c` | **production**, `live.py config --human-gates` | **BLOCKED: G3 rejected** | `plan_fits_timebox` RED (below) |
 | `new-game-20260926-205648-56b277` | live build test (G2/G3 auto-approved by the test configuration) | CANCELLED at sdk-review | two sdk bugs found and fixed; a cancelled run cannot resume |
 | `new-game-20260927-044345-3c20a0` | live build test, on the fixed commit | **WAITING at G4** | G4 is a person's decision (below) |
+| `new-game-20260927-123223-371104` | **production**, human gates, calibrated estimates (`6bc18cf`) | **WAITING at G4** | G4 is the owner's (below); no operator action in this run |
 
 Every run: the pinned template `bca41a9`, the developer and reviewer argvs from
 `workspace/config/factory.yaml`'s documented examples verbatim (Claude Code 2.1.283,
@@ -72,6 +76,32 @@ the agent clock does not see; f = 0.097, rounded to 0.1 and applied to every hou
 It is not fitted: any K from about 1 to 40 clears 10.5 days. Limits: one concept, one run;
 recalibrate as runs accumulate.
 
+## The production run (`new-game-20260927-123223-371104`, commit `6bc18cf`)
+
+| Step | Result |
+|---|---|
+| strategy | field-for-field the strategy approved in `b4b70c` |
+| G2 | approved (same judgement and record note as before) |
+| design, tech-plan | design-consistency 1.2.0 pass, 12/12 rules including both concept rules; plan 2.5 days (M1 1.5, M2 0.5, M3 0.5) |
+| G3 | approved: `design_consistent` GREEN, `engine_selected` GREEN, `plan_fits_timebox` GREEN (2.5 vs 10.5); `asset_manifest_present` not evaluable in-run (the manifest is made after G3, gates.yaml) |
+| init, assets | done |
+| develop visit 1 | attempt 1 failed conformance (`src/main.ts` imported `@wgf/pixi-framework` and kept `BootScene` - the same two findings as in `3c20a0`; the brief's rule is now explicit); attempt 2 committed `68c7e7b`, all 7 checks green |
+| review 1 | request-changes, 2 blockers: score awarded on drops with no merge (the design scores merges only); a hidden tab did not pause the session |
+| develop visit 2 | committed `9788f2e`, checks green |
+| review 2 | **approved** `9788f2e` |
+| sdk | committed `dabaaac`; poki required, working |
+| sdk-review | **approved** `dabaaac` |
+| verify | **PASS**: 41/45 PASS, 0 FAIL, 4 WARNING (placeholder assets; optional-platform screenshots); all 10 gameplay aspects PASS; QA pass; poki `ready`, evidence PASS_MOCK, portal BLOCKED_EXTERNAL |
+| G4 | **WAITING** for the owner |
+
+Developer cost US$14.13 (three sessions: 11.07 + 1.92 + 1.14, all reported); four reviewer
+sessions, each bounded at US$5. No operator action on the checkout; no gate decided against
+its predicates. The game checkout and run store are in this session's scratchpad.
+
+To finish the production run (owner): play the build, judge the four kill criteria, then
+`bin/wgf decide new-game-20260927-123223-371104 pass|iterate|kill --note ...` with the run's
+`--config`/`--store`; `pass` runs release to a local release draft (nothing is published).
+
 ## Live developer and reviewer (live build `3c20a0`, commit `ba9860c`)
 
 | Step | Result |
@@ -119,6 +149,7 @@ the same RED timebox predicate, so no release from that run would be production 
 5. The sdk step maps a game's call with the design's own placement id to that touchpoint's
    moment (`b58b54c`), and plans one placement per kind and moment (`6ae9744`).
 6. The brief says scratch files stay out of the checkout (`ba9860c`).
+7. The brief names the two `src/main.ts` conformance rules both live builds broke (this commit).
 
 ## Safety boundaries observed working
 

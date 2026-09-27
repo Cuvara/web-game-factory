@@ -514,6 +514,14 @@ class FileOwnershipInTheBrief(DesignAndPlanInTheBrief):
             self.assertTrue(any(target == p or (p.endswith("/") and target.startswith(p))
                                 for p in named), f"{target} (imported by the seam) is not named")
 
+    def test_the_brief_names_the_two_main_ts_conformance_rules(self):
+        # Regression: two independent live builds (2026-09-27) imported the engine framework
+        # in src/main.ts and kept BootScene; conformance failed both, a paid retry each.
+        _, text = self.brief(inputs_for())
+        rules = text[text.index("## Ground rules"):]
+        self.assertIn("That includes `src/main.ts`", rules)
+        self.assertIn("`BootScene`", rules)
+
     def test_the_brief_says_scratch_files_stay_out_of_the_checkout(self):
         # Regression, live build 2026-09-27: a developer left scratch-sim.mjs in the
         # repository root; develop refused the whole commit of the session that made it.

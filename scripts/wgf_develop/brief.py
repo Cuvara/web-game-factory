@@ -510,7 +510,10 @@ def render_markdown(brief):
         f"`{other}`.")
     add(f"2. `{engine_pkg}` and `{framework}` are imported only under "
         f"`{brief['engine_dir']}/` (and by `src/rendering/create-renderer.ts`). Rules, state "
-        f"and progression live in `src/game/` and never touch the engine.")
+        f"and progression live in `src/game/` and never touch the engine. That includes "
+        f"`src/main.ts`: it gets its renderer from `createRenderer`, and it no longer imports "
+        f"or starts the template's `BootScene` - your first scene replaces it. The develop "
+        f"checks fail the build on either.")
     add("3. The template is the infrastructure source of truth. Do not edit: "
         + ", ".join(f"`{p}`" for p in brief["protected_paths"])
         + ". If the template lacks something, stop and say so in `known_issues`; do not "

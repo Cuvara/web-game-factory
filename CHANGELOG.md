@@ -100,6 +100,8 @@ live tests with the documented argvs.
   build was refused for 20 reformatted template files. The brief now says to format only the
   files the developer created or changed. It also says scratch files go under `$TMPDIR`: a
   later live developer left `scratch-sim.mjs` in the repository root and was refused.
+  And it names the two `src/main.ts` rules conformance enforces (no engine import, no
+  template `BootScene`), which two independent live builds broke, a paid retry each.
 - **sdk read the design's own placement id as the wrong moment.** A game calling
   `interstitial("interstitial-between")` - the design's touchpoint id, on leaving the result
   card - was classified by the id's words ("between" -> level-complete) and the required

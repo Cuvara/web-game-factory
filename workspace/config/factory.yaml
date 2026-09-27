@@ -84,7 +84,23 @@ factory:
   techplan:
     # template_ref: Cuvara/web-game-template@main   # default: factory.init.template @ main
     # overrun_tolerance: 1.5                        # default: portfolio.yaml
-    # estimates: {hours_per_day: 6, feature_base_hours: 2, per_criterion_hours: 1.5}
+    # This installation's calibration (docs/handoff/2026-09-27-production-validation.md,
+    # "Calibration"). The defaults (wgf_techplan/devplan.py) are an uncalibrated heuristic:
+    # they put the Tower Merge Rush MVP at 87.5 h, where the live build new-game-20260927-
+    # 044345-3c20a0 took 2.12 agent-hours (develop + review, from its events.jsonl). Rule,
+    # fixed before the result: f = 4 x measured / heuristic (x4 for gate time, playtests and
+    # rework the agent clock does not see) = 0.097, rounded to 0.1 and applied to every
+    # hour constant; hours_per_day unchanged. One concept, one run: recalibrate as runs
+    # accumulate, never to make a plan fit.
+    estimates:
+      hours_per_day: 6
+      core_hours: 0.3
+      feature_base_hours: 0.2
+      per_criterion_hours: 0.15
+      feature_max_hours: 1.2
+      platform_base_hours: 0.3
+      per_assertion_hours: 0.05
+      qa_hours: 0.4
     # device_classes: [{id: mobile-mid, target_fps: 60}, {id: desktop, target_fps: 60}]
     # build: {command: pnpm build, output: dist}
 

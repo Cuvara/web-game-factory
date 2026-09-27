@@ -858,6 +858,61 @@ class SeamPlacementIds(SdkCase):
         self.assertEqual(rewarded["status"], "working")
 
 
+class DesignTouchpointIds(unittest.TestCase):
+    """Regression, live build 2026-09-26: the developer called
+    `interstitial(INTERSTITIAL_PLACEMENT_ID)` with the design's own touchpoint id
+    `interstitial-between`, on leaving the result card - the design's game over. The sdk step
+    read the id's words ("between" -> level-complete), found no design interstitial there,
+    and failed the required platform as `partial`."""
+
+    DESIGN = {
+        "monetization": {"placements": [
+            {"kind": "rewarded", "trigger": "On a run-ending failure, offer one continue per run"},
+            {"kind": "interstitial", "trigger": "When the player leaves the result card (Retry or Menu)"},
+        ]},
+        "build_spec": {"monetization_touchpoints": [
+            {"id": "rewarded-continue", "kind": "rewarded",
+             "trigger": "On a run-ending failure, offer one continue per run"},
+            {"id": "interstitial-between", "kind": "interstitial",
+             "trigger": "When the player leaves the result card (Retry or Menu)"},
+        ]},
+    }
+
+    def test_the_designs_own_id_takes_its_touchpoints_moment(self):
+        from wgf_sdk.design import design_placements, touchpoint_moments
+        from wgf_sdk.integration import IntegrationPhase
+        self.assertEqual(classify_trigger("interstitial between"), "level-complete")
+        placements = design_placements(self.DESIGN)
+        seam = {"placements": {"interstitial": {"interstitial-between": ["src/game/controller.ts:205"]}}}
+        records, plan = [], []
+        IntegrationPhase._seam_placements(IntegrationPhase, seam, placements, None, records, plan,
+                                          touchpoint_moments(self.DESIGN))
+        self.assertEqual(records[0]["moment"], "game-over")
+        self.assertTrue(records[0]["integrated"], records[0]["note"])
+        self.assertIn("the design's own placement id", records[0]["note"])
+        self.assertEqual(plan[0]["moment"], "game-over")
+
+    def test_one_plan_entry_per_kind_and_moment(self):
+        # Regression, live sdk-review 2026-09-26: the design-derived entries
+        # (rewarded-game-over, interstitial-game-over) stayed beside the game's own ids at the
+        # same moment, and the runtime's kind+moment lookup reported the unused ids.
+        from wgf_sdk.design import design_placements, touchpoint_moments
+        from wgf_sdk.integration import IntegrationPhase
+        placements = design_placements(self.DESIGN)
+        records, plan = IntegrationPhase._placements(None, placements, None)
+        self.assertEqual(sorted(e["id"] for e in plan), ["interstitial-game-over", "rewarded-game-over"])
+        seam = {"placements": {"rewarded": {"rewarded-continue": ["a.ts:1"]},
+                               "interstitial": {"interstitial-between": ["a.ts:2"]}}}
+        IntegrationPhase._seam_placements(IntegrationPhase, seam, placements, None, records, plan,
+                                          touchpoint_moments(self.DESIGN))
+        self.assertEqual(sorted((e["id"], e["kind"], e["moment"]) for e in plan),
+                         [("interstitial-between", "interstitial", "game-over"),
+                          ("rewarded-continue", "rewarded", "game-over")])
+        derived = {r["id"]: r for r in records}
+        self.assertIn("carried by the game's own placement interstitial-between",
+                      derived["interstitial-game-over"]["note"])
+
+
 TYPED_SCENE_TS = """\
 import type { GameIntegration } from "./integration.js";
 

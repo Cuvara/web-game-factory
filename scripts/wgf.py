@@ -301,6 +301,12 @@ class Progress:
             return f"{m[StepStatus.WAITING]} {step}: {data.get('message')}"
         if event == "STEP_BLOCKED":
             return f"{m[StepStatus.BLOCKED]} {step}: {data.get('message')}"
+        if event == "STEP_LOG" and record.get("level") in ("warning", "error"):
+            # A step's warning is addressed to whoever decides next (the tech plan's
+            # "plan exceeds the timebox; G3 decides"); only in the event log, nobody read it.
+            facts = ", ".join(f"{k}={v}" for k, v in sorted(data.items())
+                              if isinstance(v, (str, int, float, bool)))
+            return f"  ! {step}: {record.get('message')}" + (f" ({facts})" if facts else "")
         if event == "TRANSITION" and data.get("kind") == "goto" and data.get("route") not in (
                 None, "success", "pass", "approve"):
             return f"  {step} --{data['route']}--> {data.get('to')}"

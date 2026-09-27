@@ -24,6 +24,7 @@ __all__ = [
     "Placement",
     "classify_trigger",
     "design_placements",
+    "touchpoint_moments",
     "required_features",
 ]
 
@@ -103,6 +104,21 @@ def design_placements(design):
             placement.id = f"{placement.id}-{count + 1}"
         placements.append(placement)
     return placements
+
+
+def touchpoint_moments(design):
+    """{(kind, id): moment} for the design's own monetization touchpoints
+    (build_spec.monetization_touchpoints), whose ids the development brief hands the game to
+    call its seam with. A game calling `interstitial("interstitial-between")` is calling the
+    design's placement of that id, whatever the id's words suggest: "between" reads as a level
+    transition, and the design's trigger - leaving the result card - is a game over."""
+    moments = {}
+    for touchpoint in (design.get("build_spec") or {}).get("monetization_touchpoints") or []:
+        kind, tid = touchpoint.get("kind"), touchpoint.get("id")
+        moment = classify_trigger(touchpoint.get("trigger"))
+        if kind and tid and moment:
+            moments[(kind, tid)] = moment
+    return moments
 
 
 def required_features(design, placements, platform_id):

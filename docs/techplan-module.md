@@ -87,6 +87,11 @@ which is what the reviewer at G3 should see.
 | `qa_hours` | 4 | `QA-001` |
 | `hours_per_day` | 6 | milestone `est_days` = hours ÷ this, rounded **up** to a half day |
 
+This installation calibrates the estimates in `workspace/config/factory.yaml`
+(`factory.techplan.estimates`, from measured live-build agent time; derivation in
+`docs/handoff/2026-09-27-production-validation.md`). The defaults above are the uncalibrated
+heuristic every other installation starts from.
+
 The total is compared with `title_strategy.timebox_days × overrun_tolerance`
 (`workspace/config/portfolio.yaml`) and reported — `metadata.fits_timebox`, and a `high`
 technical risk when it overruns — but **never adjusted to fit**. `plan_fits_timebox` is

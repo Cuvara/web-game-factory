@@ -45,7 +45,7 @@ Python, not by its children.
 | `WGF_E2E_PORT` | not set; read by `scripts/wgf_sdk/e2e/playwright.config.ts` | The preview server port for the SDK browser e2e; `4461` when unset. |
 | `WGF_Y8_APP_ID`, `WGF_Y8_GAME_ID` | `scripts/wgf_sdk/e2e.py` (placeholder ids) | The Y8 build ids the template's build reads; the e2e sets test values so a Y8 build can be made. |
 | `WGF_SCRIPTS` | `scripts/tests/test_release_module.py`; read by `scripts/tests/fixtures/release/fake-pnpm.py` | Where the Factory's `scripts/` is, for the release tests' fake `pnpm`. |
-| `WGF_TEST_TESTS_DIR`, `WGF_TEST_DEV_LOG`, `WGF_TEST_DEV_MODE`, `WGF_TEST_CHILD_PID`, `WGF_TEST_LIVE_DEV_ARGV` | `scripts/tests/test_core_agents.py` | Plumbing between the AGENTS tests and the scripted developer they start (its behaviour, its log, its child-pid file, the live developer argv). |
+| `WGF_TEST_TESTS_DIR`, `WGF_TEST_DEV_LOG`, `WGF_TEST_DEV_MODE`, `WGF_TEST_CHILD_PID` | `scripts/tests/test_core_agents.py` | Plumbing between the AGENTS tests and the scripted developer they start (its behaviour, its log, its child-pid file). |
 
 `WGF_GAME_CONFIG` is read by the *template's* `vite.config.ts` (build against another
 config file). The Factory never sets it; the golden harness removes it, with
@@ -66,13 +66,12 @@ run at anything but its own checkout.
 | `WGF_TEMPLATE_RELEASE_TEST` | `test_core_release` | `1` runs the pinned template's real `release:package` / `release:manifest` on a copy of it. | off |
 | `WGF_TEMPLATE_SDK_TEST` | `test_sdk_module` | `1` runs the real `pnpm sdk:conformance` in the pinned template checkout (`wgflib.template`; never another revision) and checks the sdk-report names the pinned commit. | off |
 | `WGF_LIVE_PROCESS_TEST` | `test_core_process` | `1` runs the pinned template's Playwright smoke through the process owner and checks no server survives. | off |
-| `WGF_LIVE_AGENT` | `test_core_agents` | `1` enables the live developer/reviewer tests (with the two argv variables below). | off |
-| `WGF_LIVE_REVIEWER_ARGV` | `test_core_agents` | JSON argv of a real reviewer for the live tests. | unset: skipped |
-| `WGF_LIVE_DEVELOPER_ARGV` | `test_core_agents` | JSON argv of a real developer for the live loop test. | unset: skipped |
-| `WGF_LIVE_VERDICT_FROM` | `test_core_agents` | `file` or `stdout`: how the live reviewer returns its verdict. | `stdout` |
-| `WGF_LIVE_TIMEOUT` | `test_core_agents` | Seconds a live agent may take. | `900` |
-| `WGF_LIVE_ENV_PASSTHROUGH` | `test_core_agents` | Comma-separated names added to the live agents' `factory.agents.env_passthrough` - the host credential when it is an environment variable (`ANTHROPIC_API_KEY`). | unset: none |
-| `WGF_LIVE_KEEP` | `test_core_agents` | A directory to copy a live run's scratch (logs, verdicts, checkout) into. | unset: discarded |
+| `WGF_LIVE_AGENT` | `test_core_agents`, `test_live_loop` | `1` enables the live tests: `LiveReviewer` and the live loop (`golden.live`). They run the developer and reviewer `workspace/config/factory.yaml` documents, verbatim, and cost money. | off |
+| `WGF_LIVE_REVIEWER_ARGV` | `test_core_agents` | JSON argv replacing the documented reviewer in `LiveReviewer`. | unset: the reviewer factory.yaml documents |
+| `WGF_LIVE_VERDICT_FROM` | `test_core_agents` | `file` or `stdout`: how `LiveReviewer`'s reviewer returns its verdict. | the documented reviewer's (`stdout`) |
+| `WGF_LIVE_TIMEOUT` | `test_core_agents` | Seconds `LiveReviewer`'s reviewer may take. | the documented reviewer's `timeout_seconds` |
+| `WGF_LIVE_ENV_PASSTHROUGH` | `test_core_agents`, `golden.live` | Comma-separated names added to the live agents' `factory.agents.env_passthrough` - the host credential when it is an environment variable (`ANTHROPIC_API_KEY`). | unset: none |
+| `WGF_LIVE_KEEP` | `test_core_agents`, `test_live_loop` | A directory to keep each live test's evidence in, under `<dir>/<test id>` (`.2`, `.3` ... on a rerun; never over an earlier run's). | unset: discarded |
 
 `bin/wgf test-core` runs whatever these flags enable and lists every test they left skipped.
 The release gate is `WGF_GOLDEN=1 bin/wgf test-core --strict`, which exits 4 if anything was

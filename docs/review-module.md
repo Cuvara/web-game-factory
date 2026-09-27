@@ -363,33 +363,41 @@ python3 -m unittest discover -s scripts/tests -p test_core_agents.py      # ~35 
 WGF_AJV=1 python3 -m unittest test_core_agents.Schema                      # ajv, from scripts/tests
 ```
 
-### The live test
+### The live tests
 
-One test runs a real agent host as the reviewer, against a tiny repository with the
-planted bug. It asserts two things:
-
-- the verdict is trusted: the report is valid, isolation is intact, and there is no failure;
-- the host found the bug and then approved the fix.
-
-It costs whatever one or two short reviews cost on that host, so it only runs when you ask:
+Two opt-in tests run real agent hosts. Both cost money, so they only run with
+`WGF_LIVE_AGENT=1`, and both use the developer and reviewer that
+`workspace/config/factory.yaml` documents in its commented examples, **verbatim**: the argvs
+are read from that file (`golden.live.shipped_agent_examples`) and the prompts are the steps'
+own (`wgf_review.report.PROMPT_STDOUT`, `wgf_develop.developers.PROMPT`). No prompt is written
+for the test, so a run is reproducible from the repository alone.
 
 ```bash
 cd scripts/tests
-WGF_LIVE_AGENT=1 \
-WGF_LIVE_REVIEWER_ARGV='["claude", "-p", "{prompt}", "--permission-mode", "plan"]' \
-WGF_LIVE_VERDICT_FROM=stdout \
-WGF_LIVE_TIMEOUT=900 \
-python3 -m unittest test_core_agents.LiveReviewer -v
+WGF_LIVE_AGENT=1 WGF_LIVE_KEEP=/tmp/wgf-live python3 -m unittest \
+    test_core_agents.LiveReviewer test_live_loop.LiveBuildConverges -v
+# or the whole category:  WGF_LIVE_AGENT=1 bin/wgf test-core --only AGENTS
 ```
 
-The argv takes the same placeholders as the config. `WGF_LIVE_VERDICT_FROM` defaults to
-`stdout`. Set it to `file` for a host that can write `{verdict}` itself. Only the reviewer is live. The
-developer is still the scripted one, so the bug and the fix are deterministic.
+**`test_core_agents.LiveReviewer`** - the reviewer only, on the AgentLoop's tiny repository
+with the planted `score.ts` underflow and the scripted bug-then-fix developer. It asserts the
+reviewer **finds** the bug (the first review requests changes with a blocker on
+`src/game/score.ts`), that every verdict is trusted (valid, bound to the commit, isolation
+intact, nothing killed), that the blocker reaches the developer's next brief, and that the
+next review reads the fixing commit. It does not assert that the reviewer then clears the
+file: that repository is a stub that does not implement the brief's design, and a reviewer
+judging against the design correctly keeps a blocker on it. Before 2.0.1 the test asserted
+it anyway, which only a reviewer prompt narrowing the review could satisfy.
 
-`LiveDeveloperAndReviewer` makes the developer live too. `WGF_LIVE_DEVELOPER_ARGV` is a JSON
-argv that may use `{brief}`. The scripted part only writes the conformance scaffolding and
-plants the bug, then `exec`s the host, so the host is the develop step's own child. The host
-edits `src/game/app.ts` on visit 1. The live reviewer requests changes, and the host fixes
-the blockers on visit 2. The test then asserts that the commit lineage and isolation held
-and that the run completed. Set `WGF_LIVE_KEEP=<dir>` to keep the run's logs and verdicts.
-The argvs used for the recorded run are in `docs/claude-capabilities.md`.
+**`test_live_loop.LiveBuildConverges`** - the loop (`scripts/golden/live.py`, see
+[golden-runs.md](golden-runs.md#the-live-loop)): the golden 2D pipeline with the documented
+developer building the game from scratch from the brief and the documented reviewer judging
+it against the design. It asserts convergence - the run completed, the last development
+commit approved and the sdk commit approved by sdk-review, every develop check green, only
+the developer's own files changed, isolation intact and no process left.
+
+`WGF_LIVE_REVIEWER_ARGV` (a JSON argv, same placeholders as the config) replaces the
+reviewer for `LiveReviewer`, `WGF_LIVE_VERDICT_FROM` its verdict channel and
+`WGF_LIVE_TIMEOUT` its timeouts; unset, the documented example's own values apply.
+`WGF_LIVE_KEEP=<dir>` keeps each test's evidence under `<dir>/<test id>` (a rerun gets
+`<test id>.2`; nothing is ever copied over an earlier run's).

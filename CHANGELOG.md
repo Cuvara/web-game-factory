@@ -9,6 +9,147 @@ and `core/` is still the contract.
 
 ## [Unreleased]
 
+Found by the fresh live-agent validation of the v2.0.0 tag (`5b74e30`), which failed both
+live tests with the documented argvs.
+
+### Fixed
+
+- **Live evidence is reproducible from the repository.** The 2.0.0 live runs used prompts
+  kept only as `...` excerpts in `docs/claude-capabilities.md` (a custom developer prompt,
+  and a reviewer `--append-system-prompt` that narrowed the review to one file); they could
+  not be rerun. The live tests now read the developer and reviewer argvs from the commented
+  examples in `workspace/config/factory.yaml`, verbatim (`golden.live.shipped_agent_examples`
+  - the parser `ShippedConfig` checks them with), use the steps' own prompts, and record both
+  argvs and the host's version in the run's evidence. `WGF_LIVE_DEVELOPER_ARGV` is no longer
+  read; `WGF_LIVE_REVIEWER_ARGV` becomes an optional override.
+- **A live run started without a run budget.** The post-2.0.0 production validation records
+  every run under `develop.budget: {max_sessions: 6, max_cost: 120}`, but that was added to
+  each configuration by hand: `live.py config` wrote none, so a run started from the
+  repository alone had no run-level bound on paid developer sessions (only the host's
+  per-session `--max-budget-usd`). `golden.live.build_live_config` now writes
+  `LIVE_BUDGET` and records it in `live-agents.json`. Regression:
+  `test_live_loop.LiveConfig.test_a_live_run_starts_under_the_documented_developer_budget`.
+- **`WGF_LIVE_KEEP` with both live tests in one invocation** errored the second test: it
+  copied its scratch over the first's, onto read-only git objects. Each test now keeps its
+  evidence in `<dir>/<test id>` (`.2`, `.3` ... on a rerun), never over an earlier run's.
+  Regression: `test_core_agents.LiveEvidence`.
+- **`LiveReviewer` asserted what a competent reviewer must not do.** After the scripted fix it
+  required no blocker on `src/game/score.ts`, but the fixture is a stub that does not implement
+  the brief's design, and the reviewer - told to judge against the design - correctly keeps a
+  blocker on it. It now asserts what the fixture can prove: the reviewer finds the planted
+  bug, every verdict is trusted, the blocker reaches the developer's next brief, and the next
+  review reads the fixing commit. The assertion was not weakened to pass: convergence moved to
+  a scenario where it can legitimately happen (below).
+- **`LiveDeveloperAndReviewer` removed**, for the same reason: on the stub, approval needed a
+  review narrowed by a prompt the shipped reviewer does not have.
+
+### Added
+
+- **The live build** (`scripts/golden/live.py`, `test_live_loop`, AGENTS category, opt-in
+  `WGF_LIVE_AGENT=1`, costs money): the golden 2D pipeline with the documented developer
+  building the game from scratch from the Factory's brief and the documented reviewer judging
+  it against the design, asserted to converge - completed, last development commit and sdk
+  commit approved, every develop check green, only the developer's own files changed,
+  isolation intact, no process left. `live.py config --human-gates` writes the same
+  configuration for a run a person drives with `bin/wgf` and decides G2, G3 and G4.
+  `GoldenRun.sandbox()` is the one seam it overrides (no refusing proxy: the hosts need their
+  API).
+- **"Which files are yours" in the development brief** (`wgf_develop.brief`): inside the
+  writable paths, the template's own source (`TEMPLATE_SOURCE`: `src/core/`,
+  `src/platform/bind.ts`, `src/rendering/create-renderer.ts`, `src/types/`) and the Factory's
+  seam are not the developer's; a missing or broken one goes in `known_issues`, never into a
+  patch, and review blockers are fixed only in the developer's own files. In the v2.0.0 live
+  run a developer "fixed" a blocker about the seam's imports by writing `src/platform/bind.ts`
+  and `src/core/config.ts`. Guidance only: conformance enforces what it did before.
+  Regressions: `test_develop_module.FileOwnershipInTheBrief`, `TemplateSourceShipsInThePin`
+  (every named path ships in the pinned template; every template file the seam imports is
+  named).
+
+### Fixed (found by the first clean production run and clean-machine gate after it)
+
+- **G3 was answered blind to its own timebox predicate.** The tech plan reports an overrun
+  only as a `STEP_LOG` warning ("plan exceeds the timebox; G3 decides"), which no console
+  printed: the stopped 2026-09-26 run's G3 was approved over 18.0 estimated days against
+  10.5 allowed. `wgf`'s console now prints warning- and error-level step logs with their
+  facts. (The kernel still decides nothing with them: it may not import the lifecycle
+  guards, and a checkpoint's inputs stay its gate's `required_artifacts`.)
+- **A one-word strategy MVP item became a duplicate feature.** "Localization: en, ru"
+  shares one significant word with the Localization feature and so never folded into it:
+  two Localization features, two plan tasks. An item whose significant words a feature
+  covers entirely is now folded. Regression: `test_design_module.StrategyMvpFolding`.
+- **Clean-machine golden runs broke when the registry moved.** The 2D golden failed at
+  develop from an empty HOME with `ERR_PNPM_NO_OFFLINE_META` for `earcut` after
+  `pixi.js@8.21.0` was published: the warm-up's online install reused the template
+  lockfile's `earcut@3.2.3` without fetching its metadata, and the replay's offline
+  resolution needed it. `golden.harness.warm_store` now resolves online without the
+  lockfile (metadata for the whole graph), then performs the replay's exact offline
+  resolution once in a second copy, so a store that cannot serve it fails before the
+  sandbox, naming the package.
+
+### Changed (installation calibration)
+
+- **`factory.techplan.estimates` is calibrated for this installation** in
+  `workspace/config/factory.yaml`, by the portfolio owner's decision after G3 rejected a plan
+  of 20.0 days against 10.5 allowed. The defaults put the drop-merge MVP at 87.5 h; the live
+  build `new-game-20260927-044345-3c20a0` took 2.12 agent-hours for it (develop + review,
+  from its event log). Rule fixed before the result: f = 4 x measured / heuristic = 0.097,
+  rounded to 0.1, applied to every hour constant; `hours_per_day` unchanged. Any factor from
+  about 1 to 40 would clear the allowance, so the outcome does not hinge on the choice.
+  Workspace data, not core; the defaults in `wgf_techplan/devplan.py` are unchanged, and the
+  golden and live configurations inherit the calibration. Derivation:
+  [docs/handoff/2026-09-27-production-validation.md](docs/handoff/2026-09-27-production-validation.md).
+
+### Fixed (found by the live builds on the corrected design)
+
+- **The brief told the developer to break its own commit boundary.** It said "Run `pnpm
+  format:write` before you finish"; that is `prettier --write .`, the pinned template is not
+  prettier-clean (why the shipped checks leave `format` out), and a live developer's 61-minute
+  build was refused for 20 reformatted template files. The brief now says to format only the
+  files the developer created or changed. It also says scratch files go under `$TMPDIR`: a
+  later live developer left `scratch-sim.mjs` in the repository root and was refused.
+  And it names the two `src/main.ts` rules conformance enforces (no engine import, no
+  template `BootScene`), which two independent live builds broke, a paid retry each.
+- **sdk read the design's own placement id as the wrong moment.** A game calling
+  `interstitial("interstitial-between")` - the design's touchpoint id, on leaving the result
+  card - was classified by the id's words ("between" -> level-complete) and the required
+  platform failed as `partial`. A design touchpoint id now takes that touchpoint's moment.
+- **sdk planned two placements for one moment.** The design-derived entry
+  (`rewarded-game-over`) stayed beside the game's own id at the same moment; the generated
+  runtime resolves by kind and moment, so ad telemetry went out under the unused id (found by
+  the live sdk-review). The game's own placement now supersedes it.
+
+Validation record, runs and the two decisions left to a person:
+[docs/handoff/2026-09-27-production-validation.md](docs/handoff/2026-09-27-production-validation.md).
+
+### Fixed (design follows the strategy)
+
+- **The design described a different game from the strategy it was built from, and passed
+  its own checks.** Root cause: the design module chose its archetype by counting genre
+  keywords over the whole strategy, and had one "merge" shape - a 7x7 swap-and-match level
+  game - so the approved drop-merge strategy (drop numbered pieces onto a seven-column track;
+  equal neighbours merge and cascade) got a swap design; the 3D strategy (steer between walls
+  that rush toward the craft; a crash ends the run) likewise got a checkpoint time trial.
+  Nothing compared the design with the strategy's concept. Fixed at three layers:
+  - two archetypes for the games those concepts describe: `drop-merge` and `arena-dodge`
+    (`wgf_design/archetypes.py`), with rules and numbers matching the pinned template's
+    Tower Merge Rush and Neon Drift Arena;
+  - selection reads each archetype's `signature` - the terms of its core mechanic - against
+    the strategy's concept first, genre keywords second;
+  - *Reason (core change, core/reference):* `design-consistency-rules.yaml` 1.2.0 adds two
+    **blocking** rules, `concept_mechanics_carried` and `design_adds_no_foreign_mechanic`,
+    over a `concept_terms` vocabulary: every core mechanic the strategy's concept names must
+    be in the design's own text (core loop, the MVP mechanics it defines, the MVP controls -
+    not text folded in from the strategy), and the design may add none the strategy does not
+    name. A pinned archetype that is not the strategy's game is now refused. The old golden
+    2D and 3D designs both fail them.
+  The golden replay ports map the new MVP features, all `built`; the replay's known issue
+  "the design is a swap-based level puzzle" is gone because it is no longer true.
+  *Migration:* a design made under 1.1.0 rules is not re-evaluated (artifacts are
+  immutable); a run that redoes `design` meets the new rules, and a strategy whose concept
+  no archetype carries now fails design instead of getting the nearest genre.
+  Regressions: `test_design_module.Choices` (one per golden concept, every archetype
+  selected for its own game, a contradicting pin refused) and `ConceptFidelity`.
+
 ## [2.0.0] - 2026-09-26
 
 Factory 2.0.0 (`docs/v2-release.md`): the release audit's fixes on top of everything since

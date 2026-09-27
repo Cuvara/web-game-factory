@@ -148,21 +148,40 @@ def warm_store(game_key):
     replay's own resolution once, online, in a throwaway copy - a full online resolution,
     not --prefer-offline: that satisfies a dependency already in the store (fflate, under
     @types/three) without fetching its metadata, and the offline resolution then fails on
-    it. Idempotent; the run itself stays offline."""
+    it. The online resolution also runs WITHOUT the template's lockfile: with it, pnpm reuses
+    a locked version that satisfies a range (earcut@3.2.3 for pixi.js@8.21.0's
+    earcut@>=3.0.2) without fetching that package's metadata, and the offline resolution
+    fails on it the day the registry publishes a release that moves the range (found by a
+    clean-machine run, 2026-09-26). Then the replay's exact offline resolution is performed
+    once in a second copy, so a store that still cannot serve it fails here, before the
+    sandbox, naming the package - not as a develop failure. Idempotent; the run itself
+    stays offline."""
     from golden import replay_developer as replay
     source = template.checkout()
     template.ensure_dependencies(source)
     deps = replay.engine_dependencies(replay.load_port(game_key), source)
     scratch = tempfile.mkdtemp(prefix="wgf-golden-warm-")
     try:
-        copy = os.path.join(scratch, "template")
-        shutil.copytree(source, copy, symlinks=True,
-                        ignore=shutil.ignore_patterns("node_modules", ".git"))
-        replay.add_dependencies(copy, deps)
-        done = procs.run(["pnpm", "install", "--no-frozen-lockfile"], cwd=copy, timeout=1200)
+        def fresh_copy(name):
+            copy = os.path.join(scratch, name)
+            shutil.copytree(source, copy, symlinks=True,
+                            ignore=shutil.ignore_patterns("node_modules", ".git"))
+            replay.add_dependencies(copy, deps)
+            return copy
+
+        online = fresh_copy("online")
+        os.remove(os.path.join(online, "pnpm-lock.yaml"))
+        done = procs.run(["pnpm", "install", "--no-frozen-lockfile"],
+                         cwd=online, timeout=1200)
         if not done.ok:
             raise RuntimeError(f"golden: cannot warm the pnpm store for {game_key} "
                                f"({', '.join(sorted(deps))}): {done.tail(20)}")
+        offline = fresh_copy("offline")
+        done = procs.run(["pnpm", "install", "--offline", "--no-frozen-lockfile"],
+                         cwd=offline, timeout=1200)
+        if not done.ok:
+            raise RuntimeError(f"golden: the warmed pnpm store still cannot serve the replay's "
+                               f"offline resolution for {game_key}: {done.tail(20)}")
     finally:
         shutil.rmtree(scratch, ignore_errors=True)
 
@@ -321,11 +340,15 @@ class GoldenRun:
                                        note=G4_NOTE))
         return api, state, time.monotonic() - started
 
+    def sandbox(self):
+        """What the pipeline runs inside: the refusing proxy (the run is offline)."""
+        return network_sandbox()
+
     def execute(self, resume=None, from_step=None):
         from golden import summary as summaries
         self.write_config()
         warm_store(self.game.key)  # online, before the run goes offline
-        with network_sandbox() as guard:
+        with self.sandbox() as guard:
             api, state, seconds = self.run_workflow(resume=resume, from_step=from_step)
             pipeline_network = guard.proxy.summary()
             browser = None

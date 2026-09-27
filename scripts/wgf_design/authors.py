@@ -334,12 +334,16 @@ class ArchetypeAuthor(DesignAuthor):
             })
         # The strategy's MVP is binding. An item an existing feature already covers is folded into
         # that feature's acceptance, so the implementer gets one feature, not two that overlap.
+        # "Covers" is two shared significant words, or every significant word of the item (a
+        # one-word item such as "Localization: en, ru" can never share two, and made a second
+        # Localization feature - and a second plan task - beside the first).
         taken = {f["id"] for f in features}
         for item in strategy.get("mvp") or []:
             stems = _stems(item)
             covering = max(features, key=lambda f: len(stems & _stems(f["name"] + " " + f["description"])),
                            default=None)
-            if covering and len(stems & _stems(covering["name"] + " " + covering["description"])) >= 2:
+            shared = stems & _stems(covering["name"] + " " + covering["description"]) if covering else set()
+            if covering and (len(shared) >= 2 or (stems and shared == stems)):
                 covering["acceptance"] = covering.get("acceptance", []) + [f"Strategy MVP: {item}."]
                 if covering["tier"] != "mvp":
                     # The strategy outranks the archetype: promote, and keep the spec in step.

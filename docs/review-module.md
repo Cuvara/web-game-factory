@@ -386,7 +386,7 @@ reviewer **finds** the bug (the first review requests changes with a blocker on
 intact, nothing killed), that the blocker reaches the developer's next brief, and that the
 next review reads the fixing commit. It does not assert that the reviewer then clears the
 file: that repository is a stub that does not implement the brief's design, and a reviewer
-judging against the design correctly keeps a blocker on it. Before 2.0.1 the test asserted
+judging against the design correctly keeps a blocker on it. Before 2.1.0 the test asserted
 it anyway, which only a reviewer prompt narrowing the review could satisfy.
 
 **`test_live_loop.LiveBuildConverges`** - the loop (`scripts/golden/live.py`, see

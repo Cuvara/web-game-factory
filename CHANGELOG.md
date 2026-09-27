@@ -9,6 +9,16 @@ and `core/` is still the contract.
 
 ## [Unreleased]
 
+## [2.1.0] - 2026-09-27
+
+Factory 2.1.0 (`docs/v2.1-release.md`): the fixes found by live-agent and production
+validation of 2.0.0 (PR #4), against the unchanged template pin (v1.1.0, `bca41a9`). A minor
+version: it adds the live build, two archetypes and two blocking design-consistency rules
+(`design-consistency-rules.yaml` 1.2.0); no 2.0.0 default, schema or workflow definition
+changed. **Upgrading from 2.0.0:** nothing to configure. A design made under 1.1.0 rules is
+not re-evaluated; a run that redoes `design` meets the concept rules, and a strategy whose
+concept no archetype carries now fails design rather than getting the nearest genre.
+
 Found by the fresh live-agent validation of the v2.0.0 tag (`5b74e30`), which failed both
 live tests with the documented argvs.
 

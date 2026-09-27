@@ -183,7 +183,7 @@ the `...` excerpts shown: the developer's smoke prompt and the reviewer's
 `--append-system-prompt`, which narrowed the review to `src/game/score.ts`, were never kept
 in full. Rerun at the v2.0.0 tag with the documented argvs instead, `LiveDeveloperAndReviewer`
 and `LiveReviewer` both failed on a reviewer correctly judging the stub against the design.
-`LiveDeveloperAndReviewer` was removed in 2.0.1 and replaced by `test_live_loop`.
+`LiveDeveloperAndReviewer` was removed in 2.1.0 and replaced by `test_live_loop`.
 
 **2.0.0 (2026-09-26).** Before the 2.0.0 tag the live suites were run again, against the
 allowlisted agent environment:

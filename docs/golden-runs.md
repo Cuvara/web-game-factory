@@ -276,8 +276,8 @@ Both the live build and that configuration run under a developer budget,
 `total_cost_usd`), snapshotted when the run starts and recorded in `live-agents.json`; the
 host's own `--max-budget-usd` bounds only one session.
 
-**Why not the replay.** The v2.0.1 candidate first planted a defect in the golden replay and
-let a live reviewer find it. The reviewer rejected the build on six design-fidelity blockers
+**Why not the replay.** The post-2.0.0 live validation first planted a defect in the golden
+replay and let a live reviewer find it. The reviewer rejected the build on six design-fidelity blockers
 and never reached the defect, correctly: the golden 2D design was then the design module's
 `merge-puzzle` archetype - a 7x7 swap-and-match game with levels, goal colours and a move
 limit - while the strategy and the replay are Tower Merge Rush, a drop-and-merge game. That

@@ -17,8 +17,8 @@ time, the pinned template, the real develop checks, sdk, verify, G4, release - w
   step's own. No replay, no planted defect, no prompt written for the test;
 - no refusing proxy: the hosts need their API, and the developer runs pnpm online.
 
-Why from scratch. The v2.0.1 candidate first tried the golden replay with a defect planted in
-it. The live reviewer rejected that build on six design-fidelity blockers and never reached
+Why from scratch. The post-2.0.0 live validation first tried the golden replay with a defect
+planted in it. The live reviewer rejected that build on six design-fidelity blockers and never reached
 the defect: the golden 2D design was then the merge-puzzle archetype (a 7x7 swap-and-match
 level game), not the drop-and-merge game the strategy approved. The design now follows the
 strategy's concept (drop-merge), but a replay is still not an agent's work: the live build

@@ -171,7 +171,7 @@ NPM_SCRIPTS = {
     SCRIPT_TYPECHECK: "code.typecheck; the develop checks",
     SCRIPT_LINT: "code.lint; the develop checks",
     SCRIPT_FORMAT: "the develop checks",
-    SCRIPT_FORMAT_WRITE: "named in the developer brief",
+    SCRIPT_FORMAT_WRITE: "named in the developer brief, as the whole-repository write not to run",
     SCRIPT_TEST: "code.unit fallback; the develop checks",
     SCRIPT_TEST_UNIT: "code.unit",
     SCRIPT_TEST_INTEGRATION: "code.integration",

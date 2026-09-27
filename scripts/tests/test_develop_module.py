@@ -514,6 +514,16 @@ class FileOwnershipInTheBrief(DesignAndPlanInTheBrief):
             self.assertTrue(any(target == p or (p.endswith("/") and target.startswith(p))
                                 for p in named), f"{target} (imported by the seam) is not named")
 
+    def test_the_brief_never_asks_for_a_whole_repository_format(self):
+        # Regression, live build 2026-09-26: the brief said "Run `pnpm format:write` before
+        # you finish"; the developer did, prettier rewrote 20 template files outside the
+        # writable paths (the pinned template is not prettier-clean), and develop refused the
+        # whole commit of a 61-minute, US$24 session.
+        _, text = self.brief(inputs_for())
+        self.assertNotIn("Run `pnpm format:write`", text)
+        self.assertIn("Format only the files you created or changed", text)
+        self.assertIn("Never run `pnpm format:write`", text)
+
     def test_blockers_are_fixed_in_the_developers_own_files(self):
         data, _ = self.brief(inputs_for())
         data["review_blockers"] = [{"id": "boot-broken", "file": "src/platform/bind.ts",

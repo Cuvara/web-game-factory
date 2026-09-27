@@ -702,7 +702,10 @@ def render_markdown(brief):
             "stops `#hud[data-steps]`, and resuming advances it again. `@progression`: the "
             "difficulty or level advances in play.")
     add("- All of `pnpm typecheck`, `pnpm lint`, `pnpm test`, `pnpm build` and "
-        "`pnpm test:e2e` must pass. Run `pnpm format:write` before you finish.")
+        "`pnpm test:e2e` must pass. Format only the files you created or changed: "
+        "`pnpm exec prettier --write <those files>`. Never run `pnpm format:write` or "
+        "`prettier --write .`: they rewrite the template's own files outside the paths you "
+        "may write, and the develop step then refuses the whole commit.")
     add("")
 
     if brief.get("self_playtest"):

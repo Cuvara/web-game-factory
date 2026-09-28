@@ -124,8 +124,13 @@ Lifecycle events are persisted at once. Heartbeats are persisted at most every
     `factory.execution.hung_after_seconds` (default 300). The Factory process has stopped
     reporting - blocked outside a child process, or suspended. `wgf cancel` asks it to
     stop, but a driver that is not polling never notices; end the driver pid and resume.
-  - **`output`**: the step is waiting on a child (`pid`), heartbeats are arriving, and
-    `last_output_at` is older than `factory.execution.hung_output_seconds` (default 900).
+  - **`output`**: the step is waiting on a child (`pid`), heartbeats are arriving, and at
+    the driver's last heartbeat the child had written nothing for longer than
+    `factory.execution.hung_output_seconds` (default 900): `output_silence_seconds`,
+    `last_heartbeat_at - last_output_at`, which the driver measured on its monotonic clock -
+    what the watchdog acts on. `output_idle_seconds` (now minus `last_output_at`) is shown
+    but never judged: a step of the wall clock (NTP, a WSL resync, a resumed laptop) is in
+    it, and read a chatty child as hung before 2.2.0.
     The child may be stuck, or working without writing; status cannot tell. `wgf cancel`
     terminates its tree.
 - Status only reports. The default 900 s is above every idle timeout a shipped module uses

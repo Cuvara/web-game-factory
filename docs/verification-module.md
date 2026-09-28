@@ -167,6 +167,18 @@ no package.json there is a single `BLOCKED` `source.checkout` check — reported
 While verify runs it holds the checkout's lock: another run in the same checkout is
 `BLOCKED`, naming it.
 
+`platform.build-target:<id>` says whether the bundle is that platform's build. On the pinned
+template contract one bundle boots one adapter - the first `required` platform, else the
+first (`template_contract.build_target`) - so it is PASS for that platform and FAIL for every
+other: a package of the same bytes would load the target's SDK on the other portal, and the
+profile assertions cannot see it (the template's `platform_sdk` fact echoes the platform it
+is asked about). A failing optional platform is `not-ready` without failing the verdict; a
+second `required` platform fails it.
+
+`policy.device-performance` carries the runtime facts' fps and time to interactive with
+`evidence_status: PASS_MOCK`: they are measured in CPU-throttled desktop Chromium, a proxy for
+a low-end device, never a device. Not required; the strategy's own fps floor is judged at G4.
+
 `platform.profile:<id>` judges the game by the profile it pins **by content hash**: the
 vendored `config/platforms/<id>.yaml` must match its `pinned.json` entry and the Factory's
 profile at that version (`wgf_init.profiles.pin_identity`). A copy that only declares the

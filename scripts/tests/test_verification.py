@@ -731,6 +731,49 @@ class PlatformAndPolicy(VerificationCase):
         # ru is required by yandex and not shipped.
         self.assertIn("ru", self.check(report, "platform.requirements:yandex")["message"])
 
+    def all_assertions_pass(self):
+        results = fixture("assertions-generic-web.json")
+        return FakeRunner({"evaluate-assertions": lambda c, cwd, env: FakeRunner.evaluate(
+            c, cwd, env, results=results)})
+
+    def test_only_the_platform_the_build_targets_is_ready(self):
+        # The 2.1.2 production run: one bundle, booting the first required platform's
+        # adapter, was reported ready for two optional portals whose SDK it never loads -
+        # their assertions passed because `platform_sdk` echoes the platform asked about.
+        self.add_platform("- { id: yandex, profile: yandex@1.0.0, role: optional }")
+        result, report, _ = self.verify(runner=self.all_assertions_pass())
+        self.assertEqual(self.check(report, "platform.build-target:generic-web")["status"],
+                         "PASS")
+        foreign = self.check(report, "platform.build-target:yandex")
+        self.assertEqual(foreign["status"], "FAIL")
+        self.assertIn("boots generic-web, not yandex", foreign["message"])
+        self.assertIn("needs its own build", foreign["message"])
+        readiness = {r["platform_id"]: r for r in report["platform_readiness"]}
+        self.assertEqual(readiness["generic-web"]["readiness"], "ready")
+        self.assertEqual(readiness["yandex"]["readiness"], "not-ready")
+        self.assertIn("platform.build-target:yandex", readiness["yandex"]["blocking_checks"])
+        # An optional platform the build cannot serve does not fail the verdict.
+        self.assertEqual(result.outcome, StepOutcome.SUCCESS)
+
+    def test_a_second_required_platform_fails_the_verdict(self):
+        # One bundle cannot be two portals' build: a second required platform is unshippable.
+        self.add_platform("- { id: yandex, profile: yandex@1.0.0, role: required }")
+        result, report, _ = self.verify(runner=self.all_assertions_pass())
+        self.assertEqual(self.check(report, "platform.build-target:yandex")["status"], "FAIL")
+        self.assertEqual(result.route, "fail")
+
+    def test_proxy_performance_is_labelled_a_proxy(self):
+        # The template's fps is CPU-throttled desktop Chromium; it read as PASS evidence.
+        _, report, _ = self.verify()
+        check = self.check(report, "policy.device-performance")
+        self.assertEqual((check["status"], check["evidence_status"], check["required"]),
+                         ("PASS", "PASS_MOCK", False))
+        self.assertIn("lowend_android_fps=41.5", check["message"])
+        self.assertIn("not a device", check["message"])
+        # The runtime facts themselves were measured on the bundle: still PASS.
+        runtime = self.check(report, "policy.runtime-facts")
+        self.assertEqual((runtime["status"], runtime["evidence_status"]), ("PASS", "PASS"))
+
     def test_declared_ads_need_a_working_hook(self):
         design = fixture("inputs/game-design.json")
         design["monetization"]["placements"] = [

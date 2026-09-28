@@ -7,12 +7,21 @@ and their flags, files a suite writes, keys in `game.config.yaml`, and Playwrigh
 projects. Those names are the **template contract**.
 
 `scripts/wgflib/template_contract.py` is the one list of them. Step modules import a name from
-it instead of retyping the literal. `CONTRACT_VERSION` changes whenever an entry is added,
-removed or renamed:
+it instead of retyping the literal. `CONTRACT_VERSION` versions what the Factory requires of a
+repository, and follows acceptance:
 
-- **major**: the Factory stops accepting a repository it accepted before (an entry added or
-  renamed);
-- **minor**: the Factory only stops assuming something (an entry removed or made optional).
+- **major**: the Factory can refuse a repository it accepted before (a required entry added
+  or renamed);
+- **minor**: the Factory only stops assuming something (an entry removed or made optional);
+- **unchanged**: an entry the Factory only recognizes when present (it refuses nothing
+  without it), or a rule the pinned contract already had that the Factory now encodes.
+
+Every change to the entries is recorded, versioned or not: `CONTRACT_LOG` says what changed,
+in which Factory release, and why; `CONTRACT_DIGEST` is a sha256 over the entries (names,
+flags, owners - never their descriptions), and `test_template_contract` fails when the
+entries change without the digest and the log being updated. Contract 1.0.0's log: written
+in 2.0.0 (M10); 2.1.1 added `src/game/boot-scene.ts` (recognized, never required); 2.2.0
+encodes `build_target`, the build-target rule contract 1.0.0 always had.
 
 Like all of `wgflib`, the module names no renderer or portal (`test_core_security.Coupling`).
 The engines are the `engine.type` enum of `core/artifacts/tech-plan.schema.json` (the list
@@ -31,6 +40,7 @@ by the template's naming convention: `packages/<engine without "js">-framework/`
 | Forwarded flags (`SCRIPT_FLAGS`) | `release:package --release`; `release:manifest --release --version --kind --state` | release |
 | `pnpm exec` tools (`EXEC_TOOLS`) | `vitest`, `tsc` | sdk |
 | Node CLIs (`NODE_CLIS`) | `scripts/verify/collect-facts.mjs --platform --out`; `scripts/verify/evaluate-assertions.mjs --platform --facts --out` | verify (policy) |
+| Build target (`build_target`) | one bundle per build; it boots game.config.yaml's first `required` platform, else its first (`src/core/config.ts` `primaryPlatform`, `scripts/build/game-config-plugin.ts`); no `build:platforms` | verify (`platform.build-target:<id>`), release (packages only the target) |
 | Outputs (`OUTPUTS`) | template-named: `build/runtime-facts.json`, `build/sdk-conformance.json`, `build/facts/<platform>.json`, `release/<id>/{packages.json,checksums.txt,manifest.json}`. Factory-named: `build/assertions/<platform>.json`, `build/verification/gameplay-session.json`, `build/verification/playwright-e2e.json` | verify, sdk, release |
 | `game.config.yaml` | `game.id`, `game.version`, `engine.type` ∈ `ENGINES`, `platforms[]` `{id, profile, role}`, `monetization.ad_kinds`, `build.command`, `build.output` (default `dist`), `verification.mobile_test` | init, verify, release, develop |
 | Test projects | Playwright `desktop`, `mobile`, `verify`; Vitest `unit`, `integration`, `sdk` | verify (gameplay, runtime facts), sdk |

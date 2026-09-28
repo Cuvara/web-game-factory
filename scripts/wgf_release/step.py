@@ -101,6 +101,17 @@ def _contracts():
     return _CONTRACTS[0]
 
 
+def _replace(path, text):
+    """Write `text` to `path` whole: temp + fsync + rename, replacing a link, never following
+    it."""
+    temporary = f"{path}.{os.getpid()}.tmp"
+    with open(temporary, "w", encoding="utf-8") as handle:
+        handle.write(text)
+        handle.flush()
+        os.fsync(handle.fileno())
+    os.replace(temporary, path)
+
+
 def _read_json(path):
     try:
         with open(path, encoding="utf-8") as handle:
@@ -189,7 +200,7 @@ class ReleaseStep(WorkflowStep):
             game_config = self._game_config(root)
             release_id = self._release_id(root, head, settings)
             version = self._version(root, game_config, settings)
-            self._package(runner, root, release_id, version, settings, timeouts)
+            self._package(runner, root, release_id, version, settings, timeouts, game_config)
             manifest, packages = self._collect(root, release_id, head, loaded, game_config)
             artifact = self._manifest(manifest, packages, release_id, head, root, loaded,
                                       inputs, context, game_config)
@@ -220,9 +231,17 @@ class ReleaseStep(WorkflowStep):
                       "; UNREVIEWED (no review in this run; factory.release.allow_unreviewed)"
                       if review == "absent" else f"; review approved {head[:12]}")
                    + "; nothing published")
+        pruned = [pid for pid in getattr(self, "pruned", []) if pid]
+        if pruned:
+            target = contract.build_target(game_config.get("platforms"))
+            message += (f"; not packaged - the one build targets {target}, and needs a build "
+                        f"of its own for: {', '.join(pruned)}")
+            context.logger.warning("release packaged only the platform the build targets",
+                                   target=target, not_packaged=pruned)
         metadata = {"release_id": release_id, "commit": head, "state": "draft",
                     "evidence_status": evidence["status"], "review": review,
-                    "packages": {p["filename"]: p["checksum"] for p in artifact["packages"]}}
+                    "packages": {p["filename"]: p["checksum"] for p in artifact["packages"]},
+                    **({"not_packaged": pruned} if pruned else {})}
         return StepResult.success([ArtifactOutput("release-manifest", artifact,
                                                   metadata=metadata)], message=message)
 
@@ -346,7 +365,7 @@ class ReleaseStep(WorkflowStep):
             manager = "yarn"
         return [manager, "run", name] + (["--"] if manager == "npm" else []) + list(args)
 
-    def _package(self, runner, root, release_id, version, settings, timeouts):
+    def _package(self, runner, root, release_id, version, settings, timeouts, game_config=None):
         kind = settings.get("kind") or ("initial" if release_id == "r1" else "content")
         steps = (
             ("package", self._script(root, contract.SCRIPT_RELEASE_PACKAGE,
@@ -362,6 +381,44 @@ class ReleaseStep(WorkflowStep):
                 raise _Refused([Refusal(kind_, f"{key}-failed",
                                         describe(result) + ": "
                                         + (result.tail(15) if hasattr(result, "tail") else ""))])
+            if key == "package":
+                # Before the game's manifest is made from packages.json, so it lists only
+                # what is shipped.
+                self._prune(root, release_id, game_config or {})
+
+    def _prune(self, root, release_id, game_config):
+        """Remove the packages of every platform the bundle does not target.
+
+        On the pinned template contract one bundle boots one adapter
+        (template_contract.build_target), and `release:package` zips that same bundle under
+        every platforms[] name: a crazygames.zip of a Poki build loads Poki's SDK on
+        CrazyGames. Such an archive is removed - not kept beside a manifest that omits it,
+        where someone would upload it - and packages.json and checksums.txt are rewritten
+        without it, in the template's own formats. Verification reports those platforms
+        not-ready (platform.build-target). Returns the platform ids removed."""
+        self.pruned = []
+        target = contract.build_target(game_config.get("platforms"))
+        base = os.path.join(root, *contract.release_path(release_id))
+        listed = _read_json(os.path.join(base, contract.RELEASE_PACKAGES))
+        if target is None or not isinstance(listed, list):
+            return self.pruned  # _collect refuses what is missing or malformed
+        keep = [e for e in listed if isinstance(e, dict) and e.get("platform_id") == target]
+        drop = [e for e in listed if not (isinstance(e, dict) and e.get("platform_id") == target)]
+        if not drop:
+            return self.pruned
+        for entry in drop:
+            filename = str((entry or {}).get("filename") or "") if isinstance(entry, dict) else ""
+            path = os.path.join(base, filename)
+            if filename and os.path.basename(filename) == filename and os.path.lexists(path):
+                os.remove(path)  # a link is removed itself, never followed
+            self.pruned.append((entry or {}).get("platform_id") if isinstance(entry, dict)
+                               else None)
+        _replace(os.path.join(base, contract.RELEASE_PACKAGES),
+                 json.dumps(keep, indent=2) + "\n")
+        _replace(os.path.join(base, contract.RELEASE_CHECKSUMS),
+                 "".join(f"{str(e.get('checksum', '')).split(':', 1)[-1]}  {e.get('filename')}\n"
+                         for e in keep))
+        return self.pruned
 
     def _collect(self, root, release_id, head, loaded, game_config):
         """The game's manifest and packages, checked. Refuses anything that may not ship."""
@@ -410,11 +467,18 @@ class ReleaseStep(WorkflowStep):
             refusals.append(Refusal(FAILED, "package-unlisted",
                                     f"release/{release_id}/ holds archives packages.json does "
                                     f"not list: {', '.join(unlisted)}"))
-        targets = [p.get("id") for p in game_config.get("platforms") or [] if isinstance(p, dict)]
-        missing = [t for t in targets if t not in {p["platform_id"] for p in packages}]
-        if missing:
+        # The one platform the bundle targets must be packaged; the others were removed on
+        # purpose (_prune) and are reported not-ready by verification.
+        target = contract.build_target(game_config.get("platforms"))
+        shipped = {p["platform_id"] for p in packages}
+        if target is not None and target not in shipped:
             refusals.append(Refusal(FAILED, "package-missing",
-                                    "no package for target platform(s): " + ", ".join(missing)))
+                                    f"no package for the platform the build targets: {target}"))
+        foreign = sorted(pid for pid in shipped if pid != target)
+        if foreign:
+            refusals.append(Refusal(FAILED, "package-not-built",
+                                    "packages for platforms the build does not target: "
+                                    + ", ".join(foreign)))
 
         # The full contract: the whole schema, the provenance identity, the contract's major
         # version and the content hash - the same check the engine applies to the draft.

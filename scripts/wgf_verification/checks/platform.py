@@ -92,6 +92,8 @@ def _per_platform(session, platform):
     required = _required(platform)
     common = {"category": "platform", "required": required, "platform_id": pid}
 
+    yield _build_target(session, pid, common)
+
     # The profile the build is judged by: the pinned one, by content hash - never the
     # latest, and never a copy that only declares the pinned version.
     profile, source, pin_problems, content_hash = session.profile_identity(pid)
@@ -149,6 +151,29 @@ def _per_platform(session, platform):
         yield _hooks(session, pid, entry, common)
 
     yield _local_requirements(session, pid, profile, source, common)
+
+
+def _build_target(session, pid, common):
+    """Whether the bundle under test is this platform's build. On the pinned contract one
+    bundle boots one adapter (template_contract.build_target); the other platforms[] entries
+    get the same bytes, which load the target's SDK on their portal - never theirs. Their
+    profile assertions cannot see it (the template's `platform_sdk` fact echoes the platform
+    it was asked about), so this check says it, and their readiness is not-ready."""
+    title = "The build targets this platform"
+    target = contract.build_target(session.platforms)
+    evidence = [Evidence("file", f"game.config.yaml platforms[]: the build boots {target}",
+                         path=contract.GAME_CONFIG)]
+    if pid == target:
+        return Check(f"platform.build-target:{pid}", title=title, status=PASS,
+                     message=f"the bundle boots the {pid} adapter (game.config.yaml's first "
+                             "required platform, else its first)",
+                     evidence=evidence, **common)
+    return Check(f"platform.build-target:{pid}", title=title, status=FAIL,
+                 message=f"the one bundle this template contract builds boots {target}, not "
+                         f"{pid}: a {pid} package of it would load {target}'s SDK on {pid}. "
+                         f"{pid} needs its own build (per-platform builds are template "
+                         "contract 2); until then it is not shippable",
+                 evidence=evidence, **common)
 
 
 def _feature_evidence(pid, feature):
@@ -264,6 +289,9 @@ def _fallback(session):
 
 def check_policy(session):
     out = [session.record(_runtime_facts(session))]
+    performance = _device_performance(session)
+    if performance is not None:
+        out.append(session.record(performance))
     for platform in session.platforms:
         out.append(session.record(_assertions(session, platform)))
     return out
@@ -301,6 +329,26 @@ def _runtime_facts(session):
     return Check("policy.runtime-facts", "policy", title, status, required=required,
                  message=result.describe() + ("" if result.ok else "; no runtime facts"),
                  evidence=evidence)
+
+
+def _device_performance(session):
+    """The runtime facts' performance numbers, labelled for what they are. The template
+    measures fps and time to interactive in desktop Chromium under a CPU throttle - a
+    stand-in for a low-end device, not a device - so the evidence is PASS_MOCK, never PASS.
+    Before, they sat inside the runtime-facts check's PASS (the 2.1.2 production run's
+    "60 fps" was read as a device result). Not required: no portal profile of a target
+    asserts an fps floor; the strategy's own floor is judged at G4 on device evidence."""
+    facts = session.runtime_facts if isinstance(session.runtime_facts, dict) else {}
+    perf = (facts.get("package") or {}).get("perf")
+    if not perf:
+        return None
+    measured = ", ".join(f"{k}={v}" for k, v in sorted(perf.items()))
+    return Check("policy.device-performance", "policy", "Performance on a real device",
+                 PASS, required=False, evidence_status=PASS_MOCK,
+                 message=f"{measured}: measured in CPU-throttled desktop Chromium, a proxy for "
+                         "a low-end device, not a device; no device measurement in this run",
+                 evidence=[Evidence("file", f"proxy measurement: {measured}",
+                                    path=RUNTIME_FACTS)])
 
 
 def _assertions(session, platform):

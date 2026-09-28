@@ -457,8 +457,10 @@ def derive_liveness(state, lock_owner, now, hung_after_seconds=300,
     A RUNNING run with a live driver is HUNG when (`hung_reason`):
       * "driver" - nothing, not even a heartbeat, for longer than `hung_after_seconds`; or
       * "output" - the step is waiting on a child (`pid`), heartbeats say the driver is
-        alive, and neither the child's output nor a lifecycle event has moved
-        `last_output_at` for longer than `hung_output_seconds`.
+        alive, and at the driver's last heartbeat the child had written nothing (no output
+        or lifecycle event) for longer than `hung_output_seconds`
+        (`output_silence_seconds`, measured by the driver; `output_idle_seconds` is the
+        observer's view, reported, never judged - a step of the wall clock is in it).
     A step whose state predates `last_output_at` (or that runs with heartbeats off) can
     only be hung for the first reason.
     """
@@ -476,6 +478,16 @@ def derive_liveness(state, lock_owner, now, hung_after_seconds=300,
     last_output = parse_timestamp(step.last_output_at) if step else None
     last_beat = parse_timestamp(step.last_heartbeat_at) if step else None
     output_idle = (now - last_output).total_seconds() if last_output else None
+    # Whether the child is silent is judged on the driver's own measurement, never on the
+    # observer's clock: at a heartbeat the engine records last_output_at as the heartbeat's
+    # stamp minus the child's idle time, measured on the driver's monotonic clock - the
+    # quantity the on_hung watchdog acts on. `now - last_output_at` also counts any step of
+    # the wall clock between the driver's stamp and the observer's `now` (an NTP or WSL
+    # clock resync, a resumed laptop): a chatty child read hung for one sample after a 2.7 s
+    # step (test_core_process's chatty child, 2.1.x). A driver that stops heartbeating is
+    # caught by `hung_after_seconds` instead.
+    output_silence = (max(0.0, (last_beat - last_output).total_seconds())
+                      if last_output and last_beat else None)
 
     reason = None
     if state.status == RunStatus.RUNNING:
@@ -484,8 +496,8 @@ def derive_liveness(state, lock_owner, now, hung_after_seconds=300,
         elif idle is not None and idle > hung_after_seconds:
             liveness, reason = Liveness.HUNG, Liveness.DRIVER
         elif (step is not None and step.status == StepStatus.RUNNING and step.pid
-              and last_beat is not None and output_idle is not None
-              and output_idle > hung_output_seconds):
+              and output_silence is not None
+              and output_silence > hung_output_seconds):
             liveness, reason = Liveness.HUNG, Liveness.OUTPUT
         else:
             liveness = Liveness.RUNNING
@@ -518,6 +530,8 @@ def derive_liveness(state, lock_owner, now, hung_after_seconds=300,
         "elapsed_seconds": round(elapsed, 3) if elapsed is not None else None,
         "idle_seconds": round(idle, 3) if idle is not None else None,
         "output_idle_seconds": round(output_idle, 3) if output_idle is not None else None,
+        "output_silence_seconds": (round(output_silence, 3) if output_silence is not None
+                                   else None),
         "hung_after_seconds": hung_after_seconds,
         "hung_output_seconds": hung_output_seconds,
     }

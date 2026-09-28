@@ -126,8 +126,12 @@ await platform.storage.set("progress", json)
 ```
 
 Adapters in `web-game-template/packages/platform-sdk/` implement it per portal. This is what
-makes one build shippable to four portals, and what keeps the game independent of any of
-them. The interface differs between template revisions — which adapters exist, whether
+keeps the game independent of any of them - but on the pinned template (contract 1.0.0) it
+does **not** make one build shippable to several portals: `pnpm build` makes one bundle,
+which boots one adapter - game.config.yaml's first `required` platform, else its first
+(`template_contract.build_target`). Verification reports every other platform `not-ready`
+(`platform.build-target:<id>`) and release packages only the target; a portal needs its own
+build (template contract 2's `build:platforms`). The interface differs between template revisions — which adapters exist, whether
 `adAvailability` is declared — so nothing in the Factory restates it; the `sdk` step reads it
 off the game repository every time.
 

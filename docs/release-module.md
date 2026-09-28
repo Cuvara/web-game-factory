@@ -19,8 +19,17 @@ It never pushes, tags, publishes or contacts a portal. A draft is the input to `
 
 | Where | What |
 |---|---|
-| the game repository, `release/<release-id>/` | `<platform>.zip` per target, `packages.json`, `checksums.txt` — written by the game's own `release:package` — and `manifest.json` |
+| the game repository, `release/<release-id>/` | `<platform>.zip` for the one platform the build targets, `packages.json`, `checksums.txt` — written by the game's own `release:package` — and `manifest.json` |
 | the run | `release-manifest` (state `draft`), the same document as `release/<release-id>/manifest.json` |
+
+On the pinned template contract one bundle boots one adapter (`template_contract.build_target`:
+game.config.yaml's first `required` platform, else its first), yet `release:package` zips it
+under every `platforms[]` name. The step therefore removes, between `release:package` and
+`release:manifest`, every archive for a platform the build does not target, and rewrites
+`packages.json` and `checksums.txt` in the template's formats without it - a mislabelled
+archive is never left beside the manifest to be uploaded. The step's message and metadata
+(`not_packaged`) name those platforms; verification reports them `not-ready`
+(`platform.build-target:<id>`).
 
 Release artifacts belong in the game repository (CLAUDE.md); the run holds the manifest so a
 gate can pin it by hash. The manifest is the one the game's `release:manifest` wrote, checked
@@ -67,7 +76,8 @@ when its preconditions held is what makes a draft mean something. The refusals a
 | `bundle-not-verified` | BLOCKED | the build output on disk is not the bundle verification digested |
 | `no-checkout`, `no-commit` | BLOCKED | no game repository found, or not a git repository |
 | `package-failed`, `manifest-failed` | FAILED (BLOCKED if the tool is missing) | the game's release script failed |
-| `no-packages`, `package-missing`, `package-unlisted` | FAILED | the packages do not match the target platforms |
+| `no-packages`, `package-missing`, `package-unlisted` | FAILED | no package for the platform the build targets, or an archive `packages.json` does not list |
+| `package-not-built` | FAILED | a package for a platform the build does not target (defence in depth: such packages are removed before the manifest is made) |
 | `checksum-mismatch` | FAILED | a recorded sha256 is not its file's |
 | `package-content` | FAILED | an archive breaks an audit rule, below |
 | `invalid-manifest` | FAILED | the game's manifest, or the drafted one, does not validate |

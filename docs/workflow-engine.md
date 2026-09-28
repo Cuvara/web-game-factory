@@ -214,7 +214,7 @@ lock_owner, now, hung_after_seconds, hung_output_seconds)` and never stored:
 |---|---|---|
 | `running` | `RUNNING`, a live process holds the lock, activity within the thresholds | wait |
 | `hung` (`hung_reason: driver`) | `RUNNING`, lock held, nothing at all - not even a heartbeat - for longer than `factory.execution.hung_after_seconds` (default 300): the Factory process has stopped reporting | `wgf cancel` asks it to stop; if it never notices, end the driver pid and `wgf resume` |
-| `hung` (`hung_reason: output`) | `RUNNING`, lock held, heartbeats arriving, but the child the step waits on (`pid`) has written nothing for longer than `factory.execution.hung_output_seconds` (default 900) | inspect the child; `wgf cancel` terminates its tree |
+| `hung` (`hung_reason: output`) | `RUNNING`, lock held, heartbeats arriving, but at the driver's last heartbeat the child the step waits on (`pid`) had written nothing for longer than `factory.execution.hung_output_seconds` (default 900) - `output_silence_seconds`, measured by the driver, never the observer's wall clock | inspect the child; `wgf cancel` terminates its tree |
 | `stale` | `RUNNING` on disk but no live process holds the lock: the driver crashed | `wgf resume <run>` (it first ends what the dead driver left running) |
 | `pending` `waiting` `paused` `blocked` `failed` `completed` `cancelled` | the run status itself | as the status says |
 

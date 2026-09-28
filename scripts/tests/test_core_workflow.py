@@ -1870,6 +1870,35 @@ class OutputLiveness(unittest.TestCase):
         live = derive_liveness(state, 77, self.NOW, 300, 120)
         self.assertEqual((live["liveness"], live["hung_reason"]), (Liveness.RUNNING, None))
 
+    def test_a_wall_clock_step_does_not_make_a_chatty_child_hung(self):
+        # Observed under load on WSL2: the wall clock stepped 2.7 s forward while 0.1 s of
+        # monotonic time passed. The driver's last heartbeat (05.513) recorded output 4 ms
+        # earlier; an observer sampling after the step, before the next heartbeat was
+        # recorded, computed 2.7 s of output idle and read a chatty child as hung.
+        state = self.state(output="2026-01-01T00:00:05.509Z",
+                           beat="2026-01-01T00:00:05.513Z")
+        after_step = utc(2026, 1, 1, 0, 0, 8) + datetime.timedelta(milliseconds=246)
+        live = derive_liveness(state, 77, after_step, 300, 1.0)
+        self.assertEqual((live["liveness"], live["hung_reason"]), (Liveness.RUNNING, None))
+        self.assertEqual(live["output_silence_seconds"], 0.004)  # what the driver measured
+        self.assertEqual(live["output_idle_seconds"], 2.737)     # the observer's view
+
+    def test_a_silent_child_is_still_hung_after_a_clock_step(self):
+        # The judgement is the driver's measurement, so a real silence is not hidden either:
+        # 1.5 s silent at the last heartbeat, sampled after a forward step.
+        state = self.state(output="2026-01-01T00:00:08.500Z",
+                           beat="2026-01-01T00:00:10.000Z")
+        live = derive_liveness(state, 77, utc(2026, 1, 1, 0, 0, 13), 300, 1.0)
+        self.assertEqual((live["liveness"], live["hung_reason"]),
+                         (Liveness.HUNG, Liveness.OUTPUT))
+        self.assertEqual(live["output_silence_seconds"], 1.5)
+
+    def test_output_after_the_last_heartbeat_is_no_silence(self):
+        state = self.state(output="2026-01-01T00:09:56.000Z", beat="2026-01-01T00:09:55.000Z")
+        live = derive_liveness(state, 77, self.NOW, 300, 1.0)
+        self.assertEqual((live["liveness"], live["output_silence_seconds"]),
+                         (Liveness.RUNNING, 0.0))
+
     def test_no_child_or_no_heartbeat_is_never_output_hung(self):
         # Between children (pid None) the step is Factory code; with heartbeats off there is
         # nothing that says the driver is alive while the child is quiet.

@@ -177,6 +177,10 @@ environment is an allowlist, the development commit is scoped, unreviewed releas
 refused, `wgf status` exits as the run. Each has a way back: see **Breaking** and
 **Upgrading from 1.1.0** in [CHANGELOG.md](CHANGELOG.md).
 
+**Upgrading from 2.1.x.** 2.2.0 needs no configuration change. A release draft now holds only
+the package for the platform the build targets, and a second `required` platform fails
+verification; see 2.2.0 in [CHANGELOG.md](CHANGELOG.md).
+
 **Upgrading from 2.0.0.** 2.1.0 needs no configuration change. New designs must carry the
 strategy's core mechanic (design-consistency 1.2.0); see 2.1.0 in [CHANGELOG.md](CHANGELOG.md).
 

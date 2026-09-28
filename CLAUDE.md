@@ -324,6 +324,8 @@ seen by the engine — validate what you write there with ajv.
   it found and fixed, PASS / PASS_MOCK / UNVERIFIED / BLOCKED_EXTERNAL
 - `docs/v2-release.md` — 2.0.0: what was validated on which commit, the release audit's
   fixes, and what the evidence does not cover (no live agent host, shimmed golden runs)
+- `docs/v2.2-release.md` — 2.2.0: MV-3 (only the targeted platform is ready or packaged), the
+  liveness clock-step fix, the contract versioning record; compatibility evidence, validation
 - `docs/v2.1-release.md` — 2.1.0: the post-2.0.0 live-validation fixes (PR #4); 2.1.1: the
   BootScene false positive; 2.1.2: the sdk step's own files; 2.1.3: G4 plumbing and
   evidence; what was validated on which commit, what it does not cover

@@ -9,6 +9,68 @@ and `core/` is still the contract.
 
 ## [Unreleased]
 
+## [2.2.0] - 2026-09-28
+
+Factory 2.2.0 (`docs/v2.2-release.md`): MV-3 of the post-production plan (PR #8) - a release
+and verification that only claim what the build can ship - plus the root cause of the
+long-standing process-liveness flake and a decidable template-contract versioning rule. A
+minor version: it adds verification checks, a release refusal code, step metadata, a
+liveness field and contract records, and breaks no consumer (the compatibility evidence is
+in the release record). No schema, workflow, configuration or `CONTRACT_VERSION` change.
+
+**Upgrading from 2.1.x:** nothing to configure. What you will see:
+- A release draft holds only the package for the platform the build targets (game.config.yaml's
+  first `required` platform, else its first); the other platforms are named as not packaged,
+  and verification reports them `not-ready` (`platform.build-target:<id>`). They need
+  per-platform builds (template contract 2).
+- A game whose game.config.yaml has two `required` platforms now fails verification: one
+  bundle cannot be both portals' build. The strategy module always writes one.
+- The runtime facts' fps and time to interactive appear as `policy.device-performance`,
+  evidence `PASS_MOCK`: a desktop proxy, not a device.
+
+### Fixed
+
+- **Release drafts shipped one bundle under every platform's name.** On the pinned
+  template (contract 1.0.0) `pnpm build` makes one bundle, which boots one adapter, yet
+  `release:package` zips it for every `platforms[]` entry: the 2.1.2 production run's
+  `crazygames.zip` and `yandex.zip` were its Poki build, and would have loaded Poki's SDK on
+  both portals. The release step now removes, between `release:package` and
+  `release:manifest`, every archive for a platform the build does not target, and rewrites
+  `packages.json` and `checksums.txt` in the template's formats; the step's message and
+  metadata (`not_packaged`) name them; a foreign package that reaches the manifest anyway is
+  refused (`package-not-built`).
+- **Verification called those platforms ready.** Their profile assertions passed because the
+  template's `platform_sdk` fact echoes the platform it is asked about. New check
+  `platform.build-target:<id>`: PASS for the target, FAIL (with the reason) for every other
+  platform - an optional one is `not-ready` without failing the verdict, a second required one
+  fails it. The rule is `template_contract.build_target`, held against the pinned template by
+  a drift test that will fail when per-platform builds arrive.
+- **Proxy performance read as device evidence.** fps and time to interactive, measured in
+  CPU-throttled desktop Chromium, sat inside `policy.runtime-facts`' PASS. They are now
+  `policy.device-performance`, PASS with evidence `PASS_MOCK`, not required.
+- **`wgf status` could call a healthy chatty child hung** - the root cause of the recurring
+  `test_core_process.SilentChildInAStep.test_a_chatty_child_stays_running` failure. Captured
+  under load on WSL2: the wall clock stepped 2.7 s forward in 0.1 s of monotonic time, and
+  liveness judged output silence as `now - last_output_at`, which counts any clock step
+  between the driver's stamp and the observer's `now` (NTP corrections, WSL resyncs, resumed
+  laptops do this). Output-hung is now judged on `output_silence_seconds` =
+  `last_heartbeat_at - last_output_at`: the silence the driver measured on its monotonic
+  clock, in which a step cancels out. `output_idle_seconds` is still reported, never judged.
+  The `on_hung: cancel` watchdog was never affected (it acts on the monotonic `idle_s`).
+- **The template contract's versioning rule contradicted itself**, and 2.1.1's new
+  `SOURCE_PATHS` entry (`src/game/boot-scene.ts`) was recorded nowhere. The rule now follows
+  acceptance only (major: a repository accepted before can be refused; minor: an assumption is
+  dropped; neither: an entry only recognized when present, or a rule the pinned contract
+  already had). That entry is only recognized, so `CONTRACT_VERSION` stays 1.0.0 - by the
+  rule, not by omission. `CONTRACT_LOG` records every change and `CONTRACT_DIGEST` (a sha256
+  over the entries, never their descriptions) makes an unrecorded change fail the tests.
+
+Regressions: `test_template_contract` (BuildTargetTest, the drift rule, the digest, the log,
+descriptions are not entries), `test_verification.PlatformAndPolicy` (three),
+`test_release_module.Drafting` (two, and the drafted-packages expectation),
+`test_core_workflow.OutputLiveness` (the captured clock step, a real silence after a step,
+output after the last heartbeat).
+
 ## [2.1.3] - 2026-09-28
 
 A patch release (`docs/v2.1-release.md`, *2.1.3*): the first increment of the post-production

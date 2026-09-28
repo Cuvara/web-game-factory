@@ -431,7 +431,11 @@ class WorkflowAPI:
         info = pending_decision(state, definition, self.store.read_events(state.run_id, []),
                                 now=now)
         if info is not None and definition is not None and definition.has_step(info["step"]):
-            info["evidence"] = self._evidence(state, definition.step(info["step"]).inputs)
+            # Only when there is some: a pending decision's JSON keeps the shape it had
+            # before for every checkpoint whose inputs carry no evidence fields.
+            evidence = self._evidence(state, definition.step(info["step"]).inputs)
+            if evidence:
+                info["evidence"] = evidence
         return info
 
     def _evidence(self, state, inputs):

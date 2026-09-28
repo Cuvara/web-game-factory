@@ -261,7 +261,7 @@ def select_dev_plan(tech_plan):
 def build_brief(*, title_id, engine, iteration, key, baseline, design, assets, scaffold,
                 strategy=None, qa=None, previous_checks=None, refs=None, skills=None,
                 review=None, mobile_test=True, tech_plan=None, self_playtest=False,
-                writable_paths=None, package_changes=None, loop=None):
+                writable_paths=None, package_changes=None, loop=None, sessions=None):
     """The brief as data. `render_markdown` turns it into the document a developer reads."""
     refs = refs or {}
     writable_paths = list(DEFAULT_WRITABLE if writable_paths is None else writable_paths)
@@ -373,6 +373,9 @@ def build_brief(*, title_id, engine, iteration, key, baseline, design, assets, s
         # Which route brought the work back here, and what that route has left of its
         # visit budget (the engine's max_visits_by_route); None on a first visit.
         "loop": dict(loop) if loop else None,
+        # The run's developer budget before this visit (wgf_develop.budget summary); None
+        # when the run has none.
+        "sessions": dict(sessions) if sessions else None,
         # Every area but the other engine's: a configured area is recommended, not dropped.
         "skills": {k: list(v) for k, v in host_skills.items()
                    if v and not (k in ENGINE_DIRS and k != engine)},
@@ -751,17 +754,42 @@ def render_markdown(brief):
     if loop:
         add("## Why this is another iteration\n")
         route_budget = loop.get("route_budget") or {}
-        step_budget = loop.get("step_budget") or {}
         line = f"The run came back to development through `{loop['entered_by']}`"
         if route_budget.get("limit"):
             line += (f": pass {route_budget.get('used')} of {route_budget.get('limit')} this "
                      f"route allows before the run stops for a person "
                      f"({route_budget.get('remaining')} left after this one)")
         add(line + ".")
-        if step_budget.get("limit"):
-            add(f"Development visits since the run last started or resumed: "
-                f"{step_budget.get('used')} of {step_budget.get('limit')}.")
-        add("Fix what sent it back first; a pass that does not fix it is one fewer left.\n")
+        decision = loop.get("decision")
+        if decision:
+            who = decision.get("decided_by") or "unknown"
+            if decision.get("note"):
+                add(f"The decision at `{decision['step']}` was `{decision['decision']}` "
+                    f"({who}), with this reason:\n")
+                add("\n".join("> " + part for part in str(decision["note"]).splitlines()))
+                add("")
+                add("Change what that reason asks for, and only that. If it asks for evidence "
+                    "no code change can supply (a playtest, a device measurement), say so in "
+                    "`known_issues` rather than changing the game to look busy.")
+            else:
+                add(f"The decision at `{decision['step']}` was `{decision['decision']}` "
+                    f"({who}) and recorded no reason: nothing says what to change. Do not "
+                    f"guess - re-check the build against this brief, fix only what you can "
+                    f"show is wrong, and say in `known_issues` that no reason was given.")
+        elif brief.get("qa_defects") or brief.get("review_blockers") or \
+                brief.get("previous_failures"):
+            add("Fix what sent it back first (below); a pass that does not fix it is one "
+                "fewer left.")
+        else:
+            add("No decision, defect or blocker was recorded for this route: re-check the "
+                "build against this brief and say in `known_issues` what you found.")
+        add("")
+    sessions = brief.get("sessions")
+    if loop and sessions and sessions.get("max_sessions") is not None:
+        used, limit = sessions.get("sessions", 0), sessions["max_sessions"]
+        add(f"Developer budget: {used} of {limit} sessions used before this visit, "
+            f"{max(limit - used, 0)} left (each attempt is one session; at the limit the run "
+            f"stops for a person).\n")
 
     if brief["qa_defects"]:
         add("## Fix first: blocking defects from verification\n")

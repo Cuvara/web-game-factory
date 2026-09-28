@@ -11,7 +11,7 @@ import datetime
 import importlib
 import os
 
-from .. import budget, paths, procs
+from .. import budget, gate_evidence, paths, procs
 from . import checkpoint, integrity, mock
 from .config import ConfigError, load_config
 from .definition import WORKFLOWS, load_definition
@@ -21,7 +21,7 @@ from .contracts import ArtifactContracts
 from .model import RunStatus, StepOutcome, StepStatus, derive_liveness
 from .runtime import create_runtime
 from .step import StepRegistry
-from .store import RunStore
+from .store import RunStore, StoreError
 
 __all__ = ["WorkflowAPI", "RunRequest", "pending_decision", "missing_inputs",
            "timeout_windows", "ended_by_decision"]
@@ -428,8 +428,25 @@ class WorkflowAPI:
             definition = self.definition_for(state)
         except (OSError, ValueError):
             definition = None
-        return pending_decision(state, definition, self.store.read_events(state.run_id, []),
+        info = pending_decision(state, definition, self.store.read_events(state.run_id, []),
                                 now=now)
+        if info is not None and definition is not None and definition.has_step(info["step"]):
+            info["evidence"] = self._evidence(state, definition.step(info["step"]).inputs)
+        return info
+
+    def _evidence(self, state, inputs):
+        """gate_evidence.summarize over the newest artifact of each of the waiting step's
+        input types. An artifact that cannot be read is left out, never guessed."""
+        found = {}
+        for artifact_type in inputs or ():
+            ref = state.latest_of_type(artifact_type)
+            if ref is None:
+                continue
+            try:
+                found[artifact_type] = self.store.read_artifact(state.run_id, ref)
+            except (StoreError, OSError, ValueError):
+                continue
+        return gate_evidence.summarize(found)
 
     def waiting(self, problems=None, now=None):
         """[(state, pending)] for every run waiting for a decision, oldest first."""

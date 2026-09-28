@@ -56,6 +56,7 @@ import unittest
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
+from wgflib import gate_evidence  # noqa: E402
 from wgflib.workflow.api import (  # noqa: E402
     RunRequest, WorkflowAPI, ended_by_decision, missing_inputs, pending_decision)
 from wgflib.workflow.config import load_config  # noqa: E402
@@ -237,6 +238,11 @@ def render_status(state, definition, live=None, pending=None):
     timeout = render_timeout((pending or {}).get("timeout"), state.run_id)
     if timeout:
         lines.append(timeout)
+    evidence = gate_evidence.render((pending or {}).get("evidence"))
+    if evidence:
+        lines.append("")
+        lines.extend(evidence)
+        lines.append("")
     hint = _resume_hint(state, live, definition, pending)
     if hint:
         lines.append(hint)

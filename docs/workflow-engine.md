@@ -551,6 +551,14 @@ the run has passed and no later upstream work has superseded.
   on: {iterate: develop, kill: $end}
 ```
 
+While it waits, `wgf status`, and the output of `new-game`, `decide` and `resume`, print
+what the checkpoint's own inputs say (`wgflib.gate_evidence`, read by field, never by step or
+artifact type): each kill criterion as `breached`, `not breached` (with its measured value)
+or `unmeasured`, a warning when any is unmeasured - `breached: false` on an unmeasured
+criterion is not evidence - the playtest sessions by `player_context`, and the verdict and
+`evidence_status` of each report that carries one (`status --json`: `pending.evidence`).
+It decides nothing.
+
 `pass` continues to `release`. `iterate` goes back to `develop` (a new visit of each step of
 the loop; every artifact is a new version and the old ones stay, so the run's lineage is
 untouched) and ends at G4 again, whose new visit needs a new decision. `kill` (gates.yaml's

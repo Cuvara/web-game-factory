@@ -27,7 +27,10 @@ stake is the work not yet done.
 
 1. **Read the kill criteria from `title-strategy` first**, before the prototype report.
    Reading the results before the criteria invites the criteria to be reinterpreted.
-2. Walk `kill_criteria_eval` — each criterion, its measured value, breached or not.
+2. Walk `kill_criteria_eval` — each criterion, its measured value, breached or not. A
+   criterion with no measured value (`measured: null`) is **unmeasured**, whatever its
+   `breached` says: it is not evidence either way, and the `kill_criteria_not_breached`
+   guard reads it as UNKNOWN, never GREEN.
 3. Walk `proved` — each question the prototype was meant to answer, with its verdict. An
    `inconclusive` on a central question is an argument for `iterate`, not for `pass`.
 4. Review playtest evidence, weighting `first-time` sessions. Whether players understood it

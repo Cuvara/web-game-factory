@@ -96,8 +96,40 @@ def _loop(context):
     budget = getattr(context, "visit_budget", None) or {}
     if not route or route.rpartition(".")[2] == "success":
         return None
-    return {"entered_by": route, "route_budget": budget.get("route"),
+    loop = {"entered_by": route, "route_budget": budget.get("route"),
             "step_budget": budget.get("step")}
+    decision = _decision_behind(context, route)
+    if decision:
+        loop["decision"] = decision
+    return loop
+
+
+def _sessions(context):
+    """What the run's developer budget has spent before this visit, for the brief; None when
+    the run has no budget. Read before the brief is written: the brief used to show only
+    develop's max_visits loop guard, which a reader took for the session budget."""
+    budget = Budget.load(context)
+    return budget.summary() if budget.active else None
+
+
+def _decision_behind(context, route):
+    """The recorded decision that sent the run back here, when a checkpoint made one: the
+    newest DECISION_RECORDED of the route's source step, if its choice is the route's. G4's
+    `iterate` is the case that matters - its note is the only statement of why the prototype
+    came back, and nothing else carries it to the developer (found by the 2.1.2 production
+    run: the brief said "fix what sent it back" and nothing said what that was)."""
+    source, _, choice = route.rpartition(".")
+    reader = getattr(context, "read_events", None)
+    events = list(reader()) if callable(reader) else []
+    for event in reversed(events):
+        if event.get("event") != "DECISION_RECORDED" or event.get("step_id") != source:
+            continue
+        data = event.get("data") or {}
+        if data.get("decision") != choice:
+            return None  # the newest decision there is not the one this route stands for
+        return {"step": source, "decision": choice, "note": data.get("note") or None,
+                "decided_by": data.get("decided_by"), "decided_at": data.get("decided_at")}
+    return None
 
 
 class _Guard:
@@ -291,6 +323,7 @@ class DevelopStep(WorkflowStep):
                 writable_paths=settings.writable_paths,
                 package_changes=settings.package_changes,
                 loop=_loop(context),
+                sessions=_sessions(context),
             )
             _write(checkout, brief_json, json.dumps(brief, indent=2, ensure_ascii=False) + "\n")
             _write(checkout, brief_md, briefs.render_markdown(brief))

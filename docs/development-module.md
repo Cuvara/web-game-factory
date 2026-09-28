@@ -102,7 +102,15 @@ the game, regenerated on every visit and committed with the code it asked for. I
   `sdk-review.request-changes`, `prototype-review.iterate`: the engine's
   `context.entered_by`) and how many passes that loop, and develop itself, have left before
   the run stops for a person (`context.visit_budget`, from the workflow's
-  `max_visits_by_route`). Absent on a first visit (entered by `<step>.success`).
+  `max_visits_by_route`). When a checkpoint's decision sent it back (G4's `iterate`), the
+  decision and its note - read from the run's newest `DECISION_RECORDED` at that step, if its
+  choice is the route's - are quoted (`loop.decision`), or the brief says no reason was
+  recorded; the developer is told to change only what the reason asks for and to report, not
+  fake, evidence no code change can supply. With a developer budget, the brief states the
+  sessions used before this visit and those left (`brief.json` `sessions`, from
+  `wgf_develop.budget`); develop's `max_visits` loop guard, which a resume resets and which
+  read like the session budget, is no longer shown. Absent on a first visit (entered by
+  `<step>.success`).
 
 ## Developers
 

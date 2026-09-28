@@ -820,6 +820,90 @@ class Command(DevelopCase):
             with open(os.path.join(self.repo, briefs.BRIEF_DIR, "brief.md")) as handle:
                 self.assertNotIn("another iteration", handle.read(), entered_by)
 
+    def iterate_context(self, events, key="run-9:develop:5", environment=None):
+        """A develop visit entered by G4's iterate, as the 2.1.2 production run's was: the
+        run's events as the engine records them, the budget snapshot in its params."""
+        ctx = context(self.command_config(), key=key, visit=5)
+        ctx.entered_by = "prototype-review.iterate"
+        ctx.visit_budget = {"step": {"limit": 9, "used": 1, "remaining": 8},
+                            "route": {"route": "prototype-review.iterate",
+                                      "limit_key": "iterate", "limit": 2, "used": 1,
+                                      "remaining": 1}}
+        ctx.environment = environment or {}
+        ctx.read_events = lambda: list(events)
+        return ctx
+
+    @staticmethod
+    def decision_event(decision, note=None, step="prototype-review"):
+        data = {"decision": decision, "decided_by": "human",
+                "decided_at": "2026-09-28T03:24:10.107Z", "visit": 1}
+        if note:
+            data["note"] = note
+        return {"event": "DECISION_RECORDED", "step_id": step, "data": data}
+
+    def brief_after(self, ctx, budgeted=False):
+        result = step_with(FakeRunner(on_develop=write_game)).execute(inputs_for(), ctx)
+        if budgeted:
+            # The brief is written first; the session is then refused because this fake
+            # event log cannot show the session's own record (Budget.begin) - as intended.
+            self.assertEqual(result.outcome, StepOutcome.BLOCKED)
+            self.assertIn("could not be recorded in the run's event log", result.message)
+        else:
+            self.assertEqual(result.outcome, StepOutcome.SUCCESS, result.error)
+        with open(os.path.join(self.repo, briefs.BRIEF_DIR, "brief.json")) as handle:
+            data = json.load(handle)
+        with open(os.path.join(self.repo, briefs.BRIEF_DIR, "brief.md")) as handle:
+            return data, handle.read()
+
+    def test_the_g4_iterate_reason_reaches_the_brief(self):
+        # The 2.1.2 production run: the note was recorded, and the brief said only "fix what
+        # sent it back first", with nothing below it.
+        note = ("Continue iteration because the four G4 kill criteria do not yet have "
+                "sufficient real playtest evidence.")
+        data, text = self.brief_after(self.iterate_context(
+            [self.decision_event("iterate", note)]))
+        self.assertEqual(data["loop"]["decision"]["note"], note)
+        self.assertEqual(data["loop"]["decision"]["decided_by"], "human")
+        self.assertIn("The decision at `prototype-review` was `iterate` (human), with this "
+                      "reason:", text)
+        self.assertIn("> " + note, text)
+        self.assertIn("evidence no code change can supply", text)
+        self.assertNotIn("Fix what sent it back first", text)
+
+    def test_an_iterate_without_a_reason_says_so(self):
+        data, text = self.brief_after(self.iterate_context([self.decision_event("iterate")]))
+        self.assertIsNone(data["loop"]["decision"]["note"])
+        self.assertIn("recorded no reason: nothing says what to change", text)
+
+    def test_only_the_decision_the_route_stands_for_is_shown(self):
+        # A later decision at the same checkpoint (here a pass) is not the reason this
+        # iterate visit began; neither is a decision recorded at another step.
+        events = [self.decision_event("iterate", "old reason"),
+                  self.decision_event("pass", "a later pass"),
+                  self.decision_event("approve", "G3", step="tech-plan-review")]
+        data, text = self.brief_after(self.iterate_context(events))
+        self.assertNotIn("decision", data["loop"])
+        self.assertNotIn("old reason", text)
+        self.assertNotIn("a later pass", text)
+
+    def test_the_brief_states_the_session_budget_not_the_visit_guard(self):
+        # The production brief said "Development visits ... 1 of 9" while 7 of 9 developer
+        # sessions were spent: the number was develop's max_visits loop guard.
+        spent = [{"event": "STEP_LOG", "data": {"budget": "developer-session", "session": n}}
+                 for n in range(1, 8)]
+        env = {"develop_budget": {"max_sessions": 9}}
+        data, text = self.brief_after(self.iterate_context(
+            spent + [self.decision_event("iterate", "why")], environment=env), budgeted=True)
+        self.assertEqual((data["sessions"]["sessions"], data["sessions"]["max_sessions"]),
+                         (7, 9))
+        self.assertIn("Developer budget: 7 of 9 sessions used before this visit, 2 left", text)
+        self.assertNotIn("Development visits since", text)
+
+    def test_without_a_budget_the_brief_names_none(self):
+        data, text = self.brief_after(self.iterate_context([self.decision_event("iterate", "x")]))
+        self.assertIsNone(data["sessions"])
+        self.assertNotIn("Developer budget:", text)
+
     def test_a_failing_developer_is_retryable(self):
         runner = FakeRunner(develop_exit=2)
         result = step_with(runner).execute(inputs_for(), context(self.command_config()))

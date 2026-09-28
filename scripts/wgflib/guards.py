@@ -428,6 +428,13 @@ def kill_criteria_not_breached(context):
     breached = [r["criterion_id"] for r in results if r.get("breached")]
     if breached:
         return red(f"breached: {', '.join(breached)}", breached=breached)
+    # `breached: false` with no measured value is not evidence: the develop module writes
+    # every strategy criterion that way until something measures it, and this guard used
+    # to read GREEN on a prototype nobody had played (the 2.1.2 production run).
+    unmeasured = sorted(r.get("criterion_id") or "unnamed" for r in results
+                        if r.get("measured") is None)
+    if unmeasured:
+        return unknown(f"kill criteria not measured: {', '.join(unmeasured)}")
     return green(f"{len(results)} criteria evaluated, none breached")
 
 

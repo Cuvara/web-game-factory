@@ -575,6 +575,61 @@ def verification(verdict="PASS", evidence_status="PASS", built="built",
     return report
 
 
+class _Artifacts:
+    """An entity holding artifacts in memory, for guards that read only artifacts."""
+
+    def __init__(self, **artifacts):
+        self.artifacts = artifacts
+
+    def artifact(self, artifact_type):
+        return self.artifacts[artifact_type]
+
+    def maybe(self, artifact_type):
+        return self.artifacts.get(artifact_type)
+
+
+class KillCriteriaGuard(unittest.TestCase):
+    """kill_criteria_not_breached, on G4's pass edge. An unmeasured criterion is not a pass
+    on it: the 2.1.2 production run's prototype-report listed every kill criterion as
+    `measured: null, breached: false`, and the guard read GREEN."""
+
+    STRATEGY = {"kill_criteria": [{"id": "control_not_understood"}, {"id": "no_retry_pull"}]}
+
+    def verdict(self, *results):
+        entity = _Artifacts(**{"prototype-report": {"kill_criteria_eval": list(results)},
+                               "title-strategy": self.STRATEGY})
+        return evaluate_guard("kill_criteria_not_breached", GuardContext(entity))
+
+    @staticmethod
+    def result(criterion, measured, breached=False):
+        return {"criterion_id": criterion, "measured": measured, "breached": breached}
+
+    def test_unmeasured_criteria_are_unknown_not_green(self):
+        verdict = self.verdict(self.result("playable_build", True),
+                               self.result("control_not_understood", None),
+                               self.result("no_retry_pull", None))
+        self.assertIsNone(verdict.value, verdict.reason)
+        self.assertIn("not measured: control_not_understood, no_retry_pull", verdict.reason)
+
+    def test_a_breach_is_red_even_beside_an_unmeasured_criterion(self):
+        verdict = self.verdict(self.result("control_not_understood", 0.4, breached=True),
+                               self.result("no_retry_pull", None))
+        self.assertIs(verdict.value, False)
+
+    def test_every_criterion_measured_and_clean_is_green(self):
+        verdict = self.verdict(self.result("control_not_understood", 0.8),
+                               self.result("no_retry_pull", 0.7))
+        self.assertIs(verdict.value, True, verdict.reason)
+
+    def test_the_worked_example_still_reads_as_before(self):
+        # workspace/titles/neon-drift measures every criterion; one is breached.
+        path = os.path.join(paths.ROOT, "workspace", "titles", "neon-drift",
+                            "prototype-report.json")
+        with open(path, encoding="utf-8") as handle:
+            report = json.load(handle)
+        self.assertIs(self.verdict(*report["kill_criteria_eval"]).value, False)
+
+
 class EvidenceGuards(unittest.TestCase):
     def verdict(self, name, evidence):
         entity = Entity("bridge-title", tempfile.gettempdir(), title_state("prototype"))

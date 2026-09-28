@@ -9,6 +9,37 @@ and `core/` is still the contract.
 
 ## [Unreleased]
 
+## [2.1.3] - 2026-09-28
+
+A patch release (`docs/v2.1-release.md`, *2.1.3*): the first increment of the post-production
+plan - G4 plumbing and G4 honesty - found by the 2.1.2 production run. No configuration,
+schema or workflow change. **Upgrading:** nothing to configure. With lifecycle sync on, a
+G4 `pass` over unmeasured kill criteria now logs the guard as UNKNOWN (it read GREEN); the run
+proceeds on the person's decision as before.
+
+### Fixed
+
+- **The G4 `iterate` reason never reached the developer.** It was recorded (decision-record
+  `rationale`, `DECISION_RECORDED`) but decision-record is not a develop input and the brief's
+  "Why this is another iteration" read only visit budgets: the developer was told to "fix what
+  sent it back" with nothing saying what that was, and the production run's next visit changed
+  no game code. develop now quotes the newest decision of the route's source step when its
+  choice is the route's (`brief.json` `loop.decision`), or says none was recorded.
+- **"Development visits ... 1 of 9" was not the budget.** It was develop's `max_visits` loop
+  guard, reset by every resume; 7 of 9 developer sessions were spent. The brief now states the
+  developer budget - sessions used before this visit and left (`brief.json` `sessions`).
+- **`kill_criteria_not_breached` read GREEN on a prototype nobody had played.** develop writes
+  every strategy kill criterion as `measured: null, breached: false` until something measures
+  it; the guard counted only `breached`. An unmeasured criterion now makes it UNKNOWN.
+- **G4 showed only its choices.** `wgf status` and the output of `new-game`, `decide` and
+  `resume` now print what the waiting checkpoint's inputs say - each kill criterion as
+  breached / not breached / unmeasured with its value, a warning when any is unmeasured,
+  playtest sessions by `player_context`, report verdicts and evidence status
+  (`wgflib.gate_evidence`; `status --json` `pending.evidence`). It decides nothing.
+
+Regressions: `test_develop_module` (five brief tests), `test_decisions.KillCriteriaGuard`,
+`test_gate_evidence`, `test_workflow_cli.MockNewGame.test_g4_shows_the_evidence_it_is_decided_on`.
+
 ## [2.1.2] - 2026-09-28
 
 A patch release (`docs/v2.1-release.md`, *2.1.2*): an ownership gap between the develop and

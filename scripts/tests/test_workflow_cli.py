@@ -110,6 +110,23 @@ class MockNewGame(CliCase):
         self.assertEqual([t["step"] for t in state["trail"]], NEW_GAME)
         self.assertEqual(set(self.statuses(state).values()), {"SUCCESS"})
 
+    def test_g4_shows_the_evidence_it_is_decided_on(self):
+        # The person deciding G4 sees the kill criteria from the checkpoint's own inputs,
+        # not just the choices (the 2.1.2 production run's G4 showed only the choices).
+        done = self.wgf("new-game", "--mock", expect=3)
+        self.assertIn("Evidence (the checkpoint's inputs):", done.stdout)
+        # The mock prototype-report is the worked example's: one criterion breached.
+        self.assertIn("audio_latency_unfixable  breached", done.stdout)
+        run_id = self.state()["run_id"]
+        status = self.wgf("status", run_id, expect=3)
+        self.assertIn("Evidence (the checkpoint's inputs):", status.stdout)
+        as_json = json.loads(self.wgf("status", run_id, "--json", expect=3).stdout)
+        evidence = as_json["pending"]["evidence"]
+        statuses = {c["criterion_id"]: c["status"] for c in evidence["criteria"]}
+        self.assertEqual(statuses["audio_latency_unfixable"], "breached")
+        self.assertEqual(evidence["playtests"][0]["by_player_context"],
+                         {"first-time": 4, "internal": 1})
+
     def test_emits_an_artifact_per_step_with_reproducible_provenance(self):
         self.wgf("new-game", "--mock", expect=3)
         self.pass_g4()

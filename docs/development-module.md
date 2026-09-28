@@ -54,6 +54,23 @@ the game, regenerated on every visit and committed with the code it asked for. I
   guidance: conformance enforces the protected paths and the seam as before, and does not
   compare `TEMPLATE_SOURCE` (in the v2.0.0 live run a developer "fixed" a blocker about the
   seam's imports by writing `src/platform/bind.ts` and `src/core/config.ts`).
+- **Engine notes** — only for an engine whose template binding is not a complete surface,
+  which today is `threejs` (`brief.ENGINE_NOTES`, `brief.json` `engine_notes`); a 2D brief
+  is unchanged and carries `null`. `packages/three-framework` is a WebGL renderer, one scene
+  and one camera, so a 3D game writes its own loaders, camera rig, animation and disposal,
+  and the brief states: what the binding already owns and must not be re-implemented (the
+  pixel-ratio cap above all), the one update order (input intents, fixed-step simulation
+  behind a clamped accumulator, state and collisions, VFX/camera/UI, render) with transforms
+  reaching meshes in exactly one system, the model and clip checks after import (scale,
+  pivot, orientation, material count, clip names, a collision proxy, a loader failure
+  surfaced rather than swallowed), that restart releases everything it created, and that a
+  build which renders nothing still passes every other check. Each line points at
+  `core/craft/3d-scene-and-physics.md`, `core/craft/3d-assets-and-animation.md` and
+  `core/craft/3d-diagnostics.md` rather than restating them.
+  **Physics** is quoted from the tech plan's `architecture.physics`
+  ([techplan-module.md](techplan-module.md)) with one rule: add a physics package only if
+  that line names one, and then only that one. With no tech plan in the run, the brief says
+  custom collision and asks for `known_issues` rather than a dependency.
 - **Required systems** — boot, game state, scenes, input, core loop, mechanics,
   progression, UI, HUD, tutorial, game over, restart, asset loading, responsive layout,
   audio hooks — each with its acceptance line.
@@ -93,7 +110,10 @@ the game, regenerated on every visit and committed with the code it asked for. I
   verification contract stated up front: every Playwright test is tagged with the gameplay
   aspects it exercises (`@game-over @restart`), and the brief lists the aspects this build
   must prove - computed by `wgf_verification`'s own `required_aspects_for(design)`, so the
-  brief and verification cannot disagree.
+  brief and verification cannot disagree. With engine notes (3D), one more: the `@boot` test
+  must assert during active play that the canvas is neither blank nor a single flat colour,
+  and log the renderer's counters. This strengthens the `boot` evidence verification already
+  reads; it adds no aspect and no Factory-side probe.
 - **Report back** — `docs/development/report.json`: the developer's own account of each
   system, each MVP item, the placements, integration status, assets, scope deltas and
   known issues.

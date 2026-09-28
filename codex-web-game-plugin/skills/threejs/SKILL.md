@@ -2,11 +2,13 @@
 
 Supports: **gameplay**
 
-3D with Three.js: scene management, GLB/GLTF, Draco/Meshopt, KTX2 textures, disposal.
+3D with Three.js: what the template's renderer binding owns, the fixed update order, camera rigs, the physics ladder the tech plan pins, GLB/GLTF import checks, animation clips and root motion, Draco/Meshopt and KTX2, instancing and disposal.
 
 ## Authoritative sources
 
 - `core/artifacts/tech-plan.schema.json`
+- `core/craft/3d-scene-and-physics.md`
+- `core/craft/3d-assets-and-animation.md`
 - `core/craft/web-performance.md`
 - `core/craft/game-feel.md`
 

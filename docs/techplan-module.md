@@ -44,6 +44,35 @@ Asset kinds and their dimension come from `core/reference/asset-policy.yaml`. Th
 exists for designs written before `engine` was recorded (the asset fixtures are such
 designs); its rationale says the engine was inferred and asks for a superseding design.
 
+## Physics: this plan's decision, and only this plan's
+
+`architecture.physics` records how the game detects and resolves collisions, and the exact
+package if it needs one. Nothing is inferred from the design — the same rule as the engine,
+one rung lower. The default for both engines is `custom`: collision and overlap tests in
+`src/game/`, engine-free, unit-testable, no dependency.
+
+A simulation library is a dependency, a payload against `max_bundle_mb` and a source of
+non-determinism, so it is an architect's decision at G3, taken with the step's `with:` block:
+
+```yaml
+- id: tech-plan
+  with: {physics: rapier}      # custom (default) | rapier | cannon-es
+```
+
+| Choice | Package written into the plan | |
+|---|---|---|
+| `custom` | none | The default. `pixijs` and `threejs` |
+| `rapier` | `@dimforge/rapier2d-compat` / `@dimforge/rapier3d-compat` | Per engine |
+| `cannon-es` | `cannon-es` | `threejs` only |
+
+Anything else, and any choice with no build for the selected engine, is `FAILED`, not
+retryable. The ladder and the reasons for each rung are `core/craft/3d-scene-and-physics.md`.
+
+The develop brief quotes this line and allows the developer to add **only** the package it
+names ([development-module.md](development-module.md)); the reviewer treats an unplanned
+physics dependency as a blocker (`core/craft/gameplay-review.md`). Adding one later is a
+superseding tech-plan through G3, not a development decision.
+
 ## Platforms: the strategy's pins
 
 Each `title_strategy.platform_set[]` entry must resolve to

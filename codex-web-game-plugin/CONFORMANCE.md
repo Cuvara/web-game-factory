@@ -67,6 +67,22 @@ Regenerate the surfaces with `scripts/gen-adapters.sh`, then update this table.
 | `threejs` | `codex-web-game-plugin/skills/threejs/SKILL.md` | covered |
 | `web-performance` | `codex-web-game-plugin/skills/web-performance/SKILL.md` | covered |
 
+## 3D craft (binding manifest 1.3.0)
+
+Three `core/craft/` playbooks were added for the Three.js half of development, and four
+existing skills now read them. No new surface id, no agent, command, role, machine, gate or
+schema changed, and no 2D surface changed.
+
+- New playbooks: `core/craft/3d-scene-and-physics.md` (what the template's renderer binding
+  owns, the fixed update order, camera rigs, the physics ladder pinned by the tech plan's
+  `architecture.physics`), `core/craft/3d-assets-and-animation.md` (GLB import checks, clips
+  and root motion, cost control, disposal), `core/craft/3d-diagnostics.md` (triage for a
+  build that boots and renders nothing, and the profiling discipline).
+- Skills widened: `threejs` reads the first two; `web-performance`, `qa` and
+  `gameplay-review` read the diagnostics playbook.
+- No external skill pack, MCP server or second orchestrator is referenced. The knowledge is
+  in `core/`, and the surfaces point at it, as every other playbook does.
+
 ## Production craft (binding manifest 1.2.0)
 
 The binding gained eight skills and wider must-read lists, all pointing into the new

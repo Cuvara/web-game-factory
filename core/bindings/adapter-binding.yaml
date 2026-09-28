@@ -18,7 +18,7 @@
 # Each adapter carries a CONFORMANCE.md mapping every surface id below to its file, so
 # reviewing adapter completeness is a two-file diff rather than a directory crawl.
 
-version: 1.2.0
+version: 1.3.0
 
 surface_kinds:
   agent: A persistent role the runtime can delegate to.
@@ -352,6 +352,7 @@ skills:
       GPU-compressed assets, draw calls, memory, leaks on restart, low-end measurement.
     reads:
       - core/craft/web-performance.md
+      - core/craft/3d-diagnostics.md
       - core/artifacts/tech-plan.schema.json
   - id: pixijs
     supports: [gameplay, ui]
@@ -365,10 +366,13 @@ skills:
   - id: threejs
     supports: [gameplay]
     covers: >
-      3D with Three.js: scene management, GLB/GLTF, Draco/Meshopt, KTX2 textures,
-      disposal.
+      3D with Three.js: what the template's renderer binding owns, the fixed update order,
+      camera rigs, the physics ladder the tech plan pins, GLB/GLTF import checks,
+      animation clips and root motion, Draco/Meshopt and KTX2, instancing and disposal.
     reads:
       - core/artifacts/tech-plan.schema.json
+      - core/craft/3d-scene-and-physics.md
+      - core/craft/3d-assets-and-animation.md
       - core/craft/web-performance.md
       - core/craft/game-feel.md
   - id: assets
@@ -422,6 +426,7 @@ skills:
       feedback hooks.
     reads:
       - core/craft/gameplay-review.md
+      - core/craft/3d-diagnostics.md
       - core/lifecycle/stages/prototype.md
       - core/artifacts/review-report.schema.json
   - id: playtesting
@@ -443,6 +448,7 @@ skills:
       - core/artifacts/verification-report.schema.json
       - core/artifacts/qa-report.schema.json
       - core/craft/playtesting.md
+      - core/craft/3d-diagnostics.md
   - id: release
     supports: [release]
     covers: >

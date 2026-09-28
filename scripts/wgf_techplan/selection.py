@@ -1,4 +1,5 @@
-"""Engine selection and platform pinning. Pure functions over the inputs and core/reference.
+"""Engine and physics selection, and platform pinning. Pure functions over the inputs and
+core/reference.
 
 Engine. The renderer is the design's decision, not this module's: `game_design.engine.type`
 is taken as declared. The only knowledge here is the template's mapping from dimensionality
@@ -6,6 +7,11 @@ to its engine ids (2d -> pixijs, 3d -> threejs, core/artifacts/tech-plan.schema.
 when an older design records a dimension but no engine, or records neither and only its
 asset kinds say which it is (core/reference/asset-policy.yaml `dimension`). A design that
 says nothing either way is refused: guessing a renderer is exactly what G3 is there to stop.
+
+Physics. The same rule, one rung lower: nothing here reads the design for hints about
+collisions. `architecture.physics` is `custom` unless the step was given a choice
+(`with: {physics: rapier}`), because a simulation library is a dependency, a payload and a
+source of non-determinism that G3 should decide deliberately.
 
 Platforms. The strategy pins each target as `{id, profile_version, role}`. Each pin must
 resolve to core/reference/platforms/<id>.yaml at that version, and becomes the template's
@@ -19,8 +25,9 @@ import os
 from wgflib import paths
 from wgflib.yamllite import load_file
 
-__all__ = ["ENGINE_FOR_DIMENSION", "EngineError", "PlatformError", "Platform",
-           "select_engine", "pin_platforms", "tightest_bundle_mb", "load_asset_kinds"]
+__all__ = ["ENGINE_FOR_DIMENSION", "EngineError", "PhysicsError", "PlatformError", "Platform",
+           "PHYSICS_CHOICES", "select_engine", "select_physics", "pin_platforms",
+           "tightest_bundle_mb", "load_asset_kinds"]
 
 # The template's engine ids, by dimensionality. Mirrors the tech-plan schema's engine enum.
 ENGINE_FOR_DIMENSION = {"2d": "pixijs", "3d": "threejs"}
@@ -32,8 +39,54 @@ class EngineError(ValueError):
     """The design does not say which renderer it is drawn for, or contradicts itself."""
 
 
+class PhysicsError(ValueError):
+    """The step was given a physics choice the template's engines do not support."""
+
+
 class PlatformError(ValueError):
     """A pinned platform profile is missing, or is not at the pinned version."""
+
+
+# The physics ladder of core/craft/3d-scene-and-physics.md, as the architecture text the
+# tech plan records. `custom` is the default for both engines: it adds no dependency, no
+# WebAssembly payload and no non-determinism. Anything else is an architect's decision at
+# G3, made with `with: {physics: <choice>}`, never one development may take - the develop
+# brief quotes this line and allows only the package it names.
+PHYSICS_CHOICES = {
+    "custom": "Custom collision and overlap tests in src/game/, engine-free and unit "
+              "testable; no physics dependency. A simulation library is a superseding "
+              "tech-plan decision at G3, never development's.",
+    "rapier": "Rapier ({package}) in one physics system: fixed timestep with a clamped "
+              "accumulator, primitive and compound colliders only - never the visual mesh - "
+              "and every body released on restart. Its WebAssembly payload counts against "
+              "max_bundle_mb.",
+    "cannon-es": "cannon-es ({package}) in one physics system, for a small rigid-body scene "
+                 "where avoiding WebAssembly matters: fixed timestep, primitive colliders, "
+                 "bodies released on restart.",
+}
+# Each library's package, per engine: Rapier ships a 2D and a 3D build.
+PHYSICS_PACKAGE = {
+    "rapier": {"pixijs": "@dimforge/rapier2d-compat", "threejs": "@dimforge/rapier3d-compat"},
+    "cannon-es": {"threejs": "cannon-es"},
+}
+
+
+def select_physics(engine, requested=None):
+    """(choice, text) for the tech plan's `architecture.physics`.
+
+    Nothing is inferred from the design - this module maps, it does not guess. Absent an
+    explicit choice the answer is `custom`, which is what the template supports with no
+    dependency at all.
+    """
+    choice = "custom" if requested is None else str(requested).strip().lower()
+    if choice not in PHYSICS_CHOICES:
+        raise PhysicsError(f"physics {requested!r} is not one this Factory plans for "
+                           f"({', '.join(sorted(PHYSICS_CHOICES))})")
+    package = PHYSICS_PACKAGE.get(choice, {}).get(engine)
+    if choice != "custom" and not package:
+        raise PhysicsError(f"physics {choice!r} has no build for engine {engine!r}; "
+                           "choose another rung of the ladder")
+    return choice, PHYSICS_CHOICES[choice].format(package=package)
 
 
 def load_asset_kinds(path=None):

@@ -7,12 +7,21 @@ and their flags, files a suite writes, keys in `game.config.yaml`, and Playwrigh
 projects. Those names are the **template contract**.
 
 `scripts/wgflib/template_contract.py` is the one list of them. Step modules import a name from
-it instead of retyping the literal. `CONTRACT_VERSION` changes whenever an entry is added,
-removed or renamed:
+it instead of retyping the literal. `CONTRACT_VERSION` versions what the Factory requires of a
+repository, and follows acceptance:
 
-- **major**: the Factory stops accepting a repository it accepted before (an entry added or
-  renamed);
-- **minor**: the Factory only stops assuming something (an entry removed or made optional).
+- **major**: the Factory can refuse a repository it accepted before (a required entry added
+  or renamed);
+- **minor**: the Factory only stops assuming something (an entry removed or made optional);
+- **unchanged**: an entry the Factory only recognizes when present (it refuses nothing
+  without it), or a rule the pinned contract already had that the Factory now encodes.
+
+Every change to the entries is recorded, versioned or not: `CONTRACT_LOG` says what changed,
+in which Factory release, and why; `CONTRACT_DIGEST` is a sha256 over the entries (names,
+flags, owners - never their descriptions), and `test_template_contract` fails when the
+entries change without the digest and the log being updated. Contract 1.0.0's log: written
+in 2.0.0 (M10); 2.1.1 added `src/game/boot-scene.ts` (recognized, never required); 2.2.0
+encodes `build_target`, the build-target rule contract 1.0.0 always had.
 
 Like all of `wgflib`, the module names no renderer or portal (`test_core_security.Coupling`).
 The engines are the `engine.type` enum of `core/artifacts/tech-plan.schema.json` (the list

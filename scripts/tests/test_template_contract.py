@@ -58,6 +58,31 @@ class ContractShapeTest(unittest.TestCase):
     def test_version_is_semver(self):
         self.assertRegex(contract.CONTRACT_VERSION, r"^[0-9]+\.[0-9]+\.[0-9]+$")
 
+    def test_every_entry_change_is_recorded(self):
+        # 2.1.1 added a SOURCE_PATHS entry and recorded it nowhere; the version rule said
+        # "changes whenever an entry is added" while its own categories said otherwise.
+        self.assertEqual(
+            contract.contract_digest(), contract.CONTRACT_DIGEST,
+            "the template contract's entries changed without a record: bump CONTRACT_VERSION "
+            "if the Factory can now refuse a repository it accepted (major) or stops assuming "
+            "something (minor), add a CONTRACT_LOG line either way, then set CONTRACT_DIGEST "
+            "to contract_digest()")
+
+    def test_the_log_ends_at_the_version_and_never_goes_back(self):
+        versions = [tuple(int(p) for p in v.split(".")) for v, _, _ in contract.CONTRACT_LOG]
+        self.assertEqual(contract.CONTRACT_LOG[-1][0], contract.CONTRACT_VERSION)
+        self.assertEqual(versions, sorted(versions))
+        for version, release, change in contract.CONTRACT_LOG:
+            self.assertRegex(release, r"^[0-9]+\.[0-9]+\.[0-9]+$")
+            self.assertTrue(change.strip())
+
+    def test_descriptions_are_not_entries(self):
+        # Rewording what an entry is for (2.1.0 reworded format:write's) is not a change.
+        entries = contract.contract_entries()
+        self.assertIn("src/game/boot-scene.ts", entries["SOURCE_PATHS"])
+        self.assertNotIn("the template's boot scene", json.dumps(entries))
+        self.assertEqual(entries["NPM_SCRIPTS"], sorted(contract.NPM_SCRIPTS))
+
     def test_no_duplicate_paths(self):
         paths = [p for p, _ in contract.INFRASTRUCTURE + contract.SOURCE_PATHS]
         self.assertEqual(len(paths), len(set(paths)))

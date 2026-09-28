@@ -18,18 +18,26 @@ the one list, which guards.supported_engines() also reads - and the engine-speci
 follow from them by the template's naming convention (renderer_package, rendering_dir),
 which the drift test holds against the pinned template.
 
-CONTRACT_VERSION changes whenever an entry is added, removed or renamed: major when the
-Factory stops accepting a repository it accepted before (an entry added or renamed), minor
-when it only stops assuming something (an entry removed or made optional).
+CONTRACT_VERSION versions what the Factory requires of a repository, and follows acceptance:
+major when the Factory can refuse a repository it accepted before (a required entry added or
+renamed), minor when it only stops assuming something (an entry removed or made optional).
+An entry the Factory only recognizes when present - it refuses nothing without it - and a
+rule the pinned contract already had that the Factory now encodes change neither. Every
+change to the entries is recorded, versioned or not: CONTRACT_LOG says what changed and why,
+and CONTRACT_DIGEST (over the entries, never their descriptions) makes a change that skips
+the record fail test_template_contract.
 """
 
+import hashlib
 import json
 import os
+import sys
 
 from . import paths
 
 __all__ = [
-    "CONTRACT_VERSION",
+    "CONTRACT_VERSION", "CONTRACT_LOG", "CONTRACT_DIGEST", "contract_entries",
+    "contract_digest",
     # paths
     "PACKAGE_JSON", "PNPM_LOCK", "GAME_CONFIG", "PLAYWRIGHT_CONFIG", "VITEST_WORKSPACE",
     "PLATFORM_PROFILES_DIR", "SHARED_MJS", "CHANGELOG", "INFRASTRUCTURE", "SOURCE_PATHS",
@@ -56,6 +64,21 @@ __all__ = [
 ]
 
 CONTRACT_VERSION = "1.0.0"
+
+# (version, Factory release, change). Newest last; its version is CONTRACT_VERSION.
+CONTRACT_LOG = (
+    ("1.0.0", "2.0.0", "the contract as first written (M10)"),
+    ("1.0.0", "2.1.1", "SOURCE_PATHS + src/game/boot-scene.ts: recognized when a game source "
+                       "imports it (the BootScene conformance rule); a repository without "
+                       "it is refused nowhere"),
+    ("1.0.0", "2.2.0", "build_target: the pinned contract's own rule - one bundle, booting "
+                       "the first required platform, else the first - now encoded; no entry "
+                       "changed"),
+)
+# contract_digest() of the entries CONTRACT_LOG's last line describes. A change to any entry
+# fails test_template_contract until it is recorded: bump CONTRACT_VERSION if acceptance
+# changed (above), add a CONTRACT_LOG line either way, then update this.
+CONTRACT_DIGEST = "sha256:a2b3f97f8e53ebffee7f1e2e8924a99da1b74e8b53b0306c03c98928776e7e9a"
 
 # -- engines ----------------------------------------------------------------------------------
 
@@ -283,6 +306,39 @@ GAME_CONFIG_KEYS = (
 )
 
 MISSING = object()
+
+# Descriptions, not entries: text that explains an entry and may change freely.
+_DESCRIBED_PAIRS = ("INFRASTRUCTURE", "SOURCE_PATHS")
+_DESCRIPTION_VALUES = ("NPM_SCRIPTS",)
+
+
+def contract_entries():
+    """Every entry of the contract, without descriptions: {name: canonical value}. What
+    CONTRACT_DIGEST is computed over."""
+    module = sys.modules[__name__]
+    entries = {}
+    for name in __all__:
+        if name in ("CONTRACT_VERSION", "CONTRACT_LOG", "CONTRACT_DIGEST"):
+            continue
+        value = getattr(module, name)
+        if callable(value) or value is MISSING:
+            continue
+        if name in _DESCRIBED_PAIRS:
+            value = [path for path, _ in value]
+        elif name in _DESCRIPTION_VALUES:
+            value = sorted(value)
+        elif isinstance(value, dict):
+            value = {k: list(v) if isinstance(v, tuple) else v for k, v in sorted(value.items())}
+        elif isinstance(value, tuple):
+            value = list(value)
+        entries[name] = value
+    return entries
+
+
+def contract_digest():
+    """CONTRACT_DIGEST as the entries are now."""
+    text = json.dumps(contract_entries(), sort_keys=True, separators=(",", ":"))
+    return "sha256:" + hashlib.sha256(text.encode("utf-8")).hexdigest()
 
 
 def config_value(document, dotted):

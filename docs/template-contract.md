@@ -31,6 +31,7 @@ by the template's naming convention: `packages/<engine without "js">-framework/`
 | Forwarded flags (`SCRIPT_FLAGS`) | `release:package --release`; `release:manifest --release --version --kind --state` | release |
 | `pnpm exec` tools (`EXEC_TOOLS`) | `vitest`, `tsc` | sdk |
 | Node CLIs (`NODE_CLIS`) | `scripts/verify/collect-facts.mjs --platform --out`; `scripts/verify/evaluate-assertions.mjs --platform --facts --out` | verify (policy) |
+| Build target (`build_target`) | one bundle per build; it boots game.config.yaml's first `required` platform, else its first (`src/core/config.ts` `primaryPlatform`, `scripts/build/game-config-plugin.ts`); no `build:platforms` | verify (`platform.build-target:<id>`), release (packages only the target) |
 | Outputs (`OUTPUTS`) | template-named: `build/runtime-facts.json`, `build/sdk-conformance.json`, `build/facts/<platform>.json`, `release/<id>/{packages.json,checksums.txt,manifest.json}`. Factory-named: `build/assertions/<platform>.json`, `build/verification/gameplay-session.json`, `build/verification/playwright-e2e.json` | verify, sdk, release |
 | `game.config.yaml` | `game.id`, `game.version`, `engine.type` ∈ `ENGINES`, `platforms[]` `{id, profile, role}`, `monetization.ad_kinds`, `build.command`, `build.output` (default `dist`), `verification.mobile_test` | init, verify, release, develop |
 | Test projects | Playwright `desktop`, `mobile`, `verify`; Vitest `unit`, `integration`, `sdk` | verify (gameplay, runtime facts), sdk |

@@ -378,13 +378,48 @@ class Drafting(ReleaseCase):
         self.assertEqual(manifest["template"], {
             "repository": "example/web-game-template", "commit_sha": "a" * 40,
             "version": "1.0.0", "source": "CHANGELOG.md (first release heading)"})
-        self.assertEqual([p["platform_id"] for p in manifest["packages"]],
-                         ["generic-web", "example-portal"])
+        # One bundle boots one adapter: only the platform the build targets is packaged.
+        self.assertEqual([p["platform_id"] for p in manifest["packages"]], ["generic-web"])
         self.assertIn("nothing published", result.message)
         # The game repository holds the release; the run holds the same manifest.
         with open(self.game.path("release", "r1", "manifest.json")) as handle:
             on_disk = json.load(handle)
         self.assertEqual(on_disk, manifest)
+
+    def test_a_platform_the_build_does_not_target_is_not_packaged(self):
+        # The 2.1.2 production run's draft held crazygames.zip and yandex.zip: the Poki
+        # bundle under two more names, each loading Poki's SDK on another portal.
+        result = self.release()
+        self.assertEqual(result.outcome, StepOutcome.SUCCESS, result.error or result.message)
+        base = self.game.path("release", "r1")
+        self.assertEqual(sorted(n for n in os.listdir(base) if n.endswith(".zip")),
+                         ["generic-web.zip"])
+        with open(os.path.join(base, "packages.json")) as handle:
+            listed = json.load(handle)
+        self.assertEqual([p["platform_id"] for p in listed], ["generic-web"])
+        with open(os.path.join(base, "checksums.txt")) as handle:
+            lines = handle.read().splitlines()
+        self.assertEqual(len(lines), 1)
+        self.assertTrue(lines[0].endswith("  generic-web.zip"))
+        self.assertEqual("sha256:" + lines[0].split()[0], listed[0]["checksum"])
+        self.assertIn("not packaged - the one build targets generic-web, and needs a build "
+                      "of its own for: example-portal", result.message)
+        self.assertEqual(result.artifacts[0].metadata["not_packaged"], ["example-portal"])
+        # The game's own manifest lists what ships, and the target platforms stay declared.
+        manifest = result.artifacts[0].content
+        self.assertEqual({t["id"] for t in manifest["target_platforms"]},
+                         {"generic-web", "example-portal"})
+
+    def test_a_package_for_another_platform_is_refused(self):
+        # Defence in depth: whatever put it there, a package of the shared bundle for a
+        # platform the build does not target never reaches a manifest.
+        instance = step(repo_dir=self.game.root)
+        instance.environ = self.game.environ(())
+        instance.clock = staticmethod(lambda: NOW)
+        instance._prune = lambda *args, **kwargs: []
+        result = instance.execute(Inputs(self.game.evidence(), ()), Context())
+        self.assertNotEqual(result.outcome, StepOutcome.SUCCESS)
+        self.assertIn("package-not-built", self.refusal_codes(result))
 
     def test_both_release_scripts_run_through_the_package_manager(self):
         context = Context()

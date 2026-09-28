@@ -33,7 +33,7 @@ __all__ = [
     # paths
     "PACKAGE_JSON", "PNPM_LOCK", "GAME_CONFIG", "PLAYWRIGHT_CONFIG", "VITEST_WORKSPACE",
     "PLATFORM_PROFILES_DIR", "SHARED_MJS", "CHANGELOG", "INFRASTRUCTURE", "SOURCE_PATHS",
-    "platform_profile_path", "renderer_package", "rendering_dir",
+    "platform_profile_path", "renderer_package", "rendering_dir", "build_target",
     # package manager, npm scripts, executables
     "PACKAGE_MANAGER", "SCRIPT_BUILD", "SCRIPT_TYPECHECK", "SCRIPT_LINT", "SCRIPT_FORMAT",
     "SCRIPT_FORMAT_WRITE", "SCRIPT_TEST", "SCRIPT_TEST_UNIT", "SCRIPT_TEST_INTEGRATION",
@@ -140,6 +140,21 @@ SOURCE_PATHS = (
     ("packages/platform-sdk/src/types.ts", "the Platform interface"),
     ("packages/platform-sdk/src/registry.ts", "the adapter registry"),
 )
+
+
+def build_target(platforms):
+    """The one platform a build of this contract targets, or None for no platforms.
+
+    Contract 1.0.0 has no per-platform build: `pnpm build` makes one bundle, and that bundle
+    boots one adapter - game.config.yaml's first platform whose role is exactly "required",
+    else its first platform (the template's src/core/config.ts primaryPlatform() and
+    scripts/build/game-config-plugin.ts; a missing role is not "required" there). Every
+    other platforms[] entry is packaged from the same bundle and would boot the target's
+    SDK on the wrong portal (found by the 2.1.2 production run's release draft)."""
+    entries = [p for p in platforms or () if isinstance(p, dict) and p.get("id")]
+    if not entries:
+        return None
+    return next((p["id"] for p in entries if p.get("role") == "required"), entries[0]["id"])
 
 
 def platform_profile_path(platform_id):

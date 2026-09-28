@@ -118,9 +118,38 @@ class ContractShapeTest(unittest.TestCase):
         self.assertEqual(evidence.COMMANDS["browser"], ("pnpm", "test:sdk:browser"))
 
 
+class BuildTargetTest(unittest.TestCase):
+    """template_contract.build_target: the one platform a contract-1 bundle boots."""
+
+    def test_the_first_required_platform_else_the_first(self):
+        target = contract.build_target
+        self.assertEqual(target([{"id": "poki", "role": "required"},
+                                 {"id": "crazygames", "role": "optional"}]), "poki")
+        self.assertEqual(target([{"id": "crazygames", "role": "optional"},
+                                 {"id": "poki", "role": "required"}]), "poki")
+        self.assertEqual(target([{"id": "a", "role": "optional"},
+                                 {"id": "b", "role": "optional"}]), "a")
+        # A missing role is not "required" in the template (`role === "required"`).
+        self.assertEqual(target([{"id": "a"}, {"id": "b", "role": "required"}]), "b")
+        self.assertIsNone(target([]))
+        self.assertIsNone(target(None))
+
+
 @unittest.skipUnless(_PINNED, _PINNED_WHY)
 class PinnedTemplateDriftTest(unittest.TestCase):
     """Every contract entry, in the pinned template."""
+
+    def test_the_build_target_rule_is_the_templates(self):
+        # build_target restates the pinned template's rule; if the template changes it
+        # (per-platform builds: contract 2), this must change with it.
+        rule = 'find((candidate) => candidate.role === "required") ?? config.platforms[0]'
+        with open(os.path.join(self.root, "src", "core", "config.ts"), encoding="utf-8") as h:
+            self.assertIn(rule, " ".join(h.read().split()))
+        with open(os.path.join(self.root, "scripts", "build", "game-config-plugin.ts"),
+                  encoding="utf-8") as handle:
+            self.assertIn('find((entry) => entry.role === "required") ?? config.platforms[0]',
+                          " ".join(handle.read().split()))
+        self.assertNotIn("build:platforms", self.scripts)
 
     @classmethod
     def setUpClass(cls):

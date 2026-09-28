@@ -26,7 +26,7 @@ from wgflib.netguard import RefusingProxy, sandbox_env
 from .brief import (ENGINE_DIRS, PROTECTED_PATHS, REPORT_PATH, REQUIRED_SYSTEMS,
                     STRUCTURAL_PATHS, framework_package)
 from .repository import ExactEnv
-from .seam import seam_findings
+from .seam import sdk_owned_findings, seam_findings
 from .settings import DEFAULTS, PACKAGE_FIELDS
 
 __all__ = ["CheckResult", "run_checks", "conformance", "package_findings", "read_report",
@@ -324,6 +324,7 @@ def conformance(root, brief, git):
 
     findings.extend(_template_scene_findings(root))
     findings.extend(seam_findings(root, git, brief.get("baseline_commit")))
+    findings.extend(sdk_owned_findings(root, git, brief.get("baseline_commit")))
 
     package = os.path.join(root, contract.PACKAGE_JSON)
     if os.path.exists(package):

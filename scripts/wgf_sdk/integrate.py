@@ -44,18 +44,14 @@ __all__ = [
 HERE = os.path.dirname(os.path.abspath(__file__))
 GAME_FILES = os.path.join(HERE, "game")
 
-OWNED_FILES = (
-    "src/platform/gameplay.ts",
-    "tests/unit/platform/gameplay-integration.test.ts",
-)
+# All five are gameseam.SDK_OWNED_PATHS: the develop step refuses a developer change to them,
+# and commit.prepare refuses to overwrite one a commit it did not make has changed.
+OWNED_FILES = gameseam.SDK_OWNED_PATHS[0:2]
 # The seam implemented on the gameplay layer, for the develop step's src/game/integration.ts.
-SEAM_FILES = (
-    "src/platform/game-integration.ts",
-    "tests/unit/platform/game-integration.test.ts",
-)
+SEAM_FILES = gameseam.SDK_OWNED_PATHS[2:4]
 SEAM_DECLARATION = gameseam.CONTRACT_PATH
 WIRING_FILE = gameseam.WIRING_PATH
-PLAN_FILE = "src/platform/integration-plan.ts"
+PLAN_FILE = gameseam.SDK_OWNED_PATHS[4]
 PRINT_WIDTH = 100
 
 

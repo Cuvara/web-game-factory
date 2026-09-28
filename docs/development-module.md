@@ -45,7 +45,9 @@ the game, regenerated on every visit and committed with the code it asked for. I
 - **Which files are yours** — inside the writable paths, what is still not the developer's:
   the template's own source (`brief.TEMPLATE_SOURCE`: `src/core/`, `src/platform/bind.ts`,
   `src/rendering/create-renderer.ts`, `src/types/` - import it, never edit, delete or
-  recreate it; the Factory's seam wiring imports two of them), the Factory's seam files, and
+  recreate it; the Factory's seam wiring imports two of them), the Factory's seam files, the
+  sdk step's own files (`sdk_owned`, `wgflib.gameseam.SDK_OWNED_PATHS` - rewritten whole on
+  every sdk run, so the developer's code and tests go in files of its own), and
   `src/main.ts`'s boot order. Anything missing or wrong in a file that is not the
   developer's goes in the report's `known_issues`, never into a patch; the review-blockers
   section repeats that a blocker is fixed only in the developer's own files. This is
@@ -171,7 +173,7 @@ Run in this order; `conformance` cannot be switched off.
 | Check | What |
 |---|---|
 | `install` | `pnpm install --frozen-lockfile`. A failure stops the rest |
-| `conformance` | Static: engine imports only in `src/rendering/<engine>/`, no other engine, no portal SDK identifiers, ad APIs called only from `src/platform/`, the template's `BootScene` (`src/game/boot-scene.ts`) imported by no game source - judged by the module an import resolves to, so a game's own first scene may also be called `BootScene`, the seam files as the Factory provided them and `src/main.ts` booting through them (`wgflib.gameseam`), template-owned paths unchanged since the visit began, `package.json` changed only by allowed dependency changes and the lockfile only with them, and `report.json` complete — every required system `done`, every MVP item and placement reported |
+| `conformance` | Static: engine imports only in `src/rendering/<engine>/`, no other engine, no portal SDK identifiers, ad APIs called only from `src/platform/`, the template's `BootScene` (`src/game/boot-scene.ts`) imported by no game source - judged by the module an import resolves to, so a game's own first scene may also be called `BootScene`, the seam files as the Factory provided them and `src/main.ts` booting through them (`wgflib.gameseam`), the sdk step's files (`gameseam.SDK_OWNED_PATHS`) as the visit's baseline commit has them - absent before the sdk step first runs - since the sdk step rewrites them whole, template-owned paths unchanged since the visit began, `package.json` changed only by allowed dependency changes and the lockfile only with them, and `report.json` complete — every required system `done`, every MVP item and placement reported |
 | `format` | `pnpm format` — optional |
 | `typecheck`, `lint`, `unit`, `build` | the repository's own scripts, as CI runs them |
 | `smoke` | `pnpm test:e2e`, behind a proxy that refuses every non-local request (`wgflib.netguard`): a portal build would otherwise load the portal's real SDK from its CDN - dev traffic to the portal, and a result that depends on it (a Poki build's own "makes no insecure requests" failed on Poki's http:// ad bridge). The game must boot and play with the SDK refused, as for an ad-blocker; the summary says what was refused. Skipped, and reported as skipped, only when no browser is installed |

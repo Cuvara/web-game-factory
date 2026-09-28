@@ -31,6 +31,7 @@ from wgf_develop.repository import KEY_TRAILER, GitRepo, Runner, RunResult  # no
 from wgf_develop.settings import Settings, SettingsError  # noqa: E402
 from wgf_develop.step import DevelopStep  # noqa: E402
 from wgflib import checkout as checkout_lock  # noqa: E402
+from wgflib import gameseam  # noqa: E402
 from wgflib.hashing import content_hash  # noqa: E402
 from wgflib.workflow import mock  # noqa: E402
 from wgflib.workflow.api import RunRequest, WorkflowAPI  # noqa: E402
@@ -1074,6 +1075,94 @@ class Conformance(DevelopCase):
             "src/scenes/boot-scene.ts": 'export class BootScene { readonly id = "boot"; }\n',
         })
         self.assertEqual([f for f in found if "BootScene" in f], [])
+
+
+class SdkOwnedFiles(DevelopCase):
+    """The sdk step's own files (gameseam.SDK_OWNED_PATHS), which it writes whole on every run.
+    The 2.1.1 production run: a developer fixing an sdk-review blocker added its regression
+    test to tests/unit/platform/gameplay-integration.test.ts, the next sdk run erased it, and
+    sdk-review blocked the deletion - a loop the developer could not see."""
+
+    SDK_TEST = "tests/unit/platform/gameplay-integration.test.ts"
+
+    def after_sdk(self, sdk_files=None):
+        """A develop visit that starts from an sdk commit: the step's brief, the game, then
+        the sdk's files committed on top as the baseline. Returns (brief, head)."""
+        step_with(FakeRunner()).execute(inputs_for(), context(self.config()))
+        write_game(self.repo)
+        for relative in (gameseam.SDK_OWNED_PATHS if sdk_files is None else sdk_files):
+            path = os.path.join(self.repo, *relative.split("/"))
+            os.makedirs(os.path.dirname(path), exist_ok=True)
+            with open(path, "w") as handle:
+                handle.write(f"// {relative}, as the sdk step writes it\n")
+        self.git("add", "-A")
+        self.git(*IDENTITY, "commit", "-q", "-m", "sdk")
+        head = self.git("rev-parse", "HEAD").strip()
+        with open(os.path.join(self.repo, briefs.BRIEF_DIR, "brief.json")) as handle:
+            brief = json.load(handle)
+        brief["baseline_commit"] = head
+        return brief, head
+
+    def findings(self, brief):
+        found = conformance(self.repo, brief, GitRepo(self.repo, Runner())).findings
+        return [f for f in found if "sdk step" in f]
+
+    def test_the_sdk_files_as_the_sdk_step_committed_them_pass(self):
+        brief, _ = self.after_sdk()
+        self.assertEqual(self.findings(brief), [])
+
+    def test_a_test_added_to_the_sdk_suite_is_refused(self):
+        brief, head = self.after_sdk()
+        with open(os.path.join(self.repo, *self.SDK_TEST.split("/")), "a") as handle:
+            handle.write("it('keeps the player mute over an ad break', () => {});\n")
+        found = "\n".join(self.findings(brief))
+        self.assertIn(f"{self.SDK_TEST} belongs to the Factory's sdk step and was edited", found)
+        self.assertIn(head[:12], found)
+
+    def test_every_sdk_file_edited_or_deleted_is_refused(self):
+        for relative in gameseam.SDK_OWNED_PATHS:
+            with self.subTest(path=relative):
+                self.setUp()
+                brief, _ = self.after_sdk()
+                path = os.path.join(self.repo, *relative.split("/"))
+                os.remove(path)
+                self.assertEqual(len(self.findings(brief)), 1)
+                self.assertIn("was deleted", self.findings(brief)[0])
+
+    def test_an_sdk_file_before_the_sdk_step_ran_is_refused(self):
+        brief, _ = self.after_sdk(sdk_files=())
+        path = os.path.join(self.repo, *self.SDK_TEST.split("/"))
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "w") as handle:
+            handle.write("it('is mine', () => {});\n")
+        found = "\n".join(self.findings(brief))
+        self.assertIn(f"{self.SDK_TEST} belongs to the Factory's sdk step, which writes it "
+                      "whole", found)
+
+    def test_the_games_own_tests_beside_the_sdk_suite_pass(self):
+        brief, _ = self.after_sdk()
+        for relative in ("tests/unit/platform/mute-over-ad-break.test.ts",
+                         "tests/unit/audio-mute-merge.test.ts",
+                         "src/platform/my-helper.ts"):
+            path = os.path.join(self.repo, *relative.split("/"))
+            os.makedirs(os.path.dirname(path), exist_ok=True)
+            with open(path, "w") as handle:
+                handle.write("export {};\n")
+        self.assertEqual(self.findings(brief), [])
+
+    def test_the_brief_names_every_sdk_file_as_the_factorys(self):
+        step_with(FakeRunner()).execute(inputs_for(), context(self.config()))
+        with open(os.path.join(self.repo, briefs.BRIEF_DIR, "brief.json")) as handle:
+            brief = json.load(handle)
+        self.assertEqual(brief["sdk_owned"], list(gameseam.SDK_OWNED_PATHS))
+        with open(os.path.join(self.repo, briefs.BRIEF_DIR, "brief.md")) as handle:
+            text = handle.read()
+        section = text[text.index("## Which files are yours"):]
+        section = section[:section.index("\n## ", 5)]
+        self.assertIn("The Factory's sdk step - never create, edit or delete them", section)
+        for relative in gameseam.SDK_OWNED_PATHS:
+            self.assertIn(f"`{relative}`", section)
+        self.assertIn("a test you add there is deleted", section)
 
 
 class LinksInTheCheckout(DevelopCase):

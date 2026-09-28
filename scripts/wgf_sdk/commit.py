@@ -21,6 +21,8 @@ from wgf_develop.repository import GitError, GitRepo
 from wgf_verification.lineage import (CODE, SDK_KEY_TRAILER, is_placeholder, same_commit,
                                       sdk_commits_between)
 
+from wgflib import gameseam
+
 from . import integrate
 
 __all__ = ["SdkGit", "Ledger", "CommitRefused", "INTEGRATION_PATHS", "SDK_KEY_TRAILER",
@@ -102,6 +104,20 @@ class SdkGit(GitRepo):
                 "trailers say. Integrating on top of them would ship code nobody reviewed; "
                 "check out the prototype commit, or re-run develop and review, then resume.")
         return [sha for sha, _ in commits]
+
+    def owned_edits(self, head, trusted):
+        """[(path, sha)] for each sdk-owned file whose last change at `head` is a commit the
+        ledger does not record: work the next integration would erase. A file no commit has
+        touched yet is nobody's work."""
+        edited = []
+        for path in gameseam.SDK_OWNED_PATHS:
+            ok, out = self.call("log", "-n1", "--format=%H", head, "--", path)
+            if not ok:
+                raise CommitRefused(f"cannot read the history of {path} at {head[:12]}")
+            last = out.strip()
+            if last and last not in trusted:
+                edited.append((path, last))
+        return edited
 
     def status(self):
         """[(xy, path)] from `git status --porcelain`, untracked files included."""
@@ -201,6 +217,16 @@ def prepare(git, prototype_commit, has_prototype, run_id, ledger=None, key=None)
     else:
         base = git.base_of(head, trusted)
     own = git.own_commits(base, head, trusted)
+    if ledger is not None:
+        edited = git.owned_edits(head, trusted)
+        if edited:
+            raise CommitRefused(
+                "the integration writes " + ", ".join(p for p, _ in edited) + " whole, and "
+                "the last commit to change " + ("them" if len(edited) > 1 else "it") + " ("
+                + ", ".join(sorted({sha[:12] for _, sha in edited})) + ") was not made by "
+                "this run's sdk step: integrating now would erase that work without a word. "
+                "Those files are the sdk step's (wgflib.gameseam.SDK_OWNED_PATHS); move the "
+                "work into files of the game's own through develop (and review), then resume.")
     foreign = git.foreign_changes()
     if foreign:
         raise CommitRefused(

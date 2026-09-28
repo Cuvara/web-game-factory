@@ -75,13 +75,37 @@ developer host and its version, and the date. A benchmark without its pins is an
 None yet. Fill this section only from runs that actually happened, one table row per
 (shape × Factory commit), with the pins above alongside.
 
-### Regression baseline (measured)
+### Regression baseline
+
+Status of the 3D craft and brief change (commit `a65d7e3`, template pin `bca41a9` / v1.1.0,
+recorded 2026-09-29). Every row is what was observed, on the host named.
 
 | Run | Command | Result |
 |---|---|---|
-| 3D golden | `WGF_GOLDEN=1 python3 -m unittest scripts.tests.test_golden_3d` | *record the outcome and date here when it is run* |
-| 2D golden | `WGF_GOLDEN=1 python3 -m unittest scripts.tests.test_golden_2d` | *the guard that nothing 2D moved* |
-| Core suite | `bin/wgf test-core --strict` | *no category may SKIP for a release gate* |
+| 3D golden | `WGF_GOLDEN=1 python3 -m unittest scripts.tests.test_golden_3d` | **NOT RUN.** Blocked at `harness.warm_store`: `cannot warm the pnpm store for 3d (@types/three, three): FileNotFoundError: [WinError 2]`. `Ran 0 tests` |
+| 2D golden | `WGF_GOLDEN=1 python3 -m unittest scripts.tests.test_golden_2d` | **NOT RUN.** Same blocker: `cannot warm the pnpm store for 2d (pixi.js): FileNotFoundError: [WinError 2]`. `Ran 0 tests` |
+| Core suite | `bin/wgf test-core --strict` | FAILED. Category-for-category identical to pristine HEAD; 2D/3D GOLDEN `SKIP` without `WGF_GOLDEN=1` |
+| Golden harness checks | `python3 -m unittest scripts.tests.test_golden_fast` | 23 of 25. The 2 failures (`test_developer_and_reviewer_are_the_labelled_stand_ins`, 2D and 3D alike) reproduce unchanged at pristine HEAD |
+| Full suite vs pristine HEAD | `python3 -m unittest discover scripts/tests` | 1603 tests / 92 fail / 39 error here against 1593 / 94 / 39 at HEAD. Failing-test names diffed: **zero new failures** |
+
+**The golden blocker is the host, not the change.** `harness.warm_store` calls
+`procs.run(["pnpm", "install", ...])`; on Windows pnpm is a `.cmd` shim that the spawn cannot
+resolve, so both goldens die in `setUpClass` before a single test runs. The same error
+reproduces at pristine HEAD, and `scripts/golden/` is not touched by this change. pnpm 9.15.4
+and node v24.11.1 are installed. This was not worked around: patching the harness to make one
+host pass would weaken the release gate for every host.
+
+**Branch status: implementation-complete, GOLDEN-BLOCKED.** What a POSIX runner
+(Linux or macOS, with python3, git, node, pnpm as real executables, network for the first
+`pnpm install`, and a Playwright browser) must execute against this branch:
+
+```bash
+WGF_GOLDEN=1 bin/wgf test-core --strict
+```
+
+Record the runner OS, the commit, the exit code and both golden results in the table above.
+Until then the change carries unit, contract, integrity and baseline evidence, and no golden
+evidence.
 
 ## Out of scope for this protocol
 

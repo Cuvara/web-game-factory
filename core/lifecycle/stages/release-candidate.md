@@ -33,7 +33,9 @@ ship.
 ```
 release/<release-id>/
   manifest.json      — the immutable record
-  <platform>.zip     — one package per targeted platform
+  <platform>.zip     — one package per platform a build targets (one per platform with
+                       per-platform builds; with a single shared build, only the platform
+                       that build boots - the others would carry its SDK)
   checksums.txt
   report.md          — rendered from the manifest and QA report
 ```

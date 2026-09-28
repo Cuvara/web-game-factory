@@ -1,0 +1,107 @@
+{
+  "generated_at": "2026-09-28T16:29:21Z",
+  "release": "r90",
+  "declared_platforms": [
+    {
+      "id": "crazygames",
+      "role": "optional"
+    },
+    {
+      "id": "yandex",
+      "role": "optional"
+    },
+    {
+      "id": "poki",
+      "role": "required"
+    }
+  ],
+  "build_target": "poki",
+  "build_target_rule": "template contract 1.0.0: one bundle, booting the first platform whose role is exactly `required`, else the first",
+  "commands": {
+    "release:package": {
+      "script": "release:package",
+      "status": "exited",
+      "returncode": 0,
+      "ok": true,
+      "tail": "> web-game-template@0.1.0 release:package C:\\Workspaces\\WebGameFactory\\web-game-factory\\docs\\evidence\\mv-4\\browser\\checkout\n> node scripts/release/package.mjs \"--release\" \"r90\"\n\ncrazygames.zip  0.288 MB  sha256:e51a5c415e4038e5f2e6e0a104dbf6e7972bc49c6167e07a3595c3e618cfc44b\nyandex.zip  0.288 MB  sha256:e51a5c415e4038e5f2e6e0a104dbf6e7972bc49c6167e07a3595c3e618cfc44b\npoki.zip  0.288 MB  sha256:e51a5c415e4038e5f2e6e0a104dbf6e7972bc49c6167e07a3595c3e618cfc44b\n\nwrote release/r90/ (3 package(s), checksums.txt)"
+    },
+    "release:manifest": {
+      "script": "release:manifest",
+      "status": "exited",
+      "returncode": 0,
+      "ok": true,
+      "tail": "> web-game-template@0.1.0 release:manifest C:\\Workspaces\\WebGameFactory\\web-game-factory\\docs\\evidence\\mv-4\\browser\\checkout\n> node scripts/release/make-manifest.mjs \"--release\" \"r90\" \"--version\" \"0.1.0\"\n\nwrote release/r90/manifest.json\n  state draft\n  sha256:4a1b92490648e87e6b9ff317e2576bd8f959ec10dff32f8cd21ae96bb35c8ec3"
+    }
+  },
+  "packages": [
+    {
+      "platform_id": "crazygames",
+      "filename": "crazygames.zip",
+      "recorded_checksum": "sha256:e51a5c415e4038e5f2e6e0a104dbf6e7972bc49c6167e07a3595c3e618cfc44b",
+      "exists": true,
+      "actual_checksum": "sha256:e51a5c415e4038e5f2e6e0a104dbf6e7972bc49c6167e07a3595c3e618cfc44b",
+      "checksum_matches": true,
+      "checksums_txt": "e51a5c415e4038e5f2e6e0a104dbf6e7972bc49c6167e07a3595c3e618cfc44b",
+      "checksums_txt_matches": true,
+      "payload_digest": "sha256:c185222764eee7db21720bde17b14cda4561491f7a167ceaa3881f91464f981d",
+      "size_bytes": 302301,
+      "sdk_signatures_in_bundle": null,
+      "sdk_signatures_note": "packages/platform-sdk/sdk-signatures.json is not in this repository, so which portal SDK the bundle references was not scanned",
+      "is_build_target": false
+    },
+    {
+      "platform_id": "yandex",
+      "filename": "yandex.zip",
+      "recorded_checksum": "sha256:e51a5c415e4038e5f2e6e0a104dbf6e7972bc49c6167e07a3595c3e618cfc44b",
+      "exists": true,
+      "actual_checksum": "sha256:e51a5c415e4038e5f2e6e0a104dbf6e7972bc49c6167e07a3595c3e618cfc44b",
+      "checksum_matches": true,
+      "checksums_txt": "e51a5c415e4038e5f2e6e0a104dbf6e7972bc49c6167e07a3595c3e618cfc44b",
+      "checksums_txt_matches": true,
+      "payload_digest": "sha256:c185222764eee7db21720bde17b14cda4561491f7a167ceaa3881f91464f981d",
+      "size_bytes": 302301,
+      "sdk_signatures_in_bundle": null,
+      "sdk_signatures_note": "packages/platform-sdk/sdk-signatures.json is not in this repository, so which portal SDK the bundle references was not scanned",
+      "is_build_target": false
+    },
+    {
+      "platform_id": "poki",
+      "filename": "poki.zip",
+      "recorded_checksum": "sha256:e51a5c415e4038e5f2e6e0a104dbf6e7972bc49c6167e07a3595c3e618cfc44b",
+      "exists": true,
+      "actual_checksum": "sha256:e51a5c415e4038e5f2e6e0a104dbf6e7972bc49c6167e07a3595c3e618cfc44b",
+      "checksum_matches": true,
+      "checksums_txt": "e51a5c415e4038e5f2e6e0a104dbf6e7972bc49c6167e07a3595c3e618cfc44b",
+      "checksums_txt_matches": true,
+      "payload_digest": "sha256:c185222764eee7db21720bde17b14cda4561491f7a167ceaa3881f91464f981d",
+      "size_bytes": 302301,
+      "sdk_signatures_in_bundle": null,
+      "sdk_signatures_note": "packages/platform-sdk/sdk-signatures.json is not in this repository, so which portal SDK the bundle references was not scanned",
+      "is_build_target": true
+    }
+  ],
+  "findings": [
+    "the repository's own packaging produced a package for ['crazygames', 'yandex'], which this build does not target. The Factory's release step prunes exactly these (2.2.0, MV-3); what the repository's script does on its own is recorded here because a game repository can be released from its own workflow."
+  ],
+  "identical_payloads": {
+    "sha256:c185222764eee7db21720bde17b14cda4561491f7a167ceaa3881f91464f981d": [
+      "crazygames",
+      "yandex",
+      "poki"
+    ]
+  },
+  "target_packaged": true,
+  "non_target_packaged": [
+    "crazygames",
+    "yandex"
+  ],
+  "manifest": {
+    "version": "0.1.0",
+    "platforms_named": [
+      "crazygames",
+      "poki",
+      "yandex"
+    ],
+    "matches_packages": true
+  }
+}

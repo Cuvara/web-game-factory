@@ -18,6 +18,8 @@ import json
 import os
 import re
 
+from wgflib import paths
+
 __all__ = ["parse", "from_output", "CONTRACT", "VERDICTS", "SEVERITIES"]
 
 VERDICTS = ("approve", "request-changes")
@@ -138,8 +140,7 @@ def parse(path, head):
         if blocker["file"] is not None and (not isinstance(blocker["file"], str)
                                             or not blocker["file"].strip()):
             return None, f"{where}.file must be a repository path or null"
-        if isinstance(blocker["file"], str) and (os.path.isabs(blocker["file"])
-                                                 or ".." in blocker["file"].split("/")):
+        if isinstance(blocker["file"], str) and not paths.repo_relative(blocker["file"]):
             return None, f"{where}.file must be relative to the repository"
         if not isinstance(blocker["summary"], str) or not blocker["summary"].strip():
             return None, f"{where}.summary must be a non-empty string"

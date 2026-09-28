@@ -413,6 +413,35 @@ class HostileIdentifiers(EngineCase):
                     DevelopSettings.resolve({}, {}).checkout_for(bad)
         self.assertEqual(paths.checkout_path("/games", "neon-drift"), "/games/neon-drift")
 
+    def test_a_repository_path_is_judged_the_same_on_every_host(self):
+        # os.path.isabs is the host's rule and the host's rule moved: on Windows with Python
+        # 3.13 and later "/etc/passwd" is drive-relative, and a guard built on it accepted
+        # there what it refused on Linux. Backslash and drive-letter forms were accepted on
+        # POSIX by the same guard. Judged on the string, every host agrees.
+        for bad in ("/etc/passwd", "\\\\server\\share\\x", "C:\\Windows\\x", "c:/windows/x",
+                    "../../etc/passwd", "..\\..\\etc\\passwd", "src/../../etc/passwd",
+                    "", "   ", None, 5):
+            with self.subTest(path=bad):
+                self.assertFalse(paths.repo_relative(bad))
+        for good in ("src/game/play-scene.ts", "a.ts", "tests/unit/loop.test.ts"):
+            with self.subTest(path=good):
+                self.assertTrue(paths.repo_relative(good))
+
+    def test_a_reviewer_cannot_name_a_file_outside_the_repository(self):
+        head = "0" * 40
+        with tempfile.TemporaryDirectory() as directory:
+            path = os.path.join(directory, "verdict.json")
+            for bad in ("/etc/passwd", "C:\\Windows\\system32\\drivers\\etc\\hosts",
+                        "..\\..\\secrets.env", "../../secrets.env"):
+                with self.subTest(path=bad):
+                    with open(path, "w", encoding="utf-8") as handle:
+                        json.dump({"verdict": "request-changes", "commit": head,
+                                   "blockers": [{"id": "b1", "file": bad, "summary": "s",
+                                                 "severity": "blocker"}]}, handle)
+                    parsed, error = verdicts.parse(path, head)
+                    self.assertIsNone(parsed)
+                    self.assertIn("relative to the repository", error)
+
     def test_the_review_step_refuses_a_scaffold_record_naming_dot_dot(self):
         result = run_review_step({"repository": {"name": ".."}, "title_id": "x"})
         self.assertEqual(result.outcome, StepOutcome.FAILED)

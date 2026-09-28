@@ -102,7 +102,9 @@ def build_live_config(game, workdir, template_dir=None, examples=None, human_gat
         agents = config.setdefault("agents", {})
         agents["env_passthrough"] = list(agents.get("env_passthrough") or []) + extra
     record = {"developer": developer, "reviewer": reviewer,
-              "source": os.path.relpath(FACTORY_YAML, paths.ROOT),
+              # paths.display, not os.path.relpath: this string goes into a run record that is
+              # compared across machines, and a separator is not part of what it names.
+              "source": paths.display(FACTORY_YAML),
               "auto_approved_gates": list(config["checkpoints"]["auto_approve"]),
               "develop_budget": config["develop"]["budget"],
               "host_version": host_version(developer["argv"][0])}

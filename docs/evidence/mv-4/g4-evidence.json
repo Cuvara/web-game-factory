@@ -1,0 +1,123 @@
+{
+  "generated_at": "2026-09-28T16:29:30Z",
+  "decided_by": "a person; this file is the record they read, not a decision",
+  "criteria": [
+    {
+      "criterion": 1,
+      "id": "control_not_understood",
+      "statement": "Fewer than 60% of first-time players understand the control",
+      "measurement": null,
+      "measurement_class": null,
+      "status": "UNVERIFIED",
+      "detail": "0 first-time participant(s); 5 are the minimum for a share. Developer tests (0) are excluded by construction.",
+      "evidence": {
+        "playtest": {
+          "total_sessions": 0,
+          "first_time_players": 0,
+          "developer_tests": 0,
+          "minimum_for_a_share": 5
+        }
+      },
+      "can_this_class_decide_it": false
+    },
+    {
+      "criterion": 2,
+      "id": "no_retry_pull",
+      "statement": "Fewer than 50% retry without being prompted",
+      "measurement": null,
+      "measurement_class": null,
+      "status": "UNVERIFIED",
+      "detail": "0 first-time participant(s); 5 are the minimum for a share. Developer tests (0) are excluded by construction.",
+      "evidence": {
+        "playtest": {
+          "total_sessions": 0,
+          "first_time_players": 0,
+          "developer_tests": 0,
+          "minimum_for_a_share": 5
+        }
+      },
+      "can_this_class_decide_it": false
+    },
+    {
+      "criterion": 3,
+      "id": "timebox_exceeded",
+      "statement": "The prototype exceeds the allowed timebox",
+      "measurement": 2.5,
+      "measurement_class": "run-record",
+      "status": "NOT_MET",
+      "detail": "2.5 days planned against 10.5 allowed",
+      "evidence": {
+        "timebox_days": 10.5,
+        "planned_days": 2.5
+      },
+      "can_this_class_decide_it": true
+    },
+    {
+      "criterion": 4,
+      "id": "mobile_fps_below_30",
+      "statement": "Mobile performance below 30 FPS on a mid-range mobile browser",
+      "measurement": null,
+      "measurement_class": null,
+      "status": "UNVERIFIED",
+      "detail": "adb is not installed on this machine, so no handset can be reached from it",
+      "evidence": {
+        "proxies_recorded_but_not_deciding": [
+          {
+            "project": "desktop-real",
+            "measurement_class": "real-browser-desktop",
+            "frame_stats": {
+              "frames": 4003,
+              "median_fps": 200,
+              "mean_fps": 200,
+              "p50_frame_ms": 5,
+              "p95_frame_ms": 5.1,
+              "p99_frame_ms": 5.1,
+              "worst_frame_ms": 5.4,
+              "worst_1s_fps": 199
+            }
+          },
+          {
+            "project": "mobile-emulated",
+            "measurement_class": "emulated-mobile",
+            "frame_stats": {
+              "frames": 4001,
+              "median_fps": 200,
+              "mean_fps": 199.75,
+              "p50_frame_ms": 5,
+              "p95_frame_ms": 5.1,
+              "p99_frame_ms": 5.2,
+              "worst_frame_ms": 30,
+              "worst_1s_fps": 195
+            }
+          },
+          {
+            "project": "mobile-emulated-throttled",
+            "measurement_class": "emulated-mobile",
+            "frame_stats": {
+              "frames": 3815,
+              "median_fps": 200,
+              "mean_fps": 189.9,
+              "p50_frame_ms": 5,
+              "p95_frame_ms": 5.1,
+              "p99_frame_ms": 10.1,
+              "worst_frame_ms": 90,
+              "worst_1s_fps": 78
+            }
+          }
+        ]
+      },
+      "can_this_class_decide_it": false
+    }
+  ],
+  "summary": {
+    "measured": [
+      "timebox_exceeded"
+    ],
+    "unverified": [
+      "control_not_understood",
+      "no_retry_pull",
+      "mobile_fps_below_30"
+    ],
+    "met": []
+  }
+}

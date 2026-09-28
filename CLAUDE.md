@@ -342,6 +342,10 @@ seen by the engine — validate what you write there with ajv.
 - `docs/v2.1-release.md` — 2.1.0: the post-2.0.0 live-validation fixes (PR #4); 2.1.1: the
   BootScene false positive; 2.1.2: the sdk step's own files; 2.1.3: G4 plumbing and
   evidence; what was validated on which commit, what it does not cover
+- `docs/mv-4-plan.md`, `docs/mv-4-report.md` — MV-4: real-device, real-browser, real-SDK and
+  real-player evidence, the `measurement_class` rule (a weaker class never becomes a stronger
+  claim), what was measured, what stays UNVERIFIED and why. The harness is `scripts/mv4/`;
+  the protocols are `docs/mv-4-playtest-protocol.md` and `docs/mv-4-touch-sheet.md`
 - `docs/claude-capabilities.md` — agent-host capability audit: what the Factory enforces vs
   the host's argv, verified headless developer/reviewer config, live evidence
 - `docs/production-craft-and-mcp.md` — `core/craft/` playbooks and skills by phase, MCP tools

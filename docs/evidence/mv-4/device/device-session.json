@@ -1,0 +1,10 @@
+{
+  "criterion": "A",
+  "title": "Real mobile performance",
+  "measurement_class": null,
+  "status": "UNVERIFIED",
+  "recorded_at": "2026-09-28T15:46:09Z",
+  "reason": "adb is not installed on this machine, so no handset can be reached from it",
+  "devices_detected": [],
+  "note": "No device measurement exists for this run. The desktop proxy recorded by scripts/mv4/session.py is `emulated-mobile` and does not decide this criterion; neither does the verify step's policy.device-performance, which is PASS_MOCK by construction."
+}

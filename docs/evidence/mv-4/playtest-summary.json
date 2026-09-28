@@ -1,0 +1,25 @@
+{
+  "participants": {
+    "total_sessions": 0,
+    "first_time_players": 0,
+    "developer_tests": 0,
+    "minimum_for_a_share": 5
+  },
+  "developer_test_sessions": [],
+  "criteria": {
+    "control_not_understood": {
+      "criterion": "1",
+      "status": "UNVERIFIED",
+      "measurement_class": null,
+      "share": null,
+      "reason": "0 first-time participant(s); 5 are the minimum for a share. Developer tests (0) are excluded by construction."
+    },
+    "no_retry_pull": {
+      "criterion": "2",
+      "status": "UNVERIFIED",
+      "measurement_class": null,
+      "share": null,
+      "reason": "0 first-time participant(s); 5 are the minimum for a share. Developer tests (0) are excluded by construction."
+    }
+  }
+}

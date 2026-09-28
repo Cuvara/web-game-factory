@@ -963,5 +963,54 @@ class DriverKilledBySigkill(ProcessCase):
         self.assertSwept(orphan, events, untagged, other)
 
 
+class ResolvingTheProgram(unittest.TestCase):
+    """Where the host needs the program resolved before CreateProcess sees it (Windows has no
+    PATHEXT there, so `pnpm` never finds `pnpm.CMD`), the resolution is the child's own PATH -
+    and only a file is ever a program."""
+
+    def env(self, directory):
+        return {"PATH": directory}
+
+    def test_posix_argv_is_never_rewritten(self):
+        if not procs.POSIX:
+            self.skipTest("POSIX only: elsewhere the program must be resolved")
+        with tempfile.TemporaryDirectory() as directory:
+            self.assertEqual(procs._resolved(["pnpm", "x"], self.env(directory)), ["pnpm", "x"])
+
+    def test_a_directory_of_the_same_name_is_not_the_program(self):
+        if procs.POSIX:
+            self.skipTest("the resolution only runs where PATHEXT is not applied")
+        with tempfile.TemporaryDirectory() as directory:
+            os.mkdir(os.path.join(directory, "tool"))
+            self.assertEqual(procs._resolved(["tool", "x"], self.env(directory)), ["tool", "x"])
+
+    def test_a_file_on_the_childs_path_is_resolved(self):
+        if procs.POSIX:
+            self.skipTest("the resolution only runs where PATHEXT is not applied")
+        with tempfile.TemporaryDirectory() as directory:
+            path = os.path.join(directory, "tool.CMD")
+            with open(path, "w", encoding="utf-8") as handle:
+                handle.write("@echo off\n")
+            self.assertEqual(procs._resolved(["tool", "x"], self.env(directory)), [path, "x"])
+
+    def test_a_program_with_a_directory_part_is_left_alone(self):
+        with tempfile.TemporaryDirectory() as directory:
+            given = os.path.join(directory, "tool")
+            self.assertEqual(procs._resolved([given], self.env(directory)), [given])
+
+    def test_an_unresolvable_name_is_left_as_the_caller_wrote_it(self):
+        with tempfile.TemporaryDirectory() as directory:
+            self.assertEqual(procs._resolved(["no-such-tool-xyz"], self.env(directory)),
+                             ["no-such-tool-xyz"])
+
+    def test_an_installed_tool_starts(self):
+        """The failure this exists for: a plainly installed tool reported as not startable."""
+        if shutil.which("git") is None:
+            self.skipTest("git is not on PATH")
+        result = procs.run(["git", "--version"], timeout=60)
+        self.assertTrue(result.ok, result.tail(5))
+        self.assertIn("git version", result.stdout or "")
+
+
 if __name__ == "__main__":
     unittest.main()

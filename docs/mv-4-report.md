@@ -73,11 +73,11 @@ external request aborted and recorded. Full record:
 | | desktop-real | mobile-emulated | mobile-emulated-throttled (4×) |
 |---|---|---|---|
 | `measurement_class` | `real-browser-desktop` | `emulated-mobile` | `emulated-mobile` |
-| Time to interactive | 0.393 s | 0.231 s | 0.392 s |
-| Median frame rate | 200 fps | 200 fps | 200 fps |
-| p95 frame time | 5.1 ms | 5.1 ms | 5.1 ms |
-| Worst 1 s window | 189 fps | 199 fps | 188 fps |
-| JS heap, run 1 → run 2 | 6.92 → 7.20 MB | 7.61 → 7.43 MB | 7.57 → 7.77 MB |
+| Time to interactive | 0.242 s | 0.239 s | 0.419 s |
+| Median frame rate | 200 fps | 100 fps | 100 fps |
+| p95 frame time | 5.1 ms | 10.2 ms | 10.1 ms |
+| Worst 1 s window | 188 fps | 117 fps | 119 fps |
+| JS heap, run 1 → run 2 | 7.38 → 7.39 MB | 7.50 → 6.91 MB | 7.48 → 7.81 MB |
 | Page errors | none | none | none |
 
 Checks, identical across the three sessions except where noted:
@@ -99,14 +99,16 @@ Checks, identical across the three sessions except where noted:
 
 Three notes on how to read this, because the numbers are easy to over-read:
 
-- **200 fps is the display, not a headroom measurement.** The game rendered at this machine's
-  refresh rate throughout, including under a 4× CPU throttle. This hardware never put the game
-  under frame-budget pressure, so the sample says the game is cheap here and nothing about a
-  handset. A 4x CPU throttle did not move the median either, and moved the worst one-second
-  window only from 189 to 188 fps: the proxy has no signal to give on this hardware. An earlier
-  sample, taken while the harness drove the game through a CDP round trip every 250 ms, read a
-  suspiciously exact 30.03 fps - it was measuring the harness. The play loop now runs inside the
-  page.
+- **These frame rates are the display's, not a headroom measurement.** The desktop session
+  rendered at this machine's refresh rate (200 Hz) throughout; the two device-descriptor
+  sessions sit at exactly half that, which is the descriptor's own frame cap, not the game
+  reaching a limit. A 4x CPU throttle moved the median not at all and the worst one-second
+  window from 117 to 119 fps. This hardware never put the game under frame-budget pressure, so
+  the sample says the game is cheap here and says nothing about a handset. The figures also move
+  between runs with the build unchanged, which is the other reason not to read them as a
+  property of the game. An earlier sample, taken while the harness drove the game through a CDP
+  round trip every 250 ms, read a suspiciously exact 30.03 fps - it was measuring the harness.
+  The play loop runs inside the page now.
 - **The leak check needed correcting before it said anything true.** The first version compared
   the heap just after boot against the heap after a played, restarted run, and reported a FAIL
   on two of three projects. That compares two different games. Corrected to compare two

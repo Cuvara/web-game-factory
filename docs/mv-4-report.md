@@ -11,8 +11,10 @@ ship. Three of the four kill criteria could not be measured: there was no Androi
 no first-time player. One thing the real portal SDK showed is new and material — the time to
 interactive the verification step records is measured with the portal SDK blocked, and with the
 real SDK served the same build took 5.24 s, past the 5 s the platform profile asserts. MV-4 also
-found that the Factory's own test suite does not run on Windows, fixed the three failures in it
-that were defects rather than fixtures, and left the rest recorded.
+found that the Factory's own test suite does not run on Windows, fixed the five defects behind
+that which were the Factory's own rather than its fixtures' - two of which stopped the golden
+run's developer before it could build anything - and left the rest recorded. The Windows
+baseline went from 70 failures and 37 errors to 60 and 22, with nothing new failing.
 
 ## 1. The audit, and what MV-3 left open
 
@@ -435,8 +437,26 @@ stranger nor a phone was available.
 | `python scripts/wgf-hash.py --check workspace/` | **OK** |
 | `bash scripts/gen-adapters.sh` | **no diff** |
 | `python -m unittest scripts.tests.test_mv4` | **29 / 29 OK** |
-| `python -m unittest discover scripts/tests` | 1 630 tests, 69 failures, 37 errors, 81 skipped — **against a Windows baseline on `9fd21f0` of 70 failures and 37 errors in 1 593 tests.** Fixed by this branch: 3 security-guard failures, 1 record-path failure. Introduced by this branch: none (the failing set is compared name by name, before and after). |
-| `bin/wgf test-core` | FAIL / INCOMPLETE on Windows: VERIFY PASS, PROCESS CLEANUP PASS (33 of 34 skipped, POSIX-only), WORKFLOW/AGENTS/CONTRACTS/RELEASE/SECURITY FAIL on the fixture causes in section 9, 2D and 3D GOLDEN SKIP |
+| `python -m unittest discover scripts/tests` | 1 636 tests, **60 failures, 22 errors**, 81 skipped — against a Windows baseline on `9fd21f0` of **70 failures and 37 errors** in 1 593 tests. 29 of the baseline's failures now pass; the failing set is compared name by name before and after, and **none is new**. |
+| `bin/wgf test-core --json` | FAIL / INCOMPLETE on Windows, and it now prints its report at all (fix 8.5 — the previous run raised `UnicodeEncodeError` after twenty minutes of work and emitted nothing): |
+
+| Category | Result | tests | passed | failed | errors | skipped |
+|---|---|---|---|---|---|---|
+| WORKFLOW | FAIL | 224 | 215 | 2 | 0 | 7 |
+| AGENTS | FAIL | 47 | 41 | 2 | 1 | 3 |
+| CONTRACTS | FAIL | 131 | 124 | 6 | 0 | 1 |
+| VERIFY | **PASS** | 22 | 22 | 0 | 0 | 0 |
+| RELEASE | FAIL | 49 | 27 | 19 | 2 | 1 |
+| 2D GOLDEN | SKIP | 10 | 0 | 0 | 0 | 10 |
+| 3D GOLDEN | SKIP | 10 | 0 | 0 | 0 | 10 |
+| PROCESS CLEANUP | **PASS** | 40 | 6 | 0 | 0 | 34 |
+| SECURITY | FAIL | 117 | 105 | 8 | 1 | 3 |
+
+AGENTS went from 17 passed of 47 to 41 of 47 on fixes 8.3 and 8.4. RELEASE is almost entirely
+the POSIX-only `pnpm` shim in its own fixture. PROCESS CLEANUP passes what it runs and skips 34
+of 40 as POSIX-only, which is the same thing as saying the Factory's process-ownership
+guarantees are not tested on this platform.
+
 | `WGF_GOLDEN=1 bin/wgf test-core --only "2D GOLDEN"` | **FAIL on Windows, 3 of 10** — see below |
 | MV-4 harness | 3 browser sessions, 1 platform session, 1 packaging audit, 1 device record, 1 playtest summary, 1 G4 record — all under `evidence/mv-4/` |
 

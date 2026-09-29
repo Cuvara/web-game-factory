@@ -27,8 +27,16 @@ here.
 
 ## Commands
 
-There is deliberately **no toolchain** — no `package.json`, no lockfile, no CI. Do not add one
+There is deliberately **no toolchain** — no `package.json`, no lockfile. Do not add one
 without asking. Everything is run on demand:
+
+The one exception is **`.github/workflows/acceptance.yml`**, which runs the commands below on
+a Linux runner for every pull request and every push to `main`. It exists for one reason: the
+release gate `WGF_GOLDEN=1 bin/wgf test-core --strict` shells out to `pnpm` through
+`wgflib.procs`, which spawns without a shell, and on Windows pnpm is only a `.cmd` shim — both
+goldens die in `setUpClass` before a test runs, on any branch including `main`. It adds no
+dependency to this repository, runs the repository's own commands, and patches nothing to make
+itself pass.
 
 ```bash
 # Referential integrity across machines, schemas, roles and bindings. Standard library only.

@@ -1,0 +1,124 @@
+# The Core Acceptance Suite, on a POSIX runner.
+#
+# This repository has no toolchain of its own and deliberately had no CI: everything is run
+# on demand (CLAUDE.md). One gate cannot be: `WGF_GOLDEN=1 bin/wgf test-core --strict` runs
+# the two golden runs, and those shell out to `pnpm` through `wgflib.procs`, which spawns
+# without a shell. On Windows pnpm exists only as a `.cmd` shim, so both goldens die in
+# setUpClass with `FileNotFoundError: [WinError 2]` before a single test runs — on any branch,
+# including main. The release gate was therefore unrunnable on the host the recent work was
+# developed on. This workflow exists to give that gate a Linux runner, and for nothing else.
+#
+# Rules it keeps:
+#   - it runs the repository's own commands, exactly as CLAUDE.md documents them;
+#   - it adds no mock, shim or replacement for pnpm, and does not patch the golden harness;
+#   - it changes no test expectation;
+#   - it caches nothing: the goldens warm a pnpm store themselves and then run offline behind
+#     a refusing proxy, and a cache restored from another run would make that unreproducible.
+
+name: Acceptance
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: acceptance-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  acceptance:
+    name: integrity, schemas, adapters, unit, test-core with the goldens
+    runs-on: ubuntu-24.04
+    # The two golden runs each create a game repository from the pinned template, install it,
+    # build it and drive Chromium through Playwright.
+    timeout-minutes: 90
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          # The pinned template requires node >= 20 (its package.json `engines`).
+          node-version: '22'
+
+      - name: pnpm, at the version the template pins
+        # Corepack ships with node; `pnpm` must be a real executable on PATH because
+        # wgflib.procs spawns it directly. The version is the template's `packageManager`.
+        run: |
+          corepack enable
+          corepack prepare pnpm@9.15.4 --activate
+          pnpm --version
+
+      - name: Record the toolchain
+        run: |
+          python3 --version
+          node --version
+          pnpm --version
+          git --version
+
+      - name: Referential integrity
+        run: python3 scripts/check-integrity.py
+
+      - name: Content hashes and pins
+        run: python3 scripts/wgf-hash.py --check workspace/
+
+      - name: Every artifact schema compiles
+        run: |
+          for f in core/artifacts/*.schema.json; do
+            npx --yes -p ajv-cli@5 -p ajv-formats@2 ajv compile \
+              -s "$f" -r "core/artifacts/shared/*.schema.json" \
+              -c ajv-formats --spec=draft2020 --strict=false
+          done
+
+      - name: The worked example validates
+        run: |
+          npx --yes -p ajv-cli@5 -p ajv-formats@2 ajv validate \
+            -s core/artifacts/game-design.schema.json \
+            -r "core/artifacts/shared/*.schema.json" \
+            -c ajv-formats --spec=draft2020 --strict=false \
+            -d workspace/titles/neon-drift/game-design.json
+
+      - name: Adapters regenerate identically
+        # An adapter file is generated; a hand edit is a bug (CLAUDE.md). Regenerating must
+        # leave the tree unchanged.
+        run: |
+          bash scripts/gen-adapters.sh
+          git diff --exit-code
+
+      - name: Unit suite
+        run: python3 -m unittest discover scripts/tests
+
+      - name: The pinned template, and a browser that matches its Playwright
+        # The goldens run offline behind a refusing proxy, so the template's dependencies and
+        # the browser must already be on disk. The browser is installed by the template's own
+        # Playwright, so its build is the one that template expects.
+        run: |
+          template=$(python3 -c "
+          import sys; sys.path.insert(0, 'scripts')
+          from wgflib import template
+          directory = template.checkout()
+          template.ensure_dependencies(directory)
+          print(directory)
+          ")
+          echo "pinned template: $template"
+          cd "$template" && pnpm exec playwright install --with-deps chromium
+
+      - name: Core Acceptance Suite, with both golden runs
+        run: WGF_GOLDEN=1 bin/wgf test-core --strict
+
+      - name: Golden evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: golden-evidence
+          path: |
+            .factory/
+            /tmp/wgf-golden-*/**/evidence/**
+          if-no-files-found: ignore
+          retention-days: 7

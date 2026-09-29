@@ -420,10 +420,13 @@ class HostileIdentifiers(EngineCase):
         # POSIX by the same guard. Judged on the string, every host agrees.
         for bad in ("/etc/passwd", "\\\\server\\share\\x", "C:\\Windows\\x", "c:/windows/x",
                     "../../etc/passwd", "..\\..\\etc\\passwd", "src/../../etc/passwd",
+                    # Whitespace is not a way past the guard: it is stripped before judging.
+                    " /etc/passwd", "\t/etc/passwd", " C:\\Windows\\x", " ../x",
                     "", "   ", None, 5):
             with self.subTest(path=bad):
                 self.assertFalse(paths.repo_relative(bad))
-        for good in ("src/game/play-scene.ts", "a.ts", "tests/unit/loop.test.ts"):
+        for good in ("src/game/play-scene.ts", "a.ts", "tests/unit/loop.test.ts",
+                     "  src/game/play-scene.ts  "):
             with self.subTest(path=good):
                 self.assertTrue(paths.repo_relative(good))
 
@@ -432,7 +435,7 @@ class HostileIdentifiers(EngineCase):
         with tempfile.TemporaryDirectory() as directory:
             path = os.path.join(directory, "verdict.json")
             for bad in ("/etc/passwd", "C:\\Windows\\system32\\drivers\\etc\\hosts",
-                        "..\\..\\secrets.env", "../../secrets.env"):
+                        "..\\..\\secrets.env", "../../secrets.env", " /etc/passwd"):
                 with self.subTest(path=bad):
                     with open(path, "w", encoding="utf-8") as handle:
                         json.dump({"verdict": "request-changes", "commit": head,

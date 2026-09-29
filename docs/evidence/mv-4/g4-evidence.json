@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-09-29T03:04:58Z",
+  "generated_at": "2026-09-29T10:40:19Z",
   "decided_by": "a person; this file is the record they read, not a decision",
   "criteria": [
     {
@@ -66,42 +66,42 @@
             "project": "desktop-real",
             "measurement_class": "real-browser-desktop",
             "frame_stats": {
-              "frames": 3992,
+              "frames": 3991,
               "median_fps": 200,
               "mean_fps": 199.45,
               "p50_frame_ms": 5,
               "p95_frame_ms": 5.1,
               "p99_frame_ms": 5.2,
-              "worst_frame_ms": 30.1,
-              "worst_1s_fps": 189
+              "worst_frame_ms": 19.9,
+              "worst_1s_fps": 188
             }
           },
           {
             "project": "mobile-emulated",
             "measurement_class": "emulated-mobile",
             "frame_stats": {
-              "frames": 4002,
-              "median_fps": 200,
-              "mean_fps": 200,
-              "p50_frame_ms": 5,
-              "p95_frame_ms": 5.1,
-              "p99_frame_ms": 5.2,
-              "worst_frame_ms": 5.3,
-              "worst_1s_fps": 199
+              "frames": 2402,
+              "median_fps": 100,
+              "mean_fps": 119.89,
+              "p50_frame_ms": 10,
+              "p95_frame_ms": 10.2,
+              "p99_frame_ms": 10.3,
+              "worst_frame_ms": 35.1,
+              "worst_1s_fps": 117
             }
           },
           {
             "project": "mobile-emulated-throttled",
             "measurement_class": "emulated-mobile",
             "frame_stats": {
-              "frames": 4002,
-              "median_fps": 200,
-              "mean_fps": 199.31,
-              "p50_frame_ms": 5,
-              "p95_frame_ms": 5.1,
-              "p99_frame_ms": 5.1,
-              "worst_frame_ms": 65,
-              "worst_1s_fps": 188
+              "frames": 2406,
+              "median_fps": 100,
+              "mean_fps": 120.21,
+              "p50_frame_ms": 10,
+              "p95_frame_ms": 10.1,
+              "p99_frame_ms": 10.1,
+              "worst_frame_ms": 15,
+              "worst_1s_fps": 119
             }
           }
         ]

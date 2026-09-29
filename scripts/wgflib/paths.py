@@ -47,8 +47,14 @@ def repo_relative(path):
     written on `os.path.isabs` accepts it there and refuses it on Linux (found by MV-4 running
     the suite on Windows). A guard over input the Factory did not write - an agent's verdict,
     an artifact's path field - must not depend on which host is reading it, so this judges the
-    string: no leading separator, no drive, no `..` on either separator."""
-    if not isinstance(path, str) or not path.strip():
+    string: no leading separator, no drive, no `..` on either separator.
+
+    Surrounding whitespace is stripped before judging, because it is not part of the path an
+    agent means and it must not be a way past the guard: ` /etc/passwd` is `/etc/passwd`."""
+    if not isinstance(path, str):
+        return False
+    path = path.strip()
+    if not path:
         return False
     if path[0] in "/\\":
         return False

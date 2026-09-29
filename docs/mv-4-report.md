@@ -209,7 +209,7 @@ developer test, and still unverified — kept apart, as asked:
 | 1 | Fewer than 60% of first-time players understand the control | **UNVERIFIED** | — | 0 first-time participants; 5 is the minimum |
 | 2 | Fewer than 50% retry without being prompted | **UNVERIFIED** | — | as above |
 | 3 | The prototype exceeds the allowed timebox | **NOT MET** | `run-record` | 2.5 days planned against 10.5 allowed, from the production run `new-game-20260927-123223-371104` ([handoff](handoff/2026-09-27-production-validation.md)) |
-| 4 | Mobile performance below 30 FPS on a mid-range mobile browser | **UNVERIFIED** | — | no device. The proxies (200 fps desktop, 200 fps emulated, 78 fps worst 1 s window under a 4× throttle) are retained in the file as `proxies_recorded_but_not_deciding` |
+| 4 | Mobile performance below 30 FPS on a mid-range mobile browser | **UNVERIFIED** | — | no device. The proxies (200 fps desktop, 100 fps under a device descriptor, 100 fps under that descriptor plus a 4x CPU throttle; worst one-second windows 188, 117, 119) are retained in the file as `proxies_recorded_but_not_deciding`, and decide nothing |
 
 1. **Verified by automated/technical evidence:** criterion 3, and the whole of section 3's
    browser checks and section 6's package checks.

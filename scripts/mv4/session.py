@@ -224,9 +224,9 @@ def main(argv=None):
     # summary would name three measurements where one was taken.
     sessions = os.path.join(out, "sessions")
     shutil.rmtree(sessions, ignore_errors=True)
-    env = dict(os.environ, MV4_OUT=sessions, MV4_ARTIFACT=evidence["bundle"]["source"],
-               MV4_ARTIFACT_SHA=artifact_sha, MV4_SAMPLE_S=str(args.sample_seconds),
-               MV4_ALLOW_HOSTS=",".join(args.allow_host))
+    env = dict(os.environ, WGF_MV4_OUT=sessions, WGF_MV4_ARTIFACT=evidence["bundle"]["source"],
+               WGF_MV4_ARTIFACT_SHA=artifact_sha, WGF_MV4_SAMPLE_S=str(args.sample_seconds),
+               WGF_MV4_ALLOW_HOSTS=",".join(args.allow_host))
     evidence["allowed_hosts"] = list(args.allow_host)
     command = ["pnpm", "exec", "playwright", "test", "-c", "playwright.mv4.config.ts"]
     for project in args.project or []:

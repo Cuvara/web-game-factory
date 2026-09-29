@@ -17,11 +17,11 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { expect, test, type CDPSession, type Page } from "@playwright/test";
 
-const OUT = process.env["MV4_OUT"] ?? "mv4-session";
-const ARTIFACT = process.env["MV4_ARTIFACT"] ?? "";
-const ARTIFACT_SHA = process.env["MV4_ARTIFACT_SHA"] ?? "";
+const OUT = process.env["WGF_MV4_OUT"] ?? "mv4-session";
+const ARTIFACT = process.env["WGF_MV4_ARTIFACT"] ?? "";
+const ARTIFACT_SHA = process.env["WGF_MV4_ARTIFACT_SHA"] ?? "";
 /** Seconds of continuous play sampled for the frame-rate statistics. */
-const SAMPLE_S = Number(process.env["MV4_SAMPLE_S"] ?? "20");
+const SAMPLE_S = Number(process.env["WGF_MV4_SAMPLE_S"] ?? "20");
 
 type Hooks = Record<string, unknown> & {
   score?: number | (() => number);
@@ -126,9 +126,9 @@ test("mv4 browser session", async ({ page, context, browserName }, info) => {
   });
   page.on("pageerror", (error) => pageErrors.push(error.message));
   // Everything external is aborted, as in the golden runs - unless the operator named hosts to
-  // let through (MV4_ALLOW_HOSTS). That is how the portal SDK's own script can be fetched from
+  // let through (WGF_MV4_ALLOW_HOSTS). That is how the portal SDK's own script can be fetched from
   // the portal's origin for criterion D, deliberately, host by host, and recorded in full.
-  const allowedHosts = (process.env["MV4_ALLOW_HOSTS"] ?? "")
+  const allowedHosts = (process.env["WGF_MV4_ALLOW_HOSTS"] ?? "")
     .split(",")
     .map((host) => host.trim())
     .filter(Boolean);

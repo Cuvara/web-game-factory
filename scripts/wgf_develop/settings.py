@@ -145,8 +145,8 @@ class Settings:
                 isinstance(area, str) and isinstance(names, list)
                 and all(isinstance(n, str) and n for n in names)
                 for area, names in skills.items()):
-            raise SettingsError("factory.develop.skills must map an area (pixijs, threejs, "
-                                "ui, craft, ...) to a list of skill names")
+            raise SettingsError("factory.develop.skills must map an area (pixijs, phaserjs, "
+                                "threejs, ui, craft, ...) to a list of skill names")
         if not isinstance(data.get("self_playtest", False), bool):
             raise SettingsError("factory.develop.self_playtest must be true or false")
 

@@ -3,7 +3,8 @@ core/reference.
 
 Engine. The renderer is the design's decision, not this module's: `game_design.engine.type`
 is taken as declared. The only knowledge here is the template's mapping from dimensionality
-to its engine ids (2d -> pixijs, 3d -> threejs, core/artifacts/tech-plan.schema.json), used
+to its default engine ids (2d -> pixijs, 3d -> threejs,
+core/artifacts/tech-plan.schema.json), used
 when an older design records a dimension but no engine, or records neither and only its
 asset kinds say which it is (core/reference/asset-policy.yaml `dimension`). A design that
 says nothing either way is refused: guessing a renderer is exactly what G3 is there to stop.
@@ -29,9 +30,14 @@ __all__ = ["ENGINE_FOR_DIMENSION", "EngineError", "PhysicsError", "PlatformError
            "PHYSICS_CHOICES", "select_engine", "select_physics", "pin_platforms",
            "tightest_bundle_mb", "load_asset_kinds"]
 
-# The template's engine ids, by dimensionality. Mirrors the tech-plan schema's engine enum.
+# Every engine the template carries, by dimensionality. Mirrors the tech-plan schema's enum.
+# Two engines are 2D, so this is not an inverse of the map below: which 2D engine a game gets
+# is the design's to declare, and a design that records only `dimension: 2d` gets the default.
+DIMENSION_FOR_ENGINE = {"pixijs": "2d", "phaserjs": "2d", "threejs": "3d"}
+# The engine chosen when the design records a dimension but no engine. PixiJS stays the 2D
+# answer: it is what every existing title was planned against, and a design that wants
+# Phaser's scenes, input, tweens and physics says so by declaring `engine.type`.
 ENGINE_FOR_DIMENSION = {"2d": "pixijs", "3d": "threejs"}
-DIMENSION_FOR_ENGINE = {engine: dim for dim, engine in ENGINE_FOR_DIMENSION.items()}
 ASSET_POLICY = os.path.join(paths.REFERENCE, "asset-policy.yaml")
 
 
@@ -64,10 +70,23 @@ PHYSICS_CHOICES = {
                  "where avoiding WebAssembly matters: fixed timestep, primitive colliders, "
                  "bodies released on restart.",
 }
-# Each library's package, per engine: Rapier ships a 2D and a 3D build.
+# Each library's package, per engine: Rapier ships a 2D and a 3D build, and both 2D engines
+# take the 2D one. cannon-es is rigid bodies in 3D, so it has no 2D entry.
 PHYSICS_PACKAGE = {
-    "rapier": {"pixijs": "@dimforge/rapier2d-compat", "threejs": "@dimforge/rapier3d-compat"},
+    "rapier": {"pixijs": "@dimforge/rapier2d-compat",
+               "phaserjs": "@dimforge/rapier2d-compat",
+               "threejs": "@dimforge/rapier3d-compat"},
     "cannon-es": {"threejs": "cannon-es"},
+}
+# `custom` means "no physics dependency", which is not the same sentence for every engine:
+# Phaser ships arcade physics inside the engine the plan already pays for, so the honest
+# default there is to use it rather than to hand-roll overlap tests.
+CUSTOM_PHYSICS = {
+    "phaserjs": "Phaser's own arcade physics, which the engine already carries, in one "
+                "physics system: bodies sized with setSize/setOffset, colliders and overlaps "
+                "registered in one place, and every body released on scene shutdown. No "
+                "physics dependency is added. Matter, or a simulation library, is a "
+                "superseding tech-plan decision at G3, never development's.",
 }
 
 
@@ -86,6 +105,8 @@ def select_physics(engine, requested=None):
     if choice != "custom" and not package:
         raise PhysicsError(f"physics {choice!r} has no build for engine {engine!r}; "
                            "choose another rung of the ladder")
+    if choice == "custom" and engine in CUSTOM_PHYSICS:
+        return choice, CUSTOM_PHYSICS[engine]
     return choice, PHYSICS_CHOICES[choice].format(package=package)
 
 

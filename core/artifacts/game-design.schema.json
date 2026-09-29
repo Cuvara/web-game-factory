@@ -241,10 +241,10 @@
 
     "engine": {
       "type": "object",
-      "description": "The engine the design is drawn for: PixiJS for 2D, Three.js for 3D. Recorded at design because dimensionality changes the asset list, the camera, the controls and the load budget — a design that does not know which it is cannot be costed. tech-plan owns the binding selection (`tech_plan.engine.type`, guard engine_selected) and must agree with this, or supersede the design.",
+      "description": "The engine the design is drawn for: PixiJS or Phaser for 2D, Three.js for 3D. Recorded at design because dimensionality changes the asset list, the camera, the controls and the load budget — a design that does not know which it is cannot be costed. Which 2D engine is a smaller decision than the dimension, and `dimension: 2d` with no `type` means the 2D default; tech-plan owns the binding selection (`tech_plan.engine.type`, guard engine_selected) and must agree with this, or supersede the design.",
       "required": ["type", "dimension", "rationale"],
       "properties": {
-        "type": { "enum": ["pixijs", "threejs"] },
+        "type": { "enum": ["pixijs", "phaserjs", "threejs"] },
         "dimension": { "enum": ["2d", "3d"] },
         "rationale": {
           "type": "string",

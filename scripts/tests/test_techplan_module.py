@@ -146,7 +146,7 @@ class Entity:
 
 class EngineFromTheDesign(unittest.TestCase):
     def test_a_2d_design_gets_pixijs_and_a_3d_design_gets_threejs(self):
-        for engine in ("pixijs", "threejs"):
+        for engine in ("pixijs", "phaserjs", "threejs"):
             with self.subTest(engine):
                 result = plan(designed(engine))
                 self.assertEqual(result.outcome, StepOutcome.SUCCESS, result.error)
@@ -177,6 +177,17 @@ class EngineFromTheDesign(unittest.TestCase):
     def test_only_the_dimension_mapping_is_known_here(self):
         self.assertEqual(ENGINE_FOR_DIMENSION, {"2d": "pixijs", "3d": "threejs"})
         self.assertEqual(select_engine({"engine": {"dimension": "3d"}}, {})[0], "threejs")
+
+    def test_a_2d_dimension_alone_still_means_pixijs(self):
+        """Two engines are 2D. Which one is the design's to declare: a design that records
+        only `dimension: 2d` - every title planned before Phaser existed - keeps PixiJS."""
+        engine, _, source = select_engine({"engine": {"dimension": "2d"}}, {})
+        self.assertEqual((engine, source), ("pixijs", "design.engine.dimension"))
+        self.assertEqual(select_engine({"engine": {"type": "phaserjs"}}, {})[0], "phaserjs")
+        # Declaring the second 2D engine does not contradict declaring 2D.
+        self.assertEqual(
+            select_engine({"engine": {"type": "phaserjs", "dimension": "2d"}}, {})[0],
+            "phaserjs")
 
     def test_a_design_that_contradicts_itself_or_says_nothing_is_refused(self):
         cases = {

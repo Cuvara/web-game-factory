@@ -108,12 +108,13 @@ class ContractShapeTest(unittest.TestCase):
     def test_infrastructure_is_the_list_init_always_checked(self):
         """The list init required before the contract existed, entry for entry and in order:
         deriving the renderer packages from the engines changed nothing."""
-        self.assertEqual(contract.ENGINES, ("pixijs", "threejs"))
+        self.assertEqual(contract.ENGINES, ("pixijs", "phaserjs", "threejs"))
         self.assertEqual([p for p, _ in contract.INFRASTRUCTURE], [
             "package.json", "pnpm-workspace.yaml", "pnpm-lock.yaml", "tsconfig.base.json",
             "vite.config.ts", "vitest.workspace.ts", "playwright.config.ts", "game.config.yaml",
             "packages/game-core/", "packages/platform-sdk/", "packages/analytics-sdk/",
-            "packages/pixi-framework/", "packages/three-framework/", "config/platforms/",
+            "packages/pixi-framework/", "packages/phaser-framework/",
+            "packages/three-framework/", "config/platforms/",
             "scripts/_shared.mjs", "scripts/verify/", "scripts/release/", "scripts/publish/",
             "tests/unit/", "tests/integration/", "tests/e2e/", "tests/verify/",
             ".github/workflows/ci.yml", ".github/workflows/build.yml",
@@ -129,7 +130,7 @@ class ContractShapeTest(unittest.TestCase):
         from wgf_verification.checks import gameplay, platform
         self.assertIs(infrastructure.TEMPLATE_INFRASTRUCTURE, contract.INFRASTRUCTURE)
         self.assertEqual(infrastructure.GAME_CONFIG, "game.config.yaml")
-        self.assertEqual(infrastructure.ENGINES, ("pixijs", "threejs"))
+        self.assertEqual(infrastructure.ENGINES, ("pixijs", "phaserjs", "threejs"))
         self.assertEqual(platform.RUNTIME_FACTS, "build/runtime-facts.json")
         self.assertEqual(platform.COLLECT_FACTS, "scripts/verify/collect-facts.mjs")
         self.assertEqual(platform.EVALUATE, "scripts/verify/evaluate-assertions.mjs")

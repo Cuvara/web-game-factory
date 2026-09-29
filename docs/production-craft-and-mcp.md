@@ -41,7 +41,7 @@ for its job.
 | strategy, design | `game-design`, `core-loop`, `onboarding-ux`, `art-direction`, `monetization` | loop, onboarding, UI, audio, art, accessibility |
 | tech-plan | `architecture`, `development-planning`, `web-performance` | `web-performance.md` |
 | assets | `assets`, `art-direction`, `audio` | `art-direction.md`, `audio.md` |
-| develop | `game-feel`, `core-loop`, `pixijs` / `threejs`, `web-performance`, `onboarding-ux` | feel, loop, UI, performance |
+| develop | `game-feel`, `core-loop`, `pixijs` / `phaser` / `threejs`, `web-performance`, `onboarding-ux` | feel, loop, UI, performance |
 | review | `gameplay-review` | `gameplay-review.md` |
 | verify / QA | `qa`, `playtesting`, `web-performance` | `playtesting.md`, `accessibility.md` |
 | release | `release`, `localization` | `onboarding-and-portal-ux.md` (store presentation) |
@@ -62,6 +62,7 @@ or Claude Code user scope, used in interactive sessions.
 | assets | image-generation (unattended) | The Factory's own `2d-assets-mcp` stdio backend (`factory.assets.placeholders.2d-assets-mcp`) | slot exists, unconfigured | Factory config, not Desktop; licence configured explicitly |
 | assets | design-tool export | Figma `download_assets` | connected | licence = own work |
 | assets | audio | none suitable | gap | procedural synthesis (follow-up F5) |
+| develop (`phaserjs` only) | engine knowledge and code reuse | Phaser Game Agent MCP (`npx @phaserjs/game-agent`, `phaser_game_agent_guide`, `open_project`, `read_files`, `search_games`, `search_blocks`) | not configured; opt-in per installation | **paid** (credit-billed) and remote (`https://mcp.phaser.io/agent/mcp`, browser sign-in). Read-only use: `seed_game`, `write_files`, `verify` and `preview` act on **its** cloud workspace with **its** project layout, never this template's checkout. Never enabled for a golden run |
 | develop, QA | interactive-browser | Playwright MCP (`@playwright/mcp`) against `vite preview` on localhost; writes `build/verification/gameplay-session.json` per `playtesting.md` §A | add in Desktop | `--allowed-origins` localhost only; preview build, never the dev server |
 | QA | performance-trace | Chrome DevTools MCP (`chrome-devtools-mcp`) | add in Desktop | localhost only; traces attached to defects |
 | release | interactive-browser | Playwright MCP screenshots of the release build, for thumbnails and screenshots | add in Desktop | real build at the release commit |

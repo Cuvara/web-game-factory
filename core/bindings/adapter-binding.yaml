@@ -18,7 +18,7 @@
 # Each adapter carries a CONFORMANCE.md mapping every surface id below to its file, so
 # reviewing adapter completeness is a two-file diff rather than a directory crawl.
 
-version: 1.3.0
+version: 1.4.0
 
 surface_kinds:
   agent: A persistent role the runtime can delegate to.
@@ -361,6 +361,16 @@ skills:
       batching.
     reads:
       - core/artifacts/tech-plan.schema.json
+      - core/craft/web-performance.md
+      - core/craft/game-feel.md
+  - id: phaser
+    supports: [gameplay, ui]
+    covers: >
+      2D with Phaser: the loop game-core owns and Phaser does not, scenes and their
+      shutdown, assets, input, tweens, arcade physics, tilemaps, cameras, audio, debugging
+      and QA.
+    reads:
+      - core/craft/phaser.md
       - core/craft/web-performance.md
       - core/craft/game-feel.md
   - id: threejs

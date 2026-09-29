@@ -21,6 +21,7 @@ cannot show that raises GameConfigError instead of writing something subtly diff
 import json
 import re
 
+from wgflib.template_contract import ENGINES
 from wgflib.yamllite import YamlError, load
 
 __all__ = ["GameConfigError", "apply_game_config", "bootstrap_identity", "plain_scalar"]
@@ -202,8 +203,9 @@ def apply_game_config(text, game_config, identity=None):
 
     engine = (game_config.get("engine") or {}).get("type")
     platforms = game_config.get("platforms")
-    if engine not in ("pixijs", "threejs"):
-        raise GameConfigError(f"tech plan engine.type {engine!r} is not pixijs or threejs")
+    if engine not in ENGINES:
+        raise GameConfigError(f"tech plan engine.type {engine!r} is not one of "
+                              f"{', '.join(ENGINES)}")
     if not isinstance(platforms, list) or not platforms:
         raise GameConfigError("tech plan game_config.platforms is empty")
 

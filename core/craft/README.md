@@ -24,6 +24,7 @@ rule is.
 | [`art-direction.md`](art-direction.md) | game-designer, asset | design, prototype | `art_direction`, `build_spec.visual_identity`, `.assets`, the asset manifest |
 | [`accessibility.md`](accessibility.md) | ui, game-designer | design, prototype, qa | `ux.accessibility`, `visual_identity`, `.controls` |
 | [`web-performance.md`](web-performance.md) | architect, gameplay, qa | tech-plan, prototype, qa | `perf_budgets`, `perf_measurements`, the asset pipeline |
+| [`phaser.md`](phaser.md) | gameplay, ui | tech-plan, prototype | `build_spec.mechanics`, `.controls`, `.screens`, `.responsive` — only when `engine.type` is `phaserjs` |
 | [`3d-scene-and-physics.md`](3d-scene-and-physics.md) | gameplay, architect | tech-plan, prototype | `build_spec.mechanics`, `.controls`, `.game_states`, `architecture.physics` |
 | [`3d-assets-and-animation.md`](3d-assets-and-animation.md) | gameplay, asset | design, prototype | the asset manifest's 3D kinds, `build_spec.assets`, `max_bundle_mb` |
 | [`3d-diagnostics.md`](3d-diagnostics.md) | gameplay, architect (as reviewer), qa | prototype, qa | `known_issues`, `perf_measurements`, the repair loop |

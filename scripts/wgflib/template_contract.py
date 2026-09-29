@@ -63,7 +63,7 @@ __all__ = [
     "ASPECTS",
 ]
 
-CONTRACT_VERSION = "1.0.0"
+CONTRACT_VERSION = "2.0.0"
 
 # (version, Factory release, change). Newest last; its version is CONTRACT_VERSION.
 CONTRACT_LOG = (
@@ -74,11 +74,16 @@ CONTRACT_LOG = (
     ("1.0.0", "2.2.0", "build_target: the pinned contract's own rule - one bundle, booting "
                        "the first required platform, else the first - now encoded; no entry "
                        "changed"),
+    ("2.0.0", "2.3.0", "a second 2D engine in the tech-plan schema's engine.type enum, which "
+                       "is where ENGINES comes from: the renderer package and the rendering "
+                       "directory that follow from it are required entries the Factory did "
+                       "not require before, so a repository generated from a template "
+                       "without them is now refused"),
 )
 # contract_digest() of the entries CONTRACT_LOG's last line describes. A change to any entry
 # fails test_template_contract until it is recorded: bump CONTRACT_VERSION if acceptance
 # changed (above), add a CONTRACT_LOG line either way, then update this.
-CONTRACT_DIGEST = "sha256:a2b3f97f8e53ebffee7f1e2e8924a99da1b74e8b53b0306c03c98928776e7e9a"
+CONTRACT_DIGEST = "sha256:aedf128c63a59ed48651192f403704f496341384e1eae0922035d89692c9f7ae"
 
 # -- engines ----------------------------------------------------------------------------------
 

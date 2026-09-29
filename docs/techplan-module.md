@@ -26,15 +26,20 @@ into the game repository are the ones that were reviewed.
 
 ## Engine: the design's decision
 
-`game_design.engine.type` is taken as declared. The module's only engine knowledge is the
-template's mapping from dimensionality to engine id — `2d → pixijs`, `3d → threejs`, the
-tech-plan schema's enum — and the template's package name for each, used in the
-architecture text. There is no PixiJS- or Three.js-specific logic anywhere else.
+`game_design.engine.type` is taken as declared — including `phaserjs`, the second 2D engine.
+The module's only engine knowledge is the template's mapping from dimensionality to a
+**default** engine id — `2d → pixijs`, `3d → threejs`, from the tech-plan schema's enum — and
+the template's package name for each, used in the architecture text. There is no PixiJS-,
+Phaser- or Three.js-specific logic anywhere else.
+
+Both 2D engines map back to `2d`, so nothing about dimension changes; what a design cannot do
+is get Phaser without asking for it. `dimension: 2d` alone still selects `pixijs`, which is
+what every title planned before Phaser existed recorded.
 
 | The design says | Result | `metadata.engine_source` |
 |---|---|---|
 | `engine.type` | that engine | `design.engine.type` |
-| only `engine.dimension` | the template's engine for it | `design.engine.dimension` |
+| only `engine.dimension` | the template's default engine for it (`2d` → `pixijs`) | `design.engine.dimension` |
 | neither, but its asset lists use 3D-only kinds (`model`, `environment`…) | `threejs` | `design assets` |
 | neither, and its assets are all 2D kinds | `pixijs` | `design assets` |
 | `engine.type` and `engine.dimension` disagree | `FAILED`, not retryable | — |

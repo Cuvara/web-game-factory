@@ -64,17 +64,29 @@ _UNAVAILABLE = {
 }
 
 # Per engine: its upstream library's modules, and the template's renderer package for it.
-_ENGINE_LIBRARY_MODULES = {"pixijs": (r"pixi\.js", r"@pixi/.+"), "threejs": (r"three", r"three/.+")}
+_ENGINE_LIBRARY_MODULES = {"pixijs": (r"pixi\.js", r"@pixi/.+"),
+                           "phaserjs": (r"phaser", r"phaser/.+"),
+                           "threejs": (r"three", r"three/.+")}
 ENGINE_MODULES = {
     engine: re.compile("^(" + "|".join(_ENGINE_LIBRARY_MODULES.get(engine, ())
                                        + (re.escape(framework_package(engine)),)) + ")$")
     for engine in contract.ENGINES
 }
+# The upstream libraries alone, without the template's own renderer packages. Game source
+# importing another engine is a finding either way, but the template *depends* on every
+# renderer package - that is how its engine selector imports one dynamically - so the
+# package.json rule judges the library, never the workspace package.
+ENGINE_LIBRARIES = {
+    engine: re.compile("^(" + "|".join(modules) + ")$")
+    for engine, modules in _ENGINE_LIBRARY_MODULES.items()
+}
 
 # Engines the template does not carry. Adding one is an architecture change, which is the
-# tech plan's decision at G3, not an implementation detail.
+# tech plan's decision at G3, not an implementation detail. An engine the template *does*
+# carry is not listed here: importing or depending on it when it is not this game's engine
+# is caught by ENGINE_MODULES, with the message that names which engine this game is.
 FOREIGN_ENGINES = re.compile(
-    r"^(phaser|phaser3|@babylonjs/.+|babylonjs|playcanvas|excalibur|kaboom|kaplay|melonjs|"
+    r"^(phaser3|@babylonjs/.+|babylonjs|playcanvas|excalibur|kaboom|kaplay|melonjs|"
     r"cocos.*|@cocos/.+|@react-three/.+|aframe|littlejs|kontra)$"
 )
 
@@ -337,6 +349,13 @@ def conformance(root, brief, git):
                 if FOREIGN_ENGINES.match(name):
                     findings.append(f"package.json adds {name}, an engine the template does "
                                     f"not carry")
+                    continue
+                # Another engine's library is refused here too. The import rule above only
+                # sees game source; a dependency nothing imports yet would otherwise sit in
+                # the manifest until a later visit added the import.
+                for other, pattern in ENGINE_LIBRARIES.items():
+                    if other != engine and pattern.match(name):
+                        findings.append(f"package.json adds {name}: engine is {engine}")
 
     if brief.get("baseline_commit"):
         simple = [p for p in PROTECTED_PATHS if p not in STRUCTURAL_PATHS]

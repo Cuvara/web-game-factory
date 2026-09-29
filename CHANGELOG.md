@@ -9,6 +9,35 @@ and `core/` is still the contract.
 
 ## [Unreleased]
 
+## [2.3.0] - 2026-09-29
+
+Both engines gained ground. **Phaser is a second 2D engine** — `engine.type` accepts
+`phaserjs` next to `pixijs` and `threejs`, the pinned template ships `@wgf/phaser-framework`
+(web-game-template 1.2.0), and a Phaser title gets its own craft playbook and skill. **The
+Three.js half of the pipeline gained the craft it never had**: three 3D playbooks, a physics
+decision recorded at G3, and engine notes in the develop brief. And the acceptance gate that
+could not run on a Windows host now runs on a Linux runner in CI, which is how both golden
+runs were proved for this release.
+
+**PixiJS remains the 2D default and is unchanged**: a design that records `dimension: 2d` and
+no engine still selects `pixijs`, and no existing artifact, workflow, gate, role or platform
+changed.
+
+A minor Factory version with a **major template contract** (`CONTRACT_VERSION` 1.0.0 → 2.0.0):
+`packages/phaser-framework/` and `src/rendering/phaserjs/` follow from the new engine id by
+the template's naming convention, and they are required entries, so a repository generated
+from a template older than 1.2.0 is now refused by init. That is the whole breaking surface.
+
+**Upgrading from 2.2.x:** re-pin nothing by hand — `workspace/config/template.lock.json`
+already names web-game-template `v1.2.0`. What you will see:
+- A game repository created before the pin move is still built and verified as before; it is
+  only `init` that refuses to *create* one from an older template.
+- A design may now declare `engine.type: phaserjs`. Nothing selects it for you.
+- A Phaser title's develop brief recommends the `web-game-factory:phaser` skill and, as a
+  generic skill, the Phaser Game Agent — for reading API knowledge and reusable blocks, never
+  for writing the checkout: that tooling owns its own cloud project layout, and here the
+  template owns the layout and the build.
+
 ### Added
 
 - **3D craft playbooks** (`core/craft/3d-scene-and-physics.md`,
@@ -30,6 +59,30 @@ and `core/` is still the contract.
   build that renders nothing otherwise passes every check it has.
 - `docs/3d-benchmark.md` — the protocol for measuring the 3D developer capability. No
   results are recorded; the only measured baseline is the golden pair.
+
+- **`phaserjs` in `core/artifacts/tech-plan.schema.json`** (`engine.type` and
+  `repo_params.build.engine`), which is the one list `wgflib.template_contract.ENGINES` and
+  `guards.supported_engines()` read. The renderer package and rendering directory follow from
+  it by convention; the drift test holds both against the pinned template.
+- **`core/craft/phaser.md`** and the generated `phaser` skill in both adapters (binding
+  manifest 1.4.0): the loop game-core owns and Phaser does not, scenes and their shutdown,
+  assets, input, tweens, arcade physics, tilemaps, cameras, audio, a debugging table and a QA
+  pass. `pixijs` and `threejs` are untouched.
+- **Phaser conformance in `develop`.** `phaser` and `phaser/*` are the engine's modules for a
+  `phaserjs` game, importable only under `src/rendering/phaserjs/`; for any other game they
+  are refused exactly as before. A `package.json` dependency on another template engine's
+  library is now a finding too, not only a dependency on an engine the template does not
+  carry — previously a dependency nothing imported yet went unnoticed.
+
+### Changed
+
+- **The pinned template is web-game-template 1.2.0.** It adds `@wgf/phaser-framework`, the
+  third `createRenderer` branch, `pnpm build:engine <engine.type>`, and an engine-per-bundle
+  build: `import.meta.env.WGF_ENGINE` is defined from `game.config.yaml`, so Rollup drops the
+  engines a build does not use. A PixiJS build no longer carries the Three.js chunk, and
+  carries no Phaser.
+- `ENGINE_FOR_DIMENSION` is now the *default* engine per dimension, and `DIMENSION_FOR_ENGINE`
+  is an explicit map (two engines are 2D, so it is no longer an inverse).
 
 ## [2.2.0] - 2026-09-28
 

@@ -110,15 +110,17 @@ jobs:
           cd "$template" && pnpm exec playwright install --with-deps chromium
 
       - name: Core Acceptance Suite, with both golden runs
-        run: WGF_GOLDEN=1 bin/wgf test-core --strict
+        # WGF_GOLDEN_KEEP keeps each run's working directory, which is where the develop
+        # checks, the review verdict and the browser evidence are written. Without it a
+        # failing gate reports only a count ("conformance: 2 violation(s)") and the evidence
+        # is deleted at teardown, which is a bad trade on a runner that is thrown away anyway.
+        run: WGF_GOLDEN=1 WGF_GOLDEN_KEEP=1 bin/wgf test-core --strict
 
       - name: Golden evidence
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: golden-evidence
-          path: |
-            .factory/
-            /tmp/wgf-golden-*/**/evidence/**
-          if-no-files-found: ignore
+          path: /tmp/wgf-golden-*/evidence
+          if-no-files-found: warn
           retention-days: 7

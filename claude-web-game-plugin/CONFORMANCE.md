@@ -41,7 +41,7 @@ Regenerate the surfaces with `scripts/gen-adapters.sh`, then update this table.
 | `/wgf-status` | `claude-web-game-plugin/commands/wgf-status.md` | covered |
 | `/wgf-strategy` | `claude-web-game-plugin/commands/wgf-strategy.md` | covered |
 
-## Skills (21 of 21)
+## Skills (22 of 22)
 
 | Skill | File | Status |
 |---|---|---|
@@ -59,6 +59,7 @@ Regenerate the surfaces with `scripts/gen-adapters.sh`, then update this table.
 | `monetization` | `claude-web-game-plugin/skills/monetization/SKILL.md` | covered |
 | `onboarding-ux` | `claude-web-game-plugin/skills/onboarding-ux/SKILL.md` | covered |
 | `opportunity-scoring` | `claude-web-game-plugin/skills/opportunity-scoring/SKILL.md` | covered |
+| `phaser` | `claude-web-game-plugin/skills/phaser/SKILL.md` | covered |
 | `pixijs` | `claude-web-game-plugin/skills/pixijs/SKILL.md` | covered |
 | `platform-sdk` | `claude-web-game-plugin/skills/platform-sdk/SKILL.md` | covered |
 | `playtesting` | `claude-web-game-plugin/skills/playtesting/SKILL.md` | covered |
@@ -124,6 +125,13 @@ steps Core v1 added. Now:
 Running Claude Code *as* the Factory's unattended developer or reviewer is installation
 config, not an adapter surface: see `workspace/config/factory.yaml` and
 `docs/claude-capabilities.md`.
+
+## Phaser as a second 2D engine (binding manifest 1.4.0)
+
+One new skill, `phaser`, pointing at `core/craft/phaser.md`. `engine.type` now has a second
+2D value (`phaserjs`) in `core/artifacts/tech-plan.schema.json`; the develop brief recommends
+this skill only for a Phaser title, and `pixijs` is unchanged and still the 2D default.
+No agent, command, role, machine or gate changed.
 
 ## Not covered, deliberately
 

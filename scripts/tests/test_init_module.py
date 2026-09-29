@@ -907,6 +907,13 @@ class LocalSource(LocalCase):
         record = self.execute().artifacts[0].content
         self.assertEqual(record["game_config"]["engine"], {"type": "pixijs"})
 
+    def test_a_2d_plan_that_chose_phaser_gets_phaser(self):
+        """The second 2D engine reaches game.config.yaml unchanged: init writes the plan's
+        engine, and the repository it creates is a template that carries it."""
+        self.plan = tech_plan("phaserjs")
+        record = self.execute().artifacts[0].content
+        self.assertEqual(record["game_config"]["engine"], {"type": "phaserjs"})
+
     def test_rerun_is_idempotent(self):
         first = self.execute()
         head = git(self.local, "rev-parse", "HEAD")

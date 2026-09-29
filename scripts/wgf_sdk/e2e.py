@@ -50,6 +50,9 @@ PLATFORMS = ("yandex", "crazygames", "poki", "gamevui", "y8", "gamedistribution"
 GAME_IDS = {"gamedistribution": "0123456789abcdef0123456789abcdef",
             "gamemonetize": "wgf-sdk-e2e-0001"}
 BUILD_ENV = {"y8": {"WGF_Y8_APP_ID": "wgf-sdk-e2e-app", "WGF_Y8_GAME_ID": "wgf-sdk-e2e"}}
+# The engines this harness builds by default - one 2D and one 3D, since the integration it
+# exercises is the platform SDK, which no renderer touches. `--engines` takes any the
+# template carries; adding one here multiplies an already long browser matrix for nothing.
 ENGINES = ("pixijs", "threejs")
 
 # A design with one rewarded and one interstitial placement on every platform: the widest

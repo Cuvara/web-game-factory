@@ -25,8 +25,8 @@ from wgflib.yamllite import YamlError, load_file
 __all__ = ["Runner", "RunResult", "GitRepo", "GitError", "ExactEnv", "read_game_config",
            "ENGINES", "KEY_TRAILER"]
 
-# 2D -> PixiJS, 3D -> Three.js. The template bundles exactly these two renderers: the
-# template contract's list (the tech-plan schema's engine.type enum), not a copy of it.
+# 2D -> PixiJS or Phaser, 3D -> Three.js. The template contract's list (the tech-plan
+# schema's engine.type enum), not a copy of it.
 ENGINES = contract.ENGINES
 
 # The commit trailer a development commit is keyed by. Finding it on a commit is how a
@@ -308,6 +308,6 @@ def read_game_config(root):
     if engine not in ENGINES:
         raise ValueError(
             f"game.config.yaml engine.type is {engine!r}; the template supports only "
-            f"{' and '.join(ENGINES)} (2D -> pixijs, 3D -> threejs)"
+            f"{' and '.join(ENGINES)} (2D -> pixijs or phaserjs, 3D -> threejs)"
         )
     return document

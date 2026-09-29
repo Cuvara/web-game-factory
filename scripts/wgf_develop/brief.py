@@ -104,7 +104,7 @@ def framework_package(engine):
 
 
 # The upstream library each engine's game code imports (not a template name).
-ENGINE_LIBRARIES = {"pixijs": "pixi.js", "threejs": "three"}
+ENGINE_LIBRARIES = {"pixijs": "pixi.js", "phaserjs": "phaser", "threejs": "three"}
 
 INTEGRATION_CONTRACT = """\
 // src/game/integration.ts - the seam the integration (SDK) module wires. Game code calls
@@ -130,7 +130,7 @@ export interface GameIntegration {
 """
 
 REPORT_CONTRACT = {
-    "engine": "pixijs | threejs",
+    "engine": "pixijs | phaserjs | threejs",
     "systems": {name: "done | partial | missing" for name, _ in REQUIRED_SYSTEMS},
     "mvp": [{"item": "<exactly as listed in the brief>", "status": "built | partial | cut | "
              "deferred", "notes": "..."}],
@@ -166,6 +166,9 @@ DEV_PLAN_PHASES = (None, "prototype")
 PLUGIN = "web-game-factory"
 DEFAULT_SKILLS = {
     "pixijs": [f"{PLUGIN}:pixijs", "the official PixiJS skills"],
+    "phaserjs": [f"{PLUGIN}:phaser", "the Phaser Game Agent skill, for Phaser API knowledge "
+                 "and its reusable games and blocks - read them, never let them write this "
+                 "repository: they target their own project layout, not the template's"],
     "threejs": [f"{PLUGIN}:threejs", "a Three.js game-development skill"],
     "ui": [f"{PLUGIN}:onboarding-ux", "a frontend-design skill, for menus, HUD and screens"],
     "craft": [f"{PLUGIN}:game-feel", f"{PLUGIN}:core-loop", f"{PLUGIN}:web-performance",
@@ -179,6 +182,28 @@ DEFAULT_SKILLS = {
 # gets a complete 2D surface from its binding. Each line points at a craft playbook rather
 # than restating it; the physics line is not here because it is quoted from the tech plan.
 ENGINE_NOTES = {
+    "phaserjs": [
+        "**The loop is not Phaser's.** `PhaserRenderer` (`@wgf/phaser-framework`) boots "
+        "`Phaser.Game`, stops its `TimeStep` immediately and steps Phaser once per drawn "
+        "frame from `render()`. `@wgf/game-core` owns the fixed simulation step, pause by "
+        "reason and the scene the game is in. Never call `game.loop.start()` or `game.step()` "
+        "yourself: two loops make the simulation and the drawing disagree about elapsed time, "
+        "and the bug only shows under load.",
+        "**What goes where.** Gameplay that must be deterministic - scoring, spawn timers, "
+        "difficulty ramps - lives in game-core's fixed `update(stepMs)`. Phaser scene "
+        "`update(time, delta)` is presentation: input state, tweens, animation. Multiply by "
+        "`delta`, never by a constant per frame.",
+        "**Pause is game-core's.** `Game.pause(reason)` stops calling `render()`, which stops "
+        "stepping Phaser, which stops tweens, physics and animations together. Do not add a "
+        "second pause flag inside a scene.",
+        "**Scenes leak on restart unless you release them.** On `shutdown`, clear timers "
+        "(`this.time.removeAllEvents()`), tweens (`this.tweens.killAll()`), the input "
+        "handlers the scene added, and anything it put on the registry or on `game.events`. "
+        "Play, die and restart ten times and watch the frame rate and the heap stay flat.",
+        "**Prove the canvas renders.** A Phaser build with no scene added draws a blank "
+        "canvas, still boots and still advances `#hud[data-steps]`, so the browser test has "
+        "to say otherwise - see Tests below.",
+    ],
     "threejs": [
         "**What the template already gives you.** `ThreeRenderer` (`@wgf/three-framework`) "
         "owns the WebGL renderer, the scene, the perspective camera, the pixel-ratio cap, "
@@ -429,7 +454,7 @@ def build_brief(*, title_id, engine, iteration, key, baseline, design, assets, s
         # The run's developer budget before this visit (wgf_develop.budget summary); None
         # when the run has none.
         "sessions": dict(sessions) if sessions else None,
-        # Every area but the other engine's: a configured area is recommended, not dropped.
+        # Every area but another engine's: a configured area is recommended, not dropped.
         "skills": {k: list(v) for k, v in host_skills.items()
                    if v and not (k in ENGINE_DIRS and k != engine)},
         "report_path": REPORT_PATH,
@@ -550,7 +575,7 @@ def _ownership_section(brief):
 def render_markdown(brief):
     d = brief["design"]
     engine = brief["engine"]
-    other = next((e for e in contract.ENGINES if e != engine), engine)
+    others = [e for e in contract.ENGINES if e != engine] or [engine]
     engine_pkg = ENGINE_LIBRARIES.get(engine, engine)
     framework = framework_package(engine)
     session = d.get("session") or {}
@@ -574,9 +599,10 @@ def render_markdown(brief):
         "nothing past it.\n")
 
     add("## Ground rules\n")
-    add(f"1. **Engine: `{engine}`**, from `game.config.yaml`. 2D is PixiJS, 3D is Three.js. "
-        f"Do not add another engine, a physics engine that brings its own renderer, or "
-        f"`{other}`.")
+    add(f"1. **Engine: `{engine}`**, from `game.config.yaml`. 2D is PixiJS or Phaser, 3D is "
+        f"Three.js; the tech plan chose this one. Do not add another engine, a physics engine "
+        f"that brings its own renderer, or "
+        + " or ".join(f"`{e}`" for e in others) + ".")
     add(f"2. `{engine_pkg}` and `{framework}` are imported only under "
         f"`{brief['engine_dir']}/` (and by `src/rendering/create-renderer.ts`). Rules, state "
         f"and progression live in `src/game/` and never touch the engine. That includes "

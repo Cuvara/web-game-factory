@@ -82,7 +82,11 @@ class Runner:
         else:
             merged = dict(os.environ)
             merged.update(env or {})
-        merged.setdefault("CI", "1")  # no watch modes, no interactive prompts
+        # No watch modes, no interactive prompts. Set, not defaulted: the value the Factory
+        # gives game code must not depend on what the Factory itself was started with. A
+        # GitHub runner exports CI=true, and setdefault let that through - so the checks ran
+        # with an environment the Factory had not chosen (found by the first CI run).
+        merged["CI"] = "1"
         done = procs.run(argv, cwd=cwd, env=merged, timeout=timeout, idle_timeout=idle_timeout,
                          log_path=log_path, stderr_to_stdout=True)
         if done.error is not None:

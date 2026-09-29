@@ -79,8 +79,10 @@ class CommandRunner:
         merged = dict(agentenv.game_code_env() if self.env is None else self.env)
         merged.update(env or {})
         # CI=1 makes the template's Playwright config refuse `.only` and never reuse a stray
-        # dev server, which is the behaviour a verification wants.
-        merged.setdefault("CI", "1")
+        # dev server, which is the behaviour a verification wants. Set, not defaulted, for the
+        # reason in wgf_develop.repository: an inherited CI (a GitHub runner exports CI=true)
+        # must not decide what the Factory hands to game code.
+        merged["CI"] = "1"
         began = self.clock()
         done = procs.run(list(command), cwd=cwd, env=merged, timeout=timeout,
                          idle_timeout=self.idle_timeout, log_path=self.log_path)

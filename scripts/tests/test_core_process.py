@@ -1003,6 +1003,64 @@ class ResolvingTheProgram(unittest.TestCase):
             self.assertEqual(procs._resolved(["no-such-tool-xyz"], self.env(directory)),
                              ["no-such-tool-xyz"])
 
+    def test_a_command_with_a_separator_is_never_looked_up(self):
+        """An explicit path is the caller's decision; resolution must not second-guess it."""
+        with tempfile.TemporaryDirectory() as directory:
+            for given in ("./tool", "sub/tool", "sub" + os.sep + "tool",
+                          os.path.join(directory, "tool.CMD")):
+                with self.subTest(program=given):
+                    self.assertEqual(procs._resolved([given, "x"], self.env(directory)),
+                                     [given, "x"])
+
+    def test_a_drive_relative_name_is_not_a_bare_name(self):
+        if procs.POSIX:
+            self.skipTest("drive-relative paths are a Windows form")
+        self.assertEqual(procs._resolved(["C:tool"], self.env("C:\\")), ["C:tool"])
+
+    def test_a_child_environment_without_a_path_resolves_nothing(self):
+        self.assertEqual(procs._resolved(["tool"], {}), ["tool"])
+
+    def test_the_windows_spelling_of_the_variable_is_honoured(self):
+        if procs.POSIX:
+            self.skipTest("only Windows spells it `Path`")
+        with tempfile.TemporaryDirectory() as directory:
+            path = os.path.join(directory, "tool.CMD")
+            with open(path, "w", encoding="utf-8") as handle:
+                handle.write("@echo off\n")
+            self.assertEqual(procs._resolved(["tool"], {"Path": directory}), [path])
+
+    def test_resolution_never_makes_a_startable_program_unstartable(self):
+        """The safety property: when the child's PATH does not name the tool, argv is left as
+        written and the platform's own lookup still applies. Resolution may only ever add a
+        way to start a program, never take one away."""
+        if shutil.which("git") is None:
+            self.skipTest("git is not on PATH")
+        with tempfile.TemporaryDirectory() as directory:
+            env = dict(os.environ)
+            env["PATH"] = directory          # empty: git is not here
+            result = procs.run(["git", "--version"], env=env, timeout=60)
+            self.assertTrue(result.ok, result.tail(5))
+
+    def test_the_result_names_what_the_caller_asked_for(self):
+        """Evidence integrity: a resolved path is what is executed, never what is reported."""
+        if shutil.which("git") is None:
+            self.skipTest("git is not on PATH")
+        result = procs.run(["git", "--version"], timeout=60)
+        self.assertEqual(result.argv[0], "git")
+        self.assertEqual(result.to_dict()["argv0"], "git")
+
+    def test_spawn_resolves_the_same_way_and_keeps_the_callers_argv(self):
+        if shutil.which("git") is None:
+            self.skipTest("git is not on PATH")
+        owned = procs.spawn(["git", "--version"], stdout=subprocess.DEVNULL,
+                            stderr=subprocess.DEVNULL)
+        try:
+            self.assertEqual(owned.argv[0], "git")
+            owned.process.wait(timeout=60)
+            self.assertEqual(owned.process.returncode, 0)
+        finally:
+            owned.close()
+
     def test_an_installed_tool_starts(self):
         """The failure this exists for: a plainly installed tool reported as not startable."""
         if shutil.which("git") is None:

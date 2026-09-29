@@ -14,7 +14,7 @@ real SDK served the same build took 5.24 s, past the 5 s the platform profile as
 found that the Factory's own test suite does not run on Windows, fixed the five defects behind
 that which were the Factory's own rather than its fixtures' - two of which stopped the golden
 run's developer before it could build anything - and left the rest recorded. The Windows
-baseline went from 70 failures and 37 errors to 27 and 17, with nothing new failing.
+baseline went from 70 failures and 37 errors to 26 and 17, with nothing new failing.
 
 ## 1. The audit, and what MV-3 left open
 
@@ -356,11 +356,12 @@ coverage, and none weakens an existing test.
 
 1. **The suite does not fully run on Windows.** On this machine,
    `python -m unittest discover scripts/tests` ends
-   `FAILED (failures=27, errors=17, skipped=81)` out of 1 639 tests, against a baseline on
+   `FAILED (failures=26, errors=17, skipped=81)` out of 1 646 tests, against a baseline on
    `9fd21f0` of 70 failures and 37 errors in 1 593. The `v2.0.0`-`2.2.0` release records
-   describe a green ladder; that evidence is from Linux containers, and **the Factory still has
+   describe a green ladder, and main's Linux acceptance run is green today (36520006818, unit
+   `OK (skipped=36)`, both goldens 10/10). That evidence is all POSIX: **the Factory still has
    no evidence of a green ladder on Windows**. The 44 remaining failures, classified from their
-   tracebacks (not individually diagnosed):
+   tracebacks (not individually diagnosed; one store-concurrency case passes on some runs):
 
    | Count | Root cause |
    |---|---|
@@ -383,16 +384,20 @@ coverage, and none weakens an existing test.
    `test_core_persistence.LockTakeover` (`4 != 5`, a real concurrency assertion) and
    `UniqueTemporaryNames` (35 `PermissionError`s) — because they are about the store's
    behaviour under concurrency, which is not a fixture concern.
-2. **The 2D golden run stops at `develop` on the template's own checks** — diagnosed, not
-   fixed, because both causes are in `web-game-template` and this branch changes no template
-   source. Recorded with reproductions in `evidence/mv-4/golden/template-blockers.md`:
-   `pnpm run test` — ten unit files fail to parse under vitest on this platform, every one of
-   them (and only those) importing a `scripts/*.mjs` CLI that begins with a shebang; Node
-   imports the same modules without complaint, and 823 tests pass in the files that do load.
-   `pnpm run test:e2e` — the smoke suite's "makes no insecure requests" counts the `http://`
-   IMA bridge that the *portal's* SDK pulls in as the game's own request; the pinned `v1.1.0`
-   spec has no ad-host exclusion, while a later template commit does. Neither fires on Linux,
-   where the refusing proxy stops the portal SDK from loading at all — which is fix 8.4.
+2. **The 2D golden run stops at `develop` on Windows, on the template's own checks** — and
+   **not on Linux**, where both goldens pass 10/10 against the same pin (run 36520006818,
+   `02bf577`). So this is a Windows record, not a blocked gate. Diagnosed, not fixed: both
+   causes are in `web-game-template`, this branch changes no template source, and the template
+   work is a separate track. Reproductions in
+   `evidence/mv-4/golden/template-blockers.md`. `pnpm run test` — ten unit files fail to parse
+   under vitest on Windows, every one of them (and only those) importing a `scripts/*.mjs` CLI
+   that begins with a shebang; Node imports the same modules without complaint, and the
+   template's own Linux CI passes those ten files. `pnpm run test:e2e` — the smoke suite's
+   "makes no insecure requests" counts the `http://` IMA bridge that the *portal's* SDK pulls
+   in as the game's own request, at `v1.1.0`, `v1.2.0` and template `main` alike; the matching
+   rule exists only in `tests/verify/facts.spec.ts` (template PR #5, already in the pin), so
+   the two specs in one repository disagree. Neither fires on Linux, where the refusing proxy
+   stops the portal SDK loading at all - which is fix 8.4.
 3. **Verify cannot consume a device measurement even if one existed.** `policy.device-performance`
    is `PASS_MOCK` by construction and there is no input by which a real measurement could make
    it `PASS`. MV-4 deliberately did not add one: with no device to test it against, the code
@@ -414,7 +419,7 @@ it rests on, and no answer rests on a mock presented as the real thing.
 
 | | | Verdict | Evidence |
 |---|---|---|---|
-| 1 | Generate a playable game | **Yes, on Linux; partly here** | `tower-merge-rush` exists, boots, plays, reaches game-over and restarts — measured here in a real browser. It was generated from template `0.1.0`, and the production runs that made it were on Linux. On this machine the 2D golden run reached a scaffolded repository with the whole example game written into it and then stopped at `develop` (section 11). |
+| 1 | Generate a playable game | **Yes, on Linux; partly here** | `tower-merge-rush` exists, boots, plays, reaches game-over and restarts — measured here in a real browser. It was generated from template `0.1.0`, and the production runs that made it were on Linux. Main's Linux acceptance run does it end to end today: both goldens 10/10 (36520006818). On this machine the 2D golden run reached a scaffolded repository with the whole example game written into it and then stopped at `develop` (section 11). |
 | 2 | Have an agent implement it | **Yes, previously; not re-run here** | The 2.1.2 production run's live developer built the MVP in 2.12 agent-hours across sessions ([handoff](handoff/2026-09-27-production-validation.md)). MV-4 ran no agent. |
 | 3 | Review and iterate it | **Yes, previously; not re-run here** | Same run: review 1 requested two genuine blockers, the developer fixed them, review 2 approved `9788f2e`. |
 | 4 | Verify it | **Yes, with a qualification** | Verify passed 41/45 with 0 FAIL in that run. The qualification is section 4: one of the numbers it verifies is measured with the portal SDK absent. |
@@ -438,7 +443,7 @@ stranger nor a phone was available.
 | `python scripts/wgf-hash.py --check workspace/` | **OK** |
 | `bash scripts/gen-adapters.sh` | **no diff** |
 | `python -m unittest scripts.tests.test_mv4` | **29 / 29 OK** |
-| `python -m unittest discover scripts/tests` | 1 639 tests, **27 failures, 17 errors**, 81 skipped - against a Windows baseline on `9fd21f0` of **70 failures and 37 errors** in 1 593 tests. 63 of the baseline's failures now pass; the failing set is compared name by name after every increment, and **none is new**. |
+| `python -m unittest discover scripts/tests` | 1 646 tests, **26 failures, 17 errors**, 81 skipped - against a Windows baseline on `9fd21f0` of **70 failures and 37 errors** in 1 593 tests. 64 of the baseline's failures now pass; the failing set is compared name by name after every increment, and **none is new**. |
 | `bin/wgf test-core --json` | FAIL / INCOMPLETE on Windows, and it now prints its report at all (fix 8.5 — the previous run raised `UnicodeEncodeError` after twenty minutes of work and emitted nothing): |
 
 | Category | Result | tests | passed | failed | errors | skipped |
@@ -450,7 +455,7 @@ stranger nor a phone was available.
 | RELEASE | **PASS** | 49 | 48 | 0 | 0 | 1 |
 | 2D GOLDEN | SKIP | 10 | 0 | 0 | 0 | 10 |
 | 3D GOLDEN | SKIP | 10 | 0 | 0 | 0 | 10 |
-| PROCESS CLEANUP | **PASS** | 40 | 6 | 0 | 0 | 34 |
+| PROCESS CLEANUP | **PASS** | 47 | 13 | 0 | 0 | 34 |
 | SECURITY | FAIL | 117 | 105 | 8 | 1 | 3 |
 
 AGENTS went from 17 passed of 47 to 41 of 47, RELEASE from 27 of 49 to 48 of 49 - now PASS -
@@ -461,13 +466,28 @@ both golden categories are skipped without `WGF_GOLDEN=1`.
 
 | Check | Result |
 |---|---|
-| `WGF_GOLDEN=1 bin/wgf test-core --only "2D GOLDEN"` | **FAIL on Windows, 3 of 10** — below |
+| `WGF_GOLDEN=1 bin/wgf test-core --only "2D GOLDEN"` | **FAIL on Windows, 3 of 10** — below. The same gate is **PASS 10/10 on Linux** at `origin/main` `02bf577` against the same pin (run 36520006818), so the gate is not blocked; this branch has not been through that runner yet |
 | MV-4 harness | 3 browser sessions, 1 platform session, 1 packaging audit, 1 device record, 1 playtest summary, 1 G4 record, 1 golden-run record — all under `evidence/mv-4/` |
 
+**The golden gate itself is green, on Linux.** Run 36520006818, `origin/main` `02bf577`,
+Ubuntu 24.04, the workflow PR #10 added (`031ca0e`), against the same pinned template
+`bca41a97665f…` (`v1.1.0`) this branch uses:
+
+| Category | Result | tests | passed |
+|---|---|---|---|
+| 2D GOLDEN | **PASS** | 10 | 10 |
+| 3D GOLDEN | **PASS** | 10 | 10 |
+
+`Core Acceptance Suite: OK (INCOMPLETE — 7 tests skipped in PASS categories; 639 tests)`; the
+unit suite in the same run `OK (skipped=36)` over 1 603 tests. That is the evidence that the
+currently pinned template passes the golden gate on POSIX. **MV-4 does not claim the gate is
+blocked.** That run is not this branch's — it is main's — so it says nothing yet about
+`b70453e`; getting the same runner onto this branch is the remaining step (section 12).
+
 **The 2D golden run on Windows**, run six times, and diagnosed to a stop rather than left at
-one. The record of the last run is `evidence/mv-4/golden/golden-2d-windows.json`; the two
-remaining causes, with their reproductions, are in
-`evidence/mv-4/golden/template-blockers.md`.
+one, is a record about this machine and not about the gate. The record of the last run is
+`evidence/mv-4/golden/golden-2d-windows.json`; the two remaining causes, with their
+reproductions, are in `evidence/mv-4/golden/template-blockers.md`.
 
 - research, strategy, strategy-review, design, tech-plan, tech-plan-review, init and assets all
   SUCCEED. The run's artifacts are pinned by hash: `research-report`, `opportunity`,
@@ -481,21 +501,24 @@ remaining causes, with their reproductions, are in
 - `develop` now fails on the **game repository's own checks**: `unit: pnpm run test: exit 1;
   smoke: pnpm run test:e2e: exit 1`. Both causes are in `web-game-template` — ten unit files
   that do not parse under vitest on this platform, and a smoke assertion that counts the
-  portal SDK's `http://` ad bridge as the game's own insecure request. Neither is fixed here.
+  portal SDK's `http://` ad bridge as the game's own insecure request. Neither is fixed here,
+  neither blocks the Linux gate, and the template's own Linux CI passes those ten files.
 - Everything after `develop` is therefore NOT_RUN: review, sdk, sdk-review, verify,
   prototype-review, release. No release was drafted in a golden run on this machine, and the
   browser evidence in section 3 was taken by MV-4's own harness, not by the golden run.
 - The run's own network record now says what it is worth:
   `"enforced": false, "platform": "win32", "refused_requests": 0` with the reason. Before fix
   8.4 it said `refused_requests: 0` and nothing else, which reads as isolation and was not.
-- The 3D golden run was not attempted: it has the same developer stand-in and the same game
-  repository checks, and would stop at the same step.
+- The 3D golden run was not attempted **on Windows**: it has the same developer stand-in and
+  the same game repository checks, and would stop at the same step. On Linux it passes 10/10.
 
-The Linux ladder that `v2.2.0` was released against was not re-run: this machine is Windows and
-no Linux host was available. **A merge of this branch should be validated on Linux before it is
-believed**, exactly as the release records describe. While MV-4 ran, `origin/main` gained a
-Linux acceptance runner (`031ca0e`, PR #10), which is where that validation now belongs; this
-branch was not merged, rebased or brought up to it.
+**This branch's own Linux ladder has not been run.** Everything above was measured on Windows.
+While MV-4 ran, `origin/main` gained a Linux acceptance runner (PR #10, `031ca0e`) and it is
+green on main at `02bf577`, goldens included — but that run is main's, not `b70453e`'s. The
+workflow triggers on `push: [main]`, `pull_request: [main]` and `workflow_dispatch`, and this
+branch carries no `.github/workflows`, so the only way to put it on that runner without
+touching main is a pull request. **This branch is not believed until that run is green**,
+exactly as the release records describe. It was not merged, rebased or brought up to main.
 
 ## 12. Not done, and why
 

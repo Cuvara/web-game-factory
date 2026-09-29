@@ -73,7 +73,10 @@ two adapters identical in substance and different only in host mechanics.
 
 ## Validating
 
-No toolchain is installed and none should be. Validate on demand:
+No toolchain is installed and none should be. Validate on demand — and the same commands run
+on a Linux runner for every pull request (`.github/workflows/acceptance.yml`; see
+[Why there is no toolchain](#why-there-is-no-toolchain) for the one thing that made CI
+necessary):
 
 ```bash
 # compile every schema
@@ -145,9 +148,20 @@ module registers itself: [workflow-engine.md](workflow-engine.md).
 
 ## Why there is no toolchain
 
-`core/` must stay consumable by a provider that cannot execute anything. A `package.json`,
-a lockfile and a CI workflow in a repository whose entire product is markdown and JSON is
-permanent maintenance surface against zero titles currently in flight.
+`core/` must stay consumable by a provider that cannot execute anything. A `package.json`
+and a lockfile in a repository whose entire product is markdown and JSON is permanent
+maintenance surface against zero titles currently in flight.
+
+**CI is the one exception**, added deliberately and kept to one file
+(`.github/workflows/acceptance.yml`, one job, first-party actions only). The reason is
+specific and not about convenience: `WGF_GOLDEN=1 bin/wgf test-core --strict` is the release
+gate, and the golden harness calls `pnpm` through `wgflib.procs`, which spawns without a
+shell. On Windows pnpm is a `.cmd` shim the spawn cannot resolve, so both goldens fail in
+`setUpClass` with `FileNotFoundError: [WinError 2]` — on any branch, including a pristine
+`main`. Without a POSIX runner the gate could not be executed at all, and the alternative
+(teaching the harness to find `pnpm.cmd`) would weaken the gate for every host to suit one.
+The workflow installs node and the template's own pnpm, runs the commands above verbatim,
+and adds no mock, no shim and no changed expectation.
 
 The honest cost: **contracts are advisory until someone runs the command above.** Nothing
 stops an agent emitting a `game-design` with no `session` block; it will be caught

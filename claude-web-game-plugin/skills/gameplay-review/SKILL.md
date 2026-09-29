@@ -12,6 +12,7 @@ Reviewing a development commit read-only for the defects players feel: restart s
 ## Authoritative sources
 
 - `core/craft/gameplay-review.md`
+- `core/craft/3d-diagnostics.md`
 - `core/lifecycle/stages/prototype.md`
 - `core/artifacts/review-report.schema.json`
 

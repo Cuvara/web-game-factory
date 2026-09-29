@@ -9,6 +9,28 @@ and `core/` is still the contract.
 
 ## [Unreleased]
 
+### Added
+
+- **3D craft playbooks** (`core/craft/3d-scene-and-physics.md`,
+  `core/craft/3d-assets-and-animation.md`, `core/craft/3d-diagnostics.md`). The template's
+  Three.js binding is a renderer, one scene and one camera, so a 3D game writes its whole
+  runtime; the Factory now says how. Parts adapted from
+  `majidmanzarpour/threejs-game-skills` (MIT). The `threejs`, `web-performance`, `qa` and
+  `gameplay-review` skills read them (adapter binding 1.3.0); no new surface id.
+- **`tech-plan.architecture.physics`** — optional, additive, so every existing tech plan
+  stays valid. The physics approach and its exact package are decided at G3
+  (`with: {physics: custom|rapier|cannon-es}`), never inferred from the design and never at
+  development time. The develop brief quotes the line and allows only the package it names;
+  the reviewer treats an unplanned physics dependency as a blocker.
+- **Engine notes in the development brief**, for `threejs` only (`brief.json`
+  `engine_notes`; a 2D brief is unchanged): what the renderer binding already owns, the one
+  update order, the model and clip checks after import, restart releasing everything, and a
+  required `@boot` assertion that the canvas is neither blank nor a single flat colour, with
+  the renderer's counters logged. No new gameplay aspect and no Factory-side probe: a 3D
+  build that renders nothing otherwise passes every check it has.
+- `docs/3d-benchmark.md` — the protocol for measuring the 3D developer capability. No
+  results are recorded; the only measured baseline is the golden pair.
+
 ## [2.2.0] - 2026-09-28
 
 Factory 2.2.0 (`docs/v2.2-release.md`): MV-3 of the post-production plan (PR #8) - a release

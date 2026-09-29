@@ -125,9 +125,9 @@ class Fixed(TechPlanStep):
     clock = staticmethod(lambda: NOW)
 
 
-def plan(design, strat=None, config=None, context=None):
+def plan(design, strat=None, config=None, context=None, params=None):
     step = Fixed(_Definition("tech-plan", "tech-plan", ["game-design", "title-strategy"],
-                             ["tech-plan"]))
+                             ["tech-plan"], params))
     strat = strategy() if strat is None else strat
     return step.execute(inputs(**{"game-design": design, "title-strategy": strat}),
                         context or Context(config))
@@ -192,6 +192,46 @@ class EngineFromTheDesign(unittest.TestCase):
         design["engine"]["dimension"] = "3d"
         result = plan(rehash(design))
         self.assertEqual((result.outcome, result.retryable), (StepOutcome.FAILED, False))
+
+
+# -- physics -------------------------------------------------------------------------------
+
+
+class PhysicsIsTheTechPlansDecision(unittest.TestCase):
+    """core/craft/3d-scene-and-physics.md: the ladder is climbed at G3, never at develop."""
+
+    def test_nothing_is_inferred_from_the_design_so_the_default_is_custom(self):
+        for engine in ("pixijs", "threejs"):
+            with self.subTest(engine):
+                artifact = plan(designed(engine)).artifacts[0].content
+                physics = artifact["architecture"]["physics"]
+                self.assertIn("Custom collision", physics)
+                self.assertNotIn("@dimforge", physics)
+
+    def test_an_explicit_choice_names_the_engines_own_package(self):
+        cases = {"threejs": "@dimforge/rapier3d-compat", "pixijs": "@dimforge/rapier2d-compat"}
+        for engine, package in cases.items():
+            with self.subTest(engine):
+                result = plan(designed(engine), params={"physics": "rapier"})
+                self.assertEqual(result.outcome, StepOutcome.SUCCESS)
+                self.assertIn(package, result.artifacts[0].content["architecture"]["physics"])
+                self.assertEqual(result.artifacts[0].metadata["physics"], "rapier")
+
+    def test_a_choice_the_factory_does_not_plan_for_is_refused(self):
+        for value in ("ammo", "havok", ""):
+            with self.subTest(value):
+                result = plan(designed("threejs"), params={"physics": value})
+                self.assertEqual((result.outcome, result.retryable),
+                                 (StepOutcome.FAILED, False))
+
+    def test_a_2d_game_cannot_pick_a_3d_only_library(self):
+        result = plan(designed("pixijs"), params={"physics": "cannon-es"})
+        self.assertEqual((result.outcome, result.retryable), (StepOutcome.FAILED, False))
+
+    def test_the_field_is_optional_so_an_older_plan_still_validates(self):
+        artifact = plan(designed("threejs")).artifacts[0].content
+        del artifact["architecture"]["physics"]
+        self.assertEqual(ArtifactContracts()("tech-plan", rehash(artifact)), [])
 
 
 # -- the plan ------------------------------------------------------------------------------

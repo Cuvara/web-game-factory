@@ -56,6 +56,25 @@ checklist adds a gameplay lens to it. Every item below is a **blocker** when it 
       disposed.
 - [ ] Assets load through the loader with progress, and nothing blocks the first frame.
 
+## 3D, when the game is 3D
+
+Read `3d-scene-and-physics.md` and `3d-diagnostics.md` for why each of these is a defect
+players feel rather than a style preference.
+
+- [ ] **One update order, stated in one place**, with a fixed simulation step and a clamped
+      accumulator. Variable-delta simulation is a blocker.
+- [ ] **Body transforms are copied to meshes in exactly one system.** Two writers drift.
+- [ ] **Restart releases everything**: geometries, materials, textures, render targets,
+      animation mixers, and every physics body the run created.
+- [ ] Imported models simulate against a collision proxy, never against the visual mesh.
+- [ ] The physics approach matches the tech plan's `architecture.physics`. A physics
+      dependency the plan does not name is a blocker, not a judgement call.
+- [ ] The camera never puts geometry between the player and the next decision, and the
+      framing still works at the portrait viewport.
+- [ ] Root motion has exactly one owner — the clip or the gameplay code, not both.
+- [ ] A loader failure surfaces as an error. A swallowed rejection that leaves an empty scene
+      is a blocker even when every test passes.
+
 ## Accessibility and safety
 
 - [ ] No effect can flash more than 3 times per second. Reduced motion is honoured where the

@@ -16,17 +16,22 @@ configured by the optional `factory.techplan` section there.
 from .devplan import Estimates, build_dev_plan
 from .selection import (
     ENGINE_FOR_DIMENSION,
+    PHYSICS_CHOICES,
     EngineError,
+    PhysicsError,
     PlatformError,
     select_engine,
+    select_physics,
     pin_platforms,
 )
 from .step import TechPlanStep, TechPlanSettings, SettingsError
 
 __all__ = [
     "ENGINE_FOR_DIMENSION",
+    "PHYSICS_CHOICES",
     "EngineError",
     "Estimates",
+    "PhysicsError",
     "PlatformError",
     "SettingsError",
     "TechPlanSettings",
@@ -35,6 +40,7 @@ __all__ = [
     "pin_platforms",
     "register",
     "select_engine",
+    "select_physics",
 ]
 
 

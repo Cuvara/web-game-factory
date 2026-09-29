@@ -57,6 +57,11 @@ technical demonstration that a mechanic runs.
 `core/craft/onboarding-and-portal-ux.md`, `core/craft/playtesting.md` (agent playthrough and
 stranger playtest protocols), `core/craft/gameplay-review.md` (the reviewer's gameplay lens).
 
+For a 3D title, also `core/craft/3d-scene-and-physics.md` (update order, camera, the physics
+ladder the tech plan pinned), `core/craft/3d-assets-and-animation.md` (model import checks,
+clips, disposal) and `core/craft/3d-diagnostics.md` (the triage order for a build that boots
+and renders nothing, and the profiling discipline).
+
 ## Exit
 
 `ci_green` and `playable_build` → `prototype-review`. The build must be openable and

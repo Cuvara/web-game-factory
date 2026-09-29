@@ -46,6 +46,10 @@
       "description": "Covers the systems the template provides slots for. Each entry should say what is generic (template), what is game-specific, and what is platform-specific.",
       "properties": {
         "rendering": { "type": "string" },
+        "physics": {
+          "type": "string",
+          "description": "How the game detects and resolves collisions, and the exact package if it needs one. A simulation library is a dependency, a bundle cost and a source of non-determinism, so it is decided here at G3 and never at development time: development may add only what this names. Custom collision in game code is the default and needs no package."
+        },
         "game_core": { "type": "string" },
         "state": { "type": "string" },
         "input": { "type": "string" },

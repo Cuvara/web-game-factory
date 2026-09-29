@@ -173,6 +173,53 @@ DEFAULT_SKILLS = {
 }
 
 
+# Engine-specific ground truth, for the engine whose template surface does not carry it.
+# `packages/three-framework` is a WebGL renderer, one scene and one camera: a 3D game writes
+# its whole runtime - loaders, camera rigs, animation, disposal - itself, while a 2D game
+# gets a complete 2D surface from its binding. Each line points at a craft playbook rather
+# than restating it; the physics line is not here because it is quoted from the tech plan.
+ENGINE_NOTES = {
+    "threejs": [
+        "**What the template already gives you.** `ThreeRenderer` (`@wgf/three-framework`) "
+        "owns the WebGL renderer, the scene, the perspective camera, the pixel-ratio cap, "
+        "resize, render and destroy. Import it. Never construct a second renderer, and never "
+        "raise the pixel-ratio cap - it is what keeps a phone's native ratio inside the frame "
+        "budget. Everything else is yours: loaders, camera rig, entities, animation, "
+        "disposal, diagnostics.",
+        "**One update order, written in one place**: input intents, then the fixed-step "
+        "simulation behind a clamped accumulator, then game state and collisions, then VFX, "
+        "camera and UI, then render. Transforms reach meshes in exactly one system - two "
+        "writers is how a mesh and its collider drift apart over a session.",
+        "**Models and clips.** Load GLB/glTF only from the asset paths listed below. Decoder "
+        "files for compressed meshes and textures are bundle payload, so configure them once "
+        "and count them. After import, check scale against world units, pivot, orientation, "
+        "material count and clip names before wiring anything; simulate against a collision "
+        "proxy, never the visual mesh. A loader failure is an error you surface, never a "
+        "swallowed rejection - that is how a build boots happily and renders nothing.",
+        "**Restart releases everything** it created: geometries, materials, textures, render "
+        "targets, animation mixers, physics bodies, listeners. Heap after ten restarts should "
+        "look like heap after one.",
+        "**Prove the canvas renders.** A 3D build that draws nothing still boots, still "
+        "advances `#hud[data-steps]` and still passes every other check, so the browser test "
+        "has to say otherwise - see Tests below.",
+    ],
+}
+# The physics line when the run holds no tech plan. The default the tech plan itself writes.
+PHYSICS_FALLBACK = ("No tech plan in this run, so no physics library is planned: use custom "
+                    "collision and overlap tests in `src/game/`. If the MVP genuinely needs "
+                    "a simulation, say so in `known_issues` - adding one is a superseding "
+                    "tech plan at G3, not this step's decision.")
+
+
+def _physics_note(tech_plan):
+    """The tech plan's `architecture.physics`, verbatim, with the rule that goes with it."""
+    planned = ((tech_plan or {}).get("architecture") or {}).get("physics")
+    if not isinstance(planned, str) or not planned.strip():
+        return PHYSICS_FALLBACK
+    return (planned.strip() + " That is the approved plan: add a physics package only if the "
+            "line above names one, and then only that one.")
+
+
 def _pin(artifact_type, content, ref):
     provenance = (content or {}).get("provenance") or {}
     return {
@@ -316,6 +363,12 @@ def build_brief(*, title_id, engine, iteration, key, baseline, design, assets, s
         "baseline_commit": baseline,
         "engine": engine,
         "engine_dir": ENGINE_DIRS[engine],
+        # What this engine needs said that the template does not carry, plus the physics
+        # approach the tech plan approved at G3. None for an engine whose binding is a
+        # complete surface, so nothing about the 2D brief changes.
+        "engine_notes": ({"notes": list(ENGINE_NOTES[engine]),
+                          "physics": _physics_note(tech_plan)}
+                         if engine in ENGINE_NOTES else None),
         "inputs": [
             _pin(t, c, refs.get(t))
             for t, c in (("game-design", design), ("asset-manifest", assets),
@@ -558,6 +611,17 @@ def render_markdown(brief):
         "Match the template's style.")
     add("")
 
+    notes = brief.get("engine_notes")
+    if notes:
+        add(f"## Engine notes ({engine})\n")
+        add("What this engine needs that the template does not provide for you. None of it "
+            "replaces the ground rules above.\n")
+        for note in notes.get("notes") or []:
+            add(f"- {note}")
+        if notes.get("physics"):
+            add(f"- **Physics.** {notes['physics']}")
+        add("")
+
     add("## Required systems\n")
     add("Report each in `systems` as done, partial or missing. Anything but done fails the "
         "checks.\n")
@@ -714,6 +778,12 @@ def render_markdown(brief):
     add("- Extend `tests/e2e/smoke.spec.ts` (Playwright, desktop and mobile) so it plays: "
         "boot, start a run through real input, reach game over, restart - with no page "
         "errors. Keep the existing boot assertions.")
+    if brief.get("engine_notes"):
+        add("- **The canvas must be shown to render.** In the `@boot` test, during active "
+            "play rather than on the title screen, assert that the canvas pixels are neither "
+            "blank nor a single flat colour, and log the renderer's own counters (draw calls, "
+            "triangles, geometries, textures) so the run has the numbers. Zero draw calls "
+            "with a healthy loop is the defect this catches.")
     aspects = brief.get("verification_aspects") or {}
     if aspects.get("required"):
         add("- **Verification evidence.** Verification counts a gameplay aspect as proven only "

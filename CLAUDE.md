@@ -327,6 +327,9 @@ seen by the engine — validate what you write there with ajv.
   per-checkout lock, assets into `<checkout>/public/assets`
 - `docs/agent-lifecycle.md` — process ownership, heartbeat, liveness, cancellation
 - `docs/golden-runs.md` — the 2D and 3D regression runs
+- `docs/3d-benchmark.md` — how to measure the 3D developer capability: the seven game
+  shapes, what to record from a run, and the regression baseline. Results only from runs
+  that happened
 - `docs/core-v1.md` — what Core v1 guarantees, and how module work is validated against it
 - `docs/v1-usable.md` — 1.1.0: the real-Claude acceptance run against template v1.1.0, what
   it found and fixed, PASS / PASS_MOCK / UNVERIFIED / BLOCKED_EXTERNAL

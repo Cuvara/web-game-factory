@@ -671,6 +671,68 @@ class HostSkills(DevelopCase):
                     self.assertTrue(os.path.isfile(os.path.join(root, skill, "SKILL.md")), name)
 
 
+class EngineNotes(DevelopCase):
+    """The 3D brief carries what the template's Three.js binding does not, and the physics
+    the tech plan approved at G3. The 2D brief carries neither."""
+
+    def brief(self, engine="threejs", tech_plan=True, physics=None):
+        if engine != "pixijs":
+            path = os.path.join(self.repo, "game.config.yaml")
+            with open(path, encoding="utf-8") as handle:
+                config = handle.read()
+            with open(path, "w", encoding="utf-8") as handle:
+                handle.write(config.replace("type: pixijs", f"type: {engine}"))
+            self.git("add", "-A")
+            self.git(*IDENTITY, "commit", "-q", "-m", engine)
+        overrides = {}
+        if tech_plan:
+            plan = fixture("tech-plan")
+            if physics is not None:
+                plan["architecture"]["physics"] = physics
+            plan["provenance"]["content_hash"] = content_hash(plan)
+            overrides["tech-plan"] = plan
+        types = ("game-design", "asset-manifest", "scaffold-record", "title-strategy")
+        types += ("tech-plan",) if tech_plan else ()
+        result = step_with(FakeRunner()).execute(inputs_for(types=types, overrides=overrides),
+                                                 context(self.config()))
+        self.assertEqual(result.outcome, StepOutcome.WAITING_FOR_HUMAN, result.error)
+        with open(os.path.join(self.repo, briefs.BRIEF_DIR, "brief.json")) as handle:
+            data = json.load(handle)
+        with open(os.path.join(self.repo, briefs.BRIEF_DIR, "brief.md")) as handle:
+            return data, handle.read()
+
+    def test_the_2d_brief_has_no_engine_notes_at_all(self):
+        data, text = self.brief(engine="pixijs")
+        self.assertIsNone(data["engine_notes"])
+        self.assertNotIn("## Engine notes", text)
+        self.assertNotIn("The canvas must be shown to render", text)
+
+    def test_the_3d_brief_states_what_the_binding_owns_and_the_update_order(self):
+        data, text = self.brief(physics=None, tech_plan=False)
+        self.assertEqual(len(data["engine_notes"]["notes"]), len(briefs.ENGINE_NOTES["threejs"]))
+        self.assertIn("## Engine notes (threejs)", text)
+        for needle in ("ThreeRenderer", "pixel-ratio cap", "clamped accumulator",
+                       "exactly one system", "collision proxy", "Restart releases everything",
+                       "The canvas must be shown to render"):
+            self.assertIn(needle, text, needle)
+
+    def test_the_physics_line_is_the_tech_plans_own_words(self):
+        data, text = self.brief(physics="Rapier (@dimforge/rapier3d-compat), fixed timestep.")
+        self.assertIn("@dimforge/rapier3d-compat", data["engine_notes"]["physics"])
+        self.assertIn("only that one", data["engine_notes"]["physics"])
+        self.assertIn("**Physics.** Rapier (@dimforge/rapier3d-compat)", text)
+
+    def test_without_a_tech_plan_the_answer_is_custom_collision_not_a_dependency(self):
+        data, text = self.brief(tech_plan=False)
+        self.assertEqual(data["engine_notes"]["physics"], briefs.PHYSICS_FALLBACK)
+        self.assertIn("custom collision", text)
+        self.assertNotIn("@dimforge", text)
+
+    def test_a_tech_plan_that_records_no_physics_falls_back_the_same_way(self):
+        data, _ = self.brief(physics="   ")
+        self.assertEqual(data["engine_notes"]["physics"], briefs.PHYSICS_FALLBACK)
+
+
 class Handoff(DevelopCase):
     def test_writes_the_brief_and_waits_for_a_person(self):
         runner = FakeRunner()

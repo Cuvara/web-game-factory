@@ -10,7 +10,9 @@ Outcomes, per docs/workflow-module-contract.md §7:
     pinned platform profile missing or moved               BLOCKED - re-pin in a superseding
                                                            strategy
     design not planable (consistency not pass, title       FAILED, not retryable
-    mismatch, no engine, engine/dimension contradiction)
+    mismatch, no engine, engine/dimension contradiction),
+    or a `with: {physics: ...}` this Factory does not plan
+    for
     otherwise                                              SUCCESS - including a plan that
                                                            does not fit the timebox: that is
                                                            G3's call (plan_fits_timebox), not
@@ -27,8 +29,8 @@ from wgflib.yamllite import YamlError, load_file
 
 from .devplan import Estimates, build_dev_plan
 from .registration import RegistrationError, load_registrations, registered_entry
-from .selection import (DIMENSION_FOR_ENGINE, EngineError, PlatformError, pin_platforms,
-                        select_engine, tightest_bundle_mb)
+from .selection import (DIMENSION_FOR_ENGINE, EngineError, PhysicsError, PlatformError,
+                        pin_platforms, select_engine, select_physics, tightest_bundle_mb)
 
 __all__ = ["TechPlanStep", "TechPlanSettings", "SettingsError", "SCHEMA_VERSION", "ROLE"]
 
@@ -168,6 +170,10 @@ class TechPlanStep(WorkflowStep):
         except EngineError as exc:
             return StepResult.failed(str(exc), retryable=False)
         try:
+            physics, physics_text = select_physics(engine, self.params.get("physics"))
+        except PhysicsError as exc:
+            return StepResult.failed(str(exc), retryable=False)
+        try:
             platforms = pin_platforms(strategy, self.platforms_dir)
         except PlatformError as exc:
             return StepResult.blocked(str(exc))
@@ -180,14 +186,14 @@ class TechPlanStep(WorkflowStep):
 
         now = self.clock()
         plan = self._plan(design, strategy, title_id, engine, rationale, platforms, settings,
-                          entries)
+                          entries, physics_text)
         artifact = self._with_provenance(plan, inputs, title_id, now, context)
 
         total = plan["dev_plan"]["est_days"]
         budget = strategy.get("timebox_days")
         allowed = budget * settings.overrun_tolerance if isinstance(budget, (int, float)) else None
         fits = None if allowed is None else total <= allowed
-        metadata = {"engine": engine, "engine_source": engine_source,
+        metadata = {"engine": engine, "engine_source": engine_source, "physics": physics,
                     "platforms": [p.pin for p in platforms], "est_days": total,
                     "timebox_days": budget, "fits_timebox": fits}
         metadata = {k: v for k, v in metadata.items() if v is not None}
@@ -204,7 +210,7 @@ class TechPlanStep(WorkflowStep):
     # -- composition --------------------------------------------------------------------
 
     def _plan(self, design, strategy, title_id, engine, rationale, platforms, settings,
-              entries=None):
+              entries=None, physics_text=None):
         placements = (design.get("monetization") or {}).get("placements") or []
         kinds = [p.get("kind") for p in placements if isinstance(p, dict)]
         ad_kinds = [k for k in AD_KINDS if k in kinds]
@@ -234,6 +240,7 @@ class TechPlanStep(WorkflowStep):
         architecture = {
             "rendering": f"{engine} ({dimension}) through the template's renderer seam "
                          f"(createRenderer, {package}); the other engine is never loaded.",
+            "physics": physics_text or select_physics(engine)[1],
             "game_core": "Template packages/game-core: loop, scenes, events, pause. Game "
                          "states and mechanics from the design's build_spec live in src/.",
             "state": "Game state machine from build_spec.game_states, in src/; persistence "

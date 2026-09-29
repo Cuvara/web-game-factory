@@ -12,8 +12,9 @@ Core Acceptance Suite: OK (INCOMPLETE — 7 tests skipped in PASS categories; 63
 
 Run 36520006818 (https://github.com/Cuvara/web-game-factory/actions/runs/36520006818),
 Ubuntu 24.04, the workflow PR #10 added (`031ca0e`). The unit suite in the same run:
-`OK (skipped=36)` over 1 603 tests. **That run is the evidence that the currently pinned
-template passes the golden gate on POSIX.**
+`OK (skipped=36)` over 1 603 tests. **That run is the evidence that the template pinned when
+these measurements were taken passes the golden gate on POSIX.** Main has since released 2.3.0
+and moved the pin to `v1.2.0`; its own acceptance run (36538299558, `adea9a3`) is green too.
 
 What follows is therefore a record of two `web-game-template` defects that reproduce **on
 Windows**, and of where the Windows golden run stops because of them. They are template
@@ -129,8 +130,11 @@ both goldens pass 10/10 (run 36520006818, `02bf577`, pin `bca41a97665f…`), so:
 - the golden gate is **not blocked**, and MV-4 does not claim it is;
 - these two defects are **not MV-4 blockers**. They are `web-game-template` defects, recorded
   here because MV-4 found them, and they belong to the template's own track;
-- no template change, template release or Factory pin change is part of MV-4. The pin stays
-  `bca41a97665f8a32d0f803d46a7bbd001ac94d41` / `v1.1.0`;
+- no template change, template release or Factory pin change is part of MV-4. This branch
+  touches `workspace/config/template.lock.json` not at all. The measurements here were taken
+  against `bca41a97665f8a32d0f803d46a7bbd001ac94d41` / `v1.1.0`, the pin in force when they
+  were made; Factory 2.3.0 has since moved the pin to `v1.2.0` (`b106261`) with its own green
+  Linux run (36538299558, `adea9a3`);
 - what MV-4's Windows runs do establish is narrower and still worth having: the pipeline
   reaches a scaffolded repository with the ported game written into it on a second operating
   system, after the two Factory defects this branch fixes, and stops there for reasons outside

@@ -10,8 +10,10 @@ and `core/` is still the contract.
 ## [Unreleased]
 
 MV-4 (`docs/mv-4-report.md`): real-world evidence, and the five Factory defects that running
-the existing suite on a second operating system exposed. Nothing released; `VERSION` stays
-2.2.0.
+the existing suite on a second operating system exposed. Nothing released, no version change
+and no template pin change: this branch touches neither `VERSION` nor
+`workspace/config/template.lock.json`. Its Windows measurements were taken against template
+`v1.1.0`, the pin in force when they were made; 2.3.0 has since moved the pin to `v1.2.0`.
 
 ### Added
 

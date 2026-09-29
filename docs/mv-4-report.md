@@ -1,7 +1,10 @@
 # MV-4 — what the real world said
 
-MV-4 ran on branch `mv-4/real-world-evidence` from `9fd21f0` (Factory 2.2.0). `main`, `v2.2.0`
-and every existing tag are untouched. The plan and its acceptance criteria are in
+MV-4 ran on branch `mv-4/real-world-evidence`, measured from `9fd21f0` (Factory 2.2.0, template
+pin `v1.1.0`) and rebased onto `adea9a3` (Factory 2.3.0, template pin `v1.2.0`). Every figure
+below was taken against the `v1.1.0` pin, which is what was in force at the time; this branch
+changes no pin, no `VERSION`, and no template source. `main` and every existing tag are
+untouched. The plan and its acceptance criteria are in
 [mv-4-plan.md](mv-4-plan.md); the protocols are in [mv-4-playtest-protocol.md](mv-4-playtest-protocol.md)
 and [mv-4-touch-sheet.md](mv-4-touch-sheet.md); the evidence files are under
 [evidence/mv-4/](evidence/mv-4/).
@@ -20,7 +23,7 @@ baseline went from 70 failures and 37 errors to 26 and 17, with nothing new fail
 
 | What 2.2.0 said was not covered | Still open after MV-4 |
 |---|---|
-| Other portals' packages need a build of their own | **Open.** The Factory still pins template `v1.1.0` (`bca41a9`), which is contract 1: `pnpm build` makes one bundle and `build:platforms` does not exist in it. The sibling working copy at `268631d` has `wgf.template.contract: 2` and `build:platforms`, so the capability exists in the template and is not pinned. |
+| Other portals' packages need a build of their own | **Open when MV-4 measured it.** The pin was then template `v1.1.0` (`bca41a9`), contract 1: `pnpm build` makes one bundle and `build:platforms` does not exist in it. Everything in this report was measured against that pin. Factory 2.3.0 has since pinned `v1.2.0` with template contract 2.0.0; whether that closes this is 2.3.0's question, not MV-4's, and MV-4 changes no pin. |
 | Device performance is a desktop proxy (`PASS_MOCK`) | **Open, and now measured as such.** No handset was reachable; `policy.device-performance` is still `PASS_MOCK` by construction, and MV-4 adds a device measurement path that refuses to produce a device result without a device. |
 | Portal behaviour, submission, publishing | **Open (BLOCKED_EXTERNAL).** No portal account. MV-4 did establish, with the real SDK, what can be established without one. |
 | The kill criteria stay unmeasured | **Three of four still unmeasured.** Criterion 3 (timebox) has a run record; 1, 2 and 4 do not. |
@@ -471,7 +474,7 @@ both golden categories are skipped without `WGF_GOLDEN=1`.
 
 **The golden gate itself is green, on Linux.** Run 36520006818, `origin/main` `02bf577`,
 Ubuntu 24.04, the workflow PR #10 added (`031ca0e`), against the same pinned template
-`bca41a97665f…` (`v1.1.0`) this branch uses:
+`bca41a97665f…` (`v1.1.0`) that was pinned when MV-4's measurements were taken:
 
 | Category | Result | tests | passed |
 |---|---|---|---|
@@ -523,7 +526,8 @@ exactly as the release records describe. It was not merged, rebased or brought u
 ## 12. Not done, and why
 
 - No release was cut. No Factory defect found here changes released behaviour on the platform
-  the releases were validated on, so nothing requires a new version. `VERSION` stays 2.2.0.
+  the releases were validated on, so nothing requires a new version. This branch changes
+  neither `VERSION` (2.3.0 on main) nor the template pin.
 - No game or template source was changed. Two of MV-4's findings are template defects; they are
   recorded here and belong in `web-game-template`.
 - Nothing was published, submitted, or paid for. The only outward request was two GETs to a

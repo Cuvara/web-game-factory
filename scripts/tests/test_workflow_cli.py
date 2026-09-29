@@ -899,7 +899,7 @@ class ConsoleEncoding(unittest.TestCase):
             sys.stdout.flush()
         written = raw.getvalue()
         self.assertIn(b"pnpm said 1", written)
-        self.assertIn(b"\u2009", written)          # escaped, not encoded
+        self.assertIn(rb"\u2009", written)          # escaped, not encoded
         self.assertNotIn(" ".encode("utf-8"), written)
 
     def test_a_utf8_console_is_left_readable(self):

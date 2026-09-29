@@ -1030,14 +1030,23 @@ class ResolvingTheProgram(unittest.TestCase):
             self.assertEqual(procs._resolved(["tool"], {"Path": directory}), [path])
 
     def test_resolution_never_makes_a_startable_program_unstartable(self):
-        """The safety property: when the child's PATH does not name the tool, argv is left as
-        written and the platform's own lookup still applies. Resolution may only ever add a
-        way to start a program, never take one away."""
+        """The safety property, on the platform the resolution runs on: when the child's PATH
+        does not name the tool, argv is left as written and CreateProcess's own lookup - which
+        reads the PARENT's PATH on Windows - still applies. Resolution may only ever add a way
+        to start a program, never take one away.
+
+        On POSIX the property is a different one and is stated as such below: `execvpe` honours
+        the PATH of the environment it is given, so an emptied PATH there genuinely hides the
+        tool - behaviour this change does not touch, because `_resolved` returns argv unchanged
+        on POSIX."""
         if shutil.which("git") is None:
             self.skipTest("git is not on PATH")
         with tempfile.TemporaryDirectory() as directory:
             env = dict(os.environ)
             env["PATH"] = directory          # empty: git is not here
+            self.assertEqual(procs._resolved(["git", "--version"], env), ["git", "--version"])
+            if procs.POSIX:
+                self.skipTest("POSIX resolves nothing; the lookup is execvpe's, unchanged")
             result = procs.run(["git", "--version"], env=env, timeout=60)
             self.assertTrue(result.ok, result.tail(5))
 

@@ -72,6 +72,14 @@ ENGINE_MODULES = {
                                        + (re.escape(framework_package(engine)),)) + ")$")
     for engine in contract.ENGINES
 }
+# The upstream libraries alone, without the template's own renderer packages. Game source
+# importing another engine is a finding either way, but the template *depends* on every
+# renderer package - that is how its engine selector imports one dynamically - so the
+# package.json rule judges the library, never the workspace package.
+ENGINE_LIBRARIES = {
+    engine: re.compile("^(" + "|".join(modules) + ")$")
+    for engine, modules in _ENGINE_LIBRARY_MODULES.items()
+}
 
 # Engines the template does not carry. Adding one is an architecture change, which is the
 # tech plan's decision at G3, not an implementation detail. An engine the template *does*
@@ -342,10 +350,10 @@ def conformance(root, brief, git):
                     findings.append(f"package.json adds {name}, an engine the template does "
                                     f"not carry")
                     continue
-                # A template engine that is not this game's is refused here too. The import
-                # rule above only sees game source; a dependency nothing imports yet would
-                # otherwise sit in the manifest until the next visit added the import.
-                for other, pattern in ENGINE_MODULES.items():
+                # Another engine's library is refused here too. The import rule above only
+                # sees game source; a dependency nothing imports yet would otherwise sit in
+                # the manifest until a later visit added the import.
+                for other, pattern in ENGINE_LIBRARIES.items():
                     if other != engine and pattern.match(name):
                         findings.append(f"package.json adds {name}: engine is {engine}")
 

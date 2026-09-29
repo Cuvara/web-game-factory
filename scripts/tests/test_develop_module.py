@@ -1175,6 +1175,23 @@ class Conformance(DevelopCase):
                        "package.json adds pixi.js: engine is phaserjs"):
             self.assertIn(needle, found)
 
+    def test_the_templates_own_renderer_packages_are_not_a_dependency_finding(self):
+        """Every repository the template makes depends on every renderer package - that is
+        how src/rendering/create-renderer.ts imports one dynamically. Reading those as
+        "another engine" failed both golden runs the day the dependency rule was added."""
+        found = "\n".join(self.violations({
+            "package.json": json.dumps({"name": "demo", "scripts": {
+                "typecheck": "tsc", "lint": "eslint", "test": "vitest",
+                "build": "vite build", "test:e2e": "playwright test",
+                "format": "prettier --check ."},
+                "dependencies": {"@wgf/game-core": "workspace:*",
+                                 "@wgf/pixi-framework": "workspace:*",
+                                 "@wgf/phaser-framework": "workspace:*",
+                                 "@wgf/three-framework": "workspace:*"}}),
+        }))
+        self.assertNotIn("engine is pixijs", found)
+        self.assertNotIn("an engine the template does not carry", found)
+
     def test_the_seam_is_provided_before_the_developer_runs(self):
         seen = {}
 

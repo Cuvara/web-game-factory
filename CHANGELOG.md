@@ -58,6 +58,10 @@ existing suite on a second operating system exposed. Nothing released; `VERSION`
   the work was done and printed nothing at all (a whole `test-core --json` run). The CLI's
   streams now escape what they cannot encode. Regression:
   `test_workflow_cli.ConsoleEncoding`.
+- **The release tests could not reach their own fixture on Windows.** The suite shims `pnpm`
+  as an extension-less script with a `#!` line, which Windows cannot execute; the real `pnpm`
+  was found instead and the tests measured a repository with none of the fixture'''s scripts. The
+  fixture writes a `pnpm.CMD` beside the shim there. No test changed what it asserts.
 - **A golden run record differed by host**: `scripts/golden/live.py` wrote the config's path
   with the host's separator. It now uses `paths.display`.
 

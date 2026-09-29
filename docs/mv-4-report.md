@@ -14,7 +14,7 @@ real SDK served the same build took 5.24 s, past the 5 s the platform profile as
 found that the Factory's own test suite does not run on Windows, fixed the five defects behind
 that which were the Factory's own rather than its fixtures' - two of which stopped the golden
 run's developer before it could build anything - and left the rest recorded. The Windows
-baseline went from 70 failures and 37 errors to 60 and 22, with nothing new failing.
+baseline went from 70 failures and 37 errors to 27 and 17, with nothing new failing.
 
 ## 1. The audit, and what MV-3 left open
 
@@ -356,26 +356,25 @@ coverage, and none weakens an existing test.
 
 1. **The suite does not fully run on Windows.** On this machine,
    `python -m unittest discover scripts/tests` ends
-   `FAILED (failures=60, errors=22, skipped=81)` out of 1 636 tests, against a baseline on
+   `FAILED (failures=27, errors=17, skipped=81)` out of 1 639 tests, against a baseline on
    `9fd21f0` of 70 failures and 37 errors in 1 593. The `v2.0.0`-`2.2.0` release records
    describe a green ladder; that evidence is from Linux containers, and **the Factory still has
-   no evidence of a green ladder on Windows**. The 82 remaining failures, classified from their
+   no evidence of a green ladder on Windows**. The 44 remaining failures, classified from their
    tracebacks (not individually diagnosed):
 
    | Count | Root cause |
    |---|---|
-   | 30 | The release fixture shims `pnpm` as an extension-less script with a `#!` line (`scripts/tests/fixtures/release/fake-pnpm.py`); Windows cannot execute it, and with fix 8.2 in place the real `pnpm` is found instead and fails on the fixture's absent `scripts/release/package.mjs` |
-   | 16 | A path separator or a drive letter inside an expectation (`'C:\srv\review\demo' != '\srv\review\demo'`) |
-   | 13 | Other, including a checkout lock left behind by a previous test (`FileExistsError` on `...lock`) |
+   | 14 | Other: four `test_core_security` game-code-environment cases whose command does not run here, so "sees no secret" is not exercised; `chmod`-only and symlink semantics that Windows does not have; two store-concurrency cases (below) |
+   | 14 | A path separator or a drive letter inside an expectation (`'C:\srv\review\demo' != '\srv\review\demo'`) |
    | 11 | `os.symlink` needs a privilege this account does not hold (`WinError 1314`) |
-   | 5 | A step never ran, so the test's trail is empty (`IndexError`) - downstream of the same shim |
-   | 4 | A step outcome is BLOCKED because its fixture command did not run |
+   | 2 | A test starting a tool through `subprocess` directly rather than through `procs` (`npx`, `WinError 2`) |
    | 2 | A file still open when the test removed it (`WinError 5` / `WinError 32`) |
    | 1 | The process-tree kill reports no killed pids on Windows: `procs` finds a tree through `/proc/<pid>/environ` on Linux and has only the process group elsewhere, so `test_a_reviewer_timeout_is_retried_and_its_tree_is_killed` sees `killed_pids: []`. **Whether an agent's whole tree is actually taken down on Windows is therefore not established** - the safety claim "no agent process was left running" rests on Linux evidence |
 
-   Fixes 8.3 and 8.4 moved 25 of the earlier 106 into passing, all of them in
-   `test_core_agents.AgentLoop`: the developer and reviewer loops, the reviewer isolation
-   refusals, the malformed-verdict refusals and the retry budgets now run on this platform.
+   Fixes 8.3, 8.4 and the release fixture's Windows shim moved 63 of the baseline's failures
+   into passing - the developer and reviewer loops, the reviewer isolation refusals, the
+   malformed-verdict refusals, the retry budgets, and the whole release and commit-lineage
+   suites, which had been measuring a repository the fixture never reached.
 
    Most of what is left is fixture portability rather than product behaviour, which is why it is
    recorded rather than fixed: porting it is a piece of work in its own right, and doing it
@@ -439,7 +438,7 @@ stranger nor a phone was available.
 | `python scripts/wgf-hash.py --check workspace/` | **OK** |
 | `bash scripts/gen-adapters.sh` | **no diff** |
 | `python -m unittest scripts.tests.test_mv4` | **29 / 29 OK** |
-| `python -m unittest discover scripts/tests` | 1 636 tests, **60 failures, 22 errors**, 81 skipped — against a Windows baseline on `9fd21f0` of **70 failures and 37 errors** in 1 593 tests. 29 of the baseline's failures now pass; the failing set is compared name by name before and after, and **none is new**. |
+| `python -m unittest discover scripts/tests` | 1 639 tests, **27 failures, 17 errors**, 81 skipped - against a Windows baseline on `9fd21f0` of **70 failures and 37 errors** in 1 593 tests. 63 of the baseline's failures now pass; the failing set is compared name by name after every increment, and **none is new**. |
 | `bin/wgf test-core --json` | FAIL / INCOMPLETE on Windows, and it now prints its report at all (fix 8.5 — the previous run raised `UnicodeEncodeError` after twenty minutes of work and emitted nothing): |
 
 | Category | Result | tests | passed | failed | errors | skipped |

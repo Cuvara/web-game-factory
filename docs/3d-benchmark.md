@@ -82,30 +82,22 @@ recorded 2026-09-29). Every row is what was observed, on the host named.
 
 | Run | Command | Result |
 |---|---|---|
-| 3D golden | `WGF_GOLDEN=1 python3 -m unittest scripts.tests.test_golden_3d` | **NOT RUN.** Blocked at `harness.warm_store`: `cannot warm the pnpm store for 3d (@types/three, three): FileNotFoundError: [WinError 2]`. `Ran 0 tests` |
-| 2D golden | `WGF_GOLDEN=1 python3 -m unittest scripts.tests.test_golden_2d` | **NOT RUN.** Same blocker: `cannot warm the pnpm store for 2d (pixi.js): FileNotFoundError: [WinError 2]`. `Ran 0 tests` |
-| Core suite | `bin/wgf test-core --strict` | FAILED. Category-for-category identical to pristine HEAD; 2D/3D GOLDEN `SKIP` without `WGF_GOLDEN=1` |
+| 3D golden | `WGF_GOLDEN=1 bin/wgf test-core --strict` | **PASS** on Linux CI (`ubuntu-24.04`, run 36514228059, commit `dd78715`): `3D GOLDEN PASS 10 10 0 0 0`. Previously NOT RUN on the Windows host (`harness.warm_store`: `FileNotFoundError: [WinError 2]`) |
+| 2D golden | `WGF_GOLDEN=1 bin/wgf test-core --strict` | **PASS** on the same run: `2D GOLDEN PASS 10 10 0 0 0`. Previously NOT RUN, same blocker |
+| Core suite | `WGF_GOLDEN=1 bin/wgf test-core --strict` | **PASS** on Linux CI: every category PASS, exit 0 (`OK (INCOMPLETE — 7 tests skipped in PASS categories; 639 tests)`) |
 | Golden harness checks | `python3 -m unittest scripts.tests.test_golden_fast` | 23 of 25. The 2 failures (`test_developer_and_reviewer_are_the_labelled_stand_ins`, 2D and 3D alike) reproduce unchanged at pristine HEAD |
-| Full suite vs pristine HEAD | `python3 -m unittest discover scripts/tests` | 1603 tests / 92 fail / 39 error here against 1593 / 94 / 39 at HEAD. Failing-test names diffed: **zero new failures** |
+| Full suite vs pristine HEAD | `python3 -m unittest discover scripts/tests` | 1603 tests / 92 fail / 39 error on Windows against 1593 / 94 / 39 at HEAD there; failing-test names diffed, **zero new failures**. On Linux CI the same suite is **1603 tests, 0 failures** |
 
-**The golden blocker is the host, not the change.** `harness.warm_store` calls
-`procs.run(["pnpm", "install", ...])`; on Windows pnpm is a `.cmd` shim that the spawn cannot
-resolve, so both goldens die in `setUpClass` before a single test runs. The same error
-reproduces at pristine HEAD, and `scripts/golden/` is not touched by this change. pnpm 9.15.4
-and node v24.11.1 are installed. This was not worked around: patching the harness to make one
-host pass would weaken the release gate for every host.
+**The goldens ran, on Linux.** They could not run on the Windows host this branch was
+developed on: `harness.warm_store` calls `procs.run(["pnpm", "install", ...])`, and there pnpm
+is a `.cmd` shim the spawn cannot resolve, so both goldens died in `setUpClass` before a test
+ran - on this branch and on a pristine `main` alike. The harness was not patched; a POSIX
+runner was added instead (`.github/workflows/acceptance.yml`, merged as #10), and the gate
+passes there.
 
-**Branch status: implementation-complete, GOLDEN-BLOCKED.** What a POSIX runner
-(Linux or macOS, with python3, git, node, pnpm as real executables, network for the first
-`pnpm install`, and a Playwright browser) must execute against this branch:
-
-```bash
-WGF_GOLDEN=1 bin/wgf test-core --strict
-```
-
-Record the runner OS, the commit, the exit code and both golden results in the table above.
-Until then the change carries unit, contract, integrity and baseline evidence, and no golden
-evidence.
+**Branch status: implementation-complete, golden evidence recorded.** Runner `ubuntu-24.04`,
+node 22, pnpm 9.15.4, commit `dd78715` (this branch merged with `main` at `031ca0e`), run
+36514228059, exit code 0, both goldens PASS.
 
 ## Out of scope for this protocol
 

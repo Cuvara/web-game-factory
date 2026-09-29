@@ -40,6 +40,19 @@ existing suite on a second operating system exposed. Nothing released; `VERSION`
   `PATH` when it has no directory part, accepting only a file - a directory of the same name on
   `PATH` satisfies `shutil.which` and then fails as `WinError 267`. POSIX behaviour is
   unchanged. Regressions in `test_core_process.ResolvingTheProgram`.
+- **An agent could not start a tool at all on Windows.** The agent environment is an allowlist
+  and it held only the POSIX names; without `SystemRoot` no child starts there, so every golden
+  run's developer refused with `NotADirectoryError: [WinError 267]`. The same basics are now
+  allowlisted under the names Windows uses (`SystemRoot`, `windir`, `COMSPEC`, `PATHEXT`,
+  `SystemDrive`, the Program Files and ProgramData locations, `USERPROFILE` / `APPDATA` /
+  `LOCALAPPDATA`), and names are compared the way the platform compares them. No credential
+  name was added and the secret-name filter is unchanged. Regressions in
+  `test_core_security.AgentEnvironment`.
+- **The refusing proxy reported isolation it did not have.** `wgflib.netguard` is set through
+  the proxy environment variables, which Chromium reads on Linux and ignores elsewhere in favour
+  of the system configuration. Its summary now carries `enforced` and, when false, the reason,
+  so `refused_requests: 0` cannot be read as "nothing got out" on a platform where nothing was
+  routed through it. The proxy itself is unchanged. Regression: `test_netguard.Enforcement`.
 - **A golden run record differed by host**: `scripts/golden/live.py` wrote the config's path
   with the host's separator. It now uses `paths.display`.
 

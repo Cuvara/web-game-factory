@@ -308,7 +308,33 @@ coverage, and none weakens an existing test.
    broken working directory rather than a bad lookup. Only a file is accepted as a program now.
    Regressions: `test_core_process.ResolvingTheProgram` — five cases, plus one that simply
    starts an installed tool, which is the thing that was impossible.
-3. **A run record that differed by host** — `scripts/golden/live.py` recorded
+3. **An agent could not start a tool at all on Windows** — `scripts/wgflib/agentenv.py`. The
+   agent environment is an allowlist, and the allowlist held only the POSIX names. Without
+   `SystemRoot` no child starts on Windows, because `pnpm` is `pnpm.CMD` and is started through
+   the command processor: every golden run's developer refused with
+   `pnpm install --offline --no-frozen-lockfile failed (not-started): NotADirectoryError:
+   [WinError 267]`, on every attempt, and the run stopped at `develop` with the repository
+   scaffolded and nothing built. The same basics are now allowlisted under the names Windows
+   uses — `SystemRoot`, `windir`, `COMSPEC`, `PATHEXT`, `SystemDrive`, the Program Files and
+   ProgramData locations, and `USERPROFILE` / `APPDATA` / `LOCALAPPDATA`, which are `HOME`
+   there. None of them carries a credential and the secret-name filter over prefixes is
+   untouched. Names are also compared the way the platform compares them: Windows upper-cases
+   environment names, so an allowlist spelled `SystemRoot` matched nothing.
+   Regressions: `test_core_security.AgentEnvironment` — an agent can start a tool at all; the
+   allowlist is matched the way the platform matches names; a secret is still dropped with the
+   base names widened.
+4. **The refusing proxy was not refusing, and said nothing about it** —
+   `scripts/wgflib/netguard.py`. The guard is set through the proxy environment variables, which
+   Chromium reads on Linux and ignores everywhere else in favour of the system configuration. On
+   Windows the develop step's smoke check therefore loaded a portal's real SDK from its CDN and
+   failed on the `http://` ad bridge it pulled in — while the guard's own summary reported
+   `refused_requests: 0`, which reads as isolation. Every summary now carries `enforced` and,
+   when false, the reason, so zero refusals means "nothing tried" where the guard holds and
+   "nothing was routed here" where it does not. The proxy is unchanged; what changed is that a
+   caller can no longer read silence as safety. Making it hold on Windows needs the proxy passed
+   to the browser at launch, which is the game repository's Playwright configuration, not the
+   Factory's. Regression: `test_netguard.Enforcement`.
+5. **A run record that differed by host** — `scripts/golden/live.py` recorded
    `os.path.relpath(...)`, so a record written on Windows said `workspace\config\factory.yaml`
    where one written on Linux said `workspace/config/factory.yaml`. Records are compared across
    machines; a separator is not part of what the path names. Fixed to `paths.display`.
@@ -342,11 +368,16 @@ coverage, and none weakens an existing test.
    `test_core_persistence.LockTakeover` (`4 != 5`, a real concurrency assertion) and
    `UniqueTemporaryNames` (35 `PermissionError`s) — because they are about the store's
    behaviour under concurrency, which is not a fixture concern.
-2. **The 2D golden run's `develop` step refuses on Windows for a reason that was not captured.**
-   After fix 8.2 the replay developer gets as far as writing the whole ported example into the
-   checkout and then exits 3 (section 11). The refusal message is printed to the step log, which
-   only survives with `WGF_GOLDEN_KEEP=1`, and the two keep-runs cleaned the store before it was
-   read. Reproducing it needs one more golden run with the store retained; it was not run.
+2. **The 2D golden run stops at `develop` on the template's own checks** — diagnosed, not
+   fixed, because both causes are in `web-game-template` and this branch changes no template
+   source. Recorded with reproductions in `evidence/mv-4/golden/template-blockers.md`:
+   `pnpm run test` — ten unit files fail to parse under vitest on this platform, every one of
+   them (and only those) importing a `scripts/*.mjs` CLI that begins with a shebang; Node
+   imports the same modules without complaint, and 823 tests pass in the files that do load.
+   `pnpm run test:e2e` — the smoke suite's "makes no insecure requests" counts the `http://`
+   IMA bridge that the *portal's* SDK pulls in as the game's own request; the pinned `v1.1.0`
+   spec has no ad-host exclusion, while a later template commit does. Neither fires on Linux,
+   where the refusing proxy stops the portal SDK from loading at all — which is fix 8.4.
 3. **Verify cannot consume a device measurement even if one existed.** `policy.device-performance`
    is `PASS_MOCK` by construction and there is no input by which a real measurement could make
    it `PASS`. MV-4 deliberately did not add one: with no device to test it against, the code
@@ -397,26 +428,32 @@ stranger nor a phone was available.
 | `WGF_GOLDEN=1 bin/wgf test-core --only "2D GOLDEN"` | **FAIL on Windows, 3 of 10** — see below |
 | MV-4 harness | 3 browser sessions, 1 platform session, 1 packaging audit, 1 device record, 1 playtest summary, 1 G4 record — all under `evidence/mv-4/` |
 
-**The 2D golden run on Windows**, run three times. It reaches further each way it was measured
-and it does not finish:
+**The 2D golden run on Windows**, run six times, and diagnosed to a stop rather than left at
+one. The record of the last run is `evidence/mv-4/golden/golden-2d-windows.json`; the two
+remaining causes, with their reproductions, are in
+`evidence/mv-4/golden/template-blockers.md`.
 
-- research, strategy, design, tech-plan, init and assets all SUCCEED, and the run's artifacts
-  are pinned by hash: `research-report`, `opportunity`, `title-strategy`, `game-design`,
-  `tech-plan`, `asset-manifest`, `scaffold-record`, `decision-record`.
-- `develop` then FAILS with `developer command exited 3` — a refusal from the replay developer,
-  the deterministic stand-in the golden runs use. The first refusal was
-  `pnpm install --offline --no-frozen-lockfile failed (not-started): NotADirectoryError:
-  [WinError 267]`, which is fix 8.2's second half. After that fix the replay ports the whole
-  example game into the checkout — `src/game/app.ts`, `rules.ts`, `src/rendering/pixijs/*`,
-  `tests/e2e/tower-merge-rush.spec.ts`, the locales and the placeholder assets are all written —
-  and still exits 3 on a later refusal whose message was not captured before the workdir was
-  cleaned. **That remains undiagnosed**, and it is the honest state of the 2D golden run on this
-  platform.
+- research, strategy, strategy-review, design, tech-plan, tech-plan-review, init and assets all
+  SUCCEED. The run's artifacts are pinned by hash: `research-report`, `opportunity`,
+  `title-strategy`, `game-design`, `tech-plan`, `asset-manifest`, `scaffold-record`,
+  `decision-record`.
+- `develop` first failed with `developer command exited 3` — a refusal from the replay
+  developer, the deterministic stand-in the golden runs use. Two Factory defects were behind it,
+  one after the other: the child could not be started at all (fix 8.2), and then the agent
+  environment had no `SystemRoot`, so `pnpm.CMD` could not run (fix 8.3). After both, the replay
+  developer installs, ports the whole example game into the checkout and formats it.
+- `develop` now fails on the **game repository's own checks**: `unit: pnpm run test: exit 1;
+  smoke: pnpm run test:e2e: exit 1`. Both causes are in `web-game-template` — ten unit files
+  that do not parse under vitest on this platform, and a smoke assertion that counts the
+  portal SDK's `http://` ad bridge as the game's own insecure request. Neither is fixed here.
 - Everything after `develop` is therefore NOT_RUN: review, sdk, sdk-review, verify,
   prototype-review, release. No release was drafted in a golden run on this machine, and the
   browser evidence in section 3 was taken by MV-4's own harness, not by the golden run.
-- The 3D golden run was not attempted: it has the same developer stand-in and would have failed
-  at the same step.
+- The run's own network record now says what it is worth:
+  `"enforced": false, "platform": "win32", "refused_requests": 0` with the reason. Before fix
+  8.4 it said `refused_requests: 0` and nothing else, which reads as isolation and was not.
+- The 3D golden run was not attempted: it has the same developer stand-in and the same game
+  repository checks, and would stop at the same step.
 
 The Linux ladder that `v2.2.0` was released against was not re-run: this machine is Windows and
 no Linux host was available. **A merge of this branch should be validated on Linux before it is

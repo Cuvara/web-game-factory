@@ -1361,7 +1361,7 @@ class Coupling(unittest.TestCase):
         self.assertEqual(offenders, [])
 
     def test_the_engine_allow_list_is_the_schemas(self):
-        self.assertEqual(guards.supported_engines(), ("pixijs", "threejs"))
+        self.assertEqual(guards.supported_engines(), ("pixijs", "phaserjs", "threejs"))
 
 
 class GameCodeEnvironment(unittest.TestCase):

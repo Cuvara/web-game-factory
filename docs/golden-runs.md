@@ -146,6 +146,20 @@ itself, the tech plan pins it and init writes it into `game.config.yaml`. The wo
 and every module are unchanged. `test_golden_fast` runs research -> G3 for real and asserts
 the engine.
 
+**Phaser has no golden run**, and that is deliberate. A golden replays a whole example game
+the template ships (`examples/<name>/` plus its `wgf-golden` overlay); the template ships no
+Phaser one, and writing a third game to get a third golden is a large amount of game content
+for a renderer that the pipeline does not branch on — which is exactly what this pair already
+proves. `phaserjs` is proved where the engine-specific behaviour actually is:
+
+| Claim | Proved by |
+|---|---|
+| The template builds and boots it, the canvas appears, the loop steps, pause and resume work | `pnpm build:engine phaserjs` then the template's own `tests/e2e/` (smoke and lifecycle), run for every engine by `verify.yml` |
+| Phaser's own loop is stopped, `render()` steps it once, `destroy()` runs the deferred teardown, a re-init works | `packages/phaser-framework/tests/renderer.test.ts` |
+| The Factory plans, creates and develops a Phaser title | `test_techplan_module` (selection), `test_init_module` (the engine reaches `game.config.yaml`), `test_develop_module.Conformance` (the engine's modules, and the other 2D engine refused) |
+
+A Phaser golden becomes worth adding the day the template ships a Phaser example game.
+
 ### Never contacting a portal
 
 A build for a portal loads that portal's SDK from its CDN, so every browser test in the

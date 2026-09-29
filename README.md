@@ -177,6 +177,11 @@ environment is an allowlist, the development commit is scoped, unreviewed releas
 refused, `wgf status` exits as the run. Each has a way back: see **Breaking** and
 **Upgrading from 1.1.0** in [CHANGELOG.md](CHANGELOG.md).
 
+**Upgrading from 2.2.x.** 2.3.0 needs no configuration change. `engine.type` accepts
+`phaserjs` as a second 2D engine, PixiJS stays the 2D default, and the pinned template is
+web-game-template 1.2.0 — `init` refuses to create a repository from anything older (template
+contract 2.0.0); see 2.3.0 in [CHANGELOG.md](CHANGELOG.md).
+
 **Upgrading from 2.1.x.** 2.2.0 needs no configuration change. A release draft now holds only
 the package for the platform the build targets, and a second `required` platform fails
 verification; see 2.2.0 in [CHANGELOG.md](CHANGELOG.md).

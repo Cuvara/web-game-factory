@@ -546,6 +546,7 @@ class DevelopLiterals(unittest.TestCase):
     def test_the_behaviour_is_unchanged(self):
         from wgf_develop import brief, checks
         self.assertEqual(brief.ENGINE_DIRS, {"pixijs": "src/rendering/pixijs",
+                                             "phaserjs": "src/rendering/phaserjs",
                                              "threejs": "src/rendering/threejs"})
         self.assertEqual(checks.ENGINE_SELECTOR, "src/rendering/create-renderer.ts")
         self.assertEqual(checks.TOOLCHAIN["smoke"], (["pnpm", "run", "test:e2e"], "test:e2e"))
@@ -554,6 +555,8 @@ class DevelopLiterals(unittest.TestCase):
             self.assertTrue(checks.ENGINE_MODULES["pixijs"].match(module), module)
         for module in ("three", "three/addons/x", "@wgf/three-framework"):
             self.assertTrue(checks.ENGINE_MODULES["threejs"].match(module), module)
+        for module in ("phaser", "phaser/types/x", "@wgf/phaser-framework"):
+            self.assertTrue(checks.ENGINE_MODULES["phaserjs"].match(module), module)
         self.assertFalse(checks.ENGINE_MODULES["pixijs"].match("@wgf/pixiXframework"))
 
 

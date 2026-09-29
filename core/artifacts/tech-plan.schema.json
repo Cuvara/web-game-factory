@@ -29,8 +29,8 @@
       "required": ["type", "rationale"],
       "properties": {
         "type": {
-          "enum": ["pixijs", "threejs"],
-          "description": "PixiJS for 2D, Three.js for 3D. Driven by the game, not by preference. No other engine is supported by the template."
+          "enum": ["pixijs", "phaserjs", "threejs"],
+          "description": "PixiJS or Phaser for 2D, Three.js for 3D. Driven by the game, not by preference. No other engine is supported by the template. Between the two 2D engines: PixiJS is a renderer and the default, so the game owns its scenes, input and tweens; Phaser brings its own scene manager, input, tweens, tilemaps and arcade physics, which is worth its larger bundle only when the game uses them."
         },
         "rationale": {
           "type": "string",
@@ -135,7 +135,7 @@
             "engine": {
               "type": "object",
               "required": ["type"],
-              "properties": { "type": { "enum": ["pixijs", "threejs"] } },
+              "properties": { "type": { "enum": ["pixijs", "phaserjs", "threejs"] } },
               "additionalProperties": false
             },
             "platforms": {

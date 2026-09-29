@@ -21,7 +21,10 @@ in which Factory release, and why; `CONTRACT_DIGEST` is a sha256 over the entrie
 flags, owners - never their descriptions), and `test_template_contract` fails when the
 entries change without the digest and the log being updated. Contract 1.0.0's log: written
 in 2.0.0 (M10); 2.1.1 added `src/game/boot-scene.ts` (recognized, never required); 2.2.0
-encodes `build_target`, the build-target rule contract 1.0.0 always had.
+encodes `build_target`, the build-target rule contract 1.0.0 always had. **Contract 2.0.0**
+(Factory 2.3.0): `phaserjs` joined the `engine.type` enum, so `packages/phaser-framework/`
+and `src/rendering/phaserjs/` became required entries — a repository generated from a
+template that predates them is now refused, which is exactly what a major means.
 
 Like all of `wgflib`, the module names no renderer or portal (`test_core_security.Coupling`).
 The engines are the `engine.type` enum of `core/artifacts/tech-plan.schema.json` (the list

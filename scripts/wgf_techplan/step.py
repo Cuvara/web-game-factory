@@ -24,6 +24,7 @@ import os
 
 from wgflib import paths, provenance
 from wgflib import template as template_pin
+from wgflib import template_contract as contract
 from wgflib.workflow import ArtifactOutput, StepResult, WorkflowStep
 from wgflib.yamllite import YamlError, load_file
 
@@ -38,9 +39,14 @@ SCHEMA_VERSION = provenance.version_of("tech-plan")
 ROLE = "architect"  # core/roles/roles.yaml: architect owns title:tech-plan
 READS_MAJOR = "1"
 AD_KINDS = ("interstitial", "rewarded", "banner")
-# The template's own package names for each engine: the one piece of template knowledge the
-# architecture text needs, and a mapping, not a behaviour.
-ENGINE_PACKAGE = {"pixijs": "@wgf/pixi-framework", "threejs": "@wgf/three-framework"}
+# The template's own package name for each engine, by the template's naming convention
+# (template_contract.renderer_package): the one piece of template knowledge the architecture
+# text needs, and a mapping, not a behaviour. Derived rather than copied, so an engine added
+# to the schema's enum needs no edit here.
+ENGINE_PACKAGE = {
+    engine: "@wgf/" + contract.renderer_package(engine).rstrip("/").rsplit("/", 1)[-1]
+    for engine in contract.ENGINES
+}
 DEFAULT_BUILD = {"command": "pnpm build", "output": "dist"}
 DEFAULT_DEVICE_CLASSES = [
     {"id": "mobile-mid", "description": "Mid-range phone, portal webview", "target_fps": 60},
@@ -239,7 +245,7 @@ class TechPlanStep(WorkflowStep):
         dimension = DIMENSION_FOR_ENGINE[engine]
         architecture = {
             "rendering": f"{engine} ({dimension}) through the template's renderer seam "
-                         f"(createRenderer, {package}); the other engine is never loaded.",
+                         f"(createRenderer, {package}); no other engine is loaded.",
             "physics": physics_text or select_physics(engine)[1],
             "game_core": "Template packages/game-core: loop, scenes, events, pause. Game "
                          "states and mechanics from the design's build_spec live in src/.",

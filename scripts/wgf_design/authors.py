@@ -25,6 +25,8 @@ A workflow step may also pin one with `with: {author: <name>}`. Names only - nev
 
 import re
 
+from wgflib import template_contract as contract
+
 from . import archetypes, identity
 from .platforms import supported_placements, tightest_interval
 
@@ -137,9 +139,12 @@ class ArchetypeAuthor(DesignAuthor):
         open_questions = list(strategy.get("prototype_must_prove") or [])
 
         # 1. Engine. Dimensionality is the archetype's unless the step pins it.
+        # The 2D default is the 2D default: a second 2D engine is pinned by the step, never
+        # inferred from an archetype.
         engine_type = params.get("engine") or ("threejs" if a["dimension"] == "3d" else "pixijs")
-        if engine_type not in ("pixijs", "threejs"):
-            raise AuthorError(f"engine {engine_type!r}: PixiJS for 2D, Three.js for 3D, nothing else")
+        if engine_type not in contract.ENGINES:
+            raise AuthorError(f"engine {engine_type!r}: the template carries "
+                              f"{', '.join(contract.ENGINES)}, nothing else")
         dimension = "3d" if engine_type == "threejs" else "2d"
         orientation = params.get("orientation") or a["orientation"]
         resolution = {"width": 720, "height": 1280} if orientation == "portrait" else {"width": 1280, "height": 720}
@@ -149,7 +154,10 @@ class ArchetypeAuthor(DesignAuthor):
             "rationale": (
                 f"The play happens on a flat plane: a {a['label'].lower()} needs no depth to read, and 2D "
                 "with procedural vector art keeps the first load small on portal traffic, where time to first "
-                "play decides whether the player stays." if dimension == "2d" else
+                "play decides whether the player stays."
+                + (" The plan pins Phaser rather than the 2D default because this game leans on the engine's "
+                   "own scene manager, input, tweens and arcade physics; the tech plan states which."
+                   if engine_type == "phaserjs" else "") if dimension == "2d" else
                 f"Depth is part of the mechanic: a {a['label'].lower()} is read through a chase camera in "
                 "space. Three.js with low-poly procedural geometry and vertex colours keeps the load budget "
                 "close to a 2D title; textures and PBR materials are deliberately excluded."),

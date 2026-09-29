@@ -645,10 +645,12 @@ class HostSkills(DevelopCase):
         self.assertIn("web-game-factory:game-feel", text)
         self.assertIn("this Factory's own plugin", text)
 
-    def test_the_other_engine_is_never_recommended(self):
+    def test_another_engines_area_is_never_recommended(self):
         data, text = self.brief_json()
-        self.assertNotIn("threejs", data["skills"])
-        self.assertNotIn("web-game-factory:threejs", text)
+        for area, skill in (("threejs", "web-game-factory:threejs"),
+                            ("phaserjs", "web-game-factory:phaser")):
+            self.assertNotIn(area, data["skills"])
+            self.assertNotIn(skill, text)
 
     def test_a_configured_area_is_kept_and_an_empty_one_drops(self):
         data, _ = self.brief_json(skills={"level-design": ["a level-design skill"],
@@ -706,6 +708,24 @@ class EngineNotes(DevelopCase):
         self.assertIsNone(data["engine_notes"])
         self.assertNotIn("## Engine notes", text)
         self.assertNotIn("The canvas must be shown to render", text)
+
+    def test_the_phaser_brief_states_whose_loop_it_is(self):
+        """The second 2D engine ships its own loop, scene manager and physics, so its brief
+        says which of them the Factory's loop already owns. PixiJS, which ships none of
+        that, still gets no block at all (the test above)."""
+        data, text = self.brief(engine="phaserjs", tech_plan=False)
+        self.assertEqual(len(data["engine_notes"]["notes"]),
+                         len(briefs.ENGINE_NOTES["phaserjs"]))
+        self.assertIn("## Engine notes (phaserjs)", text)
+        for needle in ("stops its `TimeStep`", "Never call `game.loop.start()`",
+                       "Pause is game-core's", "shutdown", "canvas renders"):
+            self.assertIn(needle, text, needle)
+        self.assertNotIn("ThreeRenderer", text)
+
+    def test_the_phaser_brief_carries_the_planned_physics(self):
+        data, text = self.brief(engine="phaserjs", physics="arcade physics, one system")
+        self.assertIn("arcade physics, one system", data["engine_notes"]["physics"])
+        self.assertIn("**Physics.** arcade physics, one system", text)
 
     def test_the_3d_brief_states_what_the_binding_owns_and_the_update_order(self):
         data, text = self.brief(physics=None, tech_plan=False)
@@ -1132,6 +1152,27 @@ class Conformance(DevelopCase):
                        "required system 'tutorial' is partial",
                        "MVP item not reported: 'Rewarded continue'",
                        "no rewarded placement reported"):
+            self.assertIn(needle, found)
+
+    def test_a_phaser_game_is_held_to_the_same_rules(self):
+        """The second 2D engine, which the template carries since 1.2.0: `phaser` is its
+        engine's module wherever `pixi.js` is PixiJS's, and the other 2D engine is refused
+        exactly like the 3D one."""
+        self.git("rm", "-q", "--cached", "game.config.yaml")
+        with open(os.path.join(self.repo, "game.config.yaml"), "w", encoding="utf-8") as handle:
+            handle.write(SCAFFOLD_FILES["game.config.yaml"].replace("pixijs", "phaserjs"))
+        self.git("add", "-A")
+        self.git(*IDENTITY, "commit", "-q", "-m", "phaser")
+        found = "\n".join(self.violations({
+            "src/rendering/phaserjs/view.ts": 'import Phaser from "phaser";\n',
+            "src/game/rules.ts": 'import Phaser from "phaser";\n',
+            "src/game/draw.ts": 'import { Sprite } from "pixi.js";\n',
+            "package.json": json.dumps({"dependencies": {"pixi.js": "^8"}}),
+        }))
+        self.assertNotIn("src/rendering/phaserjs/view.ts", found)
+        for needle in ("src/game/rules.ts imports phaser outside src/rendering/phaserjs/",
+                       "src/game/draw.ts imports pixi.js: engine is phaserjs",
+                       "package.json adds pixi.js: engine is phaserjs"):
             self.assertIn(needle, found)
 
     def test_the_seam_is_provided_before_the_developer_runs(self):

@@ -27,7 +27,8 @@ inputs ──► brief ──► developer ──► checks ──► commit ─
 | `qa-report` | on a verify → develop loop, the blocking defects the brief says to fix first |
 | `review-report` | on a review → develop loop, the reviewer's blockers the brief says to fix first — used only when it requests changes to the commit this visit starts from ([review-module.md](review-module.md)) |
 
-The engine comes from the checkout's `game.config.yaml`: `pixijs` for 2D, `threejs` for 3D.
+The engine comes from the checkout's `game.config.yaml`: `pixijs` or `phaserjs` for 2D,
+`threejs` for 3D.
 Anything else is refused — adding an engine is the tech plan's decision at G3.
 
 ## The brief
@@ -152,10 +153,13 @@ The provider, if any, is named only in the installation's `factory.yaml`. The br
 - this Factory's own plugin skills, pointers into `core/craft/`:
   - `craft`: `web-game-factory:game-feel`, `core-loop`, `web-performance`, `audio`;
   - `ui`: `web-game-factory:onboarding-ux`;
-  - the engine's area: `web-game-factory:pixijs` or `threejs`;
-- next to them, generic skills (the official PixiJS skills, a frontend-design skill).
+  - the engine's area: `web-game-factory:pixijs`, `phaser` or `threejs`;
+- next to them, generic skills (the official PixiJS skills, a frontend-design skill; for
+  `phaserjs`, the Phaser Game Agent skill, named as a source of API knowledge and of reusable
+  games and blocks to read - never to write this repository, since it targets its own project
+  layout and build rather than the template's).
 
-The other engine's area is never recommended.
+Another engine's area is never recommended.
 - **Configuring.** `develop.skills` merges over the defaults: an added area is kept, and an
   area set to `[]` is dropped. A value that is not a map of area to a list of names is refused.
 - **Availability.** The plugin skills are available to a host that loads the plugin, as the

@@ -11,8 +11,8 @@ JSON and YAML. It contains no game source code and never will.
 Games live in their own repositories, created from `web-game-template`
 (https://github.com/Cuvara/web-game-template) — the source of truth for template code, the
 example games (Tower Merge Rush, PixiJS; Neon Drift Arena, Three.js), platform adapters and
-engine support. The Factory never copies any of it. It pins **one template commit** - the
-latest template *release*, by tag and commit (1.1.0: `v1.1.0`, `bca41a9`) - in
+engine support (2D: `pixijs` or `phaserjs`; 3D: `threejs`). The Factory never copies any of it. It pins **one template commit** - the
+latest template *release*, by tag and commit (1.2.0: `v1.2.0`, `b106261`) - in
 `workspace/config/template.lock.json`; init creates every game at exactly that tree, and the
 golden runs' replay ports, which the release does not ship, are pinned separately there as
 test fixtures (`golden_ports`). Everything that reads template files (golden runs,
@@ -335,6 +335,8 @@ seen by the engine — validate what you write there with ajv.
   it found and fixed, PASS / PASS_MOCK / UNVERIFIED / BLOCKED_EXTERNAL
 - `docs/v2-release.md` — 2.0.0: what was validated on which commit, the release audit's
   fixes, and what the evidence does not cover (no live agent host, shimmed golden runs)
+- `docs/v2.3-release.md` — 2.3.0: Phaser as a second 2D engine, template 1.2.0, template
+  contract 2.0.0; what was validated where, and what has no golden run and why
 - `docs/v2.2-release.md` — 2.2.0: MV-3 (only the targeted platform is ready or packaged), the
   liveness clock-step fix, the contract versioning record; compatibility evidence, validation
 - `docs/v2.1-release.md` — 2.1.0: the post-2.0.0 live-validation fixes (PR #4); 2.1.1: the

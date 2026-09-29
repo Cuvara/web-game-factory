@@ -53,6 +53,11 @@ existing suite on a second operating system exposed. Nothing released; `VERSION`
   of the system configuration. Its summary now carries `enforced` and, when false, the reason,
   so `refused_requests: 0` cannot be read as "nothing got out" on a platform where nothing was
   routed through it. The proxy itself is unchanged. Regression: `test_netguard.Enforcement`.
+- **A finished run's report was lost to the console's encoding.** Anything the CLI prints can
+  carry a character the console cannot encode; on cp1252 that raised `UnicodeEncodeError` after
+  the work was done and printed nothing at all (a whole `test-core --json` run). The CLI's
+  streams now escape what they cannot encode. Regression:
+  `test_workflow_cli.ConsoleEncoding`.
 - **A golden run record differed by host**: `scripts/golden/live.py` wrote the config's path
   with the host's separator. It now uses `paths.display`.
 

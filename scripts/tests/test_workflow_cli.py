@@ -12,6 +12,7 @@ Run from the web-game-factory repository root:
     python -m unittest discover scripts/tests
 """
 
+import io
 import json
 import os
 import shutil
@@ -19,6 +20,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from unittest import mock
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 SCRIPTS = os.path.dirname(HERE)
@@ -28,6 +30,7 @@ FIXTURES = os.path.join(HERE, "fixtures", "workflows")
 
 sys.path.insert(0, SCRIPTS)
 
+import wgf  # noqa: E402
 from wgflib.hashing import content_hash  # noqa: E402
 from wgflib.workflow.model import RunStatus  # noqa: E402
 from wgflib.workflow.store import RunStore  # noqa: E402
@@ -874,3 +877,41 @@ class ProgressShowsWarnings(unittest.TestCase):
     def test_info_stays_in_the_log(self):
         self.assertIsNone(self.progress.format({"event": "STEP_LOG", "step_id": "x", "level": "info",
                                                 "message": "tech plan composed"}))
+
+
+class ConsoleEncoding(unittest.TestCase):
+    """A finished run's report is not lost to the console's encoding. Everything the CLI
+    prints can carry a character a cp1252 console cannot encode - a tool's output quoted in a
+    failure detail - and that used to raise UnicodeEncodeError after all the work was done
+    (MV-4 lost a whole `test-core --json` run to `'charmap' codec can't encode character
+    ' '`)."""
+
+    def stream(self, encoding):
+        raw = io.BytesIO()
+        return io.TextIOWrapper(raw, encoding=encoding, newline=""), raw
+
+    def test_an_unencodable_character_is_escaped_not_raised(self):
+        out, raw = self.stream("cp1252")
+        err, _ = self.stream("cp1252")
+        with mock.patch.object(sys, "stdout", out), mock.patch.object(sys, "stderr", err):
+            wgf.tolerate_unencodable_output()
+            print("pnpm said 1 234 things")
+            sys.stdout.flush()
+        written = raw.getvalue()
+        self.assertIn(b"pnpm said 1", written)
+        self.assertIn(b"\u2009", written)          # escaped, not encoded
+        self.assertNotIn(" ".encode("utf-8"), written)
+
+    def test_a_utf8_console_is_left_readable(self):
+        out, raw = self.stream("utf-8")
+        err, _ = self.stream("utf-8")
+        with mock.patch.object(sys, "stdout", out), mock.patch.object(sys, "stderr", err):
+            wgf.tolerate_unencodable_output()
+            print("thin space")
+            sys.stdout.flush()
+        self.assertIn("thin space", raw.getvalue().decode("utf-8"))
+
+    def test_a_stream_that_cannot_be_reconfigured_is_not_an_error(self):
+        with mock.patch.object(sys, "stdout", object()),                 mock.patch.object(sys, "stderr", object()):
+            wgf.tolerate_unencodable_output()   # must not raise
+

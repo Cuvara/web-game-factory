@@ -334,7 +334,14 @@ coverage, and none weakens an existing test.
    caller can no longer read silence as safety. Making it hold on Windows needs the proxy passed
    to the browser at launch, which is the game repository's Playwright configuration, not the
    Factory's. Regression: `test_netguard.Enforcement`.
-5. **A run record that differed by host** — `scripts/golden/live.py` recorded
+5. **A finished run's report was lost to the console's encoding** — `scripts/wgf.py`. Anything
+   the CLI prints can carry a character the console cannot encode: a tool's output quoted in a
+   failure detail, a package manager's thin space. On cp1252 - the Windows default - that
+   raised `UnicodeEncodeError` *after* all the work was done and printed nothing at all: a
+   whole `bin/wgf test-core --json` run was lost to
+   `'charmap' codec can't encode character ' '`. The CLI's streams now escape what they
+   cannot encode instead of raising. Regression: `test_workflow_cli.ConsoleEncoding`.
+6. **A run record that differed by host** — `scripts/golden/live.py` recorded
    `os.path.relpath(...)`, so a record written on Windows said `workspace\config\factory.yaml`
    where one written on Linux said `workspace/config/factory.yaml`. Records are compared across
    machines; a separator is not part of what the path names. Fixed to `paths.display`.
@@ -343,25 +350,30 @@ coverage, and none weakens an existing test.
 
 ## 9. Factory bugs discovered and not resolved
 
-1. **The suite does not run on Windows.** On this machine, `python -m unittest discover
-   scripts/tests` ends `FAILED (failures=69, errors=37, skipped=80)` out of 1 624 tests, and
-   `bin/wgf test-core` is FAIL / INCOMPLETE. The `v2.0.0`–`2.2.0` release records describe a
-   green ladder; that evidence is from Linux containers, and **the Factory has no evidence of
-   working on Windows**. The 106 remaining failures, classified from their tracebacks (not
-   individually diagnosed):
+1. **The suite does not fully run on Windows.** On this machine,
+   `python -m unittest discover scripts/tests` ends
+   `FAILED (failures=60, errors=22, skipped=81)` out of 1 636 tests, against a baseline on
+   `9fd21f0` of 70 failures and 37 errors in 1 593. The `v2.0.0`-`2.2.0` release records
+   describe a green ladder; that evidence is from Linux containers, and **the Factory still has
+   no evidence of a green ladder on Windows**. The 82 remaining failures, classified from their
+   tracebacks (not individually diagnosed):
 
    | Count | Root cause |
    |---|---|
    | 30 | The release fixture shims `pnpm` as an extension-less script with a `#!` line (`scripts/tests/fixtures/release/fake-pnpm.py`); Windows cannot execute it, and with fix 8.2 in place the real `pnpm` is found instead and fails on the fixture's absent `scripts/release/package.mjs` |
-   | 21 | A step never ran, so the test's trail is empty (`IndexError`) — downstream of the same shim |
-   | 16 | A path separator or a drive letter inside an expectation (`'C:\\srv\\review\\demo' != '\\srv\\review\\demo'`) |
-   | 12 | A step outcome is BLOCKED because its fixture command did not run |
-   | 12 | Other, including a checkout lock left behind by a previous test (`FileExistsError` on `…lock`) |
+   | 16 | A path separator or a drive letter inside an expectation (`'C:\srv\review\demo' != '\srv\review\demo'`) |
+   | 13 | Other, including a checkout lock left behind by a previous test (`FileExistsError` on `...lock`) |
    | 11 | `os.symlink` needs a privilege this account does not hold (`WinError 1314`) |
-   | 2 | An executable not found (`WinError 2`) in a path fix 8.2 does not cover |
+   | 5 | A step never ran, so the test's trail is empty (`IndexError`) - downstream of the same shim |
+   | 4 | A step outcome is BLOCKED because its fixture command did not run |
    | 2 | A file still open when the test removed it (`WinError 5` / `WinError 32`) |
+   | 1 | The process-tree kill reports no killed pids on Windows: `procs` finds a tree through `/proc/<pid>/environ` on Linux and has only the process group elsewhere, so `test_a_reviewer_timeout_is_retried_and_its_tree_is_killed` sees `killed_pids: []`. **Whether an agent's whole tree is actually taken down on Windows is therefore not established** - the safety claim "no agent process was left running" rests on Linux evidence |
 
-   Most of this is fixture portability rather than product behaviour, which is why it is
+   Fixes 8.3 and 8.4 moved 25 of the earlier 106 into passing, all of them in
+   `test_core_agents.AgentLoop`: the developer and reviewer loops, the reviewer isolation
+   refusals, the malformed-verdict refusals and the retry budgets now run on this platform.
+
+   Most of what is left is fixture portability rather than product behaviour, which is why it is
    recorded rather than fixed: porting it is a piece of work in its own right, and doing it
    inside MV-4 would have meant changing dozens of tests on a branch whose purpose is evidence.
    Two entries in the "other" bucket deserve a look on their own terms —

@@ -1,0 +1,186 @@
+{
+  "golden": "2d",
+  "run_id": "new-game-20260929-020128-848880",
+  "run_status": "FAILED",
+  "run_message": "checks failed - unit: pnpm run test: exit 1; smoke: pnpm run test:e2e: exit 1",
+  "passed": false,
+  "pipeline_passed": false,
+  "browser_passed": false,
+  "review_status": null,
+  "duration_s": 119.8,
+  "engine": {
+    "consistent": true,
+    "expected": "pixijs",
+    "recorded": {
+      "browser window.__wgf__": null,
+      "game-design": "pixijs",
+      "game.config.yaml@HEAD": "pixijs",
+      "scaffold-record": "pixijs",
+      "tech-plan": "pixijs",
+      "tech-plan.repo_params": "pixijs"
+    }
+  },
+  "release": null,
+  "template": "C:\\Users\\duycu\\.cache\\wgf\\templates\\bca41a97665f8a32d0f803d46a7bbd001ac94d41",
+  "template_ref": "bca41a97665f8a32d0f803d46a7bbd001ac94d41",
+  "title_id": "tower-merge-rush",
+  "workflow": "new-game",
+  "network_refused": {
+    "pipeline": {
+      "enforced": false,
+      "not_enforced_reason": "Chromium takes its proxy from the system configuration on this platform and ignores the environment, so browser traffic was not routed through the refusing proxy: what a browser did or did not reach is not established by this summary",
+      "platform": "win32",
+      "refused_requests": 0,
+      "targets": []
+    },
+    "whole_run": {
+      "enforced": false,
+      "not_enforced_reason": "Chromium takes its proxy from the system configuration on this platform and ignores the environment, so browser traffic was not routed through the refusing proxy: what a browser did or did not reach is not established by this summary",
+      "platform": "win32",
+      "refused_requests": 0,
+      "targets": []
+    }
+  },
+  "leftover_processes": [],
+  "unexpected_steps": [],
+  "developer": "golden-run replay developer (scripts/golden/replay_developer.py) - a deterministic port of a known-good template example, NOT an AI developer",
+  "reviewer": "golden-run reviewer (scripts/golden/reviewer.py) - deterministic rule checks, NOT an AI reviewer",
+  "auto_approved_gates": [
+    "G2",
+    "G3"
+  ],
+  "steps": [
+    {
+      "step": "research",
+      "status": "SUCCESS",
+      "expected": "SUCCESS",
+      "reached": true,
+      "duration_s": 0.027,
+      "message": "selected tower-merge (opp-8a8cee68) from 1 candidates"
+    },
+    {
+      "step": "strategy",
+      "status": "SUCCESS",
+      "expected": "SUCCESS",
+      "reached": true,
+      "duration_s": 0.021,
+      "message": "title-strategy for tower-merge-rush: poki primary, 7 days - awaiting G2"
+    },
+    {
+      "step": "strategy-review",
+      "status": "SUCCESS",
+      "expected": "SUCCESS",
+      "reached": true,
+      "duration_s": 0.035,
+      "message": "G2 auto-approved"
+    },
+    {
+      "step": "design",
+      "status": "SUCCESS",
+      "expected": "SUCCESS",
+      "reached": true,
+      "duration_s": 0.047,
+      "message": "pixijs design, 13 mvp features, consistency pass"
+    },
+    {
+      "step": "tech-plan",
+      "status": "SUCCESS",
+      "expected": "SUCCESS",
+      "reached": true,
+      "duration_s": 0.028,
+      "message": "pixijs, 3 platform(s), 2.5 estimated days vs 10.5 allowed"
+    },
+    {
+      "step": "tech-plan-review",
+      "status": "SUCCESS",
+      "expected": "SUCCESS",
+      "reached": true,
+      "duration_s": 0.033,
+      "message": "G3 auto-approved"
+    },
+    {
+      "step": "init",
+      "status": "SUCCESS",
+      "expected": "SUCCESS",
+      "reached": true,
+      "duration_s": 3.196,
+      "message": "Cuvara/tower-merge-rush created, game.config.yaml committed locally at 69e726052161"
+    },
+    {
+      "step": "assets",
+      "status": "SUCCESS",
+      "expected": "SUCCESS",
+      "reached": true,
+      "duration_s": 0.244,
+      "message": "12 assets: 0 production-ready, 12 placeholders, 0 errors"
+    },
+    {
+      "step": "develop",
+      "status": "FAILED",
+      "expected": "SUCCESS",
+      "reached": false,
+      "duration_s": 35.928,
+      "message": "checks failed - unit: pnpm run test: exit 1; smoke: pnpm run test:e2e: exit 1"
+    },
+    {
+      "step": "review",
+      "status": "NOT_RUN",
+      "expected": "SUCCESS",
+      "reached": false,
+      "duration_s": null,
+      "message": null
+    },
+    {
+      "step": "sdk",
+      "status": "NOT_RUN",
+      "expected": "SUCCESS",
+      "reached": false,
+      "duration_s": null,
+      "message": null
+    },
+    {
+      "step": "sdk-review",
+      "status": "NOT_RUN",
+      "expected": "SUCCESS",
+      "reached": false,
+      "duration_s": null,
+      "message": null
+    },
+    {
+      "step": "verify",
+      "status": "NOT_RUN",
+      "expected": "SUCCESS",
+      "reached": false,
+      "duration_s": null,
+      "message": null
+    },
+    {
+      "step": "prototype-review",
+      "status": "NOT_RUN",
+      "expected": "SUCCESS",
+      "reached": false,
+      "duration_s": null,
+      "message": null
+    },
+    {
+      "step": "release",
+      "status": "NOT_RUN",
+      "expected": "SUCCESS",
+      "reached": false,
+      "duration_s": null,
+      "message": null
+    }
+  ],
+  "artifact_types": [
+    "asset-manifest",
+    "decision-record",
+    "game-design",
+    "opportunity",
+    "prototype-report",
+    "research-report",
+    "scaffold-record",
+    "tech-plan",
+    "title-strategy"
+  ],
+  "_note": "The 2D golden run on Windows, after the agent-environment and process-resolution fixes. It reaches a scaffolded repository with the ported game written into it and stops at develop on the game repository's own checks. The per-artifact bodies are the run store's and are not copied here."
+}

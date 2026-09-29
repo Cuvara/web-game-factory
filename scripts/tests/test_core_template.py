@@ -139,6 +139,10 @@ class TheFactoryContainsNoGameSource(unittest.TestCase):
         # The golden runs' independent browser probe: drives any built game from outside
         # through its window hook and records evidence. It contains no game.
         "scripts/golden/browser/probe.spec.ts",
+        # MV-4's browser session harness: the same arrangement, measuring real-browser
+        # behaviour (load, frame times, visibility, resize, audio, heap) on the bytes that
+        # ship. Drives whatever game is in the checkout through the template's hooks.
+        "scripts/mv4/session.spec.ts",
     }
     # The sdk step's integration layer (gameplay seam + its SDK-mock suite), written into a
     # game by scripts/wgf_sdk/integrate.py. Game- and renderer-agnostic platform wiring the

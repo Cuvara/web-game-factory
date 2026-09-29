@@ -895,7 +895,24 @@ def _commands(argv):
     return api.definition().commands()
 
 
+def tolerate_unencodable_output():
+    """Never lose a finished run's report to the console's encoding.
+
+    Everything the CLI prints can contain a character the console cannot encode: a tool's
+    output quoted in a failure detail, a package manager's thin space, a game's title. On a
+    console that is not UTF-8 - cp1252 is the Windows default - that raised
+    UnicodeEncodeError after the work was done and printed nothing at all: MV-4 lost a whole
+    `test-core --json` run to `'charmap' codec can't encode character '\\u2009'`. Unencodable
+    characters are escaped instead; the report survives."""
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            stream.reconfigure(errors="backslashreplace")
+        except (AttributeError, ValueError, OSError):   # not a text stream, or already closed
+            pass
+
+
 def main(argv=None, cli=False):
+    tolerate_unencodable_output()
     argv = list(sys.argv[1:] if argv is None else argv)
     try:
         commands = _commands(argv)

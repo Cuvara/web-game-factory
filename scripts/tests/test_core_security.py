@@ -413,6 +413,38 @@ class HostileIdentifiers(EngineCase):
                     DevelopSettings.resolve({}, {}).checkout_for(bad)
         self.assertEqual(paths.checkout_path("/games", "neon-drift"), "/games/neon-drift")
 
+    def test_a_repository_path_is_judged_the_same_on_every_host(self):
+        # os.path.isabs is the host's rule and the host's rule moved: on Windows with Python
+        # 3.13 and later "/etc/passwd" is drive-relative, and a guard built on it accepted
+        # there what it refused on Linux. Backslash and drive-letter forms were accepted on
+        # POSIX by the same guard. Judged on the string, every host agrees.
+        for bad in ("/etc/passwd", "\\\\server\\share\\x", "C:\\Windows\\x", "c:/windows/x",
+                    "../../etc/passwd", "..\\..\\etc\\passwd", "src/../../etc/passwd",
+                    # Whitespace is not a way past the guard: it is stripped before judging.
+                    " /etc/passwd", "\t/etc/passwd", " C:\\Windows\\x", " ../x",
+                    "", "   ", None, 5):
+            with self.subTest(path=bad):
+                self.assertFalse(paths.repo_relative(bad))
+        for good in ("src/game/play-scene.ts", "a.ts", "tests/unit/loop.test.ts",
+                     "  src/game/play-scene.ts  "):
+            with self.subTest(path=good):
+                self.assertTrue(paths.repo_relative(good))
+
+    def test_a_reviewer_cannot_name_a_file_outside_the_repository(self):
+        head = "0" * 40
+        with tempfile.TemporaryDirectory() as directory:
+            path = os.path.join(directory, "verdict.json")
+            for bad in ("/etc/passwd", "C:\\Windows\\system32\\drivers\\etc\\hosts",
+                        "..\\..\\secrets.env", "../../secrets.env", " /etc/passwd"):
+                with self.subTest(path=bad):
+                    with open(path, "w", encoding="utf-8") as handle:
+                        json.dump({"verdict": "request-changes", "commit": head,
+                                   "blockers": [{"id": "b1", "file": bad, "summary": "s",
+                                                 "severity": "blocker"}]}, handle)
+                    parsed, error = verdicts.parse(path, head)
+                    self.assertIsNone(parsed)
+                    self.assertIn("relative to the repository", error)
+
     def test_the_review_step_refuses_a_scaffold_record_naming_dot_dot(self):
         result = run_review_step({"repository": {"name": ".."}, "title_id": "x"})
         self.assertEqual(result.outcome, StepOutcome.FAILED)
@@ -984,6 +1016,39 @@ class AgentEnvironment(unittest.TestCase):
         self.assertEqual(seen.get("WGF_TEST_PASSED"), "yes")   # named in env_passthrough
         self.assertIn("PATH", seen)
         self.assertIn("WGF_PROC_TAG", seen)                    # procs still owns the tree
+
+    def test_an_agent_can_start_a_tool_at_all(self):
+        """The allowlist was written from the POSIX set, and an environment missing the host's
+        own basics cannot start a process on Windows: `pnpm` is `pnpm.CMD` there and needs
+        SystemRoot. Every golden run's developer refused with WinError 267 until this held."""
+        env = agentenv.scrubbed()
+        if os.name != "nt":
+            self.assertIn("PATH", env)
+            self.skipTest("the Windows base names matter where Windows runs")
+        for name in ("SYSTEMROOT", "COMSPEC", "PATHEXT"):
+            self.assertIn(name, env, f"{name} is missing from the agent environment")
+        tool = shutil.which("git")
+        if tool is None:
+            self.skipTest("git is not on PATH")
+        result = procs.run(["git", "--version"], cwd=self.scratch, env=env, timeout=60)
+        self.assertTrue(result.ok, result.tail(5))
+
+    def test_the_allowlist_is_matched_the_way_the_platform_matches_names(self):
+        """Windows upper-cases environment names, so `SystemRoot` in the allowlist matches
+        `SYSTEMROOT` in the environment - and on POSIX two spellings stay two variables."""
+        env = agentenv.scrubbed(env={"SYSTEMROOT": "C:/Windows", "systemroot": "x", "PATH": "p"})
+        if os.name == "nt":
+            self.assertEqual(env.get("SYSTEMROOT"), "C:/Windows")
+            self.assertEqual(env.get("systemroot"), "x")
+        else:
+            self.assertNotIn("SYSTEMROOT", env)
+        self.assertEqual(env.get("PATH"), "p")
+
+    def test_a_secret_is_still_dropped_with_the_base_names_widened(self):
+        env = agentenv.scrubbed(env={"PATH": "p", "SYSTEMROOT": "w",
+                                     "npm_config__authToken": "npm_x", "GH_TOKEN": "ghp_x"})
+        self.assertNotIn("npm_config__authToken", env)
+        self.assertNotIn("GH_TOKEN", env)
 
     def test_the_developer_sees_no_secret(self):
         dump = os.path.join(self.scratch, "developer-env.json")

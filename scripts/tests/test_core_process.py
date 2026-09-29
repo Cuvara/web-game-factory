@@ -963,5 +963,121 @@ class DriverKilledBySigkill(ProcessCase):
         self.assertSwept(orphan, events, untagged, other)
 
 
+class ResolvingTheProgram(unittest.TestCase):
+    """Where the host needs the program resolved before CreateProcess sees it (Windows has no
+    PATHEXT there, so `pnpm` never finds `pnpm.CMD`), the resolution is the child's own PATH -
+    and only a file is ever a program."""
+
+    def env(self, directory):
+        return {"PATH": directory}
+
+    def test_posix_argv_is_never_rewritten(self):
+        if not procs.POSIX:
+            self.skipTest("POSIX only: elsewhere the program must be resolved")
+        with tempfile.TemporaryDirectory() as directory:
+            self.assertEqual(procs._resolved(["pnpm", "x"], self.env(directory)), ["pnpm", "x"])
+
+    def test_a_directory_of_the_same_name_is_not_the_program(self):
+        if procs.POSIX:
+            self.skipTest("the resolution only runs where PATHEXT is not applied")
+        with tempfile.TemporaryDirectory() as directory:
+            os.mkdir(os.path.join(directory, "tool"))
+            self.assertEqual(procs._resolved(["tool", "x"], self.env(directory)), ["tool", "x"])
+
+    def test_a_file_on_the_childs_path_is_resolved(self):
+        if procs.POSIX:
+            self.skipTest("the resolution only runs where PATHEXT is not applied")
+        with tempfile.TemporaryDirectory() as directory:
+            path = os.path.join(directory, "tool.CMD")
+            with open(path, "w", encoding="utf-8") as handle:
+                handle.write("@echo off\n")
+            self.assertEqual(procs._resolved(["tool", "x"], self.env(directory)), [path, "x"])
+
+    def test_a_program_with_a_directory_part_is_left_alone(self):
+        with tempfile.TemporaryDirectory() as directory:
+            given = os.path.join(directory, "tool")
+            self.assertEqual(procs._resolved([given], self.env(directory)), [given])
+
+    def test_an_unresolvable_name_is_left_as_the_caller_wrote_it(self):
+        with tempfile.TemporaryDirectory() as directory:
+            self.assertEqual(procs._resolved(["no-such-tool-xyz"], self.env(directory)),
+                             ["no-such-tool-xyz"])
+
+    def test_a_command_with_a_separator_is_never_looked_up(self):
+        """An explicit path is the caller's decision; resolution must not second-guess it."""
+        with tempfile.TemporaryDirectory() as directory:
+            for given in ("./tool", "sub/tool", "sub" + os.sep + "tool",
+                          os.path.join(directory, "tool.CMD")):
+                with self.subTest(program=given):
+                    self.assertEqual(procs._resolved([given, "x"], self.env(directory)),
+                                     [given, "x"])
+
+    def test_a_drive_relative_name_is_not_a_bare_name(self):
+        if procs.POSIX:
+            self.skipTest("drive-relative paths are a Windows form")
+        self.assertEqual(procs._resolved(["C:tool"], self.env("C:\\")), ["C:tool"])
+
+    def test_a_child_environment_without_a_path_resolves_nothing(self):
+        self.assertEqual(procs._resolved(["tool"], {}), ["tool"])
+
+    def test_the_windows_spelling_of_the_variable_is_honoured(self):
+        if procs.POSIX:
+            self.skipTest("only Windows spells it `Path`")
+        with tempfile.TemporaryDirectory() as directory:
+            path = os.path.join(directory, "tool.CMD")
+            with open(path, "w", encoding="utf-8") as handle:
+                handle.write("@echo off\n")
+            self.assertEqual(procs._resolved(["tool"], {"Path": directory}), [path])
+
+    def test_resolution_never_makes_a_startable_program_unstartable(self):
+        """The safety property, on the platform the resolution runs on: when the child's PATH
+        does not name the tool, argv is left as written and CreateProcess's own lookup - which
+        reads the PARENT's PATH on Windows - still applies. Resolution may only ever add a way
+        to start a program, never take one away.
+
+        On POSIX the property is a different one and is stated as such below: `execvpe` honours
+        the PATH of the environment it is given, so an emptied PATH there genuinely hides the
+        tool - behaviour this change does not touch, because `_resolved` returns argv unchanged
+        on POSIX."""
+        if shutil.which("git") is None:
+            self.skipTest("git is not on PATH")
+        with tempfile.TemporaryDirectory() as directory:
+            env = dict(os.environ)
+            env["PATH"] = directory          # empty: git is not here
+            self.assertEqual(procs._resolved(["git", "--version"], env), ["git", "--version"])
+            if procs.POSIX:
+                self.skipTest("POSIX resolves nothing; the lookup is execvpe's, unchanged")
+            result = procs.run(["git", "--version"], env=env, timeout=60)
+            self.assertTrue(result.ok, result.tail(5))
+
+    def test_the_result_names_what_the_caller_asked_for(self):
+        """Evidence integrity: a resolved path is what is executed, never what is reported."""
+        if shutil.which("git") is None:
+            self.skipTest("git is not on PATH")
+        result = procs.run(["git", "--version"], timeout=60)
+        self.assertEqual(result.argv[0], "git")
+        self.assertEqual(result.to_dict()["argv0"], "git")
+
+    def test_spawn_resolves_the_same_way_and_keeps_the_callers_argv(self):
+        if shutil.which("git") is None:
+            self.skipTest("git is not on PATH")
+        owned = procs.spawn(["git", "--version"], stdout=subprocess.DEVNULL,
+                            stderr=subprocess.DEVNULL)
+        try:
+            self.assertEqual(owned.argv[0], "git")
+            owned.process.wait(timeout=60)
+            self.assertEqual(owned.process.returncode, 0)
+        finally:
+            owned.close()
+
+    def test_an_installed_tool_starts(self):
+        """The failure this exists for: a plainly installed tool reported as not startable."""
+        if shutil.which("git") is None:
+            self.skipTest("git is not on PATH")
+        result = procs.run(["git", "--version"], timeout=60)
+        self.assertTrue(result.ok, result.tail(5))
+        self.assertIn("git version", result.stdout or "")
+
+
 if __name__ == "__main__":
     unittest.main()

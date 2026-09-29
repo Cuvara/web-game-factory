@@ -9,6 +9,65 @@ and `core/` is still the contract.
 
 ## [Unreleased]
 
+MV-4 (`docs/mv-4-report.md`): real-world evidence, and the five Factory defects that running
+the existing suite on a second operating system exposed. Nothing released, no version change
+and no template pin change: this branch touches neither `VERSION` nor
+`workspace/config/template.lock.json`. Its Windows measurements were taken against template
+`v1.1.0`, the pin in force when they were made; 2.3.0 has since moved the pin to `v1.2.0`.
+
+### Added
+
+- `scripts/mv4/`: the MV-4 evidence harness. `session.py` + `session.spec.ts` measure a built
+  game in a real browser on the bytes that would ship (load, frame times, audio unlock,
+  visibility, resize, heap across a restart, telemetry), labelling every measurement with the
+  class of thing it was taken on; `device.py` records a real-device measurement or an explicit
+  UNVERIFIED with the reason, and refuses a capture that does not carry the handset's identity;
+  `playtest.py` computes the two player kill criteria and refuses to count a developer test or
+  to report a share from fewer than five first-time participants; `packaging.py` audits what a
+  release actually packaged; `g4.py` assembles the G4 record and refuses to let a weaker
+  measurement class decide a criterion. Tests: `scripts/tests/test_mv4.py`.
+- `docs/mv-4-plan.md`, `docs/mv-4-playtest-protocol.md`, `docs/mv-4-touch-sheet.md`,
+  `docs/mv-4-report.md`, and the evidence under `docs/evidence/mv-4/`.
+
+### Fixed
+
+- **A reviewer's blocker could name a file outside the repository.** The guard on
+  `blockers[].file` was written on `os.path.isabs`, which is the host's rule: on Windows with
+  Python 3.13+ it accepted `/etc/passwd`, and on POSIX it accepted `C:\Windows\x` and
+  `..\..\secrets.env`. `wgflib.paths.repo_relative` now judges the string - no leading
+  separator of either kind, no drive, no `..` on either separator - so every host agrees.
+  Regressions in `test_core_security.HostileIdentifiers`.
+- **No child process could be started on Windows.** `CreateProcess` does not apply `PATHEXT`,
+  so `procs.run(["pnpm", ...])` failed with `WinError 2` against an installed `pnpm.CMD` and the
+  step reported the tool as not startable. `procs` now resolves `argv[0]` on the child's own
+  `PATH` when it has no directory part, accepting only a file - a directory of the same name on
+  `PATH` satisfies `shutil.which` and then fails as `WinError 267`. POSIX behaviour is
+  unchanged. Regressions in `test_core_process.ResolvingTheProgram`.
+- **An agent could not start a tool at all on Windows.** The agent environment is an allowlist
+  and it held only the POSIX names; without `SystemRoot` no child starts there, so every golden
+  run's developer refused with `NotADirectoryError: [WinError 267]`. The same basics are now
+  allowlisted under the names Windows uses (`SystemRoot`, `windir`, `COMSPEC`, `PATHEXT`,
+  `SystemDrive`, the Program Files and ProgramData locations, `USERPROFILE` / `APPDATA` /
+  `LOCALAPPDATA`), and names are compared the way the platform compares them. No credential
+  name was added and the secret-name filter is unchanged. Regressions in
+  `test_core_security.AgentEnvironment`.
+- **The refusing proxy reported isolation it did not have.** `wgflib.netguard` is set through
+  the proxy environment variables, which Chromium reads on Linux and ignores elsewhere in favour
+  of the system configuration. Its summary now carries `enforced` and, when false, the reason,
+  so `refused_requests: 0` cannot be read as "nothing got out" on a platform where nothing was
+  routed through it. The proxy itself is unchanged. Regression: `test_netguard.Enforcement`.
+- **A finished run's report was lost to the console's encoding.** Anything the CLI prints can
+  carry a character the console cannot encode; on cp1252 that raised `UnicodeEncodeError` after
+  the work was done and printed nothing at all (a whole `test-core --json` run). The CLI's
+  streams now escape what they cannot encode. Regression:
+  `test_workflow_cli.ConsoleEncoding`.
+- **The release tests could not reach their own fixture on Windows.** The suite shims `pnpm`
+  as an extension-less script with a `#!` line, which Windows cannot execute; the real `pnpm`
+  was found instead and the tests measured a repository with none of the fixture's scripts. The
+  fixture writes a `pnpm.CMD` beside the shim there. No test changed what it asserts.
+- **A golden run record differed by host**: `scripts/golden/live.py` wrote the config's path
+  with the host's separator. It now uses `paths.display`.
+
 ## [2.3.0] - 2026-09-29
 
 Both engines gained ground. **Phaser is a second 2D engine** — `engine.type` accepts

@@ -64,6 +64,22 @@ run at anything but its own checkout.
 | `WGF_AJV` | `test_assets`, `test_discovery`, `test_init_module`, `test_verification`, `test_release_module`, `test_core_agents`, `test_develop_module`, `test_techplan_module` | `1` also validates emitted artifacts with ajv through `npx` (may download ajv-cli once). | off |
 | `WGF_SKIP_AJV` | `test_core_contracts` (`=1`), `test_strategy` (any value) | Skip the ajv differential / ajv validation even when `npx` is available. | off: ajv runs when `npx` works |
 | `WGF_TEMPLATE_RELEASE_TEST` | `test_core_release` | `1` runs the pinned template's real `release:package` / `release:manifest` on a copy of it. | off |
+
+## The MV-4 evidence harness
+
+Set by `scripts/mv4/session.py` for the browser side it copies into a scratch checkout
+(`scripts/mv4/session.spec.ts`); never set by hand. They are evidence inputs, not switches: none
+of them can change what class a measurement is recorded at - that is derived from the Playwright
+project name, so no environment can turn an emulated run into a device result
+([mv-4-plan.md](mv-4-plan.md)).
+
+| Variable | Read by | Meaning | Default |
+|---|---|---|---|
+| `WGF_MV4_OUT` | `scripts/mv4/session.spec.ts` | Where each project writes its `session.json`. | `mv4-session` |
+| `WGF_MV4_ARTIFACT` | `scripts/mv4/session.spec.ts` | What was measured: `release-package` or `fresh-build`. | empty |
+| `WGF_MV4_ARTIFACT_SHA` | `scripts/mv4/session.spec.ts` | The sha256 of the bytes measured, recorded in every session. | empty |
+| `WGF_MV4_SAMPLE_S` | `scripts/mv4/session.spec.ts` | Seconds of continuous play sampled for the frame statistics. | `20` |
+| `WGF_MV4_ALLOW_HOSTS` | `scripts/mv4/session.spec.ts` | Comma-separated hosts the session may contact (`--allow-host`); every other external request is aborted and recorded. Each entry is a deliberate, recorded outward request - this is how the portal's own SDK is fetched from the portal's origin for criterion D. | empty: everything external is aborted |
 | `WGF_TEMPLATE_SDK_TEST` | `test_sdk_module` | `1` runs the real `pnpm sdk:conformance` in the pinned template checkout (`wgflib.template`; never another revision) and checks the sdk-report names the pinned commit. | off |
 | `WGF_LIVE_PROCESS_TEST` | `test_core_process` | `1` runs the pinned template's Playwright smoke through the process owner and checks no server survives. | off |
 | `WGF_LIVE_AGENT` | `test_core_agents`, `test_live_loop` | `1` enables the live tests: `LiveReviewer` and the live loop (`golden.live`). They run the developer and reviewer `workspace/config/factory.yaml` documents, verbatim, and cost money. | off |

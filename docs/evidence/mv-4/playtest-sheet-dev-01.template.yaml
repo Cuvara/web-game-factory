@@ -1,0 +1,62 @@
+# MV-4 observation sheet — developer test.
+#
+# Fill this in while playing, save it as docs/evidence/mv-4/playtests/dev-01.yaml, then run
+#   python scripts/mv4/playtest.py --sessions docs/evidence/mv-4/playtests \
+#       --out docs/evidence/mv-4/playtest-summary.json
+#
+# prior_knowledge: yes makes this a developer test. It is counted and reported, and it never
+# enters kill criterion 1 or 2 — those need first-time players and stay UNVERIFIED without
+# them. The protocol is docs/mv-4-playtest-protocol.md.
+
+session_id: dev-01
+date: 2026-09-28
+build_sha256: sha256:c4754ea4ec2a86368ceeff163a9c7abd4c2db603a02e724f6470028443d93ecc
+artifact: fresh build of tower-merge-rush at 072ed75, target platform poki, served by pnpm preview
+device:                        # your machine, OS, browser and version
+input:                         # mouse | keyboard | touch
+measurement_class: developer-test
+prior_knowledge: yes
+instruction_given: n/a (developer test)
+observer: repository owner
+
+first_60_seconds:
+  first_input_at_s:
+  primary_action_found_at_s:
+  primary_action_repeated:
+  understood_control:          # leave blank or answer for the record; it is not counted
+  what_they_tried:
+
+session:
+  runs_played:
+  first_game_over_at_s:
+  retried_unprompted:          # not counted for criterion 2
+  time_to_retry_s:
+  total_session_s:
+  reached_score:
+
+# The part of this sheet that carries weight: what the build did wrong in a real session.
+what_went_wrong:
+  -
+
+confusions:
+  -
+
+# The MV-4 checks a person can judge and a harness cannot. Answer each observed | not observed.
+observed_by_hand:
+  input_feels_immediate:       # a drop happens the moment you click, with visible feedback
+  merge_is_readable:           # you can see what merged into what, without guessing
+  game_over_is_understood:     # it is clear why the run ended
+  restart_is_obvious:          # you can start again without hunting for the control
+  audio_starts_after_first_input:
+  audio_matches_events:
+  hud_readable_at_a_glance:
+  window_resize_keeps_it_playable:
+  tab_away_and_back:           # switch to another tab for ~10 s and return: what happened
+  reload_keeps_best_score:     # reload the page: is the best score still there
+  any_stall_or_hitch:          # anything that visibly stuttered, and when
+
+debrief:
+  what_were_you_trying_to_do:
+  what_made_you_stop:
+
+notes:

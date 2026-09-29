@@ -49,6 +49,7 @@ import contextvars
 import hashlib
 import os
 import secrets
+import shutil
 import signal
 import subprocess
 import sys
@@ -635,6 +636,30 @@ def _child_env(env, tag):
     return base
 
 
+def _resolved(argv, child_env):
+    """`argv` with its program resolved on PATH, for the platforms that need it.
+
+    A shell applies PATHEXT; CreateProcess does not. Every tool the Factory starts in a game
+    repository - `pnpm`, and anything `pnpm exec` stands in for - is installed on Windows as
+    `pnpm.CMD`, so `subprocess.Popen(["pnpm", ...])` there fails with WinError 2 before the
+    child exists, and the step reports a tool that is plainly installed as not startable
+    (found by MV-4 running the suite on Windows). Resolution uses the child's own PATH, so it
+    is the same lookup the child would have had. A name that resolves to nothing is left
+    exactly as given: the caller's "could not be started" error is the right report, and it
+    should name what the caller asked for."""
+    if POSIX or not argv:
+        return argv
+    program = argv[0]
+    if os.path.dirname(program):
+        return argv
+    found = shutil.which(program, path=child_env.get("PATH") or child_env.get("Path"))
+    # shutil.which answers "exists and is executable", and a directory satisfies both on
+    # Windows: a PATH entry whose parent holds a directory of the same name as the program
+    # (`...\Local\pnpm`) resolves to it and CreateProcess then fails with WinError 267, which
+    # reads as a broken working directory rather than a bad lookup. Only a file is a program.
+    return [found, *argv[1:]] if found and os.path.isfile(found) else argv
+
+
 def _session_kwargs():
     if POSIX:
         return {"start_new_session": True}
@@ -741,8 +766,10 @@ def spawn(argv, cwd=None, env=None, **popen_kwargs):
     for reserved in ("start_new_session", "creationflags", "preexec_fn", "process_group"):
         popen_kwargs.pop(reserved, None)
     popen_kwargs.update(_session_kwargs())
+    child_env = _child_env(env, tag)
     with _SPAWN_LOCK:
-        process = subprocess.Popen(argv, cwd=cwd, env=_child_env(env, tag), **popen_kwargs)
+        process = subprocess.Popen(_resolved(argv, child_env), cwd=cwd, env=child_env,
+                                   **popen_kwargs)
         _register(tag, process.pid, process.pid if POSIX else None)
     return OwnedProcess(process, tag, argv)
 
@@ -907,7 +934,7 @@ def run(argv, cwd=None, timeout=None, env=None, input=None, on_event=None, on_ou
     try:
         with _SPAWN_LOCK:
             process = subprocess.Popen(
-                argv, cwd=cwd, env=child_env,
+                _resolved(argv, child_env), cwd=cwd, env=child_env,
                 stdin=subprocess.PIPE if input is not None else subprocess.DEVNULL,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.STDOUT if stderr_to_stdout else subprocess.PIPE,

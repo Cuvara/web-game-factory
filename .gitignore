@@ -14,3 +14,8 @@ Thumbs.db
 # the check scripts and must not be committed.
 __pycache__/
 *.py[cod]
+
+# MV-4 evidence harness scratch: `scripts/mv4/session.py` clones the game repository and
+# installs its dependencies under the evidence directory. The evidence is the JSON next to it;
+# the checkout is a scratch copy of a game, which never belongs in the Factory.
+docs/evidence/*/*/checkout/

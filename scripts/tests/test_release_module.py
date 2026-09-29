@@ -166,6 +166,14 @@ class GameRepository:
         shim = os.path.join(self.bin, "pnpm")
         shutil.copy(FAKE_PNPM, shim)
         os.chmod(shim, os.stat(shim).st_mode | stat.S_IEXEC | stat.S_IXGRP | stat.S_IXOTH)
+        if os.name == "nt":
+            # A `#!` line and an executable bit are how POSIX runs a program; Windows runs what
+            # PATHEXT names, through the command processor. Without this the shim is never
+            # reached there, the real pnpm is found instead, and the release tests measure a
+            # repository that has none of the fixture's scripts (found by MV-4).
+            with open(shim + ".CMD", "w", encoding="utf-8", newline="\r\n") as handle:
+                handle.write("@echo off\n")
+                handle.write(f'"{sys.executable}" "{shim}" %*\n')
         self.log = os.path.join(scratch, "pnpm.log")
 
     # -- files ----------------------------------------------------------------------------

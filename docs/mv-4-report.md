@@ -445,21 +445,24 @@ stranger nor a phone was available.
 |---|---|---|---|---|---|---|
 | WORKFLOW | FAIL | 224 | 215 | 2 | 0 | 7 |
 | AGENTS | FAIL | 47 | 41 | 2 | 1 | 3 |
-| CONTRACTS | FAIL | 131 | 124 | 6 | 0 | 1 |
+| CONTRACTS | FAIL | 131 | 128 | 2 | 0 | 1 |
 | VERIFY | **PASS** | 22 | 22 | 0 | 0 | 0 |
-| RELEASE | FAIL | 49 | 27 | 19 | 2 | 1 |
+| RELEASE | **PASS** | 49 | 48 | 0 | 0 | 1 |
 | 2D GOLDEN | SKIP | 10 | 0 | 0 | 0 | 10 |
 | 3D GOLDEN | SKIP | 10 | 0 | 0 | 0 | 10 |
 | PROCESS CLEANUP | **PASS** | 40 | 6 | 0 | 0 | 34 |
 | SECURITY | FAIL | 117 | 105 | 8 | 1 | 3 |
 
-AGENTS went from 17 passed of 47 to 41 of 47 on fixes 8.3 and 8.4. RELEASE is almost entirely
-the POSIX-only `pnpm` shim in its own fixture. PROCESS CLEANUP passes what it runs and skips 34
-of 40 as POSIX-only, which is the same thing as saying the Factory's process-ownership
-guarantees are not tested on this platform.
+AGENTS went from 17 passed of 47 to 41 of 47, RELEASE from 27 of 49 to 48 of 49 - now PASS -
+and CONTRACTS from 124 to 128 of 131. PROCESS CLEANUP passes what it runs and skips 34 of 40
+as POSIX-only, which is the same thing as saying the Factory's process-ownership guarantees
+are not tested on this platform. The suite is still INCOMPLETE: a SKIP is never a PASS, and
+both golden categories are skipped without `WGF_GOLDEN=1`.
 
-| `WGF_GOLDEN=1 bin/wgf test-core --only "2D GOLDEN"` | **FAIL on Windows, 3 of 10** — see below |
-| MV-4 harness | 3 browser sessions, 1 platform session, 1 packaging audit, 1 device record, 1 playtest summary, 1 G4 record — all under `evidence/mv-4/` |
+| Check | Result |
+|---|---|
+| `WGF_GOLDEN=1 bin/wgf test-core --only "2D GOLDEN"` | **FAIL on Windows, 3 of 10** — below |
+| MV-4 harness | 3 browser sessions, 1 platform session, 1 packaging audit, 1 device record, 1 playtest summary, 1 G4 record, 1 golden-run record — all under `evidence/mv-4/` |
 
 **The 2D golden run on Windows**, run six times, and diagnosed to a stop rather than left at
 one. The record of the last run is `evidence/mv-4/golden/golden-2d-windows.json`; the two
@@ -490,7 +493,9 @@ remaining causes, with their reproductions, are in
 
 The Linux ladder that `v2.2.0` was released against was not re-run: this machine is Windows and
 no Linux host was available. **A merge of this branch should be validated on Linux before it is
-believed**, exactly as the release records describe.
+believed**, exactly as the release records describe. While MV-4 ran, `origin/main` gained a
+Linux acceptance runner (`031ca0e`, PR #10), which is where that validation now belongs; this
+branch was not merged, rebased or brought up to it.
 
 ## 12. Not done, and why
 

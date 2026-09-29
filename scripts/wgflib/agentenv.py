@@ -7,6 +7,15 @@ print them. What an agent host needs to run is small and known, so the environme
 built from names, never inherited:
 
   * PATH, HOME, USER, LOGNAME, SHELL, TERM, TMPDIR (and TMP/TEMP), TZ, LANG, CI;
+  * the same basics under the name Windows gives them, because the allowlist was written
+    from the POSIX set and an environment missing them cannot start a process there at all:
+    SystemRoot and windir (where the system libraries are), COMSPEC (the command processor a
+    `.cmd` program is started through), PATHEXT (which extensions are programs - the Windows
+    half of PATH), SystemDrive, the Program Files and ProgramData locations, and USERPROFILE /
+    APPDATA / LOCALAPPDATA, which are HOME there and hold the toolchain's store and config.
+    Without SystemRoot, `pnpm` - installed as `pnpm.CMD` - fails before the child exists
+    (found by MV-4: the golden run's developer refused with `NotADirectoryError: [WinError
+    267]` on every attempt). None of these names carries a credential;
   * the proxy variables (http_proxy ... NO_PROXY, either case) and SSL_CERT_FILE/DIR: how
     this machine reaches the network. A proxy URL can carry a password; an installation
     that puts one there is trusting its agents with it;
@@ -51,7 +60,13 @@ BASE_NAMES = ("PATH", "HOME", "USER", "LOGNAME", "SHELL", "TERM", "TMPDIR", "TMP
               # behind a proxy cannot reach its API without them, and the golden runs' and
               # the smoke check's refusing proxy (wgflib.netguard) is set the same way.
               "http_proxy", "https_proxy", "all_proxy", "no_proxy", "HTTP_PROXY",
-              "HTTPS_PROXY", "ALL_PROXY", "NO_PROXY", "SSL_CERT_FILE", "SSL_CERT_DIR")
+              "HTTPS_PROXY", "ALL_PROXY", "NO_PROXY", "SSL_CERT_FILE", "SSL_CERT_DIR",
+              # The same basics as above, under the names Windows uses. See the module
+              # docstring: without SystemRoot no child starts there at all.
+              "SystemRoot", "windir", "COMSPEC", "PATHEXT", "SystemDrive",
+              "USERPROFILE", "APPDATA", "LOCALAPPDATA", "HOMEDRIVE", "HOMEPATH",
+              "ProgramData", "ProgramFiles", "ProgramFiles(x86)", "ProgramW6432",
+              "NUMBER_OF_PROCESSORS", "PROCESSOR_ARCHITECTURE", "OS")
 BASE_PREFIXES = ("LC_", "XDG_", "NODE_", "PNPM_", "npm_config_", "NPM_CONFIG_", "WGF_PROC_",
                  # Toolchain configuration, not credentials: PLAYWRIGHT_BROWSERS_PATH is
                  # where an installation keeps its browsers, COREPACK_HOME where corepack
@@ -60,6 +75,13 @@ BASE_PREFIXES = ("LC_", "XDG_", "NODE_", "PNPM_", "npm_config_", "NPM_CONFIG_", 
 
 _SECRET = re.compile(r"TOKEN|SECRET|PASSWORD|PASSWD|CREDENTIAL|AUTH|KEY", re.I)
 _ENTRY = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*\*?$")
+
+
+class _Folded(frozenset):
+    """A set of lower-cased names that answers `in` for any casing of them."""
+
+    def __contains__(self, name):
+        return frozenset.__contains__(self, str(name).lower())
 
 
 class ConfigError(ValueError):
@@ -109,6 +131,12 @@ def scrubbed(extra_names=(), env=None):
             prefixes.append(entry[:-1])
         else:
             exact.add(entry)
+    # Windows environment variable names are case-insensitive, and os.environ upper-cases
+    # them, so an allowlist spelled `SystemRoot` matches nothing there. Names are compared the
+    # way the platform compares them; on POSIX two spellings are two variables.
+    if os.name == "nt":
+        folded = {name.lower() for name in exact}
+        exact = _Folded(folded)
     result = {}
     for name, value in source.items():
         if name in exact:

@@ -1014,6 +1014,39 @@ class AgentEnvironment(unittest.TestCase):
         self.assertIn("PATH", seen)
         self.assertIn("WGF_PROC_TAG", seen)                    # procs still owns the tree
 
+    def test_an_agent_can_start_a_tool_at_all(self):
+        """The allowlist was written from the POSIX set, and an environment missing the host's
+        own basics cannot start a process on Windows: `pnpm` is `pnpm.CMD` there and needs
+        SystemRoot. Every golden run's developer refused with WinError 267 until this held."""
+        env = agentenv.scrubbed()
+        if os.name != "nt":
+            self.assertIn("PATH", env)
+            self.skipTest("the Windows base names matter where Windows runs")
+        for name in ("SYSTEMROOT", "COMSPEC", "PATHEXT"):
+            self.assertIn(name, env, f"{name} is missing from the agent environment")
+        tool = shutil.which("git")
+        if tool is None:
+            self.skipTest("git is not on PATH")
+        result = procs.run(["git", "--version"], cwd=self.scratch, env=env, timeout=60)
+        self.assertTrue(result.ok, result.tail(5))
+
+    def test_the_allowlist_is_matched_the_way_the_platform_matches_names(self):
+        """Windows upper-cases environment names, so `SystemRoot` in the allowlist matches
+        `SYSTEMROOT` in the environment - and on POSIX two spellings stay two variables."""
+        env = agentenv.scrubbed(env={"SYSTEMROOT": "C:/Windows", "systemroot": "x", "PATH": "p"})
+        if os.name == "nt":
+            self.assertEqual(env.get("SYSTEMROOT"), "C:/Windows")
+            self.assertEqual(env.get("systemroot"), "x")
+        else:
+            self.assertNotIn("SYSTEMROOT", env)
+        self.assertEqual(env.get("PATH"), "p")
+
+    def test_a_secret_is_still_dropped_with_the_base_names_widened(self):
+        env = agentenv.scrubbed(env={"PATH": "p", "SYSTEMROOT": "w",
+                                     "npm_config__authToken": "npm_x", "GH_TOKEN": "ghp_x"})
+        self.assertNotIn("npm_config__authToken", env)
+        self.assertNotIn("GH_TOKEN", env)
+
     def test_the_developer_sees_no_secret(self):
         dump = os.path.join(self.scratch, "developer-env.json")
 

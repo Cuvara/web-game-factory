@@ -15,13 +15,33 @@ that waits out its init deadline turns into a 5 s time-to-interactive that fails
 profile's performance assertion - a finding about the harness, not the game. A refusal fails
 the script load immediately, which is what an ad blocker or an offline player does.
 
-This is a guard, not a sandbox: a process that ignores proxy variables is not stopped.
+This is a guard, not a sandbox: a process that ignores proxy variables is not stopped. Chromium
+is one of those processes everywhere but Linux: on Windows and macOS it takes its proxy from the
+system configuration and ignores the environment entirely. `enforced()` says so, and every
+summary carries the answer, because a guard that quietly does not guard is worse than none -
+MV-4 found a develop-step smoke check on Windows loading a portal's real SDK from its CDN and
+failing on the http:// ad bridge it pulled in, with the guard reporting nothing refused.
 """
 
 import socket
+import sys
 import threading
 
-__all__ = ["RefusingProxy", "sandbox_env", "NO_PROXY", "PROXY_VARS"]
+__all__ = ["RefusingProxy", "sandbox_env", "enforced", "NO_PROXY", "PROXY_VARS"]
+
+
+def enforced():
+    """Whether a browser started with `sandbox_env` will actually route through the proxy.
+
+    Only where Chromium reads the proxy environment variables, which is Linux. Elsewhere the
+    variables are set and ignored: git and pnpm still honour them, the browser does not."""
+    return sys.platform.startswith("linux")
+
+
+NOT_ENFORCED_REASON = ("Chromium takes its proxy from the system configuration on this "
+                       "platform and ignores the environment, so browser traffic was not "
+                       "routed through the refusing proxy: what a browser did or did not "
+                       "reach is not established by this summary")
 
 NO_PROXY = "localhost,127.0.0.1,::1"
 PROXY_VARS = ("http_proxy", "https_proxy", "HTTP_PROXY", "HTTPS_PROXY", "all_proxy",
@@ -96,8 +116,15 @@ class RefusingProxy:
         self._thread.join(timeout=2)
 
     def summary(self):
-        """{"attempts": n, "targets": sorted unique request targets}."""
+        """What the proxy refused, and whether a browser was routed through it at all.
+
+        `enforced` is the second half on purpose: zero refused requests means "nothing tried"
+        where the guard holds, and "nothing was routed here" where it does not."""
         with self._lock:
             lines = list(self.attempts)
         targets = sorted({" ".join(line.split(" ")[:2]) for line in lines})
-        return {"refused_requests": len(lines), "targets": targets}
+        result = {"refused_requests": len(lines), "targets": targets,
+                  "enforced": enforced(), "platform": sys.platform}
+        if not enforced():
+            result["not_enforced_reason"] = NOT_ENFORCED_REASON
+        return result

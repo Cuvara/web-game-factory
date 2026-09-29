@@ -73,9 +73,13 @@ class Proxy(unittest.TestCase):
         for _ in range(2):
             exchange(self.proxy.port, b"CONNECT ads.portal.example:443 HTTP/1.1\r\n\r\n")
         exchange(self.proxy.port, b"GET http://cdn.portal.example/a.js HTTP/1.1\r\n\r\n")
-        self.assertEqual(self.proxy.summary(), {
-            "refused_requests": 3,
-            "targets": ["CONNECT ads.portal.example:443", "GET http://cdn.portal.example/a.js"]})
+        summary = self.proxy.summary()
+        self.assertEqual(summary["refused_requests"], 3)
+        self.assertEqual(summary["targets"],
+                         ["CONNECT ads.portal.example:443",
+                          "GET http://cdn.portal.example/a.js"])
+        # Since MV-4 the summary also says whether a browser was routed here at all.
+        self.assertEqual(summary["enforced"], netguard.enforced())
 
     def test_a_request_line_split_across_packets_is_read_whole(self):
         with socket.create_connection(("127.0.0.1", self.proxy.port), timeout=TIMEOUT) as conn:
@@ -118,7 +122,38 @@ class SandboxEnv(unittest.TestCase):
 
     def test_the_module_exports_what_its_users_import(self):
         self.assertEqual(set(netguard.__all__),
-                         {"RefusingProxy", "sandbox_env", "NO_PROXY", "PROXY_VARS"})
+                         {"RefusingProxy", "sandbox_env", "enforced", "NO_PROXY",
+                          "PROXY_VARS"})
+
+
+class Enforcement(unittest.TestCase):
+    """A guard that quietly does not guard is worse than none: every summary says whether a
+    browser was routed through the proxy at all. Chromium reads the proxy environment on Linux
+    and takes the system configuration everywhere else (found by MV-4 on Windows, where the
+    develop step's smoke check reached a portal's real CDN with the guard reporting nothing)."""
+
+    def test_enforcement_follows_the_platform(self):
+        self.assertEqual(netguard.enforced(), sys.platform.startswith("linux"))
+
+    def test_the_summary_says_whether_it_was_enforced(self):
+        proxy = netguard.RefusingProxy().start()
+        self.addCleanup(proxy.stop)
+        summary = proxy.summary()
+        self.assertEqual(summary["enforced"], netguard.enforced())
+        self.assertEqual(summary["platform"], sys.platform)
+        self.assertEqual(summary["refused_requests"], 0)
+        if netguard.enforced():
+            self.assertNotIn("not_enforced_reason", summary)
+        else:
+            self.assertIn("not_enforced_reason", summary)
+
+    def test_zero_refusals_is_not_read_as_isolation_where_it_is_not_enforced(self):
+        """The number that matters is not the count: it is whether the count means anything."""
+        proxy = netguard.RefusingProxy().start()
+        self.addCleanup(proxy.stop)
+        summary = proxy.summary()
+        self.assertFalse(summary["refused_requests"])
+        self.assertIs(summary["enforced"], netguard.enforced())
 
 
 if __name__ == "__main__":

@@ -71,11 +71,11 @@ external request aborted and recorded. Full record:
 | | desktop-real | mobile-emulated | mobile-emulated-throttled (4×) |
 |---|---|---|---|
 | `measurement_class` | `real-browser-desktop` | `emulated-mobile` | `emulated-mobile` |
-| Time to interactive | 0.247 s | 0.219 s | 0.441 s |
+| Time to interactive | 0.393 s | 0.231 s | 0.392 s |
 | Median frame rate | 200 fps | 200 fps | 200 fps |
 | p95 frame time | 5.1 ms | 5.1 ms | 5.1 ms |
-| Worst 1 s window | 199 fps | 195 fps | 78 fps |
-| JS heap, run 1 → run 2 | 7.13 → 7.69 MB | 7.60 → 7.45 MB | 7.60 → 7.37 MB |
+| Worst 1 s window | 189 fps | 199 fps | 188 fps |
+| JS heap, run 1 → run 2 | 6.92 → 7.20 MB | 7.61 → 7.43 MB | 7.57 → 7.77 MB |
 | Page errors | none | none | none |
 
 Checks, identical across the three sessions except where noted:
@@ -100,19 +100,33 @@ Three notes on how to read this, because the numbers are easy to over-read:
 - **200 fps is the display, not a headroom measurement.** The game rendered at this machine's
   refresh rate throughout, including under a 4× CPU throttle. This hardware never put the game
   under frame-budget pressure, so the sample says the game is cheap here and nothing about a
-  handset. The one place the throttle showed at all is the worst 1 s window (78 fps).
+  handset. A 4x CPU throttle did not move the median either, and moved the worst one-second
+  window only from 189 to 188 fps: the proxy has no signal to give on this hardware. An earlier
+  sample, taken while the harness drove the game through a CDP round trip every 250 ms, read a
+  suspiciously exact 30.03 fps - it was measuring the harness. The play loop now runs inside the
+  page.
 - **The leak check needed correcting before it said anything true.** The first version compared
   the heap just after boot against the heap after a played, restarted run, and reported a FAIL
   on two of three projects. That compares two different games. Corrected to compare two
   equivalent runs one game-over apart, the same build passes on all three. The wrong version's
   output is not reported as a finding; the method is recorded in the evidence file.
-- **`pauses_when_hidden` is UNVERIFIED, not PASS.** Neither a second window brought to the
-  front nor a CDP-minimised window made Chromium report `visibilityState: "hidden"` to the
-  page, so the pause-on-hidden path was never actually entered. The game's own e2e suite
-  (`tests/e2e/tower-merge-rush.spec.ts`) covers it by redefining `document.visibilityState`
-  and dispatching the event — a stand-in, not a hidden tab. **Nothing in this stack has ever
-  tested a genuinely hidden tab**, which matters because a real pause bug was found by the
-  live reviewer in the 2.1.2 production run.
+- **`pauses_when_hidden` is UNVERIFIED, not PASS.** Four ways to background the page from
+  outside it were tried, and every one left `document.visibilityState` at `"visible"`, so the
+  pause-on-hidden path was never entered and nothing was measured. Each attempt and its outcome
+  is recorded in the session's `hide_attempt` field:
+
+  | # | Method | Outcome |
+  |---|---|---|
+  | 1 | `context.newPage()` + `bringToFront` | a second *window*; both stay visible |
+  | 2 | `Browser.setWindowBounds { minimized }` on the page's CDP session | rejected — `No web contents in the target`; `Browser.*` belongs to the browser target |
+  | 3 | the same on a browser CDP session with the page's `targetId` | accepted, window minimised, page still `"visible"` (rAF did throttle to ≈10 Hz) |
+  | 4 | a second *tab* in the page's own window (`Target.createTarget` + `activateTarget`) | `Failed to open new tab - no browser is open`: Playwright launches with `--no-startup-window`, so there is no tab strip. Dropping that flag made the tab open — and the page still reported `"visible"`, while the browser closed under the third project mid-sample. The flag is kept; losing a session is worse than a check that says UNVERIFIED |
+
+  The game's own e2e suite (`tests/e2e/tower-merge-rush.spec.ts`) covers the behaviour by
+  redefining `document.visibilityState` and dispatching the event — a stand-in, not a hidden
+  tab. **Nothing in this stack has tested a genuinely hidden tab**, which matters because a real
+  pause bug was found by the live reviewer in the 2.1.2 production run. What is left is a real
+  browser driven by a person: the developer playtest sheet's `tab_away_and_back` line.
 
 ## 4. Real platform integration results (criterion D)
 

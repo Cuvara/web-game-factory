@@ -51,7 +51,22 @@ export default defineConfig({{
     // that is genuinely hidden (headless Chromium reports visibilityState "visible" however
     // the pages are ordered), and a heap number that is not bucketed.
     headless: {headless},
-    launchOptions: {{ args: ["--enable-precise-memory-info"] }},
+    launchOptions: {{
+      args: ["--enable-precise-memory-info"],
+      // Playwright's defaults switch off exactly the behaviour a hidden tab is made of, so a
+      // test browser never backgrounds a page the way a player's browser does. Dropping them
+      // is what makes `document.visibilityState` report "hidden" when the window is minimised.
+      // `--no-startup-window` was dropped too, to give the tab strip a second tab needs. It is
+      // kept now: with a startup window the browser closed under the third project mid-sample
+      // ("Target page, context or browser has been closed"), and the tab it bought still left
+      // the page reporting "visible". A harness that loses a session is worse than a check that
+      // says UNVERIFIED.
+      ignoreDefaultArgs: [
+        "--disable-backgrounding-occluded-windows",
+        "--disable-renderer-backgrounding",
+        "--disable-background-timer-throttling",
+      ],
+    }},
   }},
   projects: [
     {{ name: "desktop-real", use: {{ ...devices["Desktop Chrome"] }} }},
@@ -204,7 +219,11 @@ def main(argv=None):
         h.write(CONFIG.format(port=port,
                               headless="true" if args.headless else "false"))
 
+    # An earlier run's session files are not evidence about this one. A run limited to one
+    # project would otherwise collect the other projects' previous results as its own, and the
+    # summary would name three measurements where one was taken.
     sessions = os.path.join(out, "sessions")
+    shutil.rmtree(sessions, ignore_errors=True)
     env = dict(os.environ, MV4_OUT=sessions, MV4_ARTIFACT=evidence["bundle"]["source"],
                MV4_ARTIFACT_SHA=artifact_sha, MV4_SAMPLE_S=str(args.sample_seconds),
                MV4_ALLOW_HOSTS=",".join(args.allow_host))

@@ -302,31 +302,65 @@ test("mv4 browser session", async ({ page, context, browserName }, info) => {
     const framesBeforeHidden = await page.evaluate(
       () => (window as unknown as W).__wgf__?.framesRendered() ?? null,
     );
-    // Minimising the window is the one way to make a page genuinely hidden from outside it:
-    // a second page brought to the front is a second WINDOW, and both stay visible (headless
-    // and headed alike reported "visible" that way, which is why the check said UNVERIFIED
-    // rather than passing on a visibility change that never happened).
-    let restoreBounds: (() => Promise<void>) | null = null;
+    // Minimising the window is the one way to make a page genuinely hidden from outside it: a
+    // second page brought to the front is a second WINDOW, and both stay visible. The
+    // `Browser.*` domain belongs to the BROWSER target, not to a page's session - sending it on
+    // a page session is what made the first version of this fail silently and report UNVERIFIED.
+    // Backgrounding the page from outside it, so `document.visibilityState` is "hidden" because
+    // the browser hid it rather than because a test said so. Four ways were tried and every one
+    // left the page "visible", so this check reports UNVERIFIED rather than passing on a
+    // visibility change that never happened. The attempt and its outcome are recorded in
+    // `hide_attempt`, so the record says which was tried:
+    //   1. `context.newPage()` + `bringToFront` - a second WINDOW; both stay visible.
+    //   2. `Browser.setWindowBounds { windowState: "minimized" }` on the page's CDP session -
+    //      rejected, "No web contents in the target": `Browser.*` is the browser target's.
+    //   3. the same on a browser CDP session with the page's `targetId` - accepted, the window
+    //      minimises, the page stays "visible" (rAF does throttle to about 10 Hz).
+    //   4. a second TAB in the page's own window (`Target.createTarget` + `activateTarget`,
+    //      with `--no-startup-window` dropped so a tab strip exists) - accepted, and the page
+    //      still reports "visible" and keeps stepping at full rate.
+    // What is left is a real browser driven by a person, which is what the developer playtest
+    // sheet's `tab_away_and_back` line is for.
+    let restore: (() => Promise<void>) | null = null;
+    const hideAttempt: Record<string, unknown> = { method: "Target.createTarget in this window" };
     try {
-      const { windowId, bounds } = (await cdp.send("Browser.getWindowForTarget")) as {
-        windowId: number;
-        bounds: Record<string, unknown>;
+      const browserCdp = await page.context().browser()!.newBrowserCDPSession();
+      // The browser session has no target of its own, so the page's target is named
+      // explicitly: the one page target serving this page's URL.
+      const { targetInfos } = (await browserCdp.send("Target.getTargets")) as {
+        targetInfos: { targetId: string; type: string; url: string }[];
       };
-      await cdp.send("Browser.setWindowBounds", { windowId, bounds: { windowState: "minimized" } });
-      restoreBounds = async () => {
-        await cdp.send("Browser.setWindowBounds", { windowId, bounds: { windowState: "normal" } });
-        await cdp.send("Browser.setWindowBounds", { windowId, bounds });
+      const own = targetInfos.find((info) => info.type === "page" && info.url === page.url());
+      if (!own) throw new Error(`no page target for ${page.url()}`);
+      hideAttempt["targetId"] = own.targetId;
+      const { windowId } = (await browserCdp.send("Browser.getWindowForTarget",
+        { targetId: own.targetId })) as { windowId: number };
+      const { targetId: sibling } = (await browserCdp.send("Target.createTarget", {
+        url: "about:blank",
+        windowId,
+        newWindow: false,
+        background: false,
+      })) as { targetId: string };
+      await browserCdp.send("Target.activateTarget", { targetId: sibling });
+      hideAttempt["ok"] = true;
+      hideAttempt["sibling"] = sibling;
+      restore = async () => {
+        await browserCdp.send("Target.activateTarget", { targetId: own.targetId });
+        await browserCdp.send("Target.closeTarget", { targetId: sibling });
       };
-    } catch {
-      restoreBounds = null;
+    } catch (error) {
+      hideAttempt["ok"] = false;
+      hideAttempt["error"] = String(error).split("\n")[0];
+      restore = null;
     }
+    result["hide_attempt"] = hideAttempt;
     await page.waitForTimeout(3000);
     const hiddenState = await page.evaluate(() => document.visibilityState);
     const pausedWhileHidden = await page.evaluate(
       () => (window as unknown as W).__game?.isPaused?.() ?? null,
     );
     const stepsAfterHidden = await steps(page);
-    if (restoreBounds) await restoreBounds();
+    if (restore) await restore();
     await page.bringToFront();
     await page.waitForTimeout(1000);
     const stepsAfterReturn = await steps(page);
@@ -358,7 +392,7 @@ test("mv4 browser session", async ({ page, context, browserName }, info) => {
           : stepsAfterHidden === stepsBeforeHidden
             ? "PASS"
             : "FAIL",
-      detail: `visibilityState ${hiddenState}; simulation steps ${stepsBeforeHidden} -> ${stepsAfterHidden} over 3 s hidden`,
+      detail: `visibilityState ${hiddenState}; simulation steps ${stepsBeforeHidden} -> ${stepsAfterHidden} over 3 s hidden; hide attempt ${JSON.stringify(hideAttempt)}`,
     };
     checks["recovers_after_return"] = {
       status: stepsAfterInput > stepsAfterHidden ? "PASS" : "FAIL",

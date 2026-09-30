@@ -13,6 +13,7 @@ same id are a design error, not something to merge quietly - which one did the d
 
 import re
 
+from . import modelspec
 from .policy import PolicyError
 
 __all__ = ["Requirement", "RequirementError", "inspect", "classify", "slugify"]
@@ -20,6 +21,8 @@ __all__ = ["Requirement", "RequirementError", "inspect", "classify", "slugify"]
 TIERS = ("mvp", "prototype", "production", "future")
 SOURCES = ("library", "procedural", "ai-generated", "purchased", "commissioned")
 MAX_EDGE = 4096
+# Kinds a `model` spec may describe: the ones delivered as GLB.
+MODEL_KINDS = ("model", "environment", "animation")
 
 # Default pixel size of a generated image, per kind. A requirement's width/height wins.
 DEFAULT_SIZE = {
@@ -62,6 +65,7 @@ class Requirement:
         self.frames = data.get("frames")
         self.platforms = list(data.get("platforms") or [])
         self.existing = data.get("existing")
+        self.model = data.get("model")
         self.notes = data.get("notes")
         self.atlas = data.get("atlas")
         self.scale = data.get("scale") or 1
@@ -176,10 +180,14 @@ def _check_2d_fields(req, entry, where):
 
 
 def game_dimension(design, override=None):
-    """2d or 3d for the game. An explicit setting wins; then any 3D-only kind in the
-    requirements; then a 3D hint in the art direction; else 2d, the cheap default."""
+    """2d or 3d for the game. An explicit setting wins; then the dimension the design's
+    `engine` block declares; then any 3D-only kind in the requirements; then a 3D hint in the
+    art direction; else 2d, the cheap default."""
     if override in ("2d", "3d"):
         return override
+    declared = (design.get("engine") or {}).get("dimension")
+    if declared in ("2d", "3d"):
+        return declared
     for req in design.get("asset_requirements") or []:
         if req.get("dimension") == "3d" or req.get("kind") in ("model", "environment",
                                                                  "material"):
@@ -279,6 +287,15 @@ def inspect(design, policy, *, dimension=None):
                                              and req.existing.get("path")):
             problems.append(f"{where}: existing needs a path")
         problems.extend(_check_2d_fields(req, entry, where))
+        if req.model is not None:
+            if req.kind not in MODEL_KINDS:
+                problems.append(f"{where}: model is for {', '.join(MODEL_KINDS)} "
+                                f"requirements, not {req.kind!r}")
+            else:
+                problems.extend(f"{where}: model.{p}" for p in modelspec.validate(req.model))
+                if any(isinstance(part, dict) and part.get("id") == req.id
+                       for part in (req.model or {}).get("parts") or []):
+                    problems.append(f"{where}: model: a part may not share the asset's id")
         try:
             classify(req, policy, game_dim)
         except RequirementError as exc:

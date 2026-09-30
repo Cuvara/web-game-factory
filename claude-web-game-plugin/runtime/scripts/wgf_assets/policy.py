@@ -43,6 +43,9 @@ class KindPolicy:
         self.est_hours = float(data.get("est_hours") or 0)
         self.est_cost = dict(data.get("est_cost") or {})
         self.optimize = list(data.get("optimize") or [])
+        # 3D budgets: triangles of the visual model at rest (LOD0), texture long edge.
+        self.max_triangles = data.get("max_triangles")
+        self.max_texture_edge = data.get("max_texture_edge")
         self.transparency = data.get("transparency") or "any"
         self.atlas = bool(data.get("atlas"))
         self.tiles = bool(data.get("tiles"))
@@ -66,6 +69,7 @@ class AssetPolicy:
                       for kind, spec in (data.get("kinds") or {}).items()}
         self.optimizations = dict(data.get("optimizations") or {})
         self.pipeline = dict(data.get("pipeline") or {})
+        self.toolchains = dict(data.get("toolchains") or {})
         limits = data.get("limits") or {}
         self.max_texture_edge = int(limits.get("max_texture_edge") or 4096)
         self.warn_texture_edge = int(limits.get("warn_texture_edge") or self.max_texture_edge)

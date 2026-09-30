@@ -168,6 +168,13 @@ factory:
       #   command: [npx, -y, 2d-assets-mcp]
       #   tool: generate_sprite
       #   license: CC0-1.0        # only if the server's terms grant it; else unknown
+      # Blender builds 3D requirements that carry a `model` spec (docs/blender-pipeline.md).
+      # It joins the order by itself when a design has one; this block only tunes it.
+      # blender:
+      #   executable: blender     # else $WGF_BLENDER, else `blender` on PATH; 4.5 LTS pinned
+      #   timeout_seconds: 300
+      #   allow_unpinned: false   # true: build with another series, recorded pinned: false
+      #   required: false         # true: a spec Blender could not build is an error
     optimize: true              # lossless, and only on files the step writes
     fail_on: []                 # issue codes that fail the step, e.g. [license-restricted]
 

@@ -8,7 +8,7 @@
     "id": "game-design",
     "kind": "artifact",
     "format": "json",
-    "version": "1.2.0",
+    "version": "1.3.0",
     "template": "templates/gdd.md",
     "producer": "title:design",
     "consumers": ["title:tech-plan", "title:prototype", "title:prototype-review", "title:production", "release:qa", "title:scaffolding"],
@@ -235,6 +235,10 @@
               "atlas": { "type": "string", "description": "For a spritesheet: its atlas descriptor, relative to the repository root. Default: <stem>.atlas.json, then <stem>.json." }
             },
             "additionalProperties": false
+          },
+          "model": {
+            "$ref": "./shared/model-spec.schema.json",
+            "description": "For model, environment and animation kinds: the asset as data. With parts it is built headless into a GLB; always, what it declares (clips, LODs, collision proxy, fitted size, budget) is checked against the delivered file."
           },
           "notes": { "type": "string" }
         },

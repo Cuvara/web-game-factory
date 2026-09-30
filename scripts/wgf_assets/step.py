@@ -17,7 +17,9 @@ step's `with:` block:
                    Relative paths resolve against the Factory root, never the working
                    directory.
     libraries      directories holding an index.json of reusable assets. Default: none.
-    placeholders   {enabled: true, backends: [2d-assets-mcp, procedural], <backend>: {...}}
+    placeholders   {enabled: true, backends: [2d-assets-mcp, procedural], <backend>: {...}}.
+                   `blender` is put first automatically when a requirement carries a
+                   buildable `model` spec; its settings block is `placeholders.blender`.
     optimize       lossless in-place optimization of files the step writes. Default: true.
     runtime_manifest  write public/assets/assets.json, the runtime asset manifest game code
                    loads from. Default: true.
@@ -43,6 +45,8 @@ from wgflib import checkout, paths, provenance
 from wgflib.workflow import ArtifactOutput, StepResult, WorkflowStep
 from wgflib.yamllite import YamlError, load_file
 
+from . import modelspec
+from .blender import BACKEND_ID as BLENDER
 from .library import open_libraries
 from .pipeline import AssetPipeline, AssetStore
 from .placeholders import build_backends
@@ -177,7 +181,13 @@ class AssetsStep(WorkflowStep):
             context.logger.warning("asset library unavailable", problem=problem)
 
         placeholders = settings["placeholders"]
-        backends = build_backends(placeholders.get("backends"), placeholders)
+        order = list(placeholders.get("backends") or [])
+        if BLENDER not in order and any(modelspec.buildable(r.model) for r in requirements):
+            # A design that describes its models asked for them to be built: Blender goes
+            # first for those (it supports nothing else), whether or not it is installed -
+            # the manifest then says why each one was not built.
+            order.insert(0, BLENDER)
+        backends = build_backends(order, placeholders)
         pipeline = AssetPipeline(policy, store, backends, libraries, logger=context.logger,
                                  placeholders=bool(placeholders.get("enabled")),
                                  optimize=bool(settings.get("optimize")),

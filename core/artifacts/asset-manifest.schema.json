@@ -8,7 +8,7 @@
     "id": "asset-manifest",
     "kind": "artifact",
     "format": "json",
-    "version": "1.2.0",
+    "version": "1.3.0",
     "producer": "title:prototype",
     "updated_by": ["title:design", "title:tech-plan", "title:production"],
     "consumers": ["title:tech-plan", "title:prototype", "title:production", "release:qa", "release:draft"],
@@ -123,6 +123,7 @@
             "type": "string",
             "description": "For an asset delivered as a named fallback rather than a file, such as a system font stack."
           },
+          "model": { "$ref": "#/$defs/model" },
           "optimization": {
             "type": "object",
             "properties": {
@@ -230,7 +231,7 @@
         "properties": {
           "item_id": { "type": "string" },
           "code": {
-            "enum": ["missing", "invalid-format", "format-not-allowed", "too-large", "not-power-of-two", "duplicate-content", "license-unknown", "license-restricted", "provenance-missing", "placeholder", "generation-failed", "library-candidate-rejected", "over-budget", "over-bundle-size", "unsafe-svg", "texture-too-large", "transparency-mismatch", "dimension-mismatch", "invalid-atlas", "atlas-overflow", "atlas-source-served", "invalid-tileset", "duplicate-path", "not-served"]
+            "enum": ["missing", "invalid-format", "format-not-allowed", "too-large", "not-power-of-two", "duplicate-content", "license-unknown", "license-restricted", "provenance-missing", "placeholder", "generation-failed", "library-candidate-rejected", "over-budget", "over-bundle-size", "unsafe-svg", "texture-too-large", "transparency-mismatch", "dimension-mismatch", "invalid-atlas", "atlas-overflow", "atlas-source-served", "invalid-tileset", "duplicate-path", "not-served", "model-invalid", "model-external-reference", "model-unsupported-extension", "model-needs-decoder", "model-transform", "model-scale", "model-pivot", "model-over-budget", "animation-missing", "animation-invalid", "lod-missing", "lod-invalid", "collision-missing", "model-spec-unbuilt"]
           },
           "severity": { "enum": ["error", "warning", "info"] },
           "message": { "type": "string" }
@@ -261,5 +262,97 @@
       "additionalProperties": false
     }
   },
-  "additionalProperties": false
+  "additionalProperties": false,
+
+  "$defs": {
+    "vec3": { "type": "array", "items": { "type": "number" }, "minItems": 3, "maxItems": 3 },
+    "model": {
+      "type": "object",
+      "description": "What a GLB item's file holds, read from its bytes: the visual model at rest (LOD0, collision proxies excluded), its clips, levels of detail, collision proxy and embedded textures; and, for a generated model, what built it.",
+      "required": ["triangles", "vertices", "nodes", "meshes", "materials", "textures", "animations", "lods", "skins"],
+      "properties": {
+        "triangles": { "type": "integer", "minimum": 0 },
+        "vertices": { "type": "integer", "minimum": 0 },
+        "nodes": { "type": "integer", "minimum": 0 },
+        "meshes": { "type": "integer", "minimum": 0 },
+        "materials": { "type": "array", "items": { "type": "string" } },
+        "textures": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["format"],
+            "properties": {
+              "format": { "type": "string" },
+              "width": { "type": "integer", "minimum": 0 },
+              "height": { "type": "integer", "minimum": 0 }
+            },
+            "additionalProperties": false
+          }
+        },
+        "dimensions": { "$ref": "#/$defs/vec3", "description": "Metres along x, y, z, glTF axes (+Y up)." },
+        "bounds": {
+          "type": "object",
+          "required": ["min", "max"],
+          "properties": { "min": { "$ref": "#/$defs/vec3" }, "max": { "$ref": "#/$defs/vec3" } },
+          "additionalProperties": false
+        },
+        "animations": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["name", "duration", "channels"],
+            "properties": {
+              "name": { "type": "string" },
+              "duration": { "type": "number", "minimum": 0 },
+              "channels": { "type": "integer", "minimum": 0 }
+            },
+            "additionalProperties": false
+          }
+        },
+        "lods": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["level", "node", "triangles"],
+            "properties": {
+              "level": { "type": "integer", "minimum": 0 },
+              "node": { "type": "string" },
+              "triangles": { "type": "integer", "minimum": 0 }
+            },
+            "additionalProperties": false
+          }
+        },
+        "collision": {
+          "type": "object",
+          "required": ["node", "shape", "triangles"],
+          "properties": {
+            "node": { "type": "string" },
+            "shape": { "type": "string" },
+            "triangles": { "type": "integer", "minimum": 0 }
+          },
+          "additionalProperties": false
+        },
+        "skins": { "type": "integer", "minimum": 0 },
+        "extensions_used": { "type": "array", "items": { "type": "string" } },
+        "extensions_required": { "type": "array", "items": { "type": "string" } },
+        "generation": {
+          "type": "object",
+          "description": "For a generated model: the tool and version that built it, whether that version is the pinned one, and the key a rebuild is compared against.",
+          "required": ["tool", "version", "pinned", "reused"],
+          "properties": {
+            "tool": { "type": "string" },
+            "version": { "type": "string" },
+            "exporter": { "type": "string" },
+            "pinned": { "type": "boolean" },
+            "key": { "$ref": "./shared/provenance.schema.json#/$defs/hash" },
+            "spec_hash": { "$ref": "./shared/provenance.schema.json#/$defs/hash" },
+            "reused": { "type": "boolean", "description": "The file already in the game repository carried this key and was kept; the tool was not run." },
+            "export_options_unsupported": { "type": "array", "items": { "type": "string" } }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    }
+  }
 }

@@ -14,6 +14,7 @@ game-design ─► inspect ─► classify ─► for each asset:
                                       ─► optimize (lossless)
             ─► pack atlas groups ─► runtime manifest (public/assets/assets.json)
             ─► prune stale placeholders/atlases ─► asset-manifest
+            (every GLB read and checked by gltf.py; a model spec built by Blender)
 ```
 
 The same pipeline runs outside a workflow as `python3 scripts/wgf-assets.py build`, and the
@@ -44,7 +45,8 @@ not a design.
 
 Kinds: `sprite`, `spritesheet`, `background`, `tileset`, `ui`, `icon`, `vfx`, `font`, `sfx`,
 `music` (2D and audio), and `model`, `texture`, `material`, `animation`, `environment` (3D). The game
-is 3D when a requirement is 3D-only or the art direction says so; audio and fonts take the
+is 3D when the step's `dimension` says so, else when the design's `engine.dimension` does,
+else when a requirement is 3D-only or the art direction says so; audio and fonts take the
 game's dimension, UI stays a 2D overlay.
 
 ## What each item records
@@ -60,6 +62,7 @@ game's dimension, UI stays a 2D overlay.
 | `optimization` | lossless steps applied, and the pipeline steps still owed (atlas, KTX2, Draco, transcode, subset); `texture-atlas` moves to `applied` when the item was packed |
 | `atlas` | `{id, frame}`: the atlas the item was packed into; its own file (under `src/assets/`) is then the source, not what ships |
 | `scale` | the authored resolution, when not 1 |
+| `model` | for a GLB: triangles, vertices, dimensions and bounds of the visual model at rest, materials, embedded textures, clips, LOD levels, collision proxy, extensions; for a generated model, the tool, version, pin and key that built it |
 
 The manifest also carries `atlases` (each packed group: its two files and its members) and
 `runtime_manifest` (path, bytes and hash of `public/assets/assets.json`).
@@ -113,10 +116,38 @@ the kind and returns a valid file wins. Every backend's availability and use is 
   PATH, failing to start, erroring or returning a non-image: recorded, and the next backend is
   used. Its output is `license_status: unknown` unless the server's terms are recorded as
   `license`.
+- **`blender`** — joins first whenever a requirement carries a buildable `model` spec. Builds
+  it headless with the pinned Blender 4.5 LTS, or reuses the file already in the checkout when
+  its stamped key matches the spec. With `source` unset or `procedural` the output is **final**
+  (`<id>.glb`, `delivered`, not a placeholder); otherwise a better stand-in. Without Blender,
+  or with another series, the procedural box stands in and the item carries
+  `model-spec-unbuilt`. Settings under `placeholders.blender`
+  ([blender-pipeline.md](blender-pipeline.md#configuration)).
 
 Placeholders are named `<id>.placeholder.<ext>`, so a stand-in is never mistaken for art. A
 new backend registers with `wgf_assets.placeholders.register_backend(id, factory)` from any
 step module, and is named in the config.
+
+## 3D models: GLB validation and the runtime manifest
+
+3D models described as data (`asset_requirements[].model`) are built headless by a pinned
+Blender: [blender-pipeline.md](blender-pipeline.md).
+
+Every `.glb`/`.gltf` the step touches — generated, library or the design's own — is read by
+`gltf.py` (standard library): structure, references and ranges, node tree, transforms,
+embedded images, animations, skins, required extensions against what three.js r170 loads, and
+plausible scale. Its findings are the manifest's issues (`model-invalid`,
+`model-external-reference`, `model-unsupported-extension`, `model-needs-decoder`,
+`model-transform`, `model-scale`, `animation-invalid`). A requirement's `model` spec —
+buildable or not — adds expectations: declared clips, LOD levels, collision proxy, fitted
+size, pivot and budgets (`animation-missing`, `lod-missing`, `lod-invalid`,
+`collision-missing`, `model-pivot`, `model-over-budget`, `texture-too-large`). Policy budgets
+are warnings; the spec's own are errors. A stand-in box is not held to a spec it was never
+built from.
+
+A GLB's entry in `public/assets/assets.json` carries `model`: its clip names, its LOD nodes,
+its collision node and shape, its dimensions and triangles — what a three.js loader looks up
+instead of guessing node names.
 
 ## Atlas groups
 
@@ -323,3 +354,7 @@ overflow), atlas descriptor checks, AVIF and SVG sniffing and hazards, the new r
 fields, atlas groups and the runtime manifest through the step (schema-valid, byte-identical
 across roots and input orders, idempotent, pruning), every runtime validation failure, the
 CLI's commands and exit codes, and the develop brief and verify check that consume it.
+
+`scripts/tests/test_models.py` covers the model spec, the GLB inspector, the Blender layer
+(with a fake Blender through the real process layer), the step with models, three.js loading,
+and — with `WGF_BLENDER_TEST=1` — real Blender builds.

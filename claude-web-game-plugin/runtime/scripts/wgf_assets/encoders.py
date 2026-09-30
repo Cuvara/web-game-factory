@@ -32,13 +32,15 @@ def _chunk(kind, data):
     return struct.pack(">I", len(data)) + body + struct.pack(">I", zlib.crc32(body) & 0xFFFFFFFF)
 
 
-def png(width, height, colour, *, checker=0, frames=1, border=True):
+def png(width, height, colour, *, checker=0, frames=1, border=True, alt=None):
     """An RGBA PNG: a solid `colour`, a darker 1px border per frame, and optionally a
-    `checker`-pixel checkerboard (textures, so tiling and mip seams are visible)."""
+    `checker`-pixel checkerboard (textures, so tiling and mip seams are visible) whose
+    second colour is `alt`, by default `colour` lightened."""
     r, g, b = colour
     dark = (r // 2, g // 2, b // 2, 255)
     light = (r, g, b, 255)
-    alt = (min(255, r + 40), min(255, g + 40), min(255, b + 40), 255)
+    alt = ((*alt, 255) if alt is not None
+           else (min(255, r + 40), min(255, g + 40), min(255, b + 40), 255))
     frame_w = max(1, width // max(1, frames))
     # A row depends only on whether it is a border row and on its checker parity, so build
     # each distinct row once: a 960x540 background would otherwise be half a million

@@ -1,0 +1,343 @@
+# The 3D asset pipeline: Blender offline, three.js at runtime
+
+A 3D game's models are described as data in the game design, built headless by a pinned
+Blender into GLB files, checked without Blender, listed in the runtime asset manifest, and loaded by the
+game's three.js `GLTFLoader`. Blender is an offline build tool of the `assets` step. It never
+reaches a browser and nothing in a game bundle depends on it.
+
+```
+OFFLINE  (Factory, scripts/wgf_assets/)                     BROWSER  (game repository)
+
+game-design.asset_requirements[].model   (model spec)
+  └─ modelspec.validate / resolve  ── glTF frame, quaternions, linear colour, PNG textures
+       └─ blender.py: discover → pin check → key → reuse?
+            └─ blender --background --factory-startup ... --python build_model.py
+                 parts · materials · textures · fit/pivot · clips · LODs · collision
+                 └─ glTF exporter → GLB → stamp asset.extras.wgf {key, blender, …}
+  └─ gltf.inspect + check_expectations   ── every GLB, any source, no Blender
+  └─ asset-manifest item.model  +  assets.json entry .model   ──────►  fetch assets.json
+                                                                        GLTFLoader.loadAsync
+                                                                        AnimationMixer / LOD /
+                                                                        collision userData
+```
+
+Code: `scripts/wgf_assets/` — `modelspec.py` (the spec), `blender.py` (discovery, pin,
+command, build, backend), `blender_scripts/build_model.py` (runs inside Blender), `gltf.py`
+(the inspector), wired into `pipeline.py` and `step.py`. Data: the model spec schema
+`core/artifacts/shared/model-spec.schema.json`, the `toolchains.blender` pin and the 3D
+budgets in `core/reference/asset-policy.yaml`, the manifest's `model` block in
+`core/artifacts/asset-manifest.schema.json`. CLI: `scripts/wgf-model.py`.
+
+## What the audit found, and what was built on
+
+- The `assets` step already produced 3D placeholders (procedural box GLBs), sniffed a GLB's
+  header, and had a registry of placeholder backends (`procedural`, an optional MCP server).
+  Blender is a third backend in that registry: no kernel, engine or `wgflib` change.
+- Nothing read a GLB past its header. A truncated index, an external texture, a clip renamed
+  on export or a model authored in centimetres all passed. `gltf.py` now reads every GLB the
+  step touches — the design's own files, library files and generated ones.
+- The runtime is the pinned template's `@wgf/three-framework` (three r170, `engine.type:
+  threejs`). It has no loader code of its own yet, and game code cannot live in this
+  repository (`test_core_template`), so runtime integration is a contract — node names,
+  `extras`, the runtime asset manifest's `model` entry — verified by loading real files with that exact three.js.
+- No compression dependency was added. Draco, Meshopt and KTX2 stay deferred build steps
+  (`optimization.deferred`), as the policy already says; the inspector flags a GLB that needs
+  a decoder (`model-needs-decoder`) and one that needs an extension three.js cannot read
+  (`model-unsupported-extension`).
+
+## Blender: version, discovery, headless use
+
+**Pinned series: Blender 4.5 LTS** (`core/reference/asset-policy.yaml`, `toolchains.blender`:
+`series: "4.5"`, `tested: 4.5.14`). The build script needs at least 4.2.
+
+The same spec under another Blender series can export different bytes (verified: 4.5.14 and
+5.0.1 give different bytes for the same model, each reproducible on its own). So another
+series is **refused** unless the installation sets `allow_unpinned: true`, and then every
+model it builds records `pinned: false`. Moving the series re-keys every generated model; do
+it deliberately, with a changelog entry, and rebuild the fixture (below).
+
+Discovery, first hit wins — never a hard-coded install path:
+
+1. `factory.assets.placeholders.blender.executable` in `workspace/config/factory.yaml`
+2. `$WGF_BLENDER`
+3. `blender` on `PATH`
+
+```bash
+python3 scripts/wgf-model.py doctor          # where, which version, pinned or not; exit 2 if unusable
+```
+
+Installing: the portable Linux build needs no root —
+download `blender-4.5.<n>-linux-x64.tar.xz` from https://download.blender.org/release/Blender4.5/,
+check it against the `.sha256` published beside it, unpack, and point `WGF_BLENDER` at the
+`blender` binary inside. On WSL use the Linux build: a Windows `blender.exe` runs, but cannot
+read Linux paths.
+
+Every build runs through `wgflib.procs` (own process tree, timeout, heartbeat, cleanup) as
+
+```
+blender --background --factory-startup -noaudio --offline-mode --python-exit-code 3 \
+        --python scripts/wgf_assets/blender_scripts/build_model.py -- \
+        --spec <resolved.json> --textures <dir> --out <model.glb> --report <report.json>
+```
+
+with an allowlisted environment (`PATH`, temp dirs, `LANG=C.UTF-8`, `PYTHONNOUSERSITE`) and
+`HOME` and every `BLENDER_USER_*` directory inside the build's scratch directory:
+`--factory-startup` ignores preferences and the startup file, and nothing from the machine's
+Blender configuration or add-ons can reach the output. The script always writes its report;
+on failure it names the error and Blender exits 3.
+
+## The model spec
+
+`asset_requirements[].model` on a `model`, `environment` or `animation` requirement. Full
+schema: `core/artifacts/shared/model-spec.schema.json`. Coordinates are glTF's = three.js's:
+metres, +Y up, the model faces +Z; rotations are Euler degrees, XYZ order.
+
+```json
+{
+  "id": "hover-car", "kind": "model",
+  "model": {
+    "parts": [
+      {"id": "hull", "shape": "box", "size": [1.2, 0.35, 2.2], "position": [0, 0.45, 0], "material": "paint"},
+      {"id": "canopy", "shape": "sphere", "size": [0.7, 0.4, 0.9], "position": [0, 0.3, -0.1],
+       "parent": "hull", "material": "glass"},
+      {"id": "fan", "shape": "cylinder", "size": [0.5, 0.12, 0.5], "position": [0, 0.1, 0.8], "material": "metal"}
+    ],
+    "materials": [
+      {"id": "paint", "color": "#ff3366", "roughness": 0.4,
+       "texture": {"pattern": "stripes", "size": 64, "color2": "#aa1144", "repeat": 2}},
+      {"id": "glass", "color": "#88ccff", "opacity": 0.6},
+      {"id": "metal", "color": "#bbbbbb", "metallic": 1, "emissive": "#00ffcc", "emissive_strength": 2}
+    ],
+    "animations": [
+      {"name": "hover", "duration": 1, "loop": true, "tracks": [
+        {"part": "hull", "path": "translation", "keys": [
+          {"t": 0, "value": [0, 0.45, 0]}, {"t": 0.5, "value": [0, 0.55, 0]}, {"t": 1, "value": [0, 0.45, 0]}]}]}
+    ],
+    "collision": {"shape": "box"},
+    "budget": {"max_triangles": 2000, "max_texture_edge": 256}
+  }
+}
+```
+
+| Field | Meaning |
+|---|---|
+| `parts` | Primitives: `box`, `cylinder`, `cone` (stand along +Y), `sphere`, `icosphere`, `plane` (XZ, facing +Y). `size` is the bounding size. One glTF node per part, named by its id; `parent` nests. |
+| `materials` | Metallic-roughness PBR only — what three.js renders with `MeshStandardMaterial` and no custom shader: `color`, `metallic`, `roughness`, `opacity` (<1 blends), `emissive` + `emissive_strength`, and an optional generated `checker`/`stripes` texture (power-of-two, embedded). No Blender-only node graph is ever built. |
+| `pivot` | `base-center` (default: origin at the centre of the base, for placing on the ground), `center`, or `origin`. |
+| `fit` | Uniform scale so the model is `size` metres along `axis` (`x`/`y`/`z`/`max`). Baked into vertices and positions, never left as a node scale. |
+| `animations` | Named clips of absolute TRS keys per part. `interpolation`: `linear` or `step`. Without `tracks`, a clip is only an expectation the delivered GLB must meet. |
+| `lods` | A count (each halves the triangles) or decreasing ratios. Not on an animated model. |
+| `collision` | A separate, unrendered proxy: `box` or `convex` (≤ 64 hull points). |
+| `budget` | This design's own limits — exceeding one is an **error** (the policy's are warnings). |
+| `fps` | Sampling rate of built clips; default 30. |
+
+Rejected before Blender runs (`modelspec.validate`, a malformed requirement fails the step):
+unknown or cyclic parents, missing materials, keys out of order or past the clip, a rotation
+step of 180° or more (keys become quaternions and a runtime slerps the short way — a 0→360
+pair is no motion), a track whose value never changes (the exporter drops constant channels,
+so it would silently not exist), and LODs on an animated model.
+
+**A spec without `parts`** is an expectation only — useful for a purchased or library GLB:
+`{"animations": [{"name": "run"}], "collision": {"shape": "box"}, "budget": {...}}` makes the
+step fail that file's production readiness if the clip or proxy is missing.
+
+**Final or placeholder.** A buildable spec with `source` unset or `procedural` is the asset
+itself: `public/assets/<dir>/<id>.glb`, `status: delivered`, `placeholder: false`,
+`LicenseRef-factory-generated`, production-ready when clean. With another `source`
+(`purchased`, `commissioned`, …) Blender builds a better stand-in, still
+`<id>.placeholder.glb`.
+
+## What the build makes
+
+```
+<asset>                  root; extras {wgf_asset, wgf_format: 1}
+  <part> …               one mesh node per part, in the spec's hierarchy
+  <asset>_LOD0           only with LODs: empty holding the parts; extras {wgf_lod: 0}
+  <asset>_LOD1 …         one joined mesh per ratio; extras {wgf_lod: n}
+  <asset>_collision      only with a proxy; no material;
+                         extras {wgf_role: collision, wgf_shape, wgf_center, wgf_half_extents}
+asset.extras.wgf         {generator, key, spec_hash, blender, exporter, format}
+```
+
+Exporter settings are fixed in `build_model.py` (`EXPORT_OPTIONS`): GLB, +Y up, extras on,
+normals and UVs, no tangents, cameras, lights, skins, morphs, Draco or gltfpack; clips from
+NLA tracks. An option a Blender version does not know is dropped and recorded
+(`model.generation.export_options_unsupported`), never silently different.
+
+**Skinning is not generated.** Parts animated as rigid nodes cover vehicles, props,
+turrets, pickups and blocky characters; an armature generator would be most of a framework
+and is left out until a game needs one. Skinned GLBs from other sources are validated
+(joints, inverse bind matrices, `JOINTS_0`/`WEIGHTS_0`).
+
+## Determinism
+
+The same spec and the same Blender version give byte-identical GLBs across separate Blender
+processes. What ran: on 4.5.14, every real-Blender test model built at least twice (the LOD
+and convex-proxy model three times) and the committed fixture rebuilt byte for byte; on 5.0.1,
+the car and the LOD model twice each. Cross-machine reproducibility follows from the same
+inputs but was measured on one machine only. Getting there took three fixes, each found by
+building twice and diffing buffers; a fourth change keeps the proxy light:
+
+| Source of drift | Fix |
+|---|---|
+| Face order out of some bmesh primitive operators varies run to run | `canonical()`: vertices and faces sorted by geometry before every mesh is written |
+| Quads tessellated by the exporter in varying order | every part triangulated in bmesh with fixed quad/ngon methods |
+| Blender's collapse decimation picks different collapses per run | LODs by vertex clustering, pure arithmetic in fixed order, cell size binary-searched to the ratio |
+| A convex hull of every vertex: deterministic but ~1000 triangles | at most 64 clustered hull points → ~100 triangles |
+
+Other inputs are closed off: factory startup, isolated user directories, no timestamps or
+random ids anywhere, names only from the spec, textures made by `modelspec` (not by Blender's
+image encoder), JSON sorted when stamped.
+
+`python3 scripts/wgf-model.py build spec.json --id x -o x.glb --twice` builds twice and fails
+unless the bytes match.
+
+## Reuse: CI and re-runs without Blender
+
+A build is keyed: sha256 over the resolved spec, texture bytes, `build_model.py` and the
+Blender series. The key is stamped into the GLB. When the file already at the model's path
+in the game repository carries the key the spec would produce, it is reused and Blender is
+not started (`model.generation.reused: true`).
+
+So the pipeline's CI rule is: **generated models are committed in the game repository**
+(the develop commit carries `public/`), and a runner — or a re-executed step — without
+Blender keeps them. Only a changed spec, a changed build script or a new series needs Blender.
+Without it, that model falls back to the procedural placeholder with a
+`model-spec-unbuilt` warning (an error, and with `strict` a failed step, when the backend's
+`required: true`). The backend's `generation.backends` note says why:
+`reuse-only: Blender not available: …`.
+
+## Validation
+
+`gltf.inspect` (standard library, no Blender) runs on every GLB and `.gltf`:
+
+| Check | Issue code |
+|---|---|
+| Container, chunk and JSON; glTF 2.0; every index in range; accessor and bufferView ranges; one parent per node; no cycle; a scene with nodes; visible triangles | `model-invalid` |
+| A buffer or image by external URI (a data URI is a size warning) | `model-external-reference` |
+| `extensionsRequired` three.js r170 cannot read / needs DRACOLoader, KTX2Loader or MeshoptDecoder for | `model-unsupported-extension` / `model-needs-decoder` |
+| Non-finite TRS, matrix and TRS together, a non-unit quaternion, a zero scale (errors), a negative scale (warning) | `model-transform` |
+| Visual model over 200 m (2 km for environments) or under 5 mm across | `model-scale` |
+| Embedded image not PNG/JPEG/WebP/KTX2, not a power of two | `model-invalid`, `not-power-of-two` |
+| Unnamed or duplicate clip; a channel animating a target twice; bad path; sampler output count | `animation-invalid` |
+
+Then against the spec and the policy (`gltf.check_expectations`): a declared clip missing
+(`animation-missing`) or of another duration; a declared LOD level missing (`lod-missing`) or
+not reducing (`lod-invalid`); a declared proxy missing (`collision-missing`) or over 256
+triangles; the fitted size (`model-scale`) and pivot (`model-pivot`); triangles, texture edge
+and bytes against the budget (`model-over-budget`, `texture-too-large`, `too-large`).
+Policy budgets per kind: model and animation 20 000 triangles and 1024 px; environment 100 000
+and 2048 px. Duplicate asset ids are refused with the requirements, as before.
+
+The result is the manifest item's `model` block: triangles and vertices of the visual model
+at rest (LOD0, proxies excluded), nodes, meshes, materials, embedded textures, dimensions and
+bounds, clips with duration and channel count, LOD levels with their triangles, the proxy,
+skins, extensions, and for a generated model its `generation` (tool, version, exporter,
+pinned, key, spec hash, reused).
+
+```bash
+python3 scripts/wgf-model.py inspect public/assets/models/car.glb --spec car.model.json
+```
+
+## Runtime integration (three.js)
+
+Blender is not in the bundle; the game receives GLBs, listed like every other asset in the
+runtime asset manifest `public/assets/assets.json` ([assets-module.md](assets-module.md),
+`shared/runtime-assets.schema.json`). A GLB's entry adds `model`:
+
+```json
+"hover-car": {"type": "model", "url": "models/hover-car.glb", "format": "glb",
+  "model": {"clips": ["hover", "spin"], "lods": [], "triangles": 280,
+            "dimensions": [1.2, 0.91, 2.2],
+            "collision": {"node": "hover-car_collision", "shape": "box"}}}
+```
+
+URLs are relative to `assets.json`; the file is deterministic and pinned by hash in the asset
+manifest's `runtime_manifest`. The loading contract, which `core/craft/3d-assets-and-animation.md` states
+for the developer:
+
+- one `GLTFLoader` (with its `LoadingManager` for the progress number), preloading the manifest's
+  `url`s relative to `assets.json`; a rejected load is an error, not an empty scene;
+- clips by name through one `AnimationMixer` per instance, driven from the fixed update;
+- a node with `userData.wgf_role === "collision"` is hidden and handed to physics
+  (`wgf_shape`, `wgf_center`, `wgf_half_extents` for a box need no mesh at all);
+- nodes with `userData.wgf_lod` become the levels of a `THREE.LOD`;
+- dispose geometries, materials, textures and mixers on scene exit and restart.
+
+**Verified with the runtime's own three.js**: `scripts/tests/threejs_runtime.py` loads GLBs
+with the pinned template's three r170 `GLTFLoader` in Node — root and proxy `userData`,
+`MeshStandardMaterial` with its map, `THREE.LOD` levels, and every clip resolving its nodes
+and moving them through `AnimationMixer`. Node has no DOM, so `self`, `createImageBitmap`
+(image size only, no pixel decode) and `fetch` of `blob:` URLs are shimmed; the rest is
+three.js. It does not render a frame: pixels on a GPU remain the golden runs' and a person's.
+
+## Configuration
+
+`factory.assets.placeholders.blender` (or a step's `with: placeholders: {blender: …}`):
+
+| Key | Default | |
+|---|---|---|
+| `executable` | `$WGF_BLENDER`, then `blender` on PATH | the Blender binary |
+| `timeout_seconds` | 300 | per build |
+| `allow_unpinned` | false | build with another series; models record `pinned: false` |
+| `required` | false | a spec that could not be built is an error, not a warning |
+
+The backend joins automatically — first in the order — whenever a requirement carries a
+buildable spec; designs without one see no change.
+
+## CI
+
+`.github/workflows/acceptance.yml` is unchanged and needs no Blender: the fake-Blender tests
+cover discovery, pinning, commands, the step, reuse and fallback through the real process
+layer, and the runtime tests load the committed Blender-built fixture
+(`scripts/tests/fixtures/models/hover-car.glb`).
+
+The real builds are opt-in, exactly like the goldens:
+
+```bash
+WGF_BLENDER_TEST=1 WGF_BLENDER=/path/to/blender-4.5.14-linux-x64/blender \
+  python3 -m unittest scripts/tests/test_models.py
+```
+
+They build every shape, track type, LOD and proxy; check determinism; run the step twice
+(build, then reuse); and rebuild the committed fixture **byte for byte**. When the build
+script changes on purpose, that last test fails with the command to rebuild the fixture:
+
+```bash
+python3 -c "import json; print(json.dumps(json.load(open('scripts/tests/fixtures/models/design-models.json'))['asset_requirements'][0]['model']))" > /tmp/hover.json
+python3 scripts/wgf-model.py build /tmp/hover.json --id hover-car -o scripts/tests/fixtures/models/hover-car.glb --twice
+```
+
+## Troubleshooting
+
+| Symptom | Cause, fix |
+|---|---|
+| `reuse-only: Blender not available: blender is not on PATH` | Install 4.5 LTS; set `WGF_BLENDER` or `executable`. `wgf-model.py doctor` confirms. |
+| `not the pinned series 4.5` | A different Blender was found. Point at 4.5.x, or `allow_unpinned: true` knowingly. |
+| `model-spec-unbuilt` | The spec's model was not built and a box stands in; the note says why. |
+| `Blender build of 'x' failed: …` | The report's error (the traceback is in the report when kept); usually a spec the script cannot build. |
+| `twice: DIFFERENT bytes` | Nondeterminism in this Blender: report it with the spec; do not ship until reproducible. |
+| `animation-missing` on a built model | A clip whose tracks were dropped — should be caught earlier by the constant-track rule; check the spec. |
+| `model-needs-decoder` | The GLB is Draco/Meshopt/KTX2-compressed: the game must configure the decoder and ship its files. |
+| Model 100× too big | `model-scale`: authored in centimetres; set `fit` or fix the source's unit. |
+
+## Known limitations
+
+- **No generated skinning or morph targets.** Rigid-part animation only; skinned GLBs from
+  other sources are validated, not made.
+- **Primitives only.** Parts are boxes, cylinders, cones, spheres, icospheres and planes;
+  importing and cleaning a sourced mesh through Blender is not implemented (a sourced GLB is
+  validated as delivered).
+- **LODs by vertex clustering** are deterministic but coarser than quadric collapse; fine for
+  distant levels of simple models, not a substitute for authored LODs of a hero model.
+- **Clips are sampled at `fps`** by the exporter (linear between samples, step clips exact).
+- **No compression in place.** Draco/Meshopt/KTX2 remain deferred build steps; nothing
+  validates a compressed file beyond flagging the decoder it needs.
+- **A superseded final is not removed.** Pruning removes stale `<id>.placeholder.glb` files
+  once a built `<id>.glb` replaces them; a built `<id>.glb` that a changed spec (without
+  Blender) demoted back to a placeholder stays on disk until rebuilt or deleted. The runtime
+  manifest lists only the current file.
+- **Rendering is not verified here.** The runtime tests parse, build the scene graph and play
+  clips with three.js in Node; drawing pixels is the golden runs' and a person's.
+- **Reproducibility across machines is by construction, measured on one.** The fixture
+  rebuild test is what proves it on a second machine: run it there.

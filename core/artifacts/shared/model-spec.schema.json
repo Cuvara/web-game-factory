@@ -1,0 +1,149 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://webgamefactory.dev/schemas/artifacts/shared/model-spec.schema.json",
+  "title": "Model Spec",
+  "description": "A 3D asset described as data, on a game design's asset requirement (`asset_requirements[].model`). Not an artifact: a part of one.\n\nTwo uses. With `parts`, it is a BUILD SPEC: primitives, materials, clips, LOD ratios and a collision proxy that an offline tool builds headless into one GLB, deterministically, with no one opening an editor. Without `parts`, and always in addition, it is an EXPECTATION: every clip, LOD level, collision proxy, fitted size and budget it declares is checked against the delivered GLB, whichever source that came from — a purchased model with a renamed clip fails the same way a generated one would.\n\nCoordinates are glTF's, which are the 3D runtime's: metres, +Y up, the model faces +Z. Rotations are Euler degrees, XYZ order. A budget written here is the design's own and an error when exceeded; the policy's defaults are warnings.",
+
+  "type": "object",
+  "properties": {
+    "parts": {
+      "type": "array",
+      "maxItems": 64,
+      "description": "The geometry, one glTF node per part, named by its id. Children follow their parent's transform and animation.",
+      "items": {
+        "type": "object",
+        "required": ["id", "shape"],
+        "properties": {
+          "id": { "type": "string", "pattern": "^[a-z][a-z0-9-]*$", "description": "The node name at runtime: animation tracks and gameplay code find the part by it." },
+          "shape": { "enum": ["box", "cylinder", "cone", "sphere", "icosphere", "plane"], "description": "A primitive fitted to `size`. Cylinders and cones stand along +Y; a plane lies in XZ facing +Y." },
+          "size": { "$ref": "#/$defs/vec3", "description": "Bounding size in metres [x, y, z]. Zero only on a plane's y. Default [1, 1, 1]." },
+          "position": { "$ref": "#/$defs/vec3", "description": "Relative to the parent part, or to the model's origin. Default [0, 0, 0]." },
+          "rotation": { "$ref": "#/$defs/vec3", "description": "Euler degrees, XYZ order. Default [0, 0, 0]." },
+          "segments": { "type": "integer", "minimum": 3, "maximum": 64, "description": "Radial segments of round shapes. Default 16." },
+          "parent": { "type": "string", "description": "Another part's id." },
+          "material": { "type": "string", "description": "A material's id. None: the runtime's default material." },
+          "smooth": { "type": "boolean", "description": "Smooth shading. Default true for spheres, false otherwise." }
+        },
+        "additionalProperties": false
+      }
+    },
+    "materials": {
+      "type": "array",
+      "description": "Metallic-roughness PBR, the only model the runtime renders without custom shaders. Reuse one material across parts: each is a draw call.",
+      "items": {
+        "type": "object",
+        "required": ["id"],
+        "properties": {
+          "id": { "type": "string", "pattern": "^[a-z][a-z0-9-]*$" },
+          "color": { "$ref": "#/$defs/hex", "description": "Base colour, sRGB. Default #cccccc." },
+          "metallic": { "type": "number", "minimum": 0, "maximum": 1 },
+          "roughness": { "type": "number", "minimum": 0, "maximum": 1, "description": "Default 0.8." },
+          "opacity": { "type": "number", "minimum": 0, "maximum": 1, "description": "Below 1 the material blends: sorting cost at runtime." },
+          "emissive": { "$ref": "#/$defs/hex" },
+          "emissive_strength": { "type": "number", "minimum": 0, "maximum": 100 },
+          "texture": {
+            "type": "object",
+            "description": "A generated base-colour texture, embedded in the GLB.",
+            "required": ["pattern"],
+            "properties": {
+              "pattern": { "enum": ["checker", "stripes"] },
+              "size": { "enum": [16, 32, 64, 128, 256, 512, 1024, 2048], "description": "Pixels on each edge. Default 128." },
+              "color2": { "$ref": "#/$defs/hex", "description": "The pattern's second colour. Default #333333." },
+              "repeat": { "type": "number", "minimum": 1, "maximum": 64, "description": "UV tiling. Default 1." }
+            },
+            "additionalProperties": false
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "pivot": { "enum": ["base-center", "center", "origin"], "description": "Where the model's origin ends up after building: the centre of its base (default, what placement on the ground wants), its centre, or where the parts put it." },
+    "fit": {
+      "type": "object",
+      "description": "Scale the whole model uniformly so it measures `size` metres along `axis` (max: its longest side). Applied to the geometry, never left on a node.",
+      "required": ["size"],
+      "properties": {
+        "size": { "type": "number", "exclusiveMinimum": 0 },
+        "axis": { "enum": ["x", "y", "z", "max"] }
+      },
+      "additionalProperties": false
+    },
+    "animations": {
+      "type": "array",
+      "maxItems": 16,
+      "description": "Named clips. Without tracks a clip is only an expectation: the delivered GLB must contain a clip of that name. Gameplay looks clips up by name, so the name is the contract.",
+      "items": {
+        "type": "object",
+        "required": ["name"],
+        "properties": {
+          "name": { "type": "string", "minLength": 1 },
+          "duration": { "type": "number", "exclusiveMinimum": 0, "maximum": 60, "description": "Seconds. Required with tracks." },
+          "loop": { "type": "boolean", "description": "Advice to the runtime; glTF does not store it." },
+          "interpolation": { "enum": ["linear", "step"] },
+          "tracks": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "object",
+              "required": ["part", "path", "keys"],
+              "properties": {
+                "part": { "type": "string" },
+                "path": { "enum": ["translation", "rotation", "scale"] },
+                "keys": {
+                  "type": "array",
+                  "minItems": 1,
+                  "maxItems": 256,
+                  "description": "Absolute values in the part's parent space, as the rest pose is written. Rotation in Euler degrees; keep each step under 180 degrees.",
+                  "items": {
+                    "type": "object",
+                    "required": ["t", "value"],
+                    "properties": {
+                      "t": { "type": "number", "minimum": 0 },
+                      "value": { "$ref": "#/$defs/vec3" }
+                    },
+                    "additionalProperties": false
+                  }
+                }
+              },
+              "additionalProperties": false
+            }
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "lods": {
+      "description": "Levels of detail beyond LOD0: a count (each halves the triangles) or decreasing triangle ratios. Not with animated parts. Only when the model is seen at several distances.",
+      "oneOf": [
+        { "type": "integer", "minimum": 0, "maximum": 3 },
+        { "type": "array", "maxItems": 3, "items": { "type": "number", "exclusiveMinimum": 0, "exclusiveMaximum": 1 } }
+      ]
+    },
+    "collision": {
+      "type": "object",
+      "description": "A separate, unrendered collision proxy: never simulate against the visual mesh.",
+      "required": ["shape"],
+      "properties": {
+        "shape": { "enum": ["box", "convex"] }
+      },
+      "additionalProperties": false
+    },
+    "budget": {
+      "type": "object",
+      "description": "Limits this design sets for this model. Exceeding one is an error.",
+      "properties": {
+        "max_triangles": { "type": "integer", "minimum": 1 },
+        "max_texture_edge": { "type": "integer", "minimum": 1 },
+        "max_bytes": { "type": "integer", "minimum": 1 }
+      },
+      "additionalProperties": false
+    },
+    "fps": { "type": "integer", "minimum": 1, "maximum": 120, "description": "The rate clips are sampled at when built. Default 30." }
+  },
+  "additionalProperties": false,
+
+  "$defs": {
+    "vec3": { "type": "array", "items": { "type": "number" }, "minItems": 3, "maxItems": 3 },
+    "hex": { "type": "string", "pattern": "^#[0-9a-fA-F]{6}$" }
+  }
+}

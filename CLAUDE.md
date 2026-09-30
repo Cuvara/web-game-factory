@@ -59,6 +59,12 @@ python3 scripts/wgf-assets.py build --design design.json --root ../my-game  # fi
 python3 scripts/wgf-assets.py validate ../my-game [--strict]   # the checkout vs its assets.json
 python3 scripts/wgf-assets.py pack out/hud frames/             # deterministic texture atlas
 
+# 3D models (docs/blender-pipeline.md). Blender 4.5 LTS via WGF_BLENDER or PATH; inspect needs none.
+python3 scripts/wgf-model.py doctor                     # is the pinned Blender usable?
+python3 scripts/wgf-model.py build spec.json --id car -o car.glb --twice   # build, check, reproduce
+python3 scripts/wgf-model.py inspect car.glb [--spec spec.json]            # validate any GLB
+WGF_BLENDER_TEST=1 python3 -m unittest scripts/tests/test_models.py        # real Blender builds
+
 # The workflow engine. Every run command is a slice of core/workflows/new-game.workflow.yaml.
 bin/wgf research                          # real market scan: research-report + opportunity
 bin/wgf new-game --mock                   # research -> ... -> verify, then WAITING at G4
@@ -339,6 +345,9 @@ seen by the engine — validate what you write there with ajv.
 - `docs/assets-module.md` — the `assets` step: asset policy, licensing rule, placeholder backends,
   atlas groups, the runtime asset manifest (`public/assets/assets.json`), validation codes,
   the `wgf-assets.py` CLI, how agents register assets, troubleshooting
+- `docs/blender-pipeline.md` — 3D models as data: the model spec, the pinned headless Blender
+  build (`wgf_assets/blender.py`, 4.5 LTS), GLB validation without Blender, reuse in CI, a
+  GLB's `model` entry in `assets.json` and the three.js loading contract; `scripts/wgf-model.py`
 - `docs/development-module.md` — the `develop` step: brief, developers, checks, keyed commits
 - `docs/platform-sdk-verification.md` — how platform SDK integration is verified, and where the
   platform profiles disagree with current portal documentation

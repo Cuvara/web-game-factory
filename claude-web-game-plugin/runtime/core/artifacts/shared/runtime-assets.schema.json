@@ -99,7 +99,36 @@
         "tile_height": { "type": "integer", "minimum": 1 },
         "columns": { "type": "integer", "minimum": 1 },
         "rows": { "type": "integer", "minimum": 1 },
-        "family": { "type": "string", "description": "A font's CSS font-family: the asset id for a font file, or the fallback stack when no file is delivered." }
+        "family": { "type": "string", "description": "A font's CSS font-family: the asset id for a font file, or the fallback stack when no file is delivered." },
+        "model": {
+          "type": "object",
+          "description": "A GLB's lookups, read from its bytes: clip names for the animation mixer, the nodes that are levels of detail, and the node that is the collision proxy (hidden; handed to physics). Node names are the glTF node names, as the loader names the objects.",
+          "required": ["clips", "lods", "triangles"],
+          "properties": {
+            "clips": { "type": "array", "items": { "type": "string" } },
+            "lods": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "required": ["level", "node"],
+                "properties": {
+                  "level": { "type": "integer", "minimum": 0 },
+                  "node": { "type": "string" }
+                },
+                "additionalProperties": false
+              }
+            },
+            "collision": {
+              "type": "object",
+              "required": ["node", "shape"],
+              "properties": { "node": { "type": "string" }, "shape": { "type": "string" } },
+              "additionalProperties": false
+            },
+            "dimensions": { "type": "array", "items": { "type": "number" }, "minItems": 3, "maxItems": 3, "description": "Metres along x, y, z of the visual model at rest (+Y up)." },
+            "triangles": { "type": "integer", "minimum": 0 }
+          },
+          "additionalProperties": false
+        }
       },
       "additionalProperties": false,
       "allOf": [

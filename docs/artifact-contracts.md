@@ -152,6 +152,15 @@ repository (`shared/runtime-assets.schema.json`, not an artifact: no provenance,
 timestamp, byte-identical for identical assets), and ten new issue codes. 1.1.0 artifacts of
 both remain valid. See [assets-module.md](assets-module.md).
 
+**`game-design` 1.3.0** adds `asset_requirements[].model`, a model spec
+(`shared/model-spec.schema.json`): parts, materials, clips, LODs, a collision proxy, a fitted
+size and a budget for a `model`, `environment` or `animation` asset. With parts it is built
+headless into a GLB; always, what it declares is checked against the delivered file.
+**`asset-manifest` 1.3.0** adds the item's `model` block (what the GLB holds, read from its
+bytes, and what built it) and the model issue codes; a GLB's entry in the runtime manifest
+gains `model` (clip names, LOD and collision nodes). Additive: 1.2.0 artifacts remain valid.
+See [blender-pipeline.md](blender-pipeline.md).
+
 ---
 
 ## Shared primitives

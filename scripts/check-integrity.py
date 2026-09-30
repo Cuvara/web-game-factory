@@ -340,6 +340,22 @@ def check_no_readme_only_dirs():
             ERRORS.append(f"{root}: contains only a README.md")
 
 
+def check_plugin_version():
+    """The Claude plugin is released with the Factory, so its manifest version is VERSION.
+    The host detects plugin updates by that field alone: a stale one means an installed
+    plugin never updates. The marketplace entry carries no version of its own - the
+    manifest's would silently win over it, leaving two numbers that can disagree."""
+    release = read("VERSION").strip()
+    manifest = json.loads(read("claude-web-game-plugin/.claude-plugin/plugin.json"))
+    if manifest.get("version") != release:
+        ERRORS.append(f"claude-web-game-plugin/.claude-plugin/plugin.json: version "
+                      f"'{manifest.get('version')}' is not VERSION '{release}'")
+    for entry in json.loads(read(".claude-plugin/marketplace.json")).get("plugins", []):
+        if "version" in entry:
+            ERRORS.append(f".claude-plugin/marketplace.json: plugin '{entry.get('name')}' "
+                          "sets a version; plugin.json is the only place it lives")
+
+
 def check_template_pin():
     """workspace/config/template.lock.json names one web-game-template commit, as a full sha.
     Where the sibling checkout stands against it is reported, never silently used: every
@@ -378,6 +394,7 @@ def main():
     platforms = check_platforms()
     check_provider_independence()
     check_no_readme_only_dirs()
+    check_plugin_version()
     pin = check_template_pin()
 
     print(f"artifacts   {len(artifacts)}")

@@ -182,7 +182,8 @@ class PlatformCheckTest(unittest.TestCase):
             for check in ("load_artifacts", "load_roles", "check_machines", "check_workflows",
                           "check_bindings", "check_charters", "check_templates",
                           "check_platforms", "check_provider_independence",
-                          "check_no_readme_only_dirs", "check_template_pin"):
+                          "check_no_readme_only_dirs", "check_plugin_version",
+                          "check_template_pin"):
                 setattr(self.ci, check, mock.Mock(return_value=set()))
             self.ci.check_template_pin.return_value = None
             write(os.path.join("core", "lifecycle", "gates.yaml"), "")
@@ -230,3 +231,48 @@ class RequiredForGatesTest(unittest.TestCase):
         self.assertEqual(len(self.module.ERRORS), 2)
         self.assertTrue(any("alpha" in e and "G2" in e for e in self.module.ERRORS))
         self.assertTrue(any("beta" in e and "G3" in e for e in self.module.ERRORS))
+
+
+class PluginVersionTest(unittest.TestCase):
+    """The Claude plugin manifest's version is VERSION: the host detects an update by that
+    field alone. The marketplace entry carries none, so there is one number, not two."""
+
+    def setUp(self):
+        self.base = tempfile.mkdtemp(prefix="wgf-integrity-plugin-")
+        self.addCleanup(shutil.rmtree, self.base, ignore_errors=True)
+        self.cwd = os.getcwd()
+        os.chdir(self.base)
+        self.addCleanup(os.chdir, self.cwd)
+        self.module = load_check_integrity()
+        self.module.ERRORS.clear()
+
+    def layout(self, release, plugin, entry_version=None):
+        write(os.path.join(self.base, "VERSION"), release)
+        write(os.path.join(self.base, "claude-web-game-plugin", ".claude-plugin", "plugin.json"),
+              '{"name": "wgf", "version": "%s"}' % plugin)
+        entry = '{"name": "wgf", "source": "./claude-web-game-plugin"%s}' % (
+            "" if entry_version is None else ', "version": "%s"' % entry_version)
+        write(os.path.join(self.base, ".claude-plugin", "marketplace.json"),
+              '{"name": "m", "plugins": [%s]}' % entry)
+
+    def test_the_manifest_at_the_release_version_passes(self):
+        self.layout("2.3.0\r\n", "2.3.0")  # a CRLF checkout of VERSION is the same version
+        self.module.check_plugin_version()
+        self.assertEqual(self.module.ERRORS, [])
+
+    def test_a_stale_manifest_version_is_an_error(self):
+        self.layout("2.3.0\n", "0.4.0")
+        self.module.check_plugin_version()
+        self.assertEqual(len(self.module.ERRORS), 1)
+        self.assertIn("'0.4.0' is not VERSION '2.3.0'", self.module.ERRORS[0])
+
+    def test_a_version_in_the_marketplace_entry_is_an_error(self):
+        self.layout("2.3.0\n", "2.3.0", entry_version="2.3.0")
+        self.module.check_plugin_version()
+        self.assertEqual(len(self.module.ERRORS), 1)
+        self.assertIn("marketplace.json", self.module.ERRORS[0])
+
+    def test_the_repository_itself_agrees(self):
+        os.chdir(self.cwd)
+        self.module.check_plugin_version()
+        self.assertEqual(self.module.ERRORS, [])

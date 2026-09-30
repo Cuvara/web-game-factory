@@ -67,6 +67,11 @@ and no template pin change: this branch touches neither `VERSION` nor
   fixture writes a `pnpm.CMD` beside the shim there. No test changed what it asserts.
 - **A golden run record differed by host**: `scripts/golden/live.py` wrote the config's path
   with the host's separator. It now uses `paths.display`.
+- **The Claude plugin reported `0.4.0` through 2.3.0.** Claude Code detects a plugin update by
+  `plugin.json`'s `version`, and it had not moved since 2.0.0, so an installed plugin never saw
+  one. The plugin is released with the Factory: its version is now `VERSION` (`2.3.0`), and
+  `check-integrity.py` fails when the two differ or when the marketplace entry sets a version
+  of its own. Regressions in `test_check_integrity.PluginVersionTest`.
 
 ## [2.3.0] - 2026-09-29
 

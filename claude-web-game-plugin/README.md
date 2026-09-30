@@ -42,7 +42,7 @@ there — or from a game repository with the factory checked out beside it.
 
 ```
 claude-web-game-plugin/
-  .claude-plugin/plugin.json   — plugin manifest
+  .claude-plugin/plugin.json   — plugin manifest; its version is the Factory's VERSION
   agents/*.md                  — 11 subagents, one per non-human role
   commands/wgf-*.md            — 13 slash commands, one per lifecycle transition
   skills/*/SKILL.md            — 21 skills, reference capability loaded on demand

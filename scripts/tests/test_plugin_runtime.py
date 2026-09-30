@@ -303,6 +303,19 @@ class FreshPackage(unittest.TestCase):
                          "scripts/wgflib/paths.py", "scripts/wgflib/workflow/engine.py",
                          "scripts/wgflib/workflow/fixtures/game-design.json",
                          "scripts/wgf_discovery/archetypes.yaml",
+                         # The 2D asset pipeline: its module, CLI, schema and craft playbook.
+                         "scripts/wgf_assets/atlas.py", "scripts/wgf_assets/runtime.py",
+                         "scripts/wgf-assets.py",
+                         # The 3D asset pipeline: Blender backend and its build script, GLB
+                         # validation, model specs, CLI, schema and craft playbook.
+                         "scripts/wgf_assets/blender.py",
+                         "scripts/wgf_assets/blender_scripts/build_model.py",
+                         "scripts/wgf_assets/gltf.py", "scripts/wgf_assets/modelspec.py",
+                         "scripts/wgf-model.py",
+                         "core/artifacts/shared/model-spec.schema.json",
+                         "core/craft/3d-assets-and-animation.md",
+                         "core/artifacts/shared/runtime-assets.schema.json",
+                         "core/craft/2d-assets.md",
                          "workspace/config/factory.yaml", "workspace/config/template.lock.json",
                          "docs/workflow-engine.md", "VERSION"):
             self.assertIn(required, files)

@@ -177,6 +177,17 @@ environment is an allowlist, the development commit is scoped, unreviewed releas
 refused, `wgf status` exits as the run. Each has a way back: see **Breaking** and
 **Upgrading from 1.1.0** in [CHANGELOG.md](CHANGELOG.md).
 
+**Upgrading from 2.4.0.** 2.4.1 needs no configuration change. The Claude plugin now carries
+the Factory runtime (`core/`, the `wgf` engine, the step modules, the shipped configuration)
+in `runtime/`, and its commands read it from `${CLAUDE_PLUGIN_ROOT}/runtime`: start Claude Code
+in the target project - the working directory is the project, not the Factory - and runs and
+instance data are kept there (`WGF_PROJECT_DIR` names another). 2.4.1 also brings the 2D and 3D asset
+pipelines (atlases, the runtime asset manifest, `scripts/wgf-assets.py`; model specs built by a
+pinned headless Blender, GLB validation, `scripts/wgf-model.py`); their schema changes are
+additive. Update the plugin as below; see 2.4.1 in [CHANGELOG.md](CHANGELOG.md),
+[docs/plugin-runtime.md](docs/plugin-runtime.md), [docs/assets-module.md](docs/assets-module.md) and
+[docs/blender-pipeline.md](docs/blender-pipeline.md).
+
 **Upgrading from 2.3.x.** 2.4.0 needs no configuration change. The Claude plugin gains
 `/web-game-factory:new-game`, a workflow entry point that runs `core/workflows/new-game` through
 `bin/wgf` and stops at every gate for a person; the `/wgf-*` commands are unchanged. Update the

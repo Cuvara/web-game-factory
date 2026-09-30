@@ -10,7 +10,7 @@ runtime and the working directory is only ever the project (scripts/wgflib/paths
     core/                       every machine, schema, gate, workflow, role, template, craft
                                 and reference file the surfaces point at and the engine reads
     scripts/wgf.py, bin/wgf     the workflow engine and its shim
-    scripts/wgf-*.py            the state, guard, hash and template-pin tools
+    scripts/wgf-*.py            the state, guard, hash, template-pin, asset and model tools
     scripts/wgflib/, wgf_*/     the engine library and every step module, with their data
     workspace/config/<shipped>  the configuration defaults and the template pin
     docs/<read by a surface>    the documents a generated surface tells the agent to read
@@ -50,6 +50,10 @@ FILES = [
     "scripts/wgf-guard.py",
     "scripts/wgf-hash.py",
     "scripts/wgf-template.py",
+    # The asset pipelines outside a run: 2D (wgf_assets names it in what it reports) and 3D
+    # (Blender doctor, model build, GLB inspect). Both import only the bundled wgf_assets.
+    "scripts/wgf-assets.py",
+    "scripts/wgf-model.py",
     # Shipped installation defaults. An instance overrides any of them with its own
     # workspace/config/<name> (paths.config_file); the template pin is the release's own.
     "workspace/config/factory.yaml",

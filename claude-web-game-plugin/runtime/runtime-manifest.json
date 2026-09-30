@@ -1,7 +1,7 @@
 {
-  "factory_version": "2.4.0",
+  "factory_version": "2.4.1",
   "files": {
-    "VERSION": "sha256:2ad7b0c3f0ede58c3165b7a8a5479e890a758d39bfe8683eaef50ce6afad7232",
+    "VERSION": "sha256:6d850e3ac42d0dd06bfdcce9151c1e6b40f4cf5272778f63eececea27c78f0b6",
     "bin/wgf": "sha256:ca3aedd7bf278145a3c59ce71a05156992a641a18b15cd4332ba32b7659dab34",
     "core/README.md": "sha256:1a8550fa94db2a998c55425953996680a3ca224233f890fa478f9ffe471b2b05",
     "core/artifacts/asset-manifest.schema.json": "sha256:6d609568bc372d63e1c0a57a8533349af46932361f5f46c4a1e075c23b1b0d6b",
@@ -104,8 +104,10 @@
     "core/templates/tech-plan.md": "sha256:e17c2bcb6423d6129fa3ab0deae559c91e98728b0f240b9b863194dbad9084ce",
     "core/workflows/new-game.workflow.yaml": "sha256:039b5eb746df69c6d67050f1176a31915098cf55ced8bbbff8566fe0164c0daf",
     "docs/workflow-engine.md": "sha256:5c60f364a32c96076d6c62f21f4dbe6757f569e12010ed8aade995f3d1d25e2e",
+    "scripts/wgf-assets.py": "sha256:df4de1d88666531b5f391f627df4ef22caeedce98217cf123787b6f92645d82e",
     "scripts/wgf-guard.py": "sha256:e105057aeb5c4e31f5aa00deb0a529afb6bae164b5aea1b38f3591074fc573d7",
     "scripts/wgf-hash.py": "sha256:61ecff71fa3ee07944e86e7fdba0676cf2a260b3a6de44fdb687ad9277c1109d",
+    "scripts/wgf-model.py": "sha256:e1d786d4f7c073e00600ac990e678cfd1eb5337eaa40ee77a4210885d0f6add7",
     "scripts/wgf-state.py": "sha256:13f3e02ce139d05a77d781724833b43515c27c83b1221194b4ca8c0d821e64a9",
     "scripts/wgf-template.py": "sha256:75c3226d603dc210d4b6abf8785c83e27eb80cce0769f6cad0f07ac26c2e00f6",
     "scripts/wgf.py": "sha256:930ae240818cd2bb5fe2f61653d1e3a59bb7397adbf3ca8d8fc9ab4eafc28578",

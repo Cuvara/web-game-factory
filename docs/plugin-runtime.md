@@ -24,7 +24,7 @@ claude-web-game-plugin/
     core/                         machines, gates, schemas, workflows, roles, templates, craft,
                                   reference data - everything a surface or the engine reads
     scripts/wgf.py                the engine
-    scripts/wgf-{state,guard,hash,template}.py
+    scripts/wgf-{state,guard,hash,template,assets,model}.py
     scripts/wgflib/               the engine library, with the mock fixtures
     scripts/wgf_*/                every step module, with its data
     workspace/config/             shipped defaults: factory.yaml, portfolio.yaml,

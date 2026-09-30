@@ -373,6 +373,9 @@ seen by the engine — validate what you write there with ajv.
   it found and fixed, PASS / PASS_MOCK / UNVERIFIED / BLOCKED_EXTERNAL
 - `docs/v2-release.md` — 2.0.0: what was validated on which commit, the release audit's
   fixes, and what the evidence does not cover (no live agent host, shimmed golden runs)
+- `docs/v2.5-release.md` — 2.5.0: a game idea for `new-game` (#16), the opt-in autonomous
+  profile, project config layered over the shipped one, research selecting only buildable
+  concepts; what was validated where
 - `docs/v2.4-release.md` — 2.4.0: `/new-game`, the first workflow entry point (adapter
   binding 1.5.0), the plugin versioned with the Factory, and MV-4; what was validated where.
   2.4.1: the plugin ships the Factory runtime and the working directory is the project, and

@@ -177,6 +177,13 @@ environment is an allowlist, the development commit is scoped, unreviewed releas
 refused, `wgf status` exits as the run. Each has a way back: see **Breaking** and
 **Upgrading from 1.1.0** in [CHANGELOG.md](CHANGELOG.md).
 
+**Upgrading from 2.4.x.** 2.5.0 needs no configuration change. `/web-game-factory:new-game`
+takes a game idea (`/web-game-factory:new-game "endless runner with a cat"`), carried from
+research to design as the run's brief; without one a run is the market scan it always was.
+An opt-in autonomous profile runs research to the G4 decision unattended once a project copies
+it ([docs/autonomous-runs.md](docs/autonomous-runs.md)). Schema changes are additive. Update
+the plugin as below; see 2.5.0 in [CHANGELOG.md](CHANGELOG.md).
+
 **Upgrading from 2.4.0.** 2.4.1 needs no configuration change. The Claude plugin now carries
 the Factory runtime (`core/`, the `wgf` engine, the step modules, the shipped configuration)
 in `runtime/`, and its commands read it from `${CLAUDE_PLUGIN_ROOT}/runtime`: start Claude Code

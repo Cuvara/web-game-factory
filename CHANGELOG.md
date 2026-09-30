@@ -9,12 +9,46 @@ and `core/` is still the contract.
 
 ## [Unreleased]
 
-An opt-in autonomous profile for `new-game`, and the two defects an audit of an unattended
-run found. The shipped configuration stays supervised; no gate, schema, workflow or template
-change. See [docs/autonomous-runs.md](docs/autonomous-runs.md).
+## [2.5.0] - 2026-09-30
+
+Two changes to `/web-game-factory:new-game` (`docs/v2.5-release.md`).
+
+**A game idea** (#16): `/web-game-factory:new-game "3D goalkeeper game where the player blocks
+penalty shots"` - and `bin/wgf new-game [--project ID] "IDEA"` - starts a run anchored to that
+idea. Research ranks candidates by how well they match it and reports when nothing buildable
+does (`idea-unmatched`); strategy and design carry it as the run's `brief`. Without an idea a
+run is the blank market scan it always was.
+
+**An opt-in autonomous profile**, and the two defects an audit of an unattended run found:
+a project's `factory.yaml` replaced the shipped one instead of layering over it, and research
+could select a concept the design step cannot build. The shipped configuration stays
+supervised; G4, G6 and G7 stay human. See [docs/autonomous-runs.md](docs/autonomous-runs.md).
+
+No gate, workflow, lifecycle or template-pin change (still `v1.2.0`); adapter binding 1.5.0
+(no surface added or removed). Schema changes are all additive: `research-report` 1.1.0,
+`opportunity` 1.1.0, `title-strategy` 1.2.0, `game-design` 1.4.0 - every earlier artifact
+remains valid.
+
+**Upgrading:** nothing to configure. Update the plugin (`claude plugin marketplace update
+cuvara`, then `claude plugin update web-game-factory@cuvara`) and restart Claude Code. To run
+unattended, copy the autonomous profile into the project (docs/autonomous-runs.md).
 
 ### Added
 
+- **A game idea for `new-game`** (#16). One optional positional `IDEA` on every run command;
+  refused (exit 2) when empty, over 500 characters, with control characters, with
+  `--resume`/`--run`, or on a slice that runs no research step. `--project` is unchanged and
+  independent. The idea is recorded canonically in the run's params and in
+  `WORKFLOW_STARTED` as a guarded param: a resume keeps it and an edit of it is refused;
+  `wgf status` shows `Idea:`. Research sets `scope.brief` and a question naming it, ranks
+  candidates by `idea_match` before the screen, and records an `idea-unmatched` gap when the
+  selection holds none of its words or is of another dimension; `opportunity.brief`,
+  `title-strategy.brief` (with an assumption naming it) and `game-design.brief` carry it.
+  The `agent` design author is told to design the game it describes; the built-in author
+  designs the buildable concept research selected and records a dimension mismatch with the
+  brief in `open_questions`. Both `new-game` surfaces take the idea as one verbatim argument.
+  An idea the catalog has no concept for is not invented: the nearest buildable concept is
+  selected and the report says so.
 - **`workspace/config/profiles/autonomous.yaml`**, shipped in the plugin runtime: the verified
   headless Claude Code developer and read-only reviewer (the shipped commented argvs,
   verbatim, held equal by a test), `checkpoints.auto_approve: [G2, G3]`, `init.source: local`

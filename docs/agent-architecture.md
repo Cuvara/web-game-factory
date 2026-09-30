@@ -121,6 +121,7 @@ Roles are provider-independent. Adapters bind them to host mechanics:
 |---|---|---|
 | Role surface | subagent, YAML frontmatter | role file referenced from `AGENTS.md` |
 | Command surface | slash command | prompt file |
+| Workflow entry point | slash command (`commands/<workflow>.md`, user-invoked only) | prompt file (`commands/<workflow>.md`) |
 | Skill surface | `skills/<id>/SKILL.md` | `skills/<id>/SKILL.md` |
 | Entry point | `.claude-plugin/plugin.json` | `AGENTS.md` |
 
@@ -130,6 +131,11 @@ mapping every declared surface to its file.
 
 **An adapter file that restates a schema or a procedure is a bug.** The body is "read these
 core paths, then follow them", plus a short block of host-specific execution notes.
+
+Command surfaces map to lifecycle transitions (`/wgf-*`). A workflow entry point (`/new-game`,
+the binding's `workflows:`) is a different kind: it runs a core workflow through the workflow
+engine (`bin/wgf`, [workflow-engine.md](workflow-engine.md)), restates none of its steps,
+composes no transition command, and never answers a gate.
 
 ---
 

@@ -808,6 +808,13 @@ wgf new-game --mock --hold-gates                                            # WA
 wgf decide <run-id> pass                                                    # G4: release, completed
 ```
 
+From an agent host, the adapters' workflow entry point (`/new-game`, generated from
+`workflows:` in `core/bindings/adapter-binding.yaml`) is this command and nothing more: it
+runs `bin/wgf new-game` or `bin/wgf resume <run-id>` in the background, reads progress from
+`bin/wgf status`, and stops at every checkpoint. It never runs `wgf decide` or `--decision`,
+because a command from that session is outside any step's process tree and would be
+recorded as a person's decision (`default_decider()`); the person types the decision.
+
 ## 12. Configuration
 
 `workspace/config/factory.yaml` — every key optional:

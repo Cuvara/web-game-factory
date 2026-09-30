@@ -45,7 +45,8 @@ claude-web-game-plugin/
   .claude-plugin/plugin.json   — plugin manifest; its version is the Factory's VERSION
   agents/*.md                  — 11 subagents, one per non-human role
   commands/wgf-*.md            — 13 slash commands, one per lifecycle transition
-  skills/*/SKILL.md            — 21 skills, reference capability loaded on demand
+  commands/new-game.md         — 1 workflow entry point: runs core/workflows/new-game through bin/wgf
+  skills/*/SKILL.md            — 22 skills, reference capability loaded on demand
   CONFORMANCE.md               — surface-by-surface coverage against the binding manifest
 ```
 
@@ -74,6 +75,41 @@ Plus `/wgf-status`, which is read-only.
 Stage-named commands drift from the machine within a month; the machine's **edges** are what
 anyone actually wants to trigger, so the commands are named after those.
 
+## Workflow entry point: `/new-game`
+
+`/new-game` is **not a transition command**. It starts (or, with `resume <run-id>`, continues)
+a run of `core/workflows/new-game.workflow.yaml` through the Factory's workflow engine,
+`bin/wgf new-game`, in the background, and reports progress from `bin/wgf status`. The
+workflow file is the only step order, retry, loop, gate and resume logic; the command restates
+none of it and composes no `/wgf-*` command.
+
+```
+/new-game  →  bin/wgf new-game (workflow engine)  →  core/workflows/new-game.workflow.yaml
+                                                   →  its steps, retries, loops and gates
+/wgf-*     →  one lifecycle transition each (above)
+```
+
+```
+/new-game [--mock [--mock-plan JSON] [--hold-gates]] [--project ID] [--from STEP] [--store DIR]
+/new-game resume <run-id> [--from STEP] [--store DIR]
+```
+
+Claude Code lists plugin commands under the plugin's namespace, so its full name is
+`/web-game-factory:new-game` (headless `claude -p` resolves only that form, for every command
+of this plugin, the `/wgf-*` ones included).
+
+- Before a real run it reports the configured autonomy (`factory.yaml`: developer, reviewer,
+  auto-approved gates, init source) and, with `init.source: github`, warns that passing G3
+  creates a GitHub repository and asks before starting. It never changes `factory.yaml`.
+- It **never answers a gate** - no `wgf decide`, no `--decision`, and it refuses those
+  arguments: a command run from the session is recorded as a person's decision. At a gate or
+  a develop handoff it stops and shows what to type, e.g.
+  `! bin/wgf decide <run-id> approve --note "..."`, then `/new-game resume <run-id>`.
+- `disable-model-invocation: true`: only a person starts a run.
+- With the shipped `factory.yaml` a real run still waits at G2, G3 and the develop handoff,
+  and release refuses an unreviewed build; making it unattended up to G4 is installation
+  config (`docs/claude-capabilities.md`), never this command's.
+
 ## How core is consumed
 
 ```
@@ -81,6 +117,7 @@ core/bindings/adapter-binding.yaml   ← declares WHAT must be covered
         │
         ├── agents/<role>.md         ← points at core/roles/ + core/lifecycle/stages/
         ├── commands/wgf-<t>.md      ← points at core/lifecycle/ + gates.yaml
+        ├── commands/<workflow>.md   ← points at core/workflows/, runs bin/wgf
         └── skills/<id>/SKILL.md     ← points at the relevant schemas and reference data
 ```
 

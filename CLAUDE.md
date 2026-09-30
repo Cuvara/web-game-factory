@@ -335,6 +335,8 @@ seen by the engine — validate what you write there with ajv.
   it found and fixed, PASS / PASS_MOCK / UNVERIFIED / BLOCKED_EXTERNAL
 - `docs/v2-release.md` — 2.0.0: what was validated on which commit, the release audit's
   fixes, and what the evidence does not cover (no live agent host, shimmed golden runs)
+- `docs/v2.4-release.md` — 2.4.0: `/new-game`, the first workflow entry point (adapter
+  binding 1.5.0), the plugin versioned with the Factory, and MV-4; what was validated where
 - `docs/v2.3-release.md` — 2.3.0: Phaser as a second 2D engine, template 1.2.0, template
   contract 2.0.0; what was validated where, and what has no golden run and why
 - `docs/v2.2-release.md` — 2.2.0: MV-3 (only the targeted platform is ready or packaged), the

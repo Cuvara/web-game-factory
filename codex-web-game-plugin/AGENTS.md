@@ -62,6 +62,12 @@ scan → score → select[G1] → strategy[G2] → design → plan[G3] → scaff
 
 Plus `wgf-status`, which is read-only.
 
+## Workflow entry point
+
+`commands/new-game.md` is not a transition: it runs `core/workflows/new-game.workflow.yaml`
+through the workflow engine (`bin/wgf new-game`) and reports the run. It never answers a gate
+or a handoff; the person types every decision.
+
 ## Skills
 
 `skills/*/SKILL.md` — reference capability loaded on demand. Pointers into core, not copies.

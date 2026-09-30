@@ -230,6 +230,73 @@ def check_bindings(roles):
             ERRORS.append(f"adapter-binding.yaml: unknown role '{role}'")
 
 
+def check_binding_workflows(roles):
+    """Every workflow entry point in adapter-binding.yaml `workflows:` runs a real workflow.
+
+    `runs` is a core/ path to `<id>.workflow.yaml` whose definition has that id, and the
+    entry's informational `gates` are exactly the gates that workflow's human checkpoints
+    name - so the surface can neither point at a missing workflow nor describe gates the
+    workflow does not have. The workflow file stays the authority; this only checks the
+    pointer."""
+    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+    from wgflib.workflow.definition import DefinitionError, load_definition
+    from wgflib.yamllite import YamlError, load as load_yaml
+
+    where = "adapter-binding.yaml"
+    try:
+        binding = load_yaml(read("core/bindings/adapter-binding.yaml")) or {}
+    except YamlError as exc:
+        ERRORS.append(f"{where}: {exc}")
+        return []
+    entries = binding.get("workflows") or []
+    if not isinstance(entries, list):
+        ERRORS.append(f"{where}: `workflows` must be a list")
+        return []
+    if entries and "workflow" not in (binding.get("surface_kinds") or {}):
+        ERRORS.append(f"{where}: `workflows` listed but surface kind 'workflow' is not declared")
+    ids = []
+    for entry in entries:
+        wid = entry.get("id") if isinstance(entry, dict) else None
+        if not wid:
+            ERRORS.append(f"{where}: workflow entry without an id: {entry!r}")
+            continue
+        if wid in ids:
+            ERRORS.append(f"{where}: workflow '{wid}' listed twice")
+        ids.append(wid)
+        role = entry.get("role")
+        if role is not None and role not in roles:
+            ERRORS.append(f"{where}: workflow '{wid}' names unknown role '{role}'")
+        runs = entry.get("runs")
+        if not runs or not isinstance(runs, str):
+            ERRORS.append(f"{where}: workflow '{wid}' has no `runs` path")
+            continue
+        if not runs.startswith("core/"):
+            ERRORS.append(f"{where}: workflow '{wid}' runs '{runs}', which is not under core/")
+            continue
+        if os.path.basename(runs) != f"{wid}.workflow.yaml":
+            ERRORS.append(f"{where}: workflow '{wid}' runs '{runs}'; expected a file named "
+                          f"'{wid}.workflow.yaml'")
+            continue
+        if not os.path.isfile(runs):
+            ERRORS.append(f"{where}: workflow '{wid}' runs missing file '{runs}'")
+            continue
+        try:
+            definition = load_definition(runs)
+        except (DefinitionError, YamlError) as exc:
+            ERRORS.append(f"{where}: workflow '{wid}' runs '{runs}', which does not load: {exc}")
+            continue
+        if definition.id != wid:
+            ERRORS.append(f"{where}: workflow '{wid}' runs '{runs}', whose workflow id is "
+                          f"'{definition.id}'")
+        declared = entry.get("gates") or []
+        actual = [step.params["gate"] for step in definition.steps
+                  if step.type == "human-checkpoint" and step.params.get("gate")]
+        if sorted(set(declared)) != sorted(set(actual)) or len(declared) != len(set(declared)):
+            ERRORS.append(f"{where}: workflow '{wid}' lists gates {declared}; '{runs}' has "
+                          f"human checkpoints on {sorted(set(actual))}")
+    return ids
+
+
 def check_charters():
     for charter in re.findall(r"^\s*charter:\s*(\S+)", read("core/roles/roles.yaml"), re.M):
         if not os.path.exists(os.path.join("core/roles", charter)):
@@ -389,6 +456,7 @@ def main():
     check_required_for_gates()
     workflows = check_workflows(artifacts)
     check_bindings(roles)
+    entry_points = check_binding_workflows(roles)
     check_charters()
     check_templates()
     platforms = check_platforms()
@@ -403,6 +471,7 @@ def main():
     print(f"machines    {len(glob.glob('core/lifecycle/*.machine.yaml'))}")
     print(f"stages      {len(glob.glob('core/lifecycle/stages/*.md'))}")
     print(f"workflows   {len(workflows)}")
+    print(f"entry points {', '.join(entry_points) or '-'}")
     if pin:
         print(f"template    {pin['repository']}@{pin['commit'][:12]} ({pin['ref']})")
     for note in NOTES:

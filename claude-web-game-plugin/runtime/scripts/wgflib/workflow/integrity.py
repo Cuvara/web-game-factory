@@ -38,7 +38,9 @@ found the file - before the engine acts on it:
     run's gate decisions are written into workspace/titles, so it can be neither turned on
     nor off by an edit. `develop_budget` (factory.develop.budget, wgflib.budget) is the
     run's developer-session budget: raised only by a person's BUDGET_RAISED event, never by
-    editing the snapshot.
+    editing the snapshot. `idea` is the game idea a person started the run with
+    (`wgf new-game "..."`), the brief every step downstream reads: it is neither added,
+    changed nor dropped by an edit.
 
   * route-scoped visits: `route_visits` / `route_base` are counts per route, a base never
     above its count, and together never more entries than `visits`; `blocked_reason` is
@@ -61,9 +63,10 @@ __all__ = ["state_problems", "params_problems", "decision_on_record", "GUARDED_P
 # recorded in WORKFLOW_STARTED has nothing to corroborate them with, so it is refused while
 # any of these is set (see params_problems).
 # `lifecycle_sync` is here for the other direction: it lets a run write into workspace/, so
-# it is never taken on the word of an edited state.json either.
+# it is never taken on the word of an edited state.json either. So is `idea`: the brief
+# decides what the run builds, and one added to state.json after the start was nobody's.
 GUARDED_PARAMS = ("mock", "mock_plan", "auto_approve", "timeout_auto_approve",
-                  "lifecycle_sync", "develop_budget")
+                  "lifecycle_sync", "develop_budget", "idea")
 
 _COUNTERS = ("attempts", "executions", "visits", "loop_base")
 _DECISION_KEYS = ("decision", "decided_by", "decided_at", "visit", "note", "mode")
@@ -113,6 +116,12 @@ def state_problems(state, definition):
         if budget.PARAM in state.params:
             problems += budget.shape_problems(state.params[budget.PARAM],
                                               f"params.{budget.PARAM}")
+        if "idea" in state.params:
+            idea = state.params["idea"]
+            if not (isinstance(idea, str) and idea and idea == " ".join(idea.split())):
+                problems.append(f"params.idea {idea!r} is not a canonical game idea (non-empty "
+                                f"text, whitespace runs as one space; a run without one "
+                                f"records no idea at all)")
     problems += _blocked_reason_problems(state, definition)
 
     for step_id, step in (state.steps or {}).items():

@@ -15,15 +15,23 @@ The discipline, mechanised:
   * the catalog's estimates are `hypothesis` claims, and every dimension resting on one is
     screened at the scoring model's hypothesis weight;
   * revenue is not estimated. `revenue_potential` is recorded as unscored, with the reason.
+
+With a brief - the game idea a person started the run with - candidates are ranked by how
+well they match it before anything else (`idea_match`): first how many of its words the
+archetype's own vocabulary holds - the genre and mechanic are the game - then the dimension
+it names ("3D"), which design can still adapt. The screen itself is unchanged. A selection
+that holds none of the brief's words, or renders in another dimension than it names, says so
+as an `idea-unmatched` gap instead of pretending to fit.
 """
 
 import hashlib
 import json
 import math
+import re
 
 from wgflib import criteria
 
-__all__ = ["ClaimBook", "analyse", "claim_id"]
+__all__ = ["ClaimBook", "analyse", "claim_id", "idea_match", "idea_terms", "idea_dimension"]
 
 CONFIDENCE_OBSERVED = 0.85
 CONFIDENCE_STALE = 0.6
@@ -41,6 +49,65 @@ TIER_RANK = {"hypothesis": 0, "derived": 1, "observed": 2}
 PLATFORM_FACTS = ("ads.rewarded", "ads.interstitial", "ads.banner", "iap", "max_bundle_mb",
                   "locales_required", "sdk_required", "review_days", "mobile_share",
                   "cloud_saves", "external_requests_restricted")
+
+
+# -- the brief ---------------------------------------------------------------------------------
+
+_IDEA_WORD = re.compile(r"[a-z0-9][a-z0-9-]*")
+# Words that describe any game, or no game: they match nothing, whatever the catalog says.
+_IDEA_STOP = frozenset("""
+    a an and are as at be by for from game games has have in into is it its of on one or
+    player players play plays playing the their them then there they this to where which
+    while who with without you your web browser mobile simple casual fun new
+""".split())
+_DIMENSION_WORDS = {"3d": "3d", "three-dimensional": "3d", "2d": "2d", "two-dimensional": "2d"}
+
+
+def idea_terms(idea):
+    """The brief's content words, lowercased, in order, without repeats or dimension words.
+    Whole words only: a brief's "blocks" is not the catalog's "block"."""
+    seen = []
+    for word in _IDEA_WORD.findall((idea or "").lower()):
+        if word in _IDEA_STOP or word in _DIMENSION_WORDS or len(word) < 3 or word in seen:
+            continue
+        seen.append(word)
+    return seen
+
+
+def idea_dimension(idea):
+    """'3d' or '2d' when the brief names exactly one, else None."""
+    named = {_DIMENSION_WORDS[w] for w in _IDEA_WORD.findall((idea or "").lower())
+             if w in _DIMENSION_WORDS}
+    return named.pop() if len(named) == 1 else None
+
+
+def _vocabulary(archetype):
+    words = set()
+    for value in ([archetype.get("genre"), archetype.get("subgenre"), archetype.get("title"),
+                   archetype.get("core_mechanic")] + list(archetype.get("market_tags") or [])):
+        for word in _IDEA_WORD.findall(str(value or "").lower()):
+            words.add(word)
+            words.update(part for part in word.split("-") if part)
+    return words
+
+
+def idea_match(archetype, idea):
+    """{"terms": the brief's words the archetype's vocabulary holds, "dimension": whether its
+    rendering is the dimension the brief names (False when it names none)}."""
+    vocabulary = _vocabulary(archetype)
+    dimension = idea_dimension(idea)
+    return {"terms": [t for t in idea_terms(idea) if t in vocabulary],
+            "dimension": dimension is not None
+            and (archetype.get("rendering") or "2d") == dimension}
+
+
+def _idea_rank(candidate, dimension):
+    """Sort key part: more of the brief's words first, then a shape of the dimension it
+    names before one of another."""
+    match = candidate.get("idea_match")
+    if match is None:
+        return (0, 0)
+    return (-len(match["terms"]), dimension is not None and not match["dimension"])
 
 
 def claim_id(*parts):
@@ -755,9 +822,10 @@ def buildable(archetype):
 
 
 def analyse(*, sources, profiles, archetypes, model, backlog, as_of_text, report_key,
-            max_candidates=8):
+            max_candidates=8, idea=None):
     """Returns (claims, platforms, candidates, selection, gaps). `as_of_text(dt)` formats a
-    timestamp; `as_of_text(None)` is the scan's own time."""
+    timestamp; `as_of_text(None)` is the scan's own time. `idea` is the run's brief, or
+    None for a blank scan - which leaves every output exactly as it was without one."""
     book = ClaimBook(as_of_text(None))
     gaps = []
 
@@ -772,6 +840,10 @@ def analyse(*, sources, profiles, archetypes, model, backlog, as_of_text, report
 
     candidates = [_candidate(book, a, views, platform_info, model, backlog, report_key)
                   for a in archetypes]
+    dimension = idea_dimension(idea) if idea else None
+    if idea:
+        for candidate in candidates:
+            candidate["idea_match"] = idea_match(candidate["_archetype"], idea)
     for candidate in candidates:
         breached = [v["criterion_id"] for v in candidate["screen"]["vetoes"] if v["breached"]]
         match = candidate["backlog_match"]
@@ -797,7 +869,10 @@ def analyse(*, sources, profiles, archetypes, model, backlog, as_of_text, report
     # Evidence of demand outranks imagined demand: when the scan observed any listings at all,
     # a candidate nobody was seen playing ranks after every candidate somebody was.
     market_seen = any(c["market_signal"]["observed"] for c in candidates)
+    # A brief ranks first among the eligible: the person asked for this game, and the
+    # screen then orders the shapes that could carry it.
     candidates.sort(key=lambda c: (c["status"] == "excluded",
+                                   _idea_rank(c, dimension),
                                    market_seen and not c["market_signal"]["observed"],
                                    -c["screen"]["score"], c["id"]))
     # Excluded candidates are always kept: a rejection and its reason are evidence, and the
@@ -809,11 +884,18 @@ def analyse(*, sources, profiles, archetypes, model, backlog, as_of_text, report
         chosen = eligible[0]
         chosen["status"] = "selected"
         runner = eligible[1] if len(eligible) > 1 else None
+        brief_note = ""
+        if idea:
+            matched = list(chosen["idea_match"]["terms"])
+            if chosen["idea_match"]["dimension"]:
+                matched.insert(0, dimension)
+            brief_note = (f"Closest to the brief ({'matched: ' + ', '.join(matched) if matched else 'matched nothing in the catalog'}), then ")
         selection = {
             "candidate_id": chosen["id"],
             "opportunity_id": chosen["opportunity_id"],
             "rationale": (
-                f"Highest screen score ({chosen['screen']['score']:.2f}) of "
+                brief_note
+                + f"{'h' if brief_note else 'H'}ighest screen score ({chosen['screen']['score']:.2f}) of "
                 f"{len(eligible)} eligible candidates out of {len(candidates)} considered"
                 + (", among those with observed market presence" if market_seen else "")
                 + "; "
@@ -830,6 +912,22 @@ def analyse(*, sources, profiles, archetypes, model, backlog, as_of_text, report
                    if runner else "")),
             "runner_up": runner["id"] if runner else None,
         }
+        if idea and not chosen["idea_match"]["terms"]:
+            wanted = idea_terms(idea)
+            gaps.append((
+                "idea-unmatched",
+                f"the catalog holds no archetype whose genre, tags or mechanic match the brief"
+                + (f" ({', '.join(wanted)})" if wanted else "")
+                + f"; selected {chosen['id']} as the nearest "
+                + (f"{dimension} shape" if chosen["idea_match"]["dimension"] else "shape")
+                + " by screen score. The brief is carried verbatim to strategy and design, "
+                  "which must realise what the shape does not", None))
+        if idea and dimension is not None and not chosen["idea_match"]["dimension"]:
+            gaps.append((
+                "idea-unmatched",
+                f"the brief names {dimension}, and no eligible archetype matching its words "
+                f"renders in {dimension}; selected {chosen['id']}, which does not. The brief "
+                f"is carried verbatim to design, which chooses the dimension", None))
     if len(candidates) > len(kept):
         gaps.append(("unscored-dimension",
                      f"{len(candidates) - len(kept)} lower-screened eligible candidates were "

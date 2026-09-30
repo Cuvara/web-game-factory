@@ -338,6 +338,13 @@ refuse a run whose `state.json` params differ from that record in any key
 turn a real run into a mock one, to add G3 to `auto_approve`, or to give a gate a timeout
 window, is refused.
 
+`idea` is a run param too, recorded only when a person gives one (`wgf new-game "..."`):
+the game idea, in its canonical form (`api.canonical_idea`: NFC, trimmed, whitespace runs as
+one space, at most 500 characters, no control characters - nothing else is changed). It is
+a `GUARDED_PARAMS` entry: adding one to `state.json`, changing it or dropping it is refused
+like any other edit, so every resume runs with the exact idea the run started with. Steps
+read it as `context.environment["idea"]` (§ [Game idea](#game-idea)).
+
 A run created before params were recorded has a `WORKFLOW_STARTED` without `params` (or,
 if it crashed at creation, none). It is accepted only while none of `mock`, `mock_plan`,
 `auto_approve`, `timeout_auto_approve` is set: those are exactly what an edit would add, and nothing can vouch for
@@ -407,8 +414,8 @@ step gets a fresh `max_visits` budget and every route limit a fresh budget too (
 resume refills only the route that stopped the run). The developer-session budget is never
 refilled by either.
 
-A run keeps the settings it was started with. So `--mock`, `--mock-plan`, `--hold-gates` and
-`--project` with `--resume` or `--run`, `--from` with `--run` (it runs the command's own
+A run keeps the settings it was started with. So `--mock`, `--mock-plan`, `--hold-gates`,
+`--project` and an `IDEA` with `--resume` or `--run`, `--from` with `--run` (it runs the command's own
 steps; `wgf resume <id> --from STEP` restarts at one), and `--note` without `--decision` are
 refused with exit 2 instead of being silently ignored.
 
@@ -681,7 +688,8 @@ records the artifact is saved, so the log never names an artifact state does not
 ## 11. CLI
 
 ```
-wgf new-game [--mock] [--from STEP] [--project ID]    the whole workflow
+wgf new-game [--mock] [--from STEP] [--project ID] ["IDEA"]
+                                                       the whole workflow; IDEA: see below
 wgf research | plan | init | assets | develop | sdk | verify | release [--mock]
 wgf resume RUN [--from STEP] [--decision CHOICE [--note TEXT]]
 wgf decide RUN CHOICE [--note TEXT]                    answer a waiting checkpoint
@@ -807,6 +815,39 @@ wgf new-game --mock --mock-plan '{"verify": ["fail"]}'                      # de
 wgf new-game --mock --hold-gates                                            # WAITING at strategy-review
 wgf decide <run-id> pass                                                    # G4: release, completed
 ```
+
+### Game idea
+
+```bash
+wgf new-game "3D goalkeeper game where the player blocks penalty shots"
+wgf new-game --project goalkeeper-3d "3D goalkeeper game where the player blocks penalty shots"
+wgf new-game --mock --hold-gates "3D goalkeeper game where the player blocks penalty shots"
+wgf new-game --mock -- "-an idea that starts with a dash"
+wgf research "a calm sort puzzle"          # any slice that runs the research step
+```
+
+The one positional argument of a run command is the game idea: the run's brief. `--project`
+is the run's identity (`project_id`, the title id) and nothing else; the two are independent
+and may be combined. Without an idea the run is the blank market scan it always was, and
+records no `idea` param at all.
+
+The idea is canonicalised once and recorded in `params.idea` (§5, corroborated on resume),
+shown by `wgf status` (`Idea:`) and in `status --json`. The research step reads it and
+anchors the scan to it: `research-report.scope.brief`, a question naming it, candidates
+ranked by their match to it first (`candidates[].idea_match`), and the opportunity's `brief`.
+Research still selects only concepts the catalog declares buildable (`design_archetype`).
+Strategy copies the brief into `title-strategy.brief` and states it as an assumption; design
+records `game-design.brief`, and the `agent` design author is told to design the game it
+describes. The built-in design author fits the archetype the selected concept declares -
+never one the brief's words would pick, which the design consistency rules would refuse -
+and when the brief names a dimension that design does not use, says so in
+`open_questions`. Nothing is invented: a selection that matches none of the brief's words,
+or renders in another dimension than it names, records an `idea-unmatched` gap.
+
+Refused with exit 2, running nothing: an empty or over-long idea, or one with control
+characters; an idea on a slice that runs no research step (`wgf plan "..."`,
+`wgf new-game --from design "..."`); an idea with `--resume` or `--run`; `wgf resume` with
+one.
 
 From an agent host, the adapters' workflow entry point (`/new-game`, generated from
 `workflows:` in `core/bindings/adapter-binding.yaml`) is this command and nothing more: it

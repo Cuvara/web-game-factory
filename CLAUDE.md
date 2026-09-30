@@ -68,6 +68,8 @@ WGF_BLENDER_TEST=1 python3 -m unittest scripts/tests/test_models.py        # rea
 # The workflow engine. Every run command is a slice of core/workflows/new-game.workflow.yaml.
 bin/wgf research                          # real market scan: research-report + opportunity
 bin/wgf new-game --mock                   # research -> ... -> verify, then WAITING at G4
+bin/wgf new-game [--project ID] "IDEA"    # anchored to a game idea: the run's brief (params.idea);
+                                          # --project is only identity; no IDEA = blank market scan
 bin/wgf decide <run-id> pass              # G4 (pass|iterate|kill): only a person decides it
 bin/wgf verify --mock                     # one step; `plan` = strategy, checkpoint, design
 bin/wgf resume <run-id> [--from STEP]     # = wgf <cmd> --resume <run-id>, which still works

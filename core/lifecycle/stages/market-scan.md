@@ -9,6 +9,13 @@ state: there is no entity to hold it.
 
 ## Inputs
 
+- A **brief**, optional — the game idea a person started the run with. With one, the scan is
+  anchored to it: the question names it, candidates are ranked by their match to it before
+  the screen orders them, and the opportunity carries it verbatim (`brief`) for strategy and
+  design to build from. The screen and its vetoes are unchanged. A selection that matches
+  none of the brief's words, or renders in another dimension than it names, records an
+  `idea-unmatched` gap: the catalog shape is reported as the nearest carrier, never as a fit.
+  Without a brief the scan is blank: the whole catalog, ranked on the screen alone.
 - `core/reference/platforms/*.yaml` — what each portal carries, rewards, and forbids
 - `core/reference/dimensions.yaml` — the vocabulary every observation must land in
 - `performance-review` artifacts from live titles — the factory's own shipped evidence

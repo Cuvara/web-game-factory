@@ -8,7 +8,7 @@
     "id": "research-report",
     "kind": "artifact",
     "format": "json",
-    "version": "1.0.0",
+    "version": "1.1.0",
     "producer": "portfolio:market-scan",
     "consumers": ["portfolio:scored", "title:strategy"],
     "repo_path": "workspace/research/reports/<report-id>.json",
@@ -170,6 +170,16 @@
         "id": { "type": "string", "pattern": "^[a-z][a-z0-9-]*$" },
         "opportunity_id": { "type": "string", "pattern": "^opp-[0-9a-z]{3,}$" },
         "concept": { "$ref": "#/$defs/concept" },
+        "idea_match": {
+          "type": "object",
+          "description": "How the candidate matched the scan's brief (scope.brief): the brief's words found in its genre, subgenre, market tags, title or core mechanic, and whether its rendering is the dimension the brief names (false when the brief names none). Present only when the scan had a brief. Added in 1.1.0.",
+          "required": ["terms", "dimension"],
+          "properties": {
+            "terms": { "type": "array", "items": { "type": "string" } },
+            "dimension": { "type": "boolean" }
+          },
+          "additionalProperties": false
+        },
         "profile": {
           "type": "object",
           "description": "The production and product shape of the candidate. Estimates, and labelled as such by the hypothesis claims they cite.",
@@ -270,7 +280,7 @@
       "required": ["kind", "description"],
       "properties": {
         "kind": {
-          "enum": ["no-external-evidence", "unscored-dimension", "stale-source", "rejected-observation", "collector-failure", "probe-miss", "profile-discrepancy", "unverified-profile"]
+          "enum": ["no-external-evidence", "idea-unmatched", "unscored-dimension", "stale-source", "rejected-observation", "collector-failure", "probe-miss", "profile-discrepancy", "unverified-profile"]
         },
         "description": { "type": "string" },
         "source_id": { "type": "string" },
@@ -295,7 +305,8 @@
         "question": { "type": "string", "minLength": 8 },
         "platforms": { "type": "array", "minItems": 1, "items": { "type": "string", "pattern": "^[a-z][a-z0-9-]*$" } },
         "genres": { "type": "array", "items": { "type": "string" } },
-        "as_of": { "type": "string", "format": "date-time" }
+        "as_of": { "type": "string", "format": "date-time" },
+        "brief": { "type": "string", "minLength": 1, "maxLength": 500, "description": "The game idea a person started the run with (`wgf new-game \"...\"`), verbatim in its canonical form: NFC, trimmed, whitespace runs as one space. Absent when the run was a blank market scan. With a brief, candidates are ranked by how well they match it before anything else (candidates[].idea_match), and a selection that matches none of its words records an idea-unmatched gap. Added in 1.1.0." }
       },
       "additionalProperties": false
     },

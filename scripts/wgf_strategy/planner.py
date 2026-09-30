@@ -675,13 +675,23 @@ class _Plan:
                       "Prototype the riskiest system first; G4 kills on prototype_overran")
 
         claims = opp.get("claim_refs") or []
+        brief = opp.get("brief")
+        if brief:
+            # The person's idea is recorded as `brief` and here, never folded into the
+            # one-liner: design fits its archetype to the concept research selected as
+            # buildable, and the brief's words must not re-pick it.
+            self.assume(
+                f"The brief (\"{brief}\") can be built on the {genre} shape research selected: "
+                f"{concept['core_mechanic']}",
+                "design cannot realise the brief's mechanic within this shape and timebox; "
+                "the prototype then plays as the shape, not as the brief")
         why = (f"{opp.get('title', opp.get('id'))} offers {(concept.get('fantasy') or concept['core_loop']).rstrip('.')}. "
                f"The opportunity rests on {opp.get('hypothesis') or 'an unstated hypothesis'}"
                + (f" and cites {', '.join(claims)}" if claims else ", with no claims cited")
                + f". {required_profile.get('name', self.required)} is primary"
                + f"{self._fit_reason(required_profile)}.")
 
-        return {
+        body = {
             "title_id": self.title_id,
             "opportunity_id": opp["id"],
             "one_liner": f"A {genre} game where the player uses {concept['core_mechanic']}.",
@@ -706,6 +716,9 @@ class _Plan:
             "risks": self.risks,
             "assumptions": self.assumptions,
         }
+        if brief:
+            body["brief"] = brief
+        return body
 
     def _fit_reason(self, profile):
         regions = sorted(set(self.audience.get("regions") or [])

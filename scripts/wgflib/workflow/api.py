@@ -10,6 +10,8 @@ orchestration of its own to drift from the others.
 import datetime
 import importlib
 import os
+import re
+import unicodedata
 
 from .. import budget, gate_evidence, paths, procs
 from . import checkpoint, integrity, mock
@@ -24,7 +26,36 @@ from .step import StepRegistry
 from .store import RunStore, StoreError
 
 __all__ = ["WorkflowAPI", "RunRequest", "pending_decision", "missing_inputs",
-           "timeout_windows", "ended_by_decision"]
+           "timeout_windows", "ended_by_decision", "canonical_idea", "IDEA_MAX_LENGTH",
+           "IDEA_STEP_TYPE"]
+
+# The game idea a person may give a new run (`wgf new-game "..."`). It is the brief the run
+# is anchored to: recorded once in the run's params, where resume corroborates it against
+# WORKFLOW_STARTED, and read by the step of this type, which carries it into its artifacts.
+IDEA_MAX_LENGTH = 500
+IDEA_STEP_TYPE = "research"
+_CONTROL = re.compile(r"[\x00-\x1f\x7f-\x9f]")
+
+
+def canonical_idea(text):
+    """The one canonical form of a game idea: NFC, trimmed, whitespace runs as one space.
+
+    Nothing else is changed - not case, not punctuation, not wording: the idea is the
+    person's, and every step downstream reads exactly this string. Raises ValueError for an
+    idea that is empty, carries control characters, or is longer than IDEA_MAX_LENGTH.
+    """
+    if not isinstance(text, str):
+        raise ValueError("the game idea must be text")
+    idea = " ".join(unicodedata.normalize("NFC", text).split())
+    if not idea:
+        raise ValueError("the game idea is empty; give it as one quoted argument, or none "
+                         "for a blank market scan")
+    if _CONTROL.search(idea):
+        raise ValueError("the game idea contains control characters")
+    if len(idea) > IDEA_MAX_LENGTH:
+        raise ValueError(f"the game idea is {len(idea)} characters; the limit is "
+                         f"{IDEA_MAX_LENGTH}")
+    return idea
 
 
 def _no_sleep(_seconds):
@@ -195,7 +226,8 @@ class RunRequest:
 
     def __init__(self, scope=None, mock=False, mock_plan=None, resume=None, from_step=None,
                  run_id=None, force=False, decision=None, note=None, project_id=None,
-                 hold_gates=False, decided_by=None, budget_sessions=None, budget_cost=None):
+                 hold_gates=False, decided_by=None, budget_sessions=None, budget_cost=None,
+                 idea=None):
         self.scope = scope
         self.mock = mock
         self.mock_plan = mock_plan
@@ -212,6 +244,8 @@ class RunRequest:
         # With resume: raise the run's developer-session budget (wgflib.budget) to these.
         self.budget_sessions = budget_sessions
         self.budget_cost = budget_cost
+        # A new run's game idea (canonical_idea); None is the blank market scan.
+        self.idea = idea
 
 
 class WorkflowAPI:
@@ -354,6 +388,11 @@ class WorkflowAPI:
             if request.mock_plan:
                 params["mock_plan"] = request.mock_plan
         engine = self.engine(request.mock)
+        if request.idea is not None:
+            idea = canonical_idea(request.idea)
+            self._refuse_idea_without_reader(engine.definition, request)
+            # Recorded only when given, so a run without one keeps the params it always had.
+            params["idea"] = idea
         auto = set(self.config.auto_approve)
         if request.mock and not request.hold_gates:
             # Only the gates this workflow actually checkpoints, and only reversible ones:
@@ -390,6 +429,21 @@ class WorkflowAPI:
             scope = None
         return engine.start(scope=scope, start_at=request.from_step,
                             project_id=request.project_id, params=params)
+
+    @staticmethod
+    def _refuse_idea_without_reader(definition, request):
+        """An idea is read by the research step; a run that never executes one would carry
+        it silently and build something else. Refused, never ignored."""
+        scope = None if request.scope == definition.id else request.scope
+        ids = definition.resolve_scope(scope)
+        if request.from_step in ids:
+            ids = ids[ids.index(request.from_step):]
+        if not any(definition.step(s).type == IDEA_STEP_TYPE for s in ids):
+            raise EngineError(
+                f"a game idea is read by the {IDEA_STEP_TYPE} step, and this run "
+                f"({request.scope or definition.id}"
+                f"{' --from ' + request.from_step if request.from_step else ''}) does not "
+                f"run one; start at {IDEA_STEP_TYPE}, or give no idea")
 
     def status(self, run_id=None):
         """(state, definition) for a run, or the latest run when no id is given."""

@@ -1,6 +1,6 @@
 ---
 description: Run the Factory's new-game workflow end to end through the wgf engine; stop at every gate for a person.
-argument-hint: "[--mock [--mock-plan JSON] [--hold-gates]] [--project ID] [--from STEP] [--store DIR] | resume <run-id> [--from STEP]"
+argument-hint: "[--mock [--mock-plan JSON] [--hold-gates]] [--project ID] [--from STEP] [--store DIR] [\"<game idea>\"] | resume <run-id> [--from STEP]"
 disable-model-invocation: true
 ---
 
@@ -29,9 +29,17 @@ Accept exactly these (the engine's own flags, `python3 "${CLAUDE_PLUGIN_ROOT}/ru
 `python3 "${CLAUDE_PLUGIN_ROOT}/runtime/scripts/wgf.py" resume --help`), and nothing else:
 
 - new run: `--mock`, `--mock-plan <JSON|@FILE>` (with `--mock` only),
-  `--hold-gates`, `--project <ID>`, `--from <STEP>`, `--store <DIR>`
+  `--hold-gates`, `--project <ID>`, `--from <STEP>`, `--store <DIR>`, and at most
+  one **game idea**: the quoted text that is not a flag or a flag's value, e.g.
+  `"3D goalkeeper game where the player blocks penalty shots"`. The idea is the run's
+  brief - research screens the catalog against it, strategy and design build from it - and
+  `--project <ID>` is only the run's identity; never take one for the other. Pass the idea
+  verbatim as one argument: never reword, summarise, translate, split or complete it, and
+  never invent one. With no idea the run is a blank market scan: say so when you start it.
+  An idea with `--from` a step after research is refused by the engine (exit 2).
 - `resume <run-id>`, optionally with `--from <STEP>` and `--store <DIR>`: continues that
-  run with the settings it started with
+  run with the settings it started with - its idea among them, so an idea given with
+  `resume` is refused
 
 With `--store <DIR>`, pass the same `--store <DIR>` to every `python3 "${CLAUDE_PLUGIN_ROOT}/runtime/scripts/wgf.py"` command for that
 run (status, logs, resume).
@@ -41,7 +49,8 @@ Refuse, and run nothing, if the arguments contain anything else — in particula
 `--budget-*` (a decision or a budget is a person's, typed by that person), `--config` or
 `--workflow` (this surface runs this workflow under the configuration it reports),
 `--resume`, `--run` or `--force` (use `resume <run-id>`), `--quiet` or `--json`
-(the surface sets the output), or a second command.
+(the surface sets the output), a second command, or more than one idea (two quoted texts;
+ask the user to give the idea as one quoted string).
 
 ## Procedure
 
@@ -71,7 +80,12 @@ Refuse, and run nothing, if the arguments contain anything else — in particula
 4. **Start** in the background, with the Bash tool's `run_in_background`: a run can take hours,
    far longer than a foreground command may. You are notified when it exits.
 
-   - new run: `python3 "${CLAUDE_PLUGIN_ROOT}/runtime/scripts/wgf.py" new-game <arguments> --json`
+   - new run: `python3 "${CLAUDE_PLUGIN_ROOT}/runtime/scripts/wgf.py" new-game <flags> --json`, or with an idea
+     `python3 "${CLAUDE_PLUGIN_ROOT}/runtime/scripts/wgf.py" new-game <flags> --json -- '<idea>'`: the idea last, after `--`, as one
+     single-quoted shell word (each `'` inside it written as `'\''`), so the shell
+     neither splits nor expands it and a leading `-` is not read as a flag. Tell the user
+     the idea as the engine recorded it: `params.idea` in `WORKFLOW_STARTED`, whitespace
+     runs collapsed and nothing else changed - or that there is none.
    - resume: `python3 "${CLAUDE_PLUGIN_ROOT}/runtime/scripts/wgf.py" resume <run-id> [--from <STEP>] [--store <DIR>] --json`
 
    Where `python3` is not on PATH (Windows), use `python` in its place.

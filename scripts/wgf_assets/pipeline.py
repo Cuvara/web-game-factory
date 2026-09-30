@@ -15,6 +15,16 @@ Every file the pipeline writes goes under the asset root (a game repository chec
 only when its bytes differ from what is there: a re-executed step reuses what it made.
 Placeholders are named `<id>.placeholder.<ext>` so a stand-in is never mistaken for art.
 
+Then, for the whole set:
+
+    atlas groups      requirements naming the same `atlas` are packed, deterministically,
+                      into public/assets/atlases/<group>.png + .json; their own PNGs go to
+                      src/assets/<kind directory>/ - kept as source, never served twice
+    runtime manifest  public/assets/assets.json: every loadable asset by id, with its URL or
+                      its atlas frame, sizes, scale, frames and animations (runtime.py)
+    prune             placeholders and packed atlases this pipeline wrote earlier that
+                      nothing references any more are removed; nothing else is touched
+
 The licence rule is enforced here, not requested: an asset whose licence is unknown or
 restricted, or that has no recorded origin, is never `delivered` and never
 `production_ready`. It can be used to prototype - it is on disk and in the manifest - but it
@@ -27,20 +37,40 @@ import os
 import tempfile
 from collections import namedtuple
 
-from . import formats
+from . import atlas as atlases_mod
+from . import formats, raster, runtime
 from .library import LibraryError, search_all
 from .optimize import optimize as optimize_bytes
 from .placeholders import BackendError
 
-__all__ = ["AssetPipeline", "AssetStore", "PipelineResult", "validate_file", "ASSET_DIR"]
+__all__ = ["AssetPipeline", "AssetStore", "PipelineResult", "validate_file", "ASSET_DIR",
+           "SOURCE_DIR"]
 
 ASSET_DIR = "public/assets"
+# Where the source image of an atlas member goes: in the repository, out of the build (Vite
+# bundles src/ only through imports), so the atlas is the one copy that ships.
+SOURCE_DIR = "src/assets"
 LOAD_BEARING_TIERS = ("mvp", "prototype")
 ORIGIN_KEYS = ("source_url", "author", "vendor", "attribution", "license_url", "evidence")
 
 
 def file_hash(data):
     return "sha256:" + hashlib.sha256(data).hexdigest()
+
+
+def _rename_atlas_image(data, image_path):
+    """Atlas bytes whose meta.image names `image_path`'s file; unchanged when it already
+    does or has no meta.image. Re-serialised with sorted keys, so the result is stable."""
+    try:
+        document = json.loads(data.decode("utf-8-sig"))
+    except (UnicodeDecodeError, ValueError):
+        return data
+    meta = document.get("meta") if isinstance(document, dict) else None
+    name = image_path.rsplit("/", 1)[-1]
+    if not isinstance(meta, dict) or "image" not in meta or meta["image"] == name:
+        return data
+    meta["image"] = name
+    return (json.dumps(document, indent=2, sort_keys=True) + "\n").encode("utf-8")
 
 
 class StoreError(ValueError):
@@ -54,6 +84,7 @@ class AssetStore:
     def __init__(self, root):
         self.root = os.path.abspath(root)
         self.writes = {"created": 0, "updated": 0, "reused": 0}
+        self.removed = []
 
     def resolve(self, relative):
         if not relative or os.path.isabs(relative) or "\\" in relative:
@@ -95,9 +126,27 @@ class AssetStore:
         self.writes[outcome] += 1
         return outcome
 
+    def remove(self, relative):
+        path = self.resolve(relative)
+        if os.path.isfile(path):
+            os.unlink(path)
+            self.removed.append(relative)
 
-def validate_file(kind, relative, data, *, companion=False):
-    """(Detected or None, [(code, severity, message)]) for one file of an asset kind."""
+    def walk(self, relative):
+        """Repository-relative paths of every file under `relative`, sorted."""
+        base = self.resolve(relative)
+        found = []
+        for directory, dirs, names in os.walk(base):
+            dirs.sort()
+            for name in sorted(names):
+                full = os.path.join(directory, name)
+                found.append(os.path.relpath(full, self.root).replace(os.sep, "/"))
+        return found
+
+
+def validate_file(kind, relative, data, *, companion=False, policy=None):
+    """(Detected or None, [(code, severity, message)]) for one file of an asset kind.
+    `policy` supplies the texture-edge limits; without one the defaults apply."""
     problems = []
     found = formats.sniff(data)
     declared = formats.format_for_extension(relative)
@@ -133,7 +182,45 @@ def validate_file(kind, relative, data, *, companion=False):
         problems.append(("not-power-of-two", "warning",
                          f"{relative} is {found.width}x{found.height}; GPU texture "
                          f"compression and mipmaps want powers of two"))
+    if found.format == "svg":
+        for hazard in formats.svg_hazards(data):
+            problems.append(("unsafe-svg", "error", f"{relative} contains {hazard}"))
+    max_edge = policy.max_texture_edge if policy else runtime.DEFAULT_MAX_EDGE
+    warn_edge = policy.warn_texture_edge if policy else runtime.DEFAULT_WARN_EDGE
+    edge = max(found.width or 0, found.height or 0)
+    if edge > max_edge:
+        problems.append(("texture-too-large", "error",
+                         f"{relative} is {found.width}x{found.height}; many mobile GPUs refuse "
+                         f"textures over {max_edge} px"))
+    elif edge > warn_edge:
+        problems.append(("texture-too-large", "warning",
+                         f"{relative} is {found.width}x{found.height}; over {warn_edge} px "
+                         f"costs memory low-end phones lack"))
+    if not companion and found.format in formats.IMAGE_FORMATS:
+        problems.extend(_transparency(kind, relative, data, found))
     return found, problems
+
+
+def _transparency(kind, relative, data, found):
+    """What a file's alpha says against what its kind assumes."""
+    expects = getattr(kind, "transparency", "any")
+    if expects == "any":
+        return []
+    has_alpha = found.format in formats.ALPHA_FORMATS
+    if found.format == "png":
+        try:
+            has_alpha = raster.png_header(data).has_alpha
+        except raster.RasterError:
+            return []
+    if expects == "required" and not has_alpha:
+        return [("transparency-mismatch", "warning",
+                 f"{relative} has no alpha channel; a {kind.kind} is drawn over the scene and "
+                 f"will show a solid rectangle")]
+    if expects == "opaque" and found.format == "png" and has_alpha:
+        return [("transparency-mismatch", "info",
+                 f"{relative} carries an alpha channel a {kind.kind} does not use; an opaque "
+                 f"PNG, JPEG or WebP is smaller")]
+    return []
 
 
 _Stored = namedtuple("_Stored", "relative data found applied saved")
@@ -145,6 +232,9 @@ class PipelineResult:
         self.issues = []
         self.backends = []
         self.bytes_total = 0
+        self.atlases = []           # asset-manifest `atlases` records
+        self.runtime_manifest = None  # {path, bytes, content_hash}
+        self.removed = []           # stale pipeline-owned files pruned
 
 
 class _Item:
@@ -163,7 +253,9 @@ class _Item:
             "scope_tier": req.scope_tier,
             "platforms": req.platforms or None,
             "notes": req.notes,
+            "scale": req.scale if req.scale != 1 else None,
         }
+        self.payload = []  # [(repository-relative path, bytes)] of the files, as recorded
 
     def issue(self, code, severity, message):
         self.issues.append({"item_id": self.req.id, "code": code, "severity": severity,
@@ -186,14 +278,15 @@ class _Item:
             data["issues"] = sorted({i["code"] for i in self.issues})
         order = ["id", "label", "type", "dimension", "source", "est_cost", "est_hours",
                  "status", "license", "license_status", "usage_constraints", "origin",
-                 "placeholder", "production_ready", "files", "reference", "optimization",
-                 "scope_tier", "platforms", "notes", "issues"]
+                 "placeholder", "production_ready", "files", "atlas", "scale", "reference",
+                 "optimization", "scope_tier", "platforms", "notes", "issues"]
         return {key: data[key] for key in order if data.get(key) is not None}
 
 
 class AssetPipeline:
     def __init__(self, policy, store, backends, libraries=(), *, logger=None,
-                 placeholders=True, optimize=True):
+                 placeholders=True, optimize=True, runtime_manifest=True, prune=True,
+                 title_id=None):
         self.policy = policy
         self.store = store
         self.backends = backends  # [(id, backend or None, note)]
@@ -201,7 +294,11 @@ class AssetPipeline:
         self.logger = logger
         self.placeholders = placeholders
         self.optimize = optimize
+        self.runtime_manifest = runtime_manifest
+        self.prune = prune
+        self.title_id = title_id
         self._hashes = {}
+        self._paths = {}
         self._available = None
         self._used = {}
 
@@ -244,13 +341,29 @@ class AssetPipeline:
 
     def run(self, requirements):
         result = PipelineResult()
+        built = []
         try:
             for req in requirements:
-                item = self._process(req)
-                result.issues.extend(item.issues)
-                result.items.append(item.finish())
+                built.append(self._process(req))
         finally:
             self.close()
+        packed = self._pack_atlases(built, result)
+        entries = {}
+        if self.runtime_manifest:
+            for item in built:
+                made = self._runtime_entry(item, packed)
+                if made is not None:
+                    entries[item.req.id] = made
+        for item in built:
+            result.issues.extend(item.issues)
+            result.items.append(item.finish())
+        if self.runtime_manifest:
+            document = runtime.build(entries, packed, self.title_id)
+            self.store.write(runtime.RUNTIME_PATH, document)
+            result.runtime_manifest = {"path": runtime.RUNTIME_PATH, "bytes": len(document),
+                                       "content_hash": file_hash(document)}
+        if self.prune:
+            self._prune(built, result)
         if self._available is not None:
             for entry in self._report:
                 entry["used"] = self._used.get(entry["id"], 0)
@@ -259,7 +372,16 @@ class AssetPipeline:
             result.backends = [{"id": b_id, "available": False, "used": 0,
                                 "note": "not needed: nothing was generated"}
                                for b_id, _b, _n in self.backends]
-        result.bytes_total = sum(f["bytes"] for i in result.items for f in i.get("files", []))
+        # What ships: every file under public/, each counted once - an atlas member's own
+        # source image does not ship; its atlas does.
+        shipped = {}
+        for record in [f for i in result.items for f in i.get("files", [])] + [
+                f for a in result.atlases for f in a["files"]]:
+            if record["path"].startswith(runtime.PUBLIC + "/"):
+                shipped[record["path"]] = record["bytes"]
+        if result.runtime_manifest:
+            shipped[result.runtime_manifest["path"]] = result.runtime_manifest["bytes"]
+        result.bytes_total = sum(shipped.values())
         return result
 
     def _process(self, req):
@@ -294,12 +416,21 @@ class AssetPipeline:
         if data is None:
             item.issue("missing", tier_severity, f"{req.id}: {relative} does not exist")
             return False
-        found, problems = validate_file(req.policy, relative, data)
+        found, problems = validate_file(req.policy, relative, data, policy=self.policy)
         for code, severity, message in problems:
             item.issue(code, severity, f"{req.id}: {message}")
         if found is None or any(code in ("invalid-format", "format-not-allowed")
                                 for code, _, _ in problems):
             return False
+
+        # The design's own file is recorded, not rewritten: optimizing it in place would
+        # change bytes someone else owns. What it still needs is deferred to the build.
+        stored = [_Stored(relative, data, found, [], 0)]
+        if req.policy.companion:
+            companion = self._existing_companion(req, item, relative, found)
+            if companion is None:
+                return False
+            stored.append(companion)
 
         origin = {"kind": "external"}
         for key in ORIGIN_KEYS:
@@ -310,13 +441,54 @@ class AssetPipeline:
         verdict = self._license(item, existing.get("license"),
                                 existing.get("usage_constraints") or ())
         self._check_clearance(item, verdict, origin)
-        # The design's own file is recorded, not rewritten: optimizing it in place would
-        # change bytes someone else owns. What it still needs is deferred to the build.
-        self._record_files(item, [_Stored(relative, data, found, [], 0)])
+        self._record_files(item, stored)
         item.data["optimization"] = {"applied": [], "deferred": list(req.policy.optimize)}
         cleared = verdict.status in ("verified", "generated") and not item.has_errors()
         item.data["status"] = "delivered" if cleared else "sourced"
         return True
+
+    def _existing_companion(self, req, item, relative, found):
+        """The atlas beside an existing spritesheet: `existing.atlas`, else
+        `<stem>.atlas.json`, else `<stem>.json`. None (with an error) when absent or bad."""
+        stem = relative.rsplit(".", 1)[0]
+        named = req.existing.get("atlas")
+        candidates = [named] if named else [f"{stem}.atlas.json", f"{stem}.json"]
+        for candidate in candidates:
+            try:
+                data = self.store.read(candidate)
+            except StoreError as exc:
+                item.issue("invalid-atlas", "error", f"{req.id}: {exc}")
+                return None
+            if data is None:
+                continue
+            a_found, problems = validate_file(req.policy, candidate, data, companion=True)
+            problems += [("invalid-atlas", "error", message) for message in
+                         self._atlas_problems(data, found, candidate, relative)]
+            for code, severity, message in problems:
+                item.issue(code, severity, f"{req.id}: {message}")
+            if a_found is None or any(sev == "error" for _, sev, _ in problems):
+                return None
+            return _Stored(candidate, data, a_found, [], 0)
+        item.issue("invalid-atlas", "error",
+                   f"{req.id}: a spritesheet needs its atlas beside it ("
+                   f"{' or '.join(candidates)}); set existing.atlas to name it")
+        return None
+
+    @staticmethod
+    def _atlas_problems(data, image, relative, image_path=None):
+        try:
+            document = json.loads(data.decode("utf-8-sig"))
+        except (UnicodeDecodeError, ValueError):
+            return [f"{relative} is not JSON"]
+        size = (image.width, image.height) if image and image.width else None
+        problems = [f"{relative}: {p}" for p in atlases_mod.check_document(document, size)]
+        named = (document.get("meta") or {}).get("image") if isinstance(
+            document.get("meta"), dict) else None
+        if image_path and isinstance(named, str) and named != image_path.rsplit("/", 1)[-1]:
+            problems.append(f"{relative}: meta.image is {named!r} but the image is "
+                            f"{image_path.rsplit('/', 1)[-1]!r}; a loader following "
+                            f"meta.image would fetch a file that is not there")
+        return problems
 
     def _library(self, req, item):
         for entry in search_all(self.libraries, req):
@@ -326,8 +498,12 @@ class AssetPipeline:
                            f"{req.id}: passed over {entry.qualified_id}: {reason}")
                 continue
             fmt = payload[0][1]
-            base = f"{ASSET_DIR}/{req.policy.directory}/{req.id}"
+            base = f"{self._directory(req, fmt)}/{req.id}"
             names = [f"{base}.{formats.FORMAT_EXTENSION.get(fmt, fmt)}", f"{base}.atlas.json"]
+            if len(payload) > 1:
+                # The image is renamed to the asset id; its atlas must name the new file, or
+                # a loader that follows meta.image fetches something that is not there.
+                payload[1] = (_rename_atlas_image(payload[1][0], names[0]), payload[1][1])
             stored = [self._store(name, data, kind)
                       for name, (data, kind) in zip(names, payload)]
             origin = {"kind": "library", "library_id": entry.qualified_id}
@@ -359,7 +535,7 @@ class AssetPipeline:
                 data = handle.read()
         except (OSError, LibraryError) as exc:
             return f"unreadable: {exc}", None
-        found, problems = validate_file(req.policy, entry.path, data)
+        found, problems = validate_file(req.policy, entry.path, data, policy=self.policy)
         errors = [message for _, severity, message in problems if severity == "error"]
         if found is None or errors:
             return "; ".join(errors) or "invalid file", None
@@ -373,6 +549,7 @@ class AssetPipeline:
                 atlas = handle.read()
             a_found, a_problems = validate_file(req.policy, atlas_path, atlas, companion=True)
             a_errors = [message for _, severity, message in a_problems if severity == "error"]
+            a_errors += self._atlas_problems(atlas, found, os.path.basename(atlas_path))
             if a_found is None or a_errors:
                 return "; ".join(a_errors) or "invalid atlas", None
             payload.append((atlas, "json"))
@@ -395,13 +572,20 @@ class AssetPipeline:
             # Validate everything before writing anything: a half-written placeholder set
             # (an image without its atlas) is worse than none.
             checked, problems = [], []
+            primary = primary_path = None
+            directory = self._directory(req, generated.files[0].format
+                                        if generated.files else None)
             for gen in generated.files:
                 ext = formats.FORMAT_EXTENSION.get(gen.format, gen.format)
-                relative = (f"{ASSET_DIR}/{req.policy.directory}/{req.id}.placeholder"
-                            f"{gen.suffix}.{ext}")
+                relative = f"{directory}/{req.id}.placeholder{gen.suffix}.{ext}"
                 found, file_problems = validate_file(req.policy, relative, gen.data,
-                                                     companion=bool(gen.suffix))
+                                                     companion=bool(gen.suffix),
+                                                     policy=self.policy)
                 errors = [m for _, severity, m in file_problems if severity == "error"]
+                if gen.suffix and found is not None:
+                    errors += self._atlas_problems(gen.data, primary, relative, primary_path)
+                elif found is not None:
+                    primary, primary_path = found, relative
                 if found is None or errors:
                     problems.extend(errors or [f"{relative} is invalid"])
                 checked.append((relative, gen))
@@ -467,7 +651,35 @@ class AssetPipeline:
                        f"{rid}: {item.data['license']} requires attribution and none is "
                        f"recorded")
 
+    def _directory(self, req, fmt):
+        """public/assets/<dir>, or src/assets/<dir> for an atlas member the packer can read."""
+        base = SOURCE_DIR if req.atlas and fmt == "png" else ASSET_DIR
+        return f"{base}/{req.policy.directory}"
+
     def _record_files(self, item, stored):
+        item.payload = [(entry.relative, entry.data) for entry in stored]
+        req = item.req
+        for entry in stored:
+            owner = self._paths.setdefault(entry.relative, req.id)
+            if owner != req.id:
+                item.issue("duplicate-path", "error",
+                           f"{req.id}: {entry.relative} is already the file of {owner}; two "
+                           f"assets cannot share one file")
+        image = stored[0].found if stored else None
+        if image is not None and image.width and req.kind not in ("spritesheet", "animation"):
+            if req.width or req.height:
+                expected = req.pixel_size()
+                if (image.width, image.height) != expected:
+                    item.issue("dimension-mismatch", "warning",
+                               f"{req.id}: {stored[0].relative} is {image.width}x{image.height}"
+                               f"; the design asks {expected[0]}x{expected[1]} "
+                               f"({req.scale}x of {req.size()[0]}x{req.size()[1]})")
+            if req.policy.tiles:
+                tw, th = (edge * int(req.scale) for edge in req.tile_size())
+                if image.width % tw or image.height % th:
+                    item.issue("invalid-tileset", "error",
+                               f"{req.id}: {image.width}x{image.height} does not divide into "
+                               f"{tw}x{th} tiles")
         files = []
         for entry in stored:
             digest = file_hash(entry.data)
@@ -502,3 +714,187 @@ class AssetPipeline:
         if saved > 0:
             block["bytes_saved"] = saved
         return block
+
+    # -- atlas groups ----------------------------------------------------------------------
+
+    def _pack_atlases(self, built, result):
+        """{group: (runtime atlas record, [(path, bytes)])} of the groups that packed."""
+        groups = {}
+        for item in built:
+            if item.req.atlas and item.data["status"] != "planned" and item.payload:
+                groups.setdefault(item.req.atlas, []).append(item)
+        packed = {}
+        directory = f"{ASSET_DIR}/{self.policy.atlas_directory}"
+        for group in sorted(groups):
+            members = []
+            for item in sorted(groups[group], key=lambda i: i.req.id):
+                relative, data = item.payload[0]
+                try:
+                    members.append((item, raster.decode_png(data)))
+                except raster.RasterError as exc:
+                    item.issue("invalid-atlas", "error",
+                               f"{item.req.id}: {relative} cannot join atlas {group}: {exc}; "
+                               f"supply a PNG")
+            scales = sorted({item.req.scale for item, _ in members})
+            if len(scales) > 1:
+                for item, _ in members:
+                    item.issue("invalid-atlas", "error",
+                               f"{item.req.id}: atlas {group} mixes scales "
+                               f"{', '.join(f'{s}x' for s in scales)}; one atlas, one scale")
+                continue
+            if not members:
+                continue
+            try:
+                image, frames = atlases_mod.pack([(item.req.id, img) for item, img in members],
+                                                 self.policy.atlas_options)
+            except atlases_mod.AtlasError as exc:
+                for item, _ in members:
+                    item.issue("atlas-overflow", "error", f"{item.req.id}: atlas {group}: {exc}")
+                continue
+            png_path = f"{directory}/{group}.png"
+            json_path = f"{directory}/{group}.json"
+            png = raster.encode_png(image)
+            document = atlases_mod.atlas_document(frames, f"{group}.png",
+                                                  (image.width, image.height),
+                                                  scale=scales[0])
+            self.store.write(png_path, png)
+            self.store.write(json_path, document)
+            files = [{"path": png_path, "format": "png", "bytes": len(png),
+                      "content_hash": file_hash(png), "width": image.width,
+                      "height": image.height},
+                     {"path": json_path, "format": "json", "bytes": len(document),
+                      "content_hash": file_hash(document)}]
+            result.atlases.append({"id": group, "files": files,
+                                   "members": [item.req.id for item, _ in members]})
+            packed[group] = ({"url": runtime.url_for(png_path),
+                              "data": runtime.url_for(json_path),
+                              "width": image.width, "height": image.height,
+                              "scale": scales[0], "frames": sorted(frames)},
+                             [(png_path, png), (json_path, document)])
+            for item, _ in members:
+                item.data["atlas"] = {"id": group, "frame": item.req.id}
+                block = item.data.setdefault("optimization", {"applied": [], "deferred": []})
+                if "texture-atlas" not in block["applied"]:
+                    block["applied"].append("texture-atlas")
+                block["deferred"] = [d for d in block["deferred"] if d != "texture-atlas"]
+                if item.payload[0][0].startswith(runtime.PUBLIC + "/"):
+                    item.issue("atlas-source-served", "warning",
+                               f"{item.req.id}: {item.payload[0][0]} is packed into atlas "
+                               f"{group} and also served on its own; move it under "
+                               f"{SOURCE_DIR}/ so it ships once")
+            self._log("atlas", atlas=group, frames=len(frames),
+                      size=f"{image.width}x{image.height}")
+        return packed
+
+    # -- the runtime manifest ----------------------------------------------------------------
+
+    def _runtime_entry(self, item, packed):
+        """(entry, payload) for the runtime manifest, or None when nothing loads."""
+        data, req = item.data, item.req
+        if data["status"] in ("planned", "cut"):
+            return None
+        entry = {"type": data["type"], "scale": req.scale if req.scale != 1 else None,
+                 "placeholder": True if data.get("placeholder") else None}
+        atlas = data.get("atlas")
+        if atlas and atlas["id"] in packed:
+            image = data["files"][0]
+            entry.update({"atlas": atlas["id"], "frame": atlas["frame"],
+                          "width": image.get("width"), "height": image.get("height")})
+            return entry, []
+        if not item.payload:
+            if data.get("reference") and data["type"] == "font":
+                entry["family"] = data["reference"]
+                return entry, []
+            return None
+        relative, blob = item.payload[0]
+        url = runtime.url_for(relative)
+        if url is None or req.atlas:
+            if not item.has_errors():
+                item.issue("not-served", "warning",
+                           f"{req.id}: {relative} is outside public/, so the runtime manifest "
+                           f"cannot list it; move it under {ASSET_DIR}/ or import it in code")
+            return None
+        record = data["files"][0]
+        entry.update({"url": url, "format": record["format"], "width": record.get("width"),
+                      "height": record.get("height")})
+        payload = [(relative, blob)]
+        if data["type"] == "font":
+            entry["family"] = req.id
+        if req.policy.tiles and record.get("width"):
+            tw, th = (edge * int(req.scale) for edge in req.tile_size())
+            entry.update({"tile_width": tw, "tile_height": th,
+                          "columns": max(1, record["width"] // tw),
+                          "rows": max(1, record["height"] // th)})
+        if len(item.payload) > 1 and item.payload[1][0].endswith(".json"):
+            atlas_path, atlas_blob = item.payload[1]
+            entry["data"] = runtime.url_for(atlas_path)
+            payload.append((atlas_path, atlas_blob))
+            try:
+                document = json.loads(atlas_blob.decode("utf-8-sig"))
+            except (UnicodeDecodeError, ValueError):
+                document = {}
+            names = atlases_mod.frames_of(document)
+            entry["frames"] = names
+            entry["animations"] = self._animations(item, document, names)
+        return entry, payload
+
+    @staticmethod
+    def _animations(item, document, names):
+        req = item.req
+        declared = document.get("animations") if isinstance(document, dict) else None
+        if req.animations is None and isinstance(declared, dict) and declared:
+            specs = {name: {"frames": list(seq), "fps": 12, "loop": True}
+                     for name, seq in sorted(declared.items()) if isinstance(seq, list)}
+        else:
+            specs = req.animation_specs(names)
+        for name, spec in sorted(specs.items()):
+            missing = [str(f) for f in spec["frames"] if f not in names]
+            if missing:
+                item.issue("invalid-atlas", "error",
+                           f"{req.id}: animation {name!r} names frame(s) the sheet lacks: "
+                           f"{', '.join(missing[:5])}")
+        return specs
+
+    # -- pruning -----------------------------------------------------------------------------
+
+    def _prune(self, built, result):
+        """Remove placeholders and packed atlases this pipeline wrote before that nothing
+        references now - a renamed asset or a delivered final must not leave its stand-in
+        shipping. Only files the pipeline's own naming marks as its own are candidates."""
+        live = {path for item in built for path, _ in item.payload}
+        live |= {f["path"] for a in result.atlases for f in a["files"]}
+        stale = []
+        for base in (ASSET_DIR, SOURCE_DIR):
+            try:
+                found = self.store.walk(base)
+            except StoreError:
+                continue
+            for relative in found:
+                name = relative.rsplit("/", 1)[-1]
+                if relative in live:
+                    continue
+                if ".placeholder." in name:
+                    stale.append(relative)
+        atlas_dir = f"{ASSET_DIR}/{self.policy.atlas_directory}"
+        try:
+            candidates = [p for p in self.store.walk(atlas_dir) if p.endswith(".json")]
+        except StoreError:
+            candidates = []
+        for relative in candidates:
+            if relative in live:
+                continue
+            try:
+                meta = json.loads(self.store.read(relative).decode("utf-8")).get("meta") or {}
+            except (UnicodeDecodeError, ValueError, AttributeError):
+                continue
+            if meta.get("app") != atlases_mod.GENERATOR:
+                continue
+            stale.append(relative)
+            image = f"{atlas_dir}/{meta.get('image')}"
+            if isinstance(meta.get("image"), str) and "/" not in meta["image"] \
+                    and image not in live:
+                stale.append(image)
+        for relative in sorted(set(stale)):
+            self.store.remove(relative)
+            self._log("pruned", path=relative)
+        result.removed = list(self.store.removed)

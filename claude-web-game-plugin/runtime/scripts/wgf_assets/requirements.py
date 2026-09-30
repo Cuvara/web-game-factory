@@ -24,10 +24,14 @@ MAX_EDGE = 4096
 # Default pixel size of a generated image, per kind. A requirement's width/height wins.
 DEFAULT_SIZE = {
     "sprite": (64, 64), "spritesheet": (64, 64), "background": (960, 540), "ui": (256, 64),
-    "icon": (512, 512), "vfx": (64, 64), "texture": (256, 256),
+    "icon": (512, 512), "vfx": (64, 64), "texture": (256, 256), "tileset": (256, 256),
 }
+DEFAULT_TILE = 32
+DEFAULT_FPS = 12
+MAX_SCALE = 4
 
 _ID = re.compile(r"^[a-z][a-z0-9-]*$")
+_ANIMATION = re.compile(r"^[a-z][a-z0-9_-]*$")
 _3D_HINT = re.compile(r"\b(3d|three\.?js|low[- ]poly|voxel|polygon(al)?)\b", re.I)
 
 
@@ -59,6 +63,11 @@ class Requirement:
         self.platforms = list(data.get("platforms") or [])
         self.existing = data.get("existing")
         self.notes = data.get("notes")
+        self.atlas = data.get("atlas")
+        self.scale = data.get("scale") or 1
+        self.animations = data.get("animations")
+        self.tile_width = data.get("tile_width")
+        self.tile_height = data.get("tile_height")
         self.derived = derived
         # Set by classify().
         self.policy = None
@@ -74,8 +83,35 @@ class Requirement:
         return words
 
     def size(self):
+        """Logical size: what the game lays out, before `scale`."""
         width, height = DEFAULT_SIZE.get(self.kind, (64, 64))
         return int(self.width or width), int(self.height or height)
+
+    def pixel_size(self):
+        """Pixel size of the file: the logical size authored at `scale` (1x, 2x, ...)."""
+        width, height = self.size()
+        return width * int(self.scale), height * int(self.scale)
+
+    def tile_size(self):
+        return int(self.tile_width or DEFAULT_TILE), int(self.tile_height or DEFAULT_TILE)
+
+    def animation_specs(self, frame_names):
+        """{name: {"frames": [frame name], "fps": n, "loop": bool}} for a sheet whose frames
+        are `frame_names` in order. Indices and names both resolve; the default is one
+        looping animation, named after the asset, over every frame."""
+        declared = self.animations or {self.id: {}}
+        specs = {}
+        for name in sorted(declared):
+            spec = declared[name] or {}
+            wanted = spec.get("frames")
+            if wanted is None:
+                frames = list(frame_names)
+            else:
+                frames = [frame_names[f] if isinstance(f, int) and f < len(frame_names)
+                          else f for f in wanted]
+            specs[name] = {"frames": frames, "fps": spec.get("fps", DEFAULT_FPS),
+                           "loop": bool(spec.get("loop", True))}
+        return specs
 
     def generate_now(self):
         """A `future`-tier asset is recorded, not produced: nothing is waiting for it."""
@@ -83,6 +119,60 @@ class Requirement:
 
     def __repr__(self):
         return f"Requirement({self.id!r}, {self.kind!r})"
+
+
+def _positive_int(value, upper):
+    return isinstance(value, int) and not isinstance(value, bool) and 1 <= value <= upper
+
+
+def _check_2d_fields(req, entry, where):
+    """Problems with the atlas, scale, animation and tile fields of one requirement."""
+    problems = []
+    if req.atlas is not None and (not isinstance(req.atlas, str) or not _ID.match(req.atlas)):
+        problems.append(f"{where}: atlas must be a kebab-case group id")
+    if "scale" in entry and not _positive_int(entry.get("scale"), MAX_SCALE):
+        problems.append(f"{where}: scale must be an integer in 1..{MAX_SCALE}")
+    elif _positive_int(req.scale, MAX_SCALE):
+        width, height = req.size()
+        if max(width, height) * req.scale > MAX_EDGE:
+            problems.append(f"{where}: {width}x{height} at {req.scale}x exceeds {MAX_EDGE} px")
+    for key in ("tile_width", "tile_height"):
+        if entry.get(key) is not None and not _positive_int(entry.get(key), MAX_EDGE):
+            problems.append(f"{where}: {key} must be an integer in 1..{MAX_EDGE}")
+    if req.animations is None:
+        return problems
+    if req.kind != "spritesheet":
+        problems.append(f"{where}: animations apply to a spritesheet only")
+        return problems
+    if not isinstance(req.animations, dict) or not req.animations:
+        problems.append(f"{where}: animations must be a non-empty object")
+        return problems
+    for name in sorted(req.animations):
+        spec = req.animations[name]
+        at = f"{where}: animation {name!r}"
+        if not _ANIMATION.match(str(name)):
+            problems.append(f"{at}: name must be lower-case letters, digits, - or _")
+        if not isinstance(spec, dict):
+            problems.append(f"{at} must be an object")
+            continue
+        frames = spec.get("frames")
+        if frames is not None:
+            if not isinstance(frames, list) or not frames or not all(
+                    (isinstance(f, int) and not isinstance(f, bool) and f >= 0)
+                    or (isinstance(f, str) and f) for f in frames):
+                problems.append(f"{at}: frames must be a non-empty list of frame indices "
+                                f"or names")
+            elif isinstance(req.frames, int) and any(
+                    isinstance(f, int) and f >= req.frames for f in frames):
+                problems.append(f"{at}: a frame index is beyond the sheet's {req.frames} "
+                                f"frames")
+        fps = spec.get("fps")
+        if fps is not None and (isinstance(fps, bool) or not isinstance(fps, (int, float))
+                                or not 0 < fps <= 120):
+            problems.append(f"{at}: fps must be a number in (0, 120]")
+        if "loop" in spec and not isinstance(spec["loop"], bool):
+            problems.append(f"{at}: loop must be true or false")
+    return problems
 
 
 def game_dimension(design, override=None):
@@ -188,11 +278,22 @@ def inspect(design, policy, *, dimension=None):
         if req.existing is not None and not (isinstance(req.existing, dict)
                                              and req.existing.get("path")):
             problems.append(f"{where}: existing needs a path")
+        problems.extend(_check_2d_fields(req, entry, where))
         try:
             classify(req, policy, game_dim)
         except RequirementError as exc:
             problems.append(str(exc))
             continue
+        if req.atlas is not None and not req.policy.atlas:
+            problems.append(f"{where}: a {req.kind} cannot join an atlas; only "
+                            + ", ".join(sorted(k for k, v in policy.kinds.items() if v.atlas))
+                            + " can")
+        if (req.tile_width or req.tile_height) and not req.policy.tiles:
+            problems.append(f"{where}: tile_width/tile_height apply to a tileset only")
+        if req.policy.tiles:
+            (w, h), (tw, th) = req.size(), req.tile_size()
+            if w % tw or h % th:
+                problems.append(f"{where}: {w}x{h} does not divide into {tw}x{th} tiles")
         reqs.append(req)
 
     if problems:

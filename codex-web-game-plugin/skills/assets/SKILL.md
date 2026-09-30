@@ -10,6 +10,7 @@ Asset manifests, sourcing, licensing, provenance of generated assets, and compre
 - `core/reference/asset-policy.yaml`
 - `core/craft/art-direction.md`
 - `core/craft/audio.md`
+- `core/craft/2d-assets.md`
 
 This skill is a pointer, not a copy. Read the paths above rather than relying on anything
 restated here; core is authoritative and this file is not a substitute for it.

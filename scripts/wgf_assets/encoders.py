@@ -326,19 +326,21 @@ def material_json(name, colour):
     }, indent=2, sort_keys=True) + "\n").encode("utf-8")
 
 
-def atlas_json(image_name, frame_w, frame_h, frames, prefix):
-    """A texture-atlas descriptor in the widely read `frames` / `meta` shape."""
+def atlas_json(image_name, frame_w, frame_h, frames, prefix, *, animations=None, scale=1):
+    """A texture-atlas descriptor in the widely read `frames` / `meta` shape. `animations`
+    maps a name to frame names; the default is one animation, `prefix`, over every frame."""
+    names = [f"{prefix}-{i}" for i in range(frames)]
     return (json.dumps({
         "frames": {
-            f"{prefix}-{i}": {
+            name: {
                 "frame": {"x": i * frame_w, "y": 0, "w": frame_w, "h": frame_h},
                 "rotated": False, "trimmed": False,
                 "sourceSize": {"w": frame_w, "h": frame_h},
                 "spriteSourceSize": {"x": 0, "y": 0, "w": frame_w, "h": frame_h},
             }
-            for i in range(frames)
+            for i, name in enumerate(names)
         },
-        "animations": {prefix: [f"{prefix}-{i}" for i in range(frames)]},
+        "animations": animations or {prefix: names},
         "meta": {"image": image_name, "format": "RGBA8888",
-                 "size": {"w": frame_w * frames, "h": frame_h}, "scale": "1"},
+                 "size": {"w": frame_w * frames, "h": frame_h}, "scale": str(scale)},
     }, indent=2, sort_keys=True) + "\n").encode("utf-8")

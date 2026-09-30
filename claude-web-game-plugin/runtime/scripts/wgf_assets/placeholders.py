@@ -108,13 +108,7 @@ class ProceduralBackend(PlaceholderBackend):
             return make([], generator=self.id, license=GENERATED_LICENSE,
                         reference=FONT_STACK, notes="System font stack until a font is chosen.")
         if kind == "spritesheet":
-            frames = int(req.frames or 4)
-            frame_w, frame_h = req.size()
-            image = encoders.png(frame_w * frames, frame_h, colour, frames=frames)
-            atlas = encoders.atlas_json(f"{req.id}.placeholder.png", frame_w, frame_h,
-                                        frames, req.id)
-            return make([GeneratedFile("png", image), GeneratedFile("json", atlas, ".atlas")],
-                        generator=self.id, license=GENERATED_LICENSE)
+            return self._sheet(req, colour)
         if kind in ("sfx", "music"):
             # Shaped, not a bare tone: a preset picked from the request's words, detuned or
             # transposed by the id so two items never share bytes (duplicate-content).
@@ -137,17 +131,28 @@ class ProceduralBackend(PlaceholderBackend):
                         license=GENERATED_LICENSE)
         if kind == "animation":
             # A 2D animation is a spritesheet in all but name.
-            frames = int(req.frames or 4)
-            frame_w, frame_h = req.size()
-            image = encoders.png(frame_w * frames, frame_h, colour, frames=frames)
-            atlas = encoders.atlas_json(f"{req.id}.placeholder.png", frame_w, frame_h,
-                                        frames, req.id)
-            return make([GeneratedFile("png", image), GeneratedFile("json", atlas, ".atlas")],
-                        generator=self.id, license=GENERATED_LICENSE)
-        width, height = req.size()
+            return self._sheet(req, colour)
+        width, height = req.pixel_size()
         checker = 16 if kind == "texture" else 0
+        if kind == "tileset":
+            # One checker cell per tile, so the grid the game slices is visible.
+            checker = req.tile_size()[0] * int(req.scale)
         return make([GeneratedFile("png", encoders.png(width, height, colour, checker=checker))],
                     generator=self.id, license=GENERATED_LICENSE)
+
+
+    def _sheet(self, req, colour):
+        frames = int(req.frames or 4)
+        frame_w, frame_h = req.pixel_size()
+        names = [f"{req.id}-{i}" for i in range(frames)]
+        animations = {name: spec["frames"]
+                      for name, spec in req.animation_specs(names).items()}
+        image = encoders.png(frame_w * frames, frame_h, encoders.colour_for(req.id),
+                             frames=frames)
+        atlas = encoders.atlas_json(f"{req.id}.placeholder.png", frame_w, frame_h, frames,
+                                    req.id, animations=animations, scale=req.scale)
+        return Generated([GeneratedFile("png", image), GeneratedFile("json", atlas, ".atlas")],
+                         generator=self.id, license=GENERATED_LICENSE)
 
 
 _FACTORIES = {"procedural": lambda settings: ProceduralBackend()}

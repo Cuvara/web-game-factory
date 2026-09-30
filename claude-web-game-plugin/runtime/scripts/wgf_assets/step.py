@@ -19,6 +19,10 @@ step's `with:` block:
     libraries      directories holding an index.json of reusable assets. Default: none.
     placeholders   {enabled: true, backends: [2d-assets-mcp, procedural], <backend>: {...}}
     optimize       lossless in-place optimization of files the step writes. Default: true.
+    runtime_manifest  write public/assets/assets.json, the runtime asset manifest game code
+                   loads from. Default: true.
+    prune          remove placeholders and packed atlases the step wrote before that nothing
+                   references now. Default: true.
     dimension      2d or 3d, when the design does not make it evident.
     fail_on        issue codes that fail the step (with the manifest still persisted as
                    evidence). Default: none - a manifest with issues is the honest output.
@@ -73,6 +77,8 @@ def resolve_settings(context):
     placeholders.setdefault("backends", list(DEFAULT_BACKENDS))
     settings["placeholders"] = placeholders
     settings.setdefault("optimize", True)
+    settings.setdefault("runtime_manifest", True)
+    settings.setdefault("prune", True)
     settings.setdefault("libraries", [])
     settings.setdefault("fail_on", [])
     return settings
@@ -174,7 +180,9 @@ class AssetsStep(WorkflowStep):
         backends = build_backends(placeholders.get("backends"), placeholders)
         pipeline = AssetPipeline(policy, store, backends, libraries, logger=context.logger,
                                  placeholders=bool(placeholders.get("enabled")),
-                                 optimize=bool(settings.get("optimize")))
+                                 optimize=bool(settings.get("optimize")),
+                                 runtime_manifest=bool(settings.get("runtime_manifest")),
+                                 prune=bool(settings.get("prune")), title_id=title_id)
         context.logger.info("asset pipeline", requirements=len(requirements),
                             dimension=dimension, root=store.root,
                             derived=bool(requirements and requirements[0].derived))
@@ -191,7 +199,9 @@ class AssetsStep(WorkflowStep):
             "production_ready": sum(1 for i in manifest["items"] if i.get("production_ready")),
             "errors": sum(1 for i in issues if i["severity"] == "error"),
             "warnings": sum(1 for i in issues if i["severity"] == "warning"),
-            "writes": dict(store.writes),
+            "writes": dict(store.writes, **({"removed": len(store.removed)}
+                                            if store.removed else {})),
+            "atlases": len(manifest.get("atlases") or []),
             **{f"status_{k.replace('-', '_')}": v for k, v in counts.items() if v},
         }
         artifact = ArtifactOutput("asset-manifest", manifest, metadata=metadata)
@@ -269,7 +279,10 @@ class AssetsStep(WorkflowStep):
             "budget": budget if isinstance(budget, (int, float)) else None,
             "complete": bool(items) and all(i["status"] in ("integrated", "cut") for i in items),
             "policy": policy.pin(),
+            "atlases": result.atlases or None,
+            "runtime_manifest": result.runtime_manifest,
             "issues": issues,
             "generation": {"backends": result.backends},
         }
-        return provenance.seal(manifest)
+        return provenance.seal({k: v for k, v in manifest.items() if v is not None
+                                or k == "budget"})

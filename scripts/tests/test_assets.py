@@ -838,7 +838,7 @@ class EngineContract(AssetsCase):
                 self.assertEqual(state.steps["assets"].consumed, ["game-design@v1"])
                 ref = state.latest_artifact("asset-manifest")
                 manifest = api.store.read_artifact(state.run_id, ref)
-                self.assertEqual(ref.schema_version, "1.1.0")
+                self.assertEqual(ref.schema_version, "1.2.0")
                 self.assertEqual(manifest["provenance"]["inputs"][0]["content_hash"],
                                  state.latest_artifact("game-design").content_hash)
                 self.write_for_ajv(fixture_name, manifest,

@@ -8,7 +8,7 @@
     "id": "game-design",
     "kind": "artifact",
     "format": "json",
-    "version": "1.1.0",
+    "version": "1.2.0",
     "template": "templates/gdd.md",
     "producer": "title:design",
     "consumers": ["title:tech-plan", "title:prototype", "title:prototype-review", "title:production", "release:qa", "title:scaffolding"],
@@ -187,7 +187,7 @@
         "properties": {
           "id": { "type": "string", "pattern": "^[a-z][a-z0-9-]*$" },
           "kind": {
-            "enum": ["sprite", "spritesheet", "background", "ui", "icon", "vfx", "font", "sfx", "music", "model", "texture", "material", "animation", "environment"]
+            "enum": ["sprite", "spritesheet", "background", "tileset", "ui", "icon", "vfx", "font", "sfx", "music", "model", "texture", "material", "animation", "environment"]
           },
           "label": { "type": "string" },
           "dimension": { "enum": ["2d", "3d"] },
@@ -197,9 +197,26 @@
             "description": "The intended final source. Absent means library first, then procedural."
           },
           "tags": { "type": "array", "items": { "type": "string" }, "description": "Words a library search matches on." },
-          "width": { "type": "integer", "minimum": 1 },
+          "width": { "type": "integer", "minimum": 1, "description": "Logical width: layout pixels, before `scale`. For a spritesheet, one frame." },
           "height": { "type": "integer", "minimum": 1 },
           "frames": { "type": "integer", "minimum": 1, "description": "For a spritesheet or an animation." },
+          "scale": { "type": "integer", "minimum": 1, "maximum": 4, "description": "The resolution the pixels are authored at: 2 means twice the logical size in pixels, drawn at the logical size. Default 1." },
+          "atlas": { "type": "string", "pattern": "^[a-z][a-z0-9-]*$", "description": "An atlas group. Sprites, UI, icons and VFX naming the same group are packed into one texture atlas; group what is drawn together (one scene, one HUD)." },
+          "animations": {
+            "type": "object",
+            "description": "A spritesheet's named animations. Absent: one looping animation, named after the asset, over every frame.",
+            "additionalProperties": {
+              "type": "object",
+              "properties": {
+                "frames": { "type": "array", "minItems": 1, "items": { "anyOf": [ { "type": "integer", "minimum": 0 }, { "type": "string", "minLength": 1 } ] }, "description": "Frame indices into the sheet, or frame names. Absent: every frame." },
+                "fps": { "type": "number", "exclusiveMinimum": 0, "maximum": 120 },
+                "loop": { "type": "boolean" }
+              },
+              "additionalProperties": false
+            }
+          },
+          "tile_width": { "type": "integer", "minimum": 1, "description": "For a tileset: logical tile width. Default 32." },
+          "tile_height": { "type": "integer", "minimum": 1 },
           "platforms": { "type": "array", "items": { "type": "string" } },
           "existing": {
             "type": "object",
@@ -214,7 +231,8 @@
               "attribution": { "type": "string" },
               "license_url": { "type": "string" },
               "evidence": { "type": "string" },
-              "usage_constraints": { "type": "array", "items": { "type": "string" } }
+              "usage_constraints": { "type": "array", "items": { "type": "string" } },
+              "atlas": { "type": "string", "description": "For a spritesheet: its atlas descriptor, relative to the repository root. Default: <stem>.atlas.json, then <stem>.json." }
             },
             "additionalProperties": false
           },

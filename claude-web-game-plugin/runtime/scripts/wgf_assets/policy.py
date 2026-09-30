@@ -43,8 +43,14 @@ class KindPolicy:
         self.est_hours = float(data.get("est_hours") or 0)
         self.est_cost = dict(data.get("est_cost") or {})
         self.optimize = list(data.get("optimize") or [])
+        self.transparency = data.get("transparency") or "any"
+        self.atlas = bool(data.get("atlas"))
+        self.tiles = bool(data.get("tiles"))
         if not self.formats:
             raise PolicyError(f"asset kind {kind!r} lists no formats")
+        if self.transparency not in ("required", "opaque", "any"):
+            raise PolicyError(f"asset kind {kind!r}: transparency must be required, opaque "
+                              f"or any, not {self.transparency!r}")
 
     def cost_for(self, source):
         return self.est_cost.get(source, 0)
@@ -60,6 +66,12 @@ class AssetPolicy:
                       for kind, spec in (data.get("kinds") or {}).items()}
         self.optimizations = dict(data.get("optimizations") or {})
         self.pipeline = dict(data.get("pipeline") or {})
+        limits = data.get("limits") or {}
+        self.max_texture_edge = int(limits.get("max_texture_edge") or 4096)
+        self.warn_texture_edge = int(limits.get("warn_texture_edge") or self.max_texture_edge)
+        atlas = dict(data.get("atlas") or {})
+        self.atlas_directory = atlas.pop("directory", None) or "atlases"
+        self.atlas_options = atlas
         licenses = data.get("licenses") or {}
         self.permitted = {entry["id"]: list(entry.get("constraints") or [])
                           for entry in licenses.get("permitted") or []}

@@ -4,10 +4,18 @@ referenced by paths that exist, loaded without failures, and licensed.
 The link between a manifest item and a file is the file's stem: item `player-ship` is
 `player-ship.png`, `player-ship.webp`, ... anywhere under the asset roots. The asset
 manifest has no path field, and the id is the one name both sides already share.
+
+When the repository has a runtime asset manifest (public/assets/assets.json, written by the
+assets step), `assets.runtime-manifest` checks the game against it with the assets module's
+own validator: every URL resolves to a file of the recorded format, atlas frames and
+animations exist, SVGs are safe. A file changed since the manifest was written, or shipped
+but unlisted, is a warning - the build still loads - not a failure.
 """
 
 import os
 import re
+
+from wgf_assets import runtime as runtime_assets
 
 from ..model import FAIL, PASS, WARNING, Check, Evidence
 
@@ -31,7 +39,8 @@ BY_TYPE = {
     "icon": FORMATS["image"] | {"ico"}, "screenshot": FORMATS["image"],
     "sfx": FORMATS["audio"], "music": FORMATS["audio"], "font": FORMATS["font"],
     "model": FORMATS["model"], "animation": FORMATS["model"] | {"json"},
-    "vfx": FORMATS["image"] | {"json"},
+    "vfx": FORMATS["image"] | {"json"}, "tileset": FORMATS["image"],
+    "background": FORMATS["image"],
 }
 ALLOWED = set().union(*FORMATS.values()) | {"ico", "basis", "html", "webmanifest", "md"}
 IGNORED = {".gitkeep", ".DS_Store", "Thumbs.db"}
@@ -65,7 +74,8 @@ def check_assets(session):
     files = _asset_files(session)
     items = [i for i in (manifest or {}).get("items") or [] if i.get("status") != "cut"]
     out = [_manifest(manifest, items), _missing(manifest, items, files),
-           _formats(items, files), _paths(session), _loading(session), _licenses(manifest, items)]
+           _formats(items, files), _paths(session), _runtime(session), _loading(session),
+           _licenses(manifest, items)]
     return [session.record(check) for check in out]
 
 
@@ -168,6 +178,40 @@ def _resolves(session, source, ref):
     bare = ref.lstrip("./")
     # Vite serves public/ at the site root; a bare relative path is resolved against it too.
     return any(os.path.exists(session.path(base, bare)) for base in ("public", ""))
+
+
+# Runtime-manifest problems that leave the build loading what it loaded before.
+_RUNTIME_SOFT = {"hash-mismatch", "unlisted-file", "unused-file", "texture-too-large"}
+
+
+def _runtime(session):
+    title = "Runtime asset manifest resolves"
+    if not session.exists(*runtime_assets.RUNTIME_PATH.split("/")):
+        return Check("assets.runtime-manifest", "assets", title, WARNING, required=False,
+                     message=f"no {runtime_assets.RUNTIME_PATH}; assets are loaded by path",
+                     evidence=[Evidence("observation",
+                                        f"{runtime_assets.RUNTIME_PATH} is absent")])
+    issues = runtime_assets.validate(session.root)
+    hard = [i for i in issues if i["severity"] == "error" and i["code"] not in _RUNTIME_SOFT]
+    soft = [i for i in issues if i not in hard and i["severity"] in ("error", "warning")]
+    evidence = [Evidence("file", f"{runtime_assets.RUNTIME_PATH} validated: {len(hard)} "
+                                 f"blocking, {len(soft)} other problem(s)")]
+    if hard or soft:
+        evidence.append(Evidence("observation", "; ".join(
+            f"{i['code']}: {i['message']}" for i in (hard + soft)[:25]),
+            data={"issues": (hard + soft)[:100]}))
+    if hard:
+        return Check("assets.runtime-manifest", "assets", title, FAIL,
+                     message=f"{len(hard)} runtime asset reference(s) are broken: "
+                             + ", ".join(sorted({i['code'] for i in hard})),
+                     evidence=evidence)
+    if soft:
+        return Check("assets.runtime-manifest", "assets", title, WARNING, required=False,
+                     message="the runtime manifest resolves, but is stale or incomplete: "
+                             + ", ".join(sorted({i['code'] for i in soft})),
+                     evidence=evidence)
+    return Check("assets.runtime-manifest", "assets", title, PASS,
+                 message="every asset in the runtime manifest resolves", evidence=evidence)
 
 
 def _loading(session):

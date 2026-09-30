@@ -8,7 +8,7 @@
     "id": "asset-manifest",
     "kind": "artifact",
     "format": "json",
-    "version": "1.1.0",
+    "version": "1.2.0",
     "producer": "title:prototype",
     "updated_by": ["title:design", "title:tech-plan", "title:production"],
     "consumers": ["title:tech-plan", "title:prototype", "title:production", "release:qa", "release:draft"],
@@ -32,7 +32,7 @@
           "id": { "type": "string", "pattern": "^[a-z][a-z0-9-]*$" },
           "label": { "type": "string" },
           "type": {
-            "enum": ["sprite", "spritesheet", "background", "texture", "material", "model", "animation", "environment", "vfx", "sfx", "music", "font", "ui", "icon", "screenshot", "other"]
+            "enum": ["sprite", "spritesheet", "background", "tileset", "texture", "material", "model", "animation", "environment", "vfx", "sfx", "music", "font", "ui", "icon", "screenshot", "other"]
           },
           "dimension": {
             "enum": ["2d", "3d"],
@@ -103,6 +103,22 @@
               "additionalProperties": false
             }
           },
+          "atlas": {
+            "type": "object",
+            "description": "The atlas this asset was packed into and its frame there. Its own file (under src/assets/) is the source; the atlas is what ships.",
+            "required": ["id", "frame"],
+            "properties": {
+              "id": { "type": "string", "pattern": "^[a-z][a-z0-9-]*$" },
+              "frame": { "type": "string" }
+            },
+            "additionalProperties": false
+          },
+          "scale": {
+            "type": "integer",
+            "minimum": 2,
+            "maximum": 4,
+            "description": "The resolution the pixels were authored at, when not 1x: a 2x asset has twice the pixels of its logical size."
+          },
           "reference": {
             "type": "string",
             "description": "For an asset delivered as a named fallback rather than a file, such as a system font stack."
@@ -163,6 +179,48 @@
       "additionalProperties": false
     },
 
+    "atlases": {
+      "type": "array",
+      "description": "Texture atlases packed from the items' atlas groups, in group order.",
+      "items": {
+        "type": "object",
+        "required": ["id", "files", "members"],
+        "properties": {
+          "id": { "type": "string", "pattern": "^[a-z][a-z0-9-]*$" },
+          "files": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": ["path", "format", "bytes", "content_hash"],
+              "properties": {
+                "path": { "type": "string" },
+                "format": { "type": "string" },
+                "bytes": { "type": "integer", "minimum": 0 },
+                "content_hash": { "$ref": "./shared/provenance.schema.json#/$defs/hash" },
+                "width": { "type": "integer", "minimum": 0 },
+                "height": { "type": "integer", "minimum": 0 }
+              },
+              "additionalProperties": false
+            }
+          },
+          "members": { "type": "array", "items": { "type": "string" } }
+        },
+        "additionalProperties": false
+      }
+    },
+
+    "runtime_manifest": {
+      "type": "object",
+      "description": "The runtime asset manifest written into the game repository (shared/runtime-assets.schema.json): what game code loads assets through.",
+      "required": ["path", "bytes", "content_hash"],
+      "properties": {
+        "path": { "type": "string" },
+        "bytes": { "type": "integer", "minimum": 0 },
+        "content_hash": { "$ref": "./shared/provenance.schema.json#/$defs/hash" }
+      },
+      "additionalProperties": false
+    },
+
     "issues": {
       "type": "array",
       "description": "Everything wrong with the manifest, one entry per problem. An error keeps its item from being production-ready.",
@@ -172,7 +230,7 @@
         "properties": {
           "item_id": { "type": "string" },
           "code": {
-            "enum": ["missing", "invalid-format", "format-not-allowed", "too-large", "not-power-of-two", "duplicate-content", "license-unknown", "license-restricted", "provenance-missing", "placeholder", "generation-failed", "library-candidate-rejected", "over-budget", "over-bundle-size"]
+            "enum": ["missing", "invalid-format", "format-not-allowed", "too-large", "not-power-of-two", "duplicate-content", "license-unknown", "license-restricted", "provenance-missing", "placeholder", "generation-failed", "library-candidate-rejected", "over-budget", "over-bundle-size", "unsafe-svg", "texture-too-large", "transparency-mismatch", "dimension-mismatch", "invalid-atlas", "atlas-overflow", "atlas-source-served", "invalid-tileset", "duplicate-path", "not-served"]
           },
           "severity": { "enum": ["error", "warning", "info"] },
           "message": { "type": "string" }

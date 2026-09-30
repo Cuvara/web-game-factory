@@ -71,6 +71,8 @@ owns the Phaser scene(s) it needs.
 - One atlas beats twenty images: the budget is draw calls, and Phaser batches per texture.
 - The asset manifest is the source of truth for what exists; a placeholder is reported as a
   placeholder in the development report, never quietly shipped.
+- When the repository has `public/assets/assets.json`, queue the loader from it instead of
+  listing paths: `2d-assets.md` has the loop, atlas frames and animations included.
 
 ## Input
 

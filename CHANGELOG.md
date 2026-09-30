@@ -9,6 +9,40 @@ and `core/` is still the contract.
 
 ## [Unreleased]
 
+The 2D asset pipeline: atlas packing, a runtime asset manifest game code loads through, and
+validation of both. A change to the `assets` module (with one consumer line each in `develop`
+and `verify`): `game-design` and `asset-manifest` move to 1.2.0 and `asset-policy` to 1.1.0,
+all additive - every 1.1.0 design and manifest remains valid, and an existing design produces
+the manifest it did plus `runtime_manifest`. No engine, workflow, lifecycle, gate or template
+change. Details: [docs/assets-module.md](docs/assets-module.md).
+
+### Added
+
+- **Atlas groups.** A sprite, UI, icon or VFX requirement may name an `atlas`; each group is
+  packed deterministically (stdlib PNG codec, shelf packing, extrusion, padding, power-of-two)
+  into `public/assets/atlases/<group>.png` + `.json` (TexturePacker JSON Hash, read unchanged
+  by PixiJS and Phaser). Members' own images go to `src/assets/`, so each pixel ships once;
+  `texture-atlas` moves from `deferred` to `applied`.
+- **The runtime asset manifest** `public/assets/assets.json`
+  (`core/artifacts/shared/runtime-assets.schema.json`): every loadable asset by id, URLs
+  relative to the manifest, atlas frames, sizes, `scale`, spritesheet frames and animations
+  (fps, loop), tileset grids, file hashes. No timestamps or absolute paths; byte-identical for
+  identical assets. The asset manifest records its path and hash.
+- **Requirement fields** (`game-design` 1.2.0): `atlas`, `scale` (1-4), `animations`,
+  `tile_width`/`tile_height` and the new `tileset` kind, `existing.atlas`.
+- **Validation**: SVG safety, texture-edge limits, transparency expectations per kind,
+  dimension and tileset checks, atlas descriptors against their images (frames in bounds,
+  animations naming real frames, `meta.image`), duplicate paths; ten new issue codes. AVIF is
+  recognised (it was sniffed as M4A).
+- **`scripts/wgf-assets.py`**: `build`, `validate`, `pack`, `inspect`; JSON output and exit
+  codes 0/1/2.
+- **`assets.runtime-manifest`**, a verify check that validates the repository against its
+  runtime manifest; the develop brief's `runtime_assets` and its loading rule.
+- **`core/craft/2d-assets.md`**: how to ask for 2D assets and load them in PixiJS and Phaser;
+  read by the asset agent and the `assets`, `pixijs` and `phaser` skills.
+- **Pruning**: placeholders and pipeline-made atlases nothing references any more are removed
+  (`prune: false` to keep them); nothing else is ever deleted.
+
 ### Fixed
 
 - **The installed Claude plugin only worked from the factory repository.** Claude Code installs
@@ -27,6 +61,16 @@ and `core/` is still the contract.
   `test_plugin_runtime` and `test_adapter_binding.ClaudeSurfacesReadThePluginRuntime`.
   *Migration:* none for a development checkout. A project using the installed plugin keeps its
   runs in `<project>/.factory/` and may add its own `workspace/config/factory.yaml`.
+- A library spritesheet renamed to its asset id kept the library's `meta.image`, so a loader
+  following the descriptor fetched a file that was not there. It is rewritten on copy, and an
+  existing sheet whose descriptor names another image is `invalid-atlas`.
+- An existing spritesheet was accepted without its atlas descriptor.
+
+### Bringing an artifact forward
+
+Nothing is required. To use the new fields, add them to a design's `asset_requirements` and
+re-run `assets`; a game adopts the runtime manifest by loading through it
+(`core/craft/2d-assets.md`).
 
 ## [2.4.0] - 2026-09-30
 

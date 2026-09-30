@@ -25,6 +25,37 @@ the checks that stop a model from being wrong in a way no test notices.
 - **Load what the first run needs, stream the rest** (`web-performance.md`). A model loaded
   before the player can act is time to interactive.
 
+## Models described as data
+
+A model that is a composition of simple parts — a vehicle, a crate, a turret, a pickup, a
+blocky character — is cheaper to describe than to source: the design's asset requirement
+carries a **model spec** (`core/artifacts/shared/model-spec.schema.json`) and the assets step
+builds it offline into a GLB. The spec is also the contract for any model, built or not:
+
+- **Name what code looks up.** Part ids become node names; clip names are what gameplay asks
+  the mixer for. Declare every clip gameplay needs, even on a purchased model — a spec without
+  parts is checked against the delivered file, so a renamed clip fails the assets step instead
+  of failing silently in play.
+- **Fit and pivot in the spec**, not in code: `fit` sets the real size in metres, `pivot:
+  base-center` puts the origin on the ground. Scale and offset are baked into the geometry.
+- **One material per look**, metallic-roughness only. Anything else does not survive export.
+- **A collision proxy is its own node** (`collision: box` or `convex`), never the visual mesh.
+- **LODs only for models seen at several distances**, and never on an animated model.
+- **A design's own budget is binding**: `budget.max_triangles` over is an error, not advice.
+
+## The loading contract of a delivered model
+
+What the pipeline guarantees a game, and what the game does with it:
+
+| The file / index gives | The game does |
+|---|---|
+| `public/assets/models.json`: every model's id, url, clip names, LOD and collision nodes | Preload from it through one loader and one loading manager; no model outside it |
+| Root node named by the asset id, `userData.wgf_asset` | Find the model by id, not by child index |
+| A node with `userData.wgf_role = "collision"` (`wgf_shape`, `wgf_center`, `wgf_half_extents`) | Hide it; give it to physics — a box needs only the extents |
+| Nodes with `userData.wgf_lod = n` | Make them the levels of one level-of-detail object; hide the others |
+| Clips by name, sampled, linear or step | One mixer per instance, clips looked up by name in one place |
+| `placeholder: true` in the index | Load it the same way; it will be replaced by a file of the same shape |
+
 ## After import, verify the model
 
 A downloaded or generated GLB is not yet a game asset. Before it is wired into anything:

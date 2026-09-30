@@ -12,7 +12,12 @@ game-design ─► inspect ─► classify ─► for each asset:
                                         placeholder?    ─ backends in order, procedural last
                                         else missing
                                       ─► optimize (lossless) ─► asset-manifest
+                                      ─► every GLB read and checked (gltf.py) ─► models.json
 ```
+
+3D models described as data (`asset_requirements[].model`) are built headless by a pinned
+Blender, and every GLB — generated, library or the design's own — is read in full and held to
+what its spec declares: [blender-pipeline.md](blender-pipeline.md).
 
 ## Inputs
 
@@ -30,7 +35,8 @@ not a design.
 
 Kinds: `sprite`, `spritesheet`, `background`, `ui`, `icon`, `vfx`, `font`, `sfx`, `music`
 (2D and audio), and `model`, `texture`, `material`, `animation`, `environment` (3D). The game
-is 3D when a requirement is 3D-only or the art direction says so; audio and fonts take the
+is 3D when the step's `dimension` says so, else when the design's `engine.dimension` does,
+else when a requirement is 3D-only or the art direction says so; audio and fonts take the
 game's dimension, UI stays a 2D overlay.
 
 ## What each item records
@@ -44,6 +50,7 @@ game's dimension, UI stays a 2D overlay.
 | `usage_constraints` | from the license's policy entry plus the source's own |
 | `placeholder`, `production_ready` | a placeholder is never production-ready; neither is anything with an error |
 | `optimization` | lossless steps applied, and the pipeline steps still owed (atlas, KTX2, Draco, transcode, subset) |
+| `model` | for a GLB: triangles, vertices, dimensions and bounds of the visual model at rest, materials, embedded textures, clips, LOD levels, collision proxy, extensions; for a generated model, the tool, version, pin and key that built it |
 
 Everything wrong is in the manifest's `issues`, with a code and a severity. The manifest pins
 the policy it was classified under by id, version and hash.
@@ -94,10 +101,35 @@ the kind and returns a valid file wins. Every backend's availability and use is 
   PATH, failing to start, erroring or returning a non-image: recorded, and the next backend is
   used. Its output is `license_status: unknown` unless the server's terms are recorded as
   `license`.
+- **`blender`** — joins first whenever a requirement carries a buildable `model` spec. Builds
+  it headless with the pinned Blender 4.5 LTS, or reuses the file already in the checkout when
+  its stamped key matches the spec. With `source` unset or `procedural` the output is **final**
+  (`<id>.glb`, `delivered`, not a placeholder); otherwise a better stand-in. Without Blender,
+  or with another series, the procedural box stands in and the item carries
+  `model-spec-unbuilt`. Settings under `placeholders.blender`
+  ([blender-pipeline.md](blender-pipeline.md#configuration)).
 
 Placeholders are named `<id>.placeholder.<ext>`, so a stand-in is never mistaken for art. A
 new backend registers with `wgf_assets.placeholders.register_backend(id, factory)` from any
 step module, and is named in the config.
+
+## GLB validation and the runtime index
+
+Every `.glb`/`.gltf` the step touches is read by `gltf.py` (standard library): structure,
+references and ranges, node tree, transforms, embedded images, animations, skins, required
+extensions against what three.js r170 loads, and plausible scale. Its findings are the
+manifest's issues (`model-invalid`, `model-external-reference`, `model-unsupported-extension`,
+`model-needs-decoder`, `model-transform`, `model-scale`, `animation-invalid`). A requirement's
+`model` spec — buildable or not — adds expectations: declared clips, LOD levels, collision
+proxy, fitted size, pivot and budgets (`animation-missing`, `lod-missing`, `lod-invalid`,
+`collision-missing`, `model-pivot`, `model-over-budget`, `texture-too-large`). Policy budgets
+are warnings; the spec's own are errors. A stand-in box is not held to a spec it was never
+built from.
+
+When the manifest holds a GLB, the step writes `public/assets/models.json`: every model's id,
+URL, hash, dimensions, clip names, LOD nodes and collision node — what a game's loader
+preloads and looks things up in. It is deterministic and pinned by hash in the manifest's
+`runtime_index`.
 
 ## Configuration
 
@@ -142,4 +174,6 @@ so a retry, resume or loop reuses everything (`metadata.writes`).
 `scripts/tests/test_assets.py`, against `scripts/tests/fixtures/assets/` — 2D and 3D designs,
 a library with licensed, restricted and unlicensed entries, a repository checkout with valid
 and broken files, and a fake MCP server. `WGF_AJV=1` adds ajv validation of the emitted
-manifest and design.
+manifest and design. `scripts/tests/test_models.py` covers the model spec, the GLB inspector,
+the Blender layer (with a fake Blender through the real process layer), the step with models,
+three.js loading, and — with `WGF_BLENDER_TEST=1` — real Blender builds.

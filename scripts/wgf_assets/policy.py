@@ -43,6 +43,9 @@ class KindPolicy:
         self.est_hours = float(data.get("est_hours") or 0)
         self.est_cost = dict(data.get("est_cost") or {})
         self.optimize = list(data.get("optimize") or [])
+        # 3D budgets: triangles of the visual model at rest (LOD0), texture long edge.
+        self.max_triangles = data.get("max_triangles")
+        self.max_texture_edge = data.get("max_texture_edge")
         if not self.formats:
             raise PolicyError(f"asset kind {kind!r} lists no formats")
 
@@ -60,6 +63,7 @@ class AssetPolicy:
                       for kind, spec in (data.get("kinds") or {}).items()}
         self.optimizations = dict(data.get("optimizations") or {})
         self.pipeline = dict(data.get("pipeline") or {})
+        self.toolchains = dict(data.get("toolchains") or {})
         licenses = data.get("licenses") or {}
         self.permitted = {entry["id"]: list(entry.get("constraints") or [])
                           for entry in licenses.get("permitted") or []}

@@ -27,20 +27,32 @@ import os
 import tempfile
 from collections import namedtuple
 
-from . import formats
+from . import formats, gltf, modelspec
 from .library import LibraryError, search_all
 from .optimize import optimize as optimize_bytes
 from .placeholders import BackendError
 
-__all__ = ["AssetPipeline", "AssetStore", "PipelineResult", "validate_file", "ASSET_DIR"]
+__all__ = ["AssetPipeline", "AssetStore", "PipelineResult", "validate_file", "asset_path",
+           "runtime_index", "ASSET_DIR", "RUNTIME_INDEX"]
 
 ASSET_DIR = "public/assets"
+# The browser-facing list of 3D models: what a game's loader preloads, and what it may look
+# up by id. Written beside the kind directories whenever the manifest holds a GLB.
+RUNTIME_INDEX = f"{ASSET_DIR}/models.json"
+MODEL_FORMATS = ("glb", "gltf")
 LOAD_BEARING_TIERS = ("mvp", "prototype")
 ORIGIN_KEYS = ("source_url", "author", "vendor", "attribution", "license_url", "evidence")
 
 
 def file_hash(data):
     return "sha256:" + hashlib.sha256(data).hexdigest()
+
+
+def asset_path(req, ext, *, final=False, suffix=""):
+    """Where the pipeline writes an asset of `req`: `<id>.<ext>` for a final file,
+    `<id>.placeholder.<ext>` for a stand-in, so a stand-in is never mistaken for art."""
+    stem = req.id if final else f"{req.id}.placeholder"
+    return f"{ASSET_DIR}/{req.policy.directory}/{stem}{suffix}.{ext}"
 
 
 class StoreError(ValueError):
@@ -128,6 +140,10 @@ def validate_file(kind, relative, data, *, companion=False):
         problems.append(("too-large", "warning",
                          f"{relative} is {len(data)} bytes; {kind.kind} budget is "
                          f"{kind.max_bytes}"))
+    if found.format in MODEL_FORMATS and not companion:
+        # A GLB that sniffs as glTF 2.0 can still be an empty scene, a broken index or a file
+        # that pulls textures from somewhere no manifest records: read all of it.
+        problems.extend(gltf.inspect(data, name=relative, kind=kind.kind).findings)
     if kind.power_of_two and found.width and found.height and not (
             formats.is_power_of_two(found.width) and formats.is_power_of_two(found.height)):
         problems.append(("not-power-of-two", "warning",
@@ -139,12 +155,49 @@ def validate_file(kind, relative, data, *, companion=False):
 _Stored = namedtuple("_Stored", "relative data found applied saved")
 
 
+def runtime_index(items):
+    """The browser-facing index of every GLB in the manifest, or None when there is none.
+
+    Deterministic (sorted, no timestamps), so it is rewritten only when a model changes. A
+    loader reads it once, preloads by `url`, looks clips up by name and finds the LOD and
+    collision nodes by the names given here instead of by convention."""
+    models = []
+    for item in sorted(items, key=lambda i: i["id"]):
+        model = item.get("model")
+        glb = next((f for f in item.get("files") or [] if f.get("format") in MODEL_FORMATS),
+                   None)
+        if not model or glb is None:
+            continue
+        path = glb["path"]
+        collision = model.get("collision")
+        models.append({
+            "id": item["id"],
+            "type": item["type"],
+            "url": path[len("public/"):] if path.startswith("public/") else None,
+            "path": path,
+            "bytes": glb["bytes"],
+            "content_hash": glb["content_hash"],
+            "placeholder": bool(item.get("placeholder")),
+            "production_ready": bool(item.get("production_ready")),
+            "dimensions": model.get("dimensions"),
+            "triangles": model.get("triangles"),
+            "animations": [c["name"] for c in model.get("animations") or []],
+            "lods": [{"level": l["level"], "node": l["node"]} for l in model.get("lods") or []],
+            "collision": ({"node": collision["node"], "shape": collision["shape"]}
+                          if collision else None),
+        })
+    if not models:
+        return None
+    return {"format": 1, "models": models}
+
+
 class PipelineResult:
     def __init__(self):
         self.items = []
         self.issues = []
         self.backends = []
         self.bytes_total = 0
+        self.runtime_index = None
 
 
 class _Item:
@@ -153,6 +206,7 @@ class _Item:
     def __init__(self, req):
         self.req = req
         self.issues = []
+        self.generation = None
         self.data = {
             "id": req.id,
             "label": req.label,
@@ -186,8 +240,8 @@ class _Item:
             data["issues"] = sorted({i["code"] for i in self.issues})
         order = ["id", "label", "type", "dimension", "source", "est_cost", "est_hours",
                  "status", "license", "license_status", "usage_constraints", "origin",
-                 "placeholder", "production_ready", "files", "reference", "optimization",
-                 "scope_tier", "platforms", "notes", "issues"]
+                 "placeholder", "production_ready", "files", "reference", "model",
+                 "optimization", "scope_tier", "platforms", "notes", "issues"]
         return {key: data[key] for key in order if data.get(key) is not None}
 
 
@@ -204,6 +258,10 @@ class AssetPipeline:
         self._hashes = {}
         self._available = None
         self._used = {}
+        # A backend that reuses what is already in the checkout (blender) needs to read it.
+        for _id, backend, _note in self.backends:
+            if backend is not None and hasattr(backend, "bind"):
+                backend.bind(store, policy)
 
     def _log(self, message, **fields):
         if self.logger:
@@ -260,6 +318,11 @@ class AssetPipeline:
                                 "note": "not needed: nothing was generated"}
                                for b_id, _b, _n in self.backends]
         result.bytes_total = sum(f["bytes"] for i in result.items for f in i.get("files", []))
+        index = runtime_index(result.items)
+        if index is not None:
+            data = (json.dumps(index, indent=2, sort_keys=True) + "\n").encode("utf-8")
+            self.store.write(RUNTIME_INDEX, data)
+            result.runtime_index = {"path": RUNTIME_INDEX, "content_hash": file_hash(data)}
         return result
 
     def _process(self, req):
@@ -273,6 +336,7 @@ class AssetPipeline:
         if req.source in (None, "library") and self.libraries and self._library(req, item):
             return item
         if self.placeholders and self._placeholder(req, item):
+            self._check_spec_built(req, item)
             return item
         severity = "error" if req.scope_tier in LOAD_BEARING_TIERS else "warning"
         item.issue("missing", severity,
@@ -326,8 +390,8 @@ class AssetPipeline:
                            f"{req.id}: passed over {entry.qualified_id}: {reason}")
                 continue
             fmt = payload[0][1]
-            base = f"{ASSET_DIR}/{req.policy.directory}/{req.id}"
-            names = [f"{base}.{formats.FORMAT_EXTENSION.get(fmt, fmt)}", f"{base}.atlas.json"]
+            names = [asset_path(req, formats.FORMAT_EXTENSION.get(fmt, fmt), final=True),
+                     asset_path(req, "json", final=True, suffix=".atlas")]
             stored = [self._store(name, data, kind)
                       for name, (data, kind) in zip(names, payload)]
             origin = {"kind": "library", "library_id": entry.qualified_id}
@@ -397,8 +461,7 @@ class AssetPipeline:
             checked, problems = [], []
             for gen in generated.files:
                 ext = formats.FORMAT_EXTENSION.get(gen.format, gen.format)
-                relative = (f"{ASSET_DIR}/{req.policy.directory}/{req.id}.placeholder"
-                            f"{gen.suffix}.{ext}")
+                relative = asset_path(req, ext, final=generated.final, suffix=gen.suffix)
                 found, file_problems = validate_file(req.policy, relative, gen.data,
                                                      companion=bool(gen.suffix))
                 errors = [m for _, severity, m in file_problems if severity == "error"]
@@ -413,10 +476,14 @@ class AssetPipeline:
             stored = [self._store(relative, gen.data, gen.format) for relative, gen in checked]
             self._used[backend.id] = self._used.get(backend.id, 0) + 1
             item.data["origin"] = {"kind": "generated", "generator": generated.generator}
-            item.data["placeholder"] = True
+            item.data["placeholder"] = not generated.final
+            item.generation = generated.metadata
             verdict = self._license(item, generated.license)
             if verdict.status != "generated":
                 self._check_clearance(item, verdict, item.data["origin"], placeholder=True)
+            if generated.final:
+                # Built from the design's own spec: this is the asset, not a stand-in for it.
+                item.data["source"] = "procedural"
             if stored:
                 self._record_files(item, stored)
                 item.data["optimization"] = self._optimization(req, stored)
@@ -425,12 +492,14 @@ class AssetPipeline:
             if generated.notes:
                 item.data["notes"] = " ".join(filter(None, [item.data.get("notes"),
                                                             generated.notes]))
-            item.data["status"] = "in-progress"
+            item.data["status"] = "delivered" if generated.final else "in-progress"
             if failures:
                 item.issue("generation-failed", "info",
                            f"{req.id}: fell back to {backend.id}: " + " | ".join(failures))
-            item.issue("placeholder", "info",
-                       f"{req.id}: placeholder from {backend.id}; the final asset is still owed")
+            if not generated.final:
+                item.issue("placeholder", "info",
+                           f"{req.id}: placeholder from {backend.id}; the final asset is still "
+                           f"owed")
             self._log("placeholder", asset=req.id, backend=backend.id)
             return True
         if failures:
@@ -467,9 +536,52 @@ class AssetPipeline:
                        f"{rid}: {item.data['license']} requires attribution and none is "
                        f"recorded")
 
+    def _check_spec_built(self, req, item):
+        """A design that described its model and got a stand-in box has to hear about it."""
+        if not modelspec.buildable(req.model):
+            return
+        generator = (item.data.get("origin") or {}).get("generator") or ""
+        if generator.startswith("blender"):
+            return
+        blender = next((b for b_id, b, _n in self.backends if b_id == "blender"), None)
+        required = bool(getattr(blender, "required", False))
+        if blender is None:
+            reason = "the blender backend is not available"
+        else:
+            reason = (getattr(blender, "refusal", None)
+                      or "its build failed; see this item's generation-failed issue")
+        stand_in = generator or "a placeholder"
+        item.issue("model-spec-unbuilt", "error" if required else "warning",
+                   f"{req.id}: its model spec was not built ({reason}); {stand_in} stands in, "
+                   f"without the declared parts, clips, LODs or collision proxy")
+
+    def _model(self, item, entry):
+        """The `model` block of a GLB item, and the spec's expectations checked against it."""
+        req = item.req
+        inspection = gltf.inspect(entry.data, name=entry.relative, kind=req.kind)
+        if inspection.summary is None:
+            return  # validate_file already recorded why
+        block = dict(inspection.summary)
+        generation = getattr(item, "generation", None)
+        if generation:
+            block["generation"] = generation
+        item.data["model"] = block
+        generator = (item.data.get("origin") or {}).get("generator") or ""
+        if item.data.get("placeholder") and not generator.startswith("blender"):
+            # A stand-in box is not held to the design's clips, LODs or budgets: the
+            # placeholder and model-spec-unbuilt issues already say it is not the asset.
+            return
+        expect = modelspec.expectations(req.model, req.policy)
+        for code, severity, message in gltf.check_expectations(block, expect, entry.data,
+                                                               name=entry.relative):
+            item.issue(code, severity, f"{req.id}: {message}")
+
     def _record_files(self, item, stored):
         files = []
         for entry in stored:
+            if entry.found is not None and entry.found.format in MODEL_FORMATS \
+                    and item.req.policy.companion is None:
+                self._model(item, entry)
             digest = file_hash(entry.data)
             record = {"path": entry.relative, "format": entry.found.format,
                       "bytes": len(entry.data), "content_hash": digest}

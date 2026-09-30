@@ -9,6 +9,58 @@ and `core/` is still the contract.
 
 ## [Unreleased]
 
+A 3D asset pipeline in the `assets` module: models described as data, built headless by a
+pinned Blender, every GLB validated without Blender, and a runtime index for the game's
+three.js loader. Module-local (`scripts/wgf_assets/`); no engine, workflow, lifecycle, gate or
+template change. Guide: [docs/blender-pipeline.md](docs/blender-pipeline.md).
+
+### Added
+
+- **Model specs.** `game-design` 1.2.0: `asset_requirements[].model`
+  (`core/artifacts/shared/model-spec.schema.json`) — parts, PBR materials, generated
+  textures, fit and pivot, named clips, LODs, a collision proxy, a budget. Validated for
+  meaning (`wgf_assets/modelspec.py`) before anything is built; a malformed spec fails the
+  requirement list like any malformed requirement.
+- **The `blender` backend** (`wgf_assets/blender.py`, `blender_scripts/build_model.py`):
+  discovery (`factory.assets.placeholders.blender.executable`, `WGF_BLENDER`, PATH), the
+  pinned series `toolchains.blender` (4.5 LTS; another series refused unless
+  `allow_unpinned`), a headless build through `wgflib.procs` in an isolated environment,
+  byte-reproducible output, a stamped generation key, and reuse of a committed build without
+  Blender. A buildable spec whose `source` is unset or `procedural` is delivered as the final
+  asset; without Blender the procedural box stands in with `model-spec-unbuilt`.
+- **GLB validation** (`wgf_assets/gltf.py`) on every `.glb`/`.gltf` the step touches, and the
+  spec's declarations checked against it. `asset-manifest` 1.2.0: the item's `model` block,
+  `runtime_index`, and the issue codes `model-invalid`, `model-external-reference`,
+  `model-unsupported-extension`, `model-needs-decoder`, `model-transform`, `model-scale`,
+  `model-pivot`, `model-over-budget`, `texture-too-large`, `animation-missing`,
+  `animation-invalid`, `lod-missing`, `lod-invalid`, `collision-missing`,
+  `model-spec-unbuilt`.
+- **`public/assets/models.json`**, the runtime index a game preloads from; and the loading
+  contract in `core/craft/3d-assets-and-animation.md`.
+- `scripts/wgf-model.py` (`doctor`, `build --twice`, `inspect`), `scripts/tests/test_models.py`
+  (fake-Blender, three.js runtime and opt-in `WGF_BLENDER_TEST=1` real-Blender layers), and a
+  committed Blender-built fixture rebuilt byte for byte by the real-Blender tests.
+
+### Changed
+
+- `asset-policy` 1.1.0: `max_triangles` and `max_texture_edge` on the GLB kinds, and
+  `toolchains.blender`. Manifests classified under 1.0.0 keep their pin; re-running the
+  assets step re-classifies under 1.1.0 and may add budget warnings, nothing else.
+- `encoders.png` takes an optional second checker colour (`alt`); existing output is
+  unchanged.
+
+### Fixed
+
+- **A Three.js design got a 2D asset baseline.** The assets step inferred the dimension from
+  3D-only requirements and art-direction words and ignored the design's own
+  `engine.dimension`; the 3D golden (Neon Drift Arena, `engine: threejs, dimension: 3d`, no
+  explicit requirements) received a background PNG and no model. The declared dimension now
+  wins after an explicit `dimension` setting, so that golden's baseline is an environment, a
+  player model, a material and a ground texture, with `public/assets/models.json`.
+
+Bringing an artifact forward: nothing required. 1.1.0 game designs and asset manifests stay
+valid (the additions are optional); a design gains models only by adding `model` specs.
+
 ## [2.4.0] - 2026-09-30
 
 A minor version: one new adapter surface and the evidence and fixes MV-4 produced. No engine,

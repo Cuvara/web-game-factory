@@ -142,6 +142,14 @@ and platform-SDK touchpoints, asset and audio requirements, responsive behaviour
 identity). Ids inside `build_spec` cross-reference each other so that "buildable without
 guessing" is checkable. 1.0.0 artifacts remain valid.
 
+**`game-design` 1.2.0** adds `asset_requirements[].model`, a model spec
+(`shared/model-spec.schema.json`): parts, materials, clips, LODs, a collision proxy, a fitted
+size and a budget for a `model`, `environment` or `animation` asset. With parts it is built
+headless into a GLB; always, what it declares is checked against the delivered file.
+**`asset-manifest` 1.2.0** adds the item's `model` block (what the GLB holds, read from its
+bytes, and what built it), the manifest's `runtime_index` pin, and the model issue codes.
+Both are additive: 1.1.0 artifacts remain valid. See [blender-pipeline.md](blender-pipeline.md).
+
 ---
 
 ## Shared primitives

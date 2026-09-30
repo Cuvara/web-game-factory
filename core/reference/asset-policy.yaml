@@ -16,6 +16,17 @@
 #            font stack). `max_bytes` bounds one delivered file. `est_hours` is the effort to
 #            produce a final asset; `est_cost` is per source, absent meaning 0.
 #            `optimize` lists what a runtime pipeline does to it beyond what is done in place.
+#            3D kinds delivered as GLB also set `max_triangles` (the visual model at rest,
+#            LOD0 only, collision proxies excluded) and `max_texture_edge` (the long edge of
+#            any image embedded in it). Like max_bytes they are warnings; a budget a design
+#            writes into its own model spec is an error.
+#
+# toolchains  The offline tools whose version changes the bytes of a generated asset.
+#            `series` is the line generated assets are reproducible under; a tool outside
+#            it is refused unless an installation opts in (allow_unpinned), and then the
+#            asset records that it was not pinned. `tested` is the release the Factory's own
+#            integration tests ran on. Moving the series re-keys every generated model, so
+#            each is rebuilt once: do it deliberately, with a changelog note.
 #
 # licenses   `permitted` may reach a published build, with the constraints listed.
 #            `restricted` may not - non-commercial, no-derivatives and copyleft terms are
@@ -29,7 +40,7 @@
 
 policy:
   id: asset-policy
-  version: 1.0.0
+  version: 1.1.0
 
 kinds:
   sprite:
@@ -139,6 +150,8 @@ kinds:
     formats: [glb, gltf]
     placeholder: glb
     max_bytes: 2097152
+    max_triangles: 20000
+    max_texture_edge: 1024
     est_hours: 6
     est_cost: {purchased: 30, commissioned: 250}
     optimize: [mesh-compression, texture-compression]
@@ -173,6 +186,8 @@ kinds:
     formats: [glb, gltf, json]
     placeholder: glb
     max_bytes: 1048576
+    max_triangles: 20000
+    max_texture_edge: 1024
     est_hours: 4
     est_cost: {purchased: 20, commissioned: 150}
     optimize: [mesh-compression]
@@ -184,6 +199,8 @@ kinds:
     formats: [glb, gltf]
     placeholder: glb
     max_bytes: 4194304
+    max_triangles: 100000
+    max_texture_edge: 2048
     est_hours: 10
     est_cost: {purchased: 50, commissioned: 400}
     optimize: [mesh-compression, texture-compression]
@@ -201,10 +218,15 @@ optimizations:
 
 pipeline:
   two_d: Images packed into texture atlases per scene; audio transcoded per the tech plan.
-  three_d: Source to GLB, then Draco or Meshopt, textures to KTX2, loaded by the 3D renderer.
+  three_d: Model spec to GLB headless in the pinned Blender (or a sourced GLB), every GLB validated, then Draco or Meshopt and KTX2 at build time, loaded by the 3D renderer through the runtime index.
   texture_compression: [ktx2-etc1s, ktx2-uastc]
   mesh_compression: [draco, meshopt]
   audio_format: [ogg, m4a]
+
+toolchains:
+  blender:
+    series: "4.5"
+    tested: 4.5.14
 
 licenses:
   # constraints: what using the asset obliges. attribution means a credits entry ships.

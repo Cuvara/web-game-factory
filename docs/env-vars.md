@@ -24,6 +24,7 @@ set `=1` and both readings agree.
 | `WGF_TEMPLATE_COMMIT` | `scripts/wgflib/template.py` | A deliberate override of the web-game-template commit in `workspace/config/template.lock.json`. Must be a full 40-hex sha. Used to validate a new pin before moving the lock. | the lock's `commit` |
 | `WGF_TEMPLATE_DIR` | `scripts/wgflib/template.py` | Offer an existing template checkout instead of the cache. Refused (`TemplateDrift`) unless its HEAD is exactly the expected commit; never moved. | unset: cache, then clone |
 | `WGF_TEMPLATE_CACHE` | `scripts/wgflib/template.py` | Where pinned template checkouts are cached, one directory per sha. | `~/.cache/wgf/templates` |
+| `WGF_BLENDER` | `scripts/wgf_assets/blender.py` | The Blender executable the `assets` step and `scripts/wgf-model.py` build models with, when `factory.assets.placeholders.blender.executable` is not set. Must be the pinned series (4.5) unless `allow_unpinned` ([blender-pipeline.md](blender-pipeline.md)). Not passed to Blender itself: its environment is an allowlist. | unset: `blender` on PATH |
 | `WGF_HEARTBEAT_SECONDS` | `scripts/wgflib/procs.py` | Heartbeat interval for every owned child process (`STEP_PROGRESS`, `last_activity_at`). A positive number; anything else falls back to the default. | `15` |
 
 Agent processes and the game code the Factory runs (develop checks, verify, sdk, release
@@ -62,6 +63,7 @@ run at anything but its own checkout.
 | `WGF_GOLDEN_DIR` | `scripts/golden/harness.py` | Parent of a golden run's fresh work directory. | `/tmp` |
 | `WGF_GOLDEN_TEMPLATE_REF` | `scripts/golden/harness.py` | Older spelling of `WGF_TEMPLATE_COMMIT` for the golden runs; used only when that is unset. | unset |
 | `WGF_AJV` | `test_assets`, `test_discovery`, `test_init_module`, `test_verification`, `test_release_module`, `test_core_agents`, `test_develop_module`, `test_techplan_module` | `1` also validates emitted artifacts with ajv through `npx` (may download ajv-cli once). | off |
+| `WGF_BLENDER_TEST` | `test_models` | `1` runs the real Blender builds (`RealBlender`): every shape and track, LODs and a convex proxy, determinism, the step building then reusing, and a byte-for-byte rebuild of `fixtures/models/hover-car.glb`. Needs the pinned series through `WGF_BLENDER` or PATH; skips with the reason otherwise. | off |
 | `WGF_SKIP_AJV` | `test_core_contracts` (`=1`), `test_strategy` (any value) | Skip the ajv differential / ajv validation even when `npx` is available. | off: ajv runs when `npx` works |
 | `WGF_TEMPLATE_RELEASE_TEST` | `test_core_release` | `1` runs the pinned template's real `release:package` / `release:manifest` on a copy of it. | off |
 

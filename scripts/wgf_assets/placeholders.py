@@ -35,12 +35,19 @@ GeneratedFile.__new__.__defaults__ = ("",)
 
 
 class Generated:
-    def __init__(self, files, *, generator, license=None, reference=None, notes=None):
+    """What a backend made. `final` says the output IS the asset the design asked for - a
+    model built from the design's own spec - rather than a stand-in for it; `metadata` is
+    the manifest item's `model.generation` block."""
+
+    def __init__(self, files, *, generator, license=None, reference=None, notes=None,
+                 final=False, metadata=None):
         self.files = list(files)
         self.generator = generator
         self.license = license
         self.reference = reference
         self.notes = notes
+        self.final = bool(final)
+        self.metadata = metadata
 
 
 class BackendError(RuntimeError):

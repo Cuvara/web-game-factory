@@ -1,0 +1,100 @@
+# Autonomous profile: an unattended new-game run, from research to the G4 decision.
+#
+# Not active anywhere by default. A project turns it on by copying this file to its own
+# workspace/config/factory.yaml, which is layered over the Factory's shipped factory.yaml
+# key by key (wgflib/workflow/config.py load_config): only what is set here changes.
+#
+#     mkdir -p workspace/config
+#     cp <runtime>/workspace/config/profiles/autonomous.yaml workspace/config/factory.yaml
+#
+# <runtime> is the `factory_root` `wgf where` reports (from the installed plugin:
+# ~/.claude/plugins/cache/cuvara/web-game-factory/<version>/runtime). Every key below is
+# documented in the shipped factory.yaml; the agent argvs are its commented, verified
+# examples, verbatim (docs/claude-capabilities.md). See docs/autonomous-runs.md.
+#
+# What it changes, and what it does not:
+#   develop    a headless Claude Code developer builds the game and fixes what verify or
+#              review sends back; the Factory still runs the checks and makes the commit
+#   review     a read-only headless Claude Code reviewer approves or requests changes
+#   G2, G3     approved by the run (reversible gates)
+#   init       a LOCAL project from the pinned template: no GitHub repository, no remote
+#   budget     at most 12 developer sessions / US$60 per run; a person raises it
+#   G4         still a person's decision (irreversible: the engine refuses to automate it),
+#              and so is everything after it - release, G5, G6, G7
+#   research   still needs evidence: snapshots in workspace/research/snapshots/, or a
+#              probes.yaml there with discovery.live. Without either the run waits for input
+factory:
+  init:
+    # A GitHub repository is an outward-facing, irreversible side effect: set
+    # `source: github` here yourself if you want one. /new-game still asks before starting
+    # such a run.
+    source: local
+
+  checkpoints:
+    auto_approve: [G2, G3]
+
+  develop:
+    developer:
+      kind: command
+      argv:
+        - claude
+        - -p
+        - "{prompt}"
+        - --model
+        - sonnet
+        - --setting-sources
+        - project
+        - --strict-mcp-config
+        - --tools
+        - "Read,Edit,Write,Glob,Grep,Bash"
+        - --allowedTools
+        - "Read,Glob,Grep,Edit(./**),Write(./**),Bash(pnpm *),Bash(git status *),Bash(git diff *),Bash(git log *),Bash(git show *)"
+        - --disallowedTools
+        - "WebFetch,WebSearch,Bash(git commit *),Bash(git push *),Bash(git reset *),Bash(git checkout *),Bash(git switch *),Bash(git rebase *),Bash(git stash *),Bash(git tag *),Bash(git branch *),Bash(git clean *),Bash(git config *),Bash(git remote *),Bash(git * --output*)"
+        - --permission-mode
+        - dontAsk
+        - --no-session-persistence
+        - --output-format
+        - stream-json
+        - --verbose
+        - --max-turns
+        - "400"
+        - --max-budget-usd
+        - "40"
+      timeout_seconds: 5400
+      idle_timeout_seconds: 900
+    budget:
+      max_sessions: 12
+      max_cost: 60
+      cost_from:
+        jsonl_key: total_cost_usd
+
+  review:
+    reviewer:
+      kind: command
+      verdict_from: stdout
+      argv:
+        - claude
+        - -p
+        - "{prompt}"
+        - --model
+        - sonnet
+        - --safe-mode
+        - --strict-mcp-config
+        - --tools
+        - "Read,Glob,Grep,Bash"
+        - --allowedTools
+        - "Read,Glob,Grep,Bash(git diff *),Bash(git log *),Bash(git show *)"
+        - --disallowedTools
+        - "Edit,Write,NotebookEdit,WebFetch,WebSearch,Bash(git * --output*),Bash(git *--output=*)"
+        - --permission-mode
+        - dontAsk
+        - --no-session-persistence
+        - --output-format
+        - text
+        - --max-turns
+        - "60"
+        - --max-budget-usd
+        - "5"
+      timeout_seconds: 1800
+      idle_timeout_seconds: null

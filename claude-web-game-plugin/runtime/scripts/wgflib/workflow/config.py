@@ -15,11 +15,14 @@ from ..yamllite import load_file
 from .definition import RetryPolicy
 from .model import DEFAULT_HUNG_OUTPUT_SECONDS
 
-__all__ = ["FactoryConfig", "load_config", "DEFAULT_CONFIG_PATH", "DEFAULTS", "ConfigError",
+__all__ = ["FactoryConfig", "load_config", "DEFAULT_CONFIG_PATH", "SHIPPED_CONFIG_PATH",
+           "DEFAULTS", "ConfigError",
            "parse_duration", "ON_HUNG"]
 
-# The instance's own factory.yaml, else the one the Factory ships (paths.config_file).
+# The instance's own factory.yaml, else the one the Factory ships (paths.config_file): the
+# file that decides last. load_config() layers it over the shipped one; see there.
 DEFAULT_CONFIG_PATH = paths.config_file("factory.yaml")
+SHIPPED_CONFIG_PATH = os.path.join(paths.FACTORY_CONFIG, "factory.yaml")
 
 DEFAULTS = {
     "workflow": {"default": "new-game"},
@@ -95,9 +98,11 @@ def _merge(base, override):
 
 
 class FactoryConfig:
-    def __init__(self, data=None, source=None):
+    def __init__(self, data=None, source=None, layers=None):
         self.data = _merge(copy.deepcopy(DEFAULTS), data or {})
         self.source = source
+        # The files this configuration was read from, lowest first (load_config).
+        self.layers = list(layers) if layers is not None else ([source] if source else [])
 
     def section(self, name):
         return self.data.get(name) or {}
@@ -224,10 +229,33 @@ class FactoryConfig:
         return os.path.abspath(os.path.join(base or paths.PROJECT, directory))
 
 
+def _factory_section(path):
+    return (load_file(path) or {}).get("factory") or {}
+
+
 def load_config(path=None):
-    """Read the config file, or the defaults when it does not exist."""
-    path = path or DEFAULT_CONFIG_PATH
-    if not os.path.exists(path):
+    """The factory configuration.
+
+    An explicit `path` (`wgf --config`) is that file alone, over the defaults above.
+
+    Otherwise the Factory's shipped workspace/config/factory.yaml, with the project's own
+    workspace/config/factory.yaml - when the project is not the Factory checkout and has
+    one - layered over it key by key, the way every file is layered over DEFAULTS: a mapping
+    merges, anything else (a list, a string) replaces. So a project states only what it
+    changes (`checkpoints: {auto_approve: [G2, G3]}`) and keeps the step modules, guarded
+    paths and every other shipped setting. In a development checkout both are one file."""
+    if path:
+        if not os.path.exists(path):
+            return FactoryConfig(source=None)
+        return FactoryConfig(_factory_section(path), source=path)
+    layers = []
+    for candidate in (SHIPPED_CONFIG_PATH, os.path.join(paths.CONFIG, "factory.yaml")):
+        if os.path.exists(candidate) and not any(
+                os.path.realpath(candidate) == os.path.realpath(seen) for seen in layers):
+            layers.append(candidate)
+    if not layers:
         return FactoryConfig(source=None)
-    document = load_file(path) or {}
-    return FactoryConfig(document.get("factory") or {}, source=path)
+    data = {}
+    for layer in layers:
+        _merge(data, copy.deepcopy(_factory_section(layer)))
+    return FactoryConfig(data, source=layers[-1], layers=layers)

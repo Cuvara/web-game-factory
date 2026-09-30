@@ -119,6 +119,19 @@ def artifacts(result):
     return {a.type: a.content for a in result.artifacts}
 
 
+def market_only_catalog(directory):
+    """The shipped catalog without its `design_archetype` declarations: the market analysis
+    alone, as it ranked before buildability screening (catalog 1.1.0). What the ranking
+    tests below measure; Buildability tests the shipped catalog as it is."""
+    import re
+    with open(wgf_discovery.step.CATALOG, encoding="utf-8") as handle:
+        text = re.sub(r"(?m)^    design_archetype: .*\n", "", handle.read())
+    path = os.path.join(directory, "market-only-catalog.yaml")
+    with open(path, "w", encoding="utf-8") as handle:
+        handle.write(text)
+    return path
+
+
 class Scratch(unittest.TestCase):
     def setUp(self):
         self.scratch = tempfile.mkdtemp(prefix="wgf-discovery-")
@@ -143,13 +156,61 @@ class Scratch(unittest.TestCase):
         return target
 
 
+# -- buildability ---------------------------------------------------------------------------
+
+
+class Buildability(unittest.TestCase):
+    """Research carries forward only a concept the design module can build: one whose catalog
+    entry names a `design_archetype`. The rest stay in the report, excluded, with the reason.
+    scripts/tests/test_research_to_design.py ties each declaration to the real design step."""
+
+    @classmethod
+    def setUpClass(cls):
+        from wgflib.yamllite import load_file
+        cls.catalog = load_file(wgf_discovery.step.CATALOG)["archetypes"]
+        cls.result = run_step()
+        cls.report = artifacts(cls.result)["research-report"]
+
+    def test_every_shipped_entry_declares_it(self):
+        for archetype in self.catalog:
+            self.assertIn("design_archetype", archetype, archetype["id"])
+
+    def test_only_a_buildable_concept_is_selected(self):
+        self.assertEqual(self.result.outcome, StepOutcome.SUCCESS, self.result.error)
+        buildable = {a["id"] for a in self.catalog if a["design_archetype"]}
+        self.assertIn(self.report["selection"]["candidate_id"], buildable)
+        for candidate in self.report["candidates"]:
+            if candidate["id"] not in buildable:
+                with self.subTest(candidate=candidate["id"]):
+                    self.assertEqual(candidate["status"], "excluded", "kept, never dropped")
+                    self.assertTrue(candidate["exclusion_reason"].startswith("not buildable")
+                                    or candidate["exclusion_reason"].startswith(
+                                        ("veto fired", "duplicate of", "no scoped platform")))
+
+    def test_nothing_buildable_blocks_with_the_report(self):
+        result = run_step(genres=["block-puzzle"])
+        self.assertEqual(result.outcome, StepOutcome.BLOCKED)
+        report = artifacts(result)["research-report"]
+        self.assertEqual(report["selection"]["candidate_id"], "none")
+        block = next(c for c in report["candidates"] if c["id"] == "block-puzzle")
+        self.assertIn("not buildable", block["exclusion_reason"])
+
+    def test_a_catalog_that_does_not_declare_it_excludes_nothing_for_it(self):
+        from wgf_discovery.analysis import buildable
+        self.assertTrue(buildable({"id": "x"}))
+        self.assertFalse(buildable({"id": "x", "design_archetype": None}))
+        self.assertTrue(buildable({"id": "x", "design_archetype": "lane-runner"}))
+
+
 # -- the successful scan --------------------------------------------------------------------
 
 
 class ResearchReport(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        cls.result = run_step()
+        cls.scratch = tempfile.mkdtemp(prefix="wgf-discovery-report-")
+        cls.addClassCleanup(shutil.rmtree, cls.scratch, ignore_errors=True)
+        cls.result = run_step(catalog=market_only_catalog(cls.scratch))
         cls.out = artifacts(cls.result)
         cls.report = cls.out["research-report"]
         cls.opportunity = cls.out["opportunity"]
@@ -284,7 +345,8 @@ class ResearchReport(unittest.TestCase):
         self.assertEqual(physics["status"], "excluded", "exclusions survive the cap")
         self.assertEqual(physics["backlog_match"],
                          {"opportunity_id": "opp-900", "state": "rejected"})
-        result = artifacts(run_step(genres=["physics"]))["research-report"]
+        result = artifacts(run_step(genres=["physics"],
+                                    catalog=market_only_catalog(self.scratch)))["research-report"]
         self.assertEqual(result["candidates"][0]["exclusion_reason"],
                          "duplicate of opp-900 (rejected) in the backlog")
 

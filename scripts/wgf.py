@@ -492,8 +492,10 @@ def build_parser(commands):
 
     where = sub.add_parser(
         "where", help="the Factory runtime and the project this command resolves",
-        description="Where core/ and the engine are read from (factory_root), and where "
-                    "instance data and runs are kept (project_root, config, store).")
+        description="Where core/ and the engine are read from (factory_root), where "
+                    "instance data and runs are kept (project_root, store), the config "
+                    "files in the order they are layered (config_layers), what a run would "
+                    "do without a person (autonomy), and the shipped profiles.")
     where.add_argument("--config", metavar="PATH", help="factory config file")
     where.add_argument("--json", action="store_true")
     where.set_defaults(handler=cmd_where)
@@ -909,16 +911,39 @@ def cmd_where(args):
             version = handle.read().strip()
     except OSError:
         version = None
+    profiles_dir = os.path.join(paths.FACTORY_CONFIG, "profiles")
+    profiles = {name[:-len(".yaml")]: os.path.join(profiles_dir, name)
+                for name in sorted(os.listdir(profiles_dir)) if name.endswith(".yaml")} \
+        if os.path.isdir(profiles_dir) else {}
     where = {
         "factory_root": paths.ROOT, "installed": paths.INSTALLED, "version": version,
         "project_root": paths.PROJECT,
-        "config": config.source, "store": config.storage_directory(),
+        "config": config.source, "config_layers": config.layers,
+        "store": config.storage_directory(),
         "workflow": os.path.join(WORKFLOWS, f"{config.default_workflow}.workflow.yaml"),
+        # What a run started now would do without a person, as configured: the step
+        # modules' own defaults where the config names nothing (handoff, none, github).
+        "autonomy": {
+            "developer": ((config.section("develop").get("developer") or {}).get("kind")
+                          or "handoff"),
+            "reviewer": ((config.section("review").get("reviewer") or {}).get("kind")
+                         or "none"),
+            "design_author": config.section("design").get("author") or "archetype",
+            "auto_approve": config.auto_approve,
+            "timeout_auto_approve": config.section("checkpoints").get(
+                "timeout_auto_approve") or {},
+            "init_source": config.section("init").get("source") or "github",
+            "develop_budget": config.section("develop").get("budget"),
+            "research_live": bool(config.section("discovery").get("live")),
+        },
+        "profiles": profiles,
     }
     if args.json:
         print(json.dumps(where, indent=2))
     else:
         for key, value in where.items():
+            if isinstance(value, dict):
+                value = ", ".join(f"{k}={v}" for k, v in value.items()) or "-"
             print(f"{key:<13} {value if value is not None else '-'}")
     return EXIT_OK
 

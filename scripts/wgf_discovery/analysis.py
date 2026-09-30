@@ -815,6 +815,12 @@ def _candidate(book, archetype, views, platform_info, model, backlog, report_key
 # -- the whole analysis ---------------------------------------------------------------------
 
 
+def buildable(archetype):
+    """False only when the catalog says so: `design_archetype: null`. A catalog that does not
+    declare the field (an installation's own) makes no claim, and nothing is excluded."""
+    return "design_archetype" not in archetype or bool(archetype["design_archetype"])
+
+
 def analyse(*, sources, profiles, archetypes, model, backlog, as_of_text, report_key,
             max_candidates=8, idea=None):
     """Returns (claims, platforms, candidates, selection, gaps). `as_of_text(dt)` formats a
@@ -851,6 +857,14 @@ def analyse(*, sources, profiles, archetypes, model, backlog, as_of_text, report
         elif not candidate["_viable"]:
             candidate["status"] = "excluded"
             candidate["exclusion_reason"] = "no scoped platform is viable without a blocker"
+        elif not buildable(candidate["_archetype"]):
+            # The Factory cannot design it: the design module has no archetype that carries
+            # this concept's mechanics, so design would fail consistency (cut scope, never
+            # relax the rules) whatever a person approved at G2. Kept, like every exclusion.
+            candidate["status"] = "excluded"
+            candidate["exclusion_reason"] = (
+                "not buildable: no design archetype carries this concept's mechanics "
+                "(catalog design_archetype is null)")
 
     # Evidence of demand outranks imagined demand: when the scan observed any listings at all,
     # a candidate nobody was seen playing ranks after every candidate somebody was.

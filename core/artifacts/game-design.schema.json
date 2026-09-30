@@ -23,7 +23,7 @@
   "properties": {
     "provenance": { "$ref": "./shared/provenance.schema.json#/$defs/provenance" },
     "title_id": { "type": "string" },
-    "brief": { "type": "string", "minLength": 1, "maxLength": 500, "description": "The game idea a person started the run with (`wgf new-game \"...\"`), verbatim in its canonical form: NFC, trimmed, whitespace runs as one space. Absent when the run was a blank market scan. Copied from the title-strategy: the design is derived from it, and the archetype it fits is chosen with it. Added in 1.4.0." },
+    "brief": { "type": "string", "minLength": 1, "maxLength": 500, "description": "The game idea a person started the run with (`wgf new-game \"...\"`), verbatim in its canonical form: NFC, trimmed, whitespace runs as one space. Absent when the run was a blank market scan. Copied from the title-strategy. An agent author designs the game it describes; the built-in author fits the buildable concept research selected, and records in open_questions a dimension the brief names that the design does not use. Added in 1.4.0." },
 
     "fantasy": { "type": "string" },
     "core_loop": {

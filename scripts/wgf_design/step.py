@@ -22,6 +22,7 @@ Outcomes, per docs/workflow-module-contract.md §7:
 """
 
 import datetime
+import re
 
 from wgflib import provenance
 from wgflib.workflow import ArtifactOutput, StepResult, WorkflowStep
@@ -41,6 +42,14 @@ DEFAULT_AUTHOR = "archetype"
 
 def utc_now():
     return datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def _brief_dimension(brief):
+    """'3d' or '2d' when the brief names exactly one."""
+    words = set(re.findall(r"[a-z0-9][a-z0-9-]*", brief.lower()))
+    named = {d for d, w in (("3d", {"3d", "three-dimensional"}), ("2d", {"2d", "two-dimensional"}))
+             if words & w}
+    return named.pop() if len(named) == 1 else None
 
 
 class DesignStep(WorkflowStep):
@@ -94,6 +103,13 @@ class DesignStep(WorkflowStep):
             # The person's idea, carried from the strategy: the design is derived from it,
             # whatever the author wrote.
             design["brief"] = strategy["brief"]
+            named = _brief_dimension(strategy["brief"])
+            built = (design.get("engine") or {}).get("dimension")
+            if named and built and named != built:
+                design.setdefault("open_questions", []).append(
+                    f"The brief names {named}; this design is {built}, the dimension of the "
+                    f"buildable concept research selected. Realising the brief in {named} is "
+                    f"a design change: an agent author, or a new concept, not this draft.")
         problems = buildability(design)
         if problems:
             context.logger.error("design is not buildable", problems=problems)

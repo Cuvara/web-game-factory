@@ -293,13 +293,12 @@ class RealModules(Scratch):
         return api, state
 
     def test_research_strategy_and_design_all_derive_from_the_exact_idea(self):
-        # The built-in design author has no goalkeeper either. The brief's "3D" makes it fit
-        # a 3D shape (arena-dodge) to a strategy whose catalog concept is lanes, and the
-        # consistency guard refuses that design - persisted as evidence, route `descope` -
-        # rather than build a game nobody approved. Nothing is relaxed to let it through:
-        # an agent author (factory.design.author: agent) is what designs the brief itself.
-        api, state = self.run_plan(GOALKEEPER, design=RunStatus.FAILED)
-        self.assertEqual(state.steps["design"].last_route, "descope")
+        # The catalog has no goalkeeper: research carries the brief to the nearest buildable
+        # concept of the dimension it names, and says so. The built-in design author fits
+        # the archetype that concept declares (never one the brief's words would pick, which
+        # design consistency would refuse), records the brief, and states as an open
+        # question that it is not the brief's dimension. The agent author designs the brief.
+        api, state = self.run_plan(GOALKEEPER)
         contracts = ArtifactContracts()
         bodies = {}
         for artifact_type in BRIEF_BEARING:
@@ -319,23 +318,33 @@ class RealModules(Scratch):
         self.assertEqual(chosen["profile"]["rendering"], "3d")
         self.assertTrue(report["selection"]["rationale"].startswith("Closest to the brief"))
         strategy = bodies["title-strategy"]
-        self.assertEqual(strategy["one_liner"], GOALKEEPER)
-        self.assertTrue(strategy["why_this_opportunity"].startswith(f'Brief: "{GOALKEEPER}"'))
+        self.assertTrue(any(GOALKEEPER in a["statement"] for a in strategy["assumptions"]))
+        self.assertNotIn(GOALKEEPER, strategy["one_liner"])
         self.assertEqual(strategy["title_id"], "goalkeeper-3d")
         design = bodies["game-design"]
-        self.assertEqual(design["engine"]["dimension"], "3d")
-        breached = {r["criterion_id"] for r in design["consistency"]["rule_results"]
-                    if r.get("breached")}
-        self.assertEqual(breached, {"concept_mechanics_carried",
-                                    "design_adds_no_foreign_mechanic"})
+        self.assertEqual(design["consistency"]["status"], "pass")
+        self.assertEqual(design["engine"]["dimension"], "2d")
+        self.assertTrue(any(q.startswith("The brief names 3d; this design is 2d")
+                            for q in design["open_questions"]), design["open_questions"])
 
     def test_research_prefers_the_shape_the_idea_names(self):
-        state = self.real_api().run(RunRequest(scope="research", project_id="sorter",
-                                               idea="A calm sort puzzle with colored balls"))
+        state = self.real_api().run(RunRequest(scope="research", project_id="swapper",
+                                               idea="A match-3 puzzle with candy tiles"))
         self.assertEqual(state.status, RunStatus.COMPLETED, state.message)
         report = self.artifact(state, "research-report")
-        self.assertEqual(report["selection"]["candidate_id"], "sort-puzzle")
+        self.assertEqual(report["selection"]["candidate_id"], "match-3")
         self.assertEqual([g for g in report["gaps"] if g["kind"] == "idea-unmatched"], [])
+
+    def test_an_unbuildable_match_is_never_selected_for_the_idea(self):
+        # sort-puzzle matches every word, but the catalog declares no design archetype for
+        # it: research keeps it excluded and carries the brief to a buildable concept.
+        state = self.real_api().run(RunRequest(scope="research", project_id="sorter",
+                                               idea="A calm sort puzzle with colored balls"))
+        report = self.artifact(state, "research-report")
+        sort = next(c for c in report["candidates"] if c["id"] == "sort-puzzle")
+        self.assertEqual(sort["status"], "excluded")
+        self.assertEqual(sort["idea_match"]["terms"], ["sort", "puzzle"])
+        self.assertNotEqual(report["selection"]["candidate_id"], "sort-puzzle")
 
     def test_without_an_idea_research_is_unchanged(self):
         api = self.real_api()

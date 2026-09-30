@@ -778,8 +778,7 @@ _WORD = re.compile(r"[a-z0-9][a-z0-9-]*")
 
 
 def _text(strategy):
-    parts = [strategy.get("brief") or "", strategy.get("one_liner", ""),
-             strategy.get("why_this_opportunity", "")]
+    parts = [strategy.get("one_liner", ""), strategy.get("why_this_opportunity", "")]
     parts += strategy.get("mvp") or []
     parts += strategy.get("prototype_must_prove") or []
     parts.append((strategy.get("audience") or {}).get("player_description", ""))
@@ -787,11 +786,13 @@ def _text(strategy):
 
 
 def concept_text(strategy):
-    """The strategy's statement of the game itself: the person's brief when there is one,
-    then one-liner, core mechanic, core loop."""
+    """The strategy's statement of the game itself: one-liner, core mechanic, core loop.
+
+    Never the person's brief: research selected a concept the catalog declares buildable
+    (`design_archetype`), and a brief's words re-picking the archetype would undo that. The
+    brief is carried as `brief`; the `agent` author designs from it."""
     concept = strategy.get("concept") or {}
-    parts = [strategy.get("brief") or "", strategy.get("one_liner", ""),
-             concept.get("core_mechanic", ""), concept.get("core_loop", "")]
+    parts = [strategy.get("one_liner", ""), concept.get("core_mechanic", ""), concept.get("core_loop", "")]
     return " ".join(p for p in parts if p).lower()
 
 

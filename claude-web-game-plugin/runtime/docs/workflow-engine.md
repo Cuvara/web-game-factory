@@ -835,13 +835,14 @@ The idea is canonicalised once and recorded in `params.idea` (§5, corroborated 
 shown by `wgf status` (`Idea:`) and in `status --json`. The research step reads it and
 anchors the scan to it: `research-report.scope.brief`, a question naming it, candidates
 ranked by their match to it first (`candidates[].idea_match`), and the opportunity's `brief`.
-Strategy copies the brief into `title-strategy.brief` and uses it as the one-liner; design
-fits its archetype with it and records `game-design.brief`, and the `agent` design author is
-told to design the game it describes. Nothing is invented: a selection that matches none of
-the brief's words, or renders in another dimension than it names, records an
-`idea-unmatched` gap in the report, and the design consistency rules still hold the design
-to what G2 approved - a brief the built-in design author cannot carry ends in design's
-`descope` route with the design kept as evidence.
+Research still selects only concepts the catalog declares buildable (`design_archetype`).
+Strategy copies the brief into `title-strategy.brief` and states it as an assumption; design
+records `game-design.brief`, and the `agent` design author is told to design the game it
+describes. The built-in design author fits the archetype the selected concept declares -
+never one the brief's words would pick, which the design consistency rules would refuse -
+and when the brief names a dimension that design does not use, says so in
+`open_questions`. Nothing is invented: a selection that matches none of the brief's words,
+or renders in another dimension than it names, records an `idea-unmatched` gap.
 
 Refused with exit 2, running nothing: an empty or over-long idea, or one with control
 characters; an idea on a slice that runs no research step (`wgf plan "..."`,
@@ -857,7 +858,11 @@ recorded as a person's decision (`default_decider()`); the person types the deci
 
 ## 12. Configuration
 
-`workspace/config/factory.yaml` — every key optional:
+`workspace/config/factory.yaml` — every key optional. With no `--config`, the Factory's
+shipped file is read and a project's own `workspace/config/factory.yaml` (when the project is
+not the Factory checkout) is layered over it key by key: a mapping merges, a list or a value
+replaces ([plugin-runtime.md](plugin-runtime.md), [autonomous-runs.md](autonomous-runs.md)).
+`--config PATH` is that file alone.
 
 ```yaml
 factory:

@@ -242,7 +242,8 @@ Arguments: $arguments
 1. \`$runs\`
 2. \`core/lifecycle/gates.yaml\`
 3. \`docs/workflow-engine.md\`
-4. the factory configuration \`bin/wgf where --json\` reports as \`config\`
+4. the factory configuration \`bin/wgf where --json\` reports: \`config_layers\` (the shipped
+   file, then the project's own, layered) and the resolved \`autonomy\`
 
 ## Arguments
 
@@ -282,14 +283,18 @@ ask the user to give the idea as one quoted string).
    process drives it, only report progress; \`WAITING\` at a gate whose \`pending.timeout\`
    is not \`eligible\` — report the gate (step 6) and stop. Anything else (a stopped,
    blocked, stale or failed run, or one waiting for input) is resumed at step 4.
-2. **Report the effective autonomy** from that \`config\` file, as configured — never
-   change it: \`factory.develop.developer.kind\`, \`factory.review.reviewer.kind\`,
-   \`factory.checkpoints.auto_approve\` (and \`timeout_auto_approve\`),
-   \`factory.init.source\`. With \`--mock\` every step is a placeholder, and a mock run approves
-   the reversible gates itself unless \`--hold-gates\` is given.
-3. **Outward effects.** For a new run without \`--mock\` and with
-   \`factory.init.source: github\`: warn that once G3 is passed the init step creates a
-   GitHub repository (\`gh repo create\`), and start only after the user confirms.
+2. **Report the effective autonomy** from \`where\`'s \`autonomy\`, as configured — never change
+   it: \`developer\`, \`reviewer\`, \`auto_approve\` (and \`timeout_auto_approve\`),
+   \`init_source\`, \`develop_budget\`. With \`--mock\` every step is a placeholder, and a mock
+   run approves the reversible gates itself unless \`--hold-gates\` is given; gates in
+   \`auto_approve\` are approved either way. An unattended run is the project's own choice
+   (\`profiles\` lists the shipped overlays, e.g. \`autonomous\`); never install one.
+3. **Outward effects.** For a new run without \`--mock\` (a mock run starts no session and
+   creates nothing): with \`init_source\` \`github\`, warn that once G3 is passed the init
+   step creates a GitHub repository (\`gh repo create\`); with a \`command\` developer or
+   reviewer, say that agent sessions will run unattended and cost money, within
+   \`develop_budget\` when one is set. Either way, start that run only after the user
+   confirms. A \`--mock\` run, or a run with neither, starts without asking.
 4. **Start** $background
 
    - new run: \`bin/wgf $id <flags> --json\`, or with an idea

@@ -341,6 +341,9 @@ seen by the engine — validate what you write there with ajv.
 - `docs/workflow-engine.md` — the `wgf` engine: definitions, steps, retry, resume, routing
 - `docs/plugin-runtime.md` — the installed plugin is the Factory runtime and the working
   directory the project: what the plugin ships, how `ROOT` and `PROJECT` resolve, `wgf where`
+- `docs/autonomous-runs.md` — why the shipped config is supervised, the opt-in autonomous
+  profile (`workspace/config/profiles/autonomous.yaml`), how a project enables it, and what
+  stays human (G4, G6, G7, evidence, budget raises)
 - `docs/workflow-module-contract.md` — what a step module implements; read before writing one
 - `docs/verification-module.md` — the `verify` step: checks, statuses, evidence, gameplay drivers
 - `docs/init-module.md` — the init module: repository from the template, idempotency, refusals

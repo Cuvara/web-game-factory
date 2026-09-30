@@ -24,7 +24,7 @@
     "title_id": { "type": "string", "pattern": "^[a-z][a-z0-9-]*$" },
     "opportunity_id": { "type": "string" },
 
-    "brief": { "type": "string", "minLength": 1, "maxLength": 500, "description": "The game idea a person started the run with (`wgf new-game \"...\"`), verbatim in its canonical form: NFC, trimmed, whitespace runs as one space. Absent when the run was a blank market scan. Copied from the opportunity; design builds from it. Added in 1.2.0." },
+    "brief": { "type": "string", "minLength": 1, "maxLength": 500, "description": "The game idea a person started the run with (`wgf new-game \"...\"`), verbatim in its canonical form: NFC, trimmed, whitespace runs as one space. Absent when the run was a blank market scan. Copied from the opportunity and stated as an assumption; never folded into the one-liner, so design fits the concept research selected as buildable. Added in 1.2.0." },
 
     "one_liner": {
       "type": "string",

@@ -26,7 +26,8 @@ codex-web-game-plugin/
   AGENTS.md            — entry point and working rules
   agents/*.md          — 11 role definitions, one per non-human role
   commands/wgf-*.md    — 13 prompts, one per lifecycle transition
-  skills/*/SKILL.md    — 21 skills, reference capability loaded on demand
+  commands/new-game.md — 1 workflow entry point: runs core/workflows/new-game through bin/wgf
+  skills/*/SKILL.md    — 22 skills, reference capability loaded on demand
   CONFORMANCE.md       — surface-by-surface coverage against the binding manifest
 ```
 
@@ -55,6 +56,16 @@ scan → score → select[G1] → strategy[G2] → design → plan[G3] → scaff
 ```
 
 Plus `wgf-status`, read-only.
+
+## Workflow entry point: `new-game`
+
+`commands/new-game.md` is **not a transition prompt**. It starts (or resumes) a run of
+`core/workflows/new-game.workflow.yaml` through the workflow engine, `bin/wgf new-game`, as a
+long-running process, and reports progress from `bin/wgf status`. The workflow file is the
+only step order; the prompt restates none of it and composes no `wgf-*` prompt. It reports
+the configured autonomy, warns before a real run whose init creates a GitHub repository, and
+never answers a gate: it refuses `--decision` and `decide`, and at a gate or handoff tells the
+person the command to type.
 
 ## Difference from the Claude adapter
 

@@ -18,12 +18,15 @@
 # Each adapter carries a CONFORMANCE.md mapping every surface id below to its file, so
 # reviewing adapter completeness is a two-file diff rather than a directory crawl.
 
-version: 1.4.0
+version: 1.5.0
 
 surface_kinds:
   agent: A persistent role the runtime can delegate to.
   command: A user-initiated action, typically a lifecycle transition or a gate.
   skill: Reference capability loaded on demand, not a role and not an action.
+  workflow: >-
+    A user-initiated run of a core workflow through the workflow engine. Not a transition;
+    the engine orchestrates, gates stay human.
 
 # ---------------------------------------------------------------------------
 # Roles → agent surfaces. One per non-human role in core/roles/roles.yaml.
@@ -259,6 +262,25 @@ commands:
     role: null
     gate: null
     note: Read-only. Reports portfolio and title state from workspace/.
+
+# ---------------------------------------------------------------------------
+# Workflows → workflow entry-point surfaces.
+#
+# NOT transitions, and not a second orchestrator. An entry point starts or resumes a run of
+# the workflow named in `runs` through the workflow engine (the `wgf` CLI) and reports where
+# it stands. The workflow file is the only source of step order, retries, loops, gates and
+# resume; the surface restates none of it. The engine never moves a lifecycle entity, so
+# `commands:` above stays the only surface kind mapped to transitions.
+#
+# `gates` is informational: the human-checkpoint gates of that workflow, which
+# check-integrity.py compares with the workflow file. An entry point never answers a gate -
+# every decision is made by a person, outside the surface.
+# ---------------------------------------------------------------------------
+workflows:
+  - id: new-game
+    runs: core/workflows/new-game.workflow.yaml
+    role: null
+    gates: [G2, G3, G4]
 
 # ---------------------------------------------------------------------------
 # Skills — reference capability, loaded on demand.

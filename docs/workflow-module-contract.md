@@ -64,7 +64,7 @@ leaks into a retry.
 | `previous_outputs` | `ArtifactRef`s this step produced on its last successful execution |
 | `decision` | A human decision recorded for this visit, or `None` (§9) |
 | `config` | The factory configuration (read-only by convention) |
-| `environment` | Run parameters: `mock`, `auto_approve`, … (read-only by convention) |
+| `environment` | Run parameters: `mock`, `auto_approve`, `idea` (the person's game idea, canonical, only when given), … (read-only by convention) |
 | `params` | Same as `self.params` |
 | `logger` | Structured logging: `.debug/.info/.warning/.error(message, **fields)` |
 | `emit(event, **fields)` | A custom event on the run's bus, tagged with this step |

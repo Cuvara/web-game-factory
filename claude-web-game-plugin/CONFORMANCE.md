@@ -165,6 +165,12 @@ workflow engine: the `wgf-*` commands are agent-driven transitions over `workspa
 - `scripts/check-integrity.py` checks each `workflows:` entry against its workflow file
   (path, id, gates); `scripts/tests/test_adapter_binding.py` checks the binding, the
   generator tables, the files on disk and this table name the same surfaces.
+- `new-game` takes an optional game idea: one quoted argument, the engine's positional
+  `IDEA` (`params.idea`, the run's brief; `docs/workflow-engine.md` § Game idea). The surface
+  passes it verbatim after `--` as one single-quoted shell word, never rewords or invents
+  one, keeps it apart from `--project` (identity), says so when there is none (a blank
+  market scan), and refuses one with `resume`. No surface was added or removed, so the
+  binding manifest is unchanged.
 
 ## Not covered, deliberately
 

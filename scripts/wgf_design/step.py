@@ -90,6 +90,10 @@ class DesignStep(WorkflowStep):
             return StepResult.failed(f"design author {author_name!r}: {exc}", retryable=False)
 
         design = finalize(draft, platforms, title_id)
+        if strategy.get("brief"):
+            # The person's idea, carried from the strategy: the design is derived from it,
+            # whatever the author wrote.
+            design["brief"] = strategy["brief"]
         problems = buildability(design)
         if problems:
             context.logger.error("design is not buildable", problems=problems)

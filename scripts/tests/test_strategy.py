@@ -373,7 +373,7 @@ class ThroughEngine(unittest.TestCase):
         artifact = api.store.read_artifact(state.run_id, ref)
         self.assertEqual(ArtifactContracts()("title-strategy", artifact), [])
         self.assertEqual(artifact["provenance"]["status"], "draft")
-        self.assertEqual(ref.schema_version, "1.1.0")
+        self.assertEqual(ref.schema_version, "1.2.0")
         self.assertEqual(state.steps["strategy"].consumed, ["opportunity@v1"])
 
         final = api.run(RunRequest(resume=state.run_id, decision="approve"))

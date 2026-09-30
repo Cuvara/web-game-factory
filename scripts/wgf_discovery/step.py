@@ -3,10 +3,18 @@
     evidence  ->  claims  ->  platform summaries  ->  screened candidates  ->  selection
     (evidence.py)          (analysis.py)                                      (here)
 
-The question it answers is "what kind of web game should the factory build next?", not "is
-this idea any good?": it screens every archetype in the catalog against what the target
-portals allow and what the evidence shows, and carries the best-balanced one forward. It
-never asks for, or needs, a game idea as input.
+The question it answers is "what kind of web game should the factory build next?": it
+screens every archetype in the catalog against what the target portals allow and what the
+evidence shows, and carries the best-balanced one forward.
+
+A game idea is optional. Without one (`wgf new-game`) the scan is blank: the whole catalog,
+ranked on the screen alone. With one (`wgf new-game "3D goalkeeper game ..."`) the run
+carries it as `params.idea` - the context's `environment["idea"]`, canonical, corroborated on
+every resume - and the scan is anchored to it: the report's `scope.brief` records it, the
+default question asks which shape carries it, candidates are ranked by their match to it
+first (analysis.idea_match), and the opportunity carries it verbatim as `brief`, for
+strategy and design to build from. The screen and its vetoes are unchanged, and nothing is
+invented: a selection that holds none of the brief's words records an `idea-unmatched` gap.
 
 Settings, each optional, in increasing precedence: DEFAULTS below, `factory.discovery` in
 workspace/config/factory.yaml, then the step's `with:` block in the workflow file.
@@ -133,7 +141,14 @@ class ResearchStep(WorkflowStep):
 
     # -- the scan -------------------------------------------------------------------------
 
+    @staticmethod
+    def idea(context):
+        """The run's game idea (canonical, from `wgf new-game "..."`), or None."""
+        idea = (getattr(context, "environment", None) or {}).get("idea")
+        return idea if isinstance(idea, str) and idea else None
+
     def _scan(self, settings, as_of, context):
+        idea = self.idea(context)
         as_of_text = format_time(as_of)
         stamp = lambda value=None: as_of_text if value is None else format_time(value)  # noqa: E731
         gaps = []
@@ -195,15 +210,19 @@ class ResearchStep(WorkflowStep):
 
         backlog = self._backlog(settings)
         corpus_hash = self._corpus_hash(sources, profiles)
+        key_parts = [corpus_hash, as_of_text[:10], scope, settings.get("genres"),
+                     _file_hash(settings["catalog"])]
+        if idea:
+            # Only with one: a blank scan keeps the report id it always had.
+            key_parts.append({"idea": idea})
         report_key = hashlib.sha256(json.dumps(
-            [corpus_hash, as_of_text[:10], scope, settings.get("genres"),
-             _file_hash(settings["catalog"])], sort_keys=True).encode()).hexdigest()[:10]
+            key_parts, sort_keys=True).encode()).hexdigest()[:10]
         report_id = f"rr-{report_key}"
 
         claims, platforms, candidates, selection, analysis_gaps = analysis.analyse(
             sources=sources, profiles=profiles, archetypes=archetypes, model=model,
             backlog=backlog, as_of_text=stamp, report_key=report_key,
-            max_candidates=int(settings.get("max_candidates") or 8))
+            max_candidates=int(settings.get("max_candidates") or 8), idea=idea)
         for kind, description, platform in analysis_gaps:
             gaps.append(Gap(kind, description, platform=platform))
 
@@ -212,7 +231,7 @@ class ResearchStep(WorkflowStep):
             model=model, model_path=model_path, ttl=ttl, collectors=collectors,
             corpus_hash=corpus_hash, sources=sources, profiles=profiles, claims=claims,
             platforms=platforms, candidates=candidates, selection=selection, gaps=gaps,
-            context=context)
+            context=context, idea=idea)
         metadata = {
             "sources": report["evidence_summary"]["sources"],
             "claims": len(claims),
@@ -234,7 +253,7 @@ class ResearchStep(WorkflowStep):
                                       "exclusion reasons")
 
         chosen = next(c for c in candidates if c["id"] == selection["candidate_id"])
-        opportunity = self._opportunity(chosen, report, profiles, context, as_of_text)
+        opportunity = self._opportunity(chosen, report, profiles, context, as_of_text, idea)
         return StepResult.success(
             [report_out, ArtifactOutput("opportunity", opportunity,
                                         metadata={"opportunity_id": opportunity["id"],
@@ -298,7 +317,7 @@ class ResearchStep(WorkflowStep):
 
     def _report(self, *, report_id, settings, scope, as_of_text, model, model_path, ttl,
                 collectors, corpus_hash, sources, profiles, claims, platforms, candidates,
-                selection, gaps, context):
+                selection, gaps, context, idea=None):
         tiers = {"observed": 0, "derived": 0, "hypothesis": 0}
         for claim in claims:
             tiers[claim["tier"]] += 1
@@ -318,6 +337,10 @@ class ResearchStep(WorkflowStep):
             })
         external = [s.to_dict() for s in sources]
         question = settings.get("question") or (
+            f"Is this game idea worth building for {', '.join(scope)}, and which proven web "
+            f"game shape carries it best, balancing monetization fit, development speed, "
+            f"technical and asset cost, platform compatibility, replayability, retention and "
+            f"verification risk: \"{idea}\"?" if idea else
             f"Which kind of web game should the factory build next for "
             f"{', '.join(scope)}, balancing monetization fit, development speed, technical "
             f"and asset cost, platform compatibility, replayability, retention and "
@@ -329,6 +352,8 @@ class ResearchStep(WorkflowStep):
         scope_block = {"question": question, "platforms": list(scope), "as_of": as_of_text}
         if settings.get("genres"):
             scope_block["genres"] = list(settings["genres"])
+        if idea:
+            scope_block["brief"] = idea
         report = {
             "provenance": self._provenance("research-report", report_id, as_of_text, context),
             "id": report_id,
@@ -364,7 +389,7 @@ class ResearchStep(WorkflowStep):
         }
         return provenance.seal(report)
 
-    def _opportunity(self, chosen, report, profiles, context, as_of_text):
+    def _opportunity(self, chosen, report, profiles, context, as_of_text, idea=None):
         archetype = chosen["_archetype"]
         viable = chosen["_viable"]
         fits = {f["platform"]: f for f in chosen["platform_fit"]}
@@ -422,4 +447,6 @@ class ResearchStep(WorkflowStep):
             "latest_evaluation_id": None,
             "title_id": None,
         }
+        if idea:
+            opportunity["brief"] = idea
         return provenance.seal(opportunity)

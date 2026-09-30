@@ -4,6 +4,9 @@
 Every command that does work is a slice of one workflow definition, executed by one engine:
 
     wgf new-game [--mock]                the whole workflow
+    wgf new-game [--project ID] "IDEA"   the whole workflow, anchored to a game idea: one
+                                         quoted argument, the brief research screens against
+                                         and design builds from (none: a blank market scan)
     wgf research | plan | init | assets | develop | sdk | verify | release [--mock]
                                          one step, or a group of steps (`plan`)
     wgf resume <run-id> [--from STEP]    continue a run from where it stopped
@@ -38,8 +41,8 @@ stops for inputs it does not hold, wgf names the latest run that holds them
 
 Exit status: 0 completed, 1 failed/blocked/cancelled or left its scope on a failure (or an
 OS error, such as a full disk), 2 usage - including a flag the command would otherwise
-ignore: --mock, --mock-plan, --hold-gates or --project with --resume or --run, --from with
---run, --note without --decision - 3 waiting for a decision or input (or paused).
+ignore: --mock, --mock-plan, --hold-gates, --project or an IDEA with --resume or --run, an
+IDEA on a slice that runs no research step, --from with --run, --note without --decision - 3 waiting for a decision or input (or paused).
 `wgf status` exits with the same code for the run it shows, and 0 for one still RUNNING.
 `wgf test-core --strict` exits 4 when a whole category was skipped (1 still means a failure).
 
@@ -207,6 +210,8 @@ def render_status(state, definition, live=None, pending=None):
     ]
     if state.project_id:
         lines.append(f"Project:  {state.project_id}")
+    if isinstance(state.params, dict) and state.params.get("idea"):
+        lines.append(f"Idea:     {state.params['idea']}")
     lines.append("")
 
     width = max(len(step_id) for step_id in definition.step_ids)
@@ -418,6 +423,10 @@ def build_parser(commands):
         run.add_argument("--project", metavar="ID", help="project/title id for the run")
         run.add_argument("--json", action="store_true", help="print events as JSON lines")
         run.add_argument("--quiet", action="store_true", help="print only the final status")
+        run.add_argument("idea", nargs="?", metavar="IDEA",
+                         help="a new run's game idea, as one quoted argument: the brief "
+                              "research screens against and design builds from (none: a "
+                              "blank market scan). Use -- before an idea starting with -")
         run.set_defaults(handler=cmd_run, scope=name)
 
     resume = sub.add_parser("resume", help="continue a stopped run")
@@ -505,10 +514,10 @@ def _api(args, subscribers=()):
 # -- commands -------------------------------------------------------------------------------
 
 
-# What only a new run takes. An existing run keeps the mocks, mock plan, gate policy and
-# project it was started with; given with --resume or --run, these would be ignored.
+# What only a new run takes. An existing run keeps the mocks, mock plan, gate policy,
+# project and idea it was started with; given with --resume or --run, these would be ignored.
 _NEW_RUN_ONLY = (("mock", "--mock"), ("mock_plan", "--mock-plan"),
-                 ("hold_gates", "--hold-gates"), ("project", "--project"))
+                 ("hold_gates", "--hold-gates"), ("project", "--project"), ("idea", "IDEA"))
 
 _NOTE_NEEDS_DECISION = "--note is recorded with a decision; it needs --decision CHOICE"
 
@@ -527,7 +536,8 @@ def _refuse_ignored_flags(args):
         raise UsageError(f"--from does not apply with --run, which runs this command's own "
                          f"steps; to restart at a step: wgf resume {args.run_id} --from STEP")
     existing = args.resume or args.run_id
-    given = [flag for attr, flag in _NEW_RUN_ONLY if getattr(args, attr)]
+    given = [flag for attr, flag in _NEW_RUN_ONLY if getattr(args, attr) is not None
+             and getattr(args, attr) is not False]
     if existing and given:
         raise UsageError(
             f"{', '.join(given)} only {'applies' if len(given) == 1 else 'apply'} to a new "
@@ -585,7 +595,7 @@ def cmd_run(args):
         scope=args.scope, mock=args.mock, mock_plan=_mock_plan(args.mock_plan),
         resume=args.resume, from_step=args.from_step, run_id=args.run_id, force=args.force,
         decision=args.decision, note=args.note, project_id=args.project,
-        hold_gates=args.hold_gates,
+        hold_gates=args.hold_gates, idea=args.idea,
     )
     state = _drive(api, args, request)
     if not (args.resume or args.run_id):

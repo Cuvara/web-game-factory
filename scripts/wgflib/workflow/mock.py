@@ -41,6 +41,17 @@ FIXTURE_SLUG = "mock-title"
 DEFAULT_EPOCH = "2026-01-01T00:00:00Z"
 
 
+# Where each artifact type carries the run's game idea (`wgf new-game "..."`): the path of
+# keys to the `brief` field. A mock run carries it exactly as a real one does, so what a
+# person typed is visible in every placeholder that has a place for it.
+BRIEF_PATHS = {
+    "research-report": ("scope", "brief"),
+    "opportunity": ("brief",),
+    "title-strategy": ("brief",),
+    "game-design": ("brief",),
+}
+
+
 class MockStepError(RuntimeError):
     pass
 
@@ -94,6 +105,13 @@ class MockStep(WorkflowStep):
         with open(path, encoding="utf-8") as handle:
             body = json.loads(handle.read().replace(FIXTURE_SLUG, slug))
         self.customize(body, artifact_type, context, entry)
+        idea = context.environment.get("idea")
+        if idea and artifact_type in BRIEF_PATHS:
+            *parents, key = BRIEF_PATHS[artifact_type]
+            target = body
+            for parent in parents:
+                target = target.setdefault(parent, {})
+            target[key] = idea
 
         sequence = min(context.execution, 99)
         artifact = {

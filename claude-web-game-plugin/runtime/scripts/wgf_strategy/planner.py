@@ -675,16 +675,26 @@ class _Plan:
                       "Prototype the riskiest system first; G4 kills on prototype_overran")
 
         claims = opp.get("claim_refs") or []
-        why = (f"{opp.get('title', opp.get('id'))} offers {(concept.get('fantasy') or concept['core_loop']).rstrip('.')}. "
+        brief = opp.get("brief")
+        if brief:
+            # The person's idea is the game; the opportunity is the shape that carries it.
+            self.assume(
+                f"The brief (\"{brief}\") can be built on the {genre} shape research selected: "
+                f"{concept['core_mechanic']}",
+                "design cannot realise the brief's mechanic within this shape and timebox; "
+                "the prototype then plays as the shape, not as the brief")
+        why = ((f"Brief: \"{brief}\". " if brief else "")
+               + f"{opp.get('title', opp.get('id'))} offers {(concept.get('fantasy') or concept['core_loop']).rstrip('.')}. "
                f"The opportunity rests on {opp.get('hypothesis') or 'an unstated hypothesis'}"
                + (f" and cites {', '.join(claims)}" if claims else ", with no claims cited")
                + f". {required_profile.get('name', self.required)} is primary"
                + f"{self._fit_reason(required_profile)}.")
 
-        return {
+        body = {
             "title_id": self.title_id,
             "opportunity_id": opp["id"],
-            "one_liner": f"A {genre} game where the player uses {concept['core_mechanic']}.",
+            # With a brief, the game in one sentence is the person's own.
+            "one_liner": brief or f"A {genre} game where the player uses {concept['core_mechanic']}.",
             "why_this_opportunity": why,
             "platform_set": platform_set,
             "audience": audience,
@@ -706,6 +716,9 @@ class _Plan:
             "risks": self.risks,
             "assumptions": self.assumptions,
         }
+        if brief:
+            body["brief"] = brief
+        return body
 
     def _fit_reason(self, profile):
         regions = sorted(set(self.audience.get("regions") or [])

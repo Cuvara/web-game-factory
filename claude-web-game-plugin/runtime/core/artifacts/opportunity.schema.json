@@ -8,7 +8,7 @@
     "id": "opportunity",
     "kind": "artifact",
     "format": "json",
-    "version": "1.0.0",
+    "version": "1.1.0",
     "producer": "portfolio:market-scan",
     "consumers": ["portfolio:scored", "portfolio:shortlisted", "title:concept", "title:strategy"],
     "repo_path": "workspace/opportunities/<opportunity-id>/opportunity.json",
@@ -26,6 +26,7 @@
       "type": "string",
       "description": "A working name. Not the shipped title."
     },
+    "brief": { "type": "string", "minLength": 1, "maxLength": 500, "description": "The game idea a person started the run with (`wgf new-game \"...\"`), verbatim in its canonical form: NFC, trimmed, whitespace runs as one space. Absent when the run was a blank market scan. The opportunity is the catalog shape that carried it best (research-report candidates[].idea_match); strategy and design carry the brief forward, so the title is built from the idea, not only the shape. Added in 1.1.0." },
     "state": {
       "type": "string",
       "enum": ["discovered", "scored", "shortlisted", "approved", "promoted", "parked", "stale", "rejected"]

@@ -68,6 +68,14 @@ PROMPT_STDOUT = (
     "and id reference valid. End your answer with the complete draft as one JSON object."
 )
 
+# Appended when the strategy carries a brief - the person's own game idea. The brief is
+# read from the request, never formatted into the prompt: it is the person's text.
+PROMPT_BRIEF = (
+    " The strategy carries the person's game idea as `brief` (also the request's `brief`): "
+    "design the game it describes - its mechanic, fantasy, controls and dimension - and "
+    "treat the starting draft as a schema-shaped starting point, not as the game."
+)
+
 DEFAULTS = {"argv": [], "timeout_seconds": 1800, "idle_timeout_seconds": 600,
             "draft_from": "file"}
 _MAX_BYTES = 4 * 1024 * 1024
@@ -146,12 +154,15 @@ class AgentAuthor(DesignAuthor):
         # The built-in author's draft is the starting point: the exact shape the module
         # requires, already inside the strategy's scope. The agent improves it.
         starting = ArchetypeAuthor().draft(brief)
+        idea = (brief.get("strategy") or {}).get("brief")
         request = {"title_id": brief.get("title_id"), "strategy": brief.get("strategy"),
                    "platforms": [{"id": p.id, "role": p.role, "version": p.version,
                                   "profile": p.profile} for p in brief.get("platforms") or []],
                    "starting_draft": starting,
                    "required_keys": list(REQUIRED_KEYS),
                    "required_build_spec_keys": list(BUILD_SPEC_KEYS)}
+        if idea:
+            request["brief"] = idea
         with open(request_path, "w", encoding="utf-8", newline="\n") as handle:
             json.dump(request, handle, indent=2, ensure_ascii=False, default=str)
 
@@ -162,6 +173,8 @@ class AgentAuthor(DesignAuthor):
         values = {"request": request_path, "draft": draft_path}
         stdout_mode = settings["draft_from"] == "stdout"
         values["prompt"] = (PROMPT_STDOUT if stdout_mode else PROMPT).format(**values)
+        if idea:
+            values["prompt"] += PROMPT_BRIEF
         try:
             command = [part.format(**values) for part in argv]
         except (KeyError, IndexError, ValueError) as exc:

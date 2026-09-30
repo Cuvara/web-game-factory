@@ -163,6 +163,11 @@ class TheFactoryContainsNoGameSource(unittest.TestCase):
         # bundle, two no-op scripts) - fixtures for the checks, not a game.
         "scripts/tests/fixtures/verification/",
     )
+    # The Claude plugin's bundled runtime (scripts/build-plugin-runtime.py) is a byte-identical
+    # copy of the Factory's own files, so each exception above holds for its copy too.
+    RUNTIME = "claude-web-game-plugin/runtime/"
+    ALLOWED = ALLOWED | set(map(RUNTIME.__add__, ALLOWED))
+    ALLOWED_PREFIXES = ALLOWED_PREFIXES + tuple(map(RUNTIME.__add__, ALLOWED_PREFIXES))
     SKIP_DIRS = {".git", "node_modules", "__pycache__", ".factory", ".claude"}
 
     def factory_files(self):

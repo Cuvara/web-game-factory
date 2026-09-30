@@ -9,6 +9,25 @@ and `core/` is still the contract.
 
 ## [Unreleased]
 
+### Fixed
+
+- **The installed Claude plugin only worked from the factory repository.** Claude Code installs
+  a plugin as a copy of its own directory, which held surfaces and nothing else: every command,
+  agent and skill read `core/` relative to the working directory, and `/web-game-factory:new-game`
+  stopped unless `core/workflows/new-game.workflow.yaml` was there. Run from a game project it
+  could not find the Factory. The plugin now ships the runtime closure in
+  `claude-web-game-plugin/runtime/` (`scripts/build-plugin-runtime.py`, run by
+  `gen-adapters.sh`, drift-checked by `check-integrity.py`), and every Claude surface names
+  Factory paths as `${CLAUDE_PLUGIN_ROOT}/runtime/...`. The engine now keeps two roots
+  (`wgflib/paths.py`): the Factory (`ROOT`, beside `wgflib/`) and the project (`PROJECT`:
+  instance data, run store, checkouts base). In a development checkout both are the
+  repository, so nothing there changes; from an installed runtime the project is the working
+  directory, or `WGF_PROJECT_DIR`. New: `wgf where [--json]`. `wgf test-core` refuses to run
+  from an installed runtime. See `docs/plugin-runtime.md`. Regressions in
+  `test_plugin_runtime` and `test_adapter_binding.ClaudeSurfacesReadThePluginRuntime`.
+  *Migration:* none for a development checkout. A project using the installed plugin keeps its
+  runs in `<project>/.factory/` and may add its own `workspace/config/factory.yaml`.
+
 ## [2.4.0] - 2026-09-30
 
 A minor version: one new adapter surface and the evidence and fixes MV-4 produced. No engine,

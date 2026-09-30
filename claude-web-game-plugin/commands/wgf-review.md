@@ -6,18 +6,18 @@ description: The kill gate. Judge the prototype against the kill criteria set at
 
 **Transition** `title: prototype-review -> production, prototype or abandoned`
 **Role** `portfolio-owner`
-**Gate** `G4` — see `core/lifecycle/gates.yaml` for its required artifacts, predicates and approvers.
+**Gate** `G4` — see `${CLAUDE_PLUGIN_ROOT}/runtime/core/lifecycle/gates.yaml` for its required artifacts, predicates and approvers.
 
 The kill gate. Judge the prototype against the kill criteria set at strategy. (Not the code review of a commit; that runs inside /wgf-prototype.)
 
 ## Procedure
 
-1. Read `core/lifecycle/` for the machine that owns this transition, and the
+1. Read `${CLAUDE_PLUGIN_ROOT}/runtime/core/lifecycle/` for the machine that owns this transition, and the
    `procedure` file named on the source state.
 2. Read the `x-wgf` block of every artifact schema this transition produces or consumes.
 3. Check the transition's guards before acting. A guard that cannot be evaluated is a
    blocker to report, not one to assume.
-4. Prepare the decision for the human approver per `core/roles/portfolio-owner.md`. Do not decide.
+4. Prepare the decision for the human approver per `${CLAUDE_PLUGIN_ROOT}/runtime/core/roles/portfolio-owner.md`. Do not decide.
 5. Record the human's decision as a `decision-record`, and update the title's `state.json`.
 
 Commands map to transitions rather than to stages, so this file stays correct as long as

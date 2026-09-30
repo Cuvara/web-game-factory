@@ -1,0 +1,233 @@
+# Asset policy: what each asset kind may be, and which licences may reach a build.
+#
+# Read by whatever produces the asset manifest (title:design, then title:prototype and
+# title:production update it). It turns three sentences in docs/agent-architecture.md into
+# data that can be checked line by line:
+#
+#   - prefer library and procedural sources at this scale;
+#   - no library, purchased or commissioned asset is integrated without a recorded licence;
+#   - 3D costs load time, so every 3D kind names the compression it is expected to go through.
+#
+# kinds      One entry per asset kind a game design may ask for. `manifest_type` is the
+#            asset-manifest item `type`. `dimension` is 2d, 3d or any (any: the kind takes the
+#            game's dimension). `formats` are the file formats accepted as delivered, in order
+#            of preference; `placeholder` is the format a placeholder is generated in, or
+#            `reference` when a placeholder is a named fallback rather than a file (a system
+#            font stack). `max_bytes` bounds one delivered file. `est_hours` is the effort to
+#            produce a final asset; `est_cost` is per source, absent meaning 0.
+#            `optimize` lists what a runtime pipeline does to it beyond what is done in place.
+#
+# licenses   `permitted` may reach a published build, with the constraints listed.
+#            `restricted` may not - non-commercial, no-derivatives and copyleft terms are
+#            incompatible with ad-monetized portal distribution. Anything not listed is
+#            UNKNOWN, and an unknown licence is treated exactly like a missing one: the asset
+#            can be used to prototype, never marked production-ready. Unknown must not
+#            silently become production.
+#
+# Changing a licence classification changes which existing manifests are shippable. Add a
+# licence freely; move one from permitted to restricted only with a note in the changelog.
+
+policy:
+  id: asset-policy
+  version: 1.0.0
+
+kinds:
+  sprite:
+    manifest_type: sprite
+    dimension: 2d
+    directory: sprites
+    formats: [png, webp, svg]
+    placeholder: png
+    max_bytes: 262144
+    est_hours: 2
+    est_cost: {purchased: 10, commissioned: 60}
+    optimize: [texture-atlas]
+
+  spritesheet:
+    manifest_type: spritesheet
+    dimension: 2d
+    directory: sprites
+    formats: [png, webp]
+    companion: json
+    placeholder: png
+    max_bytes: 1048576
+    est_hours: 6
+    est_cost: {purchased: 25, commissioned: 200}
+    optimize: [texture-atlas]
+
+  background:
+    manifest_type: background
+    dimension: 2d
+    directory: backgrounds
+    formats: [webp, jpeg, png]
+    placeholder: png
+    max_bytes: 524288
+    est_hours: 3
+    est_cost: {purchased: 15, commissioned: 120}
+    optimize: [lossy-webp]
+
+  ui:
+    manifest_type: ui
+    dimension: 2d
+    directory: ui
+    formats: [png, webp, svg]
+    placeholder: png
+    max_bytes: 262144
+    est_hours: 3
+    est_cost: {purchased: 20, commissioned: 150}
+    optimize: [texture-atlas]
+
+  icon:
+    manifest_type: icon
+    dimension: 2d
+    directory: icons
+    formats: [png, svg, webp]
+    placeholder: png
+    max_bytes: 131072
+    est_hours: 1
+    est_cost: {purchased: 5, commissioned: 40}
+    optimize: []
+
+  vfx:
+    manifest_type: vfx
+    dimension: any
+    directory: vfx
+    formats: [png, webp, json]
+    placeholder: png
+    max_bytes: 262144
+    est_hours: 2
+    est_cost: {purchased: 10, commissioned: 80}
+    optimize: [texture-atlas]
+
+  font:
+    manifest_type: font
+    dimension: any
+    directory: fonts
+    formats: [woff2, woff, ttf, otf]
+    placeholder: reference
+    max_bytes: 524288
+    est_hours: 0.5
+    est_cost: {purchased: 30}
+    optimize: [font-subset]
+
+  sfx:
+    manifest_type: sfx
+    dimension: any
+    directory: audio
+    formats: [ogg, m4a, mp3, wav]
+    placeholder: wav
+    max_bytes: 262144
+    est_hours: 0.5
+    est_cost: {purchased: 5, commissioned: 30}
+    optimize: [audio-transcode]
+
+  music:
+    manifest_type: music
+    dimension: any
+    directory: audio
+    formats: [ogg, m4a, mp3, wav]
+    placeholder: wav
+    max_bytes: 4194304
+    est_hours: 4
+    est_cost: {purchased: 40, commissioned: 300}
+    optimize: [audio-transcode]
+
+  model:
+    manifest_type: model
+    dimension: 3d
+    directory: models
+    formats: [glb, gltf]
+    placeholder: glb
+    max_bytes: 2097152
+    est_hours: 6
+    est_cost: {purchased: 30, commissioned: 250}
+    optimize: [mesh-compression, texture-compression]
+
+  texture:
+    manifest_type: texture
+    dimension: 3d
+    directory: textures
+    formats: [ktx2, png, jpeg, webp]
+    placeholder: png
+    max_bytes: 1048576
+    power_of_two: true
+    est_hours: 2
+    est_cost: {purchased: 10, commissioned: 60}
+    optimize: [texture-compression]
+
+  material:
+    manifest_type: material
+    dimension: 3d
+    directory: materials
+    formats: [json]
+    placeholder: json
+    max_bytes: 65536
+    est_hours: 1
+    est_cost: {purchased: 5}
+    optimize: []
+
+  animation:
+    manifest_type: animation
+    dimension: any
+    directory: animations
+    formats: [glb, gltf, json]
+    placeholder: glb
+    max_bytes: 1048576
+    est_hours: 4
+    est_cost: {purchased: 20, commissioned: 150}
+    optimize: [mesh-compression]
+
+  environment:
+    manifest_type: environment
+    dimension: 3d
+    directory: environments
+    formats: [glb, gltf]
+    placeholder: glb
+    max_bytes: 4194304
+    est_hours: 10
+    est_cost: {purchased: 50, commissioned: 400}
+    optimize: [mesh-compression, texture-compression]
+
+# What each deferred optimization means. Recorded on the manifest item so the build knows
+# what is still owed; none of them is done in place, because each needs a tool the Factory
+# does not ship.
+optimizations:
+  texture-atlas: Pack with the other images of its scene into one atlas at build time.
+  lossy-webp: Re-encode as lossy WebP at the quality the tech plan sets.
+  font-subset: Subset to the glyphs of the design's locales, then WOFF2.
+  audio-transcode: Transcode to the tech plan's audio formats (Ogg Vorbis, with AAC for Safari).
+  mesh-compression: Draco or Meshopt through a glTF transform pass.
+  texture-compression: KTX2 (ETC1S for colour, UASTC for normals) with mipmaps.
+
+pipeline:
+  two_d: Images packed into texture atlases per scene; audio transcoded per the tech plan.
+  three_d: Source to GLB, then Draco or Meshopt, textures to KTX2, loaded by the 3D renderer.
+  texture_compression: [ktx2-etc1s, ktx2-uastc]
+  mesh_compression: [draco, meshopt]
+  audio_format: [ogg, m4a]
+
+licenses:
+  # constraints: what using the asset obliges. attribution means a credits entry ships.
+  permitted:
+    - {id: CC0-1.0, constraints: []}
+    - {id: Unlicense, constraints: []}
+    - {id: CC-BY-3.0, constraints: [attribution]}
+    - {id: CC-BY-4.0, constraints: [attribution]}
+    - {id: CC-BY-SA-4.0, constraints: [attribution, share-alike]}
+    - {id: MIT, constraints: [attribution]}
+    - {id: Apache-2.0, constraints: [attribution]}
+    - {id: OFL-1.1, constraints: [attribution, no-standalone-font-sale]}
+    # A vendor licence, recorded with the purchase. The receipt belongs in origin.
+    - {id: LicenseRef-purchased-royalty-free, constraints: [keep-receipt]}
+    # Work made for hire under a contract that assigns the rights.
+    - {id: LicenseRef-commissioned-assigned, constraints: [keep-contract]}
+    # Made by the Factory itself: procedural output owes nobody anything.
+    - {id: LicenseRef-factory-generated, constraints: []}
+  restricted:
+    - {id: CC-BY-NC-3.0, reason: "non-commercial terms conflict with ad monetization"}
+    - {id: CC-BY-NC-4.0, reason: "non-commercial terms conflict with ad monetization"}
+    - {id: CC-BY-NC-SA-4.0, reason: "non-commercial terms conflict with ad monetization"}
+    - {id: CC-BY-NC-ND-4.0, reason: "non-commercial and no-derivatives terms"}
+    - {id: CC-BY-ND-4.0, reason: "no-derivatives forbids the atlas, crop and re-encode the pipeline performs"}
+    - {id: GPL-3.0-only, reason: "copyleft terms on a bundled asset are unresolved for portal builds"}
+    - {id: LicenseRef-editorial-only, reason: "editorial use only"}

@@ -1,0 +1,235 @@
+{
+  "id": "rr-mock",
+  "scope": {
+    "question": "Mock scan: placeholder research, no market data was read.",
+    "platforms": [
+      "yandex",
+      "crazygames"
+    ],
+    "as_of": "2026-01-01T00:00:00Z"
+  },
+  "method": {
+    "scoring_model": {
+      "id": "portfolio-default",
+      "version": "1.0.0",
+      "file_hash": "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+    },
+    "evidence_ttl_days": 45,
+    "collectors": [
+      {
+        "id": "mock",
+        "kind": "snapshot",
+        "status": "used",
+        "detail": "mock fixture"
+      }
+    ]
+  },
+  "sources": [
+    {
+      "id": "mock-source",
+      "source_uri": "https://example.invalid/mock-portal/arcade",
+      "source_kind": "portal-listing",
+      "observed_at": "2026-01-01T00:00:00Z",
+      "collector": "mock",
+      "fresh": true,
+      "observations": 1
+    }
+  ],
+  "claims": [
+    {
+      "id": "claim-m0c10001",
+      "statement": "Mock observation: the mock portal lists a rhythm arcade category.",
+      "tier": "observed",
+      "confidence": 0.85,
+      "evidence": [
+        {
+          "source_uri": "https://example.invalid/mock-portal/arcade",
+          "source_kind": "portal-listing",
+          "observed_at": "2026-01-01T00:00:00Z",
+          "excerpt": "Mock excerpt (placeholder, not market data)."
+        }
+      ],
+      "parents": [],
+      "subject": {
+        "platform": "yandex",
+        "genre": "arcade",
+        "dimension": "distribution_potential"
+      },
+      "asserted_at": "2026-01-01T00:00:00Z",
+      "asserted_by": "research",
+      "superseded_by": null,
+      "tags": [
+        "mock"
+      ]
+    },
+    {
+      "id": "claim-m0c10002",
+      "statement": "Mock derivation: the mock title fits the mock portal.",
+      "tier": "derived",
+      "confidence": 0.7,
+      "evidence": [],
+      "parents": [
+        "claim-m0c10001"
+      ],
+      "subject": {
+        "platform": "yandex",
+        "dimension": "platform_fit"
+      },
+      "asserted_at": "2026-01-01T00:00:00Z",
+      "asserted_by": "research",
+      "superseded_by": null,
+      "tags": [
+        "mock"
+      ]
+    },
+    {
+      "id": "claim-m0c10003",
+      "statement": "Mock hypothesis: the mock title can ship inside the timebox.",
+      "tier": "hypothesis",
+      "confidence": 0.4,
+      "evidence": [],
+      "parents": [],
+      "subject": {
+        "genre": "arcade",
+        "dimension": "dev_speed_days"
+      },
+      "asserted_at": "2026-01-01T00:00:00Z",
+      "asserted_by": "research",
+      "superseded_by": null,
+      "tags": [
+        "mock"
+      ]
+    }
+  ],
+  "platforms": [
+    {
+      "platform": "yandex",
+      "profile_version": "1.0.0",
+      "profile_status": "unverified",
+      "monetization": {
+        "ads": [
+          "interstitial",
+          "rewarded"
+        ],
+        "rewarded": true,
+        "iap": false
+      },
+      "constraints": {
+        "max_bundle_mb": 100,
+        "locales_required": [
+          "ru"
+        ]
+      },
+      "sdk_complexity": "medium",
+      "verification_risk": "medium",
+      "claim_refs": [
+        "claim-m0c10001"
+      ]
+    }
+  ],
+  "candidates": [
+    {
+      "id": "mock-title",
+      "opportunity_id": "opp-mock",
+      "concept": {
+        "genre": "arcade",
+        "subgenre": "rhythm-reaction",
+        "core_mechanic": "one-touch lane switching timed to a beat",
+        "fantasy": "being effortlessly in the groove",
+        "core_loop": "anticipate, tap, extend a combo, retry"
+      },
+      "profile": {
+        "session_seconds": 210,
+        "replayability": "medium",
+        "technical_complexity": "s",
+        "asset_complexity": "s",
+        "dev_speed_days": 11,
+        "asset_cost_usd": 320,
+        "monetization": {
+          "primary": "rewarded",
+          "secondary": [
+            "interstitial"
+          ]
+        }
+      },
+      "platform_fit": [
+        {
+          "platform": "yandex",
+          "fit": 0.8,
+          "blockers": [],
+          "claim_refs": [
+            "claim-m0c10002"
+          ]
+        }
+      ],
+      "dimensions": [
+        {
+          "dimension": "revenue_potential",
+          "value": null,
+          "normalized": null,
+          "weight": 0.14,
+          "tier": "hypothesis",
+          "reason": "mock: not estimated",
+          "claim_refs": []
+        },
+        {
+          "dimension": "platform_fit",
+          "value": 0.8,
+          "normalized": 1.0,
+          "weight": 0.12,
+          "tier": "derived",
+          "claim_refs": [
+            "claim-m0c10002"
+          ]
+        }
+      ],
+      "screen": {
+        "score": 0.7,
+        "weight_coverage": 0.12,
+        "evidence_coverage": 1.0,
+        "vetoes": []
+      },
+      "market_signal": {
+        "observed": true,
+        "platforms": [
+          "yandex"
+        ],
+        "reference_titles": 0,
+        "claim_refs": [
+          "claim-m0c10001"
+        ]
+      },
+      "backlog_match": null,
+      "status": "selected",
+      "claim_refs": [
+        "claim-m0c10001",
+        "claim-m0c10002",
+        "claim-m0c10003"
+      ]
+    }
+  ],
+  "selection": {
+    "candidate_id": "mock-title",
+    "opportunity_id": "opp-mock",
+    "rationale": "Mock selection: the only candidate.",
+    "runner_up": null
+  },
+  "evidence_summary": {
+    "sources": 1,
+    "external_sources": 1,
+    "stale_sources": 0,
+    "claims_by_tier": {
+      "observed": 1,
+      "derived": 1,
+      "hypothesis": 1
+    },
+    "evidence_coverage": 0.6667,
+    "revenue": "Mock: not estimated."
+  },
+  "gaps": [
+    {
+      "kind": "no-external-evidence",
+      "description": "Mock fixture: no real source was read."
+    }
+  ]
+}

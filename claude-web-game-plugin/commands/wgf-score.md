@@ -12,7 +12,7 @@ Score opportunities under a versioned model; compute evidence coverage and vetoe
 
 ## Procedure
 
-1. Read `core/lifecycle/` for the machine that owns this transition, and the
+1. Read `${CLAUDE_PLUGIN_ROOT}/runtime/core/lifecycle/` for the machine that owns this transition, and the
    `procedure` file named on the source state.
 2. Read the `x-wgf` block of every artifact schema this transition produces or consumes.
 3. Check the transition's guards before acting. A guard that cannot be evaluated is a

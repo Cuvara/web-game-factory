@@ -184,7 +184,7 @@ class PlatformCheckTest(unittest.TestCase):
                           "check_templates",
                           "check_platforms", "check_provider_independence",
                           "check_no_readme_only_dirs", "check_plugin_version",
-                          "check_template_pin"):
+                          "check_plugin_runtime", "check_template_pin"):
                 setattr(self.ci, check, mock.Mock(return_value=set()))
             self.ci.check_template_pin.return_value = None
             write(os.path.join("core", "lifecycle", "gates.yaml"), "")

@@ -1,0 +1,430 @@
+"""The `sdk` step: game-design, scaffold-record and prototype-report in, sdk-report out.
+
+    game.config.yaml + pinned profiles ──► integration plan (what each platform requires)
+    game-design + the game's source    ──► integration (integration.py): the gameplay layer,
+                                           the seam and main.ts wired to the platform SDK,
+                                           checked by its own mock suite
+    game repo `pnpm sdk:conformance`   ──► evidence (fake portal SDKs; optional browser smoke)
+                                        ──► sdk-report: per platform, per feature, how observed
+
+The integration phase runs when the run holds a game-design and a scaffold-record; without
+them (`wgf sdk` on its own) the step verifies what is already there. A feature both phases
+report takes the worse status: an adapter that works in a game that does not call it is not
+working, and neither is a wired game on an adapter that fails.
+
+Where the game repository is: wgflib.checkout's one precedence, the same for every step
+(docs/checkouts.md) - `with: {game_repo: <path>}` (or `repo_dir`) on the workflow step, else
+the WGF_GAME_REPO environment variable, else the scaffold-record's repository.local_path,
+else `factory.checkouts`/<scaffold-record repository name> (`factory.sdk.games_dir` and
+`factory.init.projects_dir` are deprecated aliases for factory.checkouts, and
+`factory.sdk.game_repo` for the step's `with:`). `with: {browser: true}` (or
+`factory.sdk.browser`) also runs the browser smoke. `with: {report: <path>}` reads an
+existing conformance report — a CI artifact, say — instead of running the suite.
+
+Outcomes (docs/workflow-module-contract.md §7):
+
+    no game repository configured, or no game.config.yaml   BLOCKED: platform not configured
+    a platform pin that does not match its profile           BLOCKED: re-pin via the tech plan
+    the suite could not run (toolchain, timeout)             FAILED, retryable
+    a REQUIRED platform with a required feature not working  FAILED, not retryable, sdk-report
+                                                             persisted as evidence
+    no packages/platform-sdk in the game repository          BLOCKED (integration phase)
+    the build does not boot through the integration seam     FAILED, not retryable: main.ts
+    (wgflib.gameseam: main.ts importing createGamePlatform   must use the develop step's seam;
+    and createGameIntegration, no createPlatform)            nothing is written or committed
+    the integration's own mock suite or typecheck failed     FAILED, not retryable, sdk-report
+                                                             persisted as evidence
+    no readable git HEAD, a prototype-report naming no
+    commit, HEAD not the prototype commit (or this run's
+    sdk commits on it), uncommitted changes the
+    integration did not make                                 BLOCKED (commit.py)
+    the conformance suite ran at another commit than HEAD    FAILED, not retryable
+    otherwise                                                SUCCESS; optional platforms that
+                                                             are not working are named in the
+                                                             message and metadata
+
+A `working` feature is one whose every conformance scenario passed. A skipped scenario (no
+adapter on this ref) is `not-started`, never `working`. The step publishes nothing.
+
+Commits (commit.py, docs/core-contracts.md §5): a successful integration that changed the
+tree is committed once, locally, keyed by the idempotency key in a `Wgf-Sdk-Key` trailer,
+and the conformance suite then runs at that commit. The sdk-report's `build_ref` names the
+commit it verified (`commit_sha`), the commit it built on (`base_commit_sha`, the
+prototype-report's) and the commits it made between them (`sdk_commits`). Nothing is pushed.
+"""
+
+import datetime
+import os
+
+from wgflib import agentenv, checkout, provenance
+from wgflib.workflow import ArtifactOutput, StepResult, WorkflowStep
+
+from wgf_develop import safewrite
+from wgf_verification.lineage import same_commit
+
+from . import commit as sdk_commit
+from . import evidence as ev
+from .integration import IntegrationPhase, PhaseBlocked, SeamMissing
+from .plan import FEATURES, PlanError, integration_plan, load_game_config
+from .runner import CommandRunner
+
+__all__ = ["SdkStep", "register", "SCHEMA_VERSION", "ROLE"]
+
+SCHEMA_VERSION = provenance.version_of("sdk-report")
+ROLE = "sdk"
+OBSERVED_BY = "web-game-template SDK conformance suite (tests/sdk, fake portal SDK)"
+
+
+def utc_now():
+    return datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def _feature_status(name, plan, observed, suite_platform, commit, limitation):
+    required = name in plan.required
+    item = {"feature": name}
+    if name in plan.unservable:
+        item.update(status="not-started",
+                    note=f"{plan.why[name]}, but the {plan.id} profile offers no {name} ads")
+        return item
+    if name == "not-configured" and limitation:
+        # The suite passed because createPlatform refused loudly — the right failure mode,
+        # but not an integration.
+        item.update(status="not-started", note=limitation)
+        return item
+    if observed is None or (observed["passed"] == observed["failed"] == observed["skipped"] == 0):
+        # Not applicable on this platform according to the suite (only `todo`), or absent.
+        if required and name in plan.conditional and observed is not None:
+            item.update(status="not-required",
+                        note=f"the conformance suite reports it not applicable on {suite_platform} "
+                             "(no portal SDK)")
+        elif required:
+            item.update(status="not-started",
+                        note=f"required ({plan.why[name]}) but the conformance suite has no "
+                             f"scenario for it on {suite_platform}")
+        else:
+            item["status"] = "not-required"
+        return item
+    if observed["failed"]:
+        item.update(status="partial", observed_by=f"{OBSERVED_BY} @ {commit}",
+                    note="; ".join(observed["failures"])[:900])
+    elif observed["skipped"]:
+        item.update(status="not-started",
+                    note=f"{observed['skipped']} scenario(s) skipped: no adapter on this ref")
+    else:
+        item.update(status="working",
+                    observed_by=f"{OBSERVED_BY} @ {commit}: {observed['passed']} scenario(s) passed")
+    if not required:
+        item["status"] = "not-required"
+        item["note"] = (f"exercised, not required by profile or game.config"
+                        + (f" ({observed['failures'][0]})" if observed["failed"] else ""))
+        item.pop("observed_by", None)
+    return item
+
+
+def _limitation(observed):
+    titles = [t for t in (observed or {}).get("not-configured", {}).get("titles", [])
+              if "refuses loudly" in t]
+    return titles[0].split(" — ", 1)[1] if titles and " — " in titles[0] else None
+
+
+# Worse status wins when both phases report a feature.
+_RANK = {"working": 0, "unsupported": 1, "partial": 2, "not-started": 3}
+
+
+def _section(config, name):
+    # The engine hands steps the configuration as a plain mapping; FactoryConfig in tests.
+    if hasattr(config, "section"):
+        return config.section(name)
+    return (config or {}).get(name) or {}
+
+
+def _combine(verified, integrated):
+    """One feature, as the conformance suite and the integration phase saw it."""
+    if integrated["status"] == "not-required":
+        return verified
+    if verified["status"] == "not-required":
+        return integrated
+    merged = dict(verified)
+    if _RANK[integrated["status"]] > _RANK.get(verified["status"], 0):
+        merged["status"] = integrated["status"]
+    for key in ("required_by", "hooks", "fallback"):
+        if key in integrated:
+            merged[key] = integrated[key]
+    observed = [o for o in (verified.get("observed_by"), integrated.get("observed_by")) if o]
+    if merged["status"] == "working" and observed:
+        merged["observed_by"] = "; ".join(observed)
+    else:
+        merged.pop("observed_by", None)
+    notes = [n for n in (verified.get("note"), integrated.get("note")) if n]
+    if notes:
+        merged["note"] = " | ".join(notes)[:1500]
+    return merged
+
+
+def _overlay(entry, integrated):
+    """Lay the integration phase's view of one platform over the conformance suite's."""
+    features = {f["feature"]: f for f in entry["features"]}
+    for item in integrated["features"]:
+        features[item["feature"]] = (_combine(features[item["feature"]], item)
+                                     if item["feature"] in features else item)
+    entry["features"] = list(features.values())
+    entry["adapter"] = integrated["adapter"]
+    if integrated.get("note"):
+        entry["note"] = " | ".join(n for n in (entry.get("note"), integrated["note"]) if n)
+    required = [f for f in entry["features"] if f["status"] != "not-required"]
+    if all(f["status"] == "working" for f in required):
+        status = "working"
+    elif any(f["status"] in ("working", "partial", "unsupported") for f in required):
+        status = "partial"
+    else:
+        status = "not-started"
+    if integrated["adapter"]["status"] == "missing":
+        status = "not-started"  # a build for it fails at boot, whatever else passed
+    order = ("working", "partial", "not-started")
+    entry["status"] = max(status, entry["status"], key=order.index)
+
+
+def _game_env(runner, env):
+    """Give a runner that has no environment of its own the game-code one (the allowlist
+    plus factory.agents.game_env_passthrough); a test's runner keeps what it has."""
+    if getattr(runner, "env", False) is None:
+        runner.env = env
+    return runner
+
+
+class SdkStep(WorkflowStep):
+    type = "sdk"
+
+    clock = staticmethod(utc_now)
+    runner_factory = ev.PnpmRunner
+    integration_runner_factory = CommandRunner
+    profiles_dir = None
+
+    def _setting(self, context, key, default=None):
+        if key in self.params:
+            return self.params[key]
+        return _section(context.config, "sdk").get(key, default)
+
+    def _game_repo(self, context, scaffold):
+        """(path or None, why): wgflib.checkout's one precedence - the step's `with:
+        game_repo` (or repo_dir), WGF_GAME_REPO, the scaffold-record's local_path, then
+        factory.checkouts (sdk.games_dir and init.projects_dir are deprecated aliases) +
+        the repository name, else the title id. The first rule that names a path decides."""
+        name = (scaffold or {}).get("title_id")
+        try:
+            path, source = checkout.locate(context.config, scaffold, "sdk", self.params,
+                                           name=name, logger=context.logger)
+        except checkout.CheckoutError as exc:
+            return None, str(exc)
+        if not os.path.isdir(path):
+            return None, f"no game repository at {path} (from {source})"
+        return path, source
+
+    def execute(self, inputs, context):
+        # The integration writes and commits in the checkout: locked against another run for
+        # the whole step (wgflib.checkout).
+        with checkout.StepLease(context) as lease:
+            try:
+                return self._execute(inputs, context, lease)
+            except safewrite.UnsafeCheckoutPath as exc:
+                # A link or non-directory where the integration writes its files: writing
+                # through it would put the Factory's text wherever it points.
+                context.logger.error("sdk refused an unsafe checkout path", error=str(exc))
+                return StepResult.failed(
+                    f"the checkout is not safe to write the integration into: {exc}. Nothing "
+                    "was written there; remove the link and run sdk again.", retryable=False)
+
+    def _execute(self, inputs, context, lease):
+        design = inputs.load("game-design") if "game-design" in inputs else None
+        scaffold = inputs.load("scaffold-record") if "scaffold-record" in inputs else None
+        game_repo, where = self._game_repo(context, scaffold)
+        if not game_repo:
+            return StepResult.blocked(
+                f"platform not configured: {where}. Name the checkout with the step's with: "
+                "game_repo, WGF_GAME_REPO, or factory.checkouts (docs/checkouts.md)")
+        try:
+            lease.take(game_repo)
+        except checkout.CheckoutLocked as exc:
+            return StepResult.blocked(str(exc))
+        try:
+            config = load_game_config(game_repo)
+            plans = integration_plan(config, self.profiles_dir, game_repo=game_repo)
+        except PlanError as exc:
+            return StepResult.blocked(str(exc))
+
+        has_prototype = "prototype-report" in inputs
+        prototype = inputs.load("prototype-report") if has_prototype else {}
+        title_id = ((design or {}).get("title_id") or (prototype or {}).get("title_id")
+                    or (config.get("game") or {}).get("id") or context.project_id)
+
+        # Where the build stands before anything is written: the commit the evidence will be
+        # about must be established, and must be develop's (or this run's sdk commits on it).
+        run_id = getattr(context, "run_id", None)
+        key = getattr(context, "idempotency_key", None) or \
+            f"{run_id or 'local'}:{getattr(context, 'current_step', None) or 'sdk'}:" \
+            f"{getattr(context, 'visit', None) or context.execution}"
+        try:
+            game_env = agentenv.game_code_env(context.config)
+        except agentenv.ConfigError as exc:
+            return StepResult.failed(str(exc), retryable=False)
+        integration_runner = _game_env(self.integration_runner_factory(), game_env)
+        git = sdk_commit.SdkGit(game_repo, integration_runner,
+                                author=self._setting(context, "commit_author"))
+        prototype_commit = ((prototype or {}).get("build_ref") or {}).get("commit_sha")
+        # Which commits are this step's is recorded outside the checkout, in the run
+        # directory: a commit trailer can be forged by anyone who can commit.
+        run_dir = getattr(context, "run_dir", None)
+        ledger = sdk_commit.Ledger(os.path.join(
+            run_dir, "sdk", f"{getattr(context, 'current_step', None) or 'sdk'}.commits.json")) \
+            if run_dir else None
+        try:
+            head, base, own = sdk_commit.prepare(git, prototype_commit, has_prototype, run_id,
+                                                 ledger=ledger, key=key)
+        except sdk_commit.CommitRefused as exc:
+            return StepResult.blocked(str(exc))
+
+        integrated = None
+        if design and scaffold:
+            phase = IntegrationPhase(lambda key, default=None: self._setting(context, key, default),
+                                     integration_runner)
+            if ledger is not None:
+                ledger.start(key)
+            try:
+                integrated = phase.run(game_repo, design, scaffold, title_id)
+            except PhaseBlocked as exc:
+                return StepResult.blocked(str(exc))
+            except SeamMissing as exc:
+                return StepResult.failed(str(exc), retryable=False)
+            context.logger.info("sdk integration", tests=integrated["integration"]["tests"]["status"])
+            if integrated["integration"]["tests"]["status"] != "failed":
+                try:
+                    sha, created = sdk_commit.commit(
+                        git, key, title_id, integrated["integration"]["files"],
+                        integrated["integration"]["tests"], ledger=ledger)
+                except sdk_commit.CommitRefused as exc:
+                    return StepResult.blocked(str(exc))
+                if created:
+                    context.logger.info("sdk integration committed", commit=sha, key=key)
+                    own = own + [sha]
+                integrated["integration"]["repository_state"] = (
+                    "clean" if not git.dirty_paths() else "uncommitted-changes")
+        head = git.head()
+        if not head:
+            return StepResult.blocked(f"{game_repo}: HEAD became unreadable during the "
+                                      "integration; the commit cannot be established")
+
+        report_path = self._setting(context, "report")
+        try:
+            if report_path:
+                run = ev.ConformanceRun(ev.read_report(report_path), None)
+            else:
+                run = _game_env(self.runner_factory(), game_env).run(
+                    game_repo, browser=bool(self._setting(context, "browser")))
+        except ev.EvidenceError as exc:
+            return StepResult.failed(str(exc))
+        observed, problems = ev.summarize(run.report)
+        if problems:
+            return StepResult.failed("the conformance report is not trustworthy: " + "; ".join(problems),
+                                     retryable=False)
+
+        commit = head
+        if run.commit and not same_commit(run.commit, head):
+            return StepResult.failed(
+                f"the conformance suite ran at {run.commit[:12]}, but the checkout's HEAD is "
+                f"{head[:12]}: the checkout moved while the step ran", retryable=False)
+        tests_failed = bool(integrated) and \
+            integrated["integration"]["tests"]["status"] == "failed"
+        lineage = {"base_commit_sha": base, "sdk_commits": list(own)}
+
+        entries, blocking, degraded = [], [], []
+        for plan in plans:
+            # A GameVui build runs the generic-web adapter; the suite reports it under gamevui.
+            suite_platform = plan.id
+            features = observed.get(suite_platform)
+            limitation = _limitation(features)
+            items = [_feature_status(name, plan, (features or {}).get(name), suite_platform, commit,
+                                     limitation)
+                     for name in FEATURES]
+            required_items = [i for i in items
+                              if i["feature"] in plan.required and i["status"] != "not-required"]
+            if not features:
+                status = "not-started"
+            elif all(i["status"] == "working" for i in required_items):
+                status = "working"
+            elif any(i["status"] in ("working", "partial") for i in required_items):
+                status = "partial"
+            else:
+                status = "not-started"
+            notes = []
+            if limitation:
+                notes.append(limitation)
+            if not features:
+                notes.append("the conformance suite has no harness for this platform")
+            if run.browser is not None:
+                notes.append("browser smoke (PixiJS + Three.js builds, mocked portal scripts): "
+                             + ("passed" if run.browser["passed"] else "FAILED"))
+                if not run.browser["passed"] and status == "working":
+                    status = "partial"
+            if not same_commit(base, commit):
+                notes.append(f"integrated on {base[:12]} and committed as {commit[:12]}")
+            if tests_failed:
+                notes.append("the failed integration is left uncommitted in the working tree")
+            entry = {"platform_id": plan.id, "profile_version": plan.version, "status": status,
+                     "features": items}
+            if notes:
+                entry["note"] = " | ".join(notes)
+            if integrated and plan.id in integrated["platforms"]:
+                _overlay(entry, integrated["platforms"][plan.id])
+                status = entry["status"]
+            entries.append(entry)
+            if status != "working":
+                (blocking if plan.role == "required" else degraded).append(f"{plan.id} ({status})")
+
+        now = self.clock()
+        artifact = self._artifact(title_id, commit, entries, inputs, prototype, now, context,
+                                  integrated, lineage)
+        metadata = {"platforms": {e["platform_id"]: e["status"] for e in entries},
+                    "commit": commit, "base_commit": base, "sdk_commits": list(own) or None,
+                    "browser": None if run.browser is None else run.browser["passed"]}
+        metadata = {k: v for k, v in metadata.items() if v is not None}
+        output = ArtifactOutput("sdk-report", artifact, metadata=metadata)
+        context.logger.info("sdk conformance read", platforms=metadata["platforms"], commit=commit)
+        if integrated:
+            tests = integrated["integration"]["tests"]
+            metadata["integration"] = tests["status"]
+            if tests["status"] == "failed":
+                return StepResult("FAILED", retryable=False, artifacts=[output],
+                                  error="the integration's own suite failed: "
+                                        + tests.get("note", "see integration.tests"))
+        if blocking:
+            return StepResult("FAILED", retryable=False, artifacts=[output],
+                              error=f"required platform integration not working: {', '.join(blocking)}")
+        return StepResult.success(
+            [output], message=f"{len(entries)} platform(s) working"
+            if not degraded else f"required platforms working; optional not working: {', '.join(degraded)}")
+
+    def _artifact(self, title_id, commit, entries, inputs, prototype, now, context,
+                  integrated=None, lineage=None):
+        record = provenance.build(
+            "sdk-report",
+            artifact_id=provenance.artifact_id("sdk-report", title_id, now, context.execution),
+            produced_by=provenance.producer(ROLE),
+            produced_at=now,
+            inputs=provenance.pin_inputs(inputs),
+            schema_version=SCHEMA_VERSION,
+            title_id=title_id)
+        build_ref = {"commit_sha": commit, **(lineage or {})}
+        url = ((prototype or {}).get("build_ref") or {}).get("url")
+        if url:
+            build_ref["url"] = url
+        artifact = {"provenance": record, "title_id": title_id, "build_ref": build_ref,
+                    "platforms": entries}
+        if integrated:
+            artifact["sdk"] = integrated["sdk"]
+            artifact["integration"] = integrated["integration"]
+        return provenance.seal(artifact)
+
+
+def register(registry):
+    registry.register(SdkStep.type, SdkStep)
+    return registry

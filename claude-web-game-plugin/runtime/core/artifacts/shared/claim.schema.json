@@ -1,0 +1,156 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://webgamefactory.dev/schemas/artifacts/shared/claim.schema.json",
+  "title": "Claim",
+  "description": "The Factory's unit of knowledge. Claims are append-only: a claim is never edited, it is superseded. This is what stops a hypothesis being quietly rewritten into a fact three weeks later — the single most important integrity rule in the system.\n\nThis file lives in shared/ but is also a stored artifact in its own right, because a claim is both a primitive embedded in other artifacts and a record on disk. Defining it twice would be the drift this structure exists to prevent.",
+
+  "x-wgf": {
+    "id": "claim",
+    "kind": "artifact",
+    "format": "json",
+    "producer": "portfolio:market-scan",
+    "also_produced_by": ["title:live"],
+    "consumers": ["portfolio:scored", "title:strategy", "title:design"],
+    "repo_path": "workspace/claims/<claim-id>.json",
+    "append_only": true
+  },
+
+  "$defs": {
+    "tier": {
+      "type": "string",
+      "description": "observed = measured or reported from a named source. derived = reasoned from other claims. hypothesis = asserted without evidence; legitimate, but must never be presented as fact.",
+      "enum": ["observed", "derived", "hypothesis"]
+    },
+
+    "evidence": {
+      "type": "object",
+      "required": ["source_uri", "source_kind", "observed_at"],
+      "properties": {
+        "source_uri": {
+          "type": "string",
+          "description": "Where this came from. A URL, a portal page, a dataset id, or a playtest session id."
+        },
+        "source_kind": {
+          "type": "string",
+          "enum": [
+            "portal-listing",
+            "portal-docs",
+            "analytics",
+            "playtest",
+            "market-report",
+            "competitor-teardown",
+            "community",
+            "internal-history",
+            "other"
+          ]
+        },
+        "observed_at": { "type": "string", "format": "date-time" },
+        "excerpt": {
+          "type": "string",
+          "description": "The specific text or figure relied upon. Required in practice for review; keep it short and verbatim."
+        },
+        "metric": {
+          "type": "object",
+          "description": "Present when the evidence is quantitative.",
+          "required": ["name", "value"],
+          "properties": {
+            "name": { "type": "string" },
+            "value": { "type": "number" },
+            "unit": { "type": "string" }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+
+    "claim": {
+      "type": "object",
+      "required": ["id", "statement", "tier", "confidence", "asserted_at"],
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^claim-[0-9a-z]{4,}$"
+        },
+        "statement": {
+          "type": "string",
+          "description": "One falsifiable sentence. 'Merge-2 idle games on Yandex average 6-9 minute sessions' — not 'merge is popular'.",
+          "minLength": 8
+        },
+        "tier": { "$ref": "#/$defs/tier" },
+        "confidence": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "evidence": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/evidence" },
+          "default": []
+        },
+        "parents": {
+          "type": "array",
+          "description": "Claim ids this was reasoned from. Required for tier=derived.",
+          "items": { "type": "string" },
+          "default": []
+        },
+        "subject": {
+          "type": "object",
+          "description": "What the claim is about, so claims can be retrieved by facet.",
+          "properties": {
+            "genre": { "type": "string" },
+            "mechanic": { "type": "string" },
+            "platform": { "type": "string" },
+            "audience": { "type": "string" },
+            "dimension": { "type": "string" }
+          },
+          "additionalProperties": false
+        },
+        "asserted_at": { "type": "string", "format": "date-time" },
+        "asserted_by": {
+          "type": "string",
+          "description": "Role id."
+        },
+        "superseded_by": {
+          "type": ["string", "null"],
+          "description": "Claim id that replaces this one. Set instead of editing. Once set, this claim is historical and must not be cited by new work.",
+          "default": null
+        },
+        "tags": {
+          "type": "array",
+          "items": { "type": "string" },
+          "default": []
+        }
+      },
+      "additionalProperties": false,
+
+      "allOf": [
+        {
+          "if": { "properties": { "tier": { "const": "observed" } }, "required": ["tier"] },
+          "then": {
+            "properties": { "evidence": { "minItems": 1 } },
+            "required": ["evidence"],
+            "description": "An observed claim without a source is a hypothesis wearing a disguise."
+          }
+        },
+        {
+          "if": { "properties": { "tier": { "const": "derived" } }, "required": ["tier"] },
+          "then": {
+            "properties": { "parents": { "minItems": 1 } },
+            "required": ["parents"],
+            "description": "A derived claim must say what it was derived from."
+          }
+        },
+        {
+          "if": { "properties": { "tier": { "const": "hypothesis" } }, "required": ["tier"] },
+          "then": {
+            "properties": { "confidence": { "maximum": 0.6 } },
+            "description": "A hypothesis may not claim high confidence. If you are more sure than this, find evidence and restate it as observed or derived."
+          }
+        }
+      ]
+    }
+  },
+
+  "$ref": "#/$defs/claim"
+}

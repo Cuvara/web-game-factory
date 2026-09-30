@@ -6,13 +6,13 @@ description: Select the engine, set budgets, write the development plan, take de
 
 **Transition** `title: tech-plan -> scaffolding`
 **Role** `architect`
-**Gate** `G3` — see `core/lifecycle/gates.yaml` for its required artifacts, predicates and approvers.
+**Gate** `G3` — see `${CLAUDE_PLUGIN_ROOT}/runtime/core/lifecycle/gates.yaml` for its required artifacts, predicates and approvers.
 
 Select the engine, set budgets, write the development plan, take design+plan to approval.
 
 ## Procedure
 
-1. Read `core/lifecycle/` for the machine that owns this transition, and the
+1. Read `${CLAUDE_PLUGIN_ROOT}/runtime/core/lifecycle/` for the machine that owns this transition, and the
    `procedure` file named on the source state.
 2. Read the `x-wgf` block of every artifact schema this transition produces or consumes.
 3. Check the transition's guards before acting. A guard that cannot be evaluated is a

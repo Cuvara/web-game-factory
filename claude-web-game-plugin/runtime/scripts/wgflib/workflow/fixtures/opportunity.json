@@ -1,0 +1,67 @@
+{
+  "id": "opp-mock",
+  "title": "Mock Title",
+  "state": "discovered",
+  "concept": {
+    "genre": "arcade",
+    "subgenre": "rhythm-reaction",
+    "core_mechanic": "one-touch lane switching timed to a beat",
+    "fantasy": "being effortlessly in the groove — the player feels skilled before they are",
+    "core_loop": "anticipate the beat, tap to switch lanes, extend a combo, push for a personal best, retry immediately",
+    "reference_titles": [
+      "Beat Racer",
+      "Dancing Line",
+      "Smash Colors 3D"
+    ]
+  },
+  "hypothesis": "claim-0a04",
+  "audience": {
+    "type": "casual",
+    "device": "mobile",
+    "regions": [
+      "ru",
+      "kz",
+      "by"
+    ],
+    "age_band": "13-34"
+  },
+  "candidate_platforms": [
+    "yandex",
+    "crazygames"
+  ],
+  "monetization_hypothesis": {
+    "primary": "rewarded",
+    "secondary": [
+      "interstitial"
+    ],
+    "rationale": "Failure-and-retry loops create a natural rewarded moment: continue the run rather than lose the combo."
+  },
+  "estimates": {
+    "dev_speed_days": 11,
+    "scope_complexity": "s",
+    "asset_cost_usd": 320,
+    "session_seconds": 210
+  },
+  "claim_refs": [
+    "claim-0a01",
+    "claim-0a02",
+    "claim-0a03",
+    "claim-0a04"
+  ],
+  "risks": [
+    {
+      "description": "Audio latency on mobile web can break beat-matching, which is the entire mechanic.",
+      "severity": "high",
+      "claim_refs": []
+    },
+    {
+      "description": "Russian localization is mandatory on Yandex and machine translation is rejected.",
+      "severity": "medium",
+      "claim_refs": [
+        "claim-0a02"
+      ]
+    }
+  ],
+  "latest_evaluation_id": null,
+  "title_id": null
+}

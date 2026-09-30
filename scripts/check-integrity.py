@@ -423,6 +423,20 @@ def check_plugin_version():
                           "sets a version; plugin.json is the only place it lives")
 
 
+def check_plugin_runtime():
+    """The Claude plugin ships the Factory runtime (claude-web-game-plugin/runtime/), because
+    an installed plugin is a copy of its own directory and nothing else. The bundle must be
+    the source's runtime closure byte for byte (scripts/build-plugin-runtime.py), or an
+    installed plugin runs a Factory this repository no longer is."""
+    import importlib.util
+    spec = importlib.util.spec_from_file_location(
+        "build_plugin_runtime", os.path.join("scripts", "build-plugin-runtime.py"))
+    builder = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(builder)
+    for problem in builder.check(builder.DEFAULT_DEST, root="."):
+        ERRORS.append(f"{builder.DEFAULT_DEST}: {problem} (run scripts/gen-adapters.sh)")
+
+
 def check_template_pin():
     """workspace/config/template.lock.json names one web-game-template commit, as a full sha.
     Where the sibling checkout stands against it is reported, never silently used: every
@@ -463,6 +477,7 @@ def main():
     check_provider_independence()
     check_no_readme_only_dirs()
     check_plugin_version()
+    check_plugin_runtime()
     pin = check_template_pin()
 
     print(f"artifacts   {len(artifacts)}")

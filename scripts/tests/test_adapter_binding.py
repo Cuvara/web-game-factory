@@ -32,6 +32,15 @@ from wgflib.yamllite import load_file  # noqa: E402
 
 PLUGINS = ("claude-web-game-plugin", "codex-web-game-plugin")
 
+# Where each host's surfaces read the Factory, and how they start its engine. The Claude
+# plugin is installed as a copy of its own directory, so its surfaces name the runtime inside
+# it (gen-adapters.sh, scripts/build-plugin-runtime.py); Codex still runs from the factory
+# repository root.
+CLAUDE_RUNTIME = "${CLAUDE_PLUGIN_ROOT}/runtime"
+FACTORY = {"claude-web-game-plugin": CLAUDE_RUNTIME + "/", "codex-web-game-plugin": ""}
+ENGINE = {"claude-web-game-plugin": f'python3 "{CLAUDE_RUNTIME}/scripts/wgf.py"',
+          "codex-web-game-plugin": "bin/wgf"}
+
 
 def read(*parts):
     with open(os.path.join(ROOT, *parts), encoding="utf-8") as handle:
@@ -122,11 +131,12 @@ class WorkflowEntryPoints(unittest.TestCase):
 
     def test_points_at_the_workflow_and_the_engine(self):
         for entry, plugin, text in self.surfaces():
+            engine = ENGINE[plugin]
             with self.subTest(plugin=plugin, workflow=entry["id"]):
-                self.assertIn(f"`{entry['runs']}`", text)
-                self.assertIn(f"bin/wgf {entry['id']} ", text)
-                self.assertIn("bin/wgf resume <run-id>", text)
-                self.assertIn("bin/wgf status <run-id>", text)
+                self.assertIn(f"`{FACTORY[plugin]}{entry['runs']}`", text)
+                self.assertIn(f"{engine} {entry['id']} ", text)
+                self.assertIn(f"{engine} resume <run-id>", text)
+                self.assertIn(f"{engine} status <run-id>", text)
 
     def test_restates_no_step_order(self):
         """The workflow file is the only step order: an entry point names no chain of steps.
@@ -140,8 +150,9 @@ class WorkflowEntryPoints(unittest.TestCase):
 
     def test_never_answers_a_gate(self):
         for entry, plugin, text in self.surfaces():
+            engine = ENGINE[plugin]
             with self.subTest(plugin=plugin, workflow=entry["id"]):
-                self.assertIn("Never run `bin/wgf decide`", text)
+                self.assertIn(f"Never run `{engine} decide`", text)
                 for flag in ("--decision", "--note", "decide", "--budget-sessions",
                              "--budget-cost", "--workflow", "--config"):
                     self.assertRegex(text, rf"Refuse[^#]*`{re.escape(flag)}`")
@@ -151,8 +162,16 @@ class WorkflowEntryPoints(unittest.TestCase):
                     if re.search(r"wgf decide|--decision (?!`)|--decision done", line):
                         self.assertTrue(
                             line.lstrip().startswith(("Never run", "Refuse", "`--decision`"))
-                            or "`! bin/wgf" in line,
+                            or f"`! {engine}" in line,
                             f"{plugin}: answers a checkpoint: {line.strip()}")
+
+    def test_claude_preflight_checks_the_plugin_runtime_not_the_working_directory(self):
+        for entry in self.entries:
+            text = read("claude-web-game-plugin", "commands", f"{entry['id']}.md")
+            with self.subTest(workflow=entry["id"]):
+                self.assertIn(f"{ENGINE['claude-web-game-plugin']} where --json", text)
+                self.assertNotIn("in the working directory", text)
+                self.assertNotIn("factory repository root", text)
 
     def test_claude_surface_is_user_invoked_only(self):
         for entry in self.entries:
@@ -163,6 +182,40 @@ class WorkflowEntryPoints(unittest.TestCase):
                 self.assertRegex(front, r"(?m)^argument-hint: \S")
                 self.assertRegex(front, r"(?m)^disable-model-invocation: true$")
                 self.assertIn("$ARGUMENTS", text)
+
+
+class ClaudeSurfacesReadThePluginRuntime(unittest.TestCase):
+    """An installed Claude plugin is a copy of its own directory, run from any project. A
+    surface naming a Factory path relative to the working directory reads the project, not
+    the Factory - so every one must be under ${CLAUDE_PLUGIN_ROOT}/runtime, and exist there."""
+
+    FACTORY_PATH = re.compile(r"(?:^|(?<=[^A-Za-z0-9_./$}-]))(core/|docs/|scripts/|bin/wgf)")
+    RUNTIME_PATH = re.compile(re.escape(CLAUDE_RUNTIME) + r"/([A-Za-z0-9_./-]+)")
+
+    def surfaces(self):
+        plugin = os.path.join(ROOT, "claude-web-game-plugin")
+        for kind in ("agents", "commands", "skills"):
+            for directory, _dirs, files in os.walk(os.path.join(plugin, kind)):
+                for name in files:
+                    path = os.path.join(directory, name)
+                    with open(path, encoding="utf-8") as handle:
+                        yield os.path.relpath(path, plugin), handle.read()
+
+    def test_no_surface_names_a_factory_path_relative_to_the_working_directory(self):
+        for name, text in self.surfaces():
+            with self.subTest(surface=name):
+                self.assertEqual(self.FACTORY_PATH.findall(text), [])
+
+    def test_every_runtime_path_a_surface_names_is_in_the_bundle(self):
+        runtime = os.path.join(ROOT, "claude-web-game-plugin", "runtime")
+        seen = 0
+        for name, text in self.surfaces():
+            for path in self.RUNTIME_PATH.findall(text):
+                path = path.rstrip(".")
+                seen += 1
+                with self.subTest(surface=name, path=path):
+                    self.assertTrue(os.path.exists(os.path.join(runtime, *path.split("/"))))
+        self.assertGreater(seen, 100)
 
 
 class BindingWorkflowIntegrity(unittest.TestCase):

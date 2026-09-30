@@ -1,0 +1,52 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://webgamefactory.dev/schemas/artifacts/shared/gameplay-session.schema.json",
+  "title": "Gameplay Session",
+  "description": "A recorded, interactive play-through of a built game in a browser, written by whoever drove it — typically an agent with a browser automation tool — for release QA to ingest as gameplay evidence.\n\nNot an artifact: it lives in the game repository's build output (by default `build/verification/gameplay-session.json`), is regenerated per commit, and is accepted only when `commit_sha` is the commit under test. A session recorded against another commit is stale evidence and is ignored.\n\nEach scenario is one gameplay aspect, observed. `observation` says what was seen, not what was expected: 'tapped the left lane at 00:12; the ship moved one lane left and the combo counter rose to 3', not 'input works'.",
+
+  "type": "object",
+  "required": ["commit_sha", "scenarios"],
+  "properties": {
+    "driver": { "type": "string", "description": "What drove the browser, e.g. playwright-mcp." },
+    "commit_sha": { "type": "string" },
+    "url": { "type": "string", "description": "The served build that was played — a preview of the built bundle, never a dev server." },
+    "recorded_at": { "type": "string", "format": "date-time" },
+    "scenarios": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["aspect", "status", "observation"],
+        "properties": {
+          "aspect": { "enum": ["boot", "loading", "start", "input", "core-loop", "progression", "game-over", "restart", "pause-resume", "responsive"] },
+          "status": { "enum": ["PASS", "FAIL"] },
+          "observation": { "type": "string", "minLength": 1 },
+          "steps": { "type": "array", "items": { "type": "string" } },
+          "viewport": { "type": "string", "description": "e.g. 393x851 for a phone, 1280x720 for desktop." },
+          "screenshot": { "type": "string", "description": "Repository-relative path to a screenshot taken at the end of the scenario." }
+        },
+        "additionalProperties": false
+      }
+    },
+    "console_errors": { "type": "array", "items": { "type": "string" } },
+    "failed_requests": {
+      "type": "array",
+      "description": "Requests that failed or returned 4xx/5xx while playing. Present and empty means observed, none failed; absent means not observed.",
+      "items": { "type": "string" }
+    },
+    "browsers": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["browser", "platform", "result"],
+        "properties": {
+          "browser": { "type": "string" },
+          "platform": { "type": "string" },
+          "result": { "enum": ["pass", "fail", "not-tested"] },
+          "note": { "type": "string" }
+        },
+        "additionalProperties": false
+      }
+    }
+  },
+  "additionalProperties": false
+}

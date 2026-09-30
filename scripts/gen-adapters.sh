@@ -12,8 +12,17 @@
 # and skills.
 #
 # Re-run after editing the binding manifest. It overwrites agents/, commands/ and skills/
-# in both plugins; it does not touch READMEs or CONFORMANCE.md. It never deletes a file:
-# a surface removed from a table must be removed from disk by hand.
+# in both plugins, and rebuilds the Factory runtime the Claude plugin ships
+# (claude-web-game-plugin/runtime/, scripts/build-plugin-runtime.py); it does not touch
+# READMEs or CONFORMANCE.md. It never deletes a surface file: a surface removed from a table
+# must be removed from disk by hand.
+#
+# Claude Code installs a plugin by copying its directory and nothing else, so the Claude
+# surfaces never name a Factory path relative to the working directory - which is the
+# project, not the Factory. Every core/, docs/, scripts/wgf.py and bin/wgf they name is
+# rewritten (claude_paths, below) to the runtime inside the plugin, through the
+# ${CLAUDE_PLUGIN_ROOT} Claude Code substitutes in command, agent and skill content. The
+# Codex adapter has no such root; it still runs from the factory repository root.
 # scripts/tests/test_adapter_binding.py keeps the binding, these tables, the generated files
 # and both CONFORMANCE.md files naming the same surfaces.
 set -euo pipefail
@@ -22,6 +31,21 @@ cd "$(dirname "$0")/.."
 C=claude-web-game-plugin
 X=codex-web-game-plugin
 mkdir -p $C/agents $C/commands $C/skills $X/agents $X/commands $X/skills
+
+# The Factory runtime as the Claude surfaces name it, and its engine. Literal text: Claude
+# Code substitutes ${CLAUDE_PLUGIN_ROOT} when it loads the surface.
+CR='${CLAUDE_PLUGIN_ROOT}/runtime'
+CW="python3 \"$CR/scripts/wgf.py\""
+
+# claude_paths < text > text: every Factory path a Claude surface names, inside the plugin.
+# A path already under $CR is left alone: the character before it is a `/`.
+claude_paths() {
+  sed -E \
+    -e 's#(^|[^A-Za-z0-9_./-])core/#\1'"$CR"'/core/#g' \
+    -e 's#(^|[^A-Za-z0-9_./-])docs/#\1'"$CR"'/docs/#g' \
+    -e 's#(^|[^A-Za-z0-9_./-])scripts/wgf\.py#\1'"$CR"'/scripts/wgf.py#g' \
+    -e 's#(^|[^A-Za-z0-9_./-])bin/wgf([^A-Za-z0-9_.-]|$)#\1'"$CW"'\2#g'
+}
 
 # ---------------------------------------------------------------- agents
 # id|owns|description|must_read (semicolon-separated)|notes
@@ -45,7 +69,7 @@ for row in "${agents[@]}"; do
   IFS=';' read -ra arr <<< "$reads"
   for p in "${arr[@]}"; do reads_md+="$n. \`$p\`"$'\n'; n=$((n+1)); done
 
-  cat > "$C/agents/$id.md" <<EOF
+  claude_paths > "$C/agents/$id.md" <<EOF
 ---
 name: $id
 description: $desc
@@ -63,8 +87,9 @@ rather than resolving it yourself.
 
 ## Execution notes (Claude Code)
 
-- Resolve core paths relative to the factory repository root; this plugin sits beside \`core/\`.
-- Write artifacts to the \`repo_path\` given in each schema's \`x-wgf\` block.
+- Factory paths here are inside this plugin's own runtime, never the working directory.
+  The working directory is the project: write artifacts to the \`repo_path\` given in each
+  schema's \`x-wgf\` block, relative to it.
 - $notes
 - Do not advance the lifecycle. Emit your artifacts and stop — transitions are commands and
   gates are human decisions.
@@ -124,7 +149,7 @@ for row in "${commands[@]}"; do
       codex_step="$claude_step"
       record_step="Record the human's decision as a \`decision-record\`, and update the title's \`state.json\`." ;;
     -)
-      claude_step="Read \`workspace/\` and report. This command changes nothing."
+      claude_step="Read the project's \`workspace/\` (in the working directory) and report. This command changes nothing."
       codex_step="$claude_step"
       record_step="Write nothing." ;;
     *)
@@ -133,7 +158,7 @@ for row in "${commands[@]}"; do
       record_step="Record the outcome: artifacts at their \`repo_path\`, and the title's \`state.json\`." ;;
   esac
 
-  cat > "$C/commands/wgf-$id.md" <<EOF
+  claude_paths > "$C/commands/wgf-$id.md" <<EOF
 ---
 description: $summary
 ---
@@ -196,10 +221,12 @@ workflows=(
 "new-game|core/workflows/new-game.workflow.yaml|Run the Factory's new-game workflow end to end through the wgf engine; stop at every gate for a person."
 )
 
-# entry_body <id> <runs> <arguments> <background> <invoke> — the procedure both adapters
-# share; <invoke> is how the host names this surface when the user types it again.
+# entry_body <id> <runs> <arguments> <background> <invoke> <preflight> <engine-note> — the
+# procedure both adapters share; <invoke> is how the host names this surface when the user
+# types it again, <preflight> how it confirms it has the Factory runtime, <engine-note> how
+# the engine is started where the shim cannot be.
 entry_body() {
-  local id=$1 runs=$2 arguments=$3 background=$4 invoke=$5
+  local id=$1 runs=$2 arguments=$3 background=$4 invoke=$5 preflight=$6 engine_note=$7
   cat <<EOF
 **Workflow entry point** \`$runs\` — not a transition.
 **Engine** \`bin/wgf\` (\`scripts/wgf.py\`), the Factory's only orchestrator.
@@ -215,7 +242,7 @@ Arguments: $arguments
 1. \`$runs\`
 2. \`core/lifecycle/gates.yaml\`
 3. \`docs/workflow-engine.md\`
-4. \`workspace/config/factory.yaml\`
+4. the factory configuration \`bin/wgf where --json\` reports as \`config\`
 
 ## Arguments
 
@@ -239,16 +266,15 @@ Refuse, and run nothing, if the arguments contain anything else — in particula
 
 ## Procedure
 
-1. **Preflight.** Stop unless \`$runs\` exists in the working directory
-   (run from the factory repository root). For \`resume <run-id>\`, read
+1. **Preflight.** $preflight For \`resume <run-id>\`, read
    \`bin/wgf status <run-id> --json\` first and stop unless \`workflow_id\` is \`$id\`.
    Then act on it without starting anything when there is nothing to continue:
    \`COMPLETED\` — report it (step 6); \`RUNNING\` with liveness \`running\` — another
    process drives it, only report progress; \`WAITING\` at a gate whose \`pending.timeout\`
    is not \`eligible\` — report the gate (step 6) and stop. Anything else (a stopped,
    blocked, stale or failed run, or one waiting for input) is resumed at step 4.
-2. **Report the effective autonomy** from \`workspace/config/factory.yaml\`, as configured —
-   never change it: \`factory.develop.developer.kind\`, \`factory.review.reviewer.kind\`,
+2. **Report the effective autonomy** from that \`config\` file, as configured — never
+   change it: \`factory.develop.developer.kind\`, \`factory.review.reviewer.kind\`,
    \`factory.checkpoints.auto_approve\` (and \`timeout_auto_approve\`),
    \`factory.init.source\`. With \`--mock\` every step is a placeholder, and a mock run approves
    the reversible gates itself unless \`--hold-gates\` is given.
@@ -260,7 +286,7 @@ Refuse, and run nothing, if the arguments contain anything else — in particula
    - new run: \`bin/wgf $id <arguments> --json\`
    - resume: \`bin/wgf resume <run-id> [--from <STEP>] [--store <DIR>] --json\`
 
-   Where \`bin/wgf\` cannot be executed (Windows), use \`python scripts/wgf.py\` in its place.
+   $engine_note
    Read \`run_id\` from the first event, \`WORKFLOW_STARTED\` (on resume, \`WORKFLOW_RESUMED\`),
    and tell the user.
 5. **Progress.** Summarise \`STEP_STARTED\`, \`STEP_COMPLETED\` and \`STEP_FAILED\` events as they
@@ -301,7 +327,7 @@ stopped, and continues it if that shell was interrupted.
   and runs \`! bin/wgf resume <run-id> --decision done\`, then \`$invoke resume <run-id>\`.
   Development is not complete until the engine says so.
 
-Do not change \`workspace/config/factory.yaml\` to make a run more autonomous, and do not
+Do not change the factory configuration to make a run more autonomous, and do not
 advance a lifecycle state: the engine never moves one, and neither does this surface.
 EOF
 }
@@ -323,8 +349,14 @@ EOF
     entry_body "$id" "$runs" "\`\$ARGUMENTS\`" \
       "in the background, with the Bash tool's \`run_in_background\`: a run can take hours,
    far longer than a foreground command may. You are notified when it exits." \
-      "/web-game-factory:$id"
-  } > "$C/commands/$id.md"
+      "/web-game-factory:$id" \
+      "Run \`bin/wgf where --json\` and stop unless \`installed\` is true and \`workflow\`
+   names an existing file: the Factory - this workflow, core, the engine and its shipped
+   configuration - is the runtime inside this plugin, never the working directory. The
+   working directory is the project: report \`project_root\` and \`store\`, where this run's
+   state and instance data are kept (\`WGF_PROJECT_DIR\` names another project)." \
+      "Where \`python3\` is not on PATH (Windows), use \`python\` in its place."
+  } | claude_paths > "$C/commands/$id.md"
 
   {
     cat <<EOF
@@ -334,7 +366,10 @@ EOF
     entry_body "$id" "$runs" "the text given with this prompt." \
       "as a long-running background process, not a blocking call: a run can take hours.
    Poll \`bin/wgf status <run-id>\` for progress." \
-      "/$id"
+      "/$id" \
+      "Stop unless \`$runs\` exists in the working directory
+   (run from the factory repository root)." \
+      "Where \`bin/wgf\` cannot be executed (Windows), use \`python scripts/wgf.py\` in its place."
   } > "$X/commands/$id.md"
 done
 
@@ -372,7 +407,7 @@ for row in "${skills[@]}"; do
   for p in "${arr[@]}"; do reads_md+="- \`$p\`"$'\n'; done
 
   mkdir -p "$C/skills/$id" "$X/skills/$id"
-  cat > "$C/skills/$id/SKILL.md" <<EOF
+  claude_paths > "$C/skills/$id/SKILL.md" <<EOF
 ---
 name: $id
 description: $covers Supports the $supports role(s). Use when working on that part of the Factory lifecycle.
@@ -406,4 +441,5 @@ restated here; core is authoritative and this file is not a substitute for it.
 EOF
 done
 
-echo "generated: $(find $C $X -type f -name '*.md' | wc -l) markdown surfaces"
+echo "generated: $(find $C/agents $C/commands $C/skills $X/agents $X/commands $X/skills -type f -name '*.md' | wc -l) markdown surfaces"
+python3 scripts/build-plugin-runtime.py

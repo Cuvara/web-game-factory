@@ -1,0 +1,179 @@
+# Web Game Factory — Dimension vocabulary
+#
+# The single enumeration of the things the factory optimizes for. Everything that scores,
+# ranks, vetoes, or sets a threshold references a dimension id from this file.
+#
+# Without one shared vocabulary, "technical_risk" means one thing in an evaluation and
+# something else in a tech plan, and the two can never be compared.
+#
+# The factory deliberately optimizes several dimensions at once. Reducing this to
+# "maximize revenue" produces a portfolio of games that are individually plausible and
+# collectively unbuildable.
+#
+# Validated by core/artifacts/shared/dimension-vocabulary.schema.json
+
+version: 1.0.0
+
+dimensions:
+  # ------------------------------------------------------------- business
+  - id: revenue_potential
+    label: Revenue potential
+    group: business
+    direction: maximize
+    unit: usd_month
+    scale: currency
+    min_evidence_tier: derived
+    default_source: portal-listing
+    note: >
+      Requires at least a derived claim. A hypothesis-only revenue figure is the most
+      dangerous number in the system — it is the one people anchor on.
+
+  - id: monetization_fit
+    label: Monetization fit
+    group: business
+    direction: maximize
+    unit: ratio
+    scale: ratio
+    min_evidence_tier: hypothesis
+    note: How well the intended monetization suits the genre, audience and platform.
+
+  - id: competition
+    label: Competition intensity
+    group: business
+    direction: minimize
+    unit: ratio
+    scale: ratio
+    min_evidence_tier: observed
+    note: >
+      Observable by counting and dating comparable titles on the target portal. If this is
+      a hypothesis, the market was not actually looked at.
+
+  - id: distribution_potential
+    label: Distribution potential
+    group: business
+    direction: maximize
+    unit: ratio
+    scale: ratio
+    min_evidence_tier: hypothesis
+
+  # -------------------------------------------------------------- product
+  - id: session_quality
+    label: Session quality
+    group: product
+    direction: maximize
+    unit: ratio
+    scale: ratio
+    min_evidence_tier: hypothesis
+    note: Whether a session ends at a satisfying point rather than an arbitrary one.
+
+  - id: retention_potential
+    label: Retention potential
+    group: product
+    direction: maximize
+    unit: ratio
+    scale: ratio
+    min_evidence_tier: hypothesis
+
+  - id: replayability
+    label: Replayability
+    group: product
+    direction: maximize
+    unit: ratio
+    scale: ratio
+    min_evidence_tier: hypothesis
+
+  - id: audience_fit
+    label: Audience fit
+    group: product
+    direction: maximize
+    unit: ratio
+    scale: ratio
+    min_evidence_tier: derived
+
+  # ------------------------------------------------------------- platform
+  - id: platform_fit
+    label: Platform fit
+    group: platform
+    direction: maximize
+    unit: ratio
+    scale: ratio
+    min_evidence_tier: observed
+    default_source: portal-docs
+    note: >
+      Derived from the platform profile: does the portal accept this content class, does
+      it support the monetization, does the audience match. Observable from portal
+      documentation, so there is no excuse for a hypothesis here.
+
+  # ---------------------------------------------------------- engineering
+  - id: technical_risk
+    label: Technical risk
+    group: engineering
+    direction: minimize
+    unit: ratio
+    scale: ratio
+    min_evidence_tier: hypothesis
+
+  - id: performance_risk
+    label: Performance risk
+    group: engineering
+    direction: minimize
+    unit: ratio
+    scale: ratio
+    min_evidence_tier: hypothesis
+    note: Mobile web is the constraint that bites. Assume the low end of the device range.
+
+  - id: iterability
+    label: Ability to iterate
+    group: engineering
+    direction: maximize
+    unit: ratio
+    scale: ratio
+    min_evidence_tier: hypothesis
+    note: >
+      How cheaply the game can be changed after launch. Chronically underweighted, and it
+      determines whether the post-launch loop is real or theatre.
+
+  # ----------------------------------------------------------- production
+  - id: dev_speed_days
+    label: Development time
+    group: production
+    direction: minimize
+    unit: days
+    scale: ratio
+    min_evidence_tier: derived
+
+  - id: scope_complexity
+    label: Scope complexity
+    group: production
+    direction: minimize
+    unit: ordinal
+    scale: ordinal
+    levels: [xs, s, m, l, xl]
+    min_evidence_tier: hypothesis
+
+  - id: asset_cost
+    label: Asset cost
+    group: production
+    direction: minimize
+    unit: usd
+    scale: currency
+    min_evidence_tier: derived
+    note: Sourced from the asset manifest once one exists; estimated before that.
+
+  - id: time_to_market
+    label: Time to market
+    group: production
+    direction: minimize
+    unit: days
+    scale: ratio
+    min_evidence_tier: derived
+    note: >
+      Distinct from dev_speed_days: includes portal moderation, which the factory does not
+      control and which varies by platform.
+
+groups:
+  business: Commercial viability.
+  product: Whether players will want it and come back.
+  platform: Whether the target portals will carry and reward it.
+  engineering: Whether it can be built and changed safely.
+  production: What it costs in time and money to make.

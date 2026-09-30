@@ -6,8 +6,8 @@ disable-model-invocation: true
 
 # /new-game
 
-**Workflow entry point** `core/workflows/new-game.workflow.yaml` — not a transition.
-**Engine** `bin/wgf` (`scripts/wgf.py`), the Factory's only orchestrator.
+**Workflow entry point** `${CLAUDE_PLUGIN_ROOT}/runtime/core/workflows/new-game.workflow.yaml` — not a transition.
+**Engine** `python3 "${CLAUDE_PLUGIN_ROOT}/runtime/scripts/wgf.py"` (`${CLAUDE_PLUGIN_ROOT}/runtime/scripts/wgf.py`), the Factory's only orchestrator.
 
 This surface starts or resumes a run of the workflow above and reports it. The workflow file
 is the single source of step order, retries, loops, gates, decisions and resume; nothing here
@@ -17,22 +17,22 @@ Arguments: `$ARGUMENTS`
 
 ## Read first
 
-1. `core/workflows/new-game.workflow.yaml`
-2. `core/lifecycle/gates.yaml`
-3. `docs/workflow-engine.md`
-4. `workspace/config/factory.yaml`
+1. `${CLAUDE_PLUGIN_ROOT}/runtime/core/workflows/new-game.workflow.yaml`
+2. `${CLAUDE_PLUGIN_ROOT}/runtime/core/lifecycle/gates.yaml`
+3. `${CLAUDE_PLUGIN_ROOT}/runtime/docs/workflow-engine.md`
+4. the factory configuration `python3 "${CLAUDE_PLUGIN_ROOT}/runtime/scripts/wgf.py" where --json` reports as `config`
 
 ## Arguments
 
-Accept exactly these (the engine's own flags, `bin/wgf new-game --help` and
-`bin/wgf resume --help`), and nothing else:
+Accept exactly these (the engine's own flags, `python3 "${CLAUDE_PLUGIN_ROOT}/runtime/scripts/wgf.py" new-game --help` and
+`python3 "${CLAUDE_PLUGIN_ROOT}/runtime/scripts/wgf.py" resume --help`), and nothing else:
 
 - new run: `--mock`, `--mock-plan <JSON|@FILE>` (with `--mock` only),
   `--hold-gates`, `--project <ID>`, `--from <STEP>`, `--store <DIR>`
 - `resume <run-id>`, optionally with `--from <STEP>` and `--store <DIR>`: continues that
   run with the settings it started with
 
-With `--store <DIR>`, pass the same `--store <DIR>` to every `bin/wgf` command for that
+With `--store <DIR>`, pass the same `--store <DIR>` to every `python3 "${CLAUDE_PLUGIN_ROOT}/runtime/scripts/wgf.py"` command for that
 run (status, logs, resume).
 
 Refuse, and run nothing, if the arguments contain anything else — in particular
@@ -44,16 +44,19 @@ Refuse, and run nothing, if the arguments contain anything else — in particula
 
 ## Procedure
 
-1. **Preflight.** Stop unless `core/workflows/new-game.workflow.yaml` exists in the working directory
-   (run from the factory repository root). For `resume <run-id>`, read
-   `bin/wgf status <run-id> --json` first and stop unless `workflow_id` is `new-game`.
+1. **Preflight.** Run `python3 "${CLAUDE_PLUGIN_ROOT}/runtime/scripts/wgf.py" where --json` and stop unless `installed` is true and `workflow`
+   names an existing file: the Factory - this workflow, core, the engine and its shipped
+   configuration - is the runtime inside this plugin, never the working directory. The
+   working directory is the project: report `project_root` and `store`, where this run's
+   state and instance data are kept (`WGF_PROJECT_DIR` names another project). For `resume <run-id>`, read
+   `python3 "${CLAUDE_PLUGIN_ROOT}/runtime/scripts/wgf.py" status <run-id> --json` first and stop unless `workflow_id` is `new-game`.
    Then act on it without starting anything when there is nothing to continue:
    `COMPLETED` — report it (step 6); `RUNNING` with liveness `running` — another
    process drives it, only report progress; `WAITING` at a gate whose `pending.timeout`
    is not `eligible` — report the gate (step 6) and stop. Anything else (a stopped,
    blocked, stale or failed run, or one waiting for input) is resumed at step 4.
-2. **Report the effective autonomy** from `workspace/config/factory.yaml`, as configured —
-   never change it: `factory.develop.developer.kind`, `factory.review.reviewer.kind`,
+2. **Report the effective autonomy** from that `config` file, as configured — never
+   change it: `factory.develop.developer.kind`, `factory.review.reviewer.kind`,
    `factory.checkpoints.auto_approve` (and `timeout_auto_approve`),
    `factory.init.source`. With `--mock` every step is a placeholder, and a mock run approves
    the reversible gates itself unless `--hold-gates` is given.
@@ -63,26 +66,26 @@ Refuse, and run nothing, if the arguments contain anything else — in particula
 4. **Start** in the background, with the Bash tool's `run_in_background`: a run can take hours,
    far longer than a foreground command may. You are notified when it exits.
 
-   - new run: `bin/wgf new-game <arguments> --json`
-   - resume: `bin/wgf resume <run-id> [--from <STEP>] [--store <DIR>] --json`
+   - new run: `python3 "${CLAUDE_PLUGIN_ROOT}/runtime/scripts/wgf.py" new-game <arguments> --json`
+   - resume: `python3 "${CLAUDE_PLUGIN_ROOT}/runtime/scripts/wgf.py" resume <run-id> [--from <STEP>] [--store <DIR>] --json`
 
-   Where `bin/wgf` cannot be executed (Windows), use `python scripts/wgf.py` in its place.
+   Where `python3` is not on PATH (Windows), use `python` in its place.
    Read `run_id` from the first event, `WORKFLOW_STARTED` (on resume, `WORKFLOW_RESUMED`),
    and tell the user.
 5. **Progress.** Summarise `STEP_STARTED`, `STEP_COMPLETED` and `STEP_FAILED` events as they
-   arrive. For detail: `bin/wgf status <run-id>` or `bin/wgf status <run-id> --json`.
+   arrive. For detail: `python3 "${CLAUDE_PLUGIN_ROOT}/runtime/scripts/wgf.py" status <run-id>` or `python3 "${CLAUDE_PLUGIN_ROOT}/runtime/scripts/wgf.py" status <run-id> --json`.
    Retries, loops and resume belong to the engine: report them, never re-run a step, edit
    `.factory/`, or edit an artifact to move the run along.
-6. **When the process exits**, read `bin/wgf status <run-id> --json` and act on the run's
+6. **When the process exits**, read `python3 "${CLAUDE_PLUGIN_ROOT}/runtime/scripts/wgf.py" status <run-id> --json` and act on the run's
    status (the process's exit code is the same contract: 0, 1, 2, 3):
    - **COMPLETED** (exit 0): report the run id, the artifacts it produced and the
      release-manifest draft. If `ended_by` is set — `Ended: kill at G4` — report the kill
      as the end of the title, never as a release.
    - **FAILED, BLOCKED or CANCELLED** (exit 1): show `status`, `cursor`, `blocked_reason`
-     and `bin/wgf logs <run-id> --step <cursor>`. A release refused as `unreviewed` is
+     and `python3 "${CLAUDE_PLUGIN_ROOT}/runtime/scripts/wgf.py" logs <run-id> --step <cursor>`. A release refused as `unreviewed` is
      the configured reviewer (`factory.review.reviewer.kind: none`) doing its job: report
      it; do not configure a reviewer or weaken the release. Suggest
-     `/web-game-factory:new-game resume <run-id>` or `bin/wgf resume <run-id> --from <STEP>`; fix nothing.
+     `/web-game-factory:new-game resume <run-id>` or `python3 "${CLAUDE_PLUGIN_ROOT}/runtime/scripts/wgf.py" resume <run-id> --from <STEP>`; fix nothing.
    - **Usage error** (exit 2, no run started): show stderr.
    - **WAITING or PAUSED** (exit 3): show `pending` — step, gate, choices, evidence — and
      `blocked_reason` if any, then stop. See the rule below. `pending: null` means the
@@ -93,7 +96,7 @@ Refuse, and run nothing, if the arguments contain anything else — in particula
 
 ## The gate rule
 
-Never run `bin/wgf decide`, `wgf resume ... --decision`, or anything else that answers
+Never run `python3 "${CLAUDE_PLUGIN_ROOT}/runtime/scripts/wgf.py" decide`, `wgf resume ... --decision`, or anything else that answers
 a checkpoint — for any gate, and for the develop handoff. Commands run from this session are
 recorded as a person's decision, so answering one would forge a human decision. Tell the user
 how to decide, and stop. A decision is the engine's resume: typed by the user, it records the
@@ -101,11 +104,11 @@ decision and drives the run on, in the user's own shell, to its next stop — an
 next stop can be hours away. `/web-game-factory:new-game resume <run-id>` afterwards reports where it
 stopped, and continues it if that shell was interrupted.
 
-- at a gate: `! bin/wgf decide <run-id> <choice> --note "..."`, then `/web-game-factory:new-game resume <run-id>`
+- at a gate: `! python3 "${CLAUDE_PLUGIN_ROOT}/runtime/scripts/wgf.py" decide <run-id> <choice> --note "..."`, then `/web-game-factory:new-game resume <run-id>`
 - at `develop` with `factory.develop.developer.kind: handoff` (`pending` names no gate):
   report the step, its message and the brief path it gives; the developer finishes the work
-  and runs `! bin/wgf resume <run-id> --decision done`, then `/web-game-factory:new-game resume <run-id>`.
+  and runs `! python3 "${CLAUDE_PLUGIN_ROOT}/runtime/scripts/wgf.py" resume <run-id> --decision done`, then `/web-game-factory:new-game resume <run-id>`.
   Development is not complete until the engine says so.
 
-Do not change `workspace/config/factory.yaml` to make a run more autonomous, and do not
+Do not change the factory configuration to make a run more autonomous, and do not
 advance a lifecycle state: the engine never moves one, and neither does this surface.

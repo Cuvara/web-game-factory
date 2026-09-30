@@ -162,7 +162,7 @@ The module verifies a local checkout and never clones. It finds it as every step
 4. `factory.checkouts` joined with the run's `scaffold-record.repository.name`
    (`verification.checkouts` is a deprecated alias).
 
-Relative paths resolve against the Factory root. The first rule that names a path decides;
+Relative paths resolve against the project root ([plugin-runtime.md](plugin-runtime.md)). The first rule that names a path decides;
 no package.json there is a single `BLOCKED` `source.checkout` check — reported, not raised.
 While verify runs it holds the checkout's lock: another run in the same checkout is
 `BLOCKED`, naming it.

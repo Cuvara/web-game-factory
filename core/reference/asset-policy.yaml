@@ -16,6 +16,20 @@
 #            font stack). `max_bytes` bounds one delivered file. `est_hours` is the effort to
 #            produce a final asset; `est_cost` is per source, absent meaning 0.
 #            `optimize` lists what a runtime pipeline does to it beyond what is done in place.
+#            `transparency` is what the kind assumes of alpha: `required` (cut-out art drawn
+#            over a scene - a format or PNG without alpha is a warning), `opaque` (drawn
+#            first, full frame - an alpha channel is wasted bytes, noted), or `any`.
+#            `atlas: true` lets a requirement name an atlas group to be packed into.
+#            `tiles: true` means the image is a grid of tiles whose size the requirement
+#            states, and the image must divide into it exactly.
+#
+# limits     Texture edges. Above `max_texture_edge` a texture fails to upload on part of the
+#            mobile fleet (error); above `warn_texture_edge` it costs memory that low-end
+#            phones do not have (warning).
+#
+# atlas      Defaults for packing a requirement's atlas group: the largest atlas edge,
+#            transparent padding between frames, edge extrusion against filtering seams,
+#            and whether atlas edges are powers of two.
 #
 # licenses   `permitted` may reach a published build, with the constraints listed.
 #            `restricted` may not - non-commercial, no-derivatives and copyleft terms are
@@ -29,15 +43,28 @@
 
 policy:
   id: asset-policy
-  version: 1.0.0
+  version: 1.1.0
+
+limits:
+  max_texture_edge: 4096
+  warn_texture_edge: 2048
+
+atlas:
+  directory: atlases
+  max_size: 2048
+  padding: 2
+  extrude: 1
+  power_of_two: true
 
 kinds:
   sprite:
     manifest_type: sprite
     dimension: 2d
     directory: sprites
-    formats: [png, webp, svg]
+    formats: [png, webp, svg, avif]
     placeholder: png
+    transparency: required
+    atlas: true
     max_bytes: 262144
     est_hours: 2
     est_cost: {purchased: 10, commissioned: 60}
@@ -50,6 +77,7 @@ kinds:
     formats: [png, webp]
     companion: json
     placeholder: png
+    transparency: required
     max_bytes: 1048576
     est_hours: 6
     est_cost: {purchased: 25, commissioned: 200}
@@ -59,8 +87,9 @@ kinds:
     manifest_type: background
     dimension: 2d
     directory: backgrounds
-    formats: [webp, jpeg, png]
+    formats: [webp, jpeg, png, avif]
     placeholder: png
+    transparency: opaque
     max_bytes: 524288
     est_hours: 3
     est_cost: {purchased: 15, commissioned: 120}
@@ -70,8 +99,10 @@ kinds:
     manifest_type: ui
     dimension: 2d
     directory: ui
-    formats: [png, webp, svg]
+    formats: [png, webp, svg, avif]
     placeholder: png
+    transparency: any
+    atlas: true
     max_bytes: 262144
     est_hours: 3
     est_cost: {purchased: 20, commissioned: 150}
@@ -83,6 +114,8 @@ kinds:
     directory: icons
     formats: [png, svg, webp]
     placeholder: png
+    transparency: any
+    atlas: true
     max_bytes: 131072
     est_hours: 1
     est_cost: {purchased: 5, commissioned: 40}
@@ -94,10 +127,25 @@ kinds:
     directory: vfx
     formats: [png, webp, json]
     placeholder: png
+    transparency: required
+    atlas: true
     max_bytes: 262144
     est_hours: 2
     est_cost: {purchased: 10, commissioned: 80}
     optimize: [texture-atlas]
+
+  tileset:
+    manifest_type: tileset
+    dimension: 2d
+    directory: tilesets
+    formats: [png, webp]
+    placeholder: png
+    transparency: any
+    tiles: true
+    max_bytes: 1048576
+    est_hours: 4
+    est_cost: {purchased: 15, commissioned: 120}
+    optimize: []
 
   font:
     manifest_type: font
@@ -192,7 +240,7 @@ kinds:
 # what is still owed; none of them is done in place, because each needs a tool the Factory
 # does not ship.
 optimizations:
-  texture-atlas: Pack with the other images of its scene into one atlas at build time.
+  texture-atlas: Pack with the other images of its scene into one atlas. Done by the assets step when the requirement names an `atlas` group; owed by the build otherwise.
   lossy-webp: Re-encode as lossy WebP at the quality the tech plan sets.
   font-subset: Subset to the glyphs of the design's locales, then WOFF2.
   audio-transcode: Transcode to the tech plan's audio formats (Ogg Vorbis, with AAC for Safari).
@@ -200,7 +248,7 @@ optimizations:
   texture-compression: KTX2 (ETC1S for colour, UASTC for normals) with mipmaps.
 
 pipeline:
-  two_d: Images packed into texture atlases per scene; audio transcoded per the tech plan.
+  two_d: Images packed into texture atlases per scene (the assets step packs named atlas groups); every file listed in public/assets/assets.json for the runtime to load; audio transcoded per the tech plan.
   three_d: Source to GLB, then Draco or Meshopt, textures to KTX2, loaded by the 3D renderer.
   texture_compression: [ktx2-etc1s, ktx2-uastc]
   mesh_compression: [draco, meshopt]

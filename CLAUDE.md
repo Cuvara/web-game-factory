@@ -54,6 +54,11 @@ python scripts/wgf-hash.py --check workspace/          # digests and pins reprod
 python scripts/wgf-state.py --show neon-drift          # cursor, and what may happen next
 python scripts/wgf-guard.py --title neon-drift --state prototype-review
 
+# The asset pipeline outside a run (docs/assets-module.md). Exit 0 clean, 1 problems, 2 unusable.
+python3 scripts/wgf-assets.py build --design design.json --root ../my-game  # files, atlases, assets.json
+python3 scripts/wgf-assets.py validate ../my-game [--strict]   # the checkout vs its assets.json
+python3 scripts/wgf-assets.py pack out/hud frames/             # deterministic texture atlas
+
 # The workflow engine. Every run command is a slice of core/workflows/new-game.workflow.yaml.
 bin/wgf research                          # real market scan: research-report + opportunity
 bin/wgf new-game --mock                   # research -> ... -> verify, then WAITING at G4
@@ -331,7 +336,9 @@ seen by the engine — validate what you write there with ajv.
 - `docs/workflow-module-contract.md` — what a step module implements; read before writing one
 - `docs/verification-module.md` — the `verify` step: checks, statuses, evidence, gameplay drivers
 - `docs/init-module.md` — the init module: repository from the template, idempotency, refusals
-- `docs/assets-module.md` — the `assets` step: asset policy, licensing rule, placeholder backends
+- `docs/assets-module.md` — the `assets` step: asset policy, licensing rule, placeholder backends,
+  atlas groups, the runtime asset manifest (`public/assets/assets.json`), validation codes,
+  the `wgf-assets.py` CLI, how agents register assets, troubleshooting
 - `docs/development-module.md` — the `develop` step: brief, developers, checks, keyed commits
 - `docs/platform-sdk-verification.md` — how platform SDK integration is verified, and where the
   platform profiles disagree with current portal documentation

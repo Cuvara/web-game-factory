@@ -431,6 +431,9 @@ def build_brief(*, title_id, engine, iteration, key, baseline, design, assets, s
         "dev_plan": select_dev_plan(tech_plan),
         "placements": placements,
         "assets": asset_items,
+        # The runtime asset manifest the assets step wrote (public/assets/assets.json): what
+        # game code loads assets through. None when the manifest records none.
+        "runtime_assets": ((assets or {}).get("runtime_manifest") or {}).get("path"),
         "required_systems": [{"id": n, "acceptance": a} for n, a in REQUIRED_SYSTEMS],
         "protected_paths": list(PROTECTED_PATHS),
         # Inside the writable paths but not the developer's: the template's own source and
@@ -765,7 +768,17 @@ def render_markdown(brief):
         add("From the asset manifest. `procedural` items are generated in code. Anything not "
             "yet delivered gets a clearly-marked placeholder loaded through the same path, "
             "reported as `placeholder`. Never ship an item without its recorded license.\n")
-        if any(a.get("files") for a in brief["assets"]):
+        if brief.get("runtime_assets"):
+            add(f"Load every asset through the runtime asset manifest `{brief['runtime_assets']}`"
+                " - fetch it once at boot, resolve each asset by its id, and never write an "
+                "asset path in source. Each entry has a `url` relative to the manifest (or an "
+                "`atlas` and `frame`: load `atlases[<atlas>]` once, then draw the frame), its "
+                "pixel `width`/`height`, `scale` (display at pixel size / scale), and for a "
+                "spritesheet its `data` atlas, `frames` and `animations` (frames, fps, loop). "
+                "Placeholders (`placeholder: true`) load through the same path, so replacing "
+                "one needs no code change. Do not edit the manifest or the files it lists; "
+                "they belong to the assets step.\n")
+        elif any(a.get("files") for a in brief["assets"]):
             add("Delivered files are listed by their path in this repository; load them from "
                 "there (they are already in the checkout, and the development commit includes "
                 "them).\n")

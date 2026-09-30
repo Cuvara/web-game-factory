@@ -185,6 +185,7 @@ agents:
       - core/reference/asset-policy.yaml
       - core/craft/art-direction.md
       - core/craft/audio.md
+      - core/craft/2d-assets.md
     produces: [asset-manifest]
     consumes: [game-design]
 
@@ -385,6 +386,7 @@ skills:
       - core/artifacts/tech-plan.schema.json
       - core/craft/web-performance.md
       - core/craft/game-feel.md
+      - core/craft/2d-assets.md
   - id: phaser
     supports: [gameplay, ui]
     covers: >
@@ -395,6 +397,7 @@ skills:
       - core/craft/phaser.md
       - core/craft/web-performance.md
       - core/craft/game-feel.md
+      - core/craft/2d-assets.md
   - id: threejs
     supports: [gameplay]
     covers: >
@@ -417,6 +420,7 @@ skills:
       - core/reference/asset-policy.yaml
       - core/craft/art-direction.md
       - core/craft/audio.md
+      - core/craft/2d-assets.md
   - id: art-direction
     supports: [game-designer, asset]
     covers: >

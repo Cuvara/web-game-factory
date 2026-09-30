@@ -142,6 +142,16 @@ and platform-SDK touchpoints, asset and audio requirements, responsive behaviour
 identity). Ids inside `build_spec` cross-reference each other so that "buildable without
 guessing" is checkable. 1.0.0 artifacts remain valid.
 
+**`game-design` 1.2.0** adds 2D fields to `asset_requirements[]`, all optional: `atlas` (a
+group packed into one texture atlas), `scale` (the resolution the art is authored at),
+`animations` (named frame ranges with `fps` and `loop` for a spritesheet), `tile_width` /
+`tile_height` for the new `tileset` kind, and `existing.atlas` (a spritesheet's descriptor).
+**`asset-manifest` 1.2.0** records what the pipeline did with them: `items[].atlas` and
+`items[].scale`, the packed `atlases`, the `runtime_manifest` it wrote into the game
+repository (`shared/runtime-assets.schema.json`, not an artifact: no provenance, no
+timestamp, byte-identical for identical assets), and ten new issue codes. 1.1.0 artifacts of
+both remain valid. See [assets-module.md](assets-module.md).
+
 ---
 
 ## Shared primitives

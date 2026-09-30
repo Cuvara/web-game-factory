@@ -217,7 +217,7 @@ class McpPlaceholderBackend(PlaceholderBackend):
     def generate(self, req):
         if self._client is None:
             raise BackendError("not started")
-        width, height = req.size()
+        width, height = req.pixel_size()
         arguments = {
             "prompt": f"{req.label or req.id}: flat placeholder {req.kind} for a web game",
             "kind": req.kind,

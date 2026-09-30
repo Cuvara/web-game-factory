@@ -11,6 +11,7 @@ Invoked from `AGENTS.md` or by the matching `/wgf-*` prompt.
 3. `core/reference/asset-policy.yaml`
 4. `core/craft/art-direction.md`
 5. `core/craft/audio.md`
+6. `core/craft/2d-assets.md`
 
 Core is authoritative. Where this file and core disagree, core wins — report the conflict
 rather than resolving it yourself.

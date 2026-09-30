@@ -82,7 +82,9 @@ the game, regenerated on every visit and committed with the code it asked for. I
   and assist, session beats, monetization touchpoints, audio cues, responsive behaviour and
   visual identity. Entries of a later tier are dropped at any depth and named as left out on
   purpose. `sdk_touchpoints` are not carried (the sdk step wires them; the developer calls
-  only the seam), nor `assets` (the asset manifest is what is delivered). The brief asks
+  only the seam), nor `assets` (the asset manifest is what is delivered; when it records a
+  runtime manifest, `runtime_assets` names `public/assets/assets.json` and the brief tells the
+  developer to load every asset through it by id - `core/craft/2d-assets.md`). The brief asks
   for tuning as data in one module, and treats every `feedback` as MVP, not polish
   (`core/craft/game-feel.md`). `brief.json` carries the same selection under `build_spec`.
 - **The design, in full** — `docs/GDD.md`, game-design's `rendered_to`, written by

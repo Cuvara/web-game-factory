@@ -9,14 +9,78 @@ and `core/` is still the contract.
 
 ## [Unreleased]
 
-A 3D asset pipeline in the `assets` module: models described as data, built headless by a
-pinned Blender, every GLB validated without Blender, and a runtime index for the game's
-three.js loader. Module-local (`scripts/wgf_assets/`); no engine, workflow, lifecycle, gate or
-template change. Guide: [docs/blender-pipeline.md](docs/blender-pipeline.md).
+The 2D asset pipeline: atlas packing, a runtime asset manifest game code loads through, and
+validation of both. A change to the `assets` module (with one consumer line each in `develop`
+and `verify`): `game-design` and `asset-manifest` move to 1.2.0 and `asset-policy` to 1.1.0,
+all additive - every 1.1.0 design and manifest remains valid, and an existing design produces
+the manifest it did plus `runtime_manifest`. No engine, workflow, lifecycle, gate or template
+change. Details: [docs/assets-module.md](docs/assets-module.md).
 
 ### Added
 
-- **Model specs.** `game-design` 1.2.0: `asset_requirements[].model`
+- **Atlas groups.** A sprite, UI, icon or VFX requirement may name an `atlas`; each group is
+  packed deterministically (stdlib PNG codec, shelf packing, extrusion, padding, power-of-two)
+  into `public/assets/atlases/<group>.png` + `.json` (TexturePacker JSON Hash, read unchanged
+  by PixiJS and Phaser). Members' own images go to `src/assets/`, so each pixel ships once;
+  `texture-atlas` moves from `deferred` to `applied`.
+- **The runtime asset manifest** `public/assets/assets.json`
+  (`core/artifacts/shared/runtime-assets.schema.json`): every loadable asset by id, URLs
+  relative to the manifest, atlas frames, sizes, `scale`, spritesheet frames and animations
+  (fps, loop), tileset grids, file hashes. No timestamps or absolute paths; byte-identical for
+  identical assets. The asset manifest records its path and hash.
+- **Requirement fields** (`game-design` 1.2.0): `atlas`, `scale` (1-4), `animations`,
+  `tile_width`/`tile_height` and the new `tileset` kind, `existing.atlas`.
+- **Validation**: SVG safety, texture-edge limits, transparency expectations per kind,
+  dimension and tileset checks, atlas descriptors against their images (frames in bounds,
+  animations naming real frames, `meta.image`), duplicate paths; ten new issue codes. AVIF is
+  recognised (it was sniffed as M4A).
+- **`scripts/wgf-assets.py`**: `build`, `validate`, `pack`, `inspect`; JSON output and exit
+  codes 0/1/2.
+- **`assets.runtime-manifest`**, a verify check that validates the repository against its
+  runtime manifest; the develop brief's `runtime_assets` and its loading rule.
+- **`core/craft/2d-assets.md`**: how to ask for 2D assets and load them in PixiJS and Phaser;
+  read by the asset agent and the `assets`, `pixijs` and `phaser` skills.
+- **Pruning**: placeholders and pipeline-made atlases nothing references any more are removed
+  (`prune: false` to keep them); nothing else is ever deleted.
+
+### Fixed
+
+- **The installed Claude plugin only worked from the factory repository.** Claude Code installs
+  a plugin as a copy of its own directory, which held surfaces and nothing else: every command,
+  agent and skill read `core/` relative to the working directory, and `/web-game-factory:new-game`
+  stopped unless `core/workflows/new-game.workflow.yaml` was there. Run from a game project it
+  could not find the Factory. The plugin now ships the runtime closure in
+  `claude-web-game-plugin/runtime/` (`scripts/build-plugin-runtime.py`, run by
+  `gen-adapters.sh`, drift-checked by `check-integrity.py`), and every Claude surface names
+  Factory paths as `${CLAUDE_PLUGIN_ROOT}/runtime/...`. The engine now keeps two roots
+  (`wgflib/paths.py`): the Factory (`ROOT`, beside `wgflib/`) and the project (`PROJECT`:
+  instance data, run store, checkouts base). In a development checkout both are the
+  repository, so nothing there changes; from an installed runtime the project is the working
+  directory, or `WGF_PROJECT_DIR`. New: `wgf where [--json]`. `wgf test-core` refuses to run
+  from an installed runtime. See `docs/plugin-runtime.md`. Regressions in
+  `test_plugin_runtime` and `test_adapter_binding.ClaudeSurfacesReadThePluginRuntime`.
+  *Migration:* none for a development checkout. A project using the installed plugin keeps its
+  runs in `<project>/.factory/` and may add its own `workspace/config/factory.yaml`.
+- A library spritesheet renamed to its asset id kept the library's `meta.image`, so a loader
+  following the descriptor fetched a file that was not there. It is rewritten on copy, and an
+  existing sheet whose descriptor names another image is `invalid-atlas`.
+- An existing spritesheet was accepted without its atlas descriptor.
+
+### Bringing an artifact forward
+
+Nothing is required. To use the new fields, add them to a design's `asset_requirements` and
+re-run `assets`; a game adopts the runtime manifest by loading through it
+(`core/craft/2d-assets.md`).
+
+**The 3D asset pipeline**, on top of the 2D one: models described as data, built headless by
+a pinned Blender, every GLB validated without Blender, and each GLB's lookups in
+`assets.json` for the game's three.js loader. `game-design` and `asset-manifest` move to
+1.3.0, `asset-policy` to 1.2.0, all additive. Module-local (`scripts/wgf_assets/`); no engine, workflow, lifecycle, gate or
+template change. Guide: [docs/blender-pipeline.md](docs/blender-pipeline.md).
+
+### Added (3D)
+
+- **Model specs.** `game-design` 1.3.0: `asset_requirements[].model`
   (`core/artifacts/shared/model-spec.schema.json`) — parts, PBR materials, generated
   textures, fit and pivot, named clips, LODs, a collision proxy, a budget. Validated for
   meaning (`wgf_assets/modelspec.py`) before anything is built; a malformed spec fails the
@@ -29,36 +93,37 @@ template change. Guide: [docs/blender-pipeline.md](docs/blender-pipeline.md).
   Blender. A buildable spec whose `source` is unset or `procedural` is delivered as the final
   asset; without Blender the procedural box stands in with `model-spec-unbuilt`.
 - **GLB validation** (`wgf_assets/gltf.py`) on every `.glb`/`.gltf` the step touches, and the
-  spec's declarations checked against it. `asset-manifest` 1.2.0: the item's `model` block,
-  `runtime_index`, and the issue codes `model-invalid`, `model-external-reference`,
+  spec's declarations checked against it. `asset-manifest` 1.3.0: the item's `model` block
+  and the issue codes `model-invalid`, `model-external-reference`,
   `model-unsupported-extension`, `model-needs-decoder`, `model-transform`, `model-scale`,
-  `model-pivot`, `model-over-budget`, `texture-too-large`, `animation-missing`,
+  `model-pivot`, `model-over-budget`, `animation-missing`,
   `animation-invalid`, `lod-missing`, `lod-invalid`, `collision-missing`,
   `model-spec-unbuilt`.
-- **`public/assets/models.json`**, the runtime index a game preloads from; and the loading
-  contract in `core/craft/3d-assets-and-animation.md`.
+- **A GLB's runtime-manifest entry carries `model`** (clip names, LOD and collision nodes,
+  dimensions; `shared/runtime-assets.schema.json`), and the loading contract is in
+  `core/craft/3d-assets-and-animation.md`.
 - `scripts/wgf-model.py` (`doctor`, `build --twice`, `inspect`), `scripts/tests/test_models.py`
   (fake-Blender, three.js runtime and opt-in `WGF_BLENDER_TEST=1` real-Blender layers), and a
   committed Blender-built fixture rebuilt byte for byte by the real-Blender tests.
 
-### Changed
+### Changed (3D)
 
-- `asset-policy` 1.1.0: `max_triangles` and `max_texture_edge` on the GLB kinds, and
-  `toolchains.blender`. Manifests classified under 1.0.0 keep their pin; re-running the
-  assets step re-classifies under 1.1.0 and may add budget warnings, nothing else.
+- `asset-policy` 1.2.0: `max_triangles` and `max_texture_edge` on the GLB kinds, and
+  `toolchains.blender`. Manifests classified under 1.1.0 keep their pin; re-running the
+  assets step re-classifies under 1.2.0 and may add budget warnings, nothing else.
 - `encoders.png` takes an optional second checker colour (`alt`); existing output is
   unchanged.
 
-### Fixed
+### Fixed (3D)
 
 - **A Three.js design got a 2D asset baseline.** The assets step inferred the dimension from
   3D-only requirements and art-direction words and ignored the design's own
   `engine.dimension`; the 3D golden (Neon Drift Arena, `engine: threejs, dimension: 3d`, no
   explicit requirements) received a background PNG and no model. The declared dimension now
   wins after an explicit `dimension` setting, so that golden's baseline is an environment, a
-  player model, a material and a ground texture, with `public/assets/models.json`.
+  player model, a material and a ground texture, listed in `public/assets/assets.json`.
 
-Bringing an artifact forward: nothing required. 1.1.0 game designs and asset manifests stay
+Bringing an artifact forward: nothing required. 1.2.0 game designs and asset manifests stay
 valid (the additions are optional); a design gains models only by adding `model` specs.
 
 ## [2.4.0] - 2026-09-30

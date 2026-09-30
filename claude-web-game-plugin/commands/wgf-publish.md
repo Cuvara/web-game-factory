@@ -6,13 +6,13 @@ description: Authorize publication, validate per platform, and prepare submissio
 
 **Transition** `release: approved -> validating -> submitting -> live`
 **Role** `release`
-**Gate** `G6` — see `core/lifecycle/gates.yaml` for its required artifacts, predicates and approvers.
+**Gate** `G6` — see `${CLAUDE_PLUGIN_ROOT}/runtime/core/lifecycle/gates.yaml` for its required artifacts, predicates and approvers.
 
 Authorize publication, validate per platform, and prepare submissions.
 
 ## Procedure
 
-1. Read `core/lifecycle/` for the machine that owns this transition, and the
+1. Read `${CLAUDE_PLUGIN_ROOT}/runtime/core/lifecycle/` for the machine that owns this transition, and the
    `procedure` file named on the source state.
 2. Read the `x-wgf` block of every artifact schema this transition produces or consumes.
 3. Check the transition's guards before acting. A guard that cannot be evaluated is a

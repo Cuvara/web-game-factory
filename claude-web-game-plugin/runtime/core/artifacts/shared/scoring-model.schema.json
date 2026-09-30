@@ -1,0 +1,156 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://webgamefactory.dev/schemas/artifacts/shared/scoring-model.schema.json",
+  "title": "Scoring Model",
+  "description": "Validates files in core/reference/scoring/ and workspace/config/scoring/. Scoring is configurable policy, not methodology: retuning weights must never require touching a schema or a state machine. Models are versioned files and are never edited in place, because an evaluation that cites a model which has since changed is unexplainable.",
+
+  "x-wgf": {
+    "id": "scoring-model",
+    "kind": "reference",
+    "format": "yaml",
+    "instance_path": "core/reference/scoring/*.yaml",
+    "consumers": ["portfolio:scored", "portfolio:shortlisted"]
+  },
+
+  "type": "object",
+  "required": ["id", "version", "aggregation", "shortlist_threshold", "evidence_policy", "dimensions"],
+  "properties": {
+    "id": { "type": "string", "pattern": "^[a-z][a-z0-9-]*$" },
+    "version": { "type": "string", "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$" },
+    "label": { "type": "string" },
+    "extends": {
+      "type": ["string", "null"],
+      "description": "Id of a base model. An override model sets only the deltas."
+    },
+
+    "aggregation": {
+      "type": "object",
+      "required": ["method"],
+      "properties": {
+        "method": {
+          "type": "string",
+          "enum": ["weighted_sum", "weighted_geometric_mean"],
+          "description": "weighted_sum is the default and is preferred for explainability at a gate; non-compensatory behaviour is recovered through named vetoes rather than by the aggregation function."
+        },
+        "missing_policy": {
+          "type": "string",
+          "enum": ["treat_as_hypothesis", "fail", "neutral"],
+          "default": "treat_as_hypothesis"
+        }
+      },
+      "additionalProperties": false
+    },
+
+    "shortlist_threshold": { "type": "number", "minimum": 0, "maximum": 1 },
+
+    "evidence_policy": {
+      "type": "object",
+      "required": ["min_coverage"],
+      "properties": {
+        "min_coverage": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1,
+          "description": "Minimum share of total weight that must be carried by evidence-backed dimensions. This is what turns 'assumptions must not become facts' into a number a gate can check."
+        },
+        "unevidenced_dimension_tier": {
+          "type": "string",
+          "enum": ["observed", "derived", "hypothesis"],
+          "default": "hypothesis"
+        },
+        "hypothesis_weight_multiplier": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1,
+          "default": 0.5
+        },
+        "note": { "type": "string" }
+      },
+      "additionalProperties": false
+    },
+
+    "evidence_ttl_days": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "Past this age an opportunity's evidence is stale and it must be re-scored before promotion."
+    },
+
+    "dimensions": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/$defs/scoredDimension" }
+    },
+
+    "vetoes": {
+      "type": "array",
+      "items": { "$ref": "https://webgamefactory.dev/schemas/artifacts/shared/criteria-expression.schema.json#/$defs/namedCriterion" },
+      "default": [],
+      "description": "Non-compensatory rules. A fired veto rejects regardless of aggregate score, and is recorded by id so the rejection is explainable."
+    }
+  },
+  "additionalProperties": false,
+
+  "$defs": {
+    "scoredDimension": {
+      "type": "object",
+      "required": ["id", "weight", "normalize"],
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Must exist in core/reference/dimensions.yaml.",
+          "pattern": "^[a-z][a-z0-9_]*$"
+        },
+        "weight": { "type": "number", "minimum": 0, "maximum": 1 },
+        "normalize": { "$ref": "#/$defs/normalizer" }
+      },
+      "additionalProperties": false
+    },
+
+    "normalizer": {
+      "description": "Maps a raw measurement onto 0..1. For minimize dimensions set min > max to invert.",
+      "oneOf": [
+        {
+          "type": "object",
+          "required": ["type", "min", "max"],
+          "properties": {
+            "type": { "enum": ["linear", "log"] },
+            "min": { "type": "number" },
+            "max": { "type": "number" }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": ["type", "bands"],
+          "properties": {
+            "type": { "const": "band" },
+            "bands": {
+              "type": "array",
+              "minItems": 1,
+              "items": {
+                "type": "object",
+                "required": ["max", "score"],
+                "properties": {
+                  "max": { "type": "number" },
+                  "score": { "type": "number", "minimum": 0, "maximum": 1 }
+                },
+                "additionalProperties": false
+              }
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": ["type", "levels", "scores"],
+          "properties": {
+            "type": { "const": "ordinal" },
+            "levels": { "type": "array", "items": { "type": "string" } },
+            "scores": { "type": "array", "items": { "type": "number", "minimum": 0, "maximum": 1 } }
+          },
+          "additionalProperties": false
+        }
+      ]
+    }
+  }
+}

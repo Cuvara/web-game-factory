@@ -1,0 +1,94 @@
+# Platform profile — GameMonetize
+#
+# See yandex.yaml for how profiles are consumed. Written from web-game-template v1.1.0's
+# audit, docs/platforms/gamemonetize.md, which read everything GameMonetize publishes
+# (gamemonetize.com/sdk, the HTML5 SDK README, the SDK text download, the FAQ) on
+# 2026-09-24. Its "Known limitations" lists the values the adapter implies for a profile;
+# they are the ones used here.
+#
+# requirements.game_id: optional — the portal issues a Game ID per title (Dashboard > My
+# games). game.config.yaml platforms[].game_id may carry it, or the build takes it from
+# WGF_GAMEMONETIZE_GAME_ID so it need not be committed. Without either the game plays, but
+# the SDK is never requested and nothing is earned.
+#
+# Figures the sources do not give are left null rather than guessed.
+
+id: gamemonetize
+name: GameMonetize
+version: 1.0.0
+status: unverified
+docs: https://gamemonetize.com/sdk
+
+# audience: not documented by the portal; left out rather than guessed.
+
+capabilities:
+  # sdk.showBanner() is a full-screen video ad despite its name: an interstitial. No rewarded
+  # ad is documented; the adapter resolves showRewarded() as unsupported.
+  ads: [interstitial]
+  iap: false
+  cloud_saves: false
+  leaderboards: false
+  achievements: false
+  auth: none
+  # No portal analytics is documented; the adapter reports "self-hosted".
+  analytics: self-hosted
+
+requirements:
+  locales_required: []
+  locales_recommended: []
+  max_bundle_mb: null
+  orientation: [landscape, portrait]
+  # No loading or game-ready call is documented.
+  loading_api: none
+  offline_start: false
+  https_only: true
+  # The FAQ allows external links.
+  no_external_links: false
+  game_id: optional
+  game_id_pattern: "^[A-Za-z0-9_-]{8,64}$"
+
+ads:
+  # "as often as you want"; the SDK itself refuses a premature call (30 s off GameMonetize's
+  # domains, 130 s on them, as observed in the live sdk.js).
+  interstitial_min_interval_s: null
+  rewarded_available: false
+  banner_available: false
+  notes: >
+    At least one interstitial is mandatory ("you must call sdk.showBanner()") — on the play
+    button, continue, a new level or level complete, never during loading. Pause and mute on
+    SDK_GAME_PAUSE, resume on SDK_GAME_START. Upload is a zip with index.html at its root.
+
+metadata_requirements:
+  descriptions_locales: [en]
+  screenshots_min: 0
+  icon_required: false
+  age_rating_required: false
+
+review:
+  # "Verify Game" confirms the integration against an uploaded build, then a content manager
+  # reviews the activation request. Neither has a documented duration.
+  process: manual
+  common_rejections:
+    - No interstitial placed, so "Verify Game" never sees the SDK used.
+    - Audio audible, or gameplay running, during an advertisement.
+
+assertions:
+  - id: gamemonetize_sdk_present
+    check: { left: package.platform_sdk, op: eq, right: gamemonetize }
+    severity: blocking
+  - id: gamemonetize_no_rewarded_ads
+    check: { left: package.uses_rewarded_ads, op: eq, right: false }
+    severity: blocking
+    rationale: >
+      GameMonetize documents no rewarded ad; the adapter reports it unsupported and the
+      template's sdk:prepare fails a title that declares one.
+  - id: gamemonetize_no_banner_ads
+    check: { left: package.uses_banner_ads, op: eq, right: false }
+    severity: blocking
+
+scoring_hints:
+  platform_fit_favours:
+    - Casual titles with natural breaks — play button, continue, new level — for interstitials.
+  platform_fit_penalizes:
+    - Designs that depend on rewarded ads, which the portal does not offer.
+    - Designs that need cloud saves, sign-in or IAP.

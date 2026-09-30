@@ -20,8 +20,8 @@ naming the rule; `develop` and `review` block; `sdk` blocks with "platform not c
 Only a recorded `local_path` that does not exist is skipped, because a run can be resumed
 on another machine.
 
-Every relative path resolves against the Factory root, never the working directory:
-`WGF_GAME_REPO=../neon-drift` means the same place from wherever `wgf` runs. A repository
+Every relative path resolves against the project root - the Factory repository in a development checkout, the working directory when run from the installed plugin ([plugin-runtime.md](plugin-runtime.md)), never the directory `wgf` happens to run in:
+`WGF_GAME_REPO=../neon-drift` means the same place from wherever `wgf` runs inside the project. A repository
 name read from a scaffold-record must be one plain directory entry (`paths.checkout_path`),
 whichever rule decides: a record naming `..` is refused outright.
 
@@ -29,7 +29,7 @@ whichever rule decides: a record naming `..` is refused outright.
 
 ```yaml
 factory:
-  checkouts: ..        # <checkouts>/<repository name>; relative to the Factory root
+  checkouts: ..        # <checkouts>/<repository name>; relative to the project root
 ```
 
 `factory.checkouts` replaced six per-module keys. They still work, as deprecated aliases,
@@ -52,9 +52,9 @@ Migration: set `factory.checkouts` and delete the per-module keys.
 
 ### What init records
 
-The scaffold-record (schema 1.2.0) carries `repository.local_path`: relative to the Factory
-root (`../neon-drift`) when the checkout is beside the Factory - anywhere under the
-Factory's parent directory, the default layout - and absolute otherwise. Relative, so a run
+The scaffold-record (schema 1.2.0) carries `repository.local_path`: relative to the project
+root (`../neon-drift`) when the checkout is beside the project - anywhere under the
+project's parent directory, the default layout - and absolute otherwise. Relative, so a run
 resumed on another machine with the same layout finds it; absolute when relative would mean
 `../../../tmp/...`, which is meaningless anywhere else too. Records written before 1.2.0 have
 no `local_path` and resolve by rule 4.

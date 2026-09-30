@@ -1,0 +1,140 @@
+# Web Game Factory — Platform publication sub-machine
+#
+# One instance per (release x platform). This is the leaf of the nesting and carries no
+# independent decision authority: it reports status upward so the release can compute its
+# quorum.
+#
+# Deliberately NOT automated against portal APIs. `submitted` and `in-review` advance by a
+# human checklist plus a status file. The value here is structure and learning, not
+# automation — and building real Yandex/CrazyGames/GameVui/Poki integrations before the
+# contracts are proven would be premature.
+#
+# The one edge that matters most is `rejected`. A rejection must emit a compliance finding
+# that versions the platform profile, so the next title never hits the same wall. A
+# rejection that only sets a status field teaches the factory nothing and you re-fail
+# forever.
+
+machine: platform-publication
+version: 1.0.0
+entity: platform-publication
+parent: release
+initial: pending
+terminals: [live, rejected, withdrawn]
+
+guards:
+  package_shaped_to_profile:
+    description: Bundle size, orientation, entry point and SDK wiring match the pinned platform profile.
+  assertions_pass:
+    description: Every assertion in the platform profile with severity=blocking evaluates clean against the package.
+  metadata_and_locales_present:
+    description: Store descriptions, screenshots, icons and required locales present for this platform.
+
+states:
+  pending:
+    label: Pending
+    kind: automatic
+    role: release
+    description: Targeted by the release; not yet packaged.
+    transitions:
+      - event: package
+        to: packaged
+        kind: automatic
+
+  packaged:
+    label: Packaged
+    kind: automatic
+    role: release
+    contributors: [sdk]
+    description: The build has been shaped to this platform's profile.
+    transitions:
+      - event: validate
+        to: validated
+        kind: deterministic-ci
+        guard: [package_shaped_to_profile, assertions_pass]
+      - event: validate
+        to: validation-failed
+        kind: deterministic-ci
+        guard_negated: [assertions_pass]
+
+  validated:
+    label: Validated
+    kind: deterministic-ci
+    role: release
+    description: Machine checks pass. Ready for submission.
+    transitions:
+      - event: submit
+        to: submitted
+        kind: automatic
+        guard: [metadata_and_locales_present]
+
+  validation-failed:
+    label: Validation failed
+    kind: deterministic-ci
+    role: release
+    description: >
+      Carries the failing assertion ids. Not terminal — it routes back through the release
+      to production with a named defect rather than a vague "platform validation failed".
+    transitions:
+      - event: remediated
+        to: packaged
+        kind: automatic
+
+  submitted:
+    label: Submitted
+    kind: automatic
+    role: release
+    procedure: stages/publish.md
+    description: >
+      The submission package has been produced and uploaded. Advanced by a human checklist;
+      the status file is the record.
+    transitions:
+      - event: acknowledged
+        to: in-review
+        kind: automatic
+
+  in-review:
+    label: In review
+    kind: automatic
+    role: release
+    description: >
+      Portal moderation. Duration varies by platform — see `review.typical_days` in the
+      platform profile. Nothing in the factory can accelerate this; the machine exists so
+      that waiting is visible rather than mistaken for being done.
+    transitions:
+      - event: approved
+        to: live
+        kind: automatic
+      - event: rejected
+        to: rejected
+        kind: automatic
+      - event: withdraw
+        to: withdrawn
+        kind: human-approval
+
+  live:
+    label: Live
+    kind: automatic
+    terminal: true
+    description: Published on this platform. Records the live URL.
+
+  rejected:
+    label: Rejected
+    kind: automatic
+    terminal: true
+    description: >
+      The portal refused the submission.
+
+      Required side effect: emit a compliance finding and open a versioned update to
+      core/reference/platforms/<id>.yaml — either a new assertion so validation catches it
+      next time, or an entry in review.common_rejections. This is the highest-return
+      feedback loop in the whole factory.
+    emits:
+      - compliance-finding
+    updates:
+      - core/reference/platforms/<platform-id>.yaml
+
+  withdrawn:
+    label: Withdrawn
+    kind: human-approval
+    terminal: true
+    description: Pulled deliberately before a verdict.

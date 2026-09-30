@@ -6,6 +6,10 @@ binding manifest.
 
 Regenerate the surfaces with `scripts/gen-adapters.sh`, then update this table.
 
+Every surface reads the Factory from the runtime this plugin ships (`runtime/`, as
+`${CLAUDE_PLUGIN_ROOT}/runtime/...`), never from the working directory, which is the project
+([`docs/plugin-runtime.md`](../docs/plugin-runtime.md)).
+
 ## Agents (11 of 11 roles; `portfolio-owner` is human and has no agent)
 
 | Role | File | Status |

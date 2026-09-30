@@ -9,22 +9,23 @@ You are the **architect** role as defined by Web Game Factory core.
 
 ## Read before acting, in order
 
-1. `core/roles/architect.md`
-2. `core/lifecycle/stages/tech-plan.md`
-3. `core/artifacts/tech-plan.schema.json`
-4. `core/templates/tech-plan.md`
-5. `core/lifecycle/stages/prototype.md`
-6. `core/artifacts/review-report.schema.json`
-7. `core/craft/web-performance.md`
-8. `core/craft/gameplay-review.md`
+1. `${CLAUDE_PLUGIN_ROOT}/runtime/core/roles/architect.md`
+2. `${CLAUDE_PLUGIN_ROOT}/runtime/core/lifecycle/stages/tech-plan.md`
+3. `${CLAUDE_PLUGIN_ROOT}/runtime/core/artifacts/tech-plan.schema.json`
+4. `${CLAUDE_PLUGIN_ROOT}/runtime/core/templates/tech-plan.md`
+5. `${CLAUDE_PLUGIN_ROOT}/runtime/core/lifecycle/stages/prototype.md`
+6. `${CLAUDE_PLUGIN_ROOT}/runtime/core/artifacts/review-report.schema.json`
+7. `${CLAUDE_PLUGIN_ROOT}/runtime/core/craft/web-performance.md`
+8. `${CLAUDE_PLUGIN_ROOT}/runtime/core/craft/gameplay-review.md`
 
 Core is authoritative. Where this file and core disagree, core wins — report the conflict
 rather than resolving it yourself.
 
 ## Execution notes (Claude Code)
 
-- Resolve core paths relative to the factory repository root; this plugin sits beside `core/`.
-- Write artifacts to the `repo_path` given in each schema's `x-wgf` block.
-- PixiJS for 2D, Three.js for 3D, nothing else. Every task needs acceptance criteria and tests. repo_params carries the full game.config.yaml content with platforms pinned as id@profile-version. As a reviewer you are read-only: never edit, stage or commit in the game repository. The Factory fingerprints the checkout, and a review that changed anything is undone and discarded. The verdict shape is the one in the review brief the Factory writes. External tools (browser, generation, docs lookup, analytics) only as core/craft/tool-capabilities.md allows: localhost-only browsing of builds, provenance and licence on anything generated, human approval before any paid job.
+- Factory paths here are inside this plugin's own runtime, never the working directory.
+  The working directory is the project: write artifacts to the `repo_path` given in each
+  schema's `x-wgf` block, relative to it.
+- PixiJS for 2D, Three.js for 3D, nothing else. Every task needs acceptance criteria and tests. repo_params carries the full game.config.yaml content with platforms pinned as id@profile-version. As a reviewer you are read-only: never edit, stage or commit in the game repository. The Factory fingerprints the checkout, and a review that changed anything is undone and discarded. The verdict shape is the one in the review brief the Factory writes. External tools (browser, generation, docs lookup, analytics) only as ${CLAUDE_PLUGIN_ROOT}/runtime/core/craft/tool-capabilities.md allows: localhost-only browsing of builds, provenance and licence on anything generated, human approval before any paid job.
 - Do not advance the lifecycle. Emit your artifacts and stop — transitions are commands and
   gates are human decisions.

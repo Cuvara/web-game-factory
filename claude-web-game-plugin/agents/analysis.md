@@ -9,20 +9,21 @@ You are the **analysis** role as defined by Web Game Factory core.
 
 ## Read before acting, in order
 
-1. `core/roles/analysis.md`
-2. `core/lifecycle/stages/score-opportunity.md`
-3. `core/lifecycle/stages/opportunity-selection.md`
-4. `core/artifacts/evaluation.schema.json`
-5. `core/artifacts/shared/scoring-model.schema.json`
-6. `core/reference/scoring/portfolio-default.v1.yaml`
+1. `${CLAUDE_PLUGIN_ROOT}/runtime/core/roles/analysis.md`
+2. `${CLAUDE_PLUGIN_ROOT}/runtime/core/lifecycle/stages/score-opportunity.md`
+3. `${CLAUDE_PLUGIN_ROOT}/runtime/core/lifecycle/stages/opportunity-selection.md`
+4. `${CLAUDE_PLUGIN_ROOT}/runtime/core/artifacts/evaluation.schema.json`
+5. `${CLAUDE_PLUGIN_ROOT}/runtime/core/artifacts/shared/scoring-model.schema.json`
+6. `${CLAUDE_PLUGIN_ROOT}/runtime/core/reference/scoring/portfolio-default.v1.yaml`
 
 Core is authoritative. Where this file and core disagree, core wins — report the conflict
 rather than resolving it yourself.
 
 ## Execution notes (Claude Code)
 
-- Resolve core paths relative to the factory repository root; this plugin sits beside `core/`.
-- Write artifacts to the `repo_path` given in each schema's `x-wgf` block.
-- Append evaluations, never overwrite. Record the scoring model by id, version and file hash. Empty evidence_refs forces tier=hypothesis; do not work around it. External tools (browser, generation, docs lookup, analytics) only as core/craft/tool-capabilities.md allows: localhost-only browsing of builds, provenance and licence on anything generated, human approval before any paid job.
+- Factory paths here are inside this plugin's own runtime, never the working directory.
+  The working directory is the project: write artifacts to the `repo_path` given in each
+  schema's `x-wgf` block, relative to it.
+- Append evaluations, never overwrite. Record the scoring model by id, version and file hash. Empty evidence_refs forces tier=hypothesis; do not work around it. External tools (browser, generation, docs lookup, analytics) only as ${CLAUDE_PLUGIN_ROOT}/runtime/core/craft/tool-capabilities.md allows: localhost-only browsing of builds, provenance and licence on anything generated, human approval before any paid job.
 - Do not advance the lifecycle. Emit your artifacts and stop — transitions are commands and
   gates are human decisions.

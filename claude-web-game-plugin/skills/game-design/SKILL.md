@@ -11,12 +11,12 @@ Core loop, session structure, retention hooks, scope tiers, the build spec, and 
 
 ## Authoritative sources
 
-- `core/lifecycle/stages/design.md`
-- `core/artifacts/game-design.schema.json`
-- `core/reference/design-consistency-rules.yaml`
-- `core/craft/core-loop-and-difficulty.md`
-- `core/craft/onboarding-and-portal-ux.md`
-- `core/templates/gdd.md`
+- `${CLAUDE_PLUGIN_ROOT}/runtime/core/lifecycle/stages/design.md`
+- `${CLAUDE_PLUGIN_ROOT}/runtime/core/artifacts/game-design.schema.json`
+- `${CLAUDE_PLUGIN_ROOT}/runtime/core/reference/design-consistency-rules.yaml`
+- `${CLAUDE_PLUGIN_ROOT}/runtime/core/craft/core-loop-and-difficulty.md`
+- `${CLAUDE_PLUGIN_ROOT}/runtime/core/craft/onboarding-and-portal-ux.md`
+- `${CLAUDE_PLUGIN_ROOT}/runtime/core/templates/gdd.md`
 
 This skill is a pointer, not a copy. Read the paths above rather than relying on anything
 restated here; core is authoritative and this file is not a substitute for it.

@@ -1,7 +1,7 @@
 # The 3D asset pipeline: Blender offline, three.js at runtime
 
 A 3D game's models are described as data in the game design, built headless by a pinned
-Blender into GLB files, checked without Blender, listed in a runtime index, and loaded by the
+Blender into GLB files, checked without Blender, listed in the runtime asset manifest, and loaded by the
 game's three.js `GLTFLoader`. Blender is an offline build tool of the `assets` step. It never
 reaches a browser and nothing in a game bundle depends on it.
 
@@ -15,7 +15,7 @@ game-design.asset_requirements[].model   (model spec)
                  parts · materials · textures · fit/pivot · clips · LODs · collision
                  └─ glTF exporter → GLB → stamp asset.extras.wgf {key, blender, …}
   └─ gltf.inspect + check_expectations   ── every GLB, any source, no Blender
-  └─ asset-manifest item.model  +  public/assets/models.json  ──────►  fetch models.json
+  └─ asset-manifest item.model  +  assets.json entry .model   ──────►  fetch assets.json
                                                                         GLTFLoader.loadAsync
                                                                         AnimationMixer / LOD /
                                                                         collision userData
@@ -39,7 +39,7 @@ budgets in `core/reference/asset-policy.yaml`, the manifest's `model` block in
 - The runtime is the pinned template's `@wgf/three-framework` (three r170, `engine.type:
   threejs`). It has no loader code of its own yet, and game code cannot live in this
   repository (`test_core_template`), so runtime integration is a contract — node names,
-  `extras`, the runtime index — verified by loading real files with that exact three.js.
+  `extras`, the runtime asset manifest's `model` entry — verified by loading real files with that exact three.js.
 - No compression dependency was added. Draco, Meshopt and KTX2 stay deferred build steps
   (`optimization.deferred`), as the policy already says; the inspector flags a GLB that needs
   a decoder (`model-needs-decoder`) and one that needs an extension three.js cannot read
@@ -241,23 +241,23 @@ python3 scripts/wgf-model.py inspect public/assets/models/car.glb --spec car.mod
 
 ## Runtime integration (three.js)
 
-Blender is not in the bundle; the game receives GLBs and `public/assets/models.json`:
+Blender is not in the bundle; the game receives GLBs, listed like every other asset in the
+runtime asset manifest `public/assets/assets.json` ([assets-module.md](assets-module.md),
+`shared/runtime-assets.schema.json`). A GLB's entry adds `model`:
 
 ```json
-{"format": 1, "models": [
-  {"id": "hover-car", "type": "model", "url": "assets/models/hover-car.glb",
-   "path": "public/assets/models/hover-car.glb", "bytes": 13312, "content_hash": "sha256:…",
-   "placeholder": false, "production_ready": true, "dimensions": [1.2, 0.91, 2.2],
-   "triangles": 280, "animations": ["hover", "spin"], "lods": [],
-   "collision": {"node": "hover-car_collision", "shape": "box"}}]}
+"hover-car": {"type": "model", "url": "models/hover-car.glb", "format": "glb",
+  "model": {"clips": ["hover", "spin"], "lods": [], "triangles": 280,
+            "dimensions": [1.2, 0.91, 2.2],
+            "collision": {"node": "hover-car_collision", "shape": "box"}}}
 ```
 
-Deterministic, sorted, rewritten only when a model changes; pinned by hash in the manifest's
-`runtime_index`. The loading contract, which `core/craft/3d-assets-and-animation.md` states
+URLs are relative to `assets.json`; the file is deterministic and pinned by hash in the asset
+manifest's `runtime_manifest`. The loading contract, which `core/craft/3d-assets-and-animation.md` states
 for the developer:
 
-- one `GLTFLoader` (with its `LoadingManager` for the progress number), preloading the index's
-  `url`s relative to the game's base URL; a rejected load is an error, not an empty scene;
+- one `GLTFLoader` (with its `LoadingManager` for the progress number), preloading the manifest's
+  `url`s relative to `assets.json`; a rejected load is an error, not an empty scene;
 - clips by name through one `AnimationMixer` per instance, driven from the fixed update;
 - a node with `userData.wgf_role === "collision"` is hidden and handed to physics
   (`wgf_shape`, `wgf_center`, `wgf_half_extents` for a box need no mesh at all);
@@ -333,9 +333,10 @@ python3 scripts/wgf-model.py build /tmp/hover.json --id hover-car -o scripts/tes
 - **Clips are sampled at `fps`** by the exporter (linear between samples, step clips exact).
 - **No compression in place.** Draco/Meshopt/KTX2 remain deferred build steps; nothing
   validates a compressed file beyond flagging the decoder it needs.
-- **Stale files are not removed.** When a built `<id>.glb` replaces `<id>.placeholder.glb` (or
-  the reverse), the other file stays in `public/assets/` until someone deletes it — as for
-  every asset kind. The runtime index lists only the current one.
+- **A superseded final is not removed.** Pruning removes stale `<id>.placeholder.glb` files
+  once a built `<id>.glb` replaces them; a built `<id>.glb` that a changed spec (without
+  Blender) demoted back to a placeholder stays on disk until rebuilt or deleted. The runtime
+  manifest lists only the current file.
 - **Rendering is not verified here.** The runtime tests parse, build the scene graph and play
   clips with three.js in Node; drawing pixels is the golden runs' and a person's.
 - **Reproducibility across machines is by construction, measured on one.** The fixture

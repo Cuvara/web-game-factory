@@ -1,0 +1,117 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://webgamefactory.dev/schemas/artifacts/scaffold-record.schema.json",
+  "title": "Scaffold Record",
+  "description": "What the scaffolding stage created, or found already created: the game repository made from web-game-template, the template revision it came from, and the game.config.yaml written from tech_plan.repo_params.\n\nScaffolding is the one stage with an outside side effect that must not happen twice, so the record states whether the repository was created by this execution or reused. A re-run that finds the repository it made before records `reused`, never a second repository.",
+
+  "x-wgf": {
+    "id": "scaffold-record",
+    "kind": "artifact",
+    "format": "json",
+    "version": "1.2.0",
+    "producer": "title:scaffolding",
+    "consumers": ["title:prototype", "title:production", "release:draft", "release:qa"],
+    "repo_path": "workspace/titles/<title-id>/scaffold-record.json",
+    "run_path": "<storage>/workflows/<run-id>/artifacts/scaffold-record/v<n>.json"
+  },
+
+  "type": "object",
+  "required": ["provenance", "title_id", "repository", "template", "game_config", "outcome"],
+  "properties": {
+    "provenance": { "$ref": "./shared/provenance.schema.json#/$defs/provenance" },
+    "title_id": { "type": "string" },
+    "repository": {
+      "type": "object",
+      "required": ["owner", "name"],
+      "properties": {
+        "owner": { "type": "string" },
+        "name": { "type": "string", "pattern": "^(?!\\.\\.?$)[A-Za-z0-9._-]+$", "description": "One directory entry: never . or .., which would make a consumer act on the checkouts directory or its parent." },
+        "url": { "type": "string" },
+        "default_branch": { "type": "string" },
+        "visibility": { "enum": ["private", "internal", "public"] },
+        "local_path": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Where scaffolding put the local checkout: relative to the Factory root (forward slashes) when it is beside the Factory - under the Factory's parent directory, the default layout - so a run resumed on another machine with the same layout finds it; absolute otherwise. Every step that works in the game repository reads it after an explicit step setting and the WGF_GAME_REPO environment variable, and falls back to the configured checkouts directory joined with `name` when the path does not exist where the run resumes. Absent in records written before 1.2.0, which resolve by that fallback."
+        }
+      },
+      "additionalProperties": false
+    },
+    "template": {
+      "type": "object",
+      "description": "The web-game-template revision the repository was generated from.",
+      "required": ["repository"],
+      "properties": {
+        "repository": {
+          "type": "string",
+          "description": "owner/name for source github; the local template path, relative to the Factory root where possible, for source local."
+        },
+        "commit_sha": {
+          "type": "string",
+          "description": "The template revision the project's tree holds: the Factory's pinned web-game-template commit."
+        },
+        "generated_from_sha": {
+          "type": "string",
+          "description": "source github: the tip of the template's default branch when GitHub generated the repository, which need not be the pinned commit."
+        },
+        "pin_commit": {
+          "type": "string",
+          "description": "source github: the local commit that brought a repository generated from another revision to commit_sha. Absent when it was generated at the pin."
+        },
+        "source": {
+          "enum": ["github", "local"],
+          "description": "github: generated from the template repository on GitHub. local: cloned from a local checkout of the template at commit_sha, with no remote and no network - what offline and golden-regression runs use. Absent means github (records written before this field existed)."
+        }
+      },
+      "additionalProperties": false
+    },
+    "game_config": {
+      "type": "object",
+      "description": "The game.config.yaml written into the repository.",
+      "required": ["path"],
+      "properties": {
+        "path": { "type": "string" },
+        "platforms": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["id", "profile", "role"],
+            "properties": {
+              "id": { "type": "string", "pattern": "^[a-z][a-z0-9-]*$" },
+              "profile": { "type": "string", "description": "<profile-id>@<version>" },
+              "role": { "enum": ["required", "optional"] }
+            },
+            "additionalProperties": false
+          }
+        },
+        "checksum": { "$ref": "./shared/provenance.schema.json#/$defs/hash" },
+        "engine": {
+          "type": "object",
+          "description": "The engine game.config.yaml selects, as read back from the project after it was written.",
+          "required": ["type"],
+          "properties": { "type": { "enum": ["pixijs", "threejs"] } },
+          "additionalProperties": false
+        },
+        "commit_sha": {
+          "type": "string",
+          "description": "The commit that wrote game.config.yaml from tech_plan.repo_params.game_config, or that an earlier execution of the same key made. Absent when the file already matched the plan and nothing was committed."
+        },
+        "pushed": {
+          "type": "boolean",
+          "description": "Whether commit_sha has been pushed. Scaffolding never pushes - pushing is outward-facing - so this is false whenever commit_sha is set: the commit exists only in the local project until someone pushes it."
+        }
+      },
+      "additionalProperties": false
+    },
+    "outcome": {
+      "enum": ["created", "reused"],
+      "description": "created: this execution made the repository. reused: it already existed from an earlier execution and was verified rather than recreated."
+    },
+    "idempotency_key": {
+      "type": "string",
+      "description": "The key the side effect was performed under, so a later execution can find it."
+    },
+    "notes": { "type": "string" }
+  },
+  "additionalProperties": false
+}

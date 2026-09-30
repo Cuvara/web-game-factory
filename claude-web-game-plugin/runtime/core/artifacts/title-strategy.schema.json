@@ -1,0 +1,280 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://webgamefactory.dev/schemas/artifacts/title-strategy.schema.json",
+  "title": "Title Strategy",
+  "description": "The commitment document. What we are building, for whom, on which platforms, by when — and, critically, the terms under which we stop.\n\nKill criteria are authored HERE, before any code exists and under a gate, not at prototype review. Criteria written at review time get written to justify the decision already made; criteria written in advance are a bet you can lose honestly. This is the single reason strategy survives as its own lifecycle state rather than folding into design.",
+
+  "x-wgf": {
+    "id": "title-strategy",
+    "kind": "artifact",
+    "format": "json",
+    "version": "1.1.0",
+    "producer": "title:strategy",
+    "consumers": ["title:strategy", "title:design", "title:tech-plan", "title:prototype", "title:prototype-review", "title:production", "title:live"],
+    "repo_path": "workspace/titles/<title-id>/title-strategy.json",
+    "run_path": "<storage>/workflows/<run-id>/artifacts/title-strategy/v<n>.json",
+    "required_for_gates": ["G2", "G4"]
+  },
+
+  "type": "object",
+  "required": ["provenance", "title_id", "opportunity_id", "one_liner", "platform_set", "audience", "monetization", "session", "timebox_days", "mvp", "out_of_scope", "success_criteria", "kill_criteria", "prototype_must_prove"],
+  "properties": {
+    "provenance": { "$ref": "./shared/provenance.schema.json#/$defs/provenance" },
+
+    "title_id": { "type": "string", "pattern": "^[a-z][a-z0-9-]*$" },
+    "opportunity_id": { "type": "string" },
+
+    "one_liner": {
+      "type": "string",
+      "description": "The game in one sentence a stranger would understand. If this is hard to write, the concept is not yet a concept."
+    },
+    "why_this_opportunity": {
+      "type": "string",
+      "description": "The argument, referencing claims. Not a restatement of the score."
+    },
+
+    "platform_set": {
+      "type": "array",
+      "minItems": 1,
+      "description": "Platforms and their role. Roles are per-release policy at publication time, but the intended shape is set here so the design can be bound to the right constraints.",
+      "items": {
+        "type": "object",
+        "required": ["id", "profile_version", "role"],
+        "properties": {
+          "id": { "type": "string", "pattern": "^[a-z][a-z0-9-]*$" },
+          "profile_version": {
+            "type": "string",
+            "description": "Pinned so the design and the eventual build agree on which compliance rules applied."
+          },
+          "role": { "enum": ["required", "optional"] },
+          "rationale": { "type": "string" }
+        },
+        "additionalProperties": false
+      }
+    },
+
+    "audience": {
+      "type": "object",
+      "required": ["type", "device"],
+      "properties": {
+        "type": { "enum": ["casual", "midcore", "core"] },
+        "device": { "enum": ["mobile", "desktop", "both"] },
+        "regions": { "type": "array", "items": { "type": "string" } },
+        "player_description": { "type": "string" }
+      },
+      "additionalProperties": false
+    },
+
+    "monetization": {
+      "type": "object",
+      "required": ["class"],
+      "properties": {
+        "class": { "enum": ["rewarded-led", "interstitial-led", "mixed-ads", "iap-led", "hybrid", "none"] },
+        "placements": { "type": "array", "items": { "enum": ["rewarded", "interstitial", "banner", "iap"] } },
+        "rationale": { "type": "string" }
+      },
+      "additionalProperties": false
+    },
+
+    "session": {
+      "type": "object",
+      "required": ["target_seconds"],
+      "description": "Intent, not detail. The detailed session design belongs to game-design.",
+      "properties": {
+        "first_session_seconds": { "type": "number" },
+        "target_seconds": { "type": "number" },
+        "sessions_per_day_target": { "type": "number" }
+      },
+      "additionalProperties": false
+    },
+
+    "timebox_days": {
+      "type": "number",
+      "minimum": 1,
+      "description": "Concept to release candidate. The factory is built around 7-14 days; beyond ~21 this is a different kind of project."
+    },
+
+    "mvp": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "type": "string" },
+      "description": "What must exist for this to be a game at all."
+    },
+
+    "out_of_scope": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "type": "string" },
+      "description": "Named exclusions. Required and non-empty on purpose: a strategy that excludes nothing has not made a decision, and every attractive concept becomes an oversized project through additions nobody ever refused."
+    },
+
+    "prototype_must_prove": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "type": "string" },
+      "description": "The specific questions the prototype exists to answer. Without these the prototype becomes small production."
+    },
+
+    "success_criteria": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "./shared/criteria-expression.schema.json#/$defs/namedCriterion" }
+    },
+
+    "kill_criteria": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "./shared/criteria-expression.schema.json#/$defs/namedCriterion" },
+      "description": "The conditions under which we stop. Non-empty is enforced by gate G2. Each needs a rationale, because a criterion nobody can justify gets argued away at exactly the moment it matters."
+    },
+
+    "sunset_floor": {
+      "type": "object",
+      "description": "Sustained performance below this sunsets the title.",
+      "properties": {
+        "metric": { "type": "string" },
+        "value": { "type": "number" },
+        "consecutive_reviews": { "type": "integer", "minimum": 1, "default": 2 }
+      },
+      "additionalProperties": false
+    },
+
+    "max_prototype_iterations": {
+      "type": "integer",
+      "minimum": 0,
+      "default": 2,
+      "description": "Bounded so ITERATE cannot become an infinite polish loop on the wrong game."
+    },
+
+    "rollback_threshold": {
+      "type": "string",
+      "description": "Defect severity at or above which a live release is rolled back."
+    },
+
+    "concept": {
+      "type": "object",
+      "required": ["genre", "core_loop", "control_scheme"],
+      "description": "The concept the opportunity proposed, narrowed to the direction the title commits to. Still not a design: enough for design to start from without re-reading the opportunity.",
+      "properties": {
+        "genre": { "type": "string" },
+        "subgenre": { "type": "string" },
+        "core_mechanic": { "type": "string" },
+        "core_loop": { "type": "string" },
+        "gameplay_direction": {
+          "type": "string",
+          "description": "The shape of play in a sentence or two: what a run or a level is, and what changes from one to the next."
+        },
+        "control_scheme": {
+          "enum": ["one-touch", "tap", "swipe", "drag", "point-and-click", "keyboard"],
+          "description": "One scheme. A title that needs two has two games' worth of onboarding."
+        },
+        "replayability": {
+          "type": "string",
+          "description": "Why a player starts another session. Replay should come from a system, not from more content."
+        }
+      },
+      "additionalProperties": false
+    },
+
+    "production_scope": {
+      "type": "object",
+      "required": ["scope_complexity", "technical_complexity", "asset_complexity", "estimate_days"],
+      "description": "How big the commitment is, and what was done to keep it small. The timebox is the constraint; this is the evidence the scope fits it.",
+      "properties": {
+        "scope_complexity": { "enum": ["xs", "s", "m", "l", "xl"] },
+        "technical_complexity": { "enum": ["low", "medium", "high"] },
+        "asset_complexity": { "enum": ["low", "medium", "high"] },
+        "estimate_days": {
+          "type": "number",
+          "minimum": 0,
+          "description": "Estimated effort before the scope was fitted to the timebox. Above timebox_days means the scope was cut to fit; see scope_decisions."
+        },
+        "asset_budget": {
+          "type": "object",
+          "properties": {
+            "max_unique_assets": { "type": "integer", "minimum": 0 },
+            "estimated_cost_usd": { "type": "number", "minimum": 0 }
+          },
+          "additionalProperties": false
+        },
+        "reusable_systems": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Systems taken from the template or an earlier title rather than built for this one."
+        },
+        "scope_decisions": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Each decision taken to keep the title small, in a sentence that says why."
+        }
+      },
+      "additionalProperties": false
+    },
+
+    "platform_compatibility": {
+      "type": "array",
+      "description": "Every candidate platform the opportunity named, checked against its pinned profile — including the ones left out of platform_set, so the reason for leaving them out is recorded.",
+      "items": {
+        "type": "object",
+        "required": ["id", "compatible"],
+        "properties": {
+          "id": { "type": "string", "pattern": "^[a-z][a-z0-9-]*$" },
+          "profile_version": { "type": ["string", "null"] },
+          "compatible": { "type": "boolean" },
+          "sdk": {
+            "type": "object",
+            "required": ["id", "features"],
+            "description": "What the platform SDK adapter must implement for this title. `none` for a platform with no SDK.",
+            "properties": {
+              "id": { "type": "string" },
+              "features": { "type": "array", "items": { "type": "string" } }
+            },
+            "additionalProperties": false
+          },
+          "constraints": {
+            "type": "array",
+            "items": { "type": "string" },
+            "description": "Binding profile requirements the design inherits."
+          },
+          "issues": { "type": "array", "items": { "type": "string" } }
+        },
+        "additionalProperties": false
+      }
+    },
+
+    "risks": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["description", "severity"],
+        "properties": {
+          "description": { "type": "string" },
+          "severity": { "enum": ["low", "medium", "high"] },
+          "origin": {
+            "enum": ["opportunity", "strategy"],
+            "description": "Carried over from the opportunity, or introduced by a decision taken here."
+          },
+          "mitigation": { "type": "string" },
+          "claim_refs": { "type": "array", "items": { "type": "string" } }
+        },
+        "additionalProperties": false
+      }
+    },
+
+    "assumptions": {
+      "type": "array",
+      "description": "What this strategy takes as true without having checked. Each names what would show it false, so the prototype and the first review know what to look at.",
+      "items": {
+        "type": "object",
+        "required": ["statement", "tier"],
+        "properties": {
+          "statement": { "type": "string" },
+          "tier": { "enum": ["derived", "hypothesis"] },
+          "invalidated_by": { "type": "string" }
+        },
+        "additionalProperties": false
+      }
+    }
+  },
+  "additionalProperties": false
+}

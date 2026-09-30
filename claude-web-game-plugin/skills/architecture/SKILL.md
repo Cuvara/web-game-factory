@@ -11,9 +11,9 @@ Engine selection, performance budgets, and the generic/game/platform ownership s
 
 ## Authoritative sources
 
-- `core/lifecycle/stages/tech-plan.md`
-- `core/artifacts/tech-plan.schema.json`
-- `core/craft/web-performance.md`
+- `${CLAUDE_PLUGIN_ROOT}/runtime/core/lifecycle/stages/tech-plan.md`
+- `${CLAUDE_PLUGIN_ROOT}/runtime/core/artifacts/tech-plan.schema.json`
+- `${CLAUDE_PLUGIN_ROOT}/runtime/core/craft/web-performance.md`
 
 This skill is a pointer, not a copy. Read the paths above rather than relying on anything
 restated here; core is authoritative and this file is not a substitute for it.

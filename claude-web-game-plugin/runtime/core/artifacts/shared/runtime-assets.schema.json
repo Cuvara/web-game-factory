@@ -1,0 +1,140 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://webgamefactory.dev/schemas/artifacts/shared/runtime-assets.schema.json",
+  "title": "Runtime Asset Manifest",
+  "description": "What the game loads, written into the game repository at public/assets/assets.json by whatever produced the asset manifest. It is not an artifact: it carries no provenance and no timestamp, because it ships inside the build and must be byte-identical for identical assets. The asset manifest (the artifact) records its path and hash.\n\nEvery `url` is relative to the runtime manifest's own URL, so the same file works at a site root, under a portal's sub-path and from a zip. Keys are sorted and the file ends in a newline; nothing in it depends on the machine, the directory or the order a filesystem listed files in.\n\nA game resolves an asset by id: `assets[id]` gives its type and either a `url` (its own file) or an `atlas` and `frame` (a frame of `atlases[atlas]`).",
+
+  "type": "object",
+  "required": ["format", "version", "assets", "atlases", "files"],
+  "properties": {
+    "format": { "const": "wgf-runtime-assets" },
+    "version": { "const": 1 },
+    "title_id": { "type": "string" },
+
+    "assets": {
+      "type": "object",
+      "description": "Every loadable asset by id.",
+      "propertyNames": { "pattern": "^[a-z][a-z0-9-]*$" },
+      "additionalProperties": { "$ref": "#/$defs/asset" }
+    },
+
+    "atlases": {
+      "type": "object",
+      "description": "Texture atlases packed from atlas groups. Load the pair once; each member asset is a frame.",
+      "propertyNames": { "pattern": "^[a-z][a-z0-9-]*$" },
+      "additionalProperties": {
+        "type": "object",
+        "required": ["url", "data", "width", "height", "scale", "frames"],
+        "properties": {
+          "url": { "$ref": "#/$defs/url" },
+          "data": { "$ref": "#/$defs/url" },
+          "width": { "type": "integer", "minimum": 1 },
+          "height": { "type": "integer", "minimum": 1 },
+          "scale": { "$ref": "#/$defs/scale" },
+          "frames": { "type": "array", "items": { "type": "string" }, "minItems": 1 }
+        },
+        "additionalProperties": false
+      }
+    },
+
+    "files": {
+      "type": "object",
+      "description": "Every file a `url` or `data` names, with its size and sha256, for cache-busting and for checking that what shipped is what was built.",
+      "additionalProperties": {
+        "type": "object",
+        "required": ["bytes", "hash"],
+        "properties": {
+          "bytes": { "type": "integer", "minimum": 0 },
+          "hash": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" }
+        },
+        "additionalProperties": false
+      }
+    }
+  },
+  "additionalProperties": false,
+
+  "$defs": {
+    "url": {
+      "type": "string",
+      "description": "Relative to this manifest. Forward slashes, no scheme, no leading slash, never leaving public/.",
+      "pattern": "^(?![a-zA-Z][a-zA-Z0-9+.-]*:)(?!/)[^\\\\?#]+$"
+    },
+    "scale": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 4,
+      "description": "The resolution the pixels were authored at: a 2x asset has twice the pixels of its logical size. Display size = pixel size / scale."
+    },
+    "asset": {
+      "type": "object",
+      "required": ["type"],
+      "properties": {
+        "type": {
+          "enum": ["sprite", "spritesheet", "background", "tileset", "texture", "material", "model", "animation", "environment", "vfx", "sfx", "music", "font", "ui", "icon"]
+        },
+        "url": { "$ref": "#/$defs/url" },
+        "format": { "type": "string" },
+        "width": { "type": "integer", "minimum": 1, "description": "Pixels of the file (or of the frame, for an atlas member)." },
+        "height": { "type": "integer", "minimum": 1 },
+        "scale": { "$ref": "#/$defs/scale" },
+        "placeholder": { "type": "boolean", "description": "A stand-in; the final asset is still owed." },
+        "atlas": { "type": "string", "description": "The atlas this asset is a frame of." },
+        "frame": { "type": "string" },
+        "data": { "$ref": "#/$defs/url", "description": "A spritesheet's atlas descriptor." },
+        "frames": { "type": "array", "items": { "type": "string" }, "description": "A spritesheet's frame names, in natural order." },
+        "animations": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "object",
+            "required": ["frames", "fps", "loop"],
+            "properties": {
+              "frames": { "type": "array", "items": { "type": "string" }, "minItems": 1 },
+              "fps": { "type": "number", "exclusiveMinimum": 0, "maximum": 120 },
+              "loop": { "type": "boolean" }
+            },
+            "additionalProperties": false
+          }
+        },
+        "tile_width": { "type": "integer", "minimum": 1 },
+        "tile_height": { "type": "integer", "minimum": 1 },
+        "columns": { "type": "integer", "minimum": 1 },
+        "rows": { "type": "integer", "minimum": 1 },
+        "family": { "type": "string", "description": "A font's CSS font-family: the asset id for a font file, or the fallback stack when no file is delivered." },
+        "model": {
+          "type": "object",
+          "description": "A GLB's lookups, read from its bytes: clip names for the animation mixer, the nodes that are levels of detail, and the node that is the collision proxy (hidden; handed to physics). Node names are the glTF node names, as the loader names the objects.",
+          "required": ["clips", "lods", "triangles"],
+          "properties": {
+            "clips": { "type": "array", "items": { "type": "string" } },
+            "lods": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "required": ["level", "node"],
+                "properties": {
+                  "level": { "type": "integer", "minimum": 0 },
+                  "node": { "type": "string" }
+                },
+                "additionalProperties": false
+              }
+            },
+            "collision": {
+              "type": "object",
+              "required": ["node", "shape"],
+              "properties": { "node": { "type": "string" }, "shape": { "type": "string" } },
+              "additionalProperties": false
+            },
+            "dimensions": { "type": "array", "items": { "type": "number" }, "minItems": 3, "maxItems": 3, "description": "Metres along x, y, z of the visual model at rest (+Y up)." },
+            "triangles": { "type": "integer", "minimum": 0 }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false,
+      "allOf": [
+        { "if": { "required": ["atlas"] }, "then": { "required": ["frame"], "not": { "required": ["url"] } } },
+        { "if": { "properties": { "type": { "const": "spritesheet" } }, "not": { "required": ["atlas"] } }, "then": { "required": ["url", "data", "frames"] } }
+      ]
+    }
+  }
+}

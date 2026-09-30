@@ -1,0 +1,26 @@
+{
+  "release_id": "r1",
+  "title_id": "mock-title",
+  "version": "0.1.0",
+  "kind": "initial",
+  "state": "draft",
+  "commit_sha": "0000000000000000000000000000000000000000",
+  "target_platforms": [
+    {
+      "id": "yandex",
+      "role": "required",
+      "profile_version": "1.0.0"
+    },
+    {
+      "id": "crazygames",
+      "role": "optional",
+      "profile_version": "1.0.0"
+    }
+  ],
+  "changelog": [
+    "Initial release (mock)."
+  ],
+  "supersedes_release_id": null,
+  "rollback_target_release_id": null,
+  "frozen_at": null
+}

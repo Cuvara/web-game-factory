@@ -11,10 +11,10 @@ Reviewing a development commit read-only for the defects players feel: restart s
 
 ## Authoritative sources
 
-- `core/craft/gameplay-review.md`
-- `core/craft/3d-diagnostics.md`
-- `core/lifecycle/stages/prototype.md`
-- `core/artifacts/review-report.schema.json`
+- `${CLAUDE_PLUGIN_ROOT}/runtime/core/craft/gameplay-review.md`
+- `${CLAUDE_PLUGIN_ROOT}/runtime/core/craft/3d-diagnostics.md`
+- `${CLAUDE_PLUGIN_ROOT}/runtime/core/lifecycle/stages/prototype.md`
+- `${CLAUDE_PLUGIN_ROOT}/runtime/core/artifacts/review-report.schema.json`
 
 This skill is a pointer, not a copy. Read the paths above rather than relying on anything
 restated here; core is authoritative and this file is not a substitute for it.

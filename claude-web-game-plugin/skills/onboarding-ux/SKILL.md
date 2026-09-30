@@ -11,9 +11,9 @@ The first 30 seconds on a web portal, tutorial approach, HUD and mobile touch la
 
 ## Authoritative sources
 
-- `core/craft/onboarding-and-portal-ux.md`
-- `core/craft/ui-hud-mobile.md`
-- `core/craft/accessibility.md`
+- `${CLAUDE_PLUGIN_ROOT}/runtime/core/craft/onboarding-and-portal-ux.md`
+- `${CLAUDE_PLUGIN_ROOT}/runtime/core/craft/ui-hud-mobile.md`
+- `${CLAUDE_PLUGIN_ROOT}/runtime/core/craft/accessibility.md`
 
 This skill is a pointer, not a copy. Read the paths above rather than relying on anything
 restated here; core is authoritative and this file is not a substitute for it.

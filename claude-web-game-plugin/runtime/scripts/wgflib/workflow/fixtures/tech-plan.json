@@ -1,0 +1,43 @@
+{
+  "title_id": "mock-title",
+  "engine": {
+    "type": "pixijs",
+    "rationale": "Mock plan: the placeholder design is drawn for 2D."
+  },
+  "architecture": {
+    "rendering": "pixijs through the template's renderer seam (mock).",
+    "networking": null
+  },
+  "perf_budgets": {
+    "device_classes": [
+      {"id": "mobile-mid", "target_fps": 60, "max_time_to_interactive_s": 6}
+    ],
+    "max_bundle_mb": 100
+  },
+  "repo_params": {
+    "repo_name": "mock-title",
+    "template_ref": "mock-org/web-game-template@main",
+    "visibility": "private",
+    "game_config": {
+      "game": {"id": "mock-title", "name": "Mock Title", "version": "0.1.0"},
+      "engine": {"type": "pixijs"},
+      "platforms": [
+        {"id": "yandex", "profile": "yandex@1.0.0", "role": "required"},
+        {"id": "crazygames", "profile": "crazygames@1.0.0", "role": "optional"}
+      ],
+      "build": {"command": "pnpm build", "output": "dist"},
+      "monetization": {"ad_kinds": ["interstitial", "rewarded"], "iap": false}
+    }
+  },
+  "dev_plan": {
+    "est_days": 3,
+    "milestones": [
+      {"id": "M1", "label": "Playable core loop", "phase": "prototype", "est_days": 3,
+       "exit_criteria": ["Mock: nothing is built."]}
+    ],
+    "tasks": [
+      {"id": "CORE-001", "title": "Boot the game on the template (mock)", "milestone": "M1",
+       "acceptance_criteria": ["Mock: nothing is built."]}
+    ]
+  }
+}

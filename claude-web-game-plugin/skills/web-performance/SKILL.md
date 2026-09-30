@@ -11,9 +11,9 @@ Web game performance: load and first-frame budgets, bundle splitting, atlases an
 
 ## Authoritative sources
 
-- `core/craft/web-performance.md`
-- `core/craft/3d-diagnostics.md`
-- `core/artifacts/tech-plan.schema.json`
+- `${CLAUDE_PLUGIN_ROOT}/runtime/core/craft/web-performance.md`
+- `${CLAUDE_PLUGIN_ROOT}/runtime/core/craft/3d-diagnostics.md`
+- `${CLAUDE_PLUGIN_ROOT}/runtime/core/artifacts/tech-plan.schema.json`
 
 This skill is a pointer, not a copy. Read the paths above rather than relying on anything
 restated here; core is authoritative and this file is not a substitute for it.

@@ -11,10 +11,10 @@ Agent browser playthroughs that record a gameplay session, stranger playtest pro
 
 ## Authoritative sources
 
-- `core/craft/playtesting.md`
-- `core/artifacts/shared/gameplay-session.schema.json`
-- `core/artifacts/prototype-report.schema.json`
-- `core/lifecycle/stages/prototype-review.md`
+- `${CLAUDE_PLUGIN_ROOT}/runtime/core/craft/playtesting.md`
+- `${CLAUDE_PLUGIN_ROOT}/runtime/core/artifacts/shared/gameplay-session.schema.json`
+- `${CLAUDE_PLUGIN_ROOT}/runtime/core/artifacts/prototype-report.schema.json`
+- `${CLAUDE_PLUGIN_ROOT}/runtime/core/lifecycle/stages/prototype-review.md`
 
 This skill is a pointer, not a copy. Read the paths above rather than relying on anything
 restated here; core is authoritative and this file is not a substitute for it.

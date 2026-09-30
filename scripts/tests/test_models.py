@@ -39,7 +39,7 @@ from test_assets import AssetsCase, ajv, with_provenance  # noqa: E402
 from testenv import enabled  # noqa: E402
 import threejs_runtime  # noqa: E402
 from wgf_assets import blender, encoders, formats, gltf, modelspec  # noqa: E402
-from wgf_assets.pipeline import RUNTIME_INDEX, runtime_index  # noqa: E402
+from wgf_assets import runtime  # noqa: E402
 from wgf_assets.policy import load_policy  # noqa: E402
 from wgf_assets.requirements import RequirementError, inspect as inspect_requirements  # noqa: E402
 from wgflib.workflow.contracts import ArtifactContracts  # noqa: E402
@@ -664,21 +664,25 @@ class Pipeline(AssetsCase):
         self.assertIn(("lod-missing", "error"), self.codes(manifest, "hover-car"))
         self.assertFalse(item["production_ready"])
 
-    def test_the_runtime_index_lists_every_glb(self):
+    def test_the_runtime_manifest_carries_each_models_lookups(self):
         manifest = self.manifest(self.models_design(), placeholders=self.blender_settings())
-        index = json.loads(self.read(RUNTIME_INDEX))
-        self.assertEqual(manifest["runtime_index"]["path"], RUNTIME_INDEX)
-        self.assertEqual(manifest["runtime_index"]["content_hash"],
-                         "sha256:" + __import__("hashlib").sha256(
-                             self.read(RUNTIME_INDEX)).hexdigest())
-        by_id = {m["id"]: m for m in index["models"]}
-        self.assertEqual(set(by_id), {"hover-car", "crate", "arena"})
-        self.assertEqual(by_id["hover-car"]["url"], "assets/models/hover-car.glb")
-        self.assertEqual(by_id["hover-car"]["animations"], ["hover", "spin"])
-        self.assertEqual(by_id["hover-car"]["collision"],
+        document = json.loads(self.read(runtime.RUNTIME_PATH))
+        self.assertEqual(manifest["runtime_manifest"]["path"], runtime.RUNTIME_PATH)
+        assets = document["assets"]
+        car = assets["hover-car"]
+        self.assertEqual((car["type"], car["url"], car["format"]),
+                         ("model", "models/hover-car.glb", "glb"))
+        self.assertEqual(car["model"]["clips"], ["hover", "spin"])
+        self.assertEqual(car["model"]["collision"],
                          {"node": "hover-car_collision", "shape": "box"})
-        self.assertTrue(by_id["crate"]["placeholder"])
-        self.assertEqual(runtime_index(manifest["items"]), index)
+        self.assertEqual(car["model"]["triangles"],
+                         self.items(manifest)["hover-car"]["model"]["triangles"])
+        self.assertTrue(assets["crate"]["placeholder"])
+        self.assertIn("model", assets["arena"])
+        # The fixture checkout holds unrelated files (unused-file warnings); nothing may be an
+        # error - the schema, every url, size and hash, and the GLBs' formats.
+        self.assertEqual([p for p in runtime.validate(self.root) if p["severity"] == "error"],
+                         [])
 
     def test_a_rerun_without_blender_reuses_the_committed_build(self):
         self.manifest(self.models_design(), placeholders=self.blender_settings())
@@ -956,7 +960,7 @@ class RealBlender(AssetsCase):
             self.assertEqual(self.read(item["files"][0]["path"]), handle.read())
         again = self.manifest(models_design(), placeholders=settings, strict=True)
         self.assertTrue(self.items(again)["hover-car"]["model"]["generation"]["reused"])
-        self.assertEqual(again["runtime_index"], manifest["runtime_index"])
+        self.assertEqual(again["runtime_manifest"], manifest["runtime_manifest"])
 
 if __name__ == "__main__":
     unittest.main()

@@ -171,11 +171,13 @@ reusing it — and even then only if it came from the configured template.
 | `populate_timeout_seconds` | `60` | `github` only: how long to wait for GitHub to generate the contents |
 | `commit_author` | `{name: wgf-init, email: wgf-init@users.noreply.invalid}` | Author of the configuration commit |
 
-Where the project goes is `factory.checkouts` (default `..`, relative to the Factory root)
+Where the project goes is `factory.checkouts` (default `..`, relative to the project root:
+the Factory repository in a development checkout, the working directory from the installed
+plugin - [plugin-runtime.md](plugin-runtime.md))
 joined with the title id - or the step's `with: repo_dir`, or `WGF_GAME_REPO` - the
 precedence every later step reads it back with ([checkouts.md](checkouts.md)). The
-scaffold-record records it in `repository.local_path`: Factory-root-relative when the project
-is beside the Factory, so a run resumed on another machine with the same layout finds it;
+scaffold-record records it in `repository.local_path`: project-root-relative when the game
+is beside the project, so a run resumed on another machine with the same layout finds it;
 absolute otherwise. From the moment the project exists, init holds its checkout lock until
 the step ends. The vendored platform profiles are read back with `verify_pins` - version
 and content hash - right after vendoring; a copy that does not verify fails the step, not

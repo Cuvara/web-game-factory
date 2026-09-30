@@ -14,7 +14,7 @@ Arguments: the text given with this prompt.
 1. `core/workflows/new-game.workflow.yaml`
 2. `core/lifecycle/gates.yaml`
 3. `docs/workflow-engine.md`
-4. `workspace/config/factory.yaml`
+4. the factory configuration `bin/wgf where --json` reports as `config`
 
 ## Arguments
 
@@ -46,8 +46,8 @@ Refuse, and run nothing, if the arguments contain anything else — in particula
    process drives it, only report progress; `WAITING` at a gate whose `pending.timeout`
    is not `eligible` — report the gate (step 6) and stop. Anything else (a stopped,
    blocked, stale or failed run, or one waiting for input) is resumed at step 4.
-2. **Report the effective autonomy** from `workspace/config/factory.yaml`, as configured —
-   never change it: `factory.develop.developer.kind`, `factory.review.reviewer.kind`,
+2. **Report the effective autonomy** from that `config` file, as configured — never
+   change it: `factory.develop.developer.kind`, `factory.review.reviewer.kind`,
    `factory.checkpoints.auto_approve` (and `timeout_auto_approve`),
    `factory.init.source`. With `--mock` every step is a placeholder, and a mock run approves
    the reversible gates itself unless `--hold-gates` is given.
@@ -101,5 +101,5 @@ stopped, and continues it if that shell was interrupted.
   and runs `! bin/wgf resume <run-id> --decision done`, then `/new-game resume <run-id>`.
   Development is not complete until the engine says so.
 
-Do not change `workspace/config/factory.yaml` to make a run more autonomous, and do not
+Do not change the factory configuration to make a run more autonomous, and do not
 advance a lifecycle state: the engine never moves one, and neither does this surface.

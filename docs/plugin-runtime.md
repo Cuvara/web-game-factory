@@ -28,7 +28,8 @@ claude-web-game-plugin/
     scripts/wgflib/               the engine library, with the mock fixtures
     scripts/wgf_*/                every step module, with its data
     workspace/config/             shipped defaults: factory.yaml, portfolio.yaml,
-                                  template.lock.json, mcp-playwright-localhost.json
+                                  template.lock.json, mcp-playwright-localhost.json,
+                                  and the opt-in profiles/ (autonomous.yaml)
     docs/workflow-engine.md       the one document a surface tells the agent to read
 ```
 
@@ -55,15 +56,21 @@ before the plugin carried a runtime), or the working directory when `runtime-man
 sits at `ROOT`. The installed runtime exports `WGF_PROJECT_DIR` to every process it starts,
 so a child in another directory finds the same project.
 
-Configuration is per project with the Factory's as default: `paths.config_file(name)` is the
-project's `workspace/config/<name>` when it has one, else the shipped copy - for
-`factory.yaml` and `portfolio.yaml`. The template pin (`template.lock.json`) is always the
+Configuration is per project with the Factory's as default. `factory.yaml` is layered: the
+shipped copy, then the project's own `workspace/config/factory.yaml` over it key by key (a
+mapping merges; a list or a value replaces), so a project states only what it changes
+(`wgflib/workflow/config.py` `load_config`; `wgf where` shows `config_layers`). An explicit
+`wgf --config` file is used alone. `portfolio.yaml` is the project's own when it has one,
+else the shipped copy (`paths.config_file`). Opt-in overlays ship under
+`workspace/config/profiles/` - the autonomous one is [autonomous-runs.md](autonomous-runs.md). The template pin (`template.lock.json`) is always the
 runtime's own: it is part of the Factory release. Relative guarded paths
 (`factory.review.guarded_paths`) are guarded under both roots, and a game checkout may be
 neither root nor contain one.
 
 `wgf where [--json]` prints what a command resolved: `factory_root`, `installed`, `version`,
-`project_root`, `config`, `store`, `workflow`.
+`project_root`, `config`, `config_layers`, `store`, `workflow`, the `autonomy` a run would
+have (developer, reviewer, auto-approved gates, init source, budget) and the shipped
+`profiles`.
 
 ## How the surfaces reach it
 

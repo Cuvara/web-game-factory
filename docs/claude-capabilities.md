@@ -85,7 +85,9 @@ golden-run work and use port 4173.
 The argvs are commented in `workspace/config/factory.yaml`, and
 `ShippedConfig.test_the_commented_agent_host_examples_are_valid_config` checks that they
 load. The active defaults stay `developer: handoff` and `reviewer: none`
-(`ShippedConfig.test_the_shipped_defaults_run_no_agent_host`). Every flag was checked
+(`ShippedConfig.test_the_shipped_defaults_run_no_agent_host`); the opt-in autonomous profile
+(`workspace/config/profiles/autonomous.yaml`, [autonomous-runs.md](autonomous-runs.md)) carries
+the two argvs verbatim, which `test_autonomous_profile` holds equal to the commented ones. Every flag was checked
 against `claude --help` for 2.1.281, and every flag appears in a live run below.
 `--max-turns` is accepted but not listed in `--help`.
 

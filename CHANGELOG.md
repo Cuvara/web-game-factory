@@ -9,6 +9,39 @@ and `core/` is still the contract.
 
 ## [Unreleased]
 
+An opt-in autonomous profile for `new-game`, and the two defects an audit of an unattended
+run found. The shipped configuration stays supervised; no gate, schema, workflow or template
+change. See [docs/autonomous-runs.md](docs/autonomous-runs.md).
+
+### Added
+
+- **`workspace/config/profiles/autonomous.yaml`**, shipped in the plugin runtime: the verified
+  headless Claude Code developer and read-only reviewer (the shipped commented argvs,
+  verbatim, held equal by a test), `checkpoints.auto_approve: [G2, G3]`, `init.source: local`
+  (no GitHub repository) and a `develop.budget` of 12 sessions / US$60. A project enables it
+  by copying it to its own `workspace/config/factory.yaml`; G4, G6 and G7 stay human.
+- `wgf where` reports `config_layers`, the effective `autonomy` a run would have, and the
+  shipped `profiles`; `/web-game-factory:new-game` reports autonomy from it and, with a
+  `command` developer or reviewer, says agent sessions will run unattended and cost money
+  before it starts.
+
+### Fixed
+
+- **A project's `workspace/config/factory.yaml` replaced the shipped one instead of layering
+  over it** (2.4.1). A project that set only `checkpoints.auto_approve` silently lost
+  `steps.modules` and every other shipped setting. `load_config()` now reads the shipped file
+  and layers the project's over it key by key (a mapping merges; a list or a value
+  replaces); `--config` is still that file alone, and a development checkout still reads one
+  file. Regressions in `test_autonomous_profile.Layering`.
+- **Research could select a concept the Factory cannot design.** 9 of the 11 catalog concepts
+  (block-puzzle among them - what the current evidence favours) reached `design` and failed
+  its consistency rules, supervised or not, so a real run from research ended at design.
+  Each discovery catalog entry now declares its `design_archetype` (catalog 1.1.0), and
+  research excludes a `null` one before selection - kept in the report, "not buildable".
+  Buildable today: `endless-runner` (`lane-runner`) and `match-3` (`merge-puzzle`).
+  `test_research_to_design` runs the real research, strategy and design steps on every
+  concept and fails when a declaration and the design step disagree.
+
 ## [2.4.1] - 2026-09-30
 
 Three changes (`docs/v2.4-release.md`, *2.4.1*).

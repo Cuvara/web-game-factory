@@ -1,0 +1,108 @@
+# Autonomous runs: `new-game` from research to the G4 decision without a person
+
+The shipped configuration is **supervised**, and stays that way. An unattended run is a
+project's explicit choice, made by copying one shipped profile into the project. Nothing
+here removes a gate: G4 (kill), G6 (publish) and G7 (spend) are irreversible and a person
+decides them, whatever any configuration says (`core/lifecycle/gates.yaml`, enforced by the
+engine and by `decision-record.schema.json`).
+
+## The default, and why
+
+`wgf where` (and `/web-game-factory:new-game`'s preflight) reports what a run would do
+without a person. With the shipped `workspace/config/factory.yaml`:
+
+| `autonomy` | Default | Why it is the default |
+|---|---|---|
+| `developer` | `handoff` | The develop step writes a brief and waits (`WAITING_FOR_HUMAN`) until a person, or a session a person drives, finishes and runs `wgf resume <run> --decision done`. An unattended developer is an agent host with a shell, spending money: an installation opts in |
+| `reviewer` | `none` | A skipped review is recorded, never an approval, and release then refuses the build (`unreviewed`): fail closed until a reviewer is configured |
+| `auto_approve` | `[]` | G2 and G3 wait for a person. Only reversible gates may ever be listed |
+| `timeout_auto_approve` | `{}` | No gate approves itself by waiting |
+| `init_source` | `github` | Passing G3 creates a repository under `factory.init.owner` with `gh repo create` - outward-facing and irreversible; `/new-game` asks before starting such a run |
+
+Every one of these has an unattended alternative already in the Factory: the verified
+headless Claude Code developer and read-only reviewer argvs (commented in the shipped
+`factory.yaml`, verified in [claude-capabilities.md](claude-capabilities.md)),
+`checkpoints.auto_approve`, `init.source: local` and `develop.budget`.
+
+## The autonomous profile
+
+`workspace/config/profiles/autonomous.yaml`, shipped in the plugin runtime, sets exactly
+those, and nothing else:
+
+| Key | Value | Effect |
+|---|---|---|
+| `develop.developer` | `kind: command`, the verified `claude -p` argv | Builds the game, and is re-entered with the failing qa-report or the review's requested changes (the workflow's own loops, `max_visits_by_route`) |
+| `develop.budget` | `max_sessions: 12`, `max_cost: 60` (US$, from `total_cost_usd`) | develop blocks, nothing spawned, once reached; only a person raises it (`wgf resume <run> --budget-sessions N`) |
+| `review.reviewer` | `kind: command`, the verified read-only `claude -p` argv | Approves or requests changes; the Factory fingerprints the checkout and undoes any write |
+| `checkpoints.auto_approve` | `[G2, G3]` | The two reversible gates in `new-game` are approved by the run, each with a decision record (`automation`) |
+| `init.source` | `local` | A project from the pinned template, `git archive`-style, **no GitHub repository, no remote** |
+
+The Factory still runs every check (install, conformance, typecheck, lint, unit, build,
+smoke), makes the keyed development commit, verifies, and holds the guarded paths - the
+Factory's own tree and the project's `workspace/config` - against the agents.
+
+## Enabling it
+
+In the target project (the working directory `/web-game-factory:new-game` runs in):
+
+```bash
+RUNTIME=$(ls -d ~/.claude/plugins/cache/cuvara/web-game-factory/*/runtime | sort -V | tail -1)
+mkdir -p workspace/config
+cp "$RUNTIME/workspace/config/profiles/autonomous.yaml" workspace/config/factory.yaml
+python3 "$RUNTIME/scripts/wgf.py" where      # autonomy: developer=command, reviewer=command, ...
+```
+
+(`wgf where --json` lists the shipped profiles and their paths under `profiles`.)
+
+The project's `workspace/config/factory.yaml` is **layered over** the shipped one key by key:
+a mapping merges, a list or a value replaces. Edit the copy to change anything - a GitHub
+repository (`init: {source: github}`), another budget, `design: {author: agent}` - and
+remove a key to fall back to the shipped value. `wgf where` shows `config_layers`.
+
+Then, in Claude Code:
+
+```
+/web-game-factory:new-game --project my-game
+```
+
+The command reports the autonomy, says that agent sessions will run unattended and cost
+money within the budget, and starts after you confirm.
+
+## Research needs evidence
+
+Research is autonomous but not evidence-free. It reads evidence snapshots from the project's
+`workspace/research/snapshots/`, and live pages only from a `workspace/research/probes.yaml`
+of probes a person wrote, with `discovery: {live: true}` (or `WGF_RESEARCH_LIVE=1`). With
+neither, the run waits for input with *no external evidence* - by design: an observed claim
+needs a source, and the profile does not turn that off
+(`discovery.require_external_evidence` stays `true`).
+
+Research carries forward only a concept the design module can build: each entry of
+`scripts/wgf_discovery/archetypes.yaml` declares its `design_archetype`, or `null`, and a
+null one is kept in the report as *excluded, not buildable*. Today two concepts are
+buildable - `endless-runner` (design `lane-runner`) and `match-3` (design `merge-puzzle`);
+`scripts/tests/test_research_to_design.py` holds every declaration against the real design
+step. Before this, 9 of 11 concepts reached design and failed its consistency rules.
+
+## What stays human
+
+| | |
+|---|---|
+| G4 prototype review | pass, iterate or kill - always a person: `! … wgf.py decide <run> pass --note "..."` |
+| release | runs after a G4 pass; drafts only. G5, G6 (publish) and G7 (spend) are the game repository's, and human |
+| budget | raising it after it is spent |
+| evidence | supplying snapshots or probes |
+| a GitHub repository | only if you set `init.source: github`, and `/new-game` asks first |
+
+## Verifying a configuration without spending anything
+
+```bash
+python3 "$RUNTIME/scripts/wgf.py" where                           # what a run would do
+python3 "$RUNTIME/scripts/wgf.py" new-game --mock --hold-gates    # profile: stops only at G4
+```
+
+`--mock` replaces every step with a placeholder, so no agent session starts. With the
+profile, `--hold-gates` still stops at G4 only: G2 and G3 are the configuration's approvals,
+not the mock's. Without it, `--mock --hold-gates` stops at G2 as before.
+`scripts/tests/test_autonomous_profile.py` also runs the real research, strategy, design and
+tech-plan steps under the profile and checks nothing waits before init.

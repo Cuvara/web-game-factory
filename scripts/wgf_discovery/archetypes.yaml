@@ -18,17 +18,24 @@
 #   asset_cost_usd      library and generated sources, not commissioned art
 #   bundle_mb           expected initial download
 #   priors              0..1 guesses for dimensions no public source measures
+#   design_archetype    the design module's archetype (scripts/wgf_design/archetypes.py) that
+#                       designs this concept so it passes design consistency, or null: the
+#                       Factory cannot design it yet, and research never selects it - it is
+#                       kept in the report as excluded, "not buildable". Tied to the design
+#                       module by scripts/tests/test_research_to_design.py; a new design
+#                       archetype is how a null becomes buildable, never a relaxed rule.
 #
 # No revenue figure appears here, deliberately: revenue_potential needs at least a derived
 # claim (core/reference/dimensions.yaml), and a catalog guess would anchor everyone.
 
-version: 1.0.0
+version: 1.1.0  # 1.1.0: design_archetype
 
 archetypes:
   - id: block-puzzle
     title: Block Grid Puzzle
     genre: puzzle
     subgenre: block-puzzle
+    design_archetype: null
     market_tags: [puzzle, block-puzzle, casual]
     core_mechanic: drag given block shapes onto a grid; full rows and columns clear
     fantasy: turning a cluttered board into a clean one, one satisfying clear at a time
@@ -58,6 +65,7 @@ archetypes:
     title: Color Sort Puzzle
     genre: puzzle
     subgenre: sorting
+    design_archetype: null
     market_tags: [puzzle, sorting, casual]
     core_mechanic: move coloured units between containers until each container holds one colour
     fantasy: bringing order to a mess with a few clever moves
@@ -87,6 +95,7 @@ archetypes:
     title: Merge Idle Empire
     genre: idle
     subgenre: merge
+    design_archetype: null
     market_tags: [idle, merge, clicker]
     core_mechanic: merge identical items into higher tiers that produce currency, including while away
     fantasy: building an empire that keeps growing when you are not looking
@@ -116,6 +125,7 @@ archetypes:
     title: One-Tap Arcade
     genre: arcade
     subgenre: one-touch
+    design_archetype: null
     market_tags: [arcade, casual]
     core_mechanic: a single tap timed to dodge, jump or stack
     fantasy: precision under pressure
@@ -145,6 +155,7 @@ archetypes:
     title: Endless Runner
     genre: arcade
     subgenre: runner
+    design_archetype: lane-runner
     market_tags: [runner, arcade, action]
     core_mechanic: swipe between lanes to dodge obstacles and collect pickups at rising speed
     fantasy: speed and near misses
@@ -174,6 +185,7 @@ archetypes:
     title: Arena .io
     genre: io
     subgenre: arena
+    design_archetype: null
     market_tags: [io, multiplayer, action]
     core_mechanic: real-time arena where players grow by absorbing smaller entities
     fantasy: rising from the smallest to the biggest thing on the map
@@ -204,6 +216,7 @@ archetypes:
     title: Physics Puzzle
     genre: puzzle
     subgenre: physics
+    design_archetype: null
     market_tags: [physics, puzzle]
     core_mechanic: cut, draw or remove pieces so physics carries an object to its goal
     fantasy: the aha of a contraption doing exactly what you planned
@@ -233,6 +246,7 @@ archetypes:
     title: Word Puzzle
     genre: puzzle
     subgenre: word
+    design_archetype: null
     market_tags: [word, puzzle]
     core_mechanic: form words from a letter set to fill a crossword-style grid
     fantasy: feeling clever with words
@@ -262,6 +276,7 @@ archetypes:
     title: Match-3 Saga
     genre: puzzle
     subgenre: match-3
+    design_archetype: merge-puzzle
     market_tags: [match-3, puzzle, casual]
     core_mechanic: swap adjacent tiles to match three or more of a colour against level goals
     fantasy: cascading combos that clear the board
@@ -291,6 +306,7 @@ archetypes:
     title: Solitaire Classic
     genre: card
     subgenre: solitaire
+    design_archetype: null
     market_tags: [card, solitaire, board]
     core_mechanic: build foundation piles from a shuffled tableau
     fantasy: a calm, familiar ritual
@@ -320,6 +336,7 @@ archetypes:
     title: Car Parking 3D
     genre: driving
     subgenre: parking
+    design_archetype: null
     market_tags: [parking, driving, racing, simulation]
     core_mechanic: steer a vehicle into a tight space without collisions
     fantasy: precision driving mastery

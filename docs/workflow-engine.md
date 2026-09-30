@@ -817,7 +817,11 @@ recorded as a person's decision (`default_decider()`); the person types the deci
 
 ## 12. Configuration
 
-`workspace/config/factory.yaml` — every key optional:
+`workspace/config/factory.yaml` — every key optional. With no `--config`, the Factory's
+shipped file is read and a project's own `workspace/config/factory.yaml` (when the project is
+not the Factory checkout) is layered over it key by key: a mapping merges, a list or a value
+replaces ([plugin-runtime.md](plugin-runtime.md), [autonomous-runs.md](autonomous-runs.md)).
+`--config PATH` is that file alone.
 
 ```yaml
 factory:

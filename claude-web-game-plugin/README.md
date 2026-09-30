@@ -41,7 +41,7 @@ plugin carries `core/`, the `wgf` engine, its step modules and the shipped confi
 Claude Code from the project you want the Factory to work in - any directory; it does not
 need the factory repository, and never reads `core/` from the working directory. Runs
 (`.factory/`) and instance data (`workspace/`, including an optional own
-`workspace/config/factory.yaml` that overrides the shipped one) are kept in that project;
+`workspace/config/factory.yaml`, layered over the shipped one key by key) are kept in that project;
 `WGF_PROJECT_DIR` names another. `wgf where` shows which is which. Details:
 [`docs/plugin-runtime.md`](../docs/plugin-runtime.md).
 

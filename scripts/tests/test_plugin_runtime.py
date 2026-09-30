@@ -246,7 +246,8 @@ class FreshPackage(unittest.TestCase):
         """The files a fresh clone would have: tracked plus not-ignored. Every file on disk
         when this is not a git work tree."""
         checkout = os.path.join(self.base, "checkout")
-        if shutil.which("git") and os.path.isdir(os.path.join(ROOT, ".git")):
+        # exists, not isdir: in a git worktree .git is a file.
+        if shutil.which("git") and os.path.exists(os.path.join(ROOT, ".git")):
             listed = subprocess.run(["git", "-C", ROOT, "ls-files", "-z", "--cached", "--others",
                                      "--exclude-standard"], capture_output=True, check=True)
             files = [f for f in listed.stdout.decode("utf-8").split("\0") if f

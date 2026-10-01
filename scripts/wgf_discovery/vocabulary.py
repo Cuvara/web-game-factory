@@ -83,7 +83,7 @@ class Vocabulary:
                     problems.append(f"{name}: {value['id']} has unknown parent {parent!r}")
         for gid in self.genres:
             seen, node = set(), gid
-            while node:
+            while node and node in self.genres:
                 if node in seen:
                     problems.append(f"genre {gid}: parent cycle")
                     break

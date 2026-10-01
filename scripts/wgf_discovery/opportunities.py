@@ -652,10 +652,10 @@ def _pattern_transfer(space):
             if vocabulary.is_within(node, home) or vocabulary.is_within(home, node):
                 continue
             games = space.games_in(node)
-            coded = [g for g in games if facet in g.facets]
-            if len(coded) < config.min_denominator:
+            measured = [g for g in games if facet in g.facets]
+            if len(measured) < config.min_denominator:
                 continue
-            holders = [g for g in coded if value in (g.value(facet) if isinstance(
+            holders = [g for g in measured if value in (g.value(facet) if isinstance(
                 g.value(facet), list) else [g.value(facet)])]
             if holders:
                 continue
@@ -663,12 +663,12 @@ def _pattern_transfer(space):
             frame = f"teardown games coded {label} and coded on {facet}"
             absent = space.book.derived(
                 ("absent", node, facet, value),
-                f"0 of {len(coded)} {label} games coded on {facet} have "
+                f"0 of {len(measured)} {label} games coded on {facet} have "
                 f"{vocabulary.label(facet, value)}.",
-                sorted({c for g in coded for c in g.facets[facet]["claim_refs"]}),
+                sorted({c for g in measured for c in g.facets[facet]["claim_refs"]}),
                 {"genre": node, "facet": facet},
-                support={"numerator": 0, "denominator": len(coded), "members": [],
-                         "exceptions": [g.id for g in coded], "frame": frame})
+                support={"numerator": 0, "denominator": len(measured), "members": [],
+                         "exceptions": [g.id for g in measured], "frame": frame})
             demand = space.demand_cells(node)
             out.append(dict(
                 origin="pattern-transfer", node=node,

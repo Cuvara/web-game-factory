@@ -26,7 +26,10 @@ patterns:
     - {id: theme-tone, a: theme, b: art_tone, kind: visual}
     - {id: genre-audience, a: genre, b: audience_type, kind: audience}
     - {id: genre-intent, a: genre, b: intent, kind: audience}
+    - {id: genre-session, a: genre, b: session_band, kind: session}
     - {id: gameplay-session, a: mechanics, b: session_band, kind: session}
+    - {id: genre-retention, a: genre, b: retention_hooks, kind: retention}
+    - {id: genre-progression, a: genre, b: progression, kind: progression}
     - {id: gameplay-retention, a: mechanics, b: retention_hooks, kind: retention}
     - {id: gameplay-progression, a: mechanics, b: progression, kind: progression}
     - {id: gameplay-monetization, a: mechanics, b: ad_triggers, kind: monetization}

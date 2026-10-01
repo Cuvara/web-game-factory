@@ -114,7 +114,8 @@ reads these from `records_dir`:
   `ua_default` (its computed style equals the user-agent default for its tag, read from a
   blank frame no page stylesheet reaches) and the properties that differ; every visible text
   outside a control, measured the same way; the overlaps between controls and between a
-  control and text; and the probe's `ui`-role entities.
+  control and text; the probe's `ui`-role entities; and every entity the probe reported at
+  that moment (with `asset` and `render`), so a state frame can be read at an entity's box.
 
 ## The checks
 

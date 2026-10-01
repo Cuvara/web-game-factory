@@ -100,6 +100,33 @@ def entities(asset=True, render="asset"):
              "asset": "striker" if asset else None, "render": render}]
 
 
+FRAMES = None
+
+
+def setUpModule():
+    """A state frame as the bot captures one: navy, with the two sprites drawn at their boxes."""
+    global FRAMES
+    FRAMES = tempfile.mkdtemp(prefix="wgf-pq-frames-")
+    write_frame(FRAMES, "state-playing", sprites=True)
+
+
+def tearDownModule():
+    shutil.rmtree(FRAMES, ignore_errors=True)
+
+
+def write_frame(directory, name, sprites, size=(393, 851)):
+    w, h = size
+    image = Image(w, h, bytes([20, 30, 60, 255]) * (w * h))
+    if sprites:
+        for e in entities():
+            for y in range(e["y"], e["y"] + e["h"]):
+                for x in range(e["x"], e["x"] + e["w"]):
+                    i = (y * w + x) * 4
+                    image.pixels[i:i + 3] = bytes([240, 200, 80])
+    with open(os.path.join(directory, f"{name}.png"), "wb") as handle:
+        handle.write(encode_png(image))
+
+
 def records(asset=True, render="asset", ui=None):
     snap = {"state": "playing", "metrics": {"saves": 0, "lives": 3}, "entities": entities(asset, render),
             "inputs": [], "assets_loaded": ["keeper", "striker"] if asset else []}
@@ -107,7 +134,7 @@ def records(asset=True, render="asset", ui=None):
                            for e in snap["entities"]]] * 3, "viewport": [393, 851]}
     retry = button("Retry", [140, 500, 120, 48])
     ui = ui or {"title": screen("title", [button("Play", [140, 400, 120, 48])]),
-                "playing": screen("playing"),
+                "playing": dict(screen("playing"), entities=entities(asset, render)),
                 "won": screen("won", [retry]), "lost": screen("lost", [retry]),
                 "retry": screen("retry")}
     common = {"asset_requests": REQUESTS if asset else [{"url": "/assets/assets.json", "status": 200}],
@@ -126,7 +153,8 @@ class Judge(unittest.TestCase):
         self.rules = load_rules()
 
     def judge(self, recs, manifest=MANIFEST, design=DESIGN, frames=None):
-        return judging.judge(recs, manifest, design, self.rules, frames or {})
+        return judging.judge(recs, manifest, design, self.rules,
+                             frames or {"desktop": FRAMES, "mobile": FRAMES})
 
     @staticmethod
     def failed(checks):
@@ -195,6 +223,38 @@ class Judge(unittest.TestCase):
         loaded = next(c for c in self.judge({"desktop": recs}) if c["id"] == "assets.loaded")
         self.assertEqual((loaded["status"], loaded["route"], loaded["assets"]),
                          ("FAIL", "develop", ["striker"]))
+
+    def test_the_asset_runtime_chain_of_a_production_build(self):
+        chain = next(c for c in self.judge({"desktop": records(), "mobile": records()})
+                     if c["id"] == "assets.runtime")
+        self.assertEqual(chain["status"], "PASS", chain)
+        keeper = chain["measured"]["keeper"]
+        self.assertEqual([keeper[k] for k in judging.CHAIN], [True] * 5)
+        self.assertGreater(keeper["visible_measured"]["box_not_background"], 0.9)
+
+    def test_an_asset_drawn_where_the_frame_shows_only_background_is_not_visible(self):
+        blank = tempfile.mkdtemp(prefix="wgf-pq-blank-")
+        self.addCleanup(shutil.rmtree, blank, ignore_errors=True)
+        write_frame(blank, "state-playing", sprites=False)
+        chain = next(c for c in self.judge({"desktop": records()}, frames={"desktop": blank})
+                     if c["id"] == "assets.runtime")
+        self.assertEqual((chain["status"], chain["route"]), ("FAIL", "develop"))
+        self.assertEqual(chain["measured"]["keeper"]["failed_at"], "visible")
+
+    def test_the_chain_stops_at_the_first_broken_link(self):
+        greybox = next(c for c in self.judge({"desktop": records(asset=False, render="primitive")})
+                       if c["id"] == "assets.runtime")
+        self.assertEqual(greybox["measured"]["striker"]["failed_at"], "loaded")
+        manifest = copy.deepcopy(MANIFEST)
+        manifest["items"][0]["placeholder"] = True
+        chain = next(c for c in self.judge({"desktop": records()}, manifest=manifest)
+                     if c["id"] == "assets.runtime")
+        self.assertEqual((chain["measured"]["keeper"]["failed_at"], chain["route"]), ("exists", "assets"))
+        runtime = copy.deepcopy(records())
+        for r in runtime.values():
+            r["runtime_assets"] = {"assets": {"keeper": RUNTIME["assets"]["keeper"]}}
+        chain = next(c for c in self.judge({"desktop": runtime}) if c["id"] == "assets.runtime")
+        self.assertEqual(chain["measured"]["striker"]["failed_at"], "referenced")
 
     def test_default_styled_tiny_buttons_fail_styled_and_targets(self):
         tiny = button("Retry", [180, 500, 30, 20], ua_default=True, ua_differs=[], font_px=13.33,
@@ -273,6 +333,8 @@ class TheStep(unittest.TestCase):
     def write_records(self, by_project, records_dir="playability/1-1/out"):
         for project, recs in by_project.items():
             os.makedirs(os.path.join(self.base, records_dir, project, "frames"), exist_ok=True)
+            shutil.copy(os.path.join(FRAMES, "state-playing.png"),
+                        os.path.join(self.base, records_dir, project, "frames"))
             for name, record in recs.items():
                 with open(os.path.join(self.base, records_dir, project, f"{name}.json"), "w") as h:
                     json.dump(record, h)

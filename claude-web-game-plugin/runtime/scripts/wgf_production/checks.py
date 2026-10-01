@@ -109,6 +109,30 @@ class _Frames:
         return [round(statistics.fmean(c[k] for c in dominant)) for k in range(3)]
 
 
+    def differs(self, frame_id, box, viewport, min_delta):
+        """Share of the frame's pixels inside `box` that differ from the frame's dominant
+        colour by at least `min_delta` in some channel; None when it cannot be read."""
+        image = self.image(frame_id)
+        if image is None or not box or not viewport or not viewport[0]:
+            return None
+        background = self.background(frame_id, [0, 0, viewport[0], viewport[1]], viewport)
+        scale = image.width / float(viewport[0])
+        x0, y0 = max(0, int(box[0] * scale)), max(0, int(box[1] * scale))
+        x1 = min(image.width, int((box[0] + box[2]) * scale))
+        y1 = min(image.height, int((box[1] + box[3]) * scale))
+        if x1 <= x0 or y1 <= y0 or background is None:
+            return None
+        step = max(1, min(x1 - x0, y1 - y0) // 32)
+        px, total, changed = image.pixels, 0, 0
+        for y in range(y0, y1, step):
+            for x in range(x0, x1, step):
+                i = (y * image.width + x) * 4
+                total += 1
+                if max(abs(px[i + k] - background[k]) for k in range(3)) >= min_delta:
+                    changed += 1
+        return round(changed / total, 4) if total else None
+
+
 # -- assets --------------------------------------------------------------------------------
 
 def required_assets(manifest, design, rules):
@@ -265,6 +289,93 @@ def assets_loaded(wanted, records, rules):
                             "runtime_manifest_fetched": runtime is not None},
                   expected="every required asset's file (runtime manifest url/atlas) fetched with a 2xx/3xx",
                   assets=unfetched)
+
+
+CHAIN = ("exists", "referenced", "loaded", "rendered", "visible")
+
+
+def assets_runtime(wanted, records, rules, frames_by_project):
+    """The asset runtime chain, per required asset: exists (a delivered, non-placeholder
+    manifest item with a file) -> referenced (in the runtime manifest the page fetched) ->
+    loaded (its file fetched during play) -> rendered (an entity the probe reported names it,
+    render asset|composite) -> visible (that entity on screen, visible and at a readable size
+    in the per-frame samples, and its box in a state frame is not the frame's background).
+    The last two apply to assets of an entity role; the chain stops at the first link that
+    fails. Route `assets` when any asset fails at `exists`, else `develop`."""
+    asset_roles = set((rules.get("entities") or {}).get("asset_roles") or [])
+    renders = set((rules.get("entities") or {}).get("asset_renders") or ["asset", "composite"])
+    not_loaded = set((rules.get("assets") or {}).get("not_loaded_types") or [])
+    bars = rules.get("visible") or {}
+    runtime = next((r["runtime_assets"] for _p, _n, r in _all_records(records)
+                    if isinstance(r.get("runtime_assets"), dict)), None)
+    fetched = [r["url"] for _p, _n, rec in _all_records(records)
+               for r in rec.get("asset_requests") or [] if isinstance(r, dict)
+               and isinstance(r.get("url"), str) and r.get("status") is not None
+               and 200 <= r["status"] < 400]
+    # What the probe said about each asset id: renders, largest on-screen share, and state
+    # frames with the box of an entity drawn with it.
+    rendered, largest, boxes = {}, {}, {}
+    for project, tests in records.items():
+        for eid, _role, asset, render, _has in _entity_views(tests):
+            if asset:
+                rendered.setdefault(asset, set()).add(render)
+        for record in tests.values():
+            sampled = (record or {}).get("sampled") or {}
+            vw, vh = sampled.get("viewport") or [1, 1]
+            area = float(vw * vh) or 1.0
+            for frame in sampled.get("frames") or []:
+                for sample in frame:
+                    if len(sample) < 9 or not sample[7]:
+                        continue
+                    _i, _r, vis, x, y, w, h = sample[:7]
+                    if vis and x + w > 0 and y + h > 0 and x < vw and y < vh:
+                        largest[sample[7]] = max(largest.get(sample[7], 0.0), w * h / area)
+        for state, ui in _ui_states(tests):
+            for e in ui.get("entities") or []:
+                if isinstance(e, dict) and e.get("asset") and e.get("visible"):
+                    boxes.setdefault(e["asset"], []).append(
+                        (project, ui.get("frame"), [e.get("x"), e.get("y"), e.get("w"), e.get("h")],
+                         ui.get("viewport")))
+    chain, failures = {}, {}
+    for asset_id, (req, item) in sorted(wanted.items()):
+        role = (req or {}).get("role") or (item or {}).get("role")
+        links = {}
+        type_ = (item or {}).get("type") or (req or {}).get("type")
+        paths = served_paths(item, runtime) if item else set()
+        links["exists"] = bool(item) and not item.get("placeholder") and bool(item.get("files")) \
+            and item.get("status") not in ("planned",)
+        if type_ not in not_loaded:
+            links["referenced"] = isinstance(runtime, dict) and asset_id in (runtime.get("assets") or {})
+            links["loaded"] = bool(paths) and any(url.endswith("/assets/" + p)
+                                                  for p in paths for url in fetched)
+        if role in asset_roles:
+            links["rendered"] = bool(rendered.get(asset_id, set()) & renders)
+            share = largest.get(asset_id, 0.0)
+            seen = []
+            for project, frame_id, box, viewport in boxes.get(asset_id, []):
+                differs = _Frames(frames_by_project.get(project)).differs(
+                    frame_id, box, viewport, bars.get("min_pixel_delta", 24))
+                if differs is not None:
+                    seen.append(differs)
+            links["visible"] = share >= bars.get("min_area_fraction", 0.002) and \
+                any(d >= bars.get("min_changed_share", 0.1) for d in seen)
+            links["visible_measured"] = {"largest_area_fraction": round(share, 4),
+                                         "box_not_background": max(seen) if seen else None}
+        failed_at = next((link for link in CHAIN if links.get(link) is False), None)
+        chain[asset_id] = dict(links, role=role, failed_at=failed_at)
+        if failed_at:
+            failures[asset_id] = failed_at
+    route = ASSETS if any(f == "exists" for f in failures.values()) else DEVELOP
+    return _check("assets.runtime", bool(wanted) and not failures,
+                  ("; ".join(f"{a}: fails at {f}" for a, f in sorted(failures.items())[:12])
+                   + (f" (+{len(failures) - 12} more)" if len(failures) > 12 else ""))
+                  if failures else (f"all {len(wanted)} required assets exist, are referenced, "
+                                    "loaded, and - for entity assets - rendered and visible in play"
+                                    if wanted else "no required asset in the design or manifest"),
+                  route, measured=chain,
+                  expected=" -> ".join(CHAIN) + " for every required asset (rendered and visible "
+                           f"for roles {', '.join(sorted(asset_roles))})",
+                  assets=sorted(failures))
 
 
 def _readable(project, tests, rules, runtime):
@@ -489,7 +600,8 @@ def judge(records, manifest, design, rules, frames_dirs):
     wanted = required_assets(manifest, design, rules)
     runtime = next((r["runtime_assets"] for _p, _n, r in _all_records(records)
                     if isinstance(r.get("runtime_assets"), dict)), None)
-    checks = [assets_present(wanted), assets_loaded(wanted, records, rules)]
+    checks = [assets_present(wanted), assets_loaded(wanted, records, rules),
+              assets_runtime(wanted, records, rules, frames_dirs)]
     for project in sorted(records):
         tests = records[project]
         frames = _Frames(frames_dirs.get(project))

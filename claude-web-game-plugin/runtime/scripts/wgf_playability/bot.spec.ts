@@ -98,7 +98,8 @@ class Watch {
     const measured = await measureUI(this.page);
     await frame(this.page, this.project, `state-${name}`, this.frames);
     this.ui[name] = { probe_state: snapshot?.state ?? null, frame: `state-${name}`, ...(measured as object),
-                      probe_ui: (snapshot?.entities ?? []).filter((e) => e.role === "ui") };
+                      probe_ui: (snapshot?.entities ?? []).filter((e) => e.role === "ui"),
+                      entities: snapshot?.entities ?? [] };
   }
 
   record(): Record<string, unknown> {

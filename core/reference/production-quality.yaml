@@ -19,6 +19,21 @@ entities:
   # Renders that count as drawn from assets.
   asset_renders: [asset, composite]
 
+  # Roles whose assets are drawn as entities the probe reports: the asset runtime chain
+  # (assets.runtime) follows each such asset to the screen.
+  asset_roles: [player, threat, goal, target, projectile, collectible, hazard]
+
+visible:
+  # An asset is visible in play when an entity drawn with it is on screen, visible, and at
+  # its largest covers at least this share of the viewport in the bot's per-frame samples
+  # (core/reference/visual-quality.yaml entities.min_area_fraction)...
+  min_area_fraction: 0.002
+  # ...and in a frame of a screen state, the pixels inside its drawn box are not the frame's
+  # background: at least this share of them differ from the frame's dominant colour by at
+  # least this much in some channel (0-255).
+  min_changed_share: 0.1
+  min_pixel_delta: 24
+
 assets:
   # Asset tiers the gate requires (game-design build_spec.assets[].tier, asset-manifest
   # items[].scope_tier).

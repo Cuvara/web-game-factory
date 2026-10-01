@@ -1,0 +1,184 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://webgamefactory.dev/schemas/artifacts/visual-qa-report.schema.json",
+  "title": "Visual QA report",
+  "description": "A vision judge's reading of a build's runtime frames - every state, desktop and mobile - against core/reference/visual-qa-rubric.yaml and the design's visual identity: placeholder or primitive art, broken composition, unreadable or default UI, missing assets, inconsistency, debug output. Each finding names the frame that shows it and where it goes back to. An agent's judgement of frames, never a first-time player's.",
+  "x-wgf": {
+    "id": "visual-qa-report",
+    "kind": "artifact",
+    "format": "json",
+    "version": "1.0.0",
+    "producer": "title:prototype",
+    "consumers": [
+      "title:prototype",
+      "title:prototype-review",
+      "release:qa"
+    ],
+    "repo_path": "<game-repo>/qa/visual-qa/<commit>.json",
+    "run_path": "<storage>/workflows/<run-id>/artifacts/visual-qa-report/v<n>.json",
+    "required_for_gates": []
+  },
+  "type": "object",
+  "required": [
+    "provenance",
+    "title_id",
+    "commit",
+    "measurement_class",
+    "verdict",
+    "failed",
+    "routes"
+  ],
+  "properties": {
+    "provenance": {
+      "$ref": "shared/provenance.schema.json#/$defs/provenance"
+    },
+    "title_id": {
+      "type": "string"
+    },
+    "commit": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{40}$"
+    },
+    "measurement_class": {
+      "const": "automation-agent"
+    },
+    "judge": {
+      "type": "object",
+      "required": [
+        "kind"
+      ],
+      "properties": {
+        "kind": {
+          "type": "string"
+        },
+        "model": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "additionalProperties": true
+    },
+    "frames": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "id",
+          "path",
+          "sha256"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "project": {
+            "type": "string"
+          },
+          "state": {
+            "type": "string"
+          },
+          "path": {
+            "type": "string"
+          },
+          "sha256": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "scores": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "number",
+        "minimum": 0,
+        "maximum": 5
+      },
+      "description": "Rubric dimension -> 0..5."
+    },
+    "findings": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "id",
+          "severity",
+          "category",
+          "summary",
+          "route"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "severity": {
+            "enum": [
+              "blocker",
+              "major",
+              "minor"
+            ]
+          },
+          "category": {
+            "enum": [
+              "assets",
+              "ui",
+              "composition",
+              "readability",
+              "consistency",
+              "debug"
+            ]
+          },
+          "frame": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "summary": {
+            "type": "string"
+          },
+          "route": {
+            "enum": [
+              "assets",
+              "develop"
+            ]
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "failed": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "Ids of the required checks or findings that failed."
+    },
+    "routes": {
+      "type": "array",
+      "items": {
+        "enum": [
+          "assets",
+          "develop"
+        ]
+      },
+      "description": "Where the failures go back to: `assets` when an asset itself must change, `develop` when the game's use of it must. The step returns the first of these as its route (assets before develop)."
+    },
+    "blocked_reason": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "verdict": {
+      "enum": [
+        "PASS",
+        "FAIL",
+        "BLOCKED"
+      ]
+    }
+  },
+  "additionalProperties": false
+}

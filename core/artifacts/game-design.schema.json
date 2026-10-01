@@ -8,7 +8,7 @@
     "id": "game-design",
     "kind": "artifact",
     "format": "json",
-    "version": "1.5.0",
+    "version": "1.6.0",
     "template": "templates/gdd.md",
     "producer": "title:design",
     "consumers": ["title:tech-plan", "title:prototype", "title:prototype-review", "title:production", "release:qa", "title:scaffolding"],
@@ -654,7 +654,10 @@
               "count": { "type": "integer", "minimum": 1 },
               "source_preference": { "enum": ["library", "procedural", "ai-generated", "purchased", "commissioned"] },
               "est_cost": { "type": "number", "minimum": 0 },
-              "spec": { "type": "string", "description": "Sizes, frames, poly budget, format." }
+              "spec": { "type": "string", "description": "Sizes, frames, poly budget, format." },
+              "role": { "enum": ["player", "threat", "goal", "target", "projectile", "collectible", "hazard", "environment", "background", "prop", "ui", "vfx", "icon", "font"], "description": "What it is to the player. The entity roles are the play probe's (shared/play-probe.schema.json): an entity the probe reports with that role is drawn with this asset in production." },
+              "dimension": { "enum": ["2d", "3d"] },
+              "readability": { "type": "string", "description": "What a first-time player must recognise in it, and at what size or distance: 'a goalkeeper in gloves, readable at 60 px tall from the play camera'. Production assets are judged against it." }
             },
             "additionalProperties": false
           }
@@ -743,7 +746,25 @@
             "shape_language": { "type": "string" },
             "motion": { "type": "string" },
             "texture": { "type": "string" },
-            "avoid": { "type": "array", "minItems": 1, "items": { "type": "string" } }
+            "avoid": { "type": "array", "minItems": 1, "items": { "type": "string" } },
+            "primitive_style": {
+              "type": "object",
+              "required": ["reason"],
+              "description": "Present only when the art direction itself is geometric (an abstract neon runner): readable entities may then be drawn as primitives in production. Absent, a cube or sphere standing for a character is a placeholder, and the production gates refuse it.",
+              "properties": { "reason": { "type": "string", "minLength": 20 } },
+              "additionalProperties": false
+            },
+            "ui": {
+              "type": "object",
+              "description": "The UI's look, as numbers and palette tokens: what the production gate and visual QA hold the screens to.",
+              "properties": {
+                "font_px": { "type": "object", "properties": { "body": { "type": "number", "minimum": 10 }, "hud": { "type": "number", "minimum": 10 }, "heading": { "type": "number", "minimum": 14 } }, "additionalProperties": false },
+                "min_target_px": { "type": "number", "minimum": 32, "description": "Smallest interactive element on a phone viewport, CSS px." },
+                "button": { "type": "object", "properties": { "fill": { "type": "string" }, "text": { "type": "string" }, "radius_px": { "type": "number", "minimum": 0 }, "style": { "type": "string" } }, "additionalProperties": false, "description": "fill and text are palette tokens." },
+                "surface": { "type": "string", "description": "Palette token for panels and result cards." }
+              },
+              "additionalProperties": false
+            }
           },
           "additionalProperties": false
         },

@@ -8,7 +8,7 @@
     "id": "asset-manifest",
     "kind": "artifact",
     "format": "json",
-    "version": "1.3.0",
+    "version": "1.4.0",
     "producer": "title:prototype",
     "updated_by": ["title:design", "title:tech-plan", "title:production"],
     "consumers": ["title:tech-plan", "title:prototype", "title:production", "release:qa", "release:draft"],
@@ -140,7 +140,23 @@
           },
           "scope_tier": { "enum": ["mvp", "prototype", "production", "future"] },
           "platforms": { "type": "array", "items": { "type": "string" } },
-          "notes": { "type": "string" }
+          "notes": { "type": "string" },
+          "role": { "enum": ["player", "threat", "goal", "target", "projectile", "collectible", "hazard", "environment", "background", "prop", "ui", "vfx", "icon", "font"], "description": "The requirement's role (game-design build_spec.assets[].role)." },
+          "quality": {
+            "type": "object",
+            "description": "Whether the delivered files are production art and not a stand-in: checks on the files themselves (an SVG's shapes and palette, a GLB's parts, normals, materials and whether it is one primitive). A placeholder, or an mvp item whose quality is not `pass`, never reaches a release.",
+            "required": ["verdict", "checks"],
+            "properties": {
+              "verdict": { "enum": ["pass", "fail", "skipped"] },
+              "checks": { "type": "array", "items": { "type": "object", "required": ["id", "status", "summary"], "properties": { "id": { "type": "string" }, "status": { "enum": ["pass", "fail", "skipped"] }, "summary": { "type": "string" } }, "additionalProperties": false } },
+              "primitive_only": { "type": ["boolean", "null"], "description": "3D: the model is one box, sphere, cylinder, capsule or plane (or several unmodified ones). 2D: the image is one plain rectangle or circle." },
+              "parts": { "type": ["integer", "null"], "minimum": 0 },
+              "triangles": { "type": ["integer", "null"], "minimum": 0 },
+              "colors": { "type": ["integer", "null"], "minimum": 0 },
+              "author": { "type": ["string", "null"], "description": "What made it: library:<id>, author:<kind>, builtin:<generator>, placeholder." }
+            },
+            "additionalProperties": false
+          }
         },
         "additionalProperties": false
       }

@@ -1,0 +1,134 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://webgamefactory.dev/schemas/artifacts/production-quality-report.schema.json",
+  "title": "Production quality report",
+  "description": "Whether a build is production art and production UI, not a greybox or a prototype: every mvp asset delivered, not a placeholder, passing its own quality checks, actually fetched by the running game and drawing the entities a player must see; no readable entity drawn as a primitive unless the design's visual_identity.primitive_style allows it; the UI measured on desktop and mobile (target sizes, overlap, text contrast and size, styled controls, win/lose/retry screens seen). Bars in core/reference/production-quality.yaml. Automation evidence.",
+  "x-wgf": {
+    "id": "production-quality-report",
+    "kind": "artifact",
+    "format": "json",
+    "version": "1.0.0",
+    "producer": "title:prototype",
+    "consumers": [
+      "title:prototype",
+      "title:prototype-review",
+      "release:qa"
+    ],
+    "repo_path": "<game-repo>/qa/production-quality/<commit>.json",
+    "run_path": "<storage>/workflows/<run-id>/artifacts/production-quality-report/v<n>.json",
+    "required_for_gates": []
+  },
+  "type": "object",
+  "required": [
+    "provenance",
+    "title_id",
+    "commit",
+    "measurement_class",
+    "verdict",
+    "failed",
+    "routes"
+  ],
+  "properties": {
+    "provenance": {
+      "$ref": "shared/provenance.schema.json#/$defs/provenance"
+    },
+    "title_id": {
+      "type": "string"
+    },
+    "commit": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{40}$"
+    },
+    "measurement_class": {
+      "const": "automation-bot"
+    },
+    "checks": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "id",
+          "status",
+          "required",
+          "summary",
+          "route"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "project": {
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "PASS",
+              "FAIL",
+              "BLOCKED",
+              "WARNING"
+            ]
+          },
+          "required": {
+            "type": "boolean"
+          },
+          "summary": {
+            "type": "string"
+          },
+          "measured": {},
+          "expected": {},
+          "route": {
+            "enum": [
+              "assets",
+              "develop"
+            ]
+          },
+          "assets": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Asset ids it concerns."
+          },
+          "frames": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "failed": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "Ids of the required checks or findings that failed."
+    },
+    "routes": {
+      "type": "array",
+      "items": {
+        "enum": [
+          "assets",
+          "develop"
+        ]
+      },
+      "description": "Where the failures go back to: `assets` when an asset itself must change, `develop` when the game's use of it must. The step returns the first of these as its route (assets before develop)."
+    },
+    "blocked_reason": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "verdict": {
+      "enum": [
+        "PASS",
+        "FAIL",
+        "BLOCKED"
+      ]
+    }
+  },
+  "additionalProperties": false
+}

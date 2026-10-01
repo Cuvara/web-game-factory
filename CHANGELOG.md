@@ -99,6 +99,14 @@ requirement was relaxed.
   and must keep it passing. The real run's game had its assets made before anyone could see
   that its loop was unreadable.
 
+- **The production contracts** ([docs/production-architecture.md](docs/production-architecture.md)):
+  what a finished game is held to, and by which artifact. `game-design` 1.6.0 (additive):
+  `build_spec.assets[].role|dimension|readability`, `visual_identity.primitive_style` (the
+  one explicit permission to draw characters as primitives) and `visual_identity.ui`.
+  `asset-manifest` 1.4.0 (additive): `role`, `quality` (verdict, checks, primitive_only,
+  parts, triangles, colors, author). `play-probe`: `entities[].asset|render`,
+  `assets_loaded`. New artifacts `production-quality-report` and `visual-qa-report`.
+
 ### Changed
 
 - develop's verify loop budget is keyed `verify.fail` (was `fail`), since `playability`'s

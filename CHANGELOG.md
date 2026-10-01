@@ -23,6 +23,29 @@ requirement was relaxed.
 - **The bot's per-screen frames had no rubric state.** `state-title`, `state-playing`,
   `state-paused`, `state-won`, `state-lost` and `state-retry` were `unknown` to visual QA's
   brief; they now map to initial, gameplay, interaction, win, loss and retry.
+- **Defects the lead caught only by eye now fail a check** (quality monitor, 2026-10-01).
+  `font.coverage` (assets): a delivered font's cmap must map every character of each locale in
+  `scope.locales` - TTF/OTF/WOFF read with the standard library, WOFF2 through the system
+  Brotli decoder via `ctypes`, else `skipped` "coverage unchecked"; the 2D reference library's
+  Latin-only WOFF2 fonts fail with `ru`. The design step refuses a typography whose face cannot
+  set a locale in scope (`asset-quality.yaml` `fonts.families`, read from the Google Fonts
+  catalogue), and the archetype author swaps such a face for its kit's covering alternate.
+  `variants.distinct` (assets): a counted requirement's drawings must differ by silhouette,
+  not colour or numeral; an author is sent back while it draws. `variants.count`: a library
+  short of the count fails the set and `variants-short` is an error for mvp items.
+  `scene.contrast` (production gate): each readable role's best box must reach 3:1 against a
+  ring around it; the dark first 3D build's barriers fail at 2.5:1. The drop-merge archetype
+  counts its `pieces` from the rules: an exhaustive search of its tracks reaches level 10,
+  not a fixed 6. asset-quality.yaml 1.1.0, production-quality.yaml 1.1.0 (additive). To bring
+  an artifact forward: re-run the design step for a title whose typography cannot set its
+  locales, and the assets step for fonts and counted drawings.
+- **Both golden runs failed those checks on their own art** (`assets.present: quality not
+  pass` - 2D `fonts, pieces`, 3D `fonts`; the 3D design has no `pieces`, its report named only
+  `fonts`). The lock's `golden_ports` moves to template `wgf-golden-content` (`db7b140`): the
+  2D library draws towers 9 and 10 (the rules reach 10; `variants.distinct` passes on all
+  ten) and bundles Rubik Mono One and Manrope, the 3D library Commissioner 500 for Instrument
+  Sans - every face Latin + Cyrillic, the kit's covering alternates the design step names for
+  `ru` - and both ports' baselines are re-captured. No check was changed.
 - **An idea no catalog concept carries was silently replaced.** Research carried the nearest
   buildable shape forward (an endless runner for the goalkeeper idea), so strategy and design
   were held to a different game. Research now waits for input instead
@@ -48,6 +71,22 @@ requirement was relaxed.
 
 ### Added
 
+- **Every design states why a player comes back** (game-design 1.7.0 `build_spec.depth`).
+  Both reference games were single-loop arcade prototypes with nothing persisted but a best
+  score. A design now states a meta loop that persists more than a score, a goal ladder
+  (short, mid, long), content-variety items introduced on a schedule, a first session of
+  120-900 s equal to `session.first_session_seconds`, and return hooks - each tiered, an MVP
+  entry resting only on what the MVP builds (`delivered_by`). The design step checks it
+  after the consistency rules (`scripts/wgf_design/depth.py`, bars in
+  `core/reference/design-depth.yaml`); an agent author is shown the problems to repair.
+  Every archetype states real depth: stages, special pieces, power-ups, coins and
+  achievements for `drop-merge`; zones, pickups, a near-miss combo, a ship garage and
+  missions for `arena-dodge` - post-mvp, so the golden ports (which build the MVP) are not
+  claimed to have them. Depth resting on a feature the strategy excludes is tiered optional
+  with the exclusion named, and listed in `open_questions`. New playbook
+  `core/craft/retention-and-progression.md`, read by the game-designer, gameplay and liveops
+  agents and the game-design and core-loop skills. Feature specs for the two reference games:
+  `docs/reference-games/`. Bringing a 1.6.0 design forward: add `build_spec.depth`.
 - **Workflow 5: the production build is judged before review.** `new-game` runs
   `production-quality` and `visual-qa` after `playability`; each routes `assets` (an asset
   must be made again) to `assets` - which reads the failing report, rebuilds only what it
@@ -81,6 +120,22 @@ requirement was relaxed.
   the fixes the real runs found in the ports: the 2D greybox ground was a wash (mean
   luminance 227), the 2D asset loader sat in `src/assets/` (verify's asset root), and the 3D
   port refused to boot without its manifest, so the greybox phase could not run.
+- **Production craft distilled from the reference ports** (adapter binding 1.6.0). Five
+  provider-neutral playbooks carry what made the 2D and 3D reference games pass the
+  production gate, with their numbers and the files and frames each came from:
+  `core/craft/production-art-2d.md` (style kit, a silhouette per variant, layered SVG,
+  backgrounds, VFX, anchors, `library.json`), `production-art-3d.md` (part decomposition,
+  taper/bevel/mirror, materials and emissive, light rig, fog and sky, portrait camera),
+  `game-ui-kit.md` (fonts as assets and locale glyphs, contrast and target floors, buttons,
+  HUD, screens, portrait), `juice.md` (acknowledgement within 100 ms, drop, merge, combo,
+  shake, near-miss, crash, opening grace) and `production-wiring.md` (`assets.json` by id and
+  role, the probe's `asset`/`render`/`assets_loaded`, the art regression guard, self-checking
+  with frames). One new skill per playbook in both adapters; the playbooks are in the
+  `must_read` of the game-designer, gameplay, ui and asset agents, the reads of eight existing
+  skills, and the `new-game` surface's "production bar". The develop brief names the engine's
+  playbooks by path and recommends the new skills; the 2D and 3D author requests carry theirs
+  as `craft`. Nothing to bring forward: no schema, gate or artifact changed.
+
 - **Every design states its production art and UI** (game-design 1.6.0). Each built-in
   archetype gives every asset a `role`, `dimension` and `readability` line (player, threats,
   targets, environment/background, UI kit, icons, fonts as bundled OFL files), and every

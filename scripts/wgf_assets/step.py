@@ -283,7 +283,8 @@ class AssetsStep(WorkflowStep):
                                                if settings["model_author"].get("kind")
                                                not in (None, "none") else None),
                                  rebuild=rebuild, settings=settings, context=context,
-                                 work_dir=self._work_dir(context, slug))
+                                 work_dir=self._work_dir(context, slug),
+                                 locales=(design.get("scope") or {}).get("locales") or ())
         context.logger.info("asset pipeline", requirements=len(requirements),
                             dimension=dimension, root=store.root,
                             derived=bool(requirements and requirements[0].derived))

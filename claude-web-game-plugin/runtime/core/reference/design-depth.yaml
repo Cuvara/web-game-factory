@@ -1,0 +1,57 @@
+# Design depth: the bars a game-design's reason to come back is held to.
+#
+# The design module checks every design it produces against these (`build_spec.depth`,
+# game-design 1.7.0; scripts/wgf_design/depth.py). They turn the defaults of
+# core/craft/retention-and-progression.md from prose into data a check can read: a loop
+# above the run that persists, content that arrives on a schedule instead of all at once, a
+# goal at every horizon, a first session long enough to show the loop more than once, and a
+# stated reason to return.
+#
+# Depth is stated, not necessarily built: every entry carries a tier, and a strategy that
+# defers retention systems past the prototype gets them tiered post-mvp or optional, visibly.
+# What the bars refuse is a design with nothing above the core loop at any tier, and an MVP
+# entry that rests on something the MVP does not build.
+#
+# Change a value only with a reason a person could defend from playtest or live data; a
+# looser bar here lets a single-loop prototype through as a game.
+
+version: 1.0.0
+
+meta_loop:
+  # Persisting only these is a scoreboard, not a meta loop: at least one persisted entry
+  # must be of another kind (stage progress, unlocks, currency, upgrades, cosmetics,
+  # achievements, missions, streak, collection).
+  score_only_kinds: [best-score, settings]
+
+goal_ladder:
+  # Every horizon has at least one goal.
+  horizons: [short, mid, long]
+  # The prototype proves these: the next-seconds goal and the this-run goal are MVP.
+  mvp_horizons: [short, mid]
+
+content_schedule:
+  # Content-variety items (pieces, specials, power-ups, obstacles, zones, events...) the
+  # design introduces over play, at any tier.
+  min_items: 4
+  # Of which at least this many are MVP: the prototype shows variety arriving, not one
+  # static board.
+  min_mvp_items: 1
+  # Distinct introduction points (`at_s` within a run, `after_runs` across runs, or the
+  # `introduced` wording when neither applies): content that all arrives at second 0 is a
+  # menu, not a schedule.
+  min_distinct_introductions: 3
+  # The first new item a player meets inside a run arrives no later than this (s): the
+  # first minute already shows the game is more than its opening.
+  max_first_in_run_s: 60
+
+first_session:
+  # Seconds a first session is designed to last. Below the minimum the loop is seen once;
+  # above the maximum it is no longer a portal session. Equal to session.first_session_seconds.
+  min_s: 120
+  max_s: 900
+
+return_hooks:
+  # Stated reasons to open the game again, at any tier.
+  min_items: 2
+  # Of which at least this many are MVP: the prototype already gives one.
+  min_mvp_items: 1

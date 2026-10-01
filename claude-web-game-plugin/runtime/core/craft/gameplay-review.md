@@ -79,7 +79,7 @@ players feel rather than a style preference.
 
 - [ ] No effect can flash more than 3 times per second. Reduced motion is honoured where the
       design says so (`accessibility.md`).
-- [ ] Audio starts only after a user gesture, and respects mute (`audio.md`).
+- [ ] Audio starts only after a user gesture, and respects mute (`game-audio.md`).
 
 ## Tests that test something
 

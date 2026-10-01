@@ -15,7 +15,12 @@ Invoked from `AGENTS.md` or by the matching `/wgf-*` prompt.
 7. `core/craft/game-feel.md`
 8. `core/craft/core-loop-and-difficulty.md`
 9. `core/craft/production-art-and-ui.md`
-10. `core/craft/game-audio.md`
+10. `core/craft/production-art-2d.md`
+11. `core/craft/production-art-3d.md`
+12. `core/craft/juice.md`
+13. `core/craft/production-wiring.md`
+14. `core/craft/retention-and-progression.md`
+15. `core/craft/game-audio.md`
 
 Core is authoritative. Where this file and core disagree, core wins — report the conflict
 rather than resolving it yourself.

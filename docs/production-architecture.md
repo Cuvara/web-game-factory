@@ -76,7 +76,11 @@ bars in `core/reference/experience-rules.yaml` `production_art` and `ui`): every
 asset states `role` and `dimension`; every entity-role asset a `readability` line; every
 readable role the design's own mechanics and win/lose conditions name (`role_cues`) has an
 asset of that role with a readability line, unless `primitive_style`; a 3D design's
-player and threat assets are models in 3D; the typography ships as an MVP `font` asset; and
+player and threat assets are models in 3D; the typography ships as an MVP `font` asset, and
+every face can set every locale in `scope.locales` (`core/reference/asset-quality.yaml`
+`fonts`: a listed family must be published with one of the locale's subsets, any other
+family's font asset states its subsets) - the archetype author swaps a kit face that cannot
+for its covering alternate (`identity.ALTERNATES`: Bungee -> Rubik Mono One for `ru`); and
 `ui` names palette tokens, button text on its fill at 4.5:1 or better, targets >= 44 px and
 body/HUD text >= 14 px. Every built-in archetype states all of it (no archetype claims
 `primitive_style`); an agent author is told the fields and shown the problems to repair.
@@ -132,9 +136,71 @@ returns findings `{id, severity, category: assets|ui|composition|debug|readabili
 frame, summary, route}` and a verdict. Never a first-time-player measure
 (`measurement_class: automation-agent`).
 
+### game-design 1.7.0 (owner: design)
+
+`build_spec.depth`: `meta_loop` (statement, tier, `persists[]` of `{kind, what, tier}`),
+`goal_ladder[]` (`horizon` short | mid | long), `content_schedule[]` (`kind`, `at_s` /
+`after_runs`, `rule`), `first_session` (`target_s` = `session.first_session_seconds`,
+`ends_on`), `return_hooks[]`; every entry tiered, with `delivered_by` naming what builds it.
+The design step checks it after the consistency rules (`scripts/wgf_design/depth.py`, bars
+in `core/reference/design-depth.yaml`); craft in `core/craft/retention-and-progression.md`.
+
+## Design depth (proposed checks)
+
+**Status: specified, not implemented.** The playability step does not run these yet. Its
+owner implements them, and this section is the contract to implement against. Each check
+measures from outside, through real input and the play probe
+(`shared/play-probe.schema.json`), against the design's `build_spec.depth`. Like every
+playability measure they are `measurement_class: automation-agent`: a bot's numbers, never a
+first-time player's.
+
+A check only holds what the build claims. It reads only the **MVP** entries of
+`build_spec.depth`, because post-mvp and optional depth are stated and not built. A
+prototype is never failed for a stage map it was not asked to build. A production build
+(after G4) is held to the post-mvp entries as well, once the step knows which phase it is
+judging.
+
+Probe additions the checks need. They are additive to the play probe, and a game without
+them reports `skipped` with the reason, never `pass`:
+
+- `metrics` carries every metric a depth entry's `measure` names, under the metric ids the
+  design uses. The prototype has at least `best`. A production build adds the persisted
+  progression metrics: `coins`, `stage` (highest stage cleared), `stars`, `missions_done`,
+  `achievements`, `unlocked` (a count) and `streak`.
+- `entities[].role` and `entities[].kind`. `kind` is optional and new: the
+  content-schedule kind (`special-piece`, `pickup`, `hazard`, ...) or the content item id,
+  so the bot can tell a bomb from a level-3 piece without reading pixels.
+- `oracle` (with `wgf-probe=1`) as now: the input that succeeds. "Fixed bad play" means
+  every input the oracle does not recommend, chosen with a fixed seed.
+
+| Check | Measures | Passes when | Route |
+|---|---|---|---|
+| `depth.session_length` | The oracle bot plays good runs back to back for up to 1.5 × `depth.first_session.target_s`. It retries at once after each loss and stops at the design's `first_session.ends_on` beat (a new best, a stage cleared) or at the cap. The bot runs 3 sessions and takes the median. | The median session length is ≥ 0.5 × `depth.first_session.target_s`. A loop that ends far sooner under good play has nothing to keep a first session going. | `develop` |
+| `depth.ramp` | Fixed bad play (a seeded non-oracle input stream), 10 runs, measuring time to loss in each. Inside one long oracle-assisted run, the bot also measures the interval between oracle-required inputs. | Bad-play runs end (time to loss < 3 × the archetype's run length). Under oracle play, the required-input rate rises from the first third of the run to the last. Any relief beat the curve states shows as a dip of ≥ 2 s. Flat or falling pressure fails. | `develop` |
+| `depth.persists` | Play until every MVP `meta_loop.persists[]` metric changes (`best` at least), reload the page, and read the probe again before any input. | Every persisted MVP metric reads its pre-reload value after the reload. A production build also covers `coins`, `stage`, `unlocked`, ... | `develop` |
+| `depth.variety` | Across the first `max_first_in_run_s` + 120 s of oracle play, record the set of `entities[].kind` (or role + asset) seen per 30 s window. | The first new kind arrives by the design's earliest MVP `content_schedule[].at_s` + 15 s. At least `min_mvp_items` new kinds appear over the window, and the MVP items whose `at_s` falls inside the window are each seen. | `develop` |
+| `depth.return_hook` | The last result card of the session-length run: its visible text and screen elements. | The card shows the session's mid goal (the gap to best, or the next stage's goal), and at least one MVP `return_hooks[]` is visible as text or an element. | `develop` |
+
+Numbers in the checks come from `core/reference/design-depth.yaml` and the design. The
+multipliers (0.5 ×, 3 ×, + 15 s, 2 s) go into that file's `playability` block when the
+checks are implemented, never into code.
+
+What the checks cannot tell: whether players come back (D1 is a live metric read at
+`title:live`, and a strategy success criterion) and whether the meta is fun. Stranger
+playtests (`core/craft/playtesting.md`) and G4 answer those.
+
 ## Golden runs
 
 The golden ports must pass the production gates: their art arrives as a `library` fixture
 in the template's golden branch (SVG tiles and background for Tower Merge Rush; GLB craft,
 walls and arena for Neon Drift Arena, built from model specs by the pinned Blender), loaded
 through `assets.json`, and their probes report `asset` and `render`.
+
+The golden designs (archetypes `drop-merge` and `arena-dodge`) state their depth honestly
+for what the ports build. The MVP depth is a persisted best score, the in-run drop ramp or
+speed tiers, and the short and mid goals the ports already have. Stages, special pieces,
+power-ups, coins, zones, pickups, the garage and missions are `post-mvp` and rest on post-mvp
+features. The dev brief and the golden replay read only the MVP, so these entries add no MVP
+item the ports lack, and nothing in the golden runs judges post-mvp depth. The feature specs
+those entries come from are [reference-games/tower-merge-rush.md](reference-games/tower-merge-rush.md)
+and [reference-games/neon-drift-arena.md](reference-games/neon-drift-arena.md).

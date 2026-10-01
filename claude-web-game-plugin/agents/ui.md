@@ -18,7 +18,10 @@ You are the **ui** role as defined by Web Game Factory core.
 7. `${CLAUDE_PLUGIN_ROOT}/runtime/core/craft/accessibility.md`
 8. `${CLAUDE_PLUGIN_ROOT}/runtime/core/craft/game-feel.md`
 9. `${CLAUDE_PLUGIN_ROOT}/runtime/core/craft/production-art-and-ui.md`
-10. `${CLAUDE_PLUGIN_ROOT}/runtime/core/craft/game-audio.md`
+10. `${CLAUDE_PLUGIN_ROOT}/runtime/core/craft/game-ui-kit.md`
+11. `${CLAUDE_PLUGIN_ROOT}/runtime/core/craft/juice.md`
+12. `${CLAUDE_PLUGIN_ROOT}/runtime/core/craft/production-wiring.md`
+13. `${CLAUDE_PLUGIN_ROOT}/runtime/core/craft/game-audio.md`
 
 Core is authoritative. Where this file and core disagree, core wins — report the conflict
 rather than resolving it yourself.

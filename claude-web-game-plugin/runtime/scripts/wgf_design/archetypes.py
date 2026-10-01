@@ -17,7 +17,7 @@ strategy approved (design-consistency rule `concept_mechanics_carried` checks it
 Tiers use the game-design vocabulary: mvp, post-mvp, optional.
 """
 
-__all__ = ["ARCHETYPES", "FALLBACK", "select"]
+__all__ = ["ARCHETYPES", "DEPTH", "FALLBACK", "select", "drop_merge_top_level"]
 
 import re
 
@@ -277,8 +277,10 @@ ARCHETYPES = {
             ],
         },
         "assets": [
-            {"id": "pieces", "type": "sprite", "tier": "mvp", "description": "Tower pieces, one per level (merges reach level 8), with a merge state",
-             "count": 8, "source_preference": "procedural", "est_cost": 0, "spec": "Vector, 96px, level readable by numeral and size",
+            {"id": "pieces", "type": "sprite", "tier": "mvp", "description": "Tower pieces, one per level, with a merge state",
+             # One drawing per level the rules reach: derived below from the mechanics'
+             # parameters (drop_merge_top_level), never a fixed number.
+             "count": None, "source_preference": "procedural", "est_cost": 0, "spec": "Vector, 96px, level readable by numeral and size",
              "role": "target", "dimension": "2d",
              "readability": "Each level a distinct size and silhouette with its numeral, never told apart by colour alone; the numeral legible at 48 px on a phone, the next level obviously bigger"},
             {"id": "track-frame", "type": "ui", "tier": "mvp", "description": "Track frame and column backing",
@@ -868,6 +870,72 @@ FALLBACK = "one-touch"
 # how every MVP action is acknowledged, what the first session teaches and its grace before
 # failure, and which HUD element shows which metric. The author adds the pause action and
 # the first-30-seconds budget from the session numbers.
+def drop_merge_top_level(columns, merges_per_level_up, max_drop_level):
+    """The highest piece level the drop-merge rules can produce: an exhaustive search of every
+    track a run can reach. The rules are the archetype's mechanics, exactly: one row of
+    `columns` cells; a drop lands in an empty column at level 1 + floor(merges /
+    merges_per_level_up), capped at `max_drop_level`; equal adjacent pieces merge into level + 1
+    in the left cell, the track compacts left and the scan repeats until no pair is left; a
+    track with no empty column ends the run (its last drop's merges still count).
+
+    The reachable top is not max_drop_level + columns - 1 in general (3 columns, cap 3: the
+    ramp never reaches 3 before the track fills, so the top is 4, not 5); hence the search.
+    The archetype's 7 columns, 4 merges per level and cap 4 reach level 10 (4,534 states; the
+    template's randomised low drops, any level 1..ramp, reach the same 10 over 263,786)."""
+    def resolve(track):
+        track, merges = list(track), 0
+        while True:
+            for i in range(len(track) - 1):
+                if track[i] and track[i] == track[i + 1]:
+                    track[i] += 1
+                    track[i + 1] = 0
+                    merges += 1
+                    filled = [c for c in track if c]
+                    track = filled + [0] * (len(track) - len(filled))
+                    break
+            else:
+                return tuple(track), merges
+
+    cap = merges_per_level_up * max_drop_level  # past it the drop level no longer changes
+    start = ((0,) * columns, 0)
+    seen, stack, top = {start}, [start], 0
+    while stack:
+        track, merges = stack.pop()
+        level = min(1 + merges // merges_per_level_up, max_drop_level)
+        for column in range(columns):
+            if track[column]:
+                continue
+            dropped = list(track)
+            dropped[column] = level
+            after, made = resolve(dropped)
+            top = max(top, max(after))
+            if all(after):
+                continue  # the track is full: the run is over
+            state = (after, min(merges + made, cap))
+            if state not in seen:
+                seen.add(state)
+                stack.append(state)
+    return top
+
+
+def _derive_counts():
+    """Counted assets whose number the rules decide."""
+    drop_merge = ARCHETYPES["drop-merge"]
+    params = {}
+    for mechanic in drop_merge["mechanics"]:
+        params.update(mechanic.get("parameters") or {})
+    top = drop_merge_top_level(params["columns"], params["merges_per_level_up"],
+                               params["max_drop_level"])
+    for asset in drop_merge["assets"]:
+        if asset["id"] == "pieces":
+            asset["count"] = top
+            asset["description"] = (f"Tower pieces, one per level the rules reach (1-{top}), "
+                                    "with a merge state")
+
+
+_derive_counts()
+
+
 EXPERIENCE = {
     "lane-runner": {
         "goal": "Run as far as you can - switch lanes to dodge every obstacle.",
@@ -943,6 +1011,364 @@ EXPERIENCE = {
         "teaches": ["tap"],
         "grace": {"until": "first-success"},
         "hud_metrics": {"score": "score", "streak": "streak"},
+    },
+}
+
+# What brings a player back, per archetype (game-design 1.7.0 build_spec.depth): the loop
+# above the run and what it persists, a goal ladder, content-variety items on a schedule, the
+# beat a first session ends on, and the reasons to return. core/craft/
+# retention-and-progression.md is the craft; core/reference/design-depth.yaml the bars.
+#
+# `features` are the post-mvp features the depth rests on: the author adds them unless the
+# strategy excludes them, and an entry whose feature is excluded is tiered optional with the
+# exclusion named - depth the strategy defers stays visible, never claimed. MVP entries rest
+# only on the archetype's MVP mechanics, progression steps, rewards and hud: what the
+# prototype builds. `at_s` is seconds into a run; `after_runs` is runs completed or stages
+# cleared before the item appears.
+DEPTH = {
+    "lane-runner": {
+        "features": [
+            {"id": "run-missions", "name": "Run missions",
+             "description": "Three active missions at a time (pass 40 rows, chain a x4 near-miss multiplier, "
+                            "grab 10 pickups); finishing one replaces it with the next of a list of 30."},
+            {"id": "distance-milestones", "name": "Distance milestones",
+             "description": "Markers at 500 m, 1000 m and every 1000 m after, kept across sessions and "
+                            "shown beside the lanes and on the title screen once crossed."},
+        ],
+        "meta": {"statement": "Run -> finish missions and cross distance milestones -> the next mission "
+                              "and the next marker are waiting -> start the next run chasing them.",
+                 "tier": "post-mvp", "delivered_by": "run-missions",
+                 "persists": [
+                     {"kind": "best-score", "what": "Best distance", "tier": "mvp", "delivered_by": "new-best"},
+                     {"kind": "missions", "what": "Active missions and their progress", "tier": "post-mvp",
+                      "delivered_by": "run-missions"},
+                     {"kind": "collection", "what": "Distance milestones crossed",
+                      "tier": "post-mvp", "delivered_by": "distance-milestones"},
+                 ]},
+        "goals": [
+            {"id": "next-row", "horizon": "short", "goal": "Get through the next row without touching anything.",
+             "measure": "rows passed", "tier": "mvp", "delivered_by": "obstacles"},
+            {"id": "beat-best", "horizon": "mid", "goal": "Beat the best distance at least once this session.",
+             "measure": "distance > best", "tier": "mvp", "delivered_by": "new-best"},
+            {"id": "next-set", "horizon": "mid", "goal": "Reach the next obstacle set in this run.",
+             "measure": "30 s, then 60 s survived", "tier": "mvp", "delivered_by": "set-2"},
+            {"id": "missions-list", "horizon": "long", "goal": "Work through the mission list and every milestone.",
+             "measure": "missions completed of 30", "tier": "post-mvp", "delivered_by": "run-missions"},
+        ],
+        "content": [
+            {"id": "set-2", "kind": "obstacle", "name": "Obstacle set 2", "introduced": "30 s into a run",
+             "at_s": 30, "rule": "Rows with two blocked lanes join the mix.", "tier": "mvp", "delivered_by": "set-2"},
+            {"id": "set-3", "kind": "obstacle", "name": "Obstacle set 3", "introduced": "60 s into a run",
+             "at_s": 60, "rule": "Staggered rows that need two switches join the mix.", "tier": "mvp",
+             "delivered_by": "set-3"},
+            {"id": "pickups", "kind": "pickup", "name": "Pickups", "introduced": "From the third run, 15 s into a run",
+             "at_s": 15, "after_runs": 2, "rule": "A pickup in a free lane adds 50 to the score when touched.",
+             "tier": "post-mvp", "delivered_by": "pickups"},
+            {"id": "biome-2", "kind": "zone", "name": "Second visual theme", "introduced": "After 1000 m is first crossed",
+             "after_runs": 5, "rule": "A new palette and obstacle skin from 1000 m on, every run after.",
+             "tier": "post-mvp", "delivered_by": "second-biome"},
+        ],
+        "first_session_ends_on": "A new best or a crossed milestone, with the next mission shown on the result card.",
+        "hooks": [
+            {"id": "best-to-beat", "kind": "best-score", "statement": "My best line is right there and I know what I did wrong.",
+             "tier": "mvp", "delivered_by": "new-best"},
+            {"id": "next-mission", "kind": "missions", "statement": "One mission is two rows from done.",
+             "tier": "post-mvp", "delivered_by": "run-missions"},
+            {"id": "next-milestone", "kind": "collection", "statement": "The 1000 m marker is the one I have not crossed yet.",
+             "tier": "post-mvp", "delivered_by": "distance-milestones"},
+        ],
+    },
+    "drop-merge": {
+        "features": [
+            {"id": "stage-map", "name": "Stage map",
+             "description": "Forty numbered stages, each a goal on the same track - build a level-6 tower within 40 drops, "
+                            "score 300 with no column above level 3 - with one to three stars by drops left; clearing a "
+                            "stage opens the next and pays coins."},
+            {"id": "special-pieces", "name": "Special pieces",
+             "description": "Wildcard (merges with any neighbour), bomb (clears its column and both neighbours) and freeze "
+                            "(holds the drop ramp for 5 drops) join the drops from stages 3, 6 and 10 on, at most one in 12 drops."},
+            {"id": "power-ups", "name": "Power-ups",
+             "description": "Hammer (remove one piece), undo (take back the last drop) and shuffle (re-roll the next three "
+                            "pieces): one charge each per stage, more bought with coins, never with money."},
+            {"id": "coins", "name": "Coins",
+             "description": "Coins earned only in play - one per merge, ten per stage star - spent on power-up charges and "
+                            "tower themes; never sold."},
+            {"id": "achievements", "name": "Achievements",
+             "description": "Twelve achievements (a five-step cascade, a level-8 tower, 100 stage stars...), kept across sessions."},
+            {"id": "daily-challenge", "name": "Daily challenge",
+             "description": "One seeded run per day with the same drops for everyone, and a streak counter for days played."},
+            {"id": "tower-themes", "name": "Tower themes",
+             "description": "Cosmetic piece and track themes bought with coins."},
+        ],
+        "meta": {"statement": "Play a stage -> earn stars and coins -> open the next stage and buy power-up charges or a "
+                              "theme -> come back for the next stage on the map.",
+                 "tier": "post-mvp", "delivered_by": "stage-map",
+                 "persists": [
+                     {"kind": "best-score", "what": "Best endless score", "tier": "mvp", "delivered_by": "new-best"},
+                     {"kind": "stage-progress", "what": "Stages cleared and stars per stage", "tier": "post-mvp",
+                      "delivered_by": "stage-map"},
+                     {"kind": "currency", "what": "Coin balance and power-up charges", "tier": "post-mvp",
+                      "delivered_by": "coins"},
+                     {"kind": "achievements", "what": "Achievements earned", "tier": "post-mvp",
+                      "delivered_by": "achievements"},
+                     {"kind": "cosmetics", "what": "Themes owned and selected", "tier": "post-mvp",
+                      "delivered_by": "tower-themes"},
+                 ]},
+        "goals": [
+            {"id": "next-cascade", "horizon": "short", "goal": "Drop the piece where it starts a cascade.",
+             "measure": "merges from one drop", "tier": "mvp", "delivered_by": "merge-cascade"},
+            {"id": "beat-best", "horizon": "mid", "goal": "Beat the best score at least once this session.",
+             "measure": "score > best", "tier": "mvp", "delivered_by": "new-best"},
+            {"id": "stage-goal", "horizon": "mid", "goal": "Clear this stage's tower goal within its drop limit.",
+             "measure": "goal met, stars by drops left", "tier": "post-mvp", "delivered_by": "stage-map"},
+            {"id": "ramp-top", "horizon": "long", "goal": "Keep a run going until the drop ramp reaches its top level.",
+             "measure": "12 merges in one run", "tier": "mvp", "delivered_by": "ramp-4"},
+            {"id": "map-complete", "horizon": "long", "goal": "Three-star every stage on the map.",
+             "measure": "stars of 120", "tier": "post-mvp", "delivered_by": "stage-map"},
+        ],
+        "content": [
+            {"id": "level-2-drops", "kind": "piece", "name": "Level-2 drops", "introduced": "After 4 merges, about 20 s in",
+             "at_s": 20, "rule": "Level-2 pieces join the drops.", "tier": "mvp", "delivered_by": "ramp-2"},
+            {"id": "level-3-drops", "kind": "piece", "name": "Level-3 drops", "introduced": "After 8 merges, about 40 s in",
+             "at_s": 40, "rule": "Level-3 pieces join the drops.", "tier": "mvp", "delivered_by": "ramp-3"},
+            {"id": "level-4-drops", "kind": "piece", "name": "Level-4 drops", "introduced": "After 12 merges, about 60 s in",
+             "at_s": 60, "rule": "Level-4 pieces, the top of the ramp, join the drops.", "tier": "mvp",
+             "delivered_by": "ramp-4"},
+            {"id": "wildcard", "kind": "special-piece", "name": "Wildcard piece", "introduced": "From stage 3",
+             "after_runs": 3, "rule": "Merges with either neighbour and takes its level + 1.", "tier": "post-mvp",
+             "delivered_by": "special-pieces"},
+            {"id": "bomb", "kind": "special-piece", "name": "Bomb piece", "introduced": "From stage 6",
+             "after_runs": 6, "rule": "Clears its column and both neighbours, scoring their levels.", "tier": "post-mvp",
+             "delivered_by": "special-pieces"},
+            {"id": "freeze", "kind": "special-piece", "name": "Freeze piece", "introduced": "From stage 10",
+             "after_runs": 10, "rule": "Holds the drop level for the next 5 drops.", "tier": "post-mvp",
+             "delivered_by": "special-pieces"},
+            {"id": "hammer", "kind": "power-up", "name": "Hammer", "introduced": "From stage 2",
+             "after_runs": 2, "rule": "Removes one chosen piece; the track slides left.", "tier": "post-mvp",
+             "delivered_by": "power-ups"},
+        ],
+        "first_session_ends_on": "A new best or a cleared stage, with the next stage's goal on the result card.",
+        "hooks": [
+            {"id": "cascade-again", "kind": "best-score",
+             "statement": "I saw the cascade that would have saved that track, and I want to set it up again.",
+             "tier": "mvp", "delivered_by": "new-best"},
+            {"id": "next-stage", "kind": "stage-map", "statement": "The next stage is open and I have two stars to earn back.",
+             "tier": "post-mvp", "delivered_by": "stage-map"},
+            {"id": "daily-run", "kind": "daily-seed", "statement": "There is a new daily track and my streak is on day 4.",
+             "tier": "post-mvp", "delivered_by": "daily-challenge"},
+            {"id": "next-theme", "kind": "next-unlock", "statement": "Forty more coins buys the theme I want.",
+             "tier": "post-mvp", "delivered_by": "tower-themes"},
+        ],
+    },
+    "merge-puzzle": {
+        "features": [
+            {"id": "level-stars", "name": "Level stars",
+             "description": "One to three stars per level by moves left, kept across sessions; replaying a level "
+                            "keeps the most stars."},
+            {"id": "booster-charges", "name": "Boosters",
+             "description": "Row-clear and colour-clear boosters earned by three-starring a level, one charge each, "
+                            "never sold."},
+        ],
+        "meta": {"statement": "Clear a level -> earn stars and open the next level -> spend boosters on the hard ones "
+                              "-> come back for the next set.",
+                 "tier": "mvp", "delivered_by": "levels-5-8",
+                 "persists": [
+                     {"kind": "stage-progress", "what": "Levels cleared", "tier": "mvp", "delivered_by": "levels-5-8"},
+                     {"kind": "collection", "what": "Stars per level", "tier": "post-mvp", "delivered_by": "level-stars"},
+                     {"kind": "unlocks", "what": "Booster charges", "tier": "post-mvp", "delivered_by": "booster-charges"},
+                 ]},
+        "goals": [
+            {"id": "next-swap", "horizon": "short", "goal": "Find a swap that clears a goal colour.",
+             "measure": "goal counter falls", "tier": "mvp", "delivered_by": "swap-resolve"},
+            {"id": "clear-level", "horizon": "mid", "goal": "Clear two or three levels this session.",
+             "measure": "levels cleared", "tier": "mvp", "delivered_by": "level-clear"},
+            {"id": "clear-set", "horizon": "long", "goal": "Clear every level in the set.",
+             "measure": "levels cleared of 12", "tier": "mvp", "delivered_by": "levels-9-12"},
+            {"id": "all-stars", "horizon": "long", "goal": "Three-star every level.",
+             "measure": "stars of 36", "tier": "post-mvp", "delivered_by": "level-stars"},
+        ],
+        "content": [
+            {"id": "two-goals", "kind": "level-set", "name": "Two goal colours", "introduced": "From level 5",
+             "after_runs": 4, "rule": "Levels ask for two goal colours at once.", "tier": "mvp", "delivered_by": "levels-5-8"},
+            {"id": "tight-moves", "kind": "modifier", "name": "Tighter move limits", "introduced": "From level 9",
+             "after_runs": 8, "rule": "Move limits drop by a quarter.", "tier": "mvp", "delivered_by": "levels-9-12"},
+            {"id": "specials", "kind": "special-piece", "name": "Special pieces", "introduced": "From level 6",
+             "after_runs": 6, "rule": "A four-match makes a row-clearer; a five-match a bomb.", "tier": "post-mvp",
+             "delivered_by": "special-pieces"},
+            {"id": "boosters", "kind": "power-up", "name": "Boosters", "introduced": "After the first three-star clear",
+             "after_runs": 3, "rule": "A row-clear or colour-clear booster can be spent before a move.",
+             "tier": "post-mvp", "delivered_by": "booster-charges"},
+            {"id": "blocker-cells", "kind": "obstacle", "name": "Board blockers", "introduced": "From level 13",
+             "after_runs": 12, "rule": "Ice and crate cells that need adjacent clears.", "tier": "optional"},
+        ],
+        "first_session_ends_on": "A cleared level boundary, with the next level's goal shown.",
+        "hooks": [
+            {"id": "next-level", "kind": "stage-map", "statement": "There is a next level waiting.",
+             "tier": "mvp", "delivered_by": "levels-5-8"},
+            {"id": "missing-stars", "kind": "collection", "statement": "I left stars on level 7.",
+             "tier": "post-mvp", "delivered_by": "level-stars"},
+        ],
+    },
+    "arena-dodge": {
+        "features": [
+            {"id": "zones", "name": "Zones",
+             "description": "Every 500 m the arena changes zone - palette, skyline and one new obstacle type: moving walls "
+                            "(500 m), laser gates that blink on a 1.2 s cycle (1000 m), closing gates (1500 m) - with a "
+                            "2 s calm stretch at each border."},
+            {"id": "pickups", "name": "Pickups",
+             "description": "Shield (absorbs one hit), magnet (pulls coins for 6 s) and boost (+30 % speed and invulnerable "
+                            "for 3 s), one in every 8 wall rows."},
+            {"id": "coins", "name": "Coins",
+             "description": "Coins in lines between walls, earned only in play and spent in the garage; never sold."},
+            {"id": "near-miss-combo", "name": "Near-miss combo",
+             "description": "Passing a wall within 0.8 units raises a score multiplier by 0.5 up to x4; a hit or 4 s with "
+                            "no near-miss resets it."},
+            {"id": "garage", "name": "Ship garage",
+             "description": "Five ships with distinct models bought with coins, each with one trait (wider shield, "
+                            "faster steer...), and three upgrade steps for pickup durations."},
+            {"id": "missions", "name": "Missions",
+             "description": "Three active missions (reach 1500 m, chain a x3 combo, grab 3 shields in one run); finishing "
+                            "one pays coins and draws the next."},
+            {"id": "daily-run", "name": "Daily run",
+             "description": "One seeded run per day, the same walls for everyone, with a streak counter for days played."},
+        ],
+        "meta": {"statement": "Run -> collect coins and finish missions -> buy a ship or an upgrade in the garage -> "
+                              "push the next distance milestone with it.",
+                 "tier": "post-mvp", "delivered_by": "garage",
+                 "persists": [
+                     {"kind": "best-score", "what": "Best score", "tier": "mvp", "delivered_by": "new-best"},
+                     {"kind": "currency", "what": "Coin balance", "tier": "post-mvp", "delivered_by": "coins"},
+                     {"kind": "upgrades", "what": "Ships owned, the selected ship, upgrade steps", "tier": "post-mvp",
+                      "delivered_by": "garage"},
+                     {"kind": "missions", "what": "Active missions and progress", "tier": "post-mvp",
+                      "delivered_by": "missions"},
+                 ]},
+        "goals": [
+            {"id": "next-gap", "horizon": "short", "goal": "Line up for the next gap.", "measure": "walls passed",
+             "tier": "mvp", "delivered_by": "walls"},
+            {"id": "beat-best", "horizon": "mid", "goal": "Beat the best score this session.", "measure": "score > best",
+             "tier": "mvp", "delivered_by": "new-best"},
+            {"id": "next-zone", "horizon": "mid", "goal": "Reach the next zone border in this run.",
+             "measure": "distance band reached", "tier": "post-mvp", "delivered_by": "zones"},
+            {"id": "tier-3", "horizon": "long", "goal": "Survive into the third speed tier.", "measure": "45 s survived",
+             "tier": "mvp", "delivered_by": "tier-3"},
+            {"id": "full-garage", "horizon": "long", "goal": "Own every ship and max its upgrades.",
+             "measure": "ships owned of 5", "tier": "post-mvp", "delivered_by": "garage"},
+        ],
+        "content": [
+            {"id": "speed-tier-2", "kind": "modifier", "name": "Speed tier 2", "introduced": "20 s into a run",
+             "at_s": 20, "rule": "Speed steps up and the palette shifts.", "tier": "mvp", "delivered_by": "tier-2"},
+            {"id": "speed-tier-3", "kind": "modifier", "name": "Speed tier 3", "introduced": "45 s into a run",
+             "at_s": 45, "rule": "Speed steps up again and the palette shifts.", "tier": "mvp", "delivered_by": "tier-3"},
+            {"id": "pickups", "kind": "pickup", "name": "Shield, magnet and boost", "introduced": "From the second run, 10 s in",
+             "at_s": 10, "after_runs": 1, "rule": "One pickup in every 8 wall rows.", "tier": "post-mvp",
+             "delivered_by": "pickups"},
+            {"id": "combo", "kind": "modifier", "name": "Near-miss combo", "introduced": "At the first near-miss",
+             "at_s": 5, "rule": "Each pass within 0.8 units raises the multiplier by 0.5, up to x4.",
+             "tier": "post-mvp", "delivered_by": "near-miss-combo"},
+            {"id": "moving-walls", "kind": "obstacle", "name": "Moving walls", "introduced": "At 500 m",
+             "at_s": 35, "rule": "Wall gaps slide sideways at 1.5 units/s while they approach.", "tier": "post-mvp",
+             "delivered_by": "zones"},
+            {"id": "lasers", "kind": "hazard", "name": "Laser gates", "introduced": "At 1000 m",
+             "at_s": 60, "rule": "A gate that blinks on and off on a 1.2 s cycle; pass while it is off.",
+             "tier": "post-mvp", "delivered_by": "zones"},
+            {"id": "closing-gates", "kind": "obstacle", "name": "Closing gates", "introduced": "At 1500 m",
+             "at_s": 80, "rule": "Two walls that close toward each other; the gap shrinks as they near.",
+             "tier": "post-mvp", "delivered_by": "zones"},
+        ],
+        "first_session_ends_on": "A new best or a new zone reached, with coins and a mission shown on the result card.",
+        "hooks": [
+            {"id": "best-to-beat", "kind": "best-score", "statement": "I crashed just short of my best and I know why.",
+             "tier": "mvp", "delivered_by": "new-best"},
+            {"id": "next-ship", "kind": "next-unlock", "statement": "Sixty more coins and I can buy the next ship.",
+             "tier": "post-mvp", "delivered_by": "garage"},
+            {"id": "missions", "kind": "missions", "statement": "Two of my three missions are nearly done.",
+             "tier": "post-mvp", "delivered_by": "missions"},
+            {"id": "daily", "kind": "daily-seed", "statement": "Today's run is new and my streak is on day 3.",
+             "tier": "post-mvp", "delivered_by": "daily-run"},
+        ],
+    },
+    "arena-3d": {
+        "features": [
+            {"id": "arena-medals", "name": "Arena medals",
+             "description": "Bronze, silver and gold target times per arena, kept across sessions."},
+        ],
+        "meta": {"statement": "Race an arena -> beat its target time for a medal -> unlock the next arena -> come back "
+                              "for the medals left.",
+                 "tier": "mvp", "delivered_by": "arena-2",
+                 "persists": [
+                     {"kind": "unlocks", "what": "Arenas unlocked", "tier": "mvp", "delivered_by": "arena-2"},
+                     {"kind": "best-score", "what": "Best per arena", "tier": "mvp", "delivered_by": "new-best"},
+                     {"kind": "collection", "what": "Medals per arena", "tier": "post-mvp", "delivered_by": "arena-medals"},
+                 ]},
+        "goals": [
+            {"id": "next-gate", "horizon": "short", "goal": "Line up for the next lit gate.", "measure": "gates passed",
+             "tier": "mvp", "delivered_by": "checkpoints"},
+            {"id": "next-arena", "horizon": "mid", "goal": "Unlock the next arena.", "measure": "gates in one run",
+             "tier": "mvp", "delivered_by": "arena-unlock"},
+            {"id": "all-medals", "horizon": "long", "goal": "Gold in every arena.", "measure": "golds of 3",
+             "tier": "post-mvp", "delivered_by": "arena-medals"},
+        ],
+        "content": [
+            {"id": "arena-2", "kind": "zone", "name": "Arena 2", "introduced": "After 10 gates in arena 1",
+             "after_runs": 2, "rule": "A new layout with tighter gate spacing.", "tier": "mvp", "delivered_by": "arena-2"},
+            {"id": "arena-3", "kind": "zone", "name": "Arena 3", "introduced": "After 12 gates in arena 2",
+             "after_runs": 4, "rule": "A new layout with gates on two heights.", "tier": "mvp", "delivered_by": "arena-3"},
+            {"id": "boost-pads", "kind": "pickup", "name": "Boost pads", "introduced": "From arena 2, 20 s in",
+             "at_s": 20, "after_runs": 2, "rule": "A pad adds a short speed burst.", "tier": "post-mvp",
+             "delivered_by": "boost"},
+            {"id": "ghost", "kind": "event", "name": "Ghost of best run", "introduced": "After the first finished run",
+             "after_runs": 1, "rule": "A translucent replay of the best run races alongside.", "tier": "post-mvp",
+             "delivered_by": "ghost-replay"},
+        ],
+        "first_session_ends_on": "A newly unlocked arena, shown on the result card.",
+        "hooks": [
+            {"id": "next-arena", "kind": "next-unlock", "statement": "Arena 3 is one good run away.",
+             "tier": "mvp", "delivered_by": "arena-unlock"},
+            {"id": "medals", "kind": "collection", "statement": "I only have bronze on arena 2.",
+             "tier": "post-mvp", "delivered_by": "arena-medals"},
+        ],
+    },
+    "one-touch": {
+        "features": [
+            {"id": "lock-milestones", "name": "Lock milestones",
+             "description": "Markers at 25, 50 and 100 locks in one run, kept across sessions and shown "
+                            "on the title screen once crossed."},
+        ],
+        "meta": {"statement": "Play -> cross a lock milestone -> it is marked for good -> chase the next milestone.",
+                 "tier": "post-mvp", "delivered_by": "lock-milestones",
+                 "persists": [
+                     {"kind": "best-score", "what": "Best score", "tier": "mvp", "delivered_by": "new-best"},
+                     {"kind": "collection", "what": "Lock milestones crossed", "tier": "post-mvp",
+                      "delivered_by": "lock-milestones"},
+                 ]},
+        "goals": [
+            {"id": "next-lock", "horizon": "short", "goal": "Land the next lock as a perfect.", "measure": "perfects",
+             "tier": "mvp", "delivered_by": "timed-tap"},
+            {"id": "beat-best", "horizon": "mid", "goal": "Beat the best score this session.", "measure": "score > best",
+             "tier": "mvp", "delivered_by": "new-best"},
+            {"id": "tempo-3", "horizon": "long", "goal": "Reach the third tempo tier.", "measure": "20 locks in one run",
+             "tier": "mvp", "delivered_by": "tier-3"},
+        ],
+        "content": [
+            {"id": "tempo-2", "kind": "modifier", "name": "Tempo tier 2", "introduced": "After 10 locks, about 15 s in",
+             "at_s": 15, "rule": "The sweep speeds up.", "tier": "mvp", "delivered_by": "tier-2"},
+            {"id": "tempo-3", "kind": "modifier", "name": "Tempo tier 3", "introduced": "After 20 locks, about 30 s in",
+             "at_s": 30, "rule": "The sweep speeds up again.", "tier": "mvp", "delivered_by": "tier-3"},
+            {"id": "shapes", "kind": "piece", "name": "Piece shapes", "introduced": "From the third run, 20 s in",
+             "at_s": 20, "after_runs": 2, "rule": "Wider and narrower pieces mixed into later tiers.",
+             "tier": "post-mvp", "delivered_by": "piece-variants"},
+            {"id": "seeded-day", "kind": "event", "name": "Seeded daily run", "introduced": "Once a day",
+             "after_runs": 1, "rule": "The same sequence for everyone for a day.", "tier": "post-mvp",
+             "delivered_by": "daily-seed"},
+        ],
+        "first_session_ends_on": "A new best, with the next milestone shown on the result card.",
+        "hooks": [
+            {"id": "best-to-beat", "kind": "best-score", "statement": "One more perfect and I had it.",
+             "tier": "mvp", "delivered_by": "new-best"},
+            {"id": "next-milestone", "kind": "collection", "statement": "Fifty locks is the marker I have not crossed.",
+             "tier": "post-mvp", "delivered_by": "lock-milestones"},
+        ],
     },
 }
 

@@ -136,11 +136,18 @@ def review(game_key, repo, commit):
             if AD_CALL.search(line) and not path.startswith("src/platform/"):
                 block("ad-calls-in-seam", "ad API called outside src/platform/", path, number)
 
-    # tests-present
+    # tests-present: the game's own tests are in the commit - added or changed since the
+    # repository's first commit (the template as init created it), not merely in this
+    # visit's change. Review reads each develop visit from where the last review stopped,
+    # so a loop's second visit rightly shows no new tests; the tests still ship.
     tests = (git.text("ls-tree", "-r", "--name-only", commit, "tests") or "").splitlines()
-    unit = [p for p in paths if p.startswith("tests/unit/") and p in tests]
-    e2e = [p for p in paths if p.startswith("tests/e2e/") and p.endswith(".spec.ts")
-           and p in tests]
+    root = ((git.text("rev-list", "--max-parents=0", commit) or "").split() or [None])[-1]
+    game_tests = set(line.split("\t")[-1] for line in
+                     (git.text("diff", "--name-status", "--no-renames", root, commit, "--",
+                               "tests") or "").splitlines() if line.strip()) if root else set()
+    unit = [p for p in tests if p.startswith("tests/unit/") and p in game_tests]
+    e2e = [p for p in tests if p.startswith("tests/e2e/") and p.endswith(".spec.ts")
+           and p in game_tests]
     if not unit:
         block("tests-present", "no unit test ships with the game")
     if not e2e:

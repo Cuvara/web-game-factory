@@ -61,13 +61,17 @@ DEFAULTS = {"kind": "command", "argv": [], "spec_from": "file", "timeout_seconds
             "idle_timeout_seconds": 300, "max_repair_rounds": MAX_REPAIR_ROUNDS, "blender": {}}
 _MAX_BYTES = 1024 * 1024
 
+# The craft playbooks (core/craft/) the request's `craft` names, in reading order.
+MODEL_CRAFT = ("production-art-3d.md", "3d-assets-and-animation.md")
+
 PROMPT = (
     "You are the 3D modeller for this game. Read the request at {request}: one asset "
     "requirement (its role, description and what a player must recognise in it), the game's "
     "palette, the model spec JSON Schema, and the rules. Write a model spec - a recognisable "
     "low-poly object composed of several shaped parts (boxes, cylinders, cones, spheres, "
     "capsules; scaled, rotated, tapered, bevelled, mirrored) with materials in the palette's "
-    "colours - and nothing else, as JSON to {spec}."
+    "colours - and nothing else, as JSON to {spec}. The craft guides are the request's "
+    "`craft`: read them first."
 )
 PROMPT_STDOUT = (
     "You are the 3D modeller for this game. Read the request at {request}: one asset "
@@ -75,7 +79,8 @@ PROMPT_STDOUT = (
     "palette, the model spec JSON Schema, and the rules. Write a model spec - a recognisable "
     "low-poly object composed of several shaped parts (boxes, cylinders, cones, spheres, "
     "capsules; scaled, rotated, tapered, bevelled, mirrored) with materials in the palette's "
-    "colours. End your answer with the spec as one JSON object."
+    "colours. The craft guides are the request's `craft`: read them first. End your answer "
+    "with the spec as one JSON object."
 )
 PROMPT_REPAIR = (
     " Your previous spec (the request's `repair.previous_spec`) was refused for the reasons in "
@@ -328,6 +333,7 @@ def _ask(req, look, bars, config, argv, env, directory, stem, repair, context):
         "example": EXAMPLE,
         "quality_bars": bars,
         "spec_path": spec_path,
+        "craft": [os.path.join(paths.CORE, "craft", name) for name in MODEL_CRAFT],
     }
     if req["expectations"]:
         request["expectations"] = req["expectations"]

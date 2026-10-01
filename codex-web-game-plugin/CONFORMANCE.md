@@ -51,7 +51,7 @@ restates none of it and never answers a gate.
 |---|---|---|---|
 | `/new-game` | `codex-web-game-plugin/commands/new-game.md` | `core/workflows/new-game.workflow.yaml` | covered |
 
-## Skills (22 of 22)
+## Skills (27 of 27)
 
 | Skill | File | Status |
 |---|---|---|
@@ -63,7 +63,9 @@ restates none of it and never answers a gate.
 | `development-planning` | `codex-web-game-plugin/skills/development-planning/SKILL.md` | covered |
 | `game-design` | `codex-web-game-plugin/skills/game-design/SKILL.md` | covered |
 | `game-feel` | `codex-web-game-plugin/skills/game-feel/SKILL.md` | covered |
+| `game-ui-kit` | `codex-web-game-plugin/skills/game-ui-kit/SKILL.md` | covered |
 | `gameplay-review` | `codex-web-game-plugin/skills/gameplay-review/SKILL.md` | covered |
+| `juice` | `codex-web-game-plugin/skills/juice/SKILL.md` | covered |
 | `localization` | `codex-web-game-plugin/skills/localization/SKILL.md` | covered |
 | `market-intelligence` | `codex-web-game-plugin/skills/market-intelligence/SKILL.md` | covered |
 | `monetization` | `codex-web-game-plugin/skills/monetization/SKILL.md` | covered |
@@ -73,6 +75,9 @@ restates none of it and never answers a gate.
 | `pixijs` | `codex-web-game-plugin/skills/pixijs/SKILL.md` | covered |
 | `platform-sdk` | `codex-web-game-plugin/skills/platform-sdk/SKILL.md` | covered |
 | `playtesting` | `codex-web-game-plugin/skills/playtesting/SKILL.md` | covered |
+| `production-art-2d` | `codex-web-game-plugin/skills/production-art-2d/SKILL.md` | covered |
+| `production-art-3d` | `codex-web-game-plugin/skills/production-art-3d/SKILL.md` | covered |
+| `production-wiring` | `codex-web-game-plugin/skills/production-wiring/SKILL.md` | covered |
 | `qa` | `codex-web-game-plugin/skills/qa/SKILL.md` | covered |
 | `release` | `codex-web-game-plugin/skills/release/SKILL.md` | covered |
 | `threejs` | `codex-web-game-plugin/skills/threejs/SKILL.md` | covered |
@@ -169,7 +174,49 @@ the `game-design`, `art-direction` and `onboarding-ux` skills, in
 `core/bindings/adapter-binding.yaml` and the `scripts/gen-adapters.sh` tables alike. No
 surface was added or removed, so the manifest version is unchanged.
 
-## Game audio craft (binding manifest 1.5.0, additive)
+## Reference-game production craft (binding manifest 1.6.0)
+
+Five `core/craft/` playbooks distilled from the template's two reference ports - the 2D and
+3D games whose production builds passed the production gate - each ending with the reference
+files and frames it came from:
+
+- `core/craft/production-art-2d.md`: the 2D style kit, one silhouette per variant, layered
+  SVG authoring, backgrounds, VFX sprites, sizes and anchors, `library.json` and the author.
+- `core/craft/production-art-3d.md`: model specs by part decomposition (taper, bevel,
+  mirror), materials and emissive, the light rig, fog and sky, portrait camera framing,
+  `wgf-model` build and inspect.
+- `core/craft/game-ui-kit.md`: fonts as licensed assets with locale glyph coverage, tokens,
+  contrast and target floors, drawn buttons, HUD, title/pause/result/retry, portrait layout.
+- `core/craft/juice.md`: the feedback numbers - acknowledgement within 100 ms, drop bounce,
+  merge pop and burst, combo text, shake, near-miss, crash, opening grace.
+- `core/craft/production-wiring.md`: loading `assets.json` by id and role (variants, fonts),
+  the play probe's `asset`/`render`/`assets_loaded`, the art regression guard, and checking
+  against the gates with frames before reporting.
+
+Five new skills, one per playbook: `production-art-2d`, `production-art-3d`, `game-ui-kit`,
+`juice`, `production-wiring`. The playbooks are also added to the `must_read` of the
+`game-designer`, `gameplay`, `ui` and `asset` agents and the `reads` of the `game-design`,
+`game-feel`, `onboarding-ux`, `pixijs`, `phaser`, `threejs`, `assets` and `art-direction`
+skills. The `new-game` workflow entry carries them as `craft` (binding and generator table
+alike), and its surface lists them under "The production bar": what the run's agents are
+held to, never a way to steer a step. Outside the adapters, the develop brief names the
+engine's playbooks by path, its recommended host skills include the new ones, and the asset
+and model author requests carry theirs as `craft`.
+
+## Retention and progression craft (binding manifest 1.5.0, additive)
+
+One new playbook, `core/craft/retention-and-progression.md`: the three loops (moment,
+session, meta), the goal ladder, session-to-session progression (stages, unlocks, missions,
+daily seed and streaks, achievements, soft currency with upgrades and cosmetics,
+persistence), content variety on a schedule, difficulty pacing with relief beats, near-miss
+and "one more try" without dark patterns, web-portal session lengths and measurable targets.
+It backs `build_spec.depth` (game-design 1.7.0), which the design step checks against
+`core/reference/design-depth.yaml`. It is added to the `must_read` of the `game-designer`,
+`gameplay` and `liveops` agents and the `reads` of the `game-design` and `core-loop` skills,
+in `core/bindings/adapter-binding.yaml` and the `scripts/gen-adapters.sh` tables alike. No
+surface was added or removed, so the manifest version is unchanged.
+
+## Game audio craft (binding manifest 1.6.0, additive)
 
 `core/craft/audio.md` became `core/craft/game-audio.md` and grew from browser rules and a cue
 list into the whole craft: music as a produced, seamless loop (arrangement, palette per

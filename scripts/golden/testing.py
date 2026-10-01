@@ -318,12 +318,28 @@ def fast_case(key):
             ids = {b["id"].rsplit("-", 1)[0] for b in blockers}
             self.assertEqual(ids, {"allowed-paths", "no-portal-sdk", "ad-calls-in-seam"})
 
-            # A finding about the build as a whole (no tests changed since the baseline)
-            # still carries `file`, as null: the verdict contract requires the key on every
-            # blocker, and a verdict without it is discarded as malformed.
-            _write(repo, "docs/development/brief.json",
-                   json.dumps({"engine": game.engine, "baseline_commit": head}))
+            # A develop loop's later visit is reviewed from where the last review stopped and
+            # changes no test; the game's tests still ship, so tests-present holds (the golden
+            # runs failed review on any loop before this).
+            _write(repo, "vite.config.ts", "export default {};\n")
+            _write(repo, "src/ads.ts", "export {};\n")
             git("add", "-A")
+            git("commit", "-q", "-m", "fix")
+            fixed = git("rev-parse", "HEAD").stdout.strip()
+            _write(repo, "docs/development/brief.json",
+                   json.dumps({"engine": game.engine, "baseline_commit": fixed}))
+            _write(repo, "src/main.ts", "export const visit = 2;\n")
+            git("add", "-A")
+            git("commit", "-q", "-m", "loop visit")
+            head = git("rev-parse", "HEAD").stdout.strip()
+            blockers, _ = reviewer.review(key, repo, head)
+            self.assertNotIn("tests-present", {b["id"].rsplit("-", 1)[0] for b in blockers},
+                             blockers)
+
+            # A finding about the build as a whole (the game's tests removed) still carries
+            # `file`, as null: the verdict contract requires the key on every blocker, and a
+            # verdict without it is discarded as malformed.
+            git("rm", "-q", "-r", "tests")
             git("commit", "-q", "-m", "no tests")
             head = git("rev-parse", "HEAD").stdout.strip()
             blockers, _ = reviewer.review(key, repo, head)

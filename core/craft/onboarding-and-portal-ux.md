@@ -25,7 +25,7 @@ Rules:
   first run. Menus appear after the first session, or behind a small icon.
 - **The loading screen shows progress and is branded.** It never shows a spinner alone.
   Load only what the first run needs; stream the rest in (`web-performance.md`).
-- **Audio starts muted or unlocks on the first tap** (`audio.md`). A game that blares on load
+- **Audio starts muted or unlocks on the first tap** (`game-audio.md`). A game that blares on load
   gets closed.
 
 ## Teaching

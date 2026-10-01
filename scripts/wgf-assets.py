@@ -111,7 +111,8 @@ def cmd_build(args):
                              placeholders=not args.no_placeholders,
                              optimize=not args.no_optimize, prune=not args.no_prune,
                              title_id=design.get("title_id"), author=author,
-                             identity=identity, work_dir=work_dir)
+                             identity=identity, work_dir=work_dir,
+                             locales=(design.get("scope") or {}).get("locales") or ())
     result = pipeline.run(requirements)
     payload = {
         "root": os.path.abspath(args.root),

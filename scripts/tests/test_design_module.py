@@ -203,8 +203,10 @@ class DesignFromWorkedExample(unittest.TestCase):
 
     def test_visual_identity_is_deliberate(self):
         look = self.design["build_spec"]["visual_identity"]
+        # A kit's display face, or - ru is in scope here - the alternate that sets Cyrillic.
+        faces = {k["typography"]["display"].split(" (")[0] for k in identity.KITS.values()}
         self.assertIn(look["typography"]["display"].split(" (")[0],
-                      {k["typography"]["display"].split(" (")[0] for k in identity.KITS.values()})
+                      faces | set(identity.ALTERNATES.values()))
         self.assertTrue(any("Inter" in a for a in look["avoid"]))
 
     def test_prototype_questions_are_open_questions(self):

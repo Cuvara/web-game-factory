@@ -191,6 +191,14 @@ class Judge(unittest.TestCase):
         frame(os.path.join(self.frames, "play-2s.png"), 240, (60, 60, 40))
         self.assertIn("mean luminance", self.judge()["frames.readable"]["summary"])
 
+    def test_entity_samples_with_asset_and_render_are_judged_the_same(self):
+        # The bot appends each entity's asset and render for the production gate.
+        before = self.judge()["entities.visible"]
+        self.records["win"]["sampled"]["frames"] = [
+            [sample + ["keeper-sprite", "asset"] for sample in frame]
+            for frame in self.records["win"]["sampled"]["frames"]]
+        self.assertEqual(self.judge()["entities.visible"], before)
+
     def test_a_wall_is_judged_at_its_closest(self):
         """A threat that spawns as a speck on the horizon and rushes at the player is read
         up close; one that is always a speck is not."""

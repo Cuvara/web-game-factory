@@ -125,12 +125,25 @@ def research_of(strategy):
         else None
 
 
+def usable(research, fv, facet):
+    """How a research facet may drive a design decision: "evidence" when research observed or
+    derived it, "proposal" when it is the one axis the opportunity proposes to change (a
+    hypothesis the title exists to test), else None - and the design decides it by default."""
+    fv = fv or {}
+    if fv.get("tier") in ("observed", "derived") and fv.get("value") not in (None, [], ""):
+        return "evidence"
+    intent = (research or {}).get("changed_axis") or {}
+    if intent.get("facet") == facet and fv.get("value") not in (None, [], ""):
+        return "proposal"
+    return None
+
+
 def research_art(research):
-    """{tone, palette, rendering} research supports (observed or derived), for the kit."""
+    """{tone, palette, rendering} research supports or proposes, for the kit."""
     out = {}
     for key in ("tone", "palette", "rendering"):
         fv = ((research or {}).get("art") or {}).get(key) or {}
-        if fv.get("tier") in ("observed", "derived") and isinstance(fv.get("value"), str):
+        if usable(research, fv, f"art_{key}") and isinstance(fv.get("value"), str):
             out[key] = fv["value"]
     return out
 
@@ -165,7 +178,7 @@ class ArchetypeAuthor(DesignAuthor):
             affinity = archetypes.ARCHETYPES[archetype_id]["identity_affinity"]
             art = research_art(research)
             kit_id, basis, matched = identity.pick(title_id, affinity, params.get("identity"), art)
-            look = identity.choose(title_id, affinity, params.get("identity"), art)[1]
+            look = identity.look(kit_id)
         except KeyError as exc:
             raise AuthorError(str(exc.args[0])) from None
         if research is not None:
@@ -228,6 +241,15 @@ class ArchetypeAuthor(DesignAuthor):
                                       f"comparable games beats the audience default",
                             "claim_refs": [measured["claim"]]})
         time_to_first_reward = min(a["first_reward_s"], max(5, int(first * 0.5)))
+        rewarded = next((b for b in (research or {}).get("benchmarks") or []
+                         if b.get("facet") == "time_to_first_reward_seconds"), None)
+        if rewarded and rewarded["median"] < time_to_first_reward:
+            # The strategy's prototype_must_prove holds the title to this bar.
+            time_to_first_reward = max(1, int(rewarded["median"]))
+            applied.append({"field": "build_spec.time_to_first_reward_s", "source": "research",
+                            "detail": f"{time_to_first_reward} s: the median of "
+                                      f"{rewarded['n']} comparable games",
+                            "claim_refs": [rewarded["claim"]]})
         run = a["run_seconds"]
         units_per_session = max(1, round(target / run))
         is_level = a["structure"] == "level"
@@ -441,6 +463,17 @@ class ArchetypeAuthor(DesignAuthor):
                                 time_to_first_play, time_to_first_reward, run, target, audience,
                                 exclusions, features)
 
+        for adopted in ((research or {}).get("patterns") or {}).get("adopt") or []:
+            open_questions.append(
+                f"Research: {adopted['numerator']} of {adopted['denominator']} comparable games "
+                f"show {adopted['pattern']} - adopt it, or say why not (a co-occurrence, not "
+                f"a proven effect).")
+        if research is not None and ((research.get("patterns") or {}).get("adopt")):
+            applied.append({"field": "open_questions", "source": "research",
+                            "detail": "the patterns comparable games share, put to G3 as "
+                                      "questions rather than built in unasked",
+                            "claim_refs": sorted({p["claim"] for p in
+                                                  research["patterns"]["adopt"]})})
         open_questions.insert(0, f"Archetype '{archetype_id}' was chosen because the {why_archetype}. "
                                  "Confirm at G3 that the loop is the one the strategy meant.")
 
@@ -450,8 +483,11 @@ class ArchetypeAuthor(DesignAuthor):
             statement = research["fantasy"].get("statement")
             theme = research["theme"]["theme"]
             setting = research["theme"]["setting"]
-            context = ", ".join(x["label"].split(" (")[0] for x in (theme, setting)
-                                if x.get("tier") in ("observed", "derived") and x.get("label"))
+            context = ", ".join(x["label"].split(" (")[0] for x, facet in
+                                ((theme, "theme"), (setting, "setting"))
+                                if usable(research, x, facet) and x.get("label"))
+            proposed = any(usable(research, x, f) == "proposal" for x, f in
+                           ((theme, "theme"), (setting, "setting")))
             if statement:
                 fantasy = (f"{statement}" + (f", in a {context.lower()} world" if context else "")
                            + f". In play: {a['fantasy']}")
@@ -467,7 +503,11 @@ class ArchetypeAuthor(DesignAuthor):
             if context:
                 art_direction = f"Theme from research: {context}. " + art_direction
                 applied.append({"field": "theme", "source": "research",
-                                "detail": f"theme carried into fantasy and art direction: {context}",
+                                "detail": (f"the opportunity's proposed theme - the hypothesis "
+                                           f"this title tests, not an observation: {context}"
+                                           if proposed else
+                                           f"theme carried into fantasy and art direction: "
+                                           f"{context}"),
                                 "claim_refs": sorted(set((theme.get("claim_refs") or [])
                                                          + (setting.get("claim_refs") or [])))})
             else:

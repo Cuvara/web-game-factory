@@ -19,7 +19,7 @@ art direction research supports; it decides only what research left open.
 
 import hashlib
 
-__all__ = ["KITS", "TRAITS", "choose", "pick"]
+__all__ = ["KITS", "TRAITS", "choose", "look", "pick"]
 
 UNIVERSAL_AVOID = [
     "System or default UI fonts (Arial, Roboto, Inter, the browser default)",
@@ -192,10 +192,15 @@ def pick(title_id, affinity, pinned=None, art=None):
 def choose(title_id, affinity, pinned=None, art=None):
     """Return (kit_id, kit dict with the universal avoid list applied). See `pick`."""
     kit_id = pick(title_id, affinity, pinned, art)[0]
+    return kit_id, look(kit_id)
+
+
+def look(kit_id):
+    """The kit as a design carries it, with the universal avoid list applied."""
     kit = KITS[kit_id]
     identity = {key: (list(value) if isinstance(value, list) else
                       dict(value) if isinstance(value, dict) else value)
                 for key, value in kit.items()}
     identity["palette"] = [dict(entry) for entry in kit["palette"]]
     identity["avoid"] = list(kit["avoid"]) + UNIVERSAL_AVOID
-    return kit_id, identity
+    return identity

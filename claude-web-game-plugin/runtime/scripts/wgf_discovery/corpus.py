@@ -67,7 +67,7 @@ class Game:
         self.fixture = fixture
         self.depth = "listing"
         self.sessions = 0
-        self.listings = []          # {platform, list, list_kind, claim, observed_at, frame}
+        self.listings = []          # {platform, list, list_kind, claim, observed_at}
         self.facets = {}            # facet -> {value, tier, claim_refs}
         self.claim_refs = set()
 
@@ -161,24 +161,21 @@ def load_records(directory):
 class Corpus:
     """Games by id, the listing frames they were seen in, and category supply counts."""
 
-    def __init__(self, vocabulary, config, book, as_of_text):
+    def __init__(self, vocabulary, config, book):
         self.vocabulary = vocabulary
         self.config = config
         self.book = book
-        self.as_of_text = as_of_text
         self.games = {}
         self.by_name = {}
         self.frames = {}            # frame id -> {id, platform, list, list_kind, observed_at, titles:[game ids], claim_refs}
         self.supply = []            # {platform, genre, count, claim, name}
         self.gaps = []
-        self.record_digests = []
         Game._vocabulary = vocabulary
 
     # -- game records -----------------------------------------------------------------------
 
     def add_records(self, records, as_of, ttl_days):
-        for name, record, digest in records:
-            self.record_digests.append(f"game:{record['id']}:{digest}")
+        for _name, record, _digest in records:
             self._add_record(record, as_of, ttl_days)
 
     def _add_record(self, record, as_of, ttl_days):
@@ -248,7 +245,7 @@ class Corpus:
                 game.listings.append({"platform": session["platform"],
                                       "list": f"teardown:{session['method']}",
                                       "list_kind": "category", "claim": cid,
-                                      "observed_at": format_time(observed), "frame": None})
+                                      "observed_at": format_time(observed)})
 
         for index, item in enumerate(record["observations"]):
             if item["session"] not in sessions:
@@ -332,7 +329,7 @@ class Corpus:
         list_name = str(fact.get("list") or "unnamed list")
         kind = self.config.list_kind(list_name, fact.get("list_kind"))
         gid = self.by_name.get(_norm(name)) or game_id_for(name)
-        fixture = "fixture" in (obs.tags or []) or "fixture" in str(obs.source.source_uri)
+        fixture = "fixture" in (obs.tags or []) or "fixtures.invalid" in str(obs.source.source_uri)
         game = self.games.get(gid)
         if game is None:
             game = self.games[gid] = Game(gid, name, fixture)
@@ -348,7 +345,7 @@ class Corpus:
         if cid not in frame["claim_refs"]:
             frame["claim_refs"].append(cid)
         game.listings.append({"platform": platform, "list": list_name, "list_kind": kind,
-                              "claim": cid, "observed_at": observed_at, "frame": frame_id})
+                              "claim": cid, "observed_at": observed_at})
         game.claim_refs.add(cid)
 
         slug = str(fact.get("genre") or "").strip()

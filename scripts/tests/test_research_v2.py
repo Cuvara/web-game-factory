@@ -252,7 +252,7 @@ class CorpusRecords(unittest.TestCase):
 
     def build(self, records):
         book = ClaimBook(AS_OF)
-        corpus = Corpus(self.vocabulary, self.config, book, lambda v=None: AS_OF)
+        corpus = Corpus(self.vocabulary, self.config, book)
         corpus.add_records(records, parse_time(AS_OF), 45)
         corpus.finish()
         return corpus, book
@@ -553,7 +553,13 @@ class Opportunities(FixtureScan):
     def test_the_carried_opportunity_holds_the_research(self):
         research = self.opportunity["research"]
         self.assertEqual(research["status"], "selected")
-        self.assertEqual(research["origin"], "proven-core-new-axis")
+        self.assertNotEqual(research["origin"], "capability-screen")
+        # Ranked first among the buildable: corpus-generated, then evidence coverage.
+        eligible = [o for o in self.report["opportunities"]
+                    if o["status"] == "eligible" and o["origin"] != "capability-screen"]
+        for other in eligible:
+            self.assertGreaterEqual(research["confidence"]["evidence_coverage"],
+                                    other["confidence"]["evidence_coverage"])
         self.assertEqual(self.opportunity["hypothesis"], research["basis"]["thesis"])
         for cid in self.opportunity["claim_refs"] + research["claim_refs"]:
             self.assertIn(cid, self.claims)
@@ -605,7 +611,7 @@ class Opportunities(FixtureScan):
                          basis=[guess], summary="FIXTURE: a guess with no observation.",
                          _sort=(0,))]
         vocabulary, config = Vocabulary(), AnalysisConfig()
-        corpus = Corpus(vocabulary, config, book, lambda v=None: AS_OF)
+        corpus = Corpus(vocabulary, config, book)
         space = opportunity_space.Space(corpus=corpus, cells={}, patterns=[], benchmarks=[],
                                         candidates=[], views={}, book=book,
                                         report_key="0000000000", scope=["poki"])
@@ -625,11 +631,32 @@ class Selection(unittest.TestCase):
     def test_a_step_can_carry_another_opportunity_from_the_space(self):
         first = outputs(scan())["research-report"]
         other = next(o for o in first["opportunities"]
-                     if o["status"] == "eligible" and o["origin"] == "supply-gap")
+                     if o["status"] == "eligible" and o["origin"] == "proven-core-new-axis")
         pinned = outputs(scan(select=other["opportunity_id"]))
         self.assertEqual(pinned["opportunity"]["id"], other["opportunity_id"])
         self.assertTrue(pinned["research-report"]["selection"]["rationale"].startswith(
             "Pinned by the step"))
+        # The proposed axis is a hypothesis; design realises it as the title's intent.
+        research = pinned["opportunity"]["research"]
+        axis = research["changed_axis"]
+        self.assertEqual(research["cell"][axis["facet"]]["tier"], "hypothesis")
+        body = plan_strategy(pinned["opportunity"], load_profiles(), "fx-pinned", None,
+                             load_vocabulary())
+        self.assertEqual(body["research"]["changed_axis"], axis)
+
+    def test_a_pin_survives_a_later_scan(self):
+        first = outputs(scan())["research-report"]
+        other = next(o for o in first["opportunities"] if o["status"] == "eligible")
+        later = outputs(scan(as_of="2026-09-30T00:00:00Z", select=other["opportunity_id"]))
+        self.assertNotEqual(later["research-report"]["id"], first["id"])
+        self.assertEqual(later["opportunity"]["id"], other["opportunity_id"])
+
+    def test_a_pin_never_overrides_waiting_for_evidence(self):
+        scratch = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, scratch)
+        os.makedirs(os.path.join(scratch, "snapshots"))
+        result = scan(corpus=scratch, select="opp-00000000")
+        self.assertEqual(result.outcome, StepOutcome.WAITING_FOR_INPUT)
 
     def test_pinning_an_unbuildable_or_unknown_opportunity_fails(self):
         first = outputs(scan())["research-report"]
@@ -663,6 +690,21 @@ class Backlog(unittest.TestCase):
         self.backlog = tempfile.mkdtemp(prefix="wgf-v2-backlog-")
         self.addCleanup(shutil.rmtree, self.backlog, ignore_errors=True)
 
+    def test_an_opportunity_somebody_acted_on_is_not_proposed_again(self):
+        first = outputs(scan(backlog=self.backlog))["research-report"]
+        target = next(o for o in first["opportunities"]
+                      if o["status"] == "eligible" and o["origin"] != "capability-screen")
+        os.makedirs(os.path.join(self.backlog, target["opportunity_id"]))
+        with open(os.path.join(self.backlog, target["opportunity_id"], "opportunity.json"),
+                  "w", encoding="utf-8") as handle:
+            json.dump({"id": target["opportunity_id"], "state": "rejected", "concept": {}},
+                      handle)
+        again = outputs(scan(backlog=self.backlog))["research-report"]
+        block = next(o for o in again["opportunities"]
+                     if o["opportunity_id"] == target["opportunity_id"])
+        self.assertEqual(block["status"], "excluded")
+        self.assertIn("rejected", block["exclusion_reason"])
+
     def test_nothing_is_written_unless_asked(self):
         scan(backlog=self.backlog)
         self.assertEqual(os.listdir(self.backlog), [])
@@ -690,6 +732,10 @@ class Backlog(unittest.TestCase):
         for oid, stamp in stamps.items():
             self.assertEqual(os.stat(os.path.join(self.backlog, oid,
                                                   "opportunity.json")).st_mtime_ns, stamp)
+        # A later scan proposes the same opportunities under the same ids: no duplicates.
+        later = scan(backlog=self.backlog, persist_backlog=True, as_of="2026-09-30T00:00:00Z")
+        self.assertEqual(later.outcome, StepOutcome.SUCCESS)
+        self.assertEqual(set(os.listdir(self.backlog)), kept)
 
 
 # -- the handoff: research -> strategy -> design ------------------------------------------
@@ -781,6 +827,54 @@ class Handoff(unittest.TestCase):
         kit_id = next(k for k, v in identity.KITS.items() if v["concept"] == kit["concept"])
         self.assertIn(tone, identity.TRAITS[kit_id]["tone"])
         self.assertEqual(research["theme"], strategy["research"]["theme"])
+
+
+def design_from(opportunity, title_id="fx-title", params=None):
+    """plan_strategy then the design step, offline, on one opportunity."""
+    body = plan_strategy(opportunity, load_profiles(), title_id, None, load_vocabulary())
+    strategy = dict(body, provenance={"artifact_id": f"wgf:title-strategy:{title_id}:1",
+                                      "artifact_type": "title-strategy",
+                                      "schema_version": "1.3.0", "inputs": [],
+                                      "produced_by": {"role": "game-designer",
+                                                      "actor": "automation"},
+                                      "produced_at": AS_OF, "status": "draft"})
+
+    class Inputs:
+        missing = []
+        refs = {"title-strategy": types.SimpleNamespace(schema_version="1.3.0",
+                                                        content_hash=None)}
+
+        def __contains__(self, kind):
+            return kind == "title-strategy"
+
+        def load(self, kind):
+            return copy.deepcopy(strategy)
+    step = DesignStep(types.SimpleNamespace(id="design", type="design", params=params or {},
+                                            inputs=["title-strategy"],
+                                            outputs=["game-design"]))
+    context = types.SimpleNamespace(config={}, project_id=title_id, execution=1,
+                                    logger=FakeLogger())
+    return body, step.execute(Inputs(), context)
+
+
+class ProposedAxis(unittest.TestCase):
+    def test_design_realises_a_proposed_theme_and_says_it_is_a_proposal(self):
+        first = outputs(scan())["research-report"]
+        themed = next(o for o in first["opportunities"]
+                      if o["status"] == "eligible" and o["origin"] == "proven-core-new-axis"
+                      and o["changed_axis"]["facet"] == "theme"
+                      and o["cell"]["genre"]["value"] == "match-3")
+        opportunity = outputs(scan(select=themed["opportunity_id"]))["opportunity"]
+        strategy, result = design_from(opportunity)
+        self.assertEqual(result.outcome, StepOutcome.SUCCESS, result.error)
+        design = result.artifacts[0].content
+        self.assertEqual(CONTRACTS("game-design", design), [])
+        applied = {a["field"]: a for a in design["research"]["applied"]}
+        self.assertIn("proposed theme", applied["theme"]["detail"])
+        label = themed["cell"]["theme"]["label"]
+        self.assertIn(label, design["art_direction"])
+        device = {a["field"]: a for a in strategy["research"]["applied"]}["audience.device"]
+        self.assertIn(device["source"], ("research", "default"))
 
 
 class DesignFallbacks(unittest.TestCase):

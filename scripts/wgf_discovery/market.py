@@ -38,7 +38,6 @@ class Cell:
         self.saturation = {"status": "unknown"}
         self.competition = {"status": "unknown"}
         self.trend = {"status": "insufficient-history"}
-        self.demand_members = []
 
     @property
     def demand_observed(self):
@@ -134,7 +133,6 @@ def analyse_market(corpus, platforms, book):
                                "denominator": len(titles),
                                "share": _share(len(members), len(titles)),
                                "frame": frame_text, "claim_refs": [claim]}
-                cell.demand_members = members
             else:
                 cell.demand = {"status": "unknown",
                                "reason": (f"no popularity-ordered list captured on {platform} "
@@ -151,9 +149,15 @@ def analyse_market(corpus, platforms, book):
                 family = vocabulary.family(node)
                 fam = [e for e in corpus.supply if e["platform"] == platform
                        and e["genre"] == family]
-                if family != node and fam and fam[0]["count"]:
-                    total = int(fam[0]["count"])
+                if family != node and fam and fam[-1]["count"]:
+                    # The latest count of each, as for the cell's own.
+                    total = int(fam[-1]["count"])
                     part = int(entry["count"])
+                    if part > total:
+                        gaps.append(Gap("insufficient-support",
+                                        f"{cell.id}: the category count ({part}) exceeds its "
+                                        f"family's ({total}); no supply share is stated",
+                                        platform=platform))
                     if 0 <= part <= total:
                         frame_text = (f"{platform} category counts: {label} {part} of "
                                       f"{vocabulary.genres[family]['label']} {total}")
@@ -161,7 +165,7 @@ def analyse_market(corpus, platforms, book):
                             ("supply", cell.id, frame_text),
                             f"{label} is {part} of the {total} games {platform} lists in "
                             f"{vocabulary.genres[family]['label']}.",
-                            [entry["claim"], fam[0]["claim"]],
+                            [entry["claim"], fam[-1]["claim"]],
                             {"genre": node, "platform": platform, "cell": cell.id,
                              "dimension": "competition"}, tags=["market", "supply"])
                         cell.supply.update({"status": "derived", "numerator": part,
@@ -247,6 +251,7 @@ def analyse_market(corpus, platforms, book):
                 moves.append((list_name, first, last, a, b))
             if moves:
                 list_name, first, last, a, b = moves[0]
+                more = len(moves) - 1
                 before = _share(len(a), len(first["titles"]))
                 after = _share(len(b), len(last["titles"]))
                 frame_text = (f"'{list_name}' on {platform}, {first['observed_at'][:10]} "
@@ -265,7 +270,9 @@ def analyse_market(corpus, platforms, book):
                              "frame": frame_text})
                 cell.trend = {"status": "derived", "numerator": len(b),
                               "denominator": len(last["titles"]), "share": after,
-                              "frame": f"{frame_text}; earlier share {before}",
+                              "frame": f"{frame_text}; earlier share {before}"
+                                       + (f"; {more} other list(s) also have history"
+                                          if more else ""),
                               "claim_refs": [claim]}
             else:
                 cell.trend = {"status": "insufficient-history",

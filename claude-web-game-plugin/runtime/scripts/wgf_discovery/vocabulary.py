@@ -206,6 +206,9 @@ class AnalysisConfig:
         for axis in self.opportunities["axes"]:
             if axis not in vocabulary.facets:
                 problems.append(f"axis {axis!r} is not a facet")
+            elif vocabulary.facet(axis)["kind"] != "one":
+                problems.append(f"axis {axis!r} holds several values; a proven core changes "
+                                f"one value of one axis")
         if problems:
             raise VocabularyError("; ".join(problems))
 

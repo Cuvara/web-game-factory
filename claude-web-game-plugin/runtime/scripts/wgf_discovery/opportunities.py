@@ -27,7 +27,7 @@ import hashlib
 import statistics
 from collections import Counter
 
-from .analysis import _idea_rank, idea_dimension, idea_terms
+from .analysis import ACTED_ON, _idea_rank, idea_dimension, idea_terms
 
 __all__ = ["generate", "rank", "CELL_FACETS"]
 
@@ -36,7 +36,8 @@ CONFIDENCE_EFFECT = 0.3
 # What may transfer between genres: how a game keeps, rewards and monetizes players. A core
 # mechanic does not transfer - moving one changes what genre the game is.
 TRANSFER_KINDS = ("retention", "progression", "monetization", "ux", "session")
-ADOPT_KINDS = ("monetization", "retention", "progression", "ux", "session")
+# What an opportunity adopts from its own genre's games: the same kinds.
+ADOPT_KINDS = TRANSFER_KINDS
 ADOPT_MIN_PREVALENCE = 0.5
 ORIGIN_RANK = {"proven-core-new-axis": 0, "supply-gap": 0, "pattern-transfer": 0,
                "portal-difference": 0, "capability-screen": 1}
@@ -64,7 +65,7 @@ class Space:
     """Everything the generators read, and the book they write claims to."""
 
     def __init__(self, *, corpus, cells, patterns, benchmarks, candidates, views, book,
-                 report_key, scope):
+                 report_key, scope, backlog=()):
         self.corpus = corpus
         self.vocabulary = corpus.vocabulary
         self.config = corpus.config
@@ -77,6 +78,10 @@ class Space:
         self.report_key = report_key
         self.scope = scope
         self.games = corpus.games
+        # Opportunities somebody already acted on (analysis.ACTED_ON): ids are stable across
+        # scans, so a proposal already scored, shortlisted or rejected is recognised.
+        self.acted_on = {opp.get("id"): opp.get("state") for opp in backlog or ()
+                         if opp.get("state") in ACTED_ON}
         popular = {gid for f in corpus.frames.values() if f["list_kind"] == "popularity"
                    for gid in f["titles"]}
         self.demand_listed = popular
@@ -118,8 +123,12 @@ class Space:
         return any(tag in (self.book.claims[c].get("tags") or [])
                    for c in self.book.closure([cid]))
 
-    def opportunity_id(self, *parts):
-        key = ":".join(str(p) for p in (self.report_key,) + parts)
+    @staticmethod
+    def opportunity_id(*parts):
+        """Stable across scans: the same proposal (generator, genre node and what makes it
+        that proposal) is the same opportunity whatever day or corpus found it, so a pinned
+        `select` survives a later scan and the backlog holds each proposal once."""
+        key = ":".join(str(p) for p in parts)
         return "opp-" + hashlib.sha256(key.encode()).hexdigest()[:8]
 
     # -- facet values -----------------------------------------------------------------------
@@ -215,16 +224,9 @@ def _audience(space, games, candidate, platforms, estimate_claim):
     vocabulary = space.vocabulary
     out = {}
     player = space.from_games(games, "audience_type")
-    if player is None:
-        descriptor = space.from_games(games, "descriptor")
-        if descriptor is not None:
-            value = descriptor["value"][0] if isinstance(descriptor["value"], list) else \
-                descriptor["value"]
-            player = dict(descriptor, value=value,
-                          label=f"{vocabulary.label('descriptor', value)} (market descriptor)")
     out["player_type"] = player or _unknown(
-        "no game in this cell is coded on player type or market descriptor; the audience "
-        "type is not assumed")
+        "no game in this cell is coded on player type; the audience type is not assumed "
+        "(a market descriptor such as casual describes the market, not the player)")
     for key, facet in (("intent", "intent"), ("skill", "skill")):
         out[key] = space.from_games(games, facet) or _unknown(
             f"no game in this cell is coded on {facet}")
@@ -270,12 +272,17 @@ def _audience(space, games, candidate, platforms, estimate_claim):
     return out
 
 
-def _production(space, cell, candidate, estimate_claim):
+def _production(space, cell, games, candidate, estimate_claim):
+    """Cost class from what research coded - the rendering style and animation class (each
+    with the vocabulary's cost), rigid-body physics, realtime networking - else the catalog's
+    unmeasured estimate. The vocabulary's cost classes are not calibrated on shipped titles."""
     vocabulary = space.vocabulary
     drivers, levels, refs = [], [], []
     tier = "unknown"
+    coded = {"art_rendering": cell.get("art_rendering"),
+             "animation": space.from_games(games, "animation")}
     for facet, values in (("art_rendering", "art_renderings"), ("animation", "animations")):
-        fv = cell.get(facet) if facet in cell else None
+        fv = coded[facet]
         if fv and fv.get("tier") in ("observed", "derived") and isinstance(fv["value"], str):
             cost = vocabulary.lists[values].get(fv["value"], {}).get("cost")
             if cost:
@@ -283,6 +290,15 @@ def _production(space, cell, candidate, estimate_claim):
                 drivers.append(f"{vocabulary.label(facet, fv['value'])} costs {cost}")
                 refs.extend(fv.get("claim_refs") or [])
                 tier = "derived"
+    for facet, value, level, what in (("physics_engine", "rigid-body", "m",
+                                       "rigid-body physics"),
+                                      ("networking", "realtime", "xl", "realtime networking")):
+        fv = space.from_games(games, facet)
+        if fv and fv["value"] == value:
+            levels.append(COST.index(level))
+            drivers.append(f"{what} ({fv['label']})")
+            refs.extend(fv.get("claim_refs") or [])
+            tier = "derived"
     entry = candidate["_archetype"] if candidate else None
     if entry:
         levels.append(COST.index(entry["technical_complexity"]))
@@ -423,7 +439,7 @@ def _market(space, node, platforms):
             if f"{node}@{pid}" in space.cells]
 
 
-def build(space, *, origin, node, platforms, basis, summary, overrides=None,
+def build(space, *, origin, node, platforms, basis, summary, identity=(), overrides=None,
           changed_axis=None, candidate=None, opportunity_id=None, adopt_extra=None):
     """One opportunity's research block (the `_`-prefixed keys are internal)."""
     vocabulary = space.vocabulary
@@ -435,8 +451,7 @@ def build(space, *, origin, node, platforms, basis, summary, overrides=None,
         estimate_claim = next((d["claim_refs"][0] for d in candidate["dimensions"]
                                if d["dimension"] == "dev_speed_days" and d["claim_refs"]), None)
     games = space.games_in(node)
-    oid = opportunity_id or space.opportunity_id(origin, node, ",".join(platforms),
-                                                 changed_axis and changed_axis["to"] or "")
+    oid = opportunity_id or space.opportunity_id(origin, node, *identity)
     cell = _cell(space, node, games, candidate, overrides, estimate_claim)
     capability = _capability(space, node, candidate, cell["art_dimension"].get("value"))
     rests = [c for c in basis if space.book.rests_on_observation(c)]
@@ -499,7 +514,7 @@ def build(space, *, origin, node, platforms, basis, summary, overrides=None,
         "patterns": patterns,
         "benchmarks": _benchmarks(space, node),
         "monetization": _monetization(space, node, candidate, platforms),
-        "production": _production(space, cell, candidate, estimate_claim),
+        "production": _production(space, cell, games, candidate, estimate_claim),
         "capability": capability,
         "audience": _audience(space, games, candidate, platforms, estimate_claim),
         "risks": risks,
@@ -596,10 +611,14 @@ def _proven_core(space):
                            f"which popular {', '.join(sorted({vocabulary.genres[g.value('genre')]['label'] for g in sources if g.value('genre')}))} "
                            f"games use ({', '.join(g.name for g in sources[:3])}) and no coded "
                            f"{label} game does.")
-                override = {axis: {"value": value, "label": vlabel, "tier": "derived",
-                                   "source": "corpus", "claim_refs": proven[:12]}}
+                # The new value is what the opportunity proposes to test, not something
+                # observed of this genre: a hypothesis, citing where it was seen elsewhere.
+                override = {axis: {"value": value, "label": vlabel, "tier": "hypothesis",
+                                   "source": "corpus", "claim_refs": proven[:12],
+                                   "reason": f"proposed: 0 of {len(coded)} {label} games "
+                                             f"use it; popular games elsewhere do"}}
                 out.append(dict(
-                    origin="proven-core-new-axis", node=node,
+                    origin="proven-core-new-axis", node=node, identity=(axis, value),
                     platforms=_demand_platforms(space, node), basis=basis, summary=summary,
                     overrides=override,
                     changed_axis={"facet": axis, "from": sorted(held), "to": value,
@@ -626,6 +645,7 @@ def _supply_gap(space):
         label = space.vocabulary.genres[cell.genre]["label"]
         out.append(dict(
             origin="supply-gap", node=cell.genre, platforms=[cell.platform],
+            identity=(cell.platform,),
             basis=cell.saturation["claim_refs"] + cell.demand["claim_refs"]
             + cell.supply["claim_refs"],
             summary=(f"{label} on {cell.platform}: {cell.demand['share']:.0%} of popularity-"
@@ -671,7 +691,7 @@ def _pattern_transfer(space):
                          "exceptions": [g.id for g in measured], "frame": frame})
             demand = space.demand_cells(node)
             out.append(dict(
-                origin="pattern-transfer", node=node,
+                origin="pattern-transfer", node=node, identity=(facet, value),
                 platforms=_demand_platforms(space, node),
                 basis=[p["claim"], absent] + sorted({r for c in demand
                                                      for r in c.demand["claim_refs"]}),
@@ -722,6 +742,7 @@ def _portal_difference(space):
                                   for r in c.demand["claim_refs"]})
             out.append(dict(
                 origin="portal-difference", node=node, platforms=[platform],
+                identity=(platform,),
                 basis=demand_refs + [absent],
                 summary=(f"{label} is in popularity lists on {', '.join(present)} but absent "
                          f"from the {len(titles)} popular titles captured on {platform}."),
@@ -779,8 +800,7 @@ def generate(space):
         kept = 0
         for proposal in proposals:
             proposal.pop("_sort")
-            key = (proposal["origin"], proposal["node"], tuple(proposal["platforms"]),
-                   (proposal.get("changed_axis") or {}).get("to"))
+            key = (proposal["origin"], proposal["node"], tuple(proposal.get("identity") or ()))
             if key in seen:
                 continue
             if not any(space.book.rests_on_observation(c) for c in proposal["basis"]):
@@ -792,7 +812,11 @@ def generate(space):
             kept += 1
             block = build(space, **proposal)
             block["_order"] = len(out)
-            if not block["capability"]["buildable"]:
+            if block["opportunity_id"] in space.acted_on:
+                block["status"] = "excluded"
+                block["exclusion_reason"] = (f"already in the backlog as "
+                                             f"{space.acted_on[block['opportunity_id']]}")
+            elif not block["capability"]["buildable"]:
                 block["status"] = "capability-gap"
             else:
                 candidate = block["_candidate"]

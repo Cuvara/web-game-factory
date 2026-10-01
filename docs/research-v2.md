@@ -52,8 +52,9 @@ OBSERVATION      a listing; a portal's own category tag; a stopwatch reading; an
      │           session (method, viewport, capture)
      ▼
 DERIVED          a coding read off a capture (theme, tone, fantasy); a demand share; a
-     │           pattern - each a `derived` claim naming its parents. A counting claim
-     │           carries `support`: numerator, denominator, members, exceptions, frame.
+     │           pattern - each a `derived` claim naming its parents. A claim that counts
+     │           games carries `support`: numerator, denominator, members, exceptions,
+     │           frame.
      │           A claim tagged `pattern` without it is refused by the ClaimBook and by the
      │           claim schema
      ▼
@@ -87,8 +88,8 @@ One cell per genre node per platform, five separate signals:
 
 | Signal | Definition | Needs |
 |---|---|---|
-| demand | the cell's share of titles in **popularity-ordered** lists on that platform | a captured popularity list whose scope covers the node; lists are pooled only with lists of the same scope |
-| supply | the portal's category count; the cell's share of its family where both counts are known | category counts |
+| demand | the cell's share of titles in **popularity-ordered** lists on that platform; a derived claim with `support` (members, exceptions) | a captured popularity list whose scope covers the node; lists are pooled only with lists of the same scope |
+| supply | the portal's category count; the cell's share of its family where both counts are known - a derived claim citing both count observations (counts have no member list, so no `support`) | category counts, the latest capture of each |
 | saturation | demand share / supply share: under-supplied, balanced or over-supplied on the configured band | observed demand **and** a supply share. Supply with no observed demand is `insufficient-demand-evidence` |
 | competition | how many of the titles captured on the platform are in the cell, by name | listings |
 | trend | the change in demand share in the same list captured on different dates | the same list on `min_history_frames` dates, else `insufficient-history` |
@@ -125,28 +126,48 @@ that measured them: median, range, the games.
 Every opportunity carries: its facet cell, basis and thesis, market cells, competitors
 (leaders first), adopted patterns with a hypothesis for each, benchmarks, monetization
 (placements comparable games use, formats each platform supports), production (cost class
-from the rendering and animation classes, or the catalog estimate), buildability, audience
-(player type, intent, skill, device, age band, session behaviour - each evidence-backed or
-`unknown`), risks and confidence (evidence coverage of its cell, weakest tier, unknown
-facets, whether any of it is fixture data).
+from the coded rendering and animation classes - the vocabulary's uncalibrated cost classes -
+rigid-body physics and realtime networking, else the catalog's estimate), buildability,
+audience, risks and confidence (evidence coverage of its cell, weakest tier, unknown facets,
+whether any of it is fixture data).
+
+The audience is never defaulted. Player type, intent, skill and age band come from the
+corpus's codings or are `unknown` (a market descriptor such as "casual" is not taken for a
+player type, and no age band is inferred). Device comes from the corpus, else from the
+platforms' mobile share, labelled `hypothesis`, `source: platform`. Session behaviour comes
+from measured runs, else from the catalog estimate, labelled `hypothesis`, `source: catalog`.
+
+In a `proven-core-new-axis` opportunity the changed facet is what the opportunity proposes
+to test, not something observed of its genre: it is a `hypothesis` (citing where it was seen
+elsewhere), it does not count toward evidence coverage, and the handoff names it in
+`changed_axis` so design can realise it as the title's intent - and say so.
 
 **Buildability is checked last.** The capability catalog entry whose `genre_node` covers the
-opportunity's node builds it if it declares a `design_archetype` and renders in the
-opportunity's dimension. Otherwise the opportunity is a `capability-gap`, with what is
+opportunity's node builds it unless it declares `design_archetype: null` (an installation's
+catalog that does not declare the field makes no claim, as before), and as long as it
+renders in the opportunity's dimension. Otherwise the opportunity is a `capability-gap`, with what is
 missing. It stays in the report and in `capability_gaps`; it is never selected and never
 discarded.
 
+**Identity.** An opportunity's id is a hash of what makes it that proposal - the generator,
+the genre node and, per generator, the changed axis and value, the platform, or the
+transferred pattern; a catalog shape's id is its entry's - never of the scan that found it.
+The same proposal found on another day, or from a bigger corpus, is the same opportunity.
+
 **Selection.** The run carries one opportunity: the first by brief match, then observed
 evidence, then corpus-generated before a bare catalog shape, then evidence coverage, then
-the shape's screen score, then generator order. A step may carry another from the same
-scan with `with: {select: <opportunity id>}` - how a G1 choice is taken forward. Only an
-eligible, buildable opportunity can be carried.
+the shape's screen score, then generator order. A step may carry another with
+`with: {select: <opportunity id>}` - how a G1 choice is taken forward, on this scan or a
+later one. Only an eligible, buildable opportunity can be carried, and a scan waiting for
+evidence carries nothing, pinned or not.
 
 **The backlog.** With `persist_backlog: true` (in `factory.discovery` or the step's
 `with:`), every eligible and capability-gap opportunity is written to the backlog as
-`discovered`, once. Off by default, like lifecycle sync: a development checkout should not
-grow instance data on every run. A `discovered` backlog entry does not exclude its shape on
-the next scan; an entry somebody acted on (scored, shortlisted, rejected, ...) still does.
+`discovered`, once: an opportunity already on file is left as it is. Off by default, like
+lifecycle sync: a development checkout should not grow instance data on every run. A
+`discovered` backlog entry does not exclude itself on the next scan; an entry somebody acted
+on (scored, shortlisted, approved, promoted, parked, stale, rejected) excludes the same
+opportunity - corpus-generated or catalog shape - with the reason.
 
 ## The report
 

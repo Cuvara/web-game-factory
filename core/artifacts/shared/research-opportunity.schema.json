@@ -928,6 +928,10 @@
         "summary": {
           "type": "string"
         },
+        "changed_axis": {
+          "$ref": "#/$defs/research/properties/changed_axis",
+          "description": "For a proven-core-new-axis opportunity: the one facet it proposes to change, and to what. A proposal to test (its cell value is a hypothesis), which design realises as the opportunity's intent - never as an observation."
+        },
         "theme": {
           "type": "object",
           "required": [

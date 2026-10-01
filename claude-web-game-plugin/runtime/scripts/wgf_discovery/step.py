@@ -1,25 +1,34 @@
-"""The `research` step: a bounded market scan that ends in a research report and one opportunity.
+"""The `research` step: a market scan that ends in a research report, an opportunity space
+and the one opportunity the run carries.
 
-    evidence  ->  claims  ->  platform summaries  ->  screened candidates  ->  selection
-    (evidence.py)          (analysis.py)                                      (here)
+    evidence -> claims -> platform summaries -> screened catalog candidates  (analysis.py)
+             -> game corpus -> market cells -> patterns and benchmarks       (corpus.py,
+             -> opportunity space -> capability check -> selection           market.py,
+                                                                             patterns.py,
+                                                                             opportunities.py)
 
-The question it answers is "what kind of web game should the factory build next?": it
-screens every archetype in the catalog against what the target portals allow and what the
-evidence shows, and carries the best-balanced one forward.
+The question it answers is "what kind of web game should the factory build next?". Research
+V2 (docs/research-v2.md): it codes every game it knows of on the shared research vocabulary,
+counts patterns across them, keeps demand, supply, saturation and trend apart, and proposes
+several opportunities from the corpus and the capability catalog; the best-ranked buildable
+one is carried forward, and every other one stays in the report (and, with
+`persist_backlog`, in the backlog). An opportunity the Factory cannot build is kept as a
+capability gap.
 
-A game idea is optional. Without one (`wgf new-game`) the scan is blank: the whole catalog,
-ranked on the screen alone. With one (`wgf new-game "3D goalkeeper game ..."`) the run
+A game idea is optional. Without one (`wgf new-game`) the scan is blank: every opportunity,
+ranked on evidence alone. With one (`wgf new-game "3D goalkeeper game ..."`) the run
 carries it as `params.idea` - the context's `environment["idea"]`, canonical, corroborated on
 every resume - and the scan is anchored to it: the report's `scope.brief` records it, the
 default question asks which shape carries it, candidates are ranked by their match to it
-first (analysis.idea_match), and the opportunity carries it verbatim as `brief`, for
+first (analysis.idea_match, opportunities.rank), and the opportunity carries it verbatim as `brief`, for
 strategy and design to build from. The screen and its vetoes are unchanged, and nothing is
 invented: a selection that holds none of the brief's words records an `idea-unmatched` gap.
 
 Settings, each optional, in increasing precedence: DEFAULTS below, `factory.discovery` in
 workspace/config/factory.yaml, then the step's `with:` block in the workflow file.
 
-    corpus          directory holding snapshots/ and probes.yaml   (workspace/research)
+    corpus          directory holding snapshots/, games/ (teardown records) and probes.yaml
+                    (workspace/research)
     platforms       platform ids to scope the scan to    (every profile except generic-web)
     genres          genre slugs; archetypes are kept if any market tag matches   (all)
     live            fetch probes.yaml pages during the run; also WGF_RESEARCH_LIVE=1  (off)
@@ -29,19 +38,26 @@ workspace/config/factory.yaml, then the step's `with:` block in the workflow fil
     scoring_model   file stem under core/reference/scoring/   (portfolio-default.v1)
     as_of           ISO timestamp the scan is "as of"; default now   (for reproducible runs)
     question        the scan's scope question, recorded in the report
+    vocabulary      research vocabulary file   (core/reference/research-vocabulary.yaml)
+    analysis        analysis configuration   (core/reference/research-analysis.yaml)
+    select          an opportunity id from the scan to carry instead of the ranked first
+    persist_backlog write every proposed opportunity to the backlog as `discovered`  (off)
 
 Outcomes (docs/workflow-module-contract.md §7):
 
     SUCCESS            research-report + opportunity
     WAITING_FOR_INPUT  no external evidence at all - the report is still emitted, and says so
     BLOCKED            evidence read, but no candidate survived screening - report emitted
-    FAILED, permanent  a malformed snapshot, probe file, catalog or scope
+    FAILED, permanent  a malformed snapshot, game record, probe file, catalog, vocabulary or
+                       scope; a `select` naming no eligible opportunity
     FAILED, retryable  live fetching was the only evidence source and every fetch failed
 
-Side effects: none outside the run. The step reads core/ and workspace/, and - only when
-`live` is on - the network. It writes nothing but the artifacts it returns, so re-executing
-it under the same idempotency key cannot duplicate anything; given the same corpus and
-`as_of` it produces byte-identical artifacts.
+Side effects: none outside the run unless `persist_backlog` is on. The step reads core/ and
+workspace/, and - only when `live` is on - the network. By default it writes nothing but the
+artifacts it returns, so re-executing it under the same idempotency key cannot duplicate
+anything; given the same corpus and `as_of` it produces byte-identical artifacts. With
+`persist_backlog` it also writes each proposed opportunity to the backlog, once: ids are
+stable across scans, and a file already there is left as it is.
 """
 
 import copy
@@ -231,6 +247,8 @@ class ResearchStep(WorkflowStep):
         if idea:
             # Only with one: a blank scan keeps the report id it always had.
             key_parts.append({"idea": idea})
+        if settings.get("select"):
+            key_parts.append({"select": settings["select"]})
         report_key = hashlib.sha256(json.dumps(
             key_parts, sort_keys=True).encode()).hexdigest()[:10]
         report_id = f"rr-{report_key}"
@@ -246,10 +264,22 @@ class ResearchStep(WorkflowStep):
             gaps.append(Gap(kind, description, platform=platform))
 
         v2 = self._research_v2(book=book, state=state, vocabulary=vocabulary, config=config,
-                               records=records, as_of=as_of, ttl=ttl, stamp=stamp,
+                               backlog=backlog,
+                               records=records, as_of=as_of, ttl=ttl,
                                report_key=report_key, scope=scope, idea=idea)
         gaps.extend(v2["gaps"])
-        selection = self._select(settings, v2, candidates, selection, state, idea)
+        if sources or not settings.get("require_external_evidence"):
+            # With no evidence the scan waits (below) and carries nothing: no pin applies.
+            chosen_before = selection and selection["opportunity_id"]
+            selection = self._select(settings, v2, candidates, selection, state, idea)
+            if selection and selection["opportunity_id"] != chosen_before:
+                carried = next(c for c in state["candidates"]
+                               if c["id"] == selection["candidate_id"])
+                if carried not in candidates:
+                    candidates.append(carried)      # the report always shows its shape
+                if idea:
+                    gaps[:] = [g for g in gaps if g.kind != "idea-unmatched"]
+                    gaps.extend(self._brief_gaps(v2, selection, idea))
         claims = [book.claims[cid] for cid in sorted(book.closure(
             set(state["referenced"]) | v2["referenced"]))]
 
@@ -445,10 +475,10 @@ class ResearchStep(WorkflowStep):
 
     # -- Research V2 ----------------------------------------------------------------------
 
-    def _research_v2(self, *, book, state, vocabulary, config, records, as_of, ttl, stamp,
-                     report_key, scope, idea):
+    def _research_v2(self, *, book, state, vocabulary, config, records, as_of, ttl,
+                     report_key, scope, idea, backlog=()):
         """Corpus -> market cells -> patterns and benchmarks -> the opportunity space."""
-        corpus = Corpus(vocabulary, config, book, stamp)
+        corpus = Corpus(vocabulary, config, book)
         corpus.add_records(records, as_of, ttl)
         corpus.add_listings(state["observations"])
         corpus.finish()
@@ -458,7 +488,7 @@ class ResearchStep(WorkflowStep):
         space = opportunity_space.Space(
             corpus=corpus, cells=cells, patterns=patterns, benchmarks=benchmarks,
             candidates=state["candidates"], views=state["views"], book=book,
-            report_key=report_key, scope=scope)
+            report_key=report_key, scope=scope, backlog=backlog)
         blocks, refused = opportunity_space.generate(space)
         ranked = opportunity_space.rank(space, blocks, idea)
         gaps = list(corpus.gaps) + list(market_gaps) + list(pattern_gaps)
@@ -551,6 +581,7 @@ class ResearchStep(WorkflowStep):
         candidate["status"] = "selected"
         runner = next((b for b in ranked if b is not chosen), None)
         counts = v2["counts"]
+        runner_candidate = (runner or {}).get("_candidate") or {}
         rationale = (
             ("Pinned by the step (`select`). " if pinned else "")
             + f"Research V2: {chosen['origin']} opportunity {chosen['opportunity_id']} - "
@@ -561,9 +592,33 @@ class ResearchStep(WorkflowStep):
             f"{counts['opportunities']} opportunities proposed: {counts['eligible']} buildable, "
             f"{counts['capability-gap']} capability gaps. Revenue was not estimated."
             + (f" Runner-up: {runner['opportunity_id']} ({runner['origin']})." if runner else ""))
+        # runner_up names a candidate, as it always has; the rationale names the opportunity.
         return {"candidate_id": candidate["id"], "opportunity_id": chosen["opportunity_id"],
                 "rationale": rationale,
-                "runner_up": runner["opportunity_id"] if runner else None}
+                "runner_up": runner_candidate.get("id")}
+
+    @staticmethod
+    def _brief_gaps(v2, selection, idea):
+        """`idea-unmatched` for the opportunity actually carried, when it is not the
+        catalog screen's pick."""
+        block = next(b for b in v2["opportunities"]
+                     if b["opportunity_id"] == selection["opportunity_id"])
+        match = block.get("brief_match") or {"terms": [], "dimension": False}
+        out = []
+        if not match["terms"]:
+            wanted = analysis.idea_terms(idea)
+            out.append(Gap("idea-unmatched",
+                           f"no opportunity's vocabulary matches the brief"
+                           + (f" ({', '.join(wanted)})" if wanted else "")
+                           + f"; carried {block['opportunity_id']} ({block['origin']}) by "
+                             f"evidence. The brief is carried verbatim to strategy and design"))
+        named = analysis.idea_dimension(idea)
+        if named and not match["dimension"]:
+            out.append(Gap("idea-unmatched",
+                           f"the brief names {named}; the carried opportunity "
+                           f"{block['opportunity_id']} does not render in it. The brief is "
+                           f"carried verbatim to design, which chooses the dimension"))
+        return out
 
     def _persist(self, settings, v2, report, profiles, context, as_of_text, idea, carried):
         """Write every proposed opportunity - buildable or a capability gap - to the backlog
@@ -658,8 +713,6 @@ class ResearchStep(WorkflowStep):
         device = block["audience"]["device"]
         if device["tier"] != "unknown":
             audience["device"] = device["value"]
-        elif archetype:
-            audience["device"] = "both" if archetype.get("mobile_ready") else "desktop"
         regions = sorted({r for pid in platforms if pid in profiles
                           for r in ((profiles[pid].get("audience") or {})
                                     .get("primary_regions") or [])})

@@ -422,6 +422,20 @@ class _Plan:
             cls = "hybrid"
         self.monetization = {"class": cls, "placements": placements}
         rationale = hypothesis.get("rationale")
+        observed = [p for p in ((self.research or {}).get("monetization") or {}).get(
+            "placements") or [] if p.get("numerator")]
+        if observed:
+            seen = "; ".join(f"{p['trigger']} in {p['numerator']} of {p['denominator']}"
+                             for p in observed[:4])
+            rationale = ((rationale + " ") if rationale else "") + \
+                f"Comparable games offer placements at: {seen}."
+            self.apply("monetization.rationale", "research",
+                       f"placement moments comparable games use: {seen}",
+                       [p["claim"] for p in observed])
+        elif self.research is not None:
+            self.apply("monetization.rationale", "default",
+                       "no comparable game's placements were coded; the shape's own "
+                       "hypothesis stands")
         if rationale:
             self.monetization["rationale"] = rationale
         if primary != "none":
@@ -582,8 +596,20 @@ class _Plan:
                 self.apply("audience.type", "default",
                            "casual: research coded no player type for this cell; it was "
                            "not assumed there, only here, as the planning default")
-        audience = {"type": audience_type,
-                    "device": self.audience.get("device") or "both"}
+        device = self.audience.get("device")
+        if not device:
+            device = "both"
+            self.assume("The audience plays on phone and desktop: no device split was "
+                        "researched for it", "platform analytics device split after launch")
+            if self.research is not None:
+                self.apply("audience.device", "default",
+                           "both: research recorded no device for this cell")
+        elif self.research is not None:
+            source = (self.research.get("audience") or {}).get("device") or {}
+            self.apply("audience.device", "research",
+                       f"{device}: {source.get('label') or source.get('source')} "
+                       f"({source.get('tier')})", source.get("claim_refs"))
+        audience = {"type": audience_type, "device": device}
         if self.audience.get("regions"):
             audience["regions"] = list(self.audience["regions"])
         audience["player_description"] = (
@@ -814,8 +840,9 @@ class _Plan:
                     "reason": f"research recorded no {name}"}
 
         player, emotional = fv("player_fantasy"), fv("emotional_fantasy")
+        intent = r.get("changed_axis") or {}
         statement = None
-        if _known(player):
+        if _known(player) or (intent.get("facet") == "player_fantasy" and player.get("value")):
             statement = player.get("label", player["value"]).split(" (")[0]
             if _known(emotional):
                 statement += " - " + emotional.get("label", emotional["value"]).split(" (")[0].lower()
@@ -845,6 +872,8 @@ class _Plan:
             "applied": list(self.applied),
         }
         out["art"]["camera"] = fv("camera")
+        if intent:
+            out["changed_axis"] = intent
         if statement:
             out["fantasy"]["statement"] = statement
         return out

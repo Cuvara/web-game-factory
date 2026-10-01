@@ -848,7 +848,9 @@ def _candidate(book, archetype, views, platform_info, model, backlog, report_key
     }
     return {
         "id": aid,
-        "opportunity_id": "opp-" + hashlib.sha256(f"{report_key}:{aid}".encode()).hexdigest()[:8],
+        # Stable across scans: the same shape is the same opportunity, so a G1 choice can
+        # pin it on a later scan and the backlog holds it once.
+        "opportunity_id": "opp-" + hashlib.sha256(f"shape:{aid}".encode()).hexdigest()[:8],
         "concept": concept,
         "profile": profile,
         "platform_fit": fits,
@@ -1010,6 +1012,5 @@ def analyse(*, sources, profiles, archetypes, model, backlog, as_of_text, report
     claims = [book.claims[cid] for cid in sorted(keep_ids)]
     if state is not None:
         state.update({"observations": observations, "views": views,
-                      "platform_info": platform_info, "candidates": candidates,
-                      "referenced": referenced})
+                      "candidates": candidates, "referenced": referenced})
     return claims, platforms, kept, selection, gaps

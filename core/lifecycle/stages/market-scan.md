@@ -89,7 +89,8 @@ state: there is no entity to hold it.
 9. **Check buildability last, and keep what cannot be built.** An opportunity the Factory
    has no capability for is kept as a capability gap, with what is missing - it is
    evidence for what to learn to build next, not something to discard. Deduplicate against
-   the backlog, including rejected entries.
+   the backlog, including rejected entries: the same proposal is the same opportunity on
+   every scan, and one somebody already acted on is not proposed again.
 
 ## Outputs
 
@@ -105,7 +106,7 @@ When the scan runs as the `research` step of a workflow, every opportunity lives
 research report, and the one the run carries - the best-ranked buildable one, unless the
 step pins another - is emitted as the run's `opportunity`; the others stay on record, where
 G1 and the next scan can find them, and the installation may write them all to the backlog
-as `discovered`. The report's screen borrows the scoring
+as `discovered`, once. The report's screen borrows the scoring
 model's weights and vetoes to rank candidates. It is not an `evaluation`: scoring for the
 shortlist remains a separate act by a separate role.
 

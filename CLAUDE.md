@@ -59,6 +59,11 @@ python3 scripts/wgf-assets.py build --design design.json --root ../my-game  # fi
 python3 scripts/wgf-assets.py validate ../my-game [--strict]   # the checkout vs its assets.json
 python3 scripts/wgf-assets.py pack out/hud frames/             # deterministic texture atlas
 
+# The research corpus (docs/research-v2.md). Exit 0 clean, 1 problems, 2 unusable.
+python3 scripts/wgf-corpus.py validate [CORPUS]             # teardown records vs schema + vocabulary
+python3 scripts/wgf-corpus.py template game-x --name "X"    # a record skeleton to fill in after playing
+python3 scripts/wgf-corpus.py facets [FACET]                # the codes a game is coded on
+
 # 3D models (docs/blender-pipeline.md). Blender 4.5 LTS via WGF_BLENDER or PATH; inspect needs none.
 python3 scripts/wgf-model.py doctor                     # is the pinned Blender usable?
 python3 scripts/wgf-model.py build spec.json --id car -o car.glb --twice   # build, check, reproduce
@@ -245,9 +250,11 @@ every step type in `new-game` has one: `wgf_discovery` (research), `wgf_strategy
 `wgf_design`, `wgf_techplan`, `wgf_init`, `wgf_assets`, `wgf_develop`, `wgf_review`,
 `wgf_sdk`, `wgf_verification` and `wgf_release`. `--mock` still replaces all of them with
 placeholders for a run. Discovery reads evidence snapshots from
-`workspace/research/snapshots/`. A module owns its domain logic; the engine owns
-orchestration — a module never edits `scripts/wgflib/workflow/` to implement domain
-behaviour. See `docs/workflow-module-contract.md`.
+`workspace/research/snapshots/` and teardown records from `workspace/research/games/`, codes
+every game on `core/reference/research-vocabulary.yaml`, and proposes several opportunities
+(Research V2, `docs/research-v2.md`); strategy and design read the `research` block. A
+module owns its domain logic; the engine owns orchestration — a module never edits
+`scripts/wgflib/workflow/` to implement domain behaviour. See `docs/workflow-module-contract.md`.
 
 Every child process a step starts goes through `scripts/wgflib/procs.py`: its own session,
 an environment tag, whole-tree termination on exit, timeout, cancel or `wgf` being
@@ -398,6 +405,10 @@ seen by the engine — validate what you write there with ajv.
 - `docs/development.md` — working on the Factory
 - `docs/handoff/2026-09-27-production-validation.md` — post-2.0.0 validation: the live
   builds, the G3 timebox rejection and the G4 hold, and the fixes they produced
+- `docs/research-v2.md` — Research V2: the game corpus and vocabulary, teardown records,
+  market cells (demand, supply, saturation, competition, trend), counted patterns, the five
+  opportunity generators, capability gaps, the research handoff strategy and design read,
+  what the shipped corpus supports, and what is not implemented
 - `docs/env-vars.md` — every `WGF_*` environment variable: runtime and test, who reads it, default
 
 Documentation that contradicts a machine file is worse than none, because people believe it.

@@ -8,7 +8,7 @@
     "id": "game-design",
     "kind": "artifact",
     "format": "json",
-    "version": "1.4.0",
+    "version": "1.5.0",
     "template": "templates/gdd.md",
     "producer": "title:design",
     "consumers": ["title:tech-plan", "title:prototype", "title:prototype-review", "title:production", "release:qa", "title:scaffolding"],
@@ -22,6 +22,10 @@
   "required": ["provenance", "title_id", "core_loop", "scope", "session", "retention", "monetization", "consistency"],
   "properties": {
     "provenance": { "$ref": "./shared/provenance.schema.json#/$defs/provenance" },
+    "research": {
+      "$ref": "./shared/research-opportunity.schema.json#/$defs/handoff",
+      "description": "Research V2 (added in 1.5.0): the research this design was derived from, carried from the strategy, and `applied`: which design decisions (archetype, fantasy, identity kit, timing targets) came from research and which fell back to a default. Absent when the strategy carries no research."
+    },
     "title_id": { "type": "string" },
     "brief": { "type": "string", "minLength": 1, "maxLength": 500, "description": "The game idea a person started the run with (`wgf new-game \"...\"`), verbatim in its canonical form: NFC, trimmed, whitespace runs as one space. Absent when the run was a blank market scan. Copied from the title-strategy. An agent author designs the game it describes; the built-in author fits the buildable concept research selected, and records in open_questions a dimension the brief names that the design does not use. Added in 1.4.0." },
 

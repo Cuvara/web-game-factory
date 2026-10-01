@@ -13,7 +13,7 @@ from wgflib import paths, provenance
 from wgflib.workflow import ArtifactOutput, StepResult, WorkflowStep
 
 from .planner import Policy, StrategyRefused, plan_strategy
-from .profiles import load_profiles
+from .profiles import load_profiles, load_vocabulary
 
 __all__ = ["StrategyStep", "SCHEMA_VERSION", "READS_OPPORTUNITY_MAJOR"]
 
@@ -64,7 +64,7 @@ class StrategyStep(WorkflowStep):
         try:
             policy = Policy.from_params(self.params)
             body = plan_strategy(opportunity, load_profiles(self.profiles_dir), title_id,
-                                 policy)
+                                 policy, load_vocabulary())
         except StrategyRefused as exc:
             context.logger.warning("strategy refused", reason=str(exc))
             return StepResult.failed(f"strategy refused: {exc}", retryable=False)

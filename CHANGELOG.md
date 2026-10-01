@@ -9,6 +9,34 @@ and `core/` is still the contract.
 
 ## [Unreleased]
 
+**Research V2** ([docs/research-v2.md](docs/research-v2.md)). Research is game-corpus based:
+listings and teardown records (`game-record`, `<corpus>/games/`) are coded on a shared,
+versioned vocabulary (`core/reference/research-vocabulary.yaml`: a genre tree, market
+descriptors, 41 facets from mechanics and core-loop beats to theme, fantasy, art, audience,
+session, retention, monetization and production). The research step now builds per-domain
+views, market cells that keep demand, supply, saturation, competition and trend apart,
+cross-game patterns and benchmarks that state their numerator and denominator, and an
+opportunity space from five generators (proven core with one axis changed, supply gap,
+pattern transfer, portal difference, capability screen). A corpus-generated opportunity must
+rest on an observation; low supply without demand is `insufficient-demand-evidence`; an
+opportunity the Factory cannot build is kept as a capability gap. The archetype catalog is
+now a build-capability catalog. Strategy and design carry the research (`research` blocks
+with `applied`): the observed control scheme, measured session length and audience type in
+strategy; the archetype, fantasy, theme and the visual identity kit - by the art research
+supports, no longer by the title id's digest - in design. `select` pins another opportunity
+from a scan; `persist_backlog` writes them all to the backlog. `scripts/wgf-corpus.py`
+validates and starts teardown records.
+
+The worked example's invalid evidence is superseded, not edited: `claim-0a05`/`claim-0a06`
+supersede `claim-0a01`/`claim-0a03`, `eval-0b02` supersedes `eval-0b01` (coverage 0.246).
+
+Schema changes are additive: `research-report` 1.2.0 (V2 sections required when
+`research_version: 2`), `opportunity` 1.2.0, `title-strategy` 1.3.0, `game-design` 1.5.0;
+claims gain facet subjects, capture evidence and a `support` block a pattern must carry.
+Every earlier artifact remains valid. Adapter binding 1.6.0 (must-read lists only). No gate,
+workflow, lifecycle or template-pin change. Not done: production-cost calibration, a
+scoring model v2, and the P2 capabilities `docs/research-v2.md` lists.
+
 ## [2.5.0] - 2026-09-30
 
 Two changes to `/web-game-factory:new-game` (`docs/v2.5-release.md`).

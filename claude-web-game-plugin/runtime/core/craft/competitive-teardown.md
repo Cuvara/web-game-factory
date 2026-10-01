@@ -1,8 +1,9 @@
 # Competitive teardown
 
 **Serves**
-- `portfolio:market-scan`: claims and research snapshots under
-  `workspace/research/snapshots/`, the input the discovery step reads
+- `portfolio:market-scan`: game records under `workspace/research/games/` (the research
+  corpus) and listing snapshots under `workspace/research/snapshots/`, the inputs the
+  discovery step reads
 - `title:strategy`: `concept`, `prototype_must_prove`, kill criteria
 - `title:design`: session numbers, monetization placement
 
@@ -34,9 +35,47 @@ trying to master it. Record observations with times:
 | Feel | Standout feedback (hit-stop, pops, audio) and anything that felt bad |
 | Presentation | Thumbnail subject; orientation; visual identity in one line |
 
+## Coding it: the game record
+
+A teardown is written as one **game record** per game, `<corpus>/games/<game-id>.json`,
+validated by `core/artifacts/shared/game-record.schema.json`. Every value is a code from
+`core/reference/research-vocabulary.yaml`, so the next scan can count across games:
+
+| Observe (above) | Facets |
+|---|---|
+| Load, onboarding | `time_to_first_play_seconds`, `taps_before_play`, `tutorial` |
+| Loop | `mechanics`, `gameplay_steps`, `controls`, `decision_type`, `skill`, `randomness` |
+| First reward, session | `time_to_first_reward_seconds`, `first_failure_seconds`, `run_seconds`, `retry_seconds` |
+| Progression, difficulty | `progression`, `difficulty_shape`, `difficulty_axes`, `retention_hooks` |
+| Monetization | `ad_formats`, `ad_triggers`, `interstitial_interval_seconds` |
+| Presentation | `theme`, `setting`, `art_dimension`, `art_rendering`, `art_tone`, `art_palette`, `camera`, `animation`, `orientation` |
+| Fantasy, audience | `player_fantasy`, `emotional_fantasy`, `audience_type`, `intent`, `device`, `age_band` |
+| Production | `physics_engine`, `networking`, `unique_assets`, `bundle_mb` |
+
+Procedure, per game:
+
+1. **Open a session** for each sitting: the page URL, the time, the method (`played`,
+   `store-page`, `screenshot`, `video`, `listing`), who observed, and - for a played
+   session - the viewport and the number of runs. Its `note` says what was done, plainly
+   enough to repeat. Keep a capture (recording or screenshots) and name it in
+   `capture_uri`.
+2. **Code each facet against a session**, with an excerpt the capture can confirm. Mark it
+   `observed` when the excerpt is the thing itself - a stopwatch reading, the portal's own
+   category tag, an ad offer seen on screen - and `interpreted` when it is your reading of
+   the capture (a theme, a tone, a fantasy, an audience). An interpreted coding becomes a
+   derived claim resting on the session, never an observation.
+3. **Leave uncoded what you did not see.** An uncoded facet is counted as unknown, not as
+   "no". Do not code an age band a portal does not state.
+4. **Keep what does not fit a facet as a note** (`strength`, `exception`, `ux`, ...). Notes
+   are evidence; they are never counted.
+5. **Name the listing names** the game appears under, so portal listings join the record.
+
+A record no session supports, a code outside the vocabulary, or a session dated after the
+scan is refused. Test data is marked `"fixture": true` and is never real evidence.
+
 ## Turning it into evidence
 
-Evidence discipline applies unchanged:
+The discovery step does the counting; the discipline is unchanged:
 
 - Each measured fact is an **observed** claim, citing the game's page URL and the time
   observed. Example: "Game X reaches first play in 4 s with one tap on a throttled phone
@@ -47,9 +86,9 @@ Evidence discipline applies unchanged:
   first reward is a market expectation for this niche."
 - Observation and interpretation are always separate claims.
 
-Where the result is a reusable research input, write it as a snapshot file in the existing
-snapshot format: one observation per fact, `source_kind` describing a played observation,
-`retrieved_via` naming the method. It is then read like any other evidence.
+Patterns across games ("3 of 4 category leaders ...") are derived by the scan itself from the
+coded records, with the numerator, the denominator, the games and the exceptions - do not
+write them by hand.
 
 ## How it feeds the title
 

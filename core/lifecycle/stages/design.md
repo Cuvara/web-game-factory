@@ -19,6 +19,14 @@ consistency result is atomic.
 
 ## Procedure
 
+0. **Start from the research the strategy carries** (`title-strategy.research`). The
+   buildable shape research named is the one to design; the theme, setting and fantasy it
+   supports shape the fantasy and the art direction; the art tone, palette and rendering it
+   supports choose the visual identity - a default (the title's own digest) decides only
+   what research left unknown. Measured benchmarks may tighten timing targets, never loosen
+   them. Carry the research into `game-design.research`, and record in `applied` what came
+   from it and what did not.
+
 1. **Read the pinned platform profiles as binding constraints.** Localization, ad cadence,
    bundle size, orientation, supported placements. Record each one you absorbed in
    `platform_constraints_applied` with how it was addressed. An empty list on a title with

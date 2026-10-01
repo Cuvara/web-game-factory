@@ -165,6 +165,12 @@ See [blender-pipeline.md](blender-pipeline.md).
 
 ## Shared primitives
 
+Research V2 adds four shared schemas, described in `docs/research-v2.md`: `game-record` (a
+teardown: the research corpus's input format), `research-opportunity` (the structured
+research an opportunity carries, and the handoff strategy and design carry), and the two
+reference schemas `research-vocabulary` and `research-analysis`.
+
+
 Three structures reused across many artifacts. Each replaces a stated intention with a
 mechanism.
 

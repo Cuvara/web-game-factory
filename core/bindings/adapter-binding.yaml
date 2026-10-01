@@ -18,7 +18,7 @@
 # Each adapter carries a CONFORMANCE.md mapping every surface id below to its file, so
 # reviewing adapter completeness is a two-file diff rather than a directory crawl.
 
-version: 1.5.0
+version: 1.6.0
 
 surface_kinds:
   agent: A persistent role the runtime can delegate to.
@@ -42,6 +42,10 @@ agents:
       - core/artifacts/opportunity.schema.json
       - core/artifacts/research-report.schema.json
       - core/reference/dimensions.yaml
+      - core/reference/research-vocabulary.yaml
+      - core/reference/research-analysis.yaml
+      - core/artifacts/shared/game-record.schema.json
+      - core/artifacts/shared/research-opportunity.schema.json
       - core/craft/competitive-teardown.md
     produces: [claim, opportunity, research-report]
     consumes: []
@@ -73,6 +77,7 @@ agents:
       - core/craft/core-loop-and-difficulty.md
       - core/craft/onboarding-and-portal-ux.md
       - core/craft/art-direction.md
+      - core/artifacts/shared/research-opportunity.schema.json
     produces: [title-strategy, game-design]
     consumes: [opportunity, evaluation, claim]
 
@@ -291,11 +296,14 @@ skills:
     supports: [research]
     covers: >
       Normalizing platform signal into tiered claims and keeping evidence honest,
-      including competitive teardowns of how leading portal games actually play.
+      including competitive teardowns of how leading portal games actually play, coded on
+      the shared research vocabulary into a game corpus.
     reads:
       - core/lifecycle/stages/market-scan.md
       - core/artifacts/shared/claim.schema.json
       - core/craft/competitive-teardown.md
+      - core/reference/research-vocabulary.yaml
+      - core/artifacts/shared/game-record.schema.json
   - id: opportunity-scoring
     supports: [analysis]
     covers: >

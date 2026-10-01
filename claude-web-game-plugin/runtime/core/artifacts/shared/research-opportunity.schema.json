@@ -1,0 +1,1092 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://webgamefactory.dev/schemas/artifacts/shared/research-opportunity.schema.json",
+  "title": "Research Opportunity (Research V2 handoff)",
+  "description": "The structured research an opportunity carries forward: the facet cell it proposes, the evidence each facet rests on, its market, competitors, adopted patterns, benchmarks, monetization evidence, production profile, buildability and risks. Embedded as `opportunity.research` and listed in full in `research-report.opportunities`. Strategy and design read it; it is the contract that stops research collapsing back into one concept string.\n\nEvery facet value carries its own tier and claims. `unknown` is a legitimate tier: a facet nobody observed stays unknown, and downstream must say so rather than fill it in.",
+  "$defs": {
+    "tier": {
+      "enum": [
+        "observed",
+        "derived",
+        "hypothesis",
+        "unknown"
+      ]
+    },
+    "claimRefs": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "pattern": "^claim-[0-9a-z]{4,}$"
+      }
+    },
+    "facetValue": {
+      "type": "object",
+      "required": [
+        "value",
+        "tier",
+        "source"
+      ],
+      "properties": {
+        "value": {
+          "type": [
+            "string",
+            "number",
+            "array",
+            "null"
+          ],
+          "items": {
+            "type": "string"
+          }
+        },
+        "label": {
+          "type": "string"
+        },
+        "tier": {
+          "$ref": "#/$defs/tier"
+        },
+        "source": {
+          "enum": [
+            "corpus",
+            "market",
+            "platform",
+            "catalog",
+            "brief",
+            "unknown"
+          ],
+          "description": "Where the value comes from. `catalog` values are the capability catalog's estimates: hypotheses."
+        },
+        "claim_refs": {
+          "$ref": "#/$defs/claimRefs"
+        },
+        "reason": {
+          "type": "string",
+          "description": "Why the value is unknown or weak."
+        }
+      },
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "tier": {
+                "const": "unknown"
+              }
+            },
+            "required": [
+              "tier"
+            ]
+          },
+          "then": {
+            "properties": {
+              "value": {
+                "const": null
+              }
+            },
+            "required": [
+              "reason"
+            ]
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "tier": {
+                "enum": [
+                  "observed",
+                  "derived"
+                ]
+              }
+            },
+            "required": [
+              "tier"
+            ]
+          },
+          "then": {
+            "required": [
+              "claim_refs"
+            ],
+            "properties": {
+              "claim_refs": {
+                "minItems": 1
+              }
+            }
+          }
+        }
+      ]
+    },
+    "count": {
+      "type": "object",
+      "required": [
+        "status"
+      ],
+      "properties": {
+        "status": {
+          "enum": [
+            "observed",
+            "derived",
+            "none-observed",
+            "unknown",
+            "insufficient-history"
+          ]
+        },
+        "numerator": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "denominator": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "share": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "count": {
+          "type": "number",
+          "minimum": 0
+        },
+        "frame": {
+          "type": "string"
+        },
+        "claim_refs": {
+          "$ref": "#/$defs/claimRefs"
+        },
+        "reason": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "if": {
+            "required": [
+              "share"
+            ]
+          },
+          "then": {
+            "required": [
+              "numerator",
+              "denominator",
+              "frame"
+            ]
+          }
+        }
+      ]
+    },
+    "marketCell": {
+      "type": "object",
+      "required": [
+        "cell",
+        "genre",
+        "platform",
+        "demand",
+        "supply",
+        "saturation",
+        "trend"
+      ],
+      "properties": {
+        "cell": {
+          "type": "string"
+        },
+        "genre": {
+          "type": "string"
+        },
+        "platform": {
+          "type": "string"
+        },
+        "demand": {
+          "$ref": "#/$defs/count",
+          "description": "Share of titles in popularity-ordered lists that belong to the cell."
+        },
+        "supply": {
+          "$ref": "#/$defs/count",
+          "description": "Games the portal lists in the cell (category counts), and its share of the family where both are known."
+        },
+        "saturation": {
+          "type": "object",
+          "required": [
+            "status"
+          ],
+          "properties": {
+            "status": {
+              "enum": [
+                "under-supplied",
+                "balanced",
+                "over-supplied",
+                "unknown",
+                "insufficient-demand-evidence"
+              ]
+            },
+            "ratio": {
+              "type": "number",
+              "minimum": 0,
+              "description": "demand share / supply share."
+            },
+            "claim_refs": {
+              "$ref": "#/$defs/claimRefs"
+            },
+            "reason": {
+              "type": "string"
+            }
+          },
+          "additionalProperties": false
+        },
+        "competition": {
+          "$ref": "#/$defs/count",
+          "description": "Distinct titles observed in the cell: named competitors, not a score."
+        },
+        "trend": {
+          "$ref": "#/$defs/count",
+          "description": "Change in demand share across dated captures of the same list. `insufficient-history` until the same list was captured on enough dates."
+        }
+      },
+      "additionalProperties": false
+    },
+    "research": {
+      "type": "object",
+      "required": [
+        "research_version",
+        "report_id",
+        "origin",
+        "status",
+        "summary",
+        "cell",
+        "basis",
+        "market",
+        "competitors",
+        "patterns",
+        "benchmarks",
+        "monetization",
+        "production",
+        "capability",
+        "audience",
+        "risks",
+        "confidence",
+        "claim_refs"
+      ],
+      "properties": {
+        "research_version": {
+          "const": 2
+        },
+        "report_id": {
+          "type": "string",
+          "pattern": "^rr-[0-9a-z]+$"
+        },
+        "opportunity_id": {
+          "type": "string",
+          "pattern": "^opp-[0-9a-z]{3,}$"
+        },
+        "origin": {
+          "enum": [
+            "proven-core-new-axis",
+            "supply-gap",
+            "pattern-transfer",
+            "portal-difference",
+            "capability-screen"
+          ],
+          "description": "Which generator proposed it. capability-screen: a buildable shape from the capability catalog screened against platforms and market; the others are generated from the game corpus and market cells."
+        },
+        "status": {
+          "enum": [
+            "selected",
+            "eligible",
+            "capability-gap",
+            "excluded"
+          ]
+        },
+        "exclusion_reason": {
+          "type": "string"
+        },
+        "summary": {
+          "type": "string",
+          "minLength": 8
+        },
+        "cell": {
+          "type": "object",
+          "required": [
+            "genre",
+            "mechanics",
+            "theme",
+            "player_fantasy",
+            "emotional_fantasy",
+            "art_dimension",
+            "art_rendering",
+            "art_tone",
+            "session_band",
+            "platforms"
+          ],
+          "properties": {
+            "genre": {
+              "$ref": "#/$defs/facetValue"
+            },
+            "family": {
+              "$ref": "#/$defs/facetValue"
+            },
+            "mechanics": {
+              "$ref": "#/$defs/facetValue"
+            },
+            "gameplay_steps": {
+              "$ref": "#/$defs/facetValue"
+            },
+            "core_loop": {
+              "$ref": "#/$defs/facetValue"
+            },
+            "controls": {
+              "$ref": "#/$defs/facetValue"
+            },
+            "theme": {
+              "$ref": "#/$defs/facetValue"
+            },
+            "setting": {
+              "$ref": "#/$defs/facetValue"
+            },
+            "player_fantasy": {
+              "$ref": "#/$defs/facetValue"
+            },
+            "emotional_fantasy": {
+              "$ref": "#/$defs/facetValue"
+            },
+            "art_dimension": {
+              "$ref": "#/$defs/facetValue"
+            },
+            "art_rendering": {
+              "$ref": "#/$defs/facetValue"
+            },
+            "art_tone": {
+              "$ref": "#/$defs/facetValue"
+            },
+            "art_palette": {
+              "$ref": "#/$defs/facetValue"
+            },
+            "camera": {
+              "$ref": "#/$defs/facetValue"
+            },
+            "session_band": {
+              "$ref": "#/$defs/facetValue"
+            },
+            "progression": {
+              "$ref": "#/$defs/facetValue"
+            },
+            "difficulty_shape": {
+              "$ref": "#/$defs/facetValue"
+            },
+            "retention_hooks": {
+              "$ref": "#/$defs/facetValue"
+            },
+            "platforms": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          },
+          "additionalProperties": false
+        },
+        "changed_axis": {
+          "type": "object",
+          "description": "For proven-core-new-axis: the facet changed from the proven core, from what to what.",
+          "required": [
+            "facet",
+            "to"
+          ],
+          "properties": {
+            "facet": {
+              "type": "string"
+            },
+            "from": {
+              "type": [
+                "array",
+                "string",
+                "null"
+              ],
+              "items": {
+                "type": "string"
+              }
+            },
+            "to": {
+              "type": "string"
+            },
+            "claim_refs": {
+              "$ref": "#/$defs/claimRefs"
+            }
+          },
+          "additionalProperties": false
+        },
+        "basis": {
+          "type": "object",
+          "description": "Why it exists. `evidence_backed` is true only when a basis claim rests on an observation; a corpus generator refuses to propose anything that is not.",
+          "required": [
+            "claim_refs",
+            "evidence_backed",
+            "thesis"
+          ],
+          "properties": {
+            "claim_refs": {
+              "$ref": "#/$defs/claimRefs"
+            },
+            "evidence_backed": {
+              "type": "boolean"
+            },
+            "thesis": {
+              "type": "string",
+              "pattern": "^claim-[0-9a-z]{4,}$",
+              "description": "The hypothesis claim (confidence <= 0.6) that the opportunity is worth testing. Never an observation."
+            },
+            "statement": {
+              "type": "string"
+            }
+          },
+          "additionalProperties": false
+        },
+        "market": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/marketCell"
+          }
+        },
+        "competitors": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "game",
+              "name",
+              "role",
+              "depth",
+              "claim_refs"
+            ],
+            "properties": {
+              "game": {
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              },
+              "role": {
+                "enum": [
+                  "leader",
+                  "listed",
+                  "teardown",
+                  "closest"
+                ]
+              },
+              "depth": {
+                "enum": [
+                  "listing",
+                  "teardown"
+                ]
+              },
+              "platforms": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "fixture": {
+                "type": "boolean"
+              },
+              "claim_refs": {
+                "$ref": "#/$defs/claimRefs"
+              }
+            },
+            "additionalProperties": false
+          }
+        },
+        "patterns": {
+          "type": "object",
+          "required": [
+            "adopt"
+          ],
+          "properties": {
+            "adopt": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "required": [
+                  "pattern",
+                  "statement",
+                  "numerator",
+                  "denominator",
+                  "claim"
+                ],
+                "properties": {
+                  "pattern": {
+                    "type": "string"
+                  },
+                  "statement": {
+                    "type": "string"
+                  },
+                  "numerator": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "denominator": {
+                    "type": "integer",
+                    "minimum": 1
+                  },
+                  "claim": {
+                    "type": "string"
+                  },
+                  "effect_hypothesis": {
+                    "type": "string",
+                    "description": "Hypothesis claim id: what adopting it may do. Never stated as fact."
+                  }
+                },
+                "additionalProperties": false
+              }
+            },
+            "differentiate_on": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          },
+          "additionalProperties": false
+        },
+        "benchmarks": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "facet",
+              "unit",
+              "median",
+              "min",
+              "max",
+              "n",
+              "games",
+              "claim"
+            ],
+            "properties": {
+              "facet": {
+                "type": "string"
+              },
+              "unit": {
+                "type": "string"
+              },
+              "median": {
+                "type": "number"
+              },
+              "min": {
+                "type": "number"
+              },
+              "max": {
+                "type": "number"
+              },
+              "n": {
+                "type": "integer",
+                "minimum": 1
+              },
+              "games": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "claim": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": false
+          }
+        },
+        "monetization": {
+          "type": "object",
+          "required": [
+            "placements",
+            "platform_support"
+          ],
+          "properties": {
+            "primary": {
+              "enum": [
+                "rewarded",
+                "interstitial",
+                "banner",
+                "iap",
+                "none"
+              ]
+            },
+            "placements": {
+              "type": "array",
+              "description": "Moments comparable games offer a placement, with how many of them do.",
+              "items": {
+                "type": "object",
+                "required": [
+                  "trigger",
+                  "numerator",
+                  "denominator",
+                  "claim"
+                ],
+                "properties": {
+                  "trigger": {
+                    "type": "string"
+                  },
+                  "numerator": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "denominator": {
+                    "type": "integer",
+                    "minimum": 1
+                  },
+                  "claim": {
+                    "type": "string"
+                  }
+                },
+                "additionalProperties": false
+              }
+            },
+            "platform_support": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "required": [
+                  "platform",
+                  "formats",
+                  "claim_refs"
+                ],
+                "properties": {
+                  "platform": {
+                    "type": "string"
+                  },
+                  "formats": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  },
+                  "claim_refs": {
+                    "$ref": "#/$defs/claimRefs"
+                  }
+                },
+                "additionalProperties": false
+              }
+            }
+          },
+          "additionalProperties": false
+        },
+        "production": {
+          "type": "object",
+          "required": [
+            "dimension",
+            "complexity",
+            "tier",
+            "drivers"
+          ],
+          "properties": {
+            "dimension": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "complexity": {
+              "enum": [
+                "xs",
+                "s",
+                "m",
+                "l",
+                "xl",
+                "unknown"
+              ]
+            },
+            "tier": {
+              "$ref": "#/$defs/tier"
+            },
+            "drivers": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "description": "What sets the complexity: a rendering's cost class, an animation class, physics, networking, the catalog estimate."
+            },
+            "estimate_days": {
+              "type": [
+                "number",
+                "null"
+              ]
+            },
+            "asset_cost_usd": {
+              "type": [
+                "number",
+                "null"
+              ]
+            },
+            "claim_refs": {
+              "$ref": "#/$defs/claimRefs"
+            }
+          },
+          "additionalProperties": false
+        },
+        "capability": {
+          "type": "object",
+          "required": [
+            "buildable",
+            "missing",
+            "reason"
+          ],
+          "properties": {
+            "buildable": {
+              "type": "boolean"
+            },
+            "catalog_entry": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "description": "Capability-catalog entry the cell maps to, if any."
+            },
+            "design_archetype": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "description": "The design archetype that builds it; null when WGF cannot build it yet."
+            },
+            "requires": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "missing": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "reason": {
+              "type": "string"
+            }
+          },
+          "additionalProperties": false
+        },
+        "audience": {
+          "type": "object",
+          "required": [
+            "player_type",
+            "intent",
+            "device",
+            "age_band",
+            "session_behavior"
+          ],
+          "properties": {
+            "player_type": {
+              "$ref": "#/$defs/facetValue"
+            },
+            "intent": {
+              "$ref": "#/$defs/facetValue"
+            },
+            "skill": {
+              "$ref": "#/$defs/facetValue"
+            },
+            "device": {
+              "$ref": "#/$defs/facetValue"
+            },
+            "age_band": {
+              "$ref": "#/$defs/facetValue"
+            },
+            "session_behavior": {
+              "$ref": "#/$defs/facetValue"
+            },
+            "regions": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          },
+          "additionalProperties": false
+        },
+        "risks": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "description",
+              "severity"
+            ],
+            "properties": {
+              "description": {
+                "type": "string"
+              },
+              "severity": {
+                "enum": [
+                  "low",
+                  "medium",
+                  "high"
+                ]
+              },
+              "claim_refs": {
+                "$ref": "#/$defs/claimRefs"
+              }
+            },
+            "additionalProperties": false
+          }
+        },
+        "confidence": {
+          "type": "object",
+          "required": [
+            "evidence_coverage",
+            "weakest_tier",
+            "unknown_facets"
+          ],
+          "properties": {
+            "evidence_coverage": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1,
+              "description": "Share of the cell's facets resting on observed or derived claims."
+            },
+            "weakest_tier": {
+              "$ref": "#/$defs/tier"
+            },
+            "unknown_facets": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "fixture_evidence": {
+              "type": "boolean",
+              "description": "True when any basis claim comes from a fixture record: test data, never real evidence."
+            }
+          },
+          "additionalProperties": false
+        },
+        "brief_match": {
+          "type": "object",
+          "properties": {
+            "terms": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "dimension": {
+              "type": "boolean"
+            }
+          },
+          "additionalProperties": false
+        },
+        "screen": {
+          "type": "object",
+          "description": "The capability catalog entry's platform screen, when the opportunity maps to one.",
+          "properties": {
+            "candidate": {
+              "type": "string"
+            },
+            "score": {
+              "type": "number"
+            }
+          },
+          "additionalProperties": false
+        },
+        "claim_refs": {
+          "$ref": "#/$defs/claimRefs"
+        }
+      },
+      "additionalProperties": false
+    },
+    "handoff": {
+      "type": "object",
+      "description": "What strategy and design carry forward from the opportunity's research: the facets that must survive the handoff (theme, fantasy, art, gameplay, audience), the evidence they rest on, and `applied` - which of the carrying artifact's own fields were decided from research and which fell back to a default because research had nothing.",
+      "required": [
+        "research_version",
+        "report_id",
+        "opportunity_id",
+        "origin",
+        "theme",
+        "fantasy",
+        "art",
+        "gameplay",
+        "audience",
+        "competitors",
+        "benchmarks",
+        "patterns",
+        "monetization",
+        "production",
+        "capability",
+        "claim_refs",
+        "applied"
+      ],
+      "properties": {
+        "research_version": {
+          "const": 2
+        },
+        "report_id": {
+          "type": "string"
+        },
+        "opportunity_id": {
+          "type": "string"
+        },
+        "origin": {
+          "$ref": "#/$defs/research/properties/origin"
+        },
+        "summary": {
+          "type": "string"
+        },
+        "theme": {
+          "type": "object",
+          "required": [
+            "theme",
+            "setting"
+          ],
+          "properties": {
+            "theme": {
+              "$ref": "#/$defs/facetValue"
+            },
+            "setting": {
+              "$ref": "#/$defs/facetValue"
+            }
+          },
+          "additionalProperties": false
+        },
+        "fantasy": {
+          "type": "object",
+          "required": [
+            "player",
+            "emotional"
+          ],
+          "properties": {
+            "player": {
+              "$ref": "#/$defs/facetValue"
+            },
+            "emotional": {
+              "$ref": "#/$defs/facetValue"
+            },
+            "statement": {
+              "type": "string"
+            }
+          },
+          "additionalProperties": false
+        },
+        "art": {
+          "type": "object",
+          "required": [
+            "dimension",
+            "rendering",
+            "tone"
+          ],
+          "properties": {
+            "dimension": {
+              "$ref": "#/$defs/facetValue"
+            },
+            "rendering": {
+              "$ref": "#/$defs/facetValue"
+            },
+            "tone": {
+              "$ref": "#/$defs/facetValue"
+            },
+            "palette": {
+              "$ref": "#/$defs/facetValue"
+            },
+            "camera": {
+              "$ref": "#/$defs/facetValue"
+            }
+          },
+          "additionalProperties": false
+        },
+        "gameplay": {
+          "type": "object",
+          "required": [
+            "genre",
+            "mechanics"
+          ],
+          "properties": {
+            "genre": {
+              "$ref": "#/$defs/facetValue"
+            },
+            "mechanics": {
+              "$ref": "#/$defs/facetValue"
+            },
+            "gameplay_steps": {
+              "$ref": "#/$defs/facetValue"
+            },
+            "controls": {
+              "$ref": "#/$defs/facetValue"
+            },
+            "core_loop": {
+              "$ref": "#/$defs/facetValue"
+            },
+            "progression": {
+              "$ref": "#/$defs/facetValue"
+            },
+            "difficulty_shape": {
+              "$ref": "#/$defs/facetValue"
+            },
+            "retention_hooks": {
+              "$ref": "#/$defs/facetValue"
+            }
+          },
+          "additionalProperties": false
+        },
+        "audience": {
+          "$ref": "#/$defs/research/properties/audience"
+        },
+        "competitors": {
+          "$ref": "#/$defs/research/properties/competitors"
+        },
+        "benchmarks": {
+          "$ref": "#/$defs/research/properties/benchmarks"
+        },
+        "patterns": {
+          "$ref": "#/$defs/research/properties/patterns"
+        },
+        "monetization": {
+          "$ref": "#/$defs/research/properties/monetization"
+        },
+        "production": {
+          "$ref": "#/$defs/research/properties/production"
+        },
+        "capability": {
+          "$ref": "#/$defs/research/properties/capability"
+        },
+        "market": {
+          "$ref": "#/$defs/research/properties/market"
+        },
+        "risks": {
+          "$ref": "#/$defs/research/properties/risks"
+        },
+        "confidence": {
+          "$ref": "#/$defs/research/properties/confidence"
+        },
+        "claim_refs": {
+          "$ref": "#/$defs/claimRefs"
+        },
+        "applied": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "field",
+              "source",
+              "detail"
+            ],
+            "properties": {
+              "field": {
+                "type": "string"
+              },
+              "source": {
+                "enum": [
+                  "research",
+                  "default"
+                ]
+              },
+              "detail": {
+                "type": "string"
+              },
+              "claim_refs": {
+                "$ref": "#/$defs/claimRefs"
+              }
+            },
+            "additionalProperties": false
+          }
+        }
+      },
+      "additionalProperties": false
+    }
+  }
+}

@@ -31,6 +31,10 @@ workspace/
     scoring/                local scoring model overrides (core ships the defaults)
   claims/
     <claim-id>.json         append-only; never edited, only superseded
+  research/
+    snapshots/              captured portal pages: platform docs and listings
+    games/                  teardown records, one per game, coded on the research
+                            vocabulary (docs/research-v2.md); none shipped yet
   opportunities/
     <opportunity-id>/
       opportunity.json

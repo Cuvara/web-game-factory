@@ -133,6 +133,20 @@ One new skill, `phaser`, pointing at `core/craft/phaser.md`. `engine.type` now h
 this skill only for a Phaser title, and `pixijs` is unchanged and still the 2D default.
 No agent, command, role, machine or gate changed.
 
+## Research V2 (binding manifest 1.6.0)
+
+Research became game-corpus based (`docs/research-v2.md`). No surface was added or removed;
+must-read lists widened so the surfaces point at the new core files:
+
+- `research` reads `core/reference/research-vocabulary.yaml`,
+  `core/reference/research-analysis.yaml`, `core/artifacts/shared/game-record.schema.json`
+  and `core/artifacts/shared/research-opportunity.schema.json`; its execution note says
+  where teardowns go (`workspace/research/games/`) and that a gameplay observation nobody
+  made is never recorded.
+- `game-designer` reads `core/artifacts/shared/research-opportunity.schema.json`: the
+  handoff strategy and design carry (`title-strategy.research`, `game-design.research`).
+- `market-intelligence` reads the vocabulary and the game-record schema.
+
 ## Workflow entry points (binding manifest 1.5.0)
 
 A new surface kind, `workflow`, and its first entry, `new-game`

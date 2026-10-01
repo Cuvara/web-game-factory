@@ -12,7 +12,11 @@ Invoked from `AGENTS.md` or by the matching `/wgf-*` prompt.
 4. `core/artifacts/opportunity.schema.json`
 5. `core/artifacts/research-report.schema.json`
 6. `core/reference/dimensions.yaml`
-7. `core/craft/competitive-teardown.md`
+7. `core/reference/research-vocabulary.yaml`
+8. `core/reference/research-analysis.yaml`
+9. `core/artifacts/shared/game-record.schema.json`
+10. `core/artifacts/shared/research-opportunity.schema.json`
+11. `core/craft/competitive-teardown.md`
 
 Core is authoritative. Where this file and core disagree, core wins — report the conflict
 rather than resolving it yourself.
@@ -22,6 +26,6 @@ rather than resolving it yourself.
 - Run from the factory repository root so relative core paths resolve.
 - Write artifacts to the `repo_path` given in each schema's `x-wgf` block.
 - Emit a plan before writing files; apply one patch per artifact.
-- Write claims to workspace/claims/ and opportunities to workspace/opportunities/. Observation and interpretation are always separate claims. Never edit a claim; supersede it. External tools (browser, generation, docs lookup, analytics) only as core/craft/tool-capabilities.md allows: localhost-only browsing of builds, provenance and licence on anything generated, human approval before any paid job.
+- Write claims to workspace/claims/ and opportunities to workspace/opportunities/. Write each teardown as a game record under workspace/research/games/, coded on the research vocabulary; never record a gameplay observation that was not made. Observation and interpretation are always separate claims. Never edit a claim; supersede it. External tools (browser, generation, docs lookup, analytics) only as core/craft/tool-capabilities.md allows: localhost-only browsing of builds, provenance and licence on anything generated, human approval before any paid job.
 - Do not advance the lifecycle. Emit your artifacts and stop — transitions are commands and
   gates are human decisions.

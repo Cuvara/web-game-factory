@@ -59,7 +59,8 @@ class ParsesValidDefinitions(unittest.TestCase):
         self.assertEqual(
             definition.step_ids,
             ["research", "strategy", "strategy-review", "design", "tech-plan",
-             "tech-plan-review", "init", "assets", "develop", "playability", "review", "sdk",
+             "tech-plan-review", "init", "greybox", "greybox-playability", "assets", "develop",
+             "playability", "review", "sdk",
              "sdk-review", "verify", "prototype-review", "release"],
         )
         self.assertEqual(definition.step("verify").on, {"fail": "develop"})

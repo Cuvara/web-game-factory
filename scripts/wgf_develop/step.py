@@ -1,6 +1,7 @@
 """The `develop` step: brief -> developer -> checks -> commit -> prototype-report.
 
-    inputs   game-design, asset-manifest, scaffold-record (required)
+    inputs   game-design, scaffold-record, asset-manifest (required; not in the greybox
+             phase, `with: {phase: greybox}`, which runs before assets exist)
              title-strategy, tech-plan (read when present: the tech plan's prototype tasks
              join the brief beside the design's build_spec),
              qa-report (on a verify -> develop loop),
@@ -59,6 +60,9 @@ from .settings import Settings, SettingsError
 __all__ = ["DevelopStep"]
 
 REQUIRED_INPUTS = ("game-design", "asset-manifest", "scaffold-record")
+# `with: {phase: greybox}`: the loop is built and played before any asset exists, so the
+# asset manifest is not an input yet. `production` (or no phase) integrates the assets.
+PHASES = ("greybox", "production")
 SUPPORTED_MAJOR = "1"
 
 
@@ -217,7 +221,13 @@ class DevelopStep(WorkflowStep):
         except SettingsError as exc:
             return StepResult.failed(str(exc), retryable=False)
 
-        missing = [t for t in REQUIRED_INPUTS if t not in inputs]
+        phase = (self.params or {}).get("phase")
+        if phase is not None and phase not in PHASES:
+            return StepResult.failed(f"develop's `with: phase` is {phase!r}; it is one of "
+                                     f"{', '.join(PHASES)}", retryable=False)
+        required = tuple(t for t in REQUIRED_INPUTS
+                         if not (phase == "greybox" and t == "asset-manifest"))
+        missing = [t for t in required if t not in inputs]
         if missing:
             return StepResult.waiting_for_input(
                 f"develop needs {', '.join(missing)} in the run before it can brief a build")
@@ -231,7 +241,8 @@ class DevelopStep(WorkflowStep):
                     retryable=False)
 
         design = inputs.load("game-design")
-        assets = inputs.load("asset-manifest")
+        assets = (inputs.load("asset-manifest")
+                  if phase != "greybox" and "asset-manifest" in inputs else None)
         scaffold = inputs.load("scaffold-record")
         strategy = inputs.load("title-strategy") if "title-strategy" in inputs else None
         tech_plan = inputs.load("tech-plan") if "tech-plan" in inputs else None
@@ -277,6 +288,9 @@ class DevelopStep(WorkflowStep):
                 context.visit > 1 and review.get("verdict") == "request-changes"
                 and review.get("blockers") and review.get("reviewed_commit") == git.head()):
             review = None
+        # A passing greybox: the loop the production phase must keep playable.
+        greybox_commit = (playability.get("commit") if phase == "production" and playability
+                          and playability.get("verdict") == "PASS" else None)
         # Likewise a playability failure: only one that played the commit this visit starts
         # from says what to fix in it.
         if playability is not None and not (
@@ -328,6 +342,7 @@ class DevelopStep(WorkflowStep):
                 strategy=strategy, qa=qa, previous_checks=previous_checks,
                 refs=inputs.refs, skills=settings.skills, review=review,
                 playability=playability, frames_root=getattr(context, "run_dir", None),
+                phase=phase, greybox_commit=greybox_commit,
                 tech_plan=tech_plan, self_playtest=settings.self_playtest,
                 mobile_test=bool((game_config.get("verification") or {}).get("mobile_test",
                                                                             True)),

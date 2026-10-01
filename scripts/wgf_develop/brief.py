@@ -345,7 +345,7 @@ def build_brief(*, title_id, engine, iteration, key, baseline, design, assets, s
                 strategy=None, qa=None, previous_checks=None, refs=None, skills=None,
                 review=None, mobile_test=True, tech_plan=None, self_playtest=False,
                 writable_paths=None, package_changes=None, loop=None, sessions=None,
-                playability=None, frames_root=None):
+                playability=None, frames_root=None, phase=None, greybox_commit=None):
     """The brief as data. `render_markdown` turns it into the document a developer reads."""
     refs = refs or {}
     writable_paths = list(DEFAULT_WRITABLE if writable_paths is None else writable_paths)
@@ -474,6 +474,9 @@ def build_brief(*, title_id, engine, iteration, key, baseline, design, assets, s
         "writable_paths": list(writable_paths),
         "package_changes": {k: list(v) for k, v in package_changes.items() if v},
         "qa_defects": defects,
+        # greybox | production | None (one develop phase, as before workflow 4).
+        "phase": phase,
+        "greybox_commit": greybox_commit,
         "playability_failures": playability_failures,
         "played_commit": (playability or {}).get("commit") if playability_failures else None,
         "review_blockers": review_blockers,
@@ -628,6 +631,30 @@ def render_markdown(brief):
     add("A genuinely playable game: a stranger opens the build, understands it without help, "
         "plays a full session, loses or finishes, and plays again. Build the MVP below and "
         "nothing past it.\n")
+
+    if brief.get("phase") == "greybox":
+        add("## Phase: greybox\n")
+        add("This build proves the game before any asset exists. Build the whole MVP loop, "
+            "playable end to end - start, the core loop, the objective, losing (and winning), "
+            "retry - with primitive shapes, flat colours from the design's palette and plain "
+            "text. No asset files: the asset manifest is made only after this build passes. "
+            "Implement now what a first-time player needs to read the game: the play probe "
+            "(*Play probe*, below), the objective on screen, the onboarding and its grace, "
+            "the HUD and every action's acknowledgement. Light and frame the scene so what "
+            "matters is plainly visible.\n")
+        add("When you finish, the build is played from outside on a desktop and a mobile "
+            "viewport and held to the experience contract; a build that fails comes back "
+            "here with what was seen. Assets and polish come in the next phase, on top of "
+            "this loop.\n")
+    elif brief.get("phase") == "production":
+        add("## Phase: production\n")
+        add("The greybox"
+            + (f" at `{brief['greybox_commit'][:12]}`" if brief.get("greybox_commit") else "")
+            + " was played from outside and passed: the loop is playable and readable. This "
+            "phase integrates the assets below and finishes the MVP on top of it. Keep every "
+            "playability check passing - an asset that hides the player, darkens the scene or "
+            "drops the objective from the screen is a regression - because the build is "
+            "played again before review.\n")
 
     add("## Ground rules\n")
     add(f"1. **Engine: `{engine}`**, from `game.config.yaml`. 2D is PixiJS or Phaser, 3D is "
@@ -832,6 +859,8 @@ def render_markdown(brief):
             add(f"- `{a['id']}` {a.get('label', '')} ({extra})")
             for path in a.get("files") or []:
                 add(f"  - `{path}`")
+    elif brief.get("phase") == "greybox":
+        add("- None in this phase: draw everything with primitives (see *Phase: greybox*).")
     else:
         add("- The manifest lists nothing for this tier.")
     add("")

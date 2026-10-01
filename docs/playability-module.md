@@ -1,14 +1,20 @@
 # The playability module
 
-`scripts/wgf_playability/` implements the `playability` step of `new-game`. It runs after
-`develop` and before `review`. A bot plays the commit develop made, from outside, the way a
-first-time player's device would. A build that cannot be played or read goes back to
-develop before anyone reviews its code.
+`scripts/wgf_playability/` implements the `playability` step type. `new-game` runs it
+twice:
+- **`greybox-playability`**, after the `greybox` phase of develop, before any asset is
+  made. A loop that cannot be played or read is rebuilt with primitives; assets are made
+  only for one that can.
+- **`playability`**, after `develop` integrates the assets, before `review`. An asset
+  that hides the player or darkens the scene is caught here.
+
+Either way, a bot plays the commit from outside, the way a first-time player's device would.
 
 ```
-develop -> playability -> review -> sdk -> sdk-review -> verify -> G4 -> release
-              │ fail
-              └──────► develop  (with the playability-report: failed checks, and the frames)
+init -> greybox -> greybox-playability -> assets -> develop -> playability -> review -> ...
+          ▲               │ fail                      ▲              │ fail
+          └───────────────┘                           └──────────────┘
+                 (with the playability-report: failed checks, and the frames)
 ```
 
 ## Why it exists
@@ -35,8 +41,9 @@ looked at a rendered frame or played the game. This step does both.
 | FAILED, route `fail` | a required check failed: back to develop, whose brief leads with *Fix first: what the build did when it was played* (each failed check and the frames that show it) |
 | BLOCKED | the step could not establish a result: no experience contract in the design, no checkout, the commit would not install or build, the browser would not start. Nothing about the game is claimed |
 
-develop's route budget `playability.fail: 2` bounds the loop. The third unplayable build
-blocks the run for a person, like the other loops (`max_visits_by_route`,
+The route budgets `greybox-playability.fail: 2` (on greybox) and `playability.fail: 2` (on
+develop) bound the loops. The third unplayable build blocks the run for a person, like the
+other loops (`max_visits_by_route`,
 [workflow-engine.md](workflow-engine.md)).
 
 ## What it does

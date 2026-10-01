@@ -158,6 +158,8 @@ reading, and `DocumentedIoContract` fails if the two disagree.
 | `tech-plan` | `tech-plan` | `game-design`, `title-strategy` | `tech-plan` |
 | `tech-plan-review` | `human-checkpoint` | `game-design`, `tech-plan` | `decision-record` |
 | `init` | `init` | `game-design`, `tech-plan` | `scaffold-record` |
+| `greybox` | `develop` | `game-design`, `scaffold-record`, `title-strategy`, `tech-plan`, `playability-report` | `prototype-report` |
+| `greybox-playability` | `playability` | `prototype-report`, `game-design`, `scaffold-record` | `playability-report` |
 | `assets` | `assets` | `game-design`, `scaffold-record` | `asset-manifest` |
 | `develop` | `develop` | `game-design`, `asset-manifest`, `scaffold-record`, `title-strategy`, `tech-plan`, `qa-report`, `review-report`, `playability-report` | `prototype-report` |
 | `playability` | `playability` | `prototype-report`, `game-design`, `scaffold-record` | `playability-report` |

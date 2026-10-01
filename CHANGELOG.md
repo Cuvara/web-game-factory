@@ -90,6 +90,15 @@ requirement was relaxed.
   objective. Neon Drift Arena's gains an opening grace: walls pass through the craft until
   the player first steers.
 
+- **The greybox phase** (`new-game` workflow 4): right after init, develop builds the whole MVP
+  loop with primitives in the design's palette (`greybox`, `with: {phase: greybox}`: no
+  asset manifest, the probe, objective, onboarding, HUD and acknowledgements), and
+  `greybox-playability` plays it from outside. Only a loop that plays and reads goes on to
+  `assets`; one that does not is rebuilt with what the bot saw (budget
+  `greybox-playability.fail: 2`). develop's production phase names the greybox that passed
+  and must keep it passing. The real run's game had its assets made before anyone could see
+  that its loop was unreadable.
+
 ### Changed
 
 - develop's verify loop budget is keyed `verify.fail` (was `fail`), since `playability`'s

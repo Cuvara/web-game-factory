@@ -51,8 +51,8 @@ python -m unittest discover scripts/tests   # includes the acceptance tests belo
       EventBus ──► store (events.jsonl = structured log)
                └─► CLI progress, and later a UI / monitor / agent host
 
-  research → strategy → [G2] → design → tech-plan → [G3] → init → assets → develop → playability → review → sdk → sdk-review → verify → [G4] → release
-  (playability's fail, like verify's, routes back to develop)
+  research → strategy → [G2] → design → tech-plan → [G3] → init → greybox → greybox-playability → assets → develop → playability → review → sdk → sdk-review → verify → [G4] → release
+  (greybox-playability's fail routes back to greybox; playability's, like verify's, to develop)
                                                                              ▲ ▲ request-  │           request-  │       │ fail │ │ kill → $end
                                                                              │ ├─ changes ─┘           changes   │       │      │ │
                                                                              │ └─────────────────────────────────┘       │      │ │

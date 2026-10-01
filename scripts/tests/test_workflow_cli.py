@@ -38,7 +38,8 @@ from wgflib.workflow.store import RunStore  # noqa: E402
 # A mock new-game approves G2 and G3 itself and waits at G4 (prototype-review), which only a
 # person decides: its trail holds the wait and then the pass.
 NEW_GAME = ["research", "strategy", "strategy-review", "design", "tech-plan", "tech-plan-review",
-            "init", "assets", "develop", "playability", "review", "sdk", "sdk-review", "verify",
+            "init", "greybox", "greybox-playability", "assets", "develop", "playability",
+            "review", "sdk", "sdk-review", "verify",
             "prototype-review", "prototype-review", "release"]
 SCHEMATIZED = {
     "research": "opportunity",
@@ -245,13 +246,14 @@ class FailureAndResume(CliCase):
         self.pass_g4()
         state = self.state()
         self.assertEqual(state["status"], "COMPLETED")
-        self.assertEqual([t["step"] for t in state["trail"]][8:],
+        self.assertEqual([t["step"] for t in state["trail"]][10:],
                          ["develop", "playability", "review", "sdk", "sdk-review", "verify",
                           "develop", "playability", "review", "sdk", "sdk-review", "verify",
                           "prototype-review", "prototype-review", "release"])
         self.assertEqual(self.artifact(state, "qa-report", 1)["verdict"], "fail")
         self.assertEqual(self.artifact(state, "qa-report", 2)["verdict"], "pass")
-        self.assertEqual(self.artifact(state, "prototype-report", 2)["iteration"], 2)
+        # v1 is the greybox's; v2 and v3 are develop's two visits.
+        self.assertEqual(self.artifact(state, "prototype-report", 3)["iteration"], 2)
 
     def test_an_unplayable_build_loops_back_to_development_before_review(self):
         # The build is played from outside first: a failure goes back to develop with the
@@ -261,14 +263,28 @@ class FailureAndResume(CliCase):
         self.pass_g4()
         state = self.state()
         self.assertEqual(state["status"], "COMPLETED")
-        self.assertEqual([t["step"] for t in state["trail"]][8:],
+        self.assertEqual([t["step"] for t in state["trail"]][10:],
                          ["develop", "playability", "develop", "playability", "review", "sdk",
                           "sdk-review", "verify", "prototype-review", "prototype-review",
                           "release"])
-        self.assertEqual(self.artifact(state, "playability-report", 1)["verdict"], "FAIL")
-        self.assertEqual(self.artifact(state, "playability-report", 2)["verdict"], "PASS")
+        # v1 is the greybox's (passed); v2 and v3 are the production build's two plays.
+        self.assertEqual(self.artifact(state, "playability-report", 2)["verdict"], "FAIL")
+        self.assertEqual(self.artifact(state, "playability-report", 3)["verdict"], "PASS")
         self.assertEqual(state["steps"]["develop"]["route_visits"],
                          {"assets.success": 1, "playability.fail": 1})
+
+    def test_an_unplayable_greybox_is_rebuilt_before_any_asset_is_made(self):
+        # The loop is proven with primitives first: a greybox that cannot be played from
+        # outside goes back to greybox, and assets are made only for one that can.
+        self.wgf("new-game", "--mock", "--quiet", "--mock-plan",
+                 '{"greybox-playability": ["fail"]}', expect=3)
+        state = self.state()
+        self.assertEqual([t["step"] for t in state["trail"]][7:12],
+                         ["greybox", "greybox-playability", "greybox", "greybox-playability",
+                          "assets"])
+        self.assertEqual(state["steps"]["greybox"]["route_visits"],
+                         {"init.success": 1, "greybox-playability.fail": 1})
+        self.assertEqual(self.artifact(state, "playability-report", 1)["verdict"], "FAIL")
 
     def test_sdk_review_requesting_changes_loops_back_to_development(self):
         # The sdk commit is reviewed too; a request for changes goes back to develop,
@@ -278,7 +294,7 @@ class FailureAndResume(CliCase):
         self.pass_g4()
         state = self.state()
         self.assertEqual(state["status"], "COMPLETED")
-        self.assertEqual([t["step"] for t in state["trail"]][8:],
+        self.assertEqual([t["step"] for t in state["trail"]][10:],
                          ["develop", "playability", "review", "sdk", "sdk-review", "develop",
                           "playability", "review", "sdk", "sdk-review", "verify",
                           "prototype-review", "prototype-review", "release"])
@@ -473,7 +489,8 @@ class RunStatesThroughTheCli(CliCase):
         succeeded = lambda s: sorted(t["step"] for t in s["trail"] if t["outcome"] == "SUCCESS")
         self.assertEqual(succeeded(before),
                          sorted(["research", "strategy", "strategy-review", "design",
-                                 "tech-plan", "tech-plan-review", "init", "assets"]))
+                                 "tech-plan", "tech-plan-review", "init", "greybox",
+                                 "greybox-playability", "assets"]))
         self.wgf("new-game", "--resume", before["run_id"], "--quiet", expect=3)
         self.pass_g4(before["run_id"])
         after = self.state(before["run_id"])

@@ -64,6 +64,8 @@ EXPECTED_STEPS = (
     ("tech-plan", "SUCCESS"),
     ("tech-plan-review", "SUCCESS"),
     ("init", "SUCCESS"),
+    ("greybox", "SUCCESS"),            # the loop with primitives, before any asset
+    ("greybox-playability", "SUCCESS"),
     ("assets", "SUCCESS"),
     ("develop", "SUCCESS"),
     ("playability", "SUCCESS"),        # played from outside through the port's play probe

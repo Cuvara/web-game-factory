@@ -31,6 +31,22 @@ The engine comes from the checkout's `game.config.yaml`: `pixijs` or `phaserjs` 
 `threejs` for 3D.
 Anything else is refused — adding an engine is the tech plan's decision at G3.
 
+## Phases
+
+`new-game` runs the develop step type twice (workflow 4), told apart by `with: phase`:
+
+- **`greybox`** (step `greybox`, right after init): the whole MVP loop with primitive
+  shapes and flat palette colours. It includes the play probe, the objective on screen,
+  onboarding, HUD and acknowledgements, and no asset files. The asset manifest is not an
+  input: it does not exist yet, and one given is ignored. The build is then played from
+  outside (`greybox-playability`, [playability-module.md](playability-module.md)).
+- **`production`** (step `develop`, after assets): integrates the assets and finishes the
+  MVP on the loop that passed. The brief names the greybox commit that passed, and says
+  that every playability check must keep passing.
+
+No `phase` (a workflow before 4) is the single develop phase it always was. An unknown phase
+fails the step.
+
 ## The brief
 
 `docs/development/brief.md` is the whole interface between the Factory and whoever writes

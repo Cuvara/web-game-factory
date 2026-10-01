@@ -33,10 +33,11 @@
 workflow:
   id: new-game
   # 2: the definition as of Factory 2.0.0 (sdk-review, G4, loop limits per route).
-  # 3: playability - the build is played from outside before review reads it. A run
+  # 3: playability - the build is played from outside before review reads it.
+  # 4: greybox - the loop is built with primitives and played before any asset is made. A run
   # records the version it started under; one resumed under a newer definition is marked
   # (WORKFLOW_RESUMED `definition_version`).
-  version: 3
+  version: 4
   description: Discover an opportunity, plan a title, build it, verify it and prepare its first release.
   start: research
 
@@ -131,6 +132,32 @@ workflow:
       outputs: [scaffold-record]
       retry: {max_attempts: 2}
 
+    # The loop before the assets: develop builds the whole MVP with primitives in the
+    # design's palette - the probe, objective, onboarding, HUD and acknowledgements included,
+    # no asset files - and the build is played from outside. Only a loop that plays and
+    # reads goes on to have assets made for it; one that does not comes back here with what
+    # the bot saw (two passes, then a person looks).
+    - id: greybox
+      type: develop
+      stage: title:prototype
+      description: Build the whole MVP loop with primitives, before any asset exists.
+      inputs: [game-design, scaffold-record, title-strategy, tech-plan, playability-report]
+      outputs: [prototype-report]
+      with:
+        phase: greybox
+      max_visits: 3
+      max_visits_by_route:
+        greybox-playability.fail: 2
+
+    - id: greybox-playability
+      type: playability
+      stage: title:prototype
+      inputs: [prototype-report, game-design, scaffold-record]
+      outputs: [playability-report]
+      max_visits: 3
+      on:
+        fail: greybox
+
     # scaffold-record is optional: it names the target platforms, whose bundle-size limits
     # the delivered files are checked against. Without it the manifest skips that check.
     - id: assets
@@ -149,6 +176,8 @@ workflow:
       # tech-plan carries the approved prototype tasks and their acceptance criteria.
       inputs: [game-design, asset-manifest, scaffold-record, title-strategy, tech-plan, qa-report, review-report, playability-report]
       outputs: [prototype-report]
+      with:
+        phase: production
       # Two unplayable builds, two requests for changes from each reviewer, two failed
       # verifications and two G4 iterations before a person looks.
       # 11 = the first visit + 2 + 2 + 2 + 2 + 2.

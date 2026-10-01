@@ -588,6 +588,58 @@ class FileOwnershipInTheBrief(DesignAndPlanInTheBrief):
         self.assertNotIn("what the build did when it was played", briefs.render_markdown(data))
 
 
+class Phases(DesignAndPlanInTheBrief):
+    """Workflow 4: `greybox` builds the loop before any asset exists; `production` adds them."""
+
+    def run_phase(self, phase, inputs):
+        step = step_with(FakeRunner())
+        step.definition.params = {"phase": phase}
+        return step.execute(inputs, context(self.config()))
+
+    def phase_brief(self, phase, inputs):
+        result = self.run_phase(phase, inputs)
+        self.assertEqual(result.outcome, StepOutcome.WAITING_FOR_HUMAN, result.error)
+        with open(os.path.join(self.repo, briefs.BRIEF_DIR, "brief.json")) as handle:
+            data = json.load(handle)
+        with open(os.path.join(self.repo, briefs.BRIEF_DIR, "brief.md")) as handle:
+            return data, handle.read()
+
+    def test_greybox_needs_no_asset_manifest_and_says_to_build_with_primitives(self):
+        data, text = self.phase_brief(
+            "greybox", inputs_for(types=("game-design", "scaffold-record", "title-strategy")))
+        self.assertEqual(data["phase"], "greybox")
+        self.assertEqual(data["assets"], [])
+        self.assertIn("## Phase: greybox", text)
+        self.assertIn("No asset files", text)
+        self.assertIn("None in this phase: draw everything with primitives", text)
+        self.assertLess(text.index("## Phase: greybox"), text.index("## Ground rules"))
+
+    def test_greybox_ignores_an_asset_manifest_it_is_given(self):
+        data, _ = self.phase_brief("greybox", inputs_for())
+        self.assertEqual(data["assets"], [])
+        self.assertNotIn("asset-manifest", [p["artifact_type"] for p in data["inputs"]])
+
+    def test_production_still_needs_the_asset_manifest(self):
+        result = self.run_phase(
+            "production", inputs_for(types=("game-design", "scaffold-record", "title-strategy")))
+        self.assertEqual(result.outcome, StepOutcome.WAITING_FOR_INPUT)
+        self.assertIn("asset-manifest", result.message)
+
+    def test_production_names_the_greybox_that_passed(self):
+        passed = {"provenance": {"content_hash": "sha256:" + "1" * 64, "schema_version": "1.0.0"},
+                  "commit": "d" * 40, "verdict": "PASS", "checks": [], "frames": []}
+        data, text = self.phase_brief(
+            "production", inputs_for(overrides={"playability-report": passed}))
+        self.assertEqual(data["greybox_commit"], "d" * 40)
+        self.assertIn("The greybox at `dddddddddddd` was played from outside and passed", text)
+        self.assertEqual(data["playability_failures"], [])
+
+    def test_an_unknown_phase_fails(self):
+        result = self.run_phase("polish", inputs_for())
+        self.assertEqual(result.outcome, StepOutcome.FAILED)
+        self.assertIn("greybox, production", result.error)
+
+
 @unittest.skipUnless(pinned_template.checkout()[0], pinned_template.checkout()[1])
 class TemplateSourceShipsInThePin(unittest.TestCase):
     def test_every_named_template_source_is_in_the_pinned_template(self):

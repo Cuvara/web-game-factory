@@ -186,7 +186,7 @@
     "scripts/wgf_review/step.py": "sha256:501b00a1ff0c23a554ef754ad2cfa1531efe977e544ce07d4ab896ef6c36caed",
     "scripts/wgf_review/verdict.py": "sha256:148162db6df1031a77fa7296976640337bfc156e8da577ace6695decadccc235",
     "scripts/wgf_sdk/__init__.py": "sha256:2fbf6893275e256d4a5ed7d5a6829b2adbf83a910a0a2b432ac028a386551de5",
-    "scripts/wgf_sdk/commit.py": "sha256:35cb43b7f30b188fc1193acd7043e4b4d36be1b3a4701b6125013c10a0f779c7",
+    "scripts/wgf_sdk/commit.py": "sha256:d2ac1b539d43e0f8876703b0fb3b77da27b16549dc695ffeccd9f940bfc25140",
     "scripts/wgf_sdk/design.py": "sha256:1b58e12e0b3c3225feefc7fcaf08f6b17380faf1ab1283084854964758da40df",
     "scripts/wgf_sdk/e2e.py": "sha256:136710c449cb02cda982ed64938bf5c2eb74ef60fc093d7239dc60aaf63b2878",
     "scripts/wgf_sdk/e2e/playwright.config.ts": "sha256:c6c87e49f4d1206f446fe567f06fb8ca9813af5c4e1ca8d831850b3dfef5791d",

@@ -1,0 +1,42 @@
+# Asset quality bars: what makes a delivered asset production art and not a stand-in.
+#
+# The assets step (and `scripts/wgf-model.py inspect` for a person) judges every delivered
+# file against these, and writes the result as the asset-manifest item's `quality` block
+# (core/artifacts/asset-manifest.schema.json). A placeholder, or an mvp item whose quality is
+# not `pass`, never reaches a release. The design supplies the per-game inputs: each
+# requirement's `role` and the `visual_identity` palette and `primitive_style`
+# (core/artifacts/game-design.schema.json, build_spec).
+#
+# Sections are per medium and keep disjoint keys: `models` (3D, GLB) here.
+
+models:
+  # Roles a first-time player must recognise (game-design build_spec.assets[].role). A model
+  # of one of these roles that is `primitive_only` fails, unless the visual identity states
+  # `primitive_style` - an art direction that is itself geometric.
+  readable_roles: [player, threat, goal, target, projectile, collectible, hazard]
+
+  # Shape detection, on each connected piece of the visual model (LOD0, collision proxies
+  # excluded), in the mesh's own axes, normalised to its bounding box. A piece is an
+  # unmodified primitive when every vertex sits on the primitive's surface within this
+  # fraction of the piece's size: a box is 8 distinct corners of its bounding box; a sphere
+  # (UV or ico) has every vertex equidistant from its centre; a cylinder or cone has two
+  # rings (or a ring and an apex) at the ends of one axis; a capsule is a cylinder wall
+  # between two hemispheres; a plane is 4 corners in one plane. Bevelled, tapered or
+  # modelled pieces match none of them.
+  shape_tolerance: 0.02
+
+  # Composition: unmodified primitives arranged into something - a keeper of a torso, head,
+  # arms, gloves and legs; a car of a body, a cabin and wheels - is a model. At least this
+  # many pieces, of at least `min_distinct_pieces` different shapes or proportions. Fewer,
+  # or copies of one piece, is still `primitive_only`.
+  min_composed_parts: 3
+  min_distinct_pieces: 2
+
+  # Every visual primitive carries vertex normals: without them three.js shades a model
+  # flat-black or faceted by guesswork.
+  require_normals: true
+
+  # At least one material's base colour within this distance of a palette colour of the
+  # visual identity (Euclidean, sRGB 0-255 per channel), so a model belongs to the game's
+  # look. Skipped when the design has no palette; textured materials are not decoded.
+  palette_distance: 48

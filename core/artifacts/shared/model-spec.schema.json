@@ -15,14 +15,17 @@
         "required": ["id", "shape"],
         "properties": {
           "id": { "type": "string", "pattern": "^[a-z][a-z0-9-]*$", "description": "The node name at runtime: animation tracks and gameplay code find the part by it." },
-          "shape": { "enum": ["box", "cylinder", "cone", "sphere", "icosphere", "plane"], "description": "A primitive fitted to `size`. Cylinders and cones stand along +Y; a plane lies in XZ facing +Y." },
+          "shape": { "enum": ["box", "cylinder", "cone", "sphere", "icosphere", "plane", "capsule"], "description": "A primitive fitted to `size`. Cylinders, cones and capsules stand along +Y; a plane lies in XZ facing +Y; a sphere is a UV sphere. A capsule's caps are hemispheres of the smaller of its x and z radii." },
           "size": { "$ref": "#/$defs/vec3", "description": "Bounding size in metres [x, y, z]. Zero only on a plane's y. Default [1, 1, 1]." },
           "position": { "$ref": "#/$defs/vec3", "description": "Relative to the parent part, or to the model's origin. Default [0, 0, 0]." },
           "rotation": { "$ref": "#/$defs/vec3", "description": "Euler degrees, XYZ order. Default [0, 0, 0]." },
           "segments": { "type": "integer", "minimum": 3, "maximum": 64, "description": "Radial segments of round shapes. Default 16." },
           "parent": { "type": "string", "description": "Another part's id." },
           "material": { "type": "string", "description": "A material's id. None: the runtime's default material." },
-          "smooth": { "type": "boolean", "description": "Smooth shading. Default true for spheres, false otherwise." }
+          "smooth": { "type": "boolean", "description": "Smooth shading. Default true for spheres and capsules, false otherwise." },
+          "taper": { "type": "array", "items": { "type": "number", "minimum": 0, "maximum": 4 }, "minItems": 2, "maxItems": 2, "description": "[x, z]: the part's top (+Y) is scaled by these factors, linearly from 1 at its base - a torso wider at the shoulders, a cabin narrower at the roof, a tapered limb. `size` is the base's. Not on a plane." },
+          "bevel": { "type": "number", "exclusiveMinimum": 0, "description": "Metres: the part's sharp edges (faces meeting at 30 degrees or more) are rounded off with two segments. Box, cylinder and cone only; at most a third of the part's smallest side." },
+          "mirror": { "enum": ["x"], "description": "Also build this part mirrored across the X = 0 plane of its parent (the model, for a top-level part): a second node `<id>-mirror`, its parent's mirror when the parent is mirrored too. Arms, legs, wheels and wings are written once." }
         },
         "additionalProperties": false
       }

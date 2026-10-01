@@ -12,9 +12,16 @@
         Exit 0 clean, 1 an error-severity finding or a failed build, 2 Blender not usable.
 
     python3 scripts/wgf-model.py inspect FILE.glb [--spec SPEC.json] [--kind model] [--json]
+                                        [--role ROLE] [--palette HEX,HEX] [--primitive-style]
+                                        [--design GAME-DESIGN.json [--asset ID]]
         Read and check a GLB or .gltf without Blender: structure, references, transforms,
         triangles, textures, clips, LODs, collision proxy; and, with --spec, what it declares.
-        Exit 0 clean, 1 an error-severity finding.
+        Then its quality (core/reference/asset-quality.yaml `models`): pieces and the
+        primitive each one is, triangles, normals, palette colours, bounds, primitive_only,
+        and a verdict for the role. --design reads the palette and primitive_style from a
+        game design's build_spec.visual_identity, and with --asset the role of that asset.
+        Exit 0 clean, 1 an error-severity finding, or a failed quality verdict when a role
+        was given (--role, or --design with --asset).
 
 Standard library only (Blender itself for `build`); run from the repository root.
 See docs/blender-pipeline.md.
@@ -27,7 +34,7 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from wgf_assets import blender, gltf, modelspec  # noqa: E402
+from wgf_assets import blender, gltf, model_quality, modelspec  # noqa: E402
 from wgf_assets.policy import PolicyError, load_policy  # noqa: E402
 
 
@@ -142,8 +149,18 @@ def inspect_command(args):
             print("wgf-model: invalid model spec:\n  " + "\n  ".join(problems), file=sys.stderr)
             return 1
     summary, findings = _check(data, args.file, args.kind, spec, policy)
+    try:
+        role, look = _judging(args)
+    except (OSError, ValueError) as exc:
+        print(f"wgf-model: {exc}", file=sys.stderr)
+        return 1
+    judged = model_quality.assess(data, role=role, visual_identity=look, spec=spec,
+                                  kind=args.kind, name=args.file, policy=policy)
+    quality = judged["quality"]
     stamp = blender.read_stamp(data)
     payload = {"file": args.file, "bytes": len(data), "summary": summary, "stamp": stamp,
+               "role": role, "quality": quality,
+               "pieces": (judged["geometry"] or {}).get("pieces"),
                "findings": [dict(zip(("code", "severity", "message"), f)) for f in findings]}
     lines = [f"file        {args.file} ({len(data)} bytes)"]
     if stamp:
@@ -156,8 +173,46 @@ def inspect_command(args):
                   f"clips       {[(c['name'], c['duration']) for c in summary['animations']]}",
                   f"lods        {summary['lods']}",
                   f"collision   {summary.get('collision')}"]
+    lines += _quality_lines(quality, judged["geometry"], role)
     _print(payload, args.json, lines + ["findings"] + _findings_lines(findings))
-    return 1 if any(f[1] == "error" for f in findings) else 0
+    failed = role is not None and quality["verdict"] == "fail"
+    return 1 if failed or any(f[1] == "error" for f in findings) else 0
+
+
+def _judging(args):
+    """(role, visual identity) from --design/--asset, overridden by --role, --palette and
+    --primitive-style."""
+    role, look = None, {}
+    if args.design:
+        with open(args.design, encoding="utf-8") as handle:
+            design = json.load(handle)
+        build_spec = design.get("build_spec") or {}
+        look = dict(build_spec.get("visual_identity") or {})
+        if args.asset:
+            asset = next((a for a in build_spec.get("assets") or []
+                          if a.get("id") == args.asset), None)
+            if asset is None:
+                raise ValueError(f"{args.design}: no build_spec.assets entry {args.asset!r}")
+            role = asset.get("role")
+    if args.role:
+        role = args.role
+    if args.palette:
+        look["palette"] = [{"hex": h.strip()} for h in args.palette.split(",") if h.strip()]
+    if args.primitive_style:
+        look["primitive_style"] = {"reason": "stated on the command line"}
+    return role, look
+
+
+def _quality_lines(quality, geometry, role):
+    shapes = {}
+    for piece in (geometry or {}).get("pieces") or []:
+        name = piece["shape"] or "modelled"
+        shapes[name] = shapes.get(name, 0) + 1
+    lines = [f"quality     {quality['verdict'].upper()} for role {role or 'unset'}: "
+             f"{quality['parts']} piece(s) ({', '.join(f'{n} {s}' for s, n in sorted(shapes.items())) or '-'}), "
+             f"primitive_only {quality['primitive_only']}, {quality['colors']} colour(s)"]
+    lines += [f"  {c['status']:<7} {c['id']:<18} {c['summary']}" for c in quality["checks"]]
+    return lines
 
 
 def main(argv=None):
@@ -181,6 +236,14 @@ def main(argv=None):
     p.add_argument("file")
     p.add_argument("--spec", help="a model spec whose declarations the file must meet")
     p.add_argument("--kind", default="model", choices=["model", "environment", "animation"])
+    p.add_argument("--role", help="the requirement's role (player, threat, prop, ...): judge "
+                                  "the model for it; a failed verdict exits 1")
+    p.add_argument("--palette", help="comma-separated #rrggbb colours the materials must use")
+    p.add_argument("--primitive-style", action="store_true",
+                   help="the art direction is geometric: primitives are allowed for any role")
+    p.add_argument("--design", help="a game-design JSON: palette and primitive_style from its "
+                                    "build_spec.visual_identity")
+    p.add_argument("--asset", help="with --design: the build_spec.assets id whose role to use")
     p.add_argument("--json", action="store_true")
     p.set_defaults(func=inspect_command)
     args = parser.parse_args(argv)

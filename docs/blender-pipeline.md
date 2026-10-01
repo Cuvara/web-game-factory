@@ -23,9 +23,11 @@ game-design.asset_requirements[].model   (model spec)
 
 Code: `scripts/wgf_assets/` — `modelspec.py` (the spec), `blender.py` (discovery, pin,
 command, build, backend), `blender_scripts/build_model.py` (runs inside Blender), `gltf.py`
-(the inspector), wired into `pipeline.py` and `step.py`. Data: the model spec schema
+(the inspector), wired into `pipeline.py` and `step.py`; `model_quality.py` (is it a model
+or a primitive) and `model_author.py` (an agent writes the spec). Data: the model spec schema
 `core/artifacts/shared/model-spec.schema.json`, the `toolchains.blender` pin and the 3D
-budgets in `core/reference/asset-policy.yaml`, the manifest's `model` block in
+budgets in `core/reference/asset-policy.yaml`, the quality bars in
+`core/reference/asset-quality.yaml` (`models`), the manifest's `model` and `quality` blocks in
 `core/artifacts/asset-manifest.schema.json`. CLI: `scripts/wgf-model.py`.
 
 ## What the audit found, and what was built on
@@ -121,7 +123,10 @@ metres, +Y up, the model faces +Z; rotations are Euler degrees, XYZ order.
 
 | Field | Meaning |
 |---|---|
-| `parts` | Primitives: `box`, `cylinder`, `cone` (stand along +Y), `sphere`, `icosphere`, `plane` (XZ, facing +Y). `size` is the bounding size. One glTF node per part, named by its id; `parent` nests. |
+| `parts` | Primitives: `box`, `cylinder`, `cone`, `capsule` (stand along +Y), `sphere` (UV), `icosphere`, `plane` (XZ, facing +Y). `size` is the bounding size. One glTF node per part, named by its id; `parent` nests. |
+| `parts[].taper` | `[x, z]`: the part's top is scaled by these factors, linearly from 1 at its base — a torso wider at the shoulders, a cabin narrower at the roof. `size` is the base's. Not on a plane. |
+| `parts[].bevel` | Metres: edges where faces meet at 30° or more are rounded with two segments (`bmesh.ops.bevel` on a canonically ordered mesh). Box, cylinder and cone; at most a third of the smallest side. |
+| `parts[].mirror` | `"x"`: also build the part mirrored across X = 0 of its parent, as `<id>-mirror` — whose parent is the parent's mirror when that is mirrored too. Expanded by `modelspec.resolve` (position x negated, Euler `[a, b, c]` → `[a, -b, -c]`); the shapes are symmetric across X, so no mesh is flipped and no node gets a negative scale. A track may animate the mirror by its id. |
 | `materials` | Metallic-roughness PBR only — what three.js renders with `MeshStandardMaterial` and no custom shader: `color`, `metallic`, `roughness`, `opacity` (<1 blends), `emissive` + `emissive_strength`, and an optional generated `checker`/`stripes` texture (power-of-two, embedded). No Blender-only node graph is ever built. |
 | `pivot` | `base-center` (default: origin at the centre of the base, for placing on the ground), `center`, or `origin`. |
 | `fit` | Uniform scale so the model is `size` metres along `axis` (`x`/`y`/`z`/`max`). Baked into vertices and positions, never left as a node scale. |
@@ -136,6 +141,16 @@ unknown or cyclic parents, missing materials, keys out of order or past the clip
 step of 180° or more (keys become quaternions and a runtime slerps the short way — a 0→360
 pair is no motion), a track whose value never changes (the exporter drops constant channels,
 so it would silently not exist), and LODs on an animated model.
+
+Taper, bevel and the capsule are arithmetic on the vertices or a bmesh operator on a
+canonically ordered mesh, so they are as deterministic as the rest (`--twice` on every one);
+a spec that uses none of them builds exactly the geometry it built before they existed (only
+the stamped key moves, because the build script is part of it).
+
+A recognisable low-poly object is several shaped parts with palette materials. The keeper the
+author tests use (`scripts/tests/fixtures/models/keeper.model.json`) is eight parts, four of
+them mirrored: a tapered, bevelled torso; shorts; neck; head; capsule arms with sphere
+gloves; capsule legs with bevelled boots — 12 nodes, about 1 500 triangles, fitted to 1.8 m.
 
 **A spec without `parts`** is an expectation only — useful for a purchased or library GLB:
 `{"animations": [{"name": "run"}], "collision": {"shape": "box"}, "budget": {...}}` makes the
@@ -239,6 +254,82 @@ pinned, key, spec hash, reused).
 python3 scripts/wgf-model.py inspect public/assets/models/car.glb --spec car.model.json
 ```
 
+## Quality: a model, or a primitive standing in for one
+
+A GLB can pass every check above and still be a 1 m cube where a goalkeeper should be — the
+real run's 3D assets were 12-triangle boxes with no normals. `model_quality.assess`
+(`scripts/wgf_assets/model_quality.py`, standard library, no Blender) judges the file itself
+and returns the asset-manifest item's `quality` block (asset-manifest 1.4.0): `verdict`,
+`checks`, `primitive_only`, `parts`, `triangles`, `colors`, `author`. Bars:
+`core/reference/asset-quality.yaml`, section `models`.
+
+The visual model (LOD0; proxies and LOD1+ excluded) is split into connected **pieces** —
+triangles sharing a vertex position, so UV seams do not split one — per mesh instance, and
+each piece is normalised to its bounding box in the mesh's own axes and tested against the
+primitives, every vertex within `shape_tolerance` (2 %) of the piece's size:
+
+| Primitive | Signature |
+|---|---|
+| box | 8 distinct positions, all corners of the bounding box |
+| plane | flat on one axis, 4 corners |
+| sphere | every vertex on the inscribed ellipsoid (UV and ico spheres) |
+| cylinder / cone | vertices only at both ends of one axis, on the inscribed ellipse (or an apex) |
+| capsule | a straight wall between two hemispheres, along the longest axis |
+
+A bevelled, tapered or modelled piece matches none. **`primitive_only`** is true when every
+piece matched and they are not composed: fewer than `min_composed_parts` (3) pieces, or
+fewer than `min_distinct_pieces` (2) different shapes or proportions — one cube, a sphere, or
+three equal cubes are primitive only; a keeper of torso, head, arms, gloves and legs, or a car
+of body, cabin and wheels, is composed.
+
+| Check | Fails when |
+|---|---|
+| `model.valid` | an error finding of the inspector or of the spec's declarations |
+| `model.parts` | no piece, or fewer mesh nodes than the spec builds (mirrors included) |
+| `model.triangles` | none, or over a budget the design declared |
+| `model.normals` | a visible primitive has no `NORMAL` |
+| `model.palette` | no material base colour within `palette_distance` of the visual identity's palette (skipped without a palette, or when only textured materials could match) |
+| `model.bounds` | no bounding box, or not the spec's fitted size |
+| `model.primitive` | `primitive_only` and the role is readable (`player`, `threat`, `goal`, `target`, `projectile`, `collectible`, `hazard`) — unless `visual_identity.primitive_style` is stated |
+
+The verdict is `fail` when any check fails. For a person:
+
+```bash
+python3 scripts/wgf-model.py inspect keeper.glb --role player --palette "#ff7a1a,#1d2b53"
+python3 scripts/wgf-model.py inspect keeper.glb --design game-design.json --asset keeper
+```
+
+prints the pieces by primitive, `primitive_only`, the colours and every check; with a role
+(`--role`, or `--design` with `--asset`), a failed verdict exits 1.
+
+## The model author
+
+`model_author.produce_model(requirement, visual_identity, out_dir, settings, context)`
+(`scripts/wgf_assets/model_author.py`) is the `author` source for 3D: an agent writes a
+model spec for one requirement, and everything after it is the Factory's own.
+
+```
+request (role, description, readability, palette, the schema, rules, a worked example)
+  -> the author command writes a model spec          {request} {spec} {prompt} in argv
+  -> schema + modelspec.validate + buildable         refused: shown back
+  -> blender.build_model (pinned, headless)          failed: shown back
+  -> gltf.inspect + check_expectations + model_quality.assess   failed: shown back
+  -> up to 2 repair rounds with exactly those problems, then ModelAuthorError
+```
+
+It returns `{files: [<out_dir>/<id>.glb], quality, source: "ai-generated", license:
+LicenseRef-factory-generated, placeholder: false, notes, spec, model, rounds, history}`. The
+author only writes the spec; it never touches Blender, the file or the verdict. The command
+runs through `wgflib.procs` with the allowlisted agent environment (`wgflib.agentenv`, plus
+`factory.agents.env_passthrough`), like the design author. Settings: `kind: command`,
+`argv`, `spec_from` (`file` | `stdout`), `timeout_seconds` (900), `idle_timeout_seconds`
+(300), `max_repair_rounds` (2), `blender` (as the backend's). A host that fails or goes
+silent raises `ModelAuthorError` with `retryable = True`; Blender missing or unpinned is
+refused before the author runs. Requests, specs, logs and the accepted spec are kept under
+`context.run_dir/<id>/`. The requirement's own `model` (clips, collision, fit, budget) is
+held to the authored model like any delivered GLB. Wiring it into the `assets` step is the
+step's.
+
 ## Runtime integration (three.js)
 
 Blender is not in the bundle; the game receives GLBs, listed like every other asset in the
@@ -325,9 +416,15 @@ python3 scripts/wgf-model.py build /tmp/hover.json --id hover-car -o scripts/tes
 
 - **No generated skinning or morph targets.** Rigid-part animation only; skinned GLBs from
   other sources are validated, not made.
-- **Primitives only.** Parts are boxes, cylinders, cones, spheres, icospheres and planes;
-  importing and cleaning a sourced mesh through Blender is not implemented (a sourced GLB is
-  validated as delivered).
+- **Shaped primitives only.** Parts are boxes, cylinders, cones, capsules, spheres,
+  icospheres and planes, tapered, bevelled and mirrored - enough for a recognisable low-poly
+  character or vehicle, not for organic sculpting; importing and cleaning a sourced mesh
+  through Blender is not implemented (a sourced GLB is validated as delivered).
+- **Primitive detection is geometric.** A piece is judged by where its vertices lie, not by
+  how it looks: a textured sphere is still a sphere, so a ball (a `projectile`) must be
+  composed (panels, a seam ring) or the art direction must state `primitive_style`. A
+  compressed or quantised GLB is not decoded (`model.primitive` skipped), and textured
+  materials' colours are not read (`model.palette` skipped when only they could match).
 - **LODs by vertex clustering** are deterministic but coarser than quadric collapse; fine for
   distant levels of simple models, not a substitute for authored LODs of a hero model.
 - **Clips are sampled at `fps`** by the exporter (linear between samples, step clips exact).

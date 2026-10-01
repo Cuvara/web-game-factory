@@ -136,7 +136,7 @@
     "scripts/wgf_assets/model_quality.py": "sha256:bb2234154bc8945f6edb6f403d307ab4b3b1cbd86c12d34755039cc1b3145416",
     "scripts/wgf_assets/modelspec.py": "sha256:e18e4916efd1338b5b258ec53d9d0b8dd80bb1ad686c276538b3187b3be044d9",
     "scripts/wgf_assets/optimize.py": "sha256:e09de666bba99aa32d044413f9cf74b0fe89c9933058d116e0813cf00463c3fa",
-    "scripts/wgf_assets/pipeline.py": "sha256:aa9b0152d9be6edd704b548b21036012b3d80867f351a836d80b2ed799c9cc8a",
+    "scripts/wgf_assets/pipeline.py": "sha256:6c867b92fb413b5f355f52634c786385811145fdfa88a31b876381de9a665410",
     "scripts/wgf_assets/placeholders.py": "sha256:29fe25750f3c892038c50765a154dbae66a7ab8550e509b3b2cedb415b192b88",
     "scripts/wgf_assets/policy.py": "sha256:88942f9229d9fdceac6f2227a219f0e4d76632f7b8a0df26caf422039bc09434",
     "scripts/wgf_assets/quality.py": "sha256:f72df779fde9d5eaaaa9557c52f0833014de40c0b49a724c43ba59addf612044",

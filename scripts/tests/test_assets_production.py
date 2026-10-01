@@ -23,6 +23,8 @@ interpreter.
 import copy
 import json
 import os
+import tempfile
+import shutil
 import sys
 import unittest
 
@@ -374,6 +376,42 @@ class MappedLibrary(ProductionCase):
         self.assertTrue(spike["quality"]["primitive_only"])
         self.assertFalse(spike["production_ready"])
         self.assertIn(("quality-failed", "error"), self.codes(manifest, "spike"))
+        self.assertEqual(ArtifactContracts()("asset-manifest", manifest), [])
+
+    def test_library_models_are_judged_like_built_ones(self):
+        # The 3D reference game imports its craft and walls from a library: a library GLB
+        # was 'skipped', so assets.present could never pass a design with library models.
+        import glb_synth
+        lib = tempfile.mkdtemp(prefix="wgf-lib3d-")
+        self.addCleanup(shutil.rmtree, lib, ignore_errors=True)
+        mats = [{"id": "hull", "hex": "#FF2E88"}, {"id": "trim", "hex": "#2EF2FF"}]
+        part = lambda shape, size, at, m="hull": {"id": f"{shape}-{at}", "shape": shape,  # noqa: E731
+                                                 "size": list(size), "translation": list(at),
+                                                 "material": m}
+        craft = glb_synth.build([part("box", (1.2, 0.3, 2.0), (0, 0, 0)),
+                                 part("sphere", (0.4, 0.3, 0.6), (0, 0.3, -0.2), "trim"),
+                                 part("capsule", (0.2, 0.2, 0.9), (0.7, 0, 0.4)),
+                                 part("capsule", (0.2, 0.2, 0.9), (-0.7, 0, 0.4)),
+                                 part("cylinder", (0.15, 0.4, 0.15), (0.3, 0, 1.0), "trim")], mats)
+        cube = glb_synth.build([part("box", (1, 1, 1), (0, 0, 0))], mats)
+        for name, data in (("craft.glb", craft), ("cube.glb", cube)):
+            with open(os.path.join(lib, name), "wb") as handle:
+                handle.write(data)
+        with open(os.path.join(lib, "library.json"), "w", encoding="utf-8") as handle:
+            json.dump({"library": {"id": "lib3d"}, "items": [
+                {"requirement": "craft", "files": ["craft.glb"], "license": "CC0-1.0",
+                 "author": "fixture"},
+                {"requirement": "drone", "files": ["cube.glb"], "license": "CC0-1.0",
+                 "author": "fixture"}]}, handle)
+        design = production_design([spec_asset("craft", "model", "player", dimension="3d"),
+                                    spec_asset("drone", "model", "threat", dimension="3d")],
+                                   engine="threejs")
+        manifest, _ = self.run_prod(design, libraries=[lib])
+        items = self.items(manifest)
+        self.assertEqual(items["craft"]["quality"]["verdict"], "pass", items["craft"]["quality"])
+        self.assertFalse(items["craft"]["quality"]["primitive_only"])
+        self.assertEqual(items["drone"]["quality"]["verdict"], "fail")
+        self.assertTrue(items["drone"]["quality"]["primitive_only"])
         self.assertEqual(ArtifactContracts()("asset-manifest", manifest), [])
 
     def test_an_unlicensed_mapping_is_passed_over(self):

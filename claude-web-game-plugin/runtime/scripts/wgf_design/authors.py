@@ -27,12 +27,8 @@ import re
 
 from wgflib import template_contract as contract
 
-<<<<<<< HEAD
 from . import archetypes, identity, presentation
-=======
-from . import archetypes, identity
 from . import depth as depth_check
->>>>>>> dyCuong03/agent-game-design-depth
 from .platforms import supported_placements, tightest_interval
 
 __all__ = ["DesignAuthor", "ArchetypeAuthor", "AUTHORS", "register_author", "resolve_author",

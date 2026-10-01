@@ -17,11 +17,7 @@ strategy approved (design-consistency rule `concept_mechanics_carried` checks it
 Tiers use the game-design vocabulary: mvp, post-mvp, optional.
 """
 
-<<<<<<< HEAD
-__all__ = ["ARCHETYPES", "FALLBACK", "select", "drop_merge_top_level"]
-=======
-__all__ = ["ARCHETYPES", "DEPTH", "FALLBACK", "select"]
->>>>>>> dyCuong03/agent-game-design-depth
+__all__ = ["ARCHETYPES", "DEPTH", "FALLBACK", "select", "drop_merge_top_level"]
 
 import re
 

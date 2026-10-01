@@ -76,7 +76,11 @@ bars in `core/reference/experience-rules.yaml` `production_art` and `ui`): every
 asset states `role` and `dimension`; every entity-role asset a `readability` line; every
 readable role the design's own mechanics and win/lose conditions name (`role_cues`) has an
 asset of that role with a readability line, unless `primitive_style`; a 3D design's
-player and threat assets are models in 3D; the typography ships as an MVP `font` asset; and
+player and threat assets are models in 3D; the typography ships as an MVP `font` asset, and
+every face can set every locale in `scope.locales` (`core/reference/asset-quality.yaml`
+`fonts`: a listed family must be published with one of the locale's subsets, any other
+family's font asset states its subsets) - the archetype author swaps a kit face that cannot
+for its covering alternate (`identity.ALTERNATES`: Bungee -> Rubik Mono One for `ru`); and
 `ui` names palette tokens, button text on its fill at 4.5:1 or better, targets >= 44 px and
 body/HUD text >= 14 px. Every built-in archetype states all of it (no archetype claims
 `primitive_style`); an agent author is told the fields and shown the problems to repair.

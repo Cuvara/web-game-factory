@@ -51,6 +51,7 @@ Bars: [`core/reference/production-quality.yaml`](../core/reference/production-qu
 | `assets.loaded` | develop | every such item with a file (store presentation types excepted) was fetched by the page during play with a 2xx/3xx: its runtime-manifest `url`/`data` or its atlas's, as `assets.json` was fetched; else its `files` under `public/assets/`. No request under `/assets/` failed |
 | `assets.runtime` | assets if any asset breaks at `exists`, else develop | the asset runtime chain holds for every required asset, link by link, stopping at the first that breaks: **exists** (a delivered manifest item, not a placeholder, with files) -> **referenced** (in the runtime manifest `assets.json` the page fetched) -> **loaded** (its file fetched during play) -> **rendered** (an entity the probe reported names it, `render` `asset`/`composite`) -> **visible** (an entity drawn with it is on screen, visible and at least `visible.min_area_fraction` of the viewport in the per-frame samples, and in a state frame at least `min_changed_share` of the pixels in its box differ from the frame's dominant colour by `min_pixel_delta`). `rendered` and `visible` apply to entity-role assets (`entities.asset_roles`); `referenced`/`loaded` skip store presentation types. `measured` holds each asset's chain and `failed_at` |
 | `assets.used` | develop | every entity of a readable role (player, threat, goal, target, projectile) the probe reported names an `asset` that is in the runtime manifest, with `render` `asset` or `composite` |
+| `scene.contrast` | develop | each readable role stands out from its surround in the state frames: for every readable entity's box (at least `contrast.min_box_px` on both sides), the WCAG contrast of the box's pixels against the median luminance of a ring around it (`ring_fraction` of the box's shorter side), taken at `percentile` (0.9: the entity's most distinct tenth, since a box also holds background), and the role's best box reaches `min_ratio` (3:1, WCAG 2.1 SC 1.4.11 for graphical objects). No box large enough to judge is a `WARNING` |
 | `scene.no_primitives` | develop | no readable entity is `render: primitive`, and every one reports `render` (one that does not cannot be shown not to be a primitive) |
 | `ui.targets` | develop | mobile only: every interactive DOM element and every probe `ui` entity is at least `min_target_px` (44, raised by the design's `visual_identity.ui.min_target_px` or `responsive.min_touch_target_px`) on both sides |
 | `ui.overlap` | develop | no two controls, and no control and text, share `min_overlap_px` or more |
@@ -60,6 +61,14 @@ Bars: [`core/reference/production-quality.yaml`](../core/reference/production-qu
 
 A check with nothing to measure (no DOM control, no DOM text) is a `WARNING`, not required:
 a canvas-drawn UI is visual QA's to judge.
+
+`scene.contrast` was proven on real frames (2026-10-01): the 3D reference Neon Drift Arena's
+gate records (`/tmp/wgf-g3d-ndrift/int/gate2/playability/1-1/out`) pass - player 11.13:1 and
+threat 15.18:1 on desktop, 8.70:1 and 14.28:1 on mobile; the 3D asset agent's first, dark
+build (`/tmp/mk/evidence/{desktop,mobile}-play-1.png`, no probe records, so the barrier and
+craft boxes were located on the frames by hand) fails on the barriers - 2.58:1 desktop,
+2.53:1 mobile - while its craft passes (6.6:1, 6.9:1); the 2D golden build passes (target
+14.5:1).
 
 ### `primitive_style`
 

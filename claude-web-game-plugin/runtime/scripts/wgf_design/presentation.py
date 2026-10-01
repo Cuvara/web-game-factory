@@ -14,6 +14,11 @@ design state it, and `check` makes the design module require it, by reference an
     `production_art.role_cues`) - has an MVP asset of that role with a readability line;
   * a 3D design's characters (`character_roles_3d`) are models built in 3D;
   * the typography's faces are an MVP asset of role `font` - files bundled with the game;
+  * every face can set every locale in `scope.locales`: a family the coverage table
+    (core/reference/asset-quality.yaml `fonts.families`) lists must be published with one of
+    the locale's subsets; any other family's font asset states, in its spec or description,
+    the subsets its files cover. A missing script is a design error, never a system-font
+    fallback at runtime (the assets step then reads the delivered files' cmap);
   * `visual_identity.ui` exists, names palette tokens for its button and surface, sets the
     button's text on its fill at `ui.min_contrast` or better, keeps every interactive element
     at least `ui.min_target_px` on a phone, and its body and HUD text at least
@@ -33,9 +38,12 @@ from wgflib.yamllite import load_file
 
 from .experience import load_rules
 
-__all__ = ["VISUAL_QUALITY_PATH", "readable_roles", "implied_roles", "contrast", "check"]
+__all__ = ["VISUAL_QUALITY_PATH", "ASSET_QUALITY_PATH", "readable_roles", "implied_roles",
+           "contrast", "check", "font_coverage", "load_font_coverage", "family_subsets",
+           "locale_subsets"]
 
 VISUAL_QUALITY_PATH = os.path.join(paths.REFERENCE, "visual-quality.yaml")
+ASSET_QUALITY_PATH = os.path.join(paths.REFERENCE, "asset-quality.yaml")
 
 # The play probe's entity roles a player sees in the world, beyond the readable ones the
 # visual gate measures: each is drawn by an asset whose readability a judge reads.
@@ -60,6 +68,65 @@ def contrast(a, b):
     """WCAG contrast ratio of two #rrggbb colours."""
     high, low = sorted((_luminance(a), _luminance(b)), reverse=True)
     return (high + 0.05) / (low + 0.05)
+
+
+def load_font_coverage(path=None):
+    """asset-quality.yaml `fonts`: {locales: {locale: {subsets, chars}}, families: {family: [subset]}}."""
+    return (load_file(path or ASSET_QUALITY_PATH) or {}).get("fonts") or {}
+
+
+def locale_subsets(locale, coverage):
+    """The subsets (any one suffices) a face needs to set `locale`, or None when the table
+    does not know the locale. Matched by the language subtag: pt-BR -> pt."""
+    table = coverage.get("locales") or {}
+    text = str(locale or "").strip()
+    entry = table.get(text) or table.get(text.replace("_", "-").split("-")[0].lower())
+    return list(entry.get("subsets") or []) if isinstance(entry, dict) else None
+
+
+def family_subsets(family, coverage):
+    """The subsets a family is published with, or None when the table does not list it."""
+    for name, subsets in (coverage.get("families") or {}).items():
+        if str(name).lower() == (family or "").strip().lower():
+            return list(subsets or [])
+    return None
+
+
+def font_coverage(design, coverage=None):
+    """Problems: a face of the typography that cannot set a locale in scope.locales."""
+    from .identity import families
+    coverage = coverage if coverage is not None else load_font_coverage()
+    locales = [x for x in (design.get("scope") or {}).get("locales") or [] if x]
+    spec = design.get("build_spec") or {}
+    look = spec.get("visual_identity") or {}
+    if not locales or not isinstance(look.get("typography"), dict):
+        return []
+    fonts = [a for a in spec.get("assets") or []
+             if a.get("role") == "font" or a.get("type") == "font"]
+    stated = " ".join(f"{a.get('spec') or ''} {a.get('description') or ''}" for a in fonts).lower()
+    problems = []
+    for family in families(look["typography"]):
+        known = family_subsets(family, coverage)
+        for locale in locales:
+            needed = locale_subsets(locale, coverage)
+            if not needed:
+                continue
+            if known is not None:
+                if not set(needed) & set(known):
+                    problems.append(
+                        f"visual_identity.typography: {family} cannot set {locale} - it needs "
+                        f"{' or '.join(needed)}, and {family} is published with "
+                        f"{', '.join(known) or 'nothing'} (asset-quality.yaml fonts.families): "
+                        "choose a face that covers every locale in scope.locales")
+            elif not any(re.search(r"(?<![a-z-])" + re.escape(s) + r"(?![a-z-])", stated)
+                         for s in needed):
+                where = f"assets.{fonts[0].get('id')}" if fonts else "the font asset"
+                problems.append(
+                    f"{where}: {family} is not in the coverage table, and nothing states that "
+                    f"its files cover {' or '.join(needed)} for {locale}: name the subsets "
+                    "the files are built with in the font asset's spec (e.g. 'subsets: latin, "
+                    "cyrillic'), or choose a face whose coverage is known")
+    return problems
 
 
 def _contains(term, text):
@@ -92,8 +159,9 @@ def implied_roles(design, rules=None, readable=None):
     return implied
 
 
-def check(design, rules=None, readable=None):
-    """Problems (strings) with the design's production art and UI. Empty means it holds."""
+def check(design, rules=None, readable=None, coverage=None):
+    """Problems (strings) with the design's production art and UI. Empty means it holds.
+    `coverage` is asset-quality.yaml's `fonts` (a seam for tests)."""
     rules = rules or load_rules()
     readable = readable if readable is not None else readable_roles()
     art = rules.get("production_art") or {}
@@ -123,6 +191,9 @@ def check(design, rules=None, readable=None):
         problems.append("no MVP asset of role 'font': the typography's faces ship as files "
                         "(their source and licence in the asset's spec), never as a system "
                         "fallback")
+
+    # ...and they can set every locale in scope.
+    problems.extend(font_coverage(design, coverage))
 
     # The readable roles the design's own words imply each have an asset that draws them.
     drawn = {a.get("role") for a in mvp if (a.get("readability") or "").strip()}

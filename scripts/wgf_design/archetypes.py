@@ -17,7 +17,7 @@ strategy approved (design-consistency rule `concept_mechanics_carried` checks it
 Tiers use the game-design vocabulary: mvp, post-mvp, optional.
 """
 
-__all__ = ["ARCHETYPES", "FALLBACK", "select"]
+__all__ = ["ARCHETYPES", "FALLBACK", "select", "drop_merge_top_level"]
 
 import re
 
@@ -277,8 +277,10 @@ ARCHETYPES = {
             ],
         },
         "assets": [
-            {"id": "pieces", "type": "sprite", "tier": "mvp", "description": "Tower pieces, one per level (merges reach level 8), with a merge state",
-             "count": 8, "source_preference": "procedural", "est_cost": 0, "spec": "Vector, 96px, level readable by numeral and size",
+            {"id": "pieces", "type": "sprite", "tier": "mvp", "description": "Tower pieces, one per level, with a merge state",
+             # One drawing per level the rules reach: derived below from the mechanics'
+             # parameters (drop_merge_top_level), never a fixed number.
+             "count": None, "source_preference": "procedural", "est_cost": 0, "spec": "Vector, 96px, level readable by numeral and size",
              "role": "target", "dimension": "2d",
              "readability": "Each level a distinct size and silhouette with its numeral, never told apart by colour alone; the numeral legible at 48 px on a phone, the next level obviously bigger"},
             {"id": "track-frame", "type": "ui", "tier": "mvp", "description": "Track frame and column backing",
@@ -840,6 +842,72 @@ FALLBACK = "one-touch"
 # how every MVP action is acknowledged, what the first session teaches and its grace before
 # failure, and which HUD element shows which metric. The author adds the pause action and
 # the first-30-seconds budget from the session numbers.
+def drop_merge_top_level(columns, merges_per_level_up, max_drop_level):
+    """The highest piece level the drop-merge rules can produce: an exhaustive search of every
+    track a run can reach. The rules are the archetype's mechanics, exactly: one row of
+    `columns` cells; a drop lands in an empty column at level 1 + floor(merges /
+    merges_per_level_up), capped at `max_drop_level`; equal adjacent pieces merge into level + 1
+    in the left cell, the track compacts left and the scan repeats until no pair is left; a
+    track with no empty column ends the run (its last drop's merges still count).
+
+    The reachable top is not max_drop_level + columns - 1 in general (3 columns, cap 3: the
+    ramp never reaches 3 before the track fills, so the top is 4, not 5); hence the search.
+    The archetype's 7 columns, 4 merges per level and cap 4 reach level 10 (4,534 states; the
+    template's randomised low drops, any level 1..ramp, reach the same 10 over 263,786)."""
+    def resolve(track):
+        track, merges = list(track), 0
+        while True:
+            for i in range(len(track) - 1):
+                if track[i] and track[i] == track[i + 1]:
+                    track[i] += 1
+                    track[i + 1] = 0
+                    merges += 1
+                    filled = [c for c in track if c]
+                    track = filled + [0] * (len(track) - len(filled))
+                    break
+            else:
+                return tuple(track), merges
+
+    cap = merges_per_level_up * max_drop_level  # past it the drop level no longer changes
+    start = ((0,) * columns, 0)
+    seen, stack, top = {start}, [start], 0
+    while stack:
+        track, merges = stack.pop()
+        level = min(1 + merges // merges_per_level_up, max_drop_level)
+        for column in range(columns):
+            if track[column]:
+                continue
+            dropped = list(track)
+            dropped[column] = level
+            after, made = resolve(dropped)
+            top = max(top, max(after))
+            if all(after):
+                continue  # the track is full: the run is over
+            state = (after, min(merges + made, cap))
+            if state not in seen:
+                seen.add(state)
+                stack.append(state)
+    return top
+
+
+def _derive_counts():
+    """Counted assets whose number the rules decide."""
+    drop_merge = ARCHETYPES["drop-merge"]
+    params = {}
+    for mechanic in drop_merge["mechanics"]:
+        params.update(mechanic.get("parameters") or {})
+    top = drop_merge_top_level(params["columns"], params["merges_per_level_up"],
+                               params["max_drop_level"])
+    for asset in drop_merge["assets"]:
+        if asset["id"] == "pieces":
+            asset["count"] = top
+            asset["description"] = (f"Tower pieces, one per level the rules reach (1-{top}), "
+                                    "with a merge state")
+
+
+_derive_counts()
+
+
 EXPERIENCE = {
     "lane-runner": {
         "goal": "Run as far as you can - switch lanes to dodge every obstacle.",

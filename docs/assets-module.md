@@ -145,7 +145,8 @@ in the policy's permitted list and the entry must say where it came from (`sourc
 becomes `origin.source_url`, anything else `origin.evidence`; or `author`/`vendor`), else it
 is passed over (`library-candidate-rejected`). Imported items are `source: library`,
 `placeholder: false`, and are judged like anything else. Fewer files than the requirement's
-`count` is `variants-short`. This is how golden fixtures and purchased packs supply real art.
+`count` is `variants-short` (an error for mvp and prototype items, and a failed
+`variants.count`). This is how golden fixtures and purchased packs supply real art.
 
 **Author** (`factory.assets.author`, 2D). `kind: command` runs an agent host once per drawing
 (`author.py`, through `wgflib.procs`, with the agent environment of `wgflib.agentenv` plus
@@ -199,9 +200,27 @@ author `placeholder`); a GLB, audio or font has no 2D check (`skipped`). A `fail
 | `raster.decodes` | not a PNG `wgf_assets.raster` can read |
 | `raster.not-flat` | fewer than `min_distinct_colors` distinct opaque colours: one flat colour |
 | `raster.alpha` | a kind with `transparency: required` (sprite, vfx) has no alpha channel |
+| `font.format`, `font.tables`, `font.glyphs`, `font.header` | not a TTF/OTF/WOFF/WOFF2; a TTF/OTF without `cmap`, `name` and outlines, or under 60 glyphs; a WOFF/WOFF2 header that does not add up |
+| `font.coverage` | the font's cmap leaves a character of a locale in the design's `scope.locales` without a glyph (`fonts.locales[].chars`: all of А-Я, а-я, Ёё for `ru`). TTF and OTF are read directly, WOFF tables inflated with `zlib`; WOFF2 tables are Brotli-compressed, and Python's standard library has no Brotli, so they are decompressed by the system decoder (`libbrotlidec`, loaded through `ctypes`, nothing spawned). Where it cannot be loaded the check is `skipped` with "coverage unchecked" - never `pass` |
+| `variants.distinct` | two drawings of a counted requirement (`count` > 1: tower levels, enemy kinds) share a silhouette: each is reduced to a `grid` x `grid` mask over its canvas (SVG shapes filled as polygons, transforms applied, curves through their control points; a PNG's opaque pixels), and a pair whose masks differ by less than `min_silhouette_distance` (1 - IoU) fails. A recolour, or the same drawing with another numeral, differs by 0 |
+| `variants.count` | a library supplied fewer drawings than the requirement's `count`: the drawings past it are missing (the `variants-short` issue is then an error for mvp and prototype items) |
 
 `parts` is the number of drawing elements, `colors` the distinct colours used. The bars are a
 floor against stand-ins, not a judgement of the art: that is visual QA.
+
+A 2D author is held to `variants.distinct` while it draws: each variant after the first is
+compared with the ones already accepted, and one with a sibling's silhouette is sent back
+(`repair.problems` names the sibling, the request lists `siblings`) like any failed check.
+The whole set is judged again when the item is recorded, whoever drew it.
+
+What these checks were proven on (2026-10-01, `scripts/wgf-assets.py build` with the 2D
+reference library of Tower Merge Rush, web-game-template branch `agent-ref-2d-tower-merge`):
+its subset WOFF2 Bungee and Figtree (209 and 204 mapped characters, Latin only) pass with
+`scope.locales: [en]` and fail `font.coverage` with `[en, ru]` (66 of 66 Cyrillic letters
+missing); its eight tower SVGs pass `variants.distinct` (closest pair levels 6 and 7, 0.20);
+the same library with level 3 replaced by level 2 recoloured fails it (0.00); the 2D asset
+agent's first six pieces fail it on levels 5 and 6 (0.00 - the same drawing); and a design
+that counts the ten levels its rules reach fails `variants.count` against the eight drawings.
 
 ## Re-entry
 

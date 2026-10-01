@@ -54,7 +54,7 @@ REQUIRED_KEYS = ("fantasy", "core_loop", "pillars", "engine", "features", "scope
 BUILD_SPEC_KEYS = ("mechanics", "controls", "player_goals", "progression", "difficulty",
                    "game_states", "screens", "hud", "menus", "tutorial", "rewards", "failure",
                    "session_flow", "monetization_touchpoints", "assets", "audio", "responsive",
-                   "visual_identity")
+                   "visual_identity", "experience")
 
 PROMPT = (
     "You are the game designer for this title. Read the request at {request}: the approved "

@@ -39,6 +39,30 @@ requirement was relaxed.
   exact problems and its previous draft for up to two repair rounds; every round is judged
   like the first. The request names the schema.
 
+### Added
+
+- **The player-experience contract** (`game-design` 1.5.0, additive): `build_spec.experience`
+  states what a first-time player must be able to tell, and how fast - the objective and the
+  screen that shows it, how play is lost (and won), how every MVP action is acknowledged, what
+  the first session teaches and its grace before failure, and the first-30-seconds budget -
+  and `hud[].metric` names what each HUD element shows. The design step requires it of every
+  design it produces and holds it, by reference and number, to the new
+  `core/reference/experience-rules.yaml` (first frame <= 2 s, playable <= 10 s, first success
+  <= 30 s, retry <= 3 s, acknowledgement <= 100 ms, grace >= 10 s) and to the rest of the
+  build_spec (`scripts/wgf_design/experience.py`): every metric the objective, win, lose and
+  actions rely on is on the HUD; every action is acknowledged and taught; the budget matches
+  the session and failure numbers; a key the design names is bound; an onboarding that shows
+  the answer cannot stand beside a strategy that must prove understanding without
+  instruction. An agent author is shown the problems to repair; the built-in archetypes state
+  a contract that holds, and the play screen now carries the objective, since a first session
+  starts there. The developer brief carries the contract first. Found by playtesting a real
+  run's game, which lost by itself 2.8 s after play began and never stated its goal;
+  `test_design_experience` holds the checks against that run's design.
+
+### Fixed
+
+- The archetype states named "Esc" for pause even when keyboard bindings were out of scope.
+
 ### Changed
 
 - The autonomous profile configures the agent design author (`design.author: agent`, the

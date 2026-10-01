@@ -28,7 +28,7 @@ from wgflib import provenance
 from wgflib.workflow import ArtifactOutput, StepResult, WorkflowStep
 from wgflib.workflow.contracts import ArtifactContracts
 
-from . import consistency
+from . import consistency, experience
 from .authors import AUTHORS, AuthorError, resolve_author
 from .compose import buildability, finalize
 from .platforms import PlatformError, load_platforms
@@ -64,6 +64,7 @@ class DesignStep(WorkflowStep):
     clock = staticmethod(utc_now)
     platforms_dir = None
     rules = None
+    experience_rules = None
 
     def execute(self, inputs, context):
         if "title-strategy" in inputs.missing:
@@ -122,6 +123,13 @@ class DesignStep(WorkflowStep):
                         f"design is not buildable without guessing{after} "
                         f"({len(problems)} problem(s)): " + "; ".join(problems[:5]),
                         retryable=False)
+                if outcome["experience"]:
+                    context.logger.error("the design's experience contract does not hold",
+                                         problems=problems, repair_rounds=repair_round)
+                    return StepResult.failed(
+                        f"the design's experience contract does not hold{after} "
+                        f"({len(problems)} problem(s)): " + "; ".join(problems[:6]),
+                        retryable=False)
                 context.logger.error("design is not a valid game-design", problems=problems[:20],
                                      repair_rounds=repair_round)
                 return StepResult.failed(
@@ -168,10 +176,16 @@ class DesignStep(WorkflowStep):
                     f"buildable concept research selected. Realising the brief in {named} is "
                     f"a design change: an agent author, or a new concept, not this draft.")
         outcome = {"design": design, "artifact": None, "block": None, "blocking": None,
-                   "warnings": None, "problems": [], "unbuildable": False}
+                   "warnings": None, "problems": [], "unbuildable": False,
+                   "experience": False}
         problems = buildability(design)
         if problems:
             outcome.update(problems=problems, unbuildable=True)
+            return outcome
+        # What a first-time player must be able to tell: held by reference and number.
+        problems = experience.check(design, strategy, self.experience_rules)
+        if problems:
+            outcome.update(problems=problems, experience=True)
             return outcome
         now = self.clock()
         block, blocking, warnings = consistency.evaluate(design, strategy, platforms, now,

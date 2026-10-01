@@ -148,6 +148,9 @@ REPORT_CONTRACT = {
 # `sdk_touchpoints` belong to the sdk step (ground rule 4: no platform SDK work here), and
 # `assets` are delivered through the asset manifest, which the brief lists on its own.
 BUILD_SPEC_SECTIONS = (
+    # First: what a first-time player must be able to tell, and how fast. The rest of the
+    # spec is how; this is what the build is measured against from outside.
+    ("experience", "Player experience contract"),
     ("mechanics", "Mechanics"), ("controls", "Controls"), ("player_goals", "Player goals"),
     ("game_states", "Game states"), ("screens", "Screens"), ("hud", "HUD"),
     ("menus", "Menus"), ("tutorial", "Tutorial"), ("rewards", "Rewards"),

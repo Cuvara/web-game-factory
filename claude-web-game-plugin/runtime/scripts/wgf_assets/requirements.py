@@ -1,10 +1,19 @@
 """Which assets a game design needs, and what kind each one is.
 
-The source is `game_design.asset_requirements`. A design without that list still gets a
-manifest: a baseline derived from the design's screens, locales, audio direction and ad
-placements. The baseline is deliberately a floor - a background, the UI screens the design
-names, a store icon, a font, a tap sound, music when there is audio direction - and each
-derived item says so in its notes, so nobody mistakes it for a designed list.
+The source is the design's `build_spec.assets` (game-design 1.6.0): each requirement's id,
+type, tier, role, dimension, description, readability, count and spec are carried onto the
+work list (`bridge`). An entry of the older `asset_requirements` list with the same id adds
+what only it can say - atlas group, exact size, scale, a `model` spec, a file the design
+already chose - and one that build_spec does not list is kept as well. Tiers map mvp ->
+mvp, post-mvp -> production, optional -> future; only mvp (and an asset_requirements entry
+of tier prototype or production) is produced now, the rest is recorded.
+
+A design that lists no assets at all still gets a manifest: a baseline derived from the
+design's screens, locales, audio direction and ad placements. The baseline is deliberately
+a floor - a background, the UI screens the design names, a store icon, a font, a tap sound,
+music when there is audio direction - each derived item says so in its notes, and every one
+of them is a placeholder (`placeholder_only`): no library or author is asked for an asset
+nobody designed.
 
 Classification resolves each requirement against the asset policy: its manifest type, its
 dimension (2d or 3d), its scope tier and its intended final source. Two requirements with the
@@ -16,7 +25,8 @@ import re
 from . import modelspec
 from .policy import PolicyError
 
-__all__ = ["Requirement", "RequirementError", "inspect", "classify", "slugify"]
+__all__ = ["Requirement", "RequirementError", "inspect", "classify", "slugify", "bridge",
+           "design_kind", "spec_size"]
 
 TIERS = ("mvp", "prototype", "production", "future")
 SOURCES = ("library", "procedural", "ai-generated", "purchased", "commissioned")
@@ -52,7 +62,7 @@ def slugify(text, fallback="asset"):
 class Requirement:
     """One asset the design needs, classified against the policy."""
 
-    def __init__(self, data, *, derived=False):
+    def __init__(self, data, *, derived=False, bridged=False):
         self.data = dict(data)
         self.id = data.get("id")
         self.kind = data.get("kind")
@@ -73,6 +83,17 @@ class Requirement:
         self.tile_width = data.get("tile_width")
         self.tile_height = data.get("tile_height")
         self.derived = derived
+        # A derived baseline item is always a placeholder: nobody designed it.
+        self.placeholder_only = derived
+        self.bridged = bridged
+        # From build_spec.assets: what it is to the player, and what it must look like.
+        self.role = data.get("role")
+        self.description = data.get("description")
+        self.readability = data.get("readability")
+        self.spec = data.get("spec")
+        self.count = data.get("count") if isinstance(data.get("count"), int) else 1
+        self.design_type = data.get("design_type")
+        self.design_tier = data.get("design_tier")
         # Set by classify().
         self.policy = None
         self.dimension = data.get("dimension")
@@ -118,8 +139,18 @@ class Requirement:
         return specs
 
     def generate_now(self):
-        """A `future`-tier asset is recorded, not produced: nothing is waiting for it."""
+        """A `future`-tier asset is recorded, not produced: nothing is waiting for it. Nor is
+        a build_spec post-mvp asset: production comes after G4 passes."""
+        if self.bridged and self.design_tier in ("post-mvp", "optional"):
+            return False
         return self.scope_tier != "future"
+
+    def variant_ids(self):
+        """The runtime ids of the drawings a `count` > 1 requirement asks for: `<id>-1` ...
+        `<id>-<count>`; [] for one drawing (the asset id itself)."""
+        if self.count <= 1:
+            return []
+        return [f"{self.id}-{n}" for n in range(1, self.count + 1)]
 
     def __repr__(self):
         return f"Requirement({self.id!r}, {self.kind!r})"
@@ -188,6 +219,10 @@ def game_dimension(design, override=None):
     declared = (design.get("engine") or {}).get("dimension")
     if declared in ("2d", "3d"):
         return declared
+    for entry in (design.get("build_spec") or {}).get("assets") or []:
+        if isinstance(entry, dict) and (entry.get("dimension") == "3d"
+                                        or entry.get("type") == "model"):
+            return "3d"
     for req in design.get("asset_requirements") or []:
         if req.get("dimension") == "3d" or req.get("kind") in ("model", "environment",
                                                                  "material"):
@@ -237,6 +272,119 @@ def derive_baseline(design, dimension):
     return reqs
 
 
+# build_spec tier -> manifest scope tier.
+DESIGN_TIERS = {"mvp": "mvp", "post-mvp": "production", "optional": "future"}
+_SIZE_WH = re.compile(r"\b(\d{1,4})\s*[x\u00d7]\s*(\d{1,4})\b")
+_SIZE_PX = re.compile(r"\b(\d{1,4})\s*px\b", re.I)
+# Kinds that are 2D images whatever the game's dimension.
+FLAT_KINDS = ("sprite", "spritesheet", "background", "tileset", "ui", "icon")
+
+
+def design_kind(entry, dimension):
+    """The asset-policy kind of a build_spec.assets entry, from its type, role and dimension.
+
+    A 2D spritesheet or animation becomes a `sprite`: what an author or a library supplies
+    is one vector drawing, animated in code (tween, transform); the frames the spec asks
+    for stay in the requirement's notes. A 2D texture is a `background`."""
+    kind, role = entry.get("type"), entry.get("role")
+    if dimension == "3d":
+        if kind in ("model", "other") and role not in ("ui", "icon", "font", "background"):
+            return "environment" if role == "environment" else "model"
+        if kind in ("animation", "texture"):
+            return kind
+    if kind == "font" or role == "font":
+        return "font"
+    if kind == "icon" or role == "icon":
+        return "icon"
+    if kind == "ui" or role == "ui":
+        return "ui"
+    if kind == "vfx" or role == "vfx":
+        return "vfx"
+    if role in ("background", "environment") or kind == "texture":
+        return "background"
+    if kind == "model":
+        return "model"
+    return "sprite"
+
+
+def spec_size(spec, kind):
+    """(width, height) a spec line states ("128x96", "readable at 64px"), or (None, None)."""
+    text = spec or ""
+    match = _SIZE_WH.search(text)
+    if match:
+        w, h = int(match.group(1)), int(match.group(2))
+        if 1 <= w <= MAX_EDGE and 1 <= h <= MAX_EDGE:
+            return w, h
+    match = _SIZE_PX.search(text)
+    if match and kind in ("sprite", "icon", "vfx", "ui"):
+        edge = int(match.group(1))
+        if 1 <= edge <= MAX_EDGE:
+            return edge, edge
+    return None, None
+
+
+def entry_dimension(entry, design):
+    """The entry's own dimension, else its type's (a model is 3D), else the engine's."""
+    if entry.get("dimension") in ("2d", "3d"):
+        return entry["dimension"]
+    if entry.get("type") == "model":
+        return "3d"
+    engine = design.get("engine") or {}
+    if engine.get("dimension") in ("2d", "3d"):
+        return engine["dimension"]
+    if engine.get("type") == "threejs":
+        return "3d"
+    if engine.get("type") in ("pixijs", "phaserjs"):
+        return "2d"
+    return None
+
+
+def bridge(design, game_dim):
+    """Requirement dicts for build_spec.assets, enriched by asset_requirements entries of
+    the same id; asset_requirements entries build_spec does not name are appended."""
+    spec_assets = ((design.get("build_spec") or {}).get("assets")) or []
+    legacy = [e for e in design.get("asset_requirements") or [] if isinstance(e, dict)]
+    by_id = {e.get("id"): e for e in legacy}
+    out, named = [], set()
+    for entry in spec_assets:
+        if not isinstance(entry, dict):
+            out.append(entry)
+            continue
+        dimension = entry_dimension(entry, design) or game_dim
+        kind = design_kind(entry, dimension)
+        if kind in FLAT_KINDS and entry.get("dimension") not in ("2d", "3d"):
+            # A HUD icon in a 3D game is still a 2D image.
+            dimension = "2d"
+        notes = [entry.get("spec")] if entry.get("spec") else []
+        if entry.get("type") in ("spritesheet", "animation") and kind == "sprite":
+            notes.append("Delivered as one vector drawing, animated in code; a frame sheet "
+                         "is still owed if the spec needs one.")
+        req = {"id": entry.get("id"), "kind": kind,
+               "label": entry.get("description"),
+               "dimension": dimension,
+               "scope_tier": DESIGN_TIERS.get(entry.get("tier"), "mvp"),
+               "role": entry.get("role"), "description": entry.get("description"),
+               "readability": entry.get("readability"), "spec": entry.get("spec"),
+               "count": entry.get("count") or 1, "design_type": entry.get("type"),
+               "design_tier": entry.get("tier"),
+               "notes": " ".join(notes) or None}
+        width, height = spec_size(entry.get("spec"), kind)
+        if width:
+            req["width"], req["height"] = width, height
+        extra = by_id.get(entry.get("id"))
+        if extra:
+            named.add(entry.get("id"))
+            for key, value in extra.items():
+                if key in ("id", "dimension") or value is None:
+                    continue
+                if key == "scope_tier" and entry.get("tier"):
+                    continue
+                req[key] = value
+        out.append(req)
+    out.extend(e for e in legacy if e.get("id") not in named)
+    return out
+
+
 def classify(req, policy, dimension):
     try:
         kind = policy.kind(req.kind)
@@ -258,15 +406,24 @@ def inspect(design, policy, *, dimension=None):
     declared = design.get("asset_requirements")
     if declared is not None and not isinstance(declared, list):
         raise RequirementError("game_design.asset_requirements must be a list")
-    derived = not declared
-    raw = derive_baseline(design, game_dim) if derived else declared
+    spec_assets = (design.get("build_spec") or {}).get("assets") \
+        if isinstance(design.get("build_spec"), dict) else None
+    if spec_assets is not None and not isinstance(spec_assets, list):
+        raise RequirementError("game_design.build_spec.assets must be a list")
+    bridged = bool(spec_assets)
+    derived = not declared and not bridged
+    if bridged:
+        raw = bridge(design, game_dim)
+    else:
+        raw = derive_baseline(design, game_dim) if derived else declared
 
     problems, seen, reqs = [], {}, []
     for index, entry in enumerate(raw):
         if not isinstance(entry, dict):
             problems.append(f"asset_requirements[{index}] is not an object")
             continue
-        req = Requirement(entry, derived=derived)
+        req = Requirement(entry, derived=derived,
+                          bridged=bridged and entry.get("design_tier") is not None)
         where = f"asset {req.id!r}" if req.id else f"asset_requirements[{index}]"
         if not isinstance(req.id, str) or not _ID.match(req.id):
             problems.append(f"{where}: id must be kebab-case")

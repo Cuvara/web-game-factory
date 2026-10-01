@@ -158,7 +158,26 @@ factory:
     # each file's path. Without a scaffold-record, or before the checkout exists:
     # .factory/assets/<title-id> under this repository's root - git-ignored scratch.
     # root: ../my-game
-    libraries: []               # directories with an index.json of reusable, licensed assets
+    # Where a requirement's file comes from, in order (docs/assets-module.md): a library,
+    # the author, the 3D model author (wgf_assets.model_author, when installed), a
+    # placeholder. Every delivered file is judged against core/reference/asset-quality.yaml.
+    #
+    # Directories (relative to the project) holding an index.json of reusable, licensed
+    # assets and/or a library.json mapping requirement ids and roles to licensed files -
+    # how golden fixtures and purchased packs supply real art.
+    libraries: []
+    # Who draws a 2D requirement as SVG: kind none (default: what no library supplies is a
+    # placeholder) or command - an agent host run through wgflib.procs with the agent
+    # environment, once per drawing. argv placeholders: {request} (the request JSON: the
+    # requirement, palette, visual identity, quality bars, repair problems, re-entry
+    # findings), {output} (where to write the SVG), {prompt}. A rejected file is shown its
+    # problems and asked again, repair_rounds times; then the requirement is a placeholder.
+    author:
+      kind: none
+      # argv: [my-agent-host, --print, "{prompt}"]   # the host's non-interactive command
+      # timeout_seconds: 600
+      # idle_timeout_seconds: 300
+      # repair_rounds: 2
     placeholders:
       enabled: true
       # Tried in order; the procedural backend is always last and always works. An

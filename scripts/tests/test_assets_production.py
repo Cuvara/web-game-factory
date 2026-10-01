@@ -427,7 +427,8 @@ class ThreeD(ProductionCase):
         sys.modules["wgf_assets.model_author"] = fake
         self.addCleanup(setattr, step_mod, "_model_author", original)
         self.addCleanup(sys.modules.pop, "wgf_assets.model_author", None)
-        manifest, _ = self.run_prod(self.design())
+        manifest, _ = self.run_prod(self.design(),
+                                    model_author={"kind": "command", "argv": ["fake"]})
         ship = self.items(manifest)["ship"]
         self.assertEqual(fake.calls, ["ship"])
         self.assertFalse(ship["placeholder"])
@@ -435,6 +436,19 @@ class ThreeD(ProductionCase):
         self.assertEqual(ship["files"][0]["path"], "public/assets/models/ship.glb")
         self.assertEqual(ArtifactContracts()("asset-manifest", manifest), [])
 
+
+    def test_an_unconfigured_model_author_is_not_asked(self):
+        # Installed but not configured: the next backend builds the model, and the run is
+        # not told a model author failed.
+        from wgf_assets import encoders
+        fake = FakeModelAuthor(encoders.glb("ship", (200, 40, 80)))
+        original = step_mod._model_author
+        step_mod._model_author = fake
+        self.addCleanup(setattr, step_mod, "_model_author", original)
+        manifest, _ = self.run_prod(self.design())
+        self.assertEqual(fake.calls, [])
+        self.assertNotIn("generation-failed",
+                         [i.get("code") for i in manifest.get("issues") or []])
 
 # -- quality checks --------------------------------------------------------------------------
 

@@ -178,6 +178,16 @@ factory:
       # timeout_seconds: 600
       # idle_timeout_seconds: 300
       # repair_rounds: 2
+    # The 3D model author (scripts/wgf_assets/model_author.py, docs/blender-pipeline.md):
+    # kind none, or command - an agent host that writes a MODEL SPEC per 3D requirement,
+    # built by the pinned Blender and judged (parts, normals, palette, primitive_only) with
+    # up to repair_rounds re-asks. Only a configured author is asked; without one, a
+    # design's own model spec is built by Blender, else the requirement is a placeholder.
+    model_author:
+      kind: none
+      # argv: [my-agent-host, --print, "{prompt}"]
+      # spec_from: file            # or stdout
+      # repair_rounds: 2
     placeholders:
       enabled: true
       # Tried in order; the procedural backend is always last and always works. An

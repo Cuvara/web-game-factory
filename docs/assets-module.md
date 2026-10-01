@@ -379,6 +379,7 @@ build still loads); every other error FAILs.
 |---|---|---|
 | `root` | the run's game repository checkout | files go under `<root>/public/assets/`; see below |
 | `libraries` | `[]` | directories with a `library.json` and/or an `index.json` (see `library.py`); relative to the project directory |
+| `model_author` | `{kind: none}` | the 3D model author (`model_author.py`): `{kind: command, argv, spec_from: file\|stdout, repair_rounds: 2}`; only a configured one is asked |
 | `author` | `{kind: none}` | `{kind: command, argv, timeout_seconds: 600, idle_timeout_seconds: 300, repair_rounds: 2}`; a misconfigured author fails the step, not retryably |
 | `placeholders` | `{enabled: true, backends: [2d-assets-mcp, procedural]}` | plus a settings block per backend |
 | `optimize` | `true` | lossless, only on files the step writes — never on the design's own |

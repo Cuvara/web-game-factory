@@ -93,7 +93,7 @@ def resolve_settings(context):
     """factory.assets, with the step's `with:` block laid over it."""
     settings = copy.deepcopy(_config_section(context.config, "assets"))
     for key, value in (context.params or {}).items():
-        if key in ("placeholders", "author") and isinstance(value, dict):
+        if key in ("placeholders", "author", "model_author") and isinstance(value, dict):
             merged = dict(settings.get(key) or {})
             merged.update(value)
             settings[key] = merged
@@ -109,6 +109,10 @@ def resolve_settings(context):
     settings.setdefault("libraries", [])
     settings.setdefault("fail_on", [])
     settings["author"] = dict(settings.get("author") or {})
+    # The 3D model author (model_author.py): `{kind: command, argv, ...}`, or none. Only a
+    # configured one is asked; unconfigured, 3D requirements go to the next backend
+    # (a design's own model spec built by Blender, then placeholders) without a warning.
+    settings["model_author"] = dict(settings.get("model_author") or {})
     return settings
 
 
@@ -275,7 +279,9 @@ class AssetsStep(WorkflowStep):
                                  runtime_manifest=bool(settings.get("runtime_manifest")),
                                  prune=bool(settings.get("prune")), title_id=title_id,
                                  author=author, identity=identity, bars=load_bars(),
-                                 model_author=getattr(_model_author, "produce_model", None),
+                                 model_author=(getattr(_model_author, "produce_model", None)
+                                               if settings["model_author"].get("kind")
+                                               not in (None, "none") else None),
                                  rebuild=rebuild, settings=settings, context=context,
                                  work_dir=self._work_dir(context, slug))
         context.logger.info("asset pipeline", requirements=len(requirements),

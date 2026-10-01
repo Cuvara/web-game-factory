@@ -957,7 +957,8 @@ class AssetPipeline:
                        "tier": req.design_tier or req.scope_tier, "model": req.model,
                        "notes": self.rebuild.get(req.id)}
         try:
-            made = self.model_author(requirement, self.identity, out_dir, self.settings,
+            made = self.model_author(requirement, self.identity, out_dir,
+                                     (self.settings or {}).get("model_author") or {},
                                      self.context)
         except Exception as exc:  # ModelAuthorError, or a bug: never breaks the pipeline
             label = "" if type(exc).__name__ == "ModelAuthorError" else \

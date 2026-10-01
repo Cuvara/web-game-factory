@@ -161,6 +161,7 @@ agents:
       - core/craft/game-feel.md
       - core/craft/core-loop-and-difficulty.md
       - core/craft/production-art-and-ui.md
+      - core/craft/game-audio.md
     produces: [prototype-report]
     consumes: [tech-plan, game-design, review-report, qa-report]
 
@@ -177,6 +178,7 @@ agents:
       - core/craft/accessibility.md
       - core/craft/game-feel.md
       - core/craft/production-art-and-ui.md
+      - core/craft/game-audio.md
     produces: []
     consumes: [game-design, tech-plan]
 
@@ -188,7 +190,7 @@ agents:
       - core/artifacts/asset-manifest.schema.json
       - core/reference/asset-policy.yaml
       - core/craft/art-direction.md
-      - core/craft/audio.md
+      - core/craft/game-audio.md
       - core/craft/2d-assets.md
       - core/craft/production-art-and-ui.md
     produces: [asset-manifest]
@@ -427,7 +429,7 @@ skills:
       - core/artifacts/asset-manifest.schema.json
       - core/reference/asset-policy.yaml
       - core/craft/art-direction.md
-      - core/craft/audio.md
+      - core/craft/game-audio.md
       - core/craft/2d-assets.md
   - id: art-direction
     supports: [game-designer, asset]
@@ -440,13 +442,16 @@ skills:
       - core/reference/asset-policy.yaml
       - core/craft/production-art-and-ui.md
   - id: audio
-    supports: [asset, gameplay]
+    supports: [asset, gameplay, ui]
     covers: >
-      Game audio for the browser: unlock on first gesture, mute, cue lists per event, mix
-      and variation, size budgets.
+      Game audio for the browser: music as a produced, seamless, adaptive loop; designed
+      sound effects and their timing; mixing levels and ducking; unlock on first gesture,
+      mute, pause and ad silence; formats, budgets and the quality checks.
     reads:
-      - core/craft/audio.md
+      - core/craft/game-audio.md
       - core/reference/asset-policy.yaml
+      - core/reference/asset-quality.yaml
+      - core/reference/production-quality.yaml
   - id: platform-sdk
     supports: [sdk]
     covers: >

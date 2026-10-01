@@ -57,6 +57,7 @@ Bars: [`core/reference/production-quality.yaml`](../core/reference/production-qu
 | `ui.text` | develop | every DOM text (controls' and others') is at least `min_font_px`, with WCAG contrast ≥ 4.5:1, or ≥ 3:1 for large text (≥ 24 px, or ≥ 18.66 px bold). The background is the DOM's when an opaque one is behind the text; otherwise the dominant colour of the state's frame inside the text's box (text over the canvas) |
 | `ui.styled` | develop | no control's computed style equals the user-agent default for its tag |
 | `ui.states` | develop | the `lost` and `retry` screens were seen on the viewport, and `won` when the experience contract has a win |
+| `audio.plays` | develop; assets when the music was never delivered | only when the design has music (`build_spec.audio` type `music` of a required tier): during play at least one probe sample has `audio.playing` with the measured `audio.level` at or above `audio.min_level` (0.005 RMS, about -46 dBFS), the probe names the track, the music's file was fetched (its runtime-manifest url), and with the page unfocused (a window blur - the platform mute) the level is at most `audio.max_muted_level` (0.001). A probe with no `audio` field fails it |
 
 A check with nothing to measure (no DOM control, no DOM text) is a `WARNING`, not required:
 a canvas-drawn UI is visual QA's to judge.

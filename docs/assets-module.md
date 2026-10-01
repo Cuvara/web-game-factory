@@ -58,6 +58,23 @@ the work list (`requirements.bridge`). Each entry carries onto its requirement:
 | `count` | `count` | > 1: one drawing per `<id>-<n>`, each its own runtime asset ([variants](#the-runtime-manifest)) |
 | `spec` sizes | `width`/`height` | `96x96` or `960x540` sets both; `64px` sets a square for sprite, icon, ui, vfx |
 
+`build_spec.audio` joins the same work list (`requirements.bridge_audio`), after the assets
+(and beside an older `asset_requirements` list too); an id an asset already uses is not
+repeated. Each cue becomes a requirement:
+
+| build_spec.audio field | Requirement | |
+|---|---|---|
+| `type` | `kind` (+ `role`) | `music` and `ambience` → `music`; `sfx`, `voice` → `sfx`; `ui` → `sfx` with role `ui` |
+| `tier` | `scope_tier` | as for assets: `mvp` produced now, `post-mvp`/`optional` recorded |
+| `loop` | `loop` | the file must loop without a seam (`audio.loop-seam`); the runtime manifest records it |
+| `description` | `min_duration_s` | a length it states ("at least 60 s", "0.5 sec") is the shortest the file may be |
+| `trigger` | `trigger` | kept in the item's notes: when it plays |
+
+Audio is delivered like art: a `library.json` entry maps the cue id to its file (WAV, Ogg
+Vorbis or Opus, MP3, M4A - the asset policy's `sfx`/`music` formats) with its licence and
+source, else a placeholder (a shaped procedural WAV) stands in. Files go to
+`public/assets/audio/`.
+
 An `asset_requirements` entry with the same id adds what only it can say (atlas group, exact
 size, scale, a `model` spec, `existing`); one build_spec does not name is kept as well. A
 design with `asset_requirements` and no `build_spec.assets` is read as before.
@@ -182,7 +199,8 @@ fall back to placeholders. See [blender-pipeline.md](blender-pipeline.md).
 
 `quality.py` judges every delivered SVG and PNG against `core/reference/asset-quality.yaml`
 and records the result as the item's `quality`. A placeholder is never judged (`skipped`,
-author `placeholder`); a GLB, audio or font has no 2D check (`skipped`). A `fail` verdict is a
+author `placeholder`); a GLB is judged by its model inspection, a font by its tables, and a
+sound file by the `audio` checks below. A `fail` verdict is a
 `quality-failed` issue (an error for mvp and prototype items) and the item is never
 `production_ready`.
 
@@ -199,6 +217,24 @@ author `placeholder`); a GLB, audio or font has no 2D check (`skipped`). A `fail
 
 `parts` is the number of drawing elements, `colors` the distinct colours used. The bars are a
 floor against stand-ins, not a judgement of the art: that is visual QA.
+
+Sound files (`sfx`, `music`) are read by `audiofile.py` with the standard library - a WAV is
+decoded (`wave`; 32-bit float from its chunks), an Ogg (Vorbis or Opus) or MP3 is read by its
+headers: page CRCs, the codec header, the duration from the last granule (less the Opus
+pre-skip) or the frame count - and held to the `audio` bars:
+
+| Check | Fails when |
+|---|---|
+| `audio.decodes` | not a WAV, Ogg or MP3 the reader can open; a bad Ogg CRC; no audio in it |
+| `audio.duration` | music (and any loop) shorter than the bar (`music.min_duration_s`, `loop.min_duration_s`) or the length the design states; a one-shot longer than `sfx.max_duration_s` |
+| `audio.not-silent` | WAV: the loudest `window_s` window is under `min_rms_dbfs`. A compressed file is `skipped` here - its level is measured in the running game (`audio.plays`) |
+| `audio.loop-seam` | a loop (WAV) whose last frame jumps to its first by more than `max_step_ratio` typical sample steps, or whose first and last `edge_ms` differ by more than `max_edge_db`. Compressed: `skipped`, the container's gapless trim is trusted |
+| `audio.size` | over the asset policy's `max_bytes` for the kind |
+| `audio.licence` | no permitted licence recorded |
+
+The runtime manifest gives every sound an `audio` block - `loop`, `duration_s`, `channels`,
+`sample_rate`, read from the file - so a game can start music in lock-step with its layers
+without decoding first. How a game should use them: `core/craft/game-audio.md`.
 
 ## Re-entry
 
@@ -243,7 +279,7 @@ the kind and returns a valid file wins. Every backend's availability and use is 
 
   Both are still placeholders (`placeholder: true`, `LicenseRef-factory-generated`, never
   production-ready). They are shaped so a playtest can tell a reward from a failure
-  (`core/craft/audio.md`).
+  (`core/craft/game-audio.md`).
 - **`2d-assets-mcp`** — optional. A 2D asset generator run as an MCP server over stdio, used
   for sprites, backgrounds, UI, icons, VFX and textures when configured. Not configured, not on
   PATH, failing to start, erroring or returning a non-image: recorded, and the next backend is

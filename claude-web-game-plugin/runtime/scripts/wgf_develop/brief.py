@@ -63,8 +63,11 @@ REQUIRED_SYSTEMS = (
                       "progress reported; procedural items generated in code."),
     ("responsive-layout", "Correct at any size and orientation, from 360x640 portrait to "
                           "desktop; resize is handled, nothing is cropped off-screen."),
-    ("audio-hooks", "A small audio service in src/audio/ with named cues the game triggers; "
-                    "muted by default until first input, silenced while paused (ads)."),
+    ("audio-hooks", "An audio service in src/audio/ that plays the design's build_spec.audio "
+                    "cues from the runtime asset manifest (types music and sfx) on their "
+                    "triggers: music from the first input, crossfaded between states and "
+                    "ducked under stings; nothing before the first input; silent while "
+                    "paused, muted (the player's toggle or the platform's) and during ads."),
     ("play-probe", "window.__wgf__.play.snapshot(), exactly as the Play probe section below "
                    "specifies: state, the experience contract's metrics, on-screen entities "
                    "with their drawn bounds, the inputs available now, and - only with "
@@ -79,6 +82,7 @@ READABLE_ROLES = tuple((load_file(os.path.join(paths.REFERENCE, "visual-quality.
                         .get("entities") or {}).get("readable_roles") or ())
 # Where the bar for a finished game's art and UI is described.
 PRODUCTION_CRAFT = "core/craft/production-art-and-ui.md"
+AUDIO_CRAFT = "core/craft/game-audio.md"
 
 # Paths a game may not edit. packages/ is the template's (fix the template instead);
 # game.config.yaml is written from the approved tech plan; the pipelines and release tooling
@@ -329,11 +333,19 @@ def select_production_art(design, assets=None):
          "delivered": (a.get("id") in manifest) if manifest is not None else None}
         for a in spec.get("assets") or [] if a.get("tier") in BUILD_TIERS
     ]
+    sounds = [
+        {"id": a.get("id"), "type": a.get("type"), "loop": bool(a.get("loop")),
+         "trigger": a.get("trigger"), "description": a.get("description"),
+         "runtime_asset": a.get("id"),
+         "delivered": (a.get("id") in manifest) if manifest is not None else None}
+        for a in spec.get("audio") or [] if isinstance(a, dict) and a.get("tier") in BUILD_TIERS
+    ]
     if not requirements and not look:
         return None
     primitive = look.get("primitive_style")
     return {
         "assets": requirements,
+        "audio": sounds,
         # The play probe's roles a player must read (core/reference/visual-quality.yaml).
         "readable_roles": list(READABLE_ROLES),
         "primitive_style": dict(primitive) if isinstance(primitive, dict) else None,
@@ -672,6 +684,25 @@ def _production_art_section(art):
               "cube, sphere or flat rectangle standing for a character is a placeholder, and "
               "the production gate refuses it. A primitive may remain only where nothing a "
               "player reads is drawn (a floor plane under a textured surface, a hit box).\n")
+    sounds = art.get("audio") or []
+    if sounds:
+        add("### Sound\n")
+        add("Play each cue from the runtime asset of its id (`public/assets/assets.json`, type "
+            "`music` or `sfx`; its `audio` block says whether it loops and how long it is), "
+            "on its trigger. Load sound after the game is interactive, start nothing before "
+            "the first input, and fall silent while paused, muted - the player's toggle or "
+            "the platform's (`onAudioMutedChange`) - and during ads. Crossfade music between "
+            "states and duck it under stings; keep music 6-10 dB under the effects. The play "
+            "probe reports `audio`: `music` (the id playing), `playing`, and `level` - the RMS "
+            "of the master output read from an AnalyserNode after every gain, so it is about "
+            "0 when muted. The production gate hears the game through it (`audio.plays`). "
+            f"The craft is `{AUDIO_CRAFT}` in the Factory.\n")
+        for a in sounds:
+            where = "" if a.get("delivered") is not False else " - not in the asset manifest yet"
+            add(f"- **{a.get('id')}** ({a.get('type')}{', loops' if a.get('loop') else ''}): "
+                f"{a.get('description') or ''} - plays on: {a.get('trigger') or 'unstated'}"
+                f"{where}.")
+        add("")
     ui = art.get("ui") or {}
     palette = art.get("palette") or {}
     typography = art.get("typography") or {}

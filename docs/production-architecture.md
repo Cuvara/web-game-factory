@@ -107,6 +107,8 @@ and at least the part count the spec states.
   null
 - `entities[].render`: `asset` | `primitive` | `text` | `composite`
 - `assets_loaded`: runtime asset ids the game has loaded
+- `audio` (optional): the music playing, whether it is audible, and the master output's
+  measured RMS - read from an `AnalyserNode` after every gain, so a muted game reports ~0
 
 ### production-quality-report (owner: production gate)
 

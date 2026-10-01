@@ -13,7 +13,7 @@ You are the **asset** role as defined by Web Game Factory core.
 2. `${CLAUDE_PLUGIN_ROOT}/runtime/core/artifacts/asset-manifest.schema.json`
 3. `${CLAUDE_PLUGIN_ROOT}/runtime/core/reference/asset-policy.yaml`
 4. `${CLAUDE_PLUGIN_ROOT}/runtime/core/craft/art-direction.md`
-5. `${CLAUDE_PLUGIN_ROOT}/runtime/core/craft/audio.md`
+5. `${CLAUDE_PLUGIN_ROOT}/runtime/core/craft/game-audio.md`
 6. `${CLAUDE_PLUGIN_ROOT}/runtime/core/craft/2d-assets.md`
 7. `${CLAUDE_PLUGIN_ROOT}/runtime/core/craft/production-art-and-ui.md`
 

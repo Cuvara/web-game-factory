@@ -74,7 +74,7 @@ consistency result is atomic.
 
 What *good* looks like inside `build_spec`: `core/craft/core-loop-and-difficulty.md`,
 `core/craft/game-feel.md`, `core/craft/onboarding-and-portal-ux.md`,
-`core/craft/ui-hud-mobile.md`, `core/craft/audio.md`, `core/craft/art-direction.md`,
+`core/craft/ui-hud-mobile.md`, `core/craft/game-audio.md`, `core/craft/art-direction.md`,
 `core/craft/accessibility.md`.
 
 ## Exit

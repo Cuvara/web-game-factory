@@ -133,6 +133,18 @@
             "triangles": { "type": "integer", "minimum": 0 }
           },
           "additionalProperties": false
+        },
+        "audio": {
+          "type": "object",
+          "description": "A sound's lookups, read from its file without decoding it (WAV header, Ogg pages, MP3 frames): its length, channels and sample rate, and whether the design plays it as a loop (game-design build_spec.audio[].loop) - so a loader can start music in lock-step with its layers and set a source looping without guessing.",
+          "required": ["loop"],
+          "properties": {
+            "loop": { "type": "boolean" },
+            "duration_s": { "type": "number", "minimum": 0 },
+            "channels": { "type": "integer", "minimum": 1 },
+            "sample_rate": { "type": "integer", "minimum": 1 }
+          },
+          "additionalProperties": false
         }
       },
       "additionalProperties": false,

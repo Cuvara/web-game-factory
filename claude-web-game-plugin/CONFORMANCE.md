@@ -183,6 +183,22 @@ the `game-design`, `art-direction` and `onboarding-ux` skills, in
 `core/bindings/adapter-binding.yaml` and the `scripts/gen-adapters.sh` tables alike. No
 surface was added or removed, so the manifest version is unchanged.
 
+## Game audio craft (binding manifest 1.5.0, additive)
+
+`core/craft/audio.md` became `core/craft/game-audio.md` and grew from browser rules and a cue
+list into the whole craft: music as a produced, seamless loop (arrangement, palette per
+genre, chord progressions, groove, in-track mixing and mastering, a band-balance check for
+when nobody can listen), adaptive music (stems in lock-step, filter opening, crossfades),
+designed sound effects and their timing, mixing levels and ducking, autoplay / mute / pause
+/ ad silence, formats, budgets, and the checks that hold a build to them
+(`core/reference/asset-quality.yaml` `audio`, the production check `audio.plays`). The
+`audio` skill now supports `asset`, `gameplay` and `ui` and also reads
+`core/reference/asset-quality.yaml` and `core/reference/production-quality.yaml`; the
+playbook is in the `must_read` of the `asset`, `gameplay` and `ui` agents and the `reads` of
+the `assets` skill - in `core/bindings/adapter-binding.yaml` and the
+`scripts/gen-adapters.sh` tables alike. No surface was added or removed, so the manifest
+version is unchanged.
+
 ## Not covered, deliberately
 
 - **`workflows/` tree** — removed. A per-provider copy of a workflow duplicates

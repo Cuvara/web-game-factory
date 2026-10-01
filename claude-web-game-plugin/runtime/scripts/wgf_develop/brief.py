@@ -17,8 +17,9 @@ plan's prototype milestones and tasks, each with its acceptance criteria.
 """
 
 import json
+import os
 
-from wgflib import gameseam
+from wgflib import gameseam, paths
 from wgflib import template_contract as contract
 
 from wgf_verification.checks.gameplay import ASPECTS, required_aspects_for
@@ -62,7 +63,14 @@ REQUIRED_SYSTEMS = (
                           "desktop; resize is handled, nothing is cropped off-screen."),
     ("audio-hooks", "A small audio service in src/audio/ with named cues the game triggers; "
                     "muted by default until first input, silenced while paused (ads)."),
+    ("play-probe", "window.__wgf__.play.snapshot(), exactly as the Play probe section below "
+                   "specifies: state, the experience contract's metrics, on-screen entities "
+                   "with their drawn bounds, the inputs available now, and - only with "
+                   "wgf-probe=1 in the URL - the oracle. Read-only."),
 )
+
+# What the playability step reads from the running build (core/artifacts/shared/).
+PLAY_PROBE_SCHEMA = os.path.join(paths.ARTIFACTS, "shared", "play-probe.schema.json")
 
 # Paths a game may not edit. packages/ is the template's (fix the template instead);
 # game.config.yaml is written from the approved tech plan; the pipelines and release tooling
@@ -660,6 +668,22 @@ def render_markdown(brief):
     for system in brief["required_systems"]:
         add(f"- **{system['id']}** - {system['acceptance']}")
     add("")
+
+    add("## Play probe (how the build is judged)\n")
+    add("The build is played from outside, not judged by its own tests: a bot drives it with "
+        "real pointer and key input, reads a snapshot before and after every input, and "
+        "renders frames to check a first-time player can see and follow it - the objective "
+        "on screen, no failure before the first success, every action visibly acknowledged, "
+        "a reachable win (or best) and loss, a restart, and the player, threats and goals "
+        "drawn large enough to read. Install `window.__wgf__.play = { snapshot() }` once "
+        "`window.__wgf__` exists, returning exactly this shape. Metric names are the "
+        "experience contract's (`build_spec.experience`, `hud[].metric`). Entity bounds are "
+        "where each thing is drawn now, in CSS px of the viewport (project 3D positions "
+        "through the camera). `oracle` is computed only when the page URL carries "
+        "`wgf-probe=1`; without it the field is absent, and nothing else changes. The probe "
+        "never changes the game, and the game never reads it.\n")
+    with open(PLAY_PROBE_SCHEMA, encoding="utf-8") as handle:
+        add("```json\n" + handle.read().rstrip() + "\n```\n")
 
     add("## MVP (build exactly this)\n")
     add(_bullets(brief["mvp"]))

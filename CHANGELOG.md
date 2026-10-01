@@ -59,6 +59,13 @@ requirement was relaxed.
   run's game, which lost by itself 2.8 s after play began and never stated its goal;
   `test_design_experience` holds the checks against that run's design.
 
+- **The play probe** (`core/artifacts/shared/play-probe.schema.json`): what a built game reports
+  about itself so it can be played and judged from outside - `window.__wgf__.play.snapshot()`
+  returns the session state, the experience contract's metrics, the entities on screen with
+  their drawn bounds, the inputs available now, and, only with `wgf-probe=1` in the URL, the
+  input that succeeds now. Read-only. A new required system in the developer brief, which
+  embeds the schema verbatim and says how the build is judged.
+
 ### Fixed
 
 - The archetype states named "Esc" for pause even when keyboard bindings were out of scope.

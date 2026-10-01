@@ -139,11 +139,64 @@ def canonical(bm):
     bm.faces.index_update()
 
 
+def capsule(bm, size, segments):
+    """A capsule standing along Blender Z, fitted to `size` (Blender frame): a UV sphere of an
+    odd ring count - so no ring sits on the equator - whose halves are pushed apart into a
+    straight-walled middle. Caps are hemispheres of the smaller of the x and y radii."""
+    sx, sy, height = size
+    radius = min(sx, sy, height) / 2
+    bmesh.ops.create_uvsphere(bm, u_segments=segments,
+                              v_segments=max(3, segments // 2) | 1, radius=0.5, calc_uvs=True)
+    # Without an equator ring the widest ring is narrower than the sphere: measure it, so
+    # `size` is the bounding size.
+    width = [max(v.co[i] for v in bm.verts) - min(v.co[i] for v in bm.verts) for i in (0, 1)]
+    shift = height / 2 - radius
+    for vert in bm.verts:
+        x, y, z = vert.co
+        vert.co = Vector((x * sx / width[0], y * sy / width[1],
+                          z * 2 * radius + (shift if z > 0 else -shift if z < 0 else 0.0)))
+
+
+def taper(bm, factors):
+    """Scale each vertex's x and y (glTF x and z) linearly with its height: 1 at the bottom,
+    `factors` at the top. Pure arithmetic on the vertices, so deterministic."""
+    low = min(v.co.z for v in bm.verts)
+    high = max(v.co.z for v in bm.verts)
+    span = high - low
+    if span <= 1e-12:
+        return
+    fx, fy = factors[0], factors[1]  # glTF [x, z] are Blender x, y
+    for vert in bm.verts:
+        t = (vert.co.z - low) / span
+        vert.co = Vector((vert.co.x * (1 + (fx - 1) * t), vert.co.y * (1 + (fy - 1) * t),
+                          vert.co.z))
+
+
+def bevel(bm, offset):
+    """Round the sharp edges (faces meeting at 30 degrees or more) off with two segments.
+    The input order is made canonical first, so the operator sees the same mesh every run."""
+    canonical(bm)
+    bm.edges.index_update()
+    edges = sorted((e for e in bm.edges
+                    if e.is_manifold and e.calc_face_angle(0.0) >= math.radians(30)),
+                   key=lambda e: tuple(sorted((e.verts[0].index, e.verts[1].index))))
+    if edges:
+        bmesh.ops.bevel(bm, geom=edges, offset=offset, offset_type="OFFSET", segments=2,
+                        profile=0.5, affect="EDGES", clamp_overlap=True)
+
+
 def make_mesh(part, repeat):
     bm = bmesh.new()
-    unit_primitive(bm, part["shape"], part["segments"])
-    bmesh.ops.scale(bm, vec=size_to_blender(part["size"]), verts=bm.verts)
+    if part["shape"] == "capsule":
+        capsule(bm, size_to_blender(part["size"]), part["segments"])
+    else:
+        unit_primitive(bm, part["shape"], part["segments"])
+        bmesh.ops.scale(bm, vec=size_to_blender(part["size"]), verts=bm.verts)
+    if part.get("taper"):
+        taper(bm, part["taper"])
     bmesh.ops.remove_doubles(bm, verts=bm.verts, dist=1e-6)
+    if part.get("bevel"):
+        bevel(bm, part["bevel"])
     bmesh.ops.recalc_face_normals(bm, faces=bm.faces)
     # Triangulate here, with fixed methods: left to the exporter, quads are tessellated in an
     # order that varies from run to run, and the GLB with it.

@@ -98,6 +98,9 @@ requirement was relaxed.
   `greybox-playability.fail: 2`). develop's production phase names the greybox that passed
   and must keep it passing. The real run's game had its assets made before anyone could see
   that its loop was unreadable.
+  The greybox's developer sessions count toward the run's `factory.develop.budget`, and
+  each develop step keeps its own transcripts (`<run>/<step>/<visit>-<attempt>.log`: a
+  greybox and a develop visit 1 no longer share `develop/1-1.log`).
 
 ### Changed
 

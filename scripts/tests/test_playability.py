@@ -16,6 +16,7 @@ outside this suite; here, its refusals and the report it writes.
 import copy
 import os
 import shutil
+import subprocess
 import sys
 import tempfile
 import types
@@ -231,7 +232,7 @@ class TheStep(unittest.TestCase):
         self.base = tempfile.mkdtemp(prefix="wgf-play-step-")
         self.addCleanup(shutil.rmtree, self.base, ignore_errors=True)
 
-    def run_step(self, docs):
+    def run_step(self, docs, step="playability"):
         class Inputs:
             refs = {k: types.SimpleNamespace(content_hash=None) for k in docs}
 
@@ -246,9 +247,27 @@ class TheStep(unittest.TestCase):
                 return lambda *a, **k: None
 
         context = types.SimpleNamespace(config={"checkouts": self.base}, run_dir=self.base,
-                                        logger=Log(), visit=1, attempt=1, execution=1)
-        return PlayabilityStep(types.SimpleNamespace(params={}, id="playability")).execute(
+                                        logger=Log(), visit=1, attempt=1, execution=1,
+                                        current_step=step)
+        return PlayabilityStep(types.SimpleNamespace(params={}, id=step)).execute(
             Inputs(), context)
+
+    def test_each_step_plays_in_its_own_scratch_directory(self):
+        # greybox-playability and playability both start at visit 1; the scratch directory
+        # is emptied first, so a shared one erased the frames the greybox's report cites.
+        os.makedirs(os.path.join(self.base, "demo"))
+        subprocess.run(["git", "init", "-q", os.path.join(self.base, "demo")], check=True)
+        keep = os.path.join(self.base, "greybox-playability", "1-1", "kept.txt")
+        docs = {"game-design": DESIGN,
+                "scaffold-record": {"title_id": "demo", "repository": {"name": "demo"}},
+                "prototype-report": {"build_ref": {"commit_sha": "a" * 40}}}
+        self.run_step(docs, step="greybox-playability")
+        self.assertTrue(os.path.isdir(os.path.dirname(keep)))
+        with open(keep, "w") as handle:
+            handle.write("the greybox's evidence")
+        self.run_step(docs, step="playability")
+        self.assertTrue(os.path.isdir(os.path.join(self.base, "playability", "1-1")))
+        self.assertTrue(os.path.exists(keep))
 
     def test_nothing_to_play_waits_for_input(self):
         self.assertEqual(self.run_step({}).outcome, StepOutcome.WAITING_FOR_INPUT)

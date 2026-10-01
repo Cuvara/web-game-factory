@@ -279,11 +279,14 @@ from `events.jsonl`; a session that cannot be shown on record is not started (`B
 When the sessions already recorded reach `max_sessions`, develop returns `BLOCKED` - not
 retryable, no agent spawned - with `budget exhausted: N developer sessions used of N`. A
 handoff developer is a person, not a session: nothing is counted. A visit that already
-committed (a re-execution) spawns nothing and costs nothing.
+committed (a re-execution) spawns nothing and costs nothing. The budget is the run's, not
+the step's: the `greybox` step's sessions (develop with `phase: greybox`) count toward the
+same `max_sessions` and `max_cost` as `develop`'s, and a budget spent in the greybox blocks
+the production build.
 
 **Cost** is installation-configured, because the Factory names no provider: `cost_from:
 {jsonl_key: <key>}` reads the number under that key in the **last** JSON-object line of the
-session's transcript (`<run_dir>/develop/<visit>-<attempt>.log`) that holds the key -
+session's transcript (`<run_dir>/<step>/<visit>-<attempt>.log`, `greybox` or `develop`) that holds the key -
 reading only what this session appended. After each session develop records a `STEP_LOG`
 with `data.budget: developer-cost` and the cost; when the recorded total reaches `max_cost`,
 the next session is refused like the session limit. A session with no readable cost (killed

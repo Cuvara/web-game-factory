@@ -110,6 +110,9 @@ test("golden probe: boot, play, game over, restart", async ({ page }, info) => {
       await page.evaluate(() => {
         const g = (window as unknown as W).__game;
         for (let i = 0; i < 120; i++) g.tick?.(1000 / 60);
+        // A first steer, as a player's: the port's opening grace (walls pass through the
+        // craft until the player first steers) ends with it.
+        g.steer?.(1);
         g.steer?.(0);
         g.spawnObstacleAt?.(0, 1, 0.8);
         for (let i = 0; i < 60 && g.phase === "playing"; i++) g.tick?.(1000 / 60);

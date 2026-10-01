@@ -1,0 +1,119 @@
+# The playability module
+
+`scripts/wgf_playability/` implements the `playability` step of `new-game`. It runs after
+`develop` and before `review`. A bot plays the commit develop made, from outside, the way a
+first-time player's device would. A build that cannot be played or read goes back to
+develop before anyone reviews its code.
+
+```
+develop -> playability -> review -> sdk -> sdk-review -> verify -> G4 -> release
+              │ fail
+              └──────► develop  (with the playability-report: failed checks, and the frames)
+```
+
+## Why it exists
+
+A real `/new-game` run produced a three.js game that passed every check: install,
+conformance, typecheck, lint, unit, build, smoke, and a review loop. Its owner could not
+see or understand it. Played from outside, it:
+
+- rendered at about 4 % brightness;
+- lost by itself 2.8 s after play began;
+- never showed a shot travel;
+- never stated its objective.
+
+Every check before this step was about the code, or about the developer's own tests. None
+looked at a rendered frame or played the game. This step does both.
+
+## Inputs, output, outcomes
+
+| | |
+|---|---|
+| inputs | `prototype-report` (the commit), `game-design` (its `build_spec.experience`), `scaffold-record` (the checkout) |
+| output | `playability-report` (`core/artifacts/playability-report.schema.json`): every check with what was measured and the bar, the captured frames with their hashes, the verdict |
+| SUCCESS | every required check passed on every viewport |
+| FAILED, route `fail` | a required check failed: back to develop, whose brief leads with *Fix first: what the build did when it was played* (each failed check and the frames that show it) |
+| BLOCKED | the step could not establish a result: no experience contract in the design, no checkout, the commit would not install or build, the browser would not start. Nothing about the game is claimed |
+
+develop's route budget `playability.fail: 2` bounds the loop. The third unplayable build
+blocks the run for a person, like the other loops (`max_visits_by_route`,
+[workflow-engine.md](workflow-engine.md)).
+
+## What it does
+
+The step works in a scratch directory under the run, `playability/<visit>-<attempt>/`. It
+never touches the game checkout itself.
+
+1. Clones the checkout at the reported commit, detached.
+2. Runs `pnpm install --frozen-lockfile --prefer-offline` and `pnpm build`. Every process
+   goes through `wgflib.procs`. The game's environment is scrubbed (`wgflib.agentenv`) and
+   network access is refused outside localhost.
+3. Runs `bot.spec.ts` with the repository's own Playwright against `pnpm preview`. Two
+   projects: desktop (1280×720) and mobile (Pixel 5, touch). Each test is a fresh browser
+   context, so each one starts as a first session.
+4. Judges the recordings (`analysis.judge`) against the design's experience contract and
+   [`core/reference/visual-quality.yaml`](../core/reference/visual-quality.yaml).
+
+### The play probe
+
+The bot reads the game's play probe (`core/artifacts/shared/play-probe.schema.json`):
+`window.__wgf__.play.snapshot()`. It returns:
+
+- the session state;
+- the contract's metrics;
+- the entities a player must see, with their screen bounds;
+- the inputs available now, as real pointer or key input (`hold_ms` for a held control);
+- the `oracle`: the input that succeeds now. It is present only with `?wgf-probe=1`.
+
+The bot acts **only** through real input at the listed positions, never through the
+probe. The developer brief embeds the schema, so a developer knows how the build is judged.
+
+### The bot's four tests, per viewport
+
+- **First session:** opens the game. If the title screen lists a begin input (`play`,
+  `start`, ...), the bot presses it. Then it makes no input at all for the idle window,
+  `max(experience-rules min_grace_s, the design's grace seconds)`. It records the text on
+  screen in the first 3 s of play and any loss.
+- **Act:** for each input action listed during play, a frame before and a frame
+  `max_ack_ms` after the input.
+- **Win:** the oracle plays well. Every rendered frame's entities are sampled for 10 s,
+  long enough for a threat that spawns far away to reach the player.
+- **Lose and restart:** one success first, then bad play: the first listed move that is
+  not the oracle's, never a pause or settings toggle. On a loss, the bot presses the retry
+  the result screen offers, then the ready screen's begin input if it lands on one.
+
+## The checks
+
+| Check | Passes when |
+|---|---|
+| `probe.present` | `snapshot()` answers. Without it nothing else is judged |
+| `probe.valid` | snapshots match the schema and carry the contract's goal, win and lose metrics |
+| `start.playable` | play begins within `first_30s.playable_s` |
+| `start.objective` | ≥ 60 % of the objective statement's content words are on screen in the first 3 s of play |
+| `idle.grace` | no loss during the idle window |
+| `act.acknowledged` | every action changes ≥ `min_changed_fraction` of the frame by ≥ `min_pixel_delta` luminance |
+| `win.reachable` | good play reaches `won`; with no win in the contract, the goal metric rises |
+| `lose.reachable` | bad play reaches `lost` |
+| `restart.works` | the retry returns to play within `retry_s` + 1 s, with the goal metric reset |
+| `entities.visible` | every readable role (player, threat, goal, target, projectile) is visible in ≥ half its samples and, at its largest on screen, covers ≥ `min_area_fraction` of the viewport (median over the role's entities that left during the sample; all of them when none did) |
+| `entities.projectile` | a projectile is seen moving for ≥ `min_projectile_frames` consecutive frames |
+| `frames.readable` | ≥ `min_lit_share` of pixels lit (luminance ≥ `lit_luminance`), contrast ≥ `min_contrast`, mean ≤ `max_mean_luminance` |
+| `page.errors` | no uncaught page error |
+
+The visual bars were calibrated on frames this step captured: the unreadable run's game,
+and the template's two example games. The calibration and its margin are recorded in
+`visual-quality.yaml` itself. `lit_share` is a floor against a dark screen, not a measure
+of readability; `entities.*` judges what must be seen.
+
+## What it does not claim
+
+The report's `measurement_class` is `automation-bot`. It shows the game can be played
+and seen. It never shows that first-time players understand it. That is a kill
+criterion, measured from people (MV-4), and an automation report never stands in for it.
+
+## Running it outside a run
+
+The step takes the same `checkout.locate` precedence as every step that works in the game
+repository ([checkouts.md](checkouts.md)). Its unit tests synthesise records and frames
+(`scripts/tests/test_playability.py`). Both golden runs play their ports through it
+([golden-runs.md](golden-runs.md)).

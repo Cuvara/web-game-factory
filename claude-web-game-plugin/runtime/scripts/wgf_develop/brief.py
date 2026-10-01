@@ -344,7 +344,8 @@ def select_dev_plan(tech_plan):
 def build_brief(*, title_id, engine, iteration, key, baseline, design, assets, scaffold,
                 strategy=None, qa=None, previous_checks=None, refs=None, skills=None,
                 review=None, mobile_test=True, tech_plan=None, self_playtest=False,
-                writable_paths=None, package_changes=None, loop=None, sessions=None):
+                writable_paths=None, package_changes=None, loop=None, sessions=None,
+                playability=None, frames_root=None):
     """The brief as data. `render_markdown` turns it into the document a developer reads."""
     refs = refs or {}
     writable_paths = list(DEFAULT_WRITABLE if writable_paths is None else writable_paths)
@@ -381,6 +382,20 @@ def build_brief(*, title_id, engine, iteration, key, baseline, design, assets, s
          if blocker.get(k) is not None}
         for blocker in (review or {}).get("blockers") or []
     ]
+    # A playability-report that failed the commit this visit starts from: what the bot saw,
+    # per failed check, with the frames that show it (absolute paths under frames_root, the
+    # run's directory, which the report's frame paths are relative to).
+    frame_paths = {(f.get("project"), f.get("id")): f.get("path")
+                   for f in (playability or {}).get("frames") or []}
+    playability_failures = [
+        {"check": c.get("id"), "project": c.get("project"), "summary": c.get("summary"),
+         "expected": c.get("expected"),
+         "frames": [os.path.join(frames_root, frame_paths[(c.get("project"), f)])
+                    if frames_root and frame_paths.get((c.get("project"), f)) else f
+                    for f in c.get("frames") or []]}
+        for c in (playability or {}).get("checks") or []
+        if c.get("required") and c.get("status") == "FAIL"
+    ]
     failures = [
         {"check": c.get("id"), "summary": c.get("summary"), "output_tail": c.get("output_tail")}
         for c in (previous_checks or {}).get("checks") or []
@@ -410,7 +425,7 @@ def build_brief(*, title_id, engine, iteration, key, baseline, design, assets, s
             for t, c in (("game-design", design), ("asset-manifest", assets),
                          ("scaffold-record", scaffold), ("title-strategy", strategy),
                          ("tech-plan", tech_plan), ("qa-report", qa),
-                         ("review-report", review))
+                         ("review-report", review), ("playability-report", playability))
             if c
         ],
         "design": {
@@ -459,6 +474,8 @@ def build_brief(*, title_id, engine, iteration, key, baseline, design, assets, s
         "writable_paths": list(writable_paths),
         "package_changes": {k: list(v) for k, v in package_changes.items() if v},
         "qa_defects": defects,
+        "playability_failures": playability_failures,
+        "played_commit": (playability or {}).get("commit") if playability_failures else None,
         "review_blockers": review_blockers,
         "reviewed_commit": (review or {}).get("reviewed_commit") if review_blockers else None,
         "previous_failures": failures,
@@ -913,7 +930,7 @@ def render_markdown(brief):
                     f"guess - re-check the build against this brief, fix only what you can "
                     f"show is wrong, and say in `known_issues` that no reason was given.")
         elif brief.get("qa_defects") or brief.get("review_blockers") or \
-                brief.get("previous_failures"):
+                brief.get("previous_failures") or brief.get("playability_failures"):
             add("Fix what sent it back first (below); a pass that does not fix it is one "
                 "fewer left.")
         else:
@@ -932,6 +949,25 @@ def render_markdown(brief):
         for defect in brief["qa_defects"]:
             add(f"- `{defect.get('id')}` ({defect.get('severity')}): {defect.get('summary')}"
                 + (f" Repro: {defect['repro']}" if defect.get("repro") else ""))
+        add("")
+
+    if brief.get("playability_failures"):
+        add("## Fix first: what the build did when it was played\n")
+        add(f"The playability step built `{(brief.get('played_commit') or '')[:12]}` and "
+            "played it from outside, as a first-time player's device would: a bot reading "
+            "the play probe (*Play probe*, above) and acting only through real pointer, touch "
+            "and key input, on a desktop and a mobile viewport. These checks failed. Each is "
+            "measured against the experience contract or core/reference/visual-quality.yaml, "
+            "and the next build is played the same way: fix what the player sees, not the "
+            "probe's report of it. A probe that misreports the game is itself a defect. "
+            "Where a frame is named, look at it.\n")
+        for failure in brief["playability_failures"]:
+            line = f"- `{failure['check']}` ({failure.get('project')}): {failure.get('summary')}"
+            if failure.get("expected") is not None:
+                line += f" Expected: {_inline(failure['expected'])}."
+            if failure.get("frames"):
+                line += " Frames: " + ", ".join(f"`{f}`" for f in failure["frames"])
+            add(line)
         add("")
 
     if brief.get("review_blockers"):

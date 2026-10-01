@@ -32,10 +32,11 @@
 
 workflow:
   id: new-game
-  # 2: the definition as of Factory 2.0.0 (sdk-review, G4, loop limits per route). A run
+  # 2: the definition as of Factory 2.0.0 (sdk-review, G4, loop limits per route).
+  # 3: playability - the build is played from outside before review reads it. A run
   # records the version it started under; one resumed under a newer definition is marked
   # (WORKFLOW_RESUMED `definition_version`).
-  version: 2
+  version: 3
   description: Discover an opportunity, plan a title, build it, verify it and prepare its first release.
   start: research
 
@@ -48,8 +49,8 @@ workflow:
     # Omitted keys fall back to factory.execution in workspace/config/factory.yaml.
     max_visits: 3
 
-  # Loops. Four routes lead back into develop: review's and sdk-review's request-changes,
-  # verify's fail, and G4's iterate. Each has its own budget on develop
+  # Loops. Five routes lead back into develop: playability's fail, review's and
+  # sdk-review's request-changes, verify's fail, and G4's iterate. Each has its own budget on develop
   # (max_visits_by_route; `review.request-changes` counts only review's requests), counted
   # over the whole run, so one loop cannot spend the passes another needs - and G4's
   # iterate, which always arrives by a resume, is still bounded - and a run blocked at a
@@ -142,20 +143,38 @@ workflow:
     - id: develop
       type: develop
       stage: title:prototype
-      description: Build the game. Re-entered with the failing qa-report when verification fails, or with the review-report when review requests changes.
+      description: Build the game. Re-entered with the failing playability-report when the build cannot be played from outside, the failing qa-report when verification fails, or with the review-report when review requests changes.
       # scaffold-record says which repository to build in; title-strategy carries the
       # questions the prototype must answer and the kill criteria its report must list;
       # tech-plan carries the approved prototype tasks and their acceptance criteria.
-      inputs: [game-design, asset-manifest, scaffold-record, title-strategy, tech-plan, qa-report, review-report]
+      inputs: [game-design, asset-manifest, scaffold-record, title-strategy, tech-plan, qa-report, review-report, playability-report]
       outputs: [prototype-report]
-      # Two requests for changes from each reviewer, two failed verifications and two G4
-      # iterations before a person looks. 9 = the first visit + 2 + 2 + 2 + 2.
-      max_visits: 9
+      # Two unplayable builds, two requests for changes from each reviewer, two failed
+      # verifications and two G4 iterations before a person looks.
+      # 11 = the first visit + 2 + 2 + 2 + 2 + 2.
+      max_visits: 11
       max_visits_by_route:
+        playability.fail: 2
         review.request-changes: 2
         sdk-review.request-changes: 2
-        fail: 2
+        verify.fail: 2
         iterate: 2
+
+    # The build is played from outside before anyone reads its code: a bot clones develop's
+    # commit, builds it, and plays it through the game's play probe with real input on a
+    # desktop and a mobile viewport - objective on screen, no loss before the grace, every
+    # action visibly acknowledged, a reachable win and loss, a working retry, readable
+    # entities, lit frames (the design's experience contract, core/reference/
+    # visual-quality.yaml). FAIL (route `fail`) goes back to develop with the report and
+    # the frames that show it; BLOCKED - it could not be built or played - stops the run.
+    - id: playability
+      type: playability
+      stage: title:prototype
+      inputs: [prototype-report, game-design, scaffold-record]
+      outputs: [playability-report]
+      max_visits: 11
+      on:
+        fail: develop
 
     # An independent reviewer reads the commit develop made; it may not change it. Approve
     # continues to sdk (whose own commit sdk-review reads in turn); request-changes (FAILED,
@@ -166,7 +185,7 @@ workflow:
       stage: title:prototype
       inputs: [prototype-report, game-design, scaffold-record]
       outputs: [review-report]
-      max_visits: 9
+      max_visits: 11
       on:
         request-changes: develop
 
@@ -177,7 +196,7 @@ workflow:
       stage: title:prototype
       inputs: [game-design, scaffold-record, prototype-report]
       outputs: [sdk-report]
-      max_visits: 9
+      max_visits: 11
 
     # The sdk step commits integration code on top of the reviewed development commit, and
     # that sdk commit is what verify checks and release ships. So it is reviewed too, by the
@@ -191,7 +210,7 @@ workflow:
       stage: title:prototype
       inputs: [sdk-report, prototype-report, game-design, scaffold-record]
       outputs: [review-report]
-      max_visits: 9
+      max_visits: 11
       with:
         subject: sdk-report
       on:
@@ -207,7 +226,7 @@ workflow:
       inputs: [prototype-report, sdk-report, game-design, scaffold-record, asset-manifest]
       outputs: [verification-report, qa-report]
       retry: {max_attempts: 2}
-      max_visits: 9
+      max_visits: 11
       on:
         fail: develop
 
@@ -229,7 +248,7 @@ workflow:
         gate: G4
         prompt: Judge the verified prototype against the kill criteria set at strategy - pass to release, iterate to develop again, or kill the title?
         choices: [pass, iterate, kill]
-      max_visits: 9
+      max_visits: 11
       on:
         iterate: develop
         kill: $end

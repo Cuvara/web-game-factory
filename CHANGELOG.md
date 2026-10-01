@@ -66,6 +66,36 @@ requirement was relaxed.
   input that succeeds now. Read-only. A new required system in the developer brief, which
   embeds the schema verbatim and says how the build is judged.
 
+- **The playability step** (`new-game` workflow 3; `scripts/wgf_playability/`,
+  [docs/playability-module.md](docs/playability-module.md)): between develop and review, a bot
+  clones develop's commit, builds it and plays it from outside through the play probe with
+  real pointer, touch and key input, on a desktop and a mobile viewport. It holds what it sees
+  to the experience contract and to the new `core/reference/visual-quality.yaml`:
+  - the objective is on screen;
+  - there is no loss with no input inside the grace;
+  - every action visibly changes the frame;
+  - good play wins (or raises the objective) and bad play loses;
+  - the retry works;
+  - what must be seen is drawn large enough;
+  - a projectile is seen in flight;
+  - frames are lit.
+
+  The new `playability-report` artifact records every check, measurement and frame. A failure
+  routes back to develop, whose brief leads with what the bot saw and the frames that show it
+  (budget `playability.fail: 2`). The real run's game fails 11 checks across both viewports;
+  both golden ports pass every check. Automation evidence (`measurement_class:
+  automation-bot`), never a first-time-player measure.
+- `play-probe`: an optional `hold_ms` on an input, for a control that acts while held.
+- The golden ports (template `golden_ports` 1c5afcb) implement the play probe and show their
+  objective. Neon Drift Arena's gains an opening grace: walls pass through the craft until
+  the player first steers.
+
+### Changed
+
+- develop's verify loop budget is keyed `verify.fail` (was `fail`), since `playability`'s
+  `fail` now enters develop too; each route keeps its own two passes. develop's `max_visits`
+  is 11.
+
 ### Fixed
 
 - The archetype states named "Esc" for pause even when keyboard bindings were out of scope.

@@ -62,7 +62,8 @@
               "properties": {
                 "type": { "const": "pointer" },
                 "x": { "type": "number", "description": "CSS px from the viewport's left." },
-                "y": { "type": "number" }
+                "y": { "type": "number" },
+                "hold_ms": { "type": "number", "minimum": 0, "description": "How long the input is held down: for a control that acts while held (steer, charge). Absent: a tap or a key press." }
               },
               "additionalProperties": false
             },
@@ -71,7 +72,8 @@
               "required": ["type", "key"],
               "properties": {
                 "type": { "const": "key" },
-                "key": { "type": "string", "description": "A KeyboardEvent.key value, e.g. ArrowLeft or ' '." }
+                "key": { "type": "string", "description": "A KeyboardEvent.key value, e.g. ArrowLeft or ' '." },
+                "hold_ms": { "type": "number", "minimum": 0, "description": "How long the input is held down: for a control that acts while held (steer, charge). Absent: a tap or a key press." }
               },
               "additionalProperties": false
             }

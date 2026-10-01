@@ -243,7 +243,7 @@ stage it serves; it never moves an entity — that is still `wgf-state.py`, guar
 Real step modules register via `factory.steps.modules` in `workspace/config/factory.yaml`;
 every step type in `new-game` has one: `wgf_discovery` (research), `wgf_strategy`,
 `wgf_design`, `wgf_techplan`, `wgf_init`, `wgf_assets`, `wgf_develop`, `wgf_review`,
-`wgf_sdk`, `wgf_verification` and `wgf_release`. `--mock` still replaces all of them with
+`wgf_sdk`, `wgf_verification`, `wgf_release` and `wgf_playability`. `--mock` still replaces all of them with
 placeholders for a run. Discovery reads evidence snapshots from
 `workspace/research/snapshots/`. A module owns its domain logic; the engine owns
 orchestration — a module never edits `scripts/wgflib/workflow/` to implement domain
@@ -354,6 +354,8 @@ seen by the engine — validate what you write there with ajv.
   build (`wgf_assets/blender.py`, 4.5 LTS), GLB validation without Blender, reuse in CI, a
   GLB's `model` entry in `assets.json` and the three.js loading contract; `scripts/wgf-model.py`
 - `docs/development-module.md` — the `develop` step: brief, developers, checks, keyed commits
+- `docs/playability-module.md` — the `playability` step: a bot plays develop's build from outside
+  through the game's play probe; the checks, `core/reference/visual-quality.yaml`, the loop back
 - `docs/platform-sdk-verification.md` — how platform SDK integration is verified, and where the
   platform profiles disagree with current portal documentation
 - `docs/review-module.md` — the `review` step: enforced read-only reviewer, verdict contract

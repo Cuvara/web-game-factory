@@ -18,7 +18,7 @@ import statistics
 
 from wgf_assets.raster import RasterError, decode_png
 
-__all__ = ["judge", "contrast_ratio", "required_assets", "served_paths"]
+__all__ = ["judge", "contrast_ratio", "required_assets", "served_paths", "scene_contrast"]
 
 ASSETS, DEVELOP = "assets", "develop"
 
@@ -131,6 +131,38 @@ class _Frames:
                 if max(abs(px[i + k] - background[k]) for k in range(3)) >= min_delta:
                     changed += 1
         return round(changed / total, 4) if total else None
+
+
+    def local_contrast(self, frame_id, box, viewport, bars):
+        """The entity's contrast with its surround in a frame: the WCAG ratio, at the bars'
+        percentile, of the pixels inside `box` against the median luminance of a ring around
+        it. None when the frame or the box cannot be read."""
+        image = self.image(frame_id)
+        if image is None or not box or not viewport or not viewport[0]:
+            return None
+        scale = image.width / float(viewport[0])
+        ring = max(float(bars.get("min_ring_px", 2)),
+                   float(bars.get("ring_fraction", 0.25)) * min(box[2], box[3])) * scale
+        x0, y0 = int(box[0] * scale), int(box[1] * scale)
+        x1, y1 = int((box[0] + box[2]) * scale), int((box[1] + box[3]) * scale)
+        rx0, ry0 = max(0, int(x0 - ring)), max(0, int(y0 - ring))
+        rx1, ry1 = min(image.width, int(x1 + ring)), min(image.height, int(y1 + ring))
+        x0, y0, x1, y1 = max(0, x0), max(0, y0), min(image.width, x1), min(image.height, y1)
+        if x1 <= x0 or y1 <= y0:
+            return None
+        step = max(1, min(x1 - x0, y1 - y0) // 48)
+        px, inner, outer = image.pixels, [], []
+        for y in range(ry0, ry1, step):
+            for x in range(rx0, rx1, step):
+                i = (y * image.width + x) * 4
+                value = _luminance((px[i], px[i + 1], px[i + 2]))
+                (inner if x0 <= x < x1 and y0 <= y < y1 else outer).append(value)
+        if not inner or not outer:
+            return None
+        surround = statistics.median(outer)
+        ratios = sorted((max(v, surround) + 0.05) / (min(v, surround) + 0.05) for v in inner)
+        at = ratios[min(len(ratios) - 1, int(float(bars.get("percentile", 0.9)) * len(ratios)))]
+        return {"ratio": round(at, 2), "surround_luminance": round(surround, 4)}
 
 
 # -- assets --------------------------------------------------------------------------------
@@ -476,6 +508,51 @@ def scene_no_primitives(project, tests, wanted, rules, runtime, design):
                   expected="no readable-role entity with render `primitive`", assets=concerned)
 
 
+def scene_contrast(project, tests, rules, frames):
+    """Each readable role's entities stand out from their surround in the state frames: the
+    best-scoring box of the role reaches the bar (production-quality.yaml `contrast`)."""
+    bars = rules.get("contrast") or {}
+    roles = set((rules.get("entities") or {}).get("readable_roles") or [])
+    bar = float(bars.get("min_ratio", 3.0))
+    smallest = float(bars.get("min_box_px", 12))
+    best, frames_used, small = {}, {}, set()
+    for state, ui in _ui_states(tests):
+        for e in ui.get("entities") or []:
+            if not isinstance(e, dict) or e.get("role") not in roles or not e.get("visible"):
+                continue
+            box = [e.get("x"), e.get("y"), e.get("w"), e.get("h")]
+            if any(not isinstance(v, (int, float)) for v in box):
+                continue
+            if min(box[2], box[3]) < smallest:
+                small.add(e["role"])
+                continue
+            measured = frames.local_contrast(ui.get("frame"), box, ui.get("viewport"), bars)
+            if measured is None:
+                continue
+            role = e["role"]
+            if role not in best or measured["ratio"] > best[role]["ratio"]:
+                best[role] = dict(measured, frame=ui.get("frame"), state=state,
+                                  entity=e.get("id"), asset=e.get("asset"),
+                                  box=[round(v, 1) for v in box])
+                frames_used[role] = ui.get("frame")
+    if not best:
+        return _check("scene.contrast", True,
+                      "no readable entity box large enough to judge in a state frame"
+                      + (f" ({', '.join(sorted(small))} only below {smallest:g} px)" if small else ""),
+                      DEVELOP, project=project, required=False, status="WARNING",
+                      expected=f">= {bar:g}:1 for each readable role")
+    low = {role: m for role, m in best.items() if m["ratio"] < bar}
+    summary = ("; ".join(f"{role} at best {m['ratio']:.2f}:1 against its surround ({m['frame']})"
+                         for role, m in sorted(low.items()))
+               + f" - below {bar:g}:1: light it, outline it or change its colour so it stands "
+                 "out from what is around it") if low else \
+        ", ".join(f"{role} {m['ratio']:.2f}:1" for role, m in sorted(best.items()))
+    return _check("scene.contrast", not low, summary, DEVELOP, project=project,
+                  measured=best, expected=f">= {bar:g}:1 for each readable role (best box)",
+                  assets=[m["asset"] for m in low.values() if m.get("asset")],
+                  frames=sorted(set(frames_used.values())))
+
+
 def _ui_states(tests):
     for name, record in tests.items():
         for state, ui in ((record or {}).get("ui") or {}).items():
@@ -616,6 +693,7 @@ def judge(records, manifest, design, rules, frames_dirs):
         frames = _Frames(frames_dirs.get(project))
         checks.append(assets_used(project, tests, wanted, rules, runtime, design))
         checks.append(scene_no_primitives(project, tests, wanted, rules, runtime, design))
+        checks.append(scene_contrast(project, tests, rules, frames))
         if project == "mobile":
             checks.append(ui_targets(project, tests, design, rules))
         checks.append(ui_overlap(project, tests, rules))

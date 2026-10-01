@@ -8,7 +8,7 @@
 # made again, `develop` when the game's use of it must change.
 # See docs/production-architecture.md and docs/production-quality-module.md.
 
-version: 1.0.0
+version: 1.1.0
 
 entities:
   # Roles a player must recognise (play probe `entities[].role`). In production each is
@@ -33,6 +33,23 @@ visible:
   # least this much in some channel (0-255).
   min_changed_share: 0.1
   min_pixel_delta: 24
+
+contrast:
+  # Entity local contrast (scene.contrast): a readable entity must stand out from what is
+  # around it, not only exist on screen - a dark barrier on a dark floor is "visible" by
+  # pixel count and unreadable to a player. For each readable entity's box in a state frame,
+  # the ring of `ring_fraction` of the box's shorter side (at least `min_ring_px` CSS px)
+  # around it gives the surround's luminance (its median); each pixel inside the box is a
+  # WCAG contrast ratio against it, and the box scores the ratio at `percentile` - the
+  # entity's most distinct tenth, since a box also holds some background. A role passes on a
+  # viewport when its best-scoring box reaches `min_ratio`: 3:1 is WCAG 2.1 SC 1.4.11, the
+  # contrast of graphical objects a user must perceive. Boxes smaller than `min_box_px` on
+  # either side (a far, fogged entity) are not judged.
+  min_ratio: 3.0
+  percentile: 0.9
+  ring_fraction: 0.25
+  min_ring_px: 2
+  min_box_px: 12
 
 assets:
   # Asset tiers the gate requires (game-design build_spec.assets[].tier, asset-manifest

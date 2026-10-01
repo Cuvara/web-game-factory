@@ -3,7 +3,11 @@
 It reads the request the assets step wrote, appends it to calls.jsonl beside the request
 (what the tests assert on), and writes an SVG at <output> as its mode says:
 
-    good            a recognisable multi-shape drawing in the request's palette colours
+    good            a recognisable multi-shape drawing in the request's palette colours; each
+                    variant of a counted requirement smaller than the one before
+    same-variants   the good drawing at one size for every variant: the variants differ by
+                    colour only (rotated palette), every time
+    same-then-good  the same-variants drawing first; the good one once asked to repair
     rect-then-good  one plain rect first; the good drawing once asked to repair
     rect            one plain rect, every time
     script          a good drawing with a <script> in it
@@ -33,14 +37,16 @@ width = asset.get("width") or 96
 height = asset.get("height") or 96
 
 
-def good(colours):
+def good(colours, k=None):
+    if k is None:
+        k = 1.0 - 0.2 * ((asset.get("variant_index") or 1) - 1)
     a, b, c = (colours * 3)[:3]
     return (f'<svg xmlns="http://www.w3.org/2000/svg" width="{width}" height="{height}" '
             f'viewBox="0 0 {width} {height}">'
             f'<title>{asset["id"]}</title>'
-            f'<ellipse cx="{width / 2}" cy="{height * 0.6}" rx="{width * 0.35}" '
-            f'ry="{height * 0.3}" fill="{a}"/>'
-            f'<circle cx="{width / 2}" cy="{height * 0.3}" r="{width * 0.18}" fill="{b}"/>'
+            f'<ellipse cx="{width / 2}" cy="{height * 0.6}" rx="{width * 0.35 * k}" '
+            f'ry="{height * 0.3 * k}" fill="{a}"/>'
+            f'<circle cx="{width / 2}" cy="{height * 0.3}" r="{width * 0.18 * k}" fill="{b}"/>'
             f'<path d="M {width * 0.3} {height * 0.8} L {width / 2} {height * 0.95} '
             f'L {width * 0.7} {height * 0.8} Z" fill="{c}"/>'
             f'<circle cx="{width * 0.45}" cy="{height * 0.28}" r="{width * 0.03}" '
@@ -53,6 +59,12 @@ rect = (f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {width} {height}"
 
 if mode == "good":
     svg = good(palette)
+elif mode == "same-variants":
+    shift = (asset.get("variant_index") or 1) - 1
+    svg = good(palette[shift:] + palette[:shift], k=1.0)
+elif mode == "same-then-good":
+    shift = (asset.get("variant_index") or 1) - 1
+    svg = good(palette) if request.get("repair") else good(palette[shift:] + palette[:shift], k=1.0)
 elif mode == "rect-then-good":
     svg = good(palette) if request.get("repair") else rect
 elif mode == "rect":

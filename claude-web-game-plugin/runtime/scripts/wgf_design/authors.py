@@ -27,7 +27,7 @@ import re
 
 from wgflib import template_contract as contract
 
-from . import archetypes, identity
+from . import archetypes, identity, presentation
 from .platforms import supported_placements, tightest_interval
 
 __all__ = ["DesignAuthor", "ArchetypeAuthor", "AUTHORS", "register_author", "resolve_author",
@@ -117,6 +117,18 @@ class Exclusions:
 
 
 # -- the built-in author -----------------------------------------------------------------
+
+def _subsets_clause(locales):
+    """' (subsets: latin, cyrillic - en, ru)': what the font files must cover, stated so the
+    asset step's coverage check and whoever builds the files read the same thing."""
+    coverage = presentation.load_font_coverage()
+    subsets = []
+    for locale in locales or []:
+        for subset in (presentation.locale_subsets(locale, coverage) or [])[:1]:
+            if subset not in subsets:
+                subsets.append(subset)
+    return (f" (subsets: {', '.join(subsets)} - {', '.join(locales)})" if subsets else "")
+
 
 class ArchetypeAuthor(DesignAuthor):
     name = "archetype"
@@ -262,6 +274,9 @@ class ArchetypeAuthor(DesignAuthor):
                     locales.append(locale)
         if "en" not in locales:
             locales.append("en")
+        # Every face must set every locale in scope: a kit face that cannot is swapped for
+        # its covering alternate (identity.ALTERNATES), never left to a system fallback.
+        look, _swapped = identity.cover(look, locales, presentation.load_font_coverage())
         terminal = {
             "skill-only": f"Progression is the personal best. The loop is deliberately open, bounded by "
                           f"{content_units} {a['content_unit_kind']} - there is no content treadmill to feed.",
@@ -383,7 +398,8 @@ class ArchetypeAuthor(DesignAuthor):
         # 7. The build spec.
         spec = self._build_spec(a, look, engine, orientation, resolution, is_level, touchpoints,
                                 time_to_first_play, time_to_first_reward, run, target, audience,
-                                exclusions, features, archetypes.EXPERIENCE[archetype_id])
+                                exclusions, features, archetypes.EXPERIENCE[archetype_id],
+                                locales)
 
         open_questions.insert(0, f"Archetype '{archetype_id}' was chosen because the {why_archetype}. "
                                  "Confirm at G3 that the loop is the one the strategy meant.")
@@ -438,7 +454,7 @@ class ArchetypeAuthor(DesignAuthor):
 
     def _build_spec(self, a, look, engine, orientation, resolution, is_level, touchpoints,
                     time_to_first_play, time_to_first_reward, run, target, audience, exclusions,
-                    features, ex):
+                    features, ex, locales=()):
         fail_state = "level-fail" if is_level else "fail"
         # Decided first: whether keyboard bindings exist decides what the states may name.
         no_desktop = exclusions.mentions("desktop", "keyboard")
@@ -567,7 +583,8 @@ class ArchetypeAuthor(DesignAuthor):
              "count": len(faces), "source_preference": "library", "est_cost": 0,
              "spec": ("Files: " + "; ".join(f"{f} ({identity.font_source(f)})" for f in faces)
                       + ". SIL Open Font License 1.1, its OFL.txt shipped beside the files. "
-                        "WOFF2 (TTF accepted), subset to the locales in scope, bundled under "
+                        "WOFF2 (TTF accepted), subset to the locales in scope"
+                      + _subsets_clause(locales) + ", bundled under "
                         "public/assets and loaded through the runtime asset manifest with "
                         "@font-face; awaited (document.fonts.load) before the first UI frame."),
              "role": "font", "dimension": "2d",

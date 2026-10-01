@@ -16,6 +16,22 @@ requirement was relaxed.
 
 ### Fixed
 
+- **Defects the lead caught only by eye now fail a check** (quality monitor, 2026-10-01).
+  `font.coverage` (assets): a delivered font's cmap must map every character of each locale in
+  `scope.locales` - TTF/OTF/WOFF read with the standard library, WOFF2 through the system
+  Brotli decoder via `ctypes`, else `skipped` "coverage unchecked"; the 2D reference library's
+  Latin-only WOFF2 fonts fail with `ru`. The design step refuses a typography whose face cannot
+  set a locale in scope (`asset-quality.yaml` `fonts.families`, read from the Google Fonts
+  catalogue), and the archetype author swaps such a face for its kit's covering alternate.
+  `variants.distinct` (assets): a counted requirement's drawings must differ by silhouette,
+  not colour or numeral; an author is sent back while it draws. `variants.count`: a library
+  short of the count fails the set and `variants-short` is an error for mvp items.
+  `scene.contrast` (production gate): each readable role's best box must reach 3:1 against a
+  ring around it; the dark first 3D build's barriers fail at 2.5:1. The drop-merge archetype
+  counts its `pieces` from the rules: an exhaustive search of its tracks reaches level 10,
+  not a fixed 6. asset-quality.yaml 1.1.0, production-quality.yaml 1.1.0 (additive). To bring
+  an artifact forward: re-run the design step for a title whose typography cannot set its
+  locales, and the assets step for fonts and counted drawings.
 - **An idea no catalog concept carries was silently replaced.** Research carried the nearest
   buildable shape forward (an endless runner for the goalkeeper idea), so strategy and design
   were held to a different game. Research now waits for input instead

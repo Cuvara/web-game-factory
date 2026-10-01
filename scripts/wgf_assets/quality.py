@@ -14,6 +14,10 @@ both offline:
         svg.palette            the colours used are near the design's palette, or the root
                                says why not (data-wgf-off-palette="<reason>")
         svg.dimensions         the declared size within the edge limit and the spec's aspect
+    font_quality(data, locales=...)  a TTF/OTF/WOFF/WOFF2: tables, glyphs, and font.coverage -
+                               the cmap maps each locale's characters (fonts.locales)
+    variants_distinct(drawings)  variants.distinct: a counted requirement's drawings differ by
+                               silhouette (a grid mask per drawing, 1 - IoU per pair)
     raster_quality(data, ...)  a PNG decoded through wgf_assets.raster:
         raster.decodes         a PNG this pipeline can read
         raster.not-flat        more than one flat colour
@@ -33,7 +37,8 @@ from wgflib.yamllite import load_file
 from . import raster
 
 __all__ = ["load_bars", "svg_quality", "raster_quality", "font_quality", "font_format", "skipped", "problems",
-           "parse_palette", "BARS_PATH", "QualityBars"]
+           "parse_palette", "BARS_PATH", "QualityBars", "font_cmap", "expand_chars", "CoverageUnchecked",
+           "silhouette", "variants_distinct"]
 
 BARS_PATH = os.path.join(paths.REFERENCE, "asset-quality.yaml")
 
@@ -77,6 +82,25 @@ class QualityBars:
         self.min_distinct = int(rast.get("min_distinct_colors") or 2)
         self.min_transparent = float(rast.get("min_transparent_share") or 0)
         self.max_pixels = int(rast.get("max_pixels") or 4194304)
+        fonts = data.get("fonts") or {}
+        self.locales = {str(k): v for k, v in (fonts.get("locales") or {}).items()
+                        if isinstance(v, dict)}
+        self.families = {str(k): list(v or []) for k, v in (fonts.get("families") or {}).items()}
+        variants = data.get("variants") or {}
+        self.variant_grid = int(variants.get("grid") or 32)
+        self.min_silhouette_distance = float(variants.get("min_silhouette_distance") or 0)
+        self.png_background_delta = int(variants.get("png_background_delta") or 24)
+
+    def locale(self, locale):
+        """The `fonts.locales` entry of a locale, matched by its language subtag; None when
+        the table does not know it."""
+        text = str(locale or "").strip()
+        return self.locales.get(text) or self.locales.get(text.replace("_", "-").split("-")[0].lower())
+
+    def locale_chars(self, locale):
+        """The characters a font must map to set `locale`, or None when it is not listed."""
+        entry = self.locale(locale)
+        return None if entry is None else expand_chars(entry.get("chars"))
 
     def shapes_for(self, role):
         return self.min_shapes.get(role or "", self.min_shapes.get("default", 3))
@@ -382,6 +406,14 @@ def raster_quality(data, *, needs_alpha=False, bars=None, author=None):
 # -- fonts ------------------------------------------------------------------------------------
 
 _SFNT = {b"\x00\x01\x00\x00": "ttf", b"true": "ttf", b"OTTO": "otf"}
+# WOFF2 known-table indices this reader needs (the WOFF2 specification's table of 63 tags).
+_WOFF2_CMAP, _WOFF2_GLYF, _WOFF2_LOCA = 0, 10, 11
+_BROTLI_LIBRARIES = ("libbrotlidec.so.1", "libbrotlidec.so", "libbrotlidec.1.dylib",
+                     "libbrotlidec.dylib", "brotlidec.dll", "libbrotlidec.dll")
+
+
+class CoverageUnchecked(Exception):
+    """The font's character map cannot be read here; the reason is the message."""
 
 
 def font_format(data):
@@ -392,14 +424,220 @@ def font_format(data):
     return {b"wOFF": "woff", b"wOF2": "woff2"}.get(head)
 
 
-def font_quality(data, *, author=None):
-    """The `quality` object of a font file: a real font a browser can load, not a stub.
+def expand_chars(items):
+    """The characters of a `fonts.locales[].chars` list: "X..Y" is a range, else literal."""
+    out = []
+    for item in items or []:
+        item = str(item)
+        if len(item) == 4 and item[1:3] == "..":
+            out.extend(chr(c) for c in range(ord(item[0]), ord(item[3]) + 1))
+        else:
+            out.extend(item)
+    return list(dict.fromkeys(out))
+
+
+def _brotli_decompress(data, size):
+    """Brotli-decompress `data` (at most `size` bytes out) with the system decoder through
+    ctypes, or raise CoverageUnchecked. dlopen only: nothing is spawned."""
+    import ctypes
+    lib = None
+    for name in _BROTLI_LIBRARIES:
+        try:
+            lib = ctypes.CDLL(name)
+            break
+        except OSError:
+            continue
+    if lib is None:
+        raise CoverageUnchecked("WOFF2 tables are Brotli-compressed and no Brotli decoder "
+                                "(libbrotlidec) can be loaded on this machine")
+    decode = lib.BrotliDecoderDecompress
+    decode.argtypes = [ctypes.c_size_t, ctypes.c_char_p, ctypes.POINTER(ctypes.c_size_t),
+                       ctypes.c_char_p]
+    decode.restype = ctypes.c_int
+    out = ctypes.create_string_buffer(max(1, size))
+    out_size = ctypes.c_size_t(size)
+    if decode(len(data), bytes(data), ctypes.byref(out_size), out) != 1:
+        raise CoverageUnchecked("the WOFF2 table data does not Brotli-decode")
+    return out.raw[:out_size.value]
+
+
+def _base128(data, pos):
+    value = 0
+    for i in range(5):
+        byte = data[pos + i]
+        if i == 0 and byte == 0x80:
+            raise ValueError("UIntBase128 with a leading zero")
+        value = (value << 7) | (byte & 0x7F)
+        if not byte & 0x80:
+            return value, pos + i + 1
+    raise ValueError("UIntBase128 longer than 5 bytes")
+
+
+def _cmap_table(data, fmt):
+    """The raw `cmap` table of a font file."""
+    import struct
+    import zlib
+    if fmt in ("ttf", "otf"):
+        (num_tables,) = struct.unpack(">H", data[4:6])
+        for i in range(num_tables):
+            tag, _sum, offset, length = struct.unpack(">4sIII", data[12 + 16 * i:28 + 16 * i])
+            if tag == b"cmap":
+                return bytes(data[offset:offset + length])
+        raise CoverageUnchecked("the font has no cmap table")
+    if fmt == "woff":
+        (num_tables,) = struct.unpack(">H", data[12:14])
+        for i in range(num_tables):
+            tag, offset, comp, orig, _sum = struct.unpack(">4sIIII", data[44 + 20 * i:64 + 20 * i])
+            if tag == b"cmap":
+                raw = bytes(data[offset:offset + comp])
+                return zlib.decompress(raw) if comp < orig else raw
+        raise CoverageUnchecked("the font has no cmap table")
+    # WOFF2: a 48-byte header, a variable-length table directory, one Brotli stream holding
+    # every table back to back in directory order. cmap is never transformed.
+    flavor = bytes(data[4:8])
+    if flavor == b"ttcf":
+        raise CoverageUnchecked("a WOFF2 font collection is not read")
+    num_tables, = struct.unpack(">H", data[12:14])
+    compressed, = struct.unpack(">I", data[20:24])
+    pos, offset, cmap = 48, 0, None
+    for _ in range(num_tables):
+        flags = data[pos]
+        pos += 1
+        index, version = flags & 0x3F, flags >> 6
+        if index == 63:
+            pos += 4
+        orig, pos = _base128(data, pos)
+        transformed = (version == 0) if index in (_WOFF2_GLYF, _WOFF2_LOCA) else (version != 0)
+        length = orig
+        if transformed:
+            length, pos = _base128(data, pos)
+        if index == _WOFF2_CMAP:
+            cmap = (offset, length)
+        offset += length
+    if cmap is None:
+        raise CoverageUnchecked("the font has no cmap table")
+    tables = _brotli_decompress(bytes(data[pos:pos + compressed]), offset)
+    return tables[cmap[0]:cmap[0] + cmap[1]]
+
+
+def font_cmap(data):
+    """{codepoint} the font maps to a glyph, from its Unicode cmap subtables (formats 4 and
+    12, and 0/6 for completeness). Raises CoverageUnchecked when it cannot be read here."""
+    import struct
+    import zlib
+    fmt = font_format(data)
+    if fmt is None:
+        raise CoverageUnchecked("not a TTF, OTF, WOFF or WOFF2 file")
+    try:
+        table = _cmap_table(data, fmt)
+        _version, count = struct.unpack(">HH", table[:4])
+        offsets = set()
+        for i in range(count):
+            platform, encoding, offset = struct.unpack(">HHI", table[4 + 8 * i:12 + 8 * i])
+            if platform == 0 or (platform == 3 and encoding in (1, 10)):
+                offsets.add(offset)
+        mapped = set()
+        for offset in sorted(offsets):
+            (sub,) = struct.unpack(">H", table[offset:offset + 2])
+            if sub == 4:
+                (seg2,) = struct.unpack(">H", table[offset + 6:offset + 8])
+                seg = seg2 // 2
+                ends = struct.unpack(f">{seg}H", table[offset + 14:offset + 14 + seg2])
+                base = offset + 16 + seg2
+                starts = struct.unpack(f">{seg}H", table[base:base + seg2])
+                deltas = struct.unpack(f">{seg}h", table[base + seg2:base + 2 * seg2])
+                ranges_at = base + 2 * seg2
+                ranges = struct.unpack(f">{seg}H", table[ranges_at:ranges_at + seg2])
+                for k in range(seg):
+                    for code in range(starts[k], ends[k] + 1):
+                        if code == 0xFFFF:
+                            continue
+                        if ranges[k] == 0:
+                            glyph = (code + deltas[k]) & 0xFFFF
+                        else:
+                            at = ranges_at + 2 * k + ranges[k] + 2 * (code - starts[k])
+                            (glyph,) = struct.unpack(">H", table[at:at + 2])
+                            if glyph:
+                                glyph = (glyph + deltas[k]) & 0xFFFF
+                        if glyph:
+                            mapped.add(code)
+            elif sub == 12:
+                (groups,) = struct.unpack(">I", table[offset + 12:offset + 16])
+                for g in range(groups):
+                    start, end, glyph = struct.unpack(
+                        ">III", table[offset + 16 + 12 * g:offset + 28 + 12 * g])
+                    if end - start > 0x30000:
+                        raise CoverageUnchecked("an implausible cmap group")
+                    mapped.update(range(start + (1 if glyph == 0 else 0), end + 1))
+            elif sub == 0:
+                glyphs = table[offset + 6:offset + 262]
+                mapped.update(code for code, glyph in enumerate(glyphs) if glyph)
+            elif sub == 6:
+                first, n = struct.unpack(">HH", table[offset + 6:offset + 10])
+                glyphs = struct.unpack(f">{n}H", table[offset + 10:offset + 10 + 2 * n])
+                mapped.update(first + k for k, glyph in enumerate(glyphs) if glyph)
+    except zlib.error as exc:
+        raise CoverageUnchecked(f"the WOFF table data does not decompress: {exc}") from None
+    except (struct.error, ValueError, IndexError) as exc:
+        raise CoverageUnchecked(f"the cmap table cannot be read: {exc}") from None
+    if not mapped:
+        raise CoverageUnchecked("the font has no Unicode cmap subtable")
+    return mapped
+
+
+def _coverage_check(checks, data, locales, bars):
+    """font.coverage: the cmap maps every character each locale in scope needs."""
+    if not locales:
+        return
+    try:
+        mapped = font_cmap(data)
+    except CoverageUnchecked as exc:
+        _check(checks, "font.coverage", True,
+               f"coverage unchecked for {', '.join(locales)}: {exc}", skipped_=True)
+        return
+    missing, unknown, covered = {}, [], []
+    for locale in locales:
+        chars = bars.locale_chars(locale)
+        if chars is None:
+            unknown.append(locale)
+            continue
+        lacking = [c for c in chars if ord(c) not in mapped]
+        if lacking:
+            missing[locale] = lacking
+        else:
+            covered.append(locale)
+    parts = []
+    if missing:
+        parts.append("; ".join(
+            f"{locale}: {len(lack)} of {len(bars.locale_chars(locale))} required characters "
+            f"have no glyph ({''.join(lack[:12])}{'...' if len(lack) > 12 else ''}) - "
+            f"{'/'.join((bars.locale(locale) or {}).get('subsets') or [])} not covered"
+            for locale, lack in missing.items()))
+    if covered:
+        parts.append(f"covers {', '.join(covered)}")
+    if unknown:
+        parts.append(f"no character table for {', '.join(unknown)} (not judged)")
+    summary = f"{len(mapped)} mapped characters; " + "; ".join(parts)
+    if not missing and not covered:
+        _check(checks, "font.coverage", True, summary, skipped_=True)
+    else:
+        _check(checks, "font.coverage", not missing, summary)
+
+
+def font_quality(data, *, locales=(), bars=None, author=None):
+    """The `quality` object of a font file: a real font a browser can load, not a stub, that
+    can set every locale in the design's scope.
 
     TTF/OTF: the table directory is read and must hold `cmap`, `name` and outlines (`glyf`
     with `loca`, `CFF `/`CFF2`, or colour glyphs), with at least 60 glyphs (`maxp`). WOFF/WOFF2:
     the header's signature, flavour, table count and sizes are checked (the tables are
-    compressed; a browser decompresses them). The licence is the asset policy's to judge."""
+    compressed; a browser decompresses them). With `locales`, `font.coverage` reads the cmap
+    (asset-quality.yaml `fonts.locales`): it fails when a locale's characters have no glyph,
+    and is `skipped` ("coverage unchecked") when the cmap cannot be read here - a WOFF2 on a
+    machine without the Brotli decoder. The licence is the asset policy's to judge."""
     import struct
+    bars = bars or load_bars()
+    locales = [str(x) for x in locales or [] if x]
     checks = []
     fmt = font_format(data)
     _check(checks, "font.format", fmt is not None,
@@ -431,6 +669,7 @@ def font_quality(data, *, author=None):
                 glyphs = None
         _check(checks, "font.glyphs", bool(glyphs and glyphs >= 60),
                f"{glyphs} glyphs" if glyphs is not None else "no maxp table: glyph count unknown")
+        _coverage_check(checks, data, locales, bars)
         return _result(checks, author, parts=glyphs)
     try:
         # WOFF and WOFF2 share the leading fields: signature, flavour, length, numTables.
@@ -441,5 +680,282 @@ def font_quality(data, *, author=None):
     ok = flavor in (b"\x00\x01\x00\x00", b"OTTO", b"true") and length == len(data) and num_tables >= 6
     _check(checks, "font.header", ok,
            f"flavour {flavor!r}, {num_tables} tables, declared {length} bytes of {len(data)}")
+    if ok:
+        _coverage_check(checks, data, locales, bars)
     return _result(checks, author)
 
+
+# -- variants -----------------------------------------------------------------------------------
+
+_NUMBER = re.compile(r"[-+]?(?:\d+\.?\d*|\.\d+)(?:[eE][-+]?\d+)?")
+_TRANSFORM = re.compile(r"(matrix|translate|scale|rotate|skewX|skewY)\s*\(([^)]*)\)")
+_PATH_TOKEN = re.compile(r"[MmLlHhVvCcSsQqTtAaZz]|[-+]?(?:\d+\.?\d*|\.\d+)(?:[eE][-+]?\d+)?")
+_PATH_ARGS = {"M": 2, "L": 2, "H": 1, "V": 1, "C": 6, "S": 4, "Q": 4, "T": 2, "A": 7, "Z": 0}
+
+
+def _numbers(text):
+    return [float(n) for n in _NUMBER.findall(text or "")]
+
+
+def _multiply(m, n):
+    a, b, c, d, e, f = m
+    a2, b2, c2, d2, e2, f2 = n
+    return (a * a2 + c * b2, b * a2 + d * b2, a * c2 + c * d2, b * c2 + d * d2,
+            a * e2 + c * f2 + e, b * e2 + d * f2 + f)
+
+
+def _transform(text):
+    """The affine matrix (a, b, c, d, e, f) of an SVG transform attribute."""
+    import math
+    matrix = (1.0, 0.0, 0.0, 1.0, 0.0, 0.0)
+    for name, args in _TRANSFORM.findall(text or ""):
+        v = _numbers(args)
+        step = None
+        if name == "matrix" and len(v) == 6:
+            step = tuple(v)
+        elif name == "translate" and v:
+            step = (1, 0, 0, 1, v[0], v[1] if len(v) > 1 else 0)
+        elif name == "scale" and v:
+            step = (v[0], 0, 0, v[1] if len(v) > 1 else v[0], 0, 0)
+        elif name == "rotate" and v:
+            r = math.radians(v[0])
+            step = (math.cos(r), math.sin(r), -math.sin(r), math.cos(r), 0, 0)
+            if len(v) == 3:
+                step = _multiply(_multiply((1, 0, 0, 1, v[1], v[2]), step), (1, 0, 0, 1, -v[1], -v[2]))
+        elif name in ("skewX", "skewY") and v:
+            t = math.tan(math.radians(v[0]))
+            step = (1, 0, t, 1, 0, 0) if name == "skewX" else (1, t, 0, 1, 0, 0)
+        if step:
+            matrix = _multiply(matrix, step)
+    return matrix
+
+
+def _path_points(d):
+    """The subpaths of SVG path data as point lists: segment ends and curve control points
+    (the curve lies inside their hull), absolute coordinates."""
+    tokens = _PATH_TOKEN.findall(d or "")
+    subpaths, points = [], []
+    x = y = sx = sy = 0.0
+    command, i = None, 0
+    while i < len(tokens):
+        if tokens[i].isalpha():
+            command = tokens[i]
+            i += 1
+            if command in "Zz":
+                if points:
+                    subpaths.append(points)
+                points, x, y = [], sx, sy
+                continue
+        if command is None:
+            break
+        upper = command.upper()
+        count = _PATH_ARGS[upper]
+        args = tokens[i:i + count]
+        if len(args) < count or any(a.isalpha() for a in args):
+            break
+        i += count
+        v = [float(a) for a in args]
+        rel = command.islower()
+        if upper == "H":
+            x = x + v[0] if rel else v[0]
+            points.append((x, y))
+            continue
+        if upper == "V":
+            y = y + v[0] if rel else v[0]
+            points.append((x, y))
+            continue
+        if upper == "A":
+            v = v[5:7]
+        pairs = [(v[k] + (x if rel else 0), v[k + 1] + (y if rel else 0)) for k in range(0, len(v), 2)]
+        if upper == "M":
+            if points:
+                subpaths.append(points)
+            points = []
+            sx, sy = pairs[0]
+            command = "l" if rel else "L"
+        points.extend(pairs)
+        x, y = pairs[-1]
+    if points:
+        subpaths.append(points)
+    return subpaths
+
+
+def _attr(element, name, inherited):
+    style = element.get("style") or ""
+    for declaration in style.split(";"):
+        if ":" in declaration:
+            key, value = declaration.split(":", 1)
+            if key.strip() == name:
+                return value.strip()
+    return element.get(name, inherited)
+
+
+def _shapes(element, matrix, fill, drawn, out):
+    """[(polygon points in canvas units, filled?)] of the drawn shapes under `element`."""
+    import math
+    name = _local(element.tag)
+    if name in NOT_DRAWN or not drawn:
+        return
+    if (_attr(element, "display", "") == "none" or _attr(element, "visibility", "") == "hidden"
+            or _attr(element, "opacity", "1") in ("0", "0.0")):
+        return
+    matrix = _multiply(matrix, _transform(element.get("transform")))
+    fill = _attr(element, "fill", fill)
+    num = lambda key: float((_numbers(element.get(key)) or [0])[0])  # noqa: E731
+    polys = []
+    if name == "rect":
+        x, y, w, h = num("x"), num("y"), num("width"), num("height")
+        if w > 0 and h > 0:
+            polys.append([(x, y), (x + w, y), (x + w, y + h), (x, y + h)])
+    elif name in ("circle", "ellipse"):
+        cx, cy = num("cx"), num("cy")
+        rx = num("r") if name == "circle" else num("rx")
+        ry = num("r") if name == "circle" else num("ry")
+        if rx > 0 and ry > 0:
+            polys.append([(cx + rx * math.cos(k * math.pi / 12), cy + ry * math.sin(k * math.pi / 12))
+                          for k in range(24)])
+    elif name == "line":
+        out.append(([_apply(matrix, (num("x1"), num("y1"))), _apply(matrix, (num("x2"), num("y2")))],
+                    False))
+    elif name in ("polyline", "polygon"):
+        v = _numbers(element.get("points"))
+        polys.append(list(zip(v[0::2], v[1::2])))
+    elif name == "path":
+        polys.extend(_path_points(element.get("d")))
+    filled = (fill or "black").strip().lower() not in ("none", "transparent")
+    for poly in polys:
+        if len(poly) >= 2:
+            out.append(([_apply(matrix, p) for p in poly], filled and len(poly) >= 3))
+    for child in element:
+        _shapes(child, matrix, fill, True, out)
+
+
+def _apply(m, p):
+    return (m[0] * p[0] + m[2] * p[1] + m[4], m[1] * p[0] + m[3] * p[1] + m[5])
+
+
+def _inside(x, y, poly):
+    inside, j = False, len(poly) - 1
+    for i in range(len(poly)):
+        xi, yi = poly[i]
+        xj, yj = poly[j]
+        if (yi > y) != (yj > y) and x < (xj - xi) * (y - yi) / ((yj - yi) or 1e-12) + xi:
+            inside = not inside
+        j = i
+    return inside
+
+
+def _svg_silhouette(data, grid):
+    if len(data) > 1048576 or re.search(rb"<!\s*(DOCTYPE|ENTITY)", data, re.I):
+        return None
+    try:
+        root = ET.fromstring(data)
+    except ET.ParseError:
+        return None
+    box = _viewbox(root)
+    if box is None:
+        w, h = _length(root.get("width")), _length(root.get("height"))
+        if not w or not h:
+            return None
+        box = [0.0, 0.0, w, h]
+    shapes = []
+    for child in root:
+        _shapes(child, (1.0, 0.0, 0.0, 1.0, 0.0, 0.0), _attr(root, "fill", None), True, shapes)
+    cell_w, cell_h = box[2] / grid, box[3] / grid
+    mask = set()
+    for poly, filled in shapes:
+        xs, ys = [p[0] for p in poly], [p[1] for p in poly]
+        c0 = max(0, int((min(xs) - box[0]) / cell_w))
+        c1 = min(grid - 1, int((max(xs) - box[0]) / cell_w))
+        r0 = max(0, int((min(ys) - box[1]) / cell_h))
+        r1 = min(grid - 1, int((max(ys) - box[1]) / cell_h))
+        if filled:
+            for r in range(r0, r1 + 1):
+                for c in range(c0, c1 + 1):
+                    if (r, c) not in mask and _inside(box[0] + (c + 0.5) * cell_w,
+                                                      box[1] + (r + 0.5) * cell_h, poly):
+                        mask.add((r, c))
+        else:
+            for (ax, ay), (bx, by) in zip(poly, poly[1:]):
+                steps = max(1, int(max(abs(bx - ax) / cell_w, abs(by - ay) / cell_h) * 2))
+                for k in range(steps + 1):
+                    px, py = ax + (bx - ax) * k / steps, ay + (by - ay) * k / steps
+                    c, r = int((px - box[0]) / cell_w), int((py - box[1]) / cell_h)
+                    if 0 <= r < grid and 0 <= c < grid:
+                        mask.add((r, c))
+    return frozenset(mask)
+
+
+def _png_silhouette(data, grid, delta):
+    try:
+        image = raster.decode_png(data)
+    except raster.RasterError:
+        return None
+    px, w, h = image.pixels, image.width, image.height
+    if not w or not h:
+        return None
+    alpha = any(px[i + 3] < 16 for i in range(3, len(px), 4 * max(1, (w * h) // 4096)))
+    corner = px[0:3]
+    mask = set()
+    for r in range(grid):
+        for c in range(grid):
+            x, y = min(w - 1, int((c + 0.5) * w / grid)), min(h - 1, int((r + 0.5) * h / grid))
+            i = (y * w + x) * 4
+            if alpha:
+                on = px[i + 3] >= 16
+            else:
+                on = max(abs(px[i + k] - corner[k]) for k in range(3)) >= delta
+            if on:
+                mask.add((r, c))
+    return frozenset(mask)
+
+
+def silhouette(data, fmt, bars=None):
+    """The drawing's silhouette: the set of (row, col) cells of a grid x grid mask over its
+    canvas that it covers, or None when it cannot be read."""
+    bars = bars or load_bars()
+    if fmt == "svg":
+        return _svg_silhouette(data, bars.variant_grid)
+    if fmt == "png":
+        return _png_silhouette(data, bars.variant_grid, bars.png_background_delta)
+    return None
+
+
+def variants_distinct(drawings, bars=None):
+    """The `variants.distinct` check of a counted requirement's drawings [(id, bytes, fmt)]:
+    every pair's silhouettes differ by at least the bar (1 - IoU of their masks). A recolour,
+    or a copy with only its numeral changed, is the same silhouette. Returns a check entry
+    with `measured` {pairs: {"a~b": distance}, closest}, or None with fewer than 2 drawings."""
+    bars = bars or load_bars()
+    masks, unread = [], []
+    for vid, data, fmt in drawings:
+        mask = silhouette(data, fmt, bars)
+        (unread.append(vid) if mask is None else masks.append((vid, mask)))
+    if len(masks) + len(unread) < 2:
+        return None
+    pairs, same = {}, []
+    for i in range(len(masks)):
+        for j in range(i + 1, len(masks)):
+            (a, ma), (b, mb) = masks[i], masks[j]
+            union = len(ma | mb)
+            distance = round(1 - len(ma & mb) / union, 3) if union else 0.0
+            pairs[f"{a}~{b}"] = distance
+            if distance < bars.min_silhouette_distance:
+                same.append((distance, a, b))
+    bar = bars.min_silhouette_distance
+    closest = min(pairs.items(), key=lambda kv: kv[1]) if pairs else None
+    if same:
+        same.sort()
+        summary = (f"{len(same)} pair(s) of drawings share a silhouette: "
+                   + ", ".join(f"{a} and {b} differ by {d:.2f}" for d, a, b in same[:6])
+                   + f"; the bar is {bar:.2f} (1 - IoU of their {bars.variant_grid}x"
+                     f"{bars.variant_grid} masks) - draw each variant as its own shape and "
+                     "size, never a recolour or a changed numeral")
+    elif unread:
+        summary = f"cannot read the silhouette of {', '.join(unread)}"
+    else:
+        summary = (f"{len(masks)} drawings, every pair differs; the closest, "
+                   f"{closest[0].replace('~', ' and ')}, by {closest[1]:.2f} (bar {bar:.2f})")
+    entry = {"id": "variants.distinct", "status": "fail" if (same or unread) else "pass",
+             "summary": summary}
+    return entry, {"pairs": pairs, "closest": closest[1] if closest else None, "bar": bar}

@@ -82,6 +82,13 @@ class CommandAuthor:
         rounds = self.settings.get("repair_rounds")
         if not isinstance(rounds, int) or isinstance(rounds, bool) or not 0 <= rounds <= 5:
             raise AuthorError("factory.assets.author.repair_rounds must be an integer 0..5")
+        try:
+            for part in argv:
+                part.format(request="", output="", prompt="")
+        except (KeyError, IndexError, ValueError) as exc:
+            raise AuthorError(f"factory.assets.author.argv has a placeholder this author does "
+                              f"not provide ({exc}); use {{request}}, {{output}}, {{prompt}}, "
+                              f"and double any literal brace") from exc
         self.argv = argv
         self.repair_rounds = rounds
         try:

@@ -276,6 +276,13 @@ class Author(ProductionCase):
                                                        context)
         self.assertEqual(result.outcome, "FAILED")
         self.assertIn("argv", result.error)
+        for author in ({"kind": "painter"}, {"kind": "command", "argv": ["x", "{repo}"]},
+                       {"kind": "command", "argv": ["x"], "repair_rounds": 9}):
+            context = base.FakeContext({"root": self.root, "author": author})
+            result = AssetsStep(base.Definition()).execute(
+                inputs_with(production_design()), context)
+            self.assertEqual(result.outcome, "FAILED", author)
+            self.assertFalse(result.retryable)
 
     def test_re_execution_reuses_what_the_author_drew(self):
         design = production_design([spec_asset("hero", "sprite", "player")])

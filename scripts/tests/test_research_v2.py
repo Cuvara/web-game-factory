@@ -670,6 +670,17 @@ class Selection(unittest.TestCase):
         report = outputs(scan(context=_with_idea("an endless runner with zombies")))
         self.assertIn("runner", report["opportunity"]["concept"]["subgenre"])
 
+    def test_a_brief_nothing_matches_waits_unless_the_nearest_is_asked_for(self):
+        idea = _with_idea("goalkeeper penalty shootout")
+        waiting = scan(context=idea)
+        self.assertEqual(waiting.outcome, StepOutcome.WAITING_FOR_INPUT)
+        self.assertNotIn("opportunity", outputs(waiting))
+        nearest = scan(context=_with_idea("goalkeeper penalty shootout"),
+                       idea_fallback="nearest")
+        self.assertEqual(nearest.outcome, StepOutcome.SUCCESS)
+        gaps = outputs(nearest)["research-report"]["gaps"]
+        self.assertTrue(any(g["kind"] == "idea-unmatched" for g in gaps))
+
     def test_the_shipped_corpus_still_selects_the_same_shape(self):
         report = outputs(scan(corpus=SHIPPED, platforms=None))["research-report"]
         self.assertEqual(report["selection"]["candidate_id"], "match-3")

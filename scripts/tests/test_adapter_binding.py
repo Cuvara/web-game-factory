@@ -82,8 +82,10 @@ class AdapterBindingDrift(unittest.TestCase):
 
     def test_generated_workflow_runs_the_binding_workflow(self):
         runs = {entry["id"]: entry["runs"] for entry in self.binding["workflows"]}
-        for wid, path, _summary in generator_rows("workflows"):
+        craft = {entry["id"]: entry.get("craft") or [] for entry in self.binding["workflows"]}
+        for wid, path, _summary, *rest in generator_rows("workflows"):
             self.assertEqual(path, runs[wid])
+            self.assertEqual(rest[0].split(";") if rest else [], craft[wid])
 
     def test_every_surface_is_on_disk_and_nothing_else_is(self):
         expected_commands = ({f"wgf-{cid}.md" for cid in self.ids("commands")}

@@ -17,6 +17,19 @@ Arguments: the text given with this prompt.
 4. the factory configuration `bin/wgf where --json` reports: `config_layers` (the shipped
    file, then the project's own, layered) and the resolved `autonomy`
 
+## The production bar
+
+The run's agents are pointed at these craft playbooks by their briefs and requests - what a
+finished build looks like, plays like and is checked against. Read them to report a run's
+output honestly; never to steer a step, which is the engine's:
+
+- `core/craft/production-art-and-ui.md`
+- `core/craft/production-art-2d.md`
+- `core/craft/production-art-3d.md`
+- `core/craft/game-ui-kit.md`
+- `core/craft/juice.md`
+- `core/craft/production-wiring.md`
+
 ## Arguments
 
 Accept exactly these (the engine's own flags, `bin/wgf new-game --help` and

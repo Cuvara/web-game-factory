@@ -16,6 +16,8 @@ Supports: **gameplay**
 - `${CLAUDE_PLUGIN_ROOT}/runtime/core/craft/3d-assets-and-animation.md`
 - `${CLAUDE_PLUGIN_ROOT}/runtime/core/craft/web-performance.md`
 - `${CLAUDE_PLUGIN_ROOT}/runtime/core/craft/game-feel.md`
+- `${CLAUDE_PLUGIN_ROOT}/runtime/core/craft/production-art-3d.md`
+- `${CLAUDE_PLUGIN_ROOT}/runtime/core/craft/production-wiring.md`
 
 This skill is a pointer, not a copy. Read the paths above rather than relying on anything
 restated here; core is authoritative and this file is not a substitute for it.

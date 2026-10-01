@@ -13,6 +13,7 @@ Core loop, session structure, retention hooks, scope tiers, the build spec, and 
 - `core/craft/onboarding-and-portal-ux.md`
 - `core/templates/gdd.md`
 - `core/craft/production-art-and-ui.md`
+- `core/craft/game-ui-kit.md`
 
 This skill is a pointer, not a copy. Read the paths above rather than relying on anything
 restated here; core is authoritative and this file is not a substitute for it.

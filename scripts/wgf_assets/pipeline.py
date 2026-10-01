@@ -51,9 +51,11 @@ import os
 import tempfile
 from collections import namedtuple
 
+from wgflib import paths
+
 from . import atlas as atlases_mod
 from . import formats, gltf, modelspec, quality as quality_mod, raster, runtime
-from .author import AuthorError, AuthorRunFailed
+from .author import AUTHOR_CRAFT, AuthorError, AuthorRunFailed
 from .library import LibraryError, match_all, search_all
 from .optimize import optimize as optimize_bytes
 from .placeholders import BackendError
@@ -875,6 +877,8 @@ class AssetPipeline:
             "quality_bars": self.bars.summary(req.role),
             "format": "svg",
             "destination": relative,
+            # The playbooks the drawing follows: silhouettes, palette, the style kit.
+            "craft": [os.path.join(paths.CORE, "craft", name) for name in AUTHOR_CRAFT],
         }
         if notes:
             request["notes"] = list(notes)

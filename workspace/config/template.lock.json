@@ -6,8 +6,8 @@
   "ref": "v1.2.0",
   "validated_on": "2026-09-28",
   "golden_ports": {
-    "about": "Test fixtures only, never a revision a game is created from: the golden runs' replay developer (scripts/golden/replay_developer.py) reads its hand-made ports (examples/*/wgf-golden/, examples/wgf-golden-shared/) from a checkout of this commit, because the pinned release above does not ship them. It is the template's main at the merge of those ports onto the release (ea466d7), plus the ports' play probe and on-screen objective, which the playability step plays them through; outside the ports - and one tsconfig exclude for them - its tree is the release's.",
-    "commit": "1c5afcbe89a81f447517c85ee33fa5bcbd930569",
-    "ref": "wgf-golden-play-probe"
+    "about": "Test fixtures only, never a revision a game is created from: the golden runs' replay developer (scripts/golden/replay_developer.py) reads its hand-made ports (examples/*/wgf-golden/, examples/wgf-golden-shared/) from a checkout of this commit, because the pinned release above does not ship them. It is the play-probe ports (1c5afcb: the template's main at the merge of the ports onto the release, plus their play probe and on-screen objective) with the 2D port's production art merged in (8f49d28: examples/tower-merge-rush/wgf-golden/library - the assets library the golden run's assets step imports - and baseline/, the approved frames its visual QA compares against), and the 2D port's greybox ground deepened so a build without its backdrop is not a wash. Outside the ports - and one tsconfig exclude for them - its tree is the release's.",
+    "commit": "7f95c99599fd3a39a9fa7b7b044330852a5b1e4a",
+    "ref": "wgf-golden-production"
   }
 }

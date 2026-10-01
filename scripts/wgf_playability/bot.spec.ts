@@ -93,6 +93,9 @@ class Watch {
   // The UI of the screen state now: measured once per name, with its frame.
   async screen(name: string): Promise<void> {
     if (name in this.ui) return;
+    // A screen's entrance (a fade, a stamp) is not what it shows: measured mid-fade, text is
+    // drawn at a fraction of its colour and fails a contrast it meets a moment later.
+    await settle(this.page);
     const snapshot = await snap(this.page);
     this.saw(snapshot);
     const measured = await measureUI(this.page);
@@ -106,6 +109,22 @@ class Watch {
     return { errors: this.errors, asset_requests: this.requests, runtime_assets: this.runtimeAssets,
              assets_loaded: [...this.loaded].sort(), ui: this.ui };
   }
+}
+
+// Wait - at most `maxMs` - for every finite CSS animation and transition running now to
+// finish. Infinite ones (a pulse, a spinner) are the screen's steady state and are not waited
+// for.
+async function settle(page: Page, maxMs = 1500): Promise<void> {
+  await page.evaluate(async (max) => {
+    const running = document.getAnimations().filter((a) => {
+      const end = a.effect?.getComputedTiming().endTime;
+      return a.playState === "running" && typeof end === "number" && Number.isFinite(end);
+    });
+    await Promise.race([
+      Promise.all(running.map((a) => a.finished.catch(() => undefined))),
+      new Promise((resolve) => setTimeout(resolve, max)),
+    ]);
+  }, maxMs);
 }
 
 async function snap(page: Page): Promise<Snapshot | null> {

@@ -7,7 +7,9 @@
              qa-report (on a verify -> develop loop),
              review-report (on a review -> develop loop: its blockers lead the brief),
              playability-report (on a playability -> develop loop: its failed checks
-             and frames lead the brief)
+             and frames lead the brief),
+             production-quality-report, visual-qa-report (on a loop back from the
+             production gates, directly or through assets: their failures lead the brief)
     output   prototype-report
     effect   one commit in the game repository per visit, keyed by the idempotency key
 
@@ -246,7 +248,9 @@ class DevelopStep(WorkflowStep):
             return StepResult.waiting_for_input(
                 f"develop needs {', '.join(missing)} in the run before it can brief a build")
         for artifact_type in REQUIRED_INPUTS + ("title-strategy", "tech-plan", "qa-report",
-                                                "review-report", "playability-report"):
+                                                "review-report", "playability-report",
+                                                "production-quality-report",
+                                                "visual-qa-report"):
             ref = inputs.refs.get(artifact_type)
             version = getattr(ref, "schema_version", None) or ""
             if ref is not None and version and version.split(".")[0] != SUPPORTED_MAJOR:
@@ -264,6 +268,9 @@ class DevelopStep(WorkflowStep):
         review = inputs.load("review-report") if "review-report" in inputs else None
         playability = (inputs.load("playability-report") if "playability-report" in inputs
                        else None)
+        production = (inputs.load("production-quality-report")
+                      if "production-quality-report" in inputs else None)
+        visual_qa = inputs.load("visual-qa-report") if "visual-qa-report" in inputs else None
         # A qa-report on the first visit is a leftover from an earlier release, not feedback
         # on this build; only a loop back from verify carries defects to fix.
         if qa is not None and (context.visit <= 1 or qa.get("verdict") == "pass"):
@@ -311,6 +318,17 @@ class DevelopStep(WorkflowStep):
                 context.visit > 1 and playability.get("verdict") == "FAIL"
                 and playability.get("commit") == git.head()):
             playability = None
+        # And the production gates': only a FAIL of the commit this visit starts from is
+        # feedback on this build - reached directly (route develop) or through assets, which
+        # rebuilt what the report named without committing, so HEAD is still the one judged.
+        if production is not None and not (
+                context.visit > 1 and production.get("verdict") == "FAIL"
+                and production.get("commit") == git.head()):
+            production = None
+        if visual_qa is not None and not (
+                context.visit > 1 and visual_qa.get("verdict") == "FAIL"
+                and visual_qa.get("commit") == git.head()):
+            visual_qa = None
 
         key = context.idempotency_key
         brief_dir = os.path.join(checkout, briefs.BRIEF_DIR)
@@ -357,6 +375,7 @@ class DevelopStep(WorkflowStep):
                 strategy=strategy, qa=qa, previous_checks=previous_checks,
                 refs=inputs.refs, skills=settings.skills, review=review,
                 playability=playability, frames_root=getattr(context, "run_dir", None),
+                production=production, visual_qa=visual_qa,
                 phase=phase, greybox_commit=greybox_commit, review_baseline=review_baseline,
                 tech_plan=tech_plan, self_playtest=settings.self_playtest,
                 mobile_test=bool((game_config.get("verification") or {}).get("mobile_test",

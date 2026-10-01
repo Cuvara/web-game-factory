@@ -230,12 +230,24 @@ def base_config():
     return copy.deepcopy(document.get("factory") or {})
 
 
-def build_config(game, workdir, template_dir=None, python=None):
-    """The golden run's factory configuration, as the `factory:` mapping."""
+def port_fixtures(game, ports=None):
+    """(library dir or None, baseline dir or None) the golden ports checkout ships for `game`:
+    <port>/library (the production art, factory.assets.libraries) and <port>/baseline (the
+    approved frames, factory.visualqa.judge.baseline_dir)."""
+    root = os.path.join(ports or template.golden_ports_checkout(), *game.port.split("/"))
+    found = [os.path.join(root, name) for name in ("library", "baseline")]
+    return tuple(path if os.path.isdir(path) else None for path in found)
+
+
+def build_config(game, workdir, template_dir=None, python=None, with_library=True):
+    """The golden run's factory configuration, as the `factory:` mapping. `with_library=False`
+    leaves the port's art library out - a calibration run, whose assets are placeholders."""
     template_dir = os.path.abspath(template_dir or globals()["template_dir"]())
     python = python or sys.executable
     games_dir = os.path.join(workdir, "games")
     repo = os.path.join(games_dir, game.title_id)
+    library, baseline = port_fixtures(game)
+    library = library if with_library else None
     config = base_config()
     overrides = {
         "storage": {"directory": os.path.join(workdir, "factory-store"), "fsync": True},
@@ -254,7 +266,14 @@ def build_config(game, workdir, template_dir=None, python=None):
             "as_of": games.AS_OF,
             "live": False,
         },
-        "assets": {"root": repo},
+        # The port's production art arrives as a library fixture (when the port ships one),
+        # imported by the real assets step like any installation's library.
+        "assets": {"root": repo, **({"libraries": [library]} if library else {})},
+        # Visual QA without an agent: each runtime frame against the port's approved frame of
+        # the same state (wgf_visualqa/baseline.py). A port with no baseline has no judge,
+        # so visual QA blocks rather than passing unjudged.
+        "visualqa": {"judge": ({"kind": "baseline", "baseline_dir": baseline}
+                               if baseline else {"kind": "none"})},
         "develop": {
             "author": dict(GOLDEN_AUTHOR),
             "developer": {
@@ -290,7 +309,7 @@ class GoldenRun:
     """One golden run of one game. `execute()` returns a Summary."""
 
     def __init__(self, game_key, workdir=None, keep=False, template_dir=None, progress=None,
-                 browser=True):
+                 browser=True, library=True):
         self.game = games.game(game_key)
         self.created_workdir = workdir is None
         self.workdir = os.path.abspath(workdir or make_workdir())
@@ -299,7 +318,8 @@ class GoldenRun:
         self.template_dir = os.path.abspath(template_dir or globals()["template_dir"]())
         self.progress = progress
         self.browser = browser
-        self.config_data = build_config(self.game, self.workdir, self.template_dir)
+        self.config_data = build_config(self.game, self.workdir, self.template_dir,
+                                        with_library=library)
         self.repo = os.path.join(self.workdir, "games", self.game.title_id)
         self.evidence_dir = os.path.join(self.workdir, "evidence")
 

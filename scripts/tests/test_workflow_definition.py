@@ -60,10 +60,20 @@ class ParsesValidDefinitions(unittest.TestCase):
             definition.step_ids,
             ["research", "strategy", "strategy-review", "design", "tech-plan",
              "tech-plan-review", "init", "greybox", "greybox-playability", "assets", "develop",
-             "playability", "review", "sdk",
+             "playability", "production-quality", "visual-qa", "review", "sdk",
              "sdk-review", "verify", "prototype-review", "release"],
         )
         self.assertEqual(definition.step("verify").on, {"fail": "develop"})
+        # The production gates route by what failed: an asset to assets, the game to develop.
+        for step_id in ("production-quality", "visual-qa"):
+            self.assertEqual(definition.step(step_id).on,
+                             {"assets": "assets", "develop": "develop"})
+        # Release reads both gates' reports and refuses unless they passed (wgf_release).
+        self.assertTrue({"production-quality-report", "visual-qa-report"}
+                        <= set(definition.step("release").inputs))
+        for step_id in ("assets", "develop"):
+            self.assertTrue({"production-quality-report", "visual-qa-report"}
+                            <= set(definition.step(step_id).inputs), step_id)
         # A build that cannot be played from outside goes back to develop before review.
         self.assertEqual(definition.step("playability").on, {"fail": "develop"})
         # The commit that ships (sdk's) is reviewed like develop's, and a request for
@@ -262,13 +272,22 @@ class RouteScopedVisitLimits(unittest.TestCase):
         # Each reviewer's requests for changes, and each step's failures, are bounded
         # separately.
         self.assertEqual(develop.max_visits_by_route,
-                         {"playability.fail": 2, "review.request-changes": 2,
+                         {"playability.fail": 2, "production-quality.develop": 2,
+                          "visual-qa.develop": 2, "review.request-changes": 2,
                           "sdk-review.request-changes": 2, "verify.fail": 2, "iterate": 2})
-        # develop's own limit never cuts a loop short of its route budget, and every step
-        # of the loop after develop is visited at most once per develop visit.
-        self.assertEqual(develop.max_visits, 1 + sum(develop.max_visits_by_route.values()))
-        for step_id in ("playability", "review", "sdk", "sdk-review", "verify",
-                        "prototype-review"):
+        # The production gates' asset failures are bounded on assets, which continues to
+        # develop: each pass through assets enters develop once more.
+        assets = definition.step("assets")
+        self.assertEqual(assets.max_visits_by_route,
+                         {"production-quality.assets": 2, "visual-qa.assets": 2})
+        self.assertEqual(assets.max_visits, 1 + sum(assets.max_visits_by_route.values()))
+        # develop's own limit never cuts a loop short of its route budget (its own, and the
+        # passes through assets), and every step of the loop after develop is visited at
+        # most once per develop visit.
+        self.assertEqual(develop.max_visits, 1 + sum(develop.max_visits_by_route.values())
+                         + sum(assets.max_visits_by_route.values()))
+        for step_id in ("playability", "production-quality", "visual-qa", "review", "sdk",
+                        "sdk-review", "verify", "prototype-review"):
             self.assertGreaterEqual(definition.step(step_id).max_visits, develop.max_visits,
                                     step_id)
 

@@ -12,8 +12,10 @@ the contracts; this page is how the step works.
        assets ◄────────────────────────┘ route assets
 ```
 
-(The step is registered as a module; wiring it into `new-game` is a workflow change made
-separately.)
+In `new-game` (workflow 5) it runs after `playability` and before `visual-qa`; route
+`assets` goes to `assets` (budget `production-quality.assets: 2`), route `develop` to
+`develop` (`production-quality.develop: 2`), and `release` refuses unless the newest report
+is PASS for the development commit it ships (docs/release-module.md).
 
 ## Why it exists
 

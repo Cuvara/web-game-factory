@@ -180,7 +180,10 @@ In `new-game`, G2, G3 and G4 are `human-checkpoint` steps decided on their gate'
 `required_artifacts`. G4 (`prototype-review`) sits after `verify` passes and before
 `release`: `pass` releases, `iterate` loops back to develop, `kill` ends the run (exit 0,
 `Ended: kill at G4`). Release cannot run until G4 passes, and a newer verification makes G4
-ask again. A `--mock` run therefore stops at G4.
+ask again. A `--mock` run therefore stops at G4. Workflow 5 judges the production build
+before review: `production-quality` and `visual-qa` route `assets` (an asset must be made
+again) to `assets` and `develop` to `develop`, and `release` refuses unless both passed the
+development commit it ships (`docs/production-architecture.md`).
 
 Every gate emits a `decision-record` pinning its subject by content hash. Decided by hand,
 the person writes it and `wgf-state.py` refuses the gated edge without it. Decided in a run,
@@ -243,7 +246,8 @@ stage it serves; it never moves an entity — that is still `wgf-state.py`, guar
 Real step modules register via `factory.steps.modules` in `workspace/config/factory.yaml`;
 every step type in `new-game` has one: `wgf_discovery` (research), `wgf_strategy`,
 `wgf_design`, `wgf_techplan`, `wgf_init`, `wgf_assets`, `wgf_develop`, `wgf_review`,
-`wgf_sdk`, `wgf_verification`, `wgf_release` and `wgf_playability`. `--mock` still replaces all of them with
+`wgf_sdk`, `wgf_verification`, `wgf_release`, `wgf_playability`, `wgf_production`
+(production-quality) and `wgf_visualqa` (visual-qa). `--mock` still replaces all of them with
 placeholders for a run. Discovery reads evidence snapshots from
 `workspace/research/snapshots/`. A module owns its domain logic; the engine owns
 orchestration — a module never edits `scripts/wgflib/workflow/` to implement domain
@@ -356,6 +360,13 @@ seen by the engine — validate what you write there with ajv.
 - `docs/development-module.md` — the `develop` step: brief, developers, checks, keyed commits
 - `docs/playability-module.md` — the `playability` step: a bot plays develop's build from outside
   through the game's play probe; the checks, `core/reference/visual-quality.yaml`, the loop back
+- `docs/production-architecture.md` — the production phase: greybox vs production, workflow 5,
+  the contracts the production gates build against
+- `docs/production-quality-module.md` — the `production-quality` step: assets present, loaded,
+  rendered, visible; no primitives; measured UI; routes `assets` / `develop`
+- `docs/visual-qa-module.md` — the `visual-qa` step: a judge reads runtime frames against
+  `core/reference/visual-qa-rubric.yaml`; the `baseline` judge a golden run uses; routes
+  `assets` / `develop`
 - `docs/platform-sdk-verification.md` — how platform SDK integration is verified, and where the
   platform profiles disagree with current portal documentation
 - `docs/review-module.md` — the `review` step: enforced read-only reviewer, verdict contract

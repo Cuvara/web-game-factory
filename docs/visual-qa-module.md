@@ -3,8 +3,10 @@
 `scripts/wgf_visualqa/` implements the `visual-qa` step type. In the production phase it
 runs after `playability` has played the production build (and, when the workflow has it,
 after `production-quality` has measured it), before `review`
-([production-architecture.md](production-architecture.md)). The lead wires it into the
-workflow; this module only registers the step type.
+([production-architecture.md](production-architecture.md)). In `new-game` (workflow 5) it
+follows `production-quality`; route `assets` goes to `assets` (budget `visual-qa.assets: 2`),
+route `develop` to `develop` (`visual-qa.develop: 2`), and `release` refuses unless the
+newest report is PASS for the development commit it ships.
 
 ```
 ... develop -> playability -> production-quality -> visual-qa -> review -> ...

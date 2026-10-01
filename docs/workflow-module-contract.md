@@ -160,15 +160,17 @@ reading, and `DocumentedIoContract` fails if the two disagree.
 | `init` | `init` | `game-design`, `tech-plan` | `scaffold-record` |
 | `greybox` | `develop` | `game-design`, `scaffold-record`, `title-strategy`, `tech-plan`, `playability-report` | `prototype-report` |
 | `greybox-playability` | `playability` | `prototype-report`, `game-design`, `scaffold-record` | `playability-report` |
-| `assets` | `assets` | `game-design`, `scaffold-record` | `asset-manifest` |
-| `develop` | `develop` | `game-design`, `asset-manifest`, `scaffold-record`, `title-strategy`, `tech-plan`, `qa-report`, `review-report`, `playability-report` | `prototype-report` |
+| `assets` | `assets` | `game-design`, `scaffold-record`, `production-quality-report`, `visual-qa-report` | `asset-manifest` |
+| `develop` | `develop` | `game-design`, `asset-manifest`, `scaffold-record`, `title-strategy`, `tech-plan`, `qa-report`, `review-report`, `playability-report`, `production-quality-report`, `visual-qa-report` | `prototype-report` |
 | `playability` | `playability` | `prototype-report`, `game-design`, `scaffold-record` | `playability-report` |
+| `production-quality` | `production-quality` | `playability-report`, `asset-manifest`, `game-design`, `scaffold-record` | `production-quality-report` |
+| `visual-qa` | `visual-qa` | `playability-report`, `game-design`, `asset-manifest`, `production-quality-report` | `visual-qa-report` |
 | `review` | `review` | `prototype-report`, `game-design`, `scaffold-record` | `review-report` |
 | `sdk` | `sdk` | `game-design`, `scaffold-record`, `prototype-report` | `sdk-report` |
 | `sdk-review` | `review` | `sdk-report`, `prototype-report`, `game-design`, `scaffold-record` | `review-report` |
 | `verify` | `verify` | `prototype-report`, `sdk-report`, `game-design`, `scaffold-record`, `asset-manifest` | `verification-report`, `qa-report` |
 | `prototype-review` | `human-checkpoint` | `qa-report`, `verification-report`, `prototype-report`, `title-strategy`, `game-design` | `decision-record` |
-| `release` | `release` | `qa-report`, `verification-report`, `sdk-report`, `prototype-report`, `scaffold-record`, `review-report` | `release-manifest` |
+| `release` | `release` | `qa-report`, `verification-report`, `sdk-report`, `prototype-report`, `scaffold-record`, `review-report`, `production-quality-report`, `visual-qa-report` | `release-manifest` |
 <!-- io-contract:end -->
 
 A `human-checkpoint` lists the artifacts its gate is decided on (gates.yaml
@@ -189,10 +191,19 @@ questions and kill criteria its `prototype-report` must list. `verify` emits the
 see [verification-module.md](verification-module.md). `release` produces a
 `release-manifest` in state `draft` and stops: it refuses unless the newest qa-report passed
 and every report and the clean checkout name one commit, the newest review-report approved
-exactly that commit (or the installation set `factory.release.allow_unreviewed`), and G4
-is passed; it packages with the game repository's
+exactly that commit (or the installation set `factory.release.allow_unreviewed`), G4
+is passed, and the newest `production-quality-report` and `visual-qa-report` are PASS for
+the development commit the shipped sdk commit sits on (`with: required_reports`, default
+both); it packages with the game repository's
 own scripts, and never publishes; see [release-module.md](release-module.md). Publishing is
 behind G5 and G6.
+
+`production-quality` ([production-quality-module.md](production-quality-module.md)) and
+`visual-qa` ([visual-qa-module.md](visual-qa-module.md)) judge the production build's art and
+UI from playability's record of the same play. Each routes `assets` (an asset must be made
+again) to `assets` - which reads the failing report, rebuilds only what it names and
+continues to `develop` - and `develop` (the game's use of assets or its UI) to `develop`,
+whose next brief leads with the failures when they judged the commit that visit starts from.
 
 Routing, retry and gates for each step are in the workflow file; read it, not a copy.
 

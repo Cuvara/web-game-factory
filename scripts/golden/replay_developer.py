@@ -73,6 +73,10 @@ FIXTURES = os.path.join(HERE, "fixtures")
 # default integration predates the Factory-provided seam wiring (wgflib.gameseam), which
 # the develop step has already written at src/platform/integration.ts.
 OVERLAY_SKIP = ("README.md", "src/platform/default-integration.ts")
+# Directories of an overlay that are fixtures of the golden run, never game files: the assets
+# library the assets step imports (factory.assets.libraries) and the approved frames visual
+# QA compares against. Matched as path prefixes.
+OVERLAY_SKIP_DIRS = ("library/", "baseline/")
 # The overlays' main.ts, moved onto the seam: (old, new), each found exactly once.
 SEAM_REWRITES = (
     ('import { createPlatform } from "@wgf/platform-sdk";\n', ""),
@@ -153,7 +157,7 @@ def port_files(port, repo):
             for name in sorted(names):
                 source = os.path.join(directory, name)
                 relative = os.path.relpath(source, root).replace(os.sep, "/")
-                if relative in OVERLAY_SKIP:
+                if relative in OVERLAY_SKIP or relative.startswith(OVERLAY_SKIP_DIRS):
                     continue
                 files[relative] = source
     if not files:

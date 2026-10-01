@@ -79,6 +79,7 @@ agents:
       - core/craft/production-art-3d.md
       - core/craft/game-ui-kit.md
       - core/craft/juice.md
+      - core/craft/retention-and-progression.md
     produces: [title-strategy, game-design]
     consumes: [opportunity, evaluation, claim]
 
@@ -149,6 +150,7 @@ agents:
       - core/lifecycle/stages/performance-review.md
       - core/lifecycle/stages/campaign.md
       - core/artifacts/performance-review.schema.json
+      - core/craft/retention-and-progression.md
     produces: [performance-review, claim]
     consumes: [release-manifest, platform-publication]
 
@@ -169,6 +171,7 @@ agents:
       - core/craft/production-art-3d.md
       - core/craft/juice.md
       - core/craft/production-wiring.md
+      - core/craft/retention-and-progression.md
     produces: [prototype-report]
     consumes: [tech-plan, game-design, review-report, qa-report]
 
@@ -349,6 +352,7 @@ skills:
       - core/templates/gdd.md
       - core/craft/production-art-and-ui.md
       - core/craft/game-ui-kit.md
+      - core/craft/retention-and-progression.md
   - id: core-loop
     supports: [game-designer, gameplay]
     covers: >
@@ -358,6 +362,7 @@ skills:
       - core/craft/core-loop-and-difficulty.md
       - core/artifacts/game-design.schema.json
       - core/lifecycle/stages/strategy.md
+      - core/craft/retention-and-progression.md
   - id: game-feel
     supports: [gameplay, ui]
     covers: >

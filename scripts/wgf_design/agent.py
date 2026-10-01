@@ -43,6 +43,7 @@ import os
 from wgflib import agentenv, paths, procs
 
 from .authors import ArchetypeAuthor, AuthorError, DesignAuthor, register_author
+from .depth import load_rules as load_depth_rules
 from .experience import load_rules
 
 __all__ = ["AgentAuthor", "AgentRunFailed", "REQUIRED_KEYS", "BUILD_SPEC_KEYS"]
@@ -110,6 +111,19 @@ PROMPT_ART = (
     " token, within the request's `production_art` bars. Set visual_identity.primitive_style"
     " (with a reason) only when the art direction itself is geometric - a character is never"
     " a cube for convenience. The craft guide is the request's `craft`."
+)
+# Appended always: why a player comes back (depth.py), so a draft states more than one loop.
+# The bars are the request's `depth`, read from core/reference/design-depth.yaml.
+PROMPT_DEPTH = (
+    " State why a player plays longer and returns, in build_spec.depth: the meta_loop above"
+    " the run and what it persists (more than a score), a goal_ladder with short, mid and long"
+    " goals, a content_schedule of piece, obstacle, power-up, zone or event types introduced"
+    " over play (at_s, after_runs), the first_session (target_s equal to"
+    " session.first_session_seconds, and the beat it ends on) and the return_hooks. Tier every"
+    " entry honestly: an mvp or post-mvp entry names in delivered_by the feature, mechanic,"
+    " progression step, reward or hud id that builds it, an mvp entry only an mvp one, and"
+    " depth the strategy excludes is optional. The bars are the request's `depth`; the craft"
+    " guide is the request's `depth_craft`."
 )
 # Appended when the step asks again: the previous draft and exactly what made it invalid.
 PROMPT_REPAIR = (
@@ -214,7 +228,11 @@ class AgentAuthor(DesignAuthor):
                    # The bars the production art and UI are held to (presentation.py), and
                    # the craft guide they come from.
                    "production_art": {key: rules.get(key) for key in ("production_art", "ui")},
-                   "craft": os.path.join(paths.CORE, "craft", "production-art-and-ui.md")}
+                   "craft": os.path.join(paths.CORE, "craft", "production-art-and-ui.md"),
+                   # The bars depth is held to (depth.py), and the craft guide behind them.
+                   "depth": load_depth_rules(),
+                   "depth_craft": os.path.join(paths.CORE, "craft",
+                                               "retention-and-progression.md")}
         if idea:
             request["brief"] = idea
         if repair:
@@ -232,7 +250,7 @@ class AgentAuthor(DesignAuthor):
         values["prompt"] = (PROMPT_STDOUT if stdout_mode else PROMPT).format(**values)
         if idea:
             values["prompt"] += PROMPT_BRIEF
-        values["prompt"] += PROMPT_CONCEPT + PROMPT_SCHEMA + PROMPT_ART
+        values["prompt"] += PROMPT_CONCEPT + PROMPT_SCHEMA + PROMPT_ART + PROMPT_DEPTH
         if repair:
             values["prompt"] += PROMPT_REPAIR
         try:

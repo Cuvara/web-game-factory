@@ -64,6 +64,22 @@ requirement was relaxed.
 
 ### Added
 
+- **Every design states why a player comes back** (game-design 1.7.0 `build_spec.depth`).
+  Both reference games were single-loop arcade prototypes with nothing persisted but a best
+  score. A design now states a meta loop that persists more than a score, a goal ladder
+  (short, mid, long), content-variety items introduced on a schedule, a first session of
+  120-900 s equal to `session.first_session_seconds`, and return hooks - each tiered, an MVP
+  entry resting only on what the MVP builds (`delivered_by`). The design step checks it
+  after the consistency rules (`scripts/wgf_design/depth.py`, bars in
+  `core/reference/design-depth.yaml`); an agent author is shown the problems to repair.
+  Every archetype states real depth: stages, special pieces, power-ups, coins and
+  achievements for `drop-merge`; zones, pickups, a near-miss combo, a ship garage and
+  missions for `arena-dodge` - post-mvp, so the golden ports (which build the MVP) are not
+  claimed to have them. Depth resting on a feature the strategy excludes is tiered optional
+  with the exclusion named, and listed in `open_questions`. New playbook
+  `core/craft/retention-and-progression.md`, read by the game-designer, gameplay and liveops
+  agents and the game-design and core-loop skills. Feature specs for the two reference games:
+  `docs/reference-games/`. Bringing a 1.6.0 design forward: add `build_spec.depth`.
 - **Workflow 5: the production build is judged before review.** `new-game` runs
   `production-quality` and `visual-qa` after `playability`; each routes `assets` (an asset
   must be made again) to `assets` - which reads the failing report, rebuilds only what it

@@ -133,7 +133,11 @@ class PlayabilityStep(WorkflowStep):
 
         rules = load_rules()
         experience_rules = load_experience_rules()
-        scratch = os.path.join(context.run_dir, "playability",
+        # Keyed by step: a workflow plays more than one build (greybox-playability,
+        # playability), each step's visits count from 1, and this directory is emptied
+        # first - one shared directory erased the greybox's frames its report cites.
+        scratch = os.path.join(context.run_dir,
+                               getattr(context, "current_step", None) or "playability",
                                f"{getattr(context, 'visit', 1)}-{getattr(context, 'attempt', 1)}")
         shutil.rmtree(scratch, ignore_errors=True)
         os.makedirs(scratch)

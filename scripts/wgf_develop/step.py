@@ -84,6 +84,20 @@ def _record_checks(checkout, path, checked_at, key, engine, checks, green):
                             indent=2) + "\n")
 
 
+def _review_baseline(existing, key, phase, baseline):
+    """Where the change a reviewer reads starts: before the oldest commit no review has read.
+
+    That is this visit's baseline, except after a greybox. The greybox is played, not
+    reviewed, so its commits are carried - from the brief it committed (`existing`) - into
+    the production build's first brief, and review reads the whole loop as well as what the
+    production phase put on it. A re-execution keeps the value its brief already holds."""
+    if existing.get("idempotency_key") == key and existing.get("review_baseline"):
+        return existing["review_baseline"]
+    if phase in PHASES and existing.get("phase") == "greybox":
+        return existing.get("review_baseline") or existing.get("baseline_commit") or baseline
+    return baseline
+
+
 def _read_json(path):
     try:
         with open(path, encoding="utf-8") as handle:
@@ -333,6 +347,7 @@ class DevelopStep(WorkflowStep):
         else:
             baseline = (existing.get("baseline_commit")
                         if existing.get("idempotency_key") == key else None) or git.head()
+            review_baseline = _review_baseline(existing, key, phase, baseline)
             previous_checks = _read_json(checks_json)
             if (previous_checks or {}).get("idempotency_key") != key:
                 previous_checks = None  # another visit's failures are not this one's
@@ -342,7 +357,7 @@ class DevelopStep(WorkflowStep):
                 strategy=strategy, qa=qa, previous_checks=previous_checks,
                 refs=inputs.refs, skills=settings.skills, review=review,
                 playability=playability, frames_root=getattr(context, "run_dir", None),
-                phase=phase, greybox_commit=greybox_commit,
+                phase=phase, greybox_commit=greybox_commit, review_baseline=review_baseline,
                 tech_plan=tech_plan, self_playtest=settings.self_playtest,
                 mobile_test=bool((game_config.get("verification") or {}).get("mobile_test",
                                                                             True)),

@@ -394,7 +394,8 @@ def build_brief(*, title_id, engine, iteration, key, baseline, design, assets, s
                 strategy=None, qa=None, previous_checks=None, refs=None, skills=None,
                 review=None, mobile_test=True, tech_plan=None, self_playtest=False,
                 writable_paths=None, package_changes=None, loop=None, sessions=None,
-                playability=None, frames_root=None, phase=None, greybox_commit=None):
+                playability=None, frames_root=None, phase=None, greybox_commit=None,
+                review_baseline=None):
     """The brief as data. `render_markdown` turns it into the document a developer reads."""
     refs = refs or {}
     writable_paths = list(DEFAULT_WRITABLE if writable_paths is None else writable_paths)
@@ -461,6 +462,9 @@ def build_brief(*, title_id, engine, iteration, key, baseline, design, assets, s
         "iteration": iteration,
         "idempotency_key": key,
         "baseline_commit": baseline,
+        # Where review's change starts (step._review_baseline): the baseline, or - after a
+        # greybox, which nobody reviewed - where the greybox started.
+        "review_baseline": review_baseline or baseline,
         "engine": engine,
         "engine_dir": ENGINE_DIRS[engine],
         # What this engine needs said that the template does not carry, plus the physics

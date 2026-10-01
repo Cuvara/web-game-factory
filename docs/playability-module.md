@@ -48,8 +48,10 @@ other loops (`max_visits_by_route`,
 
 ## What it does
 
-The step works in a scratch directory under the run, `playability/<visit>-<attempt>/`. It
-never touches the game checkout itself.
+The step works in a scratch directory under the run, `<step>/<visit>-<attempt>/` -
+`greybox-playability/1-1/`, `playability/1-1/` - so the greybox's frames, which its report
+cites, are not erased when the production build is played. It never touches the game
+checkout itself.
 
 1. Clones the checkout at the reported commit, detached.
 2. Runs `pnpm install --frozen-lockfile --prefer-offline` and `pnpm build`. Every process

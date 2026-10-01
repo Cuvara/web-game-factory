@@ -170,8 +170,11 @@ class FakeRunner(Runner):
     """Real git; scripted everything else."""
 
     def __init__(self, fail=(), unavailable=(), on_develop=None, develop_exit=0,
-                 on_check=None):
+                 on_check=None, phase_exit=None):
         self.calls = []
+        # {phase: exit}: the developer's exit by the brief's phase (greybox | production),
+        # read from the brief.json beside the brief it is handed; develop_exit otherwise.
+        self.phase_exit = dict(phase_exit or {})
         self.fail = set(fail)
         self.unavailable = set(unavailable)
         self.on_develop = on_develop
@@ -192,10 +195,23 @@ class FakeRunner(Runner):
                              duration_s=0.1)
         if self.on_develop:
             self.on_develop(cwd)
-        return RunResult(argv, self.develop_exit, "developer output")
+        code = self.develop_exit
+        if self.phase_exit:
+            code = self.phase_exit.get(brief_phase(argv), code)
+        return RunResult(argv, code, "developer output")
 
     def developer_calls(self):
         return [c for c in self.calls if c[0] != "pnpm"]
+
+
+def brief_phase(argv):
+    """The phase of the brief a developer argv names (`{brief}` -> brief.md), or None."""
+    for arg in reversed(argv):
+        path = os.path.join(os.path.dirname(str(arg)), "brief.json")
+        if str(arg).endswith(".md") and os.path.exists(path):
+            with open(path, encoding="utf-8") as handle:
+                return json.load(handle).get("phase")
+    return None
 
 
 def step_with(runner):
@@ -1840,17 +1856,28 @@ class ThroughTheEngine(unittest.TestCase):
         pinned = {pin["artifact_type"] for pin in report["provenance"]["inputs"]}
         self.assertTrue({"game-design", "asset-manifest", "scaffold-record",
                          "title-strategy", "tech-plan"} <= pinned)
-        # The approved tech plan is consumed (F1: its prototype tasks join the brief).
+        # The approved tech plan is consumed (F1: its prototype tasks join the brief), and
+        # the greybox's playability report: the loop the production build must keep.
         self.assertEqual(sorted(state.steps["develop"].consumed),
-                         ["asset-manifest@v1", "game-design@v1", "scaffold-record@v1",
-                          "tech-plan@v1", "title-strategy@v1"])
-        self.assertEqual(len(runner.developer_calls()), 1)
+                         ["asset-manifest@v1", "game-design@v1", "playability-report@v1",
+                          "scaffold-record@v1", "tech-plan@v1", "title-strategy@v1"])
+        # The greybox ran first, before any asset existed: no asset manifest, and no
+        # playability report yet to read.
+        self.assertEqual(sorted(state.steps["greybox"].consumed),
+                         ["game-design@v1", "scaffold-record@v1", "tech-plan@v1",
+                          "title-strategy@v1"])
+        order = [t["step"] for t in state.trail]
+        self.assertLess(order.index("greybox"), order.index("assets"))
+        # Two developer sessions: the greybox, then the production build on top of it.
+        self.assertEqual(len(runner.developer_calls()), 2)
         # The engine entered develop from assets (`assets.success`): a first visit, whose
         # brief says nothing of loops.
         brief_path = os.path.join(self.scratch, "checkouts", TITLE, briefs.BRIEF_DIR,
                                   "brief.json")
         with open(brief_path, encoding="utf-8") as handle:
-            self.assertIsNone(json.load(handle)["loop"])
+            brief = json.load(handle)
+        self.assertIsNone(brief["loop"])
+        self.assertEqual(brief["phase"], "production")
 
     def test_the_module_registers_by_config(self):
         registry = StepRegistry().load_modules(["wgf_develop"])
@@ -1932,23 +1959,41 @@ class DevelopBudget(unittest.TestCase):
         state = api.run(RunRequest(project_id=TITLE))
         self.assertEqual(state.cursor, "prototype-review", state.message)
         self.assertNotIn("develop_budget", state.params)
-        # Sessions are still recorded, for the record; nothing is enforced.
-        self.assertEqual(len(self.budget_events(api, state.run_id, "developer-session")), 1)
+        # Sessions are still recorded, for the record - the greybox's and develop's; nothing
+        # is enforced.
+        self.assertEqual(len(self.budget_events(api, state.run_id, "developer-session")), 2)
 
     def test_blocked_at_the_limit_without_spawning_and_counted_across_a_resume(self):
+        # The run's first developer sessions are the greybox's: two failures spend it.
         api, runner = self.api({"max_sessions": 2}, FakeRunner(develop_exit=1))
         state = api.run(RunRequest(project_id=TITLE))
-        self.assertEqual((state.status, state.cursor), (RunStatus.BLOCKED, "develop"))
+        self.assertEqual((state.status, state.cursor), (RunStatus.BLOCKED, "greybox"))
         self.assertIn("budget exhausted: 2 developer sessions used of 2",
-                      state.steps["develop"].message)
+                      state.steps["greybox"].message)
         self.assertEqual(len(runner.developer_calls()), 2)
         self.assertEqual(state.params["develop_budget"], {"max_sessions": 2})
         # A resume refills loop and attempt budgets - not this one.
         again = api.run(RunRequest(resume=state.run_id, decided_by="human"))
         self.assertEqual(again.status, RunStatus.BLOCKED)
         self.assertIn("budget exhausted: 2 developer sessions used of 2",
-                      again.steps["develop"].message)
+                      again.steps["greybox"].message)
         self.assertEqual(len(runner.developer_calls()), 2)
+
+    def test_the_greybox_sessions_count_toward_the_run_budget(self):
+        # The budget is the run's, not the step's: the greybox's one session leaves the
+        # production build one, and a failing one spends it.
+        api, runner = self.api({"max_sessions": 2},
+                               FakeRunner(on_develop=write_game,
+                                          phase_exit={"production": 1}))
+        state = api.run(RunRequest(project_id=TITLE))
+        self.assertEqual((state.status, state.cursor), (RunStatus.BLOCKED, "develop"),
+                         state.message)
+        self.assertIn("budget exhausted: 2 developer sessions used of 2",
+                      state.steps["develop"].message)
+        self.assertEqual(len(runner.developer_calls()), 2)
+        outcomes = {step: [t["outcome"] for t in state.trail if t["step"] == step]
+                    for step in ("greybox", "develop")}
+        self.assertEqual(outcomes, {"greybox": ["SUCCESS"], "develop": ["FAILED", "BLOCKED"]})
 
     def test_a_session_is_on_record_before_the_developer_is_spawned(self):
         seen = []
@@ -1962,7 +2007,7 @@ class DevelopBudget(unittest.TestCase):
         api, runner = self.api({"max_sessions": 5}, FakeRunner(on_develop=develop))
         state = api.run(RunRequest(project_id=TITLE))
         self.assertEqual(state.cursor, "prototype-review", state.message)
-        self.assertEqual(seen, [1])
+        self.assertEqual(seen, [1, 2])  # the greybox's session, then develop's
 
     def test_a_person_raises_the_budget_and_it_takes_effect(self):
         api, runner = self.api({"max_sessions": 1}, FakeRunner(develop_exit=1))
@@ -1970,7 +2015,7 @@ class DevelopBudget(unittest.TestCase):
         self.assertEqual(len(runner.developer_calls()), 1)
         state = api.run(RunRequest(resume=state.run_id, decided_by="human", budget_sessions=2))
         self.assertEqual(len(runner.developer_calls()), 2)
-        self.assertIn("used of 2", state.steps["develop"].message)
+        self.assertIn("used of 2", state.steps["greybox"].message)
         raised = [e for e in api.store.read_events(state.run_id)
                   if e["event"] == "BUDGET_RAISED"]
         self.assertEqual([(e["data"]["max_sessions"], e["data"]["decided_by"])
@@ -2000,7 +2045,8 @@ class DevelopBudget(unittest.TestCase):
 
     def assert_forgery_taken_out(self, api, runner, state):
         self.assertEqual(state.status, RunStatus.FAILED, state.message)
-        self.assertIn("event log was changed while develop ran", state.steps["develop"].error)
+        # The run's first developer session - the greybox's - forged it.
+        self.assertIn("event log was changed while greybox ran", state.steps["greybox"].error)
         self.assertEqual(len(runner.developer_calls()), 1)  # not retried
         recorded = api.store.read_events(state.run_id)
         self.assertFalse([e for e in recorded if (e.get("data") or {}).get("resume_nonce")
@@ -2062,10 +2108,11 @@ class DevelopBudget(unittest.TestCase):
         costs = self.budget_events(api, state.run_id, "developer-cost")
         self.assertEqual([c.get("cost") for c in costs], [6, 6])
         self.assertIn("budget exhausted: developer cost 12 recorded of 10",
-                      state.steps["develop"].message)
-        # Each transcript is the run's, one per visit and attempt.
-        self.assertEqual([os.path.basename(p) for p in runner.transcripts],
-                         ["1-1.log", "1-2.log"])
+                      state.steps["greybox"].message)
+        # Each transcript is the run's, one per step, visit and attempt.
+        self.assertEqual([os.path.relpath(p, api.store.run_dir(state.run_id))
+                          for p in runner.transcripts],
+                         [os.path.join("greybox", "1-1.log"), os.path.join("greybox", "1-2.log")])
 
     def test_an_unknown_cost_is_reported_and_tolerated(self):
         runner = CostRunner(costs=[None], on_develop=write_game)
@@ -2074,13 +2121,19 @@ class DevelopBudget(unittest.TestCase):
         state = api.run(RunRequest(project_id=TITLE))
         self.assertEqual(state.cursor, "prototype-review", state.message)
         costs = self.budget_events(api, state.run_id, "developer-cost")
-        self.assertEqual(len(costs), 1)
-        self.assertNotIn("cost", costs[0])
-        self.assertFalse(costs[0]["known"])
+        self.assertEqual(len(costs), 2)  # greybox, develop: neither reported a cost
+        for cost in costs:
+            self.assertNotIn("cost", cost)
+            self.assertFalse(cost["known"])
         warnings = [e for e in api.store.read_events(state.run_id)
                     if e["event"] == "STEP_LOG" and e.get("level") == "warning"
                     and "no readable cost" in (e.get("message") or "")]
-        self.assertEqual(len(warnings), 1)
+        self.assertEqual(len(warnings), 2)
+        # Each step's transcript is its own: greybox's and develop's first visit do not share
+        # a file.
+        self.assertEqual(sorted(os.path.relpath(p, api.store.run_dir(state.run_id))
+                                for p in runner.transcripts),
+                         [os.path.join("develop", "1-1.log"), os.path.join("greybox", "1-1.log")])
 
     def test_a_budget_the_factory_cannot_act_on_is_refused_at_start(self):
         for budget in ({"max_sessions": 0}, {"max_sessions": "3"}, {"max_cost": 5},

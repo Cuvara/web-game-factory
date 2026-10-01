@@ -161,6 +161,17 @@ bytes, and what built it) and the model issue codes; a GLB's entry in the runtim
 gains `model` (clip names, LOD and collision nodes). Additive: 1.2.0 artifacts remain valid.
 See [blender-pipeline.md](blender-pipeline.md).
 
+**`game-design` 1.7.0** adds `build_spec.depth`: why a player plays longer and comes back.
+`meta_loop` (a statement and what `persists` between sessions, each entry tiered),
+`goal_ladder` (short, mid and long goals), `content_schedule` (content-variety items with
+`at_s` / `after_runs`), `first_session` (`target_s`, equal to
+`session.first_session_seconds`, and the beat it `ends_on`) and `return_hooks`. Every entry
+carries a tier, and `delivered_by` names the feature, mechanic, progression step, reward or
+hud id that builds it; an MVP entry may rest only on an MVP one. Optional in the schema
+(1.6.0 artifacts remain valid); the design step requires it and holds it to
+`core/reference/design-depth.yaml` (`scripts/wgf_design/depth.py`). Craft:
+`core/craft/retention-and-progression.md`.
+
 ---
 
 ## Shared primitives

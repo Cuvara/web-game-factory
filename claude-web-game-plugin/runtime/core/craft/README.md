@@ -17,6 +17,7 @@ rule is.
 | Playbook | Primary role(s) | Stage(s) | Serves |
 |---|---|---|---|
 | [`core-loop-and-difficulty.md`](core-loop-and-difficulty.md) | game-designer, gameplay | strategy, design, prototype | `core_loop`, `build_spec.mechanics`, `.difficulty`, `.session_flow`, `.failure` |
+| [`retention-and-progression.md`](retention-and-progression.md) | game-designer, gameplay, liveops | design, prototype, production, live | `build_spec.depth`, `.player_goals`, `.progression`, `retention`, `session` |
 | [`game-feel.md`](game-feel.md) | gameplay, ui | design, prototype | `build_spec.rewards[].feedback`, `.hud[].feedback`, `.failure.feedback`, `visual_identity.motion` |
 | [`onboarding-and-portal-ux.md`](onboarding-and-portal-ux.md) | ui, game-designer | design, prototype, release | `session.time_to_first_*`, `build_spec.tutorial`, `.monetization_touchpoints`, store metadata |
 | [`ui-hud-mobile.md`](ui-hud-mobile.md) | ui | design, prototype | `build_spec.screens`, `.hud`, `.menus`, `.responsive` |

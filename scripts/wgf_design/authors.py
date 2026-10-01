@@ -28,6 +28,7 @@ import re
 from wgflib import template_contract as contract
 
 from . import archetypes, identity
+from . import depth as depth_check
 from .platforms import supported_placements, tightest_interval
 
 __all__ = ["DesignAuthor", "ArchetypeAuthor", "AUTHORS", "register_author", "resolve_author",
@@ -104,8 +105,9 @@ class Exclusions:
         self.entries = [split_reason(e) for e in entries]
         self._stems = [(_stems(item), item, why) for item, why in self.entries]
 
-    def match(self, text):
-        stems = _stems(text)
+    def match(self, text, ignore=()):
+        """The first exclusion sharing a stem with `text`, not counting the stems in `ignore`."""
+        stems = _stems(text) - set(ignore)
         for item_stems, item, why in self._stems:
             if stems & item_stems:
                 return item, why
@@ -295,10 +297,12 @@ class ArchetypeAuthor(DesignAuthor):
 
         # 6. Features, tiered. The strategy's MVP is MVP; the archetype supplies the rest, minus exclusions.
         features = []
+        deferred = {}  # candidate feature id -> the strategy exclusion that removed it
         for mechanic in a["mechanics"]:
             excluded = exclusions.match(mechanic["name"] + " " + mechanic["description"]) \
                 if mechanic["tier"] != "mvp" else None
             if excluded:
+                deferred[mechanic["id"]] = excluded[0]
                 continue
             features.append({"id": mechanic["id"], "name": mechanic["name"], "tier": mechanic["tier"],
                              "description": mechanic["description"], "acceptance": list(mechanic["rules"])})
@@ -368,10 +372,20 @@ class ArchetypeAuthor(DesignAuthor):
                              "description": f"Committed in the title strategy MVP: {item}.",
                              "acceptance": [f"Demonstrable in the prototype build: {item}.",
                                             "Covered by at least one smoke-test step."]})
-        for tier, pool in (("post-mvp", a["post_mvp"]), ("optional", a["optional"])):
+        # The features depth rests on are matched without the words that name the core game
+        # itself (its MVP mechanics): the strategy approved "track" and "level" as the game, so
+        # an exclusion of music tracks or a level editor does not remove a stage map.
+        depth_plan = archetypes.DEPTH[archetype_id]
+        depth_features = {f["id"] for f in depth_plan["features"]}
+        core = _stems(" ".join(" ".join([m["name"], m["description"]] + list(m["rules"]))
+                               for m in a["mechanics"] if m["tier"] == "mvp"))
+        for tier, pool in (("post-mvp", a["post_mvp"] + depth_plan["features"]),
+                           ("optional", a["optional"])):
             for candidate in pool:
-                excluded = exclusions.match(candidate["name"] + " " + candidate["description"])
+                excluded = exclusions.match(candidate["name"] + " " + candidate["description"],
+                                            core if candidate["id"] in depth_features else ())
                 if excluded:
+                    deferred[candidate["id"]] = excluded[0]
                     continue
                 if candidate["id"] in taken:
                     continue
@@ -384,6 +398,13 @@ class ArchetypeAuthor(DesignAuthor):
         spec = self._build_spec(a, look, engine, orientation, resolution, is_level, touchpoints,
                                 time_to_first_play, time_to_first_reward, run, target, audience,
                                 exclusions, features, archetypes.EXPERIENCE[archetype_id])
+
+        spec["depth"], optional = self._depth(depth_plan, features, spec, session, deferred)
+        if optional:
+            open_questions.append(
+                "Depth the strategy excludes is stated as optional, not built: "
+                + "; ".join(optional) + ". A superseding strategy admits it, or production "
+                "adds it after G4.")
 
         open_questions.insert(0, f"Archetype '{archetype_id}' was chosen because the {why_archetype}. "
                                  "Confirm at G3 that the loop is the one the strategy meant.")
@@ -671,6 +692,40 @@ class ArchetypeAuthor(DesignAuthor):
             "experience": self._experience(ex, actions, time_to_first_play, time_to_first_reward,
                                            2 if is_level else 1),
         }
+
+    @staticmethod
+    def _depth(plan, features, spec, session, deferred):
+        """build_spec.depth from the archetype's plan. An entry resting on a feature the strategy
+        excludes is tiered optional with the exclusion named: deferred depth stays visible and
+        is never claimed. Returns (depth, the deferred entries in words)."""
+        known = depth_check.deliverers({"features": features, "build_spec": spec})
+        optional = []
+
+        def fitted(entry, text_key, label):
+            entry = dict(entry)
+            by = entry.get("delivered_by")
+            if entry["tier"] != "optional" and by and by not in known:
+                why = deferred.get(by)
+                entry["tier"] = "optional"
+                entry.pop("delivered_by")
+                entry[text_key] = (f"{entry[text_key].rstrip('.')} (optional: the strategy excludes "
+                                   f"'{why}')." if why else entry[text_key])
+                optional.append(f"{label} ({why or by})")
+            return entry
+
+        meta = plan["meta"]
+        meta_loop = fitted({k: v for k, v in meta.items() if k != "persists"}, "statement",
+                           "the meta loop")
+        meta_loop["persists"] = [fitted(p, "what", p["what"]) for p in meta["persists"]]
+        depth = {
+            "meta_loop": meta_loop,
+            "goal_ladder": [fitted(g, "goal", g["goal"].rstrip(".")) for g in plan["goals"]],
+            "content_schedule": [fitted(c, "rule", c["name"]) for c in plan["content"]],
+            "first_session": {"target_s": session["first_session_seconds"],
+                              "ends_on": plan["first_session_ends_on"], "tier": "mvp"},
+            "return_hooks": [fitted(h, "statement", h["statement"].rstrip(".")) for h in plan["hooks"]],
+        }
+        return depth, list(dict.fromkeys(optional))
 
     @staticmethod
     def _asset_in(asset, dimension):

@@ -18,6 +18,7 @@ You are the **gameplay** role as defined by Web Game Factory core.
 7. `${CLAUDE_PLUGIN_ROOT}/runtime/core/craft/game-feel.md`
 8. `${CLAUDE_PLUGIN_ROOT}/runtime/core/craft/core-loop-and-difficulty.md`
 9. `${CLAUDE_PLUGIN_ROOT}/runtime/core/craft/production-art-and-ui.md`
+10. `${CLAUDE_PLUGIN_ROOT}/runtime/core/craft/retention-and-progression.md`
 
 Core is authoritative. Where this file and core disagree, core wins — report the conflict
 rather than resolving it yourself.

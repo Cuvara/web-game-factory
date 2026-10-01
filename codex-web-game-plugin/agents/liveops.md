@@ -11,6 +11,7 @@ Invoked from `AGENTS.md` or by the matching `/wgf-*` prompt.
 3. `core/lifecycle/stages/performance-review.md`
 4. `core/lifecycle/stages/campaign.md`
 5. `core/artifacts/performance-review.schema.json`
+6. `core/craft/retention-and-progression.md`
 
 Core is authoritative. Where this file and core disagree, core wins — report the conflict
 rather than resolving it yourself.

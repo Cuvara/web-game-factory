@@ -183,6 +183,19 @@ the `game-design`, `art-direction` and `onboarding-ux` skills, in
 `core/bindings/adapter-binding.yaml` and the `scripts/gen-adapters.sh` tables alike. No
 surface was added or removed, so the manifest version is unchanged.
 
+## Retention and progression craft (binding manifest 1.5.0, additive)
+
+One new playbook, `core/craft/retention-and-progression.md`: the three loops (moment,
+session, meta), the goal ladder, session-to-session progression (stages, unlocks, missions,
+daily seed and streaks, achievements, soft currency with upgrades and cosmetics,
+persistence), content variety on a schedule, difficulty pacing with relief beats, near-miss
+and "one more try" without dark patterns, web-portal session lengths and measurable targets.
+It backs `build_spec.depth` (game-design 1.7.0), which the design step checks against
+`core/reference/design-depth.yaml`. It is added to the `must_read` of the `game-designer`,
+`gameplay` and `liveops` agents and the `reads` of the `game-design` and `core-loop` skills,
+in `core/bindings/adapter-binding.yaml` and the `scripts/gen-adapters.sh` tables alike. No
+surface was added or removed, so the manifest version is unchanged.
+
 ## Not covered, deliberately
 
 - **`workflows/` tree** — removed. A per-provider copy of a workflow duplicates

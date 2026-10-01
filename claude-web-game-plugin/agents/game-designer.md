@@ -20,6 +20,7 @@ You are the **game-designer** role as defined by Web Game Factory core.
 9. `${CLAUDE_PLUGIN_ROOT}/runtime/core/craft/onboarding-and-portal-ux.md`
 10. `${CLAUDE_PLUGIN_ROOT}/runtime/core/craft/art-direction.md`
 11. `${CLAUDE_PLUGIN_ROOT}/runtime/core/craft/production-art-and-ui.md`
+12. `${CLAUDE_PLUGIN_ROOT}/runtime/core/craft/retention-and-progression.md`
 
 Core is authoritative. Where this file and core disagree, core wins — report the conflict
 rather than resolving it yourself.

@@ -339,6 +339,33 @@ class Resumes(EngineCase):
         self.assertEqual(resumed.status, RunStatus.COMPLETED)
         self.assertEqual(self.script.executed(), ["b", "c"])
 
+    def test_a_whole_workflow_run_resumed_under_a_newer_definition_runs_its_new_steps(self):
+        # A 2.5.0 dogfood run resumed under workflow 3: develop's success went to the new
+        # `playability` step, outside the run's recorded scope, and the run ended COMPLETED
+        # without review, verify or G4. The scope follows the definition instead.
+        self.script.set("b", *[StepResult.failed("down")] * 3)
+        failed = self.engine(LINEAR).start()
+        self.assertEqual(failed.status, RunStatus.FAILED)
+        newer = LINEAR.replace("version: 1", "version: 2").replace(
+            "    - id: c\n", "    - id: x\n      type: x\n    - id: c\n")
+        self.script.calls.clear()
+        state = self.engine(newer).resume(failed.run_id)
+        self.assertEqual(state.status, RunStatus.COMPLETED, state.message)
+        self.assertEqual(self.script.executed(), ["b", "x", "c"])
+        resumed = [e for e in self.events if e["event"] == Events.WORKFLOW_RESUMED][-1]
+        self.assertEqual(resumed["data"]["scope_widened"], ["x"])
+
+    def test_a_slice_resumed_under_a_newer_definition_keeps_its_scope(self):
+        self.script.set("a", StepResult.failed("down"), StepResult.failed("down"),
+                        StepResult.failed("down"))
+        failed = self.engine(LINEAR).start(scope="a")
+        newer = LINEAR.replace("version: 1", "version: 2").replace(
+            "    - id: c\n", "    - id: x\n      type: x\n    - id: c\n")
+        self.script.calls.clear()
+        state = self.engine(newer).resume(failed.run_id)
+        self.assertEqual(self.script.executed(), ["a"])
+        self.assertEqual(state.scope, ["a"])
+
     def test_completed_run_cannot_be_resumed(self):
         engine = self.engine(LINEAR)
         run = engine.start()

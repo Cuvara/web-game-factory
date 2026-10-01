@@ -262,7 +262,7 @@
     "scripts/wgflib/workflow/contracts.py": "sha256:7e348d07c6b8188cf810bb384ac0e75372f321ba4eb75d523aa18bec6e2a6fb7",
     "scripts/wgflib/workflow/decisions.py": "sha256:73935edfcfdec59b7386a6a88740ddd8ac53c9ccbcfdba80eff9e7e341f58f88",
     "scripts/wgflib/workflow/definition.py": "sha256:393c8a9952a8e44ac12ae58f6d85ee09c4265213f86b334fbc257c2c7afab672",
-    "scripts/wgflib/workflow/engine.py": "sha256:cc6661a5359398442a121cf77ae83ec5bfdeb89391b059add196ca852567dff9",
+    "scripts/wgflib/workflow/engine.py": "sha256:b5e357b5fb97a5cc938a4361cd754e0f24961da33f36fa31879bfe495629a3d6",
     "scripts/wgflib/workflow/events.py": "sha256:0ec98bd327790812e47213cc937a41e71f477ea2379b2745a97662dbaa3c299f",
     "scripts/wgflib/workflow/fixtures/asset-manifest.json": "sha256:18fb5b9c6fef23c2f607dfac86abda56e71a17afa13be9a4c49b9057a29d9877",
     "scripts/wgflib/workflow/fixtures/game-design.json": "sha256:ce69969537d09a66fad9aca45210ea6d1069231d5e444b86816107a29504577c",

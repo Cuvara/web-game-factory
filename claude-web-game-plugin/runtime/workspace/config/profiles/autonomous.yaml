@@ -18,6 +18,13 @@
 #   review     a read-only headless Claude Code reviewer approves or requests changes
 #   design     a headless Claude Code design author writes the design draft the module then
 #              checks unchanged - needed for a brief no design archetype carries
+#   assets     a read-only headless Claude Code 2D author prints an SVG per drawing, and a
+#              3D model author a model spec per 3D requirement that the pinned Blender
+#              builds; the Factory writes, validates and judges both, and asks again with
+#              the problems (repair rounds). Without them every asset is a placeholder,
+#              which production-quality refuses: the run loops back to assets and blocks
+#   visual-qa  a read-only headless Claude Code judge reads the captured frames and returns
+#              scores; the step decides. Without a judge visual-qa BLOCKS
 #   G2, G3     approved by the run (reversible gates)
 #   init       a LOCAL project from the pinned template: no GitHub repository, no remote
 #   budget     at most 12 developer sessions / US$60 per run; a person raises it
@@ -129,4 +136,100 @@ factory:
         - --max-budget-usd
         - "5"
       timeout_seconds: 1800
+      idle_timeout_seconds: null
+
+  assets:
+    # Workflow 5 refuses placeholder art (production-quality routes it back to `assets`), so
+    # an unattended run needs authors. Both are read-only and print what they make; the
+    # Factory writes it, validates it and judges it (core/reference/asset-quality.yaml).
+    author:
+      kind: command
+      svg_from: stdout
+      argv:
+        - claude
+        - -p
+        - "{prompt}"
+        - --model
+        - sonnet
+        - --safe-mode
+        - --strict-mcp-config
+        - --tools
+        - "Read"
+        - --allowedTools
+        - "Read"
+        - --disallowedTools
+        - "Edit,Write,NotebookEdit,Bash,WebFetch,WebSearch"
+        - --permission-mode
+        - dontAsk
+        - --no-session-persistence
+        - --output-format
+        - text
+        - --max-turns
+        - "15"
+        - --max-budget-usd
+        - "1"
+      timeout_seconds: 600
+      idle_timeout_seconds: null
+      repair_rounds: 2
+    # Builds through the pinned Blender 4.5 LTS: on PATH, or WGF_BLENDER
+    # (docs/blender-pipeline.md). Without it, every 3D requirement is a placeholder.
+    model_author:
+      kind: command
+      spec_from: stdout
+      argv:
+        - claude
+        - -p
+        - "{prompt}"
+        - --model
+        - sonnet
+        - --safe-mode
+        - --strict-mcp-config
+        - --tools
+        - "Read"
+        - --allowedTools
+        - "Read"
+        - --disallowedTools
+        - "Edit,Write,NotebookEdit,Bash,WebFetch,WebSearch"
+        - --permission-mode
+        - dontAsk
+        - --no-session-persistence
+        - --output-format
+        - text
+        - --max-turns
+        - "20"
+        - --max-budget-usd
+        - "2"
+      timeout_seconds: 900
+      idle_timeout_seconds: null
+      max_repair_rounds: 2
+
+  visualqa:
+    # Without a judge visual-qa BLOCKS: it is never a silent pass.
+    judge:
+      kind: command
+      verdict_from: stdout
+      argv:
+        - claude
+        - -p
+        - "{prompt}"
+        - --model
+        - sonnet
+        - --safe-mode
+        - --strict-mcp-config
+        - --tools
+        - "Read"
+        - --allowedTools
+        - "Read"
+        - --disallowedTools
+        - "Edit,Write,NotebookEdit,Bash,WebFetch,WebSearch"
+        - --permission-mode
+        - dontAsk
+        - --no-session-persistence
+        - --output-format
+        - text
+        - --max-turns
+        - "40"
+        - --max-budget-usd
+        - "2"
+      timeout_seconds: 900
       idle_timeout_seconds: null

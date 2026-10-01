@@ -287,6 +287,54 @@ class Author(ProductionCase):
             self.assertEqual(result.outcome, "FAILED", author)
             self.assertFalse(result.retryable)
 
+    def stdout_author(self, mode, **extra):
+        return self.author(mode, svg_from="stdout", **extra) | {
+            "argv": [sys.executable, FAKE_AUTHOR, mode, "{request}", "-"]}
+
+    def test_an_author_that_prints_its_svg_needs_no_write_tool(self):
+        """svg_from: stdout - the last complete <svg> printed is the file; the Factory
+        writes it, and judges it exactly as a written one."""
+        design = production_design([spec_asset("hero", "sprite", "player", spec="96x96")])
+        manifest, _ = self.run_prod(design, author=self.stdout_author("good"))
+        hero = self.items(manifest)["hero"]
+        self.assertFalse(hero["placeholder"])
+        self.assertEqual(hero["quality"]["verdict"], "pass", hero["quality"])
+        self.assertEqual(hero["quality"]["author"], "author:command")
+        drawn = self.read("public/assets/sprites/hero.svg")
+        drawn = drawn.decode("utf-8") if isinstance(drawn, bytes) else drawn
+        self.assertTrue(drawn.startswith("<svg") and drawn.endswith("</svg>"), drawn[:80])
+        self.assertNotIn("```", drawn)
+        self.assertGreaterEqual(hero["quality"]["parts"], 3)  # the final drawing, not the draft
+
+    def test_a_printed_primitive_is_repaired_and_a_silent_host_is_a_placeholder(self):
+        design = production_design([spec_asset("hero", "sprite", "player", spec="96x96")])
+        manifest, _ = self.run_prod(design, author=self.stdout_author("rect-then-good"))
+        self.assertEqual(self.items(manifest)["hero"]["quality"]["verdict"], "pass")
+        calls = self.calls()
+        self.assertEqual(len(calls), 2)
+        self.assertTrue(os.path.isfile(calls[1]["repair"]["previous"]))
+        design = production_design([spec_asset("foe", "sprite", "threat", spec="96x96")])
+        manifest, _ = self.run_prod(design, author=self.stdout_author("fail"))
+        self.assertTrue(self.items(manifest)["foe"]["placeholder"])
+        self.assertIn(("author-rejected", "warning"), self.codes(manifest, "foe"))
+
+    def test_svg_from_is_file_or_stdout(self):
+        context = base.FakeContext({"root": self.root, "author": {
+            "kind": "command", "argv": ["x"], "svg_from": "clipboard"}})
+        result = AssetsStep(base.Definition()).execute(inputs_with(production_design()),
+                                                       context)
+        self.assertEqual(result.outcome, "FAILED")
+        self.assertIn("svg_from", result.error)
+
+    def test_the_last_complete_svg_element_is_taken(self):
+        from wgf_assets.author import last_svg
+        self.assertEqual(last_svg('draft <svg a="1"/> no; <svg>one</svg>\n```svg\n'
+                                  '<svg viewBox="0 0 2 2"><svg x="1"></svg><g/></svg >\n```'),
+                         '<svg viewBox="0 0 2 2"><svg x="1"></svg><g/></svg >')
+        self.assertEqual(last_svg('<svg a="1"/>'), '<svg a="1"/>')
+        for text in ("", "no drawing", "<svg> cut off", "<svgfoo></svg>"):
+            self.assertIsNone(last_svg(text), text)
+
     def test_re_execution_reuses_what_the_author_drew(self):
         design = production_design([spec_asset("hero", "sprite", "player")])
         first, _ = self.run_prod(design, author=self.author("good"))

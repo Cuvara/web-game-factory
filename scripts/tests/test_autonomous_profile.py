@@ -188,6 +188,76 @@ class TheDesignAgent(unittest.TestCase):
         self.assertIn("no mechanic the strategy does not state", agent.PROMPT_CONCEPT)
 
 
+def commented_example(section, key):
+    """The shipped factory.yaml's commented `    # <key>:` block under `  <section>:`,
+    uncommented: the verified example docs/claude-capabilities.md records."""
+    from wgflib.yamllite import load
+    with open(SHIPPED, encoding="utf-8") as handle:
+        lines = handle.read().splitlines()
+    start = lines.index(f"    # {key}:", lines.index(f"  {section}:"))
+    block = [f"{key}:"]
+    for line in lines[start + 1:]:
+        if not line.startswith("    #   "):
+            break
+        block.append(line[len("    # "):])
+    return load("\n".join(block))[key]
+
+
+class TheWorkflow5Agents(unittest.TestCase):
+    """Workflow 5 refuses placeholder art and blocks without a visual-QA judge, so the
+    profile configures the 2D asset author, the 3D model author and the judge - each the
+    shipped commented example, verbatim, and each read-only (the host has only Read)."""
+
+    def setUp(self):
+        base = tempfile.mkdtemp(prefix="wgf-profile-w5-")
+        self.addCleanup(shutil.rmtree, base, ignore_errors=True)
+        project_config = os.path.join(base, "workspace", "config")
+        os.makedirs(project_config)
+        shutil.copyfile(PROFILE, os.path.join(project_config, "factory.yaml"))
+        patcher = mock.patch.object(paths, "CONFIG", project_config)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        self.config = load_config()
+
+    def agents(self):
+        assets, visualqa = self.config.section("assets"), self.config.section("visualqa")
+        return {("assets", "author"): assets["author"],
+                ("assets", "model_author"): assets["model_author"],
+                ("visualqa", "judge"): visualqa["judge"]}
+
+    def test_each_is_the_shipped_verified_example(self):
+        for (section, key), agent in self.agents().items():
+            with self.subTest(agent=key):
+                self.assertEqual(agent, commented_example(section, key))
+        shipped = load_config(SHIPPED)
+        self.assertEqual(shipped.section("assets")["author"]["kind"], "none")
+        self.assertEqual(shipped.section("assets")["model_author"]["kind"], "none")
+        self.assertEqual(shipped.section("visualqa")["judge"]["kind"], "none")
+
+    def test_each_is_read_only_and_bounded(self):
+        for (_, key), agent in self.agents().items():
+            with self.subTest(agent=key):
+                argv = agent["argv"]
+                self.assertEqual(argv[argv.index("--tools") + 1], "Read")
+                self.assertEqual(argv[argv.index("--allowedTools") + 1], "Read")
+                self.assertIn("--safe-mode", argv)
+                self.assertEqual(argv[argv.index("--permission-mode") + 1], "dontAsk")
+                self.assertLessEqual(float(argv[argv.index("--max-budget-usd") + 1]), 2)
+                self.assertIsNone(agent["idle_timeout_seconds"])  # text prints at exit
+                self.assertGreater(agent["timeout_seconds"], 0)
+
+    def test_the_modules_accept_them(self):
+        from wgf_assets.author import build_author
+        from wgf_visualqa.settings import Settings as VisualQASettings
+
+        author = build_author(self.agents()[("assets", "author")], self.config.data)
+        self.assertEqual((author.kind, author.svg_from, author.repair_rounds),
+                         ("command", "stdout", 2))
+        self.assertEqual(self.agents()[("assets", "model_author")]["spec_from"], "stdout")
+        judge = VisualQASettings.resolve(self.config.data)
+        self.assertEqual((judge.kind, judge.verdict_from), ("command", "stdout"))
+
+
 def install(destination):
     shutil.copytree(os.path.join(ROOT, "claude-web-game-plugin"), destination,
                     ignore=shutil.ignore_patterns("__pycache__", "*.pyc"))
@@ -234,10 +304,14 @@ class DryRunFromTheInstalledPlugin(unittest.TestCase):
                          ("command", "command", "local"))
         self.assertEqual(autonomy["auto_approve"], ["G2", "G3"])
         self.assertEqual(autonomy["develop_budget"]["max_sessions"], 12)
+        self.assertEqual((autonomy["asset_author"], autonomy["model_author"],
+                          autonomy["visualqa_judge"]), ("command", "command", "command"))
         default = json.loads(self.wgf(self.project("without", profile=False), "where", "--json")
                              .stdout)["autonomy"]
         self.assertEqual((default["developer"], default["reviewer"], default["auto_approve"],
                           default["init_source"]), ("handoff", "none", [], "github"))
+        self.assertEqual((default["asset_author"], default["model_author"],
+                          default["visualqa_judge"]), ("none", "none", "none"))
 
     def test_mock_hold_gates_still_stops_at_every_gate_without_the_profile(self):
         project = self.project("supervised", profile=False)

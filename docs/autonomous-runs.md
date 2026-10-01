@@ -17,11 +17,14 @@ without a person. With the shipped `workspace/config/factory.yaml`:
 | `reviewer` | `none` | A skipped review is recorded, never an approval, and release then refuses the build (`unreviewed`): fail closed until a reviewer is configured |
 | `auto_approve` | `[]` | G2 and G3 wait for a person. Only reversible gates may ever be listed |
 | `timeout_auto_approve` | `{}` | No gate approves itself by waiting |
+| `asset_author`, `model_author` | `none` | What no library supplies is a placeholder. Workflow 5 refuses placeholder art, so a supervised run brings its art in (a library, or a person's author) |
+| `visualqa_judge` | `none` | visual-qa BLOCKS without a judge: it is never a silent pass |
 | `init_source` | `github` | Passing G3 creates a repository under `factory.init.owner` with `gh repo create` - outward-facing and irreversible; `/new-game` asks before starting such a run |
 
 Every one of these has an unattended alternative already in the Factory: the verified
-headless Claude Code developer and read-only reviewer argvs (commented in the shipped
-`factory.yaml`, verified in [claude-capabilities.md](claude-capabilities.md)),
+headless Claude Code developer, read-only reviewer, asset author, model author and visual-QA
+judge argvs (commented in the shipped `factory.yaml`, verified in
+[claude-capabilities.md](claude-capabilities.md)),
 `checkpoints.auto_approve`, `init.source: local` and `develop.budget`.
 
 ## The autonomous profile
@@ -35,12 +38,24 @@ those, and nothing else:
 | `develop.budget` | `max_sessions: 12`, `max_cost: 60` (US$, from `total_cost_usd`) | develop blocks, nothing spawned, once reached; only a person raises it (`wgf resume <run> --budget-sessions N`) |
 | `review.reviewer` | `kind: command`, the verified read-only `claude -p` argv | Approves or requests changes; the Factory fingerprints the checkout and undoes any write |
 | `design` | `author: agent`, the verified read-only `claude -p` argv | Writes the design draft for a brief no design archetype carries; the module judges it unchanged, and shows it any schema or buildability problem for a bounded repair (`MAX_REPAIR_ROUNDS`) |
+| `assets.author` | `kind: command`, `svg_from: stdout`, the verified read-only `claude -p` argv | Draws each 2D requirement as an SVG it prints (one call per drawing, at most US$1 each); the Factory writes it, validates and judges it, and shows a rejected one its problems for up to two repairs |
+| `assets.model_author` | `kind: command`, `spec_from: stdout`, the same read-only argv | Writes a model spec per 3D requirement (at most US$2 a call); the pinned Blender 4.5 builds it and the Factory judges the GLB (`primitive_only`, parts, palette). Needs Blender on `PATH` or in `WGF_BLENDER` |
+| `visualqa.judge` | `kind: command`, `verdict_from: stdout`, the verified read-only `claude -p` argv | Reads the captured frames and returns scores and findings (at most US$2 a judgement); the step decides PASS or FAIL and routes `assets` / `develop` |
 | `checkpoints.auto_approve` | `[G2, G3]` | The two reversible gates in `new-game` are approved by the run, each with a decision record (`automation`) |
 | `init.source` | `local` | A project from the pinned template, `git archive`-style, **no GitHub repository, no remote** |
 
 The Factory still runs every check (install, conformance, typecheck, lint, unit, build,
 smoke), makes the keyed development commit, verifies, and holds the guarded paths - the
 Factory's own tree and the project's `workspace/config` - against the agents.
+
+Without the two authors and the judge, workflow 5 cannot finish unattended: every asset is a
+placeholder, `production-quality` refuses placeholder art and routes back to `assets`, which
+makes the same placeholders until the loop limit blocks the run; and `visual-qa` blocks with
+no judge. The authors and the judge have only `Read` - they print what they make, and the
+Factory writes it - so none of them can change the checkout or the Factory. `develop.budget`
+bounds the developer only; each other agent is bounded per call by its `--max-budget-usd`.
+A drop-merge design asks the 2D author 22 times (10 pieces, 6 icons, the frame, the
+backdrop, ...), each about 2 minutes, plus a repair call for each rejected file.
 
 ## Enabling it
 
@@ -50,7 +65,8 @@ In the target project (the working directory `/web-game-factory:new-game` runs i
 RUNTIME=$(ls -d ~/.claude/plugins/cache/cuvara/web-game-factory/*/runtime | sort -V | tail -1)
 mkdir -p workspace/config
 cp "$RUNTIME/workspace/config/profiles/autonomous.yaml" workspace/config/factory.yaml
-python3 "$RUNTIME/scripts/wgf.py" where      # autonomy: developer=command, reviewer=command, ...
+python3 "$RUNTIME/scripts/wgf.py" where      # autonomy: developer=command, reviewer=command,
+                                             # asset_author=command, visualqa_judge=command, ...
 ```
 
 (`wgf where --json` lists the shipped profiles and their paths under `profiles`.)
@@ -119,4 +135,6 @@ python3 "$RUNTIME/scripts/wgf.py" new-game --mock --hold-gates    # profile: sto
 profile, `--hold-gates` still stops at G4 only: G2 and G3 are the configuration's approvals,
 not the mock's. Without it, `--mock --hold-gates` stops at G2 as before.
 `scripts/tests/test_autonomous_profile.py` also runs the real research, strategy, design and
-tech-plan steps under the profile and checks nothing waits before init.
+tech-plan steps under the profile and checks nothing waits before init, and holds every agent
+argv in the profile to the shipped commented example (`TheWorkflow5Agents`: the authors and
+the judge are those examples verbatim, have only `Read`, and their modules accept them).

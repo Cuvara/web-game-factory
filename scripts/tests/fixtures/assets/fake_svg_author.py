@@ -1,7 +1,9 @@
 """A stand-in 2D asset author for the tests: argv <mode> <request> <output>.
 
 It reads the request the assets step wrote, appends it to calls.jsonl beside the request
-(what the tests assert on), and writes an SVG at <output> as its mode says:
+(what the tests assert on), and writes an SVG at <output> as its mode says. <output> `-`
+is `svg_from: stdout`: it prints the SVG last instead, fenced and after some prose, as a
+host's text answer does, and writes nothing (an earlier draft is printed first).
 
     good            a recognisable multi-shape drawing in the request's palette colours; each
                     variant of a counted requirement smaller than the one before
@@ -75,5 +77,8 @@ elif mode == "off-palette":
     svg = good(["#13A10E", "#8B4513", "#4B0082"])
 else:
     sys.exit(f"unknown mode {mode}")
+if output == "-":
+    print(f"A first idea:\n{rect}\nThe final drawing, in the palette:\n```svg\n{svg}\n```")
+    sys.exit(0)
 with open(output, "w", encoding="utf-8") as handle:
     handle.write(svg)

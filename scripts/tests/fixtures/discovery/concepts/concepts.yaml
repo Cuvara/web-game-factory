@@ -1,0 +1,35 @@
+# Invented, like every discovery fixture: a project concepts file holding one concept authored
+# for the brief scripts/tests/test_game_idea.py runs with. Its figures are made up; the research
+# step turns them into hypothesis claims, as it does every catalog estimate.
+version: 1
+archetypes:
+  - id: shot-stopper
+    brief: 3D goalkeeper game where the player blocks penalty shots
+    title: Shot Stopper
+    genre: sports
+    subgenre: goalkeeper
+    design_archetype: agent
+    market_tags: [sports, arcade]
+    core_mechanic: dive to block each penalty shot before it crosses the goal line
+    fantasy: the last line of defence
+    core_loop: read the striker, dive, block or concede, face a faster shot, retry
+    session_seconds: 180
+    replayability: medium
+    retention_design: streak records
+    technical_complexity: m
+    asset_complexity: m
+    dev_speed_days: 14
+    asset_cost_usd: 600
+    bundle_mb: 30
+    rendering: 3d
+    text_heavy: false
+    multiplayer: false
+    needs_cloud_save: false
+    mobile_ready: true
+    monetization:
+      primary: rewarded
+      secondary: [interstitial]
+      rationale: A rewarded second chance after a conceded goal.
+    priors: {monetization_fit: 0.6, retention_potential: 0.4, session_quality: 0.6, technical_risk: 0.4, performance_risk: 0.4, iterability: 0.6}
+    risks:
+      - {description: Shot variety may be thin without more striker behaviours., severity: medium}

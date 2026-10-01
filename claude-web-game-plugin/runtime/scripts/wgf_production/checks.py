@@ -10,7 +10,9 @@ control's size, colours and style are what the browser computed.
 
 Every check carries `route`: `assets` when an asset itself must be made again (missing, a
 placeholder, failing its own quality checks), `develop` when the game's use of assets or its
-UI must change. Bars: core/reference/production-quality.yaml.
+UI must change. Bars: core/reference/production-quality.yaml. Sound is judged the same way:
+`audio.plays` hears the game through the probe's measured output level while the bot plays,
+checks the music's file was fetched, and that the level falls away when the page loses focus.
 """
 
 import os
@@ -18,7 +20,8 @@ import statistics
 
 from wgf_assets.raster import RasterError, decode_png
 
-__all__ = ["judge", "contrast_ratio", "required_assets", "served_paths", "scene_contrast"]
+__all__ = ["judge", "contrast_ratio", "required_assets", "served_paths", "scene_contrast",
+           "audio_plays"]
 
 ASSETS, DEVELOP = "assets", "develop"
 
@@ -681,13 +684,97 @@ def ui_states(project, tests, design, rules):
                   frames=[seen[s] for s in wanted if seen.get(s)])
 
 
+# -- audio --------------------------------------------------------------------------------------
+
+def _music_items(manifest, design, rules):
+    """{id: manifest item or None} of the music the gate requires: build_spec.audio entries of
+    type music of a required tier, and manifest music items of a required tier."""
+    tiers = set((rules.get("assets") or {}).get("required_tiers") or ["mvp"])
+    items = {i.get("id"): i for i in (manifest or {}).get("items") or [] if isinstance(i, dict)}
+    wanted = {}
+    for cue in ((design or {}).get("build_spec") or {}).get("audio") or []:
+        if isinstance(cue, dict) and cue.get("type") == "music" and cue.get("tier") in tiers:
+            wanted[cue.get("id")] = items.get(cue.get("id"))
+    for item_id, item in items.items():
+        if item.get("type") == "music" and item.get("scope_tier") in tiers:
+            wanted.setdefault(item_id, item)
+    return wanted
+
+
+def audio_plays(records, manifest, design, rules):
+    """While the bot plays, the probe reports music playing and a measured output level above
+    the floor, the music's file was fetched, and the level falls to about zero when the page
+    loses focus (the platform mute every portal shares). None when the design has no music."""
+    bars = rules.get("audio") or {}
+    floor = float(bars.get("min_level", 0.005))
+    ceiling = float(bars.get("max_muted_level", 0.001))
+    music = _music_items(manifest, design, rules)
+    if not music:
+        return None
+    missing = sorted(i for i, item in music.items()
+                     if not item or item.get("status") in ("planned", "cut") or item.get("placeholder"))
+    samples, unfocused, requests, runtime = [], [], [], None
+    for _p, _n, record in _all_records(records):
+        samples += [a for a in record.get("audio") or [] if isinstance(a, dict)]
+        unfocused += [a for a in record.get("audio_unfocused") or [] if isinstance(a, dict)]
+        requests += [r for r in record.get("asset_requests") or [] if isinstance(r, dict)]
+        if runtime is None and isinstance(record.get("runtime_assets"), dict):
+            runtime = record["runtime_assets"]
+    measured = {"music_required": sorted(music), "samples": len(samples)}
+    if missing:
+        return _check("audio.plays", False,
+                      f"no delivered music for {', '.join(missing)}: the asset must be made",
+                      ASSETS, measured=measured, assets=missing)
+    if not samples:
+        return _check("audio.plays", False,
+                      "the play probe reports no `audio`: the game's sound cannot be heard from "
+                      "outside (core/artifacts/shared/play-probe.schema.json)", DEVELOP,
+                      measured=measured)
+    playing = [a for a in samples if a.get("state") == "playing"]
+    levels = [float(a.get("level") or 0) for a in playing]
+    heard = [a for a in playing if a.get("playing") and float(a.get("level") or 0) >= floor]
+    tracks = sorted({a.get("music") for a in playing if a.get("playing") and a.get("music")})
+    fetched = {_relative(r["url"].split("/assets/", 1)[-1]) for r in requests
+               if isinstance(r.get("url"), str) and "/assets/" in r["url"]
+               and r.get("status") is not None and r.get("status") < 400}
+    unfetched = sorted(i for i, item in music.items()
+                       if item and not (served_paths(item, runtime) & fetched))
+    muted = [float(a["level"]) for a in unfocused if isinstance(a.get("level"), (int, float))]
+    measured.update({"playing_samples": len(playing), "max_level": round(max(levels, default=0), 4),
+                     "median_level": round(statistics.median(levels), 4) if levels else 0,
+                     "music_heard": tracks, "unfocused_levels": muted,
+                     "music_unfetched": unfetched})
+    expected = {"min_level": floor, "max_muted_level": ceiling}
+    problems = []
+    if not heard:
+        problems.append(f"no sample during play had music playing at or above {floor} RMS "
+                        f"(loudest {measured['max_level']})")
+    if not tracks:
+        problems.append("the probe never named the music playing")
+    if unfetched:
+        problems.append(f"the music's file was never fetched: {', '.join(unfetched)}")
+    if not muted:
+        problems.append("no level was recorded while the page had lost focus")
+    elif max(muted) > ceiling:
+        problems.append(f"still {max(muted)} RMS with the page unfocused (platform mute): the "
+                        f"bar is {ceiling}")
+    return _check("audio.plays", not problems,
+                  "; ".join(problems) if problems else
+                  f"music {', '.join(tracks)} heard at up to {measured['max_level']} RMS in "
+                  f"{len(heard)} of {len(playing)} samples during play; "
+                  f"{max(muted)} RMS unfocused", DEVELOP, measured=measured, expected=expected,
+                  assets=sorted(music))
+
+
 def judge(records, manifest, design, rules, frames_dirs):
     """Checks for a build: global asset checks, then each viewport's."""
     wanted = required_assets(manifest, design, rules)
     runtime = next((r["runtime_assets"] for _p, _n, r in _all_records(records)
                     if isinstance(r.get("runtime_assets"), dict)), None)
     checks = [assets_present(wanted), assets_loaded(wanted, records, rules),
-              assets_runtime(wanted, records, rules, frames_dirs)]
+              assets_runtime(wanted, records, rules, frames_dirs),
+              audio_plays(records, manifest, design, rules)]
+    checks = [c for c in checks if c is not None]
     for project in sorted(records):
         tests = records[project]
         frames = _Frames(frames_dirs.get(project))

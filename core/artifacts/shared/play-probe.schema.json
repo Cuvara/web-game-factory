@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://webgamefactory.dev/schemas/artifacts/shared/play-probe.schema.json",
   "title": "Play probe snapshot",
-  "description": "What a built game reports about itself while it runs, so it can be played and judged from outside: `window.__wgf__.play.snapshot()` returns one object of this shape. The game installs it (the template installs `window.__wgf__`; the game adds `play`). It is read-only: calling it never changes the game. The playability step drives the game with real input and reads a snapshot before and after each input; it never acts through the probe. Metric names are the ones the design's `build_spec.experience` and `hud[].metric` use, so a snapshot can be held to the design. `oracle` is present only when the page URL carries `wgf-probe=1`: a shipped build never computes it, and a release refuses a build that would.",
+  "description": "What a built game reports about itself while it runs, so it can be played and judged from outside: `window.__wgf__.play.snapshot()` returns one object of this shape. The game installs it (the template installs `window.__wgf__`; the game adds `play`). It is read-only: calling it never changes the game. The playability step drives the game with real input and reads a snapshot before and after each input; it never acts through the probe. Metric names are the ones the design's `build_spec.experience` and `hud[].metric` use, so a snapshot can be held to the design. `audio` (optional) reports the music playing and the measured output level. `oracle` is present only when the page URL carries `wgf-probe=1`: a shipped build never computes it, and a release refuses a build that would.",
   "type": "object",
   "required": ["state", "metrics", "entities", "inputs"],
   "properties": {
@@ -29,6 +29,18 @@
       "type": "array",
       "items": { "type": "string" },
       "description": "Runtime asset ids (public/assets/assets.json) the game has loaded so far."
+    },
+    "audio": {
+      "type": "object",
+      "description": "What the game's audio is doing now. Optional, and additive: a game with sound reports it so the production gate can hear it play (audio.plays) and fall silent when muted. `level` is measured, not declared: the RMS of the game's master output (linear, 0-1) over the last few tens of milliseconds, read from an AnalyserNode placed after every gain the game applies - mute, pause, an ad break - so it is about 0 whenever the player hears nothing.",
+      "required": ["music", "playing", "level"],
+      "properties": {
+        "music": { "type": ["string", "null"], "description": "The runtime asset id of the music playing now (the main track of a layered one), or null." },
+        "playing": { "type": "boolean", "description": "Music is playing and audible now: started, its context running, and not muted, paused or held for an ad." },
+        "level": { "type": "number", "minimum": 0, "description": "Measured RMS of the master output, 0-1 (linear; 0.01 is -40 dBFS)." },
+        "muted": { "type": "boolean", "description": "The game holds its sound off now: the player's toggle, the platform's mute or an ad, a pause, or no input yet." }
+      },
+      "additionalProperties": false
     },
     "oracle": {
       "description": "Only with `wgf-probe=1` in the URL: the input that succeeds now (a save, a match, a dodge), or null when no input matters now. Lets the playability step reach `won` and play badly on purpose to reach `lost`.",

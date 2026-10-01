@@ -10,7 +10,7 @@ Invoked from `AGENTS.md` or by the matching `/wgf-*` prompt.
 2. `core/artifacts/asset-manifest.schema.json`
 3. `core/reference/asset-policy.yaml`
 4. `core/craft/art-direction.md`
-5. `core/craft/audio.md`
+5. `core/craft/game-audio.md`
 6. `core/craft/2d-assets.md`
 7. `core/craft/production-art-and-ui.md`
 8. `core/craft/production-art-2d.md`

@@ -112,9 +112,11 @@ SYSTEM_NOTES = {
     "tutorial": "one-sentence rules on the title screen; first play in one tap",
     "game-over": "game-over screen with the result and the best result",
     "restart": "one action from game over, no reload",
-    "asset-loading": "everything is procedural; loading progress reported through the platform",
+    "asset-loading": "art, music and sound from public/assets/assets.json; loading progress "
+                     "reported through the platform",
     "responsive-layout": "renderer and view resize with the window and visual viewport",
-    "audio-hooks": "src/audio/audio.ts: named cues, muted until first input and while paused",
+    "audio-hooks": "src/audio/audio.ts: the manifest's music and sfx on the design's triggers, "
+                   "silent until first input and while paused, muted or in an ad",
 }
 
 

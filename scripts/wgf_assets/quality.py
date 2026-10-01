@@ -22,6 +22,17 @@ both offline:
         raster.decodes         a PNG this pipeline can read
         raster.not-flat        more than one flat colour
         raster.alpha           a cut-out kind carries alpha and some transparent pixels
+    audio_quality(data, ...)   a WAV decoded, an Ogg or MP3 read by its headers (audiofile):
+        audio.decodes          a file the reader can open: WAV samples, Ogg pages and CRCs
+                               with a Vorbis/Opus header, MP3 frames
+        audio.duration         music (and any loop) at least the design's or the bar's
+                               length; a one-shot no longer than the bar
+        audio.not-silent       the loudest window (one bar long) above the RMS floor (WAV;
+                               a compressed file is measured at runtime by audio.plays)
+        audio.loop-seam        a loop's last frames meet its first: the jump is a few
+                               typical sample steps and the level does not leap (WAV)
+        audio.size             within the asset policy's max_bytes for the kind
+        audio.licence          the licence is recorded and permitted
 
 Each returns the asset-manifest `quality` object: {verdict, checks, primitive_only, parts,
 colors, author}. `problems(quality)` is the list an author is shown when it is asked again.
@@ -34,11 +45,11 @@ import xml.etree.ElementTree as ET
 from wgflib import paths
 from wgflib.yamllite import load_file
 
-from . import raster
+from . import audiofile, raster
 
-__all__ = ["load_bars", "svg_quality", "raster_quality", "font_quality", "font_format", "skipped", "problems",
-           "parse_palette", "BARS_PATH", "QualityBars", "font_cmap", "expand_chars", "CoverageUnchecked",
-           "silhouette", "variants_distinct"]
+__all__ = ["load_bars", "svg_quality", "raster_quality", "font_quality", "font_format",
+           "audio_quality", "skipped", "problems", "parse_palette", "BARS_PATH", "QualityBars",
+           "font_cmap", "expand_chars", "CoverageUnchecked", "silhouette", "variants_distinct"]
 
 BARS_PATH = os.path.join(paths.REFERENCE, "asset-quality.yaml")
 
@@ -90,6 +101,7 @@ class QualityBars:
         self.variant_grid = int(variants.get("grid") or 32)
         self.min_silhouette_distance = float(variants.get("min_silhouette_distance") or 0)
         self.png_background_delta = int(variants.get("png_background_delta") or 24)
+        self.audio = AudioBars(data.get("audio") or {})
 
     def locale(self, locale):
         """The `fonts.locales` entry of a locale, matched by its language subtag; None when
@@ -113,6 +125,20 @@ class QualityBars:
                 "max_off_palette_share": self.max_off_share,
                 "max_bytes": self.svg_max_bytes, "max_edge": self.max_edge,
                 "off_palette_marker": "data-wgf-off-palette=\"<reason>\" on the root <svg>"}
+
+
+class AudioBars:
+    def __init__(self, data):
+        seam = data.get("loop_seam") or {}
+        self.window_s = float(data.get("window_s") or 2.0)
+        self.min_rms_dbfs = float(data.get("min_rms_dbfs") if data.get("min_rms_dbfs")
+                                  is not None else -45)
+        self.music_min_s = float((data.get("music") or {}).get("min_duration_s") or 30)
+        self.loop_min_s = float((data.get("loop") or {}).get("min_duration_s") or 1)
+        self.sfx_max_s = float((data.get("sfx") or {}).get("max_duration_s") or 6)
+        self.seam_ratio = float(seam.get("max_step_ratio") or 8)
+        self.seam_edge_db = float(seam.get("max_edge_db") or 6)
+        self.seam_edge_ms = float(seam.get("edge_ms") or 50)
 
 
 def load_bars(path=None):
@@ -683,6 +709,76 @@ def font_quality(data, *, locales=(), bars=None, author=None):
     if ok:
         _coverage_check(checks, data, locales, bars)
     return _result(checks, author)
+
+
+
+# -- audio ------------------------------------------------------------------------------------
+
+def audio_quality(data, *, kind, loop=False, min_duration_s=None, max_bytes=None,
+                  license_ok=None, bars=None, author=None):
+    """The `quality` object of an audio file (sfx or music). `loop` and `min_duration_s` come
+    from the design's build_spec.audio entry; `max_bytes` from the asset policy's kind;
+    `license_ok` is whether the licence is recorded and permitted (None: not known here)."""
+    bars = (bars or load_bars()).audio
+    checks = []
+    try:
+        info = audiofile.read(data)
+    except audiofile.AudioError as exc:
+        _check(checks, "audio.decodes", False, f"not audio this pipeline reads: {exc}")
+        return _result(checks, author)
+    decoded = info.samples is not None
+    _check(checks, "audio.decodes", info.duration_s > 0,
+           info.summary() + ("; samples decoded" if decoded else
+                             "; headers read (no codec in the standard library)")
+           if info.duration_s > 0 else f"{info.summary()}: no audio in it")
+
+    duration = info.duration_s
+    if kind == "music" or loop:
+        floor = max(float(min_duration_s or 0),
+                    bars.music_min_s if kind == "music" else bars.loop_min_s)
+        _check(checks, "audio.duration", duration >= floor,
+               f"{duration:.2f} s; a {'music' if kind == 'music' else 'looping'} asset needs "
+               f"at least {floor:g} s")
+    else:
+        floor = float(min_duration_s or 0)
+        ok = floor <= duration <= max(bars.sfx_max_s, floor)
+        _check(checks, "audio.duration", ok,
+               f"{duration:.2f} s; a one-shot is at most {max(bars.sfx_max_s, floor):g} s"
+               + (f" and at least {floor:g} s" if floor else ""))
+
+    measured = audiofile.levels(info, bars.window_s) if decoded else None
+    if measured is None:
+        _check(checks, "audio.not-silent", True,
+               f"{info.format} ({info.codec}) is not decoded here; its level is measured in "
+               f"the running game (production check audio.plays)", skipped_=True)
+    else:
+        loud = measured["loudest_dbfs"]
+        _check(checks, "audio.not-silent", loud >= bars.min_rms_dbfs,
+               f"loudest {bars.window_s:g} s window {loud:.1f} dBFS RMS (peak "
+               f"{measured['peak_dbfs']:.1f} dBFS); the floor is {bars.min_rms_dbfs:g} dBFS")
+
+    if loop:
+        joined = audiofile.seam(info, bars.seam_edge_ms) if decoded else None
+        if joined is None:
+            _check(checks, "audio.loop-seam", True,
+                   f"{info.format} ({info.codec}) is not decoded here; its seam is the "
+                   f"encoder's (an Ogg Opus end trim, an Info/LAME gapless record)",
+                   skipped_=True)
+        else:
+            ok = joined["ratio"] <= bars.seam_ratio and joined["edge_db"] <= bars.seam_edge_db
+            _check(checks, "audio.loop-seam", ok,
+                   f"end-to-start jump {joined['jump']:.4f} = {joined['ratio']:.1f}x the "
+                   f"typical step (bar {bars.seam_ratio:g}x); level across the seam differs "
+                   f"{joined['edge_db']:.1f} dB (bar {bars.seam_edge_db:g} dB)")
+
+    if max_bytes:
+        _check(checks, "audio.size", len(data) <= max_bytes,
+               f"{len(data)} bytes; the {kind} budget is {max_bytes}")
+    if license_ok is not None:
+        _check(checks, "audio.licence", bool(license_ok),
+               "licence recorded and permitted" if license_ok else
+               "no permitted licence recorded: it cannot ship")
+    return _result(checks, author, parts=info.channels)
 
 
 # -- variants -----------------------------------------------------------------------------------

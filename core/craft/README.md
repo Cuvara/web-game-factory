@@ -21,7 +21,7 @@ rule is.
 | [`game-feel.md`](game-feel.md) | gameplay, ui | design, prototype | `build_spec.rewards[].feedback`, `.hud[].feedback`, `.failure.feedback`, `visual_identity.motion` |
 | [`onboarding-and-portal-ux.md`](onboarding-and-portal-ux.md) | ui, game-designer | design, prototype, release | `session.time_to_first_*`, `build_spec.tutorial`, `.monetization_touchpoints`, store metadata |
 | [`ui-hud-mobile.md`](ui-hud-mobile.md) | ui | design, prototype | `build_spec.screens`, `.hud`, `.menus`, `.responsive` |
-| [`audio.md`](audio.md) | asset, gameplay | design, prototype | `audio_direction`, `build_spec.audio` |
+| [`game-audio.md`](game-audio.md) | asset, gameplay, ui | design, prototype, production | `audio_direction`, `build_spec.audio`, the asset manifest's `sfx`/`music`, the play probe's `audio` |
 | [`art-direction.md`](art-direction.md) | game-designer, asset | design, prototype | `art_direction`, `build_spec.visual_identity`, `.assets`, the asset manifest |
 | [`accessibility.md`](accessibility.md) | ui, game-designer | design, prototype, qa | `ux.accessibility`, `visual_identity`, `.controls` |
 | [`production-art-and-ui.md`](production-art-and-ui.md) | game-designer, asset, gameplay, ui | design, prototype, production | `build_spec.assets[].role`/`.readability`, `visual_identity.ui`/`.primitive_style`, the play probe's `asset`/`render` |

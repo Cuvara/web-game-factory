@@ -2,7 +2,11 @@
 
 The source is the design's `build_spec.assets` (game-design 1.6.0): each requirement's id,
 type, tier, role, dimension, description, readability, count and spec are carried onto the
-work list (`bridge`). An entry of the older `asset_requirements` list with the same id adds
+work list (`bridge`). Its `build_spec.audio` joins the same list (`bridge_audio`): music
+and ambience become `music` requirements, sfx, ui and voice cues `sfx` ones (a ui cue with
+the role `ui`), each keeping its trigger, whether it loops, and any length its description
+states ("a 60 s loop") as the shortest the file may be. An entry of the older
+`asset_requirements` list with the same id adds
 what only it can say - atlas group, exact size, scale, a `model` spec, a file the design
 already chose - and one that build_spec does not list is kept as well. Tiers map mvp ->
 mvp, post-mvp -> production, optional -> future; only mvp (and an asset_requirements entry
@@ -26,7 +30,7 @@ from . import modelspec
 from .policy import PolicyError
 
 __all__ = ["Requirement", "RequirementError", "inspect", "classify", "slugify", "bridge",
-           "design_kind", "spec_size"]
+           "bridge_audio", "design_kind", "spec_size", "AUDIO_KINDS"]
 
 TIERS = ("mvp", "prototype", "production", "future")
 SOURCES = ("library", "procedural", "ai-generated", "purchased", "commissioned")
@@ -94,6 +98,10 @@ class Requirement:
         self.count = data.get("count") if isinstance(data.get("count"), int) else 1
         self.design_type = data.get("design_type")
         self.design_tier = data.get("design_tier")
+        # From build_spec.audio: when it plays, whether it loops, its shortest length.
+        self.trigger = data.get("trigger")
+        self.loop = bool(data.get("loop"))
+        self.min_duration_s = data.get("min_duration_s")
         # Set by classify().
         self.policy = None
         self.dimension = data.get("dimension")
@@ -382,6 +390,40 @@ def bridge(design, game_dim):
                 req[key] = value
         out.append(req)
     out.extend(e for e in legacy if e.get("id") not in named)
+    out.extend(bridge_audio(design, {e.get("id") for e in out if isinstance(e, dict)}))
+    return out
+
+
+# build_spec.audio type -> asset-policy kind, and the role the manifest records.
+AUDIO_KINDS = {"music": ("music", None), "ambience": ("music", None), "sfx": ("sfx", None),
+               "ui": ("sfx", "ui"), "voice": ("sfx", None)}
+_SECONDS = re.compile(r"\b(\d{1,3}(?:\.\d+)?)\s*(?:s|sec|secs|seconds?)\b", re.I)
+
+
+def audio_duration(text):
+    """The length a description states ("a 60 s loop", "0.5 sec"), in seconds, or None."""
+    match = _SECONDS.search(text or "")
+    return float(match.group(1)) if match else None
+
+
+def bridge_audio(design, named):
+    """Requirement dicts for build_spec.audio entries whose id no other requirement uses."""
+    spec_audio = ((design.get("build_spec") or {}).get("audio")) or []
+    out = []
+    for entry in spec_audio:
+        if not isinstance(entry, dict) or entry.get("id") in named:
+            continue
+        kind, role = AUDIO_KINDS.get(entry.get("type"), ("sfx", None))
+        notes = [f"Plays on: {entry['trigger']}." if entry.get("trigger") else None,
+                 "Loops seamlessly." if entry.get("loop") else None]
+        out.append({"id": entry.get("id"), "kind": kind, "label": entry.get("description"),
+                    "bridged_from": "audio",
+                    "scope_tier": DESIGN_TIERS.get(entry.get("tier"), "mvp"),
+                    "role": role, "description": entry.get("description"),
+                    "design_type": entry.get("type"), "design_tier": entry.get("tier"),
+                    "trigger": entry.get("trigger"), "loop": bool(entry.get("loop")),
+                    "min_duration_s": audio_duration(entry.get("description")),
+                    "notes": " ".join(n for n in notes if n) or None})
     return out
 
 
@@ -415,15 +457,17 @@ def inspect(design, policy, *, dimension=None):
     if bridged:
         raw = bridge(design, game_dim)
     else:
-        raw = derive_baseline(design, game_dim) if derived else declared
+        raw = derive_baseline(design, game_dim) if derived else list(declared)
+        raw.extend(bridge_audio(design, {e.get("id") for e in raw if isinstance(e, dict)}))
 
     problems, seen, reqs = [], {}, []
     for index, entry in enumerate(raw):
         if not isinstance(entry, dict):
             problems.append(f"asset_requirements[{index}] is not an object")
             continue
-        req = Requirement(entry, derived=derived,
-                          bridged=bridged and entry.get("design_tier") is not None)
+        audio = entry.get("bridged_from") == "audio"
+        req = Requirement(entry, derived=derived and not audio,
+                          bridged=(bridged or audio) and entry.get("design_tier") is not None)
         where = f"asset {req.id!r}" if req.id else f"asset_requirements[{index}]"
         if not isinstance(req.id, str) or not _ID.match(req.id):
             problems.append(f"{where}: id must be kebab-case")

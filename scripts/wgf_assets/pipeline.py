@@ -20,7 +20,8 @@ A derived baseline requirement (the design listed no assets) skips straight to t
 placeholder backends: nobody designed it, so nothing is imported or authored for it.
 
 Every delivered item gets a `quality` (quality.py): an SVG or PNG is judged against
-core/reference/asset-quality.yaml; a placeholder is `skipped`, never judged; a failed
+core/reference/asset-quality.yaml (and a sound file - WAV decoded, Ogg or MP3 by its headers -
+against its `audio` bars: length, level, loop seam, size, licence); a placeholder is `skipped`, never judged; a failed
 verdict is a `quality-failed` issue and keeps the item from being production-ready.
 
 Every file the pipeline writes goes under the asset root (a game repository checkout) at
@@ -76,6 +77,14 @@ ORIGIN_KEYS = ("source_url", "author", "vendor", "attribution", "license_url", "
 LEDGER_PATH = f"{SOURCE_DIR}/authored.json"
 LEDGER_FORMAT = "wgf-authored-assets"
 SOURCES = ("library", "procedural", "ai-generated", "purchased", "commissioned")
+AUDIO_KINDS = ("sfx", "music")
+
+
+def _is_audio(blob):
+    head = bytes(blob[:12])
+    return (head[:4] == b"OggS" or (head[:4] == b"RIFF" and head[8:12] == b"WAVE")
+            or head[:3] == b"ID3" or (len(head) > 1 and head[0] == 0xFF
+                                      and head[1] & 0xE0 == 0xE0))
 
 
 def file_hash(data):
@@ -1078,7 +1087,16 @@ class AssetPipeline:
                      if quality_mod.font_format(blob)]
             models = [(relative, blob) for relative, blob in item.payload
                       if bytes(blob[:4]) == b"glTF"]
-            if fonts and not files:
+            sounds = [(relative, blob) for relative, blob in item.payload
+                      if req.kind in AUDIO_KINDS and _is_audio(blob)]
+            if sounds:
+                licensed = data.get("license_status") in ("verified", "generated")
+                judged = _merge_quality(
+                    [(relative, quality_mod.audio_quality(
+                        blob, kind=req.kind, loop=req.loop, min_duration_s=req.min_duration_s,
+                        max_bytes=req.policy.max_bytes, license_ok=licensed, bars=self.bars,
+                        author=author)) for relative, blob in sounds], author)
+            elif fonts and not files:
                 judged = _merge_quality([(relative, quality_mod.font_quality(
                     blob, locales=self.locales, bars=self.bars, author=author))
                                          for relative, blob in fonts], author)
@@ -1388,6 +1406,8 @@ class AssetPipeline:
                       "height": record.get("height")})
         if data.get("model"):
             entry["model"] = self._runtime_model(data["model"])
+        if req.kind in AUDIO_KINDS and _is_audio(blob):
+            entry["audio"] = _runtime_audio(blob, req)
         payload = [(relative, blob)]
         if data["type"] == "font":
             entry["family"] = req.id
@@ -1502,6 +1522,19 @@ class AssetPipeline:
             self.store.remove(relative)
             self._log("pruned", path=relative)
         result.removed = list(self.store.removed)
+
+
+def _runtime_audio(blob, req):
+    """What a game's audio loader wants without decoding: length, channels, rate, looping."""
+    from . import audiofile
+    block = {"loop": bool(req.loop)}
+    try:
+        info = audiofile.read(blob)
+    except audiofile.AudioError:
+        return block
+    block.update({"duration_s": round(info.duration_s, 4), "channels": info.channels,
+                  "sample_rate": info.sample_rate})
+    return block
 
 
 def _merge_quality(results, author):

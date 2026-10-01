@@ -9,7 +9,7 @@ Asset manifests, sourcing, licensing, provenance of generated assets, and compre
 - `core/artifacts/asset-manifest.schema.json`
 - `core/reference/asset-policy.yaml`
 - `core/craft/art-direction.md`
-- `core/craft/audio.md`
+- `core/craft/game-audio.md`
 - `core/craft/2d-assets.md`
 - `core/craft/production-art-2d.md`
 - `core/craft/production-art-3d.md`

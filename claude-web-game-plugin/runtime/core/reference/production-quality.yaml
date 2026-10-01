@@ -5,10 +5,11 @@
 # requests the page made for files under /assets/, the DOM UI measured on each screen state,
 # and the frames of those states - together with the asset manifest and the design, and holds
 # them to these numbers. Each check routes its failure: `assets` when an asset itself must be
-# made again, `develop` when the game's use of it must change.
+# made again, `develop` when the game's use of it must change. Sound is heard the same way:
+# through the play probe's measured output level (`audio`) and the files the page fetched.
 # See docs/production-architecture.md and docs/production-quality-module.md.
 
-version: 1.1.0
+version: 1.2.0
 
 entities:
   # Roles a player must recognise (play probe `entities[].role`). In production each is
@@ -80,3 +81,15 @@ ui:
   # win when the design's experience contract has one.
   required_states: [lost, retry]
   win_state: won
+
+audio:
+  # audio.plays, when the design has music (build_spec.audio type music of a required tier):
+  # while the bot plays, at least one probe sample in the playing state has music playing
+  # with the measured master level (play probe `audio.level`, RMS, linear 0-1) at or above
+  # `min_level` (0.005 is about -46 dBFS), the probe names the track, and the page fetched
+  # the music's file. With the page unfocused (a window blur: the platform mute every portal
+  # requires) the level is at most `max_muted_level` (about -60 dBFS). No probe `audio`, no
+  # level, an unfetched file or sound through the mute routes `develop`; music that was never
+  # delivered (missing, a placeholder) routes `assets`.
+  min_level: 0.005
+  max_muted_level: 0.001

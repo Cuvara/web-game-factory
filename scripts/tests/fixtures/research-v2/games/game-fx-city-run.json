@@ -1,0 +1,182 @@
+{
+  "id": "game-fx-city-run",
+  "name": "FX City Run",
+  "fixture": true,
+  "vocabulary_version": "1.0.0",
+  "listing_names": [
+    "FX City Run"
+  ],
+  "sessions": [
+    {
+      "id": "ts-fx-city-run-a",
+      "source_uri": "https://fixtures.invalid/research-v2/crazygames/fx-city-run",
+      "source_kind": "competitor-teardown",
+      "observed_at": "2026-09-20T10:00:00Z",
+      "method": "played",
+      "observer": "research (FIXTURE)",
+      "platform": "crazygames",
+      "viewport": "390x844 phone, throttled 4G",
+      "runs": 3,
+      "capture_uri": "https://fixtures.invalid/research-v2/captures/fx-city-run.webm",
+      "note": "FIXTURE: played FX City Run three runs from a cold load, stopwatch on every timing."
+    }
+  ],
+  "observations": [
+    {
+      "session": "ts-fx-city-run-a",
+      "facet": "genre",
+      "value": "lane-runner",
+      "coding": "observed",
+      "excerpt": "FIXTURE genre: lane-runner"
+    },
+    {
+      "session": "ts-fx-city-run-a",
+      "facet": "mechanics",
+      "value": [
+        "lane-switch",
+        "dodge",
+        "collect"
+      ],
+      "coding": "observed",
+      "excerpt": "FIXTURE mechanics: ['lane-switch', 'dodge', 'collect']"
+    },
+    {
+      "session": "ts-fx-city-run-a",
+      "facet": "gameplay_steps",
+      "value": [
+        "act",
+        "feedback",
+        "reward",
+        "challenge",
+        "fail",
+        "retry"
+      ],
+      "coding": "observed",
+      "excerpt": "FIXTURE gameplay_steps: ['act', 'feedback', 'reward', 'challenge', 'fail', 'retry']"
+    },
+    {
+      "session": "ts-fx-city-run-a",
+      "facet": "controls",
+      "value": "swipe",
+      "coding": "observed",
+      "excerpt": "FIXTURE controls: swipe"
+    },
+    {
+      "session": "ts-fx-city-run-a",
+      "facet": "theme",
+      "value": "city",
+      "coding": "interpreted",
+      "excerpt": "FIXTURE theme: city"
+    },
+    {
+      "session": "ts-fx-city-run-a",
+      "facet": "setting",
+      "value": "city-street",
+      "coding": "interpreted",
+      "excerpt": "FIXTURE setting: city-street"
+    },
+    {
+      "session": "ts-fx-city-run-a",
+      "facet": "player_fantasy",
+      "value": "survivor",
+      "coding": "interpreted",
+      "excerpt": "FIXTURE player_fantasy: survivor"
+    },
+    {
+      "session": "ts-fx-city-run-a",
+      "facet": "emotional_fantasy",
+      "value": "tension-mastery",
+      "coding": "interpreted",
+      "excerpt": "FIXTURE emotional_fantasy: tension-mastery"
+    },
+    {
+      "session": "ts-fx-city-run-a",
+      "facet": "art_dimension",
+      "value": "3d",
+      "coding": "observed",
+      "excerpt": "FIXTURE art_dimension: 3d"
+    },
+    {
+      "session": "ts-fx-city-run-a",
+      "facet": "art_rendering",
+      "value": "low-poly",
+      "coding": "interpreted",
+      "excerpt": "FIXTURE art_rendering: low-poly"
+    },
+    {
+      "session": "ts-fx-city-run-a",
+      "facet": "art_tone",
+      "value": "bold",
+      "coding": "interpreted",
+      "excerpt": "FIXTURE art_tone: bold"
+    },
+    {
+      "session": "ts-fx-city-run-a",
+      "facet": "art_palette",
+      "value": "saturated",
+      "coding": "interpreted",
+      "excerpt": "FIXTURE art_palette: saturated"
+    },
+    {
+      "session": "ts-fx-city-run-a",
+      "facet": "run_seconds",
+      "value": 110,
+      "coding": "observed",
+      "excerpt": "FIXTURE run_seconds: 110 (stopwatch)"
+    },
+    {
+      "session": "ts-fx-city-run-a",
+      "facet": "time_to_first_play_seconds",
+      "value": 5,
+      "coding": "observed",
+      "excerpt": "FIXTURE time_to_first_play_seconds: 5 (stopwatch)"
+    },
+    {
+      "session": "ts-fx-city-run-a",
+      "facet": "retention_hooks",
+      "value": [
+        "daily-challenge"
+      ],
+      "coding": "observed",
+      "excerpt": "FIXTURE retention_hooks: ['daily-challenge']"
+    },
+    {
+      "session": "ts-fx-city-run-a",
+      "facet": "ad_formats",
+      "value": [
+        "rewarded",
+        "interstitial"
+      ],
+      "coding": "observed",
+      "excerpt": "FIXTURE ad_formats: ['rewarded', 'interstitial']"
+    },
+    {
+      "session": "ts-fx-city-run-a",
+      "facet": "ad_triggers",
+      "value": [
+        "fail-continue",
+        "double-reward"
+      ],
+      "coding": "observed",
+      "excerpt": "FIXTURE ad_triggers: ['fail-continue', 'double-reward']"
+    },
+    {
+      "session": "ts-fx-city-run-a",
+      "facet": "progression",
+      "value": [
+        "best-score",
+        "unlock-track"
+      ],
+      "coding": "observed",
+      "excerpt": "FIXTURE progression: ['best-score', 'unlock-track']"
+    },
+    {
+      "session": "ts-fx-city-run-a",
+      "facet": "audience_type",
+      "value": "casual",
+      "coding": "interpreted",
+      "excerpt": "FIXTURE audience_type: casual"
+    }
+  ],
+  "notes": []
+}

@@ -1,0 +1,202 @@
+{
+  "id": "game-fx-candy-swap",
+  "name": "FX Candy Swap",
+  "fixture": true,
+  "vocabulary_version": "1.0.0",
+  "listing_names": [
+    "FX Candy Swap"
+  ],
+  "sessions": [
+    {
+      "id": "ts-fx-candy-swap-a",
+      "source_uri": "https://fixtures.invalid/research-v2/poki/fx-candy-swap",
+      "source_kind": "competitor-teardown",
+      "observed_at": "2026-09-20T10:00:00Z",
+      "method": "played",
+      "observer": "research (FIXTURE)",
+      "platform": "poki",
+      "viewport": "390x844 phone, throttled 4G",
+      "runs": 3,
+      "capture_uri": "https://fixtures.invalid/research-v2/captures/fx-candy-swap.webm",
+      "note": "FIXTURE: played FX Candy Swap three runs from a cold load, stopwatch on every timing."
+    }
+  ],
+  "observations": [
+    {
+      "session": "ts-fx-candy-swap-a",
+      "facet": "genre",
+      "value": "match-3",
+      "coding": "observed",
+      "excerpt": "FIXTURE genre: match-3"
+    },
+    {
+      "session": "ts-fx-candy-swap-a",
+      "facet": "mechanics",
+      "value": [
+        "swap-match"
+      ],
+      "coding": "observed",
+      "excerpt": "FIXTURE mechanics: ['swap-match']"
+    },
+    {
+      "session": "ts-fx-candy-swap-a",
+      "facet": "gameplay_steps",
+      "value": [
+        "act",
+        "feedback",
+        "reward",
+        "progress",
+        "challenge",
+        "fail",
+        "retry"
+      ],
+      "coding": "observed",
+      "excerpt": "FIXTURE gameplay_steps: ['act', 'feedback', 'reward', 'progress', 'challenge', 'fail', 'retry']"
+    },
+    {
+      "session": "ts-fx-candy-swap-a",
+      "facet": "controls",
+      "value": "drag",
+      "coding": "observed",
+      "excerpt": "FIXTURE controls: drag"
+    },
+    {
+      "session": "ts-fx-candy-swap-a",
+      "facet": "theme",
+      "value": "candy",
+      "coding": "interpreted",
+      "excerpt": "FIXTURE theme: candy"
+    },
+    {
+      "session": "ts-fx-candy-swap-a",
+      "facet": "player_fantasy",
+      "value": "organizer",
+      "coding": "interpreted",
+      "excerpt": "FIXTURE player_fantasy: organizer"
+    },
+    {
+      "session": "ts-fx-candy-swap-a",
+      "facet": "emotional_fantasy",
+      "value": "satisfaction-release",
+      "coding": "interpreted",
+      "excerpt": "FIXTURE emotional_fantasy: satisfaction-release"
+    },
+    {
+      "session": "ts-fx-candy-swap-a",
+      "facet": "art_dimension",
+      "value": "2d",
+      "coding": "observed",
+      "excerpt": "FIXTURE art_dimension: 2d"
+    },
+    {
+      "session": "ts-fx-candy-swap-a",
+      "facet": "art_rendering",
+      "value": "vector-flat",
+      "coding": "interpreted",
+      "excerpt": "FIXTURE art_rendering: vector-flat"
+    },
+    {
+      "session": "ts-fx-candy-swap-a",
+      "facet": "art_tone",
+      "value": "cute",
+      "coding": "interpreted",
+      "excerpt": "FIXTURE art_tone: cute"
+    },
+    {
+      "session": "ts-fx-candy-swap-a",
+      "facet": "art_palette",
+      "value": "saturated",
+      "coding": "interpreted",
+      "excerpt": "FIXTURE art_palette: saturated"
+    },
+    {
+      "session": "ts-fx-candy-swap-a",
+      "facet": "run_seconds",
+      "value": 210,
+      "coding": "observed",
+      "excerpt": "FIXTURE run_seconds: 210 (stopwatch)"
+    },
+    {
+      "session": "ts-fx-candy-swap-a",
+      "facet": "time_to_first_play_seconds",
+      "value": 6,
+      "coding": "observed",
+      "excerpt": "FIXTURE time_to_first_play_seconds: 6 (stopwatch)"
+    },
+    {
+      "session": "ts-fx-candy-swap-a",
+      "facet": "time_to_first_reward_seconds",
+      "value": 15,
+      "coding": "observed",
+      "excerpt": "FIXTURE time_to_first_reward_seconds: 15 (stopwatch)"
+    },
+    {
+      "session": "ts-fx-candy-swap-a",
+      "facet": "retention_hooks",
+      "value": [
+        "level-map",
+        "energy"
+      ],
+      "coding": "observed",
+      "excerpt": "FIXTURE retention_hooks: ['level-map', 'energy']"
+    },
+    {
+      "session": "ts-fx-candy-swap-a",
+      "facet": "ad_formats",
+      "value": [
+        "rewarded",
+        "interstitial"
+      ],
+      "coding": "observed",
+      "excerpt": "FIXTURE ad_formats: ['rewarded', 'interstitial']"
+    },
+    {
+      "session": "ts-fx-candy-swap-a",
+      "facet": "ad_triggers",
+      "value": [
+        "fail-continue",
+        "extra-moves"
+      ],
+      "coding": "observed",
+      "excerpt": "FIXTURE ad_triggers: ['fail-continue', 'extra-moves']"
+    },
+    {
+      "session": "ts-fx-candy-swap-a",
+      "facet": "progression",
+      "value": [
+        "level-sequence"
+      ],
+      "coding": "observed",
+      "excerpt": "FIXTURE progression: ['level-sequence']"
+    },
+    {
+      "session": "ts-fx-candy-swap-a",
+      "facet": "audience_type",
+      "value": "casual",
+      "coding": "interpreted",
+      "excerpt": "FIXTURE audience_type: casual"
+    },
+    {
+      "session": "ts-fx-candy-swap-a",
+      "facet": "tutorial",
+      "value": "guided",
+      "coding": "observed",
+      "excerpt": "FIXTURE tutorial: guided"
+    },
+    {
+      "session": "ts-fx-candy-swap-a",
+      "facet": "difficulty_shape",
+      "value": "stepped",
+      "coding": "interpreted",
+      "excerpt": "FIXTURE difficulty_shape: stepped"
+    }
+  ],
+  "notes": [
+    {
+      "session": "ts-fx-candy-swap-a",
+      "kind": "strength",
+      "statement": "FIXTURE: cascades chain with a satisfying audio ladder",
+      "excerpt": "FIXTURE note: FIXTURE: cascades chain with a satisfying audio ladder"
+    }
+  ]
+}

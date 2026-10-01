@@ -1,0 +1,88 @@
+{
+  "id": "game-fx-cozy-merge",
+  "name": "FX Cozy Merge",
+  "fixture": true,
+  "vocabulary_version": "1.0.0",
+  "listing_names": [
+    "FX Cozy Merge"
+  ],
+  "sessions": [
+    {
+      "id": "ts-fx-cozy-merge-a",
+      "source_uri": "https://fixtures.invalid/research-v2/poki/fx-cozy-merge",
+      "source_kind": "competitor-teardown",
+      "observed_at": "2026-09-20T10:00:00Z",
+      "method": "played",
+      "observer": "research (FIXTURE)",
+      "platform": "poki",
+      "viewport": "390x844 phone, throttled 4G",
+      "runs": 3,
+      "capture_uri": "https://fixtures.invalid/research-v2/captures/fx-cozy-merge.webm",
+      "note": "FIXTURE: played FX Cozy Merge three runs from a cold load, stopwatch on every timing."
+    }
+  ],
+  "observations": [
+    {
+      "session": "ts-fx-cozy-merge-a",
+      "facet": "genre",
+      "value": "merge-puzzle",
+      "coding": "observed",
+      "excerpt": "FIXTURE genre: merge-puzzle"
+    },
+    {
+      "session": "ts-fx-cozy-merge-a",
+      "facet": "mechanics",
+      "value": [
+        "merge-combine"
+      ],
+      "coding": "observed",
+      "excerpt": "FIXTURE mechanics: ['merge-combine']"
+    },
+    {
+      "session": "ts-fx-cozy-merge-a",
+      "facet": "theme",
+      "value": "cooking",
+      "coding": "interpreted",
+      "excerpt": "FIXTURE theme: cooking"
+    },
+    {
+      "session": "ts-fx-cozy-merge-a",
+      "facet": "art_tone",
+      "value": "cozy",
+      "coding": "interpreted",
+      "excerpt": "FIXTURE art_tone: cozy"
+    },
+    {
+      "session": "ts-fx-cozy-merge-a",
+      "facet": "art_palette",
+      "value": "pastel",
+      "coding": "interpreted",
+      "excerpt": "FIXTURE art_palette: pastel"
+    },
+    {
+      "session": "ts-fx-cozy-merge-a",
+      "facet": "art_dimension",
+      "value": "2d",
+      "coding": "observed",
+      "excerpt": "FIXTURE art_dimension: 2d"
+    },
+    {
+      "session": "ts-fx-cozy-merge-a",
+      "facet": "retention_hooks",
+      "value": [
+        "daily-challenge",
+        "collection-hook"
+      ],
+      "coding": "observed",
+      "excerpt": "FIXTURE retention_hooks: ['daily-challenge', 'collection-hook']"
+    },
+    {
+      "session": "ts-fx-cozy-merge-a",
+      "facet": "run_seconds",
+      "value": 300,
+      "coding": "observed",
+      "excerpt": "FIXTURE run_seconds: 300 (stopwatch)"
+    }
+  ],
+  "notes": []
+}

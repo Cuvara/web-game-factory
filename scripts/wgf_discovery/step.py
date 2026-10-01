@@ -56,7 +56,11 @@ from wgflib.workflow import ArtifactOutput, StepResult, WorkflowStep
 from wgflib.workflow.model import StepOutcome
 from wgflib.yamllite import YamlError, load_file
 
-from . import analysis
+from . import analysis, opportunities as opportunity_space
+from .corpus import Corpus, load_records
+from .market import analyse_market
+from .patterns import extract_benchmarks, extract_patterns, facet_summaries
+from .vocabulary import AnalysisConfig, Vocabulary, VocabularyError
 from .evidence import (
     EvidenceError,
     Gap,
@@ -84,6 +88,10 @@ DEFAULTS = {
     "question": None,
     "catalog": CATALOG,
     "backlog": paths.OPPORTUNITIES,
+    "vocabulary": None,
+    "analysis": None,
+    "select": None,
+    "persist_backlog": False,
 }
 
 
@@ -118,7 +126,8 @@ class ResearchStep(WorkflowStep):
             settings = self.settings(context)
             as_of = self._as_of(settings)
             return self._scan(settings, as_of, context)
-        except (EvidenceError, ResearchError, YamlError) as exc:
+        except (EvidenceError, ResearchError, YamlError, VocabularyError,
+                analysis.SupportError) as exc:
             context.logger.error("research input refused", error=str(exc))
             return StepResult.failed(str(exc), retryable=False)
 
@@ -209,9 +218,16 @@ class ResearchStep(WorkflowStep):
                             "estimates"))
 
         backlog = self._backlog(settings)
-        corpus_hash = self._corpus_hash(sources, profiles)
+        vocabulary = Vocabulary(_resolve(settings["vocabulary"]) if settings.get("vocabulary")
+                                else None)
+        config = AnalysisConfig(_resolve(settings["analysis"]) if settings.get("analysis")
+                                else None)
+        config.check_against(vocabulary)
+        self._vocab = vocabulary
+        records = load_records(os.path.join(corpus, "games"))
+        corpus_hash = self._corpus_hash(sources, profiles, records)
         key_parts = [corpus_hash, as_of_text[:10], scope, settings.get("genres"),
-                     _file_hash(settings["catalog"])]
+                     _file_hash(settings["catalog"]), vocabulary.file_hash, config.file_hash]
         if idea:
             # Only with one: a blank scan keeps the report id it always had.
             key_parts.append({"idea": idea})
@@ -219,19 +235,30 @@ class ResearchStep(WorkflowStep):
             key_parts, sort_keys=True).encode()).hexdigest()[:10]
         report_id = f"rr-{report_key}"
 
+        book = analysis.ClaimBook(stamp())
+        state = {}
         claims, platforms, candidates, selection, analysis_gaps = analysis.analyse(
             sources=sources, profiles=profiles, archetypes=archetypes, model=model,
             backlog=backlog, as_of_text=stamp, report_key=report_key,
-            max_candidates=int(settings.get("max_candidates") or 8), idea=idea)
+            max_candidates=int(settings.get("max_candidates") or 8), idea=idea,
+            book=book, state=state)
         for kind, description, platform in analysis_gaps:
             gaps.append(Gap(kind, description, platform=platform))
+
+        v2 = self._research_v2(book=book, state=state, vocabulary=vocabulary, config=config,
+                               records=records, as_of=as_of, ttl=ttl, stamp=stamp,
+                               report_key=report_key, scope=scope, idea=idea)
+        gaps.extend(v2["gaps"])
+        selection = self._select(settings, v2, candidates, selection, state, idea)
+        claims = [book.claims[cid] for cid in sorted(book.closure(
+            set(state["referenced"]) | v2["referenced"]))]
 
         report = self._report(
             report_id=report_id, settings=settings, scope=scope, as_of_text=as_of_text,
             model=model, model_path=model_path, ttl=ttl, collectors=collectors,
             corpus_hash=corpus_hash, sources=sources, profiles=profiles, claims=claims,
             platforms=platforms, candidates=candidates, selection=selection, gaps=gaps,
-            context=context, idea=idea)
+            context=context, idea=idea, v2=v2)
         metadata = {
             "sources": report["evidence_summary"]["sources"],
             "claims": len(claims),
@@ -252,14 +279,27 @@ class ResearchStep(WorkflowStep):
                               message="no candidate survived screening; see the report's "
                                       "exclusion reasons")
 
-        chosen = next(c for c in candidates if c["id"] == selection["candidate_id"])
-        opportunity = self._opportunity(chosen, report, profiles, context, as_of_text, idea)
+        block = next(b for b in v2["opportunities"]
+                     if b["opportunity_id"] == selection["opportunity_id"])
+        opportunity = self._opportunity(block, report, profiles, context, as_of_text, idea,
+                                        selected=block["opportunity_id"])
+        persisted = []
+        if settings.get("persist_backlog"):
+            persisted = self._persist(settings, v2, report, profiles, context, as_of_text,
+                                      idea, opportunity)
+            context.logger.info("opportunities persisted to the backlog",
+                                written=len(persisted))
+        counts = v2["counts"]
         return StepResult.success(
             [report_out, ArtifactOutput("opportunity", opportunity,
                                         metadata={"opportunity_id": opportunity["id"],
-                                                  "report": report_id})],
-            message=f"selected {chosen['id']} ({opportunity['id']}) from {len(candidates)} "
-                    f"candidates")
+                                                  "report": report_id,
+                                                  "origin": block["origin"]})],
+            message=f"selected {opportunity['id']} ({block['origin']}, built as "
+                    f"{selection['candidate_id']}) from {counts['opportunities']} opportunities "
+                    f"({counts['eligible']} buildable, {counts['capability-gap']} capability "
+                    f"gaps) over {len(candidates)} catalog candidates"
+                    + (f"; {len(persisted)} written to the backlog" if persisted else ""))
 
     # -- inputs ---------------------------------------------------------------------------
 
@@ -296,9 +336,10 @@ class ResearchStep(WorkflowStep):
         return backlog
 
     @staticmethod
-    def _corpus_hash(sources, profiles):
+    def _corpus_hash(sources, profiles, records=()):
         parts = sorted([f"{s.id}:{s.digest}" for s in sources]
-                       + [f"profile:{pid}:{p['_digest']}" for pid, p in profiles.items()])
+                       + [f"profile:{pid}:{p['_digest']}" for pid, p in profiles.items()]
+                       + [f"game:{record['id']}:{digest}" for _n, record, digest in records])
         return "sha256:" + hashlib.sha256("\n".join(parts).encode()).hexdigest()
 
     # -- outputs --------------------------------------------------------------------------
@@ -317,7 +358,7 @@ class ResearchStep(WorkflowStep):
 
     def _report(self, *, report_id, settings, scope, as_of_text, model, model_path, ttl,
                 collectors, corpus_hash, sources, profiles, claims, platforms, candidates,
-                selection, gaps, context, idea=None):
+                selection, gaps, context, idea=None, v2=None):
         tiers = {"observed": 0, "derived": 0, "hypothesis": 0}
         for claim in claims:
             tiers[claim["tier"]] += 1
@@ -387,28 +428,255 @@ class ResearchStep(WorkflowStep):
             },
             "gaps": [g.to_dict() for g in gaps],
         }
+        if v2 is not None:
+            selected = (selection or {}).get("opportunity_id")
+            report.update({
+                "research_version": 2,
+                "corpus": v2["corpus"],
+                "analyses": v2["analyses"],
+                "competitors": v2["competitors"],
+                "market": v2["market"],
+                "patterns": v2["patterns"],
+                "benchmarks": v2["benchmarks"],
+                "opportunities": [_public(b, selected) for b in v2["opportunities"]],
+                "capability_gaps": v2["capability_gaps"],
+            })
         return provenance.seal(report)
 
-    def _opportunity(self, chosen, report, profiles, context, as_of_text, idea=None):
-        archetype = chosen["_archetype"]
-        viable = chosen["_viable"]
-        fits = {f["platform"]: f for f in chosen["platform_fit"]}
-        regions = sorted({r for pid in viable
+    # -- Research V2 ----------------------------------------------------------------------
+
+    def _research_v2(self, *, book, state, vocabulary, config, records, as_of, ttl, stamp,
+                     report_key, scope, idea):
+        """Corpus -> market cells -> patterns and benchmarks -> the opportunity space."""
+        corpus = Corpus(vocabulary, config, book, stamp)
+        corpus.add_records(records, as_of, ttl)
+        corpus.add_listings(state["observations"])
+        corpus.finish()
+        frames, cells, trend, market_gaps = analyse_market(corpus, scope, book)
+        patterns, pattern_gaps = extract_patterns(corpus, cells, book)
+        benchmarks = extract_benchmarks(corpus, book)
+        space = opportunity_space.Space(
+            corpus=corpus, cells=cells, patterns=patterns, benchmarks=benchmarks,
+            candidates=state["candidates"], views=state["views"], book=book,
+            report_key=report_key, scope=scope)
+        blocks, refused = opportunity_space.generate(space)
+        ranked = opportunity_space.rank(space, blocks, idea)
+        gaps = list(corpus.gaps) + list(market_gaps) + list(pattern_gaps)
+        for summary in refused:
+            gaps.append(Gap("insufficient-demand-evidence",
+                            f"not proposed - its basis rests on no observation: {summary}"))
+        capability_gaps = []
+        for block in blocks:
+            if block["status"] != "capability-gap":
+                continue
+            capability_gaps.append({
+                "opportunity_id": block["opportunity_id"],
+                "genre": block["_node"],
+                "catalog_entry": block["capability"].get("catalog_entry"),
+                "missing": list(block["capability"]["missing"]),
+                "reason": block["capability"]["reason"],
+                "evidence_backed": block["basis"]["evidence_backed"],
+                "claim_refs": list(block["basis"]["claim_refs"]),
+            })
+            if block["origin"] != "capability-screen":
+                gaps.append(Gap("capability-gap",
+                                f"{block['opportunity_id']} ({block['origin']}, "
+                                f"{block['_node']}): {block['capability']['reason']}"))
+        referenced = set()
+        games = [g.to_dict() for g in corpus.sorted_games()]
+        for game in games:
+            referenced.update(game["claim_refs"])
+            for facet in game["facets"].values():
+                referenced.update(facet["claim_refs"])
+        for frame in frames:
+            referenced.update(frame["claim_refs"])
+        for cell in cells.values():
+            for part in (cell.demand, cell.supply, cell.saturation, cell.competition,
+                         cell.trend):
+                referenced.update(part.get("claim_refs") or [])
+        referenced.update(p["claim"] for p in patterns)
+        referenced.update(b["claim"] for b in benchmarks)
+        for block in blocks:
+            referenced.update(block["claim_refs"])
+            referenced.update(block["basis"]["claim_refs"])
+            referenced.add(block["basis"]["thesis"])
+        counts = {"opportunities": len(blocks),
+                  "eligible": sum(1 for b in blocks if b["status"] == "eligible"),
+                  "capability-gap": len(capability_gaps)}
+        return {
+            "corpus": corpus.describe(),
+            "analyses": facet_summaries(corpus, cells),
+            "competitors": games,
+            "market": {"frames": frames,
+                       "cells": [cells[k].to_dict() for k in sorted(cells)],
+                       "trend": trend},
+            "patterns": patterns,
+            "benchmarks": benchmarks,
+            "opportunities": blocks,
+            "ranked": ranked,
+            "capability_gaps": capability_gaps,
+            "gaps": gaps,
+            "referenced": referenced,
+            "counts": counts,
+        }
+
+    def _select(self, settings, v2, candidates, selection, state, idea):
+        """The run carries one opportunity; research proposed several. The ranked first is
+        carried unless the step pins another (`select: <opportunity id>` - how a G1 choice
+        or a person re-runs research on a different opportunity)."""
+        ranked = v2["ranked"]
+        pinned = settings.get("select")
+        if pinned:
+            chosen = next((b for b in v2["opportunities"]
+                           if pinned in (b["opportunity_id"], (b.get("_candidate") or {}).get(
+                               "id") if b["origin"] == "capability-screen" else None)), None)
+            if chosen is None:
+                raise ResearchError(f"select: no opportunity {pinned!r} in this scan")
+            if chosen["status"] != "eligible":
+                raise ResearchError(f"select: {pinned} is {chosen['status']}"
+                                    + (f" ({chosen.get('exclusion_reason')})"
+                                       if chosen.get("exclusion_reason") else "")
+                                    + "; only a buildable, eligible opportunity can be carried")
+        elif ranked:
+            chosen = ranked[0]
+        else:
+            return None
+        candidate = chosen["_candidate"]
+        if selection and selection["candidate_id"] == candidate["id"] and \
+                selection["opportunity_id"] == chosen["opportunity_id"]:
+            return selection
+        for c in state["candidates"]:
+            if c["status"] == "selected":
+                c["status"] = "considered"
+        candidate["status"] = "selected"
+        runner = next((b for b in ranked if b is not chosen), None)
+        counts = v2["counts"]
+        rationale = (
+            ("Pinned by the step (`select`). " if pinned else "")
+            + f"Research V2: {chosen['origin']} opportunity {chosen['opportunity_id']} - "
+            f"{chosen['summary']} Built on the catalog shape {candidate['id']} (design "
+            f"archetype {candidate['_archetype'].get('design_archetype')}, screen "
+            f"{candidate['screen']['score']:.2f}); "
+            f"{'resting on observed evidence' if chosen['basis']['evidence_backed'] else 'resting on estimates only'}. "
+            f"{counts['opportunities']} opportunities proposed: {counts['eligible']} buildable, "
+            f"{counts['capability-gap']} capability gaps. Revenue was not estimated."
+            + (f" Runner-up: {runner['opportunity_id']} ({runner['origin']})." if runner else ""))
+        return {"candidate_id": candidate["id"], "opportunity_id": chosen["opportunity_id"],
+                "rationale": rationale,
+                "runner_up": runner["opportunity_id"] if runner else None}
+
+    def _persist(self, settings, v2, report, profiles, context, as_of_text, idea, carried):
+        """Write every proposed opportunity - buildable or a capability gap - to the backlog
+        as `discovered`. Idempotent: an opportunity already on file is left as it is (the
+        backlog is append-only; a later state belongs to whoever moved it)."""
+        backlog = _resolve(settings["backlog"])
+        written = []
+        for block in v2["opportunities"]:
+            if block["status"] not in ("eligible", "capability-gap"):
+                continue
+            if block["opportunity_id"] == carried["id"]:
+                artifact = carried
+            else:
+                artifact = self._opportunity(block, report, profiles, context, as_of_text,
+                                             idea)
+            directory = os.path.join(backlog, artifact["id"])
+            path = os.path.join(directory, "opportunity.json")
+            if os.path.exists(path):
+                continue
+            os.makedirs(directory, exist_ok=True)
+            tmp = path + ".tmp"
+            with open(tmp, "w", encoding="utf-8") as handle:
+                json.dump(artifact, handle, indent=2, ensure_ascii=False, sort_keys=False)
+                handle.write("\n")
+            os.replace(tmp, path)
+            written.append(path)
+        return written
+
+    def _opportunity(self, block, report, profiles, context, as_of_text, idea=None,
+                     selected=None):
+        """The opportunity artifact for one research block: the v1 fields strategy has always
+        read, filled from the buildable shape where research has nothing, plus the full
+        `research` block."""
+        vocabulary_cell = block["cell"]
+        candidate = block.get("_candidate")
+        archetype = candidate["_archetype"] if candidate else None
+        node = block["_node"]
+        public = _public(block, selected)
+        corpus_born = block["origin"] != "capability-screen"
+        fits = {f["platform"]: f for f in (candidate or {}).get("platform_fit") or []}
+        platforms = list(block["_platforms"]) or (list(candidate["_viable"]) if candidate
+                                                  else [])
+        if not platforms:
+            platforms = sorted({c["platform"] for c in block["market"]})[:1] or \
+                list(report["scope"]["platforms"][:1])
+
+        def text(facet):
+            fv = vocabulary_cell.get(facet) or {}
+            return fv.get("label") if fv.get("tier") != "unknown" and fv.get("label") else None
+
+        fantasy = None
+        player = vocabulary_cell.get("player_fantasy") or {}
+        emotional = vocabulary_cell.get("emotional_fantasy") or {}
+        if player.get("tier") not in (None, "unknown"):
+            fantasy = player["label"].split(" (")[0]
+            if emotional.get("tier") not in (None, "unknown"):
+                fantasy += f" - {emotional['label'].split(' (')[0].lower()}"
+        theme = text("theme")
+        if archetype:
+            genre = archetype["genre"]
+            subgenre = node if corpus_born else archetype["subgenre"]
+            core_mechanic = archetype["core_mechanic"]
+            core_loop = archetype["core_loop"]
+            fantasy = fantasy or archetype["fantasy"]
+        else:
+            genre = vocabulary_cell["family"]["value"]
+            subgenre = node
+            core_mechanic = text("mechanics") or "not yet researched: no teardown codes its mechanics"
+            core_loop = text("gameplay_steps") or "not yet researched: no teardown codes its loop"
+            fantasy = fantasy or "not yet researched: no teardown codes its fantasy"
+        concept = {"genre": genre, "subgenre": subgenre, "core_mechanic": core_mechanic,
+                   "fantasy": fantasy, "core_loop": core_loop}
+        names = [c["name"] for c in block["competitors"]][:6]
+        if not names and candidate:
+            names = list(candidate["concept"].get("reference_titles") or [])
+        concept["reference_titles"] = names
+
+        title = archetype["title"] if (archetype and not corpus_born) else \
+            vocabulary_cell["genre"]["label"]
+        axis = block.get("changed_axis")
+        if axis:
+            title += f" - {vocabulary_cell[axis['facet']]['label']}"
+        elif theme and corpus_born:
+            title += f" - {theme.split(' (')[0]}"
+
+        audience = {}
+        player_type = block["audience"]["player_type"]
+        if player_type["tier"] != "unknown":
+            entry = self._vocab.entry("audience_type", player_type["value"])
+            if entry.get("strategy_type"):
+                audience["type"] = entry["strategy_type"]
+        device = block["audience"]["device"]
+        if device["tier"] != "unknown":
+            audience["device"] = device["value"]
+        elif archetype:
+            audience["device"] = "both" if archetype.get("mobile_ready") else "desktop"
+        regions = sorted({r for pid in platforms if pid in profiles
                           for r in ((profiles[pid].get("audience") or {})
                                     .get("primary_regions") or [])})
-        estimate_refs = next((d["claim_refs"] for d in chosen["dimensions"]
-                              if d["dimension"] == "dev_speed_days"), [])
+        audience["regions"] = regions
+
         risks = [{"description": r["description"], "severity": r["severity"],
-                  "claim_refs": list(estimate_refs)}
-                 for r in archetype.get("risks") or []]
-        for pid in viable:
-            for concern in [c for c in fits[pid].get("concerns") or []
-                            if "exclusivity" not in c][:2]:
+                  "claim_refs": list(r.get("claim_refs") or [])} for r in block["risks"]]
+        for pid in platforms:
+            fit = fits.get(pid)
+            if not fit:
+                continue
+            for concern in [c for c in fit.get("concerns") or [] if "exclusivity" not in c][:2]:
                 risks.append({"description": f"{pid}: {concern}",
                               "severity": "medium" if "locali" in concern else "low",
-                              "claim_refs": list(fits[pid]["claim_refs"])})
-        exclusive = [pid for pid in viable if any(
-            "exclusivity" in c for c in fits[pid].get("concerns") or [])]
+                              "claim_refs": list(fit["claim_refs"])})
+        exclusive = [pid for pid in platforms if any(
+            "exclusivity" in c for c in (fits.get(pid) or {}).get("concerns") or [])]
         if exclusive:
             risks.append({
                 "description": f"{', '.join(exclusive)} requires web exclusivity, so the "
@@ -417,36 +685,53 @@ class ResearchStep(WorkflowStep):
                 "severity": "high",
                 "claim_refs": sorted({c for pid in exclusive for c in fits[pid]["claim_refs"]}),
             })
+        claim_refs = set(block["claim_refs"])
+        if candidate and not corpus_born:
+            claim_refs.update(candidate["claim_refs"])
+        for risk in risks:
+            claim_refs.update(risk["claim_refs"])
         opportunity = {
             "provenance": self._provenance(
-                "opportunity", chosen["opportunity_id"], as_of_text, context,
+                "opportunity", block["opportunity_id"], as_of_text, context,
                 inputs=[{"artifact_id": report["provenance"]["artifact_id"],
                          "artifact_type": "research-report",
                          "content_hash": report["provenance"]["content_hash"]}],
-                opportunity_id=chosen["opportunity_id"]),
-            "id": chosen["opportunity_id"],
-            "title": archetype["title"],
+                opportunity_id=block["opportunity_id"]),
+            "id": block["opportunity_id"],
+            "title": title,
             "state": "discovered",
-            "concept": copy.deepcopy(chosen["concept"]),
-            "hypothesis": chosen["_thesis"],
-            "audience": {
-                "type": "casual",
-                "device": "both" if archetype.get("mobile_ready") else "desktop",
-                "regions": regions,
-            },
-            "candidate_platforms": list(viable),
-            "monetization_hypothesis": copy.deepcopy(chosen["profile"]["monetization"]),
-            "estimates": {
+            "concept": concept,
+            "hypothesis": block["basis"]["thesis"],
+            "audience": audience,
+            "candidate_platforms": platforms,
+        }
+        if candidate:
+            opportunity["monetization_hypothesis"] = copy.deepcopy(
+                candidate["profile"]["monetization"])
+            opportunity["estimates"] = {
                 "dev_speed_days": archetype["dev_speed_days"],
                 "scope_complexity": archetype["technical_complexity"],
                 "asset_cost_usd": archetype["asset_cost_usd"],
                 "session_seconds": archetype["session_seconds"],
-            },
-            "claim_refs": list(chosen["claim_refs"]),
+            }
+        elif block["monetization"].get("primary"):
+            opportunity["monetization_hypothesis"] = {"primary": block["monetization"]["primary"]}
+        opportunity.update({
+            "claim_refs": sorted(claim_refs),
             "risks": risks,
+            "research": public,
             "latest_evaluation_id": None,
             "title_id": None,
-        }
+        })
         if idea:
             opportunity["brief"] = idea
         return provenance.seal(opportunity)
+
+
+
+def _public(block, selected=None):
+    """A research block without its internal keys; status `selected` for the carried one."""
+    out = {k: copy.deepcopy(v) for k, v in block.items() if not k.startswith("_")}
+    if selected and out["opportunity_id"] == selected:
+        out["status"] = "selected"
+    return out

@@ -9,6 +9,13 @@ and `core/` is still the contract.
 
 ## [Unreleased]
 
+## [2.6.0] - 2026-10-02
+
+Production-quality games, proven from the running build: workflow 5, real 2D/3D assets and
+audio, the production-quality and visual-QA gates, design depth, plugin skills distilled from
+two reference games, and an autonomous profile that configures every agent workflow 5 needs.
+Record: [docs/v2.6-release.md](docs/v2.6-release.md).
+
 What a real `/web-game-factory:new-game "<idea>"` dogfood run of 2.5.0 found, with the idea "I
 want to make a 3D battle royal game but it's human versus computer, with the goal being the
 goalkeeper": every defect below stopped it or lost the idea. No gate, rule or evidence

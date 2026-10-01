@@ -177,6 +177,12 @@ environment is an allowlist, the development commit is scoped, unreviewed releas
 refused, `wgf status` exits as the run. Each has a way back: see **Breaking** and
 **Upgrading from 1.1.0** in [CHANGELOG.md](CHANGELOG.md).
 
+**Upgrading from 2.5.x.** 2.6.0 needs no configuration change for a supervised installation:
+the new asset authors and the visual-QA judge default to `kind: none` (placeholders are refused
+by production-quality, visual-qa waits for a person). An autonomous project re-copies
+`workspace/config/profiles/autonomous.yaml`, which now configures them; the 3D model author
+needs Blender 4.5. Schema changes are additive. See [docs/v2.6-release.md](docs/v2.6-release.md).
+
 **Upgrading from 2.4.x.** 2.5.0 needs no configuration change. `/web-game-factory:new-game`
 takes a game idea (`/web-game-factory:new-game "endless runner with a cat"`), carried from
 research to design as the run's brief; without one a run is the market scan it always was.

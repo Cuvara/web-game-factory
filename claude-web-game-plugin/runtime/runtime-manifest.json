@@ -1,7 +1,7 @@
 {
-  "factory_version": "2.5.0",
+  "factory_version": "2.6.0",
   "files": {
-    "VERSION": "sha256:732f64d874f90788c0199b0c19bfd9b3b6436e140114e53e462832532d74c61c",
+    "VERSION": "sha256:6693435eadb673dda297a0652d241e293e361200bc40db949cf2501d18dd01ee",
     "bin/wgf": "sha256:ca3aedd7bf278145a3c59ce71a05156992a641a18b15cd4332ba32b7659dab34",
     "core/README.md": "sha256:1a8550fa94db2a998c55425953996680a3ca224233f890fa478f9ffe471b2b05",
     "core/artifacts/asset-manifest.schema.json": "sha256:0770ed3c6a63deef7bb19f5ea23e5a2518058bda559b57fbabe7daccf2fd5103",

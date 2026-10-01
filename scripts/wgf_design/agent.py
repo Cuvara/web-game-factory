@@ -43,6 +43,7 @@ import os
 from wgflib import agentenv, paths, procs
 
 from .authors import ArchetypeAuthor, AuthorError, DesignAuthor, register_author
+from .experience import load_rules
 
 __all__ = ["AgentAuthor", "AgentRunFailed", "REQUIRED_KEYS", "BUILD_SPEC_KEYS"]
 
@@ -92,6 +93,23 @@ PROMPT_CONCEPT = (
 PROMPT_SCHEMA = (
     " The finished design is validated against the JSON Schema the request names as `schema`:"
     " use only the enum values it allows, and keep every key it requires."
+)
+# Appended always: the production art and UI the module requires (presentation.py), so a draft
+# states how the finished game looks instead of leaving the developer to draw cubes. The bars
+# are in the request's `production_art`, read from core/reference/experience-rules.yaml.
+PROMPT_ART = (
+    " State the finished game's look, not just its rules: every MVP asset in"
+    " build_spec.assets has a `role` (what it is to the player: player, threat, goal, target,"
+    " projectile, collectible, hazard, environment, background, prop, ui, vfx, icon, font) and"
+    " a `dimension` (2d or 3d), and every entity-role asset a `readability` line - what a"
+    " first-time player must recognise in it, and at what size or distance. Every thing your"
+    " mechanics name that the player must see (the character they control, what threatens it,"
+    " what it aims at, what flies) has an MVP asset of that role; in a 3D game the characters"
+    " are 3D models. visual_identity.ui gives font_px (body, hud, heading), min_target_px, the"
+    " button's fill and text as palette tokens that contrast, its radius, and the surface"
+    " token, within the request's `production_art` bars. Set visual_identity.primitive_style"
+    " (with a reason) only when the art direction itself is geometric - a character is never"
+    " a cube for convenience. The craft guide is the request's `craft`."
 )
 # Appended when the step asks again: the previous draft and exactly what made it invalid.
 PROMPT_REPAIR = (
@@ -183,6 +201,7 @@ class AgentAuthor(DesignAuthor):
         # requires, already inside the strategy's scope. The agent improves it.
         starting = ArchetypeAuthor().draft(brief)
         idea = (brief.get("strategy") or {}).get("brief")
+        rules = load_rules()
         request = {"title_id": brief.get("title_id"), "strategy": brief.get("strategy"),
                    "platforms": [{"id": p.id, "role": p.role, "version": p.version,
                                   "profile": p.profile} for p in brief.get("platforms") or []],
@@ -191,7 +210,11 @@ class AgentAuthor(DesignAuthor):
                    "required_build_spec_keys": list(BUILD_SPEC_KEYS),
                    # What the finished design is validated against: every enum value and
                    # required key. Shared definitions are beside it, under shared/.
-                   "schema": os.path.join(paths.ARTIFACTS, "game-design.schema.json")}
+                   "schema": os.path.join(paths.ARTIFACTS, "game-design.schema.json"),
+                   # The bars the production art and UI are held to (presentation.py), and
+                   # the craft guide they come from.
+                   "production_art": {key: rules.get(key) for key in ("production_art", "ui")},
+                   "craft": os.path.join(paths.CORE, "craft", "production-art-and-ui.md")}
         if idea:
             request["brief"] = idea
         if repair:
@@ -209,7 +232,7 @@ class AgentAuthor(DesignAuthor):
         values["prompt"] = (PROMPT_STDOUT if stdout_mode else PROMPT).format(**values)
         if idea:
             values["prompt"] += PROMPT_BRIEF
-        values["prompt"] += PROMPT_CONCEPT + PROMPT_SCHEMA
+        values["prompt"] += PROMPT_CONCEPT + PROMPT_SCHEMA + PROMPT_ART
         if repair:
             values["prompt"] += PROMPT_REPAIR
         try:

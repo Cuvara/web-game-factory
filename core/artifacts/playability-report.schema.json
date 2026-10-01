@@ -8,7 +8,7 @@
     "id": "playability-report",
     "kind": "artifact",
     "format": "json",
-    "version": "1.0.0",
+    "version": "1.1.0",
     "producer": "title:prototype",
     "consumers": ["title:prototype", "title:prototype-review", "release:qa"],
     "repo_path": "<game-repo>/qa/playability/<commit>.json",
@@ -76,6 +76,10 @@
         },
         "additionalProperties": false
       }
+    },
+    "records_dir": {
+      "type": ["string", "null"],
+      "description": "Since 1.1.0. The bot's raw records, relative to the run's directory: <records_dir>/<project>/<test>.json and <project>/frames/*.png - snapshots, entity samples (with each entity's asset and render), the requests for files under /assets/, and the DOM UI measured on each screen state. Later steps (production-quality) read them instead of playing the game again. Null when the bot never ran."
     },
     "failed_checks": { "type": "array", "items": { "type": "string" } },
     "blocked_reason": { "type": ["string", "null"] },

@@ -6,16 +6,26 @@ rules it applies are `core/reference/asset-policy.yaml`. It implements
 [workflow-module-contract.md](workflow-module-contract.md) and changes nothing in the kernel.
 
 ```
-game-design ─► inspect ─► classify ─► for each asset:
-                                        existing file?  ─ validate, license, origin
-                                        library?        ─ first licensed, valid candidate
-                                        placeholder?    ─ backends in order, procedural last
-                                        else missing
-                                      ─► optimize (lossless)
+game-design ─► build_spec.assets ─► classify ─► for each asset:
+  (palette)     (requirements.py)                existing file?   ─ validate, license, origin
+                                                 library?         ─ library.json by id/role,
+                                                                    then index.json search
+                                                 author? (2D)     ─ an SVG per drawing,
+                                                                    judged, repaired ≤ 2×
+                                                 model author? (3D, when installed)
+                                                 placeholder?     ─ backends in order
+                                                 else missing
+                                               ─► optimize (lossless) ─► quality (quality.py)
             ─► pack atlas groups ─► runtime manifest (public/assets/assets.json)
             ─► prune stale placeholders/atlases ─► asset-manifest
             (every GLB read and checked by gltf.py; a model spec built by Blender)
 ```
+
+The failure this shape prevents: a run whose game shipped nothing but hash-coloured
+rectangles while every check passed. The work list is what the design asked for, every
+stand-in says `placeholder: true`, and every delivered file carries a `quality` verdict the
+production gate (`production-quality`) reads - see
+[production-architecture.md](production-architecture.md).
 
 The same pipeline runs outside a workflow as `python3 scripts/wgf-assets.py build`, and the
 game repository can be checked against what it wrote with `wgf-assets.py validate` - see
@@ -25,9 +35,32 @@ game repository can be checked against what it wrote with `wgf-assets.py validat
 
 | Input | | Used for |
 |---|---|---|
-| `game-design` | required | `asset_requirements`, or a derived baseline; `scope.asset_budget` |
+| `game-design` | required | `build_spec.assets` (and `asset_requirements`), or a derived baseline; `build_spec.visual_identity` (palette, `primitive_style`); `scope.asset_budget` |
 | `scaffold-record` | optional | target platforms, whose `max_bundle_mb` the delivered files are checked against |
+| `production-quality-report` | optional | on re-entry: the failed checks with route `assets` name the items to rebuild ([Re-entry](#re-entry)) |
+| `visual-qa-report` | optional | on re-entry: the findings with route `assets` name the items to rebuild |
 
+The two reports are read when present; wiring them into `new-game` (the `production-quality`
+and `visual-qa` routes back to `assets`) is the workflow's, not this module's.
+
+### The work list: build_spec.assets
+
+A game-design 1.6.0 lists its asset **requirements** in `build_spec.assets`, and that list is
+the work list (`requirements.bridge`). Each entry carries onto its requirement:
+
+| build_spec field | Requirement | |
+|---|---|---|
+| `id` | `id` | the manifest item id and the runtime asset id |
+| `type` + `role` + dimension | `kind` | 2D: `sprite`; `texture` or role `background`/`environment` → `background`; `ui`, `icon`, `vfx`, `font` as named; a `spritesheet` or `animation` → `sprite` (one vector drawing, animated in code; the frames stay in the notes). 3D: `model` (role `environment` → `environment`), `texture`, `animation` |
+| `dimension` | `dimension` | as stated, else `model` → 3d, else the engine's (`engine.dimension`, `threejs` → 3d); a flat kind (sprite, ui, icon, background) is 2D in any game |
+| `tier` | `scope_tier` | `mvp` → mvp, produced now; `post-mvp` → production and `optional` → future, recorded, not produced |
+| `role`, `description`, `readability`, `spec` | the same | what the author is asked for and the production gate judges |
+| `count` | `count` | > 1: one drawing per `<id>-<n>`, each its own runtime asset ([variants](#the-runtime-manifest)) |
+| `spec` sizes | `width`/`height` | `96x96` or `960x540` sets both; `64px` sets a square for sprite, icon, ui, vfx |
+
+An `asset_requirements` entry with the same id adds what only it can say (atlas group, exact
+size, scale, a `model` spec, `existing`); one build_spec does not name is kept as well. A
+design with `asset_requirements` and no `build_spec.assets` is read as before.
 `game_design.asset_requirements` lists what the design needs: `id`, `kind` (a key of the
 policy's `kinds`), and optionally `scope_tier`, intended `source`, `tags` for library search,
 `width`/`height`/`frames`, and `existing` — a file already chosen, with its license and
@@ -39,9 +72,12 @@ origin. 2D requirements may also say (game-design 1.2.0):
 | `scale` | any image | 1-4: pixels are authored at `scale` × the logical `width`/`height` |
 | `animations` | spritesheet | `{name: {frames: [index or name], fps, loop}}`; default one looping animation over every frame, named after the asset |
 | `tile_width`, `tile_height` | tileset | logical tile size (default 32); the image must divide into it |
-| `existing.atlas` | spritesheet | the descriptor of an existing sheet; default `<stem>.atlas.json`, then `<stem>.json` | A design without the list gets a **baseline** derived from its screens, locales,
-audio direction and ad placements; every derived item says so in `notes`, because a floor is
-not a design.
+| `existing.atlas` | spritesheet | the descriptor of an existing sheet; default `<stem>.atlas.json`, then `<stem>.json` |
+
+A design that lists **no assets at all** (neither list) gets a **baseline** derived from its
+screens, locales, audio direction and ad placements; every derived item says so in `notes`,
+because a floor is not a design - and every one is a placeholder: no library or author is
+asked for an asset nobody designed.
 
 Kinds: `sprite`, `spritesheet`, `background`, `tileset`, `ui`, `icon`, `vfx`, `font`, `sfx`,
 `music` (2D and audio), and `model`, `texture`, `material`, `animation`, `environment` (3D). The game
@@ -62,6 +98,8 @@ game's dimension, UI stays a 2D overlay.
 | `optimization` | lossless steps applied, and the pipeline steps still owed (atlas, KTX2, Draco, transcode, subset); `texture-atlas` moves to `applied` when the item was packed |
 | `atlas` | `{id, frame}`: the atlas the item was packed into; its own file (under `src/assets/`) is then the source, not what ships |
 | `scale` | the authored resolution, when not 1 |
+| `role`, `dimension` | from the requirement |
+| `quality` | `{verdict: pass, fail or skipped, checks: [{id, status, summary}], primitive_only, parts, triangles, colors, author}` ([Quality](#quality)); `author` is `library:<entry>`, `author:<kind>`, `builtin:<generator>`, `existing` or `placeholder` |
 | `model` | for a GLB: triangles, vertices, dimensions and bounds of the visual model at rest, materials, embedded textures, clips, LOD levels, collision proxy, extensions; for a generated model, the tool, version, pin and key that built it |
 
 The manifest also carries `atlases` (each packed group: its two files and its members) and
@@ -83,6 +121,101 @@ Each is an error: the file stays on disk and in the manifest as `sourced`, usabl
 prototype, never `delivered` and never `production_ready`. A library candidate with any of
 these problems is never picked; the manifest records that it was passed over and why.
 Unknown licensing does not silently become production.
+
+## Sources: library, author, model author
+
+Tried in this order for every requirement that is not a derived baseline item; the first that
+delivers wins, and what each passed over is in the item's issues.
+
+**Library** (`factory.assets.libraries`). A library directory holds a `library.json` that maps
+requirements to files, an `index.json` searched by kind and tags, or both (`library.py`):
+
+```json
+{"library": {"id": "tower-merge-art"},
+ "items": [
+   {"requirement": "tile", "files": ["svg/tile-1.svg", "svg/tile-2.svg"],
+    "license": "CC0-1.0", "source": "https://...", "author": "..."},
+   {"role": "background", "files": ["svg/board.svg"],
+    "license": "LicenseRef-studio-owned", "source": "studio pack 3, receipt 1182",
+    "author": "..."}]}
+```
+
+A requirement-id entry wins over a role entry. The licence (`license` or `licence`) must be
+in the policy's permitted list and the entry must say where it came from (`source`: a URL
+becomes `origin.source_url`, anything else `origin.evidence`; or `author`/`vendor`), else it
+is passed over (`library-candidate-rejected`). Imported items are `source: library`,
+`placeholder: false`, and are judged like anything else. Fewer files than the requirement's
+`count` is `variants-short`. This is how golden fixtures and purchased packs supply real art.
+
+**Author** (`factory.assets.author`, 2D). `kind: command` runs an agent host once per drawing
+(`author.py`, through `wgflib.procs`, with the agent environment of `wgflib.agentenv` plus
+`factory.agents.env_passthrough`), exactly like the design step's agent author. argv
+placeholders: `{request}`, `{output}`, `{prompt}`. The request JSON carries the requirement
+(`id`, `variant`, `count`, `type`, `kind`, `role`, `dimension`, `tier`, `description`,
+`readability`, `spec`, `width`, `height`, `transparency`), the design's `palette` and
+`visual_identity` (concept, shape language, texture, avoid, primitive_style), the
+`quality_bars` it is held to, and its repository `destination`. The host writes one SVG at
+`{output}`; the step validates it (format, unsafe constructs) and judges it
+([Quality](#quality)). A file that fails is shown to the host with exactly those problems -
+`repair: {round, problems, previous}` - and asked again, `repair_rounds` times (default 2);
+one that still fails is not delivered (`author-rejected`) and the requirement falls back to a
+placeholder that says so. A host that crashes or times out is the same fallback. Accepted
+files are `source: ai-generated`, licence `LicenseRef-factory-generated`, `origin.generator`
+and `quality.author` `author:command`, `placeholder: false`.
+
+Only kinds the policy lets be SVG are authored: `sprite`, `ui`, `icon`, `background`, `vfx`
+(asset-policy 1.3.0), never an atlas member (atlases pack PNG) or a spritesheet.
+
+What the author wrote is recorded in `src/assets/authored.json` (path → request key, file
+hash, author): a re-executed step reuses a file whose request is unchanged - same description,
+readability, role, spec, palette, bars and author - instead of asking again. Changing any of
+them asks again.
+
+**Model author** (3D). When `wgf_assets.model_author` is installed, a 3D `model`,
+`environment` or `animation` requirement is passed to its `produce_model(requirement,
+visual_identity, out_dir, settings, context)`, which returns `{files, quality, source,
+license, placeholder, notes}` or raises `ModelAuthorError`. Its files are validated as any
+GLB (`gltf.py`) and its `quality` is recorded as given. Absent, or failing, 3D requirements
+fall back to placeholders. See [blender-pipeline.md](blender-pipeline.md).
+
+## Quality
+
+`quality.py` judges every delivered SVG and PNG against `core/reference/asset-quality.yaml`
+and records the result as the item's `quality`. A placeholder is never judged (`skipped`,
+author `placeholder`); a GLB, audio or font has no 2D check (`skipped`). A `fail` verdict is a
+`quality-failed` issue (an error for mvp and prototype items) and the item is never
+`production_ready`.
+
+| Check | Fails when |
+|---|---|
+| `svg.well-formed` | larger than `svg.max_bytes`; a DOCTYPE or ENTITY (refused before parsing - nothing is expanded or fetched); not well-formed XML; the root is not `<svg>`; no usable `viewBox` |
+| `svg.safe` | `<script>`, an `on*` handler, `<foreignObject>`, an embedded raster (`<image>`), a `javascript:` URL, an href or `url()` to anything but a fragment, a stylesheet `@import` |
+| `svg.not-primitive` | the drawing elements outside `<defs>`/`<clipPath>`/`<mask>`/... are fewer than `min_shapes` for the role, or the whole drawing is one plain rect, circle or ellipse (`primitive_only: true`). With `visual_identity.primitive_style`, primitives pass |
+| `svg.palette` | more than `max_off_palette_share` of the distinct colours (fill, stroke, stop-color, inline style) are farther than `tolerance` (RGB distance) from every palette colour - greys count as on-palette when `neutrals` - unless the root says why: `data-wgf-off-palette="<reason>"` |
+| `svg.dimensions` | the declared size (width/height, else viewBox) exceeds `max_edge`, or its aspect differs from the spec's by more than `aspect_tolerance` |
+| `raster.decodes` | not a PNG `wgf_assets.raster` can read |
+| `raster.not-flat` | fewer than `min_distinct_colors` distinct opaque colours: one flat colour |
+| `raster.alpha` | a kind with `transparency: required` (sprite, vfx) has no alpha channel |
+
+`parts` is the number of drawing elements, `colors` the distinct colours used. The bars are a
+floor against stand-ins, not a judgement of the art: that is visual QA.
+
+## Re-entry
+
+When the step runs again with a `production-quality-report` or `visual-qa-report` whose
+`routes` include `assets`, it rebuilds only what those reports name: a production-quality
+check that did not pass with `route: assets` names its `assets` (else the requirement ids its
+summary mentions); a visual-qa finding with `route: assets` names the ids its id or summary
+mentions. A drawing id (`tile-2`) names its requirement. Each named item skips the library
+(it would hand over the same file) and goes to the author with the findings as `notes`; every
+other item is reused - a library file is deterministic, an authored file comes from the
+ledger, a placeholder from the same bytes. Without an author, a named item is rebuilt from
+the same sources and the manifest says so in its `notes`.
+
+In `new-game` (workflow 5) both production gates route `assets` here (budgets
+`production-quality.assets: 2`, `visual-qa.assets: 2`), and the run then continues to
+`develop` as on the first pass: develop integrates what was rebuilt, and its brief carries
+the reports' failures.
 
 ## Placeholders
 
@@ -250,7 +383,9 @@ build still loads); every other error FAILs.
 | Key | Default | |
 |---|---|---|
 | `root` | the run's game repository checkout | files go under `<root>/public/assets/`; see below |
-| `libraries` | `[]` | directories with an `index.json` (see `library.py`) |
+| `libraries` | `[]` | directories with a `library.json` and/or an `index.json` (see `library.py`); relative to the project directory |
+| `model_author` | `{kind: none}` | the 3D model author (`model_author.py`): `{kind: command, argv, spec_from: file\|stdout, repair_rounds: 2}`; only a configured one is asked |
+| `author` | `{kind: none}` | `{kind: command, argv, timeout_seconds: 600, idle_timeout_seconds: 300, repair_rounds: 2}`; a misconfigured author fails the step, not retryably |
 | `placeholders` | `{enabled: true, backends: [2d-assets-mcp, procedural]}` | plus a settings block per backend |
 | `optimize` | `true` | lossless, only on files the step writes — never on the design's own |
 | `runtime_manifest` | `true` | write `public/assets/assets.json` |
@@ -277,6 +412,7 @@ root). Without a scaffold-record, or before the checkout exists, the files go to
 | Manifest built | `SUCCESS`, whatever its issues — an honest manifest with issues is the output |
 | No `game-design` | `WAITING_FOR_INPUT` |
 | Malformed requirements (duplicate id, unknown kind, bad size) | `FAILED`, not retryable |
+| `author.kind` unknown, or `command` without an `argv` | `FAILED`, not retryable |
 | `game-design` of a newer major schema | `FAILED`, not retryable |
 | An issue in `fail_on`, or any error with `strict` | `FAILED`, not retryable, with the manifest as evidence |
 
@@ -295,6 +431,9 @@ too with `--strict`), 2 the command could not run. `--json` on every command.
 ```bash
 # Run the pipeline on a design against a checkout: files, atlases, assets.json, prune.
 python3 scripts/wgf-assets.py build --design design.json --root ../my-game [--library DIR]
+# The same with the 2D author: a command, last on the line, its argv with placeholders.
+python3 scripts/wgf-assets.py build --design design.json --root ../my-game \
+    --author-command my-agent-host --request {request} --output {output}
 # Check a checkout against its runtime manifest (what the verify step runs).
 python3 scripts/wgf-assets.py validate ../my-game [--strict] [--no-unused]
 # Pack loose PNGs into one atlas (frame name = file stem), deterministically.
@@ -303,18 +442,19 @@ python3 scripts/wgf-assets.py pack out/hud frames/ [--trim] [--animation run=her
 python3 scripts/wgf-assets.py inspect public/assets/ui/*.svg
 ```
 
-`build` accepts a whole game-design or any JSON with `asset_requirements`. It prints items,
-atlases and issues; the `asset-manifest` artifact itself is produced only inside a run,
+`build` accepts a whole game-design or any JSON with `asset_requirements`. It prints items
+(status, quality verdict, files), atlases and issues; the `asset-manifest` artifact itself is produced only inside a run,
 where it is pinned and validated.
 
 ## How agents create and register assets
 
-1. **Declare** it: one entry in `game_design.asset_requirements` - id, kind, logical size,
-   `atlas` group for anything drawn together, `animations` for a sheet. Designs are produced
-   at `design`; the entry is the registration.
+1. **Declare** it: one entry in `build_spec.assets` - id, type, tier, role, description,
+   readability, count, spec - and, when it needs more, an `asset_requirements` entry of the
+   same id (logical size, `atlas` group, `animations`, `existing`). Designs are produced at
+   `design`; the entry is the registration.
 2. **Let the step source it**: the `assets` step (or `wgf-assets.py build`) finds an existing
-   file, a licensed library entry, or generates a placeholder, then packs, writes
-   `assets.json` and records everything in the asset manifest.
+   file, a licensed library file, an authored SVG, or generates a placeholder, judges it,
+   then packs, writes `assets.json` and records everything in the asset manifest.
 3. **Load it by id** in game code through `public/assets/assets.json`
    (`core/craft/2d-assets.md`). Never a path literal, never an unregistered file.
 4. **Replace a placeholder** by putting the final file in the repository and naming it in
@@ -354,6 +494,15 @@ overflow), atlas descriptor checks, AVIF and SVG sniffing and hazards, the new r
 fields, atlas groups and the runtime manifest through the step (schema-valid, byte-identical
 across roots and input orders, idempotent, pruning), every runtime validation failure, the
 CLI's commands and exit codes, and the develop brief and verify check that consume it.
+
+`scripts/tests/test_assets_production.py` — the build_spec bridge (roles, dimensions,
+counts, tiers, sizes, the baseline always placeholder), the command author through the real
+process layer with `fixtures/assets/fake_svg_author.py` (a multi-shape SVG passes; a one-rect
+SVG is repaired on round 2; one that never passes, a script, an off-palette drawing and a
+crashing host fall back to placeholders; the ledger reuses), zero placeholders among the mvp
+items with an author and flagged placeholders without one, library.json by id and by role
+(`fixtures/assets/library-mapped/`), re-entry from both reports, the 3D model author hook,
+and every quality check.
 
 `scripts/tests/test_models.py` covers the model spec, the GLB inspector, the Blender layer
 (with a fake Blender through the real process layer), the step with models, three.js loading,

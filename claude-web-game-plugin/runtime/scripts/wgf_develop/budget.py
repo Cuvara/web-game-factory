@@ -15,11 +15,12 @@ a resume nor a crash gives a session back:
                                                   the cost it reported, or null (unknown)
 
 A session's cost is the number under `cost_from.jsonl_key` in the LAST JSON object line of
-its transcript (`<run_dir>/develop/<visit>-<attempt>.log`) that holds that key, read only
-from what this session appended. A session with no readable cost (killed, timed out, a host
-that does not report one) is counted as a session and reported as unknown, never guessed,
-and never a failure: the agent host's own per-session flag remains the bound on a single
-session's spend. Handoff developers are people, not sessions: nothing is counted for them.
+its transcript (`<run_dir>/<step>/<visit>-<attempt>.log`, `<step>` being `develop` or
+`greybox`) that holds that key, read only from what this session appended. A session with
+no readable cost (killed, timed out, a host that does not report one) is counted as a
+session and reported as unknown, never guessed, and never a failure: the agent host's own
+per-session flag remains the bound on a single session's spend. Handoff developers are
+people, not sessions: nothing is counted for them.
 
 The log is the engine's to keep: while it drives the run, anything another process writes to
 events.jsonl - a forged raise, a "refund" cost line, a truncation - is put back after the
@@ -44,7 +45,10 @@ def transcript_path(context):
     run_dir = getattr(context, "run_dir", None)
     if not run_dir:
         return None
-    return os.path.join(run_dir, "develop", f"{context.visit}-{context.attempt}.log")
+    # Keyed by step: a workflow runs develop as more than one step (greybox, develop), and
+    # each step's visits count from 1 - one directory would interleave their transcripts.
+    step = getattr(context, "current_step", None) or "develop"
+    return os.path.join(run_dir, step, f"{context.visit}-{context.attempt}.log")
 
 
 def _size(path):

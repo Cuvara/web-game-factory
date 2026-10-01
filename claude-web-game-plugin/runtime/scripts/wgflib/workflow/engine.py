@@ -271,6 +271,17 @@ class WorkflowEngine:
         if state.workflow_version != self.definition.version:
             data["definition_version"] = self.definition.version
             data["note"] = "resuming under a newer workflow definition"
+            # A run over the whole workflow stays a run over the whole workflow: its scope
+            # was the old definition's step list, and a step the newer definition inserted
+            # (a gate, a check) is outside it. Left alone, the run "leaves its scope" at the
+            # first new step and ends COMPLETED with every later step - review, verify, G4 -
+            # never run (found by resuming a 2.5.0 dogfood run under workflow 3). A slice
+            # (`wgf develop`, `plan`) never holds both the start and the last step.
+            ids = list(self.definition.step_ids)
+            if (ids and self.definition.start in state.scope and ids[-1] in state.scope
+                    and set(ids) - set(state.scope)):
+                data["scope_widened"] = sorted(set(ids) - set(state.scope))
+                state.scope = ids
 
         if from_step is not None:
             if not self.definition.has_step(from_step):

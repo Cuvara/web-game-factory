@@ -67,7 +67,7 @@ if os.path.exists(log):
     with open(log) as handle:
         calls = [json.loads(line) for line in handle if line.strip()]
 with open(log, "a") as handle:
-    handle.write(json.dumps({"iteration": brief["iteration"],
+    handle.write(json.dumps({"iteration": brief["iteration"], "phase": brief.get("phase"),
                              "blockers": brief.get("review_blockers") or []}) + "\n")
 print("developer working", flush=True)
 if mode == "sleep":
@@ -332,18 +332,22 @@ class AgentLoop(unittest.TestCase):
         return [(t["step"], t["visit"], t["attempt"], t["outcome"], t["route"])
                 for t in self.state.trail if step is None or t["step"] == step]
 
-    def reports(self, artifact_type="review-report"):
+    def reports(self, artifact_type="review-report", step=None):
         versions = []
         for refs in self.state.artifacts.values():
-            versions += [r for r in refs if r.type == artifact_type]
+            versions += [r for r in refs if r.type == artifact_type
+                         and (step is None or r.produced_by == step)]
         versions.sort(key=lambda r: r.version)
         return [self.api.store.read_artifact(self.state.run_id, r) for r in versions]
 
-    def developer_calls(self):
+    def developer_calls(self, phase="production"):
+        """The developer sessions of one phase: `greybox` (the loop before assets) or
+        `production` (develop), or every session with phase=None."""
         if not os.path.exists(self.dev_log):
             return []
         with open(self.dev_log) as handle:
-            return [json.loads(line) for line in handle if line.strip()]
+            calls = [json.loads(line) for line in handle if line.strip()]
+        return [c for c in calls if phase is None or c.get("phase") == phase]
 
     def assert_valid(self, report):
         self.assertEqual(ArtifactContracts()("review-report", report), [])
@@ -384,7 +388,7 @@ class AgentLoop(unittest.TestCase):
         ])
 
         first, second, third = self.reports()
-        prototypes = self.reports("prototype-report")
+        prototypes = self.reports("prototype-report", step="develop")
         for report in (first, second):
             self.assert_valid(report)
             self.assertTrue(report["isolation"]["intact"])
@@ -395,6 +399,12 @@ class AgentLoop(unittest.TestCase):
         self.assertEqual(first["blockers"][0]["file"], "src/game/score.ts")
         self.assertEqual(first["reviewed_commit"],
                          prototypes[0]["build_ref"]["commit_sha"])
+        # The greybox before it was played, not reviewed: the first review's change reaches
+        # back to where the greybox started - the scaffold - so the loop is reviewed too.
+        self.assertEqual(first["baseline_commit"],
+                         self.git("rev-list", "--max-parents=0", "HEAD"))
+        greybox = self.reports("prototype-report", step="greybox")[0]["build_ref"]
+        self.assertNotEqual(first["baseline_commit"], greybox["commit_sha"])
         self.assertEqual(second["verdict"], "approve")
         self.assertEqual(second["blockers"], [])
         # The second review saw the second development commit, not the first.
@@ -419,6 +429,8 @@ class AgentLoop(unittest.TestCase):
             os.path.join(verdicts_dir, "sdk-review-1-1.verdict.json")))
 
         # 5: the developer's second brief carried the reviewer's blocker.
+        # The greybox ran once, before the assets, and was not reviewed.
+        self.assertEqual(len(self.developer_calls("greybox")), 1)
         calls = self.developer_calls()
         self.assertEqual([c["iteration"] for c in calls], [1, 2])
         self.assertEqual(calls[0]["blockers"], [])
@@ -432,11 +444,18 @@ class AgentLoop(unittest.TestCase):
         self.assertEqual(state.status, RunStatus.COMPLETED, state.message)
         self.assertEqual(self.trail("review"), [("review", 1, 1, "SUCCESS", "success")])
         self.assertEqual(len(self.developer_calls()), 1)
+        self.assertEqual(len(self.developer_calls("greybox")), 1)
         self.assertEqual(self.reports()[0]["verdict"], "approve")
         # The developer's whole transcript is kept beside the run, outside the checkout.
         transcript = os.path.join(self.api.store.run_dir(state.run_id), "develop", "1-1.log")
         with open(transcript, encoding="utf-8") as handle:
             self.assertIn("developer working", handle.read())
+        # The greybox's session has its own: both steps' first visit is 1-1.
+        greybox = os.path.join(self.api.store.run_dir(state.run_id), "greybox", "1-1.log")
+        with open(greybox, encoding="utf-8") as handle:
+            self.assertEqual(handle.read().count("developer working"), 1)
+        with open(transcript, encoding="utf-8") as handle:
+            self.assertEqual(handle.read().count("developer working"), 1)
 
     def test_a_reviewer_that_always_requests_changes_is_stopped_by_its_route_limit(self):
         state = self.run_workflow(reviewer_mode="always-request")
@@ -447,6 +466,7 @@ class AgentLoop(unittest.TestCase):
                          ("route", "review.request-changes"))
         self.assertEqual([t[1] for t in self.trail("review")], [1, 2, 3])
         self.assertEqual(len(self.developer_calls()), 3)
+        self.assertEqual(len(self.developer_calls("greybox")), 1)
         self.assertNotIn("sdk", [t[0] for t in self.trail()])
 
     def test_a_sandboxed_reviewer_can_answer_on_stdout(self):
@@ -604,23 +624,29 @@ class AgentLoop(unittest.TestCase):
         state = self.run_workflow(dev_mode="sleep", developer={"timeout_seconds": 1})
         self.assertLess(time.monotonic() - began, 30)
         self.assertEqual(state.status, RunStatus.FAILED)
-        self.assertEqual([(t[2], t[3]) for t in self.trail("develop")],
+        # The first developer session is the greybox's: it times out, is retried, and the
+        # run stops there - no assets, no production build, no review.
+        self.assertEqual([(t[2], t[3]) for t in self.trail("greybox")],
                          [(1, "FAILED"), (2, "FAILED")])
-        self.assertIn("timed out", state.steps["develop"].error)
+        self.assertIn("timed out", state.steps["greybox"].error)
+        self.assertEqual(self.trail("develop"), [])
         self.assertEqual(self.trail("review"), [])
 
     def test_a_developer_failure_is_retried_and_the_loop_recovers(self):
         state = self.run_workflow(dev_mode="fail-once")
         self.assertEqual(state.status, RunStatus.COMPLETED, state.message)
-        self.assertEqual([(t[2], t[3]) for t in self.trail("develop")],
+        # fail-once crashes the run's first developer session - the greybox's.
+        self.assertEqual([(t[2], t[3]) for t in self.trail("greybox")],
                          [(1, "FAILED"), (2, "SUCCESS")])
+        self.assertEqual([(t[2], t[3]) for t in self.trail("develop")], [(1, "SUCCESS")])
         self.assertEqual(self.reports()[0]["verdict"], "approve")
 
     def test_an_exhausted_retry_budget_fails_the_run(self):
         state = self.run_workflow(dev_mode="fail")
         self.assertEqual(state.status, RunStatus.FAILED)
-        self.assertEqual(len(self.trail("develop")), 2)
-        self.assertIn("exited 3", state.steps["develop"].error)
+        self.assertEqual(len(self.trail("greybox")), 2)
+        self.assertIn("exited 3", state.steps["greybox"].error)
+        self.assertEqual(self.trail("develop"), [])
         self.assertEqual(self.trail("review"), [])
 
     def test_an_uncommitted_build_is_not_reviewed(self):
@@ -746,9 +772,11 @@ class Registration(unittest.TestCase):
         definition = load_definition("new-game")
         ids = definition.step_ids
         review = definition.step("review")
-        # The build is played from outside before review reads it.
+        # The build is played from outside, and its art and UI judged, before review reads it.
         self.assertEqual(ids[ids.index("develop") + 1], "playability")
-        self.assertEqual(ids[ids.index("playability") + 1], "review")
+        self.assertEqual(ids[ids.index("playability") + 1], "production-quality")
+        self.assertEqual(ids[ids.index("production-quality") + 1], "visual-qa")
+        self.assertEqual(ids[ids.index("visual-qa") + 1], "review")
         self.assertEqual(ids[ids.index("review") + 1], "sdk")
         self.assertEqual(ids[ids.index("sdk") + 1], "sdk-review")
         self.assertEqual(ids[ids.index("sdk-review") + 1], "verify")
@@ -1013,7 +1041,7 @@ class LiveReviewer(AgentLoop):
         state = self.run_workflow(dev_mode="bug-then-fix", reviewer=live_reviewer_config(),
                                   execution={"max_attempts": 1})
         reports = self.reports()
-        prototypes = self.reports("prototype-report")
+        prototypes = self.reports("prototype-report", step="develop")
         self.assertTrue(reports, state.message)
         for report in reports:
             self.assert_valid(report)

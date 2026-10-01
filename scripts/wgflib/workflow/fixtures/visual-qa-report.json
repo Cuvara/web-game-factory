@@ -1,0 +1,38 @@
+{
+  "title_id": "mock-title",
+  "commit": "0000000000000000000000000000000000000000",
+  "measurement_class": "automation-agent",
+  "judge": {
+    "kind": "mock",
+    "model": null
+  },
+  "rubric": {
+    "path": "core/reference/visual-qa-rubric.yaml",
+    "version": "1.0.0",
+    "sha256": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+    "pass_bar": 3
+  },
+  "judge_runs": 0,
+  "frames": [],
+  "scores": {
+    "art_completeness": 4,
+    "character_readability": 4,
+    "environment": 4,
+    "ui_polish": 4,
+    "typography": 4,
+    "composition": 4,
+    "consistency": 4,
+    "no_debug": 5
+  },
+  "findings": [],
+  "failed": [],
+  "routes": [],
+  "blocked_reason": null,
+  "states": [],
+  "look": {
+    "verdict": "finished-game",
+    "reason": "Mock judgement: no frame was read."
+  },
+  "notes": "Mock judgement: no frame was read.",
+  "verdict": "PASS"
+}

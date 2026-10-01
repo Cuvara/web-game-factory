@@ -9,7 +9,7 @@
 # Change a value only with a reason a person could defend from a playtest; a looser bar here
 # lets a game through that a first-time player cannot understand.
 
-version: 1.0.0
+version: 1.1.0
 
 first_30s:
   # Seconds from the page's first request to the first rendered frame.
@@ -29,3 +29,33 @@ onboarding:
   # A first-time player cannot fail before the first success, or before this many seconds
   # of play when the grace is a time.
   min_grace_s: 10
+
+# What a design states about its production art and UI (game-design 1.6.0
+# build_spec.assets[].role/dimension/readability and visual_identity.ui), so the production
+# gate and visual QA have something to hold the built game to. The readable entity roles
+# themselves are core/reference/visual-quality.yaml's `entities.readable_roles`: one list for
+# what the play probe must show and what the design must give an asset.
+# core/craft/production-art-and-ui.md is the prose these numbers come from.
+production_art:
+  # Entity roles a design's own words imply. A role whose cue word appears (whole word) in an
+  # MVP mechanic's name, description or rules, or in the experience contract's win and lose
+  # conditions, is one the game shows: an MVP asset requirement of that role must state what
+  # a first-time player recognises in it (`readability`), unless visual_identity
+  # .primitive_style says the look is geometric on purpose. Cues name things, never verbs.
+  role_cues:
+    player: [keeper, goalkeeper, runner, craft, vehicle, car, kart, ship, hero, character, avatar, paddle, cannon]
+    threat: [obstacle, obstacles, wall, walls, enemy, enemies, attacker, attackers, monster, monsters, opponent, opponents]
+    projectile: [ball, balls, shot, shots, bullet, bullets, projectile, projectiles, missile, missiles, arrow, arrows]
+    target: [target zone, target zones, gate, gates, piece, pieces, tile, tiles, block, blocks]
+    goal: [goal line, goal mouth, goalposts, finish line, exit door]
+  # Roles of the characters a 3D design shows: their assets are models built in 3D (type
+  # model, dimension 3d), never sprites standing in a 3D scene.
+  character_roles_3d: [player, threat]
+
+ui:
+  # Smallest interactive element on a phone viewport, CSS px (WCAG 2.5.5 target size).
+  min_target_px: 44
+  # Smallest body and HUD text, CSS px at the design resolution's phone layout.
+  min_font_px: 14
+  # Contrast of a button's text token on its fill token, at least (WCAG AA for body text).
+  min_contrast: 4.5

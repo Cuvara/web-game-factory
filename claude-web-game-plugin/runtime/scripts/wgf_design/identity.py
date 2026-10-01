@@ -3,8 +3,10 @@
 Generic UI is what a design gets when nobody decides: a system font, a purple gradient, five
 evenly spread pastels, rounded cards. Each kit here is one committed direction - a dominant
 ground, one or two sharp accents, a display face with character paired with a quiet body face,
-a shape language and a motion rule - so two implementers given the same kit build the same
-thing.
+a shape language, a motion rule, and the UI as numbers and palette tokens (`ui`: font sizes,
+the smallest touch target, the button's fill, text and corners, the panel surface) - so two
+implementers given the same kit build the same thing. A button's text token is one that reads
+on its fill at 4.5:1 or better.
 
 Faces are from the Google Fonts catalogue under the SIL Open Font License, because they ship
 inside the game bundle and a portal will ask. The kit is chosen from the archetype's affinity
@@ -12,9 +14,10 @@ list by a stable digest of the title id, so a title keeps its look across re-run
 workflow can pin one with `with: {identity: <id>}`.
 """
 
+import copy
 import hashlib
 
-__all__ = ["KITS", "choose"]
+__all__ = ["KITS", "choose", "families", "font_source"]
 
 UNIVERSAL_AVOID = [
     "System or default UI fonts (Arial, Roboto, Inter, the browser default)",
@@ -42,6 +45,10 @@ KITS = {
         "motion": "Everything enters on the beat of a 120 ms ease-out; score changes roll; nothing bounces.",
         "texture": "Faint scanline overlay at 4% opacity on the ground only, never over text.",
         "avoid": ["Gradients inside text", "More than one glowing element per screen outside play"],
+        "ui": {"font_px": {"body": 16, "hud": 20, "heading": 32}, "min_target_px": 48,
+               "button": {"fill": "signal", "text": "ground", "radius_px": 28,
+                          "style": "Pill for the single primary action (fill signal, ground text, outer glow); secondary buttons square-cornered with a 2px ink stroke"},
+               "surface": "surface"},
     },
     "riso-arcade": {
         "concept": "Risograph print on warm paper: two misregistered inks, halftone shading and chunky type.",
@@ -59,6 +66,10 @@ KITS = {
         "motion": "Stepped animation at 12 fps for UI flourishes, smooth 60 fps for play; stamps and slaps rather than fades.",
         "texture": "Halftone dot shading and a paper grain overlay.",
         "avoid": ["Soft blurred shadows", "Pure white backgrounds"],
+        "ui": {"font_px": {"body": 16, "hud": 20, "heading": 32}, "min_target_px": 48,
+               "button": {"fill": "riso-pink", "text": "ink", "radius_px": 4,
+                          "style": "Slab with a 2px ink outline and a hard 4px offset ink shadow; pressed drops onto its shadow"},
+               "surface": "paper"},
     },
     "signal-brutal": {
         "concept": "Transit-signal brutalism: flat blocks of colour, oversized numerals, information first.",
@@ -76,6 +87,10 @@ KITS = {
         "motion": "Hard cuts and 80 ms slides on one axis; no easing curves longer than 150 ms.",
         "texture": "None. Flat colour is the point.",
         "avoid": ["Rounded corners", "Glow effects"],
+        "ui": {"font_px": {"body": 16, "hud": 20, "heading": 32}, "min_target_px": 48,
+               "button": {"fill": "signal", "text": "ink", "radius_px": 0,
+                          "style": "Flat rectangle with a 3px ink border; pressed inverts to ink fill with panel text"},
+               "surface": "panel"},
     },
     "paper-diorama": {
         "concept": "Layered cut paper lit from one side: soft depth, crisp edges, handmade warmth.",
@@ -93,6 +108,10 @@ KITS = {
         "motion": "Layers slide in with slight parallax; rewards pop up like a pop-up book (scale from a hinge).",
         "texture": "Paper fibre overlay on every paper surface.",
         "avoid": ["Photographic textures", "Neon glow"],
+        "ui": {"font_px": {"body": 16, "hud": 20, "heading": 32}, "min_target_px": 48,
+               "button": {"fill": "marigold", "text": "ink", "radius_px": 6,
+                          "style": "Cut-paper tab with an irregular edge and a short hard shadow down-right; pressed flattens the shadow"},
+               "surface": "paper"},
     },
     "lacquer-brass": {
         "concept": "A lacquered game box: deep red-black lacquer, brass fittings, ivory type.",
@@ -110,6 +129,10 @@ KITS = {
         "motion": "Weighty: 200 ms ease-in-out, a small overshoot on stamps; brass glints sweep across on rewards.",
         "texture": "Subtle lacquer sheen gradient on panels.",
         "avoid": ["Flat pastel buttons", "Thin hairline type on dark ground"],
+        "ui": {"font_px": {"body": 16, "hud": 20, "heading": 32}, "min_target_px": 48,
+               "button": {"fill": "brass", "text": "lacquer", "radius_px": 2,
+                          "style": "Bevelled brass plate with lacquer text; pressed sinks the bevel and glints"},
+               "surface": "cinnabar"},
     },
     "solar-bleach": {
         "concept": "Sun-bleached desert modernism: pale sand, hard noon shadows, one saturated sky colour.",
@@ -127,6 +150,10 @@ KITS = {
         "motion": "Unhurried 180 ms eases for UI; the world never shakes, the light flares instead.",
         "texture": "Fine grain noise; flat-shaded geometry, no textures on meshes.",
         "avoid": ["Realistic PBR materials", "Blue-grey 'tech' UI"],
+        "ui": {"font_px": {"body": 16, "hud": 20, "heading": 32}, "min_target_px": 48,
+               "button": {"fill": "ink", "text": "sand", "radius_px": 4,
+                          "style": "Ink slab with a 4px sky edge along the bottom and a long hard shadow; pressed shortens the shadow"},
+               "surface": "sand"},
     },
 }
 
@@ -141,10 +168,22 @@ def choose(title_id, affinity, pinned=None):
         candidates = [k for k in affinity if k in KITS] or sorted(KITS)
         digest = hashlib.sha256((title_id or "").encode("utf-8")).digest()
         kit_id = candidates[digest[0] % len(candidates)]
-    kit = KITS[kit_id]
-    identity = {key: (list(value) if isinstance(value, list) else
-                      dict(value) if isinstance(value, dict) else value)
-                for key, value in kit.items()}
-    identity["palette"] = [dict(entry) for entry in kit["palette"]]
-    identity["avoid"] = list(kit["avoid"]) + UNIVERSAL_AVOID
+    identity = copy.deepcopy(KITS[kit_id])
+    identity["avoid"] += UNIVERSAL_AVOID
     return kit_id, identity
+
+
+def families(typography):
+    """The distinct font families a typography names, in order: 'Unbounded (800)' -> 'Unbounded'."""
+    found = []
+    for key in ("display", "body", "numeric"):
+        face = (typography or {}).get(key) or ""
+        family = face.split("(")[0].split(",")[0].strip()
+        if family and family not in found:
+            found.append(family)
+    return found
+
+
+def font_source(family):
+    """Where a family's files and licence are: the Google Fonts repository's OFL directory."""
+    return f"https://github.com/google/fonts/tree/main/ofl/{family.lower().replace(' ', '')}"

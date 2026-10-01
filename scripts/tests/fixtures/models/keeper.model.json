@@ -1,0 +1,22 @@
+{
+  "parts": [
+    {"id": "torso", "shape": "box", "size": [0.5, 0.6, 0.28], "position": [0, 1.05, 0], "taper": [1.2, 1.0], "bevel": 0.04, "material": "kit"},
+    {"id": "shorts", "shape": "box", "size": [0.46, 0.22, 0.28], "position": [0, 0.68, 0], "bevel": 0.03, "material": "shorts"},
+    {"id": "neck", "shape": "cylinder", "size": [0.11, 0.1, 0.11], "position": [0, 1.39, 0], "segments": 12, "material": "skin"},
+    {"id": "head", "shape": "sphere", "size": [0.26, 0.3, 0.27], "position": [0, 1.57, 0], "segments": 16, "material": "skin"},
+    {"id": "arm", "shape": "capsule", "size": [0.13, 0.55, 0.13], "position": [0.36, 1.08, 0], "rotation": [0, 0, 25], "segments": 12, "mirror": "x", "material": "kit"},
+    {"id": "glove", "shape": "sphere", "size": [0.18, 0.18, 0.12], "position": [0, -0.32, 0], "parent": "arm", "segments": 12, "mirror": "x", "material": "gloves"},
+    {"id": "leg", "shape": "capsule", "size": [0.16, 0.62, 0.16], "position": [0.12, 0.34, 0], "segments": 12, "mirror": "x", "material": "socks"},
+    {"id": "boot", "shape": "box", "size": [0.15, 0.09, 0.26], "position": [0, -0.3, 0.04], "parent": "leg", "bevel": 0.025, "mirror": "x", "material": "boots"}
+  ],
+  "materials": [
+    {"id": "kit", "color": "#ff7a1a", "roughness": 0.7},
+    {"id": "shorts", "color": "#1d2b53", "roughness": 0.8},
+    {"id": "skin", "color": "#e0b48a", "roughness": 0.9},
+    {"id": "gloves", "color": "#39d353", "roughness": 0.6},
+    {"id": "socks", "color": "#ff7a1a", "roughness": 0.8},
+    {"id": "boots", "color": "#222222", "roughness": 0.5}
+  ],
+  "fit": {"size": 1.8, "axis": "y"},
+  "budget": {"max_triangles": 6000}
+}

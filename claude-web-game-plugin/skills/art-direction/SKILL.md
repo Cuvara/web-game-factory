@@ -14,6 +14,7 @@ Turning the visual identity into a style sheet and keeping library, procedural a
 - `${CLAUDE_PLUGIN_ROOT}/runtime/core/craft/art-direction.md`
 - `${CLAUDE_PLUGIN_ROOT}/runtime/core/lifecycle/stages/design.md`
 - `${CLAUDE_PLUGIN_ROOT}/runtime/core/reference/asset-policy.yaml`
+- `${CLAUDE_PLUGIN_ROOT}/runtime/core/craft/production-art-and-ui.md`
 
 This skill is a pointer, not a copy. Read the paths above rather than relying on anything
 restated here; core is authoritative and this file is not a substitute for it.

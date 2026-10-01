@@ -78,6 +78,11 @@
         "height": { "type": "integer", "minimum": 1 },
         "scale": { "$ref": "#/$defs/scale" },
         "placeholder": { "type": "boolean", "description": "A stand-in; the final asset is still owed." },
+        "role": {
+          "enum": ["player", "threat", "goal", "target", "projectile", "collectible", "hazard", "environment", "background", "prop", "ui", "vfx", "icon", "font"],
+          "description": "What it is to the player (game-design build_spec.assets[].role): the play probe names the asset drawing an entity of that role."
+        },
+        "variants": { "type": "array", "items": { "type": "string", "pattern": "^[a-z][a-z0-9-]*$" }, "minItems": 2, "description": "For a requirement with a count: the ids of its drawings, each an asset of its own. This entry is the first of them." },
         "atlas": { "type": "string", "description": "The atlas this asset is a frame of." },
         "frame": { "type": "string" },
         "data": { "$ref": "#/$defs/url", "description": "A spritesheet's atlas descriptor." },

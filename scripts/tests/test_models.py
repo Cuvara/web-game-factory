@@ -472,6 +472,11 @@ if {mode!r} == "fail":
     sys.exit(3)
 document, binary = gltf.load(encoders.glb(spec["asset_id"], (200, 100, 50),
                                           animated=bool(spec["animations"])))
+# One node per spec part, stacked on the pivot, as a real build makes one object per part.
+for index in range(1, len(spec.get("parts") or [])):
+    document["nodes"].append({{"name": spec["asset_id"] + "-part-" + str(index), "mesh": 0,
+                              "translation": [0, 1.05 * index, 0]}})
+    document["scenes"][0]["nodes"].append(len(document["nodes"]) - 1)
 if spec["animations"]:
     template = document["animations"][0]
     document["animations"] = [dict(template, name=clip["name"]) for clip in spec["animations"]]

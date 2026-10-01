@@ -17,6 +17,7 @@ Core loop, session structure, retention hooks, scope tiers, the build spec, and 
 - `${CLAUDE_PLUGIN_ROOT}/runtime/core/craft/core-loop-and-difficulty.md`
 - `${CLAUDE_PLUGIN_ROOT}/runtime/core/craft/onboarding-and-portal-ux.md`
 - `${CLAUDE_PLUGIN_ROOT}/runtime/core/templates/gdd.md`
+- `${CLAUDE_PLUGIN_ROOT}/runtime/core/craft/production-art-and-ui.md`
 
 This skill is a pointer, not a copy. Read the paths above rather than relying on anything
 restated here; core is authoritative and this file is not a substitute for it.

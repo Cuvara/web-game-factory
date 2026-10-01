@@ -7,9 +7,10 @@ What `factory.review.reviewer: {kind: command}` runs in a golden run, through th
 step (docs/review-module.md), which fingerprints the checkout around it - twice: `review`
 hands it develop's commit, `sdk-review` the sdk step's integration commit on top, which is
 the one verified and shipped. Both are checked by the same rules, against the development
-brief's baseline, so the sdk commit is judged on everything it ships. It is NOT an AI
-reviewer and makes no judgement of quality or fun. It checks, from git objects only (it
-never runs `git status`, which may rewrite the index, and writes nothing but the verdict):
+brief's review baseline (where the greybox started, after one), so the sdk commit is
+judged on everything it ships. It is NOT an AI reviewer and makes no judgement of quality
+or fun. It checks, from git objects only (it never runs `git status`, which may rewrite
+the index, and writes nothing but the verdict):
 
     commit-exists        the commit under review is a commit object, and is HEAD
     allowed-paths        the commit changes, since the brief's baseline, only paths a game may
@@ -95,7 +96,9 @@ def review(game_key, repo, commit):
 
     brief = json.loads(git.text("show", f"{commit}:docs/development/brief.json") or "{}")
     engine = brief.get("engine")
-    baseline = brief.get("baseline_commit")
+    # review_baseline: after a greybox, where the greybox started - its commit was played,
+    # never reviewed, and it is where the game's tests first ship.
+    baseline = brief.get("review_baseline") or brief.get("baseline_commit")
     if not baseline or (git.text("cat-file", "-t", baseline) or "").strip() != "commit":
         block("allowed-paths", "the committed brief names no baseline commit to review from",
               file="docs/development/brief.json")

@@ -14,8 +14,9 @@ port each game's template example carries. That is the point: the pair proves th
 Factory is renderer-agnostic.
 
 ```
-research -> strategy -> G2 -> design -> tech-plan -> G3 -> init -> assets
-         -> develop -> playability -> review -> sdk -> sdk-review -> verify -> G4 -> release
+research -> strategy -> G2 -> design -> tech-plan -> G3 -> init -> greybox
+         -> greybox-playability -> assets -> develop -> playability -> production-quality
+         -> visual-qa -> review -> sdk -> sdk-review -> verify -> G4 -> release
 ```
 
 G2 and G3 are auto-approved (reversible; configured below). G4 is irreversible, so the run
@@ -23,8 +24,11 @@ stops there `WAITING`; the harness answers it `pass` through the API `wgf decide
 with `decided_by` left to `default_decider()` - `human`, because the person running the
 golden run is outside every step's process tree - and resumes. Its note says it is the
 harness operator's pass of a known-good port (`harness.G4_NOTE`). `games.EXPECTED_STEPS`
-lists all 16 steps, `playability`, `prototype-review` and `sdk-review` included.
-`playability` plays each port from outside through its play probe
+lists all 20 steps, `greybox`, both playability steps, `production-quality`, `visual-qa`,
+`prototype-review` and `sdk-review` included. The replay developer ports the whole game in
+the greybox phase - with no assets yet, each port draws its fallback primitives - and
+develop's production visit commits the assets step's files, imported from the port's art
+library, on an unchanged game that now draws them (see *The production gates*, below). Each playability step plays each port from outside through its play probe
 (`examples/*/wgf-golden/src/game/play-probe.ts` at the lock's `golden_ports` commit) and
 holds it to the design's experience contract ([playability-module.md](playability-module.md)):
 a port that cannot be played from outside fails the golden run. The golden reviewer
@@ -102,8 +106,10 @@ pass, and changing the lock in the same commit. The summary records `template_re
 
 The Factory holds no game source, so the hand-made part of each replay lives in the template,
 beside the example it adapts. The pinned **release** (v1.1.0) does not ship those ports: they
-are test fixtures, so the lock names them separately (`golden_ports`: template main
-`ea466d7`, which is v1.1.0 plus the ports), and the replay developer reads them from a
+are test fixtures, so the lock names them separately (`golden_ports`: the local template
+branch `wgf-golden-production`, `21226d2` - the play-probe ports `1c5afcb` with both
+reference ports' production art merged in, `8f49d28` and `7c132ef`), and the replay
+developer reads them from a
 checkout of that commit (`--ports`, `wgflib.template.golden_ports_checkout()`). The game
 repository itself is still created from the pinned release, exactly.
 
@@ -111,6 +117,8 @@ repository itself is still created from the pinned release, exactly.
 |---|---|
 | `examples/tower-merge-rush/wgf-golden/` | the 2D port: `src/main.ts`, `src/game/app.ts`, UI, input, the PixiJS view wrapper, `index.html`, `en`/`ru` locales, the tagged browser spec |
 | `examples/neon-drift-arena/wgf-golden/` | the 3D port: the same set for the Three.js game |
+| `examples/<example>/wgf-golden/library/` | the port's production art, a library the golden run's assets step imports (`factory.assets.libraries`): SVG pieces, board, icons, UI kit and OFL fonts (2D); Blender-built GLB craft, walls, track and skyline, fonts and icons (3D). Never copied into the game |
+| `examples/<example>/wgf-golden/baseline/` | the approved frames of the finished port, `<viewport>/<name>.png`, that visual QA's baseline judge compares the run's frames with (`states.json` names a frame's rubric state where its file name does not). Never copied into the game |
 | `examples/wgf-golden-shared/` | shared by both: the audio service (its default `GameIntegration` implementation is no longer copied: the develop step provides the seam's wiring) |
 
 Each has a README saying what it is. They sit in the template's layout (`src/...` relative to
@@ -226,6 +234,39 @@ portal SDK identifier or URL in `src/`; an ad call outside `src/platform/`; no u
 no browser test tagged for boot, start, game over and restart; no committed development
 report for the design's engine. It judges nothing about quality or fun.
 
+## The production gates in a golden run
+
+The goldens fail if the art regresses to primitives or placeholders. `harness.build_config`
+points `factory.assets.libraries` at the port's `library/` in the golden ports checkout, so
+the real assets step delivers every MVP requirement from it (`placeholder: false`, quality
+`pass`); the real `production-quality` step judges what playability recorded of the
+production build (assets present, loaded, rendered, visible; no readable entity a primitive;
+the DOM UI's targets, overlap, text and styling); and visual QA runs the `baseline` judge
+(docs/visual-qa-module.md) on the port's `baseline/` - no agent, no mock. The summary's
+`production` block holds both verdicts, and `passed` requires production-quality PASS and
+visual-qa PASS by the baseline judge (`test_the_production_gates_passed_the_port_art`). A
+port with no `library/` gets no library and one with no `baseline/` gets `judge.kind: none`,
+which blocks visual QA: never an unjudged pass.
+
+`python3 scripts/golden/run.py --game 2d --no-library --keep` is the calibration run: no art
+library, so assets are placeholders, and the run must fail. It fails at develop - the port's
+own art-guard browser test refuses placeholder art - before the production gates; the
+baseline judge's numbers for that placeholder build are in docs/visual-qa-module.md.
+
+Validated on 2026-10-01 (Factory branch `dyCuong03/wgf-p05-finish`, golden ports `5fb737d`):
+2D `Ran 11 tests ... OK` twice and 3D `Ran 11 tests ... OK`; each run COMPLETED through all
+20 steps with production-quality 16 of 16 checks (assets present, loaded, rendered and
+visible; no primitives; UI targets, overlap, text, styling, states on both viewports) and
+visual-qa PASS on 26 frames (2D 0.766-0.990, 3D 0.805-0.991 against the approved frames),
+review approved, a drafted release, no leftover process. The calibration numbers are in
+docs/visual-qa-module.md (*The baseline judge*). Getting there took three fixes in the ports
+that only a real run exposes: the 2D greybox drew paper on paper (mean luminance 227, over
+the playability ceiling of 225); the 2D asset loader sat in `src/assets/`, which verification
+reads as asset files (`assets.formats`); and the 3D port refused to boot without its runtime
+manifest, so the greybox phase - before any asset exists - failed every browser test. And
+one in the Factory: the playability bot measured a pause card mid fade-in (text at 0.75
+alpha, 3.93:1), so it now waits for finite CSS animations before measuring a screen.
+
 ## The independent browser evidence
 
 After the workflow, `scripts/golden/browser.py` clones the game repository at HEAD into
@@ -265,6 +306,13 @@ They do **not** prove:
   the 2D report lists the deltas.
 - **the GitHub path.** `init.source: local`; creating a repository with `gh` is outward-facing
   and is not exercised.
+- **that the art suits every locale.** The ports' bundled display and body fonts are subset
+  Latin builds with no Cyrillic: the `ru` locale both ports ship falls back to a system font
+  for its text. A known limit of the fixtures, not hidden by any check: production-quality
+  measures the DOM text it sees, which the golden runs play in `en`.
+- **that the art is good.** The baseline judge proves the run's frames look like frames a
+  person approved, not that the approved look is good; an agent judge (`kind: command`) is
+  what reads a new game's frames against the rubric.
 
 ## The live loop
 

@@ -44,8 +44,9 @@ from wgflib.yamllite import YamlError, load_file
 from wgf_verification.checks.platform import same_commit
 from wgf_verification.session import locate_checkout
 
-from .lineage import (BLOCKED, DEFAULT_REQUIRED_GATES, FAILED, Refusal, checkout_lineage,
-                      commit_lineage, evidence_refusals, review_status)
+from .lineage import (BLOCKED, DEFAULT_REQUIRED_GATES, DEFAULT_REQUIRED_REPORTS, FAILED,
+                      Refusal, checkout_lineage, commit_lineage, evidence_refusals,
+                      review_status)
 from .package import RULES, audit_package, file_sha256
 from .runner import ReleaseRunner, describe
 
@@ -58,7 +59,7 @@ RELEASE_ID = re.compile(r"^r([0-9]+)$")
 SEMVER = re.compile(r"^[0-9]+\.[0-9]+\.[0-9]+$")
 DEFAULT_TIMEOUTS = {"git": 30, "package": 900, "manifest": 300}
 INPUTS = ("qa-report", "verification-report", "sdk-report", "prototype-report",
-          "scaffold-record", "review-report")
+          "scaffold-record", "review-report", "production-quality-report", "visual-qa-report")
 
 
 def utc_now():
@@ -173,6 +174,15 @@ class ReleaseStep(WorkflowStep):
                                                            for g in required_gates):
             return StepResult.failed("release `with: required_gates` must be a list of gate "
                                      f"ids, not {required_gates!r}", retryable=False)
+        # Likewise which production gate reports must have passed: the workflow's (`with:
+        # required_reports`, default production-quality-report and visual-qa-report).
+        required_reports = (self.params or {}).get("required_reports",
+                                                   list(DEFAULT_REQUIRED_REPORTS))
+        if not isinstance(required_reports, list) or not all(
+                r in DEFAULT_REQUIRED_REPORTS for r in required_reports):
+            return StepResult.failed("release `with: required_reports` must be a list of "
+                                     f"{', '.join(DEFAULT_REQUIRED_REPORTS)}, not "
+                                     f"{required_reports!r}", retryable=False)
         allow_unreviewed = ((context.config or {}).get("release") or {}).get(
             "allow_unreviewed", False)
         if not isinstance(allow_unreviewed, bool):
@@ -182,7 +192,8 @@ class ReleaseStep(WorkflowStep):
             refusals = evidence_refusals(
                 inputs.refs, loaded, getattr(context, "run_id", None),
                 gates_passed=getattr(context, "gates_passed", None) or (),
-                required_gates=required_gates, allow_unreviewed=allow_unreviewed)
+                required_gates=required_gates, allow_unreviewed=allow_unreviewed,
+                required_reports=required_reports)
             if refusals:
                 raise _Refused(refusals)
             # The step's own `with:` only: a factory.release key is not a checkout path.

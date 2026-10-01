@@ -1,8 +1,17 @@
 """The `assets` workflow step: a game design in, an asset manifest out.
 
     inputs   game-design (required), scaffold-record (optional: the target platforms, whose
-             bundle-size limits the delivered files are checked against)
+             bundle-size limits the delivered files are checked against),
+             production-quality-report and visual-qa-report (optional: on re-entry, the
+             report that routed the run back to `assets`; only the items it names are
+             rebuilt, and its findings reach the author)
     outputs  asset-manifest
+
+The work list is the design's build_spec.assets (requirements.py): role, dimension,
+description, readability, count and spec, with the palette of build_spec.visual_identity.
+Each requirement is supplied, in order, by a library (library.json), the 2D author (an SVG,
+author.py), the 3D model author (wgf_assets.model_author, when installed), or a placeholder
+- and every delivered file is judged (quality.py, core/reference/asset-quality.yaml).
 
 Settings come from `factory.assets` in workspace/config/factory.yaml, overridden by the
 step's `with:` block:
@@ -16,7 +25,12 @@ step's `with:` block:
                    .factory/assets/<title> under the Factory root - git-ignored scratch.
                    Relative paths resolve against the Factory root, never the working
                    directory.
-    libraries      directories holding an index.json of reusable assets. Default: none.
+    libraries      directories holding an index.json of reusable assets and/or a
+                   library.json mapping requirement ids and roles to licensed files.
+                   Relative paths resolve against the project directory. Default: none.
+    author         {kind: none | command, argv, timeout_seconds, idle_timeout_seconds,
+                   repair_rounds}: who draws a 2D requirement as SVG (author.py). Default:
+                   none - no author, so what no library supplies is a placeholder.
     placeholders   {enabled: true, backends: [2d-assets-mcp, procedural], <backend>: {...}}.
                    `blender` is put first automatically when a requirement carries a
                    buildable `model` spec; its settings block is `placeholders.blender`.
@@ -47,17 +61,26 @@ from wgflib.yamllite import YamlError, load_file
 
 from . import modelspec
 from .blender import BACKEND_ID as BLENDER
+from .author import AuthorError, build_author
 from .library import open_libraries
 from .pipeline import AssetPipeline, AssetStore
 from .placeholders import build_backends
 from .policy import PolicyError, load_policy
+from .quality import load_bars
 from .requirements import RequirementError, inspect, slugify
+
+try:  # the 3D model author is optional: absent, 3D requirements fall back to placeholders
+    from . import model_author as _model_author
+except ImportError:
+    _model_author = None
 
 __all__ = ["AssetsStep", "MANIFEST_SCHEMA_VERSION", "resolve_settings"]
 
 MANIFEST_SCHEMA_VERSION = provenance.version_of("asset-manifest")
 READABLE_DESIGN_MAJOR = 1
 DEFAULT_BACKENDS = ["2d-assets-mcp", "procedural"]
+# Reports that can route a run back to this step, and so name what to rebuild.
+REENTRY_REPORTS = ("production-quality-report", "visual-qa-report")
 
 
 def _config_section(config, name):
@@ -70,10 +93,10 @@ def resolve_settings(context):
     """factory.assets, with the step's `with:` block laid over it."""
     settings = copy.deepcopy(_config_section(context.config, "assets"))
     for key, value in (context.params or {}).items():
-        if key == "placeholders" and isinstance(value, dict):
-            merged = dict(settings.get("placeholders") or {})
+        if key in ("placeholders", "author", "model_author") and isinstance(value, dict):
+            merged = dict(settings.get(key) or {})
             merged.update(value)
-            settings["placeholders"] = merged
+            settings[key] = merged
         else:
             settings[key] = value
     placeholders = dict(settings.get("placeholders") or {})
@@ -85,7 +108,58 @@ def resolve_settings(context):
     settings.setdefault("prune", True)
     settings.setdefault("libraries", [])
     settings.setdefault("fail_on", [])
+    settings["author"] = dict(settings.get("author") or {})
+    # The 3D model author (model_author.py): `{kind: command, argv, ...}`, or none. Only a
+    # configured one is asked; unconfigured, 3D requirements go to the next backend
+    # (a design's own model spec built by Blender, then placeholders) without a warning.
+    settings["model_author"] = dict(settings.get("model_author") or {})
     return settings
+
+
+def _id_words(text):
+    return set(re.findall(r"[a-z][a-z0-9-]*", (text or "").lower()))
+
+
+def rebuild_list(reports, requirements):
+    """{requirement id: [finding]} named by re-entry reports whose routes include `assets`:
+    a production-quality check that failed with route assets (its `assets`, else the ids
+    its summary names), a visual-qa finding with route assets (the ids its id or summary
+    names). A variant id (`tile-2`) names its requirement (`tile`)."""
+    ids = {r.id for r in requirements}
+    variants = {v: r.id for r in requirements for v in r.variant_ids()}
+
+    def resolve(names):
+        out = set()
+        for name in names:
+            if name in ids:
+                out.add(name)
+            elif name in variants:
+                out.add(variants[name])
+        return out
+
+    found = {}
+    for kind, report in reports:
+        if "assets" not in (report.get("routes") or []):
+            continue
+        if kind == "production-quality-report":
+            for check in report.get("checks") or []:
+                if check.get("route") != "assets" or check.get("status") == "PASS":
+                    continue
+                named = resolve(check.get("assets") or []) or resolve(
+                    _id_words(check.get("summary")))
+                for rid in sorted(named):
+                    found.setdefault(rid, []).append(
+                        f"{check.get('id')}: {check.get('summary')}")
+        else:
+            for finding in report.get("findings") or []:
+                if finding.get("route") != "assets":
+                    continue
+                named = resolve(_id_words(finding.get("id")) | _id_words(finding.get("summary")))
+                for rid in sorted(named):
+                    found.setdefault(rid, []).append(
+                        f"{finding.get('severity')} {finding.get('category')}: "
+                        f"{finding.get('summary')}")
+    return found
 
 
 def _bundle_limits(scaffold):
@@ -166,6 +240,17 @@ class AssetsStep(WorkflowStep):
             requirements, dimension = inspect(design, policy, dimension=settings.get("dimension"))
         except (PolicyError, RequirementError) as exc:
             return StepResult.failed(f"asset requirements: {exc}", retryable=False)
+        try:
+            author = build_author(settings["author"], context.config)
+        except AuthorError as exc:
+            return StepResult.failed(f"asset author: {exc}", retryable=False)
+        reports = [(kind, inputs.load(kind)) for kind in REENTRY_REPORTS if kind in inputs]
+        rebuild = rebuild_list(reports, requirements)
+        if reports:
+            context.logger.info("re-entry: rebuilding what the reports name",
+                                reports=[k for k, _ in reports], items=sorted(rebuild))
+        identity = (design.get("build_spec") or {}).get("visual_identity") \
+            if isinstance(design.get("build_spec"), dict) else None
 
         title_id = design.get("title_id") or context.project_id or "title"
         slug = slugify(title_id, "title")
@@ -176,7 +261,7 @@ class AssetsStep(WorkflowStep):
             except checkout.CheckoutLocked as exc:
                 return StepResult.blocked(str(exc))
         store = AssetStore(root)
-        libraries, library_problems = open_libraries(settings["libraries"])
+        libraries, library_problems = open_libraries(settings["libraries"], base=paths.PROJECT)
         for problem in library_problems:
             context.logger.warning("asset library unavailable", problem=problem)
 
@@ -192,7 +277,13 @@ class AssetsStep(WorkflowStep):
                                  placeholders=bool(placeholders.get("enabled")),
                                  optimize=bool(settings.get("optimize")),
                                  runtime_manifest=bool(settings.get("runtime_manifest")),
-                                 prune=bool(settings.get("prune")), title_id=title_id)
+                                 prune=bool(settings.get("prune")), title_id=title_id,
+                                 author=author, identity=identity, bars=load_bars(),
+                                 model_author=(getattr(_model_author, "produce_model", None)
+                                               if settings["model_author"].get("kind")
+                                               not in (None, "none") else None),
+                                 rebuild=rebuild, settings=settings, context=context,
+                                 work_dir=self._work_dir(context, slug))
         context.logger.info("asset pipeline", requirements=len(requirements),
                             dimension=dimension, root=store.root,
                             derived=bool(requirements and requirements[0].derived))
@@ -206,6 +297,9 @@ class AssetsStep(WorkflowStep):
         metadata = {
             "items": len(manifest["items"]),
             "placeholders": sum(1 for i in manifest["items"] if i.get("placeholder")),
+            "quality_failed": sum(1 for i in manifest["items"]
+                                  if (i.get("quality") or {}).get("verdict") == "fail"),
+            "rebuilt": len(rebuild),
             "production_ready": sum(1 for i in manifest["items"] if i.get("production_ready")),
             "errors": sum(1 for i in issues if i["severity"] == "error"),
             "warnings": sum(1 for i in issues if i["severity"] == "warning"),
@@ -226,6 +320,16 @@ class AssetsStep(WorkflowStep):
             message=f"{metadata['items']} assets: {metadata['production_ready']} "
                     f"production-ready, {metadata['placeholders']} placeholders, "
                     f"{metadata['errors']} errors")
+
+    @staticmethod
+    def _work_dir(context, slug):
+        """Where author requests, logs and rejected files go: the run's directory, else
+        git-ignored scratch under the project."""
+        run_dir = getattr(context, "run_dir", None)
+        if run_dir:
+            return os.path.join(run_dir, "assets",
+                                f"{getattr(context, 'visit', 1)}-{getattr(context, 'attempt', 1)}")
+        return os.path.join(paths.PROJECT, ".factory", "assets-work", slug)
 
     @staticmethod
     def _blocking(settings, issues):

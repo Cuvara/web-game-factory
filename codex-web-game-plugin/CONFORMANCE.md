@@ -158,6 +158,17 @@ workflow engine: the `wgf-*` commands are agent-driven transitions over `workspa
   market scan), and refuses one with `resume`. No surface was added or removed, so the
   binding manifest is unchanged.
 
+## Production art and UI craft (binding manifest 1.5.0, additive)
+
+One new playbook, `core/craft/production-art-and-ui.md`: what separates a finished web game
+from a prototype - silhouettes and readability at play size, palette discipline, lighting for
+3D, UI hierarchy and typography (fonts as bundled production assets), result screens and the
+retry flow, mobile layout, and the greybox-to-production replacement rule. It is added to the
+`must_read` of the `game-designer`, `gameplay`, `ui` and `asset` agents and the `reads` of
+the `game-design`, `art-direction` and `onboarding-ux` skills, in
+`core/bindings/adapter-binding.yaml` and the `scripts/gen-adapters.sh` tables alike. No
+surface was added or removed, so the manifest version is unchanged.
+
 ## Not covered, deliberately
 
 - **`workflows/` tree** — removed. A per-provider copy of a workflow duplicates

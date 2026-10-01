@@ -25,6 +25,11 @@
       "description": "Every input the player can make right now, each as the control action it performs and the real input that performs it.",
       "items": { "$ref": "#/$defs/move" }
     },
+    "assets_loaded": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Runtime asset ids (public/assets/assets.json) the game has loaded so far."
+    },
     "oracle": {
       "description": "Only with `wgf-probe=1` in the URL: the input that succeeds now (a save, a match, a dodge), or null when no input matters now. Lets the playability step reach `won` and play badly on purpose to reach `lost`.",
       "oneOf": [{ "$ref": "#/$defs/move" }, { "type": "null" }]
@@ -45,7 +50,9 @@
         "y": { "type": "number", "description": "Top edge, CSS px from the viewport's top." },
         "w": { "type": "number", "minimum": 0 },
         "h": { "type": "number", "minimum": 0 },
-        "visible": { "type": "boolean", "description": "Drawn this frame: not hidden, culled, fully transparent or behind another opaque object." }
+        "visible": { "type": "boolean", "description": "Drawn this frame: not hidden, culled, fully transparent or behind another opaque object." },
+        "asset": { "type": ["string", "null"], "description": "The runtime asset id (public/assets/assets.json) that draws it; null when nothing from the manifest does." },
+        "render": { "enum": ["asset", "primitive", "text", "composite"], "description": "How it is drawn: from a manifest asset, as an engine primitive (a box, sphere, capsule, plain rectangle or circle), as text, or as several assets together. A greybox draws primitives; production draws readable entities from assets unless the design's visual_identity.primitive_style says otherwise." }
       },
       "additionalProperties": false
     },

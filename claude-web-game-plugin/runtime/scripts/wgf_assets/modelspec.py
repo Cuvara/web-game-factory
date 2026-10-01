@@ -31,9 +31,15 @@ import zlib
 from . import encoders
 
 __all__ = ["ModelSpecError", "validate", "buildable", "resolve", "spec_hash", "expectations",
-           "SHAPES", "PATHS", "FIT_TOLERANCE"]
+           "expand_parts", "SHAPES", "PATHS", "FIT_TOLERANCE", "MIRROR_SUFFIX"]
 
-SHAPES = ("box", "cylinder", "cone", "sphere", "icosphere", "plane")
+SHAPES = ("box", "cylinder", "cone", "sphere", "icosphere", "plane", "capsule")
+# Shapes with sharp edges to bevel, and shapes smooth-shaded unless the part says otherwise.
+BEVEL_SHAPES = ("box", "cylinder", "cone")
+SMOOTH_SHAPES = ("sphere", "icosphere", "capsule")
+MIRRORS = ("x",)
+MIRROR_SUFFIX = "-mirror"
+TAPER = (0, 4)
 PATHS = ("translation", "rotation", "scale")
 PIVOTS = ("base-center", "center", "origin")
 FIT_AXES = ("x", "y", "z", "max")
@@ -65,6 +71,37 @@ def _num(value):
 
 def _vec(value, n=3):
     return isinstance(value, list) and len(value) == n and all(_num(v) for v in value)
+
+
+def mirror_euler(degrees):
+    """The rotation of a part mirrored across X = 0, as XYZ Euler degrees.
+
+    Reflection M = diag(-1, 1, 1): M Rx(a) Ry(b) Rz(c) M = Rx(a) Ry(-b) Rz(-c)."""
+    x, y, z = degrees
+    return [x, -y + 0.0, -z + 0.0]
+
+
+def expand_parts(parts):
+    """The parts with every `mirror` written out: each mirrored part is followed by
+    `<id>-mirror`, placed and turned across X = 0 of its parent, whose parent is the
+    parent's mirror when the parent is mirrored too. The shapes are symmetric across X,
+    so mirroring the placement mirrors the part. Assumes `validate()` passed."""
+    mirrored = {p["id"] for p in parts if isinstance(p, dict) and p.get("mirror")}
+    out = []
+    for part in parts:
+        copy = {k: v for k, v in part.items() if k != "mirror"}
+        out.append(copy)
+        if not part.get("mirror"):
+            continue
+        twin = dict(copy, id=part["id"] + MIRROR_SUFFIX)
+        position = list(part.get("position", [0, 0, 0]))
+        twin["position"] = [-position[0] + 0.0, position[1], position[2]]
+        if "rotation" in part:
+            twin["rotation"] = mirror_euler(part["rotation"])
+        if part.get("parent") in mirrored:
+            twin["parent"] = part["parent"] + MIRROR_SUFFIX
+        out.append(twin)
+    return out
 
 
 def buildable(spec):
@@ -119,9 +156,11 @@ def validate(spec):
                     add(f"{where}.texture.repeat: expected a number in 1..64")
 
     parts = spec.get("parts") or []
-    if len(parts) > MAX_PARTS:
-        add(f"parts: at most {MAX_PARTS}")
     part_ids, parents = set(), {}
+    mirror_ids = {f"{p['id']}{MIRROR_SUFFIX}" for p in parts
+                  if isinstance(p, dict) and p.get("mirror") and isinstance(p.get("id"), str)}
+    if len(parts) + len(mirror_ids) > MAX_PARTS:
+        add(f"parts: at most {MAX_PARTS}, mirrors included")
     for index, part in enumerate(parts):
         where = f"parts[{index}]"
         if not isinstance(part, dict) or not _ID.match(str(part.get("id") or "")):
@@ -145,8 +184,29 @@ def validate(spec):
             add(f"{where}.segments: an integer in {SEGMENTS[0]}..{SEGMENTS[1]}")
         if part.get("material") is not None and part["material"] not in material_ids:
             add(f"{where}.material: no material {part['material']!r}")
+        if pid in mirror_ids:
+            add(f"{where}: id {pid!r} is the name of another part's mirror")
+        if "mirror" in part and part["mirror"] not in MIRRORS:
+            add(f"{where}.mirror: one of {', '.join(MIRRORS)}")
+        if "taper" in part:
+            taper = part["taper"]
+            if not (_vec(taper, 2) and all(TAPER[0] <= v <= TAPER[1] for v in taper)):
+                add(f"{where}.taper: [x, z], each in {TAPER[0]}..{TAPER[1]}")
+            elif part.get("shape") == "plane":
+                add(f"{where}.taper: a plane has no height to taper")
+        if "bevel" in part:
+            bevel = part["bevel"]
+            if part.get("shape") not in BEVEL_SHAPES:
+                add(f"{where}.bevel: only on {', '.join(BEVEL_SHAPES)} (the others have no "
+                    f"sharp edge)")
+            elif not (_num(bevel) and bevel > 0):
+                add(f"{where}.bevel: a positive number of metres")
+            elif _vec(size) and min(size) > 0 and bevel > min(size) / 3 + 1e-12:
+                add(f"{where}.bevel: at most a third of the part's smallest side "
+                    f"({min(size) / 3:.4g} m)")
         if part.get("parent") is not None:
             parents[pid] = part["parent"]
+    all_ids = part_ids | {i for i in mirror_ids if i[:-len(MIRROR_SUFFIX)] in part_ids}
     for child, parent in parents.items():
         if parent not in part_ids:
             add(f"part {child!r}: parent {parent!r} is not a part")
@@ -197,7 +257,7 @@ def validate(spec):
             if not isinstance(track, dict):
                 add(f"{t_where}: expected an object")
                 continue
-            if track.get("part") not in part_ids:
+            if track.get("part") not in all_ids:
                 add(f"{t_where}.part: no part {track.get('part')!r}")
             if track.get("path") not in PATHS:
                 add(f"{t_where}.path: one of {', '.join(PATHS)}")
@@ -348,7 +408,8 @@ def resolve(spec, asset_id):
             entry["color"] = [1.0, 1.0, 1.0, entry["color"][3]]
         materials.append(entry)
 
-    by_id = {p["id"]: p for p in spec["parts"]}
+    expanded = expand_parts(spec["parts"])
+    by_id = {p["id"]: p for p in expanded}
     ordered, placed = [], set()
 
     def place(part):
@@ -359,7 +420,7 @@ def resolve(spec, asset_id):
         placed.add(part["id"])
         ordered.append(part)
 
-    for part in spec["parts"]:
+    for part in expanded:
         place(part)
 
     parts = [{
@@ -371,7 +432,10 @@ def resolve(spec, asset_id):
         "rotation": euler_to_quaternion(p.get("rotation", [0, 0, 0])),
         "parent": p.get("parent"),
         "material": p.get("material"),
-        "smooth": bool(p.get("smooth", p["shape"] in ("sphere", "icosphere"))),
+        "smooth": bool(p.get("smooth", p["shape"] in SMOOTH_SHAPES)),
+        # Only when set, so a spec without them resolves exactly as before these existed.
+        **({"taper": [float(v) for v in p["taper"]]} if "taper" in p else {}),
+        **({"bevel": float(p["bevel"])} if "bevel" in p else {}),
     } for p in ordered]
 
     animations = []

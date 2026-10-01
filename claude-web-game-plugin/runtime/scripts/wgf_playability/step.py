@@ -40,7 +40,7 @@ from wgf_design.experience import load_rules as load_experience_rules
 
 from . import analysis
 
-__all__ = ["PlayabilityStep", "RULES_PATH", "BOT_SPEC", "FAIL_ROUTE"]
+__all__ = ["PlayabilityStep", "RULES_PATH", "BOT_SPEC", "FAIL_ROUTE", "RECORDS", "PROJECTS"]
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 BOT_SPEC = os.path.join(HERE, "bot.spec.ts")
@@ -48,6 +48,8 @@ RULES_PATH = os.path.join(paths.REFERENCE, "visual-quality.yaml")
 FAIL_ROUTE = "fail"
 REQUIRED_INPUTS = ("prototype-report", "game-design", "scaffold-record")
 PROJECTS = (("desktop", 1280, 720), ("mobile", 393, 851))
+# The bot's records per viewport (bot.spec.ts): <out>/<project>/<name>.json.
+RECORDS = ("first-session", "act", "win", "lose", "pause")
 _NO_BROWSER = ("Executable doesn't exist", "browserType.launch", "playwright install")
 
 CONFIG = """\
@@ -131,7 +133,11 @@ class PlayabilityStep(WorkflowStep):
 
         rules = load_rules()
         experience_rules = load_experience_rules()
-        scratch = os.path.join(context.run_dir, "playability",
+        # Keyed by step: a workflow plays more than one build (greybox-playability,
+        # playability), each step's visits count from 1, and this directory is emptied
+        # first - one shared directory erased the greybox's frames its report cites.
+        scratch = os.path.join(context.run_dir,
+                               getattr(context, "current_step", None) or "playability",
                                f"{getattr(context, 'visit', 1)}-{getattr(context, 'attempt', 1)}")
         shutil.rmtree(scratch, ignore_errors=True)
         os.makedirs(scratch)
@@ -169,8 +175,10 @@ class PlayabilityStep(WorkflowStep):
                 frames += self._frames(frames_dir, project, context.run_dir)
             if not blocked and not any(p["ran"] for p in projects):
                 blocked = "the bot produced no records on any viewport; see " + os.path.join(logs, "bot.log")
+            records_dir = (os.path.relpath(out, context.run_dir).replace(os.sep, "/")
+                           if os.path.isdir(out) else None)
             return self._finish(context, inputs, title_id, commit, checks, frames, rules, blocked,
-                                projects)
+                                projects, records_dir)
         finally:
             shutil.rmtree(repo, ignore_errors=True)
 
@@ -231,7 +239,7 @@ class PlayabilityStep(WorkflowStep):
     @staticmethod
     def _records(directory):
         records = {}
-        for name in ("first-session", "act", "win", "lose"):
+        for name in RECORDS:
             path = os.path.join(directory, f"{name}.json")
             if os.path.isfile(path):
                 with open(path, encoding="utf-8") as handle:
@@ -262,7 +270,7 @@ class PlayabilityStep(WorkflowStep):
     # -- the report ---------------------------------------------------------------------
 
     def _finish(self, context, inputs, title_id, commit, checks, frames, rules, blocked,
-                projects=None):
+                projects=None, records_dir=None):
         failed = sorted({f"{c['project']}:{c['id']}" for c in checks
                          if c["required"] and c["status"] == "FAIL"})
         verdict = "BLOCKED" if blocked else ("FAIL" if failed else "PASS")
@@ -281,6 +289,7 @@ class PlayabilityStep(WorkflowStep):
                                      for p, w, h in PROJECTS],
             "checks": checks,
             "frames": frames,
+            "records_dir": records_dir,
             "failed_checks": failed,
             "blocked_reason": blocked,
             "verdict": verdict,

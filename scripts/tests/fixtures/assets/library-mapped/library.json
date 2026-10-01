@@ -1,0 +1,53 @@
+{
+  "library": {
+    "id": "fixture-mapped"
+  },
+  "items": [
+    {
+      "requirement": "hero",
+      "files": [
+        "svg/hero.svg"
+      ],
+      "license": "CC0-1.0",
+      "source": "https://example.invalid/hero",
+      "author": "Fixture Artist"
+    },
+    {
+      "requirement": "tile",
+      "files": [
+        "svg/tile-a.svg",
+        "svg/tile-b.svg"
+      ],
+      "licence": "CC-BY-4.0",
+      "source": "fixture pack 1, receipt 42",
+      "author": "Fixture Artist",
+      "attribution": "Tiles by Fixture Artist (CC BY 4.0)"
+    },
+    {
+      "requirement": "spike",
+      "files": [
+        "svg/flat.svg"
+      ],
+      "license": "CC0-1.0",
+      "source": "https://example.invalid/flat",
+      "author": "Fixture Artist"
+    },
+    {
+      "requirement": "coin",
+      "files": [
+        "svg/hero.svg"
+      ],
+      "source": "https://example.invalid/nolicence",
+      "author": "Nobody"
+    },
+    {
+      "role": "background",
+      "files": [
+        "png/board.png"
+      ],
+      "license": "CC0-1.0",
+      "source": "https://example.invalid/board",
+      "author": "Fixture Artist"
+    }
+  ]
+}

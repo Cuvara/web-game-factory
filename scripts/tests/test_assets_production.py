@@ -31,6 +31,7 @@ sys.path.insert(0, os.path.dirname(HERE))
 sys.path.insert(0, HERE)
 
 import test_assets as base  # noqa: E402
+from wgf_assets import quality as quality_mod  # noqa: E402
 from wgf_assets import quality, runtime, step as step_mod  # noqa: E402
 from wgf_assets.requirements import inspect  # noqa: E402
 from wgf_assets.step import AssetsStep, rebuild_list  # noqa: E402
@@ -459,6 +460,42 @@ GOOD = (b'<svg xmlns="http://www.w3.org/2000/svg" width="96" height="96" viewBox
         b'<circle cx="48" cy="28" r="16" style="fill:#EDEBFF;stroke:#0B0B12"/>'
         b'<path d="M30 80 L48 92 L66 80 Z" fill="#2EF2FF"/></svg>')
 
+
+
+def _ttf(tables, glyphs=200):
+    """A minimal sfnt: a table directory (tags only matter) and a maxp with a glyph count."""
+    import struct
+    tags = sorted(tables)
+    header = struct.pack(">IHHHH", 0x00010000, len(tags), 0, 0, 0)
+    offset = 12 + 16 * len(tags)
+    directory, body = b"", b""
+    for tag in tags:
+        data = struct.pack(">IH", 0x00005000, glyphs) if tag == "maxp" else b"\0" * 8
+        directory += struct.pack(">4sIII", tag.encode("latin-1"), 0, offset + len(body), len(data))
+        body += data
+    return header + directory + body
+
+
+class FontQuality(unittest.TestCase):
+    """Fonts are production assets: judged as real fonts, never left `skipped`."""
+
+    def test_a_real_font_passes(self):
+        result = quality_mod.font_quality(_ttf(["cmap", "name", "glyf", "loca", "maxp"]))
+        self.assertEqual(result["verdict"], "pass", result["checks"])
+        self.assertEqual(result["parts"], 200)
+
+    def test_a_stub_is_refused(self):
+        self.assertEqual(quality_mod.font_quality(b"not a font at all")["verdict"], "fail")
+        no_outlines = quality_mod.font_quality(_ttf(["cmap", "name", "maxp"]))
+        self.assertEqual(no_outlines["verdict"], "fail")
+        few = quality_mod.font_quality(_ttf(["cmap", "name", "glyf", "loca", "maxp"], glyphs=3))
+        self.assertEqual(few["verdict"], "fail")
+
+    def test_a_woff2_header_is_checked(self):
+        import struct
+        body = struct.pack(">4s4sIH", b"wOF2", b"\x00\x01\x00\x00", 64, 12) + b"\0" * 50
+        self.assertEqual(quality_mod.font_quality(body)["verdict"], "pass")
+        self.assertEqual(quality_mod.font_quality(body[:-4])["verdict"], "fail")
 
 class Quality(unittest.TestCase):
     def setUp(self):

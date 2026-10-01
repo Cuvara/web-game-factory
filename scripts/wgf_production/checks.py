@@ -312,13 +312,21 @@ def assets_runtime(wanted, records, rules, frames_by_project):
                for r in rec.get("asset_requests") or [] if isinstance(r, dict)
                and isinstance(r.get("url"), str) and r.get("status") is not None
                and 200 <= r["status"] < 400]
+    # A counted requirement's drawings are runtime assets of their own (`pieces-3`), listed
+    # as `variants` on the requirement's entry (`pieces`): an entity drawn with one is the
+    # requirement rendered. The probe stays precise about which drawing it drew.
+    parent = {}
+    for entry_id, entry in ((runtime or {}).get("assets") or {}).items():
+        for variant in (entry or {}).get("variants") or []:
+            parent.setdefault(variant, entry_id)
+    canon = lambda asset: parent.get(asset, asset)  # noqa: E731
     # What the probe said about each asset id: renders, largest on-screen share, and state
     # frames with the box of an entity drawn with it.
     rendered, largest, boxes = {}, {}, {}
     for project, tests in records.items():
         for eid, _role, asset, render, _has in _entity_views(tests):
             if asset:
-                rendered.setdefault(asset, set()).add(render)
+                rendered.setdefault(canon(asset), set()).add(render)
         for record in tests.values():
             sampled = (record or {}).get("sampled") or {}
             vw, vh = sampled.get("viewport") or [1, 1]
@@ -329,11 +337,12 @@ def assets_runtime(wanted, records, rules, frames_by_project):
                         continue
                     _i, _r, vis, x, y, w, h = sample[:7]
                     if vis and x + w > 0 and y + h > 0 and x < vw and y < vh:
-                        largest[sample[7]] = max(largest.get(sample[7], 0.0), w * h / area)
+                        key = canon(sample[7])
+                        largest[key] = max(largest.get(key, 0.0), w * h / area)
         for state, ui in _ui_states(tests):
             for e in ui.get("entities") or []:
                 if isinstance(e, dict) and e.get("asset") and e.get("visible"):
-                    boxes.setdefault(e["asset"], []).append(
+                    boxes.setdefault(canon(e["asset"]), []).append(
                         (project, ui.get("frame"), [e.get("x"), e.get("y"), e.get("w"), e.get("h")],
                          ui.get("viewport")))
     chain, failures = {}, {}

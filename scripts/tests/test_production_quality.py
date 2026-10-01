@@ -232,6 +232,37 @@ class Judge(unittest.TestCase):
         self.assertEqual([keeper[k] for k in judging.CHAIN], [True] * 5)
         self.assertGreater(keeper["visible_measured"]["box_not_background"], 0.9)
 
+    def test_a_drawing_of_a_counted_requirement_renders_the_requirement(self):
+        # Tower Merge Rush: `pieces` has six drawings, runtime assets `pieces-1..6` listed as
+        # its entry's `variants`; the probe names the drawing it drew (`pieces-3`).
+        def drawn_as(value, variant):
+            if isinstance(value, dict):
+                if value.get("asset") == "keeper":
+                    value["asset"] = variant
+                for v in value.values():
+                    drawn_as(v, variant)
+            elif isinstance(value, list):
+                if len(value) >= 9 and value[7] == "keeper":
+                    value[7] = variant
+                for v in value:
+                    drawn_as(v, variant)
+            return value
+
+        runtime = copy.deepcopy(RUNTIME)
+        runtime["assets"]["keeper"]["variants"] = ["keeper", "keeper-2"]
+        runtime["assets"]["keeper-2"] = {"type": "sprite", "url": "sprites/keeper-2.svg"}
+        per_view = []
+        for _ in range(2):
+            rec = drawn_as(records(), "keeper-2")
+            for test in rec.values():
+                if isinstance(test, dict) and "runtime_assets" in test:
+                    test["runtime_assets"] = runtime
+            per_view.append(rec)
+        chain = next(c for c in self.judge({"desktop": per_view[0], "mobile": per_view[1]})
+                     if c["id"] == "assets.runtime")
+        self.assertEqual(chain["status"], "PASS", chain["summary"])
+        self.assertTrue(chain["measured"]["keeper"]["rendered"])
+
     def test_an_asset_drawn_where_the_frame_shows_only_background_is_not_visible(self):
         blank = tempfile.mkdtemp(prefix="wgf-pq-blank-")
         self.addCleanup(shutil.rmtree, blank, ignore_errors=True)

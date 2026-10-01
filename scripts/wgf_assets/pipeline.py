@@ -1039,7 +1039,12 @@ class AssetPipeline:
                                               if (data.get("origin") or {}).get("library_id")
                                               else "existing"))
             files = self._image_files(item)
-            if not files:
+            fonts = [(relative, blob) for relative, blob in item.payload
+                     if quality_mod.font_format(blob)]
+            if fonts and not files:
+                judged = _merge_quality([(relative, quality_mod.font_quality(blob, author=author))
+                                         for relative, blob in fonts], author)
+            elif not files:
                 fmt = data["files"][0]["format"] if data.get("files") else "?"
                 judged = quality_mod.skipped(author, f"no 2D quality check for {fmt}; "
                                                      f"a GLB is judged by its model inspection")

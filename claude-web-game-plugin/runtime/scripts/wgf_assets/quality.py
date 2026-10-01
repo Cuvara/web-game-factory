@@ -32,7 +32,7 @@ from wgflib.yamllite import load_file
 
 from . import raster
 
-__all__ = ["load_bars", "svg_quality", "raster_quality", "skipped", "problems",
+__all__ = ["load_bars", "svg_quality", "raster_quality", "font_quality", "font_format", "skipped", "problems",
            "parse_palette", "BARS_PATH", "QualityBars"]
 
 BARS_PATH = os.path.join(paths.REFERENCE, "asset-quality.yaml")
@@ -377,3 +377,69 @@ def raster_quality(data, *, needs_alpha=False, bars=None, author=None):
     flat_rect = len(distinct) <= 1 and transparent == 0
     return _result(checks, author, primitive_only=flat_rect, parts=None,
                    colors=min(len(distinct), 4096))
+
+
+# -- fonts ------------------------------------------------------------------------------------
+
+_SFNT = {b"\x00\x01\x00\x00": "ttf", b"true": "ttf", b"OTTO": "otf"}
+
+
+def font_format(data):
+    """ttf | otf | woff | woff2 from the file's signature, else None."""
+    head = bytes(data[:4])
+    if head in _SFNT:
+        return _SFNT[head]
+    return {b"wOFF": "woff", b"wOF2": "woff2"}.get(head)
+
+
+def font_quality(data, *, author=None):
+    """The `quality` object of a font file: a real font a browser can load, not a stub.
+
+    TTF/OTF: the table directory is read and must hold `cmap`, `name` and outlines (`glyf`
+    with `loca`, `CFF `/`CFF2`, or colour glyphs), with at least 60 glyphs (`maxp`). WOFF/WOFF2:
+    the header's signature, flavour, table count and sizes are checked (the tables are
+    compressed; a browser decompresses them). The licence is the asset policy's to judge."""
+    import struct
+    checks = []
+    fmt = font_format(data)
+    _check(checks, "font.format", fmt is not None,
+           f"{fmt} font" if fmt else "not a TTF, OTF, WOFF or WOFF2 file")
+    if fmt is None:
+        return _result(checks, author)
+    if fmt in ("ttf", "otf"):
+        try:
+            (num_tables,) = struct.unpack(">H", data[4:6])
+            tables = {}
+            for i in range(num_tables):
+                tag, _sum, offset, length = struct.unpack(">4sIII", data[12 + 16 * i:28 + 16 * i])
+                tables[tag.decode("latin-1")] = (offset, length)
+        except struct.error:
+            _check(checks, "font.tables", False, "the table directory is truncated")
+            return _result(checks, author)
+        outlines = ("glyf" in tables and "loca" in tables) or any(
+            t in tables for t in ("CFF ", "CFF2", "CBDT", "sbix", "SVG "))
+        missing = [t for t in ("cmap", "name") if t not in tables]
+        _check(checks, "font.tables", not missing and outlines,
+               f"{num_tables} tables" + (f"; missing {', '.join(missing)}" if missing else "")
+               + ("" if outlines else "; no glyph outlines"))
+        glyphs = None
+        if "maxp" in tables:
+            offset, _length = tables["maxp"]
+            try:
+                (glyphs,) = struct.unpack(">H", data[offset + 4:offset + 6])
+            except struct.error:
+                glyphs = None
+        _check(checks, "font.glyphs", bool(glyphs and glyphs >= 60),
+               f"{glyphs} glyphs" if glyphs is not None else "no maxp table: glyph count unknown")
+        return _result(checks, author, parts=glyphs)
+    try:
+        # WOFF and WOFF2 share the leading fields: signature, flavour, length, numTables.
+        _sig, flavor, length, num_tables = struct.unpack(">4s4sIH", data[:14])
+    except struct.error:
+        _check(checks, "font.header", False, "the header is truncated")
+        return _result(checks, author)
+    ok = flavor in (b"\x00\x01\x00\x00", b"OTTO", b"true") and length == len(data) and num_tables >= 6
+    _check(checks, "font.header", ok,
+           f"flavour {flavor!r}, {num_tables} tables, declared {length} bytes of {len(data)}")
+    return _result(checks, author)
+

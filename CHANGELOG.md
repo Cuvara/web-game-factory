@@ -9,6 +9,41 @@ and `core/` is still the contract.
 
 ## [Unreleased]
 
+What a real `/web-game-factory:new-game "<idea>"` dogfood run of 2.5.0 found, with the idea "I
+want to make a 3D battle royal game but it's human versus computer, with the goal being the
+goalkeeper": every defect below stopped it or lost the idea. No gate, rule or evidence
+requirement was relaxed.
+
+### Fixed
+
+- **An idea no catalog concept carries was silently replaced.** Research carried the nearest
+  buildable shape forward (an endless runner for the goalkeeper idea), so strategy and design
+  were held to a different game. Research now waits for input instead
+  (`discovery.idea_fallback: wait`, default; `nearest` keeps the old behaviour on purpose),
+  and reads a project `workspace/research/concepts.yaml`: concepts authored for the run's
+  exact brief, in the catalog's shape, with `design_archetype` (`agent` when only an agent
+  design author can design it); their figures are hypothesis claims, plus one claim saying
+  the concept was authored for the brief. `core/lifecycle/stages/market-scan.md`.
+- **Nothing in a `/new-game` run supplied research's input.** A fresh project waited at research
+  with no evidence, and core never specified the snapshot format. `core/craft/research-evidence.md`
+  specifies it (the fields the discovery step enforces; evidence is fetched, never written)
+  and the concept file; both `new-game` surfaces hand a research input wait to the research
+  role, then resume. Read by the research agent and the market-intelligence skill.
+- **Research accepted `priors` it could not read** - a note where the six prior dimensions go -
+  scoring them as nothing and turning the note into claim text. Malformed priors are now
+  refused, for the catalog and project concepts alike.
+- **The design agent was never shown the schema its draft must satisfy, nor its errors.** Its
+  draft used enum values the game-design schema does not allow; the engine's contract check
+  caught it after the step and the retry repeated the mistakes. The design step now
+  validates the composed artifact against its contract itself, and shows an agent author the
+  exact problems and its previous draft for up to two repair rounds; every round is judged
+  like the first. The request names the schema.
+
+### Changed
+
+- The autonomous profile configures the agent design author (`design.author: agent`, the
+  shipped commented argv verbatim), needed for an idea no design archetype carries.
+
 ## [2.5.0] - 2026-09-30
 
 Two changes to `/web-game-factory:new-game` (`docs/v2.5-release.md`).

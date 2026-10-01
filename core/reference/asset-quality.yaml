@@ -1,0 +1,56 @@
+# Asset quality bars: what a delivered 2D file must be before it counts as production art.
+#
+# The assets step (title:prototype) reads the files it delivers - imported from a library,
+# written by an author, or found in the repository - and records the result on the
+# asset-manifest item as `quality` (verdict, checks, primitive_only, parts, colors). A
+# placeholder is never judged: its verdict is `skipped`, and it is a placeholder whatever
+# its shapes. These are the bars; the design supplies the rest - the palette
+# (build_spec.visual_identity.palette), the role and the spec of each requirement.
+#
+# A check that fails makes the verdict `fail`, and a failed item is never production-ready.
+# The bars are a floor against stand-ins - one rectangle, a colour nobody chose, a file that
+# fetches something at load time - not a judgement of whether the art is good: that is
+# visual QA, reading the running game against its rubric.
+
+version: 1.0.0
+
+svg:
+  # Larger files are refused before parsing; an SVG sprite that big is a traced raster.
+  max_bytes: 262144
+  # The longest edge (width/height, else viewBox) a file may declare, in px.
+  max_edge: 4096
+  # Drawing elements outside <defs>, <clipPath>, <mask>, <pattern>, <symbol>: rect, circle,
+  # ellipse, line, polyline, polygon, path, text, use. Below the bar for the role, the file
+  # is a stand-in. One rect, circle or ellipse alone is `primitive_only` whatever the bar.
+  min_shapes:
+    default: 3
+    background: 4
+    environment: 4
+    ui: 2
+    icon: 2
+    vfx: 2
+    font: 0
+  # Colours (fill, stroke, stop-color, flood-color, color; attributes and inline style)
+  # are compared with the design's palette by RGB distance. Within `tolerance` of a palette
+  # colour is on-palette. Pure greys from black to white count as on-palette when
+  # `neutrals` is true: outlines and shading. More than `max_off_palette_share` of the
+  # distinct colours off-palette fails, unless the file states why on its root element:
+  # data-wgf-off-palette="<reason, at least 12 characters>".
+  palette:
+    tolerance: 60
+    neutrals: true
+    max_off_palette_share: 0.34
+    min_reason_length: 12
+  # The declared aspect ratio may differ from the spec's (requirement width/height) by at
+  # most this share.
+  aspect_tolerance: 0.1
+
+raster:
+  # A PNG with fewer distinct opaque colours than this is one flat colour: a stand-in.
+  min_distinct_colors: 2
+  # Kinds the asset policy marks `transparency: required` must carry an alpha channel; and,
+  # when this is above 0, at least this share of their pixels must be transparent (a
+  # cut-out, not a filled rectangle). 0: the channel is enough.
+  min_transparent_share: 0
+  # Decoding bound: larger images are judged by their header only.
+  max_pixels: 4194304

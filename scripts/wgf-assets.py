@@ -2,14 +2,18 @@
 """The 2D asset pipeline from the command line: build, validate, pack, inspect.
 
     python3 scripts/wgf-assets.py build    --design DESIGN.json --root CHECKOUT [--json]
+                                           [--library DIR]... [--author-command ARG...]
     python3 scripts/wgf-assets.py validate [CHECKOUT] [--json] [--strict]
     python3 scripts/wgf-assets.py pack     OUT INPUT... [--padding N] [--extrude N]
                                            [--max-size N] [--no-pot] [--trim] [--scale N]
                                            [--animation NAME=PREFIX]... [--json]
     python3 scripts/wgf-assets.py inspect  FILE... [--json]
 
-build     Runs the same pipeline as the workflow's `assets` step on a game design (or any
-          JSON with an `asset_requirements` list) against a game repository checkout: files
+build     Runs the same pipeline as the workflow's `assets` step on a game design (its
+          build_spec.assets, or any JSON with an `asset_requirements` list) against a game
+          repository checkout: libraries (index.json, library.json), the 2D command author
+          when --author-command names one (its argv; {request}, {output}, {prompt}
+          substituted), placeholders for the rest, every delivered file judged; files
           into public/assets/ (atlas sources into src/assets/), atlases packed, the runtime
           manifest public/assets/assets.json written, stale placeholders pruned. It prints
           what it did; the asset-manifest artifact itself is only produced inside a run.
@@ -30,10 +34,12 @@ import hashlib
 import json
 import os
 import sys
+import tempfile
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from wgf_assets import atlas, formats, raster, runtime  # noqa: E402
+from wgf_assets.author import AuthorError, build_author  # noqa: E402
 from wgf_assets.library import open_libraries  # noqa: E402
 from wgf_assets.pipeline import AssetPipeline, AssetStore  # noqa: E402
 from wgf_assets.placeholders import build_backends  # noqa: E402
@@ -91,16 +97,28 @@ def cmd_build(args):
         print(f"warning: asset library unavailable: {problem}", file=sys.stderr)
     backends = build_backends(["procedural"], {})
     store = AssetStore(args.root)
+    try:
+        author = build_author({"kind": "command", "argv": args.author_command,
+                               "repair_rounds": args.repair_rounds}
+                              if args.author_command else None)
+    except AuthorError as exc:
+        raise Usage(f"author: {exc}")
+    identity = (design.get("build_spec") or {}).get("visual_identity") \
+        if isinstance(design.get("build_spec"), dict) else None
+    work_dir = args.work_dir or (tempfile.mkdtemp(prefix="wgf-assets-author-") if author
+                                 else None)
     pipeline = AssetPipeline(policy, store, backends, libraries,
                              placeholders=not args.no_placeholders,
                              optimize=not args.no_optimize, prune=not args.no_prune,
-                             title_id=design.get("title_id"))
+                             title_id=design.get("title_id"), author=author,
+                             identity=identity, work_dir=work_dir)
     result = pipeline.run(requirements)
     payload = {
         "root": os.path.abspath(args.root),
         "dimension": dimension,
-        "items": [{k: item.get(k) for k in ("id", "type", "status", "placeholder", "atlas",
-                                            "production_ready") if k in item}
+        "items": [{k: item.get(k) for k in ("id", "type", "role", "source", "status",
+                                            "placeholder", "atlas", "production_ready",
+                                            "quality") if k in item}
                   | {"files": [f["path"] for f in item.get("files") or []]}
                   for item in result.items],
         "atlases": result.atlases,
@@ -114,7 +132,8 @@ def cmd_build(args):
     for item in payload["items"]:
         where = (f"atlas {item['atlas']['id']}" if item.get("atlas")
                  else ", ".join(item["files"]) or "-")
-        lines.append(f"  {item['id']:<24} {item['status']:<12} {where}")
+        verdict = (item.get("quality") or {}).get("verdict") or "-"
+        lines.append(f"  {item['id']:<24} {item['status']:<12} {verdict:<8} {where}")
     if result.runtime_manifest:
         lines.append(f"runtime manifest: {result.runtime_manifest['path']} "
                      f"({result.runtime_manifest['content_hash'][:19]}...)")
@@ -281,6 +300,11 @@ def main(argv=None):
     build.add_argument("--no-placeholders", action="store_true")
     build.add_argument("--no-optimize", action="store_true")
     build.add_argument("--no-prune", action="store_true")
+    build.add_argument("--author-command", nargs=argparse.REMAINDER,
+                       help="the 2D author's argv (last option): {request} {output} {prompt}")
+    build.add_argument("--repair-rounds", type=int, default=2)
+    build.add_argument("--work-dir", help="author requests, logs and rejected files "
+                                          "(default: a fresh temporary directory)")
     build.set_defaults(func=cmd_build)
 
     validate = sub.add_parser("validate", help="validate a checkout's runtime manifest")

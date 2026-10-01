@@ -55,7 +55,7 @@
 
 policy:
   id: asset-policy
-  version: 1.2.0
+  version: 1.3.0
 
 limits:
   max_texture_edge: 4096
@@ -99,7 +99,7 @@ kinds:
     manifest_type: background
     dimension: 2d
     directory: backgrounds
-    formats: [webp, jpeg, png, avif]
+    formats: [webp, jpeg, png, avif, svg]
     placeholder: png
     transparency: opaque
     max_bytes: 524288
@@ -137,7 +137,7 @@ kinds:
     manifest_type: vfx
     dimension: any
     directory: vfx
-    formats: [png, webp, json]
+    formats: [png, webp, json, svg]
     placeholder: png
     transparency: required
     atlas: true

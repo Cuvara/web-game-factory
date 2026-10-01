@@ -4,11 +4,24 @@ For each requirement, in order:
 
     existing file named by the design  -> validate, check licence and origin
         | missing or invalid
+    library.json mapping (id, role)    -> the files a library maps to the requirement,
+        |                                 licensed and with an origin
     library search (source library or unset) -> first candidate that is licensed, has an
         | nothing usable                       origin and validates; the rest are recorded
+    author (2D: an SVG per drawing)    -> validated and judged (quality.py); a rejected file
+        |                                 is shown its problems and asked again
+    model author (3D, when installed)  -> wgf_assets.model_author.produce_model
+        | not configured, or failed
     placeholder backends, in order     -> first that is available and returns a valid file
         | all failed or disabled
     missing                            -> status planned, an error issue for mvp/prototype
+
+A derived baseline requirement (the design listed no assets) skips straight to the
+placeholder backends: nobody designed it, so nothing is imported or authored for it.
+
+Every delivered item gets a `quality` (quality.py): an SVG or PNG is judged against
+core/reference/asset-quality.yaml; a placeholder is `skipped`, never judged; a failed
+verdict is a `quality-failed` issue and keeps the item from being production-ready.
 
 Every file the pipeline writes goes under the asset root (a game repository checkout) at
 `public/assets/<kind directory>/`, the template's static-asset convention, and is written
@@ -39,10 +52,12 @@ import tempfile
 from collections import namedtuple
 
 from . import atlas as atlases_mod
-from . import formats, gltf, modelspec, raster, runtime
-from .library import LibraryError, search_all
+from . import formats, gltf, modelspec, quality as quality_mod, raster, runtime
+from .author import AuthorError, AuthorRunFailed
+from .library import LibraryError, match_all, search_all
 from .optimize import optimize as optimize_bytes
 from .placeholders import BackendError
+from .policy import GENERATED_LICENSE
 
 __all__ = ["AssetPipeline", "AssetStore", "PipelineResult", "validate_file", "asset_path",
            "ASSET_DIR", "SOURCE_DIR"]
@@ -54,6 +69,11 @@ SOURCE_DIR = "src/assets"
 MODEL_FORMATS = ("glb", "gltf")
 LOAD_BEARING_TIERS = ("mvp", "prototype")
 ORIGIN_KEYS = ("source_url", "author", "vendor", "attribution", "license_url", "evidence")
+# What the author backend has written, so a re-executed step reuses a file whose request is
+# unchanged instead of asking again. In the repository, out of the build.
+LEDGER_PATH = f"{SOURCE_DIR}/authored.json"
+LEDGER_FORMAT = "wgf-authored-assets"
+SOURCES = ("library", "procedural", "ai-generated", "purchased", "commissioned")
 
 
 def file_hash(data):
@@ -267,10 +287,13 @@ class _Item:
             "platforms": req.platforms or None,
             "notes": req.notes,
             "scale": req.scale if req.scale != 1 else None,
+            "role": req.role,
         }
         self.payload = []  # [(repository-relative path, bytes)] of the files, as recorded
         self.generation = None  # a generating backend's `model.generation` block
-
+        self.variants = []  # runtime ids of the drawings, when the requirement has a count
+        self.quality_author = None  # what made it, for quality.author
+        self.quality = None  # set when the backend judged it already
     def issue(self, code, severity, message):
         self.issues.append({"item_id": self.req.id, "code": code, "severity": severity,
                             "message": message})
@@ -287,20 +310,23 @@ class _Item:
         if data["status"] != "planned":
             data["production_ready"] = bool(
                 delivered_final and not data.get("placeholder") and not self.has_errors()
-                and data.get("license_status") in ("verified", "generated"))
+                and data.get("license_status") in ("verified", "generated")
+                and (data.get("quality") or {}).get("verdict") != "fail")
         if self.issues:
             data["issues"] = sorted({i["code"] for i in self.issues})
-        order = ["id", "label", "type", "dimension", "source", "est_cost", "est_hours",
-                 "status", "license", "license_status", "usage_constraints", "origin",
-                 "placeholder", "production_ready", "files", "atlas", "scale", "reference",
-                 "model", "optimization", "scope_tier", "platforms", "notes", "issues"]
+        order = ["id", "label", "type", "role", "dimension", "source", "est_cost",
+                 "est_hours", "status", "license", "license_status", "usage_constraints",
+                 "origin", "placeholder", "production_ready", "quality", "files", "atlas",
+                 "scale", "reference", "model", "optimization", "scope_tier", "platforms",
+                 "notes", "issues"]
         return {key: data[key] for key in order if data.get(key) is not None}
 
 
 class AssetPipeline:
     def __init__(self, policy, store, backends, libraries=(), *, logger=None,
                  placeholders=True, optimize=True, runtime_manifest=True, prune=True,
-                 title_id=None):
+                 title_id=None, author=None, model_author=None, palette=(), identity=None,
+                 bars=None, rebuild=None, work_dir=None, settings=None, context=None):
         self.policy = policy
         self.store = store
         self.backends = backends  # [(id, backend or None, note)]
@@ -311,6 +337,23 @@ class AssetPipeline:
         self.runtime_manifest = runtime_manifest
         self.prune = prune
         self.title_id = title_id
+        # The 2D author (author.py), or None; the 3D model author's produce_model, or None.
+        self.author = author
+        self.model_author = model_author
+        self.identity = dict(identity or {})
+        self.palette = quality_mod.parse_palette(self.identity.get("palette"))
+        if palette:
+            self.palette = list(palette)
+        self.primitive_style = bool(self.identity.get("primitive_style"))
+        self.bars = bars or quality_mod.load_bars()
+        # {requirement id: [finding]}: what a re-entry was sent back for; only these are
+        # rebuilt, and the findings reach the author.
+        self.rebuild = dict(rebuild or {})
+        self.work_dir = work_dir
+        self.settings = dict(settings or {})
+        self.context = context
+        self._ledger = None
+        self._ledger_dirty = False
         self._hashes = {}
         self._paths = {}
         self._available = None
@@ -362,9 +405,12 @@ class AssetPipeline:
         built = []
         try:
             for req in requirements:
-                built.append(self._process(req))
+                item = self._process(req)
+                self._judge(item)
+                built.append(item)
         finally:
             self.close()
+        self._write_ledger()
         packed = self._pack_atlases(built, result)
         entries = {}
         if self.runtime_manifest:
@@ -372,6 +418,7 @@ class AssetPipeline:
                 made = self._runtime_entry(item, packed)
                 if made is not None:
                     entries[item.req.id] = made
+                    entries.update(self._variant_entries(item, made[0]))
         for item in built:
             result.issues.extend(item.issues)
             result.items.append(item.finish())
@@ -410,8 +457,23 @@ class AssetPipeline:
         elif not req.generate_now():
             item.data["notes"] = req.notes or "Future tier: recorded, not produced."
             return item
-        if req.source in (None, "library") and self.libraries and self._library(req, item):
-            return item
+        if not req.placeholder_only:
+            # Sent back by a report with an author to ask: the library would hand over the
+            # same file again, so the author is asked instead.
+            redo = req.id in self.rebuild and self.author is not None
+            if self.libraries and not redo:
+                if self._mapped_library(req, item):
+                    return item
+                if req.source in (None, "library") and self._library(req, item):
+                    return item
+            if self.author is not None and self._authorable(req):
+                if self._authored(req, item):
+                    return item
+            if self.model_author is not None and req.dimension == "3d" \
+                    and req.policy.dimension in ("3d", "any") and req.kind in (
+                        "model", "environment", "animation"):
+                if self._model_authored(req, item):
+                    return item
         if self.placeholders and self._placeholder(req, item):
             self._check_spec_built(req, item)
             return item
@@ -647,6 +709,370 @@ class AssetPipeline:
             item.issue("generation-failed", "warning", f"{req.id}: " + " | ".join(failures))
         return False
 
+    # -- library.json, author, model author -------------------------------------------------
+
+    def _variant_paths(self, req, fmt, n_files):
+        """[(runtime id, repository-relative path)] for `n_files` files of `req`."""
+        ids = req.variant_ids()
+        if n_files > 1 and not ids:
+            ids = [req.id] + [f"{req.id}-{n}" for n in range(2, n_files + 1)]
+        ids = ids[:n_files] if ids else [req.id]
+        ext = formats.FORMAT_EXTENSION.get(fmt, fmt)
+        directory = self._directory(req, fmt)
+        return [(vid, f"{directory}/{vid}.{ext}") for vid in ids]
+
+    def _mapped_library(self, req, item):
+        """Files a library.json maps to the requirement (by id, then role)."""
+        for entry in match_all(self.libraries, req):
+            verdict = self.policy.classify_license(entry.license)
+            if verdict.status not in ("verified", "generated"):
+                item.issue("library-candidate-rejected", "info",
+                           f"{req.id}: passed over {entry.qualified_id}: "
+                           f"{verdict.reason or entry.license + ' is restricted'}")
+                continue
+            if not any((entry.source_url, entry.author, entry.vendor, entry.evidence)):
+                item.issue("library-candidate-rejected", "info",
+                           f"{req.id}: passed over {entry.qualified_id}: no source, author, "
+                           f"vendor or evidence recorded")
+                continue
+            try:
+                found_files = entry.absolute_paths()
+                blobs = []
+                for relative, path in found_files:
+                    with open(path, "rb") as handle:
+                        blobs.append((relative, handle.read()))
+            except (OSError, LibraryError) as exc:
+                item.issue("library-candidate-rejected", "info",
+                           f"{req.id}: passed over {entry.qualified_id}: unreadable: {exc}")
+                continue
+            if not blobs:
+                continue
+            wanted = max(1, req.count)
+            if len(blobs) < wanted:
+                item.issue("variants-short", "warning",
+                           f"{req.id}: {entry.qualified_id} supplies {len(blobs)} of the "
+                           f"{wanted} drawings the design asks for")
+            blobs = blobs[:wanted]
+            checked, errors = [], []
+            for relative, data in blobs:
+                found, problems = validate_file(req.policy, relative, data, policy=self.policy)
+                bad = [m for _, sev, m in problems if sev == "error"]
+                if found is None or bad:
+                    errors.extend(bad or [f"{relative} is invalid"])
+                checked.append((data, found))
+            if errors:
+                item.issue("library-candidate-rejected", "info",
+                           f"{req.id}: passed over {entry.qualified_id}: "
+                           + "; ".join(errors[:4]))
+                continue
+            names = self._variant_paths(req, checked[0][1].format, len(checked))
+            stored = [self._store(path, data, found.format)
+                      for (vid, path), (data, found) in zip(names, checked)]
+            item.variants = [vid for vid, _ in names] if len(names) > 1 else []
+            origin = {"kind": "library", "library_id": entry.qualified_id}
+            for key in ORIGIN_KEYS:
+                if getattr(entry, key, None):
+                    origin[key] = getattr(entry, key)
+            item.data["source"] = "library"
+            item.data["origin"] = origin
+            item.data["placeholder"] = False
+            item.quality_author = f"library:{entry.qualified_id}"
+            verdict = self._license(item, entry.license, entry.usage_constraints)
+            self._check_clearance(item, verdict, origin)
+            self._record_files(item, stored)
+            item.data["optimization"] = self._optimization(req, stored)
+            item.data["status"] = "delivered"
+            self._log("library asset", asset=req.id, library_id=entry.qualified_id)
+            return True
+        return False
+
+    @staticmethod
+    def _authorable(req):
+        """A 2D kind that may be delivered as SVG, outside an atlas (atlases pack PNG)."""
+        return (req.dimension == "2d" and "svg" in req.policy.formats and not req.atlas
+                and not req.policy.companion)
+
+    def _judge_svg(self, req, relative, data):
+        """([problem], quality) of one SVG for `req`."""
+        found, file_problems = validate_file(req.policy, relative, data, policy=self.policy)
+        problems = [m for _, sev, m in file_problems if sev == "error"]
+        if found is None:
+            problems = problems or [f"{relative} is not an SVG document"]
+        elif found.format != "svg":
+            problems.append(f"{relative} is {found.format}, not SVG")
+        judged = quality_mod.svg_quality(
+            data, role=req.role, palette=self.palette, bars=self.bars,
+            spec_size=(req.width, req.height) if req.width and req.height else None,
+            primitive_style=self.primitive_style,
+            author=self.author.label if self.author else None)
+        return problems + quality_mod.problems(judged), judged
+
+    def _author_key(self, req, vid, n):
+        """What an authored file was made from: a changed description, palette, bar or
+        author re-asks; nothing else does."""
+        basis = {"id": req.id, "variant": vid, "n": n, "type": req.design_type or req.kind,
+                 "kind": req.kind, "role": req.role, "description": req.description,
+                 "readability": req.readability, "spec": req.spec, "count": req.count,
+                 "size": [req.width, req.height],
+                 "palette": [[t, list(c)] for t, c in self.palette],
+                 "primitive_style": self.primitive_style, "bars": self.bars.version,
+                 "author": self.author.label if self.author else None}
+        text = json.dumps(basis, sort_keys=True, separators=(",", ":"), default=str)
+        return "sha256:" + hashlib.sha256(text.encode("utf-8")).hexdigest()
+
+    def _ledger_entries(self):
+        if self._ledger is None:
+            self._ledger = {}
+            try:
+                raw = self.store.read(LEDGER_PATH)
+            except StoreError:
+                raw = None
+            if raw:
+                try:
+                    document = json.loads(raw.decode("utf-8"))
+                    if document.get("format") == LEDGER_FORMAT:
+                        self._ledger = dict(document.get("files") or {})
+                except (UnicodeDecodeError, ValueError, AttributeError):
+                    self._ledger = {}
+        return self._ledger
+
+    def _write_ledger(self):
+        if not self._ledger_dirty:
+            return
+        document = {"format": LEDGER_FORMAT, "version": 1, "files": self._ledger}
+        self.store.write(LEDGER_PATH, (json.dumps(document, indent=2, sort_keys=True)
+                                       + "\n").encode("utf-8"))
+
+    def _reusable(self, relative, key):
+        record = self._ledger_entries().get(relative)
+        if not isinstance(record, dict) or record.get("key") != key:
+            return None
+        try:
+            data = self.store.read(relative)
+        except StoreError:
+            return None
+        if data is None or file_hash(data) != record.get("hash"):
+            return None
+        return data
+
+    def _author_request(self, req, vid, n, relative, notes, repair):
+        identity = self.identity
+        request = {
+            "title_id": self.title_id,
+            "asset": {"id": req.id, "variant": vid, "variant_index": n,
+                      "count": req.count, "type": req.design_type or req.kind,
+                      "kind": req.kind, "role": req.role, "dimension": req.dimension,
+                      "tier": req.design_tier or req.scope_tier,
+                      "description": req.description or req.label,
+                      "readability": req.readability, "spec": req.spec,
+                      "width": req.width, "height": req.height,
+                      "transparency": req.policy.transparency},
+            "palette": [{"token": e.get("token"), "hex": e.get("hex"), "role": e.get("role")}
+                        for e in identity.get("palette") or [] if isinstance(e, dict)],
+            "visual_identity": {k: identity.get(k) for k in (
+                "concept", "shape_language", "texture", "avoid", "primitive_style")
+                if identity.get(k) is not None},
+            "quality_bars": self.bars.summary(req.role),
+            "format": "svg",
+            "destination": relative,
+        }
+        if notes:
+            request["notes"] = list(notes)
+        if repair:
+            request["repair"] = repair
+        return request
+
+    def _ask_author(self, req, vid, n, relative, notes):
+        """(bytes, quality, problems): the first file that passes, or None and why not."""
+        work = os.path.join(self.work_dir or tempfile.gettempdir(), "author")
+        repair, judged, problems = None, None, []
+        for round_ in range(self.author.repair_rounds + 1):
+            stem = f"{vid}-{round_}"
+            output = os.path.join(work, f"{stem}.svg")
+            request = self._author_request(req, vid, n, relative, notes, repair)
+            try:
+                data = self.author.write(request, output, work, stem)
+            except (AuthorRunFailed, AuthorError) as exc:
+                return None, judged, [str(exc)]
+            problems, judged = self._judge_svg(req, relative, data)
+            self._log("authored", asset=vid, round=round_, problems=len(problems))
+            if not problems:
+                return data, judged, []
+            kept = os.path.join(work, f"{stem}.rejected.svg")
+            os.replace(output, kept)
+            repair = {"round": round_ + 1, "problems": problems[:40], "previous": kept}
+        return None, judged, problems
+
+    def _authored(self, req, item):
+        ids = req.variant_ids() or [req.id]
+        notes = self.rebuild.get(req.id)
+        stored, judged_all = [], []
+        for n, vid in enumerate(ids, 1):
+            relative = f"{self._directory(req, 'svg')}/{vid}.svg"
+            key = self._author_key(req, vid, n)
+            data = None if notes else self._reusable(relative, key)
+            judged = None
+            if data is not None:
+                problems, judged = self._judge_svg(req, relative, data)
+                if problems:
+                    data = None
+            if data is None:
+                data, judged, problems = self._ask_author(req, vid, n, relative, notes)
+                if data is None:
+                    rounds = self.author.repair_rounds
+                    item.issue("author-rejected", "warning",
+                               f"{vid}: the author's file was not accepted after {rounds} "
+                               f"repair round(s): " + "; ".join(problems[:6]))
+                    return False
+            entry = self._store(relative, data, "svg")
+            stored.append(entry)
+            judged_all.append((vid, judged))
+            record = {"key": key, "hash": file_hash(entry.data), "author": self.author.label}
+            if self._ledger_entries().get(relative) != record:
+                self._ledger_entries()[relative] = record
+                self._ledger_dirty = True
+        item.variants = ids if len(ids) > 1 else []
+        item.data["source"] = "ai-generated"
+        item.data["origin"] = {"kind": "generated", "generator": self.author.label}
+        item.data["placeholder"] = False
+        item.quality_author = self.author.label
+        item.quality = _merge_quality(judged_all, self.author.label)
+        self._license(item, GENERATED_LICENSE)
+        self._record_files(item, stored)
+        item.data["optimization"] = self._optimization(req, stored)
+        item.data["status"] = "delivered"
+        if notes:
+            item.data["notes"] = " ".join(filter(None, [
+                item.data.get("notes"), f"Rebuilt for {len(notes)} finding(s)."]))
+        return True
+
+    def _model_authored(self, req, item):
+        """A 3D requirement through wgf_assets.model_author.produce_model."""
+        out_dir = os.path.join(self.work_dir or tempfile.gettempdir(), "models", req.id)
+        os.makedirs(out_dir, exist_ok=True)
+        requirement = {"id": req.id, "kind": req.kind, "type": req.design_type or req.kind,
+                       "role": req.role, "dimension": req.dimension,
+                       "description": req.description or req.label,
+                       "readability": req.readability, "spec": req.spec, "count": req.count,
+                       "tier": req.design_tier or req.scope_tier, "model": req.model,
+                       "notes": self.rebuild.get(req.id)}
+        try:
+            made = self.model_author(requirement, self.identity, out_dir, self.settings,
+                                     self.context)
+        except Exception as exc:  # ModelAuthorError, or a bug: never breaks the pipeline
+            label = "" if type(exc).__name__ == "ModelAuthorError" else \
+                f"{type(exc).__name__}: "
+            item.issue("generation-failed", "warning", f"{req.id}: model author: {label}{exc}")
+            return False
+        files = [f for f in (made or {}).get("files") or [] if isinstance(f, str)]
+        checked, errors = [], []
+        for path in files:
+            try:
+                with open(path, "rb") as handle:
+                    data = handle.read()
+            except OSError as exc:
+                errors.append(f"{path}: {exc}")
+                continue
+            found, problems = validate_file(req.policy, os.path.basename(path), data,
+                                            policy=self.policy)
+            bad = [m for _, sev, m in problems if sev == "error"]
+            if found is None or bad:
+                errors.extend(bad or [f"{os.path.basename(path)} is invalid"])
+            checked.append((data, found))
+        if errors or not checked:
+            item.issue("generation-failed", "warning",
+                       f"{req.id}: model author produced nothing usable: "
+                       + ("; ".join(errors[:4]) or "no files"))
+            return False
+        names = self._variant_paths(req, checked[0][1].format, len(checked))
+        stored = [self._store(path, data, found.format)
+                  for (vid, path), (data, found) in zip(names, checked)]
+        item.variants = [vid for vid, _ in names] if len(names) > 1 else []
+        source = made.get("source") if made.get("source") in SOURCES else "ai-generated"
+        generator = str(made.get("source") or "model-author")
+        item.data["source"] = source
+        item.data["origin"] = {"kind": "generated", "generator": generator}
+        item.data["placeholder"] = bool(made.get("placeholder"))
+        quality = made.get("quality")
+        if isinstance(quality, dict) and quality.get("verdict"):
+            item.quality = quality
+        item.quality_author = (quality or {}).get("author") if isinstance(quality, dict) \
+            else None
+        verdict = self._license(item, made.get("license") or GENERATED_LICENSE)
+        if verdict.status != "generated":
+            self._check_clearance(item, verdict, item.data["origin"],
+                                  placeholder=item.data["placeholder"])
+        self._record_files(item, stored)
+        item.data["optimization"] = self._optimization(req, stored)
+        if made.get("notes"):
+            item.data["notes"] = " ".join(filter(None, [item.data.get("notes"),
+                                                        str(made["notes"])]))
+        item.data["status"] = "in-progress" if item.data["placeholder"] else "delivered"
+        if item.data["placeholder"]:
+            item.issue("placeholder", "info",
+                       f"{req.id}: placeholder from the model author; the final asset is "
+                       f"still owed")
+        return True
+
+    # -- quality -------------------------------------------------------------------------
+
+    def _judge(self, item):
+        """Set item.data["quality"]; a failed verdict is an issue."""
+        data, req = item.data, item.req
+        if data["status"] in ("planned", "cut"):
+            return
+        generator = (data.get("origin") or {}).get("generator")
+        if item.quality is not None:
+            judged = item.quality
+        elif data.get("placeholder"):
+            judged = quality_mod.skipped(
+                "placeholder", "a placeholder is not judged; the final asset is still owed")
+        elif not item.payload:
+            judged = quality_mod.skipped(
+                f"builtin:{generator}" if generator else None,
+                "no file to judge" + (f": {data.get('reference')}" if data.get("reference")
+                                      else ""))
+        else:
+            author = item.quality_author or (f"builtin:{generator}" if generator else
+                                             (f"library:{data['origin'].get('library_id')}"
+                                              if (data.get("origin") or {}).get("library_id")
+                                              else "existing"))
+            files = self._image_files(item)
+            if not files:
+                fmt = data["files"][0]["format"] if data.get("files") else "?"
+                judged = quality_mod.skipped(author, f"no 2D quality check for {fmt}; "
+                                                     f"a GLB is judged by its model inspection")
+            else:
+                results = []
+                for vid, relative, blob, fmt in files:
+                    if fmt == "svg":
+                        results.append((vid, quality_mod.svg_quality(
+                            blob, role=req.role, palette=self.palette, bars=self.bars,
+                            spec_size=(req.width, req.height) if req.width and req.height
+                            else None, primitive_style=self.primitive_style, author=author)))
+                    else:
+                        results.append((vid, quality_mod.raster_quality(
+                            blob, needs_alpha=req.policy.transparency == "required",
+                            bars=self.bars, author=author)))
+                judged = _merge_quality(results, author)
+        data["quality"] = judged
+        if judged["verdict"] == "fail":
+            severity = "error" if req.scope_tier in LOAD_BEARING_TIERS else "warning"
+            item.issue("quality-failed", severity,
+                       f"{req.id}: " + "; ".join(quality_mod.problems(judged)[:4]))
+
+    def _image_files(self, item):
+        """[(runtime id, path, bytes, format)] of the SVG/PNG drawings of an item (not an
+        atlas descriptor)."""
+        out = []
+        ids = item.variants or [item.req.id]
+        drawings = [(p, b) for p, b in item.payload if not p.endswith(".json")]
+        for vid, (relative, blob) in zip(ids + [item.req.id] * len(drawings), drawings):
+            found = formats.sniff(blob)
+            if found is not None and found.format in ("svg", "png"):
+                out.append((vid, relative, blob, found.format))
+        return out
+
     # -- licence, provenance, files --------------------------------------------------------
 
     def _license(self, item, license_id, extra_constraints=()):
@@ -861,7 +1287,8 @@ class AssetPipeline:
         if data["status"] in ("planned", "cut"):
             return None
         entry = {"type": data["type"], "scale": req.scale if req.scale != 1 else None,
-                 "placeholder": True if data.get("placeholder") else None}
+                 "placeholder": True if data.get("placeholder") else None,
+                 "role": req.role}
         atlas = data.get("atlas")
         if atlas and atlas["id"] in packed:
             image = data["files"][0]
@@ -906,6 +1333,25 @@ class AssetPipeline:
             entry["frames"] = names
             entry["animations"] = self._animations(item, document, names)
         return entry, payload
+
+    def _variant_entries(self, item, entry):
+        """{variant id: (entry, payload)}: one runtime entry per drawing of a counted
+        requirement; the requirement's own entry is the first drawing and lists them."""
+        if not item.variants or "url" not in entry:
+            return {}
+        out = {}
+        files = item.data.get("files") or []
+        for vid, record, (relative, blob) in zip(item.variants, files, item.payload):
+            url = runtime.url_for(relative)
+            if url is None:
+                continue
+            variant = {k: v for k, v in entry.items()
+                       if k not in ("url", "width", "height", "variants", "model")}
+            variant.update({"url": url, "format": record["format"],
+                            "width": record.get("width"), "height": record.get("height")})
+            out[vid] = (variant, [(relative, blob)])
+        entry["variants"] = list(item.variants)
+        return out
 
     @staticmethod
     def _runtime_model(model):
@@ -981,3 +1427,29 @@ class AssetPipeline:
             self.store.remove(relative)
             self._log("pruned", path=relative)
         result.removed = list(self.store.removed)
+
+
+def _merge_quality(results, author):
+    """One `quality` object from [(drawing id, quality)]: the worst verdict, every check
+    (named by drawing when there are several), the fewest parts, the most colours."""
+    results = [(vid, q) for vid, q in results if q]
+    if not results:
+        return quality_mod.skipped(author, "nothing to judge")
+    if len(results) == 1:
+        merged = dict(results[0][1])
+        merged["author"] = author
+        return merged
+    checks = []
+    for vid, judged in results:
+        for check in judged["checks"]:
+            checks.append({"id": check["id"], "status": check["status"],
+                           "summary": f"{vid}: {check['summary']}"})
+    verdicts = {q["verdict"] for _v, q in results}
+    verdict = "fail" if "fail" in verdicts else ("pass" if "pass" in verdicts else "skipped")
+    parts = [q.get("parts") for _v, q in results if q.get("parts") is not None]
+    colours = [q.get("colors") for _v, q in results if q.get("colors") is not None]
+    prims = [q.get("primitive_only") for _v, q in results if q.get("primitive_only") is not None]
+    return {"verdict": verdict, "checks": checks,
+            "primitive_only": any(prims) if prims else None,
+            "parts": min(parts) if parts else None,
+            "colors": max(colours) if colours else None, "author": author}

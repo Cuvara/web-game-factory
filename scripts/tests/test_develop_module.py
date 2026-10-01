@@ -710,6 +710,12 @@ class Phases(DesignAndPlanInTheBrief):
         self.assertIn("Result screen `result`", text)
         self.assertIn("Retry, Menu", text)
         self.assertIn("production-art-and-ui.md", text)
+        # The playbooks distilled from the reference games, for this engine's dimension.
+        for path in ("core/craft/production-art-2d.md", "core/craft/game-ui-kit.md",
+                     "core/craft/juice.md", "core/craft/production-wiring.md"):
+            self.assertIn(f"`{path}`", text)
+            self.assertTrue(os.path.isfile(os.path.join(ROOT, path)), path)
+        self.assertNotIn("production-art-3d.md", text)
         self.assertNotIn("Primitives are expected here", text)
 
     def test_a_geometric_art_direction_may_draw_primitives(self):

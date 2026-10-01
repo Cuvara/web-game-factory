@@ -79,6 +79,19 @@ READABLE_ROLES = tuple((load_file(os.path.join(paths.REFERENCE, "visual-quality.
                         .get("entities") or {}).get("readable_roles") or ())
 # Where the bar for a finished game's art and UI is described.
 PRODUCTION_CRAFT = "core/craft/production-art-and-ui.md"
+# The playbooks distilled from the reference games, by what they serve: the art of the
+# engine's dimension, then the UI kit, the feel and the wiring every production build needs.
+PRODUCTION_ART_CRAFT = {"pixijs": "core/craft/production-art-2d.md",
+                        "phaserjs": "core/craft/production-art-2d.md",
+                        "threejs": "core/craft/production-art-3d.md"}
+PRODUCTION_CRAFT_SHARED = ("core/craft/game-ui-kit.md", "core/craft/juice.md",
+                           "core/craft/production-wiring.md")
+
+
+def production_craft(engine):
+    """The craft playbook paths a production build of `engine` is pointed at, in order."""
+    art = PRODUCTION_ART_CRAFT.get(engine)
+    return [PRODUCTION_CRAFT] + ([art] if art else []) + list(PRODUCTION_CRAFT_SHARED)
 
 # Paths a game may not edit. packages/ is the template's (fix the template instead);
 # game.config.yaml is written from the approved tech plan; the pipelines and release tooling
@@ -184,14 +197,17 @@ DEV_PLAN_PHASES = (None, "prototype")
 # any host. The other engine's area is never recommended.
 PLUGIN = "web-game-factory"
 DEFAULT_SKILLS = {
-    "pixijs": [f"{PLUGIN}:pixijs", "the official PixiJS skills"],
-    "phaserjs": [f"{PLUGIN}:phaser", "the Phaser Game Agent skill, for Phaser API knowledge "
+    "pixijs": [f"{PLUGIN}:pixijs", f"{PLUGIN}:production-art-2d",
+               "the official PixiJS skills"],
+    "phaserjs": [f"{PLUGIN}:phaser", f"{PLUGIN}:production-art-2d", "the Phaser Game Agent skill, for Phaser API knowledge "
                  "and its reusable games and blocks - read them, never let them write this "
                  "repository: they target their own project layout, not the template's"],
-    "threejs": [f"{PLUGIN}:threejs", "a Three.js game-development skill"],
-    "ui": [f"{PLUGIN}:onboarding-ux", "a frontend-design skill, for menus, HUD and screens"],
-    "craft": [f"{PLUGIN}:game-feel", f"{PLUGIN}:core-loop", f"{PLUGIN}:web-performance",
-              f"{PLUGIN}:audio"],
+    "threejs": [f"{PLUGIN}:threejs", f"{PLUGIN}:production-art-3d",
+                "a Three.js game-development skill"],
+    "ui": [f"{PLUGIN}:onboarding-ux", f"{PLUGIN}:game-ui-kit",
+           "a frontend-design skill, for menus, HUD and screens"],
+    "craft": [f"{PLUGIN}:game-feel", f"{PLUGIN}:juice", f"{PLUGIN}:core-loop",
+              f"{PLUGIN}:web-performance", f"{PLUGIN}:audio", f"{PLUGIN}:production-wiring"],
 }
 
 
@@ -611,7 +627,7 @@ def _package_rule(changes):
             "`scripts`, not any other field.")
 
 
-def _production_art_section(art):
+def _production_art_section(art, engine=None):
     """The production phase's art and UI contract, from the design's build_spec."""
     out = []
     add = out.append
@@ -622,7 +638,9 @@ def _production_art_section(art):
         "the asset the design names for it, and the interface is styled from the design's UI "
         "spec. The build is held to it from outside - the play probe's entities and the files "
         "the page fetched, measured screens, and a visual judge reading the frames. The craft "
-        f"behind it is `{PRODUCTION_CRAFT}` in the Factory.\n")
+        "behind it, distilled from the reference games and read before you draw or wire "
+        "anything, is in the Factory: "
+        + ", ".join(f"`{path}`" for path in production_craft(engine)) + ".\n")
     add("### Assets, by what they are to the player\n")
     add("Draw each with the runtime asset of that id (`public/assets/assets.json`), replacing "
         "the greybox primitive that stood for its role. The readability line is what the "
@@ -1033,7 +1051,7 @@ def render_markdown(brief):
     add("")
 
     if brief.get("phase") == "production" and brief.get("production_art"):
-        add(_production_art_section(brief["production_art"]))
+        add(_production_art_section(brief["production_art"], brief.get("engine")))
 
     add(_ownership_section(brief))
     add("## Integration seam (provided by the Factory - do not write or edit it)\n")
@@ -1196,8 +1214,8 @@ def render_markdown(brief):
         add("## Host skills\n")
         add("If your host offers these, use them - but where one assumes a project layout, "
             f"the template wins. `{PLUGIN}:` skills come from this Factory's own plugin, "
-            "which points at its craft playbooks (game feel, core loop, onboarding, "
-            "performance, audio):\n")
+            "which points at its craft playbooks (game feel and juice, core loop, onboarding "
+            "and the UI kit, production art, production wiring, performance, audio):\n")
         for area, names in brief["skills"].items():
             add(f"- {area}: " + ", ".join(names))
         add("")

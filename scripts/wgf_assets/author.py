@@ -35,7 +35,7 @@ import os
 from wgflib import agentenv, procs
 
 __all__ = ["CommandAuthor", "AuthorError", "AuthorRunFailed", "build_author", "KINDS",
-           "MAX_REPAIR_ROUNDS"]
+           "MAX_REPAIR_ROUNDS", "AUTHOR_CRAFT"]
 
 KINDS = ("none", "command")
 MAX_REPAIR_ROUNDS = 2
@@ -43,13 +43,17 @@ DEFAULTS = {"kind": "none", "argv": [], "timeout_seconds": 600, "idle_timeout_se
             "repair_rounds": MAX_REPAIR_ROUNDS}
 MAX_BYTES = 1024 * 1024
 
+# The craft playbooks (core/craft/) the request's `craft` names, in reading order.
+AUTHOR_CRAFT = ("production-art-2d.md", "production-art-and-ui.md")
+
 PROMPT = (
     "You are the 2D artist for this game. Read the request at {request}: one asset the "
     "design needs - its role, description, readability line and spec - with the game's "
     "palette and visual identity. Draw it as one self-contained SVG file at {output}: a "
     "root <svg> with a viewBox, built from several shapes so a first-time player recognises "
     "it at the stated size, using the palette's colours. No scripts, no embedded images, no "
-    "references to other files. Write only the file."
+    "references to other files. The craft guides are the request's `craft`: read them "
+    "first. Write only the file."
 )
 PROMPT_REPAIR = (
     " Your previous file (the request's `repair.previous`) was rejected for the reasons in "

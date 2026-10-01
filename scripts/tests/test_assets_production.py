@@ -333,6 +333,10 @@ class ReEntry(ProductionCase):
         self.assertEqual(sorted({c["asset"]["id"] for c in again}), ["badge", "tile"])
         tile_call = next(c for c in again if c["asset"]["id"] == "tile")
         self.assertIn("assets.present: tile-2 reads as a blob", tile_call["notes"])
+        # The artist is pointed at the 2D craft playbooks, which exist.
+        self.assertTrue(tile_call["craft"][0].endswith("production-art-2d.md"))
+        for path in tile_call["craft"]:
+            self.assertTrue(os.path.isfile(path), path)
         badge_call = next(c for c in again if c["asset"]["id"] == "badge")
         self.assertTrue(any("unreadable" in n for n in badge_call["notes"]))
         self.assertIn("Rebuilt", self.items(manifest)["tile"]["notes"])

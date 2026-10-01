@@ -56,7 +56,11 @@ line and the runtime asset id that draws it (the requirement's id, the key in
 bundled font files (`@font-face`, awaited before the first UI frame, `document.fonts.check`),
 sizes, touch targets, button fill/text/radius as palette tokens, the panel surface, result
 screens with Retry as the primary action, and the mobile layout. The craft behind it is
-`core/craft/production-art-and-ui.md`.
+`core/craft/production-art-and-ui.md`, followed by the playbooks distilled from the reference
+ports (`production_craft` in `brief.py`): `production-art-2d.md` for `pixijs` and `phaserjs`
+or `production-art-3d.md` for `threejs`, then `game-ui-kit.md`, `juice.md` and
+`production-wiring.md`. The asset and model author requests name theirs the same way, as
+`craft` (`docs/assets-module.md`).
 
 No `phase` (a workflow before 4) is the single develop phase it always was. An unknown phase
 fails the step.

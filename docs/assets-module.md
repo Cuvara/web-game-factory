@@ -154,7 +154,9 @@ placeholders: `{request}`, `{output}`, `{prompt}`. The request JSON carries the 
 (`id`, `variant`, `count`, `type`, `kind`, `role`, `dimension`, `tier`, `description`,
 `readability`, `spec`, `width`, `height`, `transparency`), the design's `palette` and
 `visual_identity` (concept, shape language, texture, avoid, primitive_style), the
-`quality_bars` it is held to, and its repository `destination`. The host writes one SVG at
+`quality_bars` it is held to, its repository `destination`, and `craft`: the absolute paths
+of the playbooks the drawing follows (`core/craft/production-art-2d.md`,
+`production-art-and-ui.md`; not part of the reuse key below). The host writes one SVG at
 `{output}`; the step validates it (format, unsafe constructs) and judges it
 ([Quality](#quality)). A file that fails is shown to the host with exactly those problems -
 `repair: {round, problems, previous}` - and asked again, `repair_rounds` times (default 2);
@@ -176,7 +178,8 @@ them asks again.
 visual_identity, out_dir, settings, context)`, which returns `{files, quality, source,
 license, placeholder, notes}` or raises `ModelAuthorError`. Its files are validated as any
 GLB (`gltf.py`) and its `quality` is recorded as given. Absent, or failing, 3D requirements
-fall back to placeholders. See [blender-pipeline.md](blender-pipeline.md).
+fall back to placeholders. See [blender-pipeline.md](blender-pipeline.md); its request
+carries `craft` too (`core/craft/production-art-3d.md`, `3d-assets-and-animation.md`).
 
 ## Quality
 

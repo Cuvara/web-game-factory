@@ -41,6 +41,22 @@ requirement was relaxed.
 
 ### Added
 
+- **Production craft distilled from the reference ports** (adapter binding 1.6.0). Five
+  provider-neutral playbooks carry what made the 2D and 3D reference games pass the
+  production gate, with their numbers and the files and frames each came from:
+  `core/craft/production-art-2d.md` (style kit, a silhouette per variant, layered SVG,
+  backgrounds, VFX, anchors, `library.json`), `production-art-3d.md` (part decomposition,
+  taper/bevel/mirror, materials and emissive, light rig, fog and sky, portrait camera),
+  `game-ui-kit.md` (fonts as assets and locale glyphs, contrast and target floors, buttons,
+  HUD, screens, portrait), `juice.md` (acknowledgement within 100 ms, drop, merge, combo,
+  shake, near-miss, crash, opening grace) and `production-wiring.md` (`assets.json` by id and
+  role, the probe's `asset`/`render`/`assets_loaded`, the art regression guard, self-checking
+  with frames). One new skill per playbook in both adapters; the playbooks are in the
+  `must_read` of the game-designer, gameplay, ui and asset agents, the reads of eight existing
+  skills, and the `new-game` surface's "production bar". The develop brief names the engine's
+  playbooks by path and recommends the new skills; the 2D and 3D author requests carry theirs
+  as `craft`. Nothing to bring forward: no schema, gate or artifact changed.
+
 - **Every design states its production art and UI** (game-design 1.6.0). Each built-in
   archetype gives every asset a `role`, `dimension` and `readability` line (player, threats,
   targets, environment/background, UI kit, icons, fonts as bundled OFL files), and every

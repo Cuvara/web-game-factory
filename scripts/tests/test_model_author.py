@@ -262,6 +262,7 @@ request = json.load(open(request_path))
 with open({log!r}, "a") as log:
     log.write(json.dumps({{"mode": mode, "asset": request["asset"],
                           "repair": request.get("repair"),
+                          "craft": request.get("craft"),
                           "palette": request["palette"]}}) + "\n")
 keeper = json.load(open({keeper!r}))
 box = {box!r}
@@ -334,6 +335,10 @@ class ModelAuthor(unittest.TestCase):
         self.assertIn("gloves", call["asset"]["readability"])
         self.assertEqual(call["palette"], LOOK["palette"])
         self.assertIsNone(call["repair"])
+        # The modeller is pointed at the 3D craft playbooks, which exist.
+        self.assertTrue(call["craft"][0].endswith("production-art-3d.md"))
+        for path in call["craft"]:
+            self.assertTrue(os.path.isfile(path), path)
 
     def test_a_single_box_fails_for_a_readable_role(self):
         with self.assertRaises(model_author.ModelAuthorError) as raised:

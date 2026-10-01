@@ -51,7 +51,8 @@ python -m unittest discover scripts/tests   # includes the acceptance tests belo
       EventBus ──► store (events.jsonl = structured log)
                └─► CLI progress, and later a UI / monitor / agent host
 
-  research → strategy → [G2] → design → tech-plan → [G3] → init → assets → develop → review → sdk → sdk-review → verify → [G4] → release
+  research → strategy → [G2] → design → tech-plan → [G3] → init → assets → develop → playability → review → sdk → sdk-review → verify → [G4] → release
+  (playability's fail, like verify's, routes back to develop)
                                                                              ▲ ▲ request-  │           request-  │       │ fail │ │ kill → $end
                                                                              │ ├─ changes ─┘           changes   │       │      │ │
                                                                              │ └─────────────────────────────────┘       │      │ │
@@ -801,7 +802,7 @@ Decide: wgf decide new-game-20260923-051421-470ce6 pass|iterate|kill [--note TEX
 
 A mock run approves its reversible gates (G2, G3) itself and stops at G4, which only a person
 decides. `wgf decide <run-id> pass` continues to `release` and completes; `iterate` loops
-develop → review → sdk → sdk-review → verify → G4; `kill` ends the run (exit `0`,
+develop → playability → review → sdk → sdk-review → verify → G4; `kill` ends the run (exit `0`,
 `Ended: kill at G4`).
 
 `--mock-plan` scripts outcomes per step execution (`success`, `pass`, `fail`, `failed`,

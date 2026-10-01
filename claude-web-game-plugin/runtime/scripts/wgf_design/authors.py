@@ -383,7 +383,7 @@ class ArchetypeAuthor(DesignAuthor):
         # 7. The build spec.
         spec = self._build_spec(a, look, engine, orientation, resolution, is_level, touchpoints,
                                 time_to_first_play, time_to_first_reward, run, target, audience,
-                                exclusions, features)
+                                exclusions, features, archetypes.EXPERIENCE[archetype_id])
 
         open_questions.insert(0, f"Archetype '{archetype_id}' was chosen because the {why_archetype}. "
                                  "Confirm at G3 that the loop is the one the strategy meant.")
@@ -438,8 +438,10 @@ class ArchetypeAuthor(DesignAuthor):
 
     def _build_spec(self, a, look, engine, orientation, resolution, is_level, touchpoints,
                     time_to_first_play, time_to_first_reward, run, target, audience, exclusions,
-                    features):
+                    features, ex):
         fail_state = "level-fail" if is_level else "fail"
+        # Decided first: whether keyboard bindings exist decides what the states may name.
+        no_desktop = exclusions.mentions("desktop", "keyboard")
         tiers = {f["id"]: f["tier"] for f in features}
         states = [
             {"id": "boot", "tier": "mvp", "initial": True,
@@ -452,7 +454,8 @@ class ArchetypeAuthor(DesignAuthor):
             {"id": "title", "tier": "mvp", "description": "Title, best score, play button.",
              "exits": [{"to": "play", "on": "Play pressed"}]},
             {"id": "play", "tier": "mvp", "description": "Gameplay with HUD.",
-             "exits": [{"to": "pause", "on": "Pause pressed, Esc, or tab hidden"},
+             "exits": [{"to": "pause", "on": "Pause pressed or tab hidden" if no_desktop
+                        else "Pause pressed, Esc, or tab hidden"},
                        {"to": fail_state, "on": a["failure_condition"]}]
                       + ([{"to": "level-complete", "on": "All goal counters reach zero"}] if is_level else [])},
             {"id": "pause", "tier": "mvp", "description": "Play frozen, audio paused, pause menu shown.",
@@ -469,7 +472,8 @@ class ArchetypeAuthor(DesignAuthor):
         states[2]["exits"].append({"to": "settings", "on": "Settings pressed"})
 
         rewarded = next((t for t in touchpoints if t["kind"] == "rewarded"), None)
-        hud = [dict(h) for h in a["hud"]]
+        hud = [dict(h, **({"metric": ex["hud_metrics"][h["id"]]} if h["id"] in ex["hud_metrics"] else {}))
+               for h in a["hud"]]
         used = {h["anchor"] for h in hud}
         pause_anchor = next(x for x in ("top-left", "top-right", "bottom-right") if x not in used)
         hud.append({"id": "pause-button", "tier": "mvp", "shows": "Pause button", "anchor": pause_anchor,
@@ -484,7 +488,9 @@ class ArchetypeAuthor(DesignAuthor):
              "actions": [{"label": "Play", "goes_to": "play"}],
              "layout": "Play button in the thumb zone of the lower third; best score directly above it."},
             {"id": "play", "tier": "mvp", "state": "play", "purpose": "Gameplay; only the HUD overlays it.",
-             "elements": [h["shows"] for h in hud if h["tier"] == "mvp"],
+             # A first session starts here, not at the title: the objective is on this screen.
+             "elements": [f"Objective line until the first success: {ex['goal']}"]
+                         + [h["shows"] for h in hud if h["tier"] == "mvp"],
              "actions": [{"label": "Pause", "goes_to": "pause"}],
              "layout": "HUD inside the safe area; nothing interactive in the play area except the game itself."},
             {"id": "pause", "tier": "mvp", "state": "pause", "purpose": "Stop without losing the run.",
@@ -530,7 +536,6 @@ class ArchetypeAuthor(DesignAuthor):
         actions = [dict(x) for x in a["actions"]]
         actions.append({"id": "pause", "action": "Pause", "tier": "mvp", "touch": "Pause button",
                         "mouse": "Pause button", "keyboard": "Esc or P", "gamepad": "Start"})
-        no_desktop = exclusions.mentions("desktop", "keyboard")
         if no_desktop:
             for action in actions:
                 action["keyboard"] = "Not bound: desktop-specific controls are out of scope (title strategy)"
@@ -638,7 +643,35 @@ class ArchetypeAuthor(DesignAuthor):
             "audio": audio,
             "responsive": responsive,
             "visual_identity": look,
+            "experience": self._experience(ex, actions, time_to_first_play, time_to_first_reward,
+                                           2 if is_level else 1),
         }
+
+    @staticmethod
+    def _experience(ex, actions, time_to_first_play, time_to_first_reward, time_to_retry):
+        """build_spec.experience from the archetype's contract and the session numbers."""
+        acknowledged = []
+        for action in actions:
+            if action["tier"] != "mvp":
+                continue
+            if action["id"] == "pause":
+                entry = {"visual": "Play freezes and the pause menu appears over it.",
+                         "audio": "UI tap"}
+            else:
+                entry = ex["actions"][action["id"]]
+            acknowledged.append(dict({"action": action["id"], "max_ack_ms": 100}, **entry))
+        experience = {
+            "goal": {"statement": ex["goal"], "metric": ex["goal_metric"], "shown_on": "play"},
+            "lose": dict(ex["lose"]),
+            "actions": acknowledged,
+            "onboarding": {"teaches": list(ex["teaches"]), "grace": dict(ex["grace"]),
+                           "reveals_answer": False},
+            "first_30s": {"first_frame_s": 2, "playable_s": time_to_first_play,
+                          "first_success_s": time_to_first_reward, "retry_s": time_to_retry},
+        }
+        if "win" in ex:
+            experience["win"] = dict(ex["win"])
+        return experience
 
 
 register_author(ArchetypeAuthor.name, ArchetypeAuthor)

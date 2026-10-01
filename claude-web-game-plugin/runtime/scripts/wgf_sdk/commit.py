@@ -108,9 +108,13 @@ class SdkGit(GitRepo):
     def owned_edits(self, head, trusted):
         """[(path, sha)] for each sdk-owned file whose last change at `head` is a commit the
         ledger does not record: work the next integration would erase. A file no commit has
-        touched yet is nobody's work."""
+        touched yet is nobody's work; nor is one absent at `head` - deleting it left nothing
+        to erase (init's pin commit removes the seam files a newer template branch had)."""
         edited = []
         for path in gameseam.SDK_OWNED_PATHS:
+            present, _ = self.call("cat-file", "-e", f"{head}:{path}")
+            if not present:
+                continue
             ok, out = self.call("log", "-n1", "--format=%H", head, "--", path)
             if not ok:
                 raise CommitRefused(f"cannot read the history of {path} at {head[:12]}")

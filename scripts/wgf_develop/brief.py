@@ -17,8 +17,9 @@ plan's prototype milestones and tasks, each with its acceptance criteria.
 """
 
 import json
+import os
 
-from wgflib import gameseam
+from wgflib import gameseam, paths
 from wgflib import template_contract as contract
 
 from wgf_verification.checks.gameplay import ASPECTS, required_aspects_for
@@ -62,7 +63,14 @@ REQUIRED_SYSTEMS = (
                           "desktop; resize is handled, nothing is cropped off-screen."),
     ("audio-hooks", "A small audio service in src/audio/ with named cues the game triggers; "
                     "muted by default until first input, silenced while paused (ads)."),
+    ("play-probe", "window.__wgf__.play.snapshot(), exactly as the Play probe section below "
+                   "specifies: state, the experience contract's metrics, on-screen entities "
+                   "with their drawn bounds, the inputs available now, and - only with "
+                   "wgf-probe=1 in the URL - the oracle. Read-only."),
 )
+
+# What the playability step reads from the running build (core/artifacts/shared/).
+PLAY_PROBE_SCHEMA = os.path.join(paths.ARTIFACTS, "shared", "play-probe.schema.json")
 
 # Paths a game may not edit. packages/ is the template's (fix the template instead);
 # game.config.yaml is written from the approved tech plan; the pipelines and release tooling
@@ -148,6 +156,9 @@ REPORT_CONTRACT = {
 # `sdk_touchpoints` belong to the sdk step (ground rule 4: no platform SDK work here), and
 # `assets` are delivered through the asset manifest, which the brief lists on its own.
 BUILD_SPEC_SECTIONS = (
+    # First: what a first-time player must be able to tell, and how fast. The rest of the
+    # spec is how; this is what the build is measured against from outside.
+    ("experience", "Player experience contract"),
     ("mechanics", "Mechanics"), ("controls", "Controls"), ("player_goals", "Player goals"),
     ("game_states", "Game states"), ("screens", "Screens"), ("hud", "HUD"),
     ("menus", "Menus"), ("tutorial", "Tutorial"), ("rewards", "Rewards"),
@@ -333,7 +344,8 @@ def select_dev_plan(tech_plan):
 def build_brief(*, title_id, engine, iteration, key, baseline, design, assets, scaffold,
                 strategy=None, qa=None, previous_checks=None, refs=None, skills=None,
                 review=None, mobile_test=True, tech_plan=None, self_playtest=False,
-                writable_paths=None, package_changes=None, loop=None, sessions=None):
+                writable_paths=None, package_changes=None, loop=None, sessions=None,
+                playability=None, frames_root=None):
     """The brief as data. `render_markdown` turns it into the document a developer reads."""
     refs = refs or {}
     writable_paths = list(DEFAULT_WRITABLE if writable_paths is None else writable_paths)
@@ -370,6 +382,20 @@ def build_brief(*, title_id, engine, iteration, key, baseline, design, assets, s
          if blocker.get(k) is not None}
         for blocker in (review or {}).get("blockers") or []
     ]
+    # A playability-report that failed the commit this visit starts from: what the bot saw,
+    # per failed check, with the frames that show it (absolute paths under frames_root, the
+    # run's directory, which the report's frame paths are relative to).
+    frame_paths = {(f.get("project"), f.get("id")): f.get("path")
+                   for f in (playability or {}).get("frames") or []}
+    playability_failures = [
+        {"check": c.get("id"), "project": c.get("project"), "summary": c.get("summary"),
+         "expected": c.get("expected"),
+         "frames": [os.path.join(frames_root, frame_paths[(c.get("project"), f)])
+                    if frames_root and frame_paths.get((c.get("project"), f)) else f
+                    for f in c.get("frames") or []]}
+        for c in (playability or {}).get("checks") or []
+        if c.get("required") and c.get("status") == "FAIL"
+    ]
     failures = [
         {"check": c.get("id"), "summary": c.get("summary"), "output_tail": c.get("output_tail")}
         for c in (previous_checks or {}).get("checks") or []
@@ -399,7 +425,7 @@ def build_brief(*, title_id, engine, iteration, key, baseline, design, assets, s
             for t, c in (("game-design", design), ("asset-manifest", assets),
                          ("scaffold-record", scaffold), ("title-strategy", strategy),
                          ("tech-plan", tech_plan), ("qa-report", qa),
-                         ("review-report", review))
+                         ("review-report", review), ("playability-report", playability))
             if c
         ],
         "design": {
@@ -448,6 +474,8 @@ def build_brief(*, title_id, engine, iteration, key, baseline, design, assets, s
         "writable_paths": list(writable_paths),
         "package_changes": {k: list(v) for k, v in package_changes.items() if v},
         "qa_defects": defects,
+        "playability_failures": playability_failures,
+        "played_commit": (playability or {}).get("commit") if playability_failures else None,
         "review_blockers": review_blockers,
         "reviewed_commit": (review or {}).get("reviewed_commit") if review_blockers else None,
         "previous_failures": failures,
@@ -657,6 +685,22 @@ def render_markdown(brief):
     for system in brief["required_systems"]:
         add(f"- **{system['id']}** - {system['acceptance']}")
     add("")
+
+    add("## Play probe (how the build is judged)\n")
+    add("The build is played from outside, not judged by its own tests: a bot drives it with "
+        "real pointer and key input, reads a snapshot before and after every input, and "
+        "renders frames to check a first-time player can see and follow it - the objective "
+        "on screen, no failure before the first success, every action visibly acknowledged, "
+        "a reachable win (or best) and loss, a restart, and the player, threats and goals "
+        "drawn large enough to read. Install `window.__wgf__.play = { snapshot() }` once "
+        "`window.__wgf__` exists, returning exactly this shape. Metric names are the "
+        "experience contract's (`build_spec.experience`, `hud[].metric`). Entity bounds are "
+        "where each thing is drawn now, in CSS px of the viewport (project 3D positions "
+        "through the camera). `oracle` is computed only when the page URL carries "
+        "`wgf-probe=1`; without it the field is absent, and nothing else changes. The probe "
+        "never changes the game, and the game never reads it.\n")
+    with open(PLAY_PROBE_SCHEMA, encoding="utf-8") as handle:
+        add("```json\n" + handle.read().rstrip() + "\n```\n")
 
     add("## MVP (build exactly this)\n")
     add(_bullets(brief["mvp"]))
@@ -886,7 +930,7 @@ def render_markdown(brief):
                     f"guess - re-check the build against this brief, fix only what you can "
                     f"show is wrong, and say in `known_issues` that no reason was given.")
         elif brief.get("qa_defects") or brief.get("review_blockers") or \
-                brief.get("previous_failures"):
+                brief.get("previous_failures") or brief.get("playability_failures"):
             add("Fix what sent it back first (below); a pass that does not fix it is one "
                 "fewer left.")
         else:
@@ -905,6 +949,25 @@ def render_markdown(brief):
         for defect in brief["qa_defects"]:
             add(f"- `{defect.get('id')}` ({defect.get('severity')}): {defect.get('summary')}"
                 + (f" Repro: {defect['repro']}" if defect.get("repro") else ""))
+        add("")
+
+    if brief.get("playability_failures"):
+        add("## Fix first: what the build did when it was played\n")
+        add(f"The playability step built `{(brief.get('played_commit') or '')[:12]}` and "
+            "played it from outside, as a first-time player's device would: a bot reading "
+            "the play probe (*Play probe*, above) and acting only through real pointer, touch "
+            "and key input, on a desktop and a mobile viewport. These checks failed. Each is "
+            "measured against the experience contract or core/reference/visual-quality.yaml, "
+            "and the next build is played the same way: fix what the player sees, not the "
+            "probe's report of it. A probe that misreports the game is itself a defect. "
+            "Where a frame is named, look at it.\n")
+        for failure in brief["playability_failures"]:
+            line = f"- `{failure['check']}` ({failure.get('project')}): {failure.get('summary')}"
+            if failure.get("expected") is not None:
+                line += f" Expected: {_inline(failure['expected'])}."
+            if failure.get("frames"):
+                line += " Frames: " + ", ".join(f"`{f}`" for f in failure["frames"])
+            add(line)
         add("")
 
     if brief.get("review_blockers"):

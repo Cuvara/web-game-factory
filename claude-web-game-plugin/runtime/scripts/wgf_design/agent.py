@@ -27,7 +27,12 @@ developer and the reviewer do: nothing of the Factory's own environment beyond t
 allowlist and `factory.agents.env_passthrough` (where the host's credential is named).
 
 Outcomes: a draft whose shape is wrong (not JSON, a missing section) is an `AuthorError` -
-not retryable, the same draft would come back. A host that fails, times out or goes silent
+not retryable, the same draft would come back. A draft that is well-shaped but makes an
+invalid design - a value the game-design schema does not allow, a state machine buildability
+refuses - is shown to the agent with exactly those problems and the previous draft, and
+asked again (the design step's `MAX_REPAIR_ROUNDS`); every round is judged like the first,
+and one still invalid after the last fails the step, not retryably. The request names the
+schema (`schema`) so the agent can keep to it in the first place. A host that fails, times out or goes silent
 raises `AgentRunFailed`, which the engine retries like any other transient failure. Not
 configured is an `AuthorError`.
 """
@@ -35,7 +40,7 @@ configured is an `AuthorError`.
 import json
 import os
 
-from wgflib import agentenv, procs
+from wgflib import agentenv, paths, procs
 
 from .authors import ArchetypeAuthor, AuthorError, DesignAuthor, register_author
 
@@ -49,7 +54,7 @@ REQUIRED_KEYS = ("fantasy", "core_loop", "pillars", "engine", "features", "scope
 BUILD_SPEC_KEYS = ("mechanics", "controls", "player_goals", "progression", "difficulty",
                    "game_states", "screens", "hud", "menus", "tutorial", "rewards", "failure",
                    "session_flow", "monetization_touchpoints", "assets", "audio", "responsive",
-                   "visual_identity")
+                   "visual_identity", "experience")
 
 PROMPT = (
     "You are the game designer for this title. Read the request at {request}: the approved "
@@ -74,6 +79,25 @@ PROMPT_BRIEF = (
     " The strategy carries the person's game idea as `brief` (also the request's `brief`): "
     "design the game it describes - its mechanic, fantasy, controls and dimension - and "
     "treat the starting draft as a schema-shaped starting point, not as the game."
+)
+# Appended always: what the module checks the draft against, so the agent is not left to
+# discover the consistency rules by failing them. It changes no rule.
+PROMPT_CONCEPT = (
+    " The module then holds the draft to the strategy's `concept`: every mechanic its "
+    "core_mechanic and core_loop state must appear in your core_loop, MVP features or MVP "
+    "controls, and you may add no mechanic the strategy does not state."
+)
+
+# Appended always: the finished design is a game-design artifact, validated against its schema.
+PROMPT_SCHEMA = (
+    " The finished design is validated against the JSON Schema the request names as `schema`:"
+    " use only the enum values it allows, and keep every key it requires."
+)
+# Appended when the step asks again: the previous draft and exactly what made it invalid.
+PROMPT_REPAIR = (
+    " Your previous draft (the request's `repair.previous_draft`) was invalid for the reasons"
+    " in `repair.problems`. Return the complete draft again with exactly those fixed and"
+    " nothing else changed."
 )
 
 DEFAULTS = {"argv": [], "timeout_seconds": 1800, "idle_timeout_seconds": 600,
@@ -127,6 +151,8 @@ def check_shape(draft):
 class AgentAuthor(DesignAuthor):
     name = "agent"
     actor = "ai"
+    # The design step shows it what made its draft invalid and asks again (step.py).
+    repairs = True
 
     def draft(self, brief):
         settings = dict(DEFAULTS)
@@ -142,7 +168,9 @@ class AgentAuthor(DesignAuthor):
             raise AuthorError("the design step gave the agent author no run directory")
 
         directory = os.path.join(run_dir, "design")
-        stem = f"{brief.get('visit', 1)}-{brief.get('attempt', 1)}"
+        repair = brief.get("repair") or {}
+        stem = f"{brief.get('visit', 1)}-{brief.get('attempt', 1)}" + (
+            f"-repair{repair['round']}" if repair else "")
         request_path = os.path.join(directory, f"{stem}.request.json")
         draft_path = os.path.join(directory, f"{stem}.draft.json")
         log_path = os.path.join(directory, f"{stem}.log")
@@ -160,9 +188,15 @@ class AgentAuthor(DesignAuthor):
                                   "profile": p.profile} for p in brief.get("platforms") or []],
                    "starting_draft": starting,
                    "required_keys": list(REQUIRED_KEYS),
-                   "required_build_spec_keys": list(BUILD_SPEC_KEYS)}
+                   "required_build_spec_keys": list(BUILD_SPEC_KEYS),
+                   # What the finished design is validated against: every enum value and
+                   # required key. Shared definitions are beside it, under shared/.
+                   "schema": os.path.join(paths.ARTIFACTS, "game-design.schema.json")}
         if idea:
             request["brief"] = idea
+        if repair:
+            request["repair"] = {"problems": repair.get("problems") or [],
+                                 "previous_draft": repair.get("previous_draft")}
         with open(request_path, "w", encoding="utf-8", newline="\n") as handle:
             json.dump(request, handle, indent=2, ensure_ascii=False, default=str)
 
@@ -175,6 +209,9 @@ class AgentAuthor(DesignAuthor):
         values["prompt"] = (PROMPT_STDOUT if stdout_mode else PROMPT).format(**values)
         if idea:
             values["prompt"] += PROMPT_BRIEF
+        values["prompt"] += PROMPT_CONCEPT + PROMPT_SCHEMA
+        if repair:
+            values["prompt"] += PROMPT_REPAIR
         try:
             command = [part.format(**values) for part in argv]
         except (KeyError, IndexError, ValueError) as exc:

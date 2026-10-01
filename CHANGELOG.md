@@ -9,6 +9,107 @@ and `core/` is still the contract.
 
 ## [Unreleased]
 
+What a real `/web-game-factory:new-game "<idea>"` dogfood run of 2.5.0 found, with the idea "I
+want to make a 3D battle royal game but it's human versus computer, with the goal being the
+goalkeeper": every defect below stopped it or lost the idea. No gate, rule or evidence
+requirement was relaxed.
+
+### Fixed
+
+- **An idea no catalog concept carries was silently replaced.** Research carried the nearest
+  buildable shape forward (an endless runner for the goalkeeper idea), so strategy and design
+  were held to a different game. Research now waits for input instead
+  (`discovery.idea_fallback: wait`, default; `nearest` keeps the old behaviour on purpose),
+  and reads a project `workspace/research/concepts.yaml`: concepts authored for the run's
+  exact brief, in the catalog's shape, with `design_archetype` (`agent` when only an agent
+  design author can design it); their figures are hypothesis claims, plus one claim saying
+  the concept was authored for the brief. `core/lifecycle/stages/market-scan.md`.
+- **Nothing in a `/new-game` run supplied research's input.** A fresh project waited at research
+  with no evidence, and core never specified the snapshot format. `core/craft/research-evidence.md`
+  specifies it (the fields the discovery step enforces; evidence is fetched, never written)
+  and the concept file; both `new-game` surfaces hand a research input wait to the research
+  role, then resume. Read by the research agent and the market-intelligence skill.
+- **Research accepted `priors` it could not read** - a note where the six prior dimensions go -
+  scoring them as nothing and turning the note into claim text. Malformed priors are now
+  refused, for the catalog and project concepts alike.
+- **The design agent was never shown the schema its draft must satisfy, nor its errors.** Its
+  draft used enum values the game-design schema does not allow; the engine's contract check
+  caught it after the step and the retry repeated the mistakes. The design step now
+  validates the composed artifact against its contract itself, and shows an agent author the
+  exact problems and its previous draft for up to two repair rounds; every round is judged
+  like the first. The request names the schema.
+
+### Added
+
+- **The player-experience contract** (`game-design` 1.5.0, additive): `build_spec.experience`
+  states what a first-time player must be able to tell, and how fast - the objective and the
+  screen that shows it, how play is lost (and won), how every MVP action is acknowledged, what
+  the first session teaches and its grace before failure, and the first-30-seconds budget -
+  and `hud[].metric` names what each HUD element shows. The design step requires it of every
+  design it produces and holds it, by reference and number, to the new
+  `core/reference/experience-rules.yaml` (first frame <= 2 s, playable <= 10 s, first success
+  <= 30 s, retry <= 3 s, acknowledgement <= 100 ms, grace >= 10 s) and to the rest of the
+  build_spec (`scripts/wgf_design/experience.py`): every metric the objective, win, lose and
+  actions rely on is on the HUD; every action is acknowledged and taught; the budget matches
+  the session and failure numbers; a key the design names is bound; an onboarding that shows
+  the answer cannot stand beside a strategy that must prove understanding without
+  instruction. An agent author is shown the problems to repair; the built-in archetypes state
+  a contract that holds, and the play screen now carries the objective, since a first session
+  starts there. The developer brief carries the contract first. Found by playtesting a real
+  run's game, which lost by itself 2.8 s after play began and never stated its goal;
+  `test_design_experience` holds the checks against that run's design.
+
+- **The play probe** (`core/artifacts/shared/play-probe.schema.json`): what a built game reports
+  about itself so it can be played and judged from outside - `window.__wgf__.play.snapshot()`
+  returns the session state, the experience contract's metrics, the entities on screen with
+  their drawn bounds, the inputs available now, and, only with `wgf-probe=1` in the URL, the
+  input that succeeds now. Read-only. A new required system in the developer brief, which
+  embeds the schema verbatim and says how the build is judged.
+
+- **The playability step** (`new-game` workflow 3; `scripts/wgf_playability/`,
+  [docs/playability-module.md](docs/playability-module.md)): between develop and review, a bot
+  clones develop's commit, builds it and plays it from outside through the play probe with
+  real pointer, touch and key input, on a desktop and a mobile viewport. It holds what it sees
+  to the experience contract and to the new `core/reference/visual-quality.yaml`:
+  - the objective is on screen;
+  - there is no loss with no input inside the grace;
+  - every action visibly changes the frame;
+  - good play wins (or raises the objective) and bad play loses;
+  - the retry works;
+  - what must be seen is drawn large enough;
+  - a projectile is seen in flight;
+  - frames are lit.
+
+  The new `playability-report` artifact records every check, measurement and frame. A failure
+  routes back to develop, whose brief leads with what the bot saw and the frames that show it
+  (budget `playability.fail: 2`). The real run's game fails 11 checks across both viewports;
+  both golden ports pass every check. Automation evidence (`measurement_class:
+  automation-bot`), never a first-time-player measure.
+- `play-probe`: an optional `hold_ms` on an input, for a control that acts while held.
+- The golden ports (template `golden_ports` 1c5afcb) implement the play probe and show their
+  objective. Neon Drift Arena's gains an opening grace: walls pass through the craft until
+  the player first steers.
+
+### Changed
+
+- develop's verify loop budget is keyed `verify.fail` (was `fail`), since `playability`'s
+  `fail` now enters develop too; each route keeps its own two passes. develop's `max_visits`
+  is 11.
+
+### Fixed
+
+- **sdk refused seam files it had nothing to erase in.** GitHub generated the dogfood run's
+  repository from the template's newer default branch; init's pin commit deleted the seam
+  files that branch had, to hold the pinned tree, and the sdk step then blocked because the
+  last change to its files was not its own - though a file absent at HEAD holds no work.
+  Absent files are no longer counted (`wgf_sdk/commit.py` `owned_edits`).
+- The archetype states named "Esc" for pause even when keyboard bindings were out of scope.
+
+### Changed
+
+- The autonomous profile configures the agent design author (`design.author: agent`, the
+  shipped commented argv verbatim), needed for an idea no design archetype carries.
+
 ## [2.5.0] - 2026-09-30
 
 Two changes to `/web-game-factory:new-game` (`docs/v2.5-release.md`).

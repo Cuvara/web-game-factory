@@ -13,6 +13,7 @@ Invoked from `AGENTS.md` or by the matching `/wgf-*` prompt.
 5. `core/artifacts/research-report.schema.json`
 6. `core/reference/dimensions.yaml`
 7. `core/craft/competitive-teardown.md`
+8. `core/craft/research-evidence.md`
 
 Core is authoritative. Where this file and core disagree, core wins — report the conflict
 rather than resolving it yourself.

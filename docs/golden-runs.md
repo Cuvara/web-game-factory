@@ -15,7 +15,7 @@ Factory is renderer-agnostic.
 
 ```
 research -> strategy -> G2 -> design -> tech-plan -> G3 -> init -> assets
-         -> develop -> review -> sdk -> sdk-review -> verify -> G4 -> release
+         -> develop -> playability -> review -> sdk -> sdk-review -> verify -> G4 -> release
 ```
 
 G2 and G3 are auto-approved (reversible; configured below). G4 is irreversible, so the run
@@ -23,7 +23,11 @@ stops there `WAITING`; the harness answers it `pass` through the API `wgf decide
 with `decided_by` left to `default_decider()` - `human`, because the person running the
 golden run is outside every step's process tree - and resumes. Its note says it is the
 harness operator's pass of a known-good port (`harness.G4_NOTE`). `games.EXPECTED_STEPS`
-lists all 15 steps, `prototype-review` and `sdk-review` included. The golden reviewer
+lists all 16 steps, `playability`, `prototype-review` and `sdk-review` included.
+`playability` plays each port from outside through its play probe
+(`examples/*/wgf-golden/src/game/play-probe.ts` at the lock's `golden_ports` commit) and
+holds it to the design's experience contract ([playability-module.md](playability-module.md)):
+a port that cannot be played from outside fails the golden run. The golden reviewer
 reviews both commits - develop's (`review`) and the sdk integration commit on top of it
 (`sdk-review`), which is the one verified and released - and the golden configuration never
 sets `release.allow_unreviewed`: a golden run releases only a commit the reviewer approved

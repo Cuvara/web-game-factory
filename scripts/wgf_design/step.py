@@ -26,8 +26,9 @@ import re
 
 from wgflib import provenance
 from wgflib.workflow import ArtifactOutput, StepResult, WorkflowStep
+from wgflib.workflow.contracts import ArtifactContracts
 
-from . import consistency
+from . import consistency, experience
 from .authors import AUTHORS, AuthorError, resolve_author
 from .compose import buildability, finalize
 from .platforms import PlatformError, load_platforms
@@ -38,6 +39,10 @@ SCHEMA_VERSION = provenance.version_of("game-design")
 ROLE = "game-designer"
 READS_STRATEGY_MAJOR = "1"
 DEFAULT_AUTHOR = "archetype"
+# How often an author that can repair its draft (the `agent` author) is shown what made the
+# composed design invalid - the game-design schema and the buildability check - and asked
+# again, before the step fails. Each round is one more author session.
+MAX_REPAIR_ROUNDS = 2
 
 
 def utc_now():
@@ -59,6 +64,7 @@ class DesignStep(WorkflowStep):
     clock = staticmethod(utc_now)
     platforms_dir = None
     rules = None
+    experience_rules = None
 
     def execute(self, inputs, context):
         if "title-strategy" in inputs.missing:
@@ -94,34 +100,48 @@ class DesignStep(WorkflowStep):
                  "attempt": getattr(context, "attempt", 1)}
         try:
             author = resolve_author(author_name)
-            draft = author.draft(brief)
         except AuthorError as exc:
             return StepResult.failed(f"design author {author_name!r}: {exc}", retryable=False)
-
-        design = finalize(draft, platforms, title_id)
-        if strategy.get("brief"):
-            # The person's idea, carried from the strategy: the design is derived from it,
-            # whatever the author wrote.
-            design["brief"] = strategy["brief"]
-            named = _brief_dimension(strategy["brief"])
-            built = (design.get("engine") or {}).get("dimension")
-            if named and built and named != built:
-                design.setdefault("open_questions", []).append(
-                    f"The brief names {named}; this design is {built}, the dimension of the "
-                    f"buildable concept research selected. Realising the brief in {named} is "
-                    f"a design change: an agent author, or a new concept, not this draft.")
-        problems = buildability(design)
-        if problems:
-            context.logger.error("design is not buildable", problems=problems)
-            return StepResult.failed(
-                f"design is not buildable without guessing ({len(problems)} problem(s)): "
-                + "; ".join(problems[:5]), retryable=False)
-
-        now = self.clock()
-        block, blocking, warnings = consistency.evaluate(design, strategy, platforms, now, self.rules)
-        design["consistency"] = block
-        artifact = self._with_provenance(design, strategy, ref, title_id, now, context,
-                                         getattr(author, "actor", "automation"))
+        contracts = ArtifactContracts()
+        for repair_round in range(MAX_REPAIR_ROUNDS + 1):
+            try:
+                draft = author.draft(brief)
+            except AuthorError as exc:
+                return StepResult.failed(f"design author {author_name!r}: {exc}",
+                                         retryable=False)
+            outcome = self._compose(draft, platforms, title_id, strategy, ref, context, author,
+                                    contracts)
+            problems = outcome["problems"]
+            if not problems:
+                break
+            if not getattr(author, "repairs", False) or repair_round == MAX_REPAIR_ROUNDS:
+                after = f" after {repair_round} repair round(s)" if repair_round else ""
+                if outcome["unbuildable"]:
+                    context.logger.error("design is not buildable", problems=problems,
+                                         repair_rounds=repair_round)
+                    return StepResult.failed(
+                        f"design is not buildable without guessing{after} "
+                        f"({len(problems)} problem(s)): " + "; ".join(problems[:5]),
+                        retryable=False)
+                if outcome["experience"]:
+                    context.logger.error("the design's experience contract does not hold",
+                                         problems=problems, repair_rounds=repair_round)
+                    return StepResult.failed(
+                        f"the design's experience contract does not hold{after} "
+                        f"({len(problems)} problem(s)): " + "; ".join(problems[:6]),
+                        retryable=False)
+                context.logger.error("design is not a valid game-design", problems=problems[:20],
+                                     repair_rounds=repair_round)
+                return StepResult.failed(
+                    f"design is not a valid game-design{after} ({len(problems)} problem(s)): "
+                    + "; ".join(problems[:6]), retryable=False)
+            context.logger.warning("design draft is invalid; asking the author to repair it",
+                                   problems=problems[:20], repair_round=repair_round + 1)
+            brief = dict(brief, repair={"round": repair_round + 1, "problems": problems[:60],
+                                        "previous_draft": draft})
+        design, artifact, block, blocking, warnings = (
+            outcome["design"], outcome["artifact"], outcome["block"], outcome["blocking"],
+            outcome["warnings"])
 
         engine = design["engine"]["type"]
         mvp = sum(1 for f in design["features"] if f["tier"] == "mvp")
@@ -139,6 +159,43 @@ class DesignStep(WorkflowStep):
         return StepResult.success(
             [output], message=f"{engine} design, {mvp} mvp features, consistency {block['status']}"
                               + (f", {len(warnings)} warning(s) for G3" if warnings else ""))
+
+    def _compose(self, draft, platforms, title_id, strategy, ref, context, author, contracts):
+        """The draft finalized into the game-design artifact, and what makes it invalid: the
+        buildability check, then - only when that passes - the artifact's own schema."""
+        design = finalize(draft, platforms, title_id)
+        if strategy.get("brief"):
+            # The person's idea, carried from the strategy: the design is derived from it,
+            # whatever the author wrote.
+            design["brief"] = strategy["brief"]
+            named = _brief_dimension(strategy["brief"])
+            built = (design.get("engine") or {}).get("dimension")
+            if named and built and named != built:
+                design.setdefault("open_questions", []).append(
+                    f"The brief names {named}; this design is {built}, the dimension of the "
+                    f"buildable concept research selected. Realising the brief in {named} is "
+                    f"a design change: an agent author, or a new concept, not this draft.")
+        outcome = {"design": design, "artifact": None, "block": None, "blocking": None,
+                   "warnings": None, "problems": [], "unbuildable": False,
+                   "experience": False}
+        problems = buildability(design)
+        if problems:
+            outcome.update(problems=problems, unbuildable=True)
+            return outcome
+        # What a first-time player must be able to tell: held by reference and number.
+        problems = experience.check(design, strategy, self.experience_rules)
+        if problems:
+            outcome.update(problems=problems, experience=True)
+            return outcome
+        now = self.clock()
+        block, blocking, warnings = consistency.evaluate(design, strategy, platforms, now,
+                                                         self.rules)
+        design["consistency"] = block
+        artifact = self._with_provenance(design, strategy, ref, title_id, now, context,
+                                         getattr(author, "actor", "automation"))
+        outcome.update(artifact=artifact, block=block, blocking=blocking, warnings=warnings,
+                       problems=list(contracts("game-design", artifact)))
+        return outcome
 
     def _with_provenance(self, design, strategy, ref, title_id, now, context, actor):
         pinned = provenance.pin("title-strategy", strategy, ref.content_hash)

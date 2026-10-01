@@ -7,3 +7,5 @@ data and must never be copied into `workspace/research/`.
 - `corpus/snapshots/` - three evidence snapshots (platform docs and a category listing)
 - `corpus/probes.yaml` - live probes, answered by the test's fake fetcher
 - `backlog/` - one rejected opportunity, to exercise deduplication
+- `concepts/concepts.yaml` - a project concepts file with one concept authored for the brief
+  `scripts/tests/test_game_idea.py` runs with

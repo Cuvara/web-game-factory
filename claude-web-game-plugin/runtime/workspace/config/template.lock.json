@@ -6,8 +6,8 @@
   "ref": "v1.2.0",
   "validated_on": "2026-09-28",
   "golden_ports": {
-    "about": "Test fixtures only, never a revision a game is created from: the golden runs' replay developer (scripts/golden/replay_developer.py) reads its hand-made ports (examples/*/wgf-golden/, examples/wgf-golden-shared/) from a checkout of this commit, because the pinned release above does not ship them. It is the template's main at the merge of those ports onto the release; outside them - and one tsconfig exclude for them - its tree is the release's.",
-    "commit": "ea466d77f611649a2ebe96dbfeecbe14deb50313",
-    "ref": "main"
+    "about": "Test fixtures only, never a revision a game is created from: the golden runs' replay developer (scripts/golden/replay_developer.py) reads its hand-made ports (examples/*/wgf-golden/, examples/wgf-golden-shared/) from a checkout of this commit, because the pinned release above does not ship them. It is the template's main at the merge of those ports onto the release (ea466d7), plus the ports' play probe and on-screen objective, which the playability step plays them through; outside the ports - and one tsconfig exclude for them - its tree is the release's.",
+    "commit": "1c5afcbe89a81f447517c85ee33fa5bcbd930569",
+    "ref": "wgf-golden-play-probe"
   }
 }

@@ -1,0 +1,1601 @@
+{
+  "provenance": {
+    "artifact_id": "wgf:game-design:goalkeeper-royale:20261001-04",
+    "artifact_type": "game-design",
+    "schema_version": "1.4.0",
+    "opportunity_id": "opp-0246b8d7",
+    "title_id": "goalkeeper-royale",
+    "produced_by": {
+      "role": "game-designer",
+      "actor": "ai"
+    },
+    "produced_at": "2026-10-01T05:05:01Z",
+    "inputs": [
+      {
+        "artifact_id": "wgf:title-strategy:goalkeeper-royale:20261001-02",
+        "artifact_type": "title-strategy",
+        "content_hash": "sha256:b52a5fe435b65651bf187da007ee3373b5e126029ca933747d6545cf1e131ed5"
+      }
+    ],
+    "content_hash": "sha256:d5d179d7ffb22cda5b157d20820dfec12e6ea37f8c7ab3c16d5781f3ab21a7db",
+    "status": "draft"
+  },
+  "fantasy": "Alone between the posts, you are the last line no attacker can get past — read the windup, pick your side, and keep the clean sheet alive.",
+  "core_loop": "A round starts with 3 lives -> the AI attacker steps up and winds up a shot from a changing angle, distance and speed, the windup growing shorter as the round goes on -> the player reads the windup and taps the left, centre or right zone to dive -> a correctly timed dive is a save that extends the streak and nudges the next shot harder; a missed or late dive is a concede that resets the streak and costs a life -> the round ends when the player saves the round's shot target (win) or lives hit zero (loss) -> the result card shows the streak, save accuracy and personal best, and the player retries the same round or advances to the next, harder round built from the same tuned shot data, not new content.",
+  "pillars": [
+    "The windup always tells the truth: every shot is readable before it arrives",
+    "Every concede is a late or wrong read, never bad luck",
+    "Back between the posts within one second of a concede"
+  ],
+  "engine": {
+    "type": "threejs",
+    "dimension": "3d",
+    "rationale": "Depth is part of the read: the attacker's run-up, the windup lean and the ball's closing speed and angle are only legible from a 3D goal-mouth camera. Three.js with low-poly procedural geometry and vertex colours keeps the load budget close to a 2D title; textures and PBR materials are deliberately excluded.",
+    "design_resolution": {
+      "width": 1280,
+      "height": 720
+    },
+    "camera": "Behind-the-goal chase camera at keeper eye height, framing the attacker's run-up and the full goal mouth; no player camera control."
+  },
+  "features": [
+    {
+      "id": "goalkeeper-dive",
+      "name": "Goalkeeper dive control",
+      "tier": "mvp",
+      "description": "A single tap control: the player taps the left, centre or right zone over the goal mouth to dive or move the keeper there, timed against the attacker's windup.",
+      "acceptance": [
+        "Tapping a zone commits the keeper to a dive toward that zone within the shot's reaction window.",
+        "The keeper cannot change zone once committed; one tap resolves one shot.",
+        "Strategy MVP: A single tap control: the player moves, dives and blocks to deny every shot."
+      ]
+    },
+    {
+      "id": "ai-shot",
+      "name": "AI attacker and shot variety",
+      "tier": "mvp",
+      "description": "One computer-controlled attacker occupies the shooting spot and fires at goal from varying angles, distances and speeds, telegraphed by a windup whose duration shrinks as difficulty rises.",
+      "acceptance": [
+        "Each shot's windup visibly leans toward the side the ball will go before the ball is kicked.",
+        "Shot speed, angle offset from centre and windup duration are drawn from the current difficulty step's data, not hand-placed per shot.",
+        "Only one attacker and one ball are ever in play."
+      ]
+    },
+    {
+      "id": "save-streak",
+      "name": "Save streak and lives",
+      "tier": "mvp",
+      "description": "A save extends the player's defensive streak and raises the next shot's difficulty; a concede resets the streak and costs a life.",
+      "acceptance": [
+        "A save increments the streak and tightens the next shot's windup and widens its angle range by the round's per-save step.",
+        "A concede sets the streak to 0 and removes one life.",
+        "A round starts with 3 lives."
+      ]
+    },
+    {
+      "id": "round-outcome",
+      "name": "Round win and loss",
+      "tier": "mvp",
+      "description": "The round ends when the player survives the set number of shots (win), inverted from a normal soccer game since the human's goal is to concede nothing, or runs out of lives (loss).",
+      "acceptance": [
+        "The round's shot target comes from the content set's data, never hardcoded in the UI.",
+        "A win offers the next, harder round via the same tuned shot set, not new content.",
+        "A loss shows the result card with streak, save accuracy and personal best."
+      ]
+    },
+    {
+      "id": "difficulty-ramp",
+      "name": "One content set with a data-driven difficulty ramp",
+      "tier": "mvp",
+      "description": "Committed in the title strategy MVP: one content set with a data-driven difficulty ramp, escalating speed, angle variety and shrinking windup time.",
+      "acceptance": [
+        "Demonstrable in the prototype build: one content set with a data-driven difficulty ramp.",
+        "Covered by at least one smoke-test step."
+      ]
+    },
+    {
+      "id": "score-personal-best",
+      "name": "Score and personal best, persisted locally",
+      "tier": "mvp",
+      "description": "Committed in the title strategy MVP: score and personal best, persisted locally.",
+      "acceptance": [
+        "Demonstrable in the prototype build: score and personal best, persisted locally.",
+        "Covered by at least one smoke-test step."
+      ]
+    },
+    {
+      "id": "game-flow",
+      "name": "Game flow",
+      "tier": "mvp",
+      "description": "Boot, loading, title, play, pause, round-clear and result, wired as build_spec.game_states.",
+      "acceptance": [
+        "First session reaches play within 5s of load on a mid-range phone.",
+        "Retry from the result card starts a new round within 1s.",
+        "Pause on tab hidden; resume only on player input."
+      ]
+    },
+    {
+      "id": "telemetry",
+      "name": "Kill and success criteria telemetry",
+      "tier": "mvp",
+      "description": "Emit the measurements the strategy's criteria read, so G4 is decided on data.",
+      "acceptance": [
+        "Records `first_time_understood_share` for criterion control_not_understood.",
+        "Records `unprompted_retry_share` for criterion no_retry_pull.",
+        "Records `prototype_elapsed_days` for criterion prototype_overran.",
+        "Records `d1_retention` for criterion d1_retention.",
+        "Records `median_session_seconds` for criterion session_length."
+      ]
+    },
+    {
+      "id": "platform-integration",
+      "name": "Platform integration",
+      "tier": "mvp",
+      "description": "Platform SDK init, loading progress, ads and pause-audio-during-ads, through the template's platform abstraction.",
+      "acceptance": [
+        "Each required touchpoint fires at its stated moment in a local platform-SDK mock.",
+        "No portal SDK is called directly from game code.",
+        "Strategy MVP: Poki SDK: init, loading-progress, gameplay-start-stop, rewarded, interstitial, pause-audio-during-ads."
+      ]
+    },
+    {
+      "id": "localization",
+      "name": "Localization",
+      "tier": "mvp",
+      "description": "UI strings in en, ru, kept under 40 strings to make human translation cheap.",
+      "acceptance": [
+        "Every UI string resolves in en, ru; no hard-coded text.",
+        "Strategy MVP: Localization: en, ru."
+      ]
+    },
+    {
+      "id": "monetization-rewarded-continue",
+      "name": "Rewarded placement",
+      "tier": "mvp",
+      "description": "On a round-ending concede after at least one save has been made, offer one continue per round.",
+      "acceptance": [
+        "Offered only in state fail.",
+        "The continue button is not shown when unavailable; retry is the primary action, never a disabled button.",
+        "Strategy MVP: A rewarded placement at a natural moment in the loop (continue or bonus), never forced."
+      ]
+    },
+    {
+      "id": "monetization-interstitial-between",
+      "name": "Interstitial placement",
+      "tier": "mvp",
+      "description": "When the player leaves the result card (Retry or Menu), gated by the strictest active platform's minimum interval, never on the first round of a session and never inside play.",
+      "acceptance": [
+        "Offered only in state fail.",
+        "Proceed immediately; no placeholder, no countdown.",
+        "Strategy MVP: Interstitials between sessions only, never inside one."
+      ]
+    }
+  ],
+  "scope": {
+    "tiers": {
+      "mvp": [
+        "Goalkeeper dive control",
+        "AI attacker and shot variety",
+        "Save streak and lives",
+        "Round win and loss",
+        "One content set with a data-driven difficulty ramp",
+        "Score and personal best, persisted locally",
+        "Game flow",
+        "Kill and success criteria telemetry",
+        "Platform integration",
+        "Localization",
+        "Rewarded placement",
+        "Interstitial placement"
+      ],
+      "prototype": [
+        "Goalkeeper dive control",
+        "AI attacker and shot variety",
+        "Save streak and lives",
+        "Round win and loss",
+        "One content set with a data-driven difficulty ramp",
+        "Score and personal best, persisted locally",
+        "Game flow",
+        "Kill and success criteria telemetry",
+        "Platform integration",
+        "Localization",
+        "Rewarded placement",
+        "Interstitial placement"
+      ],
+      "production": [],
+      "future": [],
+      "out_of_scope": [
+        {
+          "item": "Multiplayer and any online play",
+          "why_excluded": "networking multiplies the test surface and needs a server nobody has budgeted"
+        },
+        {
+          "item": "Metagame layers: daily quests, battle pass, login rewards",
+          "why_excluded": "retention systems are validated after the core loop is, not before"
+        },
+        {
+          "item": "Character or skin customization and a cosmetics shop",
+          "why_excluded": "Excluded by the title strategy, approved at G2."
+        },
+        {
+          "item": "Level editor or user-generated content",
+          "why_excluded": "Excluded by the title strategy, approved at G2."
+        },
+        {
+          "item": "Story, cutscenes and dialogue",
+          "why_excluded": "text multiplies localization cost"
+        },
+        {
+          "item": "Leaderboards beyond a personal best",
+          "why_excluded": "Excluded by the title strategy, approved at G2."
+        },
+        {
+          "item": "A second mode or content set",
+          "why_excluded": "one proves the loop; more is content, not validation"
+        },
+        {
+          "item": "An IAP economy or premium currency",
+          "why_excluded": "Excluded by the title strategy, approved at G2."
+        },
+        {
+          "item": "Platforms beyond the set: y8, gamedistribution",
+          "why_excluded": "platform sprawl multiplies compliance work"
+        }
+      ]
+    },
+    "content_units": 3,
+    "content_unit_kind": "difficulty-tuned rounds",
+    "locales": [
+      "en",
+      "ru"
+    ],
+    "asset_budget": 120,
+    "progression_terminal": "Progression is the personal best (longest save streak and highest round reached). The ramp is bounded by 3 tuned difficulty rounds using the same shot set - there is no content treadmill to feed."
+  },
+  "session": {
+    "time_to_first_play_s": 5,
+    "time_to_first_reward_s": 10,
+    "first_session_seconds": 90,
+    "target_seconds": 120,
+    "structure": "A round lasts roughly 45-60s across its shot target. The first session drops straight into play with no menu, round 1 at its easiest tuning. Later sessions open on the title screen with the personal best visible. A session is roughly 2 rounds back to back; it ends at a natural stopping point - a round win advancing to a harder round, or a loss with retry/continue offered - rather than being cut off.",
+    "reward_moments_per_session": 2,
+    "end_condition": "The player sets a new personal-best streak or round reached, or fails to improve across three rounds."
+  },
+  "retention": {
+    "hooks": [
+      "progression",
+      "streak"
+    ],
+    "return_reason": "I know I can hold a clean sheet longer if I read the windup better next time.",
+    "progression_loop": "Progression is the personal best (longest save streak and highest round reached). The ramp is bounded by 3 tuned difficulty rounds - there is no content treadmill to feed.",
+    "targets": {
+      "d1": 0.25
+    }
+  },
+  "monetization": {
+    "placements": [
+      {
+        "kind": "rewarded",
+        "trigger": "On a round-ending concede (lives empty) after at least one save has been made, offer one continue that restores a life and keeps the current streak",
+        "player_value": "Keep today's streak and round progress instead of restarting from round 1",
+        "platforms": [
+          "poki",
+          "crazygames",
+          "yandex"
+        ]
+      },
+      {
+        "kind": "interstitial",
+        "trigger": "When the player leaves the result card (Retry or Menu), at most once every 180s, never in the first round of a session and never inside play",
+        "player_value": "None - a pure interruption, priced as such and held to the tightest platform cadence",
+        "platforms": [
+          "poki",
+          "crazygames",
+          "yandex"
+        ]
+      }
+    ],
+    "economy": "No currency. The rewarded continue is the only economic action.",
+    "currencies": []
+  },
+  "progression": "Skill only: win round 1 (reach its shot target) to unlock round 2's harder tuning; win round 2 to unlock round 3's harder tuning. There is no currency or unlock track - only the save streak and the round reached.",
+  "difficulty": "Round 1, shots 1-3: windup 900ms, shot speed 14 units/s, angle range +/-25 degrees from centre, straight drives only, so a first-time player sees the full windup before committing. After each save within a round: windup tightens 40ms and speed rises 0.4 units/s, down to the round's floor. Round 2 (after winning round 1): base windup 700ms, speed 16 units/s, angle range +/-35 degrees, near-post pins added. Round 3 (after winning round 2): base windup 550ms, speed 18 units/s, angle range +/-45 degrees, chips and dipping shots added. Assist: after two concedes in a row with no save between them, the next shot's windup resets to the round's base value instead of its tightened one.",
+  "controls": "Tap one of three zones over the goal mouth - left, centre, right - timed to the attacker's windup, to dive or move the keeper that way; one tap commits one dive per shot. This is the only control: on desktop a click on the same zone is the equivalent action, and there is no separate keyboard scheme, per the strategy's one-control-scheme decision.",
+  "ux": {
+    "onboarding": "Guided first save. The dive is one idea - zone, timed to windup; the first attacker's windup is slow and exaggerated, and the correct zone glows once before the first shot arrives.",
+    "screens": [
+      "loading",
+      "title",
+      "play",
+      "pause",
+      "result",
+      "settings"
+    ],
+    "accessibility": "Every windup has a visual tell independent of audio, so the game plays muted - which also covers the large share of portal traffic that plays with sound off. The zone a shot favours is never signalled by colour alone; an arrow/lean cue accompanies it. Text is at least 16 CSS px at the design resolution. A reduced-motion setting (and prefers-reduced-motion) disables camera shake and flash feedback on a concede."
+  },
+  "art_direction": "Night-match floodlights: a near-black stadium bowl, a stark white goal-mouth under hard floodlight, and one hot accent colour that marks 'the danger side' of every shot. Identity kit 'floodlight'. Hard 2px strokes with a soft floodlight glow on the ball and net; pill buttons only for the single primary action (Play/Retry/Next round), everything else square-cornered like scoreboard signage.",
+  "audio_direction": "Library stadium ambience bed (crowd murmur) plus short library SFX for windup, save and concede, all compressed and loaded after first play so audio never delays time to first play. Every windup and shot cue has a visual twin, so the game reads with sound off.",
+  "build_spec": {
+    "mechanics": [
+      {
+        "id": "goalkeeper-dive",
+        "name": "Goalkeeper dive",
+        "tier": "mvp",
+        "description": "The keeper stands on the goal line; a single tap commits a dive or move to the left, centre or right zone.",
+        "rules": [
+          "Tapping a zone commits the keeper to intercepting that zone for the current shot.",
+          "Once committed the keeper cannot change zone until the shot resolves.",
+          "The tap must land inside the shot's reaction window to count as a save attempt."
+        ],
+        "parameters": {
+          "zone_count": 3,
+          "round1_reaction_window_ms": 900
+        }
+      },
+      {
+        "id": "ai-shot",
+        "name": "AI attacker shot",
+        "tier": "mvp",
+        "description": "One computer-controlled attacker occupies the shooting spot and fires at goal with a telegraphed windup whose side, speed and angle come from the round's difficulty data.",
+        "rules": [
+          "Each shot's windup visibly leans toward the side the ball will go before it is kicked.",
+          "Shot speed, angle offset from centre and windup duration are drawn from the current round's difficulty step.",
+          "Only one attacker and one ball are in play at a time."
+        ],
+        "parameters": {
+          "round1_shot_speed": 14,
+          "round1_angle_range_deg": 25
+        }
+      },
+      {
+        "id": "save-streak",
+        "name": "Save streak and lives",
+        "tier": "mvp",
+        "description": "A save extends the player's streak and nudges the next shot's parameters harder; a concede resets the streak and costs a life.",
+        "rules": [
+          "A save increments streak by 1 and tightens the next shot's windup and widens its angle range by the round's per-save step.",
+          "A concede sets streak to 0 and removes one life.",
+          "A round starts with 3 lives."
+        ],
+        "parameters": {
+          "starting_lives": 3,
+          "per_save_windup_tighten_ms": 40,
+          "per_save_speed_add": 0.4,
+          "points_per_save": 10,
+          "points_per_streak": 2
+        }
+      },
+      {
+        "id": "round-outcome",
+        "name": "Round win and loss",
+        "tier": "mvp",
+        "description": "A round ends when the player saves its shot target (win) or loses all lives (loss).",
+        "rules": [
+          "The round's shot target and difficulty step come from the content set's data, never hand-placed per round.",
+          "A win offers the next, harder round built from the same tuned shot data.",
+          "A loss shows the result card with streak, save accuracy and personal best."
+        ],
+        "parameters": {
+          "round1_shot_target": 8
+        }
+      }
+    ],
+    "controls": {
+      "primary_input": "touch-and-mouse",
+      "actions": [
+        {
+          "id": "dive",
+          "action": "Tap a zone to dive",
+          "tier": "mvp",
+          "mechanic": "goalkeeper-dive",
+          "touch": "Tap the left, centre or right third of the goal-mouth overlay to dive that way",
+          "mouse": "Click the left, centre or right third of the goal-mouth overlay to dive that way",
+          "keyboard": "No keyboard binding - tap/click is the only input, per the single-control-scheme scope decision."
+        },
+        {
+          "id": "pause",
+          "action": "Pause",
+          "tier": "mvp",
+          "touch": "Pause button",
+          "mouse": "Pause button (click)",
+          "keyboard": "No keyboard binding - pause is a tappable/clickable button only."
+        }
+      ],
+      "pause": "Pause button only; automatic on tab hidden and before any ad. Resume needs player input.",
+      "notes": "The single tap/click control is the only input on every platform, including desktop - no keyboard scheme, per the title strategy's one-control-scheme decision."
+    },
+    "player_goals": {
+      "moment": "Read this shot's windup and commit to the right zone before it arrives.",
+      "session": "Beat your personal best streak or round reached.",
+      "long_term": "Hold a clean sheet all the way through round 3's tuning."
+    },
+    "progression": {
+      "model": "skill-only",
+      "steps": [
+        {
+          "id": "round-2",
+          "tier": "mvp",
+          "unlock_condition": "Win round 1 by reaching its shot target",
+          "grants": "Round 2's harder shot tuning and the floodlight accent shifting to its round-2 hue"
+        },
+        {
+          "id": "round-3",
+          "tier": "mvp",
+          "unlock_condition": "Win round 2 by reaching its shot target",
+          "grants": "Round 3's harder shot tuning and the floodlight accent shifting to its round-3 hue"
+        }
+      ],
+      "persistence": "Personal best (longest streak and highest round reached); cloud save where the platform offers it, local storage otherwise."
+    },
+    "difficulty": {
+      "model": "adaptive",
+      "curve": [
+        {
+          "at": "Round 1, shots 1-3",
+          "description": "Windup 900ms, shot speed 14 units/s, angle range +/-25 degrees from centre, straight drives only - a first-time player sees the full windup before committing.",
+          "parameters": {
+            "windup_ms": 900,
+            "speed": 14,
+            "angle_deg": 25
+          }
+        },
+        {
+          "at": "Round 1, after each save",
+          "description": "Windup tightens 40ms and speed rises 0.4 units/s per save, down to the round's floor.",
+          "parameters": {
+            "windup_tighten_ms": 40,
+            "speed_add": 0.4
+          }
+        },
+        {
+          "at": "Round 2 (after winning round 1)",
+          "description": "Base windup 700ms, speed 16 units/s, angle range +/-35 degrees, near-post pins added.",
+          "parameters": {
+            "windup_ms": 700,
+            "speed": 16,
+            "angle_deg": 35
+          }
+        },
+        {
+          "at": "Round 3 (after winning round 2)",
+          "description": "Base windup 550ms, speed 18 units/s, angle range +/-45 degrees, chips and dipping shots added.",
+          "parameters": {
+            "windup_ms": 550,
+            "speed": 18,
+            "angle_deg": 45
+          }
+        }
+      ],
+      "assist": "After two concedes in a row with no save between them, the next shot's windup resets to the round's base value instead of its tightened one, giving the player a clean read to rebuild the streak."
+    },
+    "game_states": [
+      {
+        "id": "boot",
+        "tier": "mvp",
+        "initial": true,
+        "description": "Platform SDK init, language, saved progress.",
+        "exits": [
+          {
+            "to": "loading",
+            "on": "SDK init resolved or timed out (3 s)"
+          }
+        ]
+      },
+      {
+        "id": "loading",
+        "tier": "mvp",
+        "description": "Load the first-play asset group only; audio and later content stream afterwards.",
+        "exits": [
+          {
+            "to": "play",
+            "on": "First-play assets ready and this is the player's first session"
+          },
+          {
+            "to": "title",
+            "on": "First-play assets ready and the player has played before"
+          }
+        ]
+      },
+      {
+        "id": "title",
+        "tier": "mvp",
+        "description": "Title, best score, play button.",
+        "exits": [
+          {
+            "to": "play",
+            "on": "Play pressed"
+          },
+          {
+            "to": "settings",
+            "on": "Settings pressed"
+          }
+        ]
+      },
+      {
+        "id": "play",
+        "tier": "mvp",
+        "description": "Gameplay with HUD: the attacker's windup, the keeper's dive, saves and concedes.",
+        "exits": [
+          {
+            "to": "pause",
+            "on": "Pause pressed, Esc, or tab hidden"
+          },
+          {
+            "to": "round-clear",
+            "on": "The round's shot target is reached without losing all lives"
+          },
+          {
+            "to": "fail",
+            "on": "A concede empties the last life"
+          }
+        ]
+      },
+      {
+        "id": "pause",
+        "tier": "mvp",
+        "description": "Play frozen, audio paused, pause menu shown.",
+        "exits": [
+          {
+            "to": "play",
+            "on": "Resume pressed"
+          },
+          {
+            "to": "title",
+            "on": "Quit pressed"
+          }
+        ]
+      },
+      {
+        "id": "round-clear",
+        "tier": "mvp",
+        "description": "Round-clear card: streak, save accuracy, next round's tuning preview.",
+        "exits": [
+          {
+            "to": "play",
+            "on": "Next round pressed"
+          },
+          {
+            "to": "title",
+            "on": "Menu pressed"
+          }
+        ]
+      },
+      {
+        "id": "fail",
+        "tier": "mvp",
+        "description": "Result card: streak, save accuracy, best, retry, optional continue.",
+        "exits": [
+          {
+            "to": "play",
+            "on": "Retry pressed, or a continue was granted"
+          },
+          {
+            "to": "title",
+            "on": "Menu pressed"
+          }
+        ]
+      },
+      {
+        "id": "settings",
+        "tier": "post-mvp",
+        "description": "Music and SFX volume, language, reduced motion.",
+        "exits": [
+          {
+            "to": "title",
+            "on": "Back pressed"
+          }
+        ]
+      }
+    ],
+    "screens": [
+      {
+        "id": "loading",
+        "tier": "mvp",
+        "state": "loading",
+        "purpose": "Show honest progress while the first-play group loads.",
+        "elements": [
+          "Wordmark in the display face",
+          "Progress bar driven by the loader, reported to the platform"
+        ],
+        "layout": "Wordmark centred, progress bar in the lower third."
+      },
+      {
+        "id": "title",
+        "tier": "mvp",
+        "state": "title",
+        "purpose": "One obvious action: play.",
+        "elements": [
+          "Wordmark",
+          "Best score",
+          "Play button (primary)",
+          "Sound toggle"
+        ],
+        "actions": [
+          {
+            "label": "Play",
+            "goes_to": "play"
+          }
+        ],
+        "layout": "Play button in the thumb zone of the lower third; best score directly above it."
+      },
+      {
+        "id": "play",
+        "tier": "mvp",
+        "state": "play",
+        "purpose": "Gameplay; only the HUD overlays it.",
+        "elements": [
+          "Score",
+          "Remaining lives",
+          "Pause button"
+        ],
+        "actions": [
+          {
+            "label": "Pause",
+            "goes_to": "pause"
+          }
+        ],
+        "layout": "HUD inside the safe area; nothing interactive in the play area except the three dive zones."
+      },
+      {
+        "id": "pause",
+        "tier": "mvp",
+        "state": "pause",
+        "purpose": "Stop without losing the round.",
+        "elements": [
+          "Dimmed frozen play behind",
+          "Pause menu"
+        ],
+        "actions": [
+          {
+            "label": "Resume",
+            "goes_to": "play"
+          },
+          {
+            "label": "Quit",
+            "goes_to": "title"
+          }
+        ],
+        "layout": "Menu centred; Resume is the largest target."
+      },
+      {
+        "id": "round-clear",
+        "tier": "mvp",
+        "state": "round-clear",
+        "purpose": "Celebrate the clean round and offer the next, harder one.",
+        "elements": [
+          "Streak and save accuracy",
+          "Next round's tuning preview",
+          "Next round button (primary)",
+          "Menu button"
+        ],
+        "actions": [
+          {
+            "label": "Next round",
+            "goes_to": "play"
+          },
+          {
+            "label": "Menu",
+            "goes_to": "title"
+          }
+        ],
+        "layout": "Card slides up over dimmed play; Next round in the thumb zone, Menu small in a corner."
+      },
+      {
+        "id": "result",
+        "tier": "mvp",
+        "state": "fail",
+        "purpose": "Show the outcome and make retrying the easiest thing to do.",
+        "elements": [
+          "Streak and save accuracy of this round",
+          "Best score, with a new-best burst",
+          "Retry button (primary)",
+          "Continue button with ad glyph (when offered)",
+          "Menu button"
+        ],
+        "actions": [
+          {
+            "label": "Retry",
+            "goes_to": "play"
+          },
+          {
+            "label": "Menu",
+            "goes_to": "title"
+          },
+          {
+            "label": "Continue",
+            "goes_to": "play"
+          }
+        ],
+        "layout": "Card slides up over dimmed play; Retry in the thumb zone, Continue above it, Menu small in a corner."
+      },
+      {
+        "id": "settings",
+        "tier": "post-mvp",
+        "state": "settings",
+        "purpose": "Volume, language, reduced motion.",
+        "elements": [
+          "Music volume",
+          "SFX volume",
+          "Language",
+          "Reduced motion toggle",
+          "Back"
+        ],
+        "actions": [
+          {
+            "label": "Back",
+            "goes_to": "title"
+          }
+        ],
+        "layout": "Single column list."
+      }
+    ],
+    "hud": [
+      {
+        "id": "score",
+        "tier": "mvp",
+        "shows": "Score",
+        "anchor": "top-center",
+        "updates_on": "Every save",
+        "feedback": "Digits roll rather than jump"
+      },
+      {
+        "id": "lives",
+        "tier": "mvp",
+        "shows": "Remaining lives",
+        "anchor": "top-left",
+        "updates_on": "Every concede",
+        "feedback": "A life icon dims and flashes when lost"
+      },
+      {
+        "id": "pause-button",
+        "tier": "mvp",
+        "shows": "Pause button",
+        "anchor": "top-right",
+        "updates_on": "Static",
+        "feedback": "Press state within one frame"
+      }
+    ],
+    "menus": [
+      {
+        "id": "title-menu",
+        "tier": "mvp",
+        "screen": "title",
+        "items": [
+          {
+            "label": "Play",
+            "action": "Enter play"
+          },
+          {
+            "label": "Sound on/off",
+            "action": "Toggle master mute; remembered",
+            "tier": "mvp"
+          },
+          {
+            "label": "Settings",
+            "action": "Open settings",
+            "tier": "post-mvp"
+          }
+        ]
+      },
+      {
+        "id": "pause-menu",
+        "tier": "mvp",
+        "screen": "pause",
+        "items": [
+          {
+            "label": "Resume",
+            "action": "Return to play"
+          },
+          {
+            "label": "Sound on/off",
+            "action": "Toggle master mute"
+          },
+          {
+            "label": "Quit",
+            "action": "Return to title; progress already saved"
+          }
+        ]
+      },
+      {
+        "id": "round-clear-menu",
+        "tier": "mvp",
+        "screen": "round-clear",
+        "items": [
+          {
+            "label": "Next round",
+            "action": "Start the next, harder round"
+          },
+          {
+            "label": "Menu",
+            "action": "Return to title"
+          }
+        ]
+      },
+      {
+        "id": "result-menu",
+        "tier": "mvp",
+        "screen": "result",
+        "items": [
+          {
+            "label": "Retry",
+            "action": "Start the round again immediately"
+          },
+          {
+            "label": "Continue",
+            "action": "Show rewarded ad (rewarded-continue); on reward, restore a life and resume"
+          },
+          {
+            "label": "Menu",
+            "action": "Return to title"
+          }
+        ]
+      }
+    ],
+    "tutorial": {
+      "approach": "guided-first-run",
+      "rationale": "The dive is one idea: zone, timed to windup. The first attacker's windup is slow and exaggerated and shows it once.",
+      "steps": [
+        {
+          "id": "dive-prompt",
+          "tier": "mvp",
+          "trigger": "First round start",
+          "prompt": "The correct zone glows as the attacker leans into the windup",
+          "completes_on": "The player makes their first save"
+        }
+      ],
+      "skippable": false,
+      "shown_once": true
+    },
+    "rewards": [
+      {
+        "id": "shot-saved",
+        "tier": "mvp",
+        "trigger": "A tap lands in the correct zone before the shot arrives",
+        "grants": "Score, scaled by the round's tier and the current streak",
+        "feedback": "The ball parries away with a flash and a thud; the streak counter bumps."
+      },
+      {
+        "id": "round-cleared",
+        "tier": "mvp",
+        "trigger": "The round's shot target is reached without running out of lives",
+        "grants": "Next round unlocked; the floodlight accent shifts hue",
+        "feedback": "A whistle blows, the crowd roars, the round-clear card slides in."
+      },
+      {
+        "id": "new-best",
+        "tier": "mvp",
+        "trigger": "A round ends, win or loss, with a streak or round above the personal best",
+        "grants": "New personal best, saved",
+        "feedback": "Best counter bursts."
+      }
+    ],
+    "failure": {
+      "condition": "The keeper dives the wrong zone, dives too late, or does not dive before the shot crosses the line, and that concede empties the last life.",
+      "feedback": "Hit-stop for 150 ms, the net ripples, the crowd groans, the camera pulls back, then the result card with streak, save accuracy and personal best.",
+      "retry": {
+        "path": "Retry on the result card.",
+        "time_to_retry_s": 1,
+        "keeps": "Personal best and settings."
+      },
+      "continue_offer": "rewarded-continue"
+    },
+    "session_flow": [
+      {
+        "beat": "Load",
+        "at_s": 0,
+        "description": "Loading screen with real progress; only first-play assets."
+      },
+      {
+        "beat": "First input",
+        "at_s": 5,
+        "description": "First session: straight into play, round 1's slow windup, the zone-glow tutorial inline."
+      },
+      {
+        "beat": "First reward",
+        "at_s": 10,
+        "description": "The opening windup guarantees a first save before the first concede."
+      },
+      {
+        "beat": "First failure",
+        "at_s": 60,
+        "description": "Result card appears on the first lives-exhausting concede; retry is the obvious action; the continue offer appears from here."
+      },
+      {
+        "beat": "Retry loop",
+        "description": "Retry, chase a longer streak or the next round, concede again; the assist kicks in after two bare concedes in a row."
+      },
+      {
+        "beat": "Natural stop",
+        "at_s": 120,
+        "description": "A new best streak or round, or a plateau; the result card shows the best so the player leaves on a high."
+      }
+    ],
+    "monetization_touchpoints": [
+      {
+        "id": "rewarded-continue",
+        "kind": "rewarded",
+        "tier": "mvp",
+        "state": "fail",
+        "trigger": "On a round-ending concede (lives empty) after at least one save has been made, offer one continue that restores a life and keeps the current streak",
+        "player_value": "Keep today's streak and round progress instead of restarting from round 1",
+        "platforms": [
+          "poki",
+          "crazygames",
+          "yandex"
+        ],
+        "when_unavailable": "The continue button is not shown; retry is the primary action. Never a disabled button."
+      },
+      {
+        "id": "interstitial-between",
+        "kind": "interstitial",
+        "tier": "mvp",
+        "state": "fail",
+        "trigger": "When the player leaves the result card (Retry or Menu), at most once every 180s, never in the first round of a session and never inside play",
+        "player_value": "None - a pure interruption, priced as such and held to the tightest platform cadence",
+        "cooldown_s": 180,
+        "platforms": [
+          "poki",
+          "crazygames",
+          "yandex"
+        ],
+        "when_unavailable": "Proceed immediately; no placeholder, no countdown."
+      }
+    ],
+    "sdk_touchpoints": [
+      {
+        "id": "sdk-init",
+        "capability": "init",
+        "tier": "mvp",
+        "when": "On boot, before showing loading",
+        "required": true,
+        "platforms": [
+          "poki",
+          "crazygames",
+          "yandex"
+        ]
+      },
+      {
+        "id": "sdk-loading-progress",
+        "capability": "loading-progress",
+        "tier": "mvp",
+        "when": "During the loading state, reported continuously as the first-play asset group loads",
+        "state": "loading",
+        "required": true,
+        "platforms": [
+          "poki",
+          "crazygames",
+          "yandex"
+        ]
+      },
+      {
+        "id": "sdk-gameplay-start",
+        "capability": "gameplay-start",
+        "tier": "mvp",
+        "when": "On entering the play state",
+        "state": "play",
+        "required": true,
+        "platforms": [
+          "poki",
+          "crazygames",
+          "yandex"
+        ]
+      },
+      {
+        "id": "sdk-gameplay-stop",
+        "capability": "gameplay-stop",
+        "tier": "mvp",
+        "when": "On leaving the play state (pause, round-clear or fail)",
+        "required": true,
+        "platforms": [
+          "poki",
+          "crazygames",
+          "yandex"
+        ]
+      },
+      {
+        "id": "sdk-pause-audio",
+        "capability": "pause-audio",
+        "tier": "mvp",
+        "when": "Immediately before any ad break and on pause",
+        "required": true,
+        "platforms": [
+          "poki",
+          "crazygames",
+          "yandex"
+        ]
+      },
+      {
+        "id": "sdk-resume-audio",
+        "capability": "resume-audio",
+        "tier": "mvp",
+        "when": "On ad close or Resume pressed",
+        "required": true,
+        "platforms": [
+          "poki",
+          "crazygames",
+          "yandex"
+        ]
+      },
+      {
+        "id": "sdk-ad-rewarded",
+        "capability": "ad-rewarded",
+        "tier": "mvp",
+        "when": "When the player chooses Continue on the result card",
+        "state": "fail",
+        "required": true,
+        "platforms": [
+          "poki",
+          "crazygames",
+          "yandex"
+        ]
+      },
+      {
+        "id": "sdk-ad-interstitial",
+        "capability": "ad-interstitial",
+        "tier": "mvp",
+        "when": "When leaving the result card and the cooldown has elapsed",
+        "state": "fail",
+        "required": true,
+        "platforms": [
+          "poki",
+          "crazygames",
+          "yandex"
+        ]
+      },
+      {
+        "id": "sdk-language",
+        "capability": "language",
+        "tier": "mvp",
+        "state": "boot",
+        "when": "After init; picks the UI locale from the platform, else the browser, else the first locale in scope.",
+        "platforms": [
+          "crazygames",
+          "poki",
+          "yandex"
+        ],
+        "required": false,
+        "fallback": "Browser language."
+      },
+      {
+        "id": "sdk-loading-complete",
+        "capability": "loading-complete",
+        "tier": "mvp",
+        "state": "loading",
+        "when": "When the first playable screen is interactive - not when every asset is loaded.",
+        "platforms": [
+          "crazygames",
+          "poki",
+          "yandex"
+        ],
+        "required": true,
+        "fallback": "None needed."
+      },
+      {
+        "id": "sdk-cloud-load",
+        "capability": "cloud-load",
+        "tier": "mvp",
+        "state": "boot",
+        "when": "After init, before the title screen shows the best score.",
+        "platforms": [
+          "crazygames",
+          "yandex"
+        ],
+        "required": false,
+        "fallback": "Local storage."
+      },
+      {
+        "id": "sdk-cloud-save",
+        "capability": "cloud-save",
+        "tier": "mvp",
+        "state": "fail",
+        "when": "When a run or level ends with a new best or new unlock; never mid-play.",
+        "platforms": [
+          "crazygames",
+          "yandex"
+        ],
+        "required": false,
+        "fallback": "Local storage."
+      }
+    ],
+    "assets": [
+      {
+        "id": "keeper",
+        "type": "model",
+        "tier": "mvp",
+        "description": "Player goalkeeper, low-poly rigged figure",
+        "count": 1,
+        "source_preference": "procedural",
+        "est_cost": 0,
+        "spec": "Low-poly rig, vertex colours, kit in the floodlight accent"
+      },
+      {
+        "id": "keeper-animset",
+        "type": "animation",
+        "tier": "mvp",
+        "description": "Keeper pose set: idle, dive-left, dive-right, block-centre, concede-reaction",
+        "count": 5,
+        "source_preference": "procedural",
+        "est_cost": 0,
+        "spec": "Simple rig poses/blends, no mocap"
+      },
+      {
+        "id": "attacker",
+        "type": "model",
+        "tier": "mvp",
+        "description": "AI attacker, low-poly rigged figure",
+        "count": 1,
+        "source_preference": "procedural",
+        "est_cost": 0,
+        "spec": "Low-poly rig, vertex colours"
+      },
+      {
+        "id": "attacker-animset",
+        "type": "animation",
+        "tier": "mvp",
+        "description": "Attacker pose set: run-up, windup-lean, kick, idle",
+        "count": 4,
+        "source_preference": "procedural",
+        "est_cost": 0,
+        "spec": "Simple rig poses; the windup lean must read clearly from the keeper's camera"
+      },
+      {
+        "id": "ball",
+        "type": "model",
+        "tier": "mvp",
+        "description": "Match ball",
+        "count": 1,
+        "source_preference": "procedural",
+        "est_cost": 0,
+        "spec": "Low-poly sphere, vertex colours"
+      },
+      {
+        "id": "goal-arena-kit",
+        "type": "model",
+        "tier": "mvp",
+        "description": "Goal frame, net, pitch strip and floodlight rig",
+        "count": 1,
+        "source_preference": "procedural",
+        "est_cost": 0,
+        "spec": "Primitive geometry, vertex colours, emissive floodlight strips"
+      },
+      {
+        "id": "save-vfx",
+        "type": "vfx",
+        "tier": "mvp",
+        "description": "Parry/save burst",
+        "count": 1,
+        "source_preference": "procedural",
+        "est_cost": 0,
+        "spec": "Instanced particles plus a flash on the ball"
+      },
+      {
+        "id": "concede-vfx",
+        "type": "vfx",
+        "tier": "mvp",
+        "description": "Net ripple on a concede",
+        "count": 1,
+        "source_preference": "procedural",
+        "est_cost": 0,
+        "spec": "Simple bone-wiggle ripple on the net mesh"
+      },
+      {
+        "id": "ui-kit",
+        "type": "ui",
+        "tier": "mvp",
+        "description": "Buttons, panels, result and round-clear cards, drawn in the identity kit",
+        "count": 1,
+        "source_preference": "procedural",
+        "est_cost": 0,
+        "spec": "9-slice panels, button states: idle, pressed, disabled"
+      },
+      {
+        "id": "icons",
+        "type": "icon",
+        "tier": "mvp",
+        "description": "Play, pause, retry, menu, sound, ad glyph, life icon",
+        "count": 7,
+        "source_preference": "library",
+        "est_cost": 10,
+        "spec": "Single-colour SVG, 48px grid"
+      },
+      {
+        "id": "fonts",
+        "type": "font",
+        "tier": "mvp",
+        "description": "Unbounded (800) and Instrument Sans (500)",
+        "count": 2,
+        "source_preference": "library",
+        "est_cost": 0,
+        "spec": "WOFF2, subset to the locales in scope"
+      },
+      {
+        "id": "wordmark",
+        "type": "ui",
+        "tier": "mvp",
+        "description": "Title wordmark in the display face",
+        "count": 1,
+        "source_preference": "procedural",
+        "est_cost": 0,
+        "spec": "SVG"
+      }
+    ],
+    "audio": [
+      {
+        "id": "amb-stadium",
+        "type": "ambience",
+        "tier": "mvp",
+        "description": "Stadium crowd murmur bed",
+        "trigger": "Round start",
+        "loop": true,
+        "source_preference": "library",
+        "est_cost": 40
+      },
+      {
+        "id": "sfx-windup",
+        "type": "sfx",
+        "tier": "mvp",
+        "description": "Crowd tension riser during the windup",
+        "trigger": "Windup starts",
+        "loop": false,
+        "source_preference": "library",
+        "est_cost": 5
+      },
+      {
+        "id": "sfx-save",
+        "type": "sfx",
+        "tier": "mvp",
+        "description": "Parry/save impact",
+        "trigger": "Save",
+        "loop": false,
+        "source_preference": "library",
+        "est_cost": 5
+      },
+      {
+        "id": "sfx-concede",
+        "type": "sfx",
+        "tier": "mvp",
+        "description": "Net ripple thud and crowd groan",
+        "trigger": "Concede",
+        "loop": false,
+        "source_preference": "library",
+        "est_cost": 5
+      },
+      {
+        "id": "ui-tap",
+        "type": "ui",
+        "tier": "mvp",
+        "description": "Button press",
+        "trigger": "Any button",
+        "loop": false,
+        "source_preference": "library",
+        "est_cost": 5
+      },
+      {
+        "id": "ui-fanfare",
+        "type": "ui",
+        "tier": "mvp",
+        "description": "New best / round clear sting",
+        "trigger": "New best or round clear",
+        "loop": false,
+        "source_preference": "library",
+        "est_cost": 5
+      }
+    ],
+    "responsive": {
+      "orientation": "landscape",
+      "design_resolution": {
+        "width": 1280,
+        "height": 720
+      },
+      "scale_mode": "fill",
+      "layouts": [
+        {
+          "id": "phone",
+          "when": "shorter side < 600 CSS px",
+          "arrangement": "HUD at the top edge inside the safe area; primary buttons in the lower third for thumb reach."
+        },
+        {
+          "id": "tablet",
+          "when": "shorter side 600-900 CSS px",
+          "arrangement": "Same as phone, UI scaled by min(1.25, shorter side / 600)."
+        },
+        {
+          "id": "desktop",
+          "when": "width >= 1024 CSS px and pointer: fine",
+          "arrangement": "Goal-mouth playfield at design aspect, centred; HUD moves into the margins; the three dive zones stay large enough to click precisely."
+        }
+      ],
+      "min_touch_target_px": 48,
+      "safe_area": "All HUD and buttons inset by env(safe-area-inset-*); nothing interactive within 16 CSS px of an edge.",
+      "wrong_orientation": "On a portrait phone the camera widens its field of view to keep the full goal mouth in frame; a rotate prompt appears only below 320 CSS px of height.",
+      "resize": "Re-layout on resize and orientation change without restarting; a mid-play orientation change pauses.",
+      "max_pixel_ratio": 2
+    },
+    "visual_identity": {
+      "concept": "Night-match floodlights: a near-black stadium bowl, a stark white goal-mouth under hard floodlight, and one hot accent colour that marks 'the danger side' of every shot.",
+      "palette": [
+        {
+          "token": "turf",
+          "hex": "#0B0F0C",
+          "role": "Background; the shadowed pitch everything sits on"
+        },
+        {
+          "token": "surface",
+          "hex": "#141A17",
+          "role": "Panels and the result/round-clear cards"
+        },
+        {
+          "token": "ink",
+          "hex": "#F2F5EF",
+          "role": "Primary text and HUD numerals"
+        },
+        {
+          "token": "signal",
+          "hex": "#FF3B30",
+          "role": "The one accent: the zone under threat, primary buttons, new best"
+        },
+        {
+          "token": "cool",
+          "hex": "#2EF2C6",
+          "role": "Secondary accent: saves, progress, links"
+        },
+        {
+          "token": "warning",
+          "hex": "#FFB020",
+          "role": "Low-lives warning state; never decorative"
+        }
+      ],
+      "typography": {
+        "display": "Unbounded (800)",
+        "body": "Instrument Sans (500)",
+        "numeric": "JetBrains Mono (700), tabular figures",
+        "source": "Google Fonts, SIL Open Font License; subset to the locales in scope"
+      },
+      "shape_language": "Hard 2px strokes with a floodlight outer glow; pill buttons only for the single primary action (Play/Retry/Next round), everything else square-cornered like scoreboard signage.",
+      "motion": "Everything enters on the beat of a 120 ms ease-out; score digits roll rather than jump; a save freezes the frame for 80 ms before the parry snaps out.",
+      "texture": "Faint floodlight haze overlay at 4% opacity on the upper third of the frame only, never over text.",
+      "avoid": [
+        "Gradients inside text",
+        "More than one glowing element per screen outside play",
+        "System or default UI fonts (Arial, Roboto, Inter, the browser default)",
+        "Purple-to-blue gradients on white",
+        "Evenly weighted pastel palettes where no colour leads",
+        "Rounded white cards with drop shadows as the default container",
+        "Emoji as iconography"
+      ]
+    }
+  },
+  "open_questions": [
+    "Confirm at G3 that a three-zone tap (left/centre/right) reads as 'a single tap control' to a first-time player, per the strategy's one-control-scheme decision.",
+    "The brief's 'battle royale' word is realised here as escalating survival pressure against one AI attacker, not literal multiplayer or simultaneous opponents, per the strategy's own reading - confirm at G3 that this still reads as the brief's idea during prototype review.",
+    "A first-time player understands the tap control without instruction",
+    "The core loop produces an unforced desire to retry within one 120-second session",
+    "The rewarded placement reads as a favour rather than an interruption"
+  ],
+  "title_id": "goalkeeper-royale",
+  "platform_constraints_applied": [
+    {
+      "platform_id": "crazygames",
+      "requirement": "Locales required: en",
+      "how_addressed": "In scope.locales; every UI string goes through the template's localization table."
+    },
+    {
+      "platform_id": "crazygames",
+      "requirement": "Loading progress must be reported through the platform SDK",
+      "how_addressed": "The loading screen is driven by the loading-progress and loading-complete touchpoints, not a timer."
+    },
+    {
+      "platform_id": "crazygames",
+      "requirement": "Interstitial minimum interval 180s",
+      "how_addressed": "Interstitial cooldown is 180s, the tightest across the platform set (180s), shown only between runs."
+    },
+    {
+      "platform_id": "crazygames",
+      "requirement": "Supported placements: interstitial, rewarded, banner",
+      "how_addressed": "All designed placements are supported."
+    },
+    {
+      "platform_id": "crazygames",
+      "requirement": "Bundle at most 250 MB",
+      "how_addressed": "Asset list favours procedural and vector sources; audio is compressed and streamed after first play."
+    },
+    {
+      "platform_id": "crazygames",
+      "requirement": "Orientations accepted: landscape, portrait",
+      "how_addressed": "Designed for landscape; the other orientation shows the responsive layout described in build_spec.responsive."
+    },
+    {
+      "platform_id": "crazygames",
+      "requirement": "Gameplay and audio must pause around ad playback",
+      "how_addressed": "gameplay-stop and pause-audio fire before every ad; resume-audio and gameplay-start after it."
+    },
+    {
+      "platform_id": "crazygames",
+      "requirement": "Cloud saves available",
+      "how_addressed": "Personal best and progress persist through cloud-save; local storage is the fallback."
+    },
+    {
+      "platform_id": "poki",
+      "requirement": "Locales required: en",
+      "how_addressed": "In scope.locales; every UI string goes through the template's localization table."
+    },
+    {
+      "platform_id": "poki",
+      "requirement": "Loading progress must be reported through the platform SDK",
+      "how_addressed": "The loading screen is driven by the loading-progress and loading-complete touchpoints, not a timer."
+    },
+    {
+      "platform_id": "poki",
+      "requirement": "Interstitial minimum interval 120s",
+      "how_addressed": "Interstitial cooldown is 180s, the tightest across the platform set (180s), shown only between runs."
+    },
+    {
+      "platform_id": "poki",
+      "requirement": "Supported placements: interstitial, rewarded",
+      "how_addressed": "All designed placements are supported."
+    },
+    {
+      "platform_id": "poki",
+      "requirement": "Bundle at most 150 MB",
+      "how_addressed": "Asset list favours procedural and vector sources; audio is compressed and streamed after first play."
+    },
+    {
+      "platform_id": "poki",
+      "requirement": "Orientations accepted: landscape, portrait",
+      "how_addressed": "Designed for landscape; the other orientation shows the responsive layout described in build_spec.responsive."
+    },
+    {
+      "platform_id": "poki",
+      "requirement": "Gameplay and audio must pause around ad playback",
+      "how_addressed": "gameplay-stop and pause-audio fire before every ad; resume-audio and gameplay-start after it."
+    },
+    {
+      "platform_id": "poki",
+      "requirement": "No external links",
+      "how_addressed": "No screen links outside the game."
+    },
+    {
+      "platform_id": "yandex",
+      "requirement": "Locales required: ru",
+      "how_addressed": "In scope.locales; every UI string goes through the template's localization table."
+    },
+    {
+      "platform_id": "yandex",
+      "requirement": "Loading progress must be reported through the platform SDK",
+      "how_addressed": "The loading screen is driven by the loading-progress and loading-complete touchpoints, not a timer."
+    },
+    {
+      "platform_id": "yandex",
+      "requirement": "Interstitial minimum interval 60s",
+      "how_addressed": "Interstitial cooldown is 180s, the tightest across the platform set (180s), shown only between runs."
+    },
+    {
+      "platform_id": "yandex",
+      "requirement": "Supported placements: interstitial, rewarded, banner, iap",
+      "how_addressed": "All designed placements are supported."
+    },
+    {
+      "platform_id": "yandex",
+      "requirement": "Bundle at most 100 MB",
+      "how_addressed": "Asset list favours procedural and vector sources; audio is compressed and streamed after first play."
+    },
+    {
+      "platform_id": "yandex",
+      "requirement": "Orientations accepted: landscape, portrait",
+      "how_addressed": "Designed for landscape; the other orientation shows the responsive layout described in build_spec.responsive."
+    },
+    {
+      "platform_id": "yandex",
+      "requirement": "Gameplay and audio must pause around ad playback",
+      "how_addressed": "gameplay-stop and pause-audio fire before every ad; resume-audio and gameplay-start after it."
+    },
+    {
+      "platform_id": "yandex",
+      "requirement": "External network requests restricted",
+      "how_addressed": "All assets ship in the bundle; no runtime fetch beyond the platform SDK."
+    },
+    {
+      "platform_id": "yandex",
+      "requirement": "Cloud saves available",
+      "how_addressed": "Personal best and progress persist through cloud-save; local storage is the fallback."
+    }
+  ],
+  "brief": "I want to make a 3D battle royal game but it's human versus computer, with the goal being the goalkeeper",
+  "consistency": {
+    "status": "pass",
+    "evaluated_at": "2026-10-01T05:05:01Z",
+    "ruleset_version": "1.2.0",
+    "rule_results": [
+      {
+        "criterion_id": "rewarded_ads_need_reward_moments",
+        "measured": [
+          "monetization.placements=['interstitial', 'rewarded']",
+          "session.reward_moments_per_session=2"
+        ],
+        "breached": false
+      },
+      {
+        "criterion_id": "short_session_no_daily_quest",
+        "measured": [
+          "retention.hooks=['progression', 'streak']",
+          "session.target_seconds=120"
+        ],
+        "breached": false
+      },
+      {
+        "criterion_id": "interstitial_interval_fits_session",
+        "measured": [
+          "platform.ads.interstitial_min_interval_s=120",
+          "session.target_seconds=120"
+        ],
+        "breached": false,
+        "note": "poki: held"
+      },
+      {
+        "criterion_id": "scope_fits_session_count",
+        "measured": [
+          "scope.content_units=3",
+          "session.target_seconds=120"
+        ],
+        "breached": false
+      },
+      {
+        "criterion_id": "required_locales_addressed",
+        "measured": [
+          "platform.requirements.locales_required=['en']",
+          "scope.locales=['en', 'ru']"
+        ],
+        "breached": false,
+        "note": "poki: held"
+      },
+      {
+        "criterion_id": "monetization_supported_by_platform",
+        "measured": [
+          "monetization.placements=['interstitial', 'rewarded']",
+          "platform.capabilities.ads=['interstitial', 'rewarded']"
+        ],
+        "breached": false,
+        "note": "poki: held"
+      },
+      {
+        "criterion_id": "concept_mechanics_carried",
+        "measured": [],
+        "breached": false
+      },
+      {
+        "criterion_id": "design_adds_no_foreign_mechanic",
+        "measured": [],
+        "breached": false
+      },
+      {
+        "criterion_id": "first_reward_within_first_session",
+        "measured": [
+          "session.first_session_seconds=90",
+          "session.time_to_first_reward_s=10"
+        ],
+        "breached": false
+      },
+      {
+        "criterion_id": "iap_matches_audience",
+        "measured": [
+          "audience.device=desktop",
+          "audience.type=casual",
+          "monetization.placements=['interstitial', 'rewarded']"
+        ],
+        "breached": false
+      },
+      {
+        "criterion_id": "asset_cost_within_scope",
+        "measured": [
+          "asset_manifest.total_est_cost=75",
+          "scope.asset_budget=120"
+        ],
+        "breached": false
+      },
+      {
+        "criterion_id": "progression_has_an_end_or_a_loop",
+        "measured": "Progression is the personal best (longest save streak and highest round reached). The ramp is bounded by 3 tuned difficulty rounds using the same shot set - there is no content treadmill to feed.",
+        "breached": false
+      }
+    ],
+    "warnings_acknowledged": false
+  }
+}

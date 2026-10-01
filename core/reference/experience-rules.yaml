@@ -1,0 +1,31 @@
+# Experience rules: the bars a game-design's experience contract is held to.
+#
+# The design module checks every design it produces against these
+# (`build_spec.experience`). They turn the numeric bars of core/craft/onboarding-and-portal-ux.md
+# and core/craft/game-feel.md from prose into data a check can read. The playability step
+# measures the built game against the same numbers, so a bar changed here changes both the
+# contract a design must state and the behaviour a build must show.
+#
+# Change a value only with a reason a person could defend from a playtest; a looser bar here
+# lets a game through that a first-time player cannot understand.
+
+version: 1.0.0
+
+first_30s:
+  # Seconds from the page's first request to the first rendered frame.
+  max_first_frame_s: 2
+  # Seconds until the player can act with one input.
+  max_playable_s: 10
+  # Seconds until a first-time player can earn the first success.
+  max_first_success_s: 30
+  # Seconds from failure to playing again.
+  max_retry_s: 3
+
+feedback:
+  # Every player action is acknowledged on screen within this many milliseconds.
+  max_ack_ms: 100
+
+onboarding:
+  # A first-time player cannot fail before the first success, or before this many seconds
+  # of play when the grace is a time.
+  min_grace_s: 10

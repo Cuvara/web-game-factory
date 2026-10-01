@@ -9,7 +9,8 @@ scan it always was.
 
 Covered: the CLI (positional idea, with and without --project, with --mock --hold-gates,
 quoting, refusals), the run state, resume, the real research / strategy / design modules
-against the discovery fixture corpus, and the generated command surfaces.
+against the discovery fixture corpus, research's idea_fallback and the project concepts
+file, and the generated command surfaces.
 
 Deterministic and offline: mock steps or the fixture corpus, temporary stores, no network,
 no repository created, no game project touched.
@@ -23,6 +24,7 @@ import sys
 import tempfile
 import types
 import unittest
+from datetime import datetime, timezone
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 SCRIPTS = os.path.dirname(HERE)
@@ -32,16 +34,19 @@ sys.path.insert(0, SCRIPTS)
 sys.path.insert(0, HERE)
 
 from wgf_discovery import analysis  # noqa: E402
+from wgf_discovery.step import ResearchStep  # noqa: E402
 from wgflib.workflow import integrity  # noqa: E402
 from wgflib.workflow.api import (  # noqa: E402
     IDEA_MAX_LENGTH, RunRequest, WorkflowAPI, canonical_idea)
 from wgflib.workflow.config import FactoryConfig  # noqa: E402
 from wgflib.workflow.contracts import ArtifactContracts  # noqa: E402
 from wgflib.workflow.engine import EngineError  # noqa: E402
-from wgflib.workflow.model import RunStatus  # noqa: E402
+from wgflib.workflow.model import RunStatus, StepOutcome  # noqa: E402
+from wgflib.yamllite import load_file  # noqa: E402
 
 GOALKEEPER = "3D goalkeeper game where the player blocks penalty shots"
 DISCOVERY = os.path.join(HERE, "fixtures", "discovery")
+CONCEPTS = os.path.join(DISCOVERY, "concepts", "concepts.yaml")
 AS_OF = "2026-09-23T00:00:00Z"
 BRIEF_BEARING = {"research-report": ("scope", "brief"), "opportunity": ("brief",),
                  "title-strategy": ("brief",), "game-design": ("brief",)}
@@ -268,16 +273,17 @@ class Resume(Scratch):
 class RealModules(Scratch):
     """research, strategy, G2 and design, with the real modules on the fixture corpus."""
 
-    def real_api(self):
+    def real_api(self, **discovery):
         return WorkflowAPI(config=FactoryConfig({
             "steps": {"modules": ["wgf_discovery", "wgf_strategy", "wgf_design"]},
             "storage": {"fsync": False},
-            "discovery": {"corpus": os.path.join(DISCOVERY, "corpus"),
-                          "backlog": os.path.join(DISCOVERY, "backlog"), "as_of": AS_OF},
+            "discovery": dict({"corpus": os.path.join(DISCOVERY, "corpus"),
+                               "backlog": os.path.join(DISCOVERY, "backlog"), "as_of": AS_OF},
+                              **discovery),
         }), store_dir=self.store)
 
-    def run_plan(self, idea, project="goalkeeper-3d", design=RunStatus.COMPLETED):
-        api = self.real_api()
+    def run_plan(self, idea, project="goalkeeper-3d", design=RunStatus.COMPLETED, **discovery):
+        api = self.real_api(**discovery)
         state = api.run(RunRequest(scope="research", idea=idea, project_id=project))
         self.assertEqual(state.status, RunStatus.COMPLETED, state.message)
         run_id = state.run_id
@@ -293,12 +299,13 @@ class RealModules(Scratch):
         return api, state
 
     def test_research_strategy_and_design_all_derive_from_the_exact_idea(self):
-        # The catalog has no goalkeeper: research carries the brief to the nearest buildable
-        # concept of the dimension it names, and says so. The built-in design author fits
-        # the archetype that concept declares (never one the brief's words would pick, which
-        # design consistency would refuse), records the brief, and states as an open
-        # question that it is not the brief's dimension. The agent author designs the brief.
-        api, state = self.run_plan(GOALKEEPER)
+        # The catalog has no goalkeeper. With idea_fallback: nearest, research carries the
+        # brief to the nearest buildable concept of the dimension it names, and says so. The
+        # built-in design author fits the archetype that concept declares (never one the
+        # brief's words would pick, which design consistency would refuse), records the
+        # brief, and states as an open question that it is not the brief's dimension. The
+        # agent author designs the brief.
+        api, state = self.run_plan(GOALKEEPER, idea_fallback="nearest")
         contracts = ArtifactContracts()
         bodies = {}
         for artifact_type in BRIEF_BEARING:
@@ -364,7 +371,7 @@ class RealModules(Scratch):
                 seen.append(self.idea(context))
                 return super().execute(inputs, context)
 
-        api = self.real_api()
+        api = self.real_api(idea_fallback="nearest")
         original = api.registry
 
         def registry(mock, load_modules=True):
@@ -382,6 +389,228 @@ class RealModules(Scratch):
     def test_the_api_refuses_an_idea_no_step_reads(self):
         with self.assertRaises(EngineError):
             self.real_api().run(RunRequest(scope="plan", idea=GOALKEEPER))
+
+    def test_an_idea_no_concept_carries_waits_for_input_by_default(self):
+        state = self.real_api().run(RunRequest(scope="research", idea=GOALKEEPER,
+                                               project_id="goalkeeper-3d"))
+        self.assertEqual((state.status, state.cursor), (RunStatus.WAITING, "research"),
+                         state.message)
+        self.assertIn("concepts.yaml", state.message)
+        self.assertIn("idea_fallback: nearest", state.message)
+        self.assertIsNone(state.latest_artifact("opportunity"))
+        report = self.artifact(state, "research-report")
+        self.assertEqual(report["selection"]["candidate_id"], "none")
+
+    def test_a_concept_for_the_idea_is_carried_through_strategy(self):
+        api = self.real_api(concepts=CONCEPTS)
+        state = api.run(RunRequest(scope="research", idea=GOALKEEPER,
+                                   project_id="goalkeeper-3d"))
+        self.assertEqual(state.status, RunStatus.COMPLETED, state.message)
+        state = api.run(RunRequest(scope="strategy", run_id=state.run_id))
+        self.assertEqual(state.status, RunStatus.COMPLETED, state.message)
+        entry = load_file(CONCEPTS)["archetypes"][0]
+        strategy = self.artifact(state, "title-strategy")
+        self.assertEqual(strategy["concept"]["core_mechanic"], entry["core_mechanic"])
+        self.assertEqual(strategy["concept"]["core_loop"], entry["core_loop"])
+        self.assertEqual(strategy["brief"], GOALKEEPER)
+
+
+def research(idea=GOALKEEPER, **params):
+    """The research step alone on the fixture corpus, as the engine would hand it the idea."""
+    base = {"corpus": os.path.join(DISCOVERY, "corpus"),
+            "backlog": os.path.join(DISCOVERY, "backlog"), "as_of": AS_OF}
+    base.update(params)
+    step = ResearchStep(types.SimpleNamespace(
+        id="research", type="research", params=base, inputs=[],
+        outputs=["research-report", "opportunity"]),
+        clock=lambda: datetime(2026, 9, 23, tzinfo=timezone.utc))
+    logger = types.SimpleNamespace(**{level: (lambda *a, **k: None)
+                                      for level in ("debug", "info", "warning", "error")})
+    context = types.SimpleNamespace(
+        config={}, execution=1, attempt=1, visit=1, project_id=None, run_id="run-test",
+        current_step="research", idempotency_key="run-test:research:1", logger=logger,
+        mock=False, environment={"idea": idea} if idea else {}, previous_outputs=[],
+        decision=None)
+    return step.execute(types.SimpleNamespace(refs={}, missing=[]), context)
+
+
+def outputs(result):
+    return {a.type: a.content for a in result.artifacts}
+
+
+class IdeaFallback(unittest.TestCase):
+    """What research does with a brief no eligible catalog concept matches."""
+
+    def test_wait_is_the_default_and_selects_nothing(self):
+        result = research()
+        self.assertEqual(result.outcome, StepOutcome.WAITING_FOR_INPUT)
+        self.assertIn("the brief matches no concept research can carry", result.message)
+        self.assertIn("concepts.yaml", result.message)
+        self.assertIn("discovery.idea_fallback: nearest", result.message)
+        out = outputs(result)
+        self.assertEqual(list(out), ["research-report"])
+        report = out["research-report"]
+        self.assertEqual(ArtifactContracts().problems("research-report", report), [])
+        self.assertEqual(report["selection"]["candidate_id"], "none")
+        self.assertIn("idea_fallback is wait", report["selection"]["rationale"])
+        # Every candidate is kept, none selected; the nearest shape is information only.
+        self.assertNotIn("selected", {c["status"] for c in report["candidates"]})
+        self.assertTrue(any(c["status"] == "considered" for c in report["candidates"]))
+        gaps = [g for g in report["gaps"] if g["kind"] == "idea-unmatched"]
+        self.assertEqual(len(gaps), 1, report["gaps"])
+        self.assertIn("goalkeeper", gaps[0]["description"])
+        self.assertIn("nothing was selected", gaps[0]["description"])
+        self.assertIn("endless-runner", gaps[0]["description"])
+        self.assertNotIn("concepts", {c["id"] for c in report["method"]["collectors"]})
+
+    def test_missing_external_evidence_still_waits_first(self):
+        empty = tempfile.mkdtemp(prefix="wgf-idea-corpus-")
+        self.addCleanup(shutil.rmtree, empty, ignore_errors=True)
+        os.makedirs(os.path.join(empty, "snapshots"))
+        result = research(corpus=empty)
+        self.assertEqual(result.outcome, StepOutcome.WAITING_FOR_INPUT)
+        self.assertIn("no external evidence", result.message)
+
+    def test_nearest_selects_the_nearest_shape(self):
+        result = research(idea_fallback="nearest")
+        self.assertEqual(result.outcome, StepOutcome.SUCCESS, result.message)
+        report = outputs(result)["research-report"]
+        self.assertEqual(report["selection"]["candidate_id"], "endless-runner")
+
+    def test_a_matched_idea_is_selected_either_way(self):
+        for fallback in ("wait", "nearest"):
+            with self.subTest(fallback=fallback):
+                result = research(idea="A match-3 puzzle with candy tiles",
+                                  idea_fallback=fallback)
+                self.assertEqual(result.outcome, StepOutcome.SUCCESS, result.message)
+                self.assertEqual(outputs(result)["research-report"]["selection"]
+                                 ["candidate_id"], "match-3")
+
+    def test_any_other_value_is_refused(self):
+        for bad in ("substitute", None, ""):
+            with self.subTest(bad=bad):
+                result = research(idea_fallback=bad)
+                self.assertEqual(result.outcome, StepOutcome.FAILED)
+                self.assertFalse(result.retryable)
+                self.assertIn("idea_fallback", result.error)
+
+    def test_without_an_idea_neither_setting_changes_a_byte(self):
+        blank = outputs(research(idea=None))
+        for params in ({"idea_fallback": "nearest"}, {"concepts": CONCEPTS}):
+            with self.subTest(params=params):
+                self.assertEqual(outputs(research(idea=None, **params)), blank)
+
+
+class ConceptsFile(unittest.TestCase):
+    """A concept a project authored for the brief: <corpus>/concepts.yaml, or `concepts`."""
+
+    def setUp(self):
+        self.scratch = tempfile.mkdtemp(prefix="wgf-concepts-")
+        self.addCleanup(shutil.rmtree, self.scratch, ignore_errors=True)
+        self.entry = load_file(CONCEPTS)["archetypes"][0]
+
+    def write(self, text, name="concepts.yaml"):
+        path = os.path.join(self.scratch, name)
+        with open(path, "w", encoding="utf-8") as handle:
+            handle.write(text)
+        return path
+
+    def edited(self, old, new):
+        with open(CONCEPTS, encoding="utf-8") as handle:
+            text = handle.read()
+        self.assertIn(old, text)
+        return self.write(text.replace(old, new, 1),
+                          name=f"concepts-{len(os.listdir(self.scratch))}.yaml")
+
+    def test_the_concept_is_selected_and_carried_verbatim(self):
+        result = research(concepts=CONCEPTS)
+        self.assertEqual(result.outcome, StepOutcome.SUCCESS, result.message)
+        out = outputs(result)
+        report, opportunity = out["research-report"], out["opportunity"]
+        contracts = ArtifactContracts()
+        self.assertEqual(contracts.problems("research-report", report), [])
+        self.assertEqual(contracts.problems("opportunity", opportunity), [])
+        self.assertEqual(report["selection"]["candidate_id"], "shot-stopper")
+        self.assertEqual([g for g in report["gaps"] if g["kind"] == "idea-unmatched"], [])
+        for key in ("genre", "subgenre", "core_mechanic", "fantasy", "core_loop"):
+            self.assertEqual(opportunity["concept"][key], self.entry[key], key)
+        self.assertEqual(opportunity["brief"], GOALKEEPER)
+        collector = next(c for c in report["method"]["collectors"] if c["id"] == "concepts")
+        self.assertEqual((collector["kind"], collector["status"]), ("reference", "used"))
+
+    def test_its_figures_stay_hypotheses_and_it_says_it_is_authored(self):
+        report = outputs(research(concepts=CONCEPTS))["research-report"]
+        claims = {c["id"]: c for c in report["claims"]}
+        chosen = next(c for c in report["candidates"] if c["id"] == "shot-stopper")
+        for dimension in chosen["dimensions"]:
+            if dimension["dimension"] in ("dev_speed_days", "asset_cost", "scope_complexity",
+                                          "retention_potential"):
+                self.assertEqual(dimension["tier"], "hypothesis")
+                for ref in dimension["claim_refs"]:
+                    self.assertEqual(claims[ref]["tier"], "hypothesis")
+                    self.assertLessEqual(claims[ref]["confidence"], 0.6)
+        authored = [claims[ref] for ref in chosen["claim_refs"]
+                    if "concept" in claims[ref]["tags"]]
+        self.assertEqual(len(authored), 1)
+        self.assertEqual(authored[0]["tier"], "hypothesis")
+        self.assertLessEqual(authored[0]["confidence"], 0.6)
+        for phrase in (GOALKEEPER, "concepts.yaml", "not a catalog shape", "unmeasured"):
+            self.assertIn(phrase, authored[0]["statement"])
+        # Catalog candidates carry no such claim.
+        runner = next(c for c in report["candidates"] if c["id"] == "endless-runner")
+        self.assertFalse(any("concept" in claims[ref]["tags"] for ref in runner["claim_refs"]))
+
+    def test_the_report_id_changes_with_the_file(self):
+        waiting = outputs(research())["research-report"]["id"]
+        first = outputs(research(concepts=CONCEPTS))["research-report"]["id"]
+        second = outputs(research(concepts=self.edited("dev_speed_days: 14",
+                                                       "dev_speed_days: 12")))
+        self.assertNotEqual(first, waiting)
+        self.assertNotEqual(second["research-report"]["id"], first)
+        self.assertEqual(outputs(research(concepts=CONCEPTS))["research-report"]["id"], first)
+
+    def test_the_default_file_is_in_the_corpus(self):
+        corpus = os.path.join(self.scratch, "corpus")
+        shutil.copytree(os.path.join(DISCOVERY, "corpus"), corpus)
+        shutil.copy(CONCEPTS, os.path.join(corpus, "concepts.yaml"))
+        result = research(corpus=corpus)
+        self.assertEqual(result.outcome, StepOutcome.SUCCESS, result.message)
+        self.assertEqual(outputs(result)["research-report"]["selection"]["candidate_id"],
+                         "shot-stopper")
+
+    def test_refusals_are_permanent(self):
+        cases = {
+            "another brief": (self.edited(f"brief: {GOALKEEPER}", "brief: a different game"),
+                              "another brief"),
+            "no design_archetype": (self.edited("    design_archetype: agent\n", ""),
+                                    "design_archetype"),
+            "null design_archetype": (self.edited("design_archetype: agent",
+                                                  "design_archetype: null"),
+                                      "design_archetype"),
+            "not kebab-case": (self.edited("design_archetype: agent",
+                                           "design_archetype: Lane Runner"),
+                               "design_archetype"),
+            "a catalog id": (self.edited("id: shot-stopper", "id: endless-runner"),
+                             "catalog already has"),
+            "a catalog key missing": (self.edited("    core_loop: read", "    loop: read"),
+                                      "core_loop"),
+            "not the catalog's shape": (self.write("archetypes: []\n", name="bare.yaml"),
+                                        "version"),
+            "a configured file that does not exist": (
+                os.path.join(self.scratch, "absent.yaml"), "no concepts file"),
+            # Found by the dogfood run: a note written where the priors go was read as a
+            # prior, so every prior dimension went unscored and the note became claim text.
+            "priors that are not priors": (
+                self.edited("priors: {", "priors: {note: guessed, "), "priors"),
+            "a prior outside [0, 1]": (
+                self.edited("monetization_fit: 0.", "monetization_fit: 7."), "priors"),
+        }
+        for name, (path, words) in cases.items():
+            with self.subTest(name):
+                result = research(concepts=path)
+                self.assertEqual(result.outcome, StepOutcome.FAILED, result.message)
+                self.assertFalse(result.retryable)
+                self.assertIn(words, result.error)
 
 
 class IdeaMatching(unittest.TestCase):

@@ -66,6 +66,7 @@ EXPECTED_STEPS = (
     ("init", "SUCCESS"),
     ("assets", "SUCCESS"),
     ("develop", "SUCCESS"),
+    ("playability", "SUCCESS"),        # played from outside through the port's play probe
     ("review", "SUCCESS"),
     ("sdk", "SUCCESS"),
     ("sdk-review", "SUCCESS"),         # the sdk commit - the one that ships - reviewed too

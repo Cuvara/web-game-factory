@@ -554,6 +554,40 @@ class FileOwnershipInTheBrief(DesignAndPlanInTheBrief):
                         text.index("## Fix first: blockers from code review"))
 
 
+    def test_a_failed_playability_report_leads_with_what_the_bot_saw(self):
+        report = {"commit": "c" * 40, "verdict": "FAIL",
+                  "frames": [{"id": "play-2s", "project": "desktop",
+                              "path": "playability/1-1/out/desktop/frames/play-2s.png"}],
+                  "checks": [
+                      {"id": "frames.readable", "project": "desktop", "status": "FAIL",
+                       "required": True, "summary": "play-2s: mean luminance 6.84",
+                       "expected": {"min_mean_luminance": 40}, "frames": ["play-2s"]},
+                      {"id": "win.reachable", "project": "desktop", "status": "PASS",
+                       "required": True, "summary": "won"},
+                      {"id": "page.errors", "project": "mobile", "status": "FAIL",
+                       "required": False, "summary": "advisory"}]}
+        data = briefs.build_brief(
+            title_id="t", engine="threejs", iteration=2, key="k", baseline="b" * 40,
+            design={}, assets={}, scaffold={}, playability=report, frames_root="/runs/r1")
+        self.assertEqual([f["check"] for f in data["playability_failures"]],
+                         ["frames.readable"])
+        self.assertEqual(data["playability_failures"][0]["frames"],
+                         ["/runs/r1/playability/1-1/out/desktop/frames/play-2s.png"])
+        text = briefs.render_markdown(data)
+        section = text[text.index("## Fix first: what the build did when it was played"):]
+        self.assertIn("`cccccccccccc`", section)
+        self.assertIn("`frames.readable` (desktop): play-2s: mean luminance 6.84", section)
+        self.assertIn("/runs/r1/playability/1-1/out/desktop/frames/play-2s.png", section)
+        self.assertNotIn("page.errors", section)
+        # Nothing failed: no section, and nothing claims a played commit.
+        report["checks"] = report["checks"][1:2]
+        data = briefs.build_brief(
+            title_id="t", engine="threejs", iteration=2, key="k", baseline="b" * 40,
+            design={}, assets={}, scaffold={}, playability=report)
+        self.assertEqual((data["playability_failures"], data["played_commit"]), ([], None))
+        self.assertNotIn("what the build did when it was played", briefs.render_markdown(data))
+
+
 @unittest.skipUnless(pinned_template.checkout()[0], pinned_template.checkout()[1])
 class TemplateSourceShipsInThePin(unittest.TestCase):
     def test_every_named_template_source_is_in_the_pinned_template(self):
@@ -1693,7 +1727,7 @@ class ThroughTheEngine(unittest.TestCase):
         step = next(s for s in definition.steps if s.id == "develop")
         self.assertEqual(set(step.inputs), {"game-design", "asset-manifest", "scaffold-record",
                                             "title-strategy", "tech-plan", "qa-report",
-                                            "review-report"})
+                                            "review-report", "playability-report"})
         self.assertEqual(list(step.outputs), ["prototype-report"])
 
 

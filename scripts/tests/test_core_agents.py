@@ -746,7 +746,9 @@ class Registration(unittest.TestCase):
         definition = load_definition("new-game")
         ids = definition.step_ids
         review = definition.step("review")
-        self.assertEqual(ids[ids.index("develop") + 1], "review")
+        # The build is played from outside before review reads it.
+        self.assertEqual(ids[ids.index("develop") + 1], "playability")
+        self.assertEqual(ids[ids.index("playability") + 1], "review")
         self.assertEqual(ids[ids.index("review") + 1], "sdk")
         self.assertEqual(ids[ids.index("sdk") + 1], "sdk-review")
         self.assertEqual(ids[ids.index("sdk-review") + 1], "verify")

@@ -774,6 +774,90 @@ ARCHETYPES = {
 
 FALLBACK = "one-touch"
 
+# The experience contract each archetype states (game-design build_spec.experience; checked by
+# experience.py against core/reference/experience-rules.yaml): the objective a first-time
+# player is shown and the metric it is measured in, how play is lost (and won, for levels),
+# how every MVP action is acknowledged, what the first session teaches and its grace before
+# failure, and which HUD element shows which metric. The author adds the pause action and
+# the first-30-seconds budget from the session numbers.
+EXPERIENCE = {
+    "lane-runner": {
+        "goal": "Run as far as you can - switch lanes to dodge every obstacle.",
+        "goal_metric": "distance",
+        "lose": {"condition": "Touching an obstacle ends the run."},
+        "actions": {
+            "move-left": {"visual": "The runner slides one lane left at once, leaving a short trail.",
+                          "audio": "Lane move whoosh"},
+            "move-right": {"visual": "The runner slides one lane right at once, leaving a short trail.",
+                           "audio": "Lane move whoosh"},
+        },
+        "teaches": ["move-left", "move-right"],
+        "grace": {"until": "first-success"},
+        "hud_metrics": {"score": "distance", "multiplier": "multiplier", "best-marker": "best"},
+    },
+    "drop-merge": {
+        "goal": "Drop pieces so matching ones merge - keep the columns from filling up.",
+        "goal_metric": "score",
+        "lose": {"condition": "Every column is full and no merge is left."},
+        "actions": {
+            "drop": {"visual": "The piece falls into the chosen column and lands with a bounce.",
+                     "audio": "Drop thud", "updates": ["score"]},
+        },
+        "teaches": ["drop"],
+        "grace": {"until": "first-success"},
+        "hud_metrics": {"score": "score", "next-piece": "next-piece", "best": "best"},
+    },
+    "merge-puzzle": {
+        "goal": "Clear every goal counter before your moves run out.",
+        "goal_metric": "goal-counters",
+        "win": {"condition": "Every goal counter reaches zero.", "metric": "goal-counters"},
+        "lose": {"condition": "Moves reach zero with goal counters left.", "metric": "moves"},
+        "actions": {
+            "swap": {"visual": "The two pieces slide into each other's place; a swap that matches nothing slides back.",
+                     "audio": "Swap click", "updates": ["moves", "goal-counters"]},
+        },
+        "teaches": ["swap"],
+        "grace": {"until": "first-success"},
+        "hud_metrics": {"moves": "moves", "goals": "goal-counters", "level": "level"},
+    },
+    "arena-dodge": {
+        "goal": "Steer through the gaps in the walls - how far can you get?",
+        "goal_metric": "score",
+        "lose": {"condition": "Crashing into a wall ends the run."},
+        "actions": {
+            "steer": {"visual": "The craft banks toward the input on the next frame.",
+                      "audio": "Engine pitch follows the steer"},
+        },
+        "teaches": ["steer"],
+        "grace": {"until": "first-success"},
+        "hud_metrics": {"score": "score", "best": "best"},
+    },
+    "arena-3d": {
+        "goal": "Fly through the lit gates before the clock runs out.",
+        "goal_metric": "gates",
+        "lose": {"condition": "The clock reaches zero.", "metric": "time"},
+        "actions": {
+            "steer": {"visual": "The craft turns toward the input on the next frame.",
+                      "audio": "Engine pitch follows the steer"},
+        },
+        "teaches": ["steer"],
+        "grace": {"until": "seconds", "seconds": 15},
+        "hud_metrics": {"clock": "time", "gates": "gates"},
+    },
+    "one-touch": {
+        "goal": "Tap when the sweep overlaps the target - land as many locks as you can.",
+        "goal_metric": "score",
+        "lose": {"condition": "A tap that misses, or two full sweeps without a tap once the first lock is landed."},
+        "actions": {
+            "tap": {"visual": "The sweep stops on the frame of the tap and the lock flashes.",
+                    "audio": "Lock click; a perfect rings higher", "updates": ["score", "streak"]},
+        },
+        "teaches": ["tap"],
+        "grace": {"until": "first-success"},
+        "hud_metrics": {"score": "score", "streak": "streak"},
+    },
+}
+
 _WORD = re.compile(r"[a-z0-9][a-z0-9-]*")
 
 

@@ -12,7 +12,7 @@ What it does, in order:
 3. Runs the ONE shared `new-game` workflow through the real WorkflowAPI - the same
    assembly `wgf new-game` uses, without --mock, so every step is its real module:
    research -> strategy -> G2 -> design -> tech-plan -> G3 -> init -> assets -> develop ->
-   review -> sdk -> sdk-review -> verify -> G4 -> release. The run stops WAITING at G4,
+   playability -> review -> sdk -> sdk-review -> verify -> G4 -> release. The run stops WAITING at G4,
    which only a person decides; the harness answers it `pass` (below) and resumes.
 4. Browser-tests the resulting game on its own (browser.py), independently of the
    pipeline's own checks.

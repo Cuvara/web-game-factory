@@ -231,6 +231,16 @@ class MockVerificationStep(MockStep):
             body["failed_checks"] = [body["checks"][0]["id"]]
 
 
+class MockPlayabilityStep(MockStep):
+    type, role = "playability", "qa"
+
+    def customize(self, body, artifact_type, context, entry):
+        if artifact_type == "playability-report" and entry == "fail":
+            body["verdict"] = "FAIL"
+            body["checks"][1].update(status="FAIL", summary="scripted failure (mock)")
+            body["failed_checks"] = ["desktop:win.reachable"]
+
+
 class MockReleaseStep(MockStep):
     type, role = "release", "release"
 
@@ -243,6 +253,7 @@ MOCK_STEPS = (
     MockInitStep,
     MockAssetsStep,
     MockDevelopmentStep,
+    MockPlayabilityStep,
     MockReviewStep,
     MockSDKStep,
     MockVerificationStep,

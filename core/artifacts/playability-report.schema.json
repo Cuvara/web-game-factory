@@ -1,0 +1,85 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://webgamefactory.dev/schemas/artifacts/playability-report.schema.json",
+  "title": "Playability report",
+  "description": "Whether a built game can be played and read by a first-time player, measured from outside: a bot drives the production build with real pointer and key input on desktop and mobile viewports, reads its play probe (shared/play-probe.schema.json) before and after each input, and inspects rendered frames. Every check names what was measured and the bar from the design's experience contract (core/reference/experience-rules.yaml) or core/reference/visual-quality.yaml. This is automation evidence: it proves the game is playable and visible, and it never stands in for what first-time players understand (a kill criterion measured from people).",
+
+  "x-wgf": {
+    "id": "playability-report",
+    "kind": "artifact",
+    "format": "json",
+    "version": "1.0.0",
+    "producer": "title:prototype",
+    "consumers": ["title:prototype", "title:prototype-review", "release:qa"],
+    "repo_path": "<game-repo>/qa/playability/<commit>.json",
+    "run_path": "<storage>/workflows/<run-id>/artifacts/playability-report/v<n>.json",
+    "required_for_gates": []
+  },
+
+  "type": "object",
+  "required": ["provenance", "title_id", "commit", "measurement_class", "projects", "checks", "failed_checks", "verdict"],
+  "properties": {
+    "provenance": { "$ref": "shared/provenance.schema.json#/$defs/provenance" },
+    "title_id": { "type": "string" },
+    "commit": { "type": "string", "pattern": "^[0-9a-f]{40}$", "description": "The commit that was built and played." },
+    "measurement_class": {
+      "const": "automation-bot",
+      "description": "Who played: a bot through the play probe. Never a first-time player."
+    },
+    "projects": {
+      "type": "array",
+      "description": "The viewports it was played on.",
+      "items": {
+        "type": "object",
+        "required": ["id", "viewport", "ran"],
+        "properties": {
+          "id": { "type": "string" },
+          "viewport": { "type": "object", "required": ["width", "height"], "properties": { "width": { "type": "integer" }, "height": { "type": "integer" } }, "additionalProperties": false },
+          "ran": { "type": "boolean" },
+          "page_errors": { "type": "array", "items": { "type": "string" } }
+        },
+        "additionalProperties": false
+      }
+    },
+    "checks": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "project", "status", "required", "summary"],
+        "properties": {
+          "id": { "type": "string", "description": "e.g. probe.present, start.objective, idle.grace, act.acknowledged, win.reachable, lose.reachable, restart.works, entities.visible, frames.luminance." },
+          "project": { "type": "string" },
+          "status": { "enum": ["PASS", "FAIL", "BLOCKED", "WARNING"] },
+          "required": { "type": "boolean" },
+          "summary": { "type": "string", "description": "What was measured, and against which bar." },
+          "measured": {},
+          "expected": {},
+          "frames": { "type": "array", "items": { "type": "string" }, "description": "Frame ids (see `frames`) that show it." }
+        },
+        "additionalProperties": false
+      }
+    },
+    "frames": {
+      "type": "array",
+      "description": "Captured frames, kept beside the run as evidence.",
+      "items": {
+        "type": "object",
+        "required": ["id", "project", "path", "sha256"],
+        "properties": {
+          "id": { "type": "string" },
+          "project": { "type": "string" },
+          "path": { "type": "string", "description": "Relative to the run's directory." },
+          "sha256": { "type": "string" },
+          "mean_luminance": { "type": "number" },
+          "contrast": { "type": "number" },
+          "lit_share": { "type": "number", "description": "Share of the frame's pixels lit (core/reference/visual-quality.yaml frames.lit_luminance)." }
+        },
+        "additionalProperties": false
+      }
+    },
+    "failed_checks": { "type": "array", "items": { "type": "string" } },
+    "blocked_reason": { "type": ["string", "null"] },
+    "verdict": { "enum": ["PASS", "FAIL", "BLOCKED"] }
+  },
+  "additionalProperties": false
+}

@@ -1096,6 +1096,23 @@ class Commits(SdkCase):
         self.assertTrue(read(self.repo, TEST_FILE).endswith(added))
         self.assertEqual(result.artifacts, [])
 
+    def test_seam_files_another_commit_deleted_are_written_again(self):
+        # The 2.5.0 dogfood run: GitHub generated the repository from the template's newer
+        # default branch, whose seam files init's pin commit then deleted to hold the pinned
+        # tree. Their last change was that deletion, not the sdk's, and the sdk step
+        # refused - though a file that is not there holds no work to erase.
+        make_repo(self.repo)
+        for path in gameseam.SDK_OWNED_PATHS:
+            write(self.repo, path, "// the template's newer default branch\n")
+        commit_checkout(self.repo, "Initial commit")
+        for path in gameseam.SDK_OWNED_PATHS:
+            os.remove(os.path.join(self.repo, *path.split("/")))
+        base = commit_checkout(self.repo, "chore(init): pin the template")
+        result = self.execute(prototype_report=prototype_at(base))
+        self.assertEqual(result.outcome, StepOutcome.SUCCESS, result.error or result.message)
+        self.assertTrue(all(os.path.exists(os.path.join(self.repo, *p.split("/")))
+                            for p in integrate.OWNED_FILES))
+
     def test_the_files_it_writes_are_the_contracts_sdk_owned_paths(self):
         self.assertEqual(set(integrate.OWNED_FILES + integrate.SEAM_FILES
                              + (integrate.PLAN_FILE,)), set(gameseam.SDK_OWNED_PATHS))

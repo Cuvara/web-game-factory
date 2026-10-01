@@ -98,6 +98,11 @@ requirement was relaxed.
 
 ### Fixed
 
+- **sdk refused seam files it had nothing to erase in.** GitHub generated the dogfood run's
+  repository from the template's newer default branch; init's pin commit deleted the seam
+  files that branch had, to hold the pinned tree, and the sdk step then blocked because the
+  last change to its files was not its own - though a file absent at HEAD holds no work.
+  Absent files are no longer counted (`wgf_sdk/commit.py` `owned_edits`).
 - The archetype states named "Esc" for pause even when keyboard bindings were out of scope.
 
 ### Changed

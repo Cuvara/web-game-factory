@@ -241,6 +241,35 @@ class MockPlayabilityStep(MockStep):
             body["failed_checks"] = ["desktop:win.reachable"]
 
 
+class MockProductionQualityStep(MockStep):
+    """`fail` in a mock plan is a production gate failure routed to `develop`; `fail-assets`
+    one routed to `assets` - FAILED, not retryable, the report emitted - the shape the real
+    step (scripts/wgf_production) returns."""
+
+    type, role = "production-quality", "qa"
+    ROUTES = {"fail": ("develop", 1), "fail-assets": ("assets", 0)}
+
+    def execute(self, inputs, context):
+        entry = self._scripted(context)
+        if entry not in self.ROUTES:
+            return super().execute(inputs, context)
+        context.logger.info("mock step", script=entry)
+        route, index = self.ROUTES[entry]
+        artifacts = [self._artifact(t, inputs, context, entry) for t in self.definition.outputs]
+        return StepResult("FAILED", route=route, artifacts=artifacts, retryable=False,
+                          error=f"{self.id} reported fail, route {route} (mock)")
+
+    def customize(self, body, artifact_type, context, entry):
+        if artifact_type != "production-quality-report" or entry not in self.ROUTES:
+            return
+        route, index = self.ROUTES[entry]
+        check = body["checks"][index]
+        check.update(status="FAIL", summary="scripted failure (mock)")
+        body["verdict"] = "FAIL"
+        body["failed"] = [f"{check['project']}:{check['id']}" if check.get("project") else check["id"]]
+        body["routes"] = [route]
+
+
 class MockReleaseStep(MockStep):
     type, role = "release", "release"
 
@@ -254,6 +283,7 @@ MOCK_STEPS = (
     MockAssetsStep,
     MockDevelopmentStep,
     MockPlayabilityStep,
+    MockProductionQualityStep,
     MockReviewStep,
     MockSDKStep,
     MockVerificationStep,

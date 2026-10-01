@@ -206,7 +206,9 @@ def judge(records, frames_dir, design, rules, experience_rules, project):
     # none of whose entities left (a static attacker) is judged on all of them.
     by_role, runs, largest, last_seen = {}, {}, {}, {}
     for index, entities in enumerate(frames):
-        for eid, role, visible, x, y, w, h in entities:
+        for sample in entities:
+            # [id, role, visible, x, y, w, h] and, from bots that record them, asset, render.
+            eid, role, visible, x, y, w, h = sample[:7]
             if role not in readable:
                 continue
             last_seen[(role, eid)] = index

@@ -1,0 +1,65 @@
+# Production quality bars: what a build must show to be production art and production UI.
+#
+# The production-quality step (title:prototype) reads what the playability bot recorded while
+# it played the build - the play probe's entities with the asset and render of each, the
+# requests the page made for files under /assets/, the DOM UI measured on each screen state,
+# and the frames of those states - together with the asset manifest and the design, and holds
+# them to these numbers. Each check routes its failure: `assets` when an asset itself must be
+# made again, `develop` when the game's use of it must change.
+# See docs/production-architecture.md and docs/production-quality-module.md.
+
+version: 1.0.0
+
+entities:
+  # Roles a player must recognise (play probe `entities[].role`). In production each is
+  # drawn from a manifest asset (render `asset` or `composite`), never as an engine
+  # primitive, unless the design's visual_identity.primitive_style says the art direction
+  # itself is geometric.
+  readable_roles: [player, threat, goal, target, projectile]
+  # Renders that count as drawn from assets.
+  asset_renders: [asset, composite]
+
+  # Roles whose assets are drawn as entities the probe reports: the asset runtime chain
+  # (assets.runtime) follows each such asset to the screen.
+  asset_roles: [player, threat, goal, target, projectile, collectible, hazard]
+
+visible:
+  # An asset is visible in play when an entity drawn with it is on screen, visible, and at
+  # its largest covers at least this share of the viewport in the bot's per-frame samples
+  # (core/reference/visual-quality.yaml entities.min_area_fraction)...
+  min_area_fraction: 0.002
+  # ...and in a frame of a screen state, the pixels inside its drawn box are not the frame's
+  # background: at least this share of them differ from the frame's dominant colour by at
+  # least this much in some channel (0-255).
+  min_changed_share: 0.1
+  min_pixel_delta: 24
+
+assets:
+  # Asset tiers the gate requires (game-design build_spec.assets[].tier, asset-manifest
+  # items[].scope_tier).
+  required_tiers: [mvp]
+  # Manifest item types the running game never fetches: store presentation.
+  not_loaded_types: [screenshot, icon]
+  # Item statuses that hold no file to deliver or load.
+  skipped_statuses: [cut]
+
+ui:
+  # Smallest interactive element on the mobile viewport, CSS px, both sides: the WCAG 2.5.5
+  # target size. A design's visual_identity.ui.min_target_px (or
+  # responsive.min_touch_target_px) raises it, never lowers it.
+  min_target_px: 44
+  # Smallest text, CSS px, on any viewport.
+  min_font_px: 12
+  # WCAG 2.x contrast: body text 4.5:1; large text (>= large_px, or >= large_bold_px at
+  # weight >= 700) 3:1.
+  min_contrast: 4.5
+  min_contrast_large: 3.0
+  large_px: 24
+  large_bold_px: 18.66
+  # Two rectangles overlap when they share at least this many CSS px of area: a shared
+  # hairline border is not an overlap.
+  min_overlap_px: 16
+  # The screens a player must have seen: the loss and the screen after a retry always, the
+  # win when the design's experience contract has one.
+  required_states: [lost, retry]
+  win_state: won

@@ -36,7 +36,7 @@ looked at a rendered frame or played the game. This step does both.
 | | |
 |---|---|
 | inputs | `prototype-report` (the commit), `game-design` (its `build_spec.experience`), `scaffold-record` (the checkout) |
-| output | `playability-report` (`core/artifacts/playability-report.schema.json`): every check with what was measured and the bar, the captured frames with their hashes, the verdict |
+| output | `playability-report` (`core/artifacts/playability-report.schema.json`, 1.1.0): every check with what was measured and the bar, the captured frames with their hashes, `records_dir` (the bot's raw records, relative to the run directory), the verdict |
 | SUCCESS | every required check passed on every viewport |
 | FAILED, route `fail` | a required check failed: back to develop, whose brief leads with *Fix first: what the build did when it was played* (each failed check and the frames that show it) |
 | BLOCKED | the step could not establish a result: no experience contract in the design, no checkout, the commit would not install or build, the browser would not start. Nothing about the game is claimed |
@@ -75,7 +75,7 @@ The bot reads the game's play probe (`core/artifacts/shared/play-probe.schema.js
 The bot acts **only** through real input at the listed positions, never through the
 probe. The developer brief embeds the schema, so a developer knows how the build is judged.
 
-### The bot's four tests, per viewport
+### The bot's five tests, per viewport
 
 - **First session:** opens the game. If the title screen lists a begin input (`play`,
   `start`, ...), the bot presses it. Then it makes no input at all for the idle window,
@@ -88,6 +88,34 @@ probe. The developer brief embeds the schema, so a developer knows how the build
 - **Lose and restart:** one success first, then bad play: the first listed move that is
   not the oracle's, never a pause or settings toggle. On a loss, the bot presses the retry
   the result screen offers, then the ready screen's begin input if it lands on one.
+- **Pause:** the probe's pause input, else a visible pause button, else Escape. If the
+  probe then reports `paused`, the pause screen is measured, then play is resumed. A game
+  without a pause is recorded as such; no check here fails on it.
+
+### What every record also carries
+
+The bot records more than this step judges, so that later steps read the same play instead
+of replaying it. `production-quality` ([production-quality-module.md](production-quality-module.md))
+reads these from `records_dir`:
+
+- `asset_requests`: every response for a URL under `/assets/` (path and status, `null` for
+  a failed request), and `runtime_assets`: the body of `assets/assets.json` as the page
+  fetched it;
+- `assets_loaded`: every runtime asset id any snapshot reported in `assets_loaded`;
+- the win test's per-frame entity samples are
+  `[id, role, visible, x, y, w, h, asset, render]` (the last two `null` when the probe
+  does not report them);
+- `ui`: the DOM UI measured on each screen state seen - `title` (before the begin input),
+  `playing`, `paused`, `won` / `lost`, and `retry` (play after the retry) - each with its
+  frame `frames/state-<name>.png`. Per state: every visible interactive element
+  (`button`, `[role=button]`, `a`, `input`) with its box, font size and weight, colour, the
+  opaque background behind it (own and ancestors' background colours composited; `null`
+  when none is opaque or an ancestor paints an image, so only the frame can tell),
+  `ua_default` (its computed style equals the user-agent default for its tag, read from a
+  blank frame no page stylesheet reaches) and the properties that differ; every visible text
+  outside a control, measured the same way; the overlaps between controls and between a
+  control and text; the probe's `ui`-role entities; and every entity the probe reported at
+  that moment (with `asset` and `render`), so a state frame can be read at an entity's box.
 
 ## The checks
 
@@ -106,6 +134,9 @@ probe. The developer brief embeds the schema, so a developer knows how the build
 | `entities.projectile` | a projectile is seen moving for ≥ `min_projectile_frames` consecutive frames |
 | `frames.readable` | ≥ `min_lit_share` of pixels lit (luminance ≥ `lit_luminance`), contrast ≥ `min_contrast`, mean ≤ `max_mean_luminance` |
 | `page.errors` | no uncaught page error |
+
+None of the production records changes a check here: an asset, a primitive or a default
+button is the production gate's to judge, not this step's.
 
 The visual bars were calibrated on frames this step captured: the unreadable run's game,
 and the template's two example games. The calibration and its margin are recorded in

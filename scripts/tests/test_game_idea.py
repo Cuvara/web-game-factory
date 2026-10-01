@@ -598,6 +598,12 @@ class ConceptsFile(unittest.TestCase):
                                         "version"),
             "a configured file that does not exist": (
                 os.path.join(self.scratch, "absent.yaml"), "no concepts file"),
+            # Found by the dogfood run: a note written where the priors go was read as a
+            # prior, so every prior dimension went unscored and the note became claim text.
+            "priors that are not priors": (
+                self.edited("priors: {", "priors: {note: guessed, "), "priors"),
+            "a prior outside [0, 1]": (
+                self.edited("monetization_fit: 0.", "monetization_fit: 7."), "priors"),
         }
         for name, (path, words) in cases.items():
             with self.subTest(name):

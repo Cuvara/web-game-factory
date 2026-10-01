@@ -260,8 +260,14 @@ class DryRunFromTheInstalledPlugin(unittest.TestCase):
     def test_real_research_and_plan_run_unattended_up_to_init(self):
         """The real discovery, strategy, design and tech-plan modules, with the profile and
         the Factory's own evidence snapshots copied in as the project's evidence: no step
-        waits for a person before init. Nothing past plan runs."""
+        waits for a person before init. Nothing past plan runs. The design author is pinned
+        to the built-in one on top of the profile - the way a project overrides one key - so
+        the test starts no agent session; the profile's agent author is held by
+        TheDesignAgent."""
         project = self.project("real-plan")
+        with open(os.path.join(project, "workspace", "config", "factory.yaml"), "a",
+                  encoding="utf-8") as handle:
+            handle.write("\n  design:\n    author: archetype\n")
         shutil.copytree(os.path.join(ROOT, "workspace", "research", "snapshots"),
                         os.path.join(project, "workspace", "research", "snapshots"))
         research = self.wgf(project, "research", "--json")

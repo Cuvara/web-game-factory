@@ -100,6 +100,29 @@ REQUIRED = ("id", "title", "genre", "subgenre", "core_mechanic", "fantasy", "cor
             "session_seconds", "replayability", "technical_complexity", "asset_complexity",
             "dev_speed_days", "asset_cost_usd", "bundle_mb", "monetization")
 _KEBAB = re.compile(r"^[a-z][a-z0-9]*(-[a-z0-9]+)*$")
+# The dimensions an entry's `priors` may guess (analysis.py reads exactly these), each a number
+# in [0, 1]. Anything else is refused: a prior the screen cannot read would be dropped
+# silently, and a note in its place would become a claim's text.
+PRIOR_KEYS = ("monetization_fit", "retention_potential", "session_quality", "technical_risk",
+              "performance_risk", "iterability")
+
+
+def _priors_problem(entry):
+    """Why an entry's `priors` cannot be read, or None. Absent priors are allowed."""
+    priors = entry.get("priors")
+    if priors is None:
+        return None
+    if not isinstance(priors, dict):
+        return "priors must be a mapping of " + ", ".join(PRIOR_KEYS) + " to numbers in [0, 1]"
+    unknown = sorted(k for k in priors if k not in PRIOR_KEYS)
+    if unknown:
+        return (f"priors has {', '.join(map(repr, unknown))}; only "
+                + ", ".join(PRIOR_KEYS) + " are priors")
+    bad = sorted(k for k, v in priors.items()
+                 if isinstance(v, bool) or not isinstance(v, (int, float)) or not 0 <= v <= 1)
+    if bad:
+        return f"priors {', '.join(bad)} must be numbers in [0, 1]"
+    return None
 
 DEFAULTS = {
     "corpus": os.path.join("workspace", "research"),
@@ -340,6 +363,9 @@ class ResearchStep(WorkflowStep):
             if missing:
                 raise ResearchError(f"archetype {archetype.get('id')!r} lacks "
                                     f"{', '.join(missing)}")
+            problem = _priors_problem(archetype)
+            if problem:
+                raise ResearchError(f"archetype {archetype.get('id')!r}: {problem}")
         catalog_ids = {a["id"] for a in archetypes}
         for concept in concepts:
             if concept["id"] in catalog_ids:
@@ -378,6 +404,9 @@ class ResearchStep(WorkflowStep):
             if missing:
                 raise ResearchError(f"{shown}: concept {entry.get('id')!r} lacks "
                                     f"{', '.join(missing)}")
+            problem = _priors_problem(entry)
+            if problem:
+                raise ResearchError(f"{shown}: concept {entry['id']!r}: {problem}")
             if entry["brief"] != brief:
                 raise ResearchError(f"{shown}: concept {entry['id']!r} was authored for "
                                     f"another brief ({entry['brief']!r}); the file holds "

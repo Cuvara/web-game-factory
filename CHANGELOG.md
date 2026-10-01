@@ -68,9 +68,29 @@ requirement was relaxed.
   validates the composed artifact against its contract itself, and shows an agent author the
   exact problems and its previous draft for up to two repair rounds; every round is judged
   like the first. The request names the schema.
+- **The shipped `factory.yaml` named the model author's repair key `repair_rounds`**; the
+  module reads `max_repair_rounds` (docs/assets-module.md said the same), so the documented
+  key did nothing. Both now say `max_repair_rounds`. And the 2D author's prompt named a
+  relative request path when `wgf-assets.py build --work-dir` was relative, while the host
+  runs inside that directory: the paths are absolute now.
 
 ### Added
 
+- **The autonomous profile configures workflow 5's three agents.** An unattended `/new-game`
+  got placeholder art (no 2D author, no 3D model author), which `production-quality`
+  refuses and routes back to `assets` until the loop limit blocks the run, and `visual-qa`
+  blocked with no judge. `workspace/config/profiles/autonomous.yaml` now sets
+  `assets.author`, `assets.model_author` and `visualqa.judge` - each the read-only headless
+  Claude Code example commented in the shipped `factory.yaml`, verbatim (only `Read`,
+  `--safe-mode`, `--permission-mode dontAsk`, text output; at most US$1 a drawing, US$2 a
+  model spec or a judgement), held there by `test_autonomous_profile.TheWorkflow5Agents`.
+  The 2D author gains `svg_from: stdout` (`scripts/wgf_assets/author.py`; `wgf-assets.py
+  build --author-svg-from`): the host prints the SVG and the Factory writes it, so the
+  author needs no write tool - as the design and model authors already take stdout.
+  `wgf where` reports `asset_author`, `model_author` and `visualqa_judge` under `autonomy`.
+  Verified live on 2026-10-02 (docs/claude-capabilities.md, "The asset authors and the
+  visual-QA judge"). The shipped default is unchanged: no author, no judge. Nothing to bring
+  forward.
 - **Every design states why a player comes back** (game-design 1.7.0 `build_spec.depth`).
   Both reference games were single-loop arcade prototypes with nothing persisted but a best
   score. A design now states a meta loop that persists more than a score, a goal ladder

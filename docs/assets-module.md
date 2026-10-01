@@ -175,7 +175,9 @@ placeholders: `{request}`, `{output}`, `{prompt}`. The request JSON carries the 
 `quality_bars` it is held to, its repository `destination`, and `craft`: the absolute paths
 of the playbooks the drawing follows (`core/craft/production-art-2d.md`,
 `production-art-and-ui.md`; not part of the reuse key below). The host writes one SVG at
-`{output}`; the step validates it (format, unsafe constructs) and judges it
+`{output}` - or, with `svg_from: stdout`, prints it last and the step writes `{output}`
+itself (the last complete `<svg>` element printed, fenced or not; nothing printed is a host
+failure), so a read-only host with no write tool can draw; the step validates it (format, unsafe constructs) and judges it
 ([Quality](#quality)). A file that fails is shown to the host with exactly those problems -
 `repair: {round, problems, previous}` - and asked again, `repair_rounds` times (default 2);
 one that still fails is not delivered (`author-rejected`) and the requirement falls back to a
@@ -447,8 +449,8 @@ build still loads); every other error FAILs.
 |---|---|---|
 | `root` | the run's game repository checkout | files go under `<root>/public/assets/`; see below |
 | `libraries` | `[]` | directories with a `library.json` and/or an `index.json` (see `library.py`); relative to the project directory |
-| `model_author` | `{kind: none}` | the 3D model author (`model_author.py`): `{kind: command, argv, spec_from: file\|stdout, repair_rounds: 2}`; only a configured one is asked |
-| `author` | `{kind: none}` | `{kind: command, argv, timeout_seconds: 600, idle_timeout_seconds: 300, repair_rounds: 2}`; a misconfigured author fails the step, not retryably |
+| `model_author` | `{kind: none}` | the 3D model author (`model_author.py`): `{kind: command, argv, spec_from: file\|stdout, max_repair_rounds: 2}`; only a configured one is asked |
+| `author` | `{kind: none}` | `{kind: command, argv, svg_from: file\|stdout, timeout_seconds: 600, idle_timeout_seconds: 300, repair_rounds: 2}`; a misconfigured author fails the step, not retryably. A verified read-only Claude Code example is commented in `factory.yaml` and set in the autonomous profile ([autonomous-runs.md](autonomous-runs.md)) |
 | `placeholders` | `{enabled: true, backends: [2d-assets-mcp, procedural]}` | plus a settings block per backend |
 | `optimize` | `true` | lossless, only on files the step writes — never on the design's own |
 | `runtime_manifest` | `true` | write `public/assets/assets.json` |
@@ -497,6 +499,9 @@ python3 scripts/wgf-assets.py build --design design.json --root ../my-game [--li
 # The same with the 2D author: a command, last on the line, its argv with placeholders.
 python3 scripts/wgf-assets.py build --design design.json --root ../my-game \
     --author-command my-agent-host --request {request} --output {output}
+# A host that prints the SVG instead of writing it (the read-only Claude Code author).
+python3 scripts/wgf-assets.py build --design design.json --root ../my-game \
+    --author-svg-from stdout --author-command claude -p {prompt} --tools Read ...
 # Check a checkout against its runtime manifest (what the verify step runs).
 python3 scripts/wgf-assets.py validate ../my-game [--strict] [--no-unused]
 # Pack loose PNGs into one atlas (frame name = file stem), deterministically.

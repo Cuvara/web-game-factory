@@ -6,6 +6,8 @@ Opt-in, configured under `factory.assets.author` (workspace/config/factory.yaml)
     author:
       kind: command                # none (default) | command
       argv: [...]                  # the host's non-interactive command; placeholders below
+      svg_from: file               # file (default): it writes {output} | stdout: it prints
+                                   # the SVG last, and the Factory writes {output}
       timeout_seconds: 600         # wall clock, per file
       idle_timeout_seconds: 300    # no output for this long ends the attempt
       repair_rounds: 2             # how often a rejected file is shown its problems again
@@ -17,6 +19,11 @@ count and variant, spec, size - the design's palette and visual identity, the qu
 the file is held to (core/reference/asset-quality.yaml), and, when asked again, the
 problems with the previous file (`repair`) or the findings that sent the step back
 (`notes`).
+
+With `svg_from: stdout` the author needs no write tool at all: the last complete <svg>
+element in what it prints (fenced or not) is the file, written at {output} by the Factory
+- the way the design author and the 3D model author take stdout. A host that prints no SVG
+wrote nothing, as with a missing file.
 
 The author only writes a FILE. The pipeline validates it (format, unsafe constructs) and
 judges it (wgf_assets.quality) exactly as it judges a library file; nothing here relaxes a
@@ -31,17 +38,20 @@ timeout or cancel) with the allowlisted agent environment (wgflib.agentenv) plus
 
 import json
 import os
+import re
 
 from wgflib import agentenv, procs
 
-__all__ = ["CommandAuthor", "AuthorError", "AuthorRunFailed", "build_author", "KINDS",
-           "MAX_REPAIR_ROUNDS", "AUTHOR_CRAFT"]
+__all__ = ["CommandAuthor", "AuthorError", "AuthorRunFailed", "build_author", "last_svg",
+           "KINDS", "SVG_FROM", "MAX_REPAIR_ROUNDS", "AUTHOR_CRAFT"]
 
 KINDS = ("none", "command")
 MAX_REPAIR_ROUNDS = 2
-DEFAULTS = {"kind": "none", "argv": [], "timeout_seconds": 600, "idle_timeout_seconds": 300,
-            "repair_rounds": MAX_REPAIR_ROUNDS}
+SVG_FROM = ("file", "stdout")
+DEFAULTS = {"kind": "none", "argv": [], "svg_from": "file", "timeout_seconds": 600,
+            "idle_timeout_seconds": 300, "repair_rounds": MAX_REPAIR_ROUNDS}
 MAX_BYTES = 1024 * 1024
+_SVG_TAG = re.compile(r"<(/?)svg(?=[\s>/])", re.IGNORECASE)
 
 # The craft playbooks (core/craft/) the request's `craft` names, in reading order.
 AUTHOR_CRAFT = ("production-art-2d.md", "production-art-and-ui.md")
@@ -54,6 +64,15 @@ PROMPT = (
     "it at the stated size, using the palette's colours. No scripts, no embedded images, no "
     "references to other files. The craft guides are the request's `craft`: read them "
     "first. Write only the file."
+)
+PROMPT_STDOUT = (
+    "You are the 2D artist for this game. Read the request at {request}: one asset the "
+    "design needs - its role, description, readability line and spec - with the game's "
+    "palette and visual identity. Draw it as one self-contained SVG: a root <svg> with a "
+    "viewBox, built from several shapes so a first-time player recognises it at the stated "
+    "size, using the palette's colours. No scripts, no embedded images, no references to "
+    "other files. The craft guides are the request's `craft`: read them first. End your "
+    "answer with the complete SVG, from <svg to </svg>; print nothing after it."
 )
 PROMPT_REPAIR = (
     " Your previous file (the request's `repair.previous`) was rejected for the reasons in "
@@ -93,8 +112,11 @@ class CommandAuthor:
             raise AuthorError(f"factory.assets.author.argv has a placeholder this author does "
                               f"not provide ({exc}); use {{request}}, {{output}}, {{prompt}}, "
                               f"and double any literal brace") from exc
+        if self.settings.get("svg_from") not in SVG_FROM:
+            raise AuthorError("factory.assets.author.svg_from must be file or stdout")
         self.argv = argv
         self.repair_rounds = rounds
+        self.svg_from = self.settings["svg_from"]
         try:
             self.env = agentenv.scrubbed(agentenv.passthrough(config or {}))
         except ValueError as exc:
@@ -106,6 +128,8 @@ class CommandAuthor:
 
     def write(self, request, output, work_dir, stem):
         """Run the host once for `request`; return the bytes it wrote at `output`."""
+        # Absolute: the host runs in work_dir, and the prompt names both paths.
+        work_dir, output = os.path.abspath(work_dir), os.path.abspath(output)
         os.makedirs(work_dir, exist_ok=True)
         request_path = os.path.join(work_dir, f"{stem}.request.json")
         log_path = os.path.join(work_dir, f"{stem}.log")
@@ -115,7 +139,7 @@ class CommandAuthor:
         with open(request_path, "w", encoding="utf-8", newline="\n") as handle:
             json.dump(request, handle, indent=2, ensure_ascii=False, sort_keys=True)
         values = {"request": request_path, "output": output}
-        prompt = PROMPT.format(**values)
+        prompt = (PROMPT_STDOUT if self.svg_from == "stdout" else PROMPT).format(**values)
         if request.get("repair"):
             prompt += PROMPT_REPAIR
         if request.get("notes"):
@@ -136,12 +160,47 @@ class CommandAuthor:
                 f"the asset author {os.path.basename(command[0])} ended "
                 f"{'timed out' if result.timed_out or result.idle_timed_out else 'with exit ' + str(result.returncode)}"
                 f"{'; ' + result.error if result.error else ''}; log: {log_path}")
+        if self.svg_from == "stdout":
+            svg = last_svg(result.stdout or "")
+            if svg is None:
+                raise AuthorRunFailed(f"the asset author printed no SVG; log: {log_path}")
+            data = svg.encode("utf-8")
+            if len(data) > MAX_BYTES:
+                raise AuthorRunFailed(f"the asset author printed more than {MAX_BYTES} bytes")
+            with open(output, "wb") as handle:
+                handle.write(data)
+            return data
         if not os.path.isfile(output):
             raise AuthorRunFailed(f"the asset author wrote nothing at {output}")
         if os.path.getsize(output) > MAX_BYTES:
             raise AuthorRunFailed(f"the asset author wrote more than {MAX_BYTES} bytes")
         with open(output, "rb") as handle:
             return handle.read()
+
+
+def last_svg(text):
+    """The last complete <svg>...</svg> root element in `text`, or None. Nested <svg>
+    elements stay inside their root; a code fence or prose around it is not part of it."""
+    found, depth, start = None, 0, None
+    for match in _SVG_TAG.finditer(text):
+        if match.group(1):
+            if depth:
+                depth -= 1
+                close = text.find(">", match.end())
+                if not depth and close >= 0:
+                    found = text[start:close + 1]
+        else:
+            close = text.find(">", match.end())
+            if close < 0:
+                break
+            if text[close - 1] == "/":  # <svg .../>: an element with nothing in it
+                if not depth:
+                    found = text[match.start():close + 1]
+                continue
+            if not depth:
+                start = match.start()
+            depth += 1
+    return found
 
 
 def build_author(settings, config=None):

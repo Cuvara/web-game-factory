@@ -171,24 +171,98 @@ factory:
     # placeholder) or command - an agent host run through wgflib.procs with the agent
     # environment, once per drawing. argv placeholders: {request} (the request JSON: the
     # requirement, palette, visual identity, quality bars, repair problems, re-entry
-    # findings), {output} (where to write the SVG), {prompt}. A rejected file is shown its
-    # problems and asked again, repair_rounds times; then the requirement is a placeholder.
+    # findings), {output} (where to write the SVG), {prompt}. svg_from: file (it writes
+    # {output}) or stdout (it prints the SVG last; the Factory writes {output}). A rejected
+    # file is shown its problems and asked again, repair_rounds times; then the requirement
+    # is a placeholder.
     author:
       kind: none
-      # argv: [my-agent-host, --print, "{prompt}"]   # the host's non-interactive command
-      # timeout_seconds: 600
-      # idle_timeout_seconds: 300
-      # repair_rounds: 2
+    # Read-only 2D author on Claude Code's headless mode: it reads the request and the craft
+    # playbooks it names, and prints the SVG (svg_from: stdout), so it needs no write tool.
+    # Checked against CLI 2.1.280 and run on a real design's requirements through
+    # scripts/wgf-assets.py build: 95-125 s a drawing, each accepted on its first round
+    # (docs/claude-capabilities.md, "The asset authors").
+    #   --safe-mode                 no hooks, plugins, MCP servers or CLAUDE.md
+    #   --tools Read                the one tool in the session: the request, the craft files
+    #   --permission-mode dontAsk   nothing is ever prompted; everything but Read is refused
+    #   --output-format text        svg_from: stdout takes the last <svg> printed. Text prints
+    #                               only at exit, so no idle timeout: rely on timeout_seconds
+    #   --max-budget-usd            the host's own bound on ONE drawing; a design asks once
+    #                               per variant (a count of 10 is 10 calls) plus repairs
+    # author:
+    #   kind: command
+    #   svg_from: stdout
+    #   argv:
+    #     - claude
+    #     - -p
+    #     - "{prompt}"
+    #     - --model
+    #     - sonnet
+    #     - --safe-mode
+    #     - --strict-mcp-config
+    #     - --tools
+    #     - "Read"
+    #     - --allowedTools
+    #     - "Read"
+    #     - --disallowedTools
+    #     - "Edit,Write,NotebookEdit,Bash,WebFetch,WebSearch"
+    #     - --permission-mode
+    #     - dontAsk
+    #     - --no-session-persistence
+    #     - --output-format
+    #     - text
+    #     - --max-turns
+    #     - "15"
+    #     - --max-budget-usd
+    #     - "1"
+    #   timeout_seconds: 600
+    #   idle_timeout_seconds: null
+    #   repair_rounds: 2
     # The 3D model author (scripts/wgf_assets/model_author.py, docs/blender-pipeline.md):
     # kind none, or command - an agent host that writes a MODEL SPEC per 3D requirement,
     # built by the pinned Blender and judged (parts, normals, palette, primitive_only) with
     # up to repair_rounds re-asks. Only a configured author is asked; without one, a
     # design's own model spec is built by Blender, else the requirement is a placeholder.
+    # argv placeholders: {request}, {spec} (where to write the spec JSON), {prompt};
+    # spec_from: file (it writes {spec}) or stdout (it prints the spec JSON last). Blender
+    # 4.5 LTS must be on PATH or in WGF_BLENDER, or the author is refused.
     model_author:
       kind: none
-      # argv: [my-agent-host, --print, "{prompt}"]
-      # spec_from: file            # or stdout
-      # repair_rounds: 2
+    # Read-only 3D model author on Claude Code's headless mode, the same flags as the 2D
+    # author: it reads the request, the model-spec schema and the craft playbooks, and
+    # prints the spec (spec_from: stdout). Checked against CLI 2.1.280 and run through
+    # model_author.produce_model and the pinned Blender: 186 s for two rounds, the first
+    # refused for three over-large bevels and repaired (docs/claude-capabilities.md, "The
+    # asset authors"). Each repair round is one more call.
+    # model_author:
+    #   kind: command
+    #   spec_from: stdout
+    #   argv:
+    #     - claude
+    #     - -p
+    #     - "{prompt}"
+    #     - --model
+    #     - sonnet
+    #     - --safe-mode
+    #     - --strict-mcp-config
+    #     - --tools
+    #     - "Read"
+    #     - --allowedTools
+    #     - "Read"
+    #     - --disallowedTools
+    #     - "Edit,Write,NotebookEdit,Bash,WebFetch,WebSearch"
+    #     - --permission-mode
+    #     - dontAsk
+    #     - --no-session-persistence
+    #     - --output-format
+    #     - text
+    #     - --max-turns
+    #     - "20"
+    #     - --max-budget-usd
+    #     - "2"
+    #   timeout_seconds: 900
+    #   idle_timeout_seconds: null
+    #   max_repair_rounds: 2
     placeholders:
       enabled: true
       # Tried in order; the procedural backend is always last and always works. An

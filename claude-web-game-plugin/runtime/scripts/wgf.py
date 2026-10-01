@@ -929,6 +929,13 @@ def cmd_where(args):
             "reviewer": ((config.section("review").get("reviewer") or {}).get("kind")
                          or "none"),
             "design_author": config.section("design").get("author") or "archetype",
+            # Workflow 5: placeholder art is refused, and visual-qa blocks without a judge.
+            "asset_author": ((config.section("assets").get("author") or {}).get("kind")
+                             or "none"),
+            "model_author": ((config.section("assets").get("model_author") or {}).get("kind")
+                             or "none"),
+            "visualqa_judge": ((config.section("visualqa").get("judge") or {}).get("kind")
+                               or "none"),
             "auto_approve": config.auto_approve,
             "timeout_auto_approve": config.section("checkpoints").get(
                 "timeout_auto_approve") or {},

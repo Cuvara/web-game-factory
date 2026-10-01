@@ -241,6 +241,37 @@ class MockPlayabilityStep(MockStep):
             body["failed_checks"] = ["desktop:win.reachable"]
 
 
+class MockVisualQAStep(MockStep):
+    """`assets` or `develop` in a mock plan is a visual QA failure routed there: FAILED with
+    that route and not retryable, a blocker finding naming it in the report - the shape the
+    real visual-qa step returns. `fail` routes to develop. No frame is read."""
+
+    type, role = "visual-qa", "qa"
+    ROUTES = ("assets", "develop")
+
+    def execute(self, inputs, context):
+        result = super().execute(inputs, context)
+        route = "develop" if result.route == "fail" else result.route
+        if route in self.ROUTES:
+            return StepResult("FAILED", route=route, artifacts=result.artifacts,
+                              retryable=False, error=f"{self.id} failed visual QA (mock)")
+        return result
+
+    def customize(self, body, artifact_type, context, entry):
+        if artifact_type != "visual-qa-report":
+            return
+        route = "develop" if entry == "fail" else entry
+        if route in self.ROUTES:
+            finding = f"mock-blocker-{context.execution}"
+            body["verdict"] = "FAIL"
+            body["findings"] = [{"id": finding, "severity": "blocker",
+                                 "category": "assets" if route == "assets" else "ui",
+                                 "frame": None, "route": route,
+                                 "summary": "Scripted visual QA blocker (mock)."}]
+            body["failed"] = [f"finding:{finding}"]
+            body["routes"] = [route]
+
+
 class MockReleaseStep(MockStep):
     type, role = "release", "release"
 
@@ -254,6 +285,7 @@ MOCK_STEPS = (
     MockAssetsStep,
     MockDevelopmentStep,
     MockPlayabilityStep,
+    MockVisualQAStep,
     MockReviewStep,
     MockSDKStep,
     MockVerificationStep,

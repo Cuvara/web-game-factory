@@ -7,7 +7,7 @@
     "id": "visual-qa-report",
     "kind": "artifact",
     "format": "json",
-    "version": "1.0.0",
+    "version": "1.1.0",
     "producer": "title:prototype",
     "consumers": [
       "title:prototype",
@@ -59,6 +59,36 @@
         }
       },
       "additionalProperties": true
+    },
+    "rubric": {
+      "type": "object",
+      "required": [
+        "version",
+        "sha256"
+      ],
+      "description": "The rubric the frames were judged by (core/reference/visual-qa-rubric.yaml unless configured), pinned by content: a verdict is explainable only against the rubric it was given.",
+      "properties": {
+        "path": {
+          "type": "string"
+        },
+        "version": {
+          "type": "string"
+        },
+        "sha256": {
+          "type": "string"
+        },
+        "pass_bar": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 5
+        }
+      },
+      "additionalProperties": false
+    },
+    "judge_runs": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "How many times the judge was run: a malformed verdict is asked for once more."
     },
     "frames": {
       "type": "array",
@@ -178,6 +208,13 @@
         "FAIL",
         "BLOCKED"
       ]
+    },
+    "notes": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "The judge's free-text notes, verbatim."
     }
   },
   "additionalProperties": false

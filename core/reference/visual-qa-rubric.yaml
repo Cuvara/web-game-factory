@@ -1,0 +1,113 @@
+# Visual QA rubric: what a finished game's frames are held to by a vision judge.
+#
+# The visual-qa step (title:prototype, production phase) hands a judge - an agent able to read
+# images - every frame the playability step captured of the production build: each state
+# (boot, idle, playing, before and after each action, won, lost), on a desktop and a mobile
+# viewport. The judge scores each dimension below 0-5 and lists findings; the step, not the
+# judge, decides the verdict from these rules. It is an agent's reading of frames
+# (measurement_class: automation-agent), never a first-time player's.
+#
+# The judge is an installation's choice, configured outside core: an agent command that can
+# read images, run read-only with nothing but the brief and copies of the frames, which
+# returns its scores and findings in the shape the brief gives. No judge configured blocks
+# the step; visual QA is never a silent pass.
+#
+# The anchors describe 0, 3 and 5; 1, 2 and 4 lie between them. A dimension scored below
+# `pass_bar` fails the build, and so does any finding of severity `blocker`. Each dimension
+# names where its failure goes back to: `assets` when an asset itself must change, `develop`
+# when the game's use of it must (the step's route is `assets` when anything failing routes
+# there, else `develop`).
+#
+# Calibrated once against real frames (docs/visual-qa-module.md, "Calibration"): a game whose
+# characters were untextured cubes on a near-black pitch, and the template's two golden
+# ports. Recalibrate as verdicts accumulate - never to make one build pass.
+
+version: 1.0.0
+
+pass_bar: 3
+
+dimensions:
+  art_completeness:
+    route: assets
+    question: Is every thing on screen finished art, in the style the design specifies?
+    anchors:
+      "0": Placeholder art everywhere - untextured primitives, flat boxes, missing-texture colours, stand-in rectangles.
+      "3": Most entities and the scene are finished art; one or two minor elements are still plain or stand-ins.
+      "5": Every entity, surface and UI element is finished art consistent with the art direction.
+  character_readability:
+    route: assets
+    question: Can a first-time player tell at a glance what each readable entity (player, threat, goal, target, projectile) is, at its size on both viewports?
+    anchors:
+      "0": Entities are anonymous shapes; the player cannot tell themself from a threat or a goal.
+      "3": Each entity's role can be told apart, but it takes a second look or it is small on mobile.
+      "5": Each entity reads instantly by silhouette and colour, on desktop and mobile alike.
+  environment:
+    route: assets
+    question: Does the scene (background, ground, arena, lighting) give a sense of place and frame the play?
+    anchors:
+      "0": An empty, black or flat-colour void; or so dark nothing reads.
+      "3": A plain but coherent setting that frames the play; lighting adequate.
+      "5": A setting with depth and character that supports the play and the identity.
+  ui_polish:
+    route: develop
+    question: Are buttons, panels and HUD styled to the design's UI rules, sized for touch on mobile?
+    anchors:
+      "0": Browser-default controls, unstyled HTML, overlapping or clipped UI.
+      "3": Styled consistently but plain; usable on mobile.
+      "5": Distinctive UI matching the visual identity, clear hierarchy, comfortable touch targets.
+  typography:
+    route: develop
+    question: Is the text set in the design's faces, legible at its size, with a clear hierarchy?
+    anchors:
+      "0": Default serif or system font, illegible sizes, text over busy art without contrast.
+      "3": Legible and consistent, little character.
+      "5": The design's faces, legible on both viewports, clear hierarchy of score, labels and calls to action.
+  composition:
+    route: develop
+    question: Is the frame laid out so the play is central, nothing important is cut off, and the mobile layout is designed rather than squeezed?
+    anchors:
+      "0": Play area cropped, entities off-screen or overlapping the HUD; mobile a shrunken desktop.
+      "3": Play area clear and uncropped on both viewports; some wasted or crowded space.
+      "5": Deliberate composition on both viewports; the eye goes to the play first.
+  consistency:
+    route: assets
+    question: Do all the visuals belong to one game - one palette, one shape language, one rendering style?
+    anchors:
+      "0": Mixed styles - flat clip-art beside photo textures, palettes that clash, assets from different games.
+      "3": Mostly coherent, with an odd one out.
+      "5": One unmistakable style throughout, matching the design's palette and shape language.
+  no_debug:
+    route: develop
+    question: Is the build free of development output?
+    anchors:
+      "0": Debug text, FPS or stats panels, axes or grid helpers, wireframes or bounding boxes visible.
+      "3": One small leftover developer element (an unlabeled counter, a stray outline).
+      "5": Nothing a developer left on screen.
+
+# Findings the judge must raise as `severity: blocker` whatever the scores. Each names the
+# category and the route the step expects; a blocker fails the build on its own.
+blockers:
+  - id: primitive-entity
+    category: assets
+    route: assets
+    rule: A readable entity (player, threat, goal, target, projectile) drawn as a plain cube, sphere, capsule, cylinder or rectangle, when the design's visual identity has no primitive_style.
+  - id: missing-asset
+    category: assets
+    route: assets
+    rule: An asset the design lists is visibly absent - a missing-texture colour, an empty sprite box, a black or magenta square, a model that did not load.
+  - id: browser-default-ui
+    category: ui
+    route: develop
+    rule: Browser-default buttons, inputs or text (grey bevelled buttons, Times New Roman, blue underlined links) in the game's UI.
+  - id: debug-output
+    category: debug
+    route: develop
+    rule: Visible debug output - text overlays, FPS or stats panels, axes or grid helpers, wireframes, collider outlines.
+  - id: unreadable-frame
+    category: readability
+    route: develop
+    rule: A playing frame in which the player cannot find the readable entities - too dark, too small, or lost in the background. Route develop when lighting, camera or scale is the cause; assets when the entity's art itself cannot be read.
+  - id: cropped-play
+    category: composition
+    route: develop
+    rule: The play area, a readable entity or a required control is cut off on either viewport.

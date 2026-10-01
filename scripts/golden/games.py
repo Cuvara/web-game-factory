@@ -69,6 +69,8 @@ EXPECTED_STEPS = (
     ("assets", "SUCCESS"),
     ("develop", "SUCCESS"),
     ("playability", "SUCCESS"),        # played from outside through the port's play probe
+    ("production-quality", "SUCCESS"), # the port's library art delivered, loaded, drawn
+    ("visual-qa", "SUCCESS"),          # its frames against the port's approved baseline
     ("review", "SUCCESS"),
     ("sdk", "SUCCESS"),
     ("sdk-review", "SUCCESS"),         # the sdk commit - the one that ships - reviewed too

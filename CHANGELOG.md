@@ -16,6 +16,13 @@ requirement was relaxed.
 
 ### Fixed
 
+- **The playability bot measured screens mid-entrance.** A pause card fading in was measured
+  at three quarters of its opacity, and its button text failed a 4.5:1 contrast it meets a
+  moment later. `Watch.screen` now lets finite CSS animations and transitions finish (at
+  most 1.5 s) before it measures and captures a screen.
+- **The bot's per-screen frames had no rubric state.** `state-title`, `state-playing`,
+  `state-paused`, `state-won`, `state-lost` and `state-retry` were `unknown` to visual QA's
+  brief; they now map to initial, gameplay, interaction, win, loss and retry.
 - **An idea no catalog concept carries was silently replaced.** Research carried the nearest
   buildable shape forward (an endless runner for the goalkeeper idea), so strategy and design
   were held to a different game. Research now waits for input instead
@@ -41,6 +48,39 @@ requirement was relaxed.
 
 ### Added
 
+- **Workflow 5: the production build is judged before review.** `new-game` runs
+  `production-quality` and `visual-qa` after `playability`; each routes `assets` (an asset
+  must be made again) to `assets` - which reads the failing report, rebuilds only what it
+  names and continues to `develop` - and `develop` to `develop`, whose brief leads with the
+  failures ("Fix first: what the production gate measured" / "what visual QA saw") when they
+  judged the commit it starts from. Budgets: `production-quality.assets`, `visual-qa.assets`
+  (assets `max_visits` 5), `production-quality.develop`, `visual-qa.develop` (develop
+  `max_visits` 19 = the first visit + its seven route budgets + assets' four passes; every
+  later step 19). `--mock` runs every new step; mock CLI tests drive both loops each way and
+  the route limit.
+- **Release refuses a build the production gates did not pass.** `wgf_release` requires the
+  newest `production-quality-report` and `visual-qa-report` to be PASS for the development
+  commit the shipped sdk commit sits on (`no-<report>`, `<gate>-not-passed`,
+  `<gate>-commit-mismatch`); a workflow without the gates says so with
+  `with: required_reports: []`.
+- **Visual QA's `baseline` judge**: no agent - each runtime frame against the approved frame of
+  its state by palette, detail and layout (`scripts/wgf_visualqa/baseline.py`, bar 0.70,
+  calibrated on both golden ports: with placeholder art 0.37-0.52 (2D), without art
+  0.45-0.69 (2D) and 0.53-0.78 (3D, failing 22 of 26 frames), finished 0.76-0.99 and
+  0.81-0.99). Unmatched
+  states are reported as minor findings.
+- **The goldens exercise production for real.** The golden ports pin (template branch
+  `wgf-golden-production`) carries both reference ports' production art: the harness imports
+  each port's `library/` through `factory.assets.libraries`, configures visual QA's baseline
+  judge on its `baseline/`, and the run passes only when production-quality and visual-qa
+  both PASS (summary `production`); `library/` and `baseline/` never land in the game. The
+  drop-merge archetype's `pieces` count is 8 (the library's eight drawings). `run.py
+  --no-library` is the calibration run that must fail (it does, at develop: the port's own
+  art guard refuses placeholder art). Both goldens pass end to end with
+  production-quality 16/16 and visual-qa PASS on 26 frames. The template branch also holds
+  the fixes the real runs found in the ports: the 2D greybox ground was a wash (mean
+  luminance 227), the 2D asset loader sat in `src/assets/` (verify's asset root), and the 3D
+  port refused to boot without its manifest, so the greybox phase could not run.
 - **Every design states its production art and UI** (game-design 1.6.0). Each built-in
   archetype gives every asset a `role`, `dimension` and `readability` line (player, threats,
   targets, environment/background, UI kit, icons, fonts as bundled OFL files), and every

@@ -33,7 +33,7 @@ Anything else is refused — adding an engine is the tech plan's decision at G3.
 
 ## Phases
 
-`new-game` runs the develop step type twice (workflow 4), told apart by `with: phase`:
+`new-game` runs the develop step type twice (workflow 4 and later), told apart by `with: phase`:
 
 - **`greybox`** (step `greybox`, right after init): the whole MVP loop with primitive
   shapes and flat palette colours. It includes the play probe, the objective on screen,
@@ -57,6 +57,17 @@ bundled font files (`@font-face`, awaited before the first UI frame, `document.f
 sizes, touch targets, button fill/text/radius as palette tokens, the panel surface, result
 screens with Retry as the primary action, and the mobile layout. The craft behind it is
 `core/craft/production-art-and-ui.md`.
+
+In workflow 5 the production build is then judged by `production-quality` and `visual-qa`.
+A failure of the game's own (route `develop`), or an asset failure after `assets` rebuilt the
+named items (route `assets`, which continues here), re-enters develop with the failing
+reports as inputs. Only a FAIL of the commit this visit starts from is feedback - the assets
+step writes files but commits nothing, so HEAD is still the judged commit - and the brief
+then leads with **Fix first: what the production gate measured** (each failed required
+check, its route, viewport, assets and bar; `brief.json` `production_failures`) and **Fix
+first: what visual QA saw** (each entry of the report's `failed`: blocker findings with
+their frame, dimensions below the bar, failing per-state answers, the look;
+`visual_qa_failures`), with the judged commit as `gated_commit`.
 
 No `phase` (a workflow before 4) is the single develop phase it always was. An unknown phase
 fails the step.

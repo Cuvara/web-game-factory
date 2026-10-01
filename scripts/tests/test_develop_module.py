@@ -684,6 +684,43 @@ class Phases(DesignAndPlanInTheBrief):
         self.assertIn("None in this phase: draw everything with primitives", text)
         self.assertLess(text.index("## Phase: greybox"), text.index("## Ground rules"))
 
+    def test_production_gate_failures_lead_only_for_the_commit_this_visit_starts_from(self):
+        # Through assets or directly, the gates judged HEAD; a FAIL of any other commit (an
+        # earlier loop, another run) says nothing about this build.
+        def gate(artifact_type, commit):
+            body = fixture(artifact_type)
+            body.update(commit=commit, verdict="FAIL")
+            if artifact_type == "production-quality-report":
+                body["checks"][1].update(status="FAIL", summary="player drawn as a primitive")
+                body["failed"], body["routes"] = ["desktop:assets.used"], ["develop"]
+            else:
+                body["findings"] = [{"id": "grey-buttons", "severity": "blocker",
+                                     "category": "ui", "frame": None, "route": "develop",
+                                     "summary": "browser-default buttons"}]
+                body["failed"], body["routes"] = ["finding:grey-buttons"], ["develop"]
+            body["provenance"]["content_hash"] = content_hash(body)
+            return body
+
+        head = self.git("rev-parse", "HEAD").strip()
+        for visit, commit, judged in ((2, head, True), (3, "f" * 40, False)):
+            with self.subTest(commit=commit[:12]):
+                inputs = inputs_for(overrides={
+                    t: gate(t, commit) for t in ("production-quality-report",
+                                                 "visual-qa-report")})
+                step = step_with(FakeRunner())
+                step.definition.params = {"phase": "production"}
+                result = step.execute(inputs, context(self.config(),
+                                                      key=f"run-1:develop:{visit}",
+                                                      visit=visit))
+                self.assertEqual(result.outcome, StepOutcome.WAITING_FOR_HUMAN, result.error)
+                with open(os.path.join(self.repo, briefs.BRIEF_DIR, "brief.json")) as handle:
+                    data = json.load(handle)
+                self.assertEqual([f["check"] for f in data["production_failures"]],
+                                 ["assets.used"] if judged else [])
+                self.assertEqual([f["id"] for f in data["visual_qa_failures"]],
+                                 ["finding:grey-buttons"] if judged else [])
+                self.assertEqual(data["gated_commit"], head if judged else None)
+
     def test_greybox_ignores_an_asset_manifest_it_is_given(self):
         data, _ = self.phase_brief("greybox", inputs_for())
         self.assertEqual(data["assets"], [])

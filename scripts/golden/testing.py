@@ -32,7 +32,7 @@ _TESTS = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))
 if _TESTS not in sys.path:
     sys.path.insert(0, _TESTS)
 
-from wgflib import paths, procs
+from wgflib import paths, procs, template
 from wgflib.workflow.api import RunRequest
 from wgf_review import verdict as review_verdict
 
@@ -75,6 +75,16 @@ def fast_case(key):
                 self.assertNotIn(key_name, config.get(section) or {}, section)
             self.assertFalse(config["init"]["adopt_existing"])
             self.assertEqual(config["assets"]["root"], os.path.join(games_dir, game.title_id))
+            # The port's art library and approved frames come from the golden ports checkout.
+            library, baseline = harness.port_fixtures(game)
+            self.assertEqual(config["assets"].get("libraries"), [library] if library else [])
+            self.assertEqual(config["visualqa"]["judge"],
+                             {**config["visualqa"]["judge"], "kind": "baseline",
+                              "baseline_dir": baseline} if baseline
+                             else {**config["visualqa"]["judge"], "kind": "none"})
+            no_art = harness.build_config(game, self.workdir, harness.TEMPLATE_DIR,
+                                          with_library=False)
+            self.assertNotIn(library, no_art["assets"].get("libraries") or [])
             self.assertTrue(config["storage"]["directory"].startswith(self.workdir))
             self.assertFalse(config["discovery"]["live"])
             self.assertEqual(config["discovery"]["catalog"], game.catalog)
@@ -157,6 +167,15 @@ def fast_case(key):
             self.assertEqual(plan["repo_params"]["game_config"]["engine"]["type"], game.engine)
 
         # -- the replay developer ---------------------------------------------------------
+
+        def test_the_port_fixtures_never_land_in_the_game(self):
+            # library/ and baseline/ are the golden run's fixtures (the art the assets step
+            # imports, the frames visual QA compares with), not game files.
+            ports = template.golden_ports_checkout()
+            port = replay_developer.load_port(key)
+            files = [rel for rel, _ in replay_developer.port_files(port, ports)]
+            self.assertTrue(files)
+            self.assertFalse([f for f in files if f.startswith(("library/", "baseline/"))])
 
         def test_port_manifest_maps_onto_the_template_example(self):
             if not _template_has_examples():
@@ -367,6 +386,16 @@ def end_to_end_case(key):
         def test_the_build_was_really_reviewed(self):
             self.assertEqual(self.summary["review_status"], "approved",
                              "a golden run passes only through an approving review")
+
+        def test_the_production_gates_passed_the_port_art(self):
+            # The goldens fail if the art regresses to primitives or placeholders: the real
+            # production-quality step and visual QA's baseline judge, no mock.
+            production = self.summary["production"]
+            self.assertEqual(production["production_quality"]["verdict"], "PASS", production)
+            self.assertEqual(production["visual_qa"]["verdict"], "PASS", production)
+            self.assertEqual(production["visual_qa"]["judge"], "baseline", production)
+            self.assertGreater(production["visual_qa"]["frames"], 0, production)
+            self.assertTrue(production["passed"], production)
 
         def test_the_engine_is_the_games_everywhere(self):
             self.assertTrue(self.summary["engine"]["consistent"], self.summary["engine"])

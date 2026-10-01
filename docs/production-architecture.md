@@ -1,6 +1,8 @@
 # Production architecture: from a playable greybox to a finished game
 
-Status: the target the 2.6 work implements. Each section names its owner workstream and the
+Status: the target the 2.6 work implements; workflow 5 (below) is executable in
+`core/workflows/new-game.workflow.yaml`, and release refuses a build the production gates did
+not pass (docs/release-module.md). Each section names its owner workstream and the
 contract (schema, reference file, step) it builds against. A contract here changes only by
 editing this file and the schema together.
 

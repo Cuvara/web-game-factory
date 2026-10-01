@@ -58,10 +58,9 @@ NAMES = {
     # act-pause-after and state-paused frames).
     "paused": "interaction", "pause": "interaction",
 }
-# Calibrated on Tower Merge Rush (docs/visual-qa-module.md, "The baseline judge"): the same
-# port without its art scored 0.46-0.62 against its approved frames, two plays of the
-# finished port 0.70-0.97 before the pause and title screens had approved frames, 0.76+
-# after.
+# Calibrated on both golden ports (docs/visual-qa-module.md, "The baseline judge"): with
+# placeholder art 0.37-0.52 and with none 0.45-0.69 (2D), 0.53-0.78 with none (3D, where a
+# mostly-DOM screen can pass); finished, 0.76-0.99 (2D, two runs) and 0.81-0.99 (3D).
 MIN_SIMILARITY = 0.70
 # The measure: weights of its three parts (they sum to 1), and the sampling it uses.
 WEIGHTS = {"palette": 0.5, "detail": 0.2, "layout": 0.3}

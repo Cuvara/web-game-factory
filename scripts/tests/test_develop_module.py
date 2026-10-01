@@ -7,6 +7,7 @@ while every other process (pnpm, the developer command) is a fake that records i
     python -m unittest discover scripts/tests
 """
 
+import copy
 import json
 import os
 import re
@@ -633,6 +634,87 @@ class Phases(DesignAndPlanInTheBrief):
         self.assertEqual(data["greybox_commit"], "d" * 40)
         self.assertIn("The greybox at `dddddddddddd` was played from outside and passed", text)
         self.assertEqual(data["playability_failures"], [])
+
+    def production_design(self, primitive_style=None):
+        design = fixture("game-design")
+        spec = copy.deepcopy(BUILD_SPEC)
+        spec["assets"] = [
+            {"id": "player", "type": "sprite", "tier": "mvp", "description": "Runner",
+             "role": "player", "dimension": "2d",
+             "readability": "A runner in the accent colour, readable at 64 px tall"},
+            {"id": "obstacles", "type": "sprite", "tier": "mvp", "description": "Obstacles",
+             "role": "threat", "dimension": "2d", "readability": "A dark block filling its lane"},
+            {"id": "skins", "type": "sprite", "tier": "optional", "description": "Later",
+             "role": "player", "dimension": "2d", "readability": "Not now"},
+            {"id": "fonts", "type": "font", "tier": "mvp", "description": "Faces",
+             "role": "font", "dimension": "2d",
+             "spec": "Files: Unbounded (https://github.com/google/fonts/tree/main/ofl/unbounded)."},
+        ]
+        spec["screens"] = [{"id": "result", "tier": "mvp", "state": "fail",
+                            "actions": [{"label": "Retry", "goes_to": "play"},
+                                        {"label": "Menu", "goes_to": "title"}]}]
+        spec["visual_identity"] = {
+            "palette": [{"token": "ground", "hex": "#0B0B12", "role": "Background"},
+                        {"token": "signal", "hex": "#FF2E88", "role": "Accent"},
+                        {"token": "surface", "hex": "#16162A", "role": "Panels"}],
+            "typography": {"display": "Unbounded (800)", "body": "Instrument Sans (500)"},
+            "ui": {"font_px": {"body": 16, "hud": 20, "heading": 32}, "min_target_px": 48,
+                   "button": {"fill": "signal", "text": "ground", "radius_px": 28,
+                              "style": "Pill with an outer glow"},
+                   "surface": "surface"}}
+        if primitive_style:
+            spec["visual_identity"]["primitive_style"] = {"reason": primitive_style}
+        design["build_spec"] = spec
+        design["provenance"]["content_hash"] = content_hash(design)
+        return design
+
+    def test_production_names_the_asset_that_draws_each_role(self):
+        data, text = self.phase_brief(
+            "production", inputs_for(overrides={"game-design": self.production_design()}))
+        art = data["production_art"]
+        self.assertEqual([(a["id"], a["role"], a["runtime_asset"]) for a in art["assets"]],
+                         [("player", "player", "player"), ("obstacles", "threat", "obstacles"),
+                          ("fonts", "font", "fonts")])
+        self.assertIn("**Fonts are production assets** (`fonts`). Files: Unbounded", text)
+        self.assertIn("`document.fonts.check`", text)
+        self.assertIn("## Production art and UI", text)
+        self.assertIn("- **player** (player, 2d, sprite): draw with runtime asset `player`", text)
+        self.assertIn("Readable as: A runner in the accent colour, readable at 64 px tall", text)
+        # The probe reports what draws each entity, and what was loaded.
+        for field in ("`asset`", "`render`", "`assets_loaded`"):
+            self.assertIn(field, text)
+        self.assertIn("**No readable entity is drawn as a primitive.**", text)
+        self.assertIn("`player`, `threat`, `goal`, `target`, `projectile`", text)
+        # The UI spec, from visual_identity.ui and the palette.
+        self.assertIn("every interactive element at least 48 x 48 CSS px", text)
+        self.assertIn("fill `signal` (#FF2E88), text `ground` (#0B0B12), corner radius 28 px",
+                      text)
+        self.assertIn("body 16, hud 20, heading 32", text)
+        self.assertIn("surface `surface` (#16162A)", text)
+        self.assertIn("Result screen `result`", text)
+        self.assertIn("Retry, Menu", text)
+        self.assertIn("production-art-and-ui.md", text)
+        self.assertNotIn("Primitives are expected here", text)
+
+    def test_a_geometric_art_direction_may_draw_primitives(self):
+        reason = "Abstract neon geometry is the art direction: slabs and light."
+        _, text = self.phase_brief(
+            "production",
+            inputs_for(overrides={"game-design": self.production_design(primitive_style=reason)}))
+        self.assertIn(f"visual_identity.primitive_style: {reason}", text)
+        self.assertNotIn("No readable entity is drawn as a primitive", text)
+
+    def test_greybox_reports_primitives_and_draws_no_production_art(self):
+        data, text = self.phase_brief(
+            "greybox", inputs_for(types=("game-design", "scaffold-record", "title-strategy"),
+                                  overrides={"game-design": self.production_design()}))
+        self.assertIn("Primitives are expected here", text)
+        self.assertIn('`render: "primitive"`', text)
+        self.assertIn("`asset: null`", text)
+        self.assertNotIn("## Production art and UI", text)
+        # Still carried as data: the roles a greybox entity is given are these.
+        self.assertEqual(data["production_art"]["readable_roles"],
+                         ["player", "threat", "goal", "target", "projectile"])
 
     def test_an_unknown_phase_fails(self):
         result = self.run_phase("polish", inputs_for())

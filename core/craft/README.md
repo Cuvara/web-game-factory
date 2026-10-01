@@ -23,6 +23,7 @@ rule is.
 | [`audio.md`](audio.md) | asset, gameplay | design, prototype | `audio_direction`, `build_spec.audio` |
 | [`art-direction.md`](art-direction.md) | game-designer, asset | design, prototype | `art_direction`, `build_spec.visual_identity`, `.assets`, the asset manifest |
 | [`accessibility.md`](accessibility.md) | ui, game-designer | design, prototype, qa | `ux.accessibility`, `visual_identity`, `.controls` |
+| [`production-art-and-ui.md`](production-art-and-ui.md) | game-designer, asset, gameplay, ui | design, prototype, production | `build_spec.assets[].role`/`.readability`, `visual_identity.ui`/`.primitive_style`, the play probe's `asset`/`render` |
 | [`2d-assets.md`](2d-assets.md) | asset, gameplay, ui | design, prototype | `asset_requirements`, the asset manifest, the runtime asset manifest |
 | [`web-performance.md`](web-performance.md) | architect, gameplay, qa | tech-plan, prototype, qa | `perf_budgets`, `perf_measurements`, the asset pipeline |
 | [`phaser.md`](phaser.md) | gameplay, ui | tech-plan, prototype | `build_spec.mechanics`, `.controls`, `.screens`, `.responsive` — only when `engine.type` is `phaserjs` |

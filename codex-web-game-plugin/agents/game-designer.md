@@ -16,6 +16,7 @@ Invoked from `AGENTS.md` or by the matching `/wgf-*` prompt.
 8. `core/craft/core-loop-and-difficulty.md`
 9. `core/craft/onboarding-and-portal-ux.md`
 10. `core/craft/art-direction.md`
+11. `core/craft/production-art-and-ui.md`
 
 Core is authoritative. Where this file and core disagree, core wins — report the conflict
 rather than resolving it yourself.

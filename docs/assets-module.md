@@ -212,6 +212,11 @@ other item is reused - a library file is deterministic, an authored file comes f
 ledger, a placeholder from the same bytes. Without an author, a named item is rebuilt from
 the same sources and the manifest says so in its `notes`.
 
+In `new-game` (workflow 5) both production gates route `assets` here (budgets
+`production-quality.assets: 2`, `visual-qa.assets: 2`), and the run then continues to
+`develop` as on the first pass: develop integrates what was rebuilt, and its brief carries
+the reports' failures.
+
 ## Placeholders
 
 Backends are tried in `placeholders.backends` order; the first that is available, supports

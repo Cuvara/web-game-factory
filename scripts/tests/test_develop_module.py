@@ -605,6 +605,59 @@ class FileOwnershipInTheBrief(DesignAndPlanInTheBrief):
         self.assertNotIn("what the build did when it was played", briefs.render_markdown(data))
 
 
+    def test_failed_production_gates_lead_the_brief(self):
+        production = {"commit": "d" * 40, "verdict": "FAIL", "checks": [
+            {"id": "scene.no_primitives", "project": "desktop", "status": "FAIL",
+             "required": True, "route": "develop", "summary": "player drawn as a primitive",
+             "expected": {"render": ["asset", "composite"]}},
+            {"id": "assets.present", "status": "FAIL", "required": True, "route": "assets",
+             "summary": "tile-3 is a placeholder", "assets": ["tile-3"]},
+            {"id": "ui.text", "project": "mobile", "status": "WARNING", "required": False,
+             "route": "develop", "summary": "advisory"}]}
+        visual_qa = {"commit": "d" * 40, "verdict": "FAIL",
+                     "frames": [{"id": "desktop/play-2s",
+                                 "path": "playability/1-1/out/desktop/frames/play-2s.png"}],
+                     "findings": [{"id": "grey-buttons", "severity": "blocker",
+                                   "category": "ui", "route": "develop",
+                                   "frame": "desktop/play-2s",
+                                   "summary": "browser-default buttons"}],
+                     "scores": {"ui_polish": 1},
+                     "failed": ["finding:grey-buttons", "score:ui_polish",
+                                "look:developer-prototype"]}
+        data = briefs.build_brief(
+            title_id="t", engine="pixijs", iteration=3, key="k", baseline="d" * 40,
+            design={}, assets={}, scaffold={}, production=production, visual_qa=visual_qa,
+            frames_root="/runs/r1")
+        self.assertEqual([f["check"] for f in data["production_failures"]],
+                         ["scene.no_primitives", "assets.present"])
+        self.assertEqual([f["id"] for f in data["visual_qa_failures"]],
+                         ["finding:grey-buttons", "score:ui_polish", "look:developer-prototype"])
+        self.assertEqual(data["gated_commit"], "d" * 40)
+        self.assertEqual({p["artifact_type"] for p in data["inputs"]},
+                         {"production-quality-report", "visual-qa-report"})
+        text = briefs.render_markdown(data)
+        gate = text[text.index("## Fix first: what the production gate measured"):]
+        self.assertIn("`dddddddddddd`", gate)
+        self.assertIn("`scene.no_primitives` (desktop) [develop]: player drawn as a primitive",
+                      gate)
+        self.assertIn("`assets.present` [assets]: tile-3 is a placeholder Assets: `tile-3`", gate)
+        self.assertNotIn("advisory", gate.split("## Fix first: what visual QA saw")[0])
+        seen = text[text.index("## Fix first: what visual QA saw"):]
+        self.assertIn("`finding:grey-buttons` [develop]: (blocker, ui) browser-default buttons",
+                      seen)
+        self.assertIn("/runs/r1/playability/1-1/out/desktop/frames/play-2s.png", seen)
+        self.assertIn("`ui_polish` scored 1 of 5", seen)
+        # Passing gates: no section, no gated commit.
+        data = briefs.build_brief(
+            title_id="t", engine="pixijs", iteration=3, key="k", baseline="d" * 40,
+            design={}, assets={}, scaffold={})
+        self.assertEqual((data["production_failures"], data["visual_qa_failures"],
+                          data["gated_commit"]), ([], [], None))
+        text = briefs.render_markdown(data)
+        self.assertNotIn("what the production gate measured", text)
+        self.assertNotIn("what visual QA saw", text)
+
+
 class Phases(DesignAndPlanInTheBrief):
     """Workflow 4: `greybox` builds the loop before any asset exists; `production` adds them."""
 
@@ -630,6 +683,43 @@ class Phases(DesignAndPlanInTheBrief):
         self.assertIn("No asset files", text)
         self.assertIn("None in this phase: draw everything with primitives", text)
         self.assertLess(text.index("## Phase: greybox"), text.index("## Ground rules"))
+
+    def test_production_gate_failures_lead_only_for_the_commit_this_visit_starts_from(self):
+        # Through assets or directly, the gates judged HEAD; a FAIL of any other commit (an
+        # earlier loop, another run) says nothing about this build.
+        def gate(artifact_type, commit):
+            body = fixture(artifact_type)
+            body.update(commit=commit, verdict="FAIL")
+            if artifact_type == "production-quality-report":
+                body["checks"][1].update(status="FAIL", summary="player drawn as a primitive")
+                body["failed"], body["routes"] = ["desktop:assets.used"], ["develop"]
+            else:
+                body["findings"] = [{"id": "grey-buttons", "severity": "blocker",
+                                     "category": "ui", "frame": None, "route": "develop",
+                                     "summary": "browser-default buttons"}]
+                body["failed"], body["routes"] = ["finding:grey-buttons"], ["develop"]
+            body["provenance"]["content_hash"] = content_hash(body)
+            return body
+
+        head = self.git("rev-parse", "HEAD").strip()
+        for visit, commit, judged in ((2, head, True), (3, "f" * 40, False)):
+            with self.subTest(commit=commit[:12]):
+                inputs = inputs_for(overrides={
+                    t: gate(t, commit) for t in ("production-quality-report",
+                                                 "visual-qa-report")})
+                step = step_with(FakeRunner())
+                step.definition.params = {"phase": "production"}
+                result = step.execute(inputs, context(self.config(),
+                                                      key=f"run-1:develop:{visit}",
+                                                      visit=visit))
+                self.assertEqual(result.outcome, StepOutcome.WAITING_FOR_HUMAN, result.error)
+                with open(os.path.join(self.repo, briefs.BRIEF_DIR, "brief.json")) as handle:
+                    data = json.load(handle)
+                self.assertEqual([f["check"] for f in data["production_failures"]],
+                                 ["assets.used"] if judged else [])
+                self.assertEqual([f["id"] for f in data["visual_qa_failures"]],
+                                 ["finding:grey-buttons"] if judged else [])
+                self.assertEqual(data["gated_commit"], head if judged else None)
 
     def test_greybox_ignores_an_asset_manifest_it_is_given(self):
         data, _ = self.phase_brief("greybox", inputs_for())
@@ -1888,7 +1978,8 @@ class ThroughTheEngine(unittest.TestCase):
         step = next(s for s in definition.steps if s.id == "develop")
         self.assertEqual(set(step.inputs), {"game-design", "asset-manifest", "scaffold-record",
                                             "title-strategy", "tech-plan", "qa-report",
-                                            "review-report", "playability-report"})
+                                            "review-report", "playability-report",
+                                            "production-quality-report", "visual-qa-report"})
         self.assertEqual(list(step.outputs), ["prototype-report"])
 
 

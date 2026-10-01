@@ -395,6 +395,7 @@ def build_brief(*, title_id, engine, iteration, key, baseline, design, assets, s
                 review=None, mobile_test=True, tech_plan=None, self_playtest=False,
                 writable_paths=None, package_changes=None, loop=None, sessions=None,
                 playability=None, frames_root=None, phase=None, greybox_commit=None,
+                production=None, visual_qa=None,
                 review_baseline=None):
     """The brief as data. `render_markdown` turns it into the document a developer reads."""
     refs = refs or {}
@@ -446,6 +447,18 @@ def build_brief(*, title_id, engine, iteration, key, baseline, design, assets, s
         for c in (playability or {}).get("checks") or []
         if c.get("required") and c.get("status") == "FAIL"
     ]
+    # The production gates' failures of the commit this visit starts from: each failed
+    # production-quality check (with the route it took: an `assets` failure was rebuilt by
+    # the assets step before this visit, and its integration is this visit's), and visual
+    # QA's failures - blocker findings, low scores, per-state answers, the look.
+    production_failures = [
+        {"check": c.get("id"), "project": c.get("project"), "route": c.get("route"),
+         "summary": c.get("summary"), "expected": c.get("expected"),
+         "assets": c.get("assets") or None}
+        for c in (production or {}).get("checks") or []
+        if c.get("required") and c.get("status") == "FAIL"
+    ]
+    visual_qa_failures = _visual_qa_failures(visual_qa, frames_root)
     failures = [
         {"check": c.get("id"), "summary": c.get("summary"), "output_tail": c.get("output_tail")}
         for c in (previous_checks or {}).get("checks") or []
@@ -478,7 +491,9 @@ def build_brief(*, title_id, engine, iteration, key, baseline, design, assets, s
             for t, c in (("game-design", design), ("asset-manifest", assets),
                          ("scaffold-record", scaffold), ("title-strategy", strategy),
                          ("tech-plan", tech_plan), ("qa-report", qa),
-                         ("review-report", review), ("playability-report", playability))
+                         ("review-report", review), ("playability-report", playability),
+                         ("production-quality-report", production),
+                         ("visual-qa-report", visual_qa))
             if c
         ],
         "design": {
@@ -535,6 +550,10 @@ def build_brief(*, title_id, engine, iteration, key, baseline, design, assets, s
         "production_art": select_production_art(design, assets),
         "greybox_commit": greybox_commit,
         "playability_failures": playability_failures,
+        "production_failures": production_failures,
+        "visual_qa_failures": visual_qa_failures,
+        "gated_commit": ((production if production_failures else None)
+                         or (visual_qa if visual_qa_failures else None) or {}).get("commit"),
         "played_commit": (playability or {}).get("commit") if playability_failures else None,
         "review_blockers": review_blockers,
         "reviewed_commit": (review or {}).get("reviewed_commit") if review_blockers else None,
@@ -766,6 +785,39 @@ def _ownership_section(brief):
                  "yours, do not create or patch it: build what you can, and say what is "
                  "missing in the report's `known_issues`.\n")
     return "\n".join(lines)
+
+
+def _visual_qa_failures(report, frames_root=None):
+    """[{id, route, summary, frame}] for each entry of a FAIL visual-qa-report's `failed`:
+    a finding (its summary and frame), a dimension below the bar, a per-state answer, or the
+    look."""
+    if not report:
+        return []
+    findings = {f.get("id"): f for f in report.get("findings") or []}
+    frames = {f.get("id"): f.get("path") for f in report.get("frames") or []}
+    scores = report.get("scores") or {}
+    out = []
+    for entry in report.get("failed") or []:
+        kind, _, name = str(entry).partition(":")
+        item = {"id": str(entry), "route": None, "summary": str(entry), "frame": None}
+        if kind == "finding" and name in findings:
+            finding = findings[name]
+            frame = finding.get("frame")
+            path = frames.get(frame)
+            item.update(route=finding.get("route"),
+                        summary=f"({finding.get('severity')}, {finding.get('category')}) "
+                                f"{finding.get('summary')}",
+                        frame=(os.path.join(frames_root, path) if frames_root and path
+                               else frame))
+        elif kind == "score":
+            item["summary"] = (f"`{name}` scored {scores.get(name)} of 5, below the rubric's "
+                               "bar")
+        elif kind == "state":
+            item["summary"] = f"on {name}: the rubric's answer fails the state"
+        elif kind == "look":
+            item["summary"] = "the build looks like a developer prototype, not a finished game"
+        out.append(item)
+    return out
 
 
 def render_markdown(brief):
@@ -1129,7 +1181,8 @@ def render_markdown(brief):
                     f"guess - re-check the build against this brief, fix only what you can "
                     f"show is wrong, and say in `known_issues` that no reason was given.")
         elif brief.get("qa_defects") or brief.get("review_blockers") or \
-                brief.get("previous_failures") or brief.get("playability_failures"):
+                brief.get("previous_failures") or brief.get("playability_failures") or \
+                brief.get("production_failures") or brief.get("visual_qa_failures"):
             add("Fix what sent it back first (below); a pass that does not fix it is one "
                 "fewer left.")
         else:
@@ -1167,6 +1220,37 @@ def render_markdown(brief):
             if failure.get("frames"):
                 line += " Frames: " + ", ".join(f"`{f}`" for f in failure["frames"])
             add(line)
+        add("")
+
+    if brief.get("production_failures"):
+        add("## Fix first: what the production gate measured\n")
+        add(f"The production-quality step judged `{(brief.get('gated_commit') or '')[:12]}` "
+            "from the same play: every required asset delivered, fetched, drawn and visible, "
+            "no readable entity a primitive, the DOM UI at its measured bars "
+            "(core/reference/production-quality.yaml). These checks failed. One routed "
+            "`assets` named an asset the assets step has now made again: use it as "
+            "`public/assets/assets.json` lists it. The rest are the game's own use of its "
+            "assets and its UI.\n")
+        for failure in brief["production_failures"]:
+            line = (f"- `{failure['check']}`"
+                    + (f" ({failure['project']})" if failure.get("project") else "")
+                    + f" [{failure.get('route')}]: {failure.get('summary')}")
+            if failure.get("assets"):
+                line += " Assets: " + ", ".join(f"`{a}`" for a in failure["assets"])
+            if failure.get("expected") is not None:
+                line += f" Expected: {_inline(failure['expected'])}."
+            add(line)
+        add("")
+
+    if brief.get("visual_qa_failures"):
+        add("## Fix first: what visual QA saw\n")
+        add(f"A judge read the frames of `{(brief.get('gated_commit') or '')[:12]}` against "
+            "core/reference/visual-qa-rubric.yaml and the design's visual identity, and the "
+            "build failed. The next build is judged the same way, from frames of the running "
+            "game: change what is on screen. Where a frame is named, look at it.\n")
+        for failure in brief["visual_qa_failures"]:
+            add(f"- `{failure['id']}` [{failure.get('route') or '-'}]: {failure['summary']}"
+                + (" Frame: `" + failure["frame"] + "`" if failure.get("frame") else ""))
         add("")
 
     if brief.get("review_blockers"):

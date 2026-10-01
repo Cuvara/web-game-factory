@@ -12,7 +12,8 @@
     "consumers": [
       "title:prototype",
       "title:prototype-review",
-      "release:qa"
+      "release:qa",
+      "release:draft"
     ],
     "repo_path": "<game-repo>/qa/visual-qa/<commit>.json",
     "run_path": "<storage>/workflows/<run-id>/artifacts/visual-qa-report/v<n>.json",

@@ -15,6 +15,10 @@
     BLOCKED   no judge configured (kind `none`: visual QA needs a judge - never a silent
               pass), no frames in the playability-report, or a frame no longer on disk
 
+The judge is a command (an agent able to read images) or, for a game whose look was
+approved once, `baseline`: each frame against the approved frame of its state (baseline.py),
+no agent, the same verdict shape.
+
     FAILED final      malformed verdict twice (judge.MAX_JUDGE_RUNS), a judge that could not
                       start or changed what it may only read, a frame that is not the one
                       the playability step recorded, bad configuration or rubric
@@ -25,13 +29,15 @@ The judge is configured, never named here: `factory.visualqa.judge` (settings.py
 """
 
 import datetime
+import json
 import os
 import shutil
 
 from wgflib import isolation, paths, provenance
 from wgflib.workflow import ArtifactOutput, StepResult, WorkflowStep
 
-from .judge import MAX_JUDGE_RUNS, FrameError, run_judge, stage_frames
+from . import baseline
+from .judge import MAX_JUDGE_RUNS, FrameError, Outcome, run_judge, stage_frames
 from .rubric import RubricError, decide, judged_pairs, load_rubric, state_ids
 from .settings import Settings, SettingsError
 
@@ -139,9 +145,13 @@ class VisualQAStep(WorkflowStep):
         except ValueError as exc:
             return StepResult.failed(str(exc), retryable=False)
 
-        outcome = run_judge(settings, rubric, workdir, frames, frames_dir, title_id=title_id,
-                            commit=commit, design=design, manifest=manifest, quality=quality,
-                            guarded=guarded, logger=context.logger, stem=self.id)
+        if settings.kind == "baseline":
+            outcome = self._baseline(settings, rubric, frames, workdir, context)
+        else:
+            outcome = run_judge(settings, rubric, workdir, frames, frames_dir,
+                                title_id=title_id, commit=commit, design=design,
+                                manifest=manifest, quality=quality, guarded=guarded,
+                                logger=context.logger, stem=self.id)
         if outcome.failure is not None:
             failure = outcome.failure
             context.logger.error("visual-qa judge failed", code=failure["code"])
@@ -173,6 +183,29 @@ class VisualQAStep(WorkflowStep):
                                  + (f", below the bar: {', '.join(below)}" if below else "")
                                  + (f" - {summary}" if summary else "")))
 
+    def _baseline(self, settings, rubric, frames, workdir, context):
+        """The baseline judge (baseline.py): no agent, the same verdict shape. Every
+        comparison is kept beside the staged frames, <workdir>/baseline.json."""
+        outcome = Outcome()
+        try:
+            outcome.verdict, comparisons = baseline.judge(
+                rubric, frames, settings.baseline_dir, settings.min_similarity)
+        except baseline.BaselineError as exc:
+            outcome.failure = {"code": "baseline-unusable", "message": str(exc),
+                               "retryable": False}
+            return outcome
+        with open(os.path.join(workdir, "baseline.json"), "w", encoding="utf-8") as handle:
+            json.dump({"baseline_dir": settings.baseline_dir,
+                       "min_similarity": settings.min_similarity or baseline.MIN_SIMILARITY,
+                       "comparisons": comparisons}, handle, indent=2)
+            handle.write("\n")
+        outcome.runs.append({"kind": "baseline", "compared": len(
+            [c for c in comparisons if c["score"] is not None])})
+        context.logger.info("visual-qa baseline judged", compared=outcome.runs[0]["compared"],
+                            lowest=min((c["score"] for c in comparisons
+                                        if c["score"] is not None), default=None))
+        return outcome
+
     # -- the report ---------------------------------------------------------------------
 
     def _blocked(self, reason):
@@ -189,6 +222,9 @@ class VisualQAStep(WorkflowStep):
         if settings.kind == "command":
             judge.update(argv0=os.path.basename(settings.argv[0]),
                          model=_model_of(settings.argv), verdict_from=settings.verdict_from)
+        elif settings.kind == "baseline":
+            judge.update(model=None, baseline_dir=paths.display(settings.baseline_dir),
+                         min_similarity=settings.min_similarity or baseline.MIN_SIMILARITY)
         types = REQUIRED_INPUTS + tuple(t for t in OPTIONAL_INPUTS if t in ctx["inputs"])
         report = {
             "provenance": provenance.build(

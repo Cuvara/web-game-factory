@@ -64,7 +64,8 @@ class ValidRelease(ReleaseCase):
         self.assertEqual(set(lineage.values()), {self.game.head})
         pinned = {p["artifact_type"] for p in manifest["provenance"]["inputs"]}
         self.assertEqual(pinned, {"qa-report", "verification-report", "sdk-report",
-                                  "prototype-report", "scaffold-record", "review-report"})
+                                  "prototype-report", "scaffold-record", "review-report",
+                                  "production-quality-report", "visual-qa-report"})
         self.assertEqual(manifest["evidence"]["review"]["status"], "approved")
         self.assertEqual(manifest["evidence"]["review"]["reviewed_commit"], self.game.head)
         self.assertEqual(manifest["evidence"]["bundle_hash"],
@@ -446,13 +447,13 @@ class ContinueIn(ReleaseCase):
                     - id: verify
                       type: test.verify
                       stage: release:qa
-                      outputs: [prototype-report, sdk-report, scaffold-record, verification-report, qa-report, review-report]
+                      outputs: [prototype-report, sdk-report, scaffold-record, verification-report, qa-report, review-report, production-quality-report, visual-qa-report]
                       on:
                         fail: $fail
                     - id: release
                       type: release
                       stage: release:draft
-                      inputs: [qa-report, verification-report, sdk-report, prototype-report, scaffold-record, review-report]
+                      inputs: [qa-report, verification-report, sdk-report, prototype-report, scaffold-record, review-report, production-quality-report, visual-qa-report]
                       outputs: [release-manifest]
                       with:
                         repo_dir: %s

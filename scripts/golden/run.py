@@ -54,6 +54,9 @@ def main(argv=None):
     parser.add_argument("--from", dest="from_step", metavar="STEP")
     parser.add_argument("--no-browser", action="store_true",
                         help="skip the independent browser evidence (the run cannot pass)")
+    parser.add_argument("--no-library", action="store_true",
+                        help="calibration: no art library, so the assets step makes "
+                             "placeholders (the production gates must fail the run)")
     args = parser.parse_args(argv)
     if args.resume and not args.workdir:
         parser.error("--resume needs the --workdir of the run")
@@ -61,7 +64,8 @@ def main(argv=None):
 
     stream = sys.stderr if args.json else sys.stdout
     run = harness.GoldenRun(args.game, workdir=args.workdir, keep=args.keep,
-                            progress=Progress(stream), browser=not args.no_browser)
+                            progress=Progress(stream), browser=not args.no_browser,
+                            library=not args.no_library)
     print(f"golden {args.game}: {run.game.title_id} ({run.game.engine}) in {run.workdir}",
           file=stream, flush=True)
     try:

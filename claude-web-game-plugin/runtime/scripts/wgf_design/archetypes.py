@@ -277,8 +277,8 @@ ARCHETYPES = {
             ],
         },
         "assets": [
-            {"id": "pieces", "type": "sprite", "tier": "mvp", "description": "Tower pieces, one per level, with a merge state",
-             "count": 6, "source_preference": "procedural", "est_cost": 0, "spec": "Vector, 96px, level readable by numeral and size",
+            {"id": "pieces", "type": "sprite", "tier": "mvp", "description": "Tower pieces, one per level (merges reach level 8), with a merge state",
+             "count": 8, "source_preference": "procedural", "est_cost": 0, "spec": "Vector, 96px, level readable by numeral and size",
              "role": "target", "dimension": "2d",
              "readability": "Each level a distinct size and silhouette with its numeral, never told apart by colour alone; the numeral legible at 48 px on a phone, the next level obviously bigger"},
             {"id": "track-frame", "type": "ui", "tier": "mvp", "description": "Track frame and column backing",

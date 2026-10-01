@@ -475,5 +475,141 @@ class TheHarness(Base):
         self.assertTrue(os.path.isfile(os.path.join(out, "frames", "mobile", "play-2s.png")))
 
 
+def rich(path, seed=0, shift=0, size=(64, 36)):
+    """A finished-looking frame: bands of saturated colour, edges and texture, shifted by
+    `shift` pixels (two plays of one game differ by where things are)."""
+    width, height = size
+    pixels = bytearray()
+    for y in range(height):
+        for x in range(width):
+            band = ((x + shift) // 8 + y // 9 + seed) % 4
+            r, g, b = ((240, 70, 170), (20, 120, 190), (250, 210, 60), (40, 30, 25))[band]
+            if (x + y) % 5 == 0:
+                r, g, b = r // 2, g // 2, b // 2
+            pixels += bytes([r, g, b, 255])
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, "wb") as handle:
+        handle.write(encode_png(Image(width, height, pixels)))
+
+
+class BaselineJudge(Base):
+    """kind: baseline - each frame against the approved frame of its state, no agent."""
+
+    def approve(self, states=("title", "gameplay", "game-over"), mapping=None):
+        directory = os.path.join(self.base, "baseline")
+        for viewport in ("desktop", "mobile"):
+            for index, name in enumerate(states):
+                rich(os.path.join(directory, viewport, f"{name}.png"), seed=index)
+        if mapping is not None:
+            with open(os.path.join(directory, "states.json"), "w") as handle:
+                json.dump(mapping, handle)
+        return directory
+
+    def frames_like(self, shift=0):
+        """Replace the solid fixture frames with the approved look (shifted), re-recording
+        their sha256 as the playability step would."""
+        seeds = {"first-session-1s": 0, "play-2s": 1, "end-lost": 2}
+        for frame in self.play["frames"]:
+            path = os.path.join(self.run_dir, frame["path"])
+            rich(path, seed=seeds[frame["id"]], shift=shift)
+            frame["sha256"] = digest(path)
+
+    def config(self, directory, **judge):
+        return {"visualqa": {"judge": {"kind": "baseline", "baseline_dir": directory, **judge}},
+                "review": {"guarded_paths": [self.guard]}}
+
+    def test_frames_that_look_like_the_approved_ones_pass(self):
+        directory = self.approve()
+        self.frames_like(shift=3)
+        result = self.run_step(self.config(directory))
+        self.assertEqual(result.outcome, StepOutcome.SUCCESS, result.error)
+        report = self.report(result)
+        self.assertEqual(report["verdict"], "PASS")
+        self.assertEqual(report["judge"]["kind"], "baseline")
+        self.assertEqual(report["look"]["verdict"], "finished-game")
+        self.assertIn("not an aesthetic judgement", report["notes"])
+        with open(os.path.join(self.run_dir, "visual-qa", "visual-qa-1-1", "baseline.json")) as handle:
+            compared = json.load(handle)["comparisons"]
+        self.assertEqual(len(compared), 6)
+        self.assertTrue(all(c["passed"] and c["score"] >= 0.7 for c in compared), compared)
+
+    def test_a_regression_to_primitives_fails_routed_to_assets(self):
+        # The fixture's own frames: one flat grey each - what a build without its art draws.
+        directory = self.approve()
+        result = self.run_step(self.config(directory))
+        self.assertEqual(result.outcome, StepOutcome.FAILED)
+        self.assertEqual(result.route, "assets")
+        report = self.report(result)
+        self.assertEqual(report["verdict"], "FAIL")
+        self.assertEqual(report["look"]["verdict"], "developer-prototype")
+        blockers = [f for f in report["findings"] if f["severity"] == "blocker"]
+        self.assertEqual(len(blockers), 6)
+        self.assertTrue(all(f["route"] == "assets" and f["frame"] for f in blockers))
+        self.assertIn("finding:baseline-regression-desktop-play-2s", report["failed"])
+        gameplay = next(e for e in report["states"]
+                        if (e["state"], e["viewport"]) == ("gameplay", "desktop"))
+        self.assertEqual(gameplay["answers"]["primitives_or_placeholders"], True)
+        self.assertEqual(gameplay["answers"]["entities_recognisable"], False)
+
+    def test_unmatched_states_are_reported_not_passed_or_failed(self):
+        # No approved loss screen; an approved retry no frame shows; a pause screen is an
+        # interaction, and a name states.json maps to null is not compared.
+        directory = self.approve(states=("title", "gameplay", "retry-playing", "paused",
+                                         "credits"), mapping={"credits": None})
+        self.frames_like()
+        result = self.run_step(self.config(directory))
+        report = self.report(result)
+        ids = {f["id"]: f for f in report["findings"]}
+        self.assertEqual(ids["no-baseline-desktop-loss"]["severity"], "minor")
+        self.assertEqual(ids["baseline-unseen-mobile-retry"]["severity"], "minor")
+        self.assertEqual(ids["baseline-unseen-desktop-interaction"]["severity"], "minor")
+        self.assertIn("desktop/credits.png", report["notes"])
+        loss = next(e for e in report["states"] if (e["state"], e["viewport"]) == ("loss", "mobile"))
+        self.assertIsNone(loss["answers"]["entities_recognisable"])
+        # The frames that had an approved state matched; nothing unmatched failed the build.
+        self.assertEqual(report["verdict"], "PASS", report["failed"])
+
+    def test_a_bad_baseline_configuration_fails_the_step(self):
+        for judge, needle in (({"baseline_dir": None}, "baseline_dir"),
+                              ({"min_similarity": 2}, "min_similarity"),
+                              ({"baseline_dir": os.path.join(self.base, "nowhere")},
+                               "does not exist")):
+            with self.subTest(judge=judge):
+                config = self.config(os.path.join(self.base, "baseline"))
+                self.approve()
+                config["visualqa"]["judge"].update(judge)
+                result = self.run_step(config)
+                self.assertEqual(result.outcome, StepOutcome.FAILED)
+                self.assertFalse(result.retryable)
+                self.assertIn(needle, result.error)
+
+    def test_the_measure_tolerates_a_shift_and_not_a_flat_frame(self):
+        from wgf_assets.raster import decode_png
+        from wgf_visualqa import baseline
+
+        def sig(path):
+            with open(path, "rb") as handle:
+                return baseline.signature(decode_png(handle.read()))
+        rich(os.path.join(self.base, "a.png"))
+        rich(os.path.join(self.base, "b.png"), shift=5)
+        png(os.path.join(self.base, "flat.png"), 200)
+        same, _ = baseline.similarity(sig(os.path.join(self.base, "a.png")),
+                                      sig(os.path.join(self.base, "a.png")))
+        shifted, _ = baseline.similarity(sig(os.path.join(self.base, "a.png")),
+                                         sig(os.path.join(self.base, "b.png")))
+        flat, parts = baseline.similarity(sig(os.path.join(self.base, "a.png")),
+                                          sig(os.path.join(self.base, "flat.png")))
+        self.assertEqual(same, 1.0)
+        self.assertGreaterEqual(shifted, baseline.MIN_SIMILARITY)
+        self.assertLess(flat, baseline.MIN_SIMILARITY)
+        self.assertLess(parts["palette"], 0.2)
+
+    def test_the_bot_screen_frames_have_states(self):
+        for frame_id, state in (("state-title", "initial"), ("state-playing", "gameplay"),
+                                ("state-paused", "interaction"), ("state-won", "win"),
+                                ("state-lost", "loss"), ("state-retry", "retry")):
+            self.assertEqual(frame_state(frame_id)[0], state, frame_id)
+
+
 if __name__ == "__main__":
     unittest.main()

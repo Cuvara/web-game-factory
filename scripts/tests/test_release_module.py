@@ -85,6 +85,19 @@ def pin(artifact):
 
 
 APPROVE = {"verdict": "approve"}
+GATES_PASS = {"production-quality-report": "PASS", "visual-qa-report": "PASS"}
+FIXTURES = os.path.join(SCRIPTS, "wgflib", "workflow", "fixtures")
+
+
+def gate_report(artifact_type, commit, verdict="PASS", upstream=()):
+    """A production gate report (production-quality-report or visual-qa-report) of
+    `commit` with `verdict`, from the mock fixture's shape."""
+    with open(os.path.join(FIXTURES, f"{artifact_type}.json"), encoding="utf-8") as handle:
+        body = json.load(handle)
+    body.update(title_id="fixture-game", commit=commit, verdict=verdict)
+    if verdict != "PASS":
+        body.update(failed=["fixture-check"], routes=["develop"])
+    return seal(artifact_type, body, inputs=list(upstream), schema_version="1.0.0")
 
 
 class Inputs:
@@ -222,12 +235,15 @@ class GameRepository:
     def evidence(self, *, commit=None, qa_verdict="pass", verdict="PASS",
                  evidence_status="PASS_MOCK", dirty=False, bundle_hash=None, run_id="run-1",
                  sdk_commit=None, prototype_commit=None, platforms=None, schema_version="1.1.0",
-                 drop=(), sdk_base=None, sdk_commits=None, review=APPROVE):
+                 drop=(), sdk_base=None, sdk_commits=None, review=APPROVE,
+                 gates=GATES_PASS, gates_commit=None):
         """The artifacts a run holds after a verification of this repository.
 
         `sdk_base` (+ `sdk_commits`) makes a 1.2.0 sdk-report that integrated on that commit;
         `review` ({verdict, reviewed_commit}) is the run's newest review-report - by default
         the sdk-review's approval of the shipped (sdk, verified) commit; None: no review.
+        `gates` ({artifact_type: verdict}) are the production gate reports, of `gates_commit`
+        - by default the development commit the sdk commit sits on.
         """
         commit = commit or self.head
         prototype = seal("prototype-report", {
@@ -308,6 +324,10 @@ class GameRepository:
                      "qa-report": qa}
         if review is not None:
             artifacts["review-report"] = review_report(prototype, sdk, **review)
+        developed = gates_commit or sdk_base or prototype["build_ref"]["commit_sha"]
+        for artifact_type, gate_verdict in (gates or {}).items():
+            artifacts[artifact_type] = gate_report(artifact_type, developed, gate_verdict,
+                                                   [pin(prototype)])
         return {t: a for t, a in artifacts.items() if t not in drop}
 
 
@@ -334,7 +354,8 @@ def step(**params):
     definition = StepDefinition({
         "id": "release", "type": "release",
         "inputs": ["qa-report", "verification-report", "sdk-report", "prototype-report",
-                   "scaffold-record", "review-report"],
+                   "scaffold-record", "review-report", "production-quality-report",
+                   "visual-qa-report"],
         "outputs": ["release-manifest"], "with": params}, retry=None, max_visits=None)
     return ReleaseStep(definition)
 
@@ -522,6 +543,59 @@ class Drafting(ReleaseCase):
         self.assertEqual(result.outcome, StepOutcome.BLOCKED)
 
 
+class ProductionGates(ReleaseCase):
+    """The release refuses a build whose art and UI the production gates did not pass for
+    the development commit the shipped sdk commit sits on."""
+
+    def assert_refused(self, result, outcome, code):
+        self.assertEqual(result.outcome, outcome, result.message)
+        self.assertIn(code, self.refusal_codes(result))
+        self.assertFalse(os.path.exists(self.game.path("release", "r1")),
+                         "an evidence refusal packages nothing")
+
+    def test_no_production_quality_report_is_refused(self):
+        result = self.release(self.game.evidence(drop=("production-quality-report",)))
+        self.assert_refused(result, StepOutcome.BLOCKED, "no-production-quality-report")
+
+    def test_no_visual_qa_report_is_refused(self):
+        result = self.release(self.game.evidence(drop=("visual-qa-report",)))
+        self.assert_refused(result, StepOutcome.BLOCKED, "no-visual-qa-report")
+
+    def test_a_failed_production_quality_report_is_refused(self):
+        result = self.release(self.game.evidence(
+            gates={"production-quality-report": "FAIL", "visual-qa-report": "PASS"}))
+        self.assert_refused(result, StepOutcome.FAILED, "production-quality-not-passed")
+        self.assertIn("fixture-check", (result.error or "") + json.dumps(result.data))
+
+    def test_a_failed_visual_qa_report_is_refused(self):
+        result = self.release(self.game.evidence(
+            gates={"production-quality-report": "PASS", "visual-qa-report": "FAIL"}))
+        self.assert_refused(result, StepOutcome.FAILED, "visual-qa-not-passed")
+
+    def test_a_pass_for_another_commit_is_refused(self):
+        result = self.release(self.game.evidence(gates_commit="b" * 40))
+        self.assert_refused(result, StepOutcome.FAILED, "production-quality-commit-mismatch")
+        self.assertIn("visual-qa-commit-mismatch", self.refusal_codes(result))
+
+    def test_the_passes_judge_the_commit_the_sdk_commit_sits_on(self):
+        # The gates run before sdk: they judge the development commit, not the shipped one.
+        developed = self.game.head
+        self.game.commit("src/platform/sdk.ts", "export const sdk = 1;\n", "sdk: integrate")
+        evidence = self.game.evidence(sdk_base=developed, sdk_commits=[self.game.head],
+                                      prototype_commit=developed)
+        self.assertEqual(evidence["visual-qa-report"]["commit"], developed)
+        result = self.release(evidence)
+        self.assertNotIn("visual-qa-commit-mismatch", self.refusal_codes(result))
+        self.assertNotIn("production-quality-commit-mismatch", self.refusal_codes(result))
+
+    def test_a_workflow_without_the_gates_says_so(self):
+        result = self.release(self.game.evidence(gates={}), required_reports=[])
+        self.assertEqual(result.outcome, StepOutcome.SUCCESS, result.error or result.message)
+        result = self.release(self.game.evidence(gates={}), required_reports=["nonsense"])
+        self.assertEqual(result.outcome, StepOutcome.FAILED)
+        self.assertIn("required_reports", result.error)
+
+
 class PackageAudit(ReleaseCase):
     def test_a_clean_archive_passes_every_rule(self):
         self.release()
@@ -553,11 +627,11 @@ class ThroughTheEngine(ReleaseCase):
                     - id: verify
                       type: test.verify
                       stage: release:qa
-                      outputs: [prototype-report, sdk-report, scaffold-record, verification-report, qa-report, review-report]
+                      outputs: [prototype-report, sdk-report, scaffold-record, verification-report, qa-report, review-report, production-quality-report, visual-qa-report]
                     - id: release
                       type: release
                       stage: release:draft
-                      inputs: [qa-report, verification-report, sdk-report, prototype-report, scaffold-record, review-report]
+                      inputs: [qa-report, verification-report, sdk-report, prototype-report, scaffold-record, review-report, production-quality-report, visual-qa-report]
                       outputs: [release-manifest]
                       with:
                         repo_dir: %s

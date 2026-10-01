@@ -3,8 +3,10 @@
 `scripts/wgf_visualqa/` implements the `visual-qa` step type. In the production phase it
 runs after `playability` has played the production build (and, when the workflow has it,
 after `production-quality` has measured it), before `review`
-([production-architecture.md](production-architecture.md)). The lead wires it into the
-workflow; this module only registers the step type.
+([production-architecture.md](production-architecture.md)). In `new-game` (workflow 5) it
+follows `production-quality`; route `assets` goes to `assets` (budget `visual-qa.assets: 2`),
+route `develop` to `develop` (`visual-qa.develop: 2`), and `release` refuses unless the
+newest report is PASS for the development commit it ships.
 
 ```
 ... develop -> playability -> production-quality -> visual-qa -> review -> ...
@@ -149,6 +151,65 @@ The judge writes:
 }
 ```
 
+## The baseline judge
+
+`kind: baseline` (`scripts/wgf_visualqa/baseline.py`) is no agent. For a game whose look was
+approved once - a golden run's reference port - "does this look finished?" has a mechanical
+answer: does each frame look like the approved frame of the same state?
+
+```yaml
+visualqa:
+  judge:
+    kind: baseline
+    baseline_dir: <dir>       # <viewport>/<name>.png - the approved frames
+    min_similarity: 0.70      # optional (baseline.MIN_SIMILARITY)
+```
+
+Approved frames are grouped into the rubric's states by file name: a state id
+(`gameplay.png`), a common name (`title` -> initial, `merge`/`paused` -> interaction,
+`near-full` -> gameplay, `game-over` -> loss, `retry-playing` -> retry; `baseline.NAMES`), or
+`<baseline_dir>/states.json` (`{"<stem>": "<state>" | null}`; the 3D port maps `steer`,
+`near-miss`, `close-wall`, `crash`). Runtime frames get their state from their id, as the
+brief shows a command judge - the bot's `state-<screen>` frames included.
+
+Each frame is compared with every approved frame of its state and viewport by a measure that
+tolerates two plays of one finished game (where the pieces are, animation timing, the score)
+and fails what a regression to primitives, placeholders or missing art changes: palette
+(512-bin colour histogram intersection, weight 0.5), detail (share of sampled neighbours that
+differ by an edge, 0.2) and large-scale layout (a 16x9 grid of mean colours, 0.3). Its best
+match must reach `min_similarity`.
+
+- A frame below the bar is a **blocker** finding (`baseline-regression-<frame>`, category
+  `assets`, route `assets`); its state answers `entities_recognisable: false` and
+  `primitives_or_placeholders: true`; the look is `developer-prototype`.
+- A runtime state with no approved frame on that viewport (`no-baseline-...`), or an approved
+  state no frame shows (`baseline-unseen-...`), is a **minor** finding: reported, never a
+  pass or a failure on its own.
+- Scores are no aesthetic judgement: every dimension at the pass bar when nothing regressed,
+  the asset dimensions 0 when anything did. The report's notes say so; `judge.kind` is
+  `baseline`, `judge_runs` 1, every comparison in `<workdir>/baseline.json`.
+
+The verdict goes through `rubric.parse` and `rubric.decide` like any judge's.
+
+**Calibration** (2026-10-01; the golden ports at template `wgf-golden-production`, each
+port's approved frames under `examples/<example>/wgf-golden/baseline`; every frame the
+playability bot captured, 26 per run on desktop and mobile):
+
+| Frames | Tower Merge Rush (2D) | Neon Drift Arena (3D) |
+|---|---|---|
+| the same port **without its art** - the greybox phase lays the whole port before any asset exists, so it draws its primitive fallback | 0.454-0.685: every frame fails | 0.534-0.775: 22 of 26 fail; the DOM-dominated pause and game-over screens reach 0.70-0.77 |
+| the same port with its library removed - the assets step's placeholders in the runtime manifest (`run.py --no-library`; the build captured with the port's own `baseline/capture.mjs`, 14 frames) | 0.365-0.523: every frame fails | - |
+| the finished port, production phase of a golden run | 0.764-0.990 | 0.805-0.991 |
+| the finished port, a second golden run | 0.766-0.990 | - |
+
+The bar is 0.70: the finished ports pass every frame, and a port with placeholder art or
+none fails the verdict (any regressed frame is a blocker) on both. The `--no-library` golden
+run itself stops earlier: its develop step fails on the port's own art-guard browser test,
+which refuses placeholder art, so the frames above were captured outside the run. The 3D overlap is where a screen is
+mostly DOM - a pause or result card over a dark scene looks alike with or without the
+models - so the verdict rests on the gameplay frames there. `min_similarity` raises the bar
+per installation. The runs: docs/golden-runs.md.
+
 ## Outside a run
 
 `scripts/wgf-visualqa.py` runs exactly the same staging, brief, judge, isolation, parse and
@@ -174,7 +235,9 @@ no frames, a judge failure).
 
 ## Tests
 
-`scripts/tests/test_visual_qa.py` runs the step with a fixture command judge: pass, a
+`scripts/tests/test_visual_qa.py` runs the step with a fixture command judge and the
+baseline judge (`BaselineJudge`: frames like the approved ones pass, flat frames fail routed
+to assets, unmatched states reported, bad configuration, the measure's tolerance), and: pass, a
 primitive-entity blocker routed to assets, debug output routed to develop, a dimension
 below the bar, a per-state answer routed by its question, a developer-prototype look,
 `primitive_style` waiving only the primitive answer, unanswered or extra states, a verdict

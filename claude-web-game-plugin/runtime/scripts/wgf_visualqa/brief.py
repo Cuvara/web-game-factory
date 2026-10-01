@@ -30,6 +30,14 @@ _STATES = (
     ("play-2s", "gameplay", "two seconds into play"),
     ("end-won", "win", "the win screen"),
     ("end-lost", "loss", "the loss screen"),
+    # The bot's per-screen frames (Watch.screen: state-<probe state>), each taken when the
+    # probe first reported that screen, after its entrance animation settled.
+    ("state-title", "initial", "the title screen, before play"),
+    ("state-playing", "gameplay", "the first frame of play"),
+    ("state-paused", "interaction", "the pause screen, just after the player paused"),
+    ("state-won", "win", "the win screen"),
+    ("state-lost", "loss", "the loss screen"),
+    ("state-retry", "retry", "the first frame after the player chose to retry"),
 )
 
 

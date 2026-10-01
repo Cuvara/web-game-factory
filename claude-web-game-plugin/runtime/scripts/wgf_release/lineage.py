@@ -18,6 +18,9 @@ A draft release is only prepared from:
     carried into the manifest as UNREVIEWED - never as an approval;
   * every gate the step's `required_gates` names (default G4), passed in this run and not
     superseded by later work (`context.gates_passed`);
+  * the production gates: the newest production-quality-report and visual-qa-report (the
+    step's `required_reports`, default both) are PASS for the development commit the
+    released sdk commit sits on - a build whose art or UI they did not pass is not released;
   * a verification of a clean tree: a verified working tree with uncommitted changes is not
     reproducible from any commit.
 
@@ -34,7 +37,8 @@ from wgf_verification.lineage import (CODE as LINEAGE, is_placeholder, lineage_p
 __all__ = ["Refusal", "FAILED", "BLOCKED", "evidence_refusals", "commit_lineage",
            "verified_commits", "checkout_lineage", "review_status", "gate_refusals",
            "shipped_commit", "ACCEPTED_EVIDENCE", "DEFAULT_REQUIRED_GATES", "UNREVIEWED",
-           "REVIEW_MISMATCH"]
+           "REVIEW_MISMATCH", "DEFAULT_REQUIRED_REPORTS", "production_refusals",
+           "developed_commit"]
 
 FAILED, BLOCKED = "failed", "blocked"
 ACCEPTED_EVIDENCE = ("PASS", "PASS_MOCK")
@@ -43,6 +47,9 @@ REVIEW_MISMATCH = "review-commit-mismatch"
 # The kill gate: nothing ships before a person has judged the verified prototype. A workflow
 # without a G4 checkpoint says so on its release step (`with: required_gates: []`).
 DEFAULT_REQUIRED_GATES = ("G4",)
+# The production gates: nothing ships whose art and UI they did not pass. A workflow without
+# them says so on its release step (`with: required_reports: []`).
+DEFAULT_REQUIRED_REPORTS = ("production-quality-report", "visual-qa-report")
 
 
 def _short(sha):
@@ -209,6 +216,47 @@ def review_status(refs, loaded, allow_unreviewed=False):
     return refusals, {k: v for k, v in record.items() if v is not None}
 
 
+def developed_commit(loaded):
+    """The development commit the released build sits on: the sdk-report's base, else the
+    prototype-report's commit - or, with neither, the verified commit. The production gates
+    judge that commit - they run before sdk commits on top of it - so it is the one their
+    reports must name."""
+    sdk_ref = (loaded.get("sdk-report") or {}).get("build_ref") or {}
+    return (sdk_ref.get("base_commit_sha") or _build_commit(loaded, "prototype-report")
+            or shipped_commit(loaded))
+
+
+def production_refusals(loaded, required_reports=DEFAULT_REQUIRED_REPORTS):
+    """[Refusal] for each production gate report in `required_reports` that is absent, did
+    not PASS, or judged another commit than the released build's development commit."""
+    out = []
+    developed = developed_commit(loaded)
+    for artifact_type in required_reports or ():
+        report = loaded.get(artifact_type)
+        gate = artifact_type.rsplit("-report", 1)[0]
+        if report is None:
+            out.append(Refusal(BLOCKED, f"no-{artifact_type}",
+                               f"no {artifact_type} in this run: the {gate} gate has not "
+                               "judged the build, and a release ships only a build whose "
+                               f"art and UI it passed. Run {gate} first."))
+            continue
+        if report.get("verdict") != "PASS":
+            failed = [str(f) for f in report.get("failed") or []]
+            out.append(Refusal(FAILED, f"{gate}-not-passed",
+                               f"the newest {artifact_type}'s verdict is "
+                               f"{report.get('verdict')!r}"
+                               + (f" (failed: {', '.join(failed[:8])})" if failed else "")
+                               + f": the build's {gate} was not passed."))
+        judged = report.get("commit")
+        if is_placeholder(judged) or is_placeholder(developed) \
+                or not same_commit(judged, developed):
+            out.append(Refusal(FAILED, f"{gate}-commit-mismatch",
+                               f"the newest {artifact_type} judged {_short(judged)}, but the "
+                               f"released build was developed at {_short(developed)}: its "
+                               "verdict is about another build. Run the gate on this one."))
+    return out
+
+
 def gate_refusals(gates_passed, required_gates):
     """[Refusal] for each gate in `required_gates` that this run has not passed, or whose
     approval later work superseded (the engine's `context.gates_passed`)."""
@@ -221,7 +269,8 @@ def gate_refusals(gates_passed, required_gates):
 
 
 def evidence_refusals(refs, loaded, run_id, *, gates_passed,
-                      required_gates=DEFAULT_REQUIRED_GATES, allow_unreviewed=False):
+                      required_gates=DEFAULT_REQUIRED_GATES, allow_unreviewed=False,
+                      required_reports=DEFAULT_REQUIRED_REPORTS):
     """Every precondition on the run's evidence that does not hold. `refs` are the newest
     ArtifactRefs per type, `loaded` their contents.
 
@@ -312,6 +361,7 @@ def evidence_refusals(refs, loaded, run_id, *, gates_passed,
     problems, _ = review_status(refs, loaded, allow_unreviewed=allow_unreviewed)
     out.extend(problems)
     out.extend(gate_refusals(gates_passed, required_gates))
+    out.extend(production_refusals(loaded, required_reports))
     if (vr.get("commit") or {}).get("dirty") is None:
         out.append(Refusal(BLOCKED, "verified-tree-unknown",
                            "the verification could not establish whether its working tree "

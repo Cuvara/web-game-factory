@@ -211,6 +211,30 @@ def leftover_processes(marker):
     return found
 
 
+def _production(contents):
+    """The production gates' newest reports: what a golden run must pass for its art and UI.
+    `passed` only when production-quality is PASS and visual-qa is PASS by a judge that
+    looked (the baseline judge, or a command) - never a mock or `none`."""
+    quality = contents.get("production-quality-report") or {}
+    visual = contents.get("visual-qa-report") or {}
+    judge = (visual.get("judge") or {}).get("kind")
+    return {
+        "production_quality": {"verdict": quality.get("verdict"),
+                               "commit": quality.get("commit"),
+                               "failed": list(quality.get("failed") or []),
+                               "checks": len(quality.get("checks") or []),
+                               "passed": sum(1 for c in quality.get("checks") or []
+                                             if c.get("status") == "PASS")},
+        "visual_qa": {"verdict": visual.get("verdict"), "commit": visual.get("commit"),
+                      "judge": judge, "failed": list(visual.get("failed") or []),
+                      "frames": len(visual.get("frames") or []),
+                      "findings": [f.get("id") for f in visual.get("findings") or []],
+                      "look": (visual.get("look") or {}).get("verdict")},
+        "passed": (quality.get("verdict") == "PASS" and visual.get("verdict") == "PASS"
+                   and judge in ("baseline", "command")),
+    }
+
+
 def build(run, api, state, seconds, browser):
     artifacts, contents = _artifacts(api, state)
     steps, steps_ok, extra = _steps(state)
@@ -224,7 +248,11 @@ def build(run, api, state, seconds, browser):
     review_status = ((manifest.get("evidence") or {}).get("review") or {}).get("status")
     # A golden run passes only through a real review: `skipped` (reviewer kind none) or an
     # absent review is a run that proves less than it claims.
-    passed = steps_ok and drafted and engine["consistent"] and review_status == "approved"
+    # And only through the production gates: the port's art delivered and drawn
+    # (production-quality) and its frames matching the approved ones (visual-qa).
+    production = _production(contents)
+    passed = (steps_ok and drafted and engine["consistent"] and review_status == "approved"
+              and production["passed"])
     return {
         "format": 1,
         "golden": run.game.key,
@@ -243,6 +271,7 @@ def build(run, api, state, seconds, browser):
                     "checks, NOT an AI reviewer",
         "auto_approved_gates": list(run.config_data["checkpoints"]["auto_approve"]),
         "review_status": review_status,
+        "production": production,
         "steps": steps,
         "unexpected_steps": extra,
         "artifacts": artifacts,

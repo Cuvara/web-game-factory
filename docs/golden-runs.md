@@ -107,9 +107,11 @@ pass, and changing the lock in the same commit. The summary records `template_re
 The Factory holds no game source, so the hand-made part of each replay lives in the template,
 beside the example it adapts. The pinned **release** (v1.1.0) does not ship those ports: they
 are test fixtures, so the lock names them separately (`golden_ports`: the local template
-branch `wgf-golden-production`, `21226d2` - the play-probe ports `1c5afcb` with both
-reference ports' production art merged in, `8f49d28` and `7c132ef`), and the replay
-developer reads them from a
+branch `wgf-golden-content`, `db7b140` - `wgf-golden-production` (the play-probe ports
+`1c5afcb` with both reference ports' production art merged in, `8f49d28` and `7c132ef`) plus
+the content the production gate's `font.coverage` and `variants` checks require: towers 9
+and 10 in the 2D library, Latin + Cyrillic faces in both, both baselines re-captured), and
+the replay developer reads them from a
 checkout of that commit (`--ports`, `wgflib.template.golden_ports_checkout()`). The game
 repository itself is still created from the pinned release, exactly.
 
@@ -266,6 +268,13 @@ reads as asset files (`assets.formats`); and the 3D port refused to boot without
 manifest, so the greybox phase - before any asset exists - failed every browser test. And
 one in the Factory: the playability bot measured a pause card mid fade-in (text at 0.75
 alpha, 3.93:1), so it now waits for finite CSS animations before measuring a screen.
+
+Validated again on 2026-10-02 (golden ports `db7b140`), after `font.coverage` and the
+`variants` checks made both runs fail `assets.present` on their own art: 2D and 3D `Ran 11
+tests ... OK`, one run at a time; each COMPLETED all 20 steps with production-quality 18 of
+18 checks and visual-qa PASS on 26 frames (2D 0.769-0.990, 3D 0.756-0.987 against the
+re-captured frames); the 2D `pieces` ten drawings with `variants.distinct` pass, every
+delivered face `font.coverage` pass for `en` and `ru`.
 
 ## The independent browser evidence
 

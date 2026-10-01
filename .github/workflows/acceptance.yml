@@ -36,8 +36,10 @@ jobs:
     name: integrity, schemas, adapters, unit, test-core with the goldens
     runs-on: ubuntu-24.04
     # The two golden runs each create a game repository from the pinned template, install it,
-    # build it and drive Chromium through Playwright.
-    timeout-minutes: 90
+    # build it and drive Chromium through Playwright. Since workflow 5 each golden builds and
+    # plays the game several times (greybox, production, the production-quality and visual-qa
+    # gates): the unit suite alone took 24 min and the run was cancelled at 90 (PR #18).
+    timeout-minutes: 180
 
     steps:
       - uses: actions/checkout@v4

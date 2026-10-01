@@ -44,6 +44,20 @@ Anything else is refused — adding an engine is the tech plan's decision at G3.
   MVP on the loop that passed. The brief names the greybox commit that passed, and says
   that every playability check must keep passing.
 
+The greybox brief says primitives are expected: every probe entity reports
+`render: "primitive"` and `asset: null`, with the role the design's asset requirements name.
+The production brief adds **Production art and UI** (`brief.json` `production_art`, from
+`select_production_art`): each MVP asset requirement with its role, dimension, readability
+line and the runtime asset id that draws it (the requirement's id, the key in
+`public/assets/assets.json`); the play probe's `entities[].asset`, `render` and
+`assets_loaded` as required; no readable entity (`core/reference/visual-quality.yaml`
+`readable_roles`) drawn as a primitive unless the design states
+`visual_identity.primitive_style`; and the UI spec from `visual_identity.ui` - faces and the
+bundled font files (`@font-face`, awaited before the first UI frame, `document.fonts.check`),
+sizes, touch targets, button fill/text/radius as palette tokens, the panel surface, result
+screens with Retry as the primary action, and the mobile layout. The craft behind it is
+`core/craft/production-art-and-ui.md`.
+
 No `phase` (a workflow before 4) is the single develop phase it always was. An unknown phase
 fails the step.
 

@@ -15,6 +15,10 @@ Outcomes, per docs/workflow-module-contract.md §7:
     pinned platform profile missing or moved   BLOCKED - re-pin in a superseding strategy
     author cannot write a design               FAILED, not retryable
     MVP not buildable (dangling references)    FAILED, not retryable, nothing persisted
+    experience contract does not hold          FAILED, not retryable, nothing persisted
+    production art or UI not stated            FAILED, not retryable, nothing persisted
+                                               (presentation.py: a role, readability or
+                                               UI token missing)
     a blocking consistency rule breached       FAILED, route `descope`, not retryable, with the
                                                game-design persisted as evidence - cut scope;
                                                never relax the rule
@@ -28,7 +32,7 @@ from wgflib import provenance
 from wgflib.workflow import ArtifactOutput, StepResult, WorkflowStep
 from wgflib.workflow.contracts import ArtifactContracts
 
-from . import consistency, experience
+from . import consistency, experience, presentation
 from .authors import AUTHORS, AuthorError, resolve_author
 from .compose import buildability, finalize
 from .platforms import PlatformError, load_platforms
@@ -130,6 +134,13 @@ class DesignStep(WorkflowStep):
                         f"the design's experience contract does not hold{after} "
                         f"({len(problems)} problem(s)): " + "; ".join(problems[:6]),
                         retryable=False)
+                if outcome["presentation"]:
+                    context.logger.error("the design does not state its production art and UI",
+                                         problems=problems, repair_rounds=repair_round)
+                    return StepResult.failed(
+                        f"the design does not state its production art and UI{after} "
+                        f"({len(problems)} problem(s)): " + "; ".join(problems[:6]),
+                        retryable=False)
                 context.logger.error("design is not a valid game-design", problems=problems[:20],
                                      repair_rounds=repair_round)
                 return StepResult.failed(
@@ -177,7 +188,7 @@ class DesignStep(WorkflowStep):
                     f"a design change: an agent author, or a new concept, not this draft.")
         outcome = {"design": design, "artifact": None, "block": None, "blocking": None,
                    "warnings": None, "problems": [], "unbuildable": False,
-                   "experience": False}
+                   "experience": False, "presentation": False}
         problems = buildability(design)
         if problems:
             outcome.update(problems=problems, unbuildable=True)
@@ -186,6 +197,11 @@ class DesignStep(WorkflowStep):
         problems = experience.check(design, strategy, self.experience_rules)
         if problems:
             outcome.update(problems=problems, experience=True)
+            return outcome
+        # What the finished game looks like: production art per readable role, and the UI.
+        problems = presentation.check(design, self.experience_rules)
+        if problems:
+            outcome.update(problems=problems, presentation=True)
             return outcome
         now = self.clock()
         block, blocking, warnings = consistency.evaluate(design, strategy, platforms, now,

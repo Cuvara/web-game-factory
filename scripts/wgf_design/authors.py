@@ -543,17 +543,42 @@ class ArchetypeAuthor(DesignAuthor):
         device = audience.get("device")
         primary = {"mobile": "touch", "desktop": "touch-and-mouse", "both": "any"}.get(device, "any")
 
-        assets = [dict(x) for x in a["assets"]] + [
+        ui = look["ui"]
+        button = ui["button"]
+        faces = identity.families(look["typography"])
+        assets = [self._asset_in(dict(x), engine["dimension"]) for x in a["assets"]] + [
             {"id": "ui-kit", "type": "ui", "tier": "mvp",
              "description": "Buttons, panels and the result card, drawn in the identity kit",
-             "count": 1, "source_preference": "procedural", "est_cost": 0, "spec": "9-slice panels, button states: idle, pressed, disabled"},
+             "count": 1, "source_preference": "procedural", "est_cost": 0, "spec": "9-slice panels, button states: idle, pressed, disabled",
+             "role": "ui", "dimension": "2d",
+             "readability": (f"Buttons filled {button['fill']} with {button['text']} labels at "
+                             f"{ui['min_target_px']} px or larger, panels in {ui['surface']}: the primary "
+                             "action (Play, Retry) is the largest, brightest target on its screen, and "
+                             "no button looks like a browser default")},
             {"id": "icons", "type": "icon", "tier": "mvp", "description": "Play, pause, retry, menu, sound, ad glyph",
-             "count": 6, "source_preference": "library", "est_cost": 10, "spec": "Single-colour SVG, 48px grid"},
+             "count": 6, "source_preference": "library", "est_cost": 10, "spec": "Single-colour SVG, 48px grid",
+             "role": "icon", "dimension": "2d",
+             "readability": "Each glyph recognisable without its label at 24 px inside a 48 px target; "
+                            "pause and retry never confused"},
             {"id": "fonts", "type": "font", "tier": "mvp",
-             "description": f"{look['typography']['display']} and {look['typography']['body']}",
-             "count": 2, "source_preference": "library", "est_cost": 0, "spec": "WOFF2, subset to the locales in scope"},
+             "description": f"{look['typography']['display']} and {look['typography']['body']}"
+                            + (f", numerals in {look['typography']['numeric']}"
+                               if look["typography"].get("numeric") else ""),
+             "count": len(faces), "source_preference": "library", "est_cost": 0,
+             "spec": ("Files: " + "; ".join(f"{f} ({identity.font_source(f)})" for f in faces)
+                      + ". SIL Open Font License 1.1, its OFL.txt shipped beside the files. "
+                        "WOFF2 (TTF accepted), subset to the locales in scope, bundled under "
+                        "public/assets and loaded through the runtime asset manifest with "
+                        "@font-face; awaited (document.fonts.load) before the first UI frame."),
+             "role": "font", "dimension": "2d",
+             "readability": ("Every UI and HUD string is set in " + " / ".join(faces)
+                             + ": the computed font-family of each button and HUD element "
+                               "resolves to the bundled face and document.fonts.check passes "
+                               "before the title screen; no system fallback is ever shown")},
             {"id": "wordmark", "type": "ui", "tier": "mvp", "description": "Title wordmark in the display face",
-             "count": 1, "source_preference": "procedural", "est_cost": 0, "spec": "SVG"},
+             "count": 1, "source_preference": "procedural", "est_cost": 0, "spec": "SVG",
+             "role": "ui", "dimension": "2d",
+             "readability": "The title in the display face, legible at 240 px wide on the loading and title screens"},
         ]
         audio = [dict(x) for x in a["audio"]] + [
             {"id": "ui-tap", "type": "ui", "tier": "mvp", "description": "Button press", "trigger": "Any button",
@@ -646,6 +671,22 @@ class ArchetypeAuthor(DesignAuthor):
             "experience": self._experience(ex, actions, time_to_first_play, time_to_first_reward,
                                            2 if is_level else 1),
         }
+
+    @staticmethod
+    def _asset_in(asset, dimension):
+        """An archetype's world asset made in the engine's dimension: a pinned engine of the
+        other dimension draws its characters as what that engine draws, never a sprite standing
+        in a 3D scene (or a model flattened into a 2D one). UI, icons and fonts stay 2D."""
+        if asset.get("dimension") in (None, dimension) or asset.get("role") in ("ui", "icon", "font"):
+            return asset
+        if dimension == "3d" and asset["type"] in ("sprite", "spritesheet"):
+            asset.update(type="model", spec="Low-poly GLB built from a model spec, flat-shaded in "
+                                            "the palette; the readability line is its brief")
+        elif dimension == "2d" and asset["type"] == "model":
+            asset.update(type="sprite", spec="Vector sprite in the palette; the readability line "
+                                             "is its brief")
+        asset["dimension"] = dimension
+        return asset
 
     @staticmethod
     def _experience(ex, actions, time_to_first_play, time_to_first_reward, time_to_retry):

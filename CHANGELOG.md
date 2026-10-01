@@ -41,6 +41,19 @@ requirement was relaxed.
 
 ### Added
 
+- **Every design states its production art and UI** (game-design 1.6.0). Each built-in
+  archetype gives every asset a `role`, `dimension` and `readability` line (player, threats,
+  targets, environment/background, UI kit, icons, fonts as bundled OFL files), and every
+  identity kit a `visual_identity.ui` (font sizes, 48 px targets, button fill/text tokens at
+  4.5:1, radius, surface). `scripts/wgf_design/presentation.py` holds every design to it in
+  the design step's repair loop (bars in `core/reference/experience-rules.yaml` 1.1.0
+  `production_art` and `ui`); the Goalkeeper Royale fixture fails it with named problems.
+  The production develop brief adds *Production art and UI* (asset per role, probe `asset`/
+  `render`/`assets_loaded`, no primitives unless `primitive_style`, the UI spec and font
+  loading); the greybox brief says to report `render: "primitive"`. New craft playbook
+  `core/craft/production-art-and-ui.md`, read by the game-designer, gameplay, ui and asset
+  agents and the game-design, art-direction and onboarding-ux skills.
+
 - **The player-experience contract** (`game-design` 1.5.0, additive): `build_spec.experience`
   states what a first-time player must be able to tell, and how fast - the objective and the
   screen that shows it, how play is lost (and won), how every MVP action is acknowledged, what

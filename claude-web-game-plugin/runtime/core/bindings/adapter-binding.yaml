@@ -74,6 +74,7 @@ agents:
       - core/craft/core-loop-and-difficulty.md
       - core/craft/onboarding-and-portal-ux.md
       - core/craft/art-direction.md
+      - core/craft/production-art-and-ui.md
     produces: [title-strategy, game-design]
     consumes: [opportunity, evaluation, claim]
 
@@ -159,6 +160,7 @@ agents:
       - core/artifacts/game-design.schema.json
       - core/craft/game-feel.md
       - core/craft/core-loop-and-difficulty.md
+      - core/craft/production-art-and-ui.md
     produces: [prototype-report]
     consumes: [tech-plan, game-design, review-report, qa-report]
 
@@ -174,6 +176,7 @@ agents:
       - core/craft/ui-hud-mobile.md
       - core/craft/accessibility.md
       - core/craft/game-feel.md
+      - core/craft/production-art-and-ui.md
     produces: []
     consumes: [game-design, tech-plan]
 
@@ -187,6 +190,7 @@ agents:
       - core/craft/art-direction.md
       - core/craft/audio.md
       - core/craft/2d-assets.md
+      - core/craft/production-art-and-ui.md
     produces: [asset-manifest]
     consumes: [game-design]
 
@@ -318,6 +322,7 @@ skills:
       - core/craft/core-loop-and-difficulty.md
       - core/craft/onboarding-and-portal-ux.md
       - core/templates/gdd.md
+      - core/craft/production-art-and-ui.md
   - id: core-loop
     supports: [game-designer, gameplay]
     covers: >
@@ -345,6 +350,7 @@ skills:
       - core/craft/onboarding-and-portal-ux.md
       - core/craft/ui-hud-mobile.md
       - core/craft/accessibility.md
+      - core/craft/production-art-and-ui.md
   - id: monetization
     supports: [game-designer, sdk]
     covers: >
@@ -432,6 +438,7 @@ skills:
       - core/craft/art-direction.md
       - core/lifecycle/stages/design.md
       - core/reference/asset-policy.yaml
+      - core/craft/production-art-and-ui.md
   - id: audio
     supports: [asset, gameplay]
     covers: >

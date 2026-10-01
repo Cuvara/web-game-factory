@@ -63,15 +63,21 @@ Routing:
   readable at 60 px tall from the camera")
 - `dimension`: 2d | 3d
 
-`build_spec.art_direction` (new, required with experience): `palette` (hex roles),
-`style` (one line), `primitive_style` (bool, default false) + `primitive_reason`.
-`build_spec.ui_style` (new): `font_family`, `font_scale` (px at 1080p), `colors`
-(background, surface, text, accent, danger), `button` (radius, min target px), `hud`
-(placement per element).
+As the schema landed, the look lives in `build_spec.visual_identity` (no separate
+`art_direction`/`ui_style` blocks): the existing `palette` (token, hex, role) and
+`typography`, plus `primitive_style` (an object with a `reason`; absent means false) and
+`ui`: `font_px` (body, hud, heading), `min_target_px`, `button` (`fill` and `text` palette
+tokens, `radius_px`, `style`) and `surface` (a palette token).
 
-The design step's experience check adds: every readable entity role the probe will report
-has an asset requirement of that role with a `readability` line, unless
-`primitive_style`.
+The design step checks it after the experience contract (`scripts/wgf_design/presentation.py`,
+bars in `core/reference/experience-rules.yaml` `production_art` and `ui`): every MVP drawn
+asset states `role` and `dimension`; every entity-role asset a `readability` line; every
+readable role the design's own mechanics and win/lose conditions name (`role_cues`) has an
+asset of that role with a readability line, unless `primitive_style`; a 3D design's
+player and threat assets are models in 3D; the typography ships as an MVP `font` asset; and
+`ui` names palette tokens, button text on its fill at 4.5:1 or better, targets >= 44 px and
+body/HUD text >= 14 px. Every built-in archetype states all of it (no archetype claims
+`primitive_style`); an agent author is told the fields and shown the problems to repair.
 
 ### asset-manifest 1.4.0 (owner: assets 2D/3D)
 

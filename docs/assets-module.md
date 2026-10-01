@@ -221,6 +221,11 @@ missing); its eight tower SVGs pass `variants.distinct` (closest pair levels 6 a
 the same library with level 3 replaced by level 2 recoloured fails it (0.00); the 2D asset
 agent's first six pieces fail it on levels 5 and 6 (0.00 - the same drawing); and a design
 that counts the ten levels its rules reach fails `variants.count` against the eight drawings.
+The golden ports' libraries were then brought up to these checks (template branch
+`wgf-golden-content`, 2026-10-02): the 2D library draws all ten towers (closest pair still
+levels 6 and 7, 0.20; the new ones at least 0.45 from every other) and bundles Rubik Mono One
+and Manrope, the 3D library Commissioner for Instrument Sans - every delivered face Latin +
+Cyrillic, `font.coverage` pass with `[en, ru]` in both golden runs.
 
 ## Re-entry
 

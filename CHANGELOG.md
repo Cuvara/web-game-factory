@@ -39,6 +39,13 @@ requirement was relaxed.
   not a fixed 6. asset-quality.yaml 1.1.0, production-quality.yaml 1.1.0 (additive). To bring
   an artifact forward: re-run the design step for a title whose typography cannot set its
   locales, and the assets step for fonts and counted drawings.
+- **Both golden runs failed those checks on their own art** (`assets.present: quality not
+  pass` - 2D `fonts, pieces`, 3D `fonts`; the 3D design has no `pieces`, its report named only
+  `fonts`). The lock's `golden_ports` moves to template `wgf-golden-content` (`db7b140`): the
+  2D library draws towers 9 and 10 (the rules reach 10; `variants.distinct` passes on all
+  ten) and bundles Rubik Mono One and Manrope, the 3D library Commissioner 500 for Instrument
+  Sans - every face Latin + Cyrillic, the kit's covering alternates the design step names for
+  `ru` - and both ports' baselines are re-captured. No check was changed.
 - **An idea no catalog concept carries was silently replaced.** Research carried the nearest
   buildable shape forward (an endless runner for the goalkeeper idea), so strategy and design
   were held to a different game. Research now waits for input instead

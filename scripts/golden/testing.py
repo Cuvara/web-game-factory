@@ -175,7 +175,8 @@ def fast_case(key):
             port = replay_developer.load_port(key)
             files = [rel for rel, _ in replay_developer.port_files(port, ports)]
             self.assertTrue(files)
-            self.assertFalse([f for f in files if f.startswith(("library/", "baseline/"))])
+            self.assertFalse([f for f in files
+                              if f.startswith(("library/", "baseline/", "release-1/"))])
 
         def test_port_manifest_maps_onto_the_template_example(self):
             if not _template_has_examples():
@@ -224,17 +225,42 @@ def fast_case(key):
                         if pattern.match(module):
                             self.assertEqual(name, game.engine, relative)
                             self.assertTrue(relative.startswith(engine_dir), relative)
-            main = files["src/main.ts"]
-            with open(main, encoding="utf-8") as handle:
-                text = replay_developer.seam_main(handle.read())
+            # A contract-2 port: the game's entry (createGame), never a main.ts of its own.
+            self.assertIn(replay_developer.ENTRY_PATH, files)
+            self.assertNotIn(replay_developer.MAIN_PATH, files)
+            # A repository from the pinned contract-1 release has no src/game/context.ts: the
+            # replay writes the template's boot bridge, which must meet the develop step's rule.
+            release_repo = os.path.join(self.workdir, "release-1-repo")
+            os.makedirs(release_repo, exist_ok=True)
+            boot, bridge = replay_developer.boot_files(port, files.items(), release_repo,
+                                                       harness.PORTS_DIR)
+            self.assertEqual(bridge, port["boot_bridge"])
+            self.assertEqual(set(boot), {replay_developer.MAIN_PATH,
+                                         replay_developer.CONTEXT_PATH})
+            for relative, body in boot.items():
+                self.assertIn("GOLDEN-RUN REPLAY", body, relative)
+                self.assertIsNone(checks.PORTAL_SDK.search(body), relative)
+            text = boot[replay_developer.MAIN_PATH]
             self.assertNotRegex(text, r"\bBootScene\b")
-            # Moved onto the seam as any developer must: the develop step's rule, applied.
+            self.assertIn("handle = await createGame(context);\n", text)
+            # Booted through the seam as any developer must: the develop step's rule, applied.
             from wgflib import gameseam
             scratch = os.path.join(self.workdir, "seam-check")
             _write(scratch, "src/main.ts", text)
             self.assertEqual(gameseam.seam_problems(scratch), [])
             self.assertIn("  const platform = await createGamePlatform();\n", text)
             self.assertIn("  const game = new Game();\n", text)
+            # A later visit (develop after greybox) finds the bridge's own context.ts: still
+            # contract 1, bridged again.
+            _write(release_repo, replay_developer.CONTEXT_PATH,
+                   boot[replay_developer.CONTEXT_PATH])
+            self.assertEqual(replay_developer.boot_files(port, files.items(), release_repo,
+                                                         harness.PORTS_DIR)[1], bridge)
+            # A contract-2 repository boots createGame from the template's own main.ts.
+            contract2_repo = os.path.join(self.workdir, "contract-2-repo")
+            _write(contract2_repo, replay_developer.CONTEXT_PATH, "export {};\n")
+            self.assertEqual(replay_developer.boot_files(port, files.items(), contract2_repo,
+                                                         harness.PORTS_DIR), ({}, None))
             self.assertIn(game.scene_id, port["scene_id"])
 
         def test_replay_refuses_a_brief_for_the_other_engine(self):

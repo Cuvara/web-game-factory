@@ -153,6 +153,41 @@ class TheProfile(unittest.TestCase):
                              reviewer.get(key))
 
 
+class TheDesignAgent(unittest.TestCase):
+    """The profile's design author is the shipped commented `design.agent` example, verbatim:
+    a brief no design archetype carries can only be designed by an agent author."""
+
+    @staticmethod
+    def commented_design_agent():
+        from wgflib.yamllite import load
+        with open(SHIPPED, encoding="utf-8") as handle:
+            lines = handle.read().splitlines()
+        start = lines.index("    # agent:", lines.index("  design:"))
+        block = []
+        for line in lines[start:]:
+            if not line.startswith("    # "):
+                break
+            block.append(line[len("    # "):])
+        return load("\n".join(block))["agent"]
+
+    def test_the_profile_uses_the_shipped_design_agent(self):
+        base = tempfile.mkdtemp(prefix="wgf-profile-design-")
+        self.addCleanup(shutil.rmtree, base, ignore_errors=True)
+        project_config = os.path.join(base, "workspace", "config")
+        os.makedirs(project_config)
+        shutil.copyfile(PROFILE, os.path.join(project_config, "factory.yaml"))
+        with mock.patch.object(paths, "CONFIG", project_config):
+            design = load_config().section("design")
+        self.assertEqual(design["author"], "agent")
+        self.assertEqual(design["agent"], self.commented_design_agent())
+        self.assertEqual(load_config(SHIPPED).section("design")["author"], "archetype")
+
+    def test_the_agent_is_told_what_the_module_checks(self):
+        from wgf_design import agent
+        self.assertIn("concept", agent.PROMPT_CONCEPT)
+        self.assertIn("no mechanic the strategy does not state", agent.PROMPT_CONCEPT)
+
+
 def install(destination):
     shutil.copytree(os.path.join(ROOT, "claude-web-game-plugin"), destination,
                     ignore=shutil.ignore_patterns("__pycache__", "*.pyc"))

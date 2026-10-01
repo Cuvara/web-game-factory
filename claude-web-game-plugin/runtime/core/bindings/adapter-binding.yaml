@@ -43,6 +43,7 @@ agents:
       - core/artifacts/research-report.schema.json
       - core/reference/dimensions.yaml
       - core/craft/competitive-teardown.md
+      - core/craft/research-evidence.md
     produces: [claim, opportunity, research-report]
     consumes: []
 
@@ -296,6 +297,7 @@ skills:
       - core/lifecycle/stages/market-scan.md
       - core/artifacts/shared/claim.schema.json
       - core/craft/competitive-teardown.md
+      - core/craft/research-evidence.md
   - id: opportunity-scoring
     supports: [analysis]
     covers: >

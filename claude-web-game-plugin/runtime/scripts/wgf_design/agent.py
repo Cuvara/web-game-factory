@@ -75,6 +75,13 @@ PROMPT_BRIEF = (
     "design the game it describes - its mechanic, fantasy, controls and dimension - and "
     "treat the starting draft as a schema-shaped starting point, not as the game."
 )
+# Appended always: what the module checks the draft against, so the agent is not left to
+# discover the consistency rules by failing them. It changes no rule.
+PROMPT_CONCEPT = (
+    " The module then holds the draft to the strategy's `concept`: every mechanic its "
+    "core_mechanic and core_loop state must appear in your core_loop, MVP features or MVP "
+    "controls, and you may add no mechanic the strategy does not state."
+)
 
 DEFAULTS = {"argv": [], "timeout_seconds": 1800, "idle_timeout_seconds": 600,
             "draft_from": "file"}
@@ -175,6 +182,7 @@ class AgentAuthor(DesignAuthor):
         values["prompt"] = (PROMPT_STDOUT if stdout_mode else PROMPT).format(**values)
         if idea:
             values["prompt"] += PROMPT_BRIEF
+        values["prompt"] += PROMPT_CONCEPT
         try:
             command = [part.format(**values) for part in argv]
         except (KeyError, IndexError, ValueError) as exc:

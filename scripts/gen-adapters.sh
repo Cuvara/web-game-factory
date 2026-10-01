@@ -50,7 +50,7 @@ claude_paths() {
 # ---------------------------------------------------------------- agents
 # id|owns|description|must_read (semicolon-separated)|notes
 agents=(
-"research|portfolio:market-scan, portfolio:discovered|Gathers web game market signal from portal sources and normalizes it into tiered claims and candidate opportunities. Use when starting a market scan, researching a genre or platform, or refreshing stale evidence on the backlog.|core/roles/research.md;core/lifecycle/stages/market-scan.md;core/artifacts/shared/claim.schema.json;core/artifacts/opportunity.schema.json;core/artifacts/research-report.schema.json;core/reference/dimensions.yaml;core/craft/competitive-teardown.md|Write claims to workspace/claims/ and opportunities to workspace/opportunities/. Observation and interpretation are always separate claims. Never edit a claim; supersede it. External tools (browser, generation, docs lookup, analytics) only as core/craft/tool-capabilities.md allows: localhost-only browsing of builds, provenance and licence on anything generated, human approval before any paid job."
+"research|portfolio:market-scan, portfolio:discovered|Gathers web game market signal from portal sources and normalizes it into tiered claims and candidate opportunities. Use when starting a market scan, researching a genre or platform, or refreshing stale evidence on the backlog.|core/roles/research.md;core/lifecycle/stages/market-scan.md;core/artifacts/shared/claim.schema.json;core/artifacts/opportunity.schema.json;core/artifacts/research-report.schema.json;core/reference/dimensions.yaml;core/craft/competitive-teardown.md;core/craft/research-evidence.md|Write claims to workspace/claims/ and opportunities to workspace/opportunities/. Observation and interpretation are always separate claims. Never edit a claim; supersede it. External tools (browser, generation, docs lookup, analytics) only as core/craft/tool-capabilities.md allows: localhost-only browsing of builds, provenance and licence on anything generated, human approval before any paid job."
 "analysis|portfolio:scored, shortlisted, approved, title:concept|Scores opportunities against a versioned scoring model, tracks evidence coverage, and presents the ranked shortlist at gate G1. Use when evaluating or re-scoring opportunities, or preparing an opportunity selection decision.|core/roles/analysis.md;core/lifecycle/stages/score-opportunity.md;core/lifecycle/stages/opportunity-selection.md;core/artifacts/evaluation.schema.json;core/artifacts/shared/scoring-model.schema.json;core/reference/scoring/portfolio-default.v1.yaml|Append evaluations, never overwrite. Record the scoring model by id, version and file hash. Empty evidence_refs forces tier=hypothesis; do not work around it. External tools (browser, generation, docs lookup, analytics) only as core/craft/tool-capabilities.md allows: localhost-only browsing of builds, provenance and licence on anything generated, human approval before any paid job."
 "game-designer|title:strategy, title:design|Authors the title strategy including its kill criteria, then designs scope, session, retention and monetization together as one artifact. Use when drafting a strategy, producing a game design, or presenting prototype evidence at gate G4.|core/roles/game-designer.md;core/lifecycle/stages/strategy.md;core/lifecycle/stages/design.md;core/artifacts/title-strategy.schema.json;core/artifacts/game-design.schema.json;core/reference/design-consistency-rules.yaml;core/templates/gdd.md;core/craft/core-loop-and-difficulty.md;core/craft/onboarding-and-portal-ux.md;core/craft/art-direction.md|Kill criteria are written at strategy, before any code exists. out_of_scope must be non-empty. When the consistency check fails, cut scope rather than relaxing a rule. External tools (browser, generation, docs lookup, analytics) only as core/craft/tool-capabilities.md allows: localhost-only browsing of builds, provenance and licence on anything generated, human approval before any paid job."
 "architect|title:tech-plan; reviews development commits in title:prototype|Selects the engine, defines architecture and performance budgets, and writes the development plan a coding agent works from; then reviews each development commit read-only and returns a review-report. Use when turning an approved design into a technical plan, preparing gate G3, or reviewing a prototype commit.|core/roles/architect.md;core/lifecycle/stages/tech-plan.md;core/artifacts/tech-plan.schema.json;core/templates/tech-plan.md;core/lifecycle/stages/prototype.md;core/artifacts/review-report.schema.json;core/craft/web-performance.md;core/craft/gameplay-review.md|PixiJS for 2D, Three.js for 3D, nothing else. Every task needs acceptance criteria and tests. repo_params carries the full game.config.yaml content with platforms pinned as id@profile-version. As a reviewer you are read-only: never edit, stage or commit in the game repository. The Factory fingerprints the checkout, and a review that changed anything is undone and discarded. The verdict shape is the one in the review brief the Factory writes. External tools (browser, generation, docs lookup, analytics) only as core/craft/tool-capabilities.md allows: localhost-only browsing of builds, provenance and licence on anything generated, human approval before any paid job."
@@ -221,12 +221,14 @@ workflows=(
 "new-game|core/workflows/new-game.workflow.yaml|Run the Factory's new-game workflow end to end through the wgf engine; stop at every gate for a person."
 )
 
-# entry_body <id> <runs> <arguments> <background> <invoke> <preflight> <engine-note> — the
-# procedure both adapters share; <invoke> is how the host names this surface when the user
-# types it again, <preflight> how it confirms it has the Factory runtime, <engine-note> how
-# the engine is started where the shim cannot be.
+# entry_body <id> <runs> <arguments> <background> <invoke> <preflight> <engine-note>
+# <research> — the procedure both adapters share; <invoke> is how the host names this
+# surface when the user types it again, <preflight> how it confirms it has the Factory
+# runtime, <engine-note> how the engine is started where the shim cannot be, <research> how
+# it hands a waiting research step's input to the research role.
 entry_body() {
   local id=$1 runs=$2 arguments=$3 background=$4 invoke=$5 preflight=$6 engine_note=$7
+  local research=$8
   cat <<EOF
 **Workflow entry point** \`$runs\` — not a transition.
 **Engine** \`bin/wgf\` (\`scripts/wgf.py\`), the Factory's only orchestrator.
@@ -326,6 +328,14 @@ ask the user to give the idea as one quoted string).
    - **WAITING or PAUSED** (exit 3): show \`pending\` — step, gate, choices, evidence — and
      \`blocked_reason\` if any, then stop. See the rule below. \`pending: null\` means the
      run waits for input, not a decision: report \`cursor\` and \`message\`.
+   - **WAITING for input at \`research\`** (\`pending: null\`, cursor \`research\`): the input
+     is the research role's, not a person's decision. $research per
+     \`core/craft/research-evidence.md\`: with *no external evidence*, it captures snapshots
+     from pages it actually fetches into the project's \`workspace/research/snapshots/\`;
+     when *the brief matches no concept research can carry*, it also writes the brief's
+     concept to \`workspace/research/concepts.yaml\`. Then resume the run (step 4) and
+     continue. Evidence is fetched, never written: if nothing relevant can be fetched, report
+     that and stop. Never edit \`.factory/\` or an artifact, and never relax a setting.
 7. **Result.** Run id, final status, artifacts, and what comes next. The workflow ends at a
    drafted release; G5 and G6 — building, packaging and publishing — are not part of it and
    belong to the game repository's CI.
@@ -374,7 +384,8 @@ EOF
    configuration - is the runtime inside this plugin, never the working directory. The
    working directory is the project: report \`project_root\` and \`store\`, where this run's
    state and instance data are kept (\`WGF_PROJECT_DIR\` names another project)." \
-      "Where \`python3\` is not on PATH (Windows), use \`python\` in its place."
+      "Where \`python3\` is not on PATH (Windows), use \`python\` in its place." \
+      "Delegate it to the \`research\` agent, which works"
   } | claude_paths > "$C/commands/$id.md"
 
   {
@@ -388,14 +399,15 @@ EOF
       "/$id" \
       "Stop unless \`$runs\` exists in the working directory
    (run from the factory repository root)." \
-      "Where \`bin/wgf\` cannot be executed (Windows), use \`python scripts/wgf.py\` in its place."
+      "Where \`bin/wgf\` cannot be executed (Windows), use \`python scripts/wgf.py\` in its place." \
+      "Follow \`$X/agents/research.md\`, working"
   } > "$X/commands/$id.md"
 done
 
 # ---------------------------------------------------------------- skills
 # id|supports|covers|reads
 skills=(
-"market-intelligence|research|Normalizing platform signal into tiered claims and keeping evidence honest, including competitive teardowns of how leading portal games actually play.|core/lifecycle/stages/market-scan.md;core/artifacts/shared/claim.schema.json;core/craft/competitive-teardown.md"
+"market-intelligence|research|Normalizing platform signal into tiered claims and keeping evidence honest, including competitive teardowns of how leading portal games actually play.|core/lifecycle/stages/market-scan.md;core/artifacts/shared/claim.schema.json;core/craft/competitive-teardown.md;core/craft/research-evidence.md"
 "opportunity-scoring|analysis|Scoring models, normalizers, vetoes, and evidence coverage.|core/lifecycle/stages/score-opportunity.md;core/artifacts/shared/scoring-model.schema.json;core/reference/scoring/portfolio-default.v1.yaml"
 "game-design|game-designer|Core loop, session structure, retention hooks, scope tiers, the build spec, and the design consistency rules.|core/lifecycle/stages/design.md;core/artifacts/game-design.schema.json;core/reference/design-consistency-rules.yaml;core/craft/core-loop-and-difficulty.md;core/craft/onboarding-and-portal-ux.md;core/templates/gdd.md"
 "core-loop|game-designer, gameplay|Making the core loop worth repeating: decisions, risk and reward, mastery signals, data-driven difficulty ramps, fast retry and session beats.|core/craft/core-loop-and-difficulty.md;core/artifacts/game-design.schema.json;core/lifecycle/stages/strategy.md"

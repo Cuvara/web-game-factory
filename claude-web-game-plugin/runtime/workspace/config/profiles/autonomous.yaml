@@ -16,6 +16,8 @@
 #   develop    a headless Claude Code developer builds the game and fixes what verify or
 #              review sends back; the Factory still runs the checks and makes the commit
 #   review     a read-only headless Claude Code reviewer approves or requests changes
+#   design     a headless Claude Code design author writes the design draft the module then
+#              checks unchanged - needed for a brief no design archetype carries
 #   G2, G3     approved by the run (reversible gates)
 #   init       a LOCAL project from the pinned template: no GitHub repository, no remote
 #   budget     at most 12 developer sessions / US$60 per run; a person raises it
@@ -32,6 +34,36 @@ factory:
 
   checkpoints:
     auto_approve: [G2, G3]
+
+  design:
+    author: agent
+    agent:
+      draft_from: stdout
+      argv:
+        - claude
+        - -p
+        - "{prompt}"
+        - --model
+        - sonnet
+        - --safe-mode
+        - --strict-mcp-config
+        - --tools
+        - "Read"
+        - --allowedTools
+        - "Read"
+        - --disallowedTools
+        - "Edit,Write,NotebookEdit,Bash,WebFetch,WebSearch"
+        - --permission-mode
+        - dontAsk
+        - --no-session-persistence
+        - --output-format
+        - text
+        - --max-turns
+        - "30"
+        - --max-budget-usd
+        - "5"
+      timeout_seconds: 1800
+      idle_timeout_seconds: null
 
   develop:
     developer:

@@ -20,6 +20,6 @@
   },
   "asserted_at": "2026-08-28T09:30:00Z",
   "asserted_by": "research",
-  "superseded_by": null,
+  "superseded_by": "claim-0a05",
   "tags": ["controls", "yandex", "arcade"]
 }

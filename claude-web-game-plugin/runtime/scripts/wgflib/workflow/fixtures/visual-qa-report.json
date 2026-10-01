@@ -28,6 +28,11 @@
   "failed": [],
   "routes": [],
   "blocked_reason": null,
+  "states": [],
+  "look": {
+    "verdict": "finished-game",
+    "reason": "Mock judgement: no frame was read."
+  },
   "notes": "Mock judgement: no frame was read.",
   "verdict": "PASS"
 }

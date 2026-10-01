@@ -12,11 +12,12 @@
 # returns its scores and findings in the shape the brief gives. No judge configured blocks
 # the step; visual QA is never a silent pass.
 #
-# The anchors describe 0, 3 and 5; 1, 2 and 4 lie between them. A dimension scored below
-# `pass_bar` fails the build, and so does any finding of severity `blocker`. Each dimension
-# names where its failure goes back to: `assets` when an asset itself must change, `develop`
-# when the game's use of it must (the step's route is `assets` when anything failing routes
-# there, else `develop`).
+# The anchors describe 0, 3 and 5; 1, 2 and 4 lie between them. The build fails on any of: a
+# dimension scored below `pass_bar`, a finding of severity `blocker`, a per-state answer equal
+# to its question's `fail_when` (state_questions below), or the look judged a
+# `developer-prototype`. Each names where its failure goes back to: `assets` when an asset
+# itself must change, `develop` when the game's use of it must (the step's route is `assets`
+# when anything failing routes there, else `develop`).
 #
 # Calibrated once against real frames (docs/visual-qa-module.md, "Calibration"): a game whose
 # characters were untextured cubes on a near-black pitch, and the template's two golden
@@ -111,3 +112,65 @@ blockers:
     category: composition
     route: develop
     rule: The play area, a readable entity or a required control is cut off on either viewport.
+
+# The states the frames are grouped into, in the order the brief and the report list them.
+# The judge answers every question below for every (state, viewport) that has frames. A state
+# with no frame (the playability bot captures no frame after a retry today) is reported as
+# not captured - never answered from imagination.
+states:
+  - id: initial
+    shows: the first screen after load, and the game waiting for input after the grace
+  - id: gameplay
+    shows: play under way
+  - id: interaction
+    shows: just before and just after a player action
+  - id: win
+    shows: the win screen
+  - id: loss
+    shows: the loss screen
+  - id: retry
+    shows: the screen after the player chose to retry
+
+# Asked of every (state, viewport). An answer equal to `fail_when` fails the build, routed to
+# `route`. null means the frames of that state show nothing the question is about (no text,
+# no button, a 2D game's lighting); it never means "not sure". `unless: primitive_style` -
+# the answer does not fail a game whose visual identity states primitive_style.
+state_questions:
+  - id: entities_recognisable
+    ask: Are the entities on screen recognisable production assets - a player can tell what each one is?
+    fail_when: false
+    route: assets
+  - id: primitives_or_placeholders
+    ask: Is any entity or element drawn as a plain primitive (cube, sphere, capsule, rectangle) or a placeholder?
+    fail_when: true
+    route: assets
+    unless: primitive_style
+  - id: lighting_materials_coherent
+    ask: In a 3D scene, are lighting and materials coherent - lit, shaded, one material language? (null for 2D)
+    fail_when: false
+    route: develop
+  - id: typography_readable
+    ask: Is the text readable at its size and set in a chosen face - not a fallback system or browser-default font?
+    fail_when: false
+    route: develop
+  - id: buttons_polished
+    ask: Are the buttons and controls styled for this game - not browser defaults?
+    fail_when: false
+    route: develop
+  - id: objective_obvious
+    ask: Is what the player must do obvious from the screen?
+    fail_when: false
+    route: develop
+    states: [initial, gameplay, interaction]
+  - id: outcome_understandable
+    ask: Is it clear the player won or lost, and what to do next?
+    fail_when: false
+    route: develop
+    states: [win, loss, retry]
+
+# Asked once, of the whole set of frames. `developer-prototype` fails the build.
+look:
+  ask: Does this look like a finished game a portal would publish, or a developer prototype?
+  values: [finished-game, developer-prototype]
+  fail_on: developer-prototype
+  route: assets

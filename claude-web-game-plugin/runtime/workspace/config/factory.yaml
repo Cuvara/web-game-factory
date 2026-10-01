@@ -429,7 +429,7 @@ factory:
     #   --permission-mode dontAsk   nothing is ever prompted
     #   --output-format text        verdict_from: stdout takes the last JSON object printed
     #   --max-budget-usd            the host's own bound on one judgement. The calibration
-    #                               runs read 14-16 frames in one session in 40-110 s each
+    #                               runs read 14-16 frames in one session in 80-215 s each
     #                               (text output reports no cost; the cap was never reached)
     # judge:
     #   kind: command

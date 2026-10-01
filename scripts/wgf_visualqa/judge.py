@@ -134,7 +134,6 @@ def run_judge(settings, rubric, workdir, frames, frames_dir, *, title_id, commit
               manifest=None, quality=None, guarded=(), logger=None, stem="judge"):
     """Judge staged `frames`. Never raises for the judge's own failure."""
     outcome = Outcome()
-    keys = [f["key"] for f in frames]
     to_stdout = settings.verdict_from == "stdout"
     problem = None
     began = time.monotonic()
@@ -192,7 +191,7 @@ def run_judge(settings, rubric, workdir, frames, frames_dir, *, title_id, commit
             if extracted is not None:
                 with open(verdict_path, "w", encoding="utf-8") as handle:
                     handle.write(extracted)
-        verdict, problem = parse(verdict_path, rubric, keys)
+        verdict, problem = parse(verdict_path, rubric, frames)
         if verdict is None and to_stdout and problem.startswith("no "):
             problem = "the judge's output ends with no JSON verdict"
         if verdict is not None:

@@ -32,7 +32,7 @@ from wgflib import isolation, paths, provenance
 from wgflib.workflow import ArtifactOutput, StepResult, WorkflowStep
 
 from .judge import MAX_JUDGE_RUNS, FrameError, run_judge, stage_frames
-from .rubric import RubricError, decide, load_rubric
+from .rubric import RubricError, decide, judged_pairs, load_rubric, state_ids
 from .settings import Settings, SettingsError
 
 __all__ = ["VisualQAStep", "REQUIRED_INPUTS", "OPTIONAL_INPUTS"]
@@ -51,6 +51,28 @@ def _model_of(argv):
         if flag in argv[:-1]:
             return argv[argv.index(flag) + 1]
     return None
+
+
+def report_states(rubric, frames, answered):
+    """Every rubric state on every viewport: the judge's answers where frames show it, and
+    `captured: false` where none does - so a state the bot never captured is visibly
+    unjudged, not silently absent."""
+    by_pair = {(e["state"], e["viewport"]): e for e in answered}
+    judged = set(judged_pairs(rubric, frames))
+    viewports = []
+    for frame in frames:
+        if frame["project"] not in viewports:
+            viewports.append(frame["project"])
+    out = []
+    for state in state_ids(rubric):
+        for viewport in viewports:
+            keys = [f["key"] for f in frames if f["state"] == state and f["project"] == viewport]
+            entry = by_pair.get((state, viewport)) if (state, viewport) in judged else None
+            out.append({"state": state, "viewport": viewport, "captured": bool(keys),
+                        "frames": keys, "answers": dict((entry or {}).get("answers") or {}),
+                        "comment": (entry or {}).get("comment") or (
+                            None if keys else "no frame of this state was captured")})
+    return out
 
 
 class VisualQAStep(WorkflowStep):
@@ -129,10 +151,15 @@ class VisualQAStep(WorkflowStep):
                               data={"output_tail": failure.get("output_tail")})
 
         verdict = outcome.verdict
-        status, failed, routes = decide(verdict, rubric)
+        identity = (design.get("build_spec") or {}).get("visual_identity") or {}
+        status, failed, routes = decide(verdict, rubric,
+                                        primitive_style=bool(identity.get("primitive_style")))
         report = self._report(verdict=status, frames=frames, scores=verdict["scores"],
                               findings=verdict["findings"], failed=failed, routes=routes,
-                              notes=verdict.get("notes"), runs=len(outcome.runs))
+                              notes=verdict.get("notes"), runs=len(outcome.runs),
+                              states=report_states(rubric, frames, verdict["states"]),
+                              look={"verdict": verdict["look"],
+                                    "reason": verdict.get("look_reason")})
         if status == "PASS":
             return StepResult.success([report], message=(
                 f"visual QA passed {commit[:12]}: {len(frames)} frames, lowest score "
@@ -154,7 +181,7 @@ class VisualQAStep(WorkflowStep):
         return StepResult("BLOCKED", artifacts=[report], message=reason)
 
     def _report(self, *, verdict, frames, scores=None, findings=None, failed=(), routes=(),
-                notes=None, runs=0, blocked_reason=None):
+                notes=None, runs=0, blocked_reason=None, states=None, look=None):
         ctx = self._ctx
         context, settings, rubric = ctx["context"], ctx["settings"], ctx["rubric"]
         now = self.clock()
@@ -188,6 +215,8 @@ class VisualQAStep(WorkflowStep):
             "failed": list(failed),
             "routes": list(routes),
             "blocked_reason": blocked_reason,
+            "states": list(states or []),
+            "look": look,
             "notes": notes,
             "verdict": verdict,
         }

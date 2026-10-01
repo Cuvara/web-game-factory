@@ -209,6 +209,74 @@
         "BLOCKED"
       ]
     },
+    "states": {
+      "type": "array",
+      "description": "The judge's per-state answers (core/reference/visual-qa-rubric.yaml `state_questions`): one entry per rubric state and viewport. `captured: false` - no frame shows that state, so nothing was answered for it.",
+      "items": {
+        "type": "object",
+        "required": [
+          "state",
+          "viewport",
+          "captured",
+          "answers"
+        ],
+        "properties": {
+          "state": {
+            "type": "string"
+          },
+          "viewport": {
+            "type": "string"
+          },
+          "captured": {
+            "type": "boolean"
+          },
+          "frames": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "answers": {
+            "type": "object",
+            "additionalProperties": {
+              "type": [
+                "boolean",
+                "null"
+              ]
+            }
+          },
+          "comment": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "look": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "description": "Finished game or developer prototype, judged of the whole set of frames; a prototype fails.",
+      "required": [
+        "verdict"
+      ],
+      "properties": {
+        "verdict": {
+          "type": "string"
+        },
+        "reason": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
     "notes": {
       "type": [
         "string",

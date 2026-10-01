@@ -150,7 +150,9 @@ def main(argv=None):
         result["failure"] = outcome.failure
         code = 2
     else:
-        status, failed, routes = decide(outcome.verdict, rubric)
+        identity = ((design or {}).get("build_spec") or {}).get("visual_identity") or {}
+        status, failed, routes = decide(outcome.verdict, rubric,
+                                        primitive_style=bool(identity.get("primitive_style")))
         result.update(verdict=status, failed=failed, routes=routes,
                       route=routes[0] if routes else None, judge_verdict=outcome.verdict)
         code = 0 if status == "PASS" else 1

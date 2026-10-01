@@ -2,7 +2,8 @@
 
 The judge here is a fixture command - a Python script that writes the verdict a scenario
 names - so every path the step takes is exercised without an agent host: a pass, a blocker
-routed to assets, a blocker routed to develop, a dimension below the bar, a malformed
+routed to assets, a blocker routed to develop, a dimension below the bar, a per-state
+answer and a developer-prototype look (the lead's per-state questions), a malformed
 verdict retried once and then failed, a malformed verdict fixed on the retry, a verdict on
 stdout, no judge (BLOCKED), a frame changed since playability recorded it, and a judge that
 writes into what it may only read. The real judge's calibration run is in
@@ -76,6 +77,27 @@ def scores(value=4, **overrides):
     return out
 
 
+# The frames Base stages: their (state, viewport) pairs, as the verdict must answer them.
+PAIRS = [(state, viewport) for state in ("initial", "gameplay", "loss")
+         for viewport in ("desktop", "mobile")]
+
+
+def answers(state, **overrides):
+    out = {q["id"]: not q["fail_when"] for q in rubric_mod.questions_for(RUBRIC, state)}
+    out.update(overrides)
+    return out
+
+
+def complete(verdict, look="finished-game"):
+    verdict = dict(verdict)
+    if "states" not in verdict:
+        verdict["states"] = [{"state": s, "viewport": v, "answers": answers(s),
+                              "comment": "fixture"} for s, v in PAIRS]
+    verdict.setdefault("look", look)
+    verdict.setdefault("look_reason", "fixture")
+    return verdict
+
+
 def finding(fid, severity, category, route, frame=None):
     return {"id": fid, "severity": severity, "category": category, "frame": frame,
             "summary": f"{fid} (fixture)", "route": route}
@@ -134,6 +156,9 @@ class Base(unittest.TestCase):
             handle.write(JUDGE)
 
     def config(self, plan, verdict_from="file", kind="command"):
+        """A verdict object in `plan` without `states` gets every judged (state, viewport)
+        answered the passing way, and look finished-game."""
+        plan = [complete(entry) if isinstance(entry, dict) else entry for entry in plan]
         scenario = os.path.join(self.base, "scenario.json")
         with open(scenario, "w") as handle:
             json.dump(plan, handle)
@@ -193,7 +218,7 @@ class TheVerdicts(Base):
         self.assertEqual(report["measurement_class"], "automation-agent")
         self.assertEqual(len(report["frames"]), 6)
         self.assertEqual(report["frames"][0]["id"], "desktop/first-session-1s")
-        self.assertEqual(report["frames"][0]["state"], "boot")
+        self.assertEqual(report["frames"][0]["state"], "initial")
         self.assertEqual(report["rubric"]["sha256"], RUBRIC["sha256"])
 
     def test_a_primitive_character_is_a_blocker_routed_to_assets(self):
@@ -231,11 +256,37 @@ class TheVerdicts(Base):
             brief = handle.read()
         for needle in ("`desktop/play-2s`", "mobile 393x851", "Floodlit night match",
                        "primitive_style: NO", "a goalkeeper in gloves", "PLACEHOLDER",
+                       "| loss | mobile | `mobile/end-lost` |", "No frame shows: interaction, win, retry",
+                       "`outcome_understandable` (win, loss, retry only)", "developer-prototype",
+                       "<true | false | null>", "<number 0-5>",
                        "`no_debug`", "`primitive-entity`", "`browser-default-ui`"):
             self.assertIn(needle, brief)
 
+    def test_a_developer_prototype_look_fails(self):
+        result = self.run_step(self.config([complete({"scores": scores(4), "findings": []},
+                                                     look="developer-prototype")]))
+        self.assertEqual(result.outcome, StepOutcome.FAILED)
+        self.assertEqual(result.route, "assets")
+        report = self.report(result)
+        self.assertEqual(report["failed"], ["look:developer-prototype"])
+        self.assertEqual(report["look"]["verdict"], "developer-prototype")
+
+    def test_a_per_state_answer_fails_by_its_route(self):
+        verdict = complete({"scores": scores(4), "findings": []})
+        verdict["states"][1]["answers"]["buttons_polished"] = False   # mobile initial
+        result = self.run_step(self.config([verdict]))
+        self.assertEqual(result.outcome, StepOutcome.FAILED)
+        self.assertEqual(result.route, "develop")
+        report = self.report(result)
+        self.assertEqual(report["failed"], ["state:mobile/initial:buttons_polished"])
+        states = {(e["state"], e["viewport"]): e for e in report["states"]}
+        self.assertEqual(len(report["states"]), 12)   # 6 rubric states x 2 viewports
+        self.assertFalse(states[("retry", "desktop")]["captured"])
+        self.assertEqual(states[("retry", "desktop")]["answers"], {})
+        self.assertEqual(states[("loss", "mobile")]["frames"], ["mobile/end-lost"])
+
     def test_a_verdict_on_stdout(self):
-        good = json.dumps({"scores": scores(5), "findings": []})
+        good = json.dumps(complete({"scores": scores(5), "findings": []}))
         result = self.run_step(self.config(["stdout:" + good], verdict_from="stdout"))
         self.assertEqual(result.outcome, StepOutcome.SUCCESS, result.error)
 
@@ -320,21 +371,52 @@ class TheRubric(unittest.TestCase):
         self.assertEqual(rules["browser-default-ui"]["route"], "develop")
         self.assertEqual(rules["debug-output"]["route"], "develop")
 
+    FRAMES = [{"key": f"{v}/x-{s}", "state": s, "project": v} for s, v in PAIRS]
+
+    def parse(self, verdict):
+        return rubric_mod.parse(verdict, RUBRIC, self.FRAMES)
+
     def test_scores_out_of_range_or_missing_are_malformed(self):
-        keys = ["desktop/play-2s"]
-        self.assertIsNone(rubric_mod.parse({"scores": scores(6), "findings": []}, RUBRIC,
-                                           keys)[0])
+        self.assertIsNone(self.parse(complete({"scores": scores(6), "findings": []}))[0])
         partial = scores(4)
         partial.pop("no_debug")
         self.assertIn("missing no_debug",
-                      rubric_mod.parse({"scores": partial, "findings": []}, RUBRIC, keys)[1])
-        self.assertIn("keys the contract does not", rubric_mod.parse(
-            {"scores": scores(4), "findings": [], "verdict": "PASS"}, RUBRIC, keys)[1])
+                      self.parse(complete({"scores": partial, "findings": []}))[1])
+        self.assertIn("keys the contract does not", self.parse(
+            complete({"scores": scores(4), "findings": [], "verdict": "PASS"}))[1])
+        self.assertIsNone(self.parse(complete({"scores": scores(4), "findings": []}))[1])
+
+    def test_every_state_must_be_answered_and_only_those(self):
+        verdict = complete({"scores": scores(4), "findings": []})
+        verdict["states"].pop()
+        self.assertIn("states is missing mobile/loss", self.parse(verdict)[1])
+        verdict = complete({"scores": scores(4), "findings": []})
+        verdict["states"].append({"state": "win", "viewport": "desktop",
+                                  "answers": answers("win")})
+        self.assertIn("which no frame shows", self.parse(verdict)[1])
+        verdict = complete({"scores": scores(4), "findings": []})
+        verdict["states"][0]["answers"]["buttons_polished"] = "yes"
+        self.assertIn("must be true, false or null", self.parse(verdict)[1])
+        verdict = complete({"scores": scores(4), "findings": []})
+        del verdict["states"][2]["answers"]["objective_obvious"]
+        self.assertIn("must answer exactly", self.parse(verdict)[1])
+        self.assertIn("look must be one of", self.parse(
+            complete({"scores": scores(4), "findings": []}, look="pretty"))[1])
+
+    def test_primitive_style_waives_the_primitive_answer_only(self):
+        verdict = complete({"scores": scores(4), "findings": []})
+        verdict["states"][0]["answers"]["primitives_or_placeholders"] = True
+        verdict["states"][0]["answers"]["buttons_polished"] = False
+        status, failed, routes = rubric_mod.decide(verdict, RUBRIC, primitive_style=True)
+        self.assertEqual(failed, ["state:desktop/initial:buttons_polished"])
+        status, failed, routes = rubric_mod.decide(verdict, RUBRIC)
+        self.assertEqual(routes, ["assets", "develop"])
 
     def test_frame_states(self):
-        self.assertEqual(frame_state("act-dive-after")[0], "playing")
+        self.assertEqual(frame_state("act-dive-after")[0], "interaction")
         self.assertIn("after the player's `dive`", frame_state("act-dive-after")[1])
-        self.assertEqual(frame_state("end-won")[0], "won")
+        self.assertEqual(frame_state("end-won")[0], "win")
+        self.assertEqual(frame_state("first-session-idle-end")[0], "initial")
 
 
 class TheMock(unittest.TestCase):

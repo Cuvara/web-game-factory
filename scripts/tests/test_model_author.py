@@ -140,12 +140,15 @@ class PrimitiveDetection(unittest.TestCase):
                 self.assertTrue(quality["primitive_only"])
                 self.assertEqual(quality["verdict"], verdict)
 
-    def test_the_placeholder_box_has_no_normals_and_is_a_primitive(self):
-        # The procedural stand-in the real run shipped: 12 triangles, no normals, no UVs.
+    def test_the_placeholder_box_is_a_primitive(self):
+        # The procedural stand-in the real run shipped as its goalkeeper: one box. It now
+        # carries flat normals (it lights correctly as a stand-in) and is still refused as
+        # a player.
         quality = model_quality.assess(encoders.glb("keeper", (90, 90, 90)), role="player",
                                        visual_identity=LOOK)["quality"]
         self.assertTrue(quality["primitive_only"])
-        self.assertEqual(check(quality, "model.normals")["status"], "fail")
+        self.assertEqual(check(quality, "model.normals")["status"], "pass")
+        self.assertEqual(check(quality, "model.primitive")["status"], "fail")
         self.assertEqual(check(quality, "model.palette")["status"], "fail")
         self.assertEqual(quality["verdict"], "fail")
 

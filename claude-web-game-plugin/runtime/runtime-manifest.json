@@ -127,7 +127,7 @@
     "scripts/wgf_assets/author.py": "sha256:9e62a4907b43e844d2c1cd871c297aba5bfbedd664c327478a403a7abbae3dcd",
     "scripts/wgf_assets/blender.py": "sha256:3c0fbccda24b269bf86936e7a9ce15d6aad286bb43476287bee952aa57045c5c",
     "scripts/wgf_assets/blender_scripts/build_model.py": "sha256:d09193f90299375a4fc9c3f39e6195cd274747f7e965bc0826ac6ee13b432b5b",
-    "scripts/wgf_assets/encoders.py": "sha256:05e943be6bf8ee026707eda4150e377c6602930f3bb22f4719a8d01ba483e1ac",
+    "scripts/wgf_assets/encoders.py": "sha256:0578f80447c028dd7a3a65f99f45030859af4c28b81e69011884ca8ee730b556",
     "scripts/wgf_assets/formats.py": "sha256:80f82b1fb5e99bfdc94d0b8408f3078843b5f666578c832fd00901e057ba0b72",
     "scripts/wgf_assets/gltf.py": "sha256:99c1d24cc5a5a5f9f77a9190ffa3643b3d1947bb13e9bb38f5ec18bb3dbdcc7b",
     "scripts/wgf_assets/library.py": "sha256:9271a5f0c84ac8aaef17cd84e843d318e33bea4d2cd639e5628db3b654084764",

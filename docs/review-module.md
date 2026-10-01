@@ -43,7 +43,7 @@ develop ──commit P──► review(P) ──approve──► sdk ──commi
 
 | `subject` | Commit reviewed | The change the brief shows | Also required |
 |---|---|---|---|
-| `prototype-report` (default) | develop's commit P | the development visit's `baseline_commit..P` (from the committed `docs/development/brief.json`) | - |
+| `prototype-report` (default) | develop's commit P | `review_baseline..P` from the committed `docs/development/brief.json`: the development visit's `baseline_commit`, except on the first production build after a greybox, where it is where the greybox started - the greybox is played, never reviewed, so the loop is part of the change | - |
 | `sdk-report` | the sdk step's commit S (P itself when sdk had nothing to commit) | `P..S`, the integration sdk added; the brief says this is the commit that ships | `sdk-report` in the run |
 
 Anything else is `FAILED`, not retryable. Every other rule is the same for both subjects:

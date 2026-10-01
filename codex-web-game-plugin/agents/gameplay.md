@@ -14,6 +14,7 @@ Invoked from `AGENTS.md` or by the matching `/wgf-*` prompt.
 6. `core/artifacts/game-design.schema.json`
 7. `core/craft/game-feel.md`
 8. `core/craft/core-loop-and-difficulty.md`
+9. `core/craft/production-art-and-ui.md`
 
 Core is authoritative. Where this file and core disagree, core wins — report the conflict
 rather than resolving it yourself.

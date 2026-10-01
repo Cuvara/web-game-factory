@@ -258,10 +258,25 @@ def glb(name, colour, *, shape="box", animated=False, generator="wgf-assets"):
         "baseColorFactor": [round(r, 4), round(g, 4), round(b, 4), 1],
         "metallicFactor": 0, "roughnessFactor": 1}}
 
-    for index, (positions, indices) in enumerate(meshes_src):
+    for index, (corners, corner_indices) in enumerate(meshes_src):
+        # Flat-shaded: one vertex per triangle corner, each with its face's normal - a
+        # stand-in that three.js lights correctly (a GLB without normals is shaded by guess).
+        positions, normals, indices = [], [], []
+        for t in range(0, len(corner_indices), 3):
+            a, b, c = (corners[i] for i in corner_indices[t:t + 3])
+            u = [b[k] - a[k] for k in range(3)]
+            v = [c[k] - a[k] for k in range(3)]
+            n = [u[1] * v[2] - u[2] * v[1], u[2] * v[0] - u[0] * v[2], u[0] * v[1] - u[1] * v[0]]
+            length = sum(x * x for x in n) ** 0.5 or 1.0
+            for corner in (a, b, c):
+                indices.append(len(positions))
+                positions.append(corner)
+                normals.append([round(x / length, 6) for x in n])
         pos_bytes = b"".join(struct.pack("<fff", *p) for p in positions)
+        nrm_bytes = b"".join(struct.pack("<fff", *n) for n in normals)
         idx_bytes = b"".join(struct.pack("<H", i) for i in indices)
         pos_view = add_view(pos_bytes, 34962)
+        nrm_view = add_view(nrm_bytes, 34962)
         idx_view = add_view(idx_bytes, 34963)
         accessors.append({
             "bufferView": pos_view, "componentType": 5126, "count": len(positions),
@@ -269,11 +284,13 @@ def glb(name, colour, *, shape="box", animated=False, generator="wgf-assets"):
             "min": [min(p[k] for p in positions) for k in range(3)],
             "max": [max(p[k] for p in positions) for k in range(3)],
         })
+        accessors.append({"bufferView": nrm_view, "componentType": 5126,
+                          "count": len(normals), "type": "VEC3"})
         accessors.append({"bufferView": idx_view, "componentType": 5123,
                           "count": len(indices), "type": "SCALAR"})
         meshes.append({"name": f"{name}-{index}", "primitives": [{
-            "attributes": {"POSITION": len(accessors) - 2}, "indices": len(accessors) - 1,
-            "material": 0}]})
+            "attributes": {"POSITION": len(accessors) - 3, "NORMAL": len(accessors) - 2},
+            "indices": len(accessors) - 1, "material": 0}]})
         nodes.append({"name": f"{name}-{index}", "mesh": index})
 
     document = {

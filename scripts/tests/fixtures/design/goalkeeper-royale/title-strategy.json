@@ -1,0 +1,429 @@
+{
+  "provenance": {
+    "artifact_id": "wgf:title-strategy:goalkeeper-royale:20261001-02",
+    "artifact_type": "title-strategy",
+    "schema_version": "1.2.0",
+    "opportunity_id": "opp-0246b8d7",
+    "title_id": "goalkeeper-royale",
+    "produced_by": {
+      "role": "game-designer",
+      "actor": "automation"
+    },
+    "produced_at": "2026-10-01T04:58:19Z",
+    "inputs": [
+      {
+        "artifact_id": "wgf:opportunity:opp-0246b8d7:20261001-04",
+        "artifact_type": "opportunity",
+        "content_hash": "sha256:2e2494c40ba463621eebe722cfaa96580d28ef098b618f3b2e71c267a9101eb2"
+      }
+    ],
+    "content_hash": "sha256:b52a5fe435b65651bf187da007ee3373b5e126029ca933747d6545cf1e131ed5",
+    "status": "draft"
+  },
+  "title_id": "goalkeeper-royale",
+  "opportunity_id": "opp-0246b8d7",
+  "one_liner": "A goalkeeper-defense game where the player uses The player is the sole defender (the goalkeeper) in a single 3D pitch/arena and never takes a shot themselves; one computer-controlled attacker occupies the shooting spot at a time and fires at the goal from varying angles, distances and speeds in the \"battle royale\" sense the brief names - escalating, survival pressure rather than a literal crowd of simultaneous scoring attackers - and the player moves, dives and blocks to deny every shot. The win condition is inverted from a normal soccer game: the human's goal is to concede nothing, not to score.\n.",
+  "why_this_opportunity": "Goalkeeper Royale offers Being the last line of defense against an unrelenting computer-driven onslaught - survival pressure borrowed from battle royale (\"everyone else is eliminated, only you are left standing\"), re-aimed at a goalkeeper who has to outlast the AI's attack rather than outscore it. The brief's \"battle royale\" word is read as that survival-pressure framing taken from its own text, not as a request for multiplayer play.\n. The opportunity rests on claim-07555f3148 and cites claim-008c6635b7, claim-07555f3148, claim-0b9f911511, claim-2a9ae48a74, claim-37418f4224, claim-5ce8a2013e, claim-5f2a90b55e, claim-7d4de2db07, claim-86bdd693be, claim-8788cb4757, claim-9c0387d80e, claim-c56352d968, claim-ce911ba6ad, claim-cf8d78cc8d, claim-d43b8fd7f2, claim-ea12f1f964, claim-f4a5134985. Poki is primary (audience regions br, de, fr, gb, id, us; supports rewarded placements).",
+  "platform_set": [
+    {
+      "id": "crazygames",
+      "profile_version": "1.0.0",
+      "role": "optional",
+      "rationale": "Secondary: CrazyGames is compatible from the same build; not required to ship."
+    },
+    {
+      "id": "poki",
+      "profile_version": "1.0.0",
+      "role": "required",
+      "rationale": "Primary: best audience fit among compatible candidates (audience regions br, de, fr, gb, id, us; supports rewarded placements); the title is not shippable without it."
+    },
+    {
+      "id": "yandex",
+      "profile_version": "1.0.0",
+      "role": "optional",
+      "rationale": "Secondary: Yandex Games is compatible from the same build; not required to ship."
+    }
+  ],
+  "audience": {
+    "type": "casual",
+    "device": "desktop",
+    "regions": [
+      "br",
+      "by",
+      "de",
+      "fr",
+      "gb",
+      "id",
+      "kz",
+      "ru",
+      "tr",
+      "us"
+    ],
+    "player_description": "A casual player on a desktop browser who wants to be playing within seconds, in sessions of about 2 minutes."
+  },
+  "monetization": {
+    "class": "rewarded-led",
+    "placements": [
+      "rewarded",
+      "interstitial"
+    ],
+    "rationale": "Short, round-based arcade sessions with a natural end-of-round break fit a rewarded continue/extra-life offer, with interstitials placed between rounds rather than mid-save - the same placement pattern observed on CrazyGames' existing goalkeeper and penalty-genre titles (see snap-crazygames-goalkeeper-wiz, snap-crazygames-penalty-listing).\n"
+  },
+  "session": {
+    "first_session_seconds": 90,
+    "target_seconds": 120,
+    "sessions_per_day_target": 3
+  },
+  "timebox_days": 14,
+  "mvp": [
+    "Core loop: A round starts -> the AI attacker takes shots in escalating speed/angle variety and shrinking windup time -> the player reads the windup and dives/moves/blocks -> a save extends the player's defensive streak and raises the next shot's difficulty; a concede costs a life -> the round ends when the player has survived the set number of shots (win) or runs out of lives (loss) -> streak and save-accuracy are tallied, then the player retries or advances to a harder round via the same tuned shot set, not new content.\n",
+    "A single tap control: The player is the sole defender (the goalkeeper) in a single 3D pitch/arena and never takes a shot themselves; one computer-controlled attacker occupies the shooting spot at a time and fires at the goal from varying angles, distances and speeds in the \"battle royale\" sense the brief names - escalating, survival pressure rather than a literal crowd of simultaneous scoring attackers - and the player moves, dives and blocks to deny every shot. The win condition is inverted from a normal soccer game: the human's goal is to concede nothing, not to score.\n",
+    "One content set with a data-driven difficulty ramp",
+    "Score and personal best, persisted locally",
+    "A rewarded placement at a natural moment in the loop (continue or bonus), never forced",
+    "Interstitials between sessions only, never inside one",
+    "Poki SDK: init, loading-progress, gameplay-start-stop, rewarded, interstitial, pause-audio-during-ads",
+    "Localization: en, ru"
+  ],
+  "out_of_scope": [
+    "Multiplayer and any online play — networking multiplies the test surface and needs a server nobody has budgeted",
+    "Metagame layers: daily quests, battle pass, login rewards — retention systems are validated after the core loop is, not before",
+    "Character or skin customization and a cosmetics shop",
+    "Level editor or user-generated content",
+    "Story, cutscenes and dialogue — text multiplies localization cost",
+    "Leaderboards beyond a personal best",
+    "A second mode or content set — one proves the loop; more is content, not validation",
+    "An IAP economy or premium currency",
+    "Platforms beyond the set: y8, gamedistribution — platform sprawl multiplies compliance work"
+  ],
+  "prototype_must_prove": [
+    "A first-time player understands the tap control without instruction",
+    "The core loop produces an unforced desire to retry within one 120-second session",
+    "The rewarded placement reads as a favour rather than an interruption"
+  ],
+  "success_criteria": [
+    {
+      "id": "d1_retention",
+      "label": "D1 retention",
+      "when": {
+        "left": "d1_retention",
+        "op": "gte",
+        "right": 0.25
+      },
+      "rationale": "Below this a short-session title without a metagame has no path to sustained portal traffic.",
+      "severity": "blocking"
+    },
+    {
+      "id": "session_length",
+      "label": "Median session near target",
+      "when": {
+        "left": "median_session_seconds",
+        "op": "gte",
+        "right": 90
+      },
+      "rationale": "Shorter than this and the placements the monetization model counts on never get a chance to show.",
+      "severity": "warning"
+    }
+  ],
+  "kill_criteria": [
+    {
+      "id": "control_not_understood",
+      "label": "First-time players do not understand the control",
+      "when": {
+        "left": "first_time_understood_share",
+        "op": "lt",
+        "right": 0.6
+      },
+      "rationale": "The title is scoped around one control scheme and no tutorial. If that scheme needs teaching, the scope assumption is wrong.",
+      "severity": "blocking"
+    },
+    {
+      "id": "no_retry_pull",
+      "label": "Players do not retry unprompted",
+      "when": {
+        "left": "unprompted_retry_share",
+        "op": "lt",
+        "right": 0.5
+      },
+      "rationale": "Replay is the retention system here, in place of content. Without immediate retry there is neither retention nor an ad moment.",
+      "severity": "blocking"
+    },
+    {
+      "id": "prototype_overran",
+      "label": "The prototype consumed most of the timebox",
+      "when": {
+        "left": "prototype_elapsed_days",
+        "op": "gt",
+        "right": 9
+      },
+      "rationale": "A prototype that needs more than 60% of the timebox is evidence the scope does not fit it, and production would overrun by more.",
+      "severity": "blocking"
+    }
+  ],
+  "sunset_floor": {
+    "metric": "d1_retention",
+    "value": 0.125,
+    "consecutive_reviews": 2
+  },
+  "max_prototype_iterations": 2,
+  "rollback_threshold": "critical",
+  "concept": {
+    "genre": "sports-action",
+    "core_mechanic": "The player is the sole defender (the goalkeeper) in a single 3D pitch/arena and never takes a shot themselves; one computer-controlled attacker occupies the shooting spot at a time and fires at the goal from varying angles, distances and speeds in the \"battle royale\" sense the brief names - escalating, survival pressure rather than a literal crowd of simultaneous scoring attackers - and the player moves, dives and blocks to deny every shot. The win condition is inverted from a normal soccer game: the human's goal is to concede nothing, not to score.\n",
+    "core_loop": "A round starts -> the AI attacker takes shots in escalating speed/angle variety and shrinking windup time -> the player reads the windup and dives/moves/blocks -> a save extends the player's defensive streak and raises the next shot's difficulty; a concede costs a life -> the round ends when the player has survived the set number of shots (win) or runs out of lives (loss) -> streak and save-accuracy are tallied, then the player retries or advances to a harder round via the same tuned shot set, not new content.\n",
+    "gameplay_direction": "Goalkeeper-defense built on The player is the sole defender (the goalkeeper) in a single 3D pitch/arena and never takes a shot themselves; one computer-controlled attacker occupies the shooting spot at a time and fires at the goal from varying angles, distances and speeds in the \"battle royale\" sense the brief names - escalating, survival pressure rather than a literal crowd of simultaneous scoring attackers - and the player moves, dives and blocks to deny every shot. The win condition is inverted from a normal soccer game: the human's goal is to concede nothing, not to score.\n. A session is a short run: A round starts -> the AI attacker takes shots in escalating speed/angle variety and shrinking windup time -> the player reads the windup and dives/moves/blocks -> a save extends the player's defensive streak and raises the next shot's difficulty; a concede costs a life -> the round ends when the player has survived the set number of shots (win) or runs out of lives (loss) -> streak and save-accuracy are tallied, then the player retries or advances to a harder round via the same tuned shot set, not new content.\n. Difficulty comes from one data-driven ramp, not hand-built levels.",
+    "control_scheme": "tap",
+    "replayability": "Score chase: short runs, a personal best to beat, and immediate retry",
+    "subgenre": "goalkeeper-defense"
+  },
+  "production_scope": {
+    "scope_complexity": "m",
+    "technical_complexity": "medium",
+    "asset_complexity": "high",
+    "estimate_days": 18,
+    "asset_budget": {
+      "max_unique_assets": 120,
+      "estimated_cost_usd": 750
+    },
+    "reusable_systems": [
+      "Template boot flow: loading, menu, play, result",
+      "Template platform SDK adapter: one interface, one implementation per platform",
+      "Input handler for the tap scheme only",
+      "Score and personal-best persistence",
+      "Data-driven difficulty ramp",
+      "Ad-break service honouring the strictest interstitial interval, pausing audio and input",
+      "Localization string table"
+    ],
+    "scope_decisions": [
+      "Estimate of 18 days exceeds the 14-day target: the timebox is held at 14 and the MVP is limited to the core loop — design cuts to fit, the timebox does not stretch",
+      "One control scheme (tap); no alternative or desktop-specific input",
+      "One required platform (poki); every other platform is optional",
+      "Replay comes from a system (score chase), not from more content",
+      "Asset budget capped at 120 unique assets (high asset complexity)"
+    ]
+  },
+  "platform_compatibility": [
+    {
+      "id": "y8",
+      "profile_version": "1.0.0",
+      "compatible": true,
+      "issues": [
+        "profile figures are unverified",
+        "left out: at most 3 platforms per title"
+      ],
+      "sdk": {
+        "id": "y8",
+        "features": [
+          "init",
+          "gameplay-start-stop",
+          "rewarded",
+          "interstitial",
+          "pause-audio-during-ads",
+          "cloud-save"
+        ]
+      },
+      "constraints": [
+        "Interstitials at least 180s apart"
+      ]
+    },
+    {
+      "id": "crazygames",
+      "profile_version": "1.0.0",
+      "compatible": true,
+      "issues": [
+        "profile figures are unverified"
+      ],
+      "sdk": {
+        "id": "crazygames",
+        "features": [
+          "init",
+          "loading-progress",
+          "gameplay-start-stop",
+          "rewarded",
+          "interstitial",
+          "pause-audio-during-ads",
+          "cloud-save"
+        ]
+      },
+      "constraints": [
+        "Locales required: en",
+        "Bundle at most 250 MB",
+        "Interstitials at least 180s apart",
+        "Loading progress reported through the SDK",
+        "HTTPS only"
+      ]
+    },
+    {
+      "id": "gamedistribution",
+      "profile_version": "1.0.0",
+      "compatible": true,
+      "issues": [
+        "profile figures are unverified",
+        "left out: at most 3 platforms per title"
+      ],
+      "sdk": {
+        "id": "gamedistribution",
+        "features": [
+          "init",
+          "gameplay-start-stop",
+          "rewarded",
+          "interstitial",
+          "pause-audio-during-ads"
+        ]
+      },
+      "constraints": [
+        "Locales required: en",
+        "HTTPS only",
+        "No external links"
+      ]
+    },
+    {
+      "id": "poki",
+      "profile_version": "1.0.0",
+      "compatible": true,
+      "issues": [
+        "profile figures are unverified"
+      ],
+      "sdk": {
+        "id": "poki",
+        "features": [
+          "init",
+          "loading-progress",
+          "gameplay-start-stop",
+          "rewarded",
+          "interstitial",
+          "pause-audio-during-ads"
+        ]
+      },
+      "constraints": [
+        "Locales required: en",
+        "Bundle at most 150 MB",
+        "Interstitials at least 120s apart",
+        "Loading progress reported through the SDK",
+        "HTTPS only",
+        "No external links"
+      ]
+    },
+    {
+      "id": "yandex",
+      "profile_version": "1.0.0",
+      "compatible": true,
+      "issues": [
+        "profile figures are unverified"
+      ],
+      "sdk": {
+        "id": "yandex",
+        "features": [
+          "init",
+          "loading-progress",
+          "gameplay-start-stop",
+          "rewarded",
+          "interstitial",
+          "pause-audio-during-ads",
+          "cloud-save"
+        ]
+      },
+      "constraints": [
+        "Locales required: ru",
+        "Bundle at most 100 MB",
+        "Interstitials at least 60s apart",
+        "Loading progress reported through the SDK",
+        "HTTPS only",
+        "External requests only to declared domains"
+      ]
+    }
+  ],
+  "risks": [
+    {
+      "description": "Scope estimate (18 days) is above the 14-day timebox",
+      "severity": "medium",
+      "origin": "strategy",
+      "mitigation": "Design must cut content, not the core loop; G3 checks the plan against the timebox (plan_fits_timebox)"
+    },
+    {
+      "description": "Required locales en, ru must be localized by a person, not machine-translated",
+      "severity": "medium",
+      "origin": "strategy",
+      "mitigation": "Keep in-game text to a short string table"
+    },
+    {
+      "description": "poki: the audience is mostly mobile and the design is not",
+      "severity": "low",
+      "origin": "opportunity",
+      "mitigation": "Tracked into design",
+      "claim_refs": [
+        "claim-216a377670",
+        "claim-55c84ee534",
+        "claim-6251d40daf",
+        "claim-86bdd693be"
+      ]
+    },
+    {
+      "description": "yandex: requires ru localization",
+      "severity": "medium",
+      "origin": "opportunity",
+      "mitigation": "Tracked into design",
+      "claim_refs": [
+        "claim-1d5899ec66",
+        "claim-86bdd693be",
+        "claim-87af119ac3",
+        "claim-e420159fbf"
+      ]
+    },
+    {
+      "description": "yandex: the audience is mostly mobile and the design is not",
+      "severity": "low",
+      "origin": "opportunity",
+      "mitigation": "Tracked into design",
+      "claim_refs": [
+        "claim-1d5899ec66",
+        "claim-86bdd693be",
+        "claim-87af119ac3",
+        "claim-e420159fbf"
+      ]
+    }
+  ],
+  "assumptions": [
+    {
+      "statement": "The research estimate of 18 development days holds for the MVP as scoped here",
+      "tier": "hypothesis",
+      "invalidated_by": "tech-plan milestones summing past the timebox (guard plan_fits_timebox)"
+    },
+    {
+      "statement": "Players sustain a 120-second session",
+      "tier": "hypothesis",
+      "invalidated_by": "median_session_seconds in the prototype playtest or first performance review"
+    },
+    {
+      "statement": "Rewarded placements monetize this loop the way research expects",
+      "tier": "hypothesis",
+      "invalidated_by": "rewarded opt-in or fill rate in the first performance review"
+    },
+    {
+      "statement": "The CrazyGames profile (v1.0.0) matches the portal's current rules",
+      "tier": "hypothesis",
+      "invalidated_by": "a validation failure or rejection citing a rule the profile does not state"
+    },
+    {
+      "statement": "The Poki profile (v1.0.0) matches the portal's current rules",
+      "tier": "hypothesis",
+      "invalidated_by": "a validation failure or rejection citing a rule the profile does not state"
+    },
+    {
+      "statement": "The Yandex Games profile (v1.0.0) matches the portal's current rules",
+      "tier": "hypothesis",
+      "invalidated_by": "a validation failure or rejection citing a rule the profile does not state"
+    },
+    {
+      "statement": "The audience research describes (casual, desktop) is the audience Poki delivers",
+      "tier": "derived",
+      "invalidated_by": "platform analytics device and region split after launch"
+    },
+    {
+      "statement": "The brief (\"I want to make a 3D battle royal game but it's human versus computer, with the goal being the goalkeeper\") can be built on the goalkeeper-defense shape research selected: The player is the sole defender (the goalkeeper) in a single 3D pitch/arena and never takes a shot themselves; one computer-controlled attacker occupies the shooting spot at a time and fires at the goal from varying angles, distances and speeds in the \"battle royale\" sense the brief names - escalating, survival pressure rather than a literal crowd of simultaneous scoring attackers - and the player moves, dives and blocks to deny every shot. The win condition is inverted from a normal soccer game: the human's goal is to concede nothing, not to score.\n",
+      "tier": "hypothesis",
+      "invalidated_by": "design cannot realise the brief's mechanic within this shape and timebox; the prototype then plays as the shape, not as the brief"
+    }
+  ],
+  "brief": "I want to make a 3D battle royal game but it's human versus computer, with the goal being the goalkeeper"
+}

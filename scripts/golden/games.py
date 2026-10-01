@@ -64,8 +64,13 @@ EXPECTED_STEPS = (
     ("tech-plan", "SUCCESS"),
     ("tech-plan-review", "SUCCESS"),
     ("init", "SUCCESS"),
+    ("greybox", "SUCCESS"),            # the loop with primitives, before any asset
+    ("greybox-playability", "SUCCESS"),
     ("assets", "SUCCESS"),
     ("develop", "SUCCESS"),
+    ("playability", "SUCCESS"),        # played from outside through the port's play probe
+    ("production-quality", "SUCCESS"), # the port's library art delivered, loaded, drawn
+    ("visual-qa", "SUCCESS"),          # its frames against the port's approved baseline
     ("review", "SUCCESS"),
     ("sdk", "SUCCESS"),
     ("sdk-review", "SUCCESS"),         # the sdk commit - the one that ships - reviewed too

@@ -31,6 +31,47 @@ The engine comes from the checkout's `game.config.yaml`: `pixijs` or `phaserjs` 
 `threejs` for 3D.
 Anything else is refused — adding an engine is the tech plan's decision at G3.
 
+## Phases
+
+`new-game` runs the develop step type twice (workflow 4 and later), told apart by `with: phase`:
+
+- **`greybox`** (step `greybox`, right after init): the whole MVP loop with primitive
+  shapes and flat palette colours. It includes the play probe, the objective on screen,
+  onboarding, HUD and acknowledgements, and no asset files. The asset manifest is not an
+  input: it does not exist yet, and one given is ignored. The build is then played from
+  outside (`greybox-playability`, [playability-module.md](playability-module.md)).
+- **`production`** (step `develop`, after assets): integrates the assets and finishes the
+  MVP on the loop that passed. The brief names the greybox commit that passed, and says
+  that every playability check must keep passing.
+
+The greybox brief says primitives are expected: every probe entity reports
+`render: "primitive"` and `asset: null`, with the role the design's asset requirements name.
+The production brief adds **Production art and UI** (`brief.json` `production_art`, from
+`select_production_art`): each MVP asset requirement with its role, dimension, readability
+line and the runtime asset id that draws it (the requirement's id, the key in
+`public/assets/assets.json`); the play probe's `entities[].asset`, `render` and
+`assets_loaded` as required; no readable entity (`core/reference/visual-quality.yaml`
+`readable_roles`) drawn as a primitive unless the design states
+`visual_identity.primitive_style`; and the UI spec from `visual_identity.ui` - faces and the
+bundled font files (`@font-face`, awaited before the first UI frame, `document.fonts.check`),
+sizes, touch targets, button fill/text/radius as palette tokens, the panel surface, result
+screens with Retry as the primary action, and the mobile layout. The craft behind it is
+`core/craft/production-art-and-ui.md`.
+
+In workflow 5 the production build is then judged by `production-quality` and `visual-qa`.
+A failure of the game's own (route `develop`), or an asset failure after `assets` rebuilt the
+named items (route `assets`, which continues here), re-enters develop with the failing
+reports as inputs. Only a FAIL of the commit this visit starts from is feedback - the assets
+step writes files but commits nothing, so HEAD is still the judged commit - and the brief
+then leads with **Fix first: what the production gate measured** (each failed required
+check, its route, viewport, assets and bar; `brief.json` `production_failures`) and **Fix
+first: what visual QA saw** (each entry of the report's `failed`: blocker findings with
+their frame, dimensions below the bar, failing per-state answers, the look;
+`visual_qa_failures`), with the judged commit as `gated_commit`.
+
+No `phase` (a workflow before 4) is the single develop phase it always was. An unknown phase
+fails the step.
+
 ## The brief
 
 `docs/development/brief.md` is the whole interface between the Factory and whoever writes
@@ -263,11 +304,14 @@ from `events.jsonl`; a session that cannot be shown on record is not started (`B
 When the sessions already recorded reach `max_sessions`, develop returns `BLOCKED` - not
 retryable, no agent spawned - with `budget exhausted: N developer sessions used of N`. A
 handoff developer is a person, not a session: nothing is counted. A visit that already
-committed (a re-execution) spawns nothing and costs nothing.
+committed (a re-execution) spawns nothing and costs nothing. The budget is the run's, not
+the step's: the `greybox` step's sessions (develop with `phase: greybox`) count toward the
+same `max_sessions` and `max_cost` as `develop`'s, and a budget spent in the greybox blocks
+the production build.
 
 **Cost** is installation-configured, because the Factory names no provider: `cost_from:
 {jsonl_key: <key>}` reads the number under that key in the **last** JSON-object line of the
-session's transcript (`<run_dir>/develop/<visit>-<attempt>.log`) that holds the key -
+session's transcript (`<run_dir>/<step>/<visit>-<attempt>.log`, `greybox` or `develop`) that holds the key -
 reading only what this session appended. After each session develop records a `STEP_LOG`
 with `data.budget: developer-cost` and the cost; when the recorded total reaches `max_cost`,
 the next session is refused like the session limit. A session with no readable cost (killed

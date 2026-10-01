@@ -23,6 +23,7 @@ rule is.
 | [`audio.md`](audio.md) | asset, gameplay | design, prototype | `audio_direction`, `build_spec.audio` |
 | [`art-direction.md`](art-direction.md) | game-designer, asset | design, prototype | `art_direction`, `build_spec.visual_identity`, `.assets`, the asset manifest |
 | [`accessibility.md`](accessibility.md) | ui, game-designer | design, prototype, qa | `ux.accessibility`, `visual_identity`, `.controls` |
+| [`production-art-and-ui.md`](production-art-and-ui.md) | game-designer, asset, gameplay, ui | design, prototype, production | `build_spec.assets[].role`/`.readability`, `visual_identity.ui`/`.primitive_style`, the play probe's `asset`/`render` |
 | [`2d-assets.md`](2d-assets.md) | asset, gameplay, ui | design, prototype | `asset_requirements`, the asset manifest, the runtime asset manifest |
 | [`web-performance.md`](web-performance.md) | architect, gameplay, qa | tech-plan, prototype, qa | `perf_budgets`, `perf_measurements`, the asset pipeline |
 | [`phaser.md`](phaser.md) | gameplay, ui | tech-plan, prototype | `build_spec.mechanics`, `.controls`, `.screens`, `.responsive` — only when `engine.type` is `phaserjs` |
@@ -32,6 +33,7 @@ rule is.
 | [`playtesting.md`](playtesting.md) | qa, game-designer | prototype, prototype-review, qa | `playtest_sessions`, gameplay-session scenarios, `kill_criteria_eval` |
 | [`gameplay-review.md`](gameplay-review.md) | architect (as reviewer) | prototype | `review-report` blockers |
 | [`competitive-teardown.md`](competitive-teardown.md) | research, game-designer | market-scan, strategy | claims and research snapshots |
+| [`research-evidence.md`](research-evidence.md) | research | market-scan | the snapshot format, and the project concept for a brief no catalog shape carries, when a run's research step waits for them |
 | [`tool-capabilities.md`](tool-capabilities.md) | every role | every stage | what tools each stage may use, and the limits on them |
 
 ## The one tension to hold

@@ -8,7 +8,7 @@
     "id": "game-design",
     "kind": "artifact",
     "format": "json",
-    "version": "1.5.0",
+    "version": "1.7.0",
     "template": "templates/gdd.md",
     "producer": "title:design",
     "consumers": ["title:tech-plan", "title:prototype", "title:prototype-review", "title:production", "release:qa", "title:scaffolding"],
@@ -24,7 +24,7 @@
     "provenance": { "$ref": "./shared/provenance.schema.json#/$defs/provenance" },
     "research": {
       "$ref": "./shared/research-opportunity.schema.json#/$defs/handoff",
-      "description": "Research V2 (added in 1.5.0): the research this design was derived from, carried from the strategy, and `applied`: which design decisions (archetype, fantasy, identity kit, timing targets) came from research and which fell back to a default. Absent when the strategy carries no research."
+      "description": "Research V2 (added in 1.7.0): the research this design was derived from, carried from the strategy, and `applied`: which design decisions (archetype, fantasy, identity kit, timing targets) came from research and which fell back to a default. Absent when the strategy carries no research."
     },
     "title_id": { "type": "string" },
     "brief": { "type": "string", "minLength": 1, "maxLength": 500, "description": "The game idea a person started the run with (`wgf new-game \"...\"`), verbatim in its canonical form: NFC, trimmed, whitespace runs as one space. Absent when the run was a blank market scan. Copied from the title-strategy. An agent author designs the game it describes; the built-in author fits the buildable concept research selected, and records in open_questions a dimension the brief names that the design does not use. Added in 1.4.0." },
@@ -487,7 +487,8 @@
               "shows": { "type": "string" },
               "anchor": { "enum": ["top-left", "top-center", "top-right", "center", "bottom-left", "bottom-center", "bottom-right"] },
               "updates_on": { "type": "string" },
-              "feedback": { "type": "string" }
+              "feedback": { "type": "string" },
+              "metric": { "$ref": "#/$defs/localId", "description": "The game metric this element displays (score, lives, moves...), named as build_spec.experience names it." }
             },
             "additionalProperties": false
           }
@@ -657,7 +658,10 @@
               "count": { "type": "integer", "minimum": 1 },
               "source_preference": { "enum": ["library", "procedural", "ai-generated", "purchased", "commissioned"] },
               "est_cost": { "type": "number", "minimum": 0 },
-              "spec": { "type": "string", "description": "Sizes, frames, poly budget, format." }
+              "spec": { "type": "string", "description": "Sizes, frames, poly budget, format." },
+              "role": { "enum": ["player", "threat", "goal", "target", "projectile", "collectible", "hazard", "environment", "background", "prop", "ui", "vfx", "icon", "font"], "description": "What it is to the player. The entity roles are the play probe's (shared/play-probe.schema.json): an entity the probe reports with that role is drawn with this asset in production." },
+              "dimension": { "enum": ["2d", "3d"] },
+              "readability": { "type": "string", "description": "What a first-time player must recognise in it, and at what size or distance: 'a goalkeeper in gloves, readable at 60 px tall from the play camera'. Production assets are judged against it." }
             },
             "additionalProperties": false
           }
@@ -746,7 +750,110 @@
             "shape_language": { "type": "string" },
             "motion": { "type": "string" },
             "texture": { "type": "string" },
-            "avoid": { "type": "array", "minItems": 1, "items": { "type": "string" } }
+            "avoid": { "type": "array", "minItems": 1, "items": { "type": "string" } },
+            "primitive_style": {
+              "type": "object",
+              "required": ["reason"],
+              "description": "Present only when the art direction itself is geometric (an abstract neon runner): readable entities may then be drawn as primitives in production. Absent, a cube or sphere standing for a character is a placeholder, and the production gates refuse it.",
+              "properties": { "reason": { "type": "string", "minLength": 20 } },
+              "additionalProperties": false
+            },
+            "ui": {
+              "type": "object",
+              "description": "The UI's look, as numbers and palette tokens: what the production gate and visual QA hold the screens to.",
+              "properties": {
+                "font_px": { "type": "object", "properties": { "body": { "type": "number", "minimum": 10 }, "hud": { "type": "number", "minimum": 10 }, "heading": { "type": "number", "minimum": 14 } }, "additionalProperties": false },
+                "min_target_px": { "type": "number", "minimum": 32, "description": "Smallest interactive element on a phone viewport, CSS px." },
+                "button": { "type": "object", "properties": { "fill": { "type": "string" }, "text": { "type": "string" }, "radius_px": { "type": "number", "minimum": 0 }, "style": { "type": "string" } }, "additionalProperties": false, "description": "fill and text are palette tokens." },
+                "surface": { "type": "string", "description": "Palette token for panels and result cards." }
+              },
+              "additionalProperties": false
+            }
+          },
+          "additionalProperties": false
+        },
+
+        "experience": {
+          "type": "object",
+          "description": "The player-experience contract: what a first-time player must be able to tell, and how fast - the objective and where it is shown, how play is won and lost, how every action is acknowledged, how the game teaches before it tests, and the first-30-seconds budget. Optional before 1.5.0; the design module requires it of every design it produces and checks it against core/reference/experience-rules.yaml and the rest of the build_spec.",
+          "required": ["goal", "lose", "actions", "onboarding", "first_30s"],
+          "properties": {
+            "goal": {
+              "type": "object",
+              "required": ["statement", "metric", "shown_on"],
+              "properties": {
+                "statement": { "type": "string", "minLength": 8, "description": "The objective, in the words the player is shown." },
+                "metric": { "$ref": "#/$defs/localId", "description": "The metric the objective is measured in; an MVP hud element shows it." },
+                "shown_on": { "$ref": "#/$defs/localId", "description": "The screen id that shows the statement before or as play starts." }
+              },
+              "additionalProperties": false
+            },
+            "win": {
+              "type": "object",
+              "description": "Absent when play has no win: an endless run chases a best.",
+              "required": ["condition", "metric"],
+              "properties": {
+                "condition": { "type": "string" },
+                "metric": { "$ref": "#/$defs/localId" }
+              },
+              "additionalProperties": false
+            },
+            "lose": {
+              "type": "object",
+              "required": ["condition"],
+              "properties": {
+                "condition": { "type": "string" },
+                "metric": { "$ref": "#/$defs/localId", "description": "The metric whose value ends play (lives, moves, time), when there is one." }
+              },
+              "additionalProperties": false
+            },
+            "actions": {
+              "type": "array",
+              "minItems": 1,
+              "description": "One entry per MVP control action: how the game acknowledges it.",
+              "items": {
+                "type": "object",
+                "required": ["action", "visual", "max_ack_ms"],
+                "properties": {
+                  "action": { "$ref": "#/$defs/localId", "description": "A build_spec.controls.actions id." },
+                  "visual": { "type": "string", "minLength": 4, "description": "What changes on screen when the action is taken." },
+                  "audio": { "type": "string" },
+                  "max_ack_ms": { "type": "integer", "minimum": 0 },
+                  "updates": { "type": "array", "items": { "$ref": "#/$defs/localId" }, "description": "Metrics the action changes; each is shown by an MVP hud element." }
+                },
+                "additionalProperties": false
+              }
+            },
+            "onboarding": {
+              "type": "object",
+              "required": ["teaches", "grace", "reveals_answer"],
+              "properties": {
+                "teaches": { "type": "array", "items": { "$ref": "#/$defs/localId" }, "description": "Control action ids the first session teaches before it tests them." },
+                "grace": {
+                  "type": "object",
+                  "description": "A first-time player cannot fail before this.",
+                  "required": ["until"],
+                  "properties": {
+                    "until": { "enum": ["first-success", "seconds"] },
+                    "seconds": { "type": "number", "minimum": 0 }
+                  },
+                  "additionalProperties": false
+                },
+                "reveals_answer": { "type": "boolean", "description": "True when onboarding shows the player the correct move rather than teaching them to read it." }
+              },
+              "additionalProperties": false
+            },
+            "first_30s": {
+              "type": "object",
+              "required": ["first_frame_s", "playable_s", "first_success_s", "retry_s"],
+              "properties": {
+                "first_frame_s": { "type": "number", "minimum": 0 },
+                "playable_s": { "type": "number", "minimum": 0 },
+                "first_success_s": { "type": "number", "minimum": 0 },
+                "retry_s": { "type": "number", "minimum": 0 }
+              },
+              "additionalProperties": false
+            }
           },
           "additionalProperties": false
         }

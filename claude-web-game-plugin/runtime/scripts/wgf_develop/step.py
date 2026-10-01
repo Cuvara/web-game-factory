@@ -1,10 +1,15 @@
 """The `develop` step: brief -> developer -> checks -> commit -> prototype-report.
 
-    inputs   game-design, asset-manifest, scaffold-record (required)
+    inputs   game-design, scaffold-record, asset-manifest (required; not in the greybox
+             phase, `with: {phase: greybox}`, which runs before assets exist)
              title-strategy, tech-plan (read when present: the tech plan's prototype tasks
              join the brief beside the design's build_spec),
              qa-report (on a verify -> develop loop),
-             review-report (on a review -> develop loop: its blockers lead the brief)
+             review-report (on a review -> develop loop: its blockers lead the brief),
+             playability-report (on a playability -> develop loop: its failed checks
+             and frames lead the brief),
+             production-quality-report, visual-qa-report (on a loop back from the
+             production gates, directly or through assets: their failures lead the brief)
     output   prototype-report
     effect   one commit in the game repository per visit, keyed by the idempotency key
 
@@ -57,6 +62,9 @@ from .settings import Settings, SettingsError
 __all__ = ["DevelopStep"]
 
 REQUIRED_INPUTS = ("game-design", "asset-manifest", "scaffold-record")
+# `with: {phase: greybox}`: the loop is built and played before any asset exists, so the
+# asset manifest is not an input yet. `production` (or no phase) integrates the assets.
+PHASES = ("greybox", "production")
 SUPPORTED_MAJOR = "1"
 
 
@@ -76,6 +84,20 @@ def _record_checks(checkout, path, checked_at, key, engine, checks, green):
     _write(checkout, path, json.dumps({"idempotency_key": key, "engine": engine,
                              "checked_at": checked_at, "green": green, "checks": checks},
                             indent=2) + "\n")
+
+
+def _review_baseline(existing, key, phase, baseline):
+    """Where the change a reviewer reads starts: before the oldest commit no review has read.
+
+    That is this visit's baseline, except after a greybox. The greybox is played, not
+    reviewed, so its commits are carried - from the brief it committed (`existing`) - into
+    the production build's first brief, and review reads the whole loop as well as what the
+    production phase put on it. A re-execution keeps the value its brief already holds."""
+    if existing.get("idempotency_key") == key and existing.get("review_baseline"):
+        return existing["review_baseline"]
+    if phase in PHASES and existing.get("phase") == "greybox":
+        return existing.get("review_baseline") or existing.get("baseline_commit") or baseline
+    return baseline
 
 
 def _read_json(path):
@@ -215,12 +237,20 @@ class DevelopStep(WorkflowStep):
         except SettingsError as exc:
             return StepResult.failed(str(exc), retryable=False)
 
-        missing = [t for t in REQUIRED_INPUTS if t not in inputs]
+        phase = (self.params or {}).get("phase")
+        if phase is not None and phase not in PHASES:
+            return StepResult.failed(f"develop's `with: phase` is {phase!r}; it is one of "
+                                     f"{', '.join(PHASES)}", retryable=False)
+        required = tuple(t for t in REQUIRED_INPUTS
+                         if not (phase == "greybox" and t == "asset-manifest"))
+        missing = [t for t in required if t not in inputs]
         if missing:
             return StepResult.waiting_for_input(
                 f"develop needs {', '.join(missing)} in the run before it can brief a build")
         for artifact_type in REQUIRED_INPUTS + ("title-strategy", "tech-plan", "qa-report",
-                                                "review-report"):
+                                                "review-report", "playability-report",
+                                                "production-quality-report",
+                                                "visual-qa-report"):
             ref = inputs.refs.get(artifact_type)
             version = getattr(ref, "schema_version", None) or ""
             if ref is not None and version and version.split(".")[0] != SUPPORTED_MAJOR:
@@ -229,12 +259,18 @@ class DevelopStep(WorkflowStep):
                     retryable=False)
 
         design = inputs.load("game-design")
-        assets = inputs.load("asset-manifest")
+        assets = (inputs.load("asset-manifest")
+                  if phase != "greybox" and "asset-manifest" in inputs else None)
         scaffold = inputs.load("scaffold-record")
         strategy = inputs.load("title-strategy") if "title-strategy" in inputs else None
         tech_plan = inputs.load("tech-plan") if "tech-plan" in inputs else None
         qa = inputs.load("qa-report") if "qa-report" in inputs else None
         review = inputs.load("review-report") if "review-report" in inputs else None
+        playability = (inputs.load("playability-report") if "playability-report" in inputs
+                       else None)
+        production = (inputs.load("production-quality-report")
+                      if "production-quality-report" in inputs else None)
+        visual_qa = inputs.load("visual-qa-report") if "visual-qa-report" in inputs else None
         # A qa-report on the first visit is a leftover from an earlier release, not feedback
         # on this build; only a loop back from verify carries defects to fix.
         if qa is not None and (context.visit <= 1 or qa.get("verdict") == "pass"):
@@ -273,6 +309,26 @@ class DevelopStep(WorkflowStep):
                 context.visit > 1 and review.get("verdict") == "request-changes"
                 and review.get("blockers") and review.get("reviewed_commit") == git.head()):
             review = None
+        # A passing greybox: the loop the production phase must keep playable.
+        greybox_commit = (playability.get("commit") if phase == "production" and playability
+                          and playability.get("verdict") == "PASS" else None)
+        # Likewise a playability failure: only one that played the commit this visit starts
+        # from says what to fix in it.
+        if playability is not None and not (
+                context.visit > 1 and playability.get("verdict") == "FAIL"
+                and playability.get("commit") == git.head()):
+            playability = None
+        # And the production gates': only a FAIL of the commit this visit starts from is
+        # feedback on this build - reached directly (route develop) or through assets, which
+        # rebuilt what the report named without committing, so HEAD is still the one judged.
+        if production is not None and not (
+                context.visit > 1 and production.get("verdict") == "FAIL"
+                and production.get("commit") == git.head()):
+            production = None
+        if visual_qa is not None and not (
+                context.visit > 1 and visual_qa.get("verdict") == "FAIL"
+                and visual_qa.get("commit") == git.head()):
+            visual_qa = None
 
         key = context.idempotency_key
         brief_dir = os.path.join(checkout, briefs.BRIEF_DIR)
@@ -309,6 +365,7 @@ class DevelopStep(WorkflowStep):
         else:
             baseline = (existing.get("baseline_commit")
                         if existing.get("idempotency_key") == key else None) or git.head()
+            review_baseline = _review_baseline(existing, key, phase, baseline)
             previous_checks = _read_json(checks_json)
             if (previous_checks or {}).get("idempotency_key") != key:
                 previous_checks = None  # another visit's failures are not this one's
@@ -317,6 +374,9 @@ class DevelopStep(WorkflowStep):
                 baseline=baseline, design=design, assets=assets, scaffold=scaffold,
                 strategy=strategy, qa=qa, previous_checks=previous_checks,
                 refs=inputs.refs, skills=settings.skills, review=review,
+                playability=playability, frames_root=getattr(context, "run_dir", None),
+                production=production, visual_qa=visual_qa,
+                phase=phase, greybox_commit=greybox_commit, review_baseline=review_baseline,
                 tech_plan=tech_plan, self_playtest=settings.self_playtest,
                 mobile_test=bool((game_config.get("verification") or {}).get("mobile_test",
                                                                             True)),

@@ -34,6 +34,7 @@ those, and nothing else:
 | `develop.developer` | `kind: command`, the verified `claude -p` argv | Builds the game, and is re-entered with the failing qa-report or the review's requested changes (the workflow's own loops, `max_visits_by_route`) |
 | `develop.budget` | `max_sessions: 12`, `max_cost: 60` (US$, from `total_cost_usd`) | develop blocks, nothing spawned, once reached; only a person raises it (`wgf resume <run> --budget-sessions N`) |
 | `review.reviewer` | `kind: command`, the verified read-only `claude -p` argv | Approves or requests changes; the Factory fingerprints the checkout and undoes any write |
+| `design` | `author: agent`, the verified read-only `claude -p` argv | Writes the design draft for a brief no design archetype carries; the module judges it unchanged, and shows it any schema or buildability problem for a bounded repair (`MAX_REPAIR_ROUNDS`) |
 | `checkpoints.auto_approve` | `[G2, G3]` | The two reversible gates in `new-game` are approved by the run, each with a decision record (`automation`) |
 | `init.source` | `local` | A project from the pinned template, `git archive`-style, **no GitHub repository, no remote** |
 
@@ -68,7 +69,7 @@ Then, in Claude Code:
 The command reports the autonomy, says that agent sessions will run unattended and cost
 money within the budget, and starts after you confirm.
 
-## Research needs evidence
+## Research needs evidence, which the research role fetches
 
 Research is autonomous but not evidence-free. It reads evidence snapshots from the project's
 `workspace/research/snapshots/`, and live pages only from a `workspace/research/probes.yaml`
@@ -76,6 +77,19 @@ of probes a person wrote, with `discovery: {live: true}` (or `WGF_RESEARCH_LIVE=
 neither, the run waits for input with *no external evidence* - by design: an observed claim
 needs a source, and the profile does not turn that off
 (`discovery.require_external_evidence` stays `true`).
+
+That wait is an input, not a decision. `/web-game-factory:new-game` hands it to the research
+agent, which captures snapshots from pages it actually fetches, per
+`core/craft/research-evidence.md` (verbatim excerpts, the URL fetched, the time of retrieval),
+then resumes the run. Evidence is fetched, never written: if nothing relevant can be fetched,
+the command reports that and stops.
+
+When the run has a game idea that no catalog concept carries, research also waits - it never
+substitutes the nearest shape (`discovery.idea_fallback: wait`; `nearest` restores the
+substitution on purpose). The research agent writes the idea's concept to the project's
+`workspace/research/concepts.yaml` (its `brief` exactly the run's idea, `design_archetype:
+agent`, every figure an estimate the scan records as a hypothesis), and the run is resumed.
+Such a concept can only be designed by an agent design author, which the profile configures.
 
 Research carries forward only a concept the design module can build: each entry of
 `scripts/wgf_discovery/archetypes.yaml` declares its `design_archetype`, or `null`, and a
@@ -91,7 +105,7 @@ step. Before this, 9 of 11 concepts reached design and failed its consistency ru
 | G4 prototype review | pass, iterate or kill - always a person: `! … wgf.py decide <run> pass --note "..."` |
 | release | runs after a G4 pass; drafts only. G5, G6 (publish) and G7 (spend) are the game repository's, and human |
 | budget | raising it after it is spent |
-| evidence | supplying snapshots or probes |
+| evidence | nothing, when the research agent can fetch it; a person when it cannot |
 | a GitHub repository | only if you set `init.source: github`, and `/new-game` asks first |
 
 ## Verifying a configuration without spending anything

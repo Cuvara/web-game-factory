@@ -1,0 +1,290 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://webgamefactory.dev/schemas/artifacts/visual-qa-report.schema.json",
+  "title": "Visual QA report",
+  "description": "A vision judge's reading of a build's runtime frames - every state, desktop and mobile - against core/reference/visual-qa-rubric.yaml and the design's visual identity: placeholder or primitive art, broken composition, unreadable or default UI, missing assets, inconsistency, debug output. Each finding names the frame that shows it and where it goes back to. An agent's judgement of frames, never a first-time player's.",
+  "x-wgf": {
+    "id": "visual-qa-report",
+    "kind": "artifact",
+    "format": "json",
+    "version": "1.1.0",
+    "producer": "title:prototype",
+    "consumers": [
+      "title:prototype",
+      "title:prototype-review",
+      "release:qa",
+      "release:draft"
+    ],
+    "repo_path": "<game-repo>/qa/visual-qa/<commit>.json",
+    "run_path": "<storage>/workflows/<run-id>/artifacts/visual-qa-report/v<n>.json",
+    "required_for_gates": []
+  },
+  "type": "object",
+  "required": [
+    "provenance",
+    "title_id",
+    "commit",
+    "measurement_class",
+    "verdict",
+    "failed",
+    "routes"
+  ],
+  "properties": {
+    "provenance": {
+      "$ref": "shared/provenance.schema.json#/$defs/provenance"
+    },
+    "title_id": {
+      "type": "string"
+    },
+    "commit": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{40}$"
+    },
+    "measurement_class": {
+      "const": "automation-agent"
+    },
+    "judge": {
+      "type": "object",
+      "required": [
+        "kind"
+      ],
+      "properties": {
+        "kind": {
+          "type": "string"
+        },
+        "model": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "additionalProperties": true
+    },
+    "rubric": {
+      "type": "object",
+      "required": [
+        "version",
+        "sha256"
+      ],
+      "description": "The rubric the frames were judged by (core/reference/visual-qa-rubric.yaml unless configured), pinned by content: a verdict is explainable only against the rubric it was given.",
+      "properties": {
+        "path": {
+          "type": "string"
+        },
+        "version": {
+          "type": "string"
+        },
+        "sha256": {
+          "type": "string"
+        },
+        "pass_bar": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 5
+        }
+      },
+      "additionalProperties": false
+    },
+    "judge_runs": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "How many times the judge was run: a malformed verdict is asked for once more."
+    },
+    "frames": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "id",
+          "path",
+          "sha256"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "project": {
+            "type": "string"
+          },
+          "state": {
+            "type": "string"
+          },
+          "path": {
+            "type": "string"
+          },
+          "sha256": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "scores": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "number",
+        "minimum": 0,
+        "maximum": 5
+      },
+      "description": "Rubric dimension -> 0..5."
+    },
+    "findings": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "id",
+          "severity",
+          "category",
+          "summary",
+          "route"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "severity": {
+            "enum": [
+              "blocker",
+              "major",
+              "minor"
+            ]
+          },
+          "category": {
+            "enum": [
+              "assets",
+              "ui",
+              "composition",
+              "readability",
+              "consistency",
+              "debug"
+            ]
+          },
+          "frame": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "summary": {
+            "type": "string"
+          },
+          "route": {
+            "enum": [
+              "assets",
+              "develop"
+            ]
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "failed": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "Ids of the required checks or findings that failed."
+    },
+    "routes": {
+      "type": "array",
+      "items": {
+        "enum": [
+          "assets",
+          "develop"
+        ]
+      },
+      "description": "Where the failures go back to: `assets` when an asset itself must change, `develop` when the game's use of it must. The step returns the first of these as its route (assets before develop)."
+    },
+    "blocked_reason": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "verdict": {
+      "enum": [
+        "PASS",
+        "FAIL",
+        "BLOCKED"
+      ]
+    },
+    "states": {
+      "type": "array",
+      "description": "The judge's per-state answers (core/reference/visual-qa-rubric.yaml `state_questions`): one entry per rubric state and viewport. `captured: false` - no frame shows that state, so nothing was answered for it.",
+      "items": {
+        "type": "object",
+        "required": [
+          "state",
+          "viewport",
+          "captured",
+          "answers"
+        ],
+        "properties": {
+          "state": {
+            "type": "string"
+          },
+          "viewport": {
+            "type": "string"
+          },
+          "captured": {
+            "type": "boolean"
+          },
+          "frames": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "answers": {
+            "type": "object",
+            "additionalProperties": {
+              "type": [
+                "boolean",
+                "null"
+              ]
+            }
+          },
+          "comment": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "look": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "description": "Finished game or developer prototype, judged of the whole set of frames; a prototype fails.",
+      "required": [
+        "verdict"
+      ],
+      "properties": {
+        "verdict": {
+          "type": "string"
+        },
+        "reason": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "notes": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "The judge's free-text notes, verbatim."
+    }
+  },
+  "additionalProperties": false
+}

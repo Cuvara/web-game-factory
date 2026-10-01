@@ -231,6 +231,76 @@ class MockVerificationStep(MockStep):
             body["failed_checks"] = [body["checks"][0]["id"]]
 
 
+class MockPlayabilityStep(MockStep):
+    type, role = "playability", "qa"
+
+    def customize(self, body, artifact_type, context, entry):
+        if artifact_type == "playability-report" and entry == "fail":
+            body["verdict"] = "FAIL"
+            body["checks"][1].update(status="FAIL", summary="scripted failure (mock)")
+            body["failed_checks"] = ["desktop:win.reachable"]
+
+
+class MockProductionQualityStep(MockStep):
+    """`fail` in a mock plan is a production gate failure routed to `develop`; `fail-assets`
+    one routed to `assets` - FAILED, not retryable, the report emitted - the shape the real
+    step (scripts/wgf_production) returns."""
+
+    type, role = "production-quality", "qa"
+    ROUTES = {"fail": ("develop", 1), "fail-assets": ("assets", 0)}
+
+    def execute(self, inputs, context):
+        entry = self._scripted(context)
+        if entry not in self.ROUTES:
+            return super().execute(inputs, context)
+        context.logger.info("mock step", script=entry)
+        route, index = self.ROUTES[entry]
+        artifacts = [self._artifact(t, inputs, context, entry) for t in self.definition.outputs]
+        return StepResult("FAILED", route=route, artifacts=artifacts, retryable=False,
+                          error=f"{self.id} reported fail, route {route} (mock)")
+
+    def customize(self, body, artifact_type, context, entry):
+        if artifact_type != "production-quality-report" or entry not in self.ROUTES:
+            return
+        route, index = self.ROUTES[entry]
+        check = body["checks"][index]
+        check.update(status="FAIL", summary="scripted failure (mock)")
+        body["verdict"] = "FAIL"
+        body["failed"] = [f"{check['project']}:{check['id']}" if check.get("project") else check["id"]]
+        body["routes"] = [route]
+
+
+class MockVisualQAStep(MockStep):
+    """`assets` or `develop` in a mock plan is a visual QA failure routed there: FAILED with
+    that route and not retryable, a blocker finding naming it in the report - the shape the
+    real visual-qa step returns. `fail` routes to develop. No frame is read."""
+
+    type, role = "visual-qa", "qa"
+    ROUTES = ("assets", "develop")
+
+    def execute(self, inputs, context):
+        result = super().execute(inputs, context)
+        route = "develop" if result.route == "fail" else result.route
+        if route in self.ROUTES:
+            return StepResult("FAILED", route=route, artifacts=result.artifacts,
+                              retryable=False, error=f"{self.id} failed visual QA (mock)")
+        return result
+
+    def customize(self, body, artifact_type, context, entry):
+        if artifact_type != "visual-qa-report":
+            return
+        route = "develop" if entry == "fail" else entry
+        if route in self.ROUTES:
+            finding = f"mock-blocker-{context.execution}"
+            body["verdict"] = "FAIL"
+            body["findings"] = [{"id": finding, "severity": "blocker",
+                                 "category": "assets" if route == "assets" else "ui",
+                                 "frame": None, "route": route,
+                                 "summary": "Scripted visual QA blocker (mock)."}]
+            body["failed"] = [f"finding:{finding}"]
+            body["routes"] = [route]
+
+
 class MockReleaseStep(MockStep):
     type, role = "release", "release"
 
@@ -243,6 +313,9 @@ MOCK_STEPS = (
     MockInitStep,
     MockAssetsStep,
     MockDevelopmentStep,
+    MockPlayabilityStep,
+    MockProductionQualityStep,
+    MockVisualQAStep,
     MockReviewStep,
     MockSDKStep,
     MockVerificationStep,

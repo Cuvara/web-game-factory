@@ -14,6 +14,7 @@ Normalizing platform signal into tiered claims and keeping evidence honest, incl
 - `${CLAUDE_PLUGIN_ROOT}/runtime/core/lifecycle/stages/market-scan.md`
 - `${CLAUDE_PLUGIN_ROOT}/runtime/core/artifacts/shared/claim.schema.json`
 - `${CLAUDE_PLUGIN_ROOT}/runtime/core/craft/competitive-teardown.md`
+- `${CLAUDE_PLUGIN_ROOT}/runtime/core/craft/research-evidence.md`
 - `${CLAUDE_PLUGIN_ROOT}/runtime/core/reference/research-vocabulary.yaml`
 - `${CLAUDE_PLUGIN_ROOT}/runtime/core/artifacts/shared/game-record.schema.json`
 

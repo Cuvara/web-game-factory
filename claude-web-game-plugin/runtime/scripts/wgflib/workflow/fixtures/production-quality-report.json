@@ -1,0 +1,26 @@
+{
+  "title_id": "mock-title",
+  "commit": "0000000000000000000000000000000000000000",
+  "measurement_class": "automation-bot",
+  "checks": [
+    {
+      "id": "assets.present",
+      "status": "PASS",
+      "required": true,
+      "summary": "every required asset delivered, none a placeholder (mock)",
+      "route": "assets"
+    },
+    {
+      "id": "assets.used",
+      "project": "desktop",
+      "status": "PASS",
+      "required": true,
+      "summary": "readable entities are drawn from runtime assets (mock)",
+      "route": "develop"
+    }
+  ],
+  "failed": [],
+  "routes": [],
+  "blocked_reason": null,
+  "verdict": "PASS"
+}

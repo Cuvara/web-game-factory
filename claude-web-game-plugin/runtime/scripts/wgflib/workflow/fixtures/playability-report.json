@@ -1,0 +1,43 @@
+{
+  "title_id": "mock-title",
+  "commit": "0000000000000000000000000000000000000000",
+  "measurement_class": "automation-bot",
+  "projects": [
+    {
+      "id": "desktop",
+      "viewport": {
+        "width": 1280,
+        "height": 720
+      },
+      "ran": true
+    },
+    {
+      "id": "mobile",
+      "viewport": {
+        "width": 393,
+        "height": 851
+      },
+      "ran": true
+    }
+  ],
+  "checks": [
+    {
+      "id": "probe.present",
+      "project": "desktop",
+      "status": "PASS",
+      "required": true,
+      "summary": "window.__wgf__.play.snapshot() answered (mock)"
+    },
+    {
+      "id": "win.reachable",
+      "project": "desktop",
+      "status": "PASS",
+      "required": true,
+      "summary": "the oracle reached `won` (mock)"
+    }
+  ],
+  "frames": [],
+  "failed_checks": [],
+  "blocked_reason": null,
+  "verdict": "PASS"
+}

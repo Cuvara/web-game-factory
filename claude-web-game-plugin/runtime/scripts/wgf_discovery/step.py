@@ -24,6 +24,24 @@ first (analysis.idea_match, opportunities.rank), and the opportunity carries it 
 strategy and design to build from. The screen and its vetoes are unchanged, and nothing is
 invented: a selection that holds none of the brief's words records an `idea-unmatched` gap.
 
+When no eligible candidate holds any of the brief's words, `idea_fallback` decides. `wait`
+(the default) selects nothing: the report keeps every candidate, records the
+`idea-unmatched` gap naming the nearest eligible shape as information only, and the step
+waits for input - a concept for the brief in the concepts file, or `idea_fallback: nearest`.
+`nearest` carries the brief to the nearest eligible shape and says so in the gap.
+
+The concepts file (`<corpus>/concepts.yaml` unless `concepts` names another) is how a
+project gives research a concept the catalog lacks. It has the catalog's shape -
+`{version, archetypes: [...]}` - and every entry the catalog's required keys, plus `brief`,
+exactly the run's canonical idea (an entry for another brief is refused), and
+`design_archetype`, the design archetype id that designs it or `agent` (only the agent
+design author can). Entries join the catalog for that run only; an id the catalog already
+uses is refused. Each one carries an extra hypothesis claim saying it was authored for the
+brief, is not a catalog shape and its figures are unmeasured; its estimates stay hypotheses
+like every catalog estimate. The file is read only when the run has an idea: a blank scan
+is unchanged by it. When it exists, its hash joins the catalog's in the report id and it is
+recorded as the `concepts` collector; without it, the report is what it always was.
+
 Settings, each optional, in increasing precedence: DEFAULTS below, `factory.discovery` in
 workspace/config/factory.yaml, then the step's `with:` block in the workflow file.
 
@@ -34,6 +52,8 @@ workspace/config/factory.yaml, then the step's `with:` block in the workflow fil
     live            fetch probes.yaml pages during the run; also WGF_RESEARCH_LIVE=1  (off)
     require_external_evidence
                     wait for input when no external source was read   (true)
+    idea_fallback   wait | nearest: with an idea no eligible candidate matches   (wait)
+    concepts        the project's concepts file   (<corpus>/concepts.yaml)
     max_candidates  how many screened candidates the report keeps   (8)
     scoring_model   file stem under core/reference/scoring/   (portfolio-default.v1)
     as_of           ISO timestamp the scan is "as of"; default now   (for reproducible runs)
@@ -46,10 +66,11 @@ workspace/config/factory.yaml, then the step's `with:` block in the workflow fil
 Outcomes (docs/workflow-module-contract.md §7):
 
     SUCCESS            research-report + opportunity
-    WAITING_FOR_INPUT  no external evidence at all - the report is still emitted, and says so
+    WAITING_FOR_INPUT  no external evidence at all - the report is still emitted, and says so;
+                       or (idea_fallback: wait) the idea matches no eligible candidate
     BLOCKED            evidence read, but no candidate survived screening - report emitted
-    FAILED, permanent  a malformed snapshot, game record, probe file, catalog, vocabulary or
-                       scope; a `select` naming no eligible opportunity
+    FAILED, permanent  a malformed snapshot, game record, probe file, catalog, concepts file,
+                       vocabulary or scope; a `select` naming no eligible opportunity
     FAILED, retryable  live fetching was the only evidence source and every fetch failed
 
 Side effects: none outside the run unless `persist_backlog` is on. The step reads core/ and
@@ -65,10 +86,12 @@ import glob
 import hashlib
 import json
 import os
+import re
 from datetime import datetime, timezone
 
 from wgflib import paths, provenance
 from wgflib.workflow import ArtifactOutput, StepResult, WorkflowStep
+from wgflib.workflow.api import canonical_idea
 from wgflib.workflow.model import StepOutcome
 from wgflib.yamllite import YamlError, load_file
 
@@ -91,6 +114,35 @@ __all__ = ["ResearchStep", "DEFAULTS", "CATALOG"]
 
 CATALOG = os.path.join(os.path.dirname(os.path.abspath(__file__)), "archetypes.yaml")
 CONTROL_PLATFORMS = ("generic-web",)
+CONCEPTS_FILE = "concepts.yaml"
+IDEA_FALLBACKS = ("wait", "nearest")
+REQUIRED = ("id", "title", "genre", "subgenre", "core_mechanic", "fantasy", "core_loop",
+            "session_seconds", "replayability", "technical_complexity", "asset_complexity",
+            "dev_speed_days", "asset_cost_usd", "bundle_mb", "monetization")
+_KEBAB = re.compile(r"^[a-z][a-z0-9]*(-[a-z0-9]+)*$")
+# The dimensions an entry's `priors` may guess (analysis.py reads exactly these), each a number
+# in [0, 1]. Anything else is refused: a prior the screen cannot read would be dropped
+# silently, and a note in its place would become a claim's text.
+PRIOR_KEYS = ("monetization_fit", "retention_potential", "session_quality", "technical_risk",
+              "performance_risk", "iterability")
+
+
+def _priors_problem(entry):
+    """Why an entry's `priors` cannot be read, or None. Absent priors are allowed."""
+    priors = entry.get("priors")
+    if priors is None:
+        return None
+    if not isinstance(priors, dict):
+        return "priors must be a mapping of " + ", ".join(PRIOR_KEYS) + " to numbers in [0, 1]"
+    unknown = sorted(k for k in priors if k not in PRIOR_KEYS)
+    if unknown:
+        return (f"priors has {', '.join(map(repr, unknown))}; only "
+                + ", ".join(PRIOR_KEYS) + " are priors")
+    bad = sorted(k for k, v in priors.items()
+                 if isinstance(v, bool) or not isinstance(v, (int, float)) or not 0 <= v <= 1)
+    if bad:
+        return f"priors {', '.join(bad)} must be numbers in [0, 1]"
+    return None
 
 DEFAULTS = {
     "corpus": os.path.join("workspace", "research"),
@@ -98,6 +150,8 @@ DEFAULTS = {
     "genres": None,
     "live": False,
     "require_external_evidence": True,
+    "idea_fallback": "wait",
+    "concepts": None,
     "max_candidates": 8,
     "scoring_model": "portfolio-default.v1",
     "as_of": None,
@@ -122,6 +176,15 @@ def _file_hash(path):
 
 def _resolve(path):
     return path if os.path.isabs(path) else os.path.join(paths.PROJECT, path)
+
+
+def _shown(path):
+    """Relative to the project when it is inside it, else as given."""
+    try:
+        shown = os.path.relpath(path, paths.PROJECT)
+    except ValueError:  # another drive
+        return path
+    return path if shown.startswith(os.pardir) else shown
 
 
 class ResearchStep(WorkflowStep):
@@ -174,6 +237,10 @@ class ResearchStep(WorkflowStep):
 
     def _scan(self, settings, as_of, context):
         idea = self.idea(context)
+        fallback = settings.get("idea_fallback")
+        if fallback not in IDEA_FALLBACKS:
+            raise ResearchError(f"idea_fallback {fallback!r} is not one of "
+                                f"{', '.join(IDEA_FALLBACKS)}")
         as_of_text = format_time(as_of)
         stamp = lambda value=None: as_of_text if value is None else format_time(value)  # noqa: E731
         gaps = []
@@ -193,8 +260,10 @@ class ResearchStep(WorkflowStep):
             raise ResearchError(f"no platform profile for {', '.join(unknown)}")
         profiles = {pid: available[pid] for pid in scope}
 
-        archetypes = self._archetypes(settings)
         corpus = _resolve(settings["corpus"])
+        concepts_path, concepts = (self._concepts(settings, corpus, idea) if idea
+                                   else (None, []))
+        archetypes = self._archetypes(settings, concepts)
         collectors = [{"id": reference.id, "kind": reference.kind, "status": "used",
                        "detail": f"{len(profiles)} platform profiles"}]
 
@@ -223,6 +292,14 @@ class ResearchStep(WorkflowStep):
             collectors.append({"id": live.id, "kind": live.kind, "status": "disabled",
                                "detail": "enable with live: true or WGF_RESEARCH_LIVE=1"})
 
+        if idea and os.path.exists(concepts_path):
+            # Only when there is one to read: a scan without the file reports as it always did.
+            collectors.append({
+                "id": "concepts", "kind": "reference",
+                "status": "used" if concepts else "empty",
+                "detail": f"{len(concepts)} concepts authored for the brief in "
+                          f"{_shown(concepts_path)}"})
+
         sources = [s for s in found + live_sources if s.observations]
         if live_failed and not sources and settings.get("require_external_evidence"):
             return StepResult.failed("every live probe fetch failed and no snapshot evidence "
@@ -244,6 +321,8 @@ class ResearchStep(WorkflowStep):
         corpus_hash = self._corpus_hash(sources, profiles, records)
         key_parts = [corpus_hash, as_of_text[:10], scope, settings.get("genres"),
                      _file_hash(settings["catalog"]), vocabulary.file_hash, config.file_hash]
+        if idea and os.path.exists(concepts_path):
+            key_parts.append({"concepts": _file_hash(concepts_path)})
         if idea:
             # Only with one: a blank scan keeps the report id it always had.
             key_parts.append({"idea": idea})
@@ -259,9 +338,12 @@ class ResearchStep(WorkflowStep):
             sources=sources, profiles=profiles, archetypes=archetypes, model=model,
             backlog=backlog, as_of_text=stamp, report_key=report_key,
             max_candidates=int(settings.get("max_candidates") or 8), idea=idea,
-            book=book, state=state)
+            idea_fallback=fallback, book=book, state=state)
         for kind, description, platform in analysis_gaps:
             gaps.append(Gap(kind, description, platform=platform))
+        # The brief matched no eligible candidate, and the scan will not substitute one.
+        unmatched = (selection is None and bool(idea) and fallback == "wait"
+                     and any(c["status"] != "excluded" for c in candidates))
 
         v2 = self._research_v2(book=book, state=state, vocabulary=vocabulary, config=config,
                                backlog=backlog,
@@ -280,6 +362,8 @@ class ResearchStep(WorkflowStep):
                 if idea:
                     gaps[:] = [g for g in gaps if g.kind != "idea-unmatched"]
                     gaps.extend(self._brief_gaps(v2, selection, idea))
+        unmatched = (selection is None and bool(idea) and fallback == "wait"
+                     and any(b["status"] == "eligible" for b in v2["opportunities"]))
         claims = [book.claims[cid] for cid in sorted(book.closure(
             set(state["referenced"]) | v2["referenced"]))]
 
@@ -288,7 +372,9 @@ class ResearchStep(WorkflowStep):
             model=model, model_path=model_path, ttl=ttl, collectors=collectors,
             corpus_hash=corpus_hash, sources=sources, profiles=profiles, claims=claims,
             platforms=platforms, candidates=candidates, selection=selection, gaps=gaps,
-            context=context, idea=idea, v2=v2)
+            context=context, idea=idea, v2=v2,
+            unselected=("No eligible candidate matches the brief, and idea_fallback is wait: "
+                        "nothing was selected." if unmatched else None))
         metadata = {
             "sources": report["evidence_summary"]["sources"],
             "claims": len(claims),
@@ -302,8 +388,15 @@ class ResearchStep(WorkflowStep):
             return StepResult(
                 StepOutcome.WAITING_FOR_INPUT, artifacts=[report_out],
                 message=(f"no external evidence: add snapshots under "
-                         f"{os.path.relpath(os.path.join(corpus, 'snapshots'), paths.PROJECT)} "
+                         f"{_shown(os.path.join(corpus, 'snapshots'))} "
                          f"or enable live probes, then resume"))
+        if unmatched:
+            return StepResult(
+                StepOutcome.WAITING_FOR_INPUT, artifacts=[report_out],
+                message=(f"the brief matches no concept research can carry; add a concept "
+                         f"for it to {_shown(concepts_path)} "
+                         f"(core/lifecycle/stages/market-scan.md), or set "
+                         f"discovery.idea_fallback: nearest, then resume"))
         if selection is None:
             return StepResult(StepOutcome.BLOCKED, artifacts=[report_out],
                               message="no candidate survived screening; see the report's "
@@ -333,26 +426,71 @@ class ResearchStep(WorkflowStep):
 
     # -- inputs ---------------------------------------------------------------------------
 
-    def _archetypes(self, settings):
+    def _archetypes(self, settings, concepts=()):
         document = load_file(_resolve(settings["catalog"])) or {}
         archetypes = document.get("archetypes") or []
-        required = ("id", "title", "genre", "subgenre", "core_mechanic", "fantasy",
-                    "core_loop", "session_seconds", "replayability", "technical_complexity",
-                    "asset_complexity", "dev_speed_days", "asset_cost_usd", "bundle_mb",
-                    "monetization")
         for archetype in archetypes:
-            missing = [k for k in required if k not in archetype]
+            missing = [k for k in REQUIRED if k not in archetype]
             if missing:
                 raise ResearchError(f"archetype {archetype.get('id')!r} lacks "
                                     f"{', '.join(missing)}")
+            problem = _priors_problem(archetype)
+            if problem:
+                raise ResearchError(f"archetype {archetype.get('id')!r}: {problem}")
+        catalog_ids = {a["id"] for a in archetypes}
+        for concept in concepts:
+            if concept["id"] in catalog_ids:
+                raise ResearchError(f"{concept['_concepts_file']}: concept {concept['id']!r} "
+                                    f"uses an id the catalog already has")
         genres = settings.get("genres")
         if genres:
             archetypes = [a for a in archetypes
                           if set(a.get("market_tags") or []) & set(genres)
                           or a["genre"] in genres]
+        # A concept authored for the brief is always screened, whatever the genre scope.
+        archetypes = list(archetypes) + list(concepts)
         if not archetypes:
             raise ResearchError("no archetype matches the scan's genre scope")
         return archetypes
+
+    def _concepts(self, settings, corpus, idea):
+        """(path, entries) of the project's concepts file; entries [] when there is none."""
+        configured = settings.get("concepts")
+        path = _resolve(configured) if configured else os.path.join(corpus, CONCEPTS_FILE)
+        if not os.path.exists(path):
+            if configured:
+                raise ResearchError(f"no concepts file {configured!r}")
+            return path, []
+        shown = _shown(path)
+        document = load_file(path)
+        if (not isinstance(document, dict) or "version" not in document
+                or not isinstance(document.get("archetypes"), list)):
+            raise ResearchError(f"{shown}: a concepts file is {{version, archetypes: [...]}}")
+        brief = canonical_idea(idea)
+        entries, seen = [], set()
+        for entry in document["archetypes"]:
+            if not isinstance(entry, dict):
+                raise ResearchError(f"{shown}: every concept is a mapping")
+            missing = [k for k in REQUIRED + ("brief", "design_archetype") if k not in entry]
+            if missing:
+                raise ResearchError(f"{shown}: concept {entry.get('id')!r} lacks "
+                                    f"{', '.join(missing)}")
+            problem = _priors_problem(entry)
+            if problem:
+                raise ResearchError(f"{shown}: concept {entry['id']!r}: {problem}")
+            if entry["brief"] != brief:
+                raise ResearchError(f"{shown}: concept {entry['id']!r} was authored for "
+                                    f"another brief ({entry['brief']!r}); the file holds "
+                                    f"concepts for this run's brief only ({brief!r})")
+            design = entry["design_archetype"]
+            if not isinstance(design, str) or not _KEBAB.match(design):
+                raise ResearchError(f"{shown}: concept {entry['id']!r} needs a design_archetype: "
+                                    f"a design archetype id, or agent")
+            if entry["id"] in seen:
+                raise ResearchError(f"{shown}: concept {entry['id']!r} appears twice")
+            seen.add(entry["id"])
+            entries.append(dict(entry, _concepts_file=shown))
+        return path, entries
 
     def _backlog(self, settings):
         backlog = []
@@ -388,7 +526,7 @@ class ResearchStep(WorkflowStep):
 
     def _report(self, *, report_id, settings, scope, as_of_text, model, model_path, ttl,
                 collectors, corpus_hash, sources, profiles, claims, platforms, candidates,
-                selection, gaps, context, idea=None, v2=None):
+                selection, gaps, context, idea=None, unselected=None, v2=None):
         tiers = {"observed": 0, "derived": 0, "hypothesis": 0}
         for claim in claims:
             tiers[claim["tier"]] += 1
@@ -443,7 +581,7 @@ class ResearchStep(WorkflowStep):
             "selection": selection or {
                 "candidate_id": "none",
                 "opportunity_id": "opp-none",
-                "rationale": "No candidate survived screening.",
+                "rationale": unselected or "No candidate survived screening.",
                 "runner_up": None,
             },
             "evidence_summary": {
@@ -556,6 +694,10 @@ class ResearchStep(WorkflowStep):
         or a person re-runs research on a different opportunity)."""
         ranked = v2["ranked"]
         pinned = settings.get("select")
+        if idea and settings.get("idea_fallback") == "wait" and not pinned:
+            # The brief is the person's question: with `wait`, only an opportunity that holds
+            # some of its words may answer it, never the nearest substitute.
+            ranked = [b for b in ranked if (b.get("brief_match") or {}).get("terms")]
         if pinned:
             chosen = next((b for b in v2["opportunities"]
                            if pinned in (b["opportunity_id"], (b.get("_candidate") or {}).get(

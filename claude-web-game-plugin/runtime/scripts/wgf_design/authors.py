@@ -461,7 +461,7 @@ class ArchetypeAuthor(DesignAuthor):
         # 7. The build spec.
         spec = self._build_spec(a, look, engine, orientation, resolution, is_level, touchpoints,
                                 time_to_first_play, time_to_first_reward, run, target, audience,
-                                exclusions, features)
+                                exclusions, features, archetypes.EXPERIENCE[archetype_id])
 
         for adopted in ((research or {}).get("patterns") or {}).get("adopt") or []:
             open_questions.append(
@@ -570,8 +570,10 @@ class ArchetypeAuthor(DesignAuthor):
 
     def _build_spec(self, a, look, engine, orientation, resolution, is_level, touchpoints,
                     time_to_first_play, time_to_first_reward, run, target, audience, exclusions,
-                    features):
+                    features, ex):
         fail_state = "level-fail" if is_level else "fail"
+        # Decided first: whether keyboard bindings exist decides what the states may name.
+        no_desktop = exclusions.mentions("desktop", "keyboard")
         tiers = {f["id"]: f["tier"] for f in features}
         states = [
             {"id": "boot", "tier": "mvp", "initial": True,
@@ -584,7 +586,8 @@ class ArchetypeAuthor(DesignAuthor):
             {"id": "title", "tier": "mvp", "description": "Title, best score, play button.",
              "exits": [{"to": "play", "on": "Play pressed"}]},
             {"id": "play", "tier": "mvp", "description": "Gameplay with HUD.",
-             "exits": [{"to": "pause", "on": "Pause pressed, Esc, or tab hidden"},
+             "exits": [{"to": "pause", "on": "Pause pressed or tab hidden" if no_desktop
+                        else "Pause pressed, Esc, or tab hidden"},
                        {"to": fail_state, "on": a["failure_condition"]}]
                       + ([{"to": "level-complete", "on": "All goal counters reach zero"}] if is_level else [])},
             {"id": "pause", "tier": "mvp", "description": "Play frozen, audio paused, pause menu shown.",
@@ -601,7 +604,8 @@ class ArchetypeAuthor(DesignAuthor):
         states[2]["exits"].append({"to": "settings", "on": "Settings pressed"})
 
         rewarded = next((t for t in touchpoints if t["kind"] == "rewarded"), None)
-        hud = [dict(h) for h in a["hud"]]
+        hud = [dict(h, **({"metric": ex["hud_metrics"][h["id"]]} if h["id"] in ex["hud_metrics"] else {}))
+               for h in a["hud"]]
         used = {h["anchor"] for h in hud}
         pause_anchor = next(x for x in ("top-left", "top-right", "bottom-right") if x not in used)
         hud.append({"id": "pause-button", "tier": "mvp", "shows": "Pause button", "anchor": pause_anchor,
@@ -616,7 +620,9 @@ class ArchetypeAuthor(DesignAuthor):
              "actions": [{"label": "Play", "goes_to": "play"}],
              "layout": "Play button in the thumb zone of the lower third; best score directly above it."},
             {"id": "play", "tier": "mvp", "state": "play", "purpose": "Gameplay; only the HUD overlays it.",
-             "elements": [h["shows"] for h in hud if h["tier"] == "mvp"],
+             # A first session starts here, not at the title: the objective is on this screen.
+             "elements": [f"Objective line until the first success: {ex['goal']}"]
+                         + [h["shows"] for h in hud if h["tier"] == "mvp"],
              "actions": [{"label": "Pause", "goes_to": "pause"}],
              "layout": "HUD inside the safe area; nothing interactive in the play area except the game itself."},
             {"id": "pause", "tier": "mvp", "state": "pause", "purpose": "Stop without losing the run.",
@@ -662,7 +668,6 @@ class ArchetypeAuthor(DesignAuthor):
         actions = [dict(x) for x in a["actions"]]
         actions.append({"id": "pause", "action": "Pause", "tier": "mvp", "touch": "Pause button",
                         "mouse": "Pause button", "keyboard": "Esc or P", "gamepad": "Start"})
-        no_desktop = exclusions.mentions("desktop", "keyboard")
         if no_desktop:
             for action in actions:
                 action["keyboard"] = "Not bound: desktop-specific controls are out of scope (title strategy)"
@@ -670,17 +675,42 @@ class ArchetypeAuthor(DesignAuthor):
         device = audience.get("device")
         primary = {"mobile": "touch", "desktop": "touch-and-mouse", "both": "any"}.get(device, "any")
 
-        assets = [dict(x) for x in a["assets"]] + [
+        ui = look["ui"]
+        button = ui["button"]
+        faces = identity.families(look["typography"])
+        assets = [self._asset_in(dict(x), engine["dimension"]) for x in a["assets"]] + [
             {"id": "ui-kit", "type": "ui", "tier": "mvp",
              "description": "Buttons, panels and the result card, drawn in the identity kit",
-             "count": 1, "source_preference": "procedural", "est_cost": 0, "spec": "9-slice panels, button states: idle, pressed, disabled"},
+             "count": 1, "source_preference": "procedural", "est_cost": 0, "spec": "9-slice panels, button states: idle, pressed, disabled",
+             "role": "ui", "dimension": "2d",
+             "readability": (f"Buttons filled {button['fill']} with {button['text']} labels at "
+                             f"{ui['min_target_px']} px or larger, panels in {ui['surface']}: the primary "
+                             "action (Play, Retry) is the largest, brightest target on its screen, and "
+                             "no button looks like a browser default")},
             {"id": "icons", "type": "icon", "tier": "mvp", "description": "Play, pause, retry, menu, sound, ad glyph",
-             "count": 6, "source_preference": "library", "est_cost": 10, "spec": "Single-colour SVG, 48px grid"},
+             "count": 6, "source_preference": "library", "est_cost": 10, "spec": "Single-colour SVG, 48px grid",
+             "role": "icon", "dimension": "2d",
+             "readability": "Each glyph recognisable without its label at 24 px inside a 48 px target; "
+                            "pause and retry never confused"},
             {"id": "fonts", "type": "font", "tier": "mvp",
-             "description": f"{look['typography']['display']} and {look['typography']['body']}",
-             "count": 2, "source_preference": "library", "est_cost": 0, "spec": "WOFF2, subset to the locales in scope"},
+             "description": f"{look['typography']['display']} and {look['typography']['body']}"
+                            + (f", numerals in {look['typography']['numeric']}"
+                               if look["typography"].get("numeric") else ""),
+             "count": len(faces), "source_preference": "library", "est_cost": 0,
+             "spec": ("Files: " + "; ".join(f"{f} ({identity.font_source(f)})" for f in faces)
+                      + ". SIL Open Font License 1.1, its OFL.txt shipped beside the files. "
+                        "WOFF2 (TTF accepted), subset to the locales in scope, bundled under "
+                        "public/assets and loaded through the runtime asset manifest with "
+                        "@font-face; awaited (document.fonts.load) before the first UI frame."),
+             "role": "font", "dimension": "2d",
+             "readability": ("Every UI and HUD string is set in " + " / ".join(faces)
+                             + ": the computed font-family of each button and HUD element "
+                               "resolves to the bundled face and document.fonts.check passes "
+                               "before the title screen; no system fallback is ever shown")},
             {"id": "wordmark", "type": "ui", "tier": "mvp", "description": "Title wordmark in the display face",
-             "count": 1, "source_preference": "procedural", "est_cost": 0, "spec": "SVG"},
+             "count": 1, "source_preference": "procedural", "est_cost": 0, "spec": "SVG",
+             "role": "ui", "dimension": "2d",
+             "readability": "The title in the display face, legible at 240 px wide on the loading and title screens"},
         ]
         audio = [dict(x) for x in a["audio"]] + [
             {"id": "ui-tap", "type": "ui", "tier": "mvp", "description": "Button press", "trigger": "Any button",
@@ -770,7 +800,51 @@ class ArchetypeAuthor(DesignAuthor):
             "audio": audio,
             "responsive": responsive,
             "visual_identity": look,
+            "experience": self._experience(ex, actions, time_to_first_play, time_to_first_reward,
+                                           2 if is_level else 1),
         }
+
+    @staticmethod
+    def _asset_in(asset, dimension):
+        """An archetype's world asset made in the engine's dimension: a pinned engine of the
+        other dimension draws its characters as what that engine draws, never a sprite standing
+        in a 3D scene (or a model flattened into a 2D one). UI, icons and fonts stay 2D."""
+        if asset.get("dimension") in (None, dimension) or asset.get("role") in ("ui", "icon", "font"):
+            return asset
+        if dimension == "3d" and asset["type"] in ("sprite", "spritesheet"):
+            asset.update(type="model", spec="Low-poly GLB built from a model spec, flat-shaded in "
+                                            "the palette; the readability line is its brief")
+        elif dimension == "2d" and asset["type"] == "model":
+            asset.update(type="sprite", spec="Vector sprite in the palette; the readability line "
+                                             "is its brief")
+        asset["dimension"] = dimension
+        return asset
+
+    @staticmethod
+    def _experience(ex, actions, time_to_first_play, time_to_first_reward, time_to_retry):
+        """build_spec.experience from the archetype's contract and the session numbers."""
+        acknowledged = []
+        for action in actions:
+            if action["tier"] != "mvp":
+                continue
+            if action["id"] == "pause":
+                entry = {"visual": "Play freezes and the pause menu appears over it.",
+                         "audio": "UI tap"}
+            else:
+                entry = ex["actions"][action["id"]]
+            acknowledged.append(dict({"action": action["id"], "max_ack_ms": 100}, **entry))
+        experience = {
+            "goal": {"statement": ex["goal"], "metric": ex["goal_metric"], "shown_on": "play"},
+            "lose": dict(ex["lose"]),
+            "actions": acknowledged,
+            "onboarding": {"teaches": list(ex["teaches"]), "grace": dict(ex["grace"]),
+                           "reveals_answer": False},
+            "first_30s": {"first_frame_s": 2, "playable_s": time_to_first_play,
+                          "first_success_s": time_to_first_reward, "retry_s": time_to_retry},
+        }
+        if "win" in ex:
+            experience["win"] = dict(ex["win"])
+        return experience
 
 
 register_author(ArchetypeAuthor.name, ArchetypeAuthor)

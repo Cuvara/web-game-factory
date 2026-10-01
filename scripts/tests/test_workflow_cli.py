@@ -38,7 +38,8 @@ from wgflib.workflow.store import RunStore  # noqa: E402
 # A mock new-game approves G2 and G3 itself and waits at G4 (prototype-review), which only a
 # person decides: its trail holds the wait and then the pass.
 NEW_GAME = ["research", "strategy", "strategy-review", "design", "tech-plan", "tech-plan-review",
-            "init", "assets", "develop", "review", "sdk", "sdk-review", "verify",
+            "init", "greybox", "greybox-playability", "assets", "develop", "playability",
+            "production-quality", "visual-qa", "review", "sdk", "sdk-review", "verify",
             "prototype-review", "prototype-review", "release"]
 SCHEMATIZED = {
     "research": "opportunity",
@@ -51,6 +52,8 @@ SCHEMATIZED = {
     "release": "release-manifest",
     "init": "scaffold-record",
     "sdk": "sdk-report",
+    "production-quality": "production-quality-report",
+    "visual-qa": "visual-qa-report",
 }
 
 
@@ -245,13 +248,94 @@ class FailureAndResume(CliCase):
         self.pass_g4()
         state = self.state()
         self.assertEqual(state["status"], "COMPLETED")
-        self.assertEqual([t["step"] for t in state["trail"]][8:],
-                         ["develop", "review", "sdk", "sdk-review", "verify", "develop",
-                          "review", "sdk", "sdk-review", "verify", "prototype-review",
-                          "prototype-review", "release"])
+        self.assertEqual([t["step"] for t in state["trail"]][10:],
+                         ["develop", "playability", "production-quality", "visual-qa",
+                          "review", "sdk", "sdk-review", "verify",
+                          "develop", "playability", "production-quality", "visual-qa",
+                          "review", "sdk", "sdk-review", "verify",
+                          "prototype-review", "prototype-review", "release"])
         self.assertEqual(self.artifact(state, "qa-report", 1)["verdict"], "fail")
         self.assertEqual(self.artifact(state, "qa-report", 2)["verdict"], "pass")
-        self.assertEqual(self.artifact(state, "prototype-report", 2)["iteration"], 2)
+        # v1 is the greybox's; v2 and v3 are develop's two visits.
+        self.assertEqual(self.artifact(state, "prototype-report", 3)["iteration"], 2)
+
+    def test_an_unplayable_build_loops_back_to_development_before_review(self):
+        # The build is played from outside first: a failure goes back to develop with the
+        # report, and review never reads a build that could not be played.
+        self.wgf("new-game", "--mock", "--quiet", "--mock-plan", '{"playability": ["fail"]}',
+                 expect=3)
+        self.pass_g4()
+        state = self.state()
+        self.assertEqual(state["status"], "COMPLETED")
+        self.assertEqual([t["step"] for t in state["trail"]][10:],
+                         ["develop", "playability", "develop", "playability",
+                          "production-quality", "visual-qa", "review", "sdk",
+                          "sdk-review", "verify", "prototype-review", "prototype-review",
+                          "release"])
+        # v1 is the greybox's (passed); v2 and v3 are the production build's two plays.
+        self.assertEqual(self.artifact(state, "playability-report", 2)["verdict"], "FAIL")
+        self.assertEqual(self.artifact(state, "playability-report", 3)["verdict"], "PASS")
+        self.assertEqual(state["steps"]["develop"]["route_visits"],
+                         {"assets.success": 1, "playability.fail": 1})
+
+    def test_an_unplayable_greybox_is_rebuilt_before_any_asset_is_made(self):
+        # The loop is proven with primitives first: a greybox that cannot be played from
+        # outside goes back to greybox, and assets are made only for one that can.
+        self.wgf("new-game", "--mock", "--quiet", "--mock-plan",
+                 '{"greybox-playability": ["fail"]}', expect=3)
+        state = self.state()
+        self.assertEqual([t["step"] for t in state["trail"]][7:12],
+                         ["greybox", "greybox-playability", "greybox", "greybox-playability",
+                          "assets"])
+        self.assertEqual(state["steps"]["greybox"]["route_visits"],
+                         {"init.success": 1, "greybox-playability.fail": 1})
+        self.assertEqual(self.artifact(state, "playability-report", 1)["verdict"], "FAIL")
+
+    def test_a_production_gate_failure_routes_to_assets_or_develop(self):
+        # production-quality and visual-qa route by what failed: an asset that must be made
+        # again goes to assets (which continues to develop, as on the first pass), the game's
+        # own use of assets or its UI goes to develop. Each loop is played again from outside
+        # and judged again before review reads anything.
+        gated = ["develop", "playability", "production-quality", "visual-qa"]
+        for plan, route, back in (
+                ('{"production-quality": ["fail-assets"]}', "production-quality.assets",
+                 ["assets"]),
+                ('{"production-quality": ["fail"]}', "production-quality.develop", []),
+                ('{"visual-qa": ["assets"]}', "visual-qa.assets", ["assets"]),
+                ('{"visual-qa": ["develop"]}', "visual-qa.develop", [])):
+            with self.subTest(plan=plan):
+                self.wgf("new-game", "--mock", "--quiet", "--mock-plan", plan, expect=3)
+                run_id = self.state()["run_id"]
+                self.pass_g4(run_id)
+                state = self.state(run_id)
+                self.assertEqual(state["status"], "COMPLETED")
+                first_gate = gated[:3] if "production-quality" in plan else gated
+                self.assertEqual([t["step"] for t in state["trail"]][9:],
+                                 ["assets"] + first_gate + back + gated
+                                 + ["review", "sdk", "sdk-review", "verify",
+                                    "prototype-review", "prototype-review", "release"])
+                gate = route.split(".")[0]
+                report = f"{gate}-report"
+                self.assertEqual(self.artifact(state, report, 1)["verdict"], "FAIL")
+                self.assertEqual(self.artifact(state, report, 1)["routes"], [route.split(".")[1]])
+                self.assertEqual(self.artifact(state, report, 2)["verdict"], "PASS")
+                target = route.split(".")[1]
+                self.assertEqual(state["steps"][target]["route_visits"].get(route), 1)
+                if target == "assets":
+                    # Through assets, develop is entered once more as on the first pass.
+                    self.assertEqual(state["steps"]["develop"]["route_visits"],
+                                     {"assets.success": 2})
+                    self.assertEqual(self.artifact(state, "asset-manifest", 2)["provenance"]
+                                     ["artifact_type"], "asset-manifest")
+
+    def test_a_production_gate_that_keeps_failing_is_stopped_by_its_route_limit(self):
+        self.wgf("new-game", "--mock", "--quiet", "--mock-plan",
+                 '{"visual-qa": ["assets", "assets", "assets"]}', expect=1)
+        state = self.state()
+        self.assertEqual(state["status"], "BLOCKED", state.get("message"))
+        self.assertEqual(state["blocked_reason"]["limit_key"], "visual-qa.assets")
+        self.assertEqual(state["steps"]["assets"]["route_visits"]["visual-qa.assets"], 2)
+        self.assertNotIn("review", [t["step"] for t in state["trail"]])
 
     def test_sdk_review_requesting_changes_loops_back_to_development(self):
         # The sdk commit is reviewed too; a request for changes goes back to develop,
@@ -261,10 +345,12 @@ class FailureAndResume(CliCase):
         self.pass_g4()
         state = self.state()
         self.assertEqual(state["status"], "COMPLETED")
-        self.assertEqual([t["step"] for t in state["trail"]][8:],
-                         ["develop", "review", "sdk", "sdk-review", "develop", "review", "sdk",
-                          "sdk-review", "verify", "prototype-review", "prototype-review",
-                          "release"])
+        self.assertEqual([t["step"] for t in state["trail"]][10:],
+                         ["develop", "playability", "production-quality", "visual-qa",
+                          "review", "sdk", "sdk-review",
+                          "develop", "playability", "production-quality", "visual-qa",
+                          "review", "sdk", "sdk-review", "verify",
+                          "prototype-review", "prototype-review", "release"])
         rejected = self.artifact(state, "review-report", 2)
         self.assertEqual(rejected["verdict"], "request-changes")
         # Both mock reviews approve the commit their subject names.
@@ -422,7 +508,7 @@ class RunStatesThroughTheCli(CliCase):
         self.wgf("new-game", "--resume", run_id, expect=2)
 
     def test_blocked_by_the_loop_limit_then_resumed(self):
-        # verify fails on every pass; new-game's develop takes two `fail` loops per run
+        # verify fails on every pass; new-game's develop takes two `verify.fail` loops per run
         # (max_visits_by_route), and the third blocks - on that route, as data.
         done = self.wgf("new-game", "--mock", "--quiet", "--mock-plan",
                         '{"verify": ["fail", "fail", "fail", "fail"]}', expect=1)
@@ -432,7 +518,7 @@ class RunStatesThroughTheCli(CliCase):
         self.assertEqual(state["steps"]["verify"]["visits"], 3)
         self.assertEqual(state["blocked_reason"], {
             "kind": "loop-limit", "step": "develop", "route": "fail", "scope": "route",
-            "limit": 2, "entered": 2, "from": "verify", "limit_key": "fail"})
+            "limit": 2, "entered": 2, "from": "verify", "limit_key": "verify.fail"})
         # Entered once from assets (success), then twice through verify's fail.
         self.assertEqual(state["steps"]["develop"]["route_visits"],
                          {"assets.success": 1, "verify.fail": 2})
@@ -456,14 +542,16 @@ class RunStatesThroughTheCli(CliCase):
         succeeded = lambda s: sorted(t["step"] for t in s["trail"] if t["outcome"] == "SUCCESS")
         self.assertEqual(succeeded(before),
                          sorted(["research", "strategy", "strategy-review", "design",
-                                 "tech-plan", "tech-plan-review", "init", "assets"]))
+                                 "tech-plan", "tech-plan-review", "init", "greybox",
+                                 "greybox-playability", "assets"]))
         self.wgf("new-game", "--resume", before["run_id"], "--quiet", expect=3)
         self.pass_g4(before["run_id"])
         after = self.state(before["run_id"])
         self.assertEqual(succeeded(after), sorted(succeeded(before) +
-                                                  ["develop", "review", "sdk", "sdk-review",
-                                                   "verify", "prototype-review",
-                                                   "release"]))
+                                                  ["develop", "playability",
+                                                   "production-quality", "visual-qa",
+                                                   "review", "sdk", "sdk-review", "verify",
+                                                   "prototype-review", "release"]))
 
     def test_mock_auto_approves_only_the_workflows_own_checkpoint(self):
         self.wgf("new-game", "--mock", "--quiet", expect=3)  # G4 is never auto-approved

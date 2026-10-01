@@ -175,7 +175,11 @@ class ReviewStep(WorkflowStep):
             # The change under review is what sdk committed on top of development's commit.
             baseline = developed
         else:
-            baseline = (develop_brief or {}).get("baseline_commit")
+            # The develop brief's review_baseline: after a greybox (played, never reviewed)
+            # it reaches back to where the greybox started, so the change shown is the whole
+            # loop plus what production put on it. Briefs before it carry only the baseline.
+            baseline = ((develop_brief or {}).get("review_baseline")
+                        or (develop_brief or {}).get("baseline_commit"))
         with open(brief_path, "w", encoding="utf-8", newline="\n") as handle:
             handle.write(render_brief(
                 title_id=title_id, commit=head, baseline=baseline, design=design,

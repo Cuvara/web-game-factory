@@ -71,6 +71,9 @@ when its preconditions held is what makes a draft mean something. The refusals a
 | `unreviewed` | FAILED | the newest review-report is `skipped` (no reviewer configured) or the run holds none. Allowed only by `factory.release.allow_unreviewed: true`; the manifest then says UNREVIEWED |
 | `review-commit-mismatch` | FAILED | the newest approval is of another commit than the one shipped — e.g. only develop's commit, when sdk committed on top of it — or pins an older prototype-report or sdk-report than the run's newest. `allow_unreviewed` does not waive it |
 | `g4-not-passed` | BLOCKED | a gate the step's `required_gates` names (default `[G4]`) is not in `context.gates_passed`: not passed in this run, or superseded by a newer verification. A person decides it (`wgf decide`), then the run resumes |
+| `no-production-quality-report`, `no-visual-qa-report` | BLOCKED | a production gate the step's `required_reports` names (default both) has not judged the build in this run |
+| `production-quality-not-passed`, `visual-qa-not-passed` | FAILED | the newest report of that gate is not `PASS`: the build's art or UI was not passed |
+| `production-quality-commit-mismatch`, `visual-qa-commit-mismatch` | FAILED | the newest report judged another commit than the development commit the shipped sdk commit sits on (`sdk-report.build_ref.base_commit_sha`, else the prototype-report's commit): its verdict is about another build |
 | `verified-dirty-tree` | BLOCKED | verification ran on uncommitted changes, which no commit reproduces |
 | `dirty-checkout` | BLOCKED | the checkout has uncommitted or untracked changes |
 | `bundle-not-verified` | BLOCKED | the build output on disk is not the bundle verification digested |
@@ -175,6 +178,7 @@ test seam, when set, is used as given.
 | `version` | `game.version` in game.config.yaml, else package.json | semver |
 | `kind` | `initial` for `r1`, else `content` | |
 | `timeouts` | git 30, package 900, manifest 300 | seconds |
+| `required_reports` | `[production-quality-report, visual-qa-report]` | Production gate reports that must be `PASS` for the shipped build's development commit. **`with:` only**, like `required_gates`. A workflow without the production gates says so: `required_reports: []` |
 | `required_gates` | `[G4]` | Gates the run must have passed, current (`context.gates_passed`). **`with:` only** - never read from `factory.release`, so an installation cannot loosen what the workflow requires. A workflow with no G4 checkpoint (a test workflow) says so: `required_gates: []` |
 
 And one key read **only** from `factory.release`, never from `with:` - an installation's

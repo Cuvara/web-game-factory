@@ -32,10 +32,14 @@
 
 workflow:
   id: new-game
-  # 2: the definition as of Factory 2.0.0 (sdk-review, G4, loop limits per route). A run
-  # records the version it started under; one resumed under a newer definition is marked
+  # 2: the definition as of Factory 2.0.0 (sdk-review, G4, loop limits per route).
+  # 3: playability - the build is played from outside before review reads it.
+  # 4: greybox - the loop is built with primitives and played before any asset is made.
+  # 5: production - production-quality and visual-qa judge the production build's art and UI
+  # before review, routing back to assets or develop; release refuses a build they did not
+  # pass. A run records the version it started under; one resumed under a newer definition is marked
   # (WORKFLOW_RESUMED `definition_version`).
-  version: 2
+  version: 5
   description: Discover an opportunity, plan a title, build it, verify it and prepare its first release.
   start: research
 
@@ -48,13 +52,16 @@ workflow:
     # Omitted keys fall back to factory.execution in workspace/config/factory.yaml.
     max_visits: 3
 
-  # Loops. Four routes lead back into develop: review's and sdk-review's request-changes,
-  # verify's fail, and G4's iterate. Each has its own budget on develop
+  # Loops. Seven routes lead back into develop: playability's fail, production-quality's
+  # and visual-qa's `develop`, review's and sdk-review's request-changes, verify's fail, and
+  # G4's iterate - and two into assets, production-quality's and visual-qa's `assets`, from
+  # which the run continues to develop as on its first pass. Each has its own budget on develop
   # (max_visits_by_route; `review.request-changes` counts only review's requests), counted
   # over the whole run, so one loop cannot spend the passes another needs - and G4's
   # iterate, which always arrives by a resume, is still bounded - and a run blocked at a
   # limit says which route reached it (state.blocked_reason). develop's own max_visits is
-  # the first visit plus every route's budget, so it is never the limit a loop meets first;
+  # the first visit plus every route's budget - its own, and assets' (each pass through
+  # assets enters develop once more) - so it is never the limit a loop meets first;
   # every step of the loop after develop is visited at most once per develop visit and
   # carries the same bound. A person resuming a run blocked at a route limit grants that
   # route one more pass and a fresh budget - that route only. What a whole run may spend on
@@ -130,32 +137,122 @@ workflow:
       outputs: [scaffold-record]
       retry: {max_attempts: 2}
 
+    # The loop before the assets: develop builds the whole MVP with primitives in the
+    # design's palette - the probe, objective, onboarding, HUD and acknowledgements included,
+    # no asset files - and the build is played from outside. Only a loop that plays and
+    # reads goes on to have assets made for it; one that does not comes back here with what
+    # the bot saw (two passes, then a person looks).
+    - id: greybox
+      type: develop
+      stage: title:prototype
+      description: Build the whole MVP loop with primitives, before any asset exists.
+      inputs: [game-design, scaffold-record, title-strategy, tech-plan, playability-report]
+      outputs: [prototype-report]
+      with:
+        phase: greybox
+      max_visits: 3
+      max_visits_by_route:
+        greybox-playability.fail: 2
+
+    - id: greybox-playability
+      type: playability
+      stage: title:prototype
+      inputs: [prototype-report, game-design, scaffold-record]
+      outputs: [playability-report]
+      max_visits: 3
+      on:
+        fail: greybox
+
     # scaffold-record is optional: it names the target platforms, whose bundle-size limits
     # the delivered files are checked against. Without it the manifest skips that check.
+    #
+    # Re-entered by production-quality or visual-qa (route `assets`) with the report that
+    # sent it back: only the items the report names are rebuilt, then the run continues to
+    # develop, which integrates them. Two passes per gate before a person looks.
     - id: assets
       type: assets
       stage: title:prototype
-      description: Inspect, source or generate, validate and license-check every asset.
-      inputs: [game-design, scaffold-record]
+      description: Inspect, source or generate, validate and license-check every asset. Re-entered with the failing production-quality-report or visual-qa-report when an asset must be made again.
+      inputs: [game-design, scaffold-record, production-quality-report, visual-qa-report]
       outputs: [asset-manifest]
+      # 5 = the first visit + 2 + 2.
+      max_visits: 5
+      max_visits_by_route:
+        production-quality.assets: 2
+        visual-qa.assets: 2
 
     - id: develop
       type: develop
       stage: title:prototype
-      description: Build the game. Re-entered with the failing qa-report when verification fails, or with the review-report when review requests changes.
+      description: Build the game. Re-entered with the failing playability-report when the build cannot be played from outside, the failing production-quality-report or visual-qa-report when its use of assets or its UI falls short, the failing qa-report when verification fails, or with the review-report when review requests changes.
       # scaffold-record says which repository to build in; title-strategy carries the
       # questions the prototype must answer and the kill criteria its report must list;
       # tech-plan carries the approved prototype tasks and their acceptance criteria.
-      inputs: [game-design, asset-manifest, scaffold-record, title-strategy, tech-plan, qa-report, review-report]
+      inputs: [game-design, asset-manifest, scaffold-record, title-strategy, tech-plan, qa-report, review-report, playability-report, production-quality-report, visual-qa-report]
       outputs: [prototype-report]
-      # Two requests for changes from each reviewer, two failed verifications and two G4
-      # iterations before a person looks. 9 = the first visit + 2 + 2 + 2 + 2.
-      max_visits: 9
+      with:
+        phase: production
+      # Two unplayable builds, two production-quality and two visual-qa failures of the
+      # game's own, two requests for changes from each reviewer, two failed verifications
+      # and two G4 iterations before a person looks - plus the four passes through assets
+      # (assets' own route budgets), each of which enters develop once more.
+      # 19 = the first visit + 2 x 7 + 4.
+      max_visits: 19
       max_visits_by_route:
+        playability.fail: 2
+        production-quality.develop: 2
+        visual-qa.develop: 2
         review.request-changes: 2
         sdk-review.request-changes: 2
-        fail: 2
+        verify.fail: 2
         iterate: 2
+
+    # The build is played from outside before anyone reads its code: a bot clones develop's
+    # commit, builds it, and plays it through the game's play probe with real input on a
+    # desktop and a mobile viewport - objective on screen, no loss before the grace, every
+    # action visibly acknowledged, a reachable win and loss, a working retry, readable
+    # entities, lit frames (the design's experience contract, core/reference/
+    # visual-quality.yaml). FAIL (route `fail`) goes back to develop with the report and
+    # the frames that show it; BLOCKED - it could not be built or played - stops the run.
+    - id: playability
+      type: playability
+      stage: title:prototype
+      inputs: [prototype-report, game-design, scaffold-record]
+      outputs: [playability-report]
+      max_visits: 19
+      on:
+        fail: develop
+
+    # The production gate: from what playability recorded of the same play of the same
+    # commit, every required asset exists, is not a placeholder, passes its own quality
+    # checks, is fetched, drawn and visible; no readable entity is a primitive (unless the
+    # design's art direction is primitive_style); the DOM UI meets its measured bars
+    # (core/reference/production-quality.yaml). FAILED with route `assets` - an asset must
+    # be made again - goes to assets; route `develop` - the game's use of assets or its UI
+    # must change - goes to develop. BLOCKED (nothing recorded to judge) stops the run.
+    - id: production-quality
+      type: production-quality
+      stage: title:prototype
+      inputs: [playability-report, asset-manifest, game-design, scaffold-record]
+      outputs: [production-quality-report]
+      max_visits: 19
+      on:
+        assets: assets
+        develop: develop
+
+    # A judge reads the production build's frames against core/reference/visual-qa-rubric.yaml
+    # and the design's visual identity; the step decides. FAIL routes by the category of the
+    # failures: `assets` to assets, `develop` to develop. With no judge configured it is
+    # BLOCKED, never a silent pass.
+    - id: visual-qa
+      type: visual-qa
+      stage: title:prototype
+      inputs: [playability-report, game-design, asset-manifest, production-quality-report]
+      outputs: [visual-qa-report]
+      max_visits: 19
+      on:
+        assets: assets
+        develop: develop
 
     # An independent reviewer reads the commit develop made; it may not change it. Approve
     # continues to sdk (whose own commit sdk-review reads in turn); request-changes (FAILED,
@@ -166,7 +263,7 @@ workflow:
       stage: title:prototype
       inputs: [prototype-report, game-design, scaffold-record]
       outputs: [review-report]
-      max_visits: 9
+      max_visits: 19
       on:
         request-changes: develop
 
@@ -177,7 +274,7 @@ workflow:
       stage: title:prototype
       inputs: [game-design, scaffold-record, prototype-report]
       outputs: [sdk-report]
-      max_visits: 9
+      max_visits: 19
 
     # The sdk step commits integration code on top of the reviewed development commit, and
     # that sdk commit is what verify checks and release ships. So it is reviewed too, by the
@@ -191,7 +288,7 @@ workflow:
       stage: title:prototype
       inputs: [sdk-report, prototype-report, game-design, scaffold-record]
       outputs: [review-report]
-      max_visits: 9
+      max_visits: 19
       with:
         subject: sdk-report
       on:
@@ -207,7 +304,7 @@ workflow:
       inputs: [prototype-report, sdk-report, game-design, scaffold-record, asset-manifest]
       outputs: [verification-report, qa-report]
       retry: {max_attempts: 2}
-      max_visits: 9
+      max_visits: 19
       on:
         fail: develop
 
@@ -229,7 +326,7 @@ workflow:
         gate: G4
         prompt: Judge the verified prototype against the kill criteria set at strategy - pass to release, iterate to develop again, or kill the title?
         choices: [pass, iterate, kill]
-      max_visits: 9
+      max_visits: 19
       on:
         iterate: develop
         kill: $end
@@ -241,11 +338,14 @@ workflow:
     # commit; factory.release.allow_unreviewed is the installation's explicit, recorded
     # exception for a run with no reviewer), and unless every gate in `required_gates` is
     # passed and current in this run. A workflow with no G4 checkpoint must say so with
-    # `required_gates: []`; omitted, the release step requires G4.
+    # `required_gates: []`; omitted, the release step requires G4. And it refuses unless the
+    # newest production-quality-report and visual-qa-report both passed the development
+    # commit the released sdk commit sits on: a build whose art or UI the gates did not pass
+    # is not released.
     - id: release
       type: release
       stage: release:draft
-      inputs: [qa-report, verification-report, sdk-report, prototype-report, scaffold-record, review-report]
+      inputs: [qa-report, verification-report, sdk-report, prototype-report, scaffold-record, review-report, production-quality-report, visual-qa-report]
       outputs: [release-manifest]
       with:
         required_gates: [G4]

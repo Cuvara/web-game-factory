@@ -1,0 +1,53 @@
+# Visual and playability bars: what a built game must show a first-time player.
+#
+# The playability step (title:prototype) plays the built game from outside, with real input,
+# and reads its play probe (core/artifacts/shared/play-probe.schema.json) and its rendered
+# frames. These are the numbers it judges them by; the design's experience contract
+# (core/reference/experience-rules.yaml) supplies the per-game ones - the objective, the
+# grace, the first-30-seconds budget. A frame that fails these is one a player cannot read,
+# whatever the code says it draws.
+#
+# Measured on frames captured during play at the device's viewport, desktop and mobile.
+
+version: 1.0.0
+
+frames:
+  # What is lit: the share of a frame's pixels at or above `lit_luminance` (relative
+  # luminance, 0-255; 64 is a quarter of white). A dark theme is fine - bright pieces on a
+  # navy board read at once - but a frame with almost nothing lit is a dark screen with
+  # shapes in it. Calibrated on frames the step captured, desktop and mobile: an unlit
+  # three.js scene a player could not read (Goalkeeper Royale 810925b) had 0.16-0.83 % of its
+  # pixels lit; the template's Tower Merge Rush, bright tiles on dark navy, 2.5-5.8 %; its
+  # Neon Drift Arena, a neon craft and walls on black, 1.3-4.3 %. The margin between the
+  # worst readable and the best unreadable frame is narrow: this is a floor against a dark
+  # screen, not a judgement of readability - entities.* judges what must be seen.
+  lit_luminance: 64
+  min_lit_share: 0.01
+  # Mean relative luminance, 0-255: above the ceiling, a wash.
+  max_mean_luminance: 225
+  # Standard deviation of luminance, 0-255: below it, nothing stands out from anything.
+  min_contrast: 18
+
+entities:
+  # Roles the player must be able to see (play probe `entities[].role`).
+  readable_roles: [player, threat, goal, target, projectile]
+  # Share of the viewport's area an entity of a readable role covers, at least.
+  min_area_fraction: 0.002
+  # Share of samples during play in which an entity of a readable role is visible and on
+  # screen, at least.
+  min_visible_share: 0.5
+  # A projectile (a shot, a ball) is drawn for at least this many consecutive frames each
+  # time it appears: one the player never sees travel cannot be read or answered.
+  min_projectile_frames: 3
+
+acknowledgement:
+  # A player action is acknowledged when the frame after it differs from the frame before
+  # it in at least this share of pixels, each by at least this much luminance.
+  min_changed_fraction: 0.002
+  min_pixel_delta: 24
+
+budgets:
+  # How long the playability bot may play for a win (or, with no win, for the objective's
+  # metric to rise) and for a loss, in seconds.
+  win_s: 180
+  lose_s: 90

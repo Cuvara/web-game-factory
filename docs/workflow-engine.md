@@ -51,13 +51,20 @@ python -m unittest discover scripts/tests   # includes the acceptance tests belo
       EventBus ──► store (events.jsonl = structured log)
                └─► CLI progress, and later a UI / monitor / agent host
 
-  research → strategy → [G2] → design → tech-plan → [G3] → init → assets → develop → review → sdk → sdk-review → verify → [G4] → release
-                                                                             ▲ ▲ request-  │           request-  │       │ fail │ │ kill → $end
-                                                                             │ ├─ changes ─┘           changes   │       │      │ │
-                                                                             │ └─────────────────────────────────┘       │      │ │
-                                                                             ├───────────────────────────────────────────┘      │ │
-                                                                             └───────────────────── iterate ────────────────────┘ │ pass
-                                                                                                                                  ▼
+  research → strategy → [G2] → design → tech-plan → [G3] → init → greybox → greybox-playability
+    → assets → develop → playability → production-quality → visual-qa → review → sdk → sdk-review
+    → verify → [G4] → release
+
+  greybox-playability  fail             → greybox
+  playability          fail             → develop
+  production-quality   assets / develop → assets (which continues to develop) / develop
+  visual-qa            assets / develop → assets (which continues to develop) / develop
+  review, sdk-review   request-changes  → develop
+  verify               fail             → develop
+  [G4]                 iterate → develop · kill → $end · pass → release
+
+  release (refuses unless G4 passed, the shipped commit was reviewed, and production-quality
+  and visual-qa passed its development commit)
                                release-manifest (draft) ─► game repo CI ─► G5 ─► G6 ─► publish
                                ─────────── Factory ends here ───────────   (outside the engine)
 ```
@@ -467,14 +474,18 @@ refills that limit alone (the person granting that loop more passes); `--from` r
 every one. The engine names no route: every one comes from the workflow file, and the
 definition refuses a key that is no route into the step.
 
-new-game bounds develop's four loops this way: `review.request-changes: 2`,
-`sdk-review.request-changes: 2`, `fail: 2` (verify), `iterate: 2` (G4). develop's
-`max_visits` is 9 - the first visit plus every route's budget - so it is never what a loop
-meets first, and review, sdk, sdk-review, verify and prototype-review, each visited at most
-once per develop visit, carry 9 as well. A reviewer that never approves blocks the run on its
-own third request for changes; a verification that always fails, on its third failure; a
-third G4 iterate stops for a person too; none spends another's budget. What a whole run may
-spend on unattended developer sessions is bounded separately, by `factory.develop.budget`
+new-game bounds develop's seven loops this way: `playability.fail: 2`,
+`production-quality.develop: 2`, `visual-qa.develop: 2`, `review.request-changes: 2`,
+`sdk-review.request-changes: 2`, `verify.fail: 2` and `iterate: 2` (G4) - and the production
+gates' asset failures on `assets`: `production-quality.assets: 2`, `visual-qa.assets: 2`
+(assets' `max_visits` 5). Each pass through assets enters develop once more, so develop's
+`max_visits` is 19 - the first visit, its own route budgets and assets' - and it is never
+what a loop meets first; every step after develop (playability, production-quality,
+visual-qa, review, sdk, sdk-review, verify, prototype-review), each visited at most once per
+develop visit, carries 19 as well. A reviewer that never approves blocks the run on its own
+third request for changes; a verification that always fails, on its third failure; a third
+G4 iterate stops for a person too; none spends another's budget. What a whole run may spend
+on unattended developer sessions is bounded separately, by `factory.develop.budget`
 ([development-module.md](development-module.md#budget)).
 
 **Why a run stopped, as data.** A loop-limit stop records `state.blocked_reason =
@@ -801,7 +812,7 @@ Decide: wgf decide new-game-20260923-051421-470ce6 pass|iterate|kill [--note TEX
 
 A mock run approves its reversible gates (G2, G3) itself and stops at G4, which only a person
 decides. `wgf decide <run-id> pass` continues to `release` and completes; `iterate` loops
-develop → review → sdk → sdk-review → verify → G4; `kill` ends the run (exit `0`,
+develop → playability → review → sdk → sdk-review → verify → G4; `kill` ends the run (exit `0`,
 `Ended: kill at G4`).
 
 `--mock-plan` scripts outcomes per step execution (`success`, `pass`, `fail`, `failed`,

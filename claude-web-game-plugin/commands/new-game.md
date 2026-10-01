@@ -109,6 +109,14 @@ ask the user to give the idea as one quoted string).
    - **WAITING or PAUSED** (exit 3): show `pending` — step, gate, choices, evidence — and
      `blocked_reason` if any, then stop. See the rule below. `pending: null` means the
      run waits for input, not a decision: report `cursor` and `message`.
+   - **WAITING for input at `research`** (`pending: null`, cursor `research`): the input
+     is the research role's, not a person's decision. Delegate it to the `research` agent, which works per
+     `${CLAUDE_PLUGIN_ROOT}/runtime/core/craft/research-evidence.md`: with *no external evidence*, it captures snapshots
+     from pages it actually fetches into the project's `workspace/research/snapshots/`;
+     when *the brief matches no concept research can carry*, it also writes the brief's
+     concept to `workspace/research/concepts.yaml`. Then resume the run (step 4) and
+     continue. Evidence is fetched, never written: if nothing relevant can be fetched, report
+     that and stop. Never edit `.factory/` or an artifact, and never relax a setting.
 7. **Result.** Run id, final status, artifacts, and what comes next. The workflow ends at a
    drafted release; G5 and G6 — building, packaging and publishing — are not part of it and
    belong to the game repository's CI.

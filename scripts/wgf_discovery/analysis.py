@@ -21,7 +21,13 @@ well they match it before anything else (`idea_match`): first how many of its wo
 archetype's own vocabulary holds - the genre and mechanic are the game - then the dimension
 it names ("3D"), which design can still adapt. The screen itself is unchanged. A selection
 that holds none of the brief's words, or renders in another dimension than it names, says so
-as an `idea-unmatched` gap instead of pretending to fit.
+as an `idea-unmatched` gap instead of pretending to fit. When no eligible candidate holds any
+of its words, `idea_fallback="wait"` selects nothing and names the nearest shape only as
+information; `"nearest"` selects it.
+
+A concept a project authored for the brief (the step's concepts file) is screened like a
+catalog entry. It matches the brief it was authored for, and carries one more hypothesis
+claim: authored for that brief, not a catalog shape, its figures unmeasured.
 """
 
 import hashlib
@@ -83,8 +89,10 @@ def idea_dimension(idea):
 
 def _vocabulary(archetype):
     words = set()
+    # `brief` only exists on a concept authored for one: it matches the brief it was written for.
     for value in ([archetype.get("genre"), archetype.get("subgenre"), archetype.get("title"),
-                   archetype.get("core_mechanic")] + list(archetype.get("market_tags") or [])):
+                   archetype.get("core_mechanic"), archetype.get("brief")]
+                  + list(archetype.get("market_tags") or [])):
         for word in _IDEA_WORD.findall(str(value or "").lower()):
             words.add(word)
             words.update(part for part in word.split("-") if part)
@@ -679,6 +687,14 @@ def _candidate(book, archetype, views, platform_info, model, backlog, report_key
             f"{k} {v}" for k, v in sorted((archetype.get("priors") or {}).items())) + ".",
         dict(subject, dimension="retention_potential"), confidence=CONFIDENCE_ESTIMATE,
         tags=["estimate", "catalog"])
+    authored = None
+    if archetype.get("_concepts_file"):
+        authored = book.hypothesis(
+            ("authored", aid, archetype["_concepts_file"], archetype["brief"]),
+            f"{archetype['title']} is a concept authored for the brief \"{archetype['brief']}\" "
+            f"in {archetype['_concepts_file']}. It is not a catalog shape, and its figures - "
+            f"estimates and priors alike - are unmeasured.",
+            subject, confidence=CONFIDENCE_ESTIMATE, tags=["estimate", "concept"])
 
     # Platform fit, one derived claim for all platforms.
     fits, fit_parents = [], {estimate}
@@ -819,7 +835,7 @@ def _candidate(book, archetype, views, platform_info, model, backlog, report_key
 
     match = _backlog_match(archetype, backlog)
     claim_refs = {estimate, priors_claim, fit_claim, thesis} | set(refs) | set(market_claims)
-    for extra in (distribution_claim, competition_claim):
+    for extra in (distribution_claim, competition_claim, authored):
         if extra:
             claim_refs.add(extra)
     concept = {
@@ -881,10 +897,12 @@ def buildable(archetype):
 
 
 def analyse(*, sources, profiles, archetypes, model, backlog, as_of_text, report_key,
-            max_candidates=8, idea=None, book=None, state=None):
+            max_candidates=8, idea=None, idea_fallback="nearest", book=None, state=None):
     """Returns (claims, platforms, candidates, selection, gaps). `as_of_text(dt)` formats a
     timestamp; `as_of_text(None)` is the scan's own time. `idea` is the run's brief, or
     None for a blank scan - which leaves every output exactly as it was without one.
+    `idea_fallback` is "nearest" or "wait": whether a brief no eligible candidate matches
+    selects the nearest shape, or nothing.
 
     `book` and `state` are for Research V2 (step.py), which continues from where the screen
     stops: `state` receives the observations, platform views, every candidate (before the
@@ -943,7 +961,20 @@ def analyse(*, sources, profiles, archetypes, model, backlog, as_of_text, report
     eligible = [c for c in candidates if c["status"] != "excluded"][:max(1, max_candidates)]
     kept = eligible + [c for c in candidates if c["status"] == "excluded"]
     selection = None
-    if eligible:
+    if (idea and idea_fallback == "wait" and eligible
+            and not eligible[0]["idea_match"]["terms"]):
+        nearest = eligible[0]
+        wanted = idea_terms(idea)
+        gaps.append((
+            "idea-unmatched",
+            f"no eligible candidate's genre, tags or mechanic match the brief"
+            + (f" ({', '.join(wanted)})" if wanted else "")
+            + f"; nothing was selected. For information only, the nearest eligible "
+            + (f"{dimension} shape" if nearest["idea_match"]["dimension"] else "shape")
+            + f" by screen score is {nearest['id']} - a different game, not the brief. Add a "
+              "concept for the brief to the concepts file, or set idea_fallback: nearest",
+            None))
+    elif eligible:
         chosen = eligible[0]
         chosen["status"] = "selected"
         runner = eligible[1] if len(eligible) > 1 else None

@@ -20,6 +20,7 @@ You are the **research** role as defined by Web Game Factory core.
 9. `${CLAUDE_PLUGIN_ROOT}/runtime/core/artifacts/shared/game-record.schema.json`
 10. `${CLAUDE_PLUGIN_ROOT}/runtime/core/artifacts/shared/research-opportunity.schema.json`
 11. `${CLAUDE_PLUGIN_ROOT}/runtime/core/craft/competitive-teardown.md`
+12. `${CLAUDE_PLUGIN_ROOT}/runtime/core/craft/research-evidence.md`
 
 Core is authoritative. Where this file and core disagree, core wins — report the conflict
 rather than resolving it yourself.

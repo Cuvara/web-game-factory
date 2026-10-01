@@ -15,6 +15,25 @@ build, and the manifest records that it was passed over and why.
       ]
     }
 
+A library may instead (or as well) hold a `library.json` that maps a design's requirements
+to files directly - by requirement id, and/or by role for every requirement of that role.
+This is how golden fixtures and purchased packs supply real art for a known design:
+
+    {
+      "library": {"id": "tower-merge-art"},
+      "items": [
+        {"requirement": "tile", "files": ["svg/tile-1.svg", "svg/tile-2.svg"],
+         "license": "CC0-1.0", "source": "https://…", "author": "…"},
+        {"role": "background", "files": ["svg/board.svg"],
+         "license": "LicenseRef-studio-owned", "source": "studio art pack 3", "author": "…"}
+      ]
+    }
+
+`licence` is accepted for `license`; `source` is where it came from (a URL becomes the
+origin's source_url, anything else its evidence). A requirement-id entry wins over a role
+entry. `files` are relative to the library directory; one per drawing when the requirement
+has a `count`.
+
 Libraries are configured as `factory.assets.libraries: [<dir>, …]` (relative to the working
 directory) or per step as `with: {libraries: [...]}`.
 """
@@ -22,7 +41,8 @@ directory) or per step as `with: {libraries: [...]}`.
 import json
 import os
 
-__all__ = ["AssetLibrary", "LibraryEntry", "LibraryError", "open_libraries"]
+__all__ = ["AssetLibrary", "LibraryEntry", "LibraryError", "MappedEntry", "open_libraries",
+           "match_all"]
 
 
 class LibraryError(ValueError):
@@ -63,18 +83,82 @@ class LibraryEntry:
         return len(words & req.terms)
 
 
+class MappedEntry:
+    """A library.json item: files supplied for a requirement id or a role."""
+
+    def __init__(self, library, data, index):
+        self.library = library
+        self.requirement = data.get("requirement")
+        self.role = data.get("role")
+        files = data.get("files")
+        if isinstance(files, str):
+            files = [files]
+        self.files = [f for f in files or [] if isinstance(f, str)]
+        self.license = data.get("license") or data.get("licence")
+        source = data.get("source") or data.get("source_url")
+        is_url = isinstance(source, str) and "://" in source
+        self.source_url = source if is_url else None
+        self.evidence = data.get("evidence") or (source if source and not is_url else None)
+        self.author = data.get("author")
+        self.vendor = data.get("vendor")
+        self.attribution = data.get("attribution")
+        self.license_url = data.get("license_url")
+        self.usage_constraints = list(data.get("usage_constraints") or [])
+        self.id = self.requirement or f"role-{self.role}-{index}"
+
+    @property
+    def qualified_id(self):
+        return f"{self.library.id}:{self.id}"
+
+    def absolute_paths(self):
+        root = os.path.realpath(self.library.directory)
+        out = []
+        for relative in self.files:
+            path = os.path.realpath(os.path.join(root, relative))
+            if os.path.commonpath([root, path]) != root:
+                raise LibraryError(f"{self.qualified_id}: path {relative!r} leaves the library")
+            out.append((relative, path))
+        return out
+
+
 class AssetLibrary:
     def __init__(self, directory):
         self.directory = os.path.abspath(directory)
+        self.entries, self.mapped = [], []
         index = os.path.join(self.directory, "index.json")
+        mapping = os.path.join(self.directory, "library.json")
+        if not os.path.isfile(index) and not os.path.isfile(mapping):
+            raise LibraryError(f"no index.json or library.json in {self.directory}")
+        self.id = None
+        if os.path.isfile(mapping):
+            data = self._load(mapping)
+            self.id = (data.get("library") or {}).get("id")
+            self.mapped = [MappedEntry(self, e, n) for n, e in enumerate(data.get("items") or [])
+                           if isinstance(e, dict) and (e.get("requirement") or e.get("role"))]
+        if os.path.isfile(index):
+            data = self._load(index)
+            self.id = self.id or (data.get("library") or {}).get("id")
+            self.entries = [LibraryEntry(self, e) for e in data.get("assets") or []
+                            if isinstance(e, dict) and e.get("id") and e.get("kind")]
+        self.id = self.id or os.path.basename(self.directory)
+
+    @staticmethod
+    def _load(path):
         try:
-            with open(index, encoding="utf-8") as handle:
+            with open(path, encoding="utf-8") as handle:
                 data = json.load(handle)
         except (OSError, ValueError) as exc:
-            raise LibraryError(f"cannot read library index {index}: {exc}")
-        self.id = (data.get("library") or {}).get("id") or os.path.basename(self.directory)
-        self.entries = [LibraryEntry(self, e) for e in data.get("assets") or []
-                        if isinstance(e, dict) and e.get("id") and e.get("kind")]
+            raise LibraryError(f"cannot read library index {path}: {exc}")
+        if not isinstance(data, dict):
+            raise LibraryError(f"library index {path} is not an object")
+        return data
+
+    def match(self, req):
+        """library.json entries for the requirement: by id first, then by role."""
+        by_id = [e for e in self.mapped if e.requirement == req.id]
+        by_role = [e for e in self.mapped if not e.requirement and req.role
+                   and e.role == req.role]
+        return by_id + by_role
 
     def search(self, req):
         """Entries of the requirement's kind that share at least one term with it, best
@@ -104,3 +188,11 @@ def search_all(libraries, req):
     for library in libraries:
         found.extend(library.search(req))
     return found
+
+
+def match_all(libraries, req):
+    """Every library's library.json entries for the requirement: all id matches across the
+    libraries in order, then all role matches."""
+    found = [e for library in libraries for e in library.match(req)]
+    return ([e for e in found if e.requirement == req.id]
+            + [e for e in found if e.requirement != req.id])

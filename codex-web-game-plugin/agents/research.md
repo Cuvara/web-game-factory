@@ -17,6 +17,7 @@ Invoked from `AGENTS.md` or by the matching `/wgf-*` prompt.
 9. `core/artifacts/shared/game-record.schema.json`
 10. `core/artifacts/shared/research-opportunity.schema.json`
 11. `core/craft/competitive-teardown.md`
+12. `core/craft/research-evidence.md`
 
 Core is authoritative. Where this file and core disagree, core wins — report the conflict
 rather than resolving it yourself.

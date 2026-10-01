@@ -9,6 +9,7 @@ Normalizing platform signal into tiered claims and keeping evidence honest, incl
 - `core/lifecycle/stages/market-scan.md`
 - `core/artifacts/shared/claim.schema.json`
 - `core/craft/competitive-teardown.md`
+- `core/craft/research-evidence.md`
 - `core/reference/research-vocabulary.yaml`
 - `core/artifacts/shared/game-record.schema.json`
 

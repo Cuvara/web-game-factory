@@ -44,6 +44,30 @@ elif mode == "unbuildable":
     draft["build_spec"]["game_states"][0]["exits"][0]["to"] = "nowhere"
 elif mode == "missing":
     del draft["build_spec"]["hud"]
+elif mode == "invalid-enum":
+    # A value the game-design schema does not allow, whatever it is told.
+    draft["build_spec"]["controls"]["primary_input"] = "tap"
+elif mode == "repairs":
+    # Invalid first; given the problems, it fixes exactly them.
+    if "repair" in request:
+        with open(os.path.join(os.path.dirname(draft_path), "repair.json"), "w") as handle:
+            json.dump({"problems": request["repair"]["problems"],
+                       "had_previous": request["repair"]["previous_draft"] is not None,
+                       "schema": request["schema"]}, handle)
+    else:
+        draft["build_spec"]["controls"]["primary_input"] = "tap"
+elif mode == "cubes":
+    # A draft that says nothing about how the game looks; repaired once shown the problems.
+    if "repair" in request:
+        with open(os.path.join(os.path.dirname(draft_path), "repair.json"), "w") as handle:
+            json.dump({"problems": request["repair"]["problems"],
+                       "production_art": request["production_art"],
+                       "craft": request["craft"]}, handle)
+    else:
+        for asset in draft["build_spec"]["assets"]:
+            for key in ("role", "dimension", "readability"):
+                asset.pop(key, None)
+        del draft["build_spec"]["visual_identity"]["ui"]
 elif mode == "garbage":
     open(draft_path, "w").write("this is not json")
     sys.exit(0)
@@ -121,6 +145,50 @@ class TheModuleStillJudges(AgentCase):
         self.assertEqual((result.outcome, result.retryable), (StepOutcome.FAILED, False))
         self.assertIn("not buildable", result.error)
         self.assertEqual(result.artifacts, [])
+
+    def test_an_invalid_draft_is_shown_its_problems_and_repaired(self):
+        """Found by the dogfood run: an agent draft used enum values the schema does not allow
+        and the step failed with no second look. The step shows the agent exactly what made
+        the design invalid and asks again; the result is checked like the first."""
+        result = self.run_design(self.config("repairs"))
+        self.assertEqual(result.outcome, StepOutcome.SUCCESS, result.error)
+        with open(os.path.join(self.scratch, "run", "design", "repair.json"), encoding="utf-8") as h:
+            repair = json.load(h)
+        self.assertTrue(any("primary_input" in p for p in repair["problems"]), repair)
+        self.assertTrue(repair["had_previous"])
+        self.assertTrue(repair["schema"].endswith("game-design.schema.json"))
+        self.assertTrue(os.path.isfile(repair["schema"]))
+
+    def test_a_draft_that_states_no_production_art_is_shown_what_to_state(self):
+        """The production art and UI are held like the experience contract: an agent draft that
+        leaves the developer to draw cubes is shown the named problems, and the bars and the
+        craft guide are in its request from the first round."""
+        result = self.run_design(self.config("cubes"))
+        self.assertEqual(result.outcome, StepOutcome.SUCCESS, result.error)
+        with open(os.path.join(self.scratch, "run", "design", "repair.json"), encoding="utf-8") as h:
+            repair = json.load(h)
+        text = "\n".join(repair["problems"])
+        self.assertIn("visual_identity.ui is missing", text)
+        self.assertIn("state its role and dimension", text)
+        self.assertEqual(repair["production_art"]["ui"]["min_target_px"], 44)
+        self.assertTrue(os.path.isfile(repair["craft"]), repair["craft"])
+
+    def test_the_prompt_names_the_production_art_fields(self):
+        from wgf_design.agent import PROMPT_ART
+        for field in ("role", "dimension", "readability", "visual_identity.ui", "min_target_px",
+                      "primitive_style"):
+            self.assertIn(field, PROMPT_ART)
+
+    def test_a_draft_that_stays_invalid_fails_after_the_repair_rounds(self):
+        from wgf_design.step import MAX_REPAIR_ROUNDS
+        result = self.run_design(self.config("invalid-enum"))
+        self.assertEqual((result.outcome, result.retryable), (StepOutcome.FAILED, False))
+        self.assertIn("not a valid game-design", result.error)
+        self.assertIn(f"after {MAX_REPAIR_ROUNDS} repair round(s)", result.error)
+        self.assertIn("primary_input", result.error)
+        rounds = sorted(n for n in os.listdir(os.path.join(self.scratch, "run", "design"))
+                        if n.endswith(".request.json"))
+        self.assertEqual(len(rounds), MAX_REPAIR_ROUNDS + 1, rounds)
 
     def test_a_draft_missing_a_section_is_refused_before_finalize(self):
         result = self.run_design(self.config("missing"))

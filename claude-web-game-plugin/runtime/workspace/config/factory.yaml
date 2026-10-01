@@ -76,8 +76,9 @@ factory:
   # `--mock` replaces every implementation with its placeholder for that run.
   #   wgf_strategy   the `strategy` step (scripts/wgf_strategy/)
   #   wgf_release    the `release` step (scripts/wgf_release/, docs/release-module.md)
+  #   wgf_visualqa   the `visual-qa` step (scripts/wgf_visualqa/, docs/visual-qa-module.md)
   steps:
-    modules: [wgf_discovery, wgf_strategy, wgf_init, wgf_assets, wgf_develop, wgf_review, wgf_verification, wgf_design, wgf_sdk, wgf_techplan, wgf_release]
+    modules: [wgf_discovery, wgf_strategy, wgf_init, wgf_assets, wgf_develop, wgf_review, wgf_verification, wgf_design, wgf_sdk, wgf_techplan, wgf_release, wgf_playability, wgf_production, wgf_visualqa]
 
   # The tech-plan module (scripts/wgf_techplan, docs/techplan-module.md): engine from the
   # design, pinned platforms from the strategy, a heuristic dev plan. Every key is optional.
@@ -158,7 +159,36 @@ factory:
     # each file's path. Without a scaffold-record, or before the checkout exists:
     # .factory/assets/<title-id> under this repository's root - git-ignored scratch.
     # root: ../my-game
-    libraries: []               # directories with an index.json of reusable, licensed assets
+    # Where a requirement's file comes from, in order (docs/assets-module.md): a library,
+    # the author, the 3D model author (wgf_assets.model_author, when installed), a
+    # placeholder. Every delivered file is judged against core/reference/asset-quality.yaml.
+    #
+    # Directories (relative to the project) holding an index.json of reusable, licensed
+    # assets and/or a library.json mapping requirement ids and roles to licensed files -
+    # how golden fixtures and purchased packs supply real art.
+    libraries: []
+    # Who draws a 2D requirement as SVG: kind none (default: what no library supplies is a
+    # placeholder) or command - an agent host run through wgflib.procs with the agent
+    # environment, once per drawing. argv placeholders: {request} (the request JSON: the
+    # requirement, palette, visual identity, quality bars, repair problems, re-entry
+    # findings), {output} (where to write the SVG), {prompt}. A rejected file is shown its
+    # problems and asked again, repair_rounds times; then the requirement is a placeholder.
+    author:
+      kind: none
+      # argv: [my-agent-host, --print, "{prompt}"]   # the host's non-interactive command
+      # timeout_seconds: 600
+      # idle_timeout_seconds: 300
+      # repair_rounds: 2
+    # The 3D model author (scripts/wgf_assets/model_author.py, docs/blender-pipeline.md):
+    # kind none, or command - an agent host that writes a MODEL SPEC per 3D requirement,
+    # built by the pinned Blender and judged (parts, normals, palette, primitive_only) with
+    # up to repair_rounds re-asks. Only a configured author is asked; without one, a
+    # design's own model spec is built by Blender, else the requirement is a placeholder.
+    model_author:
+      kind: none
+      # argv: [my-agent-host, --print, "{prompt}"]
+      # spec_from: file            # or stdout
+      # repair_rounds: 2
     placeholders:
       enabled: true
       # Tried in order; the procedural backend is always last and always works. An
@@ -399,6 +429,65 @@ factory:
     # its judge. claude-web-game-plugin is here because the opt-in self-playtest developer
     # loads its skills (--plugin-dir): instructions an agent must not be able to rewrite.
     guarded_paths: [core, scripts, bin, workspace/config, claude-web-game-plugin]
+
+  # The visual QA module (scripts/wgf_visualqa, docs/visual-qa-module.md): a vision judge
+  # reads every frame playability captured of the production build - each state, desktop
+  # and mobile - against core/reference/visual-qa-rubric.yaml, the design's visual identity
+  # and the asset roles, and returns scores and findings; the step decides PASS or FAIL
+  # (any blocker, or a dimension below the rubric's pass bar) and routes a failure to
+  # `assets` or `develop`. `none` BLOCKS the step: visual QA needs a judge, and is never a
+  # silent pass. The judge gets copies of the frames in a directory under the run, the
+  # allowlisted environment (factory.agents.env_passthrough), and the Factory's guarded paths
+  # are fingerprinted around it. A malformed verdict is asked for once more, then fails.
+  visualqa:
+    judge:
+      kind: none                # none | command: run argv unattended, read-only
+      argv: []                  # command only: {frames_dir} {brief} {verdict} {prompt}
+      timeout_seconds: 900
+      idle_timeout_seconds: null
+      verdict_from: file        # file: it writes {verdict} | stdout: it prints the JSON last
+    # rubric: core/reference/visual-qa-rubric.yaml   # the default
+    # Read-only judge on Claude Code's headless mode, able to read images and nothing else.
+    # Checked against CLI 2.1.280 and run on real frames (docs/visual-qa-module.md,
+    # "Calibration"). Its working directory is the step's scratch directory holding only the
+    # brief and the frames.
+    #   --safe-mode                 no hooks, plugins, MCP servers or CLAUDE.md
+    #   --tools Read                the one tool that exists in the session: it reads the
+    #                               brief and the PNG frames (images are read as images)
+    #   --allowedTools Read         reads run without a prompt; everything else is refused
+    #   --permission-mode dontAsk   nothing is ever prompted
+    #   --output-format text        verdict_from: stdout takes the last JSON object printed
+    #   --max-budget-usd            the host's own bound on one judgement. The calibration
+    #                               runs read 14-16 frames in one session in 80-215 s each
+    #                               (text output reports no cost; the cap was never reached)
+    # judge:
+    #   kind: command
+    #   verdict_from: stdout
+    #   argv:
+    #     - claude
+    #     - -p
+    #     - "{prompt}"
+    #     - --model
+    #     - sonnet
+    #     - --safe-mode
+    #     - --strict-mcp-config
+    #     - --tools
+    #     - "Read"
+    #     - --allowedTools
+    #     - "Read"
+    #     - --disallowedTools
+    #     - "Edit,Write,NotebookEdit,Bash,WebFetch,WebSearch"
+    #     - --permission-mode
+    #     - dontAsk
+    #     - --no-session-persistence
+    #     - --output-format
+    #     - text
+    #     - --max-turns
+    #     - "40"
+    #     - --max-budget-usd
+    #     - "2"
+    #   timeout_seconds: 900
+    #   idle_timeout_seconds: null
 
   # The discovery module (scripts/wgf_discovery) implements `research`. Every key is
   # optional; see scripts/wgf_discovery/step.py. Evidence snapshots live in

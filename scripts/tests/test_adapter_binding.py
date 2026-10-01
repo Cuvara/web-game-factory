@@ -140,12 +140,14 @@ class WorkflowEntryPoints(unittest.TestCase):
 
     def test_restates_no_step_order(self):
         """The workflow file is the only step order: an entry point names no chain of steps.
-        `develop` is the one step it may name, for the handoff it must not answer."""
+        It may name two steps, each for an input it handles and no order: `develop`, for the
+        handoff it must not answer, and `research`, whose waiting input (evidence, a concept
+        for an unmatched brief) is the research role's to supply."""
         for entry, plugin, text in self.surfaces():
             steps = {step.id for step in load_definition(os.path.join(ROOT, entry["runs"])).steps}
             named = set(re.findall(r"`([a-z][a-z0-9-]*)`", text)) & steps
             with self.subTest(plugin=plugin, workflow=entry["id"]):
-                self.assertLessEqual(named, {"develop"})
+                self.assertLessEqual(named, {"develop", "research"})
                 self.assertNotRegex(text, r"(→|->)")
 
     def test_never_answers_a_gate(self):

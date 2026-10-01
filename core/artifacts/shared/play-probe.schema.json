@@ -1,0 +1,93 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://webgamefactory.dev/schemas/artifacts/shared/play-probe.schema.json",
+  "title": "Play probe snapshot",
+  "description": "What a built game reports about itself while it runs, so it can be played and judged from outside: `window.__wgf__.play.snapshot()` returns one object of this shape. The game installs it (the template installs `window.__wgf__`; the game adds `play`). It is read-only: calling it never changes the game. The playability step drives the game with real input and reads a snapshot before and after each input; it never acts through the probe. Metric names are the ones the design's `build_spec.experience` and `hud[].metric` use, so a snapshot can be held to the design. `oracle` is present only when the page URL carries `wgf-probe=1`: a shipped build never computes it, and a release refuses a build that would.",
+  "type": "object",
+  "required": ["state", "metrics", "entities", "inputs"],
+  "properties": {
+    "state": {
+      "enum": ["loading", "title", "playing", "paused", "won", "lost", "other"],
+      "description": "The session state, in these words whatever the game calls them. `won` and `lost` are the ends of play the experience contract names; a result screen after either keeps reporting it until play starts again."
+    },
+    "metrics": {
+      "type": "object",
+      "description": "Every metric the design's experience contract relies on (the goal's, win's, lose's, and every metric an action updates), by the same name, at its current value.",
+      "additionalProperties": { "type": "number" }
+    },
+    "entities": {
+      "type": "array",
+      "description": "The things on screen a player must be able to see, with where they are drawn now.",
+      "items": { "$ref": "#/$defs/entity" }
+    },
+    "inputs": {
+      "type": "array",
+      "description": "Every input the player can make right now, each as the control action it performs and the real input that performs it.",
+      "items": { "$ref": "#/$defs/move" }
+    },
+    "assets_loaded": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Runtime asset ids (public/assets/assets.json) the game has loaded so far."
+    },
+    "oracle": {
+      "description": "Only with `wgf-probe=1` in the URL: the input that succeeds now (a save, a match, a dodge), or null when no input matters now. Lets the playability step reach `won` and play badly on purpose to reach `lost`.",
+      "oneOf": [{ "$ref": "#/$defs/move" }, { "type": "null" }]
+    }
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "entity": {
+      "type": "object",
+      "required": ["id", "role", "x", "y", "w", "h", "visible"],
+      "properties": {
+        "id": { "type": "string" },
+        "role": {
+          "enum": ["player", "threat", "goal", "target", "projectile", "collectible", "hazard", "ui"],
+          "description": "What the entity is to the player. The visual gate requires every player, threat, goal, target and projectile entity to be on screen and large enough to read."
+        },
+        "x": { "type": "number", "description": "Left edge of its drawn bounds, CSS px from the viewport's left." },
+        "y": { "type": "number", "description": "Top edge, CSS px from the viewport's top." },
+        "w": { "type": "number", "minimum": 0 },
+        "h": { "type": "number", "minimum": 0 },
+        "visible": { "type": "boolean", "description": "Drawn this frame: not hidden, culled, fully transparent or behind another opaque object." },
+        "asset": { "type": ["string", "null"], "description": "The runtime asset id (public/assets/assets.json) that draws it; null when nothing from the manifest does." },
+        "render": { "enum": ["asset", "primitive", "text", "composite"], "description": "How it is drawn: from a manifest asset, as an engine primitive (a box, sphere, capsule, plain rectangle or circle), as text, or as several assets together. A greybox draws primitives; production draws readable entities from assets unless the design's visual_identity.primitive_style says otherwise." }
+      },
+      "additionalProperties": false
+    },
+    "move": {
+      "type": "object",
+      "required": ["action", "input"],
+      "properties": {
+        "action": { "type": "string", "description": "A build_spec.controls.actions id." },
+        "input": {
+          "oneOf": [
+            {
+              "type": "object",
+              "required": ["type", "x", "y"],
+              "properties": {
+                "type": { "const": "pointer" },
+                "x": { "type": "number", "description": "CSS px from the viewport's left." },
+                "y": { "type": "number" },
+                "hold_ms": { "type": "number", "minimum": 0, "description": "How long the input is held down: for a control that acts while held (steer, charge). Absent: a tap or a key press." }
+              },
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "required": ["type", "key"],
+              "properties": {
+                "type": { "const": "key" },
+                "key": { "type": "string", "description": "A KeyboardEvent.key value, e.g. ArrowLeft or ' '." },
+                "hold_ms": { "type": "number", "minimum": 0, "description": "How long the input is held down: for a control that acts while held (steer, charge). Absent: a tap or a key press." }
+              },
+              "additionalProperties": false
+            }
+          ]
+        }
+      },
+      "additionalProperties": false
+    }
+  }
+}

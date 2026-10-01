@@ -17,9 +17,11 @@ plan's prototype milestones and tasks, each with its acceptance criteria.
 """
 
 import json
+import os
 
-from wgflib import gameseam
+from wgflib import gameseam, paths
 from wgflib import template_contract as contract
+from wgflib.yamllite import load_file
 
 from wgf_verification.checks.gameplay import ASPECTS, required_aspects_for
 
@@ -27,7 +29,8 @@ from .scope import DEFAULT_WRITABLE
 
 __all__ = ["REQUIRED_SYSTEMS", "INTEGRATION_CONTRACT", "REPORT_PATH", "BRIEF_DIR",
            "build_brief", "render_markdown", "PROTECTED_PATHS", "STRUCTURAL_PATHS",
-           "TEMPLATE_SOURCE", "ENGINE_DIRS", "select_build_spec", "select_dev_plan"]
+           "TEMPLATE_SOURCE", "ENGINE_DIRS", "select_build_spec", "select_dev_plan",
+           "select_production_art"]
 
 BRIEF_DIR = "docs/development"
 REPORT_PATH = f"{BRIEF_DIR}/report.json"
@@ -62,7 +65,20 @@ REQUIRED_SYSTEMS = (
                           "desktop; resize is handled, nothing is cropped off-screen."),
     ("audio-hooks", "A small audio service in src/audio/ with named cues the game triggers; "
                     "muted by default until first input, silenced while paused (ads)."),
+    ("play-probe", "window.__wgf__.play.snapshot(), exactly as the Play probe section below "
+                   "specifies: state, the experience contract's metrics, on-screen entities "
+                   "with their drawn bounds, the inputs available now, and - only with "
+                   "wgf-probe=1 in the URL - the oracle. Read-only."),
 )
+
+# What the playability step reads from the running build (core/artifacts/shared/).
+PLAY_PROBE_SCHEMA = os.path.join(paths.ARTIFACTS, "shared", "play-probe.schema.json")
+# The entity roles a player must be able to read: the visual gate's, and the ones production
+# draws from assets (core/reference/visual-quality.yaml `entities.readable_roles`).
+READABLE_ROLES = tuple((load_file(os.path.join(paths.REFERENCE, "visual-quality.yaml"))
+                        .get("entities") or {}).get("readable_roles") or ())
+# Where the bar for a finished game's art and UI is described.
+PRODUCTION_CRAFT = "core/craft/production-art-and-ui.md"
 
 # Paths a game may not edit. packages/ is the template's (fix the template instead);
 # game.config.yaml is written from the approved tech plan; the pipelines and release tooling
@@ -148,6 +164,9 @@ REPORT_CONTRACT = {
 # `sdk_touchpoints` belong to the sdk step (ground rule 4: no platform SDK work here), and
 # `assets` are delivered through the asset manifest, which the brief lists on its own.
 BUILD_SPEC_SECTIONS = (
+    # First: what a first-time player must be able to tell, and how fast. The rest of the
+    # spec is how; this is what the build is measured against from outside.
+    ("experience", "Player experience contract"),
     ("mechanics", "Mechanics"), ("controls", "Controls"), ("player_goals", "Player goals"),
     ("game_states", "Game states"), ("screens", "Screens"), ("hud", "HUD"),
     ("menus", "Menus"), ("tutorial", "Tutorial"), ("rewards", "Rewards"),
@@ -289,6 +308,47 @@ def select_build_spec(design):
             "omitted": [k for k in ("sdk_touchpoints", "assets") if k in spec]}
 
 
+def select_production_art(design, assets=None):
+    """The design's production art (game-design 1.6.0) as the developer draws it.
+
+    Each MVP asset requirement in the design's `build_spec.assets` with its role, dimension
+    and readability, and the runtime asset id that draws it - the requirement's own id, which
+    is the asset-manifest item's and `public/assets/assets.json`'s key. `delivered` says
+    whether the asset manifest holds that item (None when there is no manifest yet)."""
+    spec = (design or {}).get("build_spec")
+    if not isinstance(spec, dict):
+        return None
+    look = spec.get("visual_identity") or {}
+    manifest = {item.get("id") for item in (assets or {}).get("items") or []
+                if item.get("status") != "cut"} if assets else None
+    requirements = [
+        {"id": a.get("id"), "type": a.get("type"), "role": a.get("role"),
+         "dimension": a.get("dimension"), "readability": a.get("readability"),
+         "description": a.get("description"), "spec": a.get("spec"),
+         "runtime_asset": a.get("id"),
+         "delivered": (a.get("id") in manifest) if manifest is not None else None}
+        for a in spec.get("assets") or [] if a.get("tier") in BUILD_TIERS
+    ]
+    if not requirements and not look:
+        return None
+    primitive = look.get("primitive_style")
+    return {
+        "assets": requirements,
+        # The play probe's roles a player must read (core/reference/visual-quality.yaml).
+        "readable_roles": list(READABLE_ROLES),
+        "primitive_style": dict(primitive) if isinstance(primitive, dict) else None,
+        "ui": look.get("ui"),
+        "palette": {p.get("token"): p.get("hex") for p in look.get("palette") or []},
+        "typography": look.get("typography"),
+        "result_screens": [
+            {"id": sc.get("id"), "state": sc.get("state"),
+             "actions": [a.get("label") for a in sc.get("actions") or []]}
+            for sc in spec.get("screens") or []
+            if sc.get("tier") in BUILD_TIERS and sc.get("id") in ("result", "level-complete")
+        ],
+    }
+
+
 def _dependency_order(tasks):
     """Tasks in dependency order, stable otherwise. A dependency outside the list (a task of
     another phase) does not hold a task back; a cycle keeps the plan's own order."""
@@ -333,7 +393,10 @@ def select_dev_plan(tech_plan):
 def build_brief(*, title_id, engine, iteration, key, baseline, design, assets, scaffold,
                 strategy=None, qa=None, previous_checks=None, refs=None, skills=None,
                 review=None, mobile_test=True, tech_plan=None, self_playtest=False,
-                writable_paths=None, package_changes=None, loop=None, sessions=None):
+                writable_paths=None, package_changes=None, loop=None, sessions=None,
+                playability=None, frames_root=None, phase=None, greybox_commit=None,
+                production=None, visual_qa=None,
+                review_baseline=None):
     """The brief as data. `render_markdown` turns it into the document a developer reads."""
     refs = refs or {}
     writable_paths = list(DEFAULT_WRITABLE if writable_paths is None else writable_paths)
@@ -370,6 +433,32 @@ def build_brief(*, title_id, engine, iteration, key, baseline, design, assets, s
          if blocker.get(k) is not None}
         for blocker in (review or {}).get("blockers") or []
     ]
+    # A playability-report that failed the commit this visit starts from: what the bot saw,
+    # per failed check, with the frames that show it (absolute paths under frames_root, the
+    # run's directory, which the report's frame paths are relative to).
+    frame_paths = {(f.get("project"), f.get("id")): f.get("path")
+                   for f in (playability or {}).get("frames") or []}
+    playability_failures = [
+        {"check": c.get("id"), "project": c.get("project"), "summary": c.get("summary"),
+         "expected": c.get("expected"),
+         "frames": [os.path.join(frames_root, frame_paths[(c.get("project"), f)])
+                    if frames_root and frame_paths.get((c.get("project"), f)) else f
+                    for f in c.get("frames") or []]}
+        for c in (playability or {}).get("checks") or []
+        if c.get("required") and c.get("status") == "FAIL"
+    ]
+    # The production gates' failures of the commit this visit starts from: each failed
+    # production-quality check (with the route it took: an `assets` failure was rebuilt by
+    # the assets step before this visit, and its integration is this visit's), and visual
+    # QA's failures - blocker findings, low scores, per-state answers, the look.
+    production_failures = [
+        {"check": c.get("id"), "project": c.get("project"), "route": c.get("route"),
+         "summary": c.get("summary"), "expected": c.get("expected"),
+         "assets": c.get("assets") or None}
+        for c in (production or {}).get("checks") or []
+        if c.get("required") and c.get("status") == "FAIL"
+    ]
+    visual_qa_failures = _visual_qa_failures(visual_qa, frames_root)
     failures = [
         {"check": c.get("id"), "summary": c.get("summary"), "output_tail": c.get("output_tail")}
         for c in (previous_checks or {}).get("checks") or []
@@ -386,6 +475,9 @@ def build_brief(*, title_id, engine, iteration, key, baseline, design, assets, s
         "iteration": iteration,
         "idempotency_key": key,
         "baseline_commit": baseline,
+        # Where review's change starts (step._review_baseline): the baseline, or - after a
+        # greybox, which nobody reviewed - where the greybox started.
+        "review_baseline": review_baseline or baseline,
         "engine": engine,
         "engine_dir": ENGINE_DIRS[engine],
         # What this engine needs said that the template does not carry, plus the physics
@@ -399,7 +491,9 @@ def build_brief(*, title_id, engine, iteration, key, baseline, design, assets, s
             for t, c in (("game-design", design), ("asset-manifest", assets),
                          ("scaffold-record", scaffold), ("title-strategy", strategy),
                          ("tech-plan", tech_plan), ("qa-report", qa),
-                         ("review-report", review))
+                         ("review-report", review), ("playability-report", playability),
+                         ("production-quality-report", production),
+                         ("visual-qa-report", visual_qa))
             if c
         ],
         "design": {
@@ -448,6 +542,19 @@ def build_brief(*, title_id, engine, iteration, key, baseline, design, assets, s
         "writable_paths": list(writable_paths),
         "package_changes": {k: list(v) for k, v in package_changes.items() if v},
         "qa_defects": defects,
+        # greybox | production | None (one develop phase, as before workflow 4).
+        "phase": phase,
+        # What the design says the finished game looks like: each MVP asset requirement's
+        # role and readability with the runtime asset id that draws it, the UI spec, and
+        # whether the art direction is geometric on purpose. None for a design without it.
+        "production_art": select_production_art(design, assets),
+        "greybox_commit": greybox_commit,
+        "playability_failures": playability_failures,
+        "production_failures": production_failures,
+        "visual_qa_failures": visual_qa_failures,
+        "gated_commit": ((production if production_failures else None)
+                         or (visual_qa if visual_qa_failures else None) or {}).get("commit"),
+        "played_commit": (playability or {}).get("commit") if playability_failures else None,
         "review_blockers": review_blockers,
         "reviewed_commit": (review or {}).get("reviewed_commit") if review_blockers else None,
         "previous_failures": failures,
@@ -523,6 +630,111 @@ def _package_rule(changes):
             "`scripts`, not any other field.")
 
 
+def _production_art_section(art):
+    """The production phase's art and UI contract, from the design's build_spec."""
+    out = []
+    add = out.append
+    readable = art.get("readable_roles") or []
+    primitive = art.get("primitive_style")
+    add("## Production art and UI\n")
+    add("What separates this build from the greybox: every thing a player reads is drawn by "
+        "the asset the design names for it, and the interface is styled from the design's UI "
+        "spec. The build is held to it from outside - the play probe's entities and the files "
+        "the page fetched, measured screens, and a visual judge reading the frames. The craft "
+        f"behind it is `{PRODUCTION_CRAFT}` in the Factory.\n")
+    add("### Assets, by what they are to the player\n")
+    add("Draw each with the runtime asset of that id (`public/assets/assets.json`), replacing "
+        "the greybox primitive that stood for its role. The readability line is what the "
+        "visual judge checks the drawn result against.\n")
+    for a in art.get("assets") or []:
+        role = a.get("role") or "unstated role"
+        where = "" if a.get("delivered") is not False else " - not in the asset manifest yet"
+        add(f"- **{a.get('id')}** ({role}, {a.get('dimension') or '?'}, {a.get('type')}): "
+            f"draw with runtime asset `{a.get('runtime_asset')}`{where}."
+            + (f" Readable as: {a['readability']}" if a.get("readability") else ""))
+    add("")
+    add("### The play probe in production\n")
+    add("Every probe entity reports `asset` - the runtime asset id drawing it, or null - and "
+        "`render`: `asset` (drawn from a manifest asset), `composite` (several assets "
+        "together), `text`, or `primitive` (an engine box, sphere, capsule, plain rectangle "
+        "or circle). `assets_loaded` lists every runtime asset id the game has loaded. "
+        "Report what is drawn, never what should be: the production gate compares the probe "
+        "with the files the page actually fetched.")
+    if primitive:
+        add(f"\nThe design's art direction is geometric on purpose "
+            f"(visual_identity.primitive_style: {primitive.get('reason')}): readable entities "
+            "may be drawn as primitives, styled from the palette, and reported "
+            "`render: \"primitive\"`. The visual judge still reads them.\n")
+    else:
+        add("\n**No readable entity is drawn as a primitive.** An entity of role "
+            + ", ".join(f"`{r}`" for r in readable)
+            + " reports `render: \"asset\"` or `\"composite\"` with its `asset` set; a "
+              "cube, sphere or flat rectangle standing for a character is a placeholder, and "
+              "the production gate refuses it. A primitive may remain only where nothing a "
+              "player reads is drawn (a floor plane under a textured surface, a hit box).\n")
+    ui = art.get("ui") or {}
+    palette = art.get("palette") or {}
+    typography = art.get("typography") or {}
+
+    def token(name):
+        return f"`{name}` ({palette[name]})" if name in palette else f"`{name}`"
+
+    add("### The interface\n")
+    if ui:
+        fonts = ui.get("font_px") or {}
+        button = ui.get("button") or {}
+        if typography:
+            add(f"- **Faces:** display {typography.get('display')}, body "
+                f"{typography.get('body')}"
+                + (f", numerals {typography['numeric']}" if typography.get("numeric") else "")
+                + ".")
+        fonts_assets = [a for a in art.get("assets") or []
+                        if a.get("role") == "font" or a.get("type") == "font"]
+        for font in fonts_assets:
+            add(f"- **Fonts are production assets** (`{font['runtime_asset']}`). "
+                + (f"{font['spec']} " if font.get("spec") else "")
+                + "Declare each face with `@font-face` from its runtime asset url, await "
+                  "`document.fonts.load` for every face before the first UI frame, and set "
+                  "every button, HUD and result-screen element in it. The production gate "
+                  "checks that `document.fonts.check` is true for each family and that the "
+                  "computed `font-family` of buttons and HUD resolves to the bundled face; a "
+                  "system fallback on screen fails it.")
+        if fonts:
+            add("- **Sizes (CSS px at the phone layout):** "
+                + ", ".join(f"{k} {v}" for k, v in fonts.items()) + ". Nothing smaller.")
+        if ui.get("min_target_px"):
+            add(f"- **Touch targets:** every interactive element at least "
+                f"{ui['min_target_px']} x {ui['min_target_px']} CSS px on a phone, none "
+                "overlapping another or the HUD.")
+        if button:
+            add("- **Buttons:** fill " + token(button.get("fill")) + ", text "
+                + token(button.get("text"))
+                + (f", corner radius {button['radius_px']} px" if button.get("radius_px")
+                   is not None else "")
+                + (f". {button['style']}" if button.get("style") else "")
+                + ". Idle, pressed and disabled states; no browser-default button survives.")
+        if ui.get("surface"):
+            add(f"- **Panels and result cards:** surface {token(ui['surface'])}.")
+    else:
+        add("- The design states no UI spec: style buttons and panels from the visual "
+            "identity's palette and faces; never ship browser defaults.")
+    results = art.get("result_screens") or []
+    for screen in results:
+        actions = ", ".join(a for a in screen.get("actions") or [] if a)
+        add(f"- **Result screen `{screen['id']}`** (state `{screen.get('state')}`): the "
+            f"outcome, the score against the best, and {actions or 'its actions'} - the "
+            "retry the primary button, in the thumb zone, back in play within the "
+            "experience contract's retry budget.")
+    if not results:
+        add("- **Result screens:** win and lose each end on a screen with the outcome, the "
+            "score against the best, and Retry as the primary button.")
+    add("- **Layout:** HUD inside the safe area, primary actions in the lower third on a "
+        "phone, nothing interactive within 16 CSS px of an edge; the same screens re-flow, "
+        "never crop, on desktop.")
+    add("")
+    return "\n".join(out)
+
+
 def _bullets(items, empty="- (none)"):
     lines = [f"- {item}" for item in items if item]
     return "\n".join(lines) if lines else empty
@@ -575,6 +787,39 @@ def _ownership_section(brief):
     return "\n".join(lines)
 
 
+def _visual_qa_failures(report, frames_root=None):
+    """[{id, route, summary, frame}] for each entry of a FAIL visual-qa-report's `failed`:
+    a finding (its summary and frame), a dimension below the bar, a per-state answer, or the
+    look."""
+    if not report:
+        return []
+    findings = {f.get("id"): f for f in report.get("findings") or []}
+    frames = {f.get("id"): f.get("path") for f in report.get("frames") or []}
+    scores = report.get("scores") or {}
+    out = []
+    for entry in report.get("failed") or []:
+        kind, _, name = str(entry).partition(":")
+        item = {"id": str(entry), "route": None, "summary": str(entry), "frame": None}
+        if kind == "finding" and name in findings:
+            finding = findings[name]
+            frame = finding.get("frame")
+            path = frames.get(frame)
+            item.update(route=finding.get("route"),
+                        summary=f"({finding.get('severity')}, {finding.get('category')}) "
+                                f"{finding.get('summary')}",
+                        frame=(os.path.join(frames_root, path) if frames_root and path
+                               else frame))
+        elif kind == "score":
+            item["summary"] = (f"`{name}` scored {scores.get(name)} of 5, below the rubric's "
+                               "bar")
+        elif kind == "state":
+            item["summary"] = f"on {name}: the rubric's answer fails the state"
+        elif kind == "look":
+            item["summary"] = "the build looks like a developer prototype, not a finished game"
+        out.append(item)
+    return out
+
+
 def render_markdown(brief):
     d = brief["design"]
     engine = brief["engine"]
@@ -600,6 +845,35 @@ def render_markdown(brief):
     add("A genuinely playable game: a stranger opens the build, understands it without help, "
         "plays a full session, loses or finishes, and plays again. Build the MVP below and "
         "nothing past it.\n")
+
+    if brief.get("phase") == "greybox":
+        add("## Phase: greybox\n")
+        add("This build proves the game before any asset exists. Build the whole MVP loop, "
+            "playable end to end - start, the core loop, the objective, losing (and winning), "
+            "retry - with primitive shapes, flat colours from the design's palette and plain "
+            "text. No asset files: the asset manifest is made only after this build passes. "
+            "Implement now what a first-time player needs to read the game: the play probe "
+            "(*Play probe*, below), the objective on screen, the onboarding and its grace, "
+            "the HUD and every action's acknowledgement. Light and frame the scene so what "
+            "matters is plainly visible.\n")
+        add("Primitives are expected here: report every probe entity with `render: "
+            "\"primitive\"` (`\"text\"` for text) and `asset: null`, and `assets_loaded` as "
+            "`[]`. Give each entity the role the design's asset requirements name (the "
+            "*Production art and UI* the next phase draws), so the production build replaces "
+            "the primitive standing for each role without renaming anything.\n")
+        add("When you finish, the build is played from outside on a desktop and a mobile "
+            "viewport and held to the experience contract; a build that fails comes back "
+            "here with what was seen. Assets and polish come in the next phase, on top of "
+            "this loop.\n")
+    elif brief.get("phase") == "production":
+        add("## Phase: production\n")
+        add("The greybox"
+            + (f" at `{brief['greybox_commit'][:12]}`" if brief.get("greybox_commit") else "")
+            + " was played from outside and passed: the loop is playable and readable. This "
+            "phase integrates the assets below and finishes the MVP on top of it. Keep every "
+            "playability check passing - an asset that hides the player, darkens the scene or "
+            "drops the objective from the screen is a regression - because the build is "
+            "played again before review.\n")
 
     add("## Ground rules\n")
     add(f"1. **Engine: `{engine}`**, from `game.config.yaml`. 2D is PixiJS or Phaser, 3D is "
@@ -657,6 +931,22 @@ def render_markdown(brief):
     for system in brief["required_systems"]:
         add(f"- **{system['id']}** - {system['acceptance']}")
     add("")
+
+    add("## Play probe (how the build is judged)\n")
+    add("The build is played from outside, not judged by its own tests: a bot drives it with "
+        "real pointer and key input, reads a snapshot before and after every input, and "
+        "renders frames to check a first-time player can see and follow it - the objective "
+        "on screen, no failure before the first success, every action visibly acknowledged, "
+        "a reachable win (or best) and loss, a restart, and the player, threats and goals "
+        "drawn large enough to read. Install `window.__wgf__.play = { snapshot() }` once "
+        "`window.__wgf__` exists, returning exactly this shape. Metric names are the "
+        "experience contract's (`build_spec.experience`, `hud[].metric`). Entity bounds are "
+        "where each thing is drawn now, in CSS px of the viewport (project 3D positions "
+        "through the camera). `oracle` is computed only when the page URL carries "
+        "`wgf-probe=1`; without it the field is absent, and nothing else changes. The probe "
+        "never changes the game, and the game never reads it.\n")
+    with open(PLAY_PROBE_SCHEMA, encoding="utf-8") as handle:
+        add("```json\n" + handle.read().rstrip() + "\n```\n")
 
     add("## MVP (build exactly this)\n")
     add(_bullets(brief["mvp"]))
@@ -788,9 +1078,14 @@ def render_markdown(brief):
             add(f"- `{a['id']}` {a.get('label', '')} ({extra})")
             for path in a.get("files") or []:
                 add(f"  - `{path}`")
+    elif brief.get("phase") == "greybox":
+        add("- None in this phase: draw everything with primitives (see *Phase: greybox*).")
     else:
         add("- The manifest lists nothing for this tier.")
     add("")
+
+    if brief.get("phase") == "production" and brief.get("production_art"):
+        add(_production_art_section(brief["production_art"]))
 
     add(_ownership_section(brief))
     add("## Integration seam (provided by the Factory - do not write or edit it)\n")
@@ -886,7 +1181,8 @@ def render_markdown(brief):
                     f"guess - re-check the build against this brief, fix only what you can "
                     f"show is wrong, and say in `known_issues` that no reason was given.")
         elif brief.get("qa_defects") or brief.get("review_blockers") or \
-                brief.get("previous_failures"):
+                brief.get("previous_failures") or brief.get("playability_failures") or \
+                brief.get("production_failures") or brief.get("visual_qa_failures"):
             add("Fix what sent it back first (below); a pass that does not fix it is one "
                 "fewer left.")
         else:
@@ -905,6 +1201,56 @@ def render_markdown(brief):
         for defect in brief["qa_defects"]:
             add(f"- `{defect.get('id')}` ({defect.get('severity')}): {defect.get('summary')}"
                 + (f" Repro: {defect['repro']}" if defect.get("repro") else ""))
+        add("")
+
+    if brief.get("playability_failures"):
+        add("## Fix first: what the build did when it was played\n")
+        add(f"The playability step built `{(brief.get('played_commit') or '')[:12]}` and "
+            "played it from outside, as a first-time player's device would: a bot reading "
+            "the play probe (*Play probe*, above) and acting only through real pointer, touch "
+            "and key input, on a desktop and a mobile viewport. These checks failed. Each is "
+            "measured against the experience contract or core/reference/visual-quality.yaml, "
+            "and the next build is played the same way: fix what the player sees, not the "
+            "probe's report of it. A probe that misreports the game is itself a defect. "
+            "Where a frame is named, look at it.\n")
+        for failure in brief["playability_failures"]:
+            line = f"- `{failure['check']}` ({failure.get('project')}): {failure.get('summary')}"
+            if failure.get("expected") is not None:
+                line += f" Expected: {_inline(failure['expected'])}."
+            if failure.get("frames"):
+                line += " Frames: " + ", ".join(f"`{f}`" for f in failure["frames"])
+            add(line)
+        add("")
+
+    if brief.get("production_failures"):
+        add("## Fix first: what the production gate measured\n")
+        add(f"The production-quality step judged `{(brief.get('gated_commit') or '')[:12]}` "
+            "from the same play: every required asset delivered, fetched, drawn and visible, "
+            "no readable entity a primitive, the DOM UI at its measured bars "
+            "(core/reference/production-quality.yaml). These checks failed. One routed "
+            "`assets` named an asset the assets step has now made again: use it as "
+            "`public/assets/assets.json` lists it. The rest are the game's own use of its "
+            "assets and its UI.\n")
+        for failure in brief["production_failures"]:
+            line = (f"- `{failure['check']}`"
+                    + (f" ({failure['project']})" if failure.get("project") else "")
+                    + f" [{failure.get('route')}]: {failure.get('summary')}")
+            if failure.get("assets"):
+                line += " Assets: " + ", ".join(f"`{a}`" for a in failure["assets"])
+            if failure.get("expected") is not None:
+                line += f" Expected: {_inline(failure['expected'])}."
+            add(line)
+        add("")
+
+    if brief.get("visual_qa_failures"):
+        add("## Fix first: what visual QA saw\n")
+        add(f"A judge read the frames of `{(brief.get('gated_commit') or '')[:12]}` against "
+            "core/reference/visual-qa-rubric.yaml and the design's visual identity, and the "
+            "build failed. The next build is judged the same way, from frames of the running "
+            "game: change what is on screen. Where a frame is named, look at it.\n")
+        for failure in brief["visual_qa_failures"]:
+            add(f"- `{failure['id']}` [{failure.get('route') or '-'}]: {failure['summary']}"
+                + (" Frame: `" + failure["frame"] + "`" if failure.get("frame") else ""))
         add("")
 
     if brief.get("review_blockers"):

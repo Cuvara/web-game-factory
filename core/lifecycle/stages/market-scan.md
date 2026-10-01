@@ -15,7 +15,26 @@ state: there is no entity to hold it.
   design to build from. The screen and its vetoes are unchanged. A selection that matches
   none of the brief's words, or renders in another dimension than it names, records an
   `idea-unmatched` gap: the catalog shape is reported as the nearest carrier, never as a fit.
+  When no eligible candidate matches any of the brief's words, the scan **waits** by default
+  (`discovery.idea_fallback: wait`): it selects nothing, keeps every candidate, names the
+  nearest eligible shape in the gap as information only, and asks for input - a concept for
+  the brief in the project's concepts file, or `idea_fallback: nearest`, which carries the
+  brief to that nearest shape instead. A substitute shape is a different game, so it is never
+  carried forward unless someone asked for it.
   Without a brief the scan is blank: every generator, ranked on evidence alone.
+- A **concepts file**, optional — `concepts.yaml` in the research corpus (or the path the
+  `concepts` setting names): concepts a project authored for a brief the catalog does not
+  carry. It has the catalog's shape, `{version, archetypes: [...]}`, and every entry the
+  catalog's fields plus `brief`, exactly the run's brief (an entry for another brief is
+  refused), and `design_archetype`, the design archetype that designs it or `agent` when only
+  an agent design author can. An entry may not reuse a catalog id. Its entries are screened
+  with the catalog's, under the same vetoes; each one's figures are estimates, so they are
+  hypothesis claims, and each carries one more hypothesis claim saying it was authored for
+  the brief, is not a catalog shape and is unmeasured. The file is read only when the run has
+  a brief; its hash is part of the report's identity, and its use is listed among the report's
+  collectors. A selected entry's concept is the opportunity's concept, verbatim.
+  When a workflow run's research step waits for either input - evidence, or a concept for
+  its brief - the research role supplies it and the run is resumed: `core/craft/research-evidence.md`.
 - `core/reference/platforms/*.yaml` — what each portal carries, rewards, and forbids
 - `core/reference/dimensions.yaml` — the vocabulary every observation must land in
 - `core/reference/research-vocabulary.yaml` — the shared codes every researched game is

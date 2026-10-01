@@ -12,6 +12,7 @@ Invoked from `AGENTS.md` or by the matching `/wgf-*` prompt.
 4. `core/craft/art-direction.md`
 5. `core/craft/audio.md`
 6. `core/craft/2d-assets.md`
+7. `core/craft/production-art-and-ui.md`
 
 Core is authoritative. Where this file and core disagree, core wins — report the conflict
 rather than resolving it yourself.

@@ -294,7 +294,7 @@
     "scripts/wgflib/workflow/fixtures/verification-report.json": "sha256:87ad625f41ba7cadab58247e31861263279cbbc1925cff78345e98d4914bca09",
     "scripts/wgflib/workflow/fixtures/visual-qa-report.json": "sha256:e0cab38fe30e555a6a106c6bbc1d057eb9d7c84cc1ce629cae19d0a8e52a85d9",
     "scripts/wgflib/workflow/integrity.py": "sha256:03cdbc7c2a3c7aad6ed0d67169ea50036d3ab19a343862c633ad3239d9660561",
-    "scripts/wgflib/workflow/mock.py": "sha256:1ea46a310e5f063d191dc618768766f557ada87f8eabd7959e866ba2ee9ed06e",
+    "scripts/wgflib/workflow/mock.py": "sha256:342e9c6d48c0ef9bb095f90cc8dfe1f1c7f97318d92d05c96f4db87ecda00382",
     "scripts/wgflib/workflow/model.py": "sha256:4be8e43b5a59d18b50c6df919b36349f19ec69442a331149a90570841e10f90d",
     "scripts/wgflib/workflow/runtime.py": "sha256:ba51070dc7b6bec499cd531c8de04dba5cda2b7f443acd15cea4889575946ceb",
     "scripts/wgflib/workflow/step.py": "sha256:44609e1e85e965c6c0024a73790619d209fff635c53f89dd5785fed5dff19974",

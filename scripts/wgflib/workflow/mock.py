@@ -269,6 +269,7 @@ class MockProductionQualityStep(MockStep):
         body["failed"] = [f"{check['project']}:{check['id']}" if check.get("project") else check["id"]]
         body["routes"] = [route]
 
+
 class MockVisualQAStep(MockStep):
     """`assets` or `develop` in a mock plan is a visual QA failure routed there: FAILED with
     that route and not retryable, a blocker finding naming it in the report - the shape the

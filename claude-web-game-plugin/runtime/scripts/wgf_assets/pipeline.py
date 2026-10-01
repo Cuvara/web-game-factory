@@ -1041,9 +1041,21 @@ class AssetPipeline:
             files = self._image_files(item)
             fonts = [(relative, blob) for relative, blob in item.payload
                      if quality_mod.font_format(blob)]
+            models = [(relative, blob) for relative, blob in item.payload
+                      if bytes(blob[:4]) == b"glTF"]
             if fonts and not files:
                 judged = _merge_quality([(relative, quality_mod.font_quality(blob, author=author))
                                          for relative, blob in fonts], author)
+            elif models and not files:
+                # A GLB from a library (or the repository) is judged like a built one: the
+                # model inspection - parts, normals, palette, primitive_only for its role.
+                from . import model_quality
+                judged = _merge_quality(
+                    [(relative, model_quality.assess(
+                        blob, role=req.role, visual_identity=self.identity,
+                        spec=req.model, kind=req.kind or "model", name=req.id,
+                        policy=self.policy, author=author)["quality"])
+                     for relative, blob in models], author)
             elif not files:
                 fmt = data["files"][0]["format"] if data.get("files") else "?"
                 judged = quality_mod.skipped(author, f"no 2D quality check for {fmt}; "

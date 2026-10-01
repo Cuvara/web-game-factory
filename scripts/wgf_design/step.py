@@ -99,6 +99,14 @@ class DesignStep(WorkflowStep):
             return StepResult.failed(f"design author {author_name!r}: {exc}", retryable=False)
 
         design = finalize(draft, platforms, title_id)
+        carried = strategy.get("research")
+        if isinstance(carried, dict) and carried.get("research_version") == 2 and \
+                not isinstance(design.get("research"), dict):
+            # Whatever the author wrote, the research the design rests on is not dropped.
+            design["research"] = dict(carried, applied=[{
+                "field": "research", "source": "default",
+                "detail": f"carried from the strategy; the {author_name!r} author recorded "
+                          f"no research-based decisions"}])
         if strategy.get("brief"):
             # The person's idea, carried from the strategy: the design is derived from it,
             # whatever the author wrote.

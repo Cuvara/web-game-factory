@@ -968,10 +968,14 @@ def _content_section(brief):
             f"there is no list to compare a file with. Keep every tuning value - the "
             f"generation parameters, and each mechanic's `parameters` - as data in one module "
             f"all the same, so a playtest changes a number and not the code.\n")
+    design_pin = next((pin for pin in brief.get("inputs") or []
+                       if pin.get("artifact_type") == "game-design"), {})
     add("```json\n" + json.dumps({
         "schema": content_contract.SCHEMA,
-        "design": {"artifact_id": "<the game-design artifact id pinned above>",
-                   "content_hash": "<its content hash, as the Input line above gives it>"},
+        "design": {"artifact_id": design_pin.get("id")
+                   or "<the game-design artifact id pinned above>",
+                   "content_hash": design_pin.get("content_hash")
+                   or "<the game-design's full content hash>"},
         "genre": genre or {"family": "<the design's genre.family>"},
         "unit_kind": kind,
         "generation": generation or {"mode": "authored"},

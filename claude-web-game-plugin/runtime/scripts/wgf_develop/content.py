@@ -244,6 +244,20 @@ def _unit_findings(unit, built, tolerance):
     return findings
 
 
+def _same_pin(written, pinned):
+    """The data file's pin names the design: the full hash, or an unambiguous prefix of it of
+    at least 12 hex digits (the brief's Input line shows the pin shortened)."""
+    if not isinstance(written, str) or not isinstance(pinned, str):
+        return False
+    if written == pinned:
+        return True
+    w, p = written.lower(), pinned.lower()
+    for prefix in ("sha256:",):
+        if w.startswith(prefix) and p.startswith(prefix):
+            w, p = w[len(prefix):], p[len(prefix):]
+    return len(w) >= 12 and p.startswith(w)
+
+
 def content_findings(root, brief_or_design, models=None):
     """Every way the checkout's content data disagrees with the design it was built from.
 
@@ -262,7 +276,7 @@ def content_findings(root, brief_or_design, models=None):
     else:
         pinned = selection["pin"].get("content_hash")
         built_pin = (data.get("design") or {}).get("content_hash")
-        if pinned and built_pin != pinned:
+        if pinned and not _same_pin(built_pin, pinned):
             findings.append(f"content.design_pin: {CONTENT_PATH} says it was built from "
                             f"game-design {built_pin or 'none'}, this visit builds "
                             f"{pinned}")

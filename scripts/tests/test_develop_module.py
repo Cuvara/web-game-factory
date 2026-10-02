@@ -2566,6 +2566,17 @@ class ContentDataFile(unittest.TestCase):
     def test_the_tiers_are_the_briefs(self):
         self.assertEqual(content.MVP_TIERS, briefs.BUILD_TIERS)
 
+    def test_a_shortened_design_pin_is_the_same_pin(self):
+        # The brief's Input line shows the pin shortened to 19 characters and the live
+        # developer copied it: an unambiguous prefix of at least 12 hex digits names the
+        # design; a different hash, or a prefix too short to be one, does not.
+        self.write({"design": {"content_hash": self.pin[:19]}})
+        self.assertNotIn("content.design_pin", self.findings())
+        self.write({"design": {"content_hash": "sha256:" + "0" * 64}})
+        self.assertIn("content.design_pin", self.findings())
+        self.write({"design": {"content_hash": self.pin[:12]}})
+        self.assertIn("content.design_pin", self.findings())
+
     def test_content_findings_require_the_data_file_when_authored(self):
         self.write(None, test=False, loader=False)
         self.assertEqual(sorted(self.findings()),

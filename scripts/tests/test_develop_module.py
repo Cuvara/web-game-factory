@@ -26,8 +26,9 @@ sys.path.insert(0, SCRIPTS)
 
 import wgf_develop  # noqa: E402
 from wgf_develop import brief as briefs  # noqa: E402
-from wgf_develop import gdd, safewrite, scope, seam  # noqa: E402
-from wgf_develop.checks import conformance, package_findings  # noqa: E402
+from wgf_develop import content, gdd, safewrite, scope, seam  # noqa: E402
+from wgf_develop.checks import _report_findings, conformance, package_findings  # noqa: E402
+from wgf_develop.report import CONTENT_QUESTION  # noqa: E402
 from wgf_develop.repository import KEY_TRAILER, GitRepo, Runner, RunResult  # noqa: E402
 from wgf_develop.settings import Settings, SettingsError  # noqa: E402
 from wgf_develop.step import DevelopStep  # noqa: E402
@@ -2291,6 +2292,496 @@ class NoPlaceholderCommit(DevelopCase):
         self.assertEqual(result.outcome, StepOutcome.BLOCKED, result.error)
         self.assertEqual(result.artifacts, [])
         self.assertIn("cannot be established", result.message)
+
+
+# -- the content contract (game-design 1.9.0, core/reference/genre-models.yaml) ---------------
+#
+# One authored design, reused: a platformer with six MVP levels and a seventh of a later
+# tier, three mechanics with starting tuning, and two difficulty axes. It is what a design
+# that states its content looks like, and every test below reads from it.
+
+AUTHORED_AXES = [
+    {"id": "precision", "range": [0, 1], "relief_allowed": False,
+     "description": "Jump windows and landing targets"},
+    {"id": "hazard-density", "range": [0, 1], "relief_allowed": True,
+     "description": "Hazards per screen"},
+]
+AUTHORED_MECHANICS = [
+    {"id": "run", "name": "Run", "tier": "mvp", "description": "The player always runs.",
+     "rules": ["Ground speed is constant."], "parameters": {"speed_px_s": 220}},
+    {"id": "jump", "name": "Jump", "tier": "mvp", "description": "Tap to jump.",
+     "rules": ["One jump per grounded frame."],
+     "parameters": {"height_px": 96, "coyote_ms": 90}},
+    {"id": "wall-slide", "name": "Wall slide", "tier": "mvp", "description": "Slide a wall.",
+     "rules": ["Sliding halves fall speed."], "parameters": {"slide_px_s": 60}},
+]
+AUTHORED_PURPOSES = ("teach", "teach", "test", "breather", "twist", "climax")
+AUTHORED_UNIT_COUNT = 6
+LATER_UNIT = "l-07"
+
+
+def authored_units():
+    """Six MVP levels in index order, then one of a later tier."""
+    units = []
+    for index in range(1, AUTHORED_UNIT_COUNT + 1):
+        units.append({
+            "id": f"l-{index:02d}", "index": index, "tier": "mvp",
+            "purpose": AUTHORED_PURPOSES[index - 1],
+            "objective": f"Reach the exit of level {index}",
+            "start_state": "At the left edge, grounded",
+            "end_state": "At the exit flag",
+            "mechanics": ["run", "jump"] if index < 4 else ["run", "jump", "wall-slide"],
+            "introduces": ["jump"] if index == 1 else (["wall-slide"] if index == 4 else []),
+            "difficulty": {"precision": round(0.1 * index, 2),
+                           "hazard-density": round(0.05 * index, 2)},
+            "expected_duration_s": 40 + 10 * index,
+            "success": f"The player reaches the exit flag of level {index}",
+            "failure": "A fall or a hazard costs a life and restarts the level",
+            "acceptance": [f"Level {index} is completable without taking damage",
+                           f"Level {index} ends on the result screen within one second"],
+            "variation_from_previous": ["layout_motif"] if index > 1 else [],
+            "parameters": {"hazards": index},
+        })
+    units.append({
+        "id": LATER_UNIT, "index": AUTHORED_UNIT_COUNT + 1, "tier": "post-mvp",
+        "purpose": "bonus", "objective": "Collect every coin of the bonus level",
+        "mechanics": ["run", "jump", "wall-slide"], "introduces": [],
+        "difficulty": {"precision": 0.9, "hazard-density": 0.4},
+        "expected_duration_s": 120,
+        "success": "Every coin of the bonus level is collected",
+        "failure": "The timer runs out and the level restarts",
+        "acceptance": ["The bonus level is reachable only after level 6"],
+    })
+    return units
+
+
+def authored_build_spec(mode="authored"):
+    generation = {"mode": mode}
+    if mode != "authored":
+        generation["parameters"] = {"hazard_rate": 0.4, "segment_pool": 8}
+        generation["expected_units"] = 12
+    return {
+        "content": {"unit_kind": "level", "generation": generation,
+                    "units": authored_units()},
+        "mechanics": copy.deepcopy(AUTHORED_MECHANICS),
+        "difficulty": {"model": "level-authored", "axes": copy.deepcopy(AUTHORED_AXES),
+                       "curve": [{"at": "level 1", "description": "Forgiving opening."}]},
+        "mastery": {"model": "execution",
+                    "statement": "A better player reaches the exit without touching a hazard.",
+                    "signals": ["time-to-exit", "deaths"]},
+        "depth": {
+            "meta_loop": {"statement": "Play a level, earn stars, unlock the next island.",
+                          "tier": "mvp", "persists": ["stars", "levels-cleared"]},
+            "goal_ladder": [
+                {"id": "reach-exit", "horizon": "short", "goal": "Reach the exit", "tier": "mvp"},
+                {"id": "no-damage", "horizon": "mid", "goal": "Clear it clean", "tier": "mvp"},
+                {"id": "all-stars", "horizon": "long", "goal": "Every star", "tier": "post-mvp"},
+            ],
+            "content_schedule": [{"id": "wall-slide", "at": "level 4", "tier": "mvp",
+                                  "introduces": "The wall slide"}],
+            "first_session": {"statement": "Four levels in nine minutes.", "tier": "mvp"},
+            "return_hooks": [{"id": "next-island", "statement": "An island is one level away.",
+                              "tier": "mvp"}],
+        },
+    }
+
+
+def authored_design(mode="authored"):
+    design = fixture("game-design")
+    design["genre"] = {"family": "platformer", "node": "platformer",
+                       "session_profile": "standard", "ending": "finite"}
+    design["build_spec"] = authored_build_spec(mode)
+    design["scope"] = dict(design.get("scope") or {}, content_units=AUTHORED_UNIT_COUNT,
+                           content_unit_kind="levels")
+    design["provenance"]["content_hash"] = content_hash(design)
+    return design
+
+
+def with_authored_content(mode="authored"):
+    return inputs_for(overrides={"game-design": authored_design(mode)})
+
+
+CONTENT_FIELDS = ("id", "index", "tier", "objective", "mechanics", "introduces", "difficulty",
+                  "expected_duration_s", "success", "failure")
+CONTENT_LOADER = "src/game/content.ts"
+CONTENT_LOADER_SOURCE = ('const URL = "content/units.json";\n'
+                         "export async function loadUnits() {\n"
+                         "  return (await fetch(URL)).json();\n}\n")
+CONTENT_SPEC_SOURCE = ('import { describe, it } from "vitest";\n'
+                       'describe("content", () => { it("loads", () => {}); });\n')
+
+
+def content_data(units, pin, *, genre=None, unit_kind="level", generation=None, tuning=None):
+    """public/content/units.json as the developer writes it."""
+    return {
+        "schema": content.SCHEMA,
+        "design": {"artifact_id": f"wgf:game-design:{TITLE}:20260101-01", "content_hash": pin},
+        "genre": genre or {"family": "platformer"},
+        "unit_kind": unit_kind,
+        "generation": generation or {"mode": "authored"},
+        "units": [{field: copy.deepcopy(unit[field]) for field in CONTENT_FIELDS
+                   if field in unit} for unit in units],
+        "tuning": tuning if tuning is not None else {
+            mechanic["id"]: dict(mechanic["parameters"]) for mechanic in AUTHORED_MECHANICS},
+    }
+
+
+def content_data_for(design):
+    return content_data(briefs.select_content(design)["units"],
+                        design["provenance"]["content_hash"],
+                        genre=design["genre"],
+                        unit_kind=design["build_spec"]["content"]["unit_kind"],
+                        generation=design["build_spec"]["content"]["generation"])
+
+
+def content_files(data):
+    return {content.CONTENT_PATH: json.dumps(data, indent=2),
+            content.TEST_PATH: CONTENT_SPEC_SOURCE,
+            CONTENT_LOADER: CONTENT_LOADER_SOURCE}
+
+
+class ContentInTheBrief(DevelopCase):
+    """F1 again, for the content the design states: the table the developer builds from."""
+
+    def brief(self, inputs):
+        result = step_with(FakeRunner()).execute(inputs, context(self.config()))
+        self.assertEqual(result.outcome, StepOutcome.WAITING_FOR_HUMAN, result.error)
+        with open(os.path.join(self.repo, briefs.BRIEF_DIR, "brief.json")) as handle:
+            data = json.load(handle)
+        with open(os.path.join(self.repo, briefs.BRIEF_DIR, "brief.md")) as handle:
+            return data, handle.read()
+
+    def test_the_brief_renders_the_content_table_mvp_only(self):
+        data, text = self.brief(with_authored_content())
+        content_block = data["content"]
+        self.assertTrue(content_block["applies"])
+        self.assertEqual([unit["id"] for unit in content_block["units"]],
+                         [f"l-{i:02d}" for i in range(1, AUTHORED_UNIT_COUNT + 1)])
+        self.assertEqual(content_block["later"], [LATER_UNIT])
+        self.assertEqual(content_block["unit_kind"], "level")
+        self.assertEqual([axis["id"] for axis in content_block["axes"]],
+                         ["precision", "hazard-density"])
+        self.assertEqual(data["design"]["scope_content_units"], AUTHORED_UNIT_COUNT)
+        self.assertEqual(data["design"]["content_unit_kind"], "levels")
+        self.assertEqual(data["genre"]["family"], "platformer")
+        table = text[text.index("## Content units (build exactly these, in this order)"):
+                     text.index("## Difficulty axes")]
+        self.assertIn("| d:precision | d:hazard-density |", table)
+        for index in range(1, AUTHORED_UNIT_COUNT + 1):
+            self.assertIn(f"| l-{index:02d} |", table)
+            self.assertIn(f"Level {index} is completable without taking damage", table)
+        # The later tier is named as not-now, and never as a row to build.
+        self.assertNotIn(f"| {LATER_UNIT} |", table)
+        self.assertIn(f"Not now: `{LATER_UNIT}`", table)
+        self.assertIn("Differs from the previous unit in: layout_motif", table)
+        for needle in ("## Genre", "**platformer**", "session profile `standard`",
+                       "**precision** (0..1)", "Relief is allowed on it.",
+                       "## Mastery", "without touching a hazard",
+                       f"`{content.CONTENT_PATH}`", f"`{content.TEST_PATH}`",
+                       content.SCHEMA, "metrics.difficulty.<axis>"):
+            self.assertIn(needle, text)
+
+    def test_the_brief_renders_depth_and_mastery(self):
+        data, text = self.brief(with_authored_content())
+        sections = data["build_spec"]["sections"]
+        self.assertIn("depth", sections)
+        self.assertIn("mastery", sections)
+        # depth was in the design and in no brief before 2.7.0; it is rendered MVP-tier.
+        self.assertIn("### Depth (reason to return)", text)
+        self.assertIn("Play a level, earn stars, unlock the next island.", text)
+        self.assertIn("An island is one level away.", text)
+        self.assertNotIn("Every star", text)          # the post-mvp goal is dropped
+        self.assertIn("### Mastery", text)
+        self.assertIn("See *Mastery* above", text)    # rendered once, in its own section
+        self.assertIn("See *Content units* above", text)
+        self.assertIn("depth/goal_ladder/all-stars (post-mvp)",
+                      data["build_spec"]["not_now"])
+        self.assertIn(f"content/units/{LATER_UNIT} (post-mvp)",
+                      data["build_spec"]["not_now"])
+
+    def test_a_parametric_design_owes_no_data_file(self):
+        data, text = self.brief(with_authored_content(mode="parametric"))
+        self.assertFalse(data["content"]["applies"])
+        self.assertEqual([unit["id"] for unit in data["content"]["units"]],
+                         [f"l-{i:02d}" for i in range(1, AUTHORED_UNIT_COUNT + 1)])
+        self.assertIn("Generation: **parametric**", text)
+        self.assertIn("optional for a parametric design", text)
+        self.assertIn("hazard_rate: 0.4", text)
+
+
+class ContentDataFile(unittest.TestCase):
+    """What the develop checks compare: public/content/units.json against the design."""
+
+    def setUp(self):
+        self.root = tempfile.mkdtemp(prefix="wgf-content-")
+        self.addCleanup(shutil.rmtree, self.root, ignore_errors=True)
+        self.design = authored_design()
+        self.pin = self.design["provenance"]["content_hash"]
+        self.units = briefs.select_content(self.design)["units"]
+
+    def write(self, data=None, *, test=True, loader=True):
+        files = {}
+        if data is not None:
+            files[content.CONTENT_PATH] = json.dumps(data)
+        if test:
+            files[content.TEST_PATH] = CONTENT_SPEC_SOURCE
+        files[CONTENT_LOADER] = (CONTENT_LOADER_SOURCE if loader
+                                 else "export const nothing = 1;\n")
+        for relative, text in files.items():
+            path = os.path.join(self.root, relative)
+            os.makedirs(os.path.dirname(path), exist_ok=True)
+            with open(path, "w", encoding="utf-8") as handle:
+                handle.write(text)
+
+    def findings(self, design=None):
+        return content.codes(content.content_findings(self.root, design or self.design))
+
+    def test_the_tiers_are_the_briefs(self):
+        self.assertEqual(content.MVP_TIERS, briefs.BUILD_TIERS)
+
+    def test_content_findings_require_the_data_file_when_authored(self):
+        self.write(None, test=False, loader=False)
+        self.assertEqual(sorted(self.findings()),
+                         ["content.file_missing", "content.not_loaded",
+                          "content.test_missing"])
+        self.write(content_data_for(self.design))
+        self.assertEqual(self.findings(), [])
+
+    def test_content_findings_are_empty_for_parametric_designs(self):
+        parametric = authored_design(mode="parametric")
+        self.assertEqual(content.content_findings(self.root, parametric), [])
+        # And for a design that states no content at all (before game-design 1.9.0).
+        self.assertEqual(content.content_findings(self.root, fixture("game-design")), [])
+
+    def test_a_unit_missing_from_units_json_is_found(self):
+        data = content_data_for(self.design)
+        data["units"] = [unit for unit in data["units"] if unit["id"] != "l-04"]
+        data["units"].append(dict(data["units"][0], id="l-99", index=99))
+        self.write(data)
+        self.assertEqual(sorted(self.findings()),
+                         ["content.unit_extra:l-99", "content.unit_missing:l-04"])
+
+    def test_a_changed_field_is_found_field_by_field(self):
+        data = content_data_for(self.design)
+        data["units"][1]["objective"] = "Something the design never said"
+        data["units"][1]["mechanics"] = ["run"]
+        data["units"][2]["success"] = "Anything"
+        self.write(data)
+        self.assertEqual(sorted(self.findings()),
+                         ["content.unit_field:l-02.mechanics",
+                          "content.unit_field:l-02.objective",
+                          "content.unit_field:l-03.success"])
+
+    def test_a_difficulty_value_outside_tolerance_is_found(self):
+        tolerance = content.implementation()["difficulty_tolerance"]
+        data = content_data_for(self.design)
+        # Inside the tolerance: tuning the number by a hair is not a different design.
+        data["units"][0]["difficulty"]["precision"] += tolerance
+        data["units"][1]["difficulty"]["precision"] += tolerance * 4
+        del data["units"][2]["difficulty"]["hazard-density"]
+        self.write(data)
+        self.assertEqual(sorted(self.findings()),
+                         ["content.difficulty:l-02.precision",
+                          "content.difficulty:l-03.hazard-density"])
+
+    def test_tuning_keys_must_exist(self):
+        data = content_data_for(self.design)
+        del data["tuning"]["jump"]["coyote_ms"]
+        data["tuning"].pop("wall-slide")
+        self.write(data)
+        self.assertEqual(sorted(self.findings()),
+                         ["content.tuning:jump.coyote_ms", "content.tuning:wall-slide.slide_px_s"])
+
+    def test_a_file_built_from_another_design_is_found(self):
+        data = content_data_for(self.design)
+        data["design"]["content_hash"] = "sha256:" + "0" * 64
+        self.write(data)
+        self.assertEqual(self.findings(), ["content.design_pin"])
+
+    def test_units_nothing_loads_are_not_the_games_units(self):
+        self.write(content_data_for(self.design), loader=False)
+        self.assertEqual(self.findings(), ["content.not_loaded"])
+
+
+class ContentInTheReport(unittest.TestCase):
+    """The development report against the content the brief asked for (checks._report_findings).
+    """
+
+    def setUp(self):
+        self.design = authored_design()
+        self.content = briefs.select_content(self.design)
+        self.brief = {"engine": "pixijs", "mvp": [], "placements": [],
+                      "content": self.content}
+        self.report = {
+            "engine": "pixijs",
+            "systems": {name: "done" for name, _ in briefs.REQUIRED_SYSTEMS},
+            "content_units": [{"id": unit["id"], "status": "built"}
+                              for unit in self.content["units"]],
+            "design_gaps": [],
+        }
+
+    def findings(self, content_issues=()):
+        return _report_findings(self.report, self.brief, content_issues)
+
+    def test_a_complete_report_passes(self):
+        self.assertEqual(self.findings(), [])
+
+    def test_a_cut_mvp_unit_without_a_design_gap_fails(self):
+        self.report["content_units"][3] = {"id": "l-04", "status": "cut"}
+        findings = self.findings()
+        self.assertEqual(len(findings), 1, findings)
+        self.assertIn("'l-04' is cut and no design_gaps entry names it", findings[0])
+        self.report["design_gaps"] = [{
+            "field": "build_spec.content.units[l-04].success", "severity": "blocking",
+            "question": "How is level 4 won when the wall slide is the only route?"}]
+        self.assertEqual(self.findings(), [])
+
+    def test_a_partial_unit_says_what_is_missing_and_an_unreported_one_is_found(self):
+        self.report["content_units"][0] = {"id": "l-01", "status": "partial"}
+        self.report["content_units"][1] = {"id": "l-02", "status": "elsewhere"}
+        self.report["content_units"].pop(2)
+        findings = sorted(self.findings())
+        self.assertEqual(len(findings), 3, findings)
+        self.assertIn("'l-01' is partial with no notes", findings[0])
+        self.assertIn("'l-02' has status 'elsewhere'", findings[1])
+        self.assertIn("'l-03' is not reported", findings[2])
+
+    def test_content_done_is_refused_when_units_json_fails(self):
+        issues = ["content.unit_missing:l-05: the design's 'l-05' is not in units.json"]
+        findings = self.findings(issues)
+        self.assertEqual(len(findings), 2, findings)
+        self.assertIn("'content' is reported done while the content data disagrees",
+                      findings[0])
+        self.assertIn("'difficulty-curve' is reported done", findings[1])
+        self.report["systems"]["content"] = "partial"
+        self.report["systems"]["difficulty-curve"] = "partial"
+        # Reported honestly, the systems rule alone refuses the build - which is the point.
+        self.assertEqual(
+            [f for f in self.findings(issues) if "disagrees" in f], [])
+
+    def test_a_gap_with_an_unknown_severity_is_found(self):
+        self.report["design_gaps"] = [{"field": "build_spec.content", "question": "What?",
+                                       "severity": "annoying"}]
+        self.assertIn("severity 'annoying'", self.findings()[0])
+
+    def test_a_parametric_design_owes_no_unit_statuses(self):
+        self.brief["content"] = briefs.select_content(authored_design(mode="parametric"))
+        self.report["content_units"] = []
+        self.assertEqual(self.findings(), [])
+
+
+def developer_reporting(gaps=(), content_units=None, data=None):
+    """A developer that builds the game and reports gaps, units and the data file with it."""
+    def on_develop(root):
+        with open(os.path.join(root, briefs.BRIEF_DIR, "brief.json")) as handle:
+            brief = json.load(handle)
+        extra = dict(content_files(data) if data is not None else {})
+        write_game(root, extra=extra)
+        path = os.path.join(root, briefs.REPORT_PATH)
+        with open(path, encoding="utf-8") as handle:
+            report = json.load(handle)
+        report["design_gaps"] = [dict(gap) for gap in gaps]
+        if content_units is not None:
+            report["content_units"] = [dict(unit) for unit in content_units]
+        elif brief.get("content", {}).get("units"):
+            report["content_units"] = [{"id": unit["id"], "status": "built"}
+                                       for unit in brief["content"]["units"]]
+        with open(path, "w", encoding="utf-8") as handle:
+            json.dump(report, handle)
+    return on_develop
+
+
+MINOR_GAP = {"field": "build_spec.content.units[l-03].start_state",
+             "question": "Does level 3 start from the checkpoint or the entrance?",
+             "assumed": "The entrance.", "severity": "minor"}
+BLOCKING_GAP = {"field": "build_spec.content.units[l-04].success",
+                "question": "How is level 4 won when the exit is behind a wall?",
+                "assumed": None, "severity": "blocking", "unit": "l-04"}
+
+
+class DesignGaps(DevelopCase):
+    """A gap the developer could not build around routes back to design (workflow 6)."""
+
+    def test_a_blocking_design_gap_routes_to_design(self):
+        runner = FakeRunner(on_develop=developer_reporting(gaps=[MINOR_GAP, BLOCKING_GAP]))
+        result = step_with(runner).execute(inputs_for(), context(self.command_config()))
+        self.assertEqual(result.outcome, StepOutcome.FAILED)
+        self.assertEqual(result.route, wgf_develop.DESIGN_GAP_ROUTE)
+        self.assertFalse(result.retryable)
+        self.assertIn("build_spec.content.units[l-04].success", result.error)
+        # The build is kept: the design is repaired from this report, not from nothing.
+        report = result.artifacts[0].content
+        self.assertEqual([gap["severity"] for gap in report["design_gaps"]],
+                         ["minor", "blocking"])
+        self.assertEqual(len(self.commits()), 2)
+
+    def test_a_minor_gap_does_not_route(self):
+        runner = FakeRunner(on_develop=developer_reporting(gaps=[MINOR_GAP]))
+        result = step_with(runner).execute(inputs_for(), context(self.command_config()))
+        self.assertEqual(result.outcome, StepOutcome.SUCCESS, result.error)
+        self.assertIsNone(result.route)
+        gaps = result.artifacts[0].content["design_gaps"]
+        self.assertEqual(gaps, [MINOR_GAP])
+
+    def test_an_unreportable_gap_is_dropped_from_the_artifact(self):
+        bad = {"field": "", "question": "?", "severity": "blocking"}
+        runner = FakeRunner(on_develop=developer_reporting(gaps=[bad]))
+        result = step_with(runner).execute(inputs_for(), context(self.command_config()))
+        self.assertEqual(result.outcome, StepOutcome.SUCCESS, result.error)
+        self.assertNotIn("design_gaps", result.artifacts[0].content)
+
+    def test_the_prototype_report_carries_coverage_and_gaps(self):
+        design = authored_design()
+        inputs = inputs_for(overrides={"game-design": design})
+        runner = FakeRunner(on_develop=developer_reporting(
+            gaps=[MINOR_GAP], data=content_data_for(design)))
+        result = step_with(runner).execute(inputs, context(self.command_config()))
+        self.assertEqual(result.outcome, StepOutcome.SUCCESS, result.error)
+        report = result.artifacts[0].content
+        coverage = report["content_coverage"]
+        self.assertEqual((coverage["designed"], coverage["built"], coverage["cut"]),
+                         (AUTHORED_UNIT_COUNT, AUTHORED_UNIT_COUNT, 0))
+        self.assertEqual([unit["id"] for unit in coverage["units"]],
+                         [f"l-{i:02d}" for i in range(1, AUTHORED_UNIT_COUNT + 1)])
+        proved = {entry["question"]: entry["verdict"] for entry in report["proved"]}
+        self.assertEqual(proved[CONTENT_QUESTION], "proved")
+        self.assertEqual(report["design_gaps"], [MINOR_GAP])
+        # The gap is a design fix, not a line in a session note.
+        notes = report["playtest_sessions"][0]["notes"]
+        self.assertNotIn(MINOR_GAP["question"], notes)
+
+    def test_a_cut_unit_disproves_the_content_question(self):
+        design = authored_design()
+        units = [{"id": f"l-{i:02d}", "status": "built"}
+                 for i in range(1, AUTHORED_UNIT_COUNT + 1)]
+        units[3] = {"id": "l-04", "status": "cut", "notes": "The design does not say how."}
+        runner = FakeRunner(on_develop=developer_reporting(
+            gaps=[BLOCKING_GAP], content_units=units, data=content_data_for(design)))
+        result = step_with(runner).execute(
+            inputs_for(overrides={"game-design": design}), context(self.command_config()))
+        self.assertEqual(result.outcome, StepOutcome.FAILED)
+        self.assertEqual(result.route, wgf_develop.DESIGN_GAP_ROUTE)
+        report = result.artifacts[0].content
+        self.assertEqual(report["content_coverage"]["cut"], 1)
+        proved = {entry["question"]: entry["verdict"] for entry in report["proved"]}
+        self.assertEqual(proved[CONTENT_QUESTION], "disproved")
+
+
+class GameDesignDocumentContent(unittest.TestCase):
+    def test_gdd_renders_content(self):
+        text = gdd.render_gdd(authored_design(), content_hash="sha256:" + "1" * 64)
+        self.assertIn("**Genre family** platformer", text)
+        self.assertIn("| d:precision | d:hazard-density |", text)
+        for index in range(1, AUTHORED_UNIT_COUNT + 1):
+            self.assertIn(f"| l-{index:02d} |", text)
+            self.assertIn(f"Level {index} is completable without taking damage", text)
+        self.assertIn("**Axes.**", text)
+        self.assertIn("Jump windows and landing targets", text)
+        self.assertIn("### Mastery", text)
+        self.assertIn("without touching a hazard", text)
+        self.assertIn("### Depth (reason to return)", text)
+        self.assertIn("unlock the next island", text)
+        self.assertIn(f"Later tiers: {LATER_UNIT}", text)
 
 
 if __name__ == "__main__":

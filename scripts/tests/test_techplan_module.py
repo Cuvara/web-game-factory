@@ -28,6 +28,8 @@ import wgf_techplan  # noqa: E402
 from wgf_design.step import DesignStep  # noqa: E402
 from wgf_techplan import (ENGINE_FOR_DIMENSION, EngineError, TechPlanStep,  # noqa: E402
                           select_engine)
+from wgf_techplan.devplan import Estimates, build_dev_plan  # noqa: E402
+from wgflib import genre_models  # noqa: E402
 from wgflib import guards, paths  # noqa: E402
 from wgflib.hashing import content_hash  # noqa: E402
 from wgflib.workflow import ArtifactOutput, StepResult, WorkflowStep  # noqa: E402
@@ -617,6 +619,106 @@ class Schema(unittest.TestCase):
              "--spec=draft2020", "--strict=false", *files],
             cwd=ROOT, capture_output=True, text=True, check=False)
         self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
+
+
+# -- content tasks (core/reference/genre-models.yaml `implementation`) ------------------------
+
+
+CONTENT_FEATURES = [
+    {"id": "run", "name": "Run", "tier": "mvp", "acceptance": ["The player runs"]},
+    {"id": "jump", "name": "Jump", "tier": "mvp", "acceptance": ["The player jumps"]},
+    {"id": "wall-slide", "name": "Wall slide", "tier": "mvp", "acceptance": ["Walls slow a fall"]},
+]
+
+
+def content_unit(index):
+    return {
+        "id": f"l-{index:02d}", "index": index, "tier": "mvp",
+        "purpose": "test", "objective": f"Reach the exit of level {index}",
+        "mechanics": ["run", "jump"] if index < 4 else ["run", "jump", "wall-slide"],
+        "introduces": [], "difficulty": {"precision": round(0.1 * index, 2)},
+        "expected_duration_s": 60,
+        "success": f"The exit of level {index} is reached",
+        "failure": "A fall costs a life",
+        "acceptance": [f"Level {index} is completable without damage"],
+    }
+
+
+def content_design(mode="authored", units=6):
+    generation = {"mode": mode}
+    if mode != "authored":
+        generation["parameters"] = {"hazard_rate": 0.4}
+        generation["expected_units"] = units
+    return {
+        "features": copy.deepcopy(CONTENT_FEATURES),
+        "build_spec": {
+            "content": {"unit_kind": "level", "generation": generation,
+                        "units": [content_unit(i) for i in range(1, units + 1)]
+                        + [dict(content_unit(units + 1), tier="post-mvp")]},
+        },
+    }
+
+
+class ContentTasks(unittest.TestCase):
+    """MVP content units become tasks, batched by the genre models' `implementation`."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.models = genre_models.load()
+        cls.implementation = cls.models["implementation"]
+
+    def plan_for(self, design):
+        return build_dev_plan(design, "pixijs", [], Estimates())
+
+    def test_one_content_task_per_batch_with_its_acceptance(self):
+        batch = self.implementation["task_batch"]
+        hours = self.implementation["content_unit_hours"]
+        plan = self.plan_for(content_design(units=6))
+        tasks = [t for t in plan["tasks"] if t["id"].startswith("CONTENT-")]
+        self.assertEqual([t["id"] for t in tasks], ["CONTENT-001", "CONTENT-002"])
+        self.assertEqual(len(tasks), -(-6 // batch))
+        first, second = tasks
+        self.assertEqual(first["milestone"], "M1")
+        self.assertEqual(first["phase"], "prototype")
+        self.assertEqual(first["tests"], ["tests/unit/content.spec.ts"])
+        self.assertEqual(first["est_hours"], round(hours * batch, 2))
+        self.assertIn("levels l-01, l-02, l-03", first["title"])
+        # The units' own acceptance, plus where the unit lives and what it follows.
+        self.assertIn("Level 1 is completable without damage", first["acceptance_criteria"])
+        self.assertIn("Unit l-01 is in public/content/units.json with the design's difficulty "
+                      "values", first["acceptance_criteria"])
+        self.assertIn("Unit l-01 is where play starts", first["acceptance_criteria"])
+        self.assertIn("Reachable from unit 1 in play", first["acceptance_criteria"])
+        # The mechanics a unit asks for are the features it waits for.
+        by_feature = {t["title"]: t["id"] for t in plan["tasks"] if t["id"].startswith("GAME-")}
+        run, jump = by_feature["Implement Run"], by_feature["Implement Jump"]
+        slide = by_feature["Implement Wall slide"]
+        self.assertEqual(first["dependencies"], ["CORE-001"] + sorted([run, jump]))
+        self.assertEqual(second["dependencies"], ["CORE-001"] + sorted([run, jump, slide]))
+        # The post-mvp unit gets no task, and the milestone says what it now exits on.
+        self.assertNotIn("l-07", " ".join(t["title"] for t in tasks))
+        m1 = next(m for m in plan["milestones"] if m["id"] == "M1")
+        self.assertIn("Every MVP content unit is in public/content/units.json and reachable "
+                      "in play", m1["exit_criteria"])
+        # And the hardening tasks still wait for all of M1, content included.
+        qa = next(t for t in plan["tasks"] if t["id"] == "QA-001")
+        self.assertTrue({"CONTENT-001", "CONTENT-002"} <= set(qa["dependencies"]))
+
+    def test_parametric_designs_get_no_content_tasks(self):
+        parametric = self.plan_for(content_design(mode="parametric"))
+        self.assertEqual([t["id"] for t in parametric["tasks"]
+                          if t["id"].startswith("CONTENT-")], [])
+        # And nothing else about the plan moves, so the goldens' timebox is untouched.
+        bare = content_design(mode="parametric")
+        bare["build_spec"] = {}
+        self.assertEqual(parametric["est_days"], self.plan_for(bare)["est_days"])
+        m1 = next(m for m in parametric["milestones"] if m["id"] == "M1")
+        self.assertNotIn("Every MVP content unit is in public/content/units.json and reachable "
+                         "in play", m1["exit_criteria"])
+
+    def test_a_procedural_design_is_treated_the_same_way(self):
+        plan = self.plan_for(content_design(mode="procedural"))
+        self.assertEqual([t["id"] for t in plan["tasks"] if t["id"].startswith("CONTENT-")], [])
 
 
 if __name__ == "__main__":

@@ -18,9 +18,9 @@ SDK - the template's platform abstraction is the seam, and the integration modul
 See docs/development-module.md.
 """
 
-from .step import DevelopStep
+from .step import DESIGN_GAP_ROUTE, DevelopStep
 
-__all__ = ["DevelopStep", "register"]
+__all__ = ["DevelopStep", "DESIGN_GAP_ROUTE", "register"]
 
 
 def register(registry):

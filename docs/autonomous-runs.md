@@ -91,6 +91,17 @@ Then, in Claude Code:
 The command reports the autonomy, says that agent sessions will run unattended and cost
 money within the budget, and starts after you confirm.
 
+## On Windows: the design author's Edit rule
+
+The profile lets the design author edit one file, by the host's path rule
+`Edit(/{draft})`, where `//` means an absolute path. That rule is written for POSIX paths: on
+Windows `{draft}` substitutes to `C:\...-1.draft.json`, the rule never matches, the host
+refuses every Edit, and the author ends its session asking for permission it cannot be
+given - the step fails with "the design agent left the draft ... unchanged" (seen on the
+2.7.0 genre-depth runs). A project overlay on Windows allows `Edit` without a path
+(`--allowedTools "Read,Edit"`); the author still has no Write, Bash or network, and its
+working directory holds nothing but the request and the draft.
+
 ## Research needs evidence, which the research role fetches
 
 Research is autonomous but not evidence-free. It reads evidence snapshots from the project's

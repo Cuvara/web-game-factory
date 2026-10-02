@@ -434,6 +434,74 @@ class FailurePaths(unittest.TestCase):
         self.assertIn("interstitial_interval_fits_session", breached)
         self.assertEqual(ArtifactContracts()("game-design", design), [])
 
+    def test_every_repairable_problem_is_collected_in_one_round(self):
+        # The experience, presentation, depth and content checks all run on every draft, and
+        # every problem goes into one repair request: an author that repairs is not asked once
+        # per check per round, which spent the rounds before the content check was reached.
+        class Collecting(authors.ArchetypeAuthor):
+            repairs = True
+            rounds = []
+
+            def draft(self, brief):
+                Collecting.rounds.append(list((brief.get("repair") or {}).get("problems") or []))
+                draft = super().draft(brief)
+                if not brief.get("repair"):
+                    # Two classes of problem at once: the onboarding teaches nothing, and the
+                    # content's objectives all read the same.
+                    draft["build_spec"]["experience"]["onboarding"]["teaches"] = []
+                    for unit in draft["build_spec"]["content"]["units"]:
+                        unit["objective"] = "Survive the segment as it comes"
+                return draft
+
+        Collecting.rounds = []
+        authors.register_author("collecting", Collecting)
+        self.addCleanup(authors.AUTHORS.pop, "collecting", None)
+        result = run_step(load_strategy(), params={"author": "collecting"})
+        self.assertEqual(result.outcome, StepOutcome.SUCCESS, result.error)
+        self.assertEqual(len(Collecting.rounds), 2)
+        first = " ".join(Collecting.rounds[1])
+        self.assertIn("onboarding", first)
+        self.assertIn("[content.objectives_vary]", first)
+
+    def test_a_blocking_consistency_breach_is_repaired_before_it_descopes(self):
+        # An author that repairs is told which rule the draft breaches and what the concept
+        # view found, and gets its rounds; only a draft still breaching after them descopes.
+        class Foreign(authors.ArchetypeAuthor):
+            repairs = True
+            rounds = []
+
+            def draft(self, brief):
+                Foreign.rounds.append(list((brief.get("repair") or {}).get("problems") or []))
+                draft = super().draft(brief)
+                if not brief.get("repair"):
+                    draft["core_loop"] += " Shoot the gate to open it."
+                return draft
+
+        Foreign.rounds = []
+        authors.register_author("foreign", Foreign)
+        self.addCleanup(authors.AUTHORS.pop, "foreign", None)
+        result = run_step(load_strategy(), params={"author": "foreign"})
+        self.assertEqual(result.outcome, StepOutcome.SUCCESS, result.error)
+        self.assertEqual(len(Foreign.rounds), 2)
+        self.assertIn("design_adds_no_foreign_mechanic", " ".join(Foreign.rounds[1]))
+        self.assertIn("shoot", " ".join(Foreign.rounds[1]))
+
+    def test_a_breach_the_author_keeps_still_descopes(self):
+        class Stubborn(authors.ArchetypeAuthor):
+            repairs = True
+
+            def draft(self, brief):
+                draft = super().draft(brief)
+                draft["core_loop"] += " Shoot the gate to open it."
+                return draft
+
+        authors.register_author("stubborn", Stubborn)
+        self.addCleanup(authors.AUTHORS.pop, "stubborn", None)
+        result = run_step(load_strategy(), params={"author": "stubborn"})
+        self.assertEqual((result.outcome, result.route, result.retryable),
+                         (StepOutcome.FAILED, "descope", False))
+        self.assertEqual(len(result.artifacts), 1)
+
     def test_an_author_exception_is_left_to_the_runtime_as_retryable(self):
         class Flaky(authors.DesignAuthor):
             def draft(self, brief):

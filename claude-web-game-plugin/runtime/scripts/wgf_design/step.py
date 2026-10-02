@@ -141,6 +141,11 @@ class DesignStep(WorkflowStep):
             outcome = self._compose(draft, platforms, title_id, strategy, ref, context, author,
                                     contracts)
             problems = outcome["problems"]
+            if not problems and outcome["consistency_problems"] and                     getattr(author, "repairs", False) and repair_round < MAX_REPAIR_ROUNDS:
+                # A blocking consistency breach is repairable by an author that repairs:
+                # it is asked to carry the concept or drop the foreign mechanic before the
+                # breach becomes a descope.
+                problems = outcome["consistency_problems"]
             if not problems:
                 break
             if not getattr(author, "repairs", False) or repair_round == MAX_REPAIR_ROUNDS:
@@ -236,40 +241,62 @@ class DesignStep(WorkflowStep):
         outcome = {"design": design, "artifact": None, "block": None, "blocking": None,
                    "warnings": None, "problems": [], "unbuildable": False,
                    "experience": False, "presentation": False, "depth": False,
-                   "content": False}
+                   "content": False, "consistency_problems": []}
         problems = buildability(design)
         if problems:
             outcome.update(problems=problems, unbuildable=True)
             return outcome
+        # Every check the draft is held to runs, and every problem is collected, so an author
+        # that repairs is asked once for everything rather than once per check per round.
         # What a first-time player must be able to tell: held by reference and number.
-        problems = experience.check(design, strategy, self.experience_rules)
-        if problems:
-            outcome.update(problems=problems, experience=True)
-            return outcome
+        found = experience.check(design, strategy, self.experience_rules)
+        if found:
+            outcome.update(experience=True)
+            problems += found
         # What the finished game looks like: production art per readable role, and the UI.
-        problems = presentation.check(design, self.experience_rules)
-        if problems:
-            outcome.update(problems=problems, presentation=True)
-            return outcome
+        found = presentation.check(design, self.experience_rules)
+        if found:
+            outcome.update(presentation=True)
+            problems += found
         now = self.clock()
         block, blocking, warnings = consistency.evaluate(design, strategy, platforms, now,
                                                          self.rules)
-        if not blocking:
+        if blocking:
+            # A breached blocking rule is `descope` for an author that cannot repair; one
+            # that can is told which rule, and what the concept view found, first.
+            concept = (block.get("concept") or consistency.concept_view(
+                design, strategy, (self.rules or consistency.load_rules()).get("concept_terms") or {}))
+            for rule_id in blocking:
+                note = ""
+                if rule_id == "concept_mechanics_carried":
+                    note = (f": the strategy's concept names {concept.get('uncarried')} and "
+                            "the design's core loop, MVP features and MVP controls do not")
+                elif rule_id == "design_adds_no_foreign_mechanic":
+                    note = (f": the design's own text names {concept.get('foreign')}, which "
+                            "the strategy nowhere does - remove it, or say it in the "
+                            "strategy's words")
+                outcome["consistency_problems"].append(
+                    f"design consistency rule {rule_id} is breached{note}")
+        else:
             # Why a player comes back: a design that must cut scope first is not asked yet.
-            problems = depth.check(design, self.depth_rules)
-            if problems:
-                outcome.update(problems=problems, depth=True)
-                return outcome
+            found = depth.check(design, self.depth_rules)
+            if found:
+                outcome.update(depth=True)
+                problems += found
             # What the player actually plays: every unit, held to its genre family's bars.
             models = self.content_models or content.load_models()
-            problems, results = content.check(design, strategy, models)
-            if problems:
-                outcome.update(problems=problems, content=True)
-                return outcome
-            block["rule_results"] = list(block["rule_results"]) + results
-            family, _why = content.resolve_family(strategy, design, models)
-            if family:
-                block["content_model"] = content.content_model_record(models, family)
+            found, results = content.check(design, strategy, models)
+            if found:
+                outcome.update(content=True)
+                problems += found
+            else:
+                block["rule_results"] = list(block["rule_results"]) + results
+                family, _why = content.resolve_family(strategy, design, models)
+                if family:
+                    block["content_model"] = content.content_model_record(models, family)
+        if problems:
+            outcome.update(problems=problems)
+            return outcome
         design["consistency"] = block
         artifact = self._with_provenance(design, strategy, ref, title_id, now, context,
                                          getattr(author, "actor", "automation"))

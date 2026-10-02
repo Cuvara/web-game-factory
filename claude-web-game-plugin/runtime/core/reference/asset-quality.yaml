@@ -91,6 +91,22 @@ models:
   # look. Skipped when the design has no palette; textured materials are not decoded.
   palette_distance: 48
 
+  # Silhouette: a model of one of these roles is not a box with bumps. The visual model is
+  # projected orthographically from the front, the side and the top (a 64-cell grid on the
+  # longer side, every triangle covering each cell it touches), and in each view the share of
+  # the outline covered by its single largest component is measured - a part (a mesh node),
+  # or for a model that is one mesh, the largest rectangle inside the outline. The model
+  # fails when even its most distinctive view (the smallest share) is over `max_dominance`:
+  # its wings, limbs, fins, engines or gaps stay inside the main body's outline, and at
+  # gameplay distance it reads as a brick. Skipped under `primitive_style`, and for views in
+  # which the model is flat (an edge, not an outline).
+  # Calibrated on the 3D reference game's library (Blender builds of hand-iterated specs):
+  # craft 0.29, wall 0.53, skyline 0.27, track 0.39, a 13-part goalkeeper 0.38 and a
+  # body-cabin-wheels car 0.53 pass; an autonomous craft that read as "an orange brick with
+  # no wings" 0.66, a box hull with a sphere canopy and a fan 0.63, and one box 1.0 fail.
+  silhouette_roles: [player, threat]
+  max_dominance: 0.6
+
 fonts:
   # Glyph coverage. A font that cannot set a locale in the design's scope.locales is a design
   # error, not a runtime fallback: the browser would draw those strings in a system face the

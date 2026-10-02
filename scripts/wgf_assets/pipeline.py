@@ -305,6 +305,7 @@ class _Item:
         self.generation = None  # a generating backend's `model.generation` block
         self.variants = []  # runtime ids of the drawings, when the requirement has a count
         self.short = None   # (supplied, wanted) when a library supplies fewer drawings
+        self.deferred = False  # waiting for the 3D set author, which runs once for all
         self.quality_author = None  # what made it, for quality.author
         self.quality = None  # set when the backend judged it already
         self.rebuilt = False  # made again by an author for a re-entry's feedback
@@ -339,9 +340,9 @@ class _Item:
 class AssetPipeline:
     def __init__(self, policy, store, backends, libraries=(), *, logger=None,
                  placeholders=True, optimize=True, runtime_manifest=True, prune=True,
-                 title_id=None, author=None, model_author=None, palette=(), identity=None,
-                 bars=None, rebuild=None, work_dir=None, settings=None, context=None,
-                 locales=()):
+                 title_id=None, author=None, model_author=None, model_set=None, palette=(),
+                 identity=None, design=None, bars=None, rebuild=None, work_dir=None,
+                 settings=None, context=None, locales=()):
         self.policy = policy
         self.store = store
         self.backends = backends  # [(id, backend or None, note)]
@@ -352,10 +353,15 @@ class AssetPipeline:
         self.runtime_manifest = runtime_manifest
         self.prune = prune
         self.title_id = title_id
-        # The 2D author (author.py), or None; the 3D model author's produce_model, or None.
+        # The 2D author (author.py), or None; the 3D model author's produce_model, or None;
+        # and its produce_models when it authors every 3D requirement in one set session.
         self.author = author
         self.model_author = model_author
+        self.model_set = model_set
         self.identity = dict(identity or {})
+        # What the 3D author and its renders read from the design beyond the identity:
+        # {art_direction, camera}.
+        self.design = {k: v for k, v in (design or {}).items() if v}
         self.palette = quality_mod.parse_palette(self.identity.get("palette"))
         if palette:
             self.palette = list(palette)
@@ -426,8 +432,17 @@ class AssetPipeline:
         try:
             for req in requirements:
                 item = self._process(req)
-                self._judge(item)
+                if not item.deferred:
+                    self._judge(item)
                 built.append(item)
+            deferred = [item for item in built if item.deferred]
+            if deferred:
+                # The set author makes every 3D model it was handed in one session; what it
+                # could not make falls to the placeholders, as in each mode.
+                self._author_set(deferred)
+                for item in deferred:
+                    item.deferred = False
+                    self._judge(item)
         finally:
             self.close()
         self._write_ledger()
@@ -494,8 +509,15 @@ class AssetPipeline:
             if self.model_author is not None and req.dimension == "3d" \
                     and req.policy.dimension in ("3d", "any") and req.kind in (
                         "model", "environment", "animation"):
+                if self.model_set is not None:
+                    item.deferred = True
+                    return item
                 if self._model_authored(req, item):
                     return item
+        return self._fallback(req, item)
+
+    def _fallback(self, req, item):
+        """No source supplied it: a placeholder, else a missing item."""
         if self.placeholders and self._placeholder(req, item):
             self._check_spec_built(req, item)
             return item
@@ -1027,38 +1049,92 @@ class AssetPipeline:
             item.rebuilt = True
         return True
 
-    def _model_author_context(self):
-        """The plain mapping model_author.produce_model reads (config, policy, run_dir) -
-        never the step's WorkflowContext itself, which is not a mapping: handed one,
-        produce_model raised before asking the author, and every 3D requirement fell back to
-        a placeholder. Liveness needs nothing here: the engine binds the step's reporting to
-        every wgflib.procs run on its thread."""
-        out = {"config": getattr(self.context, "config", None), "policy": self.policy}
-        if self.work_dir:
-            out["run_dir"] = os.path.join(self.work_dir, "model-author")
-        return {k: v for k, v in out.items() if v is not None}
+    def _model_requirement(self, req):
+        return {"id": req.id, "kind": req.kind, "type": req.design_type or req.kind,
+                "role": req.role, "dimension": req.dimension,
+                "description": req.description or req.label,
+                "readability": req.readability, "spec": req.spec, "count": req.count,
+                "tier": req.design_tier or req.scope_tier, "model": req.model,
+                **self._model_feedback(req)}
+
+    def _model_feedback(self, req):
+        """What a failed gate sent `req` back for: `notes` (the judge's reasons, which the
+        author's request carries as findings) and `feedback` ({notes, frames}: the frames
+        to open). Empty on a first visit."""
+        notes, frames = self._feedback(req)
+        if not notes:
+            return {}
+        return {"notes": notes, "feedback": {"notes": notes, "frames": frames}}
+
+    def _model_context(self):
+        """What the model author reads beside its settings - a plain dict, whatever the
+        pipeline was handed (a workflow step's context is an object, not a mapping)."""
+        if isinstance(self.context, dict):
+            config = self.context.get("config")
+            environ = self.context.get("environ")
+        else:
+            config, environ = getattr(self.context, "config", None), None
+        context = {"run_dir": os.path.join(self.work_dir or tempfile.gettempdir(),
+                                           "model-author"),
+                   "config": config, "policy": self.policy, "design": dict(self.design)}
+        if environ is not None:
+            context["environ"] = environ
+        return context
+
+    @staticmethod
+    def _model_error(exc):
+        return ("" if type(exc).__name__ == "ModelAuthorError" else
+                f"{type(exc).__name__}: ") + str(exc)
 
     def _model_authored(self, req, item):
         """A 3D requirement through wgf_assets.model_author.produce_model."""
         out_dir = os.path.join(self.work_dir or tempfile.gettempdir(), "models", req.id)
         os.makedirs(out_dir, exist_ok=True)
-        requirement = {"id": req.id, "kind": req.kind, "type": req.design_type or req.kind,
-                       "role": req.role, "dimension": req.dimension,
-                       "description": req.description or req.label,
-                       "readability": req.readability, "spec": req.spec, "count": req.count,
-                       "tier": req.design_tier or req.scope_tier, "model": req.model}
-        notes, frames = self._feedback(req)
-        if notes:
-            requirement["feedback"] = {"notes": notes, "frames": frames}
         try:
-            made = self.model_author(requirement, self.identity, out_dir,
+            made = self.model_author(self._model_requirement(req), self.identity, out_dir,
                                      (self.settings or {}).get("model_author") or {},
-                                     self._model_author_context())
+                                     self._model_context())
         except Exception as exc:  # ModelAuthorError, or a bug: never breaks the pipeline
-            label = "" if type(exc).__name__ == "ModelAuthorError" else \
-                f"{type(exc).__name__}: "
-            item.issue("generation-failed", "warning", f"{req.id}: model author: {label}{exc}")
+            item.issue("generation-failed", "warning",
+                       f"{req.id}: model author: {self._model_error(exc)}")
             return False
+        return self._accept_model(req, item, made)
+
+    def _author_set(self, items):
+        """Every deferred 3D requirement through wgf_assets.model_author.produce_models, in
+        one session; each one it could not make falls back as in each mode."""
+        out_dir = os.path.join(self.work_dir or tempfile.gettempdir(), "models", "set")
+        os.makedirs(out_dir, exist_ok=True)
+        try:
+            made = self.model_set([self._model_requirement(i.req) for i in items],
+                                  self.identity, out_dir,
+                                  (self.settings or {}).get("model_author") or {},
+                                  self._model_context())
+        except Exception as exc:  # ModelAuthorError, or a bug: never breaks the pipeline
+            for item in items:
+                item.issue("generation-failed", "warning",
+                           f"{item.req.id}: model author (set): {self._model_error(exc)}")
+                self._fallback(item.req, item)
+            return
+        results = (made or {}).get("results") or {}
+        errors = (made or {}).get("errors") or {}
+        set_render = (made or {}).get("set_render")
+        for item in items:
+            result = results.get(item.req.id)
+            if result is not None:
+                if set_render:
+                    result = dict(result, notes=" ".join(filter(None, [
+                        result.get("notes"), f"Set render: {set_render}."])))
+                if self._accept_model(item.req, item, result):
+                    continue
+            elif item.req.id in errors:
+                item.issue("generation-failed", "warning",
+                           f"{item.req.id}: model author (set): "
+                           f"{self._model_error(errors[item.req.id])}")
+            self._fallback(item.req, item)
+
+    def _accept_model(self, req, item, made):
+        """Record what the model author made for `req`; False when it is not usable."""
         files = [f for f in (made or {}).get("files") or [] if isinstance(f, str)]
         checked, errors = [], []
         for path in files:
@@ -1102,6 +1178,11 @@ class AssetPipeline:
         if made.get("notes"):
             item.data["notes"] = " ".join(filter(None, [item.data.get("notes"),
                                                         str(made["notes"])]))
+        sheet = (made.get("renders") or {}).get("sheet") \
+            if isinstance(made.get("renders"), dict) else None
+        if sheet:
+            item.data["notes"] = " ".join(filter(None, [item.data.get("notes"),
+                                                        f"Renders: {sheet}."]))
         item.data["status"] = "in-progress" if item.data["placeholder"] else "delivered"
         if notes and not item.data["placeholder"]:
             item.rebuilt = True

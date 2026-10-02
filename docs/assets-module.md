@@ -197,12 +197,18 @@ them asks again.
 **Model author** (3D). When `wgf_assets.model_author` is installed, a 3D `model`,
 `environment` or `animation` requirement is passed to its `produce_model(requirement,
 visual_identity, out_dir, settings, context)`, which returns `{files, quality, source,
-license, placeholder, notes}` or raises `ModelAuthorError`. `context` is a plain mapping
-(`config`, `policy`, `run_dir`), never the step's context object, and a requirement a gate
-sent back carries `feedback: {notes, frames}` ([Re-entry](#re-entry)). Its files are
-validated as any GLB (`gltf.py`) and its `quality` is recorded as given. Absent, or failing,
-3D requirements fall back to placeholders. See [blender-pipeline.md](blender-pipeline.md); its request
-carries `craft` too (`core/craft/production-art-3d.md`, `3d-assets-and-animation.md`).
+license, placeholder, notes}` or raises `ModelAuthorError`. Its files are validated as any
+GLB (`gltf.py`) and its `quality` is recorded as given; the item's notes name the contact
+sheet the author reviewed. With `model_author.mode: set`, every 3D requirement that reaches
+the model author is deferred and `produce_models(requirements, ...)` makes them in one
+session, after the other items; each it could not make falls back like a failure in `each`
+mode. A requirement a gate sent back carries `feedback: {notes, frames}`
+([Re-entry](#re-entry)); the author's request puts them on the asset as `notes` and
+`frames`. The author receives a plain context dict (`run_dir` under the step's work directory,
+`config`, `policy`, `design: {art_direction, camera}`). Absent, or failing, 3D requirements
+fall back to placeholders. See [blender-pipeline.md](blender-pipeline.md) ("Renders and
+self-review", "Set mode"); its request carries `craft` too
+(`core/craft/production-art-3d.md`, `3d-assets-and-animation.md`, `art-direction.md`).
 
 ## Quality
 
@@ -491,7 +497,7 @@ build still loads); every other error FAILs.
 |---|---|---|
 | `root` | the run's game repository checkout | files go under `<root>/public/assets/`; see below |
 | `libraries` | `[]` | directories with a `library.json` and/or an `index.json` (see `library.py`); relative to the project directory |
-| `model_author` | `{kind: none}` | the 3D model author (`model_author.py`): `{kind: command, argv, spec_from: file\|stdout, max_repair_rounds: 2}`; only a configured one is asked |
+| `model_author` | `{kind: none}` | the 3D model author (`model_author.py`): `{kind: command, mode: each\|set, argv, spec_from: file\|stdout, max_repair_rounds: 2, review_rounds: 1, render: {enabled: true}}`; only a configured one is asked |
 | `author` | `{kind: none}` | `{kind: command, argv, svg_from: file\|stdout, timeout_seconds: 600, idle_timeout_seconds: 300, repair_rounds: 2}`; a misconfigured author fails the step, not retryably. A verified read-only Claude Code example is commented in `factory.yaml` and set in the autonomous profile ([autonomous-runs.md](autonomous-runs.md)) |
 | `placeholders` | `{enabled: true, backends: [2d-assets-mcp, procedural]}` | plus a settings block per backend |
 | `optimize` | `true` | lossless, only on files the step writes — never on the design's own |

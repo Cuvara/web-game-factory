@@ -307,8 +307,9 @@ class ModelAuthor(unittest.TestCase):
         return path
 
     def settings(self, mode, **extra):
+        # Repair rounds only: the review rounds over renders are test_model_review.py's.
         return dict({"kind": "command", "argv": [self.author, mode, "{request}", "{spec}"],
-                     "blender": {"executable": self.blender}}, **extra)
+                     "blender": {"executable": self.blender}, "review_rounds": 0}, **extra)
 
     def produce(self, mode, requirement=KEEPER_REQ, look=LOOK, **extra):
         return model_author.produce_model(requirement, look, self.out, self.settings(mode, **extra),

@@ -119,7 +119,8 @@ def resolve_settings(context):
     settings.setdefault("libraries", [])
     settings.setdefault("fail_on", [])
     settings["author"] = dict(settings.get("author") or {})
-    # The 3D model author (model_author.py): `{kind: command, argv, ...}`, or none. Only a
+    # The 3D model author (model_author.py): `{kind: command, argv, ...}`, or none; `mode:
+    # set` makes every 3D requirement in one session (produce_models). Only a
     # configured one is asked; unconfigured, 3D requirements go to the next backend
     # (a design's own model spec built by Blender, then placeholders) without a warning.
     settings["model_author"] = dict(settings.get("model_author") or {})
@@ -255,15 +256,22 @@ class AssetsStep(WorkflowStep):
             # the manifest then says why each one was not built.
             order.insert(0, BLENDER)
         backends = build_backends(order, placeholders)
+        model_settings = settings["model_author"]
+        model_author = (getattr(_model_author, "produce_model", None)
+                        if model_settings.get("kind") not in (None, "none") else None)
+        model_set = (getattr(_model_author, "produce_models", None)
+                     if model_author is not None and model_settings.get("mode") == "set"
+                     else None)
         pipeline = AssetPipeline(policy, store, backends, libraries, logger=context.logger,
                                  placeholders=bool(placeholders.get("enabled")),
                                  optimize=bool(settings.get("optimize")),
                                  runtime_manifest=bool(settings.get("runtime_manifest")),
                                  prune=bool(settings.get("prune")), title_id=title_id,
                                  author=author, identity=identity, bars=load_bars(),
-                                 model_author=(getattr(_model_author, "produce_model", None)
-                                               if settings["model_author"].get("kind")
-                                               not in (None, "none") else None),
+                                 model_author=model_author, model_set=model_set,
+                                 design={"art_direction": design.get("art_direction"),
+                                         "camera": (design.get("engine") or {}).get("camera")
+                                         if isinstance(design.get("engine"), dict) else None},
                                  rebuild=rebuild, settings=settings, context=context,
                                  work_dir=self._work_dir(context, slug),
                                  locales=(design.get("scope") or {}).get("locales") or ())

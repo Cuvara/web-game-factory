@@ -183,7 +183,10 @@ workflow engine: the `wgf-*` commands are agent-driven transitions over `workspa
 - The 13 `wgf-*` transition commands, the agents and the skills are unchanged.
 - `scripts/check-integrity.py` checks each `workflows:` entry against its workflow file
   (path, id, gates); `scripts/tests/test_adapter_binding.py` checks the binding, the
-  generator tables, the files on disk and this table name the same surfaces.
+  generator tables, the files on disk and this table name the same surfaces. Binding 1.6.0
+  lists `new-game`'s gates as G2, G3, G4, G5, G6: G5 and G6 are the workflow's `publish`
+  group (`wgf publish --run <run-id>`, `docs/publish-module.md`), which `wgf new-game`
+  never enters on its own. This surface still answers no gate.
 - `new-game` takes an optional game idea: one quoted argument, the engine's positional
   `IDEA` (`params.idea`, the run's brief; `docs/workflow-engine.md` § Game idea). The surface
   passes it verbatim after `--` as one single-quoted shell word, never rewords or invents

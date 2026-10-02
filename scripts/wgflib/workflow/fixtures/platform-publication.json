@@ -1,0 +1,19 @@
+{
+  "release_id": "r1",
+  "title_id": "mock-title",
+  "platform_id": "yandex",
+  "profile_version": "1.0.0",
+  "role": "required",
+  "state": "validated",
+  "readiness": "READY",
+  "guards": [
+    {"guard": "candidate_frozen", "verdict": "GREEN", "reason": "mock"},
+    {"guard": "store_metadata_complete", "verdict": "GREEN", "reason": "mock"},
+    {"guard": "package_shaped_to_profile", "verdict": "GREEN", "reason": "mock"},
+    {"guard": "assertions_pass", "verdict": "GREEN", "reason": "mock"},
+    {"guard": "metadata_and_locales_present", "verdict": "GREEN", "reason": "mock"}
+  ],
+  "assertion_results": [],
+  "evidence": [{"kind": "observation", "summary": "Mock publication: nothing was contacted."}],
+  "measurement_class": "automation-check"
+}

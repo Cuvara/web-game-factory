@@ -1,0 +1,17 @@
+# Publication profile - generic web (docs/publish-module.md)
+#
+# No portal: a standalone build is hosted by the installation itself (the game repository's
+# own deploy, e.g. build.yml to Cloudflare Pages). Nothing to submit and nobody to review it;
+# the publish step records the release as manual and stops HUMAN_REQUIRED
+# (manual-submission) for the person who deploys it.
+
+id: generic-web
+version: 1.0.0
+status: verified
+docs: null
+
+submission:
+  method: manual
+  automation_terms: permitted
+  human_required: []
+  notes: Hosting is the installation's; no submission exists for this target.

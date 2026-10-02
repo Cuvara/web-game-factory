@@ -77,8 +77,10 @@ factory:
   #   wgf_strategy   the `strategy` step (scripts/wgf_strategy/)
   #   wgf_release    the `release` step (scripts/wgf_release/, docs/release-module.md)
   #   wgf_visualqa   the `visual-qa` step (scripts/wgf_visualqa/, docs/visual-qa-module.md)
+  #   wgf_publish    the `platform-validate` and `publish` steps (scripts/wgf_publish/,
+  #                  docs/publish-module.md)
   steps:
-    modules: [wgf_discovery, wgf_strategy, wgf_init, wgf_assets, wgf_develop, wgf_review, wgf_verification, wgf_design, wgf_sdk, wgf_techplan, wgf_release, wgf_playability, wgf_production, wgf_visualqa]
+    modules: [wgf_discovery, wgf_strategy, wgf_init, wgf_assets, wgf_develop, wgf_review, wgf_verification, wgf_design, wgf_sdk, wgf_techplan, wgf_release, wgf_playability, wgf_production, wgf_visualqa, wgf_publish]
 
   # The tech-plan module (scripts/wgf_techplan, docs/techplan-module.md): engine from the
   # design, pinned platforms from the strategy, a heuristic dev plan. Every key is optional.
@@ -149,6 +151,39 @@ factory:
     # evidence.review says UNREVIEWED. It never waives a request for changes, an approval
     # of another commit, or G4.
     allow_unreviewed: false
+
+  # The publish module (scripts/wgf_publish, docs/publish-module.md): the `publish` group
+  # of the workflow - release:validating (platform-validate), G5, G6, release:submitting
+  # (publish) - run in the drafting run by `wgf publish --run <run-id>`. Every key is
+  # optional; a step's `with:` overrides any of them.
+  publish:
+    # dry-run (default): everything up to the irreversible submit - the session is checked,
+    # the draft found or made, the listing filled, the portal state read back - and the
+    # submit is NOT made; the record says outcome DRY_RUN. live: the submit is made, once,
+    # and only when the Factory's environment also has WGF_PUBLISH_LIVE=1. Production
+    # submission is opted into twice, never by one edit.
+    mode: dry-run
+    # The credential variables the publish step may read - one per platform, named in
+    # core/reference/publication/<id>.yaml (submission.credential.env), each the path of a
+    # Playwright storage state a PERSON captured by logging in once (python
+    # scripts/wgf-publish.py capture <platform>). A third allowlist beside
+    # factory.agents.env_passthrough and game_env_passthrough: a portal session never reaches
+    # an agent or a build. Empty: every console platform is HUMAN_REQUIRED.
+    env_passthrough: []
+    # env_passthrough: [WGF_PUBLISH_CRAZYGAMES_STORAGE_STATE]
+    # Per platform. terms_confirmed: a person established, from the portal's own terms, that
+    # automated use of its developer console is permitted (the publication profile says
+    # `automation_terms: unverified` for every console portal shipped: until this is set,
+    # the step stops HUMAN_REQUIRED before contacting it). adapter: another adapter for the
+    # platform (tests point one at the fixture portal). console_url: override the profile's.
+    platforms: {}
+    # platforms:
+    #   crazygames: {terms_confirmed: true}
+    # More publication profiles (directories, relative to the project): a test's fixture.
+    # profiles_extra: []
+    # The console executor's timeouts, ms: action 5000, navigation 60000, upload from the
+    # profile (upload_timeout_s) else 900000.
+    # timeouts: {}
 
   # The assets step (scripts/wgf_assets). Every key is optional; a step's `with:` block
   # overrides any of them. See docs/assets-module.md.

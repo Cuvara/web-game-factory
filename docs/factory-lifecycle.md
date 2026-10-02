@@ -146,8 +146,14 @@ pending ──▶ packaged ──▶ validated ──▶ submitted ──▶ in-
 Publication is **not atomic**: portals moderate independently, and Yandex can reject what
 CrazyGames approved. The release computes a quorum from these records.
 
-`submitted` and `in-review` advance by a human checklist plus a status file. No portal APIs
-are integrated — the machine's value here is structure and learning, not automation.
+`submitted` advances from an observed portal state: read back by the `submit` step's
+platform adapter (`docs/publish-module.md`: the portal's API or CLI where it publishes one, a
+deterministic browser run of its developer console where it does not - no shipped portal
+documents an upload API - or a person's checklist otherwise), never from a click that
+returned. `in-review` and its verdicts are the portal's; a person transcribes them. The
+record also carries what `release:validating` established: a `readiness` (READY, BLOCKED,
+HUMAN_REQUIRED, UNKNOWN) computed from the guards below, evidence, and the idempotency key
+and portal draft id of the attempt.
 
 **The `rejected` edge is the most valuable one in the system.** A rejection must produce a
 compliance finding that updates the platform profile — a new assertion, a
@@ -194,7 +200,7 @@ restarts its wait. See [workflow-engine.md §9](workflow-engine.md#9-human-check
 
 ### Gates inside the `new-game` workflow
 
-The workflow (`core/workflows/new-game.workflow.yaml`) holds three of them as
+The workflow (`core/workflows/new-game.workflow.yaml`) holds five of them as
 `human-checkpoint` steps, each decided on its gate's `required_artifacts` and waiting for
 input — asking nobody — until the run holds them:
 
@@ -203,6 +209,16 @@ input — asking nobody — until the run holds them:
 | `strategy-review` | G2 | strategy → design | `title-strategy` | approve, reject |
 | `tech-plan-review` | G3 | tech-plan → init | `game-design`, `tech-plan` | approve, reject |
 | `prototype-review` | G4 | verify (PASS) → release | `qa-report`, `verification-report`, `prototype-report` | pass, iterate, kill |
+| `release-review` | G5 | platform-validate → publish-review | `qa-report`, `verification-report`, `release-manifest` | approve, reject |
+| `publish-review` | G6 | release-review → submit | `release-manifest` (the record pins it by hash) | publish, reject |
+
+G5 and G6 are the `publish` group's: `wgf new-game` ends with the drafted release, and
+`wgf publish --run <run-id>` continues that run through `platform-validate`, G5, G6 and
+`submit` (`docs/publish-module.md`). G6 never auto-approves, so no unattended run enters the
+group on its own. `reject` at either gate ends the run (the release machine's `reject` edges
+to `cancelled`, G5's and G6's own); `publish` is G6's approval, named after the machine's
+`approved -> validating` edge, and the `submit` step refuses to submit any manifest but the
+one that record pins.
 
 G4 judges the *verified* prototype: it runs only after verification passes, and a
 verification that runs again after a pass makes G4 ask again. `pass` continues to release;

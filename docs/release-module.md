@@ -15,6 +15,10 @@ WGF_GAME_REPO=../neon-drift bin/wgf release --run <run-id>
 It never pushes, tags, publishes or contacts a portal. A draft is the input to `release:qa`
 / `rc` and the G5 and G6 gates, which are later and elsewhere.
 
+What happens next is the `publish` group ([publish-module.md](publish-module.md)):
+`wgf publish --run <run-id>` continues the run that drafted the release through
+`release:validating`, G5, G6 and `release:submitting`.
+
 ## What it produces
 
 | Where | What |

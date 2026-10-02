@@ -27,8 +27,11 @@
 # with each answer - approve, reject, pass, iterate, kill, or an approval on a timeout -
 # pinning by content hash exactly the inputs it was decided on.
 #
-# `release` prepares a release - a release-manifest in state `draft` - and stops. Building,
-# packaging and publishing belong to the game repository's CI, behind G5 and G6.
+# `release` prepares a release - a release-manifest in state `draft` - and `wgf new-game`
+# stops there. Publication is the `publish` group after it: `wgf publish --run <run-id>`
+# continues the same run through release:validating, G5, G6 and release:submitting
+# (docs/publish-module.md). G6 is irreversible and never auto-approves, which is why no
+# unattended run enters the group on its own.
 
 workflow:
   id: new-game
@@ -37,9 +40,12 @@ workflow:
   # 4: greybox - the loop is built with primitives and played before any asset is made.
   # 5: production - production-quality and visual-qa judge the production build's art and UI
   # before review, routing back to assets or develop; release refuses a build they did not
-  # pass. A run records the version it started under; one resumed under a newer definition is marked
+  # pass.
+  # 6: publication - the `publish` group: platform-validate (release:validating), G5, G6
+  # and submit (release:submitting), continued in the drafting run by `wgf publish --run`.
+  # A run records the version it started under; one resumed under a newer definition is marked
   # (WORKFLOW_RESUMED `definition_version`).
-  version: 5
+  version: 6
   description: Discover an opportunity, plan a title, build it, verify it and prepare its first release.
   start: research
 
@@ -70,6 +76,8 @@ workflow:
 
   groups:
     plan: [strategy, strategy-review, design, tech-plan, tech-plan-review]
+    # Publication of a drafted release, in the run that drafted it: `wgf publish --run <id>`.
+    publish: [platform-validate, release-review, publish-review, submit]
 
   steps:
     - id: research
@@ -349,4 +357,81 @@ workflow:
       outputs: [release-manifest]
       with:
         required_gates: [G4]
+      # `wgf new-game` ends here, with a draft: publication is authorized per release, never
+      # standing (gates.yaml G6), so an unattended run never continues into it. The steps
+      # below are the `publish` group: `wgf publish --run <run-id>` continues this same run
+      # through them, reusing its artifacts (docs/publish-module.md).
       next: $end
+
+    # -- publication: the `publish` group ------------------------------------------------
+    #
+    # The release lifecycle's tail (release.machine.yaml: validating -> [G6] -> submitting),
+    # run as a continuation of the run that drafted the release, never as a new one: every
+    # record it writes pins the manifest, the verification and the decisions of that run.
+    # Publication readiness is computed first, so both gates are decided on it.
+
+    # release:validating. The publication guards (candidate_frozen, store_metadata_complete,
+    # package_shaped_to_profile, assertions_pass, metadata_and_locales_present), the package
+    # on disk against the manifest's checksum, the pinned platform profile's assertions as
+    # verify recorded them for this commit, and the publication profile
+    # (core/reference/publication/<id>.yaml: method, terms, credential named). One
+    # platform-publication per packaged platform, with a `readiness`: READY, BLOCKED,
+    # HUMAN_REQUIRED or UNKNOWN. A guard that cannot be evaluated is UNKNOWN, never READY.
+    # BLOCKED is FAILED, route `fail`, the record kept as evidence; it is unrouted, so the
+    # run stops for a person (the lifecycle sends it back to production with the named
+    # assertion ids).
+    - id: platform-validate
+      type: platform-validate
+      stage: release:validating
+      inputs: [release-manifest, verification-report, qa-report, sdk-report, scaffold-record]
+      outputs: [platform-publication]
+
+    # G5, release approval (reversible): a person reads the qa-report, verification-report
+    # and release-manifest the run holds and the readiness platform-validate computed.
+    # `reject` cancels the release and ends the run.
+    - id: release-review
+      type: human-checkpoint
+      stage: release:rc
+      inputs: [qa-report, verification-report, release-manifest]
+      outputs: [decision-record]
+      with:
+        gate: G5
+        prompt: Approve this release candidate - the build, its manifest and its evidence - as the thing people will play?
+        choices: [approve, reject]
+      on:
+        reject: $end
+
+    # G6, publish authorization (irreversible): only a person decides it - `publish`, the
+    # release machine's own edge - and the decision-record pins the release-manifest by
+    # content hash. The submit step refuses to submit unless that hash is the manifest it
+    # holds. `reject` ends the run; an approved build may sit indefinitely.
+    - id: publish-review
+      type: human-checkpoint
+      stage: release:approved
+      inputs: [release-manifest, platform-publication]
+      outputs: [decision-record]
+      with:
+        gate: G6
+        prompt: Publish this release, to these platforms, now? Irreversible - portals cache and index.
+        choices: [publish, reject]
+      on:
+        reject: $end
+
+    # release:submitting (scripts/wgf_publish, docs/publish-module.md). For the platform the
+    # platform-publication names: resolve its adapter from core/reference/publication/<id>.yaml
+    # (api/cli where the portal publishes one; a deterministic Playwright run of its console
+    # where it does not; email/manual by a person), look up the idempotency key before any
+    # upload, upload, configure, submit once, read the portal's state back, and record it all
+    # with hashed, redacted evidence. The irreversible submit is attempted once: retry is
+    # max_attempts 1 and a failure around it is never retryable. A login challenge, a
+    # CAPTCHA, unconfirmed terms, a missing credential or a method nobody automates stops
+    # the step WAITING_FOR_HUMAN (unrouted: the run parks until `wgf decide <run> done`
+    # after a person acted, or `abandon`). factory.publish.mode is dry-run until an
+    # installation sets live.
+    - id: submit
+      type: publish
+      stage: release:submitting
+      inputs: [release-manifest, platform-publication, decision-record, scaffold-record]
+      outputs: [platform-publication]
+      retry: {max_attempts: 1}
+      max_visits: 3

@@ -9,6 +9,46 @@ and `core/` is still the contract.
 
 ## [Unreleased]
 
+**Publication runs inside the Factory** ([docs/publish-module.md](docs/publish-module.md)).
+The release lifecycle's tail - `release:validating`, G5, G6, `release:submitting` - is now the
+`publish` group of `new-game` (workflow version 6), continued in the run that drafted the
+release by `wgf publish --run <run-id>`; `wgf new-game` still ends with the draft, because G6
+is irreversible and never auto-approves. `platform-validate` (`scripts/wgf_publish`) computes
+the publication guards the machines name - `candidate_frozen`, `store_metadata_complete`,
+`package_shaped_to_profile`, `assertions_pass`, `metadata_and_locales_present` and the quorum
+guards, all UNKNOWN before - through `wgflib/publication.py`, which `wgf-state.py` now reads
+too, and writes a `platform-publication` with a `readiness` (READY, BLOCKED, HUMAN_REQUIRED,
+UNKNOWN; UNKNOWN is never READY). `release-review` (G5) and `publish-review` (G6:
+`publish`/`reject`, a person only, pinning the release-manifest by hash) are
+`human-checkpoint` steps; the release machine gains the matching `reject` edges. `submit`
+refuses any manifest but the one G6 pinned, finds a draft by a deterministic idempotency key
+before any upload, submits once (`retry: max_attempts 1`, never retryable), and advances the
+record only from the portal's own state read back; `factory.publish.mode` is dry-run until an
+installation sets live and `WGF_PUBLISH_LIVE=1`. Platform behaviour lives in adapters
+(`scripts/wgf_publish/adapters/`) and in new, separately versioned publication profiles
+(`core/reference/publication/<id>.yaml`, `shared/publication-profile.schema.json`): the
+portal's method (api/cli/console/email/manual), console origins, the credential's variable
+name, what only a person does, `automation_terms`. No shipped portal documents an upload API;
+the console adapter is direct Playwright under `wgflib.procs` with fixed selectors
+(`browser/console.spec.ts`), never Playwright MCP, and every shipped console flow is
+unverified and off until a person records the portal's terms
+(`factory.publish.platforms.<id>.terms_confirmed`). A login, CAPTCHA, second factor,
+unconfirmed terms, missing session, unmapped portal state or a method only a person performs
+stops the step WAITING_FOR_HUMAN (`wgf decide <run> done|abandon`). A portal session is
+captured by a person (`scripts/wgf-publish.py capture`), read through a third allowlist
+(`factory.publish.env_passthrough`), copied privately for one browser run and deleted;
+`wgflib/redact.py` scrubs every workflow event (kernel: `events.py`) and every publish
+artifact. `platform-publication` 1.1.0 (additive: readiness, guards, submission method/key/
+draft id/dry run/authorized_by, outcome, human_required, verified_state, evidence,
+measurement_class, workflow); `decision-record`, `scaffold-record`, `qa-report`,
+`verification-report`, `release-manifest` consumers gain the publication stages;
+`check-integrity.py` accepts an artifact's `updated_by` stage as a producer. The lifecycle
+bridge picks a decision's edge by the record's transition (`approved` is G2's `approve` and
+G6's `publish`). Tests: `test_publish_module` (RELEASE category) with a fake console and,
+opt-in (`WGF_PUBLISH_BROWSER_TEST=1`), real Chromium against a fixture portal; no test
+contacts a real portal. Not done: a live run against any real console, a Poki CLI adapter,
+per-platform builds (one bundle still targets one portal).
+
 **Research V2** ([docs/research-v2.md](docs/research-v2.md)). Research is game-corpus based:
 listings and teardown records (`game-record`, `<corpus>/games/`) are coded on a shared,
 versioned vocabulary (`core/reference/research-vocabulary.yaml`: a genre tree, market

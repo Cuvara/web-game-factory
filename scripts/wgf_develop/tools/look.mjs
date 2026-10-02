@@ -20,6 +20,9 @@
 // game exposes one. The frames are images: open them with your file-reading tool and judge
 // them against the design's visual identity and the quality bar. Nothing here judges them.
 //
+// --burst <actions> performs those actions once more during play and saves six frames 80 ms
+// apart (<viewport>-burst-0..5.png): what a player sees in the half second after an input.
+//
 // --actions is a comma list of `wait:<ms>`, `key:<Key>`, `click:<x>x<y>` (fractions of the
 // viewport, e.g. click:0.5x0.6) and `hold:<Key>:<ms>`. Exit 2 when the repository has no
 // dist/ or no Playwright; the frames are written outside the repository (--out is refused
@@ -41,6 +44,7 @@ function args(argv) {
     else if (key === "--actions") out.actions = value;
     else if (key === "--viewports") out.viewports = value;
     else if (key === "--settle-ms") out.settle = Number(value);
+    else if (key === "--burst") out.burst = value;
     else continue;
     i += 1;
   }
@@ -179,6 +183,15 @@ async function main() {
       await act(page, viewport, opts.actions);
       await page.waitForTimeout(opts.settle);
       await shoot("2-play");
+      if (opts.burst) {
+        // Feel is motion: the frames right after one more input show whether the game
+        // answers it (a squash, a pop, a flash, a number that rolls) or only changes state.
+        await act(page, viewport, opts.burst);
+        for (let i = 0; i < 6; i += 1) {
+          await shoot(`burst-${i}`);
+          await page.waitForTimeout(80);
+        }
+      }
       await page.waitForTimeout(3000);
       await shoot("3-play-later");
       result.viewports[name] = record;

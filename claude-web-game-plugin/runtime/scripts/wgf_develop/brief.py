@@ -929,7 +929,11 @@ def _see_your_build(brief, look):
         "`desktop-1-title.png`, `desktop-2-play.png`, `desktop-3-play-later.png`, the same "
         "for `mobile-`, and `look.json` (page errors, failed asset requests, the play "
         "probe's snapshots). Pass `--actions` to script other input, e.g. "
-        "`--actions click:0.5x0.7,wait:500,key:ArrowLeft`.")
+        "`--actions click:0.5x0.7,wait:500,key:ArrowLeft`. Feel is motion: "
+        "`--burst <actions>` performs one more input during play and saves six frames 80 ms "
+        "apart (`desktop-burst-0..5.png`) - what a player sees in the half second after "
+        "acting. If those six frames are identical apart from a number, the action has no "
+        "feedback yet (the craft's juice guide says what it needs).")
     add("3. **Open every frame** with your file-reading tool - they are images - and judge "
         "them as a player would, against the design's visual identity and the quality bar "
         "below: is the player obvious within a second? is the objective on screen? does "

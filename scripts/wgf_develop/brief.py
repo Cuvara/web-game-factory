@@ -947,8 +947,9 @@ def _see_your_build(brief, look):
         "standing for a character, an empty dark void)? does the phone frame fit? did the "
         "play frames change after input?")
     add("   Need a probe of your own? Write scratch scripts under /tmp, never in the "
-        "checkout: you cannot delete a file, and a new file outside the writable paths is "
-        "moved out of the checkout and costs the attempt.")
+        "checkout. A new file outside the writable paths is moved out of the checkout and "
+        "costs the attempt; one you created inside them and no longer want, delete with "
+        "`git clean -f -- <path>` (src/, tests/ and public/ only).")
     add("4. **Fix and look again**, after every change a player would see. Look one last "
         "time before you write the report, and say in `known_issues` what the last frames "
         "still show that falls short of the bar.\n")

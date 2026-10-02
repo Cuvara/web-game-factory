@@ -166,6 +166,10 @@ class TheFactoryContainsNoGameSource(unittest.TestCase):
         # game and run there against its build (scripts/wgf_playability/step.py). It
         # records what a player's device would see; it contains no game.
         "scripts/wgf_playability/bot.spec.ts",
+        # The developer's frame tool: serves a game's built dist/ and screenshots it with
+        # the game's own Playwright (scripts/wgf_develop/brief.py, "See your build").
+        # Tooling that looks at a game; it contains none.
+        "scripts/wgf_develop/tools/",
     )
     # The Claude plugin's bundled runtime (scripts/build-plugin-runtime.py) is a byte-identical
     # copy of the Factory's own files, so each exception above holds for its copy too.

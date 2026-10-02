@@ -85,6 +85,20 @@ The step's route is the first of `routes`, assets before develop: when an asset 
 wrong, the game's use of it cannot be judged until it is made again. The report keeps every
 failed check, so `develop`, re-entered after `assets`, still sees its own.
 
+## What a failure sends back
+
+Every failed check keeps `summary`, `expected`, `measured`, the `assets` it concerns and the
+`frames` it measured (frame ids of the play, resolved through the playability-report it
+judged to absolute paths under the run directory).
+
+- **Route `assets`**: the assets step remakes the checks' `assets` (else the ids and role
+  words their summary names) and hands each author the check, what was expected and
+  measured, and the frames ([assets-module.md](assets-module.md#re-entry)). When no
+  configured author can remake them, the assets step blocks instead of reusing every file.
+- **Route `develop`**: the develop brief's "Fix first: what the production gate measured"
+  lists every failed required check with its route, assets, expected, measured (cut at 600
+  characters) and the absolute paths of its frames, which the developer is told to open.
+
 ## What it does not claim
 
 `measurement_class: automation-bot`. It proves the art is delivered and used and the DOM UI

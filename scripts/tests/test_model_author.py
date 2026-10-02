@@ -263,6 +263,8 @@ with open({log!r}, "a") as log:
     log.write(json.dumps({{"mode": mode, "asset": request["asset"],
                           "repair": request.get("repair"),
                           "craft": request.get("craft"),
+                          "notes": request.get("notes"),
+                          "frames": request.get("frames"),
                           "palette": request["palette"]}}) + "\n")
 keeper = json.load(open({keeper!r}))
 box = {box!r}
@@ -339,6 +341,20 @@ class ModelAuthor(unittest.TestCase):
         self.assertTrue(call["craft"][0].endswith("production-art-3d.md"))
         for path in call["craft"]:
             self.assertTrue(os.path.isfile(path), path)
+
+    def test_a_gates_feedback_reaches_the_request_with_its_frames(self):
+        frame = os.path.join(self.scratch, "run", "playability", "desktop", "play-2s.png")
+        requirement = dict(KEEPER_REQ, feedback={
+            "notes": ["blocker assets finding `flat`: the keeper is a grey box"],
+            "frames": [frame]})
+        self.produce("keeper", requirement=requirement)
+        (call,) = self.calls()
+        self.assertEqual(call["notes"], ["blocker assets finding `flat`: the keeper is a grey box"])
+        self.assertEqual(call["frames"], [frame])
+        self.assertIn("Open every PNG in the request's `frames`", model_author.PROMPT_NOTES)
+        # Without feedback the request carries neither.
+        self.produce("keeper")
+        self.assertIsNone(self.calls()[1]["notes"])
 
     def test_a_single_box_fails_for_a_readable_role(self):
         with self.assertRaises(model_author.ModelAuthorError) as raised:

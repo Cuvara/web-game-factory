@@ -34,7 +34,7 @@ first-time players see or understand.
 | `game-design` (required) | `build_spec.visual_identity` (concept, palette, typography, shape language, avoid, `primitive_style`, `ui`), `build_spec.assets[]` (`role`, `readability`) |
 | `asset-manifest` (required) | per item: `role`, `source`, `placeholder`, `quality` |
 | `production-quality-report` (optional) | its failed checks, to confirm or dismiss by eye |
-| `visual-qa-report` (output) | `scores`, `findings`, `failed`, `routes`, `verdict`, the frames judged, the `rubric` pinned by sha256, `judge_runs` |
+| `visual-qa-report` (output, 1.2.0) | `scores` and the judge's `score_reasons`, `findings`, `states` (answers, comment, frames), `look` (verdict, reason), `failed`, `routes`, `verdict`, the frames judged, the `rubric` pinned by sha256, `judge_runs` |
 
 The report is emitted on PASS, FAIL and BLOCKED. A judge that could not produce a usable
 verdict leaves no report (nothing was judged); its brief, log and raw output stay under
@@ -75,6 +75,29 @@ fallback font (develop), `buttons_polished` - not browser defaults (develop),
 of every failure, `assets` before `develop`; the step's route is the first. A `major` or
 `minor` finding is recorded and does not fail the build on its own. The report lists every
 rubric state on every viewport; one no frame shows is `captured: false`, unanswered.
+
+## What a failure sends back
+
+A FAIL is only useful if the agent who fixes it can see what the judge saw. The report keeps
+the judge's words beside every failure - a score's `score_reasons` entry, a state's
+`comment` and `frames`, the look's `reason`, a finding's `summary` and `frame` - and both
+receivers get them with the absolute paths of the frames (frame `path`s are relative to the
+run directory):
+
+- **Route `assets`** (`scripts/wgf_assets/feedback.py`, [assets-module.md](assets-module.md#re-entry)).
+  Every failure routed `assets` - findings of any severity, failing scores, state answers and
+  the look - is mapped to the design's asset requirements by id, by role word ("the
+  player"), by the play probe's entity -> asset records and by the rubric's `rebuild_roles`
+  (`rebuild` at the end of the rubric: which roles `environment`, `character_readability`,
+  `art_completeness`, `consistency`, the look, `primitive-entity`, `entities_recognisable`
+  and `primitives_or_placeholders` concern). Each remade asset's author gets the reasons and
+  the frames, and is told to open them. Nothing resolving remakes every readable entity and
+  the scene; nothing able to remake (no author) blocks the assets step rather than reuse
+  every file.
+- **Route `develop`** (`scripts/wgf_develop/brief.py`, "Fix first: what visual QA saw").
+  Every `failed` entry with its reason - the score's reason, the state's comment and frames,
+  the look's reason, the finding's frame - and every `major` finding that did not fail the
+  build on its own.
 
 ## Outcomes
 
@@ -129,7 +152,9 @@ What the step does around it (`scripts/wgf_visualqa/judge.py`):
    other keys; findings with a unique kebab-case `id`, `severity`, `category`, `route`,
    a `frame` that is one of the given ids or null, and a summary; exactly one `states`
    entry per (state, viewport) with frames, answering exactly its questions; a `look` among
-   the rubric's values. A malformed verdict is
+   the rubric's values; `score_reasons`, when given, strings for rubric dimensions only (the
+   brief asks for one per dimension; a verdict without it is still well formed). A
+   malformed verdict is
    asked for once more, with the reason at the top of the new brief; a second one fails the
    step.
 
@@ -138,6 +163,8 @@ The judge writes:
 ```json
 {
   "scores": {"art_completeness": 0, "character_readability": 1, "...": 5},
+  "score_reasons": {"art_completeness": "the keeper is an untextured capsule in every frame",
+                    "...": "..."},
   "findings": [{"id": "primitive-keeper", "severity": "blocker", "category": "assets",
                 "frame": "desktop/play-2s", "summary": "...", "route": "assets"}],
   "states": [{"state": "gameplay", "viewport": "mobile",
@@ -243,8 +270,11 @@ below the bar, a per-state answer routed by its question, a developer-prototype 
 `primitive_style` waiving only the primitive answer, unanswered or extra states, a verdict
 on stdout, a malformed verdict retried once then failed (and one
 fixed on the retry), an unknown frame id, no judge (BLOCKED), a non-zero exit (retryable),
-a changed and a missing frame, a judge writing to a frame or a guarded path, the mock, and
-the CLI harness.
+a changed and a missing frame, a judge writing to a frame or a guarded path, the mock, the
+CLI harness, the judge's `score_reasons` reaching the report (and checked when malformed),
+and the rubric's `rebuild_roles` for every `assets` failure. What a failure sends back is
+tested where it lands: `test_assets_production.py` (re-entry, including the real arena-dodge
+verdict that must remake the player) and `test_develop_module.py` (the brief).
 
 ## Calibration
 

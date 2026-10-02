@@ -1,0 +1,1802 @@
+{
+  "provenance": {
+    "artifact_id": "wgf:game-design:neon-drift:20260923-01",
+    "artifact_type": "game-design",
+    "schema_version": "1.7.0",
+    "opportunity_id": "opp-001",
+    "title_id": "neon-drift",
+    "produced_by": {
+      "role": "game-designer",
+      "actor": "automation"
+    },
+    "produced_at": "2026-09-23T10:00:00Z",
+    "inputs": [
+      {
+        "artifact_id": "wgf:title-strategy:neon-drift:20260901-01",
+        "artifact_type": "title-strategy",
+        "content_hash": "sha256:fc78e2a022e58e492a0ce7d4de5ab5fd58c29d6f93ef9200132568a71b320236"
+      }
+    ],
+    "content_hash": "sha256:e84b6ec89fa2a46368e317d6f3432e2fec2c663f2fea2b3c191f325d2a4354f4",
+    "status": "draft"
+  },
+  "fantasy": "Threading a gap at a speed that should not be survivable.",
+  "core_loop": "Drive into the arena -> walls rush toward the craft -> steer between them -> score climbs with time and every wall cleared -> the walls speed up -> a crash ends the run -> drive again at once.",
+  "pillars": [
+    "The gap is always readable before it arrives",
+    "Every crash is the player's mistake, never the camera's",
+    "Back in a run within one second of crashing"
+  ],
+  "engine": {
+    "type": "threejs",
+    "dimension": "3d",
+    "rationale": "Depth is part of the mechanic: a 3d arena dodger is read through a chase camera in space. Three.js with low-poly procedural geometry and vertex colours keeps the load budget close to a 2D title; textures and PBR materials are deliberately excluded.",
+    "design_resolution": {
+      "width": 1280,
+      "height": 720
+    },
+    "camera": "Third-person chase camera, slightly high, locked behind the craft; no player camera control."
+  },
+  "features": [
+    {
+      "id": "steering",
+      "name": "Steering",
+      "tier": "mvp",
+      "description": "The craft drives forward on its own; the player steers it left and right across the arena.",
+      "acceptance": [
+        "The craft slides sideways at a fixed steer speed and cannot leave the arena's width.",
+        "Forward speed is never player-controlled; the walls' speed carries the drive."
+      ]
+    },
+    {
+      "id": "walls",
+      "name": "Rushing walls",
+      "tier": "mvp",
+      "description": "Walls spawn ahead and rush toward the craft; the player steers between them.",
+      "acceptance": [
+        "Walls spawn at a fixed distance ahead at a fixed interval and move toward the craft.",
+        "Every wall row leaves a gap the craft can pass through.",
+        "A wall that passes the craft without a hit counts as cleared."
+      ]
+    },
+    {
+      "id": "crash",
+      "name": "Crash ends the run",
+      "tier": "mvp",
+      "description": "Hitting a wall is a crash, and a crash ends the run.",
+      "acceptance": [
+        "Any overlap of the craft with a wall is a crash.",
+        "The result card shows the score and the personal best."
+      ]
+    },
+    {
+      "id": "speed-ramp",
+      "name": "Speed ramp and score",
+      "tier": "mvp",
+      "description": "The walls speed up the longer the drive lasts; score climbs with time survived and every wall cleared.",
+      "acceptance": [
+        "Wall speed starts at 8 arena units per second and rises by 0.35 every second survived.",
+        "Score rises 10 per second survived plus 5 per wall cleared."
+      ]
+    },
+    {
+      "id": "game-flow",
+      "name": "Game flow",
+      "tier": "mvp",
+      "description": "Boot, loading, title, play, pause and the result card, wired as build_spec.game_states.",
+      "acceptance": [
+        "First session reaches play within 5s of load on a mid-range phone.",
+        "Retry from the result card starts a new run within 1s.",
+        "Pause on tab hidden; resume only on player input."
+      ]
+    },
+    {
+      "id": "telemetry",
+      "name": "Kill and success criteria telemetry",
+      "tier": "mvp",
+      "description": "Emit the measurements the strategy's criteria read, so G4 is decided on data.",
+      "acceptance": [
+        "Records `audio_input_latency_ms` for criterion audio_latency_unfixable.",
+        "Records `first_time_understood_share` for criterion control_not_understood.",
+        "Records `unprompted_retry_share` for criterion no_retry_pull.",
+        "Records `d1_retention` for criterion d1_retention.",
+        "Records `median_session_seconds` for criterion session_length."
+      ]
+    },
+    {
+      "id": "platform-integration",
+      "name": "Platform integration",
+      "tier": "mvp",
+      "description": "Platform SDK init, loading progress, ads, cloud save and the other build_spec.sdk_touchpoints, through the template's platform abstraction.",
+      "acceptance": [
+        "Each required touchpoint fires at its stated moment in a local platform-SDK mock.",
+        "No portal SDK is called directly from game code.",
+        "Strategy MVP: Yandex SDK: init, loading progress, rewarded video, cloud save of best score."
+      ]
+    },
+    {
+      "id": "localization",
+      "name": "Localization",
+      "tier": "mvp",
+      "description": "UI strings in ru, en, kept under 40 strings to make human translation cheap.",
+      "acceptance": [
+        "Every UI string resolves in ru, en; no hard-coded text."
+      ]
+    },
+    {
+      "id": "monetization-rewarded-continue",
+      "name": "Rewarded placement",
+      "tier": "mvp",
+      "description": "On a run-ending failure after at least 20 s of play, offer one continue per run",
+      "acceptance": [
+        "Offered only in state fail.",
+        "The continue button is not shown; retry is the primary action. Never a disabled button.",
+        "Strategy MVP: Rewarded continue on failure."
+      ]
+    },
+    {
+      "id": "strategy-one-track-with-three",
+      "name": "One track with three difficulty ramps",
+      "tier": "mvp",
+      "description": "Committed in the title strategy MVP: One track with three difficulty ramps.",
+      "acceptance": [
+        "Demonstrable in the prototype build: One track with three difficulty ramps.",
+        "Covered by at least one smoke-test step."
+      ]
+    },
+    {
+      "id": "strategy-one-touch-lane-switching",
+      "name": "One-touch lane switching locked to the beat",
+      "tier": "mvp",
+      "description": "Committed in the title strategy MVP: One-touch lane switching locked to the beat.",
+      "acceptance": [
+        "Demonstrable in the prototype build: One-touch lane switching locked to the beat.",
+        "Covered by at least one smoke-test step."
+      ]
+    },
+    {
+      "id": "strategy-combo-and-score-with",
+      "name": "Combo and score with a personal best",
+      "tier": "mvp",
+      "description": "Committed in the title strategy MVP: Combo and score with a personal best.",
+      "acceptance": [
+        "Demonstrable in the prototype build: Combo and score with a personal best.",
+        "Covered by at least one smoke-test step."
+      ]
+    },
+    {
+      "id": "monetization-interstitial-between",
+      "name": "Interstitial placement",
+      "tier": "post-mvp",
+      "description": "When the player leaves the result card (Retry or Menu), at most once every 180s, never in the first run of a session and never inside play",
+      "acceptance": [
+        "Offered only in state fail.",
+        "Proceed immediately; no placeholder, no countdown."
+      ]
+    },
+    {
+      "id": "moving-gaps",
+      "name": "Moving gaps",
+      "tier": "post-mvp",
+      "description": "Wall rows whose gap slides while they approach."
+    },
+    {
+      "id": "zones",
+      "name": "Zones",
+      "tier": "post-mvp",
+      "description": "Every 500 m the arena changes zone - palette, skyline and one new obstacle type: moving walls (500 m), laser gates that blink on a 1.2 s cycle (1000 m), closing gates (1500 m) - with a 2 s calm stretch at each border."
+    },
+    {
+      "id": "pickups",
+      "name": "Pickups",
+      "tier": "post-mvp",
+      "description": "Shield (absorbs one hit), magnet (pulls coins for 6 s) and boost (+30 % speed and invulnerable for 3 s), one in every 8 wall rows."
+    },
+    {
+      "id": "coins",
+      "name": "Coins",
+      "tier": "post-mvp",
+      "description": "Coins in lines between walls, earned only in play and spent in the garage; never sold."
+    },
+    {
+      "id": "near-miss-combo",
+      "name": "Near-miss combo",
+      "tier": "post-mvp",
+      "description": "Passing a wall within 0.8 units raises a score multiplier by 0.5 up to x4; a hit or 4 s with no near-miss resets it."
+    },
+    {
+      "id": "garage",
+      "name": "Ship garage",
+      "tier": "post-mvp",
+      "description": "Five ships with distinct models bought with coins, each with one trait (wider shield, faster steer...), and three upgrade steps for pickup durations."
+    },
+    {
+      "id": "missions",
+      "name": "Missions",
+      "tier": "post-mvp",
+      "description": "Three active missions (reach 1500 m, chain a x3 combo, grab 3 shields in one run); finishing one pays coins and draws the next."
+    }
+  ],
+  "scope": {
+    "tiers": {
+      "mvp": [
+        "Steering",
+        "Rushing walls",
+        "Crash ends the run",
+        "Speed ramp and score",
+        "Game flow",
+        "Kill and success criteria telemetry",
+        "Platform integration",
+        "Localization",
+        "Rewarded placement",
+        "One track with three difficulty ramps",
+        "One-touch lane switching locked to the beat",
+        "Combo and score with a personal best"
+      ],
+      "prototype": [
+        "Steering",
+        "Rushing walls",
+        "Crash ends the run",
+        "Speed ramp and score",
+        "Game flow",
+        "Kill and success criteria telemetry",
+        "Platform integration",
+        "Localization",
+        "Rewarded placement",
+        "One track with three difficulty ramps",
+        "One-touch lane switching locked to the beat",
+        "Combo and score with a personal best"
+      ],
+      "production": [
+        "Interstitial placement",
+        "Moving gaps",
+        "Zones",
+        "Pickups",
+        "Coins",
+        "Near-miss combo",
+        "Ship garage",
+        "Missions"
+      ],
+      "future": [],
+      "out_of_scope": [
+        {
+          "item": "Multiple music tracks",
+          "why_excluded": "one track proves the mechanic; more is content, not validation"
+        },
+        {
+          "item": "Character or skin customization",
+          "why_excluded": "Excluded by the title strategy, approved at G2."
+        },
+        {
+          "item": "Leaderboards beyond the personal best",
+          "why_excluded": "Excluded by the title strategy, approved at G2."
+        },
+        {
+          "item": "Level editor",
+          "why_excluded": "Excluded by the title strategy, approved at G2."
+        },
+        {
+          "item": "Any metagame or daily-quest layer",
+          "why_excluded": "Excluded by the title strategy, approved at G2."
+        },
+        {
+          "item": "Desktop-specific control scheme",
+          "why_excluded": "Excluded by the title strategy, approved at G2."
+        }
+      ]
+    },
+    "content_units": 3,
+    "content_unit_kind": "speed tiers",
+    "locales": [
+      "ru",
+      "en"
+    ],
+    "asset_budget": 400,
+    "progression_terminal": "Progression is the personal best. The loop is deliberately open, bounded by 3 speed tiers - there is no content treadmill to feed."
+  },
+  "session": {
+    "time_to_first_play_s": 5,
+    "time_to_first_reward_s": 10,
+    "first_session_seconds": 180,
+    "target_seconds": 240,
+    "structure": "A run lasts about 60s. A session is 4 runs back to back, each starting within a second of the last ending. The first session drops straight into play with no menu; later sessions open on the title screen with the best score visible. The session ends at a natural stopping point rather than being cut off.",
+    "reward_moments_per_session": 4,
+    "end_condition": "The player sets a new personal best, or three runs pass without improvement."
+  },
+  "retention": {
+    "hooks": [
+      "progression",
+      "streak"
+    ],
+    "return_reason": "I know I can hold the line through one more speed-up.",
+    "progression_loop": "Progression is the personal best. The loop is deliberately open, bounded by 3 speed tiers - there is no content treadmill to feed.",
+    "targets": {
+      "d1": 0.25
+    }
+  },
+  "monetization": {
+    "economy": "No currency. The rewarded continue is the only economic action.",
+    "currencies": [],
+    "placements": [
+      {
+        "kind": "rewarded",
+        "trigger": "On a run-ending failure after at least 20 s of play, offer one continue per run",
+        "player_value": "Continue from the point of failure, keeping score and streak",
+        "platforms": [
+          "yandex",
+          "crazygames"
+        ]
+      },
+      {
+        "kind": "interstitial",
+        "trigger": "When the player leaves the result card (Retry or Menu), at most once every 180s, never in the first run of a session and never inside play",
+        "player_value": "None - a pure interruption, priced as such and held to the tightest platform cadence",
+        "platforms": [
+          "yandex",
+          "crazygames"
+        ]
+      }
+    ]
+  },
+  "progression": "Skill only: Survive 20 s in one run -> Speed tier 2 and its palette; Survive 45 s in one run -> Speed tier 3 and its palette.",
+  "difficulty": "0-15 s: Slow walls and wide gaps, so a first-time player clears walls before crashing. 15-45 s: Walls speed up 0.35 units per second each second. 45 s+: The ramp continues; only reading gaps early keeps the run alive. Assist: After three runs under 10 s, the next run's first 10 s use the opening speed.",
+  "controls": "Steer left or right: Hold and drag: the craft follows the finger's horizontal position (touch). Pause: Pause button (touch).",
+  "ux": {
+    "onboarding": "Guided first run. Steering is one idea; the first wall shows it once.",
+    "screens": [
+      "loading",
+      "title",
+      "play",
+      "pause",
+      "result",
+      "settings"
+    ],
+    "accessibility": "Every audio cue has a visual counterpart, so the game plays muted - which also covers the large share of portal traffic that plays with sound off. Colour is never the only signal. Text is at least 16 CSS px at the design resolution. A reduced-motion setting (and prefers-reduced-motion) disables shake and flashes."
+  },
+  "art_direction": "Transit-signal brutalism: flat blocks of colour, oversized numerals, information first. Identity kit 'signal-brutal'. Rectangles only; 3px black borders; numerals set enormous and cropped by the viewport edge.",
+  "audio_direction": "Library music loop plus short library SFX, all compressed and loaded after first play so audio never delays time to first play. Every cue has a visual twin.",
+  "build_spec": {
+    "mechanics": [
+      {
+        "id": "steering",
+        "name": "Steering",
+        "tier": "mvp",
+        "description": "The craft drives forward on its own; the player steers it left and right across the arena.",
+        "rules": [
+          "The craft slides sideways at a fixed steer speed and cannot leave the arena's width.",
+          "Forward speed is never player-controlled; the walls' speed carries the drive."
+        ],
+        "parameters": {
+          "arena_half_width": 4,
+          "steer_speed": 6
+        }
+      },
+      {
+        "id": "walls",
+        "name": "Rushing walls",
+        "tier": "mvp",
+        "description": "Walls spawn ahead and rush toward the craft; the player steers between them.",
+        "rules": [
+          "Walls spawn at a fixed distance ahead at a fixed interval and move toward the craft.",
+          "Every wall row leaves a gap the craft can pass through.",
+          "A wall that passes the craft without a hit counts as cleared."
+        ],
+        "parameters": {
+          "spawn_interval_s": 0.9,
+          "spawn_distance": 40
+        }
+      },
+      {
+        "id": "crash",
+        "name": "Crash ends the run",
+        "tier": "mvp",
+        "description": "Hitting a wall is a crash, and a crash ends the run.",
+        "rules": [
+          "Any overlap of the craft with a wall is a crash.",
+          "The result card shows the score and the personal best."
+        ]
+      },
+      {
+        "id": "speed-ramp",
+        "name": "Speed ramp and score",
+        "tier": "mvp",
+        "description": "The walls speed up the longer the drive lasts; score climbs with time survived and every wall cleared.",
+        "rules": [
+          "Wall speed starts at 8 arena units per second and rises by 0.35 every second survived.",
+          "Score rises 10 per second survived plus 5 per wall cleared."
+        ],
+        "parameters": {
+          "base_speed": 8,
+          "speed_ramp_per_s": 0.35,
+          "points_per_s": 10,
+          "points_per_wall": 5
+        }
+      }
+    ],
+    "controls": {
+      "primary_input": "touch",
+      "actions": [
+        {
+          "id": "steer",
+          "action": "Steer left or right",
+          "tier": "mvp",
+          "mechanic": "steering",
+          "touch": "Hold and drag: the craft follows the finger's horizontal position",
+          "mouse": "The craft follows the pointer's horizontal position",
+          "keyboard": "Not bound: desktop-specific controls are out of scope (title strategy)"
+        },
+        {
+          "id": "pause",
+          "action": "Pause",
+          "tier": "mvp",
+          "touch": "Pause button",
+          "mouse": "Pause button",
+          "keyboard": "Not bound: desktop-specific controls are out of scope (title strategy)"
+        }
+      ],
+      "pause": "Pause button; automatic on tab hidden and before any ad. Resume needs player input.",
+      "notes": "Desktop plays through the touch scheme: pointer events make a click a tap. No keyboard or gamepad bindings, because the strategy excludes desktop-specific controls."
+    },
+    "player_goals": {
+      "moment": "Line up for the next gap.",
+      "session": "Beat the personal best.",
+      "long_term": "Survive into the third speed tier."
+    },
+    "progression": {
+      "model": "skill-only",
+      "steps": [
+        {
+          "id": "tier-2",
+          "tier": "mvp",
+          "unlock_condition": "Survive 20 s in one run",
+          "grants": "Speed tier 2 and its palette"
+        },
+        {
+          "id": "tier-3",
+          "tier": "mvp",
+          "unlock_condition": "Survive 45 s in one run",
+          "grants": "Speed tier 3 and its palette"
+        }
+      ],
+      "persistence": "Personal best and unlocks; cloud save where the platform offers it, local storage otherwise."
+    },
+    "difficulty": {
+      "model": "time-ramp",
+      "curve": [
+        {
+          "at": "0-15 s",
+          "description": "Slow walls and wide gaps, so a first-time player clears walls before crashing.",
+          "parameters": {
+            "speed": 8
+          }
+        },
+        {
+          "at": "15-45 s",
+          "description": "Walls speed up 0.35 units per second each second.",
+          "parameters": {
+            "speed_ramp_per_s": 0.35
+          }
+        },
+        {
+          "at": "45 s+",
+          "description": "The ramp continues; only reading gaps early keeps the run alive.",
+          "parameters": {}
+        }
+      ],
+      "assist": "After three runs under 10 s, the next run's first 10 s use the opening speed."
+    },
+    "game_states": [
+      {
+        "id": "boot",
+        "tier": "mvp",
+        "initial": true,
+        "description": "Platform SDK init, language, saved progress.",
+        "exits": [
+          {
+            "to": "loading",
+            "on": "SDK init resolved or timed out (3 s)"
+          }
+        ]
+      },
+      {
+        "id": "loading",
+        "tier": "mvp",
+        "description": "Load the first-play asset group only; audio and later content stream afterwards.",
+        "exits": [
+          {
+            "to": "play",
+            "on": "First-play assets ready and this is the player's first session"
+          },
+          {
+            "to": "title",
+            "on": "First-play assets ready and the player has played before"
+          }
+        ]
+      },
+      {
+        "id": "title",
+        "tier": "mvp",
+        "description": "Title, best score, play button.",
+        "exits": [
+          {
+            "to": "play",
+            "on": "Play pressed"
+          },
+          {
+            "to": "settings",
+            "on": "Settings pressed"
+          }
+        ]
+      },
+      {
+        "id": "play",
+        "tier": "mvp",
+        "description": "Gameplay with HUD.",
+        "exits": [
+          {
+            "to": "pause",
+            "on": "Pause pressed or tab hidden"
+          },
+          {
+            "to": "fail",
+            "on": "The craft crashes into a wall."
+          }
+        ]
+      },
+      {
+        "id": "pause",
+        "tier": "mvp",
+        "description": "Play frozen, audio paused, pause menu shown.",
+        "exits": [
+          {
+            "to": "play",
+            "on": "Resume pressed"
+          },
+          {
+            "to": "title",
+            "on": "Quit pressed"
+          }
+        ]
+      },
+      {
+        "id": "fail",
+        "tier": "mvp",
+        "description": "Result card: score, best, retry, optional continue.",
+        "exits": [
+          {
+            "to": "play",
+            "on": "Retry pressed, or a continue was granted"
+          },
+          {
+            "to": "title",
+            "on": "Menu pressed"
+          }
+        ]
+      },
+      {
+        "id": "settings",
+        "tier": "post-mvp",
+        "description": "Music and SFX volume, language, reduced motion.",
+        "exits": [
+          {
+            "to": "title",
+            "on": "Back pressed"
+          }
+        ]
+      }
+    ],
+    "screens": [
+      {
+        "id": "loading",
+        "tier": "mvp",
+        "state": "loading",
+        "purpose": "Show honest progress while the first-play group loads.",
+        "elements": [
+          "Wordmark in the display face",
+          "Progress bar driven by the loader, reported to the platform"
+        ],
+        "layout": "Wordmark centred, progress bar in the lower third."
+      },
+      {
+        "id": "title",
+        "tier": "mvp",
+        "state": "title",
+        "purpose": "One obvious action: play.",
+        "elements": [
+          "Wordmark",
+          "Best score",
+          "Play button (primary)",
+          "Sound toggle"
+        ],
+        "actions": [
+          {
+            "label": "Play",
+            "goes_to": "play"
+          }
+        ],
+        "layout": "Play button in the thumb zone of the lower third; best score directly above it."
+      },
+      {
+        "id": "play",
+        "tier": "mvp",
+        "state": "play",
+        "purpose": "Gameplay; only the HUD overlays it.",
+        "elements": [
+          "Objective line until the first success: Steer through the gaps in the walls - how far can you get?",
+          "Score",
+          "Personal best",
+          "Pause button"
+        ],
+        "actions": [
+          {
+            "label": "Pause",
+            "goes_to": "pause"
+          }
+        ],
+        "layout": "HUD inside the safe area; nothing interactive in the play area except the game itself."
+      },
+      {
+        "id": "pause",
+        "tier": "mvp",
+        "state": "pause",
+        "purpose": "Stop without losing the run.",
+        "elements": [
+          "Dimmed frozen play behind",
+          "Pause menu"
+        ],
+        "actions": [
+          {
+            "label": "Resume",
+            "goes_to": "play"
+          },
+          {
+            "label": "Quit",
+            "goes_to": "title"
+          }
+        ],
+        "layout": "Menu centred; Resume is the largest target."
+      },
+      {
+        "id": "result",
+        "tier": "mvp",
+        "state": "fail",
+        "purpose": "Show the outcome and make retrying the easiest thing to do.",
+        "elements": [
+          "Score of this run",
+          "Best score, with a new-best burst",
+          "Retry button (primary)",
+          "Continue button with ad glyph (when offered)",
+          "Menu button"
+        ],
+        "actions": [
+          {
+            "label": "Retry",
+            "goes_to": "play"
+          },
+          {
+            "label": "Menu",
+            "goes_to": "title"
+          },
+          {
+            "label": "Continue",
+            "goes_to": "play"
+          }
+        ],
+        "layout": "Card slides up over dimmed play; Retry in the thumb zone, Continue above it, Menu small in a corner."
+      },
+      {
+        "id": "settings",
+        "tier": "post-mvp",
+        "state": "settings",
+        "purpose": "Volume, language, reduced motion.",
+        "elements": [
+          "Music volume",
+          "SFX volume",
+          "Language",
+          "Reduced motion toggle",
+          "Back"
+        ],
+        "actions": [
+          {
+            "label": "Back",
+            "goes_to": "title"
+          }
+        ],
+        "layout": "Single column list."
+      }
+    ],
+    "hud": [
+      {
+        "id": "score",
+        "tier": "mvp",
+        "shows": "Score",
+        "anchor": "top-center",
+        "updates_on": "Every frame",
+        "feedback": "Digits roll rather than jump",
+        "metric": "score"
+      },
+      {
+        "id": "best",
+        "tier": "mvp",
+        "shows": "Personal best",
+        "anchor": "top-left",
+        "updates_on": "Run start and new best",
+        "metric": "best"
+      },
+      {
+        "id": "pause-button",
+        "tier": "mvp",
+        "shows": "Pause button",
+        "anchor": "top-right",
+        "updates_on": "Static",
+        "feedback": "Press state within one frame"
+      }
+    ],
+    "menus": [
+      {
+        "id": "title-menu",
+        "tier": "mvp",
+        "screen": "title",
+        "items": [
+          {
+            "label": "Play",
+            "action": "Enter play"
+          },
+          {
+            "label": "Sound on/off",
+            "action": "Toggle master mute; remembered",
+            "tier": "mvp"
+          },
+          {
+            "label": "Settings",
+            "action": "Open settings",
+            "tier": "post-mvp"
+          }
+        ]
+      },
+      {
+        "id": "pause-menu",
+        "tier": "mvp",
+        "screen": "pause",
+        "items": [
+          {
+            "label": "Resume",
+            "action": "Return to play"
+          },
+          {
+            "label": "Restart",
+            "action": "Start a new run"
+          },
+          {
+            "label": "Sound on/off",
+            "action": "Toggle master mute"
+          },
+          {
+            "label": "Quit",
+            "action": "Return to title; progress already saved"
+          }
+        ]
+      },
+      {
+        "id": "result-menu",
+        "tier": "mvp",
+        "screen": "result",
+        "items": [
+          {
+            "label": "Retry",
+            "action": "Start again immediately"
+          },
+          {
+            "label": "Continue",
+            "action": "Show rewarded ad (rewarded-continue); on reward, resume"
+          },
+          {
+            "label": "Menu",
+            "action": "Return to title"
+          }
+        ]
+      }
+    ],
+    "tutorial": {
+      "approach": "guided-first-run",
+      "rationale": "Steering is one idea; the first wall shows it once.",
+      "steps": [
+        {
+          "id": "steer-prompt",
+          "tier": "mvp",
+          "trigger": "First run start",
+          "prompt": "Left and right arrows glow; the first wall's gap sits off to one side",
+          "completes_on": "The player clears the first wall"
+        }
+      ],
+      "skippable": false,
+      "shown_once": true
+    },
+    "rewards": [
+      {
+        "id": "wall-cleared",
+        "tier": "mvp",
+        "trigger": "A wall passes the craft without a hit",
+        "grants": "Score +5",
+        "feedback": "The wall's edge flashes as it passes; a short whoosh."
+      },
+      {
+        "id": "tier-up",
+        "tier": "mvp",
+        "trigger": "Speed tier changes",
+        "grants": "New palette",
+        "feedback": "The arena's neon shifts hue; a riser."
+      },
+      {
+        "id": "new-best",
+        "tier": "mvp",
+        "trigger": "Run ends above the personal best",
+        "grants": "New best, saved",
+        "feedback": "Best counter bursts."
+      }
+    ],
+    "failure": {
+      "condition": "The craft crashes into a wall.",
+      "feedback": "Hit-stop for 150 ms, the wall flashes, the camera pulls up, then the result card with score and best.",
+      "retry": {
+        "path": "Retry on the result card.",
+        "time_to_retry_s": 1,
+        "keeps": "Personal best, unlocks and settings."
+      },
+      "continue_offer": "rewarded-continue"
+    },
+    "session_flow": [
+      {
+        "beat": "Load",
+        "at_s": 0,
+        "description": "Loading screen with real progress; only first-play assets."
+      },
+      {
+        "beat": "First input",
+        "at_s": 5,
+        "description": "First session: straight into play, tutorial steps inline."
+      },
+      {
+        "beat": "First reward",
+        "at_s": 10,
+        "description": "The opening difficulty guarantees a reward before the first failure."
+      },
+      {
+        "beat": "First failure",
+        "at_s": 65,
+        "description": "Result card; retry is the obvious action; the continue offer appears from here."
+      },
+      {
+        "beat": "Retry loop",
+        "description": "Retry, improve, fail again; difficulty assist kicks in if the player is stuck."
+      },
+      {
+        "beat": "Natural stop",
+        "at_s": 240,
+        "description": "A new best or a plateau; the result card shows the best so the player leaves on a high."
+      }
+    ],
+    "monetization_touchpoints": [
+      {
+        "id": "rewarded-continue",
+        "kind": "rewarded",
+        "tier": "mvp",
+        "state": "fail",
+        "trigger": "On a run-ending failure after at least 20 s of play, offer one continue per run",
+        "player_value": "Continue from the point of failure, keeping score and streak",
+        "platforms": [
+          "yandex",
+          "crazygames"
+        ],
+        "when_unavailable": "The continue button is not shown; retry is the primary action. Never a disabled button."
+      },
+      {
+        "id": "interstitial-between",
+        "kind": "interstitial",
+        "tier": "post-mvp",
+        "state": "fail",
+        "trigger": "When the player leaves the result card (Retry or Menu), at most once every 180s, never in the first run of a session and never inside play",
+        "player_value": "None - a pure interruption, priced as such and held to the tightest platform cadence",
+        "cooldown_s": 180,
+        "platforms": [
+          "yandex",
+          "crazygames"
+        ],
+        "when_unavailable": "Proceed immediately; no placeholder, no countdown."
+      }
+    ],
+    "sdk_touchpoints": [
+      {
+        "id": "sdk-init",
+        "capability": "init",
+        "tier": "mvp",
+        "state": "boot",
+        "when": "First thing at boot, before any asset load; the game proceeds on timeout (3 s) with ads disabled.",
+        "platforms": [
+          "yandex",
+          "crazygames"
+        ],
+        "required": true,
+        "fallback": "No-op adapter on platforms without an SDK."
+      },
+      {
+        "id": "sdk-language",
+        "capability": "language",
+        "tier": "mvp",
+        "state": "boot",
+        "when": "After init; picks the UI locale from the platform, else the browser, else the first locale in scope.",
+        "platforms": [
+          "yandex",
+          "crazygames"
+        ],
+        "required": false,
+        "fallback": "Browser language."
+      },
+      {
+        "id": "sdk-loading-progress",
+        "capability": "loading-progress",
+        "tier": "mvp",
+        "state": "loading",
+        "when": "On every asset-loader progress event.",
+        "platforms": [
+          "yandex",
+          "crazygames"
+        ],
+        "required": true,
+        "fallback": "Progress bar only."
+      },
+      {
+        "id": "sdk-loading-complete",
+        "capability": "loading-complete",
+        "tier": "mvp",
+        "state": "loading",
+        "when": "When the first playable screen is interactive - not when every asset is loaded.",
+        "platforms": [
+          "yandex",
+          "crazygames"
+        ],
+        "required": true,
+        "fallback": "None needed."
+      },
+      {
+        "id": "sdk-gameplay-start",
+        "capability": "gameplay-start",
+        "tier": "mvp",
+        "state": "play",
+        "when": "On entering play, and on resuming after pause or an ad.",
+        "platforms": [
+          "yandex",
+          "crazygames"
+        ],
+        "required": true,
+        "fallback": "No-op."
+      },
+      {
+        "id": "sdk-gameplay-stop",
+        "capability": "gameplay-stop",
+        "tier": "mvp",
+        "state": "play",
+        "when": "On leaving play: pause, fail, tab hidden, and before any ad.",
+        "platforms": [
+          "yandex",
+          "crazygames"
+        ],
+        "required": true,
+        "fallback": "No-op."
+      },
+      {
+        "id": "sdk-pause-audio",
+        "capability": "pause-audio",
+        "tier": "mvp",
+        "state": "pause",
+        "when": "Before any ad shows and on tab hidden.",
+        "platforms": [
+          "yandex",
+          "crazygames"
+        ],
+        "required": true,
+        "fallback": "Mute the master bus."
+      },
+      {
+        "id": "sdk-resume-audio",
+        "capability": "resume-audio",
+        "tier": "mvp",
+        "state": "pause",
+        "when": "After an ad closes, whatever its outcome, and on tab visible.",
+        "platforms": [
+          "yandex",
+          "crazygames"
+        ],
+        "required": true,
+        "fallback": "Unmute the master bus."
+      },
+      {
+        "id": "sdk-ad-rewarded",
+        "capability": "ad-rewarded",
+        "tier": "mvp",
+        "state": "fail",
+        "when": "On a run-ending failure after at least 20 s of play, offer one continue per run",
+        "platforms": [
+          "yandex",
+          "crazygames"
+        ],
+        "required": false,
+        "fallback": "The continue button is not shown; retry is the primary action. Never a disabled button."
+      },
+      {
+        "id": "sdk-ad-interstitial",
+        "capability": "ad-interstitial",
+        "tier": "post-mvp",
+        "state": "fail",
+        "when": "When the player leaves the result card (Retry or Menu), at most once every 180s, never in the first run of a session and never inside play",
+        "platforms": [
+          "yandex",
+          "crazygames"
+        ],
+        "required": false,
+        "fallback": "Proceed immediately; no placeholder, no countdown."
+      },
+      {
+        "id": "sdk-cloud-load",
+        "capability": "cloud-load",
+        "tier": "mvp",
+        "state": "boot",
+        "when": "After init, before the title screen shows the best score.",
+        "platforms": [
+          "yandex",
+          "crazygames"
+        ],
+        "required": false,
+        "fallback": "Local storage."
+      },
+      {
+        "id": "sdk-cloud-save",
+        "capability": "cloud-save",
+        "tier": "mvp",
+        "state": "fail",
+        "when": "When a run or level ends with a new best or new unlock; never mid-play.",
+        "platforms": [
+          "yandex",
+          "crazygames"
+        ],
+        "required": false,
+        "fallback": "Local storage."
+      }
+    ],
+    "assets": [
+      {
+        "id": "craft",
+        "type": "model",
+        "tier": "mvp",
+        "description": "Player craft",
+        "count": 1,
+        "source_preference": "procedural",
+        "est_cost": 0,
+        "spec": "Low-poly GLB built from a model spec: hull, canopy, two fins, engine glow; 800-3k triangles, flat-shaded",
+        "role": "player",
+        "dimension": "3d",
+        "readability": "A craft with a hull, canopy and fins and a glowing engine at the back, its nose plainly pointing down the arena: readable at 80 px wide from the chase camera, and never the walls' colour"
+      },
+      {
+        "id": "arena-kit",
+        "type": "model",
+        "tier": "mvp",
+        "description": "Arena floor and side rails",
+        "count": 2,
+        "source_preference": "procedural",
+        "est_cost": 0,
+        "spec": "Low-poly GLB modules built from a model spec: floor tile with lane lines, side rail; vertex colours",
+        "role": "environment",
+        "dimension": "3d",
+        "readability": "A floor whose lines run toward the horizon so speed reads, and side rails that mark the arena's edge; both dimmer than the craft and the walls"
+      },
+      {
+        "id": "wall",
+        "type": "model",
+        "tier": "mvp",
+        "description": "Neon wall segment",
+        "count": 1,
+        "source_preference": "procedural",
+        "est_cost": 0,
+        "spec": "Low-poly GLB built from a model spec: framed panel with emissive strips; under 1k triangles",
+        "role": "threat",
+        "dimension": "3d",
+        "readability": "A wall panel with a lit frame and emissive strips, its gap obvious from 40 units away: 'do not touch' before it arrives, in the identity's warning colour"
+      },
+      {
+        "id": "crash-vfx",
+        "type": "vfx",
+        "tier": "mvp",
+        "description": "Crash burst",
+        "count": 1,
+        "source_preference": "procedural",
+        "est_cost": 0,
+        "spec": "Instanced particles",
+        "role": "vfx",
+        "dimension": "3d",
+        "readability": "A burst at the point of contact that shows where the craft hit, gone before the result card"
+      },
+      {
+        "id": "sky",
+        "type": "texture",
+        "tier": "mvp",
+        "description": "Gradient sky behind the arena",
+        "count": 1,
+        "source_preference": "procedural",
+        "est_cost": 0,
+        "spec": "Shader gradient, no texture fetch",
+        "role": "background",
+        "dimension": "3d",
+        "readability": "A gradient sky that sets the horizon, darker than the walls so every wall stands out against it"
+      },
+      {
+        "id": "ui-kit",
+        "type": "ui",
+        "tier": "mvp",
+        "description": "Buttons, panels and the result card, drawn in the identity kit",
+        "count": 1,
+        "source_preference": "procedural",
+        "est_cost": 0,
+        "spec": "9-slice panels, button states: idle, pressed, disabled",
+        "role": "ui",
+        "dimension": "2d",
+        "readability": "Buttons filled signal with ink labels at 48 px or larger, panels in panel: the primary action (Play, Retry) is the largest, brightest target on its screen, and no button looks like a browser default"
+      },
+      {
+        "id": "icons",
+        "type": "icon",
+        "tier": "mvp",
+        "description": "Play, pause, retry, menu, sound, ad glyph",
+        "count": 6,
+        "source_preference": "library",
+        "est_cost": 10,
+        "spec": "Single-colour SVG, 48px grid",
+        "role": "icon",
+        "dimension": "2d",
+        "readability": "Each glyph recognisable without its label at 24 px inside a 48 px target; pause and retry never confused"
+      },
+      {
+        "id": "fonts",
+        "type": "font",
+        "tier": "mvp",
+        "description": "Russo One (400) and Rubik (500), numerals in Russo One, tabular",
+        "count": 2,
+        "source_preference": "library",
+        "est_cost": 0,
+        "spec": "Files: Russo One (https://github.com/google/fonts/tree/main/ofl/russoone); Rubik (https://github.com/google/fonts/tree/main/ofl/rubik). SIL Open Font License 1.1, its OFL.txt shipped beside the files. WOFF2 (TTF accepted), subset to the locales in scope (subsets: cyrillic, latin - ru, en), bundled under public/assets and loaded through the runtime asset manifest with @font-face; awaited (document.fonts.load) before the first UI frame.",
+        "role": "font",
+        "dimension": "2d",
+        "readability": "Every UI and HUD string is set in Russo One / Rubik: the computed font-family of each button and HUD element resolves to the bundled face and document.fonts.check passes before the title screen; no system fallback is ever shown"
+      },
+      {
+        "id": "wordmark",
+        "type": "ui",
+        "tier": "mvp",
+        "description": "Title wordmark in the display face",
+        "count": 1,
+        "source_preference": "procedural",
+        "est_cost": 0,
+        "spec": "SVG",
+        "role": "ui",
+        "dimension": "2d",
+        "readability": "The title in the display face, legible at 240 px wide on the loading and title screens"
+      }
+    ],
+    "audio": [
+      {
+        "id": "music-drive",
+        "type": "music",
+        "tier": "mvp",
+        "description": "Driving loop of at least 60 s, seamless; its intensity rises with speed",
+        "trigger": "Run start",
+        "loop": true,
+        "source_preference": "library",
+        "est_cost": 40
+      },
+      {
+        "id": "music-drive-layer",
+        "type": "music",
+        "tier": "mvp",
+        "description": "Intensity layer of the driving loop, at least 60 s, same length, faded in with speed",
+        "trigger": "Run start, in lock-step with music-drive",
+        "loop": true,
+        "source_preference": "library",
+        "est_cost": 20
+      },
+      {
+        "id": "music-title",
+        "type": "music",
+        "tier": "mvp",
+        "description": "Calmer title variant of the driving loop, at least 30 s, seamless",
+        "trigger": "Title screen; crossfades to the driving loop on run start",
+        "loop": true,
+        "source_preference": "library",
+        "est_cost": 40
+      },
+      {
+        "id": "sfx-engine",
+        "type": "sfx",
+        "tier": "mvp",
+        "description": "Engine hum loop; pitch follows speed, filter and pan follow steering",
+        "trigger": "During a run",
+        "loop": true,
+        "source_preference": "procedural",
+        "est_cost": 0
+      },
+      {
+        "id": "sfx-pass",
+        "type": "sfx",
+        "tier": "mvp",
+        "description": "Wall pass whoosh",
+        "trigger": "Wall cleared",
+        "loop": false,
+        "source_preference": "library",
+        "est_cost": 5
+      },
+      {
+        "id": "sfx-near-miss",
+        "type": "sfx",
+        "tier": "mvp",
+        "description": "Near-miss whoosh",
+        "trigger": "A wall passes with little room to spare",
+        "loop": false,
+        "source_preference": "library",
+        "est_cost": 5
+      },
+      {
+        "id": "sfx-crash",
+        "type": "sfx",
+        "tier": "mvp",
+        "description": "Crash impact",
+        "trigger": "Crash",
+        "loop": false,
+        "source_preference": "library",
+        "est_cost": 5
+      },
+      {
+        "id": "sfx-game-over",
+        "type": "sfx",
+        "tier": "mvp",
+        "description": "Game-over sting; the music ducks under it",
+        "trigger": "Run ends, after the crash",
+        "loop": false,
+        "source_preference": "library",
+        "est_cost": 5
+      },
+      {
+        "id": "ui-tap",
+        "type": "ui",
+        "tier": "mvp",
+        "description": "Button press",
+        "trigger": "Any button",
+        "loop": false,
+        "source_preference": "library",
+        "est_cost": 5
+      },
+      {
+        "id": "ui-fanfare",
+        "type": "ui",
+        "tier": "mvp",
+        "description": "New best / level clear sting",
+        "trigger": "New best or level clear",
+        "loop": false,
+        "source_preference": "library",
+        "est_cost": 5
+      }
+    ],
+    "responsive": {
+      "orientation": "landscape",
+      "design_resolution": {
+        "width": 1280,
+        "height": 720
+      },
+      "scale_mode": "fill",
+      "layouts": [
+        {
+          "id": "phone",
+          "when": "shorter side < 600 CSS px",
+          "arrangement": "HUD at the top edge inside the safe area; primary buttons in the lower third for thumb reach."
+        },
+        {
+          "id": "tablet",
+          "when": "shorter side 600-900 CSS px",
+          "arrangement": "Same as phone, UI scaled by min(1.25, shorter side / 600)."
+        },
+        {
+          "id": "desktop",
+          "when": "width >= 1024 CSS px and pointer: fine",
+          "arrangement": "Playfield at design aspect, centred; HUD moves into the margins."
+        }
+      ],
+      "min_touch_target_px": 48,
+      "safe_area": "All HUD and buttons inset by env(safe-area-inset-*); nothing interactive within 16 CSS px of an edge.",
+      "wrong_orientation": "On a portrait phone the camera widens its field of view to keep the next target in frame; a rotate prompt appears only below 320 CSS px of height.",
+      "resize": "Re-layout on resize and orientation change without restarting; a mid-play orientation change pauses.",
+      "max_pixel_ratio": 2
+    },
+    "visual_identity": {
+      "concept": "Transit-signal brutalism: flat blocks of colour, oversized numerals, information first.",
+      "palette": [
+        {
+          "token": "concrete",
+          "hex": "#D9D6CF",
+          "role": "Background"
+        },
+        {
+          "token": "ink",
+          "hex": "#111111",
+          "role": "Text, numerals, borders"
+        },
+        {
+          "token": "signal",
+          "hex": "#FF5B00",
+          "role": "Primary accent: player, primary action"
+        },
+        {
+          "token": "go",
+          "hex": "#00A86B",
+          "role": "Positive feedback, new best"
+        },
+        {
+          "token": "panel",
+          "hex": "#F2F0EA",
+          "role": "Cards and modals"
+        },
+        {
+          "token": "danger",
+          "hex": "#D7263D",
+          "role": "Failure"
+        }
+      ],
+      "typography": {
+        "display": "Russo One (400)",
+        "body": "Rubik (500)",
+        "numeric": "Russo One, tabular",
+        "source": "Google Fonts, SIL Open Font License; cyrillic in scope (ru, en): Russo One for Archivo Black, Rubik for Archivo, which cover it"
+      },
+      "shape_language": "Rectangles only; 3px black borders; numerals set enormous and cropped by the viewport edge.",
+      "motion": "Hard cuts and 80 ms slides on one axis; no easing curves longer than 150 ms.",
+      "texture": "None. Flat colour is the point.",
+      "avoid": [
+        "Rounded corners",
+        "Glow effects",
+        "System or default UI fonts (Arial, Roboto, Inter, the browser default)",
+        "Purple-to-blue gradients on white",
+        "Evenly weighted pastel palettes where no colour leads",
+        "Rounded white cards with drop shadows as the default container",
+        "Emoji as iconography"
+      ],
+      "ui": {
+        "font_px": {
+          "body": 16,
+          "hud": 20,
+          "heading": 32
+        },
+        "min_target_px": 48,
+        "button": {
+          "fill": "signal",
+          "text": "ink",
+          "radius_px": 0,
+          "style": "Flat rectangle with a 3px ink border; pressed inverts to ink fill with panel text"
+        },
+        "surface": "panel"
+      }
+    },
+    "experience": {
+      "goal": {
+        "statement": "Steer through the gaps in the walls - how far can you get?",
+        "metric": "score",
+        "shown_on": "play"
+      },
+      "lose": {
+        "condition": "Crashing into a wall ends the run."
+      },
+      "actions": [
+        {
+          "action": "steer",
+          "max_ack_ms": 100,
+          "visual": "The craft banks toward the input on the next frame.",
+          "audio": "Engine pitch follows the steer"
+        },
+        {
+          "action": "pause",
+          "max_ack_ms": 100,
+          "visual": "Play freezes and the pause menu appears over it.",
+          "audio": "UI tap"
+        }
+      ],
+      "onboarding": {
+        "teaches": [
+          "steer"
+        ],
+        "grace": {
+          "until": "first-success"
+        },
+        "reveals_answer": false
+      },
+      "first_30s": {
+        "first_frame_s": 2,
+        "playable_s": 5,
+        "first_success_s": 10,
+        "retry_s": 1
+      }
+    },
+    "depth": {
+      "meta_loop": {
+        "statement": "Run -> collect coins and finish missions -> buy a ship or an upgrade in the garage -> push the next distance milestone with it.",
+        "tier": "post-mvp",
+        "delivered_by": "garage",
+        "persists": [
+          {
+            "kind": "best-score",
+            "what": "Best score",
+            "tier": "mvp",
+            "delivered_by": "new-best"
+          },
+          {
+            "kind": "currency",
+            "what": "Coin balance",
+            "tier": "post-mvp",
+            "delivered_by": "coins"
+          },
+          {
+            "kind": "upgrades",
+            "what": "Ships owned, the selected ship, upgrade steps",
+            "tier": "post-mvp",
+            "delivered_by": "garage"
+          },
+          {
+            "kind": "missions",
+            "what": "Active missions and progress",
+            "tier": "post-mvp",
+            "delivered_by": "missions"
+          }
+        ]
+      },
+      "goal_ladder": [
+        {
+          "id": "next-gap",
+          "horizon": "short",
+          "goal": "Line up for the next gap.",
+          "measure": "walls passed",
+          "tier": "mvp",
+          "delivered_by": "walls"
+        },
+        {
+          "id": "beat-best",
+          "horizon": "mid",
+          "goal": "Beat the best score this session.",
+          "measure": "score > best",
+          "tier": "mvp",
+          "delivered_by": "new-best"
+        },
+        {
+          "id": "next-zone",
+          "horizon": "mid",
+          "goal": "Reach the next zone border in this run.",
+          "measure": "distance band reached",
+          "tier": "post-mvp",
+          "delivered_by": "zones"
+        },
+        {
+          "id": "tier-3",
+          "horizon": "long",
+          "goal": "Survive into the third speed tier.",
+          "measure": "45 s survived",
+          "tier": "mvp",
+          "delivered_by": "tier-3"
+        },
+        {
+          "id": "full-garage",
+          "horizon": "long",
+          "goal": "Own every ship and max its upgrades.",
+          "measure": "ships owned of 5",
+          "tier": "post-mvp",
+          "delivered_by": "garage"
+        }
+      ],
+      "content_schedule": [
+        {
+          "id": "speed-tier-2",
+          "kind": "modifier",
+          "name": "Speed tier 2",
+          "introduced": "20 s into a run",
+          "at_s": 20,
+          "rule": "Speed steps up and the palette shifts.",
+          "tier": "mvp",
+          "delivered_by": "tier-2"
+        },
+        {
+          "id": "speed-tier-3",
+          "kind": "modifier",
+          "name": "Speed tier 3",
+          "introduced": "45 s into a run",
+          "at_s": 45,
+          "rule": "Speed steps up again and the palette shifts.",
+          "tier": "mvp",
+          "delivered_by": "tier-3"
+        },
+        {
+          "id": "pickups",
+          "kind": "pickup",
+          "name": "Shield, magnet and boost",
+          "introduced": "From the second run, 10 s in",
+          "at_s": 10,
+          "after_runs": 1,
+          "rule": "One pickup in every 8 wall rows.",
+          "tier": "post-mvp",
+          "delivered_by": "pickups"
+        },
+        {
+          "id": "combo",
+          "kind": "modifier",
+          "name": "Near-miss combo",
+          "introduced": "At the first near-miss",
+          "at_s": 5,
+          "rule": "Each pass within 0.8 units raises the multiplier by 0.5, up to x4.",
+          "tier": "post-mvp",
+          "delivered_by": "near-miss-combo"
+        },
+        {
+          "id": "moving-walls",
+          "kind": "obstacle",
+          "name": "Moving walls",
+          "introduced": "At 500 m",
+          "at_s": 35,
+          "rule": "Wall gaps slide sideways at 1.5 units/s while they approach.",
+          "tier": "post-mvp",
+          "delivered_by": "zones"
+        },
+        {
+          "id": "lasers",
+          "kind": "hazard",
+          "name": "Laser gates",
+          "introduced": "At 1000 m",
+          "at_s": 60,
+          "rule": "A gate that blinks on and off on a 1.2 s cycle; pass while it is off.",
+          "tier": "post-mvp",
+          "delivered_by": "zones"
+        },
+        {
+          "id": "closing-gates",
+          "kind": "obstacle",
+          "name": "Closing gates",
+          "introduced": "At 1500 m",
+          "at_s": 80,
+          "rule": "Two walls that close toward each other; the gap shrinks as they near.",
+          "tier": "post-mvp",
+          "delivered_by": "zones"
+        }
+      ],
+      "first_session": {
+        "target_s": 180,
+        "ends_on": "A new best or a new zone reached, with coins and a mission shown on the result card.",
+        "tier": "mvp"
+      },
+      "return_hooks": [
+        {
+          "id": "best-to-beat",
+          "kind": "best-score",
+          "statement": "I crashed just short of my best and I know why.",
+          "tier": "mvp",
+          "delivered_by": "new-best"
+        },
+        {
+          "id": "next-ship",
+          "kind": "next-unlock",
+          "statement": "Sixty more coins and I can buy the next ship.",
+          "tier": "post-mvp",
+          "delivered_by": "garage"
+        },
+        {
+          "id": "missions",
+          "kind": "missions",
+          "statement": "Two of my three missions are nearly done.",
+          "tier": "post-mvp",
+          "delivered_by": "missions"
+        },
+        {
+          "id": "daily",
+          "kind": "daily-seed",
+          "statement": "Today's run is new and my streak is on day 3 (optional: the strategy excludes 'Any metagame or daily-quest layer').",
+          "tier": "optional"
+        }
+      ]
+    }
+  },
+  "open_questions": [
+    "Archetype 'arena-dodge' was chosen because the pinned by the workflow step. Confirm at G3 that the loop is the one the strategy meant.",
+    "Audio-to-input latency on mid-range mobile web is low enough that beat-matching feels fair rather than arbitrary",
+    "A first-time player understands the control without instruction",
+    "The fail-and-retry loop produces an unforced desire to retry immediately",
+    "A rewarded continue reads as a favour rather than an interruption",
+    "Depth the strategy excludes is stated as optional, not built: Today's run is new and my streak is on day 3 (Any metagame or daily-quest layer). A superseding strategy admits it, or production adds it after G4."
+  ],
+  "title_id": "neon-drift",
+  "platform_constraints_applied": [
+    {
+      "platform_id": "yandex",
+      "requirement": "Locales required: ru",
+      "how_addressed": "In scope.locales; every UI string goes through the template's localization table."
+    },
+    {
+      "platform_id": "yandex",
+      "requirement": "Loading progress must be reported through the platform SDK",
+      "how_addressed": "The loading screen is driven by the loading-progress and loading-complete touchpoints, not a timer."
+    },
+    {
+      "platform_id": "yandex",
+      "requirement": "Interstitial minimum interval 60s",
+      "how_addressed": "Interstitial cooldown is 180s, the tightest across the platform set (180s), shown only between runs."
+    },
+    {
+      "platform_id": "yandex",
+      "requirement": "Supported placements: interstitial, rewarded, banner, iap",
+      "how_addressed": "All designed placements are supported."
+    },
+    {
+      "platform_id": "yandex",
+      "requirement": "Bundle at most 100 MB",
+      "how_addressed": "Asset list favours procedural and vector sources; audio is compressed and streamed after first play."
+    },
+    {
+      "platform_id": "yandex",
+      "requirement": "Orientations accepted: landscape, portrait",
+      "how_addressed": "Designed for landscape; the other orientation shows the responsive layout described in build_spec.responsive."
+    },
+    {
+      "platform_id": "yandex",
+      "requirement": "Gameplay and audio must pause around ad playback",
+      "how_addressed": "gameplay-stop and pause-audio fire before every ad; resume-audio and gameplay-start after it."
+    },
+    {
+      "platform_id": "yandex",
+      "requirement": "External network requests restricted",
+      "how_addressed": "All assets ship in the bundle; no runtime fetch beyond the platform SDK."
+    },
+    {
+      "platform_id": "yandex",
+      "requirement": "Cloud saves available",
+      "how_addressed": "Personal best and progress persist through cloud-save; local storage is the fallback."
+    },
+    {
+      "platform_id": "crazygames",
+      "requirement": "Locales required: en",
+      "how_addressed": "In scope.locales; every UI string goes through the template's localization table."
+    },
+    {
+      "platform_id": "crazygames",
+      "requirement": "Loading progress must be reported through the platform SDK",
+      "how_addressed": "The loading screen is driven by the loading-progress and loading-complete touchpoints, not a timer."
+    },
+    {
+      "platform_id": "crazygames",
+      "requirement": "Interstitial minimum interval 180s",
+      "how_addressed": "Interstitial cooldown is 180s, the tightest across the platform set (180s), shown only between runs."
+    },
+    {
+      "platform_id": "crazygames",
+      "requirement": "Supported placements: interstitial, rewarded, banner",
+      "how_addressed": "All designed placements are supported."
+    },
+    {
+      "platform_id": "crazygames",
+      "requirement": "Bundle at most 250 MB",
+      "how_addressed": "Asset list favours procedural and vector sources; audio is compressed and streamed after first play."
+    },
+    {
+      "platform_id": "crazygames",
+      "requirement": "Orientations accepted: landscape, portrait",
+      "how_addressed": "Designed for landscape; the other orientation shows the responsive layout described in build_spec.responsive."
+    },
+    {
+      "platform_id": "crazygames",
+      "requirement": "Gameplay and audio must pause around ad playback",
+      "how_addressed": "gameplay-stop and pause-audio fire before every ad; resume-audio and gameplay-start after it."
+    },
+    {
+      "platform_id": "crazygames",
+      "requirement": "Cloud saves available",
+      "how_addressed": "Personal best and progress persist through cloud-save; local storage is the fallback."
+    }
+  ],
+  "consistency": {
+    "status": "pass",
+    "evaluated_at": "2026-09-23T10:00:00Z",
+    "ruleset_version": "1.2.0",
+    "rule_results": [
+      {
+        "criterion_id": "rewarded_ads_need_reward_moments",
+        "measured": [
+          "monetization.placements=['interstitial', 'rewarded']",
+          "session.reward_moments_per_session=4"
+        ],
+        "breached": false
+      },
+      {
+        "criterion_id": "short_session_no_daily_quest",
+        "measured": [
+          "retention.hooks=['progression', 'streak']",
+          "session.target_seconds=240"
+        ],
+        "breached": false
+      },
+      {
+        "criterion_id": "interstitial_interval_fits_session",
+        "measured": [
+          "platform.ads.interstitial_min_interval_s=60",
+          "session.target_seconds=240"
+        ],
+        "breached": false,
+        "note": "yandex: held"
+      },
+      {
+        "criterion_id": "scope_fits_session_count",
+        "measured": [
+          "scope.content_units=3",
+          "session.target_seconds=240"
+        ],
+        "breached": false
+      },
+      {
+        "criterion_id": "required_locales_addressed",
+        "measured": [
+          "platform.requirements.locales_required=['ru']",
+          "scope.locales=['ru', 'en']"
+        ],
+        "breached": false,
+        "note": "yandex: held"
+      },
+      {
+        "criterion_id": "monetization_supported_by_platform",
+        "measured": [
+          "monetization.placements=['interstitial', 'rewarded']",
+          "platform.capabilities.ads=['interstitial', 'rewarded', 'banner', 'iap']"
+        ],
+        "breached": false,
+        "note": "yandex: held"
+      },
+      {
+        "criterion_id": "concept_mechanics_carried",
+        "measured": [],
+        "breached": false
+      },
+      {
+        "criterion_id": "design_adds_no_foreign_mechanic",
+        "measured": [],
+        "breached": false
+      },
+      {
+        "criterion_id": "first_reward_within_first_session",
+        "measured": [
+          "session.first_session_seconds=180",
+          "session.time_to_first_reward_s=10"
+        ],
+        "breached": false
+      },
+      {
+        "criterion_id": "iap_matches_audience",
+        "measured": [
+          "audience.device=mobile",
+          "audience.type=casual",
+          "monetization.placements=['interstitial', 'rewarded']"
+        ],
+        "breached": false
+      },
+      {
+        "criterion_id": "asset_cost_within_scope",
+        "measured": [
+          "asset_manifest.total_est_cost=140",
+          "scope.asset_budget=400"
+        ],
+        "breached": false
+      },
+      {
+        "criterion_id": "progression_has_an_end_or_a_loop",
+        "measured": "Progression is the personal best. The loop is deliberately open, bounded by 3 speed tiers - there is no content treadmill to feed.",
+        "breached": false
+      }
+    ],
+    "warnings_acknowledged": false
+  }
+}

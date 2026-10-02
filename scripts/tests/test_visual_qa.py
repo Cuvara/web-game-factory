@@ -285,6 +285,23 @@ class TheVerdicts(Base):
         self.assertEqual(states[("retry", "desktop")]["answers"], {})
         self.assertEqual(states[("loss", "mobile")]["frames"], ["mobile/end-lost"])
 
+    def test_the_judges_reasons_for_its_scores_reach_the_report(self):
+        reasons = {"environment": "a flat black void above the horizon"}
+        result = self.run_step(self.config([{"scores": scores(4, environment=1),
+                                             "score_reasons": reasons, "findings": []}]))
+        self.assertEqual(result.outcome, StepOutcome.FAILED)
+        report = self.report(result)
+        self.assertEqual(report["score_reasons"], reasons)
+        brief_path = os.path.join(self.run_dir, "visual-qa", "visual-qa-1-1",
+                                  "visual-qa-1.brief.md")
+        with open(brief_path) as handle:
+            brief = handle.read()
+        self.assertIn("`score_reasons` gives, for every dimension", brief)
+        self.assertIn('"score_reasons"', brief)
+        # A verdict without reasons is still well formed, and its report has none.
+        result = self.run_step(self.config([{"scores": scores(4), "findings": []}]))
+        self.assertNotIn("score_reasons", self.report(result))
+
     def test_a_verdict_on_stdout(self):
         good = json.dumps(complete({"scores": scores(5), "findings": []}))
         result = self.run_step(self.config(["stdout:" + good], verdict_from="stdout"))
@@ -385,6 +402,36 @@ class TheRubric(unittest.TestCase):
         self.assertIn("keys the contract does not", self.parse(
             complete({"scores": scores(4), "findings": [], "verdict": "PASS"}))[1])
         self.assertIsNone(self.parse(complete({"scores": scores(4), "findings": []}))[1])
+
+    def test_score_reasons_are_optional_and_checked(self):
+        verdict = complete({"scores": scores(4), "findings": [],
+                            "score_reasons": {"environment": "a void"}})
+        self.assertIsNone(self.parse(verdict)[1])
+        verdict["score_reasons"] = {"vibes": "nice"}
+        self.assertIn("dimensions the rubric does not", self.parse(verdict)[1])
+        verdict["score_reasons"] = {"environment": 3}
+        self.assertIn("must be a string", self.parse(verdict)[1])
+
+    def test_assets_failures_name_the_roles_they_remake(self):
+        # What the assets step remakes on re-entry is data (rebuild_roles, rebuild.groups).
+        dims = RUBRIC["dimensions"]
+        self.assertEqual(rubric_mod.expand_roles(RUBRIC, dims["environment"]["rebuild_roles"]),
+                         ["environment", "background", "prop"])
+        entities = rubric_mod.expand_roles(RUBRIC, ["entities"])
+        self.assertIn("player", entities)
+        self.assertIn("threat", entities)
+        art = rubric_mod.expand_roles(RUBRIC, RUBRIC["look"]["rebuild_roles"])
+        self.assertTrue(set(entities) < set(art))
+        self.assertNotIn("ui", art)
+        for name, dimension in dims.items():
+            if dimension["route"] == "assets":
+                self.assertTrue(dimension.get("rebuild_roles"), name)
+        for question in RUBRIC["state_questions"]:
+            if question["route"] == "assets":
+                self.assertTrue(question.get("rebuild_roles"), question["id"])
+        self.assertIn("player", RUBRIC["rebuild"]["role_words"])
+        broken = dict(RUBRIC, rebuild={"groups": {"x": "player"}})
+        self.assertIn("rebuild.groups", rubric_mod._check_rebuild(broken))
 
     def test_every_state_must_be_answered_and_only_those(self):
         verdict = complete({"scores": scores(4), "findings": []})

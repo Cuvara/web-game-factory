@@ -54,6 +54,7 @@ DEFAULT_BARS = {
     "palette_distance": 48,
     "silhouette_roles": ["player", "threat"],
     "max_dominance": 0.6,
+    "min_contrast_share": {"player": 0.5, "collectible": 0.4, "threat": 0.25, "hazard": 0.25},
 }
 _COMPONENT = {5120: ("b", 1), 5121: ("B", 1), 5122: ("h", 2), 5123: ("H", 2),
               5125: ("I", 4), 5126: ("f", 4)}
@@ -254,6 +255,7 @@ def analyse(data, *, tolerance=0.02, name="model"):
              for r in reversed(scenes[scene].get("nodes") or [])]
     seen = set()
     world = []  # the visual model's triangles in model space, for the silhouette
+    surface = {}  # material index (-1: none) -> visible surface area, for the contrast
     while stack:
         index, inherited, parent_matrix = stack.pop()
         if index in seen or not 0 <= index < len(nodes):
@@ -285,6 +287,10 @@ def analyse(data, *, tolerance=0.02, name="model"):
             flat_indices = [i[0] for i in indices] if indices is not None else None
             prim_triangles = _triangles(prim, len(positions), flat_indices)
             placed = [gltf._apply(matrix, p) for p in positions]
+            material = prim.get("material") if isinstance(prim.get("material"), int) else -1
+            surface[material] = surface.get(material, 0.0) + sum(
+                _area(*(placed[i] for i in tri)) for tri in prim_triangles
+                if all(i < len(placed) for i in tri))
             world.extend((index, tuple(placed[i] for i in tri)) for tri in prim_triangles
                          if all(i < len(placed) for i in tri))
             for points, triangles in _pieces(positions, prim_triangles):
@@ -300,12 +306,68 @@ def analyse(data, *, tolerance=0.02, name="model"):
             continue
         pbr = materials[i].get("pbrMetallicRoughness") or {}
         factor = pbr.get("baseColorFactor") or [1, 1, 1, 1]
+        emissive = list(materials[i].get("emissiveFactor") or [0, 0, 0])[:3]
+        strength = ((materials[i].get("extensions") or {}).get(
+            "KHR_materials_emissive_strength") or {}).get("emissiveStrength", 1.0)
         colours.append({"name": materials[i].get("name") or f"material-{i}",
                         "color": _srgb_hex(factor[:3]),
+                        "emissive": _srgb_hex([min(1.0, c * float(strength))
+                                               for c in emissive]),
+                        "area": round(surface.get(i, 0.0), 6),
                         "textured": isinstance(pbr.get("baseColorTexture"), dict)})
     return {"pieces": pieces, "mesh_nodes": mesh_nodes, "normals": normals and mesh_nodes > 0,
             "decoded": decoded, "materials": colours,
             "silhouette": silhouette(world) if decoded and world else None}
+
+
+def _area(a, b, c):
+    u = [b[k] - a[k] for k in range(3)]
+    v = [c[k] - a[k] for k in range(3)]
+    cross = (u[1] * v[2] - u[2] * v[1], u[2] * v[0] - u[0] * v[2], u[0] * v[1] - u[1] * v[0])
+    return 0.5 * math.sqrt(sum(x * x for x in cross))
+
+
+def _luminance(hex_colour):
+    """WCAG relative luminance of an sRGB hex colour."""
+    def channel(c):
+        return c / 12.92 if c <= 0.04045 else ((c + 0.055) / 1.055) ** 2.4
+    r, g, b = (channel(x / 255.0) for x in _rgb(hex_colour))
+    return 0.2126 * r + 0.7152 * g + 0.0722 * b
+
+
+def contrast_ratio(a, b):
+    la, lb = sorted((_luminance(a), _luminance(b)), reverse=True)
+    return (la + 0.05) / (lb + 0.05)
+
+
+def background_colour(visual_identity):
+    """The colour the game draws its scene on: the palette entry whose token or role names
+    the background or ground, else the darkest."""
+    palette = [e for e in (visual_identity or {}).get("palette") or [] if isinstance(e, dict)
+               and isinstance(e.get("hex"), str) and len(e["hex"]) == 7]
+    for entry in palette:
+        words = f"{entry.get('token', '')} {entry.get('role', '')}".lower()
+        if any(w in words for w in ("background", "ground", "backdrop", "sky")):
+            return entry["hex"]
+    return min((e["hex"] for e in palette), key=_luminance, default=None)
+
+
+def contrast_share(materials, background):
+    """The share of the visible surface whose colour - base or emissive, the brighter -
+    stands off `background` by at least 3:1; None when there is no surface to measure."""
+    total = sum(m.get("area") or 0.0 for m in materials if not m.get("textured"))
+    if not total or not background:
+        return None
+    standing = 0.0
+    for m in materials:
+        if m.get("textured"):
+            continue
+        best = max(contrast_ratio(m["color"], background),
+                   contrast_ratio(m.get("emissive") or "#000000", background)
+                   if (m.get("emissive") or "#000000") != "#000000" else 1.0)
+        if best >= 3.0:
+            standing += m.get("area") or 0.0
+    return standing / total
 
 
 # -- the silhouette ---------------------------------------------------------------------------
@@ -612,6 +674,28 @@ def assess(data, *, role=None, visual_identity=None, spec=None, kind="model", na
                   f"of the main body's outline in at least one view")
         else:
             check("model.silhouette", "pass", f"{text} (at most {float(limit):.0%})")
+
+    floors = bars.get("min_contrast_share") if isinstance(bars.get("min_contrast_share"),
+                                                         dict) else {}
+    contrast_roles = list(floors)
+    floor = floors.get(role)
+    background = background_colour(visual_identity)
+    share = contrast_share(used, background) if used else None
+    if share is None:
+        check("model.contrast", "skipped",
+              "no untextured surface or no background colour to measure against")
+    else:
+        text = (f"{share:.0%} of the visible surface stands off the background {background} "
+                f"by 3:1 or more (base or emissive colour)")
+        if role not in contrast_roles:
+            check("model.contrast", "pass", f"{text}; not judged for role {role or 'unset'}")
+        elif share < float(floor):
+            check("model.contrast", "fail",
+                  f"{text}, under {float(floor):.0%}: a dark model on a dark scene vanishes at "
+                  f"gameplay distance - give the body a light or saturated palette colour, or "
+                  f"emissive trim that outlines it")
+        else:
+            check("model.contrast", "pass", f"{text} (at least {float(floor):.0%})")
 
     verdict ="fail" if any(c["status"] == "fail" for c in checks) else "pass"
     quality = {"verdict": verdict, "checks": checks, "primitive_only": only,

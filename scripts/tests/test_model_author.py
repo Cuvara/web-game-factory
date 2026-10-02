@@ -200,6 +200,19 @@ class PrimitiveDetection(unittest.TestCase):
         self.assertEqual(set(bars), set(model_quality.DEFAULT_BARS))
         self.assertEqual(bars, model_quality.DEFAULT_BARS)
 
+    def test_a_dark_player_on_a_dark_ground_fails_contrast(self):
+        # Calibration: the reference craft 0.76 and wall 0.30 pass; an autonomous set's
+        # black-hulled craft 0.35 and near-black asteroid 0.07 vanished on their renders.
+        look = {"palette": [{"token": "ground", "hex": "#0B0B12", "role": "Background"},
+                            {"token": "signal", "hex": "#FF2E88", "role": "accent"}]}
+        dark = [{"color": "#16162a", "emissive": "#000000", "area": 3.0, "textured": False},
+                {"color": "#ff2e88", "emissive": "#000000", "area": 1.0, "textured": False}]
+        self.assertEqual(model_quality.background_colour(look), "#0B0B12")
+        self.assertAlmostEqual(model_quality.contrast_share(dark, "#0B0B12"), 0.25)
+        lit = [dict(dark[0], emissive="#2ef2ff")] + dark[1:]
+        self.assertEqual(model_quality.contrast_share(lit, "#0B0B12"), 1.0)
+        self.assertLess(model_quality.contrast_ratio("#16162a", "#0B0B12"), 1.2)
+
     def test_the_quality_block_is_the_manifests(self):
         schema = ArtifactContracts().schemas["asset-manifest"]
         block = schema["properties"]["items"]["items"]["properties"]["quality"]

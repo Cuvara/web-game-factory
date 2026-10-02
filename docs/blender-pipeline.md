@@ -299,6 +299,7 @@ of body, cabin and wheels, is composed.
 | `model.bounds` | no bounding box, or not the spec's fitted size |
 | `model.primitive` | `primitive_only` and the role is readable (`player`, `threat`, `goal`, `target`, `projectile`, `collectible`, `hazard`) — unless `visual_identity.primitive_style` is stated |
 | `model.silhouette` | a box with bumps: the role is in `silhouette_roles` (`player`, `threat`) and, in every view, one component covers more than `max_dominance` (0.6) of the outline — unless `primitive_style` is stated |
+| `model.contrast` | a dark model on a dark scene: under `min_contrast_share` of the visible surface (by area; base or emissive colour, the brighter) stands off the design's background by 3:1 - player 0.5, collectible 0.4, threat and hazard 0.25 (calibrated: the reference craft 0.76 and wall 0.30 pass, a black-hulled craft 0.35 and a near-black asteroid 0.07 fail) |
 
 **The silhouette proxy.** `model.primitive` passes a hull with a canopy and a fin hidden
 inside its outline — composed, yet "an orange brick with no wings" in the game. So the

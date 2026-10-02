@@ -52,6 +52,8 @@ DEFAULT_BARS = {
     "min_distinct_pieces": 2,
     "require_normals": True,
     "palette_distance": 48,
+    "silhouette_roles": ["player", "threat"],
+    "max_dominance": 0.6,
 }
 _COMPONENT = {5120: ("b", 1), 5121: ("B", 1), 5122: ("h", 2), 5123: ("H", 2),
               5125: ("I", 4), 5126: ("f", 4)}
@@ -248,10 +250,12 @@ def analyse(data, *, tolerance=0.02, name="model"):
     normals = True
     decoded = True
     # The roles as gltf.inspect assigns them: a collision subtree, a LOD level, or neither.
-    stack = [(r, (None, None)) for r in reversed(scenes[scene].get("nodes") or [])]
+    stack = [(r, (None, None), gltf.IDENTITY)
+             for r in reversed(scenes[scene].get("nodes") or [])]
     seen = set()
+    world = []  # the visual model's triangles in model space, for the silhouette
     while stack:
-        index, inherited = stack.pop()
+        index, inherited, parent_matrix = stack.pop()
         if index in seen or not 0 <= index < len(nodes):
             return None
         seen.add(index)
@@ -259,8 +263,9 @@ def analyse(data, *, tolerance=0.02, name="model"):
         own = gltf._role(node)
         role = own if own[0] == "collision" or (own[0] == "lod"
                                                 and inherited[0] != "collision") else inherited
+        matrix = gltf._multiply(parent_matrix, gltf._trs(node))
         for child in reversed(node.get("children") or []):
-            stack.append((child, role))
+            stack.append((child, role, matrix))
         visual = role[0] is None or (role[0] == "lod" and not role[1])
         if not visual or "mesh" not in node or not 0 <= node["mesh"] < len(meshes):
             continue
@@ -278,8 +283,11 @@ def analyse(data, *, tolerance=0.02, name="model"):
                 decoded = False
                 continue
             flat_indices = [i[0] for i in indices] if indices is not None else None
-            for points, triangles in _pieces(positions,
-                                             _triangles(prim, len(positions), flat_indices)):
+            prim_triangles = _triangles(prim, len(positions), flat_indices)
+            placed = [gltf._apply(matrix, p) for p in positions]
+            world.extend((index, tuple(placed[i] for i in tri)) for tri in prim_triangles
+                         if all(i < len(placed) for i in tri))
+            for points, triangles in _pieces(positions, prim_triangles):
                 lo = [min(p[k] for p in points) for k in range(3)]
                 hi = [max(p[k] for p in points) for k in range(3)]
                 pieces.append({"node": node.get("name") or f"nodes[{index}]",
@@ -296,7 +304,128 @@ def analyse(data, *, tolerance=0.02, name="model"):
                         "color": _srgb_hex(factor[:3]),
                         "textured": isinstance(pbr.get("baseColorTexture"), dict)})
     return {"pieces": pieces, "mesh_nodes": mesh_nodes, "normals": normals and mesh_nodes > 0,
-            "decoded": decoded, "materials": colours}
+            "decoded": decoded, "materials": colours,
+            "silhouette": silhouette(world) if decoded and world else None}
+
+
+# -- the silhouette ---------------------------------------------------------------------------
+
+# The three orthographic views a silhouette is read from, as the two model-space axes each
+# projects onto (glTF: x right, y up, z the model's front).
+SILHOUETTE_VIEWS = (("front", 0, 1), ("side", 2, 1), ("top", 0, 2))
+SILHOUETTE_GRID = 64
+# A view in which the model is this flat (its shorter projected side under this fraction of
+# the longer) shows an edge, not a silhouette - a floor tile from the front - and is skipped.
+_FLAT_VIEW = 0.03
+
+
+def _band_span(tri, row):
+    """[lo, hi] of the triangle `tri` (2D, cell units) clipped to the band row <= v <= row+1,
+    or None: a conservative cover of the row - a sliver thinner than a cell still counts."""
+    poly = list(tri)
+    for bound, keep_above in ((row, True), (row + 1, False)):
+        out = []
+        for i, a in enumerate(poly):
+            b = poly[(i + 1) % len(poly)]
+            a_in = a[1] >= bound if keep_above else a[1] <= bound
+            b_in = b[1] >= bound if keep_above else b[1] <= bound
+            if a_in:
+                out.append(a)
+            if a_in != b_in and a[1] != b[1]:
+                t = (bound - a[1]) / (b[1] - a[1])
+                out.append((a[0] + t * (b[0] - a[0]), bound))
+        poly = out
+        if not poly:
+            return None
+    xs = [p[0] for p in poly]
+    return min(xs), max(xs)
+
+
+def _view_masks(triangles, u_axis, v_axis, grid):
+    """(width, height, {node: set of covered cells}) of the outline projected onto the two
+    axes, on a grid whose longer side has `grid` square cells; None when edge-on."""
+    us = [p[u_axis] for _node, tri in triangles for p in tri]
+    vs = [p[v_axis] for _node, tri in triangles for p in tri]
+    lo_u, lo_v = min(us), min(vs)
+    extent_u, extent_v = max(us) - lo_u, max(vs) - lo_v
+    longest = max(extent_u, extent_v)
+    if longest <= 1e-9 or min(extent_u, extent_v) < longest * _FLAT_VIEW:
+        return None
+    cell = longest / grid
+    width = max(1, min(grid, int(math.ceil(extent_u / cell - 1e-9))))
+    height = max(1, min(grid, int(math.ceil(extent_v / cell - 1e-9))))
+    masks = {}
+    for node, tri in triangles:
+        mask = masks.setdefault(node, set())
+        flat = [((p[u_axis] - lo_u) / cell, (p[v_axis] - lo_v) / cell) for p in tri]
+        low = max(0, int(math.floor(min(p[1] for p in flat))))
+        high = min(height - 1, int(math.floor(max(p[1] for p in flat))))
+        for row in range(low, high + 1):
+            span = _band_span(flat, row)
+            if span is None:
+                continue
+            first = max(0, int(math.floor(span[0])))
+            last = min(width - 1, int(math.floor(span[1])))
+            mask.update(range(row * width + first, row * width + last + 1))
+    return width, height, masks
+
+
+def _largest_rectangle(cells, width, height):
+    """Cells in the largest all-covered axis-aligned rectangle (histogram method)."""
+    best = 0
+    heights = [0] * width
+    for row in range(height):
+        base = row * width
+        heights = [h + 1 if base + i in cells else 0 for i, h in enumerate(heights)]
+        stack = []
+        for i, h in enumerate(heights + [0]):
+            start = i
+            while stack and stack[-1][1] >= h:
+                start, top = stack.pop()
+                best = max(best, top * (i - start))
+            stack.append((start, h))
+    return best
+
+
+def silhouette(triangles, grid=SILHOUETTE_GRID):
+    """The model's outline seen from the front, the side and the top, measured per view
+    (each 0..1):
+
+        fill       the outline's share of its bounding rectangle
+        block      the largest rectangle inside the outline, over the outline
+        part       the largest single part's outline, over the outline
+        dominance  `part` when the model has several parts; `block` when it is one mesh (a
+                   modelled mesh from another tool, whose parts are not nodes)
+
+    `triangles` are (node, (p0, p1, p2)) in model space. A box with bumps - one hull with
+    small parts that stay inside its outline - is dominated by one component in every view;
+    a ship whose wings, tail and engines stand out, a figure with arms and legs, a rock
+    cluster, is not in at least one. {views: {front, side, top: {...} or None}, dominance,
+    view}: the most distinctive view's dominance (the smallest), and which view that is."""
+    several = len({node for node, _tri in triangles}) > 1
+    views = {}
+    for name, u_axis, v_axis in SILHOUETTE_VIEWS:
+        measured = _view_masks(triangles, u_axis, v_axis, grid) if triangles else None
+        if measured is None:
+            views[name] = None
+            continue
+        width, height, masks = measured
+        union = set().union(*masks.values())
+        if not union:
+            views[name] = None
+            continue
+        measures = {
+            "fill": round(len(union) / float(width * height), 3),
+            "block": round(_largest_rectangle(union, width, height) / float(len(union)), 3),
+            "part": round(max(len(m) for m in masks.values()) / float(len(union)), 3),
+        }
+        measures["dominance"] = measures["part" if several else "block"]
+        views[name] = measures
+    judged = {k: v["dominance"] for k, v in views.items() if v is not None}
+    if not judged:
+        return {"views": views, "dominance": None, "view": None, "grid": grid}
+    view = min(judged, key=lambda k: (judged[k], k))
+    return {"views": views, "dominance": judged[view], "view": view, "grid": grid}
 
 
 def _srgb_hex(linear):
@@ -461,7 +590,30 @@ def assess(data, *, role=None, visual_identity=None, spec=None, kind="model", na
               f"primitive only ({len(pieces)} piece(s): {', '.join(shapes)}) for the readable "
               f"role {role}: a primitive standing in for a {role} is a placeholder")
 
-    verdict = "fail" if any(c["status"] == "fail" for c in checks) else "pass"
+    outline = (geometry or {}).get("silhouette")
+    silhouette_roles = bars.get("silhouette_roles") or []
+    limit = bars.get("max_dominance")
+    if outline is None or outline.get("dominance") is None:
+        check("model.silhouette", "skipped",
+              "no outline to measure (the geometry is unread, compressed or flat)")
+    else:
+        share, view = outline["dominance"], outline["view"]
+        text = (f"one component covers {share:.0%} of the {view} outline, the most distinctive "
+                f"view")
+        if role not in silhouette_roles or limit is None:
+            check("model.silhouette", "pass", f"{text}; not judged for role {role or 'unset'}")
+        elif styled:
+            check("model.silhouette", "pass", f"{text}; the visual identity states "
+                                              f"primitive_style")
+        elif share > float(limit):
+            check("model.silhouette", "fail",
+                  f"{text}, over {float(limit):.0%}: a box with bumps - the parts a player "
+                  f"recognises a {role} by (wings, limbs, fins, engines, a gap) must stand out "
+                  f"of the main body's outline in at least one view")
+        else:
+            check("model.silhouette", "pass", f"{text} (at most {float(limit):.0%})")
+
+    verdict ="fail" if any(c["status"] == "fail" for c in checks) else "pass"
     quality = {"verdict": verdict, "checks": checks, "primitive_only": only,
                "parts": len(pieces) if geometry is not None else None,
                "triangles": triangles if summary is not None else None,

@@ -440,10 +440,14 @@ class MappedLibrary(ProductionCase):
         part = lambda shape, size, at, m="hull": {"id": f"{shape}-{at}", "shape": shape,  # noqa: E731
                                                  "size": list(size), "translation": list(at),
                                                  "material": m}
+        # Wings standing out of the hull's outline: without them it is a box with bumps,
+        # which model.silhouette refuses for a player (test_model_author.Silhouette).
         craft = glb_synth.build([part("box", (1.2, 0.3, 2.0), (0, 0, 0)),
                                  part("sphere", (0.4, 0.3, 0.6), (0, 0.3, -0.2), "trim"),
                                  part("capsule", (0.2, 0.2, 0.9), (0.7, 0, 0.4)),
                                  part("capsule", (0.2, 0.2, 0.9), (-0.7, 0, 0.4)),
+                                 part("box", (0.9, 0.06, 0.7), (1.05, 0, 0.1)),
+                                 part("box", (0.9, 0.06, 0.7), (-1.05, 0, 0.1)),
                                  part("cylinder", (0.15, 0.4, 0.15), (0.3, 0, 1.0), "trim")], mats)
         cube = glb_synth.build([part("box", (1, 1, 1), (0, 0, 0))], mats)
         for name, data in (("craft.glb", craft), ("cube.glb", cube)):
@@ -480,17 +484,34 @@ class FakeModelAuthor:
     class ModelAuthorError(RuntimeError):
         pass
 
-    def __init__(self, glb):
+    def __init__(self, glb, fail=()):
         self.glb = glb
+        self.fail = set(fail)
         self.calls = []
+        self.sets = []
+        self.contexts = []
 
     def produce_model(self, requirement, visual_identity, out_dir, settings, context):
         self.calls.append(requirement["id"])
-        path = os.path.join(out_dir, f"{requirement['id']}.glb")
+        self.contexts.append(context)
+        return self._made(requirement["id"], out_dir)
+
+    def produce_models(self, requirements, visual_identity, out_dir, settings, context):
+        self.sets.append([r["id"] for r in requirements])
+        self.contexts.append(context)
+        results = {r["id"]: self._made(r["id"], out_dir) for r in requirements
+                   if r["id"] not in self.fail}
+        errors = {i: self.ModelAuthorError(f"{i} still fails") for i in self.fail}
+        return {"results": results, "errors": errors,
+                "set_render": os.path.join(out_dir, "set.png"), "rounds": 2}
+
+    def _made(self, asset_id, out_dir):
+        path = os.path.join(out_dir, f"{asset_id}.glb")
         with open(path, "wb") as handle:
             handle.write(self.glb)
         return {"files": [path], "source": "ai-generated", "license": None,
                 "placeholder": False, "notes": "fake model author",
+                "renders": {"sheet": os.path.join(out_dir, f"{asset_id}.sheet.png")},
                 "quality": {"verdict": "pass", "checks": [
                     {"id": "model.parts", "status": "pass", "summary": "5 parts"}],
                     "primitive_only": False, "parts": 5, "triangles": 12, "colors": 3,
@@ -525,6 +546,43 @@ class ThreeD(ProductionCase):
         self.assertFalse(ship["placeholder"])
         self.assertEqual(ship["quality"]["author"], "author:fake")
         self.assertEqual(ship["files"][0]["path"], "public/assets/models/ship.glb")
+        self.assertIn("ship.sheet.png", ship["notes"])
+        self.assertEqual(ArtifactContracts()("asset-manifest", manifest), [])
+        # The author is handed a plain dict, never the step's context object (which is not
+        # a mapping: handed on as it was, every real run's model author failed).
+        (context,) = fake.contexts
+        self.assertIsInstance(context, dict)
+        self.assertTrue(context["run_dir"].endswith("model-author"))
+        self.assertIn("policy", context)
+
+    def install(self, fake):
+        original = step_mod._model_author
+        step_mod._model_author = fake
+        self.addCleanup(setattr, step_mod, "_model_author", original)
+
+    def test_set_mode_authors_every_3d_requirement_in_one_session(self):
+        from wgf_assets import encoders
+        fake = FakeModelAuthor(encoders.glb("ship", (200, 40, 80)), fail={"rock"})
+        self.install(fake)
+        design = production_design([spec_asset("ship", "model", "player"),
+                                    spec_asset("rock", "model", "threat"),
+                                    spec_asset("gate", "model", "hazard")], engine="threejs")
+        design["engine"]["camera"] = "Third-person chase camera, slightly high"
+        design["art_direction"] = "Deep-space neon"
+        manifest, _ = self.run_prod(design, model_author={"kind": "command", "argv": ["fake"],
+                                                          "mode": "set"})
+        items = self.items(manifest)
+        self.assertEqual(fake.sets, [["ship", "rock", "gate"]])
+        self.assertEqual(fake.calls, [])
+        self.assertFalse(items["ship"]["placeholder"])
+        self.assertIn("set.png", items["gate"]["notes"])
+        # What the set author could not make falls to the placeholders, as in each mode.
+        self.assertTrue(items["rock"]["placeholder"])
+        self.assertIn(("generation-failed", "warning"), self.codes(manifest, "rock"))
+        (context,) = fake.contexts
+        self.assertEqual(context["design"], {"art_direction": "Deep-space neon",
+                                             "camera": "Third-person chase camera, "
+                                                       "slightly high"})
         self.assertEqual(ArtifactContracts()("asset-manifest", manifest), [])
 
 

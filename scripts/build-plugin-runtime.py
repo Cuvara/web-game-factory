@@ -43,7 +43,9 @@ MANIFEST = "runtime-manifest.json"
 # Directories copied whole (minus EXCLUDE), and single files. Relative to the repository root.
 TREES = ["core", "scripts/wgflib",
          # Opt-in configuration overlays a project copies to its own factory.yaml.
-         "workspace/config/profiles"]
+         "workspace/config/profiles",
+         # The quality bar every look-making or look-judging agent is shown.
+         "workspace/quality-bar"]
 TREE_GLOBS = ["scripts/wgf_*"]
 FILES = [
     "VERSION",

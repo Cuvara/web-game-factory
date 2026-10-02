@@ -803,7 +803,8 @@ class Phases(DesignAndPlanInTheBrief):
         # The playbooks distilled from the reference games, for this engine's dimension.
         for path in ("core/craft/production-art-2d.md", "core/craft/game-ui-kit.md",
                      "core/craft/juice.md", "core/craft/production-wiring.md"):
-            self.assertIn(f"`{path}`", text)
+            # Absolute: the developer's working directory is the checkout, not the Factory.
+            self.assertIn(f"`{briefs.factory_path(path)}`", text)
             self.assertTrue(os.path.isfile(os.path.join(ROOT, path)), path)
         self.assertNotIn("production-art-3d.md", text)
         self.assertNotIn("Primitives are expected here", text)
@@ -900,6 +901,44 @@ class GameDesignDocument(DevelopCase):
         self.assertEqual(committed, gdd.render_gdd(inputs.load("game-design"),
                                                    inputs.load("title-strategy"),
                                                    inputs.refs["game-design"].content_hash))
+
+
+class SeeYourBuild(DevelopCase):
+    """The developer is given eyes (look.mjs), the installation's quality bar and every craft
+    guide by an absolute path - none of which it had, which is how a build drew nothing for
+    forty minutes and a finished one looked like a prototype."""
+
+    def brief(self):
+        step_with(FakeRunner()).execute(inputs_for(), context(self.config()))
+        with open(os.path.join(self.repo, briefs.BRIEF_DIR, "brief.json")) as handle:
+            data = json.load(handle)
+        with open(os.path.join(self.repo, briefs.BRIEF_DIR, "brief.md")) as handle:
+            return data, handle.read()
+
+    def test_the_brief_says_draw_first_and_look_with_the_frame_tool(self):
+        data, text = self.brief()
+        self.assertTrue(os.path.isfile(data["look"]["tool"]))
+        self.assertTrue(data["look"]["out"].startswith("/tmp/wgf-look/"))
+        self.assertIn("## See your build", text)
+        self.assertIn("**Make it draw first.**", text)
+        self.assertIn(f"pnpm exec node {data['look']['tool']} --out", text)
+
+    def test_the_quality_bar_is_the_engines_dimension_and_exists(self):
+        data, text = self.brief()
+        bar = data["look"]["quality_bar"]
+        self.assertTrue(bar)
+        for frame in bar:
+            self.assertEqual(frame["dimension"], "2d")  # the fixture is PixiJS
+            self.assertTrue(os.path.isfile(frame["path"]), frame["path"])
+            self.assertIn(frame["path"], text)
+        self.assertIn("### The quality bar", text)
+
+    def test_every_craft_guide_is_absolute_and_exists(self):
+        data, text = self.brief()
+        self.assertIn("## Craft guides", text)
+        for path in data["craft_guides"]:
+            self.assertTrue(os.path.isabs(path) and os.path.isfile(path), path)
+        self.assertNotIn("production-art-3d.md", " ".join(data["craft_guides"]))
 
 
 class HostSkills(DevelopCase):

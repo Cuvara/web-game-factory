@@ -180,6 +180,31 @@ the game, regenerated on every visit and committed with the code it asked for. I
   read like the session budget, is no longer shown. Absent on a first visit (entered by
   `<step>.success`).
 
+## Eyes and the quality bar
+
+A developer that never looks at what it built builds blind: a live 2D greybox drew nothing
+for forty minutes while fifteen logic modules were written, and no developer had ever been
+shown what a finished game looks like. Every brief therefore carries a **See your build**
+section (`brief.json` `look`):
+
+- **Draw first.** Wire `src/main.ts` to the game's scene before more than a handful of
+  modules exist.
+- **Look.** `pnpm exec node <Factory>/scripts/wgf_develop/tools/look.mjs --out
+  /tmp/wgf-look/<key>/<n>` after `pnpm build`: it serves `dist/` with its own static server,
+  drives the checkout's own Playwright (headless Chromium, software WebGL) and writes
+  title / play / play-later frames for a desktop and a phone viewport, plus `look.json`
+  (page errors, failed `/assets/` requests, the play probe's snapshots). It needs only
+  `Bash(pnpm *)` and `Read`, which every developer already has, and writes outside the
+  checkout, so it never changes the commit.
+- **Compare** the frames with the installation's **quality bar**
+  (`workspace/quality-bar/quality-bar.yaml`, read by `wgflib.quality_bar`; a project's own
+  `workspace/quality-bar/` replaces the shipped one): frames of finished games for the
+  engine's dimension, each with what it shows, and the qualities every finished frame has.
+  The bar sets the level of finish, never the style.
+- **Craft guides** are listed by absolute path (`brief.json` `craft_guides`): the
+  developer's working directory is the checkout, where a Factory-relative path names
+  nothing.
+
 ## Developers
 
 | `developer.kind` | Who writes the game | On a failed check |

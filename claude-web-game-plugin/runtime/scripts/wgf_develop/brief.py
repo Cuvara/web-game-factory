@@ -19,7 +19,7 @@ plan's prototype milestones and tasks, each with its acceptance criteria.
 import json
 import os
 
-from wgflib import gameseam, paths
+from wgflib import gameseam, paths, quality_bar
 from wgflib import template_contract as contract
 from wgflib.yamllite import load_file
 
@@ -96,6 +96,37 @@ def production_craft(engine):
     """The craft playbook paths a production build of `engine` is pointed at, in order."""
     art = PRODUCTION_ART_CRAFT.get(engine)
     return [PRODUCTION_CRAFT] + ([art] if art else []) + list(PRODUCTION_CRAFT_SHARED)
+
+
+def factory_path(relative):
+    """An absolute path to a Factory file. The developer's working directory is the game
+    checkout: a path relative to the Factory names nothing it can open."""
+    return os.path.join(paths.ROOT, *relative.split("/"))
+
+
+# The developer's eyes: frames of the built game (tools/look.mjs), run with the checkout's
+# own Playwright. Absolute, for the same reason as factory_path.
+LOOK_TOOL = os.path.join(os.path.dirname(os.path.abspath(__file__)), "tools", "look.mjs")
+LOOK_OUT_ROOT = "/tmp/wgf-look"
+
+
+def craft_guides(engine):
+    """Every craft playbook in the Factory a developer of `engine` may read: the production
+    ones first, then the rest of core/craft/, absolute."""
+    first = production_craft(engine) + [AUDIO_CRAFT]
+    rest = []
+    craft_dir = os.path.join(paths.CORE, "craft")
+    if os.path.isdir(craft_dir):
+        for name in sorted(os.listdir(craft_dir)):
+            rel = f"core/craft/{name}"
+            if name.endswith(".md") and rel not in first and not _other_engine_art(rel, engine):
+                rest.append(rel)
+    return [factory_path(p) for p in first + rest]
+
+
+def _other_engine_art(rel, engine):
+    mine = PRODUCTION_ART_CRAFT.get(engine)
+    return rel in PRODUCTION_ART_CRAFT.values() and rel != mine
 
 # Paths a game may not edit. packages/ is the template's (fix the template instead);
 # game.config.yaml is written from the approved tech plan; the pipelines and release tooling
@@ -597,6 +628,16 @@ def build_brief(*, title_id, engine, iteration, key, baseline, design, assets, s
                    if v and not (k in ENGINE_DIRS and k != engine)},
         "report_path": REPORT_PATH,
         "self_playtest": bool(self_playtest),
+        # How the developer sees what it built, and what "finished" looks like: the frame
+        # tool, where its frames go (outside the checkout), and the installation's quality
+        # bar for this engine's dimension (wgflib.quality_bar).
+        "look": {"tool": LOOK_TOOL,
+                 "out": f"{LOOK_OUT_ROOT}/" + "".join(
+                     c if c.isalnum() or c in "._-" else "-" for c in str(key)),
+                 "quality_bar": quality_bar.frames(
+                     "3d" if engine == "threejs" else "2d"),
+                 "qualities": quality_bar.qualities()},
+        "craft_guides": craft_guides(engine),
         # What verification will demand browser evidence for (wgf_verification computes the
         # same set from the same design): the developer is told up front, instead of
         # learning it from a failed verification and a loop back here.
@@ -671,7 +712,7 @@ def _production_art_section(art, engine=None):
         "the page fetched, measured screens, and a visual judge reading the frames. The craft "
         "behind it, distilled from the reference games and read before you draw or wire "
         "anything, is in the Factory: "
-        + ", ".join(f"`{path}`" for path in production_craft(engine)) + ".\n")
+        + ", ".join(f"`{factory_path(path)}`" for path in production_craft(engine)) + ".\n")
     add("### Assets, by what they are to the player\n")
     add("Draw each with the runtime asset of that id (`public/assets/assets.json`), replacing "
         "the greybox primitive that stood for its role. The readability line is what the "
@@ -714,7 +755,7 @@ def _production_art_section(art, engine=None):
             "probe reports `audio`: `music` (the id playing), `playing`, and `level` - the RMS "
             "of the master output read from an AnalyserNode after every gain, so it is about "
             "0 when muted. The production gate hears the game through it (`audio.plays`). "
-            f"The craft is `{AUDIO_CRAFT}` in the Factory.\n")
+            f"The craft is `{factory_path(AUDIO_CRAFT)}` in the Factory.\n")
         for a in sounds:
             where = "" if a.get("delivered") is not False else " - not in the asset manifest yet"
             add(f"- **{a.get('id')}** ({a.get('type')}{', loops' if a.get('loop') else ''}): "
@@ -869,6 +910,58 @@ def _visual_qa_failures(report, frames_root=None):
     return out
 
 
+def _see_your_build(brief, look):
+    """The section that gives the developer eyes: build, capture frames, open them, compare
+    them with the quality bar, fix, repeat - from the first playable wiring on."""
+    out = []
+    add = out.append
+    tool, where = look["tool"], look["out"]
+    add("## See your build\n")
+    add("You cannot judge a game you have not looked at, and nobody else will look at it "
+        "before the gates do. The order of work is therefore:\n")
+    add("1. **Make it draw first.** Before writing more than a handful of modules, wire "
+        "`src/main.ts` to your game's scene so the core loop renders and takes input - "
+        "the template's boot scene draws nothing. A build that has drawn nothing after "
+        "your first hour of work is the most expensive failure there is.")
+    add(f"2. **Look.** `pnpm build`, then `pnpm exec node {tool} --out {where}/<n>` "
+        "(a new `<n>` each time: 1, 2, 3 ...). It serves `dist/` itself, plays the first "
+        "seconds on a desktop (1280x720) and a phone (390x844) viewport, and writes "
+        "`desktop-1-title.png`, `desktop-2-play.png`, `desktop-3-play-later.png`, the same "
+        "for `mobile-`, and `look.json` (page errors, failed asset requests, the play "
+        "probe's snapshots). Pass `--actions` to script other input, e.g. "
+        "`--actions click:0.5x0.7,wait:500,key:ArrowLeft`.")
+    add("3. **Open every frame** with your file-reading tool - they are images - and judge "
+        "them as a player would, against the design's visual identity and the quality bar "
+        "below: is the player obvious within a second? is the objective on screen? does "
+        "anything look like a default (browser button, system font, flat grey, a cube "
+        "standing for a character, an empty dark void)? does the phone frame fit? did the "
+        "play frames change after input?")
+    add("4. **Fix and look again**, after every change a player would see. Look one last "
+        "time before you write the report, and say in `known_issues` what the last frames "
+        "still show that falls short of the bar.\n")
+    bar = look.get("quality_bar") or []
+    if bar:
+        add("### The quality bar\n")
+        add("Frames of finished games this installation holds its games to. Open them before "
+            "you start and again before you finish. They set the **level of finish** - "
+            "composition, hierarchy, density, one visual language - never the style: this "
+            "game's look comes from its own design.\n")
+        for frame in bar:
+            add(f"- `{frame['path']}` ({frame.get('state')}): {frame.get('shows')}")
+        add("")
+    qualities = look.get("qualities") or []
+    if qualities:
+        add("What every frame of a finished game has:\n")
+        for quality in qualities:
+            add(f"- {quality}")
+        add("")
+    if brief.get("phase") == "greybox":
+        add("In this greybox phase the bar applies to composition, framing, hierarchy and "
+            "readability - primitives and flat palette colours are expected, an unframed or "
+            "empty scene is not.\n")
+    return "\n".join(out) + "\n"
+
+
 def render_markdown(brief):
     d = brief["design"]
     engine = brief["engine"]
@@ -923,6 +1016,10 @@ def render_markdown(brief):
             "playability check passing - an asset that hides the player, darkens the scene or "
             "drops the objective from the screen is a regression - because the build is "
             "played again before review.\n")
+
+    look = brief.get("look")
+    if look:
+        add(_see_your_build(brief, look))
 
     add("## Ground rules\n")
     add(f"1. **Engine: `{engine}`**, from `game.config.yaml`. 2D is PixiJS or Phaser, 3D is "
@@ -1324,6 +1421,16 @@ def render_markdown(brief):
             add(f"### {failure['check']}\n\n{failure.get('summary') or ''}\n")
             if failure.get("output_tail"):
                 add("```\n" + failure["output_tail"][-2500:] + "\n```\n")
+
+    if brief.get("craft_guides"):
+        add("## Craft guides\n")
+        add("The Factory's craft playbooks - game feel and juice, the core loop, onboarding, "
+            "the UI kit, production art, production wiring, performance, audio. They are "
+            "outside this repository: open them by these absolute paths. Read the first "
+            "four before you build anything a player sees.\n")
+        for path in brief["craft_guides"]:
+            add(f"- `{path}`")
+        add("")
 
     if brief["skills"]:
         add("## Host skills\n")

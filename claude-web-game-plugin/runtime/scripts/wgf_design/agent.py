@@ -41,8 +41,9 @@ configured is an `AuthorError`.
 import json
 import os
 
-from wgflib import agentenv, paths, procs
+from wgflib import agentenv, paths, procs, quality_bar
 
+from . import identity
 from .authors import ArchetypeAuthor, AuthorError, DesignAuthor, register_author
 from .depth import load_rules as load_depth_rules
 from .experience import load_rules
@@ -114,6 +115,16 @@ PROMPT_ART = (
     " token, within the request's `production_art` bars. Set visual_identity.primitive_style"
     " (with a reason) only when the art direction itself is geometric - a character is never"
     " a cube for convenience. The craft guide is the request's `craft`."
+    " The starting draft's visual identity was picked from a fixed set by a digest of the"
+    " title id, not from the idea: choose from the request's `identity_kits` the one that"
+    " best fits this game's idea, subjects and genre, and make visual_identity that kit -"
+    " keep its typography (the asset step can deliver those faces), shape language, motion"
+    " and ui rules - adapted to the game: add palette tokens for the colours its subjects"
+    " need (each piece, character or object a player tells apart by colour gets a token), and"
+    " rewrite art_direction and every asset's description and readability to follow it."
+    " The request's `quality_bar` lists frames of finished games: open them - the level of"
+    " finish (a composed frame, one visual language, designed typography and UI) is the bar"
+    " your art direction must make reachable; their style is not this game's."
 )
 # Appended always: why a player comes back (depth.py), so a draft states more than one loop.
 # The bars are the request's `depth`, read from core/reference/design-depth.yaml.
@@ -235,7 +246,13 @@ class AgentAuthor(DesignAuthor):
                    # The bars depth is held to (depth.py), and the craft guide behind them.
                    "depth": load_depth_rules(),
                    "depth_craft": os.path.join(paths.CORE, "craft",
-                                               "retention-and-progression.md")}
+                                               "retention-and-progression.md"),
+                   # The committed looks to choose from, and frames of finished games.
+                   "identity_kits": {kit_id: {key: kit.get(key) for key in (
+                       "concept", "palette", "typography", "shape_language", "motion",
+                       "texture", "avoid", "ui")} for kit_id, kit in identity.KITS.items()},
+                   "quality_bar": quality_bar.frames(),
+                   "quality_bar_qualities": quality_bar.qualities()}
         if idea:
             request["brief"] = idea
         if repair:

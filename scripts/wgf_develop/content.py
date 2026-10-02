@@ -70,7 +70,7 @@ __all__ = ["CONTENT_PATH", "TEST_PATH", "SCHEMA", "MVP_TIERS", "GENRE_MODELS_PAT
 # The data file the developer writes and the game loads, and the unit test over it. Both are
 # inside the paths a developer may write (scope.DEFAULT_WRITABLE: public/, tests/).
 CONTENT_PATH = "public/content/units.json"
-TEST_PATH = "tests/unit/content.spec.ts"
+TEST_PATH = "tests/unit/content.test.ts"  # *.test.ts: the only pattern the template's unit project collects
 SCHEMA = "wgf-content/1"
 
 # The tiers the MVP build covers. Kept equal to wgf_develop.brief.BUILD_TIERS (a test checks

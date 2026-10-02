@@ -680,7 +680,7 @@ class ContentTasks(unittest.TestCase):
         first, second = tasks
         self.assertEqual(first["milestone"], "M1")
         self.assertEqual(first["phase"], "prototype")
-        self.assertEqual(first["tests"], ["tests/unit/content.spec.ts"])
+        self.assertEqual(first["tests"], ["tests/unit/content.test.ts"])
         self.assertEqual(first["est_hours"], round(hours * batch, 2))
         self.assertIn("levels l-01, l-02, l-03", first["title"])
         # The units' own acceptance, plus where the unit lives and what it follows.

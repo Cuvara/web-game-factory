@@ -147,7 +147,7 @@ the game, regenerated on every visit and committed with the code it asked for. I
   pin (artifact id and content hash), `genre`, `unit_kind`, `generation`, `units[]` and
   `tuning` — with the design's unit ids, index order, objectives, mechanics and difficulty
   values and every mechanic parameter as `tuning`; the game loads it at boot, and
-  `tests/unit/content.spec.ts` tests it. A `parametric` or `procedural` design states the same
+  `tests/unit/content.test.ts` tests it. A `parametric` or `procedural` design states the same
   table but generates the rest from `generation.parameters`, so no data file is owed and none
   is compared. Nothing in the table is the developer's to invent: where the design is silent
   the gap goes in the report's `design_gaps` and the unit is `partial` or `cut`. Craft:

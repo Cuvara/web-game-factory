@@ -36,7 +36,7 @@ GENRE_MODELS_PATH = genre_models.PATH
 # The data file the developer writes the units into, and the unit test over it
 # (wgf_develop.content). Named here so a CONTENT task's acceptance says where a unit lives.
 CONTENT_FILE = "public/content/units.json"
-CONTENT_TEST = "tests/unit/content.spec.ts"
+CONTENT_TEST = "tests/unit/content.test.ts"
 
 def content_units(design):
     """The MVP content units a plan owes tasks for, in index order.

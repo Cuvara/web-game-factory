@@ -559,7 +559,28 @@ class DevelopStep(WorkflowStep):
         """FAILED, not retryable, when the tree holds a change the development commit may
         not contain; None when every change is in scope."""
         try:
-            allowed, refused = scope.partition(git.changes(), settings.writable_paths)
+            changes = git.changes()
+            # An untracked scratch file outside the writable paths cannot be committed and a
+            # developer host that denies deletion cannot remove it: it is swept here, said
+            # so, and never counted against the developer. Tracked files, hidden paths,
+            # instruction files and package files are never swept.
+            swept = []
+            for xy, path in list(changes):
+                if xy != "??" or not scope.stray(path, settings.writable_paths):
+                    continue
+                full = os.path.join(checkout, path)
+                if os.path.islink(full) or not os.path.isfile(full):
+                    continue
+                try:
+                    os.remove(full)
+                except OSError:
+                    continue
+                swept.append(path)
+                changes.remove((xy, path))
+            if swept:
+                logger.warning("develop swept stray untracked files outside the writable "
+                               "paths before judging the commit scope", paths=swept)
+            allowed, refused = scope.partition(changes, settings.writable_paths)
         except GitError as exc:
             return StepResult.failed(f"cannot read what the developer changed: {exc}",
                                      retryable=False)

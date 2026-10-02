@@ -118,7 +118,7 @@ the design's index order — the order *is* the difficulty curve. Each task carr
 own `acceptance` lines plus two generated ones per unit: that the unit is in
 `public/content/units.json` with the design's difficulty values, and that it is reachable from
 the unit before it in play (or, for the first, that it is where play starts). Its tests are
-`tests/unit/content.spec.ts`, and it depends on `CORE-001` and on the `GAME-nnn` tasks of the
+`tests/unit/content.test.ts`, and it depends on `CORE-001` and on the `GAME-nnn` tasks of the
 mechanics its units ask for — a level cannot be built before the verb it is made of. Estimated
 at `implementation.content_unit_hours` (1.5) per unit, so the content is in the timebox total
 that `plan_fits_timebox` is asked about. A design whose `generation.mode` is not `authored`

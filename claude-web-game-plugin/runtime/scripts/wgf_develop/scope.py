@@ -70,6 +70,14 @@ def refusal(path, writable=DEFAULT_WRITABLE):
     return "outside the paths a developer may write (" + ", ".join(writable) + ")"
 
 
+def stray(path, writable=DEFAULT_WRITABLE):
+    """True for a path whose only problem is being outside the writable paths: a scratch
+    file a developer left at the root, not a hidden path, an instruction file or a package
+    file. An untracked one may be swept before the commit scope is judged."""
+    reason = refusal(path, writable)
+    return bool(reason) and reason.startswith("outside the paths")
+
+
 def partition(changes, writable=DEFAULT_WRITABLE):
     """(allowed paths, [(path, reason)] refused) for `[(xy, path)]` from GitRepo.changes."""
     allowed, refused = set(), {}

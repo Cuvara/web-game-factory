@@ -286,6 +286,33 @@ class Checkout(DevelopCase):
         result = step_with(FakeRunner(on_develop=write_game)).execute(inputs_for(), ctx)
         self.assertEqual(result.outcome, StepOutcome.SUCCESS, result.error)
 
+    def test_a_stray_scratch_file_outside_the_writable_paths_is_swept_not_fatal(self):
+        # A developer host that denies deletion leaves its scratch file at the root (seen on
+        # the 2.7.0 genre-depth runs: "scratch-check.mjs ... could not be removed"). An
+        # untracked file whose only problem is being outside the writable paths is swept
+        # before the commit scope is judged; a tracked file or a hidden path is not.
+        def leave_stray(root):
+            write_game(root)
+            with open(os.path.join(root, "scratch-check.mjs"), "w", encoding="utf-8") as handle:
+                handle.write("export {};" + chr(10))
+
+        result = step_with(FakeRunner(on_develop=leave_stray)).execute(
+            inputs_for(), context(self.command_config()))
+        self.assertEqual(result.outcome, StepOutcome.SUCCESS, result.error)
+        self.assertFalse(os.path.exists(os.path.join(self.repo, "scratch-check.mjs")))
+        self.assertNotIn("scratch-check.mjs", self.git("show", "--stat", "HEAD"))
+
+    def test_a_tracked_file_outside_the_writable_paths_still_fails(self):
+        def edit_readme(root):
+            write_game(root)
+            with open(os.path.join(root, "README.md"), "a", encoding="utf-8") as handle:
+                handle.write(chr(10) + "scratch" + chr(10))
+
+        result = step_with(FakeRunner(on_develop=edit_readme)).execute(
+            inputs_for(), context(self.command_config()))
+        self.assertEqual((result.outcome, result.retryable), (StepOutcome.FAILED, False))
+        self.assertIn("README.md", result.error)
+
     def test_wgf_game_repo_names_the_checkout_for_develop_too(self):
         config = self.command_config(checkouts=os.path.join(self.scratch, "elsewhere"))
         with mock_env.patch.dict(os.environ, {"WGF_GAME_REPO": self.repo}):

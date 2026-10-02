@@ -2,13 +2,13 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://webgamefactory.dev/schemas/artifacts/game-design.schema.json",
   "title": "Game Design",
-  "description": "One artifact covering scope, session, retention, monetization, progression and economy.\n\nThese are NOT separate stages and not separate documents. Scope depends on monetization, which depends on session, which depends on scope — sequencing them invents an order that does not exist, and splitting them into four files guarantees they drift apart. One artifact with a recorded consistency result is atomic; four files cannot be.\n\nThe `consistency` block is what makes 'these were co-designed' checkable rather than asserted. It is produced by evaluating core/reference/design-consistency-rules.yaml and is the exit guard on title:design.\n\nThe human-readable GDD is a RENDERING of this artifact (see core/templates/gdd.md), not a separate source of truth.\n\nSchema 1.1.0 adds three optional blocks — `engine`, `features` and `build_spec` — which carry the design down to what an implementation agent needs to build the MVP without guessing. They are optional so 1.0.0 artifacts stay valid; the design module always emits them. Schema 1.7.0 adds `build_spec.depth`: the meta loop, goal ladder, content schedule, first-session length and return hooks, each tiered.",
+  "description": "One artifact covering scope, session, retention, monetization, progression and economy.\n\nThese are NOT separate stages and not separate documents. Scope depends on monetization, which depends on session, which depends on scope — sequencing them invents an order that does not exist, and splitting them into four files guarantees they drift apart. One artifact with a recorded consistency result is atomic; four files cannot be.\n\nThe `consistency` block is what makes 'these were co-designed' checkable rather than asserted. It is produced by evaluating core/reference/design-consistency-rules.yaml and is the exit guard on title:design.\n\nThe human-readable GDD is a RENDERING of this artifact (see core/templates/gdd.md), not a separate source of truth.\n\nSchema 1.1.0 adds three optional blocks — `engine`, `features` and `build_spec` — which carry the design down to what an implementation agent needs to build the MVP without guessing. They are optional so 1.0.0 artifacts stay valid; the design module always emits them. Schema 1.7.0 adds `build_spec.depth`: the meta loop, goal ladder, content schedule, first-session length and return hooks, each tiered. Schema 1.9.0 adds the content contract: `genre` (the family of core/reference/genre-models.yaml the design is held to), `build_spec.content` (every unit of content the player meets - level, wave, track, encounter, scenario, round - with its objective, mechanics, difficulty, success, failure and acceptance), `build_spec.difficulty.axes` (the axes those difficulty values are on) and `build_spec.mastery` (what getting better means here, and the signals that show it). All optional, so 1.8.0 artifacts stay valid; a design that names a `finite` ending must state its win.",
 
   "x-wgf": {
     "id": "game-design",
     "kind": "artifact",
     "format": "json",
-    "version": "1.8.0",
+    "version": "1.9.0",
     "template": "templates/gdd.md",
     "producer": "title:design",
     "consumers": ["title:tech-plan", "title:prototype", "title:prototype-review", "title:production", "release:qa", "title:scaffolding"],
@@ -28,6 +28,31 @@
     },
     "title_id": { "type": "string" },
     "brief": { "type": "string", "minLength": 1, "maxLength": 500, "description": "The game idea a person started the run with (`wgf new-game \"...\"`), verbatim in its canonical form: NFC, trimmed, whitespace runs as one space. Absent when the run was a blank market scan. Copied from the title-strategy. An agent author designs the game it describes; the built-in author fits the buildable concept research selected, and records in open_questions a dimension the brief names that the design does not use. Added in 1.4.0." },
+
+    "genre": {
+      "type": "object",
+      "description": "The family of core/reference/genre-models.yaml the design is held to: which unit kinds, progression models and difficulty models fit it, the axes difficulty is measured on, the shape of win and loss, how many units an MVP carries, what counts as variety and how mastery shows. The family is what makes `build_spec.content` checkable rather than a list of anything. Added in 1.9.0.",
+      "required": ["family"],
+      "properties": {
+        "family": {
+          "enum": ["puzzle", "platformer", "arcade", "shooter", "racing", "strategy", "survival", "simulation"],
+          "description": "A `families` key of core/reference/genre-models.yaml."
+        },
+        "node": {
+          "type": "string",
+          "description": "The genre node of core/reference/research-vocabulary.yaml this game is (match-3, endless-runner, tower-defense). It resolves to the family whose `nodes` lists it or its nearest listed ancestor."
+        },
+        "session_profile": {
+          "enum": ["casual", "standard"],
+          "description": "Not a family: a session profile. It tightens how long a unit and a first session run and how many axes one unit may raise at once; it never changes what the game is."
+        },
+        "ending": {
+          "enum": ["finite", "endless"],
+          "description": "Whether play ends. `finite` requires build_spec.experience.win: a game that can be finished must say how."
+        }
+      },
+      "additionalProperties": false
+    },
 
     "fantasy": { "type": "string" },
     "core_loop": {
@@ -318,6 +343,15 @@
               "tier": { "$ref": "#/$defs/tier" },
               "description": { "type": "string" },
               "rules": { "type": "array", "minItems": 1, "items": { "type": "string" }, "description": "Testable statements. 'Feels good' is not a rule." },
+              "progression_role": {
+                "enum": ["core", "introduced", "variation", "mastery"],
+                "description": "What the mechanic is to progression: `core` the verb every unit uses, `introduced` taught by one unit and reused after it, `variation` a twist on an earlier mechanic, `mastery` a demand only a practised player meets. Added in 1.9.0."
+              },
+              "interactions": {
+                "type": "array",
+                "items": { "$ref": "#/$defs/localId" },
+                "description": "Other mechanics this one combines with, so a content unit can ask for the combination rather than each in turn. Added in 1.9.0."
+              },
               "parameters": {
                 "type": "object",
                 "description": "Starting tuning values, so the first build is playable rather than zeroed.",
@@ -326,6 +360,94 @@
             },
             "additionalProperties": false
           }
+        },
+
+        "content": {
+          "type": "object",
+          "description": "Every unit of content the player meets - every level, wave, track, lap, encounter, scenario, shift, round, map or run-segment - with its purpose, objective, mechanics, difficulty, duration, success, failure and acceptance. This is what stops a one-level prototype being reported as a game: the developer builds these units as data and the content check holds the build to them. Difficulty is values on the axes build_spec.difficulty.axes declares for the genre family, and this block is the single source of those numbers - no other field restates them. `generation.mode` says what the list is: `authored`, every unit the tier ships is listed; `parametric`, units are generated from `generation.parameters` and the units listed are the representative segments the design commits to; `procedural`, `generation.expected_units` distinct units a session meets, of which the listed ones are the examples. Held to core/reference/genre-models.yaml. Added in 1.9.0.",
+          "required": ["unit_kind", "generation", "units"],
+          "properties": {
+            "unit_kind": {
+              "enum": ["level", "wave", "track", "lap", "encounter", "scenario", "shift", "round", "map", "run-segment"],
+              "description": "What one unit of content is, in the player's terms. The family's `unit_kinds` say which fit."
+            },
+            "generation": {
+              "type": "object",
+              "required": ["mode"],
+              "properties": {
+                "mode": { "enum": ["authored", "parametric", "procedural"] },
+                "parameters": {
+                  "type": "object",
+                  "description": "For parametric or procedural generation: the values a unit is generated from - rates, pools, ranges, weights.",
+                  "additionalProperties": { "type": ["number", "string", "boolean", "array"] }
+                },
+                "expected_units": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "description": "How many distinct units a session meets. For `procedural` this is the count the design is judged on, since no list can be exhaustive."
+                }
+              },
+              "additionalProperties": false
+            },
+            "units": {
+              "type": "array",
+              "minItems": 1,
+              "items": {
+                "type": "object",
+                "required": ["id", "index", "tier", "purpose", "objective", "mechanics", "difficulty", "expected_duration_s", "success", "failure", "acceptance"],
+                "properties": {
+                  "id": { "$ref": "#/$defs/localId" },
+                  "index": { "type": "integer", "minimum": 1, "description": "Its place in the sequence, from 1." },
+                  "tier": { "$ref": "#/$defs/tier" },
+                  "purpose": {
+                    "enum": ["teach", "test", "twist", "breather", "climax", "bonus"],
+                    "description": "Why this unit exists. A run of units that all `test` is a difficulty curve with no shape."
+                  },
+                  "objective": { "type": "string", "minLength": 8, "description": "What the player is trying to do here, in the words they are shown." },
+                  "start_state": { "type": "string", "description": "What the unit begins from: the board, the grid, the starting line, what the player carries in." },
+                  "end_state": { "type": "string" },
+                  "mechanics": {
+                    "type": "array",
+                    "minItems": 1,
+                    "items": { "$ref": "#/$defs/localId" },
+                    "description": "The build_spec.mechanics ids this unit asks for."
+                  },
+                  "introduces": {
+                    "type": "array",
+                    "items": { "$ref": "#/$defs/localId" },
+                    "description": "Mechanics the player meets for the first time here. Every mechanic is introduced by exactly one unit and used again after it."
+                  },
+                  "difficulty": {
+                    "type": "object",
+                    "minProperties": 1,
+                    "description": "The unit's value on each difficulty axis, keyed by build_spec.difficulty.axes id and inside that axis's range.",
+                    "additionalProperties": { "type": "number" }
+                  },
+                  "expected_duration_s": { "type": "number", "minimum": 1, "description": "How long the unit is designed to take a competent player. Held to the session profile's longest unit." },
+                  "success": { "type": "string", "minLength": 8, "description": "How this unit is won, testably." },
+                  "failure": { "type": "string", "minLength": 8, "description": "How it is lost, and what the player returns to." },
+                  "acceptance": {
+                    "type": "array",
+                    "minItems": 1,
+                    "items": { "type": "string", "minLength": 12 },
+                    "description": "What must be true of the built unit. The developer builds against these; two near-identical lines across units mean the units are not distinct."
+                  },
+                  "variation_from_previous": {
+                    "type": "array",
+                    "items": { "type": "string" },
+                    "description": "The family's variety dimensions this unit changes against the previous one. A unit that changes only a number is scaling, not content."
+                  },
+                  "parameters": {
+                    "type": "object",
+                    "description": "The unit's own tuning values, as the data file carries them.",
+                    "additionalProperties": { "type": ["number", "string", "boolean"] }
+                  }
+                },
+                "additionalProperties": false
+              }
+            }
+          },
+          "additionalProperties": false
         },
 
         "controls": {
@@ -388,7 +510,12 @@
                 "additionalProperties": false
               }
             },
-            "persistence": { "type": "string", "description": "What is saved between sessions, and where." }
+            "persistence": { "type": "string", "description": "What is saved between sessions, and where." },
+            "unit_sequence": {
+              "type": "array",
+              "items": { "$ref": "#/$defs/localId" },
+              "description": "The order the content units (build_spec.content.units) are played in, by id. Absent, it is their `index` order. Added in 1.9.0."
+            }
           },
           "additionalProperties": false
         },
@@ -398,6 +525,27 @@
           "required": ["model", "curve"],
           "properties": {
             "model": { "enum": ["time-ramp", "level-authored", "adaptive", "player-chosen"] },
+            "axes": {
+              "type": "array",
+              "description": "The dimensions difficulty moves on for this genre family (core/reference/genre-models.yaml `axes`). It declares the axes only - id, what the axis means, its range, and whether a unit may dip on it for relief. The values are on the content units (build_spec.content.units[].difficulty), so there is exactly one place every difficulty number lives. Added in 1.9.0.",
+              "items": {
+                "type": "object",
+                "required": ["id", "range"],
+                "properties": {
+                  "id": { "$ref": "#/$defs/localId" },
+                  "description": { "type": "string", "description": "What the axis measures, in terms a developer can set a number from." },
+                  "range": {
+                    "type": "array",
+                    "minItems": 2,
+                    "maxItems": 2,
+                    "prefixItems": [{ "type": "number" }, { "type": "number" }],
+                    "description": "Lowest and highest value a unit may take on this axis."
+                  },
+                  "relief_allowed": { "type": "boolean", "description": "Whether a breather unit may dip on this axis. An axis the family says escalates still ends higher than it starts." }
+                },
+                "additionalProperties": false
+              }
+            },
             "curve": {
               "type": "array",
               "minItems": 1,
@@ -954,6 +1102,23 @@
             }
           },
           "additionalProperties": false
+        },
+
+        "mastery": {
+          "type": "object",
+          "description": "What getting better at this game means, and how a player sees that they have. The model is the kind of skill the game asks for (core/reference/genre-models.yaml `mastery.model`): `execution` doing it cleanly, `planning` choosing before acting, `reading` seeing what the board says, `optimisation` shaving the margin, `routing` choosing the order. The statement says it for this game in one sentence, and the signals are the hud metrics the improvement shows up in. A game whose only signal is 'you lost later' has no mastery. Added in 1.9.0.",
+          "required": ["model", "statement", "signals"],
+          "properties": {
+            "model": { "enum": ["execution", "planning", "reading", "optimisation", "routing"] },
+            "statement": { "type": "string", "minLength": 12, "description": "What a better player does differently, in one sentence." },
+            "signals": {
+              "type": "array",
+              "minItems": 1,
+              "items": { "$ref": "#/$defs/localId" },
+              "description": "The hud metric ids (build_spec.hud[].metric) a player reads their improvement from."
+            }
+          },
+          "additionalProperties": false
         }
       },
       "additionalProperties": false
@@ -975,6 +1140,15 @@
           "type": "boolean",
           "default": false,
           "description": "Set at G3. A warning nobody read is just a comment."
+        },
+        "content_model": {
+          "type": "object",
+          "description": "The genre model the content was checked against: core/reference/genre-models.yaml by id and version, so a later re-check can say whether the bars moved or the design did. Added in 1.9.0.",
+          "properties": {
+            "id": { "type": "string" },
+            "version": { "type": "string" }
+          },
+          "additionalProperties": false
         }
       },
       "additionalProperties": false
@@ -987,6 +1161,27 @@
     }
   },
   "additionalProperties": false,
+
+  "if": {
+    "required": ["genre"],
+    "properties": {
+      "genre": {
+        "required": ["ending"],
+        "properties": {
+          "ending": { "const": "finite" }
+        }
+      }
+    }
+  },
+  "then": {
+    "properties": {
+      "build_spec": {
+        "properties": {
+          "experience": { "required": ["win"] }
+        }
+      }
+    }
+  },
 
   "$defs": {
     "tier": {

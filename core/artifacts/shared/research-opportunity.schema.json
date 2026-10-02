@@ -745,6 +745,13 @@
               ],
               "description": "The design archetype that builds it; null when WGF cannot build it yet."
             },
+            "genre_model": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "description": "The core/reference/genre-models.yaml family the cell's genre node resolves to; null when no family lists it, which is itself a capability gap."
+            },
             "requires": {
               "type": "array",
               "items": {
@@ -762,6 +769,9 @@
             }
           },
           "additionalProperties": false
+        },
+        "design_constraints": {
+          "$ref": "#/$defs/handoff/properties/design_constraints"
         },
         "audience": {
           "type": "object",
@@ -1023,6 +1033,67 @@
             },
             "retention_hooks": {
               "$ref": "#/$defs/facetValue"
+            }
+          },
+          "additionalProperties": false
+        },
+        "design_constraints": {
+          "type": "object",
+          "description": "What research says the content of a game in this cell must be, in the vocabulary the design uses (core/reference/genre-models.yaml): the genre family, what one unit of content is, how progression and difficulty are shaped, the axes difficulty moves on, the session band, the retention hooks, and the conventions a player of the genre expects as a matter of course. Design reads these as the shape to fit rather than prose to reinterpret; a facet nobody observed stays `unknown`, and design falls back to the family's default and says so in `applied`.",
+          "required": [
+            "family"
+          ],
+          "properties": {
+            "family": {
+              "$ref": "#/$defs/facetValue",
+              "description": "The core/reference/genre-models.yaml family the games in this cell belong to."
+            },
+            "unit_kind": {
+              "$ref": "#/$defs/facetValue",
+              "description": "What one unit of content is in these games: level, wave, track, lap, encounter, scenario, shift, round, map, run-segment."
+            },
+            "progression": {
+              "$ref": "#/$defs/facetValue",
+              "description": "How these games carry a player forward: linear levels, an unlock track, meta currency, skill only, endless scaling."
+            },
+            "difficulty_shape": {
+              "$ref": "#/$defs/facetValue",
+              "description": "How difficulty moves over a session in these games, and where it relieves."
+            },
+            "difficulty_axes": {
+              "$ref": "#/$defs/facetValue",
+              "description": "The axes difficulty moves on in these games, as the value's array of axis ids."
+            },
+            "session_band": {
+              "$ref": "#/$defs/facetValue",
+              "description": "How long a session runs in these games; the design's session profile is held to it."
+            },
+            "retention_hooks": {
+              "$ref": "#/$defs/facetValue",
+              "description": "What brings a player of these games back."
+            },
+            "conventions": {
+              "type": "array",
+              "description": "What a player of this genre expects without being told: a retry that keeps the board, a next button after a level, a best score kept between sessions. Each carries its own tier and claims, so a convention nobody observed stays a hypothesis.",
+              "items": {
+                "type": "object",
+                "required": [
+                  "statement",
+                  "tier"
+                ],
+                "properties": {
+                  "statement": {
+                    "type": "string"
+                  },
+                  "tier": {
+                    "$ref": "#/$defs/tier"
+                  },
+                  "claim_refs": {
+                    "$ref": "#/$defs/claimRefs"
+                  }
+                },
+                "additionalProperties": false
+              }
             }
           },
           "additionalProperties": false

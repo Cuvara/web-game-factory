@@ -90,7 +90,22 @@ enough to build what was asked — and is bounded on design, one pass from each 
 (`greybox.design-gap: 1`, `develop.design-gap: 1`); the build commit and its report are kept,
 and tech-plan and G3 run again on the repaired design. `design` therefore also takes the
 `prototype-report`, `verify` and G4 take the `playability-report`, and G4 takes the
-`review-report` as well. Visit budgets move with it: develop 21 (1 + 2 × 7 + 4 + 2), greybox 5.
+`review-report` as well (`gates.yaml` 1.2.0 lists both among G4's required artifacts, so the
+decision record pins them). Visit budgets move with it: develop 21 (1 + 2 × 7 + 4 + 2),
+greybox 5.
+
+What the first live run of this found, and what it changed, before any gate was relaxed. A
+sliding-ice puzzle idea reached the design step as the catalog's own colour-grid concept: on
+a catalog entry that names only a genre model, the entry is a capability and **the idea is the
+concept** (`concept.core_mechanic` is the brief, `core_loop` is the family's `loop`,
+`research.applied` source `brief`); an entry that names a design archetype keeps the catalog
+concept, as before. The design step met the experience problems in round one, the
+presentation problems in round two and never reached the content check: every check now runs
+on every draft and **one repair request carries every problem**, and a blocking consistency
+breach is put to a repairing author by rule name before it descopes. The agent's penguin
+design named a wall and a locked door and was descoped as a foreign mechanic:
+`design-consistency-rules.yaml` 1.4.0 lists `wall`, `crash` and `lock` as `detail_terms`,
+counted when the concept names them and the design drops them, never as a different game.
 
 The build is now held to the content it claims. The developer brief carries the genre, the
 content table, the difficulty axes, mastery and depth, and an authored design owes

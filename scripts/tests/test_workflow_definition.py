@@ -93,7 +93,8 @@ class ParsesValidDefinitions(unittest.TestCase):
                          ("human-checkpoint", "G4", ["pass", "iterate", "kill"]))
         self.assertEqual(g4.on, {"iterate": "develop", "kill": "$end"})
         self.assertEqual(g4.inputs, ["qa-report", "verification-report", "prototype-report",
-                                     "title-strategy", "game-design"])
+                                     "title-strategy", "game-design", "playability-report",
+                                     "review-report"])
         self.assertEqual(definition.step("design").on, {"descope": "$fail"})
         self.assertEqual(definition.resolve_scope("plan"),
                          ["strategy", "strategy-review", "design", "tech-plan",
@@ -284,8 +285,18 @@ class RouteScopedVisitLimits(unittest.TestCase):
         # develop's own limit never cuts a loop short of its route budget (its own, and the
         # passes through assets), and every step of the loop after develop is visited at
         # most once per develop visit.
+        # A design repair (route `design-gap`, bounded on design) re-enters develop once more
+        # per pass, from either source.
+        design = definition.step("design")
+        self.assertEqual(design.max_visits_by_route,
+                         {"greybox.design-gap": 1, "develop.design-gap": 1})
+        self.assertEqual(design.max_visits, 1 + sum(design.max_visits_by_route.values()))
         self.assertEqual(develop.max_visits, 1 + sum(develop.max_visits_by_route.values())
-                         + sum(assets.max_visits_by_route.values()))
+                         + sum(assets.max_visits_by_route.values())
+                         + sum(design.max_visits_by_route.values()))
+        greybox = definition.step("greybox")
+        self.assertEqual(greybox.max_visits, 1 + sum(greybox.max_visits_by_route.values())
+                         + sum(design.max_visits_by_route.values()))
         for step_id in ("playability", "production-quality", "visual-qa", "review", "sdk",
                         "sdk-review", "verify", "prototype-review"):
             self.assertGreaterEqual(definition.step(step_id).max_visits, develop.max_visits,

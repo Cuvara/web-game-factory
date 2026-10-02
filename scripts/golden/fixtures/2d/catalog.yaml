@@ -17,6 +17,10 @@ archetypes:
     title: Tower Merge Rush
     genre: puzzle
     subgenre: merge
+    # The design module's archetype that builds this shape, and the genre family it is held
+    # to (core/reference/genre-models.yaml): an endless, parametric arcade loop, not a level game.
+    design_archetype: drop-merge
+    genre_model: arcade
     market_tags: [puzzle, merge, casual]
     core_mechanic: drop numbered tower pieces onto a seven-column track; equal neighbours merge into the next level and the merge cascades
     fantasy: turning a crowded track into one tall tower with a chain of satisfying merges

@@ -16,6 +16,10 @@ archetypes:
     title: Neon Drift Arena
     genre: arcade
     subgenre: driving
+    # The design module's archetype that builds this shape, and the genre family it is held
+    # to (core/reference/genre-models.yaml): an endless, parametric arcade loop, not a level game.
+    design_archetype: arena-dodge
+    genre_model: arcade
     market_tags: [arcade, driving, racing, casual]
     core_mechanic: drive a neon craft down a 3d arena and steer between walls that rush toward it
     fantasy: threading a glowing craft through a closing arena at rising speed

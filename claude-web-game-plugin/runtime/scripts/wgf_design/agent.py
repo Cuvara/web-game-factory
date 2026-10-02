@@ -38,6 +38,7 @@ raises `AgentRunFailed`, which the engine retries like any other transient failu
 configured is an `AuthorError`.
 """
 
+import copy
 import json
 import os
 
@@ -118,7 +119,8 @@ PROMPT_ART = (
     " The starting draft's visual identity was picked from a fixed set by a digest of the"
     " title id, not from the idea: choose from the request's `identity_kits` the one that"
     " best fits this game's idea, subjects and genre, and make visual_identity that kit -"
-    " keep its typography (the asset step can deliver those faces), shape language, motion"
+    " keep its typography exactly as listed there (those faces are already chosen to set"
+    " every locale in scope, and the asset step can deliver them), shape language, motion"
     " and ui rules - adapted to the game: add palette tokens for the colours its subjects"
     " need (each piece, character or object a player tells apart by colour gets a token), and"
     " rewrite art_direction and every asset's description and readability to follow it."
@@ -172,6 +174,22 @@ def _last_json_object(text):
         if isinstance(value, dict):
             found = value
         index = end
+
+
+def _kits(locales):
+    """Every identity kit the agent may choose from, each with its faces already swapped for
+    the covering alternates the design's locales need (identity.cover) - the same rule the
+    archetype author applies, so a chosen kit's typography can set every locale in scope."""
+    from .presentation import load_font_coverage
+    coverage = load_font_coverage()
+    out = {}
+    for kit_id, kit in identity.KITS.items():
+        look = {key: copy.deepcopy(kit.get(key)) for key in (
+            "concept", "palette", "typography", "shape_language", "motion", "texture",
+            "avoid", "ui")}
+        look, _swapped = identity.cover(look, list(locales or []), coverage)
+        out[kit_id] = look
+    return out
 
 
 def check_shape(draft):
@@ -248,9 +266,7 @@ class AgentAuthor(DesignAuthor):
                    "depth_craft": os.path.join(paths.CORE, "craft",
                                                "retention-and-progression.md"),
                    # The committed looks to choose from, and frames of finished games.
-                   "identity_kits": {kit_id: {key: kit.get(key) for key in (
-                       "concept", "palette", "typography", "shape_language", "motion",
-                       "texture", "avoid", "ui")} for kit_id, kit in identity.KITS.items()},
+                   "identity_kits": _kits((starting.get("scope") or {}).get("locales")),
                    "quality_bar": quality_bar.frames(),
                    "quality_bar_qualities": quality_bar.qualities()}
         if idea:

@@ -62,7 +62,7 @@ class ParsesValidDefinitions(unittest.TestCase):
              "tech-plan-review", "init", "greybox", "greybox-playability", "assets", "develop",
              "playability", "production-quality", "visual-qa", "review", "sdk",
              "sdk-review", "verify", "prototype-review", "store-listing", "listing-validation",
-             "release"],
+             "release", "platform-validate", "release-review", "publish-review", "submit"],
         )
         # The store listing is made after G4 passes and before release ships it; a failed
         # validation goes back to the listing step, and release reads both.
@@ -70,6 +70,21 @@ class ParsesValidDefinitions(unittest.TestCase):
         self.assertEqual(definition.step("store-listing").params.get("required_gates"), ["G4"])
         self.assertTrue({"store-listing", "listing-validation-report"}
                         <= set(definition.step("release").inputs))
+        # `wgf new-game` ends at release; the publication tail is the `publish` group, run in
+        # the drafting run by `wgf publish --run <id>`.
+        self.assertEqual(definition.success_target(definition.step("release")), END)
+        self.assertEqual(definition.resolve_scope("publish"),
+                         ["platform-validate", "release-review", "publish-review", "submit"])
+        for step_id, gate, choices in (("release-review", "G5", ["approve", "reject"]),
+                                       ("publish-review", "G6", ["publish", "reject"])):
+            checkpoint = definition.step(step_id)
+            self.assertEqual((checkpoint.type, checkpoint.params["gate"],
+                              checkpoint.params["choices"], checkpoint.on),
+                             ("human-checkpoint", gate, choices, {"reject": "$end"}), step_id)
+        publish = definition.step("submit")
+        self.assertEqual(publish.retry.max_attempts, 1)  # the irreversible submit: once
+        self.assertEqual(publish.inputs, ["release-manifest", "platform-publication",
+                                          "decision-record", "scaffold-record"])
         self.assertEqual(definition.step("verify").on, {"fail": "develop"})
         # The production gates route by what failed: an asset to assets, the game to develop.
         for step_id in ("production-quality", "visual-qa"):
@@ -165,13 +180,13 @@ class Scopes(unittest.TestCase):
 
     def test_unknown_name_is_refused_with_the_known_ones(self):
         with self.assertRaises(KeyError) as caught:
-            self.definition.resolve_scope("publish")
+            self.definition.resolve_scope("deploy")
         self.assertIn("verify", str(caught.exception))
 
     def test_every_required_command_exists(self):
         commands = self.definition.commands()
         for name in ("research", "plan", "init", "assets", "develop", "verify", "release",
-                     "new-game"):
+                     "publish", "new-game"):
             self.assertIn(name, commands)
 
 

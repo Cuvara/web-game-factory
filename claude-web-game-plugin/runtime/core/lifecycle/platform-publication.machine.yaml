@@ -4,10 +4,12 @@
 # independent decision authority: it reports status upward so the release can compute its
 # quorum.
 #
-# Deliberately NOT automated against portal APIs. `submitted` and `in-review` advance by a
-# human checklist plus a status file. The value here is structure and learning, not
-# automation — and building real Yandex/CrazyGames/GameVui/Poki integrations before the
-# contracts are proven would be premature.
+# `submitted` advances from an observed portal state - read back by the publish step's
+# platform adapter (core/reference/publication/<id>.yaml says how each portal is reached;
+# docs/publish-module.md) or recorded by a person with a checklist - never from a click
+# that returned. `in-review` and its verdicts are the portal's: only a person transcribes
+# them. Until 2.6.0 nothing here was automated at all, by design, so the contracts could be
+# proven first; the publish step keeps every one of them.
 #
 # The one edge that matters most is `rejected`. A rejection must emit a compliance finding
 # that versions the platform profile, so the next title never hits the same wall. A
@@ -85,8 +87,9 @@ states:
     role: release
     procedure: stages/publish.md
     description: >
-      The submission package has been produced and uploaded. Advanced by a human checklist;
-      the status file is the record.
+      The submission package has been produced and uploaded, and the portal was observed
+      holding it (platform-publication.verified_state). Advanced by the publish step's
+      adapter or by a person's checklist; the platform-publication record is the record.
     transitions:
       - event: acknowledged
         to: in-review

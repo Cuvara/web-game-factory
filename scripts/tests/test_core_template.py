@@ -171,6 +171,11 @@ class TheFactoryContainsNoGameSource(unittest.TestCase):
         # directory (scripts/wgf_listing/capture.py). It records frames, a recording and the
         # branding composition; it contains no game.
         "scripts/wgf_listing/capture.mjs",
+        # The publish step's console executor: a Playwright spec that drives a portal's
+        # developer console through fixed phases from a flow file (scripts/wgf_publish/
+        # browser.py), copied into the checkout's release/ scratch directory for one run.
+        # Portal plumbing, no game in it.
+        "scripts/wgf_publish/browser/console.spec.ts",
     )
     # The Claude plugin's bundled runtime (scripts/build-plugin-runtime.py) is a byte-identical
     # copy of the Factory's own files, so each exception above holds for its copy too.

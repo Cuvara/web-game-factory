@@ -24,18 +24,25 @@ required. It is a policy change, so it is recorded.
 
 ## Separation of responsibilities
 
-**AI prepares. Deterministic automation executes.**
+**AI prepares. Deterministic automation executes. A person authorizes.**
 
 - The AI role prepares release metadata, per-platform descriptions, localizations,
-  screenshots, and the packaged build.
-- GitHub Actions performs the mechanical packaging and artifact handling.
-- The submission itself is a **human checklist plus a status file**. No portal APIs are
-  integrated, by design — building real Yandex/CrazyGames/GameVui/Poki integrations before
-  the contracts are proven would be premature, and the machine's value here is structure
-  and learning rather than automation.
+  screenshots (`release/<release-id>/store-metadata.json`), and the packaged build.
+- The Factory's `publish` group runs this state: behind G6 - a person's decision pinning the
+  release-manifest by content hash - the `submit` step hands the package to the platform's
+  adapter, which follows `core/reference/publication/<platform-id>.yaml`: the portal's
+  documented API or CLI where one exists; a deterministic browser run of its developer
+  console (direct Playwright, fixed selectors, one submit click) where none does and a person
+  has recorded that the portal permits it; otherwise the person submits by hand and records
+  it with `wgf decide <run> done --note <portal reference>`. The idempotency key is looked up
+  before any upload; the submit is attempted once; the portal's own status, read back, is the
+  only thing that advances the record. See docs/publish-module.md.
+- A login, a CAPTCHA, a second factor, unconfirmed terms or a missing session stop the step
+  for a person. Nothing is bypassed.
 
-**Secrets never live in source.** Portal credentials belong in CI secret storage and are
-referenced, never committed, never printed into an artifact or a log.
+**Secrets never live in source.** A portal session is captured once by a person, kept where
+the installation keeps secrets, named to the Factory by an environment variable, and redacted
+from every artifact, event and log.
 
 ## Rejections are the valuable path
 

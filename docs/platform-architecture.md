@@ -297,18 +297,30 @@ Yandex-only and `r2` may add CrazyGames.
 
 ### Separation of responsibilities
 
-**AI prepares. Deterministic automation executes.**
+**AI prepares. Deterministic automation executes. A person authorizes.**
 
-- AI roles prepare metadata, localizations, screenshots and the packaged build.
-- GitHub Actions performs mechanical packaging and artifact handling.
-- Submission itself is a **human checklist plus a status file**.
+- AI roles prepare metadata, localizations, screenshots and the packaged build (the release
+  role: `release/<id>/store-metadata.json`).
+- The Factory's `publish` group (`docs/publish-module.md`) validates the release against the
+  publication guards (`release:validating`), asks a person at G5 and G6, and submits
+  (`release:submitting`) through a **platform adapter**: the portal's documented API or CLI
+  where it publishes one, a deterministic direct-Playwright run of its developer console
+  where it does not, a person's checklist where neither is permitted or verified. Platform
+  behaviour lives in `core/reference/publication/<id>.yaml` (data) and
+  `scripts/wgf_publish/adapters/` (code); the pipeline names no portal.
+- The portal's own state, read back after acting, is the only thing that advances
+  `platform-publication`; a click that returned is not a submission.
 
-No portal APIs are integrated, by design. Building real Yandex/CrazyGames/GameVui/Poki
-integrations before the contracts are proven would be building them twice — and the machine's
-value here is structure and learning, not automation.
+No shipped portal documents an upload API (CrazyGames, Yandex, Y8, GameVui: console or email
+only; Poki: its CLI). Every console profile ships `automation_terms: unverified`, so until a
+person records that a portal permits automated console use the `submit` step stops
+HUMAN_REQUIRED before contacting it. Playwright MCP is not the submission executor; it stays
+the localhost QA tool.
 
-**Secrets never live in source.** Portal credentials belong in CI secret storage, referenced
-and never committed, printed, or written into an artifact.
+**Secrets never live in source.** A portal session is captured once by a person
+(`scripts/wgf-publish.py capture`), kept where the installation keeps secrets, named to the
+Factory by one environment variable per platform (`factory.publish.env_passthrough`), read
+only by the `submit` step, and redacted from every event, log and artifact.
 
 ---
 

@@ -1524,7 +1524,7 @@ class GateAnsweredWithoutPassing(EngineCase):
         definition = load_definition("new-game")
         gates = {step.params.get("gate"): step for step in definition.steps
                  if step.type == checkpoint.HumanCheckpointStep.type}
-        self.assertEqual(set(gates), {"G2", "G3", "G4"})
+        self.assertEqual(set(gates), {"G2", "G3", "G4", "G5", "G6"})
         for gate, step in gates.items():
             required = checkpoint.required_artifacts(gate)
             self.assertTrue(required, gate)

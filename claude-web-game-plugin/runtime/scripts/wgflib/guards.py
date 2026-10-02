@@ -15,10 +15,18 @@ honest third case - the data is not here, the game repository is not reachable, 
 human can say - and it carries the reason. Nothing collapses UNKNOWN into RED, because
 "we checked and it failed" and "we could not check" lead to different actions.
 
-Guards whose answer lives in the game repository (ci_green, playable_build, the release and
-publication guards) are UNKNOWN from the Factory side until a repository is supplied. That is
-not a gap to paper over: the Factory deliberately holds no game source, and the two guards
-that do have implementations name them - web-game-template's ci.yml and verify.yml.
+Guards whose answer lives in the game repository (ci_green, playable_build, repo_created,
+content_complete, perf_budgets_met, no_blocking_defects) are UNKNOWN from the Factory side
+until a repository is supplied. That is not a gap to paper over: the Factory deliberately
+holds no game source, and the two guards that do have implementations name them -
+web-game-template's ci.yml and verify.yml.
+
+The release and publication guards (candidate_frozen, store_metadata_complete, the
+per-platform package_shaped_to_profile / assertions_pass / metadata_and_locales_present, and
+the quorum guards) are computed by wgflib.publication from a title's release-manifest and
+platform-publication - or from the run that drafted and validated them - exactly as the
+publish module's platform-validate step records them (docs/publish-module.md). UNKNOWN until
+those artifacts exist; never GREEN by default.
 
 Three of them can also be answered from what a workflow run's `verify` step recorded:
 `ci_green`, `verify_suite_green` and `playable_build` read the newest qa-report and
@@ -34,10 +42,11 @@ import glob
 import json
 import os
 
-from . import paths
+from . import paths, publication
 from .criteria import Unevaluable, evaluate
 from .hashing import CanonicalizationError, content_hash
-from .workspace import WorkspaceError, all_title_states, load_scoring_model
+from .workspace import (WorkspaceError, all_title_states, load_platform_profile,
+                        load_scoring_model)
 
 __all__ = ["Verdict", "GuardContext", "RunEvidence", "evaluate_guard", "known_guards"]
 
@@ -112,17 +121,25 @@ class RunEvidence:
     evidence guards never read them as an answer. Contents are read through the run store,
     so a report whose file changed after it was recorded is refused, not used."""
 
-    TYPES = ("qa-report", "verification-report")
+    TYPES = ("qa-report", "verification-report", "release-manifest", "platform-publication")
 
-    def __init__(self, run_id, qa=None, verification=None, mock=False):
+    def __init__(self, run_id, qa=None, verification=None, mock=False, manifest=None,
+                 publication=None):
         self.run_id = run_id
         self.qa = qa
         self.verification = verification
         self.mock = bool(mock)
+        # The release the run drafted and what its publication steps recorded (newest).
+        self.manifest = manifest
+        self.publication = publication
 
     @property
     def empty(self):
         return self.qa is None and self.verification is None
+
+    @property
+    def no_release(self):
+        return self.manifest is None and self.publication is None
 
     @classmethod
     def of_run(cls, store, state):
@@ -137,7 +154,8 @@ class RunEvidence:
             return None
         params = state.params if isinstance(state.params, dict) else {}
         return cls(state.run_id, found.get("qa-report"), found.get("verification-report"),
-                   mock=bool(params.get("mock")))
+                   mock=bool(params.get("mock")), manifest=found.get("release-manifest"),
+                   publication=found.get("platform-publication"))
 
     @classmethod
     def find(cls, title_id, store_dir=None):
@@ -726,6 +744,112 @@ def _playable_build(evidence):
 _with_run_evidence("verify_suite_green", _verify_suite_green)
 _with_run_evidence("ci_green", _ci_green)
 _with_run_evidence("playable_build", _playable_build)
+
+
+# ------------------------------------ the release and publication guards (wgflib.publication)
+#
+# Computed by wgflib.publication, which the publish module's platform-validate step also
+# calls, so the verdict a person sees from wgf-state.py is the one the step recorded. Read
+# from the entity (a title's release-manifest and platform-publication, when it holds them)
+# or from the run the context carries; UNKNOWN when neither holds the artifact. A verdict is
+# never read from a mock run.
+
+def _wrap(result):
+    return Verdict(result.value, result.reason, dict(result.measurements))
+
+
+def _release_artifacts(context):
+    """(manifest, publication record, source) from the entity, else the run evidence."""
+    entity = getattr(context, "entity", None)
+    manifest = record = None
+    if entity is not None and hasattr(entity, "maybe"):
+        try:
+            manifest = entity.maybe("release-manifest")
+            record = entity.maybe("platform-publication")
+        except (WorkspaceError, OSError, ValueError):
+            manifest = record = None
+    if manifest is not None or record is not None:
+        return manifest, record, "workspace"
+    evidence = getattr(context, "evidence", None)
+    if evidence is not None and not evidence.no_release:
+        if evidence.mock:
+            return None, None, f"mock run {evidence.run_id}: placeholders, not evidence"
+        return evidence.manifest, evidence.publication, f"run {evidence.run_id}"
+    return None, None, None
+
+
+def _profiles_for(manifest):
+    profiles = {}
+    for target in (manifest or {}).get("target_platforms") or []:
+        pid = str(target.get("id"))
+        try:
+            profiles[pid] = load_platform_profile(pid)
+        except WorkspaceError:
+            profiles[pid] = None
+    return profiles
+
+
+def _recorded(record, name):
+    """The verdict release:validating recorded for guard `name`, or None."""
+    for entry in (record or {}).get("guards") or []:
+        if entry.get("guard") == name:
+            value = {"GREEN": True, "RED": False}.get(entry.get("verdict"))
+            return publication.GuardResult(
+                value, f"recorded by release:validating: {entry.get('reason')}")
+    return None
+
+
+@guard("candidate_frozen")
+def candidate_frozen(context):
+    manifest, _record, source = _release_artifacts(context)
+    if manifest is None:
+        return unknown("no release-manifest" + (f" ({source})" if source else ": a title's "
+                       "release/<id>/manifest.json, or a run that drafted one"))
+    return _wrap(publication.candidate_frozen(manifest))
+
+
+@guard("store_metadata_complete")
+def store_metadata_complete(context):
+    manifest, _record, source = _release_artifacts(context)
+    if manifest is None:
+        return unknown("no release-manifest" + (f" ({source})" if source else ""))
+    return _wrap(publication.store_metadata_complete(manifest, _profiles_for(manifest)))
+
+
+def _platform_guard(name):
+    """A per-platform guard: the verdict release:validating recorded in the newest
+    platform-publication; UNKNOWN until that step has run."""
+    def implementation(context):
+        _manifest, record, source = _release_artifacts(context)
+        if record is None:
+            return unknown(f"{name} is decided by release:validating, which has recorded no "
+                           f"platform-publication" + (f" ({source})" if source else ""))
+        recorded = _recorded(record, name)
+        if recorded is None:
+            return unknown(f"the platform-publication for {record.get('platform_id')} records "
+                           f"no {name} verdict")
+        return _wrap(recorded)
+
+    return implementation
+
+
+for _name in publication.PLATFORM_GUARDS:
+    REGISTRY[_name] = _platform_guard(_name)
+
+
+def _quorum_guard(name, compute):
+    def implementation(context):
+        manifest, record, source = _release_artifacts(context)
+        if manifest is None:
+            return unknown("no release-manifest" + (f" ({source})" if source else ""))
+        return _wrap(compute(manifest, [record] if record else []))
+
+    REGISTRY[name] = implementation
+
+
+_quorum_guard("all_targeted_validated", publication.all_targeted_validated)
+_quorum_guard("required_all_live", publication.required_all_live)
+_quorum_guard("none_permanently_rejected", publication.none_permanently_rejected)
 
 
 @guard("platform_constraints_satisfied")

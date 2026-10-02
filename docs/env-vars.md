@@ -21,6 +21,8 @@ set `=1` and both readings agree.
 |---|---|---|---|
 | `WGF_GAME_REPO` | `scripts/wgflib/checkout.py` | The game checkout EVERY step that works in the game repository uses - init (where it creates the project), assets, develop, review, sdk, verify and release - when the step's own `with: repo_dir` / `game_repo` is not set. Checked before the scaffold-record's `local_path` and `factory.checkouts`. A relative path resolves against the Factory root ([checkouts.md](checkouts.md)). | unset: the scaffold-record's `local_path`, else `factory.checkouts` + the repository name |
 | `WGF_PROJECT_DIR` | `scripts/wgflib/paths.py` | The project root: where `workspace/` (instance data and the installation's own `workspace/config/`), the run store and the checkouts base resolve. Never where `core/` or the engine is read - that is always beside `wgflib/`. Set by the installed runtime for every process it starts, so a child in another directory finds the same project. ([plugin-runtime.md](plugin-runtime.md)) | development checkout: the repository; installed plugin runtime: the working directory |
+| `WGF_PUBLISH_LIVE` | `scripts/wgf_publish/common.py` | `1`, together with `factory.publish.mode: live`, lets the `submit` step make the irreversible portal submit. Either alone is a dry run. ([publish-module.md](publish-module.md)) | unset: dry run |
+| `WGF_PUBLISH_<PLATFORM>_STORAGE_STATE` | `scripts/wgf_publish/session.py` (the name is each publication profile's `submission.credential.env`) | The path (or JSON) of the Playwright storage state a person captured for that portal's console (`scripts/wgf-publish.py capture`). Read only when `factory.publish.env_passthrough` lists the name, only for its platform, and redacted everywhere. | unset: the platform is HUMAN_REQUIRED |
 | `WGF_RESEARCH_LIVE` | `scripts/wgf_discovery/step.py` | `1` makes the `research` step fetch the pages in `probes.yaml` during the run, like `live: true` on the step. | off: evidence snapshots only |
 | `WGF_TEMPLATE_COMMIT` | `scripts/wgflib/template.py` | A deliberate override of the web-game-template commit in `workspace/config/template.lock.json`. Must be a full 40-hex sha. Used to validate a new pin before moving the lock. | the lock's `commit` |
 | `WGF_TEMPLATE_DIR` | `scripts/wgflib/template.py` | Offer an existing template checkout instead of the cache. Refused (`TemplateDrift`) unless its HEAD is exactly the expected commit; never moved. | unset: cache, then clone |
@@ -66,6 +68,7 @@ run at anything but its own checkout.
 
 | Variable | Read by | Meaning | Default |
 |---|---|---|---|
+| `WGF_PUBLISH_BROWSER_TEST` | `test_publish_module` | `1` drives the fixture portal (`scripts/tests/fixtures/publish/portal.py`) with real Chromium through the publish module's console executor, in the pinned template's checkout. Contacts nothing but 127.0.0.1. | off |
 | `WGF_GOLDEN` | `scripts/golden/testing.py` (via `test_golden_2d`, `test_golden_3d`) | `1` runs the 2D and 3D golden pipelines (minutes each). Otherwise the `2D GOLDEN` / `3D GOLDEN` categories are `SKIP`. | off |
 | `WGF_GOLDEN_KEEP` | `scripts/golden/testing.py` | `1` keeps a golden run's work directory after the test. | off: removed |
 | `WGF_GOLDEN_DIR` | `scripts/golden/harness.py` | Parent of a golden run's fresh work directory. | `/tmp` |

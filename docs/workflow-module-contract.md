@@ -20,6 +20,7 @@ what a module owes the engine, and what the engine promises back.
 | Verification — QA, policy and technical verification | artifact references, versions, checksums |
 | Init — repository scaffolding from the template | the workflow run lifecycle |
 | Listing — the store package captured from the verified build, and its validation per platform | |
+| Publication — the publication guards and the platform adapters that submit a release | gates, and who may decide them |
 
 If a module needs something the engine does not offer, that is a gap in the kernel: raise it
 and fix it there once, for every module — never special-case one module in `engine.py`.
@@ -174,6 +175,10 @@ reading, and `DocumentedIoContract` fails if the two disagree.
 | `store-listing` | `store-listing` | `qa-report`, `verification-report`, `sdk-report`, `prototype-report`, `game-design`, `title-strategy`, `scaffold-record`, `asset-manifest`, `playability-report`, `listing-validation-report` | `store-listing` |
 | `listing-validation` | `listing-validation` | `store-listing`, `game-design`, `sdk-report`, `scaffold-record` | `listing-validation-report` |
 | `release` | `release` | `qa-report`, `verification-report`, `sdk-report`, `prototype-report`, `scaffold-record`, `review-report`, `production-quality-report`, `visual-qa-report`, `store-listing`, `listing-validation-report` | `release-manifest` |
+| `platform-validate` | `platform-validate` | `release-manifest`, `verification-report`, `qa-report`, `sdk-report`, `scaffold-record` | `platform-publication` |
+| `release-review` | `human-checkpoint` | `qa-report`, `verification-report`, `release-manifest` | `decision-record` |
+| `publish-review` | `human-checkpoint` | `release-manifest`, `platform-publication` | `decision-record` |
+| `submit` | `publish` | `release-manifest`, `platform-publication`, `decision-record`, `scaffold-record` | `platform-publication` |
 <!-- io-contract:end -->
 
 A `human-checkpoint` lists the artifacts its gate is decided on (gates.yaml
@@ -198,8 +203,17 @@ exactly that commit (or the installation set `factory.release.allow_unreviewed`)
 is passed, and the newest `production-quality-report` and `visual-qa-report` are PASS for
 the development commit the shipped sdk commit sits on (`with: required_reports`, default
 both); it packages with the game repository's
-own scripts, and never publishes; see [release-module.md](release-module.md). Publishing is
-behind G5 and G6.
+own scripts, and never publishes; see [release-module.md](release-module.md). `wgf new-game`
+ends there.
+
+The last four rows are the `publish` group, run in the same run by `wgf publish --run <id>`
+([publish-module.md](publish-module.md)): `platform-validate` computes the publication guards
+and a readiness per packaged platform into a `platform-publication`; `release-review` (G5) and
+`publish-review` (G6, `publish`/`reject`, a person only) decide on it; `submit` reads the
+G6 `decision-record` - it refuses any manifest but the one the record pins by hash - and
+hands the package to the platform adapter, writing the `platform-publication` again from the
+portal state it observed. Its `retry` is `max_attempts: 1`: the irreversible submit is never
+retried by the engine.
 
 `production-quality` ([production-quality-module.md](production-quality-module.md)) and
 `visual-qa` ([visual-qa-module.md](visual-qa-module.md)) judge the production build's art and

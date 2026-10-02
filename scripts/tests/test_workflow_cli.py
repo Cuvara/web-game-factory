@@ -558,7 +558,9 @@ class RunStatesThroughTheCli(CliCase):
 
     def test_mock_auto_approves_only_the_workflows_own_checkpoint(self):
         self.wgf("new-game", "--mock", "--quiet", expect=3)  # G4 is never auto-approved
-        self.assertEqual(self.state()["params"]["auto_approve"], ["G2", "G3"])
+        # The reversible gates the workflow checkpoints, G5 (the publish group) included;
+        # G4 and G6 are never auto-approved.
+        self.assertEqual(self.state()["params"]["auto_approve"], ["G2", "G3", "G5"])
         self.wgf("new-game", "--mock", "--hold-gates", "--quiet", expect=3)
         self.assertNotIn("auto_approve", self.state()["params"])
 

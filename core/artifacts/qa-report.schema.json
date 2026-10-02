@@ -11,7 +11,7 @@
     "version": "1.1.0",
     "template": "templates/qa-report.md",
     "producer": "release:qa",
-    "consumers": ["release:rc", "title:production", "title:prototype", "title:prototype-review", "release:draft", "release:store-listing"],
+    "consumers": ["release:rc", "title:production", "title:prototype", "title:prototype-review", "release:draft", "release:store-listing", "release:validating"],
     "repo_path": "<game-repo>/qa/<release-id>/report.json",
     "run_path": "<storage>/workflows/<run-id>/artifacts/qa-report/v<n>.json",
     "required_for_gates": ["G4", "G5"]

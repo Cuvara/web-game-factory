@@ -5,8 +5,9 @@ step, persists every change, and can be stopped, resumed, retried and routed wit
 calling a step by hand. It ships with a placeholder for every step type. Discovery, strategy,
 design, init ([init-module.md](init-module.md)), assets, development, review
 ([review-module.md](review-module.md)), SDK and verification
-([verification-module.md](verification-module.md)) are real modules that plug into it;
-`release` is still a placeholder —
+([verification-module.md](verification-module.md)), release
+([release-module.md](release-module.md)) and publication
+([publish-module.md](publish-module.md)) are real modules that plug into it —
 **[workflow-module-contract.md](workflow-module-contract.md) is what they implement against.**
 
 Standard library Python, like every other script here. No database, no toolchain.
@@ -67,8 +68,14 @@ python -m unittest discover scripts/tests   # includes the acceptance tests belo
   release (refuses unless G4 passed, the shipped commit was reviewed, production-quality
   and visual-qa passed its development commit, and the store listing of the shipped
   commit is complete and validated)
-                               release-manifest (draft) ─► game repo CI ─► G5 ─► G6 ─► publish
-                               ─────────── Factory ends here ───────────   (outside the engine)
+                               release-manifest (draft)   ─── `wgf new-game` ends here ───
+
+  the `publish` group, in the same run: `wgf publish --run <run-id>`
+    → platform-validate → [G5] → [G6] → submit
+  platform-validate    fail                 → (unrouted: the run stops for a person)
+  [G5]                 approve · reject → $end
+  [G6]                 publish · reject → $end         (a person only; pins the manifest)
+  submit               submitted / dry-run → $end · a person needed → WAITING_FOR_HUMAN
 ```
 
 The boundary the whole design protects: **the engine knows `Workflow`, `WorkflowStep`,

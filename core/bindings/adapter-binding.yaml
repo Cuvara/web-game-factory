@@ -311,12 +311,15 @@ commands:
 # `gates` is informational: the human-checkpoint gates of that workflow, which
 # check-integrity.py compares with the workflow file. An entry point never answers a gate -
 # every decision is made by a person, outside the surface.
+#
+# G5 and G6 are the `publish` group's: `wgf publish --run <id>` continues a drafting run
+# into them. G6 is irreversible and only a person decides it.
 # ---------------------------------------------------------------------------
 workflows:
   - id: new-game
     runs: core/workflows/new-game.workflow.yaml
     role: null
-    gates: [G2, G3, G4]
+    gates: [G2, G3, G4, G5, G6]
     # The production bar the run's agents are held to: the develop brief and the asset and
     # model author requests point at these by path; the surface names them so the person
     # starting a run knows what a finished build is judged against.

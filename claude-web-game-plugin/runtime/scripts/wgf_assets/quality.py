@@ -14,6 +14,11 @@ both offline:
         svg.palette            the colours used are near the design's palette, or the root
                                says why not (data-wgf-off-palette="<reason>")
         svg.dimensions         the declared size within the edge limit and the spec's aspect
+        svg.text-font          a <text> names one of the design's typography faces first
+        svg.avoid              none of the identity's avoid lines that can be measured on the
+                               file (asset-quality.yaml `avoid.rules`: blur, emoji, ...)
+    set_consistency(drawings)  set.consistent: drawings judged as one set share outline,
+                               outline width and colour, and soft effects per group of roles
     font_quality(data, locales=...)  a TTF/OTF/WOFF/WOFF2: tables, glyphs, and font.coverage -
                                the cmap maps each locale's characters (fonts.locales)
     variants_distinct(drawings)  variants.distinct: a counted requirement's drawings differ by
@@ -47,7 +52,8 @@ from wgflib.yamllite import load_file
 
 from . import audiofile, raster
 
-__all__ = ["load_bars", "svg_quality", "raster_quality", "font_quality", "font_format",
+__all__ = ["load_bars", "svg_quality", "svg_style", "set_consistency", "typography_families",
+           "avoid_rules", "raster_quality", "font_quality", "font_format",
            "audio_quality", "skipped", "problems", "parse_palette", "BARS_PATH", "QualityBars",
            "font_cmap", "expand_chars", "CoverageUnchecked", "silhouette", "variants_distinct"]
 
@@ -102,6 +108,17 @@ class QualityBars:
         self.min_silhouette_distance = float(variants.get("min_silhouette_distance") or 0)
         self.png_background_delta = int(variants.get("png_background_delta") or 24)
         self.audio = AudioBars(data.get("audio") or {})
+        text = data.get("text") or {}
+        self.generic_families = {str(f).lower() for f in text.get("generic_families") or []}
+        self.avoid_rules = {str(k): [str(p).lower() for p in v or []]
+                            for k, v in ((data.get("avoid") or {}).get("rules") or {}).items()}
+        group = data.get("set") or {}
+        self.set_groups = {str(k): [str(r) for r in v or []]
+                           for k, v in (group.get("groups") or {}).items()}
+        self.set_min_group = int(group.get("min_group") or 2)
+        self.set_outlined_share = float(group.get("outlined_share") or 0.3)
+        self.set_max_outline_ratio = float(group.get("max_outline_ratio") or 1.6)
+        self.set_outline_tolerance = float(group.get("outline_colour_tolerance") or 60)
 
     def locale(self, locale):
         """The `fonts.locales` entry of a locale, matched by its language subtag; None when
@@ -261,9 +278,11 @@ def _length(value):
 
 
 def svg_quality(data, *, role=None, palette=(), bars=None, spec_size=None,
-                primitive_style=False, author=None):
+                primitive_style=False, author=None, typography=None, avoid=None):
     """The `quality` object of an SVG file. `palette` is parse_palette()'s list; `spec_size`
-    the requirement's (width, height) when the design states one."""
+    the requirement's (width, height) when the design states one; `typography` the design's
+    visual_identity.typography (svg.text-font, when the file sets text) and `avoid` its avoid
+    list (svg.avoid, for the lines asset-quality.yaml `avoid.rules` can measure)."""
     bars = bars or load_bars()
     checks = []
     if len(data) > bars.svg_max_bytes:
@@ -377,8 +396,303 @@ def svg_quality(data, *, role=None, palette=(), bars=None, spec_size=None,
                f"{spec_size[1]} is {want:.2f}")
     else:
         _check(checks, "svg.dimensions", True, f"{width:g}x{height:g}")
+    families = typography_families(typography)
+    styled = list(_styled(root))
+    texts = [(element, props) for element, drawn, props in styled
+             if drawn and _local(element.tag) == "text"]
+    if texts and families:
+        _text_check(checks, texts, families, bars)
+    applied = avoid_rules(avoid, bars)
+    if applied:
+        _avoid_check(checks, root, styled, texts, applied)
     return _result(checks, author, primitive_only=primitive_only, parts=parts,
                    colors=len(rgb))
+
+
+# -- presentation: what each element is drawn with, after inheritance and CSS ---------------
+
+_INHERITED = ("fill", "stroke", "stroke-width", "font-family")
+_PRESENTATION = _INHERITED + ("filter", "rx", "ry")
+_CSS_RULE = re.compile(r"([^{}]+)\{([^{}]*)\}")
+
+
+def _declarations(text):
+    out = {}
+    for declaration in (text or "").split(";"):
+        if ":" in declaration:
+            key, value = declaration.split(":", 1)
+            out[key.strip().lower()] = value.strip()
+    return out
+
+
+def _css_rules(root):
+    """{selector: {property: value}} of the simple selectors (`tag`, `.class`, `tag.class`)
+    in the file's <style> elements."""
+    rules = {}
+    for element in root.iter():
+        if _local(element.tag) == "style" and element.text:
+            text = re.sub(r"/\*.*?\*/", "", element.text, flags=re.S)
+            for selectors, body in _CSS_RULE.findall(text):
+                values = _declarations(body)
+                for selector in selectors.split(","):
+                    selector = selector.strip()
+                    if selector:
+                        rules.setdefault(selector, {}).update(values)
+    return rules
+
+
+def _styled(root):
+    """[(element, drawn?, {property: value})] depth first: the inherited presentation
+    properties, then the element's attributes, matching <style> rules, its inline style."""
+    rules = _css_rules(root)
+    out = []
+
+    def visit(element, drawn, inherited):
+        name = _local(element.tag)
+        here = drawn and name not in NOT_DRAWN
+        props = {k: v for k, v in inherited.items() if k in _INHERITED}
+        for key in _PRESENTATION:
+            if element.get(key) is not None:
+                props[key] = element.get(key).strip()
+        classes = (element.get("class") or "").split()
+        for selector in [name] + [f".{c}" for c in classes] + [f"{name}.{c}" for c in classes]:
+            props.update({k: v for k, v in (rules.get(selector) or {}).items()
+                          if k in _PRESENTATION})
+        props.update({k: v for k, v in _declarations(element.get("style")).items()
+                      if k in _PRESENTATION})
+        out.append((element, here, props))
+        for child in element:
+            visit(child, here, props)
+
+    visit(root, True, {})
+    return out
+
+
+def typography_families(typography):
+    """The font families a design's typography names, lower case: 'Fraunces (800, soft)' ->
+    'fraunces'."""
+    found = []
+    for key in ("display", "body", "numeric"):
+        face = (typography or {}).get(key) if isinstance(typography, dict) else None
+        family = str(face or "").split("(")[0].split(",")[0].strip().strip("'\"").lower()
+        if family and family not in found:
+            found.append(family)
+    return found
+
+
+def _families(value):
+    return [f.strip().strip("'\"").lower() for f in str(value or "").split(",") if f.strip()]
+
+
+def _text_check(checks, texts, families, bars):
+    wrong = []
+    for element, props in texts:
+        if not "".join(element.itertext()).strip():
+            continue
+        listed = _families(props.get("font-family"))
+        if not listed:
+            wrong.append("a <text> with no font-family (the browser default)")
+        elif listed[0] not in families:
+            kind = "a generic family" if listed[0] in bars.generic_families else "a face"
+            wrong.append(f"{kind} the typography does not name ({listed[0]!r})")
+    names = ", ".join(families)
+    if wrong:
+        _check(checks, "svg.text-font", False,
+               f"text set in {'; '.join(sorted(set(wrong))[:4])}: name the design's faces "
+               f"({names}) first in font-family, or draw the lettering as outlines (paths) - "
+               f"an SVG drawn as an image cannot load the game's web fonts")
+    else:
+        _check(checks, "svg.text-font", True,
+               f"{len(texts)} text element(s), set in the design's faces ({names}); an SVG "
+               f"drawn as an image cannot load web fonts, so outlines are safer")
+
+
+def avoid_rules(avoid, bars=None):
+    """[(rule, avoid line)] of the asset-quality.yaml `avoid.rules` the design's avoid list
+    triggers: a line containing one of a rule's phrases, case-insensitive."""
+    bars = bars or load_bars()
+    out = []
+    for line in avoid or []:
+        text = str(line or "").lower()
+        for rule, phrases in bars.avoid_rules.items():
+            if any(p and p in text for p in phrases) and rule not in [r for r, _ in out]:
+                out.append((rule, str(line)))
+    return out
+
+
+_EMOJI = re.compile("[\U0001F000-\U0001FAFF\u2600-\u27BF\u2B00-\u2BFF\uFE0F]")
+_BLUR = re.compile(r"\b(blur|drop-shadow)\s*\(")
+
+
+def _hls(rgb):
+    import colorsys
+    h, lightness, saturation = colorsys.rgb_to_hls(*(c / 255 for c in rgb))
+    return h * 360, saturation, lightness
+
+
+def _hue_in(rgb, low, high):
+    h, saturation, lightness = _hls(rgb)
+    return saturation > 0.25 and 0.15 < lightness < 0.9 and low <= h < high
+
+
+def _avoid_check(checks, root, styled, texts, applied):
+    found = []
+    for rule, line in applied:
+        hit = None
+        if rule == "blur":
+            for element, _drawn, props in styled:
+                name = _local(element.tag)
+                if name in ("feGaussianBlur", "feDropShadow"):
+                    hit = f"a <{name}>"
+                elif _BLUR.search(props.get("filter") or ""):
+                    hit = f"a CSS filter {props['filter'][:40]!r}"
+                if hit:
+                    break
+        elif rule == "emoji":
+            hit = next(("an emoji in a <text>" for element, _p in texts
+                        if _EMOJI.search("".join(element.itertext()))), None)
+        elif rule == "text-gradient":
+            hit = next(("a <text> painted with a gradient" for _e, props in texts
+                        if any("url(" in (props.get(k) or "") for k in ("fill", "stroke"))),
+                       None)
+        elif rule == "purple-blue-gradient":
+            for element in root.iter():
+                if _local(element.tag) in ("linearGradient", "radialGradient"):
+                    stops = [parse_colour(s.get("stop-color") or _declarations(
+                        s.get("style")).get("stop-color")) for s in element.iter()
+                        if _local(s.tag) == "stop"]
+                    stops = [c for c in stops if c]
+                    if any(_hue_in(c, 255, 320) for c in stops) and \
+                            any(_hue_in(c, 195, 255) for c in stops):
+                        hit = f"a purple-to-blue gradient ({element.get('id') or 'unnamed'})"
+                        break
+        elif rule == "rounded-corners":
+            hit = next(("a <rect> with rounded corners (rx/ry)" for element, drawn, props
+                        in styled if drawn and _local(element.tag) == "rect" and any(
+                            (_numbers(props.get(k)) or [0])[0] > 0 for k in ("rx", "ry"))),
+                       None)
+        if hit:
+            found.append(f"{hit}, where the identity avoids {line!r}")
+    lines = ", ".join(repr(line) for _rule, line in applied)
+    _check(checks, "svg.avoid", not found,
+           "; ".join(found[:4]) if found else f"none of the measurable avoid lines ({lines})")
+
+
+# -- style and set consistency ------------------------------------------------------------------
+
+_SHAPES = {"rect", "circle", "ellipse", "line", "polyline", "polygon", "path"}
+
+
+def svg_style(data, display=None):
+    """The measurable treatment of an SVG: {shapes, stroked, outlined_share, outline_px,
+    outline_colour, blur}. `outline_px` is the widest stroke (an outline is the heaviest
+    line; detail is drawn thinner), in displayed px when `display` (width, height) is given,
+    else in viewBox units. None when the file cannot be read."""
+    if len(data) > 1048576 or re.search(rb"<!\s*(DOCTYPE|ENTITY)", data, re.I):
+        return None
+    try:
+        root = ET.fromstring(data)
+    except ET.ParseError:
+        return None
+    box = _viewbox(root)
+    scale = float(display[0]) / box[2] if box and display and display[0] else 1.0
+    shapes, strokes, blur = 0, [], False
+    for element, drawn, props in _styled(root):
+        name = _local(element.tag)
+        if name in ("feGaussianBlur", "feDropShadow") or _BLUR.search(props.get("filter") or ""):
+            blur = True
+        if not drawn or name not in _SHAPES:
+            continue
+        shapes += 1
+        colour = parse_colour(props.get("stroke"))
+        if colour is None:
+            continue
+        width = (_numbers(props.get("stroke-width")) or [1.0])[0]
+        if width > 0:
+            strokes.append((round(width, 2), colour))
+    counts = {}
+    for width, _colour in strokes:
+        counts[width] = counts.get(width, 0) + 1
+    outline = max(list(counts) or [0.0])
+    colours = {}
+    for width, colour in strokes:
+        if width == outline:
+            colours[colour] = colours.get(colour, 0) + 1
+    outline_colour = max(colours.items(), key=lambda kv: kv[1])[0] if colours else None
+    return {"shapes": shapes, "stroked": len(strokes),
+            "outlined_share": round(len(strokes) / shapes, 3) if shapes else 0.0,
+            "outline_px": round(outline * scale, 2) if strokes else None,
+            "outline_colour": _hex(outline_colour) if outline_colour else None,
+            "blur": blur}
+
+
+def _median(values):
+    values = sorted(values)
+    mid = len(values) // 2
+    return values[mid] if len(values) % 2 else (values[mid - 1] + values[mid]) / 2
+
+
+def set_consistency(drawings, bars=None):
+    """set.consistent of drawings judged as one set: [(id, bytes, role, (w, h) or None)].
+    Returns ({id: check entry} for every drawing in a compared group, {group: {id: style}}).
+    Groups and tolerances: asset-quality.yaml `set`."""
+    bars = bars or load_bars()
+    checks, measured = {}, {}
+    for group, roles in bars.set_groups.items():
+        members = []
+        for vid, data, role, display in drawings:
+            if role in roles:
+                style = svg_style(data, display)
+                if style is not None:
+                    members.append((vid, style))
+        if len(members) < bars.set_min_group:
+            continue
+        measured[group] = dict(members)
+        why = {vid: [] for vid, _style in members}
+        outlined = {vid: style["outlined_share"] >= bars.set_outlined_share and
+                    bool(style["outline_px"]) for vid, style in members}
+        yes = [v for v, o in outlined.items() if o]
+        no = [v for v, o in outlined.items() if not o]
+        if yes and no:
+            for vid in (no if len(no) <= len(yes) else yes):
+                why[vid].append(
+                    f"has no outline while {len(yes)} of the {len(members)} {group} are "
+                    f"outlined" if vid in no else
+                    f"is outlined while {len(no)} of the {len(members)} {group} are not")
+        widths = [style["outline_px"] for vid, style in members if outlined[vid]]
+        median = _median(widths) if widths else None
+        tally = {}
+        for vid, style in members:
+            if outlined[vid] and style["outline_colour"]:
+                tally[style["outline_colour"]] = tally.get(style["outline_colour"], 0) + 1
+        common = max(sorted(tally.items()), key=lambda kv: kv[1])[0] if tally else None
+        for vid, style in members:
+            if not outlined[vid]:
+                continue
+            width = style["outline_px"]
+            if median and max(width / median, median / width) > bars.set_max_outline_ratio:
+                why[vid].append(f"its outline is {width:g}px where the {group}' median is "
+                                f"{median:g}px (within x{bars.set_max_outline_ratio:g})")
+            colour = parse_colour(style["outline_colour"])
+            if common and colour and _distance(colour, parse_colour(common)) > \
+                    bars.set_outline_tolerance:
+                why[vid].append(f"its outline colour is {style['outline_colour']} where the "
+                                f"{group} use {common}")
+        soft = [v for v, s in members if s["blur"]]
+        if soft and len(soft) < len(members):
+            hard = [v for v, s in members if not s["blur"]]
+            for vid in (soft if len(soft) <= len(hard) else hard):
+                why[vid].append(f"{'uses' if vid in soft else 'lacks'} the blur filter "
+                                f"{len(soft)} of the {len(members)} {group} use")
+        for vid, style in members:
+            treatment = (f"outline {style['outline_px']:g}px {style['outline_colour']}"
+                         if outlined[vid] else "no outline")
+            checks[vid] = {"id": "set.consistent", "status": "fail" if why[vid] else "pass",
+                           "summary": (f"{vid} breaks the {group}' shared treatment: "
+                                       + "; ".join(why[vid])) if why[vid] else
+                           f"one treatment with the other {len(members) - 1} {group} "
+                           f"({treatment})"}
+    return checks, measured
 
 
 # -- raster --------------------------------------------------------------------------------

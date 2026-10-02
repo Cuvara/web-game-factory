@@ -15,7 +15,8 @@ build     Runs the same pipeline as the workflow's `assets` step on a game desig
           repository checkout: libraries (index.json, library.json), the 2D command author
           when --author-command names one (its argv; {request}, {output}, {prompt}
           substituted; with --author-svg-from stdout it prints the SVG and the
-          pipeline writes it), placeholders for the rest, every delivered file judged; files
+          pipeline writes it; with --author-mode set one session draws every 2D
+          requirement, {request} {out} {preview} {sheet} {prompt}), placeholders for the rest, every delivered file judged; files
           into public/assets/ (atlas sources into src/assets/), atlases packed, the runtime
           manifest public/assets/assets.json written, stale placeholders pruned. It prints
           what it did; the asset-manifest artifact itself is only produced inside a run.
@@ -100,10 +101,13 @@ def cmd_build(args):
     backends = build_backends(["procedural"], {})
     store = AssetStore(args.root)
     try:
-        author = build_author({"kind": "command", "argv": args.author_command,
-                               "repair_rounds": args.repair_rounds,
-                               "svg_from": args.author_svg_from}
-                              if args.author_command else None)
+        settings = {"kind": "command", "argv": args.author_command, "mode": args.author_mode,
+                    "repair_rounds": args.repair_rounds}
+        if args.author_mode == "asset":
+            settings["svg_from"] = args.author_svg_from
+        if args.author_timeout:
+            settings["timeout_seconds"] = args.author_timeout
+        author = build_author(settings if args.author_command else None)
     except AuthorError as exc:
         raise Usage(f"author: {exc}")
     identity = (design.get("build_spec") or {}).get("visual_identity") \
@@ -115,7 +119,11 @@ def cmd_build(args):
                              optimize=not args.no_optimize, prune=not args.no_prune,
                              title_id=design.get("title_id"), author=author,
                              identity=identity, work_dir=work_dir,
-                             locales=(design.get("scope") or {}).get("locales") or ())
+                             locales=(design.get("scope") or {}).get("locales") or (),
+                             design_context={
+                                 "art_direction": design.get("art_direction"),
+                                 "design_resolution": (design.get("engine") or {}).get(
+                                     "design_resolution")})
     result = pipeline.run(requirements)
     payload = {
         "root": os.path.abspath(args.root),
@@ -308,6 +316,12 @@ def main(argv=None):
                        help="the 2D author's argv (last option): {request} {output} {prompt}")
     build.add_argument("--author-svg-from", choices=("file", "stdout"), default="file",
                        help="file: the author writes {output}; stdout: it prints the SVG last")
+    build.add_argument("--author-mode", choices=("asset", "set"), default="asset",
+                       help="asset: one session per drawing ({request} {output} {prompt}); "
+                            "set: one session for every drawing ({request} {out} {preview} "
+                            "{sheet} {prompt}), shown a rendered contact sheet")
+    build.add_argument("--author-timeout", type=int,
+                       help="seconds per author session (default: 600 asset, 2400 set)")
     build.add_argument("--repair-rounds", type=int, default=2)
     build.add_argument("--work-dir", help="author requests, logs and rejected files "
                                           "(default: a fresh temporary directory)")

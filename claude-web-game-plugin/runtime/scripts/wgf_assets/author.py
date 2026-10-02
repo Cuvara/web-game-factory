@@ -5,6 +5,9 @@ Opt-in, configured under `factory.assets.author` (workspace/config/factory.yaml)
 
     author:
       kind: command                # none (default) | command
+      mode: asset                  # asset (default): one session per drawing, below
+                                   # set: one session authors every drawing together, looking
+                                   # at a rendered contact sheet - set_author.py
       argv: [...]                  # the host's non-interactive command; placeholders below
       svg_from: file               # file (default): it writes {output} | stdout: it prints
                                    # the SVG last, and the Factory writes {output}
@@ -44,9 +47,10 @@ import re
 from wgflib import agentenv, procs
 
 __all__ = ["CommandAuthor", "AuthorError", "AuthorRunFailed", "build_author", "last_svg",
-           "KINDS", "SVG_FROM", "MAX_REPAIR_ROUNDS", "AUTHOR_CRAFT"]
+           "KINDS", "MODES", "SVG_FROM", "MAX_REPAIR_ROUNDS", "AUTHOR_CRAFT"]
 
 KINDS = ("none", "command")
+MODES = ("asset", "set")
 MAX_REPAIR_ROUNDS = 2
 SVG_FROM = ("file", "stdout")
 DEFAULTS = {"kind": "none", "argv": [], "svg_from": "file", "timeout_seconds": 600,
@@ -98,6 +102,7 @@ class AuthorRunFailed(RuntimeError):
 
 class CommandAuthor:
     kind = "command"
+    mode = "asset"
 
     def __init__(self, settings, config=None):
         self.settings = dict(DEFAULTS)
@@ -218,4 +223,11 @@ def build_author(settings, config=None):
                           f"not {kind!r}")
     if kind == "none":
         return None
+    mode = settings.get("mode") or "asset"
+    if mode not in MODES:
+        raise AuthorError(f"factory.assets.author.mode must be one of {', '.join(MODES)}, "
+                          f"not {mode!r}")
+    if mode == "set":
+        from .set_author import SetAuthor
+        return SetAuthor({k: v for k, v in settings.items() if k != "mode"}, config)
     return CommandAuthor(settings, config)

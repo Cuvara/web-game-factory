@@ -49,6 +49,7 @@ cannot become a production asset without someone recording what it is.
 import hashlib
 import json
 import os
+import shutil
 import tempfile
 from collections import namedtuple
 
@@ -56,11 +57,13 @@ from wgflib import paths
 
 from . import atlas as atlases_mod
 from . import formats, gltf, modelspec, quality as quality_mod, raster, runtime
+from . import preview
 from .author import AUTHOR_CRAFT, AuthorError, AuthorRunFailed
 from .library import LibraryError, match_all, search_all
 from .optimize import optimize as optimize_bytes
 from .placeholders import BackendError
 from .policy import GENERATED_LICENSE
+from .set_author import craft_paths as set_craft_paths, layout_for as set_layout
 
 __all__ = ["AssetPipeline", "AssetStore", "PipelineResult", "validate_file", "asset_path",
            "ASSET_DIR", "SOURCE_DIR"]
@@ -305,10 +308,11 @@ class _Item:
         self.generation = None  # a generating backend's `model.generation` block
         self.variants = []  # runtime ids of the drawings, when the requirement has a count
         self.short = None   # (supplied, wanted) when a library supplies fewer drawings
-        self.deferred = False  # waiting for the 3D set author, which runs once for all
+        self.model_deferred = False  # waiting for the 3D set author, which runs once for all
         self.quality_author = None  # what made it, for quality.author
         self.quality = None  # set when the backend judged it already
         self.rebuilt = False  # made again by an author for a re-entry's feedback
+        self.deferred = False  # waiting for the 2D set author (author mode `set`)
     def issue(self, code, severity, message):
         self.issues.append({"item_id": self.req.id, "code": code, "severity": severity,
                             "message": message})
@@ -342,7 +346,7 @@ class AssetPipeline:
                  placeholders=True, optimize=True, runtime_manifest=True, prune=True,
                  title_id=None, author=None, model_author=None, model_set=None, palette=(),
                  identity=None, design=None, bars=None, rebuild=None, work_dir=None,
-                 settings=None, context=None, locales=()):
+                 settings=None, context=None, locales=(), design_context=None):
         self.policy = policy
         self.store = store
         self.backends = backends  # [(id, backend or None, note)]
@@ -366,6 +370,8 @@ class AssetPipeline:
         if palette:
             self.palette = list(palette)
         self.primitive_style = bool(self.identity.get("primitive_style"))
+        # What the set author is told besides the identity: art_direction, design_resolution.
+        self.design_context = dict(design_context or {})
         self.bars = bars or quality_mod.load_bars()
         # The design's scope.locales: a delivered font must set each of them.
         self.locales = [str(x) for x in locales or [] if x]
@@ -431,18 +437,25 @@ class AssetPipeline:
         built = []
         try:
             for req in requirements:
-                item = self._process(req)
-                if not item.deferred:
-                    self._judge(item)
-                built.append(item)
-            deferred = [item for item in built if item.deferred]
-            if deferred:
-                # The set author makes every 3D model it was handed in one session; what it
-                # could not make falls to the placeholders, as in each mode.
-                self._author_set(deferred)
-                for item in deferred:
-                    item.deferred = False
-                    self._judge(item)
+                built.append(self._process(req))
+            models = [item for item in built if item.model_deferred]
+            if models:
+                # The 3D set author makes every 3D model it was handed in one session; what
+                # it could not make falls to the placeholders, as in each mode.
+                self._author_model_set(models)
+                for item in models:
+                    item.model_deferred = False
+            drawings = [item for item in built if item.deferred]
+            if drawings:
+                # The 2D set author draws every deferred requirement in one session; what it
+                # does not deliver goes on to the placeholder, like a rejected drawing.
+                self._author_set(drawings)
+                for item in drawings:
+                    if item.deferred:
+                        item.deferred = False
+                        self._last_resort(item.req, item)
+            for item in built:
+                self._judge(item)
         finally:
             self.close()
         self._write_ledger()
@@ -504,16 +517,23 @@ class AssetPipeline:
                 if req.source in (None, "library") and self._library(req, item):
                     return item
             if self.author is not None and self._authorable(req):
+                if getattr(self.author, "mode", "asset") == "set":
+                    item.deferred = True  # drawn with the rest of the set, after this pass
+                    return item
                 if self._authored(req, item):
                     return item
             if self.model_author is not None and req.dimension == "3d" \
                     and req.policy.dimension in ("3d", "any") and req.kind in (
                         "model", "environment", "animation"):
                 if self.model_set is not None:
-                    item.deferred = True
+                    item.model_deferred = True
                     return item
                 if self._model_authored(req, item):
                     return item
+        return self._fallback(req, item)
+
+    def _last_resort(self, req, item):
+        """A placeholder, or the `missing` issue (the 2D set author's name for _fallback)."""
         return self._fallback(req, item)
 
     def _fallback(self, req, item):
@@ -868,12 +888,15 @@ class AssetPipeline:
             problems = problems or [f"{relative} is not an SVG document"]
         elif found.format != "svg":
             problems.append(f"{relative} is {found.format}, not SVG")
-        judged = quality_mod.svg_quality(
+        judged = self._svg_quality(data, req, self.author.label if self.author else None)
+        return problems + quality_mod.problems(judged), judged
+
+    def _svg_quality(self, data, req, author):
+        return quality_mod.svg_quality(
             data, role=req.role, palette=self.palette, bars=self.bars,
             spec_size=(req.width, req.height) if req.width and req.height else None,
-            primitive_style=self.primitive_style,
-            author=self.author.label if self.author else None)
-        return problems + quality_mod.problems(judged), judged
+            primitive_style=self.primitive_style, author=author,
+            typography=self.identity.get("typography"), avoid=self.identity.get("avoid"))
 
     def _author_key(self, req, vid, n):
         """What an authored file was made from: a changed description, palette, bar or
@@ -937,15 +960,17 @@ class AssetPipeline:
                       "transparency": req.policy.transparency},
             "palette": [{"token": e.get("token"), "hex": e.get("hex"), "role": e.get("role")}
                         for e in identity.get("palette") or [] if isinstance(e, dict)],
-            "visual_identity": {k: identity.get(k) for k in (
-                "concept", "shape_language", "texture", "avoid", "primitive_style")
-                if identity.get(k) is not None},
+            # The whole identity: typography, motion and ui belong to the look as much as
+            # the shape language does.
+            "visual_identity": {k: v for k, v in identity.items() if k != "palette"},
             "quality_bars": self.bars.summary(req.role),
             "format": "svg",
             "destination": relative,
             # The playbooks the drawing follows: silhouettes, palette, the style kit.
             "craft": [os.path.join(paths.CORE, "craft", name) for name in AUTHOR_CRAFT],
         }
+        if self.design_context.get("art_direction"):
+            request["art_direction"] = self.design_context["art_direction"]
         if notes:
             # Why the running game sent this asset back, in the judge's words, and the
             # frames of the running game that show it (absolute PNG paths).
@@ -986,8 +1011,9 @@ class AssetPipeline:
             output = os.path.join(work, f"{stem}.svg")
             request = self._author_request(req, vid, n, relative, notes, repair, frames)
             if siblings:
-                request["siblings"] = [{"variant": other, "destination":
-                                        f"{self._directory(req, 'svg')}/{other}.svg"}
+                # Absolute: the host runs in the work directory, not the checkout.
+                request["siblings"] = [{"variant": other, "path": self.store.resolve(
+                                        f"{self._directory(req, 'svg')}/{other}.svg")}
                                        for other, _data in siblings]
             try:
                 data = self.author.write(request, output, work, stem)
@@ -1026,13 +1052,22 @@ class AssetPipeline:
                                f"{vid}: the author's file was not accepted after {rounds} "
                                f"repair round(s): " + "; ".join(problems[:6]))
                     return False
-            entry = self._store(relative, data, "svg")
-            stored.append(entry)
+            stored.append(self._keep_authored(relative, key, data))
             judged_all.append((vid, judged))
-            record = {"key": key, "hash": file_hash(entry.data), "author": self.author.label}
-            if self._ledger_entries().get(relative) != record:
-                self._ledger_entries()[relative] = record
-                self._ledger_dirty = True
+        self._deliver_authored(item, ids, stored, judged_all, notes)
+        return True
+
+    def _keep_authored(self, relative, key, data):
+        """Write an accepted drawing and record what it was made from in the ledger."""
+        entry = self._store(relative, data, "svg")
+        record = {"key": key, "hash": file_hash(entry.data), "author": self.author.label}
+        if self._ledger_entries().get(relative) != record:
+            self._ledger_entries()[relative] = record
+            self._ledger_dirty = True
+        return entry
+
+    def _deliver_authored(self, item, ids, stored, judged_all, notes):
+        req = item.req
         item.variants = ids if len(ids) > 1 else []
         item.data["source"] = "ai-generated"
         item.data["origin"] = {"kind": "generated", "generator": self.author.label}
@@ -1048,6 +1083,192 @@ class AssetPipeline:
                 item.data.get("notes"), f"Rebuilt for {len(notes)} finding(s)."]))
             item.rebuilt = True
         return True
+
+    # -- the set author (author mode `set`, set_author.py) ------------------------------------
+
+    def _set_colours(self):
+        """(background, surface) hex of the design: the ground the drawings sit on, and the
+        panel colour (visual_identity.ui.surface)."""
+        palette = [e for e in self.identity.get("palette") or [] if isinstance(e, dict)]
+
+        def find(*words):
+            for entry in palette:
+                text = f"{entry.get('token', '')} {entry.get('role', '')}".lower()
+                if any(word in text for word in words):
+                    return entry.get("hex")
+            return None
+        ui = self.identity.get("ui") if isinstance(self.identity.get("ui"), dict) else {}
+        surface = next((e.get("hex") for e in palette if e.get("token") == ui.get("surface")),
+                       None)
+        background = find("background", "backdrop", "ground") or \
+            (palette[0].get("hex") if palette else None)
+        return background, surface or find("panel", "surface", "card") or "#FFFFFF"
+
+    def _set_entries(self, items):
+        """[(item, variant id, n, repository-relative path, ledger key)] of a set."""
+        entries = []
+        for item in items:
+            ids = item.req.variant_ids() or [item.req.id]
+            for n, vid in enumerate(ids, 1):
+                entries.append((item, vid, n, f"{self._directory(item.req, 'svg')}/{vid}.svg",
+                                self._author_key(item.req, vid, n)))
+        return entries
+
+    def _set_brief(self, entries, layout, accepted, job):
+        """What the set author reads: every requirement, the whole identity, the bars."""
+        identity = self.identity
+        requirements = []
+        for item in dict.fromkeys(e[0] for e in entries):
+            req = item.req
+            files = [{"variant": vid, "path": os.path.join(layout["out"], f"{vid}.svg"),
+                      "accepted": vid in accepted}
+                     for owner, vid, _n, _rel, _key in entries if owner is item]
+            entry = {"id": req.id, "type": req.design_type or req.kind, "kind": req.kind,
+                     "role": req.role, "tier": req.design_tier or req.scope_tier,
+                     "description": req.description or req.label,
+                     "readability": req.readability, "spec": req.spec, "count": req.count,
+                     "width": req.width, "height": req.height,
+                     "transparency": req.policy.transparency,
+                     "quality_bars": self.bars.summary(req.role), "files": files}
+            notes, frames = self._feedback(req)
+            if notes:
+                # A failed gate sent it back: the judge's words, and the frames of the running
+                # game that show the problem (the set author's prompt says to open them).
+                entry["notes"] = notes
+                entry["frames"] = frames
+            requirements.append(entry)
+        bars = self.bars
+        brief = {
+            "title_id": self.title_id,
+            "art_direction": self.design_context.get("art_direction"),
+            "design_resolution": self.design_context.get("design_resolution"),
+            "visual_identity": identity,
+            "typography_faces": quality_mod.typography_families(identity.get("typography")),
+            "background": job["background"], "surface": job["surface"],
+            "requirements": requirements,
+            "out_dir": layout["out"],
+            "style_sheet": os.path.join(layout["out"], "STYLE.md"),
+            "contact_sheet": layout["sheet"],
+            "set_bars": {
+                "groups": bars.set_groups,
+                "rule": (f"within a group, every drawing outlined or none; outline widths "
+                         f"(displayed px) within x{bars.set_max_outline_ratio:g} of the "
+                         f"group's median; one outline colour (RGB distance "
+                         f"{bars.set_outline_tolerance:g}); blur filters used by all or none"),
+            },
+            "avoid_measured": [line for _rule, line in quality_mod.avoid_rules(
+                identity.get("avoid"), bars)],
+            "format": "svg",
+            "conventions": [
+                "Each file is a root <svg> with a viewBox, and width/height equal to its "
+                "in-game size in px. Where a requirement states no size, choose one for the "
+                "design_resolution (a background covers it) and declare it.",
+                "The game draws every drawing on `background`; panels and cards are "
+                "`surface`. The contact sheet shows both.",
+                "A counted requirement is a family: one silhouette per variant, and an "
+                "ordered family grows (craft: production-art-2d.md, section 2).",
+                "Lettering is outlined paths, or <text> in the design's faces "
+                "(typography_faces) - never a system font.",
+                "A colour off the palette is allowed only when the root states why: "
+                "data-wgf-off-palette=\"<reason>\".",
+            ],
+            "craft": set_craft_paths(),
+        }
+        return {k: v for k, v in brief.items() if v is not None}
+
+    def _author_set(self, items):
+        """Ask the set author for every deferred requirement at once; deliver what passes.
+        An item it does not deliver keeps `deferred` and goes on to the placeholder."""
+        layout = set_layout(self.work_dir or tempfile.mkdtemp(prefix="wgf-set-"))
+        for key in ("out", "preview"):
+            shutil.rmtree(layout[key], ignore_errors=True)
+            os.makedirs(layout[key])
+        entries = self._set_entries(items)
+        accepted = set()
+        for item, vid, _n, relative, key in entries:
+            if self.rebuild.get(item.req.id):
+                continue
+            data = self._reusable(relative, key)
+            if data is not None:
+                with open(os.path.join(layout["out"], f"{vid}.svg"), "wb") as handle:
+                    handle.write(data)
+                accepted.add(vid)
+        background, surface = self._set_colours()
+        owners = {vid: (item, relative) for item, vid, _n, relative, _key in entries}
+        job = {"out_dir": layout["out"], "preview_dir": layout["preview"],
+               "checkout": self.store.root if os.path.isfile(
+                   os.path.join(self.store.root, "package.json")) else None,
+               "title": f"{self.title_id or 'title'}: the 2D set",
+               "background": background, "surface": surface,
+               "palette": self.identity.get("palette") or [],
+               "primitive_style": self.primitive_style,
+               "typography": self.identity.get("typography"),
+               "avoid": self.identity.get("avoid") or [], "author": self.author.label,
+               "files": [{"id": vid, "requirement": item.req.id, "role": item.req.role,
+                          "width": item.req.width, "height": item.req.height,
+                          "count": item.req.count}
+                         for item, vid, _n, _rel, _key in entries]}
+
+        def extra(entry, data):
+            item, relative = owners[entry["id"]]
+            found, problems = validate_file(item.req.policy, relative, data, policy=self.policy)
+            out = [m for _, sev, m in problems if sev == "error"]
+            if found is None:
+                out = out or [f"{relative} is not an SVG document"]
+            elif found.format != "svg":
+                out.append(f"{relative} is {found.format}, not SVG")
+            return out
+
+        def judge():
+            return preview.review(job, extra=extra, render_env=getattr(self.author, "env", None))
+
+        rounds, review = [], None
+        if len(accepted) == len(entries):
+            # All drawn before: a session only when one of them fails now.
+            preview.write_job(layout["job"], job)
+            review = judge()
+        if review is None or not review["passed"]:
+            brief = self._set_brief(entries, layout, accepted, job)
+            try:
+                review, rounds = self.author.author(
+                    brief, job, layout, judge, logger=self.logger,
+                    notes=any(self.rebuild.get(i.req.id) for i in items))
+            except (AuthorError, AuthorRunFailed) as exc:
+                for item in items:
+                    item.issue("author-rejected", "warning", f"{item.req.id}: set author: {exc}")
+                return
+        for warning in review.get("warnings") or []:
+            self._log("set preview", warning=warning)
+        with open(os.path.join(layout["root"], "rounds.json"), "w", encoding="utf-8") as handle:
+            json.dump({"rounds": rounds, "sheet": review.get("sheet"),
+                       "warnings": review.get("warnings"),
+                       "failing": {vid: r["problems"] for vid, r in review["files"].items()
+                                   if r["problems"]},
+                       "set": review.get("set")}, handle, indent=2, sort_keys=True,
+                      default=str)
+        sessions = len(rounds)
+        ended = rounds[-1].get("error") if rounds else None
+        for item in items:
+            mine = [(vid, relative, key) for owner, vid, _n, relative, key in entries
+                    if owner is item]
+            records = [review["files"][vid] for vid, _rel, _key in mine]
+            problems = [f"{vid}: {p}" for (vid, _rel, _key), record in zip(mine, records)
+                        for p in record["problems"]]
+            if problems:
+                item.issue("author-rejected", "warning",
+                           f"{item.req.id}: the set author's drawings were not accepted after "
+                           f"{sessions} session(s)" + (f" ({ended})" if ended else "")
+                           + ": " + "; ".join(problems[:6]))
+                continue
+            stored, judged_all = [], []
+            for (vid, relative, key), record in zip(mine, records):
+                with open(record["path"], "rb") as handle:
+                    data = handle.read()
+                stored.append(self._keep_authored(relative, key, data))
+                judged_all.append((vid, record["quality"]))
+            self._deliver_authored(item, [vid for vid, _rel, _key in mine], stored, judged_all,
+                                   self._feedback(item.req)[0])
+            item.deferred = False
 
     def _model_requirement(self, req):
         return {"id": req.id, "kind": req.kind, "type": req.design_type or req.kind,
@@ -1100,7 +1321,7 @@ class AssetPipeline:
             return False
         return self._accept_model(req, item, made)
 
-    def _author_set(self, items):
+    def _author_model_set(self, items):
         """Every deferred 3D requirement through wgf_assets.model_author.produce_models, in
         one session; each one it could not make falls back as in each mode."""
         out_dir = os.path.join(self.work_dir or tempfile.gettempdir(), "models", "set")
@@ -1184,6 +1405,7 @@ class AssetPipeline:
             item.data["notes"] = " ".join(filter(None, [item.data.get("notes"),
                                                         f"Renders: {sheet}."]))
         item.data["status"] = "in-progress" if item.data["placeholder"] else "delivered"
+        notes, _ = self._feedback(req)
         if notes and not item.data["placeholder"]:
             item.rebuilt = True
             item.data["notes"] = " ".join(filter(None, [
@@ -1253,10 +1475,7 @@ class AssetPipeline:
                 results = []
                 for vid, relative, blob, fmt in files:
                     if fmt == "svg":
-                        results.append((vid, quality_mod.svg_quality(
-                            blob, role=req.role, palette=self.palette, bars=self.bars,
-                            spec_size=(req.width, req.height) if req.width and req.height
-                            else None, primitive_style=self.primitive_style, author=author)))
+                        results.append((vid, self._svg_quality(blob, req, author)))
                     else:
                         results.append((vid, quality_mod.raster_quality(
                             blob, needs_alpha=req.policy.transparency == "required",

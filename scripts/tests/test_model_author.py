@@ -350,12 +350,13 @@ class ModelAuthor(unittest.TestCase):
             "frames": [frame]})
         self.produce("keeper", requirement=requirement)
         (call,) = self.calls()
-        self.assertEqual(call["notes"], ["blocker assets finding `flat`: the keeper is a grey box"])
-        self.assertEqual(call["frames"], [frame])
-        self.assertIn("Open every PNG in the request's `frames`", model_author.PROMPT_NOTES)
+        self.assertEqual(call["asset"]["notes"],
+                         ["blocker assets finding `flat`: the keeper is a grey box"])
+        self.assertEqual(call["asset"]["frames"], [frame])
+        self.assertIn("Open every PNG in its `frames`", model_author.PROMPT_NOTES)
         # Without feedback the request carries neither.
         self.produce("keeper")
-        self.assertIsNone(self.calls()[1]["notes"])
+        self.assertNotIn("notes", self.calls()[1]["asset"])
 
     def test_a_single_box_fails_for_a_readable_role(self):
         with self.assertRaises(model_author.ModelAuthorError) as raised:

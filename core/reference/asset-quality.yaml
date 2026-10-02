@@ -16,7 +16,7 @@
 # Sections are per medium and keep disjoint keys: `svg` and `raster` (2D), `models` (3D, GLB),
 # `audio` (sfx and music: WAV decoded, Ogg and MP3 read by their headers).
 
-version: 1.2.0
+version: 1.3.0
 
 svg:
   # Larger files are refused before parsing; an SVG sprite that big is a traced raster.
@@ -187,6 +187,53 @@ variants:
   grid: 32
   min_silhouette_distance: 0.08
   png_background_delta: 24
+
+text:
+  # svg.text-font: a <text> (or <tspan>) is set in a face the design's typography names
+  # (visual_identity.typography display/body/numeric, the family before any "(weight)"),
+  # first in its font-family list; generic families may follow it as a fallback. A <text>
+  # with no font-family, or one led by another family, is set in a system font - the generic
+  # UI the identity kits exist to prevent. An SVG drawn as an image cannot load the game's
+  # web fonts at all, so lettering that must look right is drawn as outlines (paths).
+  generic_families: [serif, sans-serif, monospace, cursive, fantasy, system-ui, ui-serif, ui-sans-serif, ui-monospace, ui-rounded, emoji, math, fangsong]
+
+avoid:
+  # svg.avoid: the visual identity's `avoid` list, where a line can be measured on the file.
+  # A rule applies when an avoid line contains one of its phrases (case-insensitive); the
+  # other lines are for the author and visual QA to read, never failed here.
+  #   blur                  a Gaussian blur, a drop-shadow filter, or a CSS blur(): glow and
+  #                         soft shadows
+  #   emoji                 an emoji character in a <text>
+  #   purple-blue-gradient  a gradient whose stops run from purple to blue
+  #   text-gradient         a <text> filled or stroked with a gradient
+  #   rounded-corners       a <rect> with rx or ry above 0
+  rules:
+    blur: [neon glow, glow effects, soft blurred, blurred, blur]
+    emoji: [emoji]
+    purple-blue-gradient: [purple-to-blue, purple to blue]
+    text-gradient: [gradients inside text, gradient text]
+    rounded-corners: [rounded corners]
+
+set:
+  # set.consistent: drawings authored as one set (the 2D author's `set` mode, or any item
+  # judged with others) share one treatment, measured on simple proxies per group of roles.
+  # A group with fewer than `min_group` drawings is not compared.
+  #   outlined   a drawing is outlined when at least `outlined_share` of its shapes carry a
+  #              stroke; within a group, outlined and unoutlined drawings do not mix (the
+  #              minority fails)
+  #   width      an outlined drawing's outline - its widest stroke, in displayed px
+  #              (stroke-width x displayed size / viewBox width) - within
+  #              `max_outline_ratio` of the group's median
+  #   colour     its outline colour within `outline_colour_tolerance` (RGB distance) of the
+  #              group's most common outline colour
+  #   effects    blur filters (soft shadows, glow) used by all of a group or by none
+  groups:
+    entities: [player, threat, goal, target, projectile, collectible, hazard, prop]
+    icons: [icon]
+  min_group: 2
+  outlined_share: 0.3
+  max_outline_ratio: 1.6
+  outline_colour_tolerance: 60
 
 audio:
   # A WAV is decoded with the standard library (`wave`); Ogg (Vorbis, Opus) and MP3 are read

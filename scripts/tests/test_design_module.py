@@ -517,7 +517,7 @@ class FailurePaths(unittest.TestCase):
         result = run_step(load_strategy(), params={"author": "walled"})
         self.assertEqual(result.outcome, StepOutcome.SUCCESS, result.error)
         rules = consistency.load_rules()
-        self.assertEqual(sorted(rules["detail_terms"]), ["crash", "lock", "wall"])
+        self.assertEqual(sorted(rules["detail_terms"]), ["crash", "exit", "lock", "wall"])
         for term in rules["detail_terms"]:
             self.assertIn(term, rules["concept_terms"])
 

@@ -94,7 +94,7 @@
     "core/lifecycle/title.machine.yaml": "sha256:c79a05d36b45a2e2e62a98bc864c956559e0cdcdd7e8388262fba865cb4a3655",
     "core/reference/asset-policy.yaml": "sha256:04a02e9dd181092294aa0b1bce5c39e9864c7f67cbca7ed06cb5bea9ef9b92bc",
     "core/reference/asset-quality.yaml": "sha256:000b84e6555cd7e3438f586e090fb5ed32d795ec67b711cdd9b007c3c78c3881",
-    "core/reference/design-consistency-rules.yaml": "sha256:969eb549d4630abfd1f2b7e7446afc56a24fbd88a3c129a86636de378813571f",
+    "core/reference/design-consistency-rules.yaml": "sha256:280ae657eb4c0de2d8086bc6e426b87899222d6c1765382abac56e7aa85e7813",
     "core/reference/design-depth.yaml": "sha256:b30fa899b40c193dfdf51559da4020447fee2b1fc5b6a05e9566f69c1ffa113e",
     "core/reference/dimensions.yaml": "sha256:18028010b65e169b17078495fd6d6d9967f64d41dfb07468dd27c7aaa6145c3a",
     "core/reference/experience-rules.yaml": "sha256:dfa32df2ca38413f90815b6869135fcce0ca48888d6102b23b27eb8fc66c6fff",

@@ -173,10 +173,10 @@ concept_terms:
 
 # Terms that count for `concept.uncarried` (the strategy names them, so the design must carry
 # them) but never for `concept.foreign`: walls, crashes and locks are details most games
-# have - an ice puzzle's penguin stops at a wall, its door has a lock - and a design that
+# have - an ice puzzle's penguin stops at a wall, its door has a lock, its goal is an exit - and a design that
 # names one has not changed what the game is. A term absent from this list is defining both
 # ways.
-detail_terms: [wall, crash, lock]
+detail_terms: [wall, crash, lock, exit]
 
 evaluation:
   pass_condition: No rule with severity=blocking is breached.

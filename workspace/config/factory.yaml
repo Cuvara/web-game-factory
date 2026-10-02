@@ -167,6 +167,12 @@ factory:
     # assets and/or a library.json mapping requirement ids and roles to licensed files -
     # how golden fixtures and purchased packs supply real art.
     libraries: []
+    # Producers of final assets from the design itself, tried after libraries and authors
+    # and before placeholders: `fonts` (the typography's faces from the Factory font library,
+    # workspace/library/fonts - OFL, pre-built WOFF2) and `audio` (music composed from the
+    # design's audio direction, encoded Ogg Vorbis; sound effects as WAV - ~1-2 min per
+    # design). Off by default; the autonomous profile turns both on.
+    producers: []
     # Who draws a 2D requirement as SVG: kind none (default: what no library supplies is a
     # placeholder) or command - an agent host run through wgflib.procs with the agent
     # environment, once per drawing. argv placeholders: {request} (the request JSON: the

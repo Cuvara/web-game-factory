@@ -116,8 +116,10 @@ for (const [id, e] of Object.entries<any>(m.assets)) {
 // Tilesets: map.addTilesetImage(name, id, e.tile_width, e.tile_height).
 ```
 
-Fonts: an entry with a `url` is a file — `new FontFace(e.family, \`url(${at(e.url)})\`)`,
-`await face.load()`, `document.fonts.add(face)`; an entry with only `family` is a system
+Fonts: an entry with a `url` is a file — `new FontFace(e.family, \`url(${at(e.url)})\`,
+e.weight ? { weight: e.weight } : {})`, `await face.load()`, `document.fonts.add(face)`; a
+requirement with several faces lists them in `variants`, each with its own `family` (the
+typography's face) and `weight` (one weight, or a variable file's range); an entry with only `family` is a system
 stack to use as the CSS `font-family`. Audio: load through the engine's audio or Web Audio,
 and unlock on the first gesture (`game-audio.md`).
 

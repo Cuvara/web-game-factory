@@ -109,12 +109,44 @@ def resolve_settings(context):
     settings.setdefault("prune", True)
     settings.setdefault("libraries", [])
     settings.setdefault("fail_on", [])
+    # Producers of final assets from the design itself (fonts, audio): off unless named.
+    producers = settings.get("producers") or []
+    if not isinstance(producers, list) or any(p not in PRODUCERS for p in producers):
+        raise PolicyError(f"factory.assets.producers must list some of {', '.join(PRODUCERS)}"
+                          f"; got {producers!r}")
+    settings["producers"] = list(producers)
     settings["author"] = dict(settings.get("author") or {})
     # The 3D model author (model_author.py): `{kind: command, argv, ...}`, or none. Only a
     # configured one is asked; unconfigured, 3D requirements go to the next backend
     # (a design's own model spec built by Blender, then placeholders) without a warning.
     settings["model_author"] = dict(settings.get("model_author") or {})
     return settings
+
+
+PRODUCERS = ("fonts", "audio")
+
+
+def build_producers(names, design, title_id, *, logger=None):
+    """The producers `factory.assets.producers` names, in order: `fonts` (the Factory font
+    library, fontlib.py) and `audio` (the composer, sound/producer.py). Unknown names are
+    refused by resolve_settings; an unavailable one (no font library) is skipped."""
+    from . import fontlib
+    out = []
+    spec = design.get("build_spec") if isinstance(design.get("build_spec"), dict) else {}
+    look = spec.get("visual_identity") if isinstance(spec.get("visual_identity"), dict) else {}
+    for name in names or []:
+        if name == "fonts":
+            library = fontlib.load()
+            if library is None:
+                if logger:
+                    logger.warning("font library unavailable", path=fontlib.LIBRARY_DIR)
+                continue
+            out.append(fontlib.FontProducer(library, look.get("typography"),
+                                            (design.get("scope") or {}).get("locales") or ()))
+        elif name == "audio":
+            from .sound.producer import AudioProducer
+            out.append(AudioProducer(design, title_id, logger=logger))
+    return out
 
 
 def _id_words(text):
@@ -235,8 +267,8 @@ class AssetsStep(WorkflowStep):
         design = inputs.load("game-design")
         scaffold = inputs.load("scaffold-record") if "scaffold-record" in inputs else None
 
-        settings = resolve_settings(context)
         try:
+            settings = resolve_settings(context)
             policy = load_policy(settings.get("policy"))
             requirements, dimension = inspect(design, policy, dimension=settings.get("dimension"))
         except (PolicyError, RequirementError) as exc:
@@ -274,6 +306,8 @@ class AssetsStep(WorkflowStep):
             # the manifest then says why each one was not built.
             order.insert(0, BLENDER)
         backends = build_backends(order, placeholders)
+        producers = build_producers(settings.get("producers"), design, title_id,
+                                    logger=context.logger)
         pipeline = AssetPipeline(policy, store, backends, libraries, logger=context.logger,
                                  placeholders=bool(placeholders.get("enabled")),
                                  optimize=bool(settings.get("optimize")),
@@ -285,7 +319,8 @@ class AssetsStep(WorkflowStep):
                                                not in (None, "none") else None),
                                  rebuild=rebuild, settings=settings, context=context,
                                  work_dir=self._work_dir(context, slug),
-                                 locales=(design.get("scope") or {}).get("locales") or ())
+                                 locales=(design.get("scope") or {}).get("locales") or (),
+                                 producers=producers)
         context.logger.info("asset pipeline", requirements=len(requirements),
                             dimension=dimension, root=store.root,
                             derived=bool(requirements and requirements[0].derived))

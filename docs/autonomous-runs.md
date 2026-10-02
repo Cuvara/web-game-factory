@@ -39,6 +39,7 @@ those, and nothing else:
 | `review.reviewer` | `kind: command`, the verified read-only `claude -p` argv | Approves or requests changes; the Factory fingerprints the checkout and undoes any write |
 | `design` | `author: agent`, the verified read-only `claude -p` argv | Writes the design draft for a brief no design archetype carries; the module judges it unchanged, and shows it any schema or buildability problem for a bounded repair (`MAX_REPAIR_ROUNDS`) |
 | `assets.author` | `kind: command`, `svg_from: stdout`, the verified read-only `claude -p` argv | Draws each 2D requirement as an SVG it prints (one call per drawing, at most US$1 each); the Factory writes it, validates and judges it, and shows a rejected one its problems for up to two repairs |
+| `assets.producers` | `[fonts, audio]` | Bundles the typography's faces from the Factory font library and composes the music and sound effects; no agent, no network, no cost (the shipped default is `[]`) |
 | `assets.model_author` | `kind: command`, `spec_from: stdout`, the same read-only argv | Writes a model spec per 3D requirement (at most US$2 a call); the pinned Blender 4.5 builds it and the Factory judges the GLB (`primitive_only`, parts, palette). Needs Blender on `PATH` or in `WGF_BLENDER` |
 | `visualqa.judge` | `kind: command`, `verdict_from: stdout`, the verified read-only `claude -p` argv | Reads the captured frames and returns scores and findings (at most US$2 a judgement); the step decides PASS or FAIL and routes `assets` / `develop` |
 | `checkpoints.auto_approve` | `[G2, G3]` | The two reversible gates in `new-game` are approved by the run, each with a decision record (`automation`) |
@@ -56,6 +57,16 @@ Factory writes it - so none of them can change the checkout or the Factory. `dev
 bounds the developer only; each other agent is bounded per call by its `--max-budget-usd`.
 A drop-merge design asks the 2D author 22 times (10 pieces, 6 icons, the frame, the
 backdrop, ...), each about 2 minutes, plus a repair call for each rejected file.
+
+Fonts and audio need no agent: the profile sets `assets.producers: [fonts, audio]`. The
+typography's faces come from the Factory font library (OFL WOFF2s shipped with the runtime,
+`workspace/library/fonts`), and the design's music and sound effects are composed from its
+audio direction and encoded by the Factory itself (Ogg Vorbis loops, WAV effects) - about a
+minute per design, no network, no paid service, nothing a person must source. Before them
+an unattended run could only ship a system font stack and an 8-second placeholder loop for
+items its design marks `mvp`, which production-quality refuses. See
+[assets-module.md](assets-module.md), "Fonts and audio: the producers". Still without a
+producer: 3D textures (sky, sparks) and 3D VFX.
 
 ## Enabling it
 

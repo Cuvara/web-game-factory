@@ -142,6 +142,11 @@ factory:
       idle_timeout_seconds: null
 
   assets:
+    # Fonts and audio have no agent author: the Factory makes them itself. `fonts` bundles
+    # the typography's faces from the Factory font library (OFL, workspace/library/fonts);
+    # `audio` composes the design's music (Ogg Vorbis loops) and sound effects (WAV) from its
+    # audio direction. Both run before any placeholder (docs/assets-module.md).
+    producers: [fonts, audio]
     # Workflow 5 refuses placeholder art (production-quality routes it back to `assets`), so
     # an unattended run needs authors. Both are read-only and print what they make; the
     # Factory writes it, validates it and judges it (core/reference/asset-quality.yaml).

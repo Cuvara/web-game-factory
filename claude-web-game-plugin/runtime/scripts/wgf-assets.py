@@ -9,6 +9,7 @@
                                            [--max-size N] [--no-pot] [--trim] [--scale N]
                                            [--animation NAME=PREFIX]... [--json]
     python3 scripts/wgf-assets.py inspect  FILE... [--json]
+    python3 scripts/wgf-assets.py fonts    list|check|build [--dir DIR] [--json]
 
 build     Runs the same pipeline as the workflow's `assets` step on a game design (its
           build_spec.assets, or any JSON with an `asset_requirements` list) against a game
@@ -47,6 +48,7 @@ from wgf_assets.pipeline import AssetPipeline, AssetStore  # noqa: E402
 from wgf_assets.placeholders import build_backends  # noqa: E402
 from wgf_assets.policy import PolicyError, load_policy  # noqa: E402
 from wgf_assets.requirements import RequirementError, inspect as inspect_design  # noqa: E402
+from wgf_assets.step import PRODUCERS, build_producers  # noqa: E402
 
 OK, PROBLEMS, UNUSABLE = 0, 1, 2
 
@@ -115,7 +117,10 @@ def cmd_build(args):
                              optimize=not args.no_optimize, prune=not args.no_prune,
                              title_id=design.get("title_id"), author=author,
                              identity=identity, work_dir=work_dir,
-                             locales=(design.get("scope") or {}).get("locales") or ())
+                             locales=(design.get("scope") or {}).get("locales") or (),
+                             producers=build_producers(
+                                 [p for p in (args.producers or "").split(",") if p], design,
+                                 args.title_id or design.get("title_id")))
     result = pipeline.run(requirements)
     payload = {
         "root": os.path.abspath(args.root),
@@ -146,6 +151,31 @@ def cmd_build(args):
         lines.extend(_issue_lines(result.issues))
     _emit(args, payload, lines)
     return _status(result.issues, args.strict)
+
+
+# -- fonts ---------------------------------------------------------------------------------
+
+def cmd_fonts(args):
+    from wgf_assets import fontlib
+    if args.action == "build":
+        try:
+            index = fontlib.build(args.dir)
+        except ImportError as exc:
+            raise Usage(f"building the font library needs fontTools and Brotli: {exc}")
+        _emit(args, index, [f"{len(index['families'])} families -> "
+                            f"{args.dir or fontlib.LIBRARY_DIR}"])
+        return OK
+    if args.action == "check":
+        problems = fontlib.check(args.dir)
+        _emit(args, {"problems": problems}, problems or ["font library: ok"])
+        return PROBLEMS if problems else OK
+    library = fontlib.load(args.dir)
+    if library is None:
+        raise Usage("no font library index")
+    lines = [f"{name:<20} {e['weights'][0]}-{e['weights'][1]}  {e['bytes']:>7} B  "
+             f"{', '.join(e['subsets'])}" for name, e in sorted(library.families.items())]
+    _emit(args, library.index, lines)
+    return OK
 
 
 # -- validate ------------------------------------------------------------------------------
@@ -311,7 +341,16 @@ def main(argv=None):
     build.add_argument("--repair-rounds", type=int, default=2)
     build.add_argument("--work-dir", help="author requests, logs and rejected files "
                                           "(default: a fresh temporary directory)")
+    build.add_argument("--producers", default="",
+                       help=f"comma-separated producers of final assets: {', '.join(PRODUCERS)}"
+                            " (the Factory font library; the composer)")
+    build.add_argument("--title-id", help="the title id the composer seeds its key from")
     build.set_defaults(func=cmd_build)
+
+    fonts = sub.add_parser("fonts", help="the Factory font library: list, check, build")
+    fonts.add_argument("action", choices=("list", "check", "build"))
+    fonts.add_argument("--dir", help="library directory (default: the Factory's)")
+    fonts.set_defaults(func=cmd_fonts)
 
     validate = sub.add_parser("validate", help="validate a checkout's runtime manifest")
     validate.add_argument("root", nargs="?", default=".", help="game repository checkout")
@@ -336,7 +375,7 @@ def main(argv=None):
     inspect.add_argument("files", nargs="+")
     inspect.set_defaults(func=cmd_inspect)
 
-    for command in (build, validate, pack, inspect):
+    for command in (build, validate, pack, inspect, fonts):
         command.add_argument("--json", action="store_true", help="machine-readable output")
         if command in (build, validate):
             command.add_argument("--strict", action="store_true",

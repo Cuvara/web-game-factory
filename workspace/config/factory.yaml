@@ -201,11 +201,11 @@ factory:
     #     - --safe-mode
     #     - --strict-mcp-config
     #     - --tools
-    #     - "Read,Edit"
+    #     - "Read"
     #     - --allowedTools
-    #     - "Read,Edit(/{draft})"
+    #     - "Read"
     #     - --disallowedTools
-    #     - "Write,NotebookEdit,Bash,WebFetch,WebSearch"
+    #     - "Edit,Write,NotebookEdit,Bash,WebFetch,WebSearch"
     #     - --permission-mode
     #     - dontAsk
     #     - --no-session-persistence
@@ -589,11 +589,11 @@ factory:
     #     - --safe-mode
     #     - --strict-mcp-config
     #     - --tools
-    #     - "Read"
+    #     - "Read,Edit"
     #     - --allowedTools
-    #     - "Read"
+    #     - "Read,Edit(/{draft})"
     #     - --disallowedTools
-    #     - "Edit,Write,NotebookEdit,Bash,WebFetch,WebSearch"
+    #     - "Write,NotebookEdit,Bash,WebFetch,WebSearch"
     #     - --permission-mode
     #     - dontAsk
     #     - --no-session-persistence

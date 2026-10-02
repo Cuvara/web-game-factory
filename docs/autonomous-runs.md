@@ -76,6 +76,12 @@ a mapping merges, a list or a value replaces. Edit the copy to change anything -
 repository (`init: {source: github}`), another budget, `design: {author: agent}` - and
 remove a key to fall back to the shipped value. `wgf where` shows `config_layers`.
 
+The game checkout goes to `factory.checkouts` + the repository name, and the shipped
+`checkouts` is `..`: beside the project. A project directory named like the game
+(`my-game` for `--project my-game`) would then be the checkout itself, which init refuses
+(BLOCKED, "is the Factory's own tree or its project"). Name the project directory
+differently, or set `checkouts: ../games` (or any directory outside the project) in the copy.
+
 Then, in Claude Code:
 
 ```

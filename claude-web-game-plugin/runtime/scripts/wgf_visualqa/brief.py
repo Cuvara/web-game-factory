@@ -229,6 +229,10 @@ def render_brief(*, title_id, commit, frames, rubric, design=None, manifest=None
     add("```json\n" + shape + "\n```\n")
     add("- `scores` has every dimension above and no other, each a JSON number 0-5 (`3`, not "
         "`\"3\"`).")
+    add("- `score_reasons` gives, for every dimension, one or two sentences on why it scored "
+        "what it did: what you saw, on which entity or element, in which frames. A score "
+        "below the bar without a reason cannot be acted on: the artist and the developer "
+        "who fix the build read exactly these sentences, beside the frames.")
     add(f"- `severity` is one of {', '.join(SEVERITIES)}; `category` one of "
         f"{', '.join(CATEGORIES)}; `route` one of {', '.join(ROUTES)}: `assets` when an "
         f"asset itself must change, `develop` when the game's use of it (layout, lighting, "

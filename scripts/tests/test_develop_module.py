@@ -605,6 +605,61 @@ class FileOwnershipInTheBrief(DesignAndPlanInTheBrief):
         self.assertNotIn("what the build did when it was played", briefs.render_markdown(data))
 
 
+    def test_the_gates_reasons_and_frames_reach_the_developer(self):
+        # The judge's words for a low score, a state and the look; its major findings; and
+        # the frames a production-quality check measured - none of it is a bare label.
+        play = {"commit": "d" * 40, "frames": [
+            {"id": "state-playing", "project": "mobile",
+             "path": "playability/2-1/out/mobile/frames/state-playing.png"}]}
+        production = {"commit": "d" * 40, "verdict": "FAIL", "checks": [
+            {"id": "scene.contrast", "project": "mobile", "status": "FAIL", "required": True,
+             "route": "develop", "summary": "the player does not stand out",
+             "measured": {"player": 1.4}, "frames": ["state-playing"]}]}
+        frames = [{"id": "mobile/play-2s", "project": "mobile", "state": "gameplay",
+                   "path": "playability/1-1/out/mobile/frames/play-2s.png"}]
+        visual_qa = {"commit": "d" * 40, "verdict": "FAIL", "frames": frames,
+                     "rubric": {"pass_bar": 3},
+                     "scores": {"composition": 2},
+                     "score_reasons": {"composition": "the pause button covers the subtitle"},
+                     "states": [{"state": "gameplay", "viewport": "mobile", "captured": True,
+                                 "frames": ["mobile/play-2s"],
+                                 "comment": "the subtitle runs under the pause button",
+                                 "answers": {"typography_readable": False}}],
+                     "look": {"verdict": "developer-prototype",
+                              "reason": "programmer art on a black void"},
+                     "findings": [{"id": "empty-void", "severity": "major",
+                                   "category": "readability", "route": "develop",
+                                   "frame": "mobile/play-2s",
+                                   "summary": "a flat black void above the horizon"},
+                                  {"id": "nit", "severity": "minor", "category": "ui",
+                                   "route": "develop", "frame": None, "summary": "nit"}],
+                     "failed": ["score:composition",
+                                "state:mobile/gameplay:typography_readable",
+                                "look:developer-prototype"]}
+        data = briefs.build_brief(
+            title_id="t", engine="pixijs", iteration=3, key="k", baseline="d" * 40,
+            design={}, assets={}, scaffold={}, playability=play, production=production,
+            visual_qa=visual_qa, frames_root="/runs/r1")
+        self.assertEqual(data["production_failures"][0]["frames"],
+                         ["/runs/r1/playability/2-1/out/mobile/frames/state-playing.png"])
+        self.assertEqual([f["id"] for f in data["visual_qa_failures"]],
+                         ["score:composition", "state:mobile/gameplay:typography_readable",
+                          "look:developer-prototype", "finding:empty-void"])
+        text = briefs.render_markdown(data)
+        gate = text[text.index("## Fix first: what the production gate measured"):]
+        gate = gate[:gate.index("## Fix first: what visual QA saw")]
+        self.assertIn("/runs/r1/playability/2-1/out/mobile/frames/state-playing.png", gate)
+        self.assertIn("Measured: player: 1.4", gate)
+        seen = text[text.index("## Fix first: what visual QA saw"):]
+        self.assertIn("`composition` scored 2 of 5, below the rubric's bar of 3. The judge: "
+                      "the pause button covers the subtitle", seen)
+        self.assertIn("The judge saw: the subtitle runs under the pause button", seen)
+        self.assertIn("Frames: `/runs/r1/playability/1-1/out/mobile/frames/play-2s.png`", seen)
+        self.assertIn("The judge: programmer art on a black void", seen)
+        self.assertIn("(major, readability; did not fail the build on its own) a flat black "
+                      "void above the horizon", seen)
+        self.assertNotIn("`finding:nit`", seen)
+
     def test_failed_production_gates_lead_the_brief(self):
         production = {"commit": "d" * 40, "verdict": "FAIL", "checks": [
             {"id": "scene.no_primitives", "project": "desktop", "status": "FAIL",

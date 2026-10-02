@@ -279,6 +279,7 @@ class PipelineResult:
         self.atlases = []           # asset-manifest `atlases` records
         self.runtime_manifest = None  # {path, bytes, content_hash}
         self.removed = []           # stale pipeline-owned files pruned
+        self.rebuilt = []           # requirement ids a re-entry made again, by an author
 
 
 class _Item:
@@ -306,6 +307,7 @@ class _Item:
         self.short = None   # (supplied, wanted) when a library supplies fewer drawings
         self.quality_author = None  # what made it, for quality.author
         self.quality = None  # set when the backend judged it already
+        self.rebuilt = False  # made again by an author for a re-entry's feedback
     def issue(self, code, severity, message):
         self.issues.append({"item_id": self.req.id, "code": code, "severity": severity,
                             "message": message})
@@ -361,9 +363,12 @@ class AssetPipeline:
         self.bars = bars or quality_mod.load_bars()
         # The design's scope.locales: a delivered font must set each of them.
         self.locales = [str(x) for x in locales or [] if x]
-        # {requirement id: [finding]}: what a re-entry was sent back for; only these are
-        # rebuilt, and the findings reach the author.
-        self.rebuild = dict(rebuild or {})
+        # {requirement id: {"reasons": [text], "frames": [PNG path]}}: what a re-entry was
+        # sent back for (feedback.py); only these are rebuilt, and the reasons and frames
+        # reach the author. A bare list is reasons alone.
+        self.rebuild = {rid: (dict(fb) if isinstance(fb, dict)
+                              else {"reasons": list(fb or []), "frames": []})
+                        for rid, fb in (rebuild or {}).items()}
         self.work_dir = work_dir
         self.settings = dict(settings or {})
         self.context = context
@@ -437,6 +442,8 @@ class AssetPipeline:
         for item in built:
             result.issues.extend(item.issues)
             result.items.append(item.finish())
+            if item.rebuilt:
+                result.rebuilt.append(item.req.id)
         if self.runtime_manifest:
             document = runtime.build(entries, packed, self.title_id)
             self.store.write(runtime.RUNTIME_PATH, document)
@@ -475,7 +482,7 @@ class AssetPipeline:
         if not req.placeholder_only:
             # Sent back by a report with an author to ask: the library would hand over the
             # same file again, so the author is asked instead.
-            redo = req.id in self.rebuild and self.author is not None
+            redo = req.id in self.rebuild and self.can_remake(req)
             if self.libraries and not redo:
                 if self._mapped_library(req, item):
                     return item
@@ -805,6 +812,26 @@ class AssetPipeline:
             return True
         return False
 
+    def can_remake(self, req):
+        """Whether a configured author can make `req` again: the 2D author an SVG it may
+        deliver, the 3D model author a model. A library or placeholder backend would hand
+        over the same file."""
+        if req.placeholder_only:
+            return False
+        if self.author is not None and self._authorable(req):
+            return True
+        return (self.model_author is not None and req.dimension == "3d"
+                and req.policy is not None and req.policy.dimension in ("3d", "any")
+                and req.kind in ("model", "environment", "animation"))
+
+    def _feedback(self, req):
+        """(reasons, frames) a re-entry sent back for `req`, or (None, [])."""
+        fb = self.rebuild.get(req.id)
+        if not fb:
+            return None, []
+        return (list(fb.get("reasons") or []) or ["sent back by a failed gate"],
+                [str(f) for f in fb.get("frames") or [] if f])
+
     @staticmethod
     def _authorable(req):
         """A 2D kind that may be delivered as SVG, outside an atlas (atlases pack PNG)."""
@@ -874,7 +901,7 @@ class AssetPipeline:
             return None
         return data
 
-    def _author_request(self, req, vid, n, relative, notes, repair):
+    def _author_request(self, req, vid, n, relative, notes, repair, frames=()):
         identity = self.identity
         request = {
             "title_id": self.title_id,
@@ -898,7 +925,16 @@ class AssetPipeline:
             "craft": [os.path.join(paths.CORE, "craft", name) for name in AUTHOR_CRAFT],
         }
         if notes:
+            # Why the running game sent this asset back, in the judge's words, and the
+            # frames of the running game that show it (absolute PNG paths).
             request["notes"] = list(notes)
+            request["frames"] = list(frames)
+            try:
+                current = self.store.resolve(relative)
+            except Exception:
+                current = None
+            if current and os.path.isfile(current):
+                request["current"] = os.path.abspath(current)
         if repair:
             request["repair"] = repair
         return request
@@ -917,7 +953,7 @@ class AssetPipeline:
                            f"{other} or the same drawing with another numeral")
         return out
 
-    def _ask_author(self, req, vid, n, relative, notes, siblings=()):
+    def _ask_author(self, req, vid, n, relative, notes, siblings=(), frames=()):
         """(bytes, quality, problems): the first file that passes, or None and why not.
         `siblings`: [(variant id, bytes)] already accepted for the same requirement; a file
         with one's silhouette is sent back like any failed check."""
@@ -926,7 +962,7 @@ class AssetPipeline:
         for round_ in range(self.author.repair_rounds + 1):
             stem = f"{vid}-{round_}"
             output = os.path.join(work, f"{stem}.svg")
-            request = self._author_request(req, vid, n, relative, notes, repair)
+            request = self._author_request(req, vid, n, relative, notes, repair, frames)
             if siblings:
                 request["siblings"] = [{"variant": other, "destination":
                                         f"{self._directory(req, 'svg')}/{other}.svg"}
@@ -947,7 +983,7 @@ class AssetPipeline:
 
     def _authored(self, req, item):
         ids = req.variant_ids() or [req.id]
-        notes = self.rebuild.get(req.id)
+        notes, frames = self._feedback(req)
         stored, judged_all = [], []
         for n, vid in enumerate(ids, 1):
             relative = f"{self._directory(req, 'svg')}/{vid}.svg"
@@ -961,7 +997,7 @@ class AssetPipeline:
                     data = None
             if data is None:
                 data, judged, problems = self._ask_author(req, vid, n, relative, notes,
-                                                          siblings)
+                                                          siblings, frames)
                 if data is None:
                     rounds = self.author.repair_rounds
                     item.issue("author-rejected", "warning",
@@ -988,7 +1024,19 @@ class AssetPipeline:
         if notes:
             item.data["notes"] = " ".join(filter(None, [
                 item.data.get("notes"), f"Rebuilt for {len(notes)} finding(s)."]))
+            item.rebuilt = True
         return True
+
+    def _model_author_context(self):
+        """The plain mapping model_author.produce_model reads (config, policy, run_dir) -
+        never the step's WorkflowContext itself, which is not a mapping: handed one,
+        produce_model raised before asking the author, and every 3D requirement fell back to
+        a placeholder. Liveness needs nothing here: the engine binds the step's reporting to
+        every wgflib.procs run on its thread."""
+        out = {"config": getattr(self.context, "config", None), "policy": self.policy}
+        if self.work_dir:
+            out["run_dir"] = os.path.join(self.work_dir, "model-author")
+        return {k: v for k, v in out.items() if v is not None}
 
     def _model_authored(self, req, item):
         """A 3D requirement through wgf_assets.model_author.produce_model."""
@@ -998,12 +1046,14 @@ class AssetPipeline:
                        "role": req.role, "dimension": req.dimension,
                        "description": req.description or req.label,
                        "readability": req.readability, "spec": req.spec, "count": req.count,
-                       "tier": req.design_tier or req.scope_tier, "model": req.model,
-                       "notes": self.rebuild.get(req.id)}
+                       "tier": req.design_tier or req.scope_tier, "model": req.model}
+        notes, frames = self._feedback(req)
+        if notes:
+            requirement["feedback"] = {"notes": notes, "frames": frames}
         try:
             made = self.model_author(requirement, self.identity, out_dir,
                                      (self.settings or {}).get("model_author") or {},
-                                     self.context)
+                                     self._model_author_context())
         except Exception as exc:  # ModelAuthorError, or a bug: never breaks the pipeline
             label = "" if type(exc).__name__ == "ModelAuthorError" else \
                 f"{type(exc).__name__}: "
@@ -1053,6 +1103,10 @@ class AssetPipeline:
             item.data["notes"] = " ".join(filter(None, [item.data.get("notes"),
                                                         str(made["notes"])]))
         item.data["status"] = "in-progress" if item.data["placeholder"] else "delivered"
+        if notes and not item.data["placeholder"]:
+            item.rebuilt = True
+            item.data["notes"] = " ".join(filter(None, [
+                item.data.get("notes"), f"Rebuilt for {len(notes)} finding(s)."]))
         if item.data["placeholder"]:
             item.issue("placeholder", "info",
                        f"{req.id}: placeholder from the model author; the final asset is "

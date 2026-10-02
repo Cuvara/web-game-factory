@@ -17,8 +17,9 @@ JSON), {output} (where to write the SVG), {prompt} (a one-paragraph instruction)
 request carries the requirement - id, type, role, dimension, description, readability,
 count and variant, spec, size - the design's palette and visual identity, the quality bars
 the file is held to (core/reference/asset-quality.yaml), and, when asked again, the
-problems with the previous file (`repair`) or the findings that sent the step back
-(`notes`).
+problems with the previous file (`repair`), or, when a failed gate sent the step back
+(wgf_assets.feedback), why in the judge's words (`notes`), the frames of the running game
+that show it (`frames`, absolute PNG paths) and the file that was judged (`current`).
 
 With `svg_from: stdout` the author needs no write tool at all: the last complete <svg>
 element in what it prints (fenced or not) is the file, written at {output} by the Factory
@@ -79,8 +80,11 @@ PROMPT_REPAIR = (
     "`repair.problems`. Write it again with exactly those fixed."
 )
 PROMPT_NOTES = (
-    " The running game was judged and this asset was named in the findings in `notes`: "
-    "address them."
+    " This asset was drawn before, and the running game was judged and sent it back: the "
+    "request's `notes` say why, in the judge's words. Open every PNG in the request's "
+    "`frames` - screenshots of the running game - find this asset in them, and fix what "
+    "they show and the notes say; `current` is the file that was judged. Draw it anew - "
+    "resubmitting the same drawing fails the game again."
 )
 
 

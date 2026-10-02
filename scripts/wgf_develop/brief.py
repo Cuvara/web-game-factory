@@ -514,12 +514,18 @@ def build_brief(*, title_id, engine, iteration, key, baseline, design, assets, s
     ]
     # The production gates' failures of the commit this visit starts from: each failed
     # production-quality check (with the route it took: an `assets` failure was rebuilt by
-    # the assets step before this visit, and its integration is this visit's), and visual
-    # QA's failures - blocker findings, low scores, per-state answers, the look.
+    # the assets step before this visit, and its integration is this visit's) and the frames
+    # it measured, resolved through the playability-report it judged; and visual QA's
+    # failures - blocker findings, low scores with the judge's reasons, per-state answers
+    # with its comments and frames, the look with its reason - and its major findings.
     production_failures = [
         {"check": c.get("id"), "project": c.get("project"), "route": c.get("route"),
          "summary": c.get("summary"), "expected": c.get("expected"),
-         "assets": c.get("assets") or None}
+         "measured": c.get("measured"),
+         "assets": c.get("assets") or None,
+         "frames": [os.path.join(frames_root, frame_paths[(c.get("project"), f)])
+                    if frames_root and frame_paths.get((c.get("project"), f)) else f
+                    for f in c.get("frames") or []] or None}
         for c in (production or {}).get("checks") or []
         if c.get("required") and c.get("status") == "FAIL"
     ]
@@ -884,14 +890,24 @@ def _ownership_section(brief):
 
 
 def _visual_qa_failures(report, frames_root=None):
-    """[{id, route, summary, frame}] for each entry of a FAIL visual-qa-report's `failed`:
-    a finding (its summary and frame), a dimension below the bar, a per-state answer, or the
-    look."""
+    """[{id, route, summary, frame, frames}] for each entry of a FAIL visual-qa-report's
+    `failed` - a finding (its summary and frame), a dimension below the bar (with the judge's
+    reason), a per-state answer (with the judge's comment on that state and its frames), the
+    look (with its reason) - then each `major` finding that did not fail the build on its own
+    (a real defect the judge saw: fix it too)."""
     if not report:
         return []
     findings = {f.get("id"): f for f in report.get("findings") or []}
+
+    def where(path):
+        return os.path.join(frames_root, path) if frames_root and path else path
+
     frames = {f.get("id"): f.get("path") for f in report.get("frames") or []}
     scores = report.get("scores") or {}
+    reasons = report.get("score_reasons") or {}
+    bar = (report.get("rubric") or {}).get("pass_bar")
+    states = {(s.get("viewport"), s.get("state")): s for s in report.get("states") or []
+              if isinstance(s, dict)}
     out = []
     for entry in report.get("failed") or []:
         kind, _, name = str(entry).partition(":")
@@ -899,20 +915,42 @@ def _visual_qa_failures(report, frames_root=None):
         if kind == "finding" and name in findings:
             finding = findings[name]
             frame = finding.get("frame")
-            path = frames.get(frame)
             item.update(route=finding.get("route"),
                         summary=f"({finding.get('severity')}, {finding.get('category')}) "
                                 f"{finding.get('summary')}",
-                        frame=(os.path.join(frames_root, path) if frames_root and path
-                               else frame))
+                        frame=where(frames.get(frame)) or frame)
         elif kind == "score":
             item["summary"] = (f"`{name}` scored {scores.get(name)} of 5, below the rubric's "
-                               "bar")
+                               f"bar{' of ' + str(bar) if bar is not None else ''}"
+                               + (f". The judge: {reasons[name]}" if reasons.get(name)
+                                  else ""))
         elif kind == "state":
-            item["summary"] = f"on {name}: the rubric's answer fails the state"
+            pair, _, question = name.rpartition(":")
+            viewport, _, state = pair.partition("/")
+            judged = states.get((viewport, state)) or {}
+            item["summary"] = (f"on {viewport} {state}: the answer to `{question}` fails the "
+                               "state"
+                               + (f". The judge saw: {judged['comment']}"
+                                  if judged.get("comment") else ""))
+            shown = [where(frames.get(k)) or k for k in judged.get("frames") or []]
+            if shown:
+                item["frames"] = shown
         elif kind == "look":
-            item["summary"] = "the build looks like a developer prototype, not a finished game"
+            look = report.get("look") or {}
+            item["summary"] = ("the build looks like a developer prototype, not a finished "
+                               "game"
+                               + (f". The judge: {look['reason']}" if look.get("reason")
+                                  else ""))
         out.append(item)
+    failed = {str(e) for e in report.get("failed") or []}
+    for finding in report.get("findings") or []:
+        if finding.get("severity") != "major" or f"finding:{finding.get('id')}" in failed:
+            continue
+        frame = finding.get("frame")
+        out.append({"id": f"finding:{finding.get('id')}", "route": finding.get("route"),
+                    "summary": f"(major, {finding.get('category')}; did not fail the build "
+                               f"on its own) {finding.get('summary')}",
+                    "frame": where(frames.get(frame)) or frame})
     return out
 
 
@@ -1398,7 +1436,7 @@ def render_markdown(brief):
             "(core/reference/production-quality.yaml). These checks failed. One routed "
             "`assets` named an asset the assets step has now made again: use it as "
             "`public/assets/assets.json` lists it. The rest are the game's own use of its "
-            "assets and its UI.\n")
+            "assets and its UI. Where a frame is named, open it: it is what was measured.\n")
         for failure in brief["production_failures"]:
             line = (f"- `{failure['check']}`"
                     + (f" ({failure['project']})" if failure.get("project") else "")
@@ -1407,6 +1445,11 @@ def render_markdown(brief):
                 line += " Assets: " + ", ".join(f"`{a}`" for a in failure["assets"])
             if failure.get("expected") is not None:
                 line += f" Expected: {_inline(failure['expected'])}."
+            if failure.get("measured") is not None:
+                measured = _inline(failure["measured"])
+                line += f" Measured: {measured[:600] + ' ...' if len(measured) > 600 else measured}."
+            if failure.get("frames"):
+                line += " Frames: " + ", ".join(f"`{f}`" for f in failure["frames"])
             add(line)
         add("")
 
@@ -1415,10 +1458,15 @@ def render_markdown(brief):
         add(f"A judge read the frames of `{(brief.get('gated_commit') or '')[:12]}` against "
             "core/reference/visual-qa-rubric.yaml and the design's visual identity, and the "
             "build failed. The next build is judged the same way, from frames of the running "
-            "game: change what is on screen. Where a frame is named, look at it.\n")
+            "game: change what is on screen. Where a frame is named, open it and find what "
+            "the judge describes; a score's or the look's reason is the judge's own words. "
+            "`major` findings did not fail the build on their own, but they are defects the "
+            "judge saw: fix them in the same pass.\n")
         for failure in brief["visual_qa_failures"]:
             add(f"- `{failure['id']}` [{failure.get('route') or '-'}]: {failure['summary']}"
-                + (" Frame: `" + failure["frame"] + "`" if failure.get("frame") else ""))
+                + (" Frame: `" + failure["frame"] + "`" if failure.get("frame") else "")
+                + (" Frames: " + ", ".join(f"`{f}`" for f in failure["frames"])
+                   if failure.get("frames") else ""))
         add("")
 
     if brief.get("review_blockers"):

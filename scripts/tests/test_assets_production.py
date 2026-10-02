@@ -34,7 +34,7 @@ sys.path.insert(0, HERE)
 
 import test_assets as base  # noqa: E402
 from wgf_assets import quality as quality_mod  # noqa: E402
-from wgf_assets import quality, runtime, step as step_mod  # noqa: E402
+from wgf_assets import feedback, quality, runtime, step as step_mod  # noqa: E402
 from wgf_assets.requirements import inspect  # noqa: E402
 from wgf_assets.step import AssetsStep, rebuild_list  # noqa: E402
 from wgflib.workflow.contracts import ArtifactContracts  # noqa: E402
@@ -396,6 +396,226 @@ class ReEntry(ProductionCase):
                                                  "summary": "s"}]}
         self.assertEqual(rebuild_list([("production-quality-report", pq)], reqs), {})
 
+    # -- the feedback that reaches the author (wgf_assets.feedback) ------------------------
+
+    def vqa(self, **body):
+        body.setdefault("verdict", "FAIL")
+        body.setdefault("routes", ["assets"])
+        body.setdefault("findings", [])
+        body.setdefault("failed", [])
+        body.setdefault("frames", [
+            {"id": f"{p}/{i}", "project": p, "state": s,
+             "path": f"playability/p-1-1/{p}/frames/{i}.png"}
+            for p in ("desktop", "mobile")
+            for i, s in (("play-2s", "gameplay"), ("first-session-1s", "initial"),
+                         ("end-lost", "loss"))])
+        return report("visual-qa-report", title_id="neon-test", commit="a" * 40,
+                      measurement_class="automation-agent", **body)
+
+    def plan(self, reports, design=None, **kwargs):
+        reqs, _ = inspect(design or production_design(), self.policy)
+        kwargs.setdefault("run_dir", "/runs/r1")
+        return feedback.plan(reports, reqs, **kwargs)
+
+    def test_a_finding_naming_a_role_rebuilds_that_roles_asset(self):
+        # The judge says "player" and "enemy", never the ids `hero` and `spike`.
+        vqa = self.vqa(findings=[{
+            "id": "flat-shapes", "severity": "blocker", "category": "assets",
+            "frame": "desktop/play-2s", "route": "assets",
+            "summary": "The player (teal trapezoid) and every enemy are flat rectangles"}],
+            failed=["finding:flat-shapes"])
+        plan = self.plan([("visual-qa-report", vqa)])
+        self.assertEqual(sorted(plan.items), ["hero", "spike"])
+        self.assertFalse(plan.fallback)
+        hero = plan.items["hero"]
+        self.assertIn("flat rectangles", hero["reasons"][0])
+        self.assertEqual(hero["frames"],
+                         ["/runs/r1/playability/p-1-1/desktop/frames/play-2s.png"])
+
+    def test_failing_scores_states_and_the_look_carry_the_judges_words(self):
+        vqa = self.vqa(
+            scores={"environment": 1, "typography": 1},
+            score_reasons={"environment": "a flat black void above the horizon",
+                           "typography": "system font"},
+            states=[{"state": "gameplay", "viewport": "mobile", "captured": True,
+                     "frames": ["mobile/play-2s"], "comment": "the hero is a grey box",
+                     "answers": {"entities_recognisable": False}}],
+            look={"verdict": "developer-prototype", "reason": "programmer art"},
+            failed=["score:environment", "score:typography",
+                    "state:mobile/gameplay:entities_recognisable",
+                    "look:developer-prototype"])
+        plan = self.plan([("visual-qa-report", vqa)])
+        # environment -> the scene; the look -> every drawn asset of the art group;
+        # typography routes develop and remakes nothing; a font or icon is not `art`.
+        self.assertEqual(sorted(plan.items), ["board", "hero", "spike", "tile"])
+        board = plan.items["board"]
+        self.assertTrue(any("a flat black void above the horizon" in r
+                            for r in board["reasons"]), board["reasons"])
+        self.assertTrue(any("programmer art" in r for r in board["reasons"]))
+        self.assertFalse(any("system font" in r for r in board["reasons"]))
+        hero = plan.items["hero"]
+        self.assertTrue(any("the hero is a grey box" in r for r in hero["reasons"]))
+        self.assertIn("/runs/r1/playability/p-1-1/mobile/frames/play-2s.png", hero["frames"])
+        self.assertTrue(all(os.path.isabs(f) for f in hero["frames"]))
+
+    def test_the_probe_maps_an_entity_role_to_the_asset_that_draws_it(self):
+        vqa = self.vqa(findings=[{"id": "blob", "severity": "blocker", "category": "assets",
+                                  "frame": None, "route": "assets",
+                                  "summary": "the projectile is an unreadable blob"}],
+                       failed=["finding:blob"])
+        # No requirement has the role `projectile`; the probe drew one with tile-2.
+        self.assertTrue(self.plan([("visual-qa-report", vqa)]).fallback)
+        plan = self.plan([("visual-qa-report", vqa)], probe={"projectile": {"tile-2"}})
+        self.assertEqual(sorted(plan.items), ["tile"])
+        # A finding about every frame is shown with a play frame of each viewport.
+        self.assertEqual(plan.items["tile"]["frames"][:2], [
+            "/runs/r1/playability/p-1-1/desktop/frames/play-2s.png",
+            "/runs/r1/playability/p-1-1/mobile/frames/play-2s.png"])
+
+    def test_nothing_named_falls_back_to_every_entity_and_the_scene(self):
+        vqa = self.vqa(findings=[{"id": "meh", "severity": "major", "category": "assets",
+                                  "frame": None, "route": "assets",
+                                  "summary": "nothing here looks finished"}])
+        plan = self.plan([("visual-qa-report", vqa)])
+        self.assertTrue(plan.reentry and plan.fallback)
+        self.assertEqual(sorted(plan.items), ["board", "hero", "spike", "tile"])
+        self.assertIn("nothing here looks finished", plan.items["hero"]["reasons"][0])
+
+    def test_only_the_gate_that_routed_here_is_read(self):
+        old = self.vqa(findings=[{"id": "old", "severity": "blocker", "category": "assets",
+                                  "frame": None, "route": "assets",
+                                  "summary": "the badge is unreadable"}],
+                       failed=["finding:old"])
+        pq = report("production-quality-report", title_id="neon-test", commit="b" * 40,
+                    measurement_class="automation-bot", verdict="FAIL", failed=["x"],
+                    routes=["assets"],
+                    checks=[{"id": "scene.contrast", "status": "FAIL", "required": True,
+                             "summary": "spike does not stand out", "route": "assets",
+                             "project": "desktop", "assets": ["spike"],
+                             "frames": ["state-playing"], "expected": {"min_ratio": 3}}])
+        play = {"frames": [{"id": "state-playing", "project": "desktop",
+                            "path": "playability/p-2-1/desktop/frames/state-playing.png"}]}
+        plan = self.plan([("production-quality-report", pq), ("visual-qa-report", old)],
+                         entered_by="production-quality.assets", playability=play)
+        self.assertEqual(plan.sources, ["production-quality-report"])
+        self.assertEqual(sorted(plan.items), ["spike"])
+        spike = plan.items["spike"]
+        self.assertIn("scene.contrast: spike does not stand out", spike["reasons"][0])
+        self.assertIn("Expected: ", spike["reasons"][0])
+        self.assertEqual(spike["frames"],
+                         ["/runs/r1/playability/p-2-1/desktop/frames/state-playing.png"])
+        # Unknown entry: every report routed to assets.
+        self.assertEqual(len(self.plan([("production-quality-report", pq),
+                                        ("visual-qa-report", old)]).sources), 2)
+
+    def test_the_author_is_given_the_reasons_the_frames_and_the_judged_file(self):
+        design = production_design()
+        self.run_prod(design, author=self.author("good"))
+        before = len(self.calls())
+        vqa = self.vqa(findings=[{"id": "flat-hero", "severity": "blocker",
+                                  "category": "assets", "frame": "mobile/play-2s",
+                                  "route": "assets",
+                                  "summary": "the player is a flat rectangle"}],
+                       failed=["finding:flat-hero"])
+        self.run_prod(design, reports=[("visual-qa-report", vqa)], author=self.author("good"))
+        again = self.calls()[before:]
+        self.assertEqual([c["asset"]["id"] for c in again], ["hero"])
+        call = again[0]
+        self.assertIn("the player is a flat rectangle", call["notes"][0])
+        self.assertEqual(call["frames"], [os.path.join(
+            self.run_dir, "playability", "p-1-1", "mobile", "frames", "play-2s.png")])
+        self.assertTrue(call["current"].endswith(os.path.join("sprites", "hero.svg")))
+        self.assertTrue(os.path.isfile(call["current"]))
+        from wgf_assets.author import PROMPT_NOTES
+        self.assertIn("Open every PNG in the request's `frames`", PROMPT_NOTES)
+
+    def test_a_reentry_with_no_author_blocks_instead_of_reusing_every_file(self):
+        design = production_design()
+        self.run_prod(design)
+        vqa = self.vqa(look={"verdict": "developer-prototype", "reason": "placeholders"},
+                       failed=["look:developer-prototype"])
+        context = base.FakeContext({"root": self.root,
+                                    "placeholders": {"backends": ["procedural"]}})
+        context.run_dir = self.run_dir
+        context.entered_by = "visual-qa.assets"
+        result = AssetsStep(base.Definition()).execute(
+            inputs_with(design, [("visual-qa-report", vqa)]), context)
+        self.assertEqual(result.outcome, "BLOCKED")
+        self.assertIn("no configured author", result.message)
+        self.assertIn("hero", result.message)
+
+    def test_a_reentry_whose_author_delivers_nothing_fails_retryably(self):
+        design = production_design([spec_asset("hero", "sprite", "player", spec="96x96")])
+        vqa = self.vqa(findings=[{"id": "flat", "severity": "blocker", "category": "assets",
+                                  "frame": None, "route": "assets",
+                                  "summary": "the hero is a flat box"}],
+                       failed=["finding:flat"])
+        context = base.FakeContext({"root": self.root, "author": self.author("fail"),
+                                    "placeholders": {"backends": ["procedural"]}})
+        context.run_dir = self.run_dir
+        result = AssetsStep(base.Definition()).execute(
+            inputs_with(design, [("visual-qa-report", vqa)]), context)
+        self.assertEqual(result.outcome, "FAILED")
+        self.assertTrue(result.retryable)
+        self.assertIn("none delivered", result.error)
+        self.assertEqual(result.artifacts[0].type, "asset-manifest")
+
+
+class RealJudgeVerdict(ProductionCase):
+    """The regression the quality audit found: the judge's verdict on a real build of the
+    arena-dodge design (autonomous profile, 2026-10-02) named "the player (teal trapezoid)",
+    never `craft`, and the old exact-id match rebuilt only `wall`."""
+
+    FIXTURES = os.path.join(os.path.dirname(base.FIXTURES), "visual-qa")
+    IDS = ("act-pause-after", "act-pause-before", "act-steer-after", "act-steer-before",
+           "end-lost", "first-session-1s", "first-session-idle-end", "play-2s")
+
+    def load(self, name):
+        with open(os.path.join(self.FIXTURES, name), encoding="utf-8") as handle:
+            return json.load(handle)
+
+    def report(self):
+        from wgf_visualqa import rubric as rubric_mod
+        from wgf_visualqa.brief import frame_state
+        from wgf_visualqa.step import report_states
+        rubric = rubric_mod.load_rubric()
+        frames = [{"key": f"{p}/{i}", "project": p, "id": i, "state": frame_state(i)[0],
+                   "path": f"playability/playability-1-1/{p}/frames/{i}.png"}
+                  for p in ("desktop", "mobile") for i in self.IDS]
+        verdict, problem = rubric_mod.parse(self.load("arena-dodge.judge-verdict.json"),
+                                            rubric, frames)
+        self.assertIsNone(problem)
+        status, failed, routes = rubric_mod.decide(verdict, rubric)
+        self.assertEqual((status, routes[0]), ("FAIL", "assets"))
+        return {"verdict": status, "failed": failed, "routes": routes,
+                "scores": verdict["scores"], "findings": verdict["findings"],
+                "states": report_states(rubric, frames, verdict["states"]),
+                "look": {"verdict": verdict["look"], "reason": verdict["look_reason"]},
+                "rubric": {"pass_bar": rubric["pass_bar"]},
+                "frames": [{"id": f["key"], "project": f["project"], "state": f["state"],
+                            "path": f["path"]} for f in frames]}
+
+    def test_the_real_verdict_rebuilds_the_player_asset(self):
+        design = self.load("arena-dodge.game-design.json")
+        reqs, _ = inspect(design, self.policy)
+        plan = feedback.plan([("visual-qa-report", self.report())], reqs,
+                             run_dir="/runs/r1", entered_by="visual-qa.assets")
+        self.assertFalse(plan.fallback)
+        # The player, the threat, the scene and the crash debris; never a sound, the UI kit
+        # or a font - the judge passed the buttons and the type.
+        self.assertEqual(sorted(plan.items),
+                         ["arena-kit", "craft", "crash-vfx", "sky", "wall"])
+        craft = plan.items["craft"]
+        text = " ".join(craft["reasons"])
+        self.assertIn("The player (teal trapezoid)", text)
+        self.assertIn("`art_completeness` scored 0 of 5", text)
+        self.assertIn("programmer-art placeholder build", text)       # the look's reason
+        self.assertIn("Player trapezoid and a threat rectangle", text)  # a state comment
+        self.assertTrue(craft["frames"])
+        self.assertTrue(all(f.startswith("/runs/r1/playability/") and f.endswith(".png")
+                            for f in craft["frames"]))
+        self.assertIn("debris", " ".join(plan.items["crash-vfx"]["reasons"]))
+
 
 # -- the library -----------------------------------------------------------------------------
 
@@ -483,9 +703,13 @@ class FakeModelAuthor:
     def __init__(self, glb):
         self.glb = glb
         self.calls = []
+        self.requirements = []
+        self.contexts = []
 
     def produce_model(self, requirement, visual_identity, out_dir, settings, context):
         self.calls.append(requirement["id"])
+        self.requirements.append(requirement)
+        self.contexts.append(context)
         path = os.path.join(out_dir, f"{requirement['id']}.glb")
         with open(path, "wb") as handle:
             handle.write(self.glb)
@@ -522,6 +746,10 @@ class ThreeD(ProductionCase):
                                     model_author={"kind": "command", "argv": ["fake"]})
         ship = self.items(manifest)["ship"]
         self.assertEqual(fake.calls, ["ship"])
+        # produce_model reads a plain mapping, never the step's context object.
+        self.assertIsInstance(fake.contexts[0], dict)
+        self.assertIn("policy", fake.contexts[0])
+        self.assertNotIn("feedback", fake.requirements[0])
         self.assertFalse(ship["placeholder"])
         self.assertEqual(ship["quality"]["author"], "author:fake")
         self.assertEqual(ship["files"][0]["path"], "public/assets/models/ship.glb")

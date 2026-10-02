@@ -37,10 +37,11 @@ game repository can be checked against what it wrote with `wgf-assets.py validat
 |---|---|---|
 | `game-design` | required | `build_spec.assets` (and `asset_requirements`), or a derived baseline; `build_spec.visual_identity` (palette, `primitive_style`); `scope.asset_budget` |
 | `scaffold-record` | optional | target platforms, whose `max_bundle_mb` the delivered files are checked against |
-| `production-quality-report` | optional | on re-entry: the failed checks with route `assets` name the items to rebuild ([Re-entry](#re-entry)) |
-| `visual-qa-report` | optional | on re-entry: the findings with route `assets` name the items to rebuild |
+| `production-quality-report` | optional | on re-entry: the failed checks with route `assets` say which items to rebuild and why ([Re-entry](#re-entry)) |
+| `visual-qa-report` | optional | on re-entry: the findings, scores, per-state answers and look routed `assets` say which items to rebuild and why |
+| `playability-report` | optional | on re-entry: the play the gate judged - where its frames are, and the play probe's entity -> asset records |
 
-The two reports are read when present; wiring them into `new-game` (the `production-quality`
+The reports are read when present; wiring them into `new-game` (the `production-quality`
 and `visual-qa` routes back to `assets`) is the workflow's, not this module's.
 
 ### The work list: build_spec.assets
@@ -196,9 +197,11 @@ them asks again.
 **Model author** (3D). When `wgf_assets.model_author` is installed, a 3D `model`,
 `environment` or `animation` requirement is passed to its `produce_model(requirement,
 visual_identity, out_dir, settings, context)`, which returns `{files, quality, source,
-license, placeholder, notes}` or raises `ModelAuthorError`. Its files are validated as any
-GLB (`gltf.py`) and its `quality` is recorded as given. Absent, or failing, 3D requirements
-fall back to placeholders. See [blender-pipeline.md](blender-pipeline.md); its request
+license, placeholder, notes}` or raises `ModelAuthorError`. `context` is a plain mapping
+(`config`, `policy`, `run_dir`), never the step's context object, and a requirement a gate
+sent back carries `feedback: {notes, frames}` ([Re-entry](#re-entry)). Its files are
+validated as any GLB (`gltf.py`) and its `quality` is recorded as given. Absent, or failing,
+3D requirements fall back to placeholders. See [blender-pipeline.md](blender-pipeline.md); its request
 carries `craft` too (`core/craft/production-art-3d.md`, `3d-assets-and-animation.md`).
 
 ## Quality
@@ -268,14 +271,53 @@ without decoding first. How a game should use them: `core/craft/game-audio.md`.
 ## Re-entry
 
 When the step runs again with a `production-quality-report` or `visual-qa-report` whose
-`routes` include `assets`, it rebuilds only what those reports name: a production-quality
-check that did not pass with `route: assets` names its `assets` (else the requirement ids its
-summary mentions); a visual-qa finding with `route: assets` names the ids its id or summary
-mentions. A drawing id (`tile-2`) names its requirement. Each named item skips the library
-(it would hand over the same file) and goes to the author with the findings as `notes`; every
-other item is reused - a library file is deterministic, an authored file comes from the
-ledger, a placeholder from the same bytes. Without an author, a named item is rebuilt from
-the same sources and the manifest says so in its `notes`.
+`routes` include `assets`, it remakes only what the failure concerns
+(`scripts/wgf_assets/feedback.py`). Only the report of the gate that routed the run here is
+read (`context.entered_by`, `<step>.<route>`); without one, every report routed `assets`.
+
+What is read:
+
+| Report | Failures read |
+|---|---|
+| production-quality | every check routed `assets` that did not pass: its `assets` ids, else the ids and role words its summary names; its `expected` and `measured`; its frames |
+| visual-qa | every finding routed `assets` (any severity); every failing score, per-state answer and look whose rubric entry routes `assets`, with the judge's reason (`score_reasons`), comment or `look.reason` |
+
+Which requirements a failure concerns (game-design `build_spec.assets`, mvp, not
+`existing`):
+
+- **By id.** The requirement ids, or drawing ids (`tile-2` is `tile`), it names.
+- **By role word.** A word of a role in its id or summary (`core/reference/visual-qa-rubric.yaml`
+  `rebuild.role_words`: "player", "enemy", "obstacle", "sky", "debris", ...) names every
+  requirement of that role. The judge says "the player", not `craft`.
+- **By the play probe.** The playability records' entities name the runtime asset that drew
+  each role, so a role resolves to that asset's requirement too.
+- **By the rubric.** A score, state question, look or blocker carries `rebuild_roles` in the
+  rubric (`environment` -> the scene; `character_readability` -> the readable entities; the
+  look and `art_completeness` -> every drawn role). Groups (`entities`, `scene`, `art`) are
+  `rebuild.groups`.
+
+A visual-qa failure never remakes a sound. A failure no requirement resolves for is added to
+every requirement that is remade, as "about the build as a whole".
+
+**Nothing resolves.** A re-entry from a failed gate never reuses every file: when no failure
+resolves to a requirement, every requirement of `rebuild.fallback` (the readable entities
+and the scene) is remade with every reason, and the step logs a warning.
+
+**What the author is given.** Per remade requirement, the request (author.py; the 3D model
+author's request alike) carries `notes` - the reasons, in the judge's words - `frames` - the
+absolute paths of the frames that show them: the finding's frame, the failing state's
+frames, the measured check's frames, or, for a failure about every frame, the play frames of
+each viewport (at most 12) - and, for an SVG, `current`, the file that was judged. The prompt
+tells the author to open every frame with its read tool and fix what they show. Each remade
+item skips the library (it would hand over the same file); every other item is reused - a
+library file is deterministic, an authored file comes from the ledger, a placeholder from the
+same bytes.
+
+**When nothing can change.** No configured author able to remake any concerned requirement
+(`factory.assets.author` for 2D SVG, `factory.assets.model_author` for 3D models) blocks the
+step: a library or placeholder would hand over the same file and the loop would spend its
+budget on nothing. Authors asked and none delivering an accepted file fails the step,
+retryable, with the manifest as evidence. Some remade and some not is a warning.
 
 In `new-game` (workflow 5) both production gates route `assets` here (budgets
 `production-quality.assets: 2`, `visual-qa.assets: 2`), and the run then continues to
@@ -480,6 +522,8 @@ root). Without a scaffold-record, or before the checkout exists, the files go to
 | `author.kind` unknown, or `command` without an `argv` | `FAILED`, not retryable |
 | `game-design` of a newer major schema | `FAILED`, not retryable |
 | An issue in `fail_on`, or any error with `strict` | `FAILED`, not retryable, with the manifest as evidence |
+| Re-entry from a failed gate, and no configured author can remake what it concerns | `BLOCKED`: configure an author or replace the files by hand, and resume ([Re-entry](#re-entry)) |
+| Re-entry from a failed gate, and the authors delivered nothing | `FAILED`, retryable, with the manifest as evidence |
 
 Re-execution is idempotent: files are deterministic and written only when their bytes change,
 so a retry, resume or loop reuses everything (`metadata.writes`; `removed` counts pruned
@@ -569,8 +613,12 @@ process layer with `fixtures/assets/fake_svg_author.py` (a multi-shape SVG passe
 SVG is repaired on round 2; one that never passes, a script, an off-palette drawing and a
 crashing host fall back to placeholders; the ledger reuses), zero placeholders among the mvp
 items with an author and flagged placeholders without one, library.json by id and by role
-(`fixtures/assets/library-mapped/`), re-entry from both reports, the 3D model author hook,
-and every quality check.
+(`fixtures/assets/library-mapped/`), re-entry from both reports (by id, role word, probe
+and rubric roles; the gate that routed here; the fallback; the reasons, frames and judged
+file in the author's request; BLOCKED without an author, FAILED when authors deliver
+nothing), the regression against a real judge verdict (`fixtures/visual-qa/`: the arena-dodge
+design and the verdict that named "the player", never `craft`), the 3D model author hook
+(given a plain mapping as context), and every quality check.
 
 `scripts/tests/test_models.py` covers the model spec, the GLB inspector, the Blender layer
 (with a fake Blender through the real process layer), the step with models, three.js loading,

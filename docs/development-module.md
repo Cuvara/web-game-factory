@@ -68,10 +68,13 @@ named items (route `assets`, which continues here), re-enters develop with the f
 reports as inputs. Only a FAIL of the commit this visit starts from is feedback - the assets
 step writes files but commits nothing, so HEAD is still the judged commit - and the brief
 then leads with **Fix first: what the production gate measured** (each failed required
-check, its route, viewport, assets and bar; `brief.json` `production_failures`) and **Fix
-first: what visual QA saw** (each entry of the report's `failed`: blocker findings with
-their frame, dimensions below the bar, failing per-state answers, the look;
-`visual_qa_failures`), with the judged commit as `gated_commit`.
+check, its route, viewport, assets, bar, what was measured and the absolute paths of the
+frames it measured; `brief.json` `production_failures`) and **Fix first: what visual QA
+saw** (each entry of the report's `failed`: blocker findings with their frame, dimensions
+below the bar with the judge's `score_reasons`, failing per-state answers with the judge's
+comment and the state's frames, the look with its reason; then every `major` finding that
+did not fail the build on its own; `visual_qa_failures`), with the judged commit as
+`gated_commit`.
 
 No `phase` (a workflow before 4) is the single develop phase it always was. An unknown phase
 fails the step.

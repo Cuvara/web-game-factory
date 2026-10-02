@@ -23,7 +23,7 @@ import json
 import os
 import re
 
-from wgflib import paths
+from wgflib import genre_models, paths
 from wgflib import template_contract as contract
 from wgflib.jsonschema_lite import Registry, Validator, json_problems
 
@@ -53,18 +53,27 @@ TITLES = {
 # Title keywords, used only for tests with no @aspect tag. Deliberately conservative: a
 # keyword maps a test to an aspect it plausibly exercises, and an unmapped aspect is
 # reported as uncovered rather than guessed at.
+#
+# `progression` has no entry on purpose. A test whose title says "score" or "level" is the
+# weakest possible evidence that the design's progression - its content units, in order, with
+# what persists between them - is built, and it was passing on exactly those words. Progression
+# is now a pass only on what the bot played (quality.progression:persists) or on a test the
+# developer tagged `@progression` together with the content data file: see check_gameplay.
 KEYWORDS = {
     "boot": r"\bboots?\b|\bbooting\b",
     "loading": r"\bload(s|ing|ed)?\b|\bready\b|\bboots?\b",
     "start": r"\bstart(s|ed)?\b|\bmenu\b|\bplay button\b",
     "input": r"\binput\b|\btaps?\b|\bclicks?\b|\bkey(board|s)?\b|\bswipes?\b|\btouch\b",
     "core-loop": r"\bsteps?\b|\bloop\b|\bsimulation\b|\bcore\b",
-    "progression": r"\bprogress(ion)?\b|\blevel\b|\bscore\b|\bpersonal best\b",
     "game-over": r"\bgame ?over\b|\bdies\b|\bdeath\b|\bloses?\b|\bruns? ends?\b",
     "restart": r"\brestarts?\b|\bretry\b|\breplay\b|\bplay again\b",
     "pause-resume": r"\bpause[sd]?\b|\bresumes?\b|\bvisibility\b",
     "responsive": r"\bresponsive\b|\bviewport\b|\bresize\b|\borientation\b",
 }
+# Where the developer records what it built the content from, and what the build reads it back
+# out of (core/craft/content-and-level-design.md, core/reference/genre-models.yaml).
+DEVELOP_CHECKS = "docs/development/checks.json"
+CONTENT_DATA = "public/content/units.json"
 MOBILE_PROJECT = re.compile(r"mobile|pixel|iphone|android|tablet|ipad", re.I)
 _TAG = re.compile(r"@([a-z][a-z-]*)")
 _MISSING_BROWSER = re.compile(r"Executable doesn't exist|playwright install", re.I)
@@ -262,7 +271,8 @@ def map_report(report, path):
             tags = {t.lstrip("@") for t in spec.get("tags") or []}
             tags |= set(_TAG.findall(title))
             explicit = [a for a in ASPECTS if a in tags]
-            keyword = [a for a in ASPECTS if re.search(KEYWORDS[a], title, re.I)]
+            keyword = [a for a in ASPECTS if a in KEYWORDS
+                       and re.search(KEYWORDS[a], title, re.I)]
             aspects = explicit or keyword
             for test in spec.get("tests") or []:
                 project = test.get("projectName") or "default"
@@ -354,6 +364,74 @@ def required_aspects_for(design, mobile_test=True):
     return required
 
 
+def content_conformance(session):
+    """(ok or None, Evidence): does anything say the build carries the design's content units?
+
+    None when the design authors none, so there is nothing to conform to. Otherwise, in order:
+    what the develop step recorded (`docs/development/checks.json`, which carries its content
+    check), else the data file the build reads its units out of (`public/content/units.json`)
+    holding every MVP unit id. A build that does neither has not shown its content exists.
+    """
+    content, mode, units = genre_models.units_of(session.inputs.get("game-design"))
+    if content is None:
+        return None, Evidence("observation", "the design authors no content units "
+                                             "(build_spec.content), so none can be conformed to")
+    recorded = session.read_json(DEVELOP_CHECKS) or {}
+    for entry in recorded.get("checks") or []:
+        if isinstance(entry, dict) and "content" in str(entry.get("id", "")):
+            passed = entry.get("status") == "passed"
+            return passed, Evidence("file", f"develop recorded {entry.get('id')}: "
+                                            f"{entry.get('status')} - {entry.get('summary')}",
+                                    path=DEVELOP_CHECKS,
+                                    content_hash=session.file_hash(DEVELOP_CHECKS))
+    data = session.read_json(CONTENT_DATA)
+    if data is None:
+        return False, Evidence("file", f"{CONTENT_DATA} is missing, and {DEVELOP_CHECKS} records "
+                                       "no content check: nothing says the designed units were "
+                                       "built", path=CONTENT_DATA)
+    text = json.dumps(data)
+    absent = sorted(u.get("id") for u in units
+                    if u.get("id") and f'"{u["id"]}"' not in text)
+    return not absent, Evidence(
+        "file", (f"{CONTENT_DATA} carries every mvp unit of the design ({len(units)}, "
+                 f"generation {mode})" if not absent else
+                 f"{CONTENT_DATA} does not carry: {', '.join(absent)}"),
+        path=CONTENT_DATA, content_hash=session.file_hash(CONTENT_DATA),
+        data={"missing_units": absent} or None)
+
+
+def _hold_progression(session, check, seen):
+    """Progression passes on what the bot played, or on a tagged test plus the content data.
+
+    `gameplay.progression` used to pass on a test whose title mentioned a score. Progression is
+    the thing a prototype most often does not have, so it is now held to evidence that names
+    it: `quality.progression:persists` (the bot reloaded the game and read it back), or a test
+    the developer tagged `@progression` together with content conformance.
+    """
+    played = session.results.get("quality.progression:persists")
+    if played is not None and played.status == PASS:
+        check.evidence.append(Evidence("reference", "the playability bot reloaded the build and "
+                                                    "found the designed progression intact",
+                                       check_ref="quality.progression:persists"))
+        if check.status != PASS:
+            check.status = PASS
+            check.message = "progression survived a reload when the bot played it: " \
+                            + played.message[:200]
+        return check
+    if check.status != PASS:
+        return check
+    ok, evidence = content_conformance(session)
+    check.evidence.append(evidence)
+    if ok is False:
+        check.status = FAIL if check.required else WARNING
+        check.message = ("a test exercises progression, but nothing says the designed content "
+                         f"units were built: {evidence.summary}")
+    else:
+        check.message += ("; the designed content units are accounted for" if ok
+                          else "; the design authors no content units to account for")
+    return check
+
+
 def check_gameplay(session):
     required = required_aspects(session)
     if not session.passed("build.build"):
@@ -394,9 +472,11 @@ def check_gameplay(session):
             message = (f"{len(failed)} of {len(results)} observation(s) failed" if failed
                        else f"{len(results)} observation(s) passed")
             evidence = [e for _, e in results]
-        out.append(session.record(Check(f"gameplay.{aspect}", "gameplay", TITLES[aspect],
-                                        status, required=is_required, message=message,
-                                        evidence=evidence)))
+        check = Check(f"gameplay.{aspect}", "gameplay", TITLES[aspect], status,
+                      required=is_required, message=message, evidence=evidence)
+        if aspect == "progression":
+            check = _hold_progression(session, check, seen)
+        out.append(session.record(check))
     if seen.console_errors:
         boot = session.results["gameplay.boot"]
         boot.evidence.append(Evidence("observation", f"{len(seen.console_errors)} console "

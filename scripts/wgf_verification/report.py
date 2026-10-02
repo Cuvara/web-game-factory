@@ -35,6 +35,8 @@ SUITES = (
     ("code.integration", "integration"),
     ("build.", "build"),
     ("gameplay.", "smoke"),
+    # What the playability bot measured about the design's content, difficulty and depth.
+    ("quality.", "gameplay-quality"),
     ("policy.runtime-facts", "performance"),
     ("policy.assertions:", "platform-validation"),
     ("platform.", "platform-validation"),

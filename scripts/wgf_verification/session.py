@@ -54,12 +54,16 @@ def locate_checkout(params, config, scaffold, environ=None, section="verificatio
 
 
 class VerificationSession:
-    def __init__(self, root, runner, *, params=None, inputs=None, config=None, logger=None):
+    def __init__(self, root, runner, *, params=None, inputs=None, config=None, logger=None,
+                 missing_inputs=()):
         self.root = root
         self.runner = runner
         self.network_refusals = []   # one wgflib.netguard summary per browser command
         self.params = dict(params or {})
         self.inputs = inputs or {}          # artifact type -> loaded content
+        # Inputs the workflow declares for this step that did not reach it. A check that needs
+        # one can tell "the run never asked for it" from "the run asked and it is missing".
+        self.missing_inputs = tuple(missing_inputs or ())
         self.config = config or {}
         self.logger = logger
         self.results = {}                   # check id -> Check

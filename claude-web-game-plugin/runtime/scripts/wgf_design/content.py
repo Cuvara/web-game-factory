@@ -689,10 +689,16 @@ def _axes_monotone_with_relief(d):
         if len(series) < 2:
             continue
         first, last = series[0][1], series[-1][1]
+        rise = d.bar("min_axis_rise") or 0
         if last <= first:
             problems.append(f"difficulty {axis_id!r} is {first:g} on the first MVP unit and "
                             f"{last:g} on the last; an axis a {d.label} game escalates on ends "
                             f"higher than it starts")
+        elif last - first < rise - 1e-9:
+            problems.append(f"difficulty {axis_id!r} rises only {last - first:g} over the MVP "
+                            f"units ({first:g} to {last:g}); an axis a {d.label} game escalates "
+                            f"on rises at least {rise:g} of its range by the last MVP unit - a "
+                            f"nudge is not a curve")
         for position in range(1, len(series)):
             unit, value = series[position]
             before = series[position - 1][1]

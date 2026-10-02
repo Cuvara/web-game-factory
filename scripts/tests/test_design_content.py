@@ -629,6 +629,16 @@ class Difficulty(ContentCase):
         self.breaches(design, "content.axes_monotone_with_relief",
                       "an axis a Racing / driving game escalates on ends higher than it starts")
 
+    def test_an_escalating_axis_that_only_nudges_upward(self):
+        # The live puzzle design raised depth from 0.08 to 0.16 over six levels: higher, and
+        # not a curve. An escalating axis rises at least `min_axis_rise` of its range.
+        design = self.design()
+        start = mvp(design)[0]["difficulty"]["route-complexity"]
+        for item in mvp(design)[1:]:
+            item["difficulty"]["route-complexity"] = start + 0.02
+        self.breaches(design, "content.axes_monotone_with_relief",
+                      "rises at least 0.1 of its range by the last MVP unit")
+
     def test_a_dip_deeper_than_relief_allows(self):
         design = self.design()
         item = mvp(design)[1]

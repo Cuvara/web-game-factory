@@ -60,6 +60,10 @@ variety:
   # not a regression; deeper, or not recovered within `relief_recovery_units`, breaches.
   relief_dip_max: 0.35
   relief_recovery_units: 2
+  # An escalating axis ends at least this much higher (of its 0..1 range) on the last MVP
+  # unit than on the first: a rise of a few hundredths satisfies "higher" and teaches
+  # nothing.
+  min_axis_rise: 0.1
 
 implementation:
   # The developer writes every MVP unit as data (public/content/units.json) with the design's

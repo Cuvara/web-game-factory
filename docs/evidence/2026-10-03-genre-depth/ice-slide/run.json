@@ -1,0 +1,15 @@
+{
+  "run_id": "new-game-20261002-202507-8c157a",
+  "status": "RUNNING",
+  "steps": {
+    "research": "SUCCESS",
+    "strategy": "SUCCESS",
+    "strategy-review": "SUCCESS",
+    "design": "SUCCESS",
+    "tech-plan": "SUCCESS",
+    "tech-plan-review": "SUCCESS",
+    "init": "SUCCESS",
+    "greybox": "RUNNING"
+  },
+  "blocked_reason": null
+}

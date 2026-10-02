@@ -264,8 +264,10 @@ class DesignStep(WorkflowStep):
         if blocking:
             # A breached blocking rule is `descope` for an author that cannot repair; one
             # that can is told which rule, and what the concept view found, first.
-            concept = (block.get("concept") or consistency.concept_view(
-                design, strategy, (self.rules or consistency.load_rules()).get("concept_terms") or {}))
+            ruleset = self.rules or consistency.load_rules()
+            concept = consistency.concept_view(
+                design, strategy, ruleset.get("concept_terms") or {},
+                tuple(ruleset.get("detail_terms") or ()))
             for rule_id in blocking:
                 note = ""
                 if rule_id == "concept_mechanics_carried":

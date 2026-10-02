@@ -502,6 +502,25 @@ class FailurePaths(unittest.TestCase):
                          (StepOutcome.FAILED, "descope", False))
         self.assertEqual(len(result.artifacts), 1)
 
+    def test_a_detail_term_is_never_foreign(self):
+        # Walls, crashes and locks are details most games have: a penguin that stops at a
+        # wall and a door with a lock have not changed what the game is. They still count
+        # when the strategy's concept names them and the design drops them.
+        class Walled(authors.ArchetypeAuthor):
+            def draft(self, brief):
+                draft = super().draft(brief)
+                draft["core_loop"] += " The piece stops at a wall; a locked door opens with a key."
+                return draft
+
+        authors.register_author("walled", Walled)
+        self.addCleanup(authors.AUTHORS.pop, "walled", None)
+        result = run_step(load_strategy(), params={"author": "walled"})
+        self.assertEqual(result.outcome, StepOutcome.SUCCESS, result.error)
+        rules = consistency.load_rules()
+        self.assertEqual(sorted(rules["detail_terms"]), ["crash", "lock", "wall"])
+        for term in rules["detail_terms"]:
+            self.assertIn(term, rules["concept_terms"])
+
     def test_an_author_exception_is_left_to_the_runtime_as_retryable(self):
         class Flaky(authors.DesignAuthor):
             def draft(self, brief):

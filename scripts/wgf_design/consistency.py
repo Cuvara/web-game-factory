@@ -98,17 +98,20 @@ def _design_own(design):
     return " ".join(str(p) for p in parts)
 
 
-def concept_view(design, strategy, concept_terms):
+def concept_view(design, strategy, concept_terms, detail_terms=()):
     """`uncarried`: mechanics the strategy's concept names that the design's own text does not.
-    `foreign`: mechanics the design's own text names that the strategy nowhere does."""
+    `foreign`: mechanics the design's own text names that the strategy nowhere does - minus
+    `detail_terms`, the words most games have (a wall, a crash, a lock) that count for
+    `uncarried` but never make a design a different game."""
     wanted = _terms_in(_strategy_concept(strategy), concept_terms)
     named = _terms_in(_strategy_all(strategy), concept_terms)
     designed = _terms_in(_design_own(design), concept_terms)
     return {"strategy_terms": sorted(wanted), "design_terms": sorted(designed),
-            "uncarried": sorted(wanted - designed), "foreign": sorted(designed - named)}
+            "uncarried": sorted(wanted - designed),
+            "foreign": sorted(designed - named - set(detail_terms or ()))}
 
 
-def projection(design, strategy, platform=None, concept_terms=None):
+def projection(design, strategy, platform=None, concept_terms=None, detail_terms=()):
     spec = design.get("build_spec") or {}
     cost = sum(item.get("est_cost", 0) for item in (spec.get("assets") or []) + (spec.get("audio") or []))
     return {
@@ -120,7 +123,7 @@ def projection(design, strategy, platform=None, concept_terms=None):
         "audience": strategy.get("audience") or {},
         "asset_manifest": {"total_est_cost": cost},
         "platform": _platform_view(platform),
-        "concept": concept_view(design, strategy, concept_terms or {}),
+        "concept": concept_view(design, strategy, concept_terms or {}, detail_terms),
     }
 
 
@@ -153,6 +156,7 @@ def evaluate(design, strategy, platforms, evaluated_at, rules=None):
     """Return the `consistency` block for `design`."""
     ruleset = rules or load_rules()
     terms = ruleset.get("concept_terms") or {}
+    details = tuple(ruleset.get("detail_terms") or ())
     required = [p for p in platforms if p.required]
     results = []
     blocking_breached = []
@@ -160,11 +164,13 @@ def evaluate(design, strategy, platforms, evaluated_at, rules=None):
     for rule in ruleset["rules"]:
         reads_platform = any(p.startswith("platform.") for p in _paths(rule["when"]))
         if not reads_platform:
-            result = _evaluate_once(rule, projection(design, strategy, concept_terms=terms))
+            result = _evaluate_once(rule, projection(design, strategy, concept_terms=terms,
+                                                     detail_terms=details))
         else:
             per_platform, notes, breached = [], [], False
             for platform in required:
-                context = projection(design, strategy, platform, concept_terms=terms)
+                context = projection(design, strategy, platform, concept_terms=terms,
+                                     detail_terms=details)
                 absent = [p for p in _paths(rule["when"])
                           if p.startswith("platform.") and resolve(p, context) in (MISSING, None)]
                 if absent:

@@ -12,7 +12,7 @@
 # artifact plus the resolved platform profiles. Keep them few and obvious — a rule nobody
 # understands gets waived, and a waived rule is worse than no rule.
 
-version: 1.3.0  # 1.3.0: scope_fits_session_count applies only without a genre family
+version: 1.4.0  # 1.3.0: scope_fits_session_count applies only without a genre family; 1.4.0: detail_terms
 
 rules:
   - id: rewarded_ads_need_reward_moments
@@ -170,6 +170,13 @@ concept_terms:
   race: [race, races, racing, rival, rivals]
   exit: [exit, exits, goal flag, exit door]
   aim: [aim, aims, aiming]
+
+# Terms that count for `concept.uncarried` (the strategy names them, so the design must carry
+# them) but never for `concept.foreign`: walls, crashes and locks are details most games
+# have - an ice puzzle's penguin stops at a wall, its door has a lock - and a design that
+# names one has not changed what the game is. A term absent from this list is defining both
+# ways.
+detail_terms: [wall, crash, lock]
 
 evaluation:
   pass_condition: No rule with severity=blocking is breached.

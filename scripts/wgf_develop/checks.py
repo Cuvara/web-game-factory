@@ -23,7 +23,8 @@ from wgflib import agentenv
 from wgflib import template_contract as contract
 from wgflib.netguard import RefusingProxy, sandbox_env
 
-from .brief import (ENGINE_DIRS, PROTECTED_PATHS, REPORT_PATH, REQUIRED_SYSTEMS,
+from .brief import (ENGINE_DIRS, GREYBOX_DEFERRABLE, PROTECTED_PATHS, REPORT_PATH,
+                    REQUIRED_SYSTEMS,
                     STRUCTURAL_PATHS, framework_package)
 from .repository import ExactEnv
 from .seam import sdk_owned_findings, seam_findings
@@ -214,8 +215,11 @@ def _report_findings(report, brief):
         findings.append(f"report engine is {report.get('engine')!r}, game.config.yaml says "
                         f"{brief['engine']!r}")
     systems = report.get("systems") or {}
+    greybox = brief.get("phase") == "greybox"
     for name, _ in REQUIRED_SYSTEMS:
         status = systems.get(name)
+        if greybox and name in GREYBOX_DEFERRABLE and status in ("done", "partial", "deferred"):
+            continue
         if status != "done":
             findings.append(f"required system {name!r} is {status or 'not reported'}")
     reported = {entry.get("item"): entry.get("status") for entry in report.get("mvp") or []

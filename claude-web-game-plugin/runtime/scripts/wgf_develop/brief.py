@@ -74,6 +74,12 @@ REQUIRED_SYSTEMS = (
                    "wgf-probe=1 in the URL - the oracle. Read-only."),
 )
 
+# Systems a greybox cannot finish, because what they serve arrives in production: assets and
+# sound do not exist yet, and progression's persistence is not what a greybox proves. In the
+# greybox phase they may be reported `partial` or `deferred`; production finishes them.
+# Requiring `done` of them made an honest greybox fail conformance and a dishonest one pass.
+GREYBOX_DEFERRABLE = ("progression", "asset-loading", "audio-hooks")
+
 # What the playability step reads from the running build (core/artifacts/shared/).
 PLAY_PROBE_SCHEMA = os.path.join(paths.ARTIFACTS, "shared", "play-probe.schema.json")
 # The entity roles a player must be able to read: the visual gate's, and the ones production
@@ -1076,8 +1082,16 @@ def render_markdown(brief):
         add("")
 
     add("## Required systems\n")
-    add("Report each in `systems` as done, partial or missing. Anything but done fails the "
-        "checks.\n")
+    if brief.get("phase") == "greybox":
+        add("Report each in `systems` as done, partial or missing. Anything but done fails the "
+            "checks - except "
+            + ", ".join(f"**{n}**" for n in GREYBOX_DEFERRABLE)
+            + ", which serve assets, sound and persistence that arrive in production: in "
+              "this phase report them `partial` or `deferred` honestly and spend the time on "
+              "the loop, its readability and its feel.\n")
+    else:
+        add("Report each in `systems` as done, partial or missing. Anything but done fails "
+            "the checks.\n")
     for system in brief["required_systems"]:
         add(f"- **{system['id']}** - {system['acceptance']}")
     add("")

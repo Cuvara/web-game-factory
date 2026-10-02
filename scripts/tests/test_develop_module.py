@@ -941,6 +941,26 @@ class SeeYourBuild(DevelopCase):
         self.assertNotIn("production-art-3d.md", " ".join(data["craft_guides"]))
 
 
+class GreyboxSystems(unittest.TestCase):
+    """A greybox may defer what serves assets, sound and persistence; production may not."""
+
+    def findings(self, phase, status):
+        from wgf_develop import checks as dev_checks
+        systems = {name: "done" for name, _ in briefs.REQUIRED_SYSTEMS}
+        systems["asset-loading"] = status
+        report = {"engine": "pixijs", "systems": systems, "mvp": [], "placements": []}
+        brief = {"engine": "pixijs", "phase": phase, "mvp": [], "placements": []}
+        return dev_checks._report_findings(report, brief)
+
+    def test_greybox_may_defer_asset_loading(self):
+        self.assertEqual(self.findings("greybox", "deferred"), [])
+        self.assertEqual(self.findings("greybox", "partial"), [])
+
+    def test_production_may_not(self):
+        self.assertTrue(self.findings("production", "partial"))
+        self.assertTrue(self.findings("greybox", "missing"))
+
+
 class HostSkills(DevelopCase):
     """F7: the brief recommends this Factory's own plugin skills, not only generic ones."""
 

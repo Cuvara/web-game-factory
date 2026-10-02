@@ -185,7 +185,8 @@ class TheDesignAgent(unittest.TestCase):
     def test_the_agent_is_told_what_the_module_checks(self):
         from wgf_design import agent
         self.assertIn("concept", agent.PROMPT_CONCEPT)
-        self.assertIn("no mechanic the strategy does not state", agent.PROMPT_CONCEPT)
+        self.assertIn("no mechanic the strategy's concept, content_model or MVP does not state",
+                      agent.PROMPT_CONCEPT)
 
 
 def commented_example(section, key):

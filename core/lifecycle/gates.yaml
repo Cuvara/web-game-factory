@@ -27,7 +27,7 @@
 # `required_artifacts` is what a gate is decided on. A workflow checkpoint for the gate
 # lists them as its inputs, and waits for input - asks nobody - until the run holds them.
 
-version: 1.1.0  # 1.1.0: G3 and G4 required_artifacts (Factory 2.0.0)
+version: 1.2.0  # 1.1.0: G3 and G4 required_artifacts (Factory 2.0.0); 1.2.0: G4 reads playability and review (2.7.0)
 
 defaults:
   approvers: [portfolio-owner]
@@ -111,9 +111,12 @@ gates:
     auto_approve_after: null
     # The verified prototype - what the verify step produced for the build under review -
     # judged against the terms of the bet: the kill criteria in title-strategy and the
-    # design they measure. A workflow's G4 checkpoint comes after verification passes, and
-    # a verification that runs again after a pass supersedes it.
-    required_artifacts: [qa-report, verification-report, prototype-report, title-strategy, game-design]
+    # design they measure - and, since Factory 2.7.0, the playability report (did the build
+    # traverse the units the design claims, with the difficulty it states) and the review
+    # report (was the build faithful to the design, or did it invent). A workflow's G4
+    # checkpoint comes after verification passes, and a verification that runs again after
+    # a pass supersedes it.
+    required_artifacts: [qa-report, verification-report, prototype-report, title-strategy, game-design, playability-report, review-report]
     required_predicates:
       - playable_build
     # The workflow checkpoint's choices are pass, iterate and kill; kill is `abandon`.

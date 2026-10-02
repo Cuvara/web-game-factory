@@ -14,8 +14,8 @@
 #
 # The anchors describe 0, 3 and 5; 1, 2 and 4 lie between them. The build fails on any of: a
 # dimension scored below `pass_bar`, a finding of severity `blocker`, a per-state answer equal
-# to its question's `fail_when` (state_questions below), or the look judged a
-# `developer-prototype`. Each names where its failure goes back to: `assets` when an asset
+# to its question's `fail_when` (state_questions below), a mean score below `mean_pass_bar`,
+# or the look judged anything but `finished-game`. Each names where its failure goes back to: `assets` when an asset
 # itself must change, `develop` when the game's use of it must (the step's route is `assets`
 # when anything failing routes there, else `develop`).
 #
@@ -33,9 +33,15 @@
 # characters were untextured cubes on a near-black pitch, and the template's two golden
 # ports. Recalibrate as verdicts accumulate - never to make one build pass.
 
-version: 1.1.0
+version: 1.2.0
 
 pass_bar: 3
+# The mean of every dimension's score must reach this too. Per-dimension scores from one
+# judge vary by a point between runs on the same frames, so no single dimension can carry a
+# bar of 4; the mean does. Calibration 2026-10-02 (three runs per reference, one on a
+# greybox): two finished reference games scored means of 3.63-4.13, a styled greybox 3.13.
+# A dimension below 4 then contributes its route.
+mean_pass_bar: 3.5
 
 dimensions:
   art_completeness:
@@ -187,9 +193,14 @@ state_questions:
 
 # Asked once, of the whole set of frames. `developer-prototype` fails the build.
 look:
-  ask: Does this look like a finished game a portal would publish, or a developer prototype?
-  values: [finished-game, developer-prototype]
-  fail_on: developer-prototype
+  ask: >-
+    Does this look like a finished game a portal would feature (finished-game), a competent
+    but plain game nobody would remember - generic shapes, default-looking UI, an empty or
+    flat scene, no visual identity of its own (unremarkable) - or a developer prototype?
+    Compare with the quality bar frames in the brief.
+  values: [finished-game, unremarkable, developer-prototype]
+  # Both fail: the bar is a game a portal would feature, not one that merely works.
+  fail_on: [unremarkable, developer-prototype]
   route: assets
   rebuild_roles: [art]
 

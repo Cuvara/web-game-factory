@@ -660,3 +660,48 @@ class BaselineJudge(Base):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TheQualityBar(unittest.TestCase):
+    """Rubric 1.2.0: the bar is a game a portal would feature, not one that merely works.
+    Calibrated 2026-10-02: finished reference games scored means 3.63-4.13 and looked
+    `finished-game` in 6 of 6 runs; a styled greybox scored 3.13."""
+
+    def setUp(self):
+        from wgf_visualqa.rubric import load_rubric
+        self.rubric = load_rubric()
+
+    def verdict(self, score, look="finished-game", **override):
+        scores = {name: score for name in self.rubric["dimensions"]}
+        scores.update(override)
+        return {"scores": scores, "findings": [], "states": [], "look": look}
+
+    def test_a_plain_game_fails_on_the_look(self):
+        from wgf_visualqa.rubric import decide
+        verdict, failed, routes = decide(self.verdict(4, look="unremarkable"), self.rubric)
+        self.assertEqual(verdict, "FAIL")
+        self.assertIn("look:unremarkable", failed)
+        self.assertIn("assets", routes)
+
+    def test_all_threes_pass_no_dimension_but_fail_the_mean(self):
+        from wgf_visualqa.rubric import decide
+        verdict, failed, routes = decide(self.verdict(3), self.rubric)
+        self.assertEqual((verdict, failed), ("FAIL", ["mean:3.00"]))
+        self.assertTrue(routes)
+
+    def test_the_references_calibrated_scores_pass(self):
+        from wgf_visualqa.rubric import decide
+        # The lowest-mean reference run: one dimension at 2 does not fail it alone (bar 3
+        # fails it - scored 3 here), the mean of 3.63 holds.
+        verdict, failed, _ = decide(self.verdict(4, composition=3, typography=3,
+                                                 ui_polish=3, no_debug=5), self.rubric)
+        self.assertEqual((verdict, failed), ("PASS", []))
+
+    def test_the_judge_brief_carries_the_quality_bar(self):
+        from wgf_visualqa.brief import render_brief
+        text = render_brief(title_id="t", commit="c" * 12, frames=[], rubric=self.rubric,
+                            design={"engine": {"type": "threejs"}})
+        self.assertIn("## The quality bar", text)
+        self.assertIn("3d-desktop-3-play-later.png", text)
+        self.assertNotIn("2d-desktop-1-title.png", text)
+        self.assertIn("`unremarkable` or `developer-prototype` fails the build", text)

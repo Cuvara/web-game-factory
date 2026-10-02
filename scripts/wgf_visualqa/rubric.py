@@ -12,7 +12,7 @@ The judge writes:
       "states":   [{"state": "<rubric state>", "viewport": "<viewport>",
                     "answers": {"<every question for that state>": true | false | null},
                     "comment": "..."}],      # one per (state, viewport) that has frames
-      "look":     "finished-game" | "developer-prototype",
+      "look":     "finished-game" | "unremarkable" | "developer-prototype",
       "look_reason": "...",
       "notes":    "free text (optional)"
     }
@@ -90,9 +90,16 @@ def load_rubric(path=None):
             raise RubricError(f"{path}: state question {question!r} needs id, fail_when, "
                               f"route and known states")
     look = data.get("look") or {}
-    if (look.get("fail_on") not in (look.get("values") or [])
+    fail_on = look.get("fail_on")
+    fail_on = fail_on if isinstance(fail_on, list) else [fail_on]
+    if (not fail_on or not set(fail_on) <= set(look.get("values") or [])
             or look.get("route") not in ROUTES):
         raise RubricError(f"{path}: `look` needs values, fail_on among them and a route")
+    look["fail_on"] = fail_on
+    mean_bar = data.get("mean_pass_bar")
+    if mean_bar is not None and not (isinstance(mean_bar, (int, float))
+                                     and 0 <= mean_bar <= 5):
+        raise RubricError(f"{path}: mean_pass_bar must be a number 0..5")
     problem = _check_rebuild(data)
     if problem:
         raise RubricError(f"{path}: {problem}")
@@ -358,8 +365,16 @@ def decide(verdict, rubric, primitive_style=False):
                 continue
             failed.append(f"state:{entry['viewport']}/{entry['state']}:{qid}")
             routes.add(question["route"])
+    mean_bar = rubric.get("mean_pass_bar")
+    scores = [verdict["scores"][name] for name in rubric["dimensions"]]
+    if mean_bar is not None and scores and sum(scores) / len(scores) < mean_bar:
+        failed.append(f"mean:{sum(scores) / len(scores):.2f}")
+        for name, dimension in rubric["dimensions"].items():
+            if verdict["scores"][name] < 4:
+                routes.add(dimension["route"])
     look = rubric.get("look") or {}
-    if verdict.get("look") == look.get("fail_on"):
+    fail_on = look.get("fail_on")
+    if verdict.get("look") in (fail_on if isinstance(fail_on, list) else [fail_on]):
         failed.append(f"look:{verdict['look']}")
         routes.add(look["route"])
     ordered = [r for r in ROUTES if r in routes]

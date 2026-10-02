@@ -65,12 +65,15 @@ null (nothing on screen the question is about): `entities_recognisable` (assets)
 `lighting_materials_coherent` (develop; null in 2D), `typography_readable` - and not a
 fallback font (develop), `buttons_polished` - not browser defaults (develop),
 `objective_obvious` (initial, gameplay, interaction; develop), `outcome_understandable`
-(win, loss, retry; develop). And once, the `look`: `finished-game` or
-`developer-prototype`.
+(win, loss, retry; develop). And once, the `look`: `finished-game`, `unremarkable` (competent
+but plain) or `developer-prototype`. The brief shows the judge the installation's quality
+bar (`workspace/quality-bar/`, `wgflib.quality_bar`) as what a 4 and `finished-game` look
+like.
 
 **Decision** (`rubric.decide`): FAIL when any finding is a blocker, any dimension is below
-`pass_bar` (3), any per-state answer equals its question's `fail_when`, or the look is
-`developer-prototype`. `failed` lists `finding:<id>`, `score:<dimension>`,
+`pass_bar` (3), the mean of all scores is below `mean_pass_bar` (3.5; each dimension below 4
+then contributes its route), any per-state answer equals its question's `fail_when`, or the
+look is anything but `finished-game`. `failed` lists `finding:<id>`, `score:<dimension>`,
 `state:<viewport>/<state>:<question>` and `look:developer-prototype`; `routes` the routes
 of every failure, `assets` before `develop`; the step's route is the first. A `major` or
 `minor` finding is recorded and does not fail the build on its own. The report lists every
@@ -870,3 +873,33 @@ Neon Drift Arena golden port, round 2, verbatim:
   "notes": "No win or retry frames were captured, so those outcomes are not assessed."
 }
 ```
+
+**Round 3** (2026-10-02, rubric 1.2.0). Why: the bar of 3 passes a plain game - level 3 reads
+"plain", "little character" - and no good game had ever been judged. Frames: the reference
+games' production builds (`workspace/quality-bar/` sources, captured with
+`scripts/wgf_develop/tools/look.mjs`, desktop and phone, title / play / play-later) and a
+live autonomous 3D greybox (styled HUD, primitive ship and obstacles). Same judge argv as
+the autonomous profile.
+
+Without anchors, three runs per reference (scores in dimension order art, readability,
+environment, ui, typography, composition, consistency, no_debug):
+
+| frames | runs | means | look |
+|---|---|---|---|
+| 2D reference | 3 | 4.00, 3.88, 3.88 | finished-game x3 (one run raised a mobile-cropping blocker) |
+| 3D reference | 3 | 3.88, 4.13, 3.63 | finished-game x3 |
+| 3D greybox | 1 | 3.13 | developer-prototype |
+
+Single dimensions moved by a point (sometimes two) between runs on identical frames, so no
+dimension can carry a bar of 4 without failing the references half the time. What held:
+the look, and the mean. Rubric 1.2.0 therefore adds `mean_pass_bar: 3.5` and a third look,
+`unremarkable` (competent but plain), which fails like `developer-prototype`; and the judge
+brief now carries the installation's quality-bar frames as what a 4 and `finished-game`
+look like.
+
+With the quality bar in the brief (one run each): 2D reference 3.88 PASS; 3D reference 4.88
+PASS (inflated - its own frames are among the anchors); 3D greybox 2.12 FAIL (ui and
+typography fell from 3-4 to 1-2: compared with a finished game, a styled default is not
+polish). The separation is wider with the anchors. Open: no *mid* game - finished art but
+generic - has been judged yet; that is the next calibration point when an autonomous run
+produces one.

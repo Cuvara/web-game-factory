@@ -285,7 +285,11 @@ class AssetsStep(WorkflowStep):
                                                not in (None, "none") else None),
                                  rebuild=rebuild, settings=settings, context=context,
                                  work_dir=self._work_dir(context, slug),
-                                 locales=(design.get("scope") or {}).get("locales") or ())
+                                 locales=(design.get("scope") or {}).get("locales") or (),
+                                 design_context={
+                                     "art_direction": design.get("art_direction"),
+                                     "design_resolution": (design.get("engine") or {}).get(
+                                         "design_resolution")})
         context.logger.info("asset pipeline", requirements=len(requirements),
                             dimension=dimension, root=store.root,
                             derived=bool(requirements and requirements[0].derived))

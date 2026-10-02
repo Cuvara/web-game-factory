@@ -172,11 +172,20 @@ class Planner(unittest.TestCase):
         short = {"session_seconds": 90}
         us = plan(opportunity(estimates=short, audience__regions=["us", "gb"]))
         self.assertEqual(us["session"]["target_seconds"], 180)  # CrazyGames: 180s
-        self.assertIn("Target session raised from 90s to 180s",
+        self.assertIn("Target session raised from 120s to 180s: CrazyGames",
                       " ".join(us["production_scope"]["scope_decisions"]))
         self.assertTrue(any(a["statement"] == "Players sustain a 180-second session"
                             for a in us["assumptions"]))
-        self.assertEqual(plan(opportunity(estimates=short))["session"]["target_seconds"], 90)
+        # Yandex (60s) holds no bar above the first-session one.
+        self.assertEqual(plan(opportunity(estimates=short))["session"]["target_seconds"], 120)
+
+    def test_the_first_session_meets_the_design_depth_bar(self):
+        from wgf_design.depth import load_rules
+        bar = load_rules()["first_session"]["min_s"]
+        self.assertEqual(Policy.FIELDS["min_first_session_seconds"], bar)
+        body = plan(opportunity(estimates={"session_seconds": 60}))
+        self.assertEqual(body["session"]["first_session_seconds"], bar)
+        self.assertGreaterEqual(body["session"]["target_seconds"], bar)
 
     def test_rapid_production_bias(self):
         body = plan()

@@ -92,6 +92,9 @@ class Policy:
         "default_session_seconds": 180,
         "min_session_seconds": 60,
         "max_session_seconds": 300,
+        # Design's depth bar (core/reference/design-depth.yaml first_session.min_s, held equal
+        # by test_strategy): a first session shorter is refused at design, after G2.
+        "min_first_session_seconds": 120,
         "sessions_per_day_target": 3,
         "max_prototype_iterations": 2,
     }
@@ -286,7 +289,13 @@ class _Plan:
                 f"sessions keep content needs small and fit portal play patterns")
             target = policy.max_session_seconds
         target = max(policy.min_session_seconds, int(round(target)))
-        first = max(policy.min_session_seconds, int(round(target * 0.75 / 10.0)) * 10)
+        first = max(policy.min_session_seconds, policy.min_first_session_seconds,
+                    int(round(target * 0.75 / 10.0)) * 10)
+        if first > target:
+            self.decisions.append(
+                f"Target session raised from {target}s to {first}s: a first session must "
+                f"last {policy.min_first_session_seconds}s to show the loop more than once")
+            target = first
         self.session_body = {
             "first_session_seconds": min(first, target),
             "target_seconds": target,

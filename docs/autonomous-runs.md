@@ -95,7 +95,7 @@ money within the budget, and starts after you confirm.
 
 The profile lets the design author edit one file, by the host's path rule
 `Edit(/{draft})`, where `//` means an absolute path. That rule is written for POSIX paths: on
-Windows `{draft}` substitutes to `C:\...-1.draft.json`, the rule never matches, the host
+Windows `{draft}` substitutes to a drive-letter path (`C:/.../design/1-1.draft.json`), the rule never matches, the host
 refuses every Edit, and the author ends its session asking for permission it cannot be
 given - the step fails with "the design agent left the draft ... unchanged" (seen on the
 2.7.0 genre-depth runs). A project overlay on Windows allows `Edit` without a path

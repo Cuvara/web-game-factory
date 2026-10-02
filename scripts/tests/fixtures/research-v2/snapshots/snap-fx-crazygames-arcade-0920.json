@@ -1,0 +1,68 @@
+{
+  "id": "snap-fx-crazygames-arcade-0920",
+  "source_uri": "https://fixtures.invalid/research-v2/snap-fx-crazygames-arcade-0920",
+  "source_kind": "portal-listing",
+  "title": "FIXTURE crazygames listing",
+  "observed_at": "2026-09-20T00:00:00Z",
+  "retrieved_via": "fixture",
+  "platform": "crazygames",
+  "observations": [
+    {
+      "statement": "FIXTURE: FX Zombie Dash is listed in crazygames 'category:arcade most-popular'.",
+      "excerpt": "FIXTURE listing excerpt: FX Zombie Dash",
+      "subject": {
+        "platform": "crazygames",
+        "dimension": "competition"
+      },
+      "facts": {
+        "reference_title": {
+          "name": "FX Zombie Dash",
+          "genre": "runner",
+          "list": "category:arcade most-popular"
+        }
+      },
+      "tags": [
+        "reference-title",
+        "fixture"
+      ]
+    },
+    {
+      "statement": "FIXTURE: FX City Run is listed in crazygames 'category:arcade most-popular'.",
+      "excerpt": "FIXTURE listing excerpt: FX City Run",
+      "subject": {
+        "platform": "crazygames",
+        "dimension": "competition"
+      },
+      "facts": {
+        "reference_title": {
+          "name": "FX City Run",
+          "genre": "runner",
+          "list": "category:arcade most-popular"
+        }
+      },
+      "tags": [
+        "reference-title",
+        "fixture"
+      ]
+    },
+    {
+      "statement": "FIXTURE: FX Tap Tower is listed in crazygames 'category:arcade most-popular'.",
+      "excerpt": "FIXTURE listing excerpt: FX Tap Tower",
+      "subject": {
+        "platform": "crazygames",
+        "dimension": "competition"
+      },
+      "facts": {
+        "reference_title": {
+          "name": "FX Tap Tower",
+          "genre": "one-touch",
+          "list": "category:arcade most-popular"
+        }
+      },
+      "tags": [
+        "reference-title",
+        "fixture"
+      ]
+    }
+  ]
+}

@@ -8,7 +8,7 @@
     "id": "research-report",
     "kind": "artifact",
     "format": "json",
-    "version": "1.1.0",
+    "version": "1.2.0",
     "producer": "portfolio:market-scan",
     "consumers": ["portfolio:scored", "title:strategy"],
     "repo_path": "workspace/research/reports/<report-id>.json",
@@ -280,11 +280,140 @@
       "required": ["kind", "description"],
       "properties": {
         "kind": {
-          "enum": ["no-external-evidence", "idea-unmatched", "unscored-dimension", "stale-source", "rejected-observation", "collector-failure", "probe-miss", "profile-discrepancy", "unverified-profile"]
+          "enum": ["no-external-evidence", "idea-unmatched", "unscored-dimension", "stale-source", "rejected-observation", "collector-failure", "probe-miss", "profile-discrepancy", "unverified-profile", "insufficient-support", "insufficient-demand-evidence", "insufficient-history", "unmapped-vocabulary", "uncoded-facet", "capability-gap", "fixture-evidence"]
         },
         "description": { "type": "string" },
         "source_id": { "type": "string" },
         "platform": { "type": "string" }
+      },
+      "additionalProperties": false
+    },
+
+    "corpus": {
+      "type": "object",
+      "description": "Research V2: the game corpus the scan read, and the vocabulary and analysis configuration it was coded and counted under.",
+      "required": ["vocabulary", "analysis", "games", "teardown_games", "listing_games", "fixture_games", "sessions"],
+      "properties": {
+        "vocabulary": {"type": "object", "required": ["version", "file_hash"], "properties": {"version": {"type": "string"}, "file_hash": {"$ref": "./shared/provenance.schema.json#/$defs/hash"}}, "additionalProperties": false},
+        "analysis": {"type": "object", "required": ["version", "file_hash"], "properties": {"version": {"type": "string"}, "file_hash": {"$ref": "./shared/provenance.schema.json#/$defs/hash"}}, "additionalProperties": false},
+        "games": { "type": "integer", "minimum": 0 },
+        "teardown_games": { "type": "integer", "minimum": 0, "description": "Games with at least one session beyond a listing (played, store page, capture): coded on how they play." },
+        "listing_games": { "type": "integer", "minimum": 0, "description": "Games known only from portal listings: a genre and where they are listed, nothing about how they play." },
+        "fixture_games": { "type": "integer", "minimum": 0, "description": "Games from records marked fixture: test data, never real evidence." },
+        "sessions": { "type": "integer", "minimum": 0 }
+      },
+      "additionalProperties": false
+    },
+    "game": {
+      "type": "object",
+      "description": "One game in the corpus, as compared across the shared facets. Every facet value names the claims it rests on.",
+      "required": ["id", "name", "depth", "platforms", "facets", "claim_refs"],
+      "properties": {
+        "id": { "type": "string", "pattern": "^game-[a-z0-9][a-z0-9-]*$" },
+        "name": { "type": "string" },
+        "depth": { "enum": ["listing", "teardown"] },
+        "fixture": { "type": "boolean" },
+        "platforms": { "type": "array", "items": { "type": "string" } },
+        "listings": {"type": "array", "items": {"type": "object", "required": ["platform", "list", "list_kind", "claim"], "properties": {"platform": {"type": "string"}, "list": {"type": "string"}, "list_kind": {"enum": ["popularity", "editorial", "category"]}, "claim": {"type": "string"}, "observed_at": {"type": "string"}}, "additionalProperties": false}},
+        "facets": {"type": "object", "additionalProperties": {"type": "object", "required": ["value", "tier", "claim_refs"], "properties": {"value": {"type": ["string", "number", "array"], "items": {"type": "string"}}, "tier": {"enum": ["observed", "derived"]}, "claim_refs": {"$ref": "#/$defs/claimRefs"}}, "additionalProperties": false}},
+        "claim_refs": { "$ref": "#/$defs/claimRefs" }
+      },
+      "additionalProperties": false
+    },
+    "facetSummary": {
+      "type": "object",
+      "description": "One facet over the corpus: how many games are in scope, how many are coded on it, and which games hold which value. Uncoded games are not counted as anything.",
+      "required": ["facet", "games_in_scope", "coded", "values"],
+      "properties": {
+        "facet": { "type": "string" },
+        "games_in_scope": { "type": "integer", "minimum": 0 },
+        "coded": { "type": "integer", "minimum": 0 },
+        "values": {"type": "array", "items": {"type": "object", "required": ["value", "games"], "properties": {"value": {"type": ["string", "number"]}, "label": {"type": "string"}, "games": {"type": "array", "items": {"type": "string"}}}, "additionalProperties": false}},
+        "benchmark": {"type": "object", "properties": {"median": {"type": "number"}, "min": {"type": "number"}, "max": {"type": "number"}, "n": {"type": "integer", "minimum": 1}, "unit": {"type": "string"}}, "additionalProperties": false}
+      },
+      "additionalProperties": false
+    },
+    "analyses": {
+      "type": "object",
+      "description": "One view per research domain over the same corpus - not independent research systems.",
+      "required": ["genre", "gameplay", "mechanics", "theme", "fantasy", "art", "audience", "session_retention", "monetization", "ux", "production"],
+      "properties": {
+        "genre": { "type": "array", "items": { "$ref": "#/$defs/facetSummary" } },
+        "gameplay": { "type": "array", "items": { "$ref": "#/$defs/facetSummary" } },
+        "mechanics": { "type": "array", "items": { "$ref": "#/$defs/facetSummary" } },
+        "theme": { "type": "array", "items": { "$ref": "#/$defs/facetSummary" } },
+        "fantasy": { "type": "array", "items": { "$ref": "#/$defs/facetSummary" } },
+        "art": { "type": "array", "items": { "$ref": "#/$defs/facetSummary" } },
+        "audience": { "type": "array", "items": { "$ref": "#/$defs/facetSummary" } },
+        "session_retention": { "type": "array", "items": { "$ref": "#/$defs/facetSummary" } },
+        "monetization": { "type": "array", "items": { "$ref": "#/$defs/facetSummary" } },
+        "ux": { "type": "array", "items": { "$ref": "#/$defs/facetSummary" } },
+        "production": { "type": "array", "items": { "$ref": "#/$defs/facetSummary" } }
+      },
+      "additionalProperties": false
+    },
+    "market": {
+      "type": "object",
+      "description": "Popularity, demand, supply, saturation, competition and trend, kept apart. Every share states its numerator, denominator and frame.",
+      "required": ["frames", "cells", "trend"],
+      "properties": {
+        "frames": {"type": "array", "items": {"type": "object", "required": ["id", "platform", "list", "list_kind", "observed_at", "titles", "claim_refs"], "properties": {"id": {"type": "string"}, "platform": {"type": "string"}, "list": {"type": "string"}, "list_kind": {"enum": ["popularity", "editorial", "category"]}, "observed_at": {"type": "string"}, "titles": {"type": "integer", "minimum": 0}, "claim_refs": {"$ref": "#/$defs/claimRefs"}}, "additionalProperties": false}},
+        "cells": { "type": "array", "items": { "$ref": "./shared/research-opportunity.schema.json#/$defs/marketCell" } },
+        "trend": {"type": "object", "required": ["status", "reason"], "properties": {"status": {"enum": ["available", "insufficient-history"]}, "reason": {"type": "string"}, "series": {"type": "integer", "minimum": 0}}, "additionalProperties": false}
+      },
+      "additionalProperties": false
+    },
+    "pattern": {
+      "type": "object",
+      "description": "A cross-game pattern: of the games coded a=X (and coded on b at all), how many have b=Y. Descriptive, never causal.",
+      "required": ["id", "pair", "kind", "statement", "a", "b", "numerator", "denominator", "prevalence", "members", "exceptions", "claim"],
+      "properties": {
+        "id": { "type": "string" },
+        "pair": { "type": "string" },
+        "kind": { "type": "string" },
+        "statement": { "type": "string" },
+        "a": {"type": "object", "required": ["facet", "value"], "properties": {"facet": {"type": "string"}, "value": {"type": ["string", "number"]}}, "additionalProperties": false},
+        "b": {"type": "object", "required": ["facet", "value"], "properties": {"facet": {"type": "string"}, "value": {"type": ["string", "number"]}}, "additionalProperties": false},
+        "numerator": { "type": "integer", "minimum": 1 },
+        "denominator": { "type": "integer", "minimum": 1 },
+        "prevalence": { "$ref": "#/$defs/ratio" },
+        "members": { "type": "array", "items": { "type": "string" } },
+        "exceptions": { "type": "array", "items": { "type": "string" } },
+        "unknown": { "type": "array", "items": { "type": "string" } },
+        "claim": { "type": "string" }
+      },
+      "additionalProperties": false
+    },
+    "benchmark": {
+      "type": "object",
+      "description": "A measured facet (seconds, taps, assets) summarised over the teardown games of one genre node.",
+      "required": ["id", "genre", "facet", "unit", "median", "min", "max", "n", "games", "claim"],
+      "properties": {
+        "id": { "type": "string" },
+        "genre": { "type": "string" },
+        "facet": { "type": "string" },
+        "unit": { "type": "string" },
+        "median": { "type": "number" },
+        "min": { "type": "number" },
+        "max": { "type": "number" },
+        "n": { "type": "integer", "minimum": 1 },
+        "games": { "type": "array", "items": { "type": "string" } },
+        "claim": { "type": "string" }
+      },
+      "additionalProperties": false
+    },
+    "capabilityGap": {
+      "type": "object",
+      "description": "An opportunity the Factory cannot build yet, kept with what is missing - never silently discarded.",
+      "required": ["opportunity_id", "genre", "missing", "reason"],
+      "properties": {
+        "opportunity_id": { "type": "string" },
+        "genre": { "type": "string" },
+        "catalog_entry": { "type": ["string", "null"] },
+        "missing": { "type": "array", "items": { "type": "string" } },
+        "reason": { "type": "string" },
+        "evidence_backed": { "type": "boolean" },
+        "claim_refs": { "$ref": "#/$defs/claimRefs" }
       },
       "additionalProperties": false
     }
@@ -398,7 +527,27 @@
       "type": "array",
       "description": "What the scan could not establish. As much a finding as anything it did establish.",
       "items": { "$ref": "#/$defs/gap" }
-    }
+    },
+
+    "research_version": { "const": 2, "description": "Present on a Research V2 report (added in 1.2.0). When present, the game corpus, the per-domain analyses, the competitors, the market cells, the cross-game patterns, the benchmarks, every opportunity and every capability gap are required." },
+    "corpus": { "$ref": "#/$defs/corpus" },
+    "analyses": { "$ref": "#/$defs/analyses" },
+    "competitors": { "type": "array", "description": "The corpus's games, compared on the shared facets.", "items": { "$ref": "#/$defs/game" } },
+    "market": { "$ref": "#/$defs/market" },
+    "patterns": { "type": "array", "items": { "$ref": "#/$defs/pattern" } },
+    "benchmarks": { "type": "array", "items": { "$ref": "#/$defs/benchmark" } },
+    "opportunities": {
+      "type": "array",
+      "description": "Every opportunity the scan proposed, buildable or not, each with its full research block. The selected one is also the run's `opportunity` artifact; the rest are kept so G1 can choose among them and the backlog can hold them.",
+      "items": { "$ref": "./shared/research-opportunity.schema.json#/$defs/research" }
+    },
+    "capability_gaps": { "type": "array", "items": { "$ref": "#/$defs/capabilityGap" } }
   },
+  "allOf": [
+    {
+      "if": { "required": ["research_version"] },
+      "then": { "required": ["corpus", "analyses", "competitors", "market", "patterns", "benchmarks", "opportunities", "capability_gaps"] }
+    }
+  ],
   "additionalProperties": false
 }

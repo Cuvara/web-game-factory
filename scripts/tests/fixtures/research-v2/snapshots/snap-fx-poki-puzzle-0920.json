@@ -1,0 +1,206 @@
+{
+  "id": "snap-fx-poki-puzzle-0920",
+  "source_uri": "https://fixtures.invalid/research-v2/snap-fx-poki-puzzle-0920",
+  "source_kind": "portal-listing",
+  "title": "FIXTURE poki listing",
+  "observed_at": "2026-09-20T00:00:00Z",
+  "retrieved_via": "fixture",
+  "platform": "poki",
+  "observations": [
+    {
+      "statement": "FIXTURE: FX Candy Swap is listed in poki 'category:puzzle most-popular'.",
+      "excerpt": "FIXTURE listing excerpt: FX Candy Swap",
+      "subject": {
+        "platform": "poki",
+        "dimension": "competition"
+      },
+      "facts": {
+        "reference_title": {
+          "name": "FX Candy Swap",
+          "genre": "match-3",
+          "list": "category:puzzle most-popular"
+        }
+      },
+      "tags": [
+        "reference-title",
+        "fixture"
+      ]
+    },
+    {
+      "statement": "FIXTURE: FX Fruit Swap is listed in poki 'category:puzzle most-popular'.",
+      "excerpt": "FIXTURE listing excerpt: FX Fruit Swap",
+      "subject": {
+        "platform": "poki",
+        "dimension": "competition"
+      },
+      "facts": {
+        "reference_title": {
+          "name": "FX Fruit Swap",
+          "genre": "match-3",
+          "list": "category:puzzle most-popular"
+        }
+      },
+      "tags": [
+        "reference-title",
+        "fixture"
+      ]
+    },
+    {
+      "statement": "FIXTURE: FX Gem Swap is listed in poki 'category:puzzle most-popular'.",
+      "excerpt": "FIXTURE listing excerpt: FX Gem Swap",
+      "subject": {
+        "platform": "poki",
+        "dimension": "competition"
+      },
+      "facts": {
+        "reference_title": {
+          "name": "FX Gem Swap",
+          "genre": "match-3",
+          "list": "category:puzzle most-popular"
+        }
+      },
+      "tags": [
+        "reference-title",
+        "fixture"
+      ]
+    },
+    {
+      "statement": "FIXTURE: FX Cozy Merge is listed in poki 'category:puzzle most-popular'.",
+      "excerpt": "FIXTURE listing excerpt: FX Cozy Merge",
+      "subject": {
+        "platform": "poki",
+        "dimension": "competition"
+      },
+      "facts": {
+        "reference_title": {
+          "name": "FX Cozy Merge",
+          "genre": "merge",
+          "list": "category:puzzle most-popular"
+        }
+      },
+      "tags": [
+        "reference-title",
+        "fixture"
+      ]
+    },
+    {
+      "statement": "FIXTURE: FX Block Blast is listed in poki 'category:puzzle most-popular'.",
+      "excerpt": "FIXTURE listing excerpt: FX Block Blast",
+      "subject": {
+        "platform": "poki",
+        "dimension": "competition"
+      },
+      "facts": {
+        "reference_title": {
+          "name": "FX Block Blast",
+          "genre": "block-puzzle",
+          "list": "category:puzzle most-popular"
+        }
+      },
+      "tags": [
+        "reference-title",
+        "fixture"
+      ]
+    },
+    {
+      "statement": "FIXTURE: poki lists 300 Puzzle Games.",
+      "excerpt": "FIXTURE category excerpt: 300 Puzzle Games",
+      "subject": {
+        "platform": "poki",
+        "dimension": "competition",
+        "genre": "puzzle"
+      },
+      "facts": {
+        "category": {
+          "name": "Puzzle Games",
+          "genre": "puzzle",
+          "game_count": 300
+        }
+      },
+      "tags": [
+        "category-size",
+        "fixture"
+      ]
+    },
+    {
+      "statement": "FIXTURE: poki lists 30 Match 3 Games.",
+      "excerpt": "FIXTURE category excerpt: 30 Match 3 Games",
+      "subject": {
+        "platform": "poki",
+        "dimension": "competition",
+        "genre": "match-3"
+      },
+      "facts": {
+        "category": {
+          "name": "Match 3 Games",
+          "genre": "match-3",
+          "game_count": 30
+        }
+      },
+      "tags": [
+        "category-size",
+        "fixture"
+      ]
+    },
+    {
+      "statement": "FIXTURE: poki lists 60 Merge Games.",
+      "excerpt": "FIXTURE category excerpt: 60 Merge Games",
+      "subject": {
+        "platform": "poki",
+        "dimension": "competition",
+        "genre": "merge"
+      },
+      "facts": {
+        "category": {
+          "name": "Merge Games",
+          "genre": "merge",
+          "game_count": 60
+        }
+      },
+      "tags": [
+        "category-size",
+        "fixture"
+      ]
+    },
+    {
+      "statement": "FIXTURE: poki lists 10 Block Games.",
+      "excerpt": "FIXTURE category excerpt: 10 Block Games",
+      "subject": {
+        "platform": "poki",
+        "dimension": "competition",
+        "genre": "block-puzzle"
+      },
+      "facts": {
+        "category": {
+          "name": "Block Games",
+          "genre": "block-puzzle",
+          "game_count": 10
+        }
+      },
+      "tags": [
+        "category-size",
+        "fixture"
+      ]
+    },
+    {
+      "statement": "FIXTURE: poki lists 15 Sort Games.",
+      "excerpt": "FIXTURE category excerpt: 15 Sort Games",
+      "subject": {
+        "platform": "poki",
+        "dimension": "competition",
+        "genre": "sorting"
+      },
+      "facts": {
+        "category": {
+          "name": "Sort Games",
+          "genre": "sorting",
+          "game_count": 15
+        }
+      },
+      "tags": [
+        "category-size",
+        "fixture"
+      ]
+    }
+  ]
+}

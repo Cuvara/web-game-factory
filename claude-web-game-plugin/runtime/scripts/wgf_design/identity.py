@@ -12,12 +12,18 @@ Faces are from the Google Fonts catalogue under the SIL Open Font License, becau
 inside the game bundle and a portal will ask. The kit is chosen from the archetype's affinity
 list by a stable digest of the title id, so a title keeps its look across re-runs, and a
 workflow can pin one with `with: {identity: <id>}`.
+
+When the strategy carries research (Research V2) that observed an art direction - a tone, a
+palette class, a rendering style in the research vocabulary - the kit is chosen by how many of
+those it matches (`TRAITS`), and the digest only breaks ties. The title id never overrides an
+art direction research supports; it decides only what research left open.
 """
 
 import copy
 import hashlib
 
-__all__ = ["KITS", "ALTERNATES", "choose", "cover", "families", "font_source"]
+__all__ = ["KITS", "ALTERNATES", "TRAITS", "choose", "cover", "families", "font_source",
+           "look", "pick"]
 
 UNIVERSAL_AVOID = [
     "System or default UI fonts (Arial, Roboto, Inter, the browser default)",
@@ -175,19 +181,71 @@ ALTERNATES = {
 }
 
 
-def choose(title_id, affinity, pinned=None):
-    """Return (kit_id, kit dict with the universal avoid list applied)."""
+
+# What each kit is, in research-vocabulary terms (core/reference/research-vocabulary.yaml:
+# art_tones, art_palettes, art_renderings).
+TRAITS = {
+    "neon-night": {"tone": ["neon", "dark"], "palette": ["dark-glow", "saturated"],
+                   "rendering": ["vector-flat"]},
+    "riso-arcade": {"tone": ["retro", "bold", "cute"], "palette": ["saturated", "warm-paper"],
+                    "rendering": ["hand-drawn", "pixel"]},
+    "signal-brutal": {"tone": ["bold", "minimal", "neutral"],
+                      "palette": ["monochrome-accent", "saturated"],
+                      "rendering": ["vector-flat"]},
+    "paper-diorama": {"tone": ["cozy", "cute"], "palette": ["pastel", "warm-paper", "muted"],
+                      "rendering": ["hand-drawn", "low-poly"]},
+    "lacquer-brass": {"tone": ["dark", "retro"], "palette": ["muted", "dark-glow"],
+                      "rendering": ["stylized-3d", "low-poly"]},
+    "solar-bleach": {"tone": ["minimal", "neutral"], "palette": ["muted", "pastel"],
+                     "rendering": ["low-poly", "vector-flat"]},
+}
+
+
+def _digest_pick(title_id, candidates):
+    digest = hashlib.sha256((title_id or "").encode("utf-8")).digest()
+    return candidates[digest[0] % len(candidates)]
+
+
+def pick(title_id, affinity, pinned=None, art=None):
+    """(kit id, basis, matched): which kit, by which rule, matching which research values.
+
+    `art`: {"tone": id, "palette": id, "rendering": id}, the values research supports (any
+    may be missing). With at least one, the kits matching most of them win - preferring the
+    archetype's affinity list when one of its kits matches at all - and the title digest only
+    breaks a tie (basis `research`). Without one, the digest picks within the affinity list
+    (basis `title-digest`). A pin overrides both (basis `pinned`)."""
+    art = {k: v for k, v in (art or {}).items() if isinstance(v, str) and v}
     if pinned:
         if pinned not in KITS:
             raise KeyError(f"unknown identity kit {pinned!r}; known: {', '.join(sorted(KITS))}")
-        kit_id = pinned
-    else:
-        candidates = [k for k in affinity if k in KITS] or sorted(KITS)
-        digest = hashlib.sha256((title_id or "").encode("utf-8")).digest()
-        kit_id = candidates[digest[0] % len(candidates)]
+        return pinned, "pinned", []
+    candidates = [k for k in affinity if k in KITS] or sorted(KITS)
+
+    def score(kit):
+        return sum(1 for key, value in art.items() if value in TRAITS[kit].get(key, []))
+    if art:
+        if max(score(k) for k in candidates) == 0:
+            candidates = sorted(KITS)
+        best = max(score(k) for k in candidates)
+        if best > 0:
+            kit_id = _digest_pick(title_id, [k for k in candidates if score(k) == best])
+            matched = sorted(f"{key}={value}" for key, value in art.items()
+                             if value in TRAITS[kit_id].get(key, []))
+            return kit_id, "research", matched
+    return _digest_pick(title_id, candidates), "title-digest", []
+
+
+def choose(title_id, affinity, pinned=None, art=None):
+    """Return (kit_id, kit dict with the universal avoid list applied). See `pick`."""
+    kit_id = pick(title_id, affinity, pinned, art)[0]
+    return kit_id, look(kit_id)
+
+
+def look(kit_id):
+    """The kit as a design carries it, with the universal avoid list applied."""
     identity = copy.deepcopy(KITS[kit_id])
     identity["avoid"] += UNIVERSAL_AVOID
-    return kit_id, identity
+    return identity
 
 
 def families(typography):

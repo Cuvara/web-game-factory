@@ -12,6 +12,6 @@
   },
   "asserted_at": "2026-08-28T11:00:00Z",
   "asserted_by": "research",
-  "superseded_by": null,
+  "superseded_by": "claim-0a06",
   "tags": ["controls", "positioning"]
 }

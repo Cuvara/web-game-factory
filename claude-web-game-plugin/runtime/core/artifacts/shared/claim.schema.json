@@ -59,6 +59,18 @@
             "unit": { "type": "string" }
           },
           "additionalProperties": false
+        },
+        "method": {
+          "type": "string",
+          "description": "How the source was read: web-fetch, played, listing, store-page, screenshot, video. A played observation also names its session."
+        },
+        "session_id": {
+          "type": "string",
+          "description": "The teardown session (game-record sessions[].id) this evidence comes from."
+        },
+        "capture_uri": {
+          "type": "string",
+          "description": "A recording, screenshot set or notes the excerpt can be checked against."
         }
       },
       "additionalProperties": false
@@ -94,6 +106,20 @@
           "items": { "type": "string" },
           "default": []
         },
+        "support": {
+          "type": "object",
+          "description": "The count a derived pattern or market statistic rests on. A share means nothing without its denominator, so a claim tagged `pattern` must carry one: how many members show it (numerator), out of how many were coded on the question at all (denominator), which do, and which do not.",
+          "required": ["numerator", "denominator", "members", "frame"],
+          "properties": {
+            "numerator": { "type": "integer", "minimum": 0 },
+            "denominator": { "type": "integer", "minimum": 1 },
+            "members": { "type": "array", "items": { "type": "string" }, "description": "Ids (games, titles) counted in the numerator." },
+            "exceptions": { "type": "array", "items": { "type": "string" }, "description": "Ids in the denominator that do not show it." },
+            "unknown": { "type": "array", "items": { "type": "string" }, "description": "Ids in scope but not coded on the counted facet: neither members nor exceptions, and not in the denominator." },
+            "frame": { "type": "string", "minLength": 1, "description": "What was counted over: the corpus slice, list and date." }
+          },
+          "additionalProperties": false
+        },
         "subject": {
           "type": "object",
           "description": "What the claim is about, so claims can be retrieved by facet.",
@@ -102,7 +128,14 @@
             "mechanic": { "type": "string" },
             "platform": { "type": "string" },
             "audience": { "type": "string" },
-            "dimension": { "type": "string" }
+            "dimension": { "type": "string" },
+            "game": { "type": "string", "description": "Game-record id (game-<slug>)." },
+            "facet": { "type": "string", "description": "Research-vocabulary facet the claim codes or counts." },
+            "theme": { "type": "string" },
+            "fantasy": { "type": "string" },
+            "art": { "type": "string" },
+            "pattern": { "type": "string" },
+            "cell": { "type": "string", "description": "Market cell: <genre node>@<platform>." }
           },
           "additionalProperties": false
         },
@@ -146,6 +179,21 @@
           "then": {
             "properties": { "confidence": { "maximum": 0.6 } },
             "description": "A hypothesis may not claim high confidence. If you are more sure than this, find evidence and restate it as observed or derived."
+          }
+        },
+        {
+          "if": { "properties": { "tags": { "contains": { "const": "pattern" } } }, "required": ["tags"] },
+          "then": {
+            "required": ["support"],
+            "properties": { "tier": { "const": "derived" } },
+            "description": "A pattern is derived from observations, and states its numerator and denominator."
+          }
+        },
+        {
+          "if": { "required": ["support"] },
+          "then": {
+            "properties": { "tier": { "const": "derived" } },
+            "description": "Only a derived claim counts: an observation is one fact, and a hypothesis counts nothing."
           }
         }
       ]

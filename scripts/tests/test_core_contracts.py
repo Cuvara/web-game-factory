@@ -79,7 +79,9 @@ UNSCHEMATIZED = {
 }
 
 REFERENCE_FILES = (
-    [(os.path.join(paths.REFERENCE, "dimensions.yaml"), "dimension-vocabulary")]
+    [(os.path.join(paths.REFERENCE, "dimensions.yaml"), "dimension-vocabulary"),
+     (os.path.join(paths.REFERENCE, "research-vocabulary.yaml"), "research-vocabulary"),
+     (os.path.join(paths.REFERENCE, "research-analysis.yaml"), "research-analysis")]
     + [(path, "platform-profile")
        for path in sorted(glob.glob(os.path.join(paths.PLATFORMS, "*.yaml")))]
     + [(path, "scoring-model")
@@ -119,6 +121,8 @@ def workspace_instances():
             schema_id = provenance.get("artifact_type")
         elif relative == "claims":
             schema_id = "claim"
+        elif relative == os.path.join("research", "games"):
+            schema_id = "game-record"        # teardown records: the corpus's own format
         else:
             schema_id = os.path.basename(path)[:-len(".json")]
         found.append((path, schema_id))

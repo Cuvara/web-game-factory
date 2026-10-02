@@ -1,8 +1,15 @@
-# Discovery module - candidate archetype catalog.
+# Discovery module - the build-capability catalog.
 #
-# The shapes of web game the market scan considers. The scan's job is to find out which of
-# these the evidence favours on the target portals, not to invent a game from nothing - and
-# a catalog makes "what else did you consider?" answerable at G1.
+# What the Factory can build, and what it cannot yet. Research V2 discovers opportunities from
+# a game corpus (wgf_discovery/corpus.py, opportunities.py) - this catalog no longer bounds
+# what research may propose. It answers, for any opportunity: is there a shape the Factory
+# can build for it (an entry covering its genre node, with a `design_archetype`), what does
+# that need (`requires`), and when it cannot be built, why not (`unavailable`). An opportunity
+# with no buildable entry is kept as a capability gap, never discarded.
+#
+# Each entry is also still screened as a candidate in its own right (the `capability-screen`
+# generator): its platform fit and catalog estimates against the scoped portals - so "what
+# else did you consider?" stays answerable at G1.
 #
 # EVERY NUMBER HERE IS AN ESTIMATE, not a measurement. The research step turns each
 # archetype's figures into one `hypothesis` claim (capped at 0.6 confidence), and every
@@ -18,6 +25,11 @@
 #   asset_cost_usd      library and generated sources, not commissioned art
 #   bundle_mb           expected initial download
 #   priors              0..1 guesses for dimensions no public source measures
+#   genre_node          the research-vocabulary genre node the entry builds; it covers that
+#                       node's subtree (core/reference/research-vocabulary.yaml)
+#   mechanics           the vocabulary mechanics the entry's design implements
+#   requires            the technical and asset capabilities the shape needs
+#   unavailable         why the Factory cannot build it yet (entries with design_archetype null)
 #   design_archetype    the design module's archetype (scripts/wgf_design/archetypes.py) that
 #                       designs this concept so it passes design consistency, or null: the
 #                       Factory cannot design it yet, and research never selects it - it is
@@ -28,7 +40,7 @@
 # No revenue figure appears here, deliberately: revenue_potential needs at least a derived
 # claim (core/reference/dimensions.yaml), and a catalog guess would anchor everyone.
 
-version: 1.1.0  # 1.1.0: design_archetype
+version: 1.2.0  # 1.1.0: design_archetype; 1.2.0: capability fields (genre_node, mechanics, requires, unavailable)
 
 archetypes:
   - id: block-puzzle
@@ -36,6 +48,10 @@ archetypes:
     genre: puzzle
     subgenre: block-puzzle
     design_archetype: null
+    genre_node: block-puzzle
+    mechanics: [drag-place, line-clear]
+    requires: [2d grid board, drag input, line-clear rules]
+    unavailable: no design archetype places given block shapes on a grid and clears lines; merge-puzzle (grid) and drop-merge are the nearest
     market_tags: [puzzle, block-puzzle, casual]
     core_mechanic: drag given block shapes onto a grid; full rows and columns clear
     fantasy: turning a cluttered board into a clean one, one satisfying clear at a time
@@ -66,6 +82,10 @@ archetypes:
     genre: puzzle
     subgenre: sorting
     design_archetype: null
+    genre_node: sort-puzzle
+    mechanics: [sort-move]
+    requires: [2d containers, tap-to-move input, hand-authored or generated levels]
+    unavailable: no design archetype moves units between containers; level authoring is not part of the design module
     market_tags: [puzzle, sorting, casual]
     core_mechanic: move coloured units between containers until each container holds one colour
     fantasy: bringing order to a mess with a few clever moves
@@ -96,6 +116,10 @@ archetypes:
     genre: idle
     subgenre: merge
     design_archetype: null
+    genre_node: idle-merge
+    mechanics: [merge-combine, upgrade-tap]
+    requires: [2d board, offline progress economy, cloud or local save]
+    unavailable: no design archetype runs an idle economy; offline progress and economy balancing are outside the design module
     market_tags: [idle, merge, clicker]
     core_mechanic: merge identical items into higher tiers that produce currency, including while away
     fantasy: building an empire that keeps growing when you are not looking
@@ -126,6 +150,10 @@ archetypes:
     genre: arcade
     subgenre: one-touch
     design_archetype: null
+    genre_node: one-touch
+    mechanics: [tap-timing]
+    requires: [2d, single-input timing loop]
+    unavailable: design's one-touch archetype does not carry this concept through design consistency (pinned by scripts/tests/test_research_to_design.py)
     market_tags: [arcade, casual]
     core_mechanic: a single tap timed to dodge, jump or stack
     fantasy: precision under pressure
@@ -156,6 +184,9 @@ archetypes:
     genre: arcade
     subgenre: runner
     design_archetype: lane-runner
+    genre_node: runner
+    mechanics: [lane-switch, dodge, collect]
+    requires: [3d lane track, swipe input, procedural obstacle spawning]
     market_tags: [runner, arcade, action]
     core_mechanic: swipe between lanes to dodge obstacles and collect pickups at rising speed
     fantasy: speed and near misses
@@ -186,6 +217,10 @@ archetypes:
     genre: io
     subgenre: arena
     design_archetype: null
+    genre_node: io
+    mechanics: [grow, dodge]
+    requires: [realtime server, netcode, matchmaking, bots]
+    unavailable: WGF has no realtime networking capability: no server, netcode or bots in the template or the design module
     market_tags: [io, multiplayer, action]
     core_mechanic: real-time arena where players grow by absorbing smaller entities
     fantasy: rising from the smallest to the biggest thing on the map
@@ -217,6 +252,10 @@ archetypes:
     genre: puzzle
     subgenre: physics
     design_archetype: null
+    genre_node: physics-puzzle
+    mechanics: [physics-launch, stack]
+    requires: [deterministic 2d rigid-body physics, level authoring]
+    unavailable: no rigid-body physics archetype; determinism across devices is unproven in the template
     market_tags: [physics, puzzle]
     core_mechanic: cut, draw or remove pieces so physics carries an object to its goal
     fantasy: the aha of a contraption doing exactly what you planned
@@ -247,6 +286,10 @@ archetypes:
     genre: puzzle
     subgenre: word
     design_archetype: null
+    genre_node: word
+    mechanics: [word-form]
+    requires: [per-locale dictionaries, per-locale level sets, text rendering]
+    unavailable: no word archetype, and no per-locale dictionary or level-set capability
     market_tags: [word, puzzle]
     core_mechanic: form words from a letter set to fill a crossword-style grid
     fantasy: feeling clever with words
@@ -277,6 +320,9 @@ archetypes:
     genre: puzzle
     subgenre: match-3
     design_archetype: merge-puzzle
+    genre_node: match-3
+    mechanics: [swap-match]
+    requires: [2d grid board, swap input, cascade resolution]
     market_tags: [match-3, puzzle, casual]
     core_mechanic: swap adjacent tiles to match three or more of a colour against level goals
     fantasy: cascading combos that clear the board
@@ -307,6 +353,10 @@ archetypes:
     genre: card
     subgenre: solitaire
     design_archetype: null
+    genre_node: solitaire
+    mechanics: [card-move]
+    requires: [card rules engine, drag input, deal generation]
+    unavailable: no card-rules archetype in the design module
     market_tags: [card, solitaire, board]
     core_mechanic: build foundation piles from a shuffled tableau
     fantasy: a calm, familiar ritual
@@ -337,6 +387,10 @@ archetypes:
     genre: driving
     subgenre: parking
     design_archetype: null
+    genre_node: parking
+    mechanics: [steer]
+    requires: [3d vehicle physics, 3d vehicle and environment assets]
+    unavailable: no vehicle-steering archetype; vehicle physics and assets are beyond the current 3d archetypes
     market_tags: [parking, driving, racing, simulation]
     core_mechanic: steer a vehicle into a tight space without collisions
     fantasy: precision driving mastery

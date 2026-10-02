@@ -42,6 +42,10 @@ agents:
       - core/artifacts/opportunity.schema.json
       - core/artifacts/research-report.schema.json
       - core/reference/dimensions.yaml
+      - core/reference/research-vocabulary.yaml
+      - core/reference/research-analysis.yaml
+      - core/artifacts/shared/game-record.schema.json
+      - core/artifacts/shared/research-opportunity.schema.json
       - core/craft/competitive-teardown.md
       - core/craft/research-evidence.md
     produces: [claim, opportunity, research-report]
@@ -80,6 +84,7 @@ agents:
       - core/craft/game-ui-kit.md
       - core/craft/juice.md
       - core/craft/retention-and-progression.md
+      - core/artifacts/shared/research-opportunity.schema.json
     produces: [title-strategy, game-design]
     consumes: [opportunity, evaluation, claim]
 
@@ -326,12 +331,15 @@ skills:
     supports: [research]
     covers: >
       Normalizing platform signal into tiered claims and keeping evidence honest,
-      including competitive teardowns of how leading portal games actually play.
+      including competitive teardowns of how leading portal games actually play, coded on
+      the shared research vocabulary into a game corpus.
     reads:
       - core/lifecycle/stages/market-scan.md
       - core/artifacts/shared/claim.schema.json
       - core/craft/competitive-teardown.md
       - core/craft/research-evidence.md
+      - core/reference/research-vocabulary.yaml
+      - core/artifacts/shared/game-record.schema.json
   - id: opportunity-scoring
     supports: [analysis]
     covers: >

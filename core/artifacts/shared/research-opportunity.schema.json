@@ -1147,8 +1147,10 @@
               "source": {
                 "enum": [
                   "research",
-                  "default"
-                ]
+                  "default",
+                  "brief"
+                ],
+                "description": "research: a coded fact decided it; default: the module's default did; brief: the person's idea did (the concept of a title on a genre-model entry)."
               },
               "detail": {
                 "type": "string"

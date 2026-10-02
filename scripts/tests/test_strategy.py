@@ -333,6 +333,35 @@ class ContentModel(unittest.TestCase):
         self.assertIn("research coded no content shape", applied["detail"])
         self.assertNotIn("claim_refs", applied)
 
+    def test_an_idea_on_a_genre_model_entry_is_the_concept(self):
+        # Research named no hand-coded archetype, only the family the Factory can build: the
+        # catalog entry is a capability and the person's idea is the game. The concept is read
+        # from the brief, the family's loop says what a session is, and the content model
+        # bounds the design; the catalog's seed wording never replaces the idea.
+        idea = "A lane tower defense on a kitchen counter: four tower types and twelve waves"
+        body = plan(opportunity(brief=idea,
+                                research=research_block(genre="tower-defense",
+                                                        family="strategy",
+                                                        genre_model="strategy")))
+        self.assertEqual(body["one_liner"], idea + ".")
+        self.assertEqual(body["concept"]["core_mechanic"], idea)
+        self.assertIn("hold the wave", body["concept"]["core_loop"])
+        self.assertIn(f"The brief, built in full: {idea}", body["mvp"])
+        self.assertEqual(body["brief"], idea)
+        applied = next(a for a in body["research"]["applied"] if a["field"] == "concept")
+        self.assertEqual(applied["source"], "brief")
+        self.assertTrue(any("is the concept" in a["statement"] for a in body["assumptions"]))
+
+    def test_an_idea_on_a_design_archetype_entry_keeps_the_catalog_concept(self):
+        # A hand-coded archetype is the game research selected; the brief is recorded, never
+        # folded into the concept, so its words cannot re-pick the archetype.
+        research = research_block(genre="match-3", family="puzzle")
+        research["capability"]["design_archetype"] = "merge-puzzle"
+        body = plan(opportunity(brief="a penguin ice puzzle", research=research))
+        self.assertNotIn("penguin", body["one_liner"])
+        self.assertNotIn("penguin", body["concept"]["core_mechanic"])
+        self.assertEqual(body["brief"], "a penguin ice puzzle")
+
     def test_mvp_no_longer_promises_one_ramp(self):
         # A genre-model entry: the catalog builds it from the family's model, so the MVP is a
         # number of designed units, not "one content set with a ramp".

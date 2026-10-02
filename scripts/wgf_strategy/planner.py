@@ -231,6 +231,7 @@ class _Plan:
         # Set by content(): the content shape the title commits to, or None when no genre
         # family covers the opportunity.
         self.content_model = None
+        self.idea_concept = None
         self._content_total = 0
 
     def risk(self, description, severity, mitigation=None, origin="strategy", claims=None):
@@ -412,6 +413,7 @@ class _Plan:
         genre family resolves - then the concept keeps the wording it had before genre models
         existed, because nothing here knows what a unit of this game is."""
         self.content_model = None
+        self.idea_concept = None
         self._content_total = 0
         research = self.research or {}
         constraints = research.get("design_constraints")
@@ -468,6 +470,23 @@ class _Plan:
         if not isinstance(axes, list) or not axes:
             axes = [a["id"] for a in model.get("axes") or [] if isinstance(a, dict)
                     and a.get("id")]
+        # On a genre-model entry (no hand-coded design archetype), the catalog entry is a
+        # capability - the family the Factory can build - and the person's idea is the game:
+        # the concept is read from the brief, the family's loop says what a session of it
+        # is, and the family's content model bounds what it must list. The catalog's own
+        # concept wording would otherwise replace the idea with the seed's game.
+        brief = self.opp.get("brief")
+        capability = research.get("capability") or {}
+        if brief and not capability.get("design_archetype") and model.get("loop"):
+            self.idea_concept = {
+                "core_mechanic": brief,
+                "core_loop": str(model["loop"]),
+                "one_liner": brief if brief.rstrip().endswith((".", "!", "?")) else f"{brief}.",
+            }
+            self.apply("concept", "brief",
+                       f"the idea is the concept: research named no design archetype, so the "
+                       f"{family} family's model bounds the content and the brief says what "
+                       f"the game is")
         self.content_model = {
             "family": family,
             "unit_kind": unit_kind,
@@ -704,7 +723,9 @@ class _Plan:
     # -- the artifact body ----------------------------------------------------------------
 
     def body(self):
-        concept = self.concept
+        concept = dict(self.concept)
+        if getattr(self, "idea_concept", None):
+            concept.update({k: v for k, v in self.idea_concept.items() if k != "one_liner"})
         opp = self.opp
         required_profile = self.profiles[self.required]
         genre = concept.get("subgenre") or concept.get("genre")
@@ -794,7 +815,9 @@ class _Plan:
 
         mvp = [
             f"Core loop: {concept['core_loop']}",
-            f"A single {self.control_scheme} control: {concept['core_mechanic']}",
+            (f"The brief, built in full: {concept['core_mechanic']}"
+             if getattr(self, "idea_concept", None) else
+             f"A single {self.control_scheme} control: {concept['core_mechanic']}"),
             "One content set with a data-driven difficulty ramp" if content is None else
             f"{content['min_units']} designed {_plural(content['unit_kind'])} with authored "
             f"difficulty on {', '.join(content['difficulty_axes'])}",
@@ -951,7 +974,14 @@ class _Plan:
 
         claims = opp.get("claim_refs") or []
         brief = opp.get("brief")
-        if brief:
+        if brief and getattr(self, "idea_concept", None):
+            self.assume(
+                f"The brief (\"{brief}\") is the concept: the {genre} shape research "
+                f"selected names no design archetype, so the family's content model bounds "
+                f"the design and the design states the idea's mechanics in full",
+                "the design cannot state the idea's mechanics within the family's model and "
+                "the timebox; then the shape is a capability gap, not this title")
+        elif brief:
             # The person's idea is recorded as `brief` and here, never folded into the
             # one-liner: design fits its archetype to the concept research selected as
             # buildable, and the brief's words must not re-pick it.
@@ -974,7 +1004,8 @@ class _Plan:
         body = {
             "title_id": self.title_id,
             "opportunity_id": opp["id"],
-            "one_liner": f"A {genre} game where the player uses {concept['core_mechanic']}.",
+            "one_liner": (self.idea_concept["one_liner"] if getattr(self, "idea_concept", None)
+                          else f"A {genre} game where the player uses {concept['core_mechanic']}."),
             "why_this_opportunity": why,
             "platform_set": platform_set,
             "audience": audience,

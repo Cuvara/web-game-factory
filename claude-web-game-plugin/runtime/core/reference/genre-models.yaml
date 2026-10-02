@@ -109,6 +109,9 @@ families:
 
   puzzle:
     label: Level puzzle
+    # The family's loop in one line: the concept a person's idea is read through when
+    # the catalog names no hand-coded archetype for it.
+    loop: read the level, plan the moves, solve it, advance to a harder level that adds a rule or tightens the budget
     nodes: [puzzle, match, match-3, tile-match, bubble-shooter, merge-puzzle, block-puzzle, sort-puzzle, physics-puzzle, logic-puzzle, screw-puzzle]
     unit_kinds: [level]
     progression_models: [linear-levels, unlock-track]
@@ -580,6 +583,9 @@ families:
 
   platformer:
     label: Platformer
+    # The family's loop in one line: the concept a person's idea is read through when
+    # the catalog names no hand-coded archetype for it.
+    loop: read the screen, run and jump through its hazards, reach the exit, advance to a level that adds a hazard or a verb
     nodes: [platformer]
     unit_kinds: [level]
     progression_models: [linear-levels, unlock-track]
@@ -1087,6 +1093,9 @@ families:
 
   arcade:
     label: Arcade / action
+    # The family's loop in one line: the concept a person's idea is read through when
+    # the catalog names no hand-coded archetype for it.
+    loop: react to what comes, survive and bank score, the pressure rises, a miss ends the run, retry at once
     nodes: [arcade, runner, endless-runner, lane-runner, one-touch, rhythm, snake]
     unit_kinds: [run-segment, round, wave]
     progression_models: [skill-only, unlock-track, endless-scaling]
@@ -1546,6 +1555,9 @@ families:
 
   shooter:
     label: Shooter
+    # The family's loop in one line: the concept a person's idea is read through when
+    # the catalog names no hand-coded archetype for it.
+    loop: read the encounter, move and shoot, clear the wave, pick up what it leaves, face a harder mix
     nodes: [shooter]
     unit_kinds: [wave, encounter]
     progression_models: [linear-levels, unlock-track, endless-scaling]
@@ -2046,6 +2058,9 @@ families:
 
   racing:
     label: Racing / driving
+    # The family's loop in one line: the concept a person's idea is read through when
+    # the catalog names no hand-coded archetype for it.
+    loop: learn the track, drive it clean, beat the target, unlock the next track or car
     nodes: [racing, parking]
     unit_kinds: [track, lap]
     progression_models: [linear-levels, unlock-track]
@@ -2556,6 +2571,9 @@ families:
 
   strategy:
     label: Strategy (tower defense)
+    # The family's loop in one line: the concept a person's idea is read through when
+    # the catalog names no hand-coded archetype for it.
+    loop: read the wave preview, spend on placements and upgrades, hold the wave, bank what is left, answer a harder mix
     nodes: [strategy, tower-defense]
     unit_kinds: [wave, map, scenario]
     progression_models: [linear-levels, unlock-track, meta-currency]
@@ -3060,6 +3078,9 @@ families:
 
   survival:
     label: Survival (arena survivor)
+    # The family's loop in one line: the concept a person's idea is read through when
+    # the catalog names no hand-coded archetype for it.
+    loop: move and survive the swarm, choose an upgrade when it comes, outlast the next escalation, run again stronger
     nodes: [arena-survivor, action]
     unit_kinds: [run-segment, wave, encounter]
     progression_models: [meta-currency, unlock-track, endless-scaling]
@@ -3556,6 +3577,9 @@ families:
 
   simulation:
     label: Simulation / management
+    # The family's loop in one line: the concept a person's idea is read through when
+    # the catalog names no hand-coded archetype for it.
+    loop: read demand, set prices and stock, serve the day, bank the profit, unlock what the next scenario needs
     nodes: [simulation, time-management, tycoon, idle, idle-merge, clicker]
     unit_kinds: [scenario, shift, round]
     progression_models: [unlock-track, meta-currency, linear-levels]

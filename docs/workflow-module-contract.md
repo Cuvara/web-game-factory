@@ -154,7 +154,7 @@ reading, and `DocumentedIoContract` fails if the two disagree.
 | `research` | `research` | — | `research-report`, `opportunity` |
 | `strategy` | `strategy` | `opportunity` | `title-strategy` |
 | `strategy-review` | `human-checkpoint` | `title-strategy` | `decision-record` |
-| `design` | `design` | `title-strategy` | `game-design` |
+| `design` | `design` | `title-strategy`, `prototype-report` | `game-design` |
 | `tech-plan` | `tech-plan` | `game-design`, `title-strategy` | `tech-plan` |
 | `tech-plan-review` | `human-checkpoint` | `game-design`, `tech-plan` | `decision-record` |
 | `init` | `init` | `game-design`, `tech-plan` | `scaffold-record` |
@@ -168,8 +168,8 @@ reading, and `DocumentedIoContract` fails if the two disagree.
 | `review` | `review` | `prototype-report`, `game-design`, `scaffold-record` | `review-report` |
 | `sdk` | `sdk` | `game-design`, `scaffold-record`, `prototype-report` | `sdk-report` |
 | `sdk-review` | `review` | `sdk-report`, `prototype-report`, `game-design`, `scaffold-record` | `review-report` |
-| `verify` | `verify` | `prototype-report`, `sdk-report`, `game-design`, `scaffold-record`, `asset-manifest` | `verification-report`, `qa-report` |
-| `prototype-review` | `human-checkpoint` | `qa-report`, `verification-report`, `prototype-report`, `title-strategy`, `game-design` | `decision-record` |
+| `verify` | `verify` | `prototype-report`, `sdk-report`, `game-design`, `scaffold-record`, `asset-manifest`, `playability-report` | `verification-report`, `qa-report` |
+| `prototype-review` | `human-checkpoint` | `qa-report`, `verification-report`, `prototype-report`, `title-strategy`, `game-design`, `playability-report`, `review-report` | `decision-record` |
 | `release` | `release` | `qa-report`, `verification-report`, `sdk-report`, `prototype-report`, `scaffold-record`, `review-report`, `production-quality-report`, `visual-qa-report` | `release-manifest` |
 <!-- io-contract:end -->
 

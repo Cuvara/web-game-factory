@@ -102,7 +102,7 @@ check a declaration rather than a run.
 
 | Milestone | Phase | Tasks |
 |---|---|---|
-| `M1` Playable core loop | prototype | `CORE-001` (boot on the template with the engine) + one `GAME-nnn` per `mvp` feature |
+| `M1` Playable core loop | prototype | `CORE-001` (boot on the template with the engine) + one `GAME-nnn` per `mvp` feature + one `CONTENT-nnn` per batch of MVP content units |
 | `M2` Production scope | production | one `GAME-nnn` per `post-mvp` feature; omitted if none |
 | `M3` Platform integration and hardening | hardening | one `SDK-nnn` per target platform + `QA-001` (verify suite green) |
 
@@ -110,6 +110,20 @@ A feature task's acceptance criteria are the feature's own. `optional` features 
 A design with no `features` (an older schema) falls back to `scope.tiers.mvp` and
 `scope.tiers.production`; those carry no criteria, and the generated criterion says so —
 which is what the reviewer at G3 should see.
+
+**Content tasks.** The design's MVP content units (`build_spec.content.units`, game-design
+1.9.0) are planned as work, not left implicit in the feature tasks: one `CONTENT-nnn` per
+batch of `implementation.task_batch` units (3, from `core/reference/genre-models.yaml`), in
+the design's index order — the order *is* the difficulty curve. Each task carries every unit's
+own `acceptance` lines plus two generated ones per unit: that the unit is in
+`public/content/units.json` with the design's difficulty values, and that it is reachable from
+the unit before it in play (or, for the first, that it is where play starts). Its tests are
+`tests/unit/content.spec.ts`, and it depends on `CORE-001` and on the `GAME-nnn` tasks of the
+mechanics its units ask for — a level cannot be built before the verb it is made of. Estimated
+at `implementation.content_unit_hours` (1.5) per unit, so the content is in the timebox total
+that `plan_fits_timebox` is asked about. A design whose `generation.mode` is not `authored`
+gets **no** content task: a parametric or procedural design generates its units from
+parameters, and there is no list to build one against (`devplan.content_units`).
 
 **Estimates**, in hours, all overridable under `factory.techplan.estimates`:
 
@@ -138,6 +152,12 @@ G3's question; estimates that sum neatly to the budget were fitted
 installation may list it under `factory.checkpoints.auto_approve`; otherwise the run waits
 for `--decision approve`. A rejection is unrouted and blocks the run for a person.
 `wgf plan` runs strategy → G2 → design → tech-plan → G3.
+
+What G3 sees of the content, beside the plan: the design's `consistency.rule_results`
+include the `content.*` rules and `consistency.content_model` names the genre model by id and
+version, and `wgflib.gate_evidence` prints both — how many content rules ran, which breached,
+and against which model — so the reviewer can tell a design that was checked from one that was
+not.
 
 Known gap: the title machine's G3 also requires an `asset-manifest` (guard
 `asset_manifest_present`), but in `new-game` the `assets` step runs after `init`, because it

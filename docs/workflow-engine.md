@@ -478,11 +478,18 @@ new-game bounds develop's seven loops this way: `playability.fail: 2`,
 `production-quality.develop: 2`, `visual-qa.develop: 2`, `review.request-changes: 2`,
 `sdk-review.request-changes: 2`, `verify.fail: 2` and `iterate: 2` (G4) - and the production
 gates' asset failures on `assets`: `production-quality.assets: 2`, `visual-qa.assets: 2`
-(assets' `max_visits` 5). Each pass through assets enters develop once more, so develop's
-`max_visits` is 19 - the first visit, its own route budgets and assets' - and it is never
-what a loop meets first; every step after develop (playability, production-quality,
-visual-qa, review, sdk, sdk-review, verify, prototype-review), each visited at most once per
-develop visit, carries 19 as well. A reviewer that never approves blocks the run on its own
+(assets' `max_visits` 5). Workflow 6 adds an eighth route out of the build, and the only one
+that leads back before init: `design-gap`, from `greybox` and from `develop` to `design`,
+taken when a developer reports a blocking design gap - the design does not say enough to build
+what was asked, and inventing the answer would carry a decision nobody made into the build.
+It is bounded on `design`, one pass from each source: `greybox.design-gap: 1`,
+`develop.design-gap: 1` (design's `max_visits` 3). A design repair re-runs `tech-plan` and
+G3 on the repaired design, and the build starts again at `greybox`, so each return costs a
+greybox visit and a develop visit: `greybox`'s `max_visits` is 5 (the first visit, two
+playability passes, two returns) and develop's is 21 - the first visit, its own route budgets,
+assets' and the two returns - and it is never what a loop meets first; every step after
+develop (playability, production-quality, visual-qa, review, sdk, sdk-review, verify,
+prototype-review), each visited at most once per develop visit, carries 21 as well. A reviewer that never approves blocks the run on its own
 third request for changes; a verification that always fails, on its third failure; a third
 G4 iterate stops for a person too; none spends another's budget. What a whole run may spend
 on unattended developer sessions is bounded separately, by `factory.develop.budget`
@@ -564,7 +571,8 @@ the run has passed and no later upstream work has superseded.
 - id: prototype-review
   type: human-checkpoint
   stage: title:prototype-review
-  inputs: [qa-report, verification-report, prototype-report, title-strategy, game-design]
+  inputs: [qa-report, verification-report, prototype-report, title-strategy, game-design,
+           playability-report, review-report]
   with: {gate: G4, choices: [pass, iterate, kill]}
   on: {iterate: develop, kill: $end}
 ```
@@ -575,7 +583,12 @@ artifact type): each kill criterion as `breached`, `not breached` (with its meas
 or `unmeasured`, a warning when any is unmeasured - `breached: false` on an unmeasured
 criterion is not evidence - the playtest sessions by `player_context`, and the verdict and
 `evidence_status` of each report that carries one (`status --json`: `pending.evidence`).
-It decides nothing.
+Since workflow 6 it also prints what the inputs say about the content the design committed
+to: the design's `content.*` consistency rules and the genre model they were checked against,
+the prototype's `content_coverage` (built against designed units) and `design_gaps`, each
+`content.` / `difficulty.` / `progression.` / `depth.` check the playability bot ran - with
+every skip named as a skip, because a skip is not a pass - and the review's verdict with any
+design-fidelity blocker. It decides nothing.
 
 `pass` continues to `release`. `iterate` goes back to `develop` (a new visit of each step of
 the loop; every artifact is a new version and the old ones stay, so the run's lineage is
@@ -830,9 +843,9 @@ wgf decide <run-id> pass                                                    # G4
 ### Game idea
 
 ```bash
-wgf new-game "3D goalkeeper game where the player blocks penalty shots"
-wgf new-game --project goalkeeper-3d "3D goalkeeper game where the player blocks penalty shots"
-wgf new-game --mock --hold-gates "3D goalkeeper game where the player blocks penalty shots"
+wgf new-game "3D goalkeeper game where the player saves penalty kicks"
+wgf new-game --project goalkeeper-3d "3D goalkeeper game where the player saves penalty kicks"
+wgf new-game --mock --hold-gates "3D goalkeeper game where the player saves penalty kicks"
 wgf new-game --mock -- "-an idea that starts with a dash"
 wgf research "a calm sort puzzle"          # any slice that runs the research step
 ```

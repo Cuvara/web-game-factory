@@ -117,16 +117,50 @@ the game, regenerated on every visit and committed with the code it asked for. I
   ([techplan-module.md](techplan-module.md)) with one rule: add a physics package only if
   that line names one, and then only that one. With no tech plan in the run, the brief says
   custom collision and asks for `known_issues` rather than a dependency.
-- **Required systems** — boot, game state, scenes, input, core loop, mechanics,
-  progression, UI, HUD, tutorial, game over, restart, asset loading, responsive layout,
-  audio hooks — each with its acceptance line.
+- **Required systems** — boot, game state, scenes, input, core loop, mechanics, **content**,
+  **win-lose**, **difficulty-curve**, **mastery**, progression, UI, HUD, tutorial, game over,
+  restart, asset loading, responsive layout, audio hooks — each with its acceptance line
+  (`brief.REQUIRED_SYSTEMS`). The four added with the content contract are:
+  `content` (every MVP unit of the content table in `public/content/units.json` under its
+  design id with the design's objective, mechanics and difficulty values, loaded at boot and
+  reachable in play in design order through the probe's `content.unit_id`; a unit that could
+  not be built is `cut` or `partial` in the report with a `design_gaps` entry),
+  `win-lose` (the experience contract's win — unless the genre is endless — and its lose are
+  reachable, and each unit's own success and failure end it or advance it),
+  `difficulty-curve` (each axis of `build_spec.difficulty.axes` is a data value per unit read
+  from `units.json`, or a function of time for a parametric design, and is exposed as
+  `metrics.difficulty.<axis>`) and
+  `mastery` (the mastery signals are shown on the result screen and persisted through the
+  seam). `progression`'s acceptance is tightened with them: after a page reload the probe
+  reports the same `content.unit_index` and `metrics.best` before any input.
 - **Scope** — the MVP verbatim, the tiers that are *not now*, and what is out of scope.
+- **Genre and content units** — the family the design is held to
+  (`core/reference/genre-models.yaml`, with its node, session profile and ending), then the
+  content table: every MVP unit in the design's order with its purpose, objective, mechanics,
+  per-axis difficulty, expected duration, success, failure, acceptance lines and what it
+  varies from the previous unit; the difficulty axes those numbers are on with their ranges;
+  the mastery model, statement and signals; and the units of a later tier, named so the
+  developer knows not to build them. `brief.json`: `genre` and `content`
+  (`brief.select_content`). The **content data-file contract** goes with it, and applies when
+  the design's `build_spec.content.generation.mode` is `authored` with at least one MVP unit:
+  the developer writes `public/content/units.json` — `schema: "wgf-content/1"`, the `design`
+  pin (artifact id and content hash), `genre`, `unit_kind`, `generation`, `units[]` and
+  `tuning` — with the design's unit ids, index order, objectives, mechanics and difficulty
+  values and every mechanic parameter as `tuning`; the game loads it at boot, and
+  `tests/unit/content.spec.ts` tests it. A `parametric` or `procedural` design states the same
+  table but generates the rest from `generation.parameters`, so no data file is owed and none
+  is compared. Nothing in the table is the developer's to invent: where the design is silent
+  the gap goes in the report's `design_gaps` and the unit is `partial` or `cut`. Craft:
+  `core/craft/content-and-level-design.md`.
 - **Build spec** — the design's `build_spec`, MVP tier only, every field: mechanics with
   their rules and starting tuning, controls, player goals, game states, screens, HUD,
   menus, tutorial, rewards and failure with their feedback, progression, difficulty curve
   and assist, session beats, monetization touchpoints, audio cues, responsive behaviour and
-  visual identity. Entries of a later tier are dropped at any depth and named as left out on
-  purpose. `sdk_touchpoints` are not carried (the sdk step wires them; the developer calls
+  visual identity, plus `mastery` and `depth` (the reason to return, carried by the design
+  since 1.7.0 and by no brief before the content contract). `content` and `mastery` are
+  rendered in their own section above rather than twice in one document
+  (`brief.SPEC_SECTIONS_RENDERED_ABOVE`). Entries of a later tier are dropped at any depth and
+  named as left out on purpose. `sdk_touchpoints` are not carried (the sdk step wires them; the developer calls
   only the seam), nor `assets` (the asset manifest is what is delivered; when it records a
   runtime manifest, `runtime_assets` names `public/assets/assets.json` and the brief tells the
   developer to load every asset through it by id - `core/craft/2d-assets.md`). The brief asks
@@ -164,7 +198,12 @@ the game, regenerated on every visit and committed with the code it asked for. I
   reads; it adds no aspect and no Factory-side probe.
 - **Report back** — `docs/development/report.json`: the developer's own account of each
   system, each MVP item, the placements, integration status, assets, scope deltas and
-  known issues.
+  known issues, plus two fields the content contract added:
+  `content_units[].{id,status,notes}` (`built`, `partial` or `cut`, one entry per unit of the
+  brief's table) and
+  `design_gaps[].{field,question,assumed,severity}` — where the design did not say enough to
+  build from, as a question the designer can answer, with what was built instead. A gap is how
+  a design is corrected; filling one in silently is a design-fidelity blocker at review.
 - **Why this is another iteration** — on a visit a loop brought back (`brief.json` `loop`),
   the step and route that did (`verify.fail`, `review.request-changes`,
   `sdk-review.request-changes`, `prototype-review.iterate`: the engine's
@@ -252,7 +291,7 @@ Run in this order; `conformance` cannot be switched off.
 | Check | What |
 |---|---|
 | `install` | `pnpm install --frozen-lockfile`. A failure stops the rest |
-| `conformance` | Static: engine imports only in `src/rendering/<engine>/`, no other engine, no portal SDK identifiers, ad APIs called only from `src/platform/`, the template's `BootScene` (`src/game/boot-scene.ts`) imported by no game source - judged by the module an import resolves to, so a game's own first scene may also be called `BootScene`, the seam files as the Factory provided them and `src/main.ts` booting through them (`wgflib.gameseam`), the sdk step's files (`gameseam.SDK_OWNED_PATHS`) as the visit's baseline commit has them - absent before the sdk step first runs - since the sdk step rewrites them whole, template-owned paths unchanged since the visit began, `package.json` changed only by allowed dependency changes and the lockfile only with them, and `report.json` complete — every required system `done`, every MVP item and placement reported |
+| `conformance` | Static, and the content contract: engine imports only in `src/rendering/<engine>/`, no other engine, no portal SDK identifiers, ad APIs called only from `src/platform/`, the template's `BootScene` (`src/game/boot-scene.ts`) imported by no game source - judged by the module an import resolves to, so a game's own first scene may also be called `BootScene`, the seam files as the Factory provided them and `src/main.ts` booting through them (`wgflib.gameseam`), the sdk step's files (`gameseam.SDK_OWNED_PATHS`) as the visit's baseline commit has them - absent before the sdk step first runs - since the sdk step rewrites them whole, template-owned paths unchanged since the visit began, `package.json` changed only by allowed dependency changes and the lockfile only with them, and `report.json` complete — every required system `done`, every MVP item and placement reported. With the content contract, also `public/content/units.json` against the design (`scripts/wgf_develop/content.py`), as findings named by code: `content.file_missing`, `content.design_pin` (its `design.content_hash` is not the brief's pin), `content.unit_missing:<id>`, `content.unit_extra:<id>`, `content.unit_field:<id>.<field>` (index, objective, mechanics, success or failure differ), `content.difficulty:<id>.<axis>` (further from the design's value than `implementation.difficulty_tolerance`, 0.05), `content.tuning:<mechanic>.<param>`, `content.test_missing` and `content.not_loaded` (no file under `src/` reads the data file) |
 | `format` | `pnpm format` — optional |
 | `typecheck`, `lint`, `unit`, `build` | the repository's own scripts, as CI runs them |
 | `smoke` | `pnpm test:e2e`, behind a proxy that refuses every non-local request (`wgflib.netguard`): a portal build would otherwise load the portal's real SDK from its CDN - dev traffic to the portal, and a result that depends on it (a Poki build's own "makes no insecure requests" failed on Poki's http:// ad bridge). The game must boot and play with the SDK refused, as for an ad-blocker; the summary says what was refused. Skipped, and reported as skipped, only when no browser is installed |
@@ -277,6 +316,37 @@ What an automated step can honestly claim is narrow, and the report keeps to it:
 
 Integration status and scope deltas come from the developer's report; MVP items reported
 `cut` or `deferred` and placeholder assets become scope deltas automatically.
+
+Two things it does measure, from the developer's report and the content check rather than from
+prose:
+
+- `content_coverage` — the designed MVP units against `content_units`: `designed`, `built`,
+  `partial`, `cut` and the per-unit list. A unit the developer did not report at all is
+  counted `cut`, with a note saying so; a design that states no content units gets no coverage
+  block, because nought of nought would read as a measurement. It also appears as a `proved`
+  entry, *"Every MVP content unit is built and reachable"* — `proved` only when every designed
+  unit is built, `disproved` when any was cut, otherwise `inconclusive`.
+- `design_gaps` — the developer's gaps, carried as reported (an entry the schema would reject
+  is dropped, having already been a conformance finding). A gap is not also folded into the
+  session notes: a gap buried in a note is a note nobody acts on.
+
+### The design-gap route
+
+A **blocking** gap — the design does not say enough to build what was asked, and the developer
+could not honestly build around it — is a non-retryable `FAILED` with route `design-gap`
+(`wgf_develop.DESIGN_GAP_ROUTE`), from the `greybox` step and the `develop` step alike. The
+commit and the prototype-report are kept: the work is real, and the report is what the design
+is repaired from. Workflow 6 routes it back to `design` (one pass from each source,
+`greybox.design-gap: 1` and `develop.design-gap: 1`), which re-runs tech-plan and G3 before
+the build starts again. It is never retried, because another developer session would meet the
+same silence. A `minor` gap does not route: it is an assumption to confirm, carried to review
+and to G4.
+
+The design author's side of the route is the agent author's repair mode: the brief's `gaps`
+and `previous_design`, answered at each gap's own field, which the deterministic authors refuse
+rather than silently ignore. The design *step* does not yet build that brief from the returned
+prototype-report ([core-contracts.md](core-contracts.md) §4.3, gap 9), so today the route's
+value is that the run stops carrying an invented decision forward and a person sees the gaps.
 
 ## Budget
 

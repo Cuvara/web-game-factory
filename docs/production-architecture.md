@@ -145,11 +145,38 @@ frame, summary, route}` and a verdict. Never a first-time-player measure
 The design step checks it after the consistency rules (`scripts/wgf_design/depth.py`, bars
 in `core/reference/design-depth.yaml`); craft in `core/craft/retention-and-progression.md`.
 
-## Design depth (proposed checks)
+After depth comes the **content contract** (game-design 1.9.0): `genre`,
+`build_spec.content.units[]`, `build_spec.difficulty.axes` and `build_spec.mastery`, held to
+the genre family's entry in `core/reference/genre-models.yaml` by
+`scripts/wgf_design/content.py` (22 `content.*` rules). That is what gives the checks below
+something to measure a build against: a unit list, the axes difficulty moves on, and a stated
+win. Craft: `core/craft/content-and-level-design.md`.
 
-**Status: specified, not implemented.** The playability step does not run these yet. Its
-owner implements them, and this section is the contract to implement against. Each check
-measures from outside, through real input and the play probe
+## Design depth (implemented)
+
+**Status: implemented.** The playability step runs them
+([playability-module.md](playability-module.md)), as three extra bot tests per viewport
+(traverse, persist, session) and eight checks:
+`content.units_reachable`, `content.objective_shown`, `content.win_lose_per_unit`,
+`content.variety`, `difficulty.axes_progress`, `progression.persists`,
+`depth.session_length` and `depth.ramp`. Every bar is data — `core/reference/design-depth.yaml`
+`playability:` (added in 1.1.0: the time budget, the traverse and objective bars, the
+difficulty rise share and relief dip, the variety share, the session share and the ramp
+multipliers) merged with the genre family's `qa:` block in `core/reference/genre-models.yaml`,
+read through `wgflib/genre_models.py` `qa_of()`. No multiplier is in code.
+
+Two things differ from the proposal below. There is no `depth.return_hook` check: the result
+card's hook is not measured. And `depth.persists` is `progression.persists`, which also holds
+the content unit reached, not only the depth metrics. A check whose claim the design does not
+make is `SKIPPED` — never a pass, always listed in the report's `skipped_checks` with its
+reason — and a claim the probe cannot show is a FAIL. `verify` carries all of it into the
+verification and the qa-report's `gameplay-quality` suite rather than measuring it again
+([verification-module.md](verification-module.md)), and G4 is shown it
+(`wgflib.gate_evidence`).
+
+The rest of this section is the contract as it was specified, kept because it is what the
+implementation was written against. Each check measures from outside, through real input and
+the play probe
 (`shared/play-probe.schema.json`), against the design's `build_spec.depth`. Like every
 playability measure they are `measurement_class: automation-agent`: a bot's numbers, never a
 first-time player's.
@@ -182,8 +209,7 @@ them reports `skipped` with the reason, never `pass`:
 | `depth.return_hook` | The last result card of the session-length run: its visible text and screen elements. | The card shows the session's mid goal (the gap to best, or the next stage's goal), and at least one MVP `return_hooks[]` is visible as text or an element. | `develop` |
 
 Numbers in the checks come from `core/reference/design-depth.yaml` and the design. The
-multipliers (0.5 ×, 3 ×, + 15 s, 2 s) go into that file's `playability` block when the
-checks are implemented, never into code.
+multipliers (0.5 ×, 3 ×, + 15 s, 2 s) are in that file's `playability` block, never in code.
 
 What the checks cannot tell: whether players come back (D1 is a live metric read at
 `title:live`, and a strategy success criterion) and whether the meta is fun. Stranger
@@ -196,7 +222,11 @@ in the template's golden branch (SVG tiles and background for Tower Merge Rush; 
 walls and arena for Neon Drift Arena, built from model specs by the pinned Blender), loaded
 through `assets.json`, and their probes report `asset` and `render`.
 
-The golden designs (archetypes `drop-merge` and `arena-dodge`) state their depth honestly
+The golden designs (archetypes `drop-merge` and `arena-dodge`) are **parametric arcade**
+games: the fixtures pin `design_archetype` and `genre_model: arcade`, and their content is
+generated from parameters rather than authored unit by unit, so the authored-content checks
+SKIP or warn rather than failing art that is correct
+([golden-runs.md](golden-runs.md)). They state their depth honestly
 for what the ports build. The MVP depth is a persisted best score, the in-run drop ramp or
 speed tiers, and the short and mid goals the ports already have. Stages, special pieces,
 power-ups, coins, zones, pickups, the garage and missions are `post-mvp` and rest on post-mvp

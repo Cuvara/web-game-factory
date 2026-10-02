@@ -393,6 +393,10 @@ seen by the engine — validate what you write there with ajv.
   it found and fixed, PASS / PASS_MOCK / UNVERIFIED / BLOCKED_EXTERNAL
 - `docs/v2-release.md` — 2.0.0: what was validated on which commit, the release audit's
   fixes, and what the evidence does not cover (no live agent host, shimmed golden runs)
+- `docs/v2.7-release.md` — 2.7.0: the content contract (genre models, `build_spec.content`,
+  the content data file, the content and difficulty playability checks), workflow 6's
+  `design-gap` return, Research V2, and buildability from a genre family; what was validated
+  where, and the eight representative runs that have not been run yet
 - `docs/v2.6-release.md` — 2.6.0: workflow 5 (greybox, playability, production-quality,
   visual-qa), real 2D/3D assets and audio, design depth, the production skills, the reference
   games, the completed autonomous profile; what was validated where

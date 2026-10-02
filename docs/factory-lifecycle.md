@@ -204,6 +204,16 @@ input — asking nobody — until the run holds them:
 | `tech-plan-review` | G3 | tech-plan → init | `game-design`, `tech-plan` | approve, reject |
 | `prototype-review` | G4 | verify (PASS) → release | `qa-report`, `verification-report`, `prototype-report` | pass, iterate, kill |
 
+The gate's `required_artifacts` (`core/lifecycle/gates.yaml`) are what the decision is
+*required* to rest on; a checkpoint may be given more to show. Since workflow 6, G4's step also
+takes the `playability-report` and the `review-report`, and G3's design carries the content
+rules in its `consistency` block — so what each gate prints while it waits
+(`wgflib.gate_evidence`) includes the design's `content.*` rules and the genre model they were
+checked against (G3), and the prototype's `content_coverage` and `design_gaps`, every content,
+difficulty, progression and depth check the playability bot ran with each skip named as a skip,
+and the review's verdict with any design-fidelity blocker (G4). None of it decides anything; a
+gate still reads a skip as "not measured", never as a pass.
+
 G4 judges the *verified* prototype: it runs only after verification passes, and a
 verification that runs again after a pass makes G4 ask again. `pass` continues to release;
 `iterate` sends the work back to develop and ends at G4 again; `kill` — the machine's

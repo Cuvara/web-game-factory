@@ -77,7 +77,7 @@ The bot reads the game's play probe (`core/artifacts/shared/play-probe.schema.js
 The bot acts **only** through real input at the listed positions, never through the
 probe. The developer brief embeds the schema, so a developer knows how the build is judged.
 
-### The bot's five tests, per viewport
+### The bot's eight tests, per viewport
 
 - **First session:** opens the game. If the title screen lists a begin input (`play`,
   `start`, ...), the bot presses it. Then it makes no input at all for the idle window,
@@ -93,6 +93,27 @@ probe. The developer brief embeds the schema, so a developer knows how the build
 - **Pause:** the probe's pause input, else a visible pause button, else Escape. If the
   probe then reports `paused`, the pause screen is measured, then play is resumed. A game
   without a pause is recorded as such; no check here fails on it.
+- **Traverse** (only when the design states `build_spec.content`): the oracle plays unit
+  after unit. Every sample records which unit is in play, its progress, the difficulty on
+  each declared axis (`metrics.difficulty.<axis>`) and the entity kinds drawn. When a unit
+  ends in `won` or reaches its progress target, the bot presses the advance input the oracle
+  names (`next`, `continue`, ...) - never a jump to a unit the player has not finished. It
+  stops at the traverse window, after `max_units` units, or at a second loss, and writes
+  `transitions[]`, `per_unit[]` and a frame `unit-<index>-1s.png` per unit.
+- **Persist** (only when the design states `build_spec.depth`): the oracle plays until the
+  best or the unit reached moves, the page is reloaded, and the probe is read **before any
+  input**. Whatever is gone was not persisted.
+- **Session** (only with a depth contract): one first session with instant retries, held open
+  to the design's own first-session length. Records how long play lasted, each attempt's
+  oracle input rate per third of it, when the designed closing beat first arrived, and the
+  difficulty in each `endless_window_s` window.
+
+The time budget (`design-depth.yaml playability.time_budget.bot_total_s`) is a hard cap per
+viewport. What the first five tests cost is subtracted; the rest is shared between the
+traverse, persist and session windows in proportion to what they asked for, and every check
+judged from a window that was cut carries `measured.truncated: true` - and, where the
+shortfall is the budget's rather than the build's, drops to a warning. The bot's process
+timeout is `2 x bot_total_s + 120` s, not a fixed number.
 
 ### What every record also carries
 
@@ -128,18 +149,43 @@ reads these from `records_dir`:
 | Check | Passes when |
 |---|---|
 | `probe.present` | `snapshot()` answers. Without it nothing else is judged |
-| `probe.valid` | snapshots match the schema and carry the contract's goal, win and lose metrics |
+| `probe.valid` | snapshots match the schema and carry the contract's goal, win and lose metrics; with authored content, every playing snapshot reports `content` and its `unit_id` is one of the design's |
 | `start.playable` | play begins within `first_30s.playable_s` |
 | `start.objective` | ≥ 60 % of the objective statement's content words are on screen in the first 3 s of play |
 | `idle.grace` | no loss during the idle window |
 | `act.acknowledged` | every action changes ≥ `min_changed_fraction` of the frame by ≥ `min_pixel_delta` luminance |
-| `win.reachable` | good play reaches `won`; with no win in the contract, the goal metric rises |
-| `lose.reachable` | bad play reaches `lost` |
-| `restart.works` | the retry returns to play within `retry_s` + 1 s, with the goal metric reset |
+| `win.reachable` | good play reaches `won`. Never degraded to "the metric rose" when the contract states a win; and a design whose genre family wins by anything but a best score, with no `experience.win`, fails here - there is nothing for good play to reach |
+| `lose.reachable` | bad play reaches `lost`, and - when the family names a `resource_metric` - that number is seen to fall under the anti-oracle |
+| `restart.works` | the retry returns to play within `retry_s` + 1 s, with the goal metric reset; and, when the family says a unit can be restarted from inside it (`reset_in_unit`), a restart pressed mid-unit returns to a clean unit |
 | `entities.visible` | every readable role (player, threat, goal, target, projectile) is visible in ≥ half its samples and, at its largest on screen, covers ≥ `min_area_fraction` of the viewport (median over the role's entities that left during the sample; all of them when none did) |
 | `entities.projectile` | a projectile is seen moving for ≥ `min_projectile_frames` consecutive frames |
 | `frames.readable` | ≥ `min_lit_share` of pixels lit (luminance ≥ `lit_luminance`), contrast ≥ `min_contrast`, mean ≤ `max_mean_luminance` |
 | `page.errors` | no uncaught page error |
+
+### The content, difficulty and depth checks
+
+These hold the build to what the design committed it to *contain*, not only to being
+playable. Every bar is data - `core/reference/design-depth.yaml` `playability:` merged with
+the genre family's `qa:` block (`core/reference/genre-models.yaml`), read through
+`wgflib/genre_models.py` `qa_of()`. No number is in code.
+
+| Check | Passes when |
+|---|---|
+| `content.units_reachable` | authored content: the transitions show units 1..N in the design's order (N = `min(mvp units, qa.min_units_traversed)`), each entered within `transition_grace_ms` of the previous one reaching `won` or its progress target |
+| `content.objective_shown` | each traversed unit shows ≥ `objective_min_share` of its `objective`'s content words while it is played |
+| `content.win_lose_per_unit` | every traversed unit that states a `success` was completed, and bad play failed a unit that states a `failure`. With `qa.time_target_axis`, completion also needs `metrics.time` inside the unit's own `parameters.time_target` |
+| `content.variety` | authored: ≥ `min_changed_pairs_share` of consecutive unit pairs change their entity kinds or their mechanics, and each unit introduces ≥ `qa.min_new_kinds_per_unit` kinds not seen before. Generated: a kind not on screen at the start arrives by the earliest MVP `content_schedule.at_s` + `first_new_kind_slack_s` |
+| `difficulty.axes_progress` | authored: on every axis the family says escalates, ≥ `min_rise_share` of consecutive units hold or dip no deeper than `relief_dip_max`, and the last is above the first. Generated or endless: the last `endless_window_s` window is above the first. An axis the family marks `probe: required` and the build does not report **fails**; an optional one it does not report is a warning |
+| `progression.persists` | after a reload, read before any input, every MVP `meta_loop.persists[]` metric the probe reports - and `content.unit_index` - is what it was. Required only for the generation modes in `persists.required_generations`; a warning otherwise. With `qa.checkpoint`, the unit's own progress must also survive an in-unit loss |
+| `depth.session_length` | one oracle session with instant retries reaches `min_share` x `depth.first_session.target_s`. Required for authored designs; a warning otherwise, and never a failure when the budget cut the window |
+| `depth.ramp` | bad play ends a run inside `bad_play_max_multiplier` x the run length, and the oracle's input rate in the last third of its longest run is at least the first third's |
+
+**`SKIPPED` is never a pass.** A check is skipped only when the design does not claim what it
+measures - no `build_spec.content` at all, or generated content where a unit sequence would be
+traversed, or no declared difficulty axes, or nothing persisted at the MVP tier. Every skip is
+listed in the report's `skipped_checks` with its reason, named in the step's summary, and
+subtracted by anything counting passes. A thing the design *does* claim and the probe cannot
+show is a FAIL, not a skip - including a build that authors content and reports no `content`.
 
 None of the production records changes a check here: an asset, a primitive or a default
 button is the production gate's to judge, not this step's.

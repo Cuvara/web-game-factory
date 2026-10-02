@@ -243,6 +243,22 @@ factory:
   - each prototype task with its acceptance criteria.
 
   A missing feedback hook, or an unmet criterion on an MVP task, is a design-fidelity blocker;
+- **design fidelity**: what the design committed the build to *contain*. It appears when the
+  brief carries a content contract (`build_spec.sections.content`, or a top-level `content`),
+  difficulty axes, mastery, or when there are gaps or coverage to show. It lists:
+  - the content table - unit id, purpose, objective, mechanics, per-axis difficulty, and
+    whether development reported it built, partial or cut;
+  - each unit's acceptance lines, and what it says it varies from the previous unit;
+  - the difficulty axes those numbers are on, with their ranges;
+  - win and loss as the design states them, and the mastery model, statement and signals;
+  - the content coverage development reported (designed against built);
+  - the `design_gaps` development reported - what the design did not decide and what was
+    assumed instead - read from `docs/development/report.json`, with the prototype-report's
+    copy standing in. When nothing is reported, the brief says so: a place where the code had
+    to decide something the design did not say, with no gap recorded, is itself a finding.
+
+  A reviewer reading only the diff cannot tell an invented unit from a designed one. This is
+  what makes that visible, and an invented unit, mechanic or rule is a design-fidelity blocker;
 - **look for**: the code checks (logic defects, stubs and empty tests, template rules,
   secrets and unknown hosts), then a **gameplay lens** (`GAMEPLAY_LENS`). The lens is a
   condensed copy of `core/craft/gameplay-review.md`. It covers:
@@ -254,7 +270,13 @@ factory:
   - tuning kept as data;
   - no allocation in the frame loop;
   - flash rate and audio only after a user gesture;
-  - aspect-tagged tests that reach their aspect.
+  - aspect-tagged tests that reach their aspect;
+  - every MVP content unit present in `public/content/units.json` and reachable in code from
+    the previous one by playing - no unit only a debug jump or a URL parameter can enter;
+  - every mechanic rule implemented as a rule with a unit test, with per-unit difficulty read
+    from the data file rather than re-typed or recomputed in logic;
+  - gaps reported in `design_gaps` rather than filled in silently; an invented unit, mechanic
+    or rule is a design-fidelity blocker.
 
   On an MVP path a lens failure is a blocker; elsewhere it is at most minor. The lens is
   restated rather than pointed at, because the reviewer runs in the game checkout, where the

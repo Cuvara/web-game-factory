@@ -327,6 +327,20 @@ They do **not** prove:
   statuses; it never upgrades them. `PASS_MOCK` is not `PASS`.
 - **design quality.** The design module's archetypes do not include a drop-and-merge game;
   the 2D report lists the deltas.
+- **the content contract on an authored game.** Both golden designs are **parametric arcade**:
+  the fixture catalogs pin `design_archetype` (`drop-merge`, `arena-dodge`) and
+  `genre_model: arcade`, and the archetypes state `genre.ending: endless` with
+  `build_spec.content.generation.mode: parametric` — the units they list are the representative
+  run-segments the design commits to, not a sequence the build traverses. So the goldens do
+  exercise the design step's content rules, the brief's content table, the tech plan without
+  `CONTENT-nnn` tasks (a generated design gets none) and the generated-content playability
+  path, and they do **not** exercise the authored path: no `public/content/units.json` is owed,
+  `content.units_reachable`, `content.objective_shown` and `content.win_lose_per_unit` are
+  `SKIPPED` with the reason "content is generated (parametric)", and `progression.persists` and
+  `depth.session_length` are warnings rather than failures because the generation mode is not
+  `authored`. `difficulty.axes_progress`, `content.variety` and `depth.ramp` are measured from
+  the endless windows and the in-run content schedule. A level game — the authored path, a data
+  file compared unit for unit — has no golden run and needs its own port before it has one.
 - **the GitHub path.** `init.source: local`; creating a repository with `gh` is outward-facing
   and is not exercised.
 - **that the art suits every locale.** The ports' bundled display and body fonts are subset

@@ -83,6 +83,7 @@ whatever blocked it is fixed.
 | build | `install`, `build`, `bundle`, `asset-resolution` | lockfile install; `build.command` from game.config.yaml; the output directory, digested; every local URL the built HTML/CSS/JS names |
 | code | `typecheck`, `lint`, `unit`, `integration` | the repository's scripts — the names the template's CI gives qa-report suites |
 | gameplay | `boot`, `loading`, `start`, `input`, `core-loop`, `progression`, `game-over`, `restart`, `pause-resume`, `responsive` | a browser against the built bundle — see below |
+| gameplay | `quality.report-commit`, `quality.<group>:<check>` | the playability-report: what the bot measured about the design's content, difficulty, progression and depth, carried not re-measured — see below |
 | policy | `runtime-facts`, `assertions:<platform>`, `asset-licenses` | `test:verify`; the template's `collect-facts.mjs` / `evaluate-assertions.mjs` against the **pinned** profile; the asset manifest |
 | platform | `profile:<p>`, `sdk-init:<p>`, `hooks:<p>`, `requirements:<p>`, `fallback` | vendored `config/platforms/`; sdk-report per platform and feature (`BLOCKED` when it names another commit; `PASS_MOCK` unless observed live); declared ad kinds; shipped locales; a boot with no portal SDK present |
 | assets | `manifest`, `missing`, `formats`, `paths`, `runtime-manifest`, `loading` | asset-manifest vs files named after each item id under `public/`, `src/assets/`, `assets/`; extensions per asset type; asset paths in `src/`; `public/assets/assets.json` against the repository with the assets module's validator (broken references FAIL; a stale hash, unlisted/unused file or large texture is a WARNING; absent is a WARNING) ([assets-module.md](assets-module.md#validation)); failed requests while playing |
@@ -110,6 +111,38 @@ ad interrupts play. `with: {gameplay: {required: [...]}}` overrides the set.
 
 A required aspect nothing exercised is `FAIL`, not `BLOCKED`: the fix is a test in the game
 repository, which is development's work, so it loops back there.
+
+`progression` is the exception, because it is the thing a prototype most often does not have
+and it used to pass on a test whose *title* mentioned a score. It has no title-keyword mapping
+any more. It passes only on evidence that names it:
+
+- `quality.progression:persists` PASS - the bot reloaded the build and found the designed
+  progression intact; or
+- a test or recorded scenario explicitly tagged `@progression`, **together with** content
+  conformance: the develop step's own content check in `docs/development/checks.json`, else
+  `public/content/units.json` carrying every MVP unit id when the design authors content. A
+  design that authors no content units has nothing to conform to, and the tagged test stands.
+
+### Quality: the playability evidence, carried
+
+`checks/quality.py` reads the `playability-report` among this step's inputs and never plays the
+game again.
+
+- `quality.report-commit` holds the report to the build under test: the commit develop built
+  (the `prototype-report` this verification pins; the verified commit may be the sdk step's,
+  one commit on top of it). A report about anything else **fails**, and none of its answers are
+  carried - an earlier visit's evidence is not evidence about this build.
+- one check per `content.` / `difficulty.` / `progression.` / `depth.` check of the report, with
+  every viewport collapsed into one answer: FAIL if any viewport failed, WARNING if any was
+  skipped or warned (a skip is **never** a pass, and the warning says what was not measured),
+  else PASS. Ids are translated into the verification-report's own vocabulary:
+  `content.units_reachable` becomes `quality.content:units-reachable`.
+- `SUITES` maps `quality.` to the qa-report suite `gameplay-quality`, so G5 reads it beside
+  lint, unit and e2e.
+- With no playability-report at all the verification is `BLOCKED` on `quality.report` -
+  **required** when the workflow declares the input and it did not arrive, not required when
+  the run never asked for one. Either way the report says the content was not verified rather
+  than implying it was.
 
 ## Evidence is this run's, and pinned
 

@@ -176,9 +176,16 @@ factory:
       repair_rounds: 2
     # Builds through the pinned Blender 4.5 LTS: on PATH, or WGF_BLENDER
     # (docs/blender-pipeline.md). Without it, every 3D requirement is a placeholder.
+    # One session authors every 3D model of the design as a set (docs/blender-pipeline.md,
+    # "Set mode"); after each round the pinned Blender renders contact sheets and the set,
+    # and the author opens them: repairs see what was refused, and a review round asks it
+    # to revise what does not read at gameplay size. It writes <id>.model.json files under
+    # its session directory only: an Edit rule on {dir} (`//` = an absolute path) governs
+    # every file-editing tool - verified with a real claude -p call.
     model_author:
       kind: command
-      spec_from: stdout
+      mode: set
+      spec_from: file
       argv:
         - claude
         - -p
@@ -188,23 +195,24 @@ factory:
         - --safe-mode
         - --strict-mcp-config
         - --tools
-        - "Read"
+        - "Read,Write,Edit"
         - --allowedTools
-        - "Read"
+        - "Read,Edit(/{dir}/**)"
         - --disallowedTools
-        - "Edit,Write,NotebookEdit,Bash,WebFetch,WebSearch"
+        - "NotebookEdit,Bash,WebFetch,WebSearch"
         - --permission-mode
         - dontAsk
         - --no-session-persistence
         - --output-format
         - text
         - --max-turns
-        - "20"
+        - "80"
         - --max-budget-usd
-        - "2"
-      timeout_seconds: 900
+        - "3"
+      timeout_seconds: 1800
       idle_timeout_seconds: null
       max_repair_rounds: 2
+      review_rounds: 1
 
   visualqa:
     # Without a judge visual-qa BLOCKS: it is never a silent pass.

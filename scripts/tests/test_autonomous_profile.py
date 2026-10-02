@@ -234,15 +234,24 @@ class TheWorkflow5Agents(unittest.TestCase):
         self.assertEqual(shipped.section("assets")["model_author"]["kind"], "none")
         self.assertEqual(shipped.section("visualqa")["judge"]["kind"], "none")
 
-    def test_each_is_read_only_and_bounded(self):
+    def test_each_is_read_only_or_write_scoped_and_bounded(self):
         for (_, key), agent in self.agents().items():
             with self.subTest(agent=key):
                 argv = agent["argv"]
-                self.assertEqual(argv[argv.index("--tools") + 1], "Read")
-                self.assertEqual(argv[argv.index("--allowedTools") + 1], "Read")
+                if key == "model_author":
+                    # The set author writes its spec files, and only under its session
+                    # directory: an Edit rule governs every file-editing tool.
+                    self.assertEqual(argv[argv.index("--allowedTools") + 1],
+                                     "Read,Edit(/{dir}/**)")
+                    denied = argv[argv.index("--disallowedTools") + 1].split(",")
+                    self.assertIn("Bash", denied)
+                    self.assertLessEqual(float(argv[argv.index("--max-budget-usd") + 1]), 3)
+                else:
+                    self.assertEqual(argv[argv.index("--tools") + 1], "Read")
+                    self.assertEqual(argv[argv.index("--allowedTools") + 1], "Read")
+                    self.assertLessEqual(float(argv[argv.index("--max-budget-usd") + 1]), 2)
                 self.assertIn("--safe-mode", argv)
                 self.assertEqual(argv[argv.index("--permission-mode") + 1], "dontAsk")
-                self.assertLessEqual(float(argv[argv.index("--max-budget-usd") + 1]), 2)
                 self.assertIsNone(agent["idle_timeout_seconds"])  # text prints at exit
                 self.assertGreater(agent["timeout_seconds"], 0)
 
@@ -253,7 +262,10 @@ class TheWorkflow5Agents(unittest.TestCase):
         author = build_author(self.agents()[("assets", "author")], self.config.data)
         self.assertEqual((author.kind, author.svg_from, author.repair_rounds),
                          ("command", "stdout", 2))
-        self.assertEqual(self.agents()[("assets", "model_author")]["spec_from"], "stdout")
+        from wgf_assets.model_author import MODES
+        model = self.agents()[("assets", "model_author")]
+        self.assertEqual((model["mode"], model["spec_from"]), ("set", "file"))
+        self.assertIn(model["mode"], MODES)
         judge = VisualQASettings.resolve(self.config.data)
         self.assertEqual((judge.kind, judge.verdict_from), ("command", "stdout"))
 

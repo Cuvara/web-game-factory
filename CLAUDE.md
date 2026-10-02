@@ -63,6 +63,7 @@ python3 scripts/wgf-assets.py pack out/hud frames/             # deterministic t
 python3 scripts/wgf-model.py doctor                     # is the pinned Blender usable?
 python3 scripts/wgf-model.py build spec.json --id car -o car.glb --twice   # build, check, reproduce
 python3 scripts/wgf-model.py inspect car.glb [--spec spec.json]            # validate any GLB
+python3 scripts/wgf-model.py render car.glb -o out/ --design game-design.json  # contact sheets
 WGF_BLENDER_TEST=1 python3 -m unittest scripts/tests/test_models.py        # real Blender builds
 
 # The workflow engine. Every run command is a slice of core/workflows/new-game.workflow.yaml.

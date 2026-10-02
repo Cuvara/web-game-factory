@@ -123,6 +123,16 @@ class Silhouette(unittest.TestCase):
         quality = assess(data)["quality"]
         self.assertEqual(check(quality, "model.silhouette")["status"], "fail")
 
+    def test_a_rotated_part_is_measured_by_its_vertices_not_its_box(self):
+        # A sphere of 1 m turned 45 degrees about y: the corners of its local box would
+        # stand 1.41 m apart, and a fitted model of rotated rocks read as missing its fit
+        # (the live set author's asteroid, 6.42 m for 6 m, which it "fixed" by fudging fit).
+        turned = modelspec.euler_to_quaternion([0, 45, 0])
+        data = glb_synth.build([part("sphere", (1, 1, 1), (0, 0, 0), rotation=turned)], MATS)
+        dims = gltf.inspect(data).summary["dimensions"]
+        self.assertLess(dims[0], 1.01)
+        self.assertGreater(dims[0], 0.95)
+
     def test_the_bars_are_the_reference_files(self):
         bars = model_quality.load_bars()
         self.assertEqual(bars["silhouette_roles"], ["player", "threat"])

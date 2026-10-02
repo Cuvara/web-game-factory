@@ -125,8 +125,10 @@ metres, +Y up, the model faces +Z; rotations are Euler degrees, XYZ order.
 |---|---|
 | `parts` | Primitives: `box`, `cylinder`, `cone`, `capsule` (stand along +Y), `sphere` (UV), `icosphere`, `plane` (XZ, facing +Y). `size` is the bounding size. One glTF node per part, named by its id; `parent` nests. |
 | `parts[].taper` | `[x, z]`: the part's top is scaled by these factors, linearly from 1 at its base — a torso wider at the shoulders, a cabin narrower at the roof. `size` is the base's. Not on a plane. |
-| `parts[].bevel` | Metres: edges where faces meet at 30° or more are rounded with two segments (`bmesh.ops.bevel` on a canonically ordered mesh). Box, cylinder and cone; at most a third of the smallest side. |
-| `parts[].mirror` | `"x"`: also build the part mirrored across X = 0 of its parent, as `<id>-mirror` — whose parent is the parent's mirror when that is mirrored too. Expanded by `modelspec.resolve` (position x negated, Euler `[a, b, c]` → `[a, -b, -c]`); the shapes are symmetric across X, so no mesh is flipped and no node gets a negative scale. A track may animate the mirror by its id. |
+| `parts[].bevel` | Metres: edges where faces meet at 30° or more are rounded with two segments (`bmesh.ops.bevel` on a canonically ordered mesh). Box, cylinder, cone and extrude; at most a third of the smallest side. |
+| `extrude` + `outline` | `outline: [[x, z], ...]`: a closed polygon seen from above (+Z the model's front), 3–64 points in order round the shape, concave allowed, never crossing itself; pulled up along +Y into a prism, fitted to `size` like a primitive. Swept and delta wings, fins (rotate it upright), blades, chevrons, arrows, angular slabs — the silhouettes no box can make. |
+| `lathe` + `profile` | `profile: [[radius, y], ...]`: an open line, 2–64 points, swept round Y in `segments` steps; radius 0 only at an end (a pole), an end with a radius gets a flat cap. Fitted to `size` (widest radius = half of `size` x/z). Nozzles, bells, domes, bottles, turned posts. |
+| `parts[].mirror` | `"x"`: also build the part mirrored across X = 0 of its parent, as `<id>-mirror` — whose parent is the parent's mirror when that is mirrored too. Expanded by `modelspec.resolve` (position x negated, Euler `[a, b, c]` → `[a, -b, -c]`); the primitives and a lathe are symmetric across X, so no mesh is flipped and no node gets a negative scale; an extrude's outline is reflected (x negated, order reversed). A track may animate the mirror by its id. |
 | `materials` | Metallic-roughness PBR only — what three.js renders with `MeshStandardMaterial` and no custom shader: `color`, `metallic`, `roughness`, `opacity` (<1 blends), `emissive` + `emissive_strength`, and an optional generated `checker`/`stripes` texture (power-of-two, embedded). No Blender-only node graph is ever built. |
 | `pivot` | `base-center` (default: origin at the centre of the base, for placing on the ground), `center`, or `origin`. |
 | `fit` | Uniform scale so the model is `size` metres along `axis` (`x`/`y`/`z`/`max`). Baked into vertices and positions, never left as a node scale. |
@@ -145,7 +147,12 @@ so it would silently not exist), and LODs on an animated model.
 Taper, bevel and the capsule are arithmetic on the vertices or a bmesh operator on a
 canonically ordered mesh, so they are as deterministic as the rest (`--twice` on every one);
 a spec that uses none of them builds exactly the geometry it built before they existed (only
-the stamped key moves, because the build script is part of it).
+the stamped key moves, because the build script is part of it). The same holds for
+`extrude` and `lathe`: built vertex by vertex from the numbers, their UVs box-projected on
+the finished triangles (a UV layer carried through the bevel operator was not reproducible
+from run to run — caught by `--twice`). Adding them re-keyed every build: a committed GLB
+built before is rebuilt once (its geometry bytes are unchanged; `hover-car.glb` was rebuilt
+identical apart from the key).
 
 A recognisable low-poly object is several shaped parts with palette materials. The keeper the
 author tests use (`scripts/tests/fixtures/models/keeper.model.json`) is eight parts, four of
@@ -291,6 +298,34 @@ of body, cabin and wheels, is composed.
 | `model.palette` | no material base colour within `palette_distance` of the visual identity's palette (skipped without a palette, or when only textured materials could match) |
 | `model.bounds` | no bounding box, or not the spec's fitted size |
 | `model.primitive` | `primitive_only` and the role is readable (`player`, `threat`, `goal`, `target`, `projectile`, `collectible`, `hazard`) — unless `visual_identity.primitive_style` is stated |
+| `model.silhouette` | a box with bumps: the role is in `silhouette_roles` (`player`, `threat`) and, in every view, one component covers more than `max_dominance` (0.6) of the outline — unless `primitive_style` is stated |
+
+**The silhouette proxy.** `model.primitive` passes a hull with a canopy and a fin hidden
+inside its outline — composed, yet "an orange brick with no wings" in the game. So the
+visual model's triangles are projected orthographically from the front, the side and the top
+onto a grid (64 cells on the longer side, every triangle covering each cell it touches), and
+per view the share of the outline covered by its largest **part** (mesh node) is measured; a
+model that is one mesh (another tool's export) uses the largest rectangle inside the outline
+instead. The most distinctive view (smallest share) is the score, reported with the fill and
+block measures per view (`geometry.silhouette`). A view in which the model is flat is
+skipped. Calibrated on the 3D reference game's library (the golden ports' Blender builds,
+`test_model_review.ReferenceLibrary`):
+
+| Model | Dominance | |
+|---|---|---|
+| reference craft (13 parts, delta wings, thrusters) | 0.29 | pass |
+| reference skyline / track / wall | 0.27 / 0.39 / 0.53 | pass |
+| keeper (torso, limbs, gloves) | 0.38 | pass |
+| body-cabin-wheels car | 0.53 | pass |
+| hover car (box hull, sphere canopy, fan) | 0.63 | fail |
+| the autonomous "brick" craft (audit 2026-10-02) | 0.66 | fail |
+| one box | 1.00 | fail |
+
+A pure outline measure (bounding-box fill, largest rectangle) could not separate the brick
+from the reference craft — the brick's protrusions widen its box — and ranked a plain car
+boxier than the brick: the brick's defect is that its parts do not reach the silhouette,
+which is what the part share measures. It is a proxy, not taste: it catches a box with
+bumps, it does not judge whether a ship reads as a ship. That is the renders' job, below.
 
 The verdict is `fail` when any check fails. For a person:
 
@@ -328,8 +363,80 @@ silent raises `ModelAuthorError` with `retryable = True`; Blender missing or unp
 refused before the author runs. Requests, specs, logs and the accepted spec are kept under
 `context.run_dir/<id>/`. The requirement's own `model` (clips, collision, fit, budget) is
 held to the authored model like any delivered GLB. Wiring it into the `assets` step is the
-step's. A verified read-only Claude Code author (`spec_from: stdout`, only `Read`) is
-commented in the shipped `factory.yaml` and set in the autonomous profile
+step's: the `assets` step hands it a plain context dict (`run_dir`, `config`, `policy`,
+`design`) — before 2026-10-02 it handed on the step's context object, `dict()` of which
+raised, so every real run's model author failed with a `generation-failed` warning.
+
+### Renders and self-review
+
+The reference game's models were specs a person iterated by **looking at renders**. The
+author gets the same pictures (`scripts/wgf_assets/render.py`,
+`blender_scripts/render_models.py`): after each round's builds, the pinned Blender renders
+every built GLB headless through `wgflib.procs` (the build's environment: no preferences,
+add-ons or home) into a contact sheet `<id>.sheet.png`, left to right:
+
+| View | What it shows |
+|---|---|
+| `three-quarter` | front-right, from above |
+| `side` | the profile |
+| `top` | from above, the model's front up |
+| `game` | from the design's `engine.camera`, when it states one a view can be made from: a chase camera sees the player from behind and slightly high and everything else from the front; top-down, isometric, side views likewise |
+| `gameplay` | that view (or the three-quarter) rendered at the size the `readability` line names ("readable at 80 px wide"; else 96 px) and enlarged without smoothing: the pixels a player gets |
+
+Lighting is the craft guide's rig in the design's palette (`production-art-3d.md`, "Lighting
+rig"): a hemisphere ambient (the darkest palette colour below, the lightest tinted toward the
+accent above), a white key high front-right, a rim from behind in the player's accent (the
+palette entry whose token or role names the player/accent/signal, never the danger colour;
+else the most vivid). The background is the darkest colour; collision proxies and LOD1+ are
+hidden. Engine: Eevee, else Cycles on the CPU (which needs no GPU); fixed samples, seed 0, no
+denoiser, the Standard view transform so palette colours come out as authored. The PNGs are
+evidence for a reader, never a build output, and are not hashed. Each view's alpha mask is
+measured (`coverage` of the frame, `fill` of its own box). A render failure is not a
+refusal: the round goes on without pictures, and no review round is asked for.
+
+```
+round 0   author (blind)  -> build -> judge -> render
+repair    (max_repair_rounds, 2) the problems AND the renders of what was refused
+review    (review_rounds, 1) every model passes: "open the renders; at gameplay size does
+          the silhouette read as `readability`? leave the spec as it is, or revise it"
+          -> an unchanged spec is the author's "it reads"; a revision is built, judged and
+          rendered; one that breaks a check is repaired while repairs remain, else dropped
+```
+
+Only a passing spec ever replaces a passing spec. The result adds `renders` (`sheet`,
+`views`) and `review` (`rounds`, `reads`, the author's one-line `note`); the manifest item's
+notes name the sheet.
+
+### Set mode
+
+`mode: set` (`model_author.produce_models(requirements, ...)`) authors **every** 3D
+requirement of the design in one session: one palette, one material language (the same
+material ids and values in every spec), one level of detail, real sizes. The request carries
+every asset, the full `visual_identity`, `art_direction`, the game's `camera`, `set_rules`,
+the schema, the rules, the example and the craft guides by absolute path
+(`production-art-3d.md` — which holds the reference game's own spec, material table and rig —
+`3d-assets-and-animation.md`, `art-direction.md`). Each round also renders the set:
+`set.png`, every model side by side at its real size from the three-quarter view and the
+game's camera, through a long lens so relative size reads. Repair rounds name the refused
+specs; the author may also change one the set render shows does not belong. The `assets`
+step defers every 3D requirement that reaches the model author and calls the set author once;
+a requirement it could not make falls back to placeholders exactly as in `each` mode.
+
+With `spec_from: file` the session writes `<id>.model.json` files in `{dir}/specs/` (the
+request's `spec_paths`); on a repair or review they hold the previous specs, to be edited in
+place, and an untouched file is unchanged. Scope the host's writes to that directory: for
+Claude Code, `--allowedTools "Read,Edit(/{dir}/**)"` — `//` makes it absolute, and an
+`Edit(...)` rule governs every file-editing tool (verified 2026-10-02 with a real `claude -p`:
+a `Write(...)` rule is ignored with a warning; a write inside the directory and a
+subdirectory succeeded, one outside was refused). With `spec_from: stdout` the answer ends
+`{"models": {"<id>": <spec>, ...}}` (on a review: only the revised specs).
+
+Settings: `mode` (`each` | `set`), `review_rounds` (1), `render` (`{enabled: true, engines,
+samples, tile, timeout_seconds}`), and `{dir}` in argv. `python3 scripts/wgf-model.py render
+[ID=]a.glb ... -o DIR [--design game-design.json | --palette ... --camera ...]` renders the
+same sheets and set outside a run. The autonomous profile uses set mode, file specs and the
+scoped Edit rule ([autonomous-runs.md](autonomous-runs.md)); a read-only per-model author
+(`spec_from: stdout`, only `Read`) is commented in the shipped `factory.yaml`
 ([claude-capabilities.md](claude-capabilities.md), "The asset authors and the visual-QA
 judge").
 
@@ -419,10 +526,16 @@ python3 scripts/wgf-model.py build /tmp/hover.json --id hover-car -o scripts/tes
 
 - **No generated skinning or morph targets.** Rigid-part animation only; skinned GLBs from
   other sources are validated, not made.
-- **Shaped primitives only.** Parts are boxes, cylinders, cones, capsules, spheres,
-  icospheres and planes, tapered, bevelled and mirrored - enough for a recognisable low-poly
-  character or vehicle, not for organic sculpting; importing and cleaning a sourced mesh
-  through Blender is not implemented (a sourced GLB is validated as delivered).
+- **Shaped primitives, outlines and profiles only.** Parts are boxes, cylinders, cones,
+  capsules, spheres, icospheres and planes, extruded outlines and lathed profiles, tapered,
+  bevelled and mirrored - enough for a recognisable low-poly character, vehicle or prop, not
+  for organic sculpting or jagged rock (no vertex noise); importing and cleaning a sourced
+  mesh through Blender is not implemented (a sourced GLB is validated as delivered).
+- **The silhouette check is a proxy.** It refuses a box with bumps; it cannot say a ship
+  reads as a ship. The self-review over renders is the author's judgement of its own work,
+  not an independent one - visual-qa judges the game's frames later.
+- **Renders need a working Blender render engine.** Eevee needs a GPU context; without one
+  the renderer falls back to Cycles on the CPU (slower, same rig).
 - **Primitive detection is geometric.** A piece is judged by where its vertices lie, not by
   how it looks: a textured sphere is still a sphere, so a ball (a `projectile`) must be
   composed (panels, a seam ring) or the art direction must state `primitive_style`. A

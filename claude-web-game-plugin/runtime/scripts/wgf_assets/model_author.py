@@ -22,7 +22,10 @@ cannot mark its own homework, and nothing here relaxes a check to let a spec thr
 
 `requirement` is a build_spec asset (`id`, `role`, `description`, `readability`, `spec`) or
 an asset requirement (`requirements.Requirement`, or its dict: `kind`, `label`, `model` -
-whose declared clips, collision, fit and budget the authored spec must meet). `settings`:
+whose declared clips, collision, fit and budget the authored spec must meet). A
+requirement sent back by a failed gate carries `feedback` {notes, frames} (wgf_assets.
+feedback): the judge's reasons and the absolute paths of the frames of the running game that
+show them, which reach the author's request as `notes` and `frames`. `settings`:
 
     kind                  "command" (the only kind)
     argv                  the author's command; placeholders, per element, never re-formatted:
@@ -33,10 +36,11 @@ whose declared clips, collision, fit and budget the authored spec must meet). `s
     max_repair_rounds     2
     blender               {executable, timeout_seconds, allow_unpinned} as the backend's
 
-`context`: `run_dir` (requests, specs and logs; default `<out_dir>/.model-author`), `config`
-(the factory section: `factory.agents.env_passthrough` names the host's credential),
-`policy` (the asset policy; loaded when absent), `environ` and `on_event` (passed to
-Blender's discovery and build).
+`context`: a plain mapping - `run_dir` (requests, specs and logs; default
+`<out_dir>/.model-author`), `config` (the factory section: `factory.agents.env_passthrough`
+names the host's credential), `policy` (the asset policy; loaded when absent), `environ` and
+`on_event` (passed to Blender's discovery and build). The assets step builds it
+(pipeline._model_author_context); a step's WorkflowContext is not one.
 
 The author runs through wgflib.procs with the allowlisted agent environment
 (wgflib.agentenv), like the design author and the developer. A host that fails, times out
@@ -85,6 +89,12 @@ PROMPT_STDOUT = (
 PROMPT_REPAIR = (
     " Your previous spec (the request's `repair.previous_spec`) was refused for the reasons in "
     "`repair.problems`. Return the complete spec again with exactly those fixed."
+)
+PROMPT_NOTES = (
+    " This asset was modelled before, and the running game was judged and sent it back: the "
+    "request's `notes` say why, in the judge's words. Open every PNG in the request's "
+    "`frames` - screenshots of the running game - find this asset in them, and fix what "
+    "they show and the notes say. Model it anew - the same spec fails the game again."
 )
 
 RULES = [
@@ -150,7 +160,7 @@ def _requirement(requirement):
         data = dict(requirement)
     else:
         data = dict(getattr(requirement, "data", None) or {})
-        for key in ("id", "kind", "label", "model", "notes"):
+        for key in ("id", "kind", "label", "model", "notes", "feedback"):
             value = getattr(requirement, key, None)
             if value is not None:
                 data.setdefault(key, value)
@@ -167,6 +177,8 @@ def _requirement(requirement):
         # A model spec on the requirement is what the delivered GLB is held to (clips,
         # collision, fit, budget), whoever wrote the geometry.
         "expectations": data.get("model") if isinstance(data.get("model"), dict) else None,
+        # What a failed gate sent it back for (wgf_assets.feedback): {notes, frames}.
+        "feedback": data.get("feedback") if isinstance(data.get("feedback"), dict) else None,
     }
 
 
@@ -337,6 +349,10 @@ def _ask(req, look, bars, config, argv, env, directory, stem, repair, context):
     }
     if req["expectations"]:
         request["expectations"] = req["expectations"]
+    feedback = req.get("feedback") or {}
+    if feedback.get("notes"):
+        request["notes"] = list(feedback["notes"])
+        request["frames"] = [str(f) for f in feedback.get("frames") or []]
     if repair:
         request["repair"] = repair
     with open(request_path, "w", encoding="utf-8", newline="\n") as handle:
@@ -347,6 +363,8 @@ def _ask(req, look, bars, config, argv, env, directory, stem, repair, context):
     values["prompt"] = (PROMPT_STDOUT if stdout_mode else PROMPT).format(**values)
     if repair:
         values["prompt"] += PROMPT_REPAIR
+    if request.get("notes"):
+        values["prompt"] += PROMPT_NOTES
     try:
         command = [part.format(**values) for part in argv]
     except (KeyError, IndexError, ValueError) as exc:

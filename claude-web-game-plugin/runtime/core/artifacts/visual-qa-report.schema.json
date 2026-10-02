@@ -7,7 +7,7 @@
     "id": "visual-qa-report",
     "kind": "artifact",
     "format": "json",
-    "version": "1.1.0",
+    "version": "1.2.0",
     "producer": "title:prototype",
     "consumers": [
       "title:prototype",
@@ -128,6 +128,11 @@
         "maximum": 5
       },
       "description": "Rubric dimension -> 0..5."
+    },
+    "score_reasons": {
+      "type": "object",
+      "additionalProperties": { "type": "string" },
+      "description": "Rubric dimension -> the judge's reason for its score, verbatim: what it saw, on which entity, in which frames. What a failing score sends back to the asset authors and the developer besides the number. Absent when the judge gave none (the baseline judge never does)."
     },
     "findings": {
       "type": "array",

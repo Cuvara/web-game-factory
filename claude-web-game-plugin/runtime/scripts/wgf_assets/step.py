@@ -3,8 +3,10 @@
     inputs   game-design (required), scaffold-record (optional: the target platforms, whose
              bundle-size limits the delivered files are checked against),
              production-quality-report and visual-qa-report (optional: on re-entry, the
-             report that routed the run back to `assets`; only the items it names are
-             rebuilt, and its findings reach the author)
+             report that routed the run back to `assets`; only the items it concerns are
+             rebuilt, and its reasons and frames reach the author - feedback.py),
+             playability-report (optional: the play the gate judged - its frame paths, and
+             the probe's entity -> asset records)
     outputs  asset-manifest
 
 The work list is the design's build_spec.assets (requirements.py): role, dimension,
@@ -49,6 +51,12 @@ Outcomes: SUCCESS with the manifest; WAITING_FOR_INPUT without a game-design; FA
 retryable, for a design whose asset requirements are malformed or a game-design of a major
 schema version this step cannot read; FAILED, not retryable, carrying the manifest, when an
 issue named in fail_on (or any error, when strict) is present.
+
+On a re-entry from a failed gate (a report routed `assets`) the step must change the art:
+BLOCKED when no configured author can make any requirement the gate concerns again (a
+library or placeholder hands over the same file, and the loop would spend its budget on
+nothing); FAILED, retryable, carrying the manifest, when authors were asked and none
+delivered.
 """
 
 import copy
@@ -60,6 +68,7 @@ from wgflib import checkout, paths, provenance
 from wgflib.workflow import ArtifactOutput, StepResult, WorkflowStep
 from wgflib.yamllite import YamlError, load_file
 
+from . import feedback as feedback_mod
 from . import modelspec
 from .blender import BACKEND_ID as BLENDER
 from .author import AuthorError, build_author
@@ -75,7 +84,7 @@ try:  # the 3D model author is optional: absent, 3D requirements fall back to pl
 except ImportError:
     _model_author = None
 
-__all__ = ["AssetsStep", "MANIFEST_SCHEMA_VERSION", "resolve_settings"]
+__all__ = ["AssetsStep", "MANIFEST_SCHEMA_VERSION", "resolve_settings", "rebuild_list"]
 
 MANIFEST_SCHEMA_VERSION = provenance.version_of("asset-manifest")
 READABLE_DESIGN_MAJOR = 1
@@ -117,50 +126,11 @@ def resolve_settings(context):
     return settings
 
 
-def _id_words(text):
-    return set(re.findall(r"[a-z][a-z0-9-]*", (text or "").lower()))
-
-
-def rebuild_list(reports, requirements):
-    """{requirement id: [finding]} named by re-entry reports whose routes include `assets`:
-    a production-quality check that failed with route assets (its `assets`, else the ids
-    its summary names), a visual-qa finding with route assets (the ids its id or summary
-    names). A variant id (`tile-2`) names its requirement (`tile`)."""
-    ids = {r.id for r in requirements}
-    variants = {v: r.id for r in requirements for v in r.variant_ids()}
-
-    def resolve(names):
-        out = set()
-        for name in names:
-            if name in ids:
-                out.add(name)
-            elif name in variants:
-                out.add(variants[name])
-        return out
-
-    found = {}
-    for kind, report in reports:
-        if "assets" not in (report.get("routes") or []):
-            continue
-        if kind == "production-quality-report":
-            for check in report.get("checks") or []:
-                if check.get("route") != "assets" or check.get("status") == "PASS":
-                    continue
-                named = resolve(check.get("assets") or []) or resolve(
-                    _id_words(check.get("summary")))
-                for rid in sorted(named):
-                    found.setdefault(rid, []).append(
-                        f"{check.get('id')}: {check.get('summary')}")
-        else:
-            for finding in report.get("findings") or []:
-                if finding.get("route") != "assets":
-                    continue
-                named = resolve(_id_words(finding.get("id")) | _id_words(finding.get("summary")))
-                for rid in sorted(named):
-                    found.setdefault(rid, []).append(
-                        f"{finding.get('severity')} {finding.get('category')}: "
-                        f"{finding.get('summary')}")
-    return found
+def rebuild_list(reports, requirements, **kwargs):
+    """{requirement id: {"reasons": [text], "frames": [PNG path]}} the re-entry reports
+    concern (feedback.plan): by id, variant id, role word, the probe's entity -> asset
+    records and the rubric's rebuild_roles."""
+    return feedback_mod.rebuild_list(reports, requirements, **kwargs)
 
 
 def _bundle_limits(scaffold):
@@ -246,10 +216,21 @@ class AssetsStep(WorkflowStep):
         except AuthorError as exc:
             return StepResult.failed(f"asset author: {exc}", retryable=False)
         reports = [(kind, inputs.load(kind)) for kind in REENTRY_REPORTS if kind in inputs]
-        rebuild = rebuild_list(reports, requirements)
+        playability = (inputs.load("playability-report")
+                       if "playability-report" in inputs else None)
+        plan = feedback_mod.plan(reports, requirements,
+                                 run_dir=getattr(context, "run_dir", None),
+                                 entered_by=getattr(context, "entered_by", None),
+                                 playability=playability)
+        rebuild = plan.items
         if reports:
-            context.logger.info("re-entry: rebuilding what the reports name",
-                                reports=[k for k, _ in reports], items=sorted(rebuild))
+            context.logger.info("re-entry: rebuilding what the reports concern",
+                                reports=plan.sources, items=sorted(rebuild),
+                                frames=sum(len(v["frames"]) for v in rebuild.values()))
+        if plan.fallback:
+            context.logger.warning(
+                "re-entry: no failure named an asset requirement; remaking every readable "
+                "entity and the scene", items=sorted(rebuild), unresolved=plan.unresolved[:6])
         identity = (design.get("build_spec") or {}).get("visual_identity") \
             if isinstance(design.get("build_spec"), dict) else None
 
@@ -312,6 +293,11 @@ class AssetsStep(WorkflowStep):
         }
         artifact = ArtifactOutput("asset-manifest", manifest, metadata=metadata)
 
+        if plan.reentry:
+            refused = self._reentry_refusal(plan, requirements, pipeline, result, context,
+                                            artifact)
+            if refused is not None:
+                return refused
         blocking = self._blocking(settings, issues)
         if blocking:
             return StepResult("FAILED", artifacts=[artifact], retryable=False,
@@ -322,6 +308,41 @@ class AssetsStep(WorkflowStep):
             message=f"{metadata['items']} assets: {metadata['production_ready']} "
                     f"production-ready, {metadata['placeholders']} placeholders, "
                     f"{metadata['errors']} errors")
+
+    @staticmethod
+    def _reentry_refusal(plan, requirements, pipeline, result, context, artifact):
+        """None when a re-entry from a failed gate changed the art; else the outcome that
+        says why it could not - never a SUCCESS that reused every file."""
+        by_id = {r.id: r for r in requirements}
+        wanted = sorted(plan.items)
+        made = sorted(set(result.rebuilt))
+        skipped = [rid for rid in wanted if rid not in made]
+        if made:
+            if skipped:
+                context.logger.warning("re-entry: not every requirement was made again",
+                                       rebuilt=made, not_rebuilt=skipped)
+            return None
+        sources = ", ".join(k.replace("-report", "") for k in plan.sources) or "a gate"
+        if not wanted:
+            return StepResult.blocked(
+                f"{sources} sent the run back to make its art again, but the design lists no "
+                f"asset requirement that can be made again (build_spec.assets). Fix the "
+                f"design or the art by hand, and resume.")
+        capable = [rid for rid in wanted if rid in by_id and pipeline.can_remake(by_id[rid])]
+        if not capable:
+            return StepResult.blocked(
+                f"{sources} sent the run back to make {', '.join(wanted)} again, but no "
+                f"configured author can make them: factory.assets.author draws 2D SVG, "
+                f"factory.assets.model_author builds 3D models, and a library or placeholder "
+                f"would hand over the same files - the loop would spend its budget on "
+                f"nothing. Configure an author (docs/assets-module.md), or replace the files "
+                f"by hand, and resume.")
+        context.logger.error("re-entry: the authors delivered nothing", wanted=capable)
+        return StepResult("FAILED", artifacts=[artifact], retryable=True,
+                          error=f"{sources} sent the run back to make {', '.join(capable)} "
+                                f"again; the authors were asked and none delivered an "
+                                f"accepted file (see the manifest's author-rejected and "
+                                f"generation-failed issues)")
 
     @staticmethod
     def _work_dir(context, slug):

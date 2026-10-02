@@ -8,7 +8,7 @@
     "id": "title-strategy",
     "kind": "artifact",
     "format": "json",
-    "version": "1.2.0",
+    "version": "1.3.0",
     "producer": "title:strategy",
     "consumers": ["title:strategy", "title:design", "title:tech-plan", "title:prototype", "title:prototype-review", "title:production", "title:live"],
     "repo_path": "workspace/titles/<title-id>/title-strategy.json",
@@ -20,6 +20,10 @@
   "required": ["provenance", "title_id", "opportunity_id", "one_liner", "platform_set", "audience", "monetization", "session", "timebox_days", "mvp", "out_of_scope", "success_criteria", "kill_criteria", "prototype_must_prove"],
   "properties": {
     "provenance": { "$ref": "./shared/provenance.schema.json#/$defs/provenance" },
+    "research": {
+      "$ref": "./shared/research-opportunity.schema.json#/$defs/handoff",
+      "description": "Research V2 (added in 1.3.0): the opportunity's research carried to design - theme, fantasy, art direction, gameplay, audience, competitors, benchmarks, patterns, monetization evidence, production and buildability, with the claims they rest on - and `applied`: which strategy decisions came from research and which fell back to a default. Absent when the opportunity predates Research V2."
+    },
 
     "title_id": { "type": "string", "pattern": "^[a-z][a-z0-9-]*$" },
     "opportunity_id": { "type": "string" },

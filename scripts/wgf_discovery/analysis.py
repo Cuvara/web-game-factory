@@ -118,6 +118,45 @@ def _idea_rank(candidate, dimension):
     return (-len(match["terms"]), dimension is not None and not match["dimension"])
 
 
+class SupportError(ValueError):
+    """A derived statistic without a valid count behind it. A share with no denominator is
+    a number nobody can check, so it is refused rather than reported."""
+
+
+def check_support(support, key="?"):
+    """The support block of a counting claim, validated: a denominator of at least one, a
+    numerator no larger, members that are exactly the numerator, no member also an
+    exception, and a frame saying what was counted over."""
+    if not isinstance(support, dict):
+        raise SupportError(f"{key}: support must be an object")
+    numerator, denominator = support.get("numerator"), support.get("denominator")
+    members = list(support.get("members") or [])
+    exceptions = list(support.get("exceptions") or [])
+    for name, value in (("numerator", numerator), ("denominator", denominator)):
+        if isinstance(value, bool) or not isinstance(value, int):
+            raise SupportError(f"{key}: support.{name} must be an integer, got {value!r}")
+    if denominator < 1:
+        raise SupportError(f"{key}: a share needs a denominator of at least 1")
+    if not 0 <= numerator <= denominator:
+        raise SupportError(f"{key}: numerator {numerator} is outside 0..{denominator}")
+    if len(set(members)) != numerator:
+        raise SupportError(f"{key}: {len(set(members))} members for a numerator of "
+                           f"{numerator}")
+    if set(members) & set(exceptions):
+        raise SupportError(f"{key}: an id is both a member and an exception")
+    if exceptions and numerator + len(set(exceptions)) != denominator:
+        raise SupportError(f"{key}: members and exceptions do not add up to the denominator")
+    if not str(support.get("frame") or "").strip():
+        raise SupportError(f"{key}: support names no frame")
+    out = {"numerator": numerator, "denominator": denominator, "members": sorted(set(members)),
+           "frame": str(support["frame"])}
+    if exceptions:
+        out["exceptions"] = sorted(set(exceptions))
+    if support.get("unknown"):
+        out["unknown"] = sorted(set(support["unknown"]))
+    return out
+
+
 def claim_id(*parts):
     digest = hashlib.sha256(json.dumps(parts, sort_keys=True, ensure_ascii=False)
                             .encode("utf-8")).hexdigest()
@@ -179,21 +218,31 @@ class ClaimBook:
             "tags": sorted(set(tags)),
         })
 
-    def derived(self, key, statement, parents, subject, tags=()):
+    def derived(self, key, statement, parents, subject, tags=(), support=None):
         parents = sorted(set(parents))
         if not parents:
             raise ValueError(f"derived claim {key!r} has no parents")
+        tags = set(tags)
+        if "pattern" in tags and support is None:
+            raise ValueError(f"pattern claim {key!r} states no numerator and denominator")
         confidence = min([CONFIDENCE_DERIVED_MAX]
                          + [self.claims[p]["confidence"] for p in parents if p in self.claims])
-        return self._add(claim_id("derived", key, statement), {
+        body = {
             "statement": statement,
             "tier": "derived",
             "confidence": confidence,
             "evidence": [],
             "parents": parents,
             "subject": subject,
-            "tags": sorted(set(tags)),
-        })
+            "tags": sorted(tags),
+        }
+        if support is not None:
+            body["support"] = check_support(support, key)
+        return self._add(claim_id("derived", key, statement), body)
+
+    def record(self, cid, body):
+        """A claim built elsewhere (a teardown session or coding): kept as built."""
+        return self._add(cid, body)
 
     def tier(self, cid):
         return self.claims[cid]["tier"]
@@ -597,8 +646,16 @@ def _vetoes(model, raw):
     return results
 
 
+# Backlog states that mean somebody already acted on an opportunity. A `discovered` one is
+# only a proposal a scan persisted (Research V2 keeps every opportunity it proposes): finding
+# it again refreshes it rather than excluding the shape as a duplicate of itself.
+ACTED_ON = ("scored", "shortlisted", "approved", "promoted", "parked", "stale", "rejected")
+
+
 def _backlog_match(archetype, backlog):
     for opp in backlog:
+        if opp.get("state") not in ACTED_ON:
+            continue
         concept = opp.get("concept") or {}
         same_genre = (concept.get("genre") or "").lower() == archetype["genre"]
         same_kind = ((concept.get("subgenre") or "").lower() == archetype["subgenre"]
@@ -807,7 +864,9 @@ def _candidate(book, archetype, views, platform_info, model, backlog, report_key
     }
     return {
         "id": aid,
-        "opportunity_id": "opp-" + hashlib.sha256(f"{report_key}:{aid}".encode()).hexdigest()[:8],
+        # Stable across scans: the same shape is the same opportunity, so a G1 choice can
+        # pin it on a later scan and the backlog holds it once.
+        "opportunity_id": "opp-" + hashlib.sha256(f"shape:{aid}".encode()).hexdigest()[:8],
         "concept": concept,
         "profile": profile,
         "platform_fit": fits,
@@ -838,13 +897,17 @@ def buildable(archetype):
 
 
 def analyse(*, sources, profiles, archetypes, model, backlog, as_of_text, report_key,
-            max_candidates=8, idea=None, idea_fallback="nearest"):
+            max_candidates=8, idea=None, idea_fallback="nearest", book=None, state=None):
     """Returns (claims, platforms, candidates, selection, gaps). `as_of_text(dt)` formats a
     timestamp; `as_of_text(None)` is the scan's own time. `idea` is the run's brief, or
     None for a blank scan - which leaves every output exactly as it was without one.
     `idea_fallback` is "nearest" or "wait": whether a brief no eligible candidate matches
-    selects the nearest shape, or nothing."""
-    book = ClaimBook(as_of_text(None))
+    selects the nearest shape, or nothing.
+
+    `book` and `state` are for Research V2 (step.py), which continues from where the screen
+    stops: `state` receives the observations, platform views, every candidate (before the
+    report's cap) and the claim ids the screen references."""
+    book = book if book is not None else ClaimBook(as_of_text(None))
     gaps = []
 
     observations = []
@@ -978,4 +1041,7 @@ def analyse(*, sources, profiles, archetypes, model, backlog, as_of_text, report
             referenced.update(d["claim_refs"])
     keep_ids = book.closure(referenced)
     claims = [book.claims[cid] for cid in sorted(keep_ids)]
+    if state is not None:
+        state.update({"observations": observations, "views": views,
+                      "candidates": candidates, "referenced": referenced})
     return claims, platforms, kept, selection, gaps

@@ -25,6 +25,7 @@ You are the **game-designer** role as defined by Web Game Factory core.
 14. `${CLAUDE_PLUGIN_ROOT}/runtime/core/craft/game-ui-kit.md`
 15. `${CLAUDE_PLUGIN_ROOT}/runtime/core/craft/juice.md`
 16. `${CLAUDE_PLUGIN_ROOT}/runtime/core/craft/retention-and-progression.md`
+17. `${CLAUDE_PLUGIN_ROOT}/runtime/core/artifacts/shared/research-opportunity.schema.json`
 
 Core is authoritative. Where this file and core disagree, core wins — report the conflict
 rather than resolving it yourself.

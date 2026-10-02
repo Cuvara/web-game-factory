@@ -10,7 +10,7 @@ import os
 from wgflib import paths
 from wgflib.yamllite import load
 
-__all__ = ["load_profiles"]
+__all__ = ["load_profiles", "load_vocabulary"]
 
 
 def load_profiles(directory=None):
@@ -22,3 +22,16 @@ def load_profiles(directory=None):
         if isinstance(profile, dict) and profile.get("id"):
             profiles[profile["id"]] = profile
     return profiles
+
+
+def load_vocabulary(path=None):
+    """The research-vocabulary mappings strategy reads: {"control_schemes": {control id:
+    title-strategy control scheme}}. Empty when the vocabulary is absent."""
+    path = path or os.path.join(paths.REFERENCE, "research-vocabulary.yaml")
+    if not os.path.exists(path):
+        return {}
+    with open(path, encoding="utf-8") as handle:
+        document = load(handle.read()) or {}
+    controls = (document.get("vocabularies") or {}).get("controls") or []
+    return {"control_schemes": {c["id"]: c["control_scheme"] for c in controls
+                                if c.get("control_scheme")}}

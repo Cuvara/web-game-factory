@@ -21,7 +21,7 @@ state: there is no entity to hold it.
   the brief in the project's concepts file, or `idea_fallback: nearest`, which carries the
   brief to that nearest shape instead. A substitute shape is a different game, so it is never
   carried forward unless someone asked for it.
-  Without a brief the scan is blank: the whole catalog, ranked on the screen alone.
+  Without a brief the scan is blank: every generator, ranked on evidence alone.
 - A **concepts file**, optional — `concepts.yaml` in the research corpus (or the path the
   `concepts` setting names): concepts a project authored for a brief the catalog does not
   carry. It has the catalog's shape, `{version, archetypes: [...]}`, and every entry the
@@ -37,6 +37,14 @@ state: there is no entity to hold it.
   its brief - the research role supplies it and the run is resumed: `core/craft/research-evidence.md`.
 - `core/reference/platforms/*.yaml` — what each portal carries, rewards, and forbids
 - `core/reference/dimensions.yaml` — the vocabulary every observation must land in
+- `core/reference/research-vocabulary.yaml` — the shared codes every researched game is
+  described in: the genre tree, market descriptors, and the facets (mechanics, core-loop
+  beats, controls, theme, fantasy, art, audience, session, progression, difficulty,
+  retention, monetization, production) and their values
+- `core/reference/research-analysis.yaml` — which facet pairs are analysed, and when a
+  count is large enough to report as a pattern
+- the **game corpus**: portal listings captured as snapshots, and teardown records of
+  individual games (`game-record`; `core/craft/competitive-teardown.md`)
 - `performance-review` artifacts from live titles — the factory's own shipped evidence
 - Existing claims and opportunities, for deduplication
 
@@ -51,7 +59,14 @@ state: there is no entity to hold it.
    rankings, play counts, ratings, release dates, tags, ad formats — and do not invent the
    fields it does not show.
 
-3. **Write claims, one statement each.** Each claim is falsifiable and carries its tier:
+3. **Research games, not only platforms.** The game is the unit. Every game the scan knows
+   of - from a listing, or played and timed in a teardown - is coded on the shared
+   vocabulary, so games can be compared and counted. A portal's own category tag, a
+   stopwatch reading, an ad the observer saw offered are observations; a theme read off a
+   thumbnail, a tone, a fantasy are interpretations of a capture, and are coded as such.
+   Free text describes; only codes count.
+
+4. **Write claims, one statement each.** Each claim is falsifiable and carries its tier:
 
    - `observed` — measured or read from a named source. Requires at least one evidence
      entry with a `source_uri`. No exceptions; the schema enforces it.
@@ -64,18 +79,37 @@ state: there is no entity to hold it.
    hypothesis. Collapsing these into one sentence is how a guess acquires the authority of
    a measurement.
 
-4. **Never edit an existing claim.** If something changed, write a new claim and set
+5. **Never edit an existing claim.** If something changed, write a new claim and set
    `superseded_by` on the old one. The old claim stays readable, which is the only way to
    see that a belief moved.
 
-5. **Form opportunities.** Group claims into candidate games. An opportunity needs a
-   genre, a core mechanic, a fantasy, a core loop, candidate platforms, and the claim ids
-   it rests on. Deduplicate against the existing backlog including rejected entries — a
-   previously rejected opportunity plus its evaluation is evidence, and rediscovering the
-   same dead end every quarter is a real cost.
+6. **Count across games.** A pattern is a derived claim over the corpus: of the games coded
+   on both facets, how many show it (numerator), out of how many (denominator), which do and
+   which do not. A share without its denominator is refused. Patterns describe; what
+   adopting one might do is a separate hypothesis.
 
-6. **Generate several candidates, not one.** The scan's job is to widen the field. Four to
-   eight opportunities from a scan is healthy; one means you decided before you looked.
+7. **Keep the market signals apart.** Per genre node and platform: *demand* is the cell's
+   share of popularity-ordered lists; *supply* is the portal's category count and its share
+   of the family; *saturation* is demand share over supply share and needs both;
+   *competition* names the titles; a *trend* needs the same list captured on several dates.
+   Many games is supply, not saturation. Few games with no demand evidence is a gap in the
+   evidence, recorded as `insufficient-demand-evidence` - never an opportunity.
+
+8. **Generate several opportunities, not one.** The scan's job is to widen the field. Each
+   generator is a rule over the corpus: a proven core with one axis changed (theme, tone,
+   rendering, fantasy), a supply gap, a pattern transferred from one genre to another, a
+   difference between portals, and every buildable shape screened against the portals.
+   Each opportunity names its facet cell (every facet with its tier and claims, or
+   `unknown`), its basis and a thesis (a hypothesis), its market cells, competitors,
+   adopted patterns, benchmarks, monetization evidence, production profile and audience.
+   An opportunity whose basis rests on no observation is not proposed. Four to eight
+   opportunities from a scan is healthy; one means you decided before you looked.
+
+9. **Check buildability last, and keep what cannot be built.** An opportunity the Factory
+   has no capability for is kept as a capability gap, with what is missing - it is
+   evidence for what to learn to build next, not something to discard. Deduplicate against
+   the backlog, including rejected entries: the same proposal is the same opportunity on
+   every scan, and one somebody already acted on is not proposed again.
 
 ## Outputs
 
@@ -87,9 +121,11 @@ state: there is no entity to hold it.
   its reason for exclusion, and the selection. The report is how a reviewer sees that the
   field was widened before it was narrowed.
 
-When the scan runs as the `research` step of a workflow, the candidates live in the
-research report and only the selected one is emitted as an `opportunity`; the others stay
-on record, where the next scan can find them. The report's screen borrows the scoring
+When the scan runs as the `research` step of a workflow, every opportunity lives in the
+research report, and the one the run carries - the best-ranked buildable one, unless the
+step pins another - is emitted as the run's `opportunity`; the others stay on record, where
+G1 and the next scan can find them, and the installation may write them all to the backlog
+as `discovered`, once. The report's screen borrows the scoring
 model's weights and vetoes to rank candidates. It is not an `evaluation`: scoring for the
 shortlist remains a separate act by a separate role.
 

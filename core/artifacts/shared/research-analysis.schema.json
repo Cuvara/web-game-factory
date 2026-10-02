@@ -1,0 +1,74 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://webgamefactory.dev/schemas/artifacts/shared/research-analysis.schema.json",
+  "title": "Research Analysis",
+  "description": "Validates core/reference/research-analysis.yaml: the thresholds and facet pairs that turn a game corpus into patterns, market cells and opportunities. Data so a reviewer can see when a count is large enough to be called a pattern.",
+
+  "x-wgf": {
+    "id": "research-analysis",
+    "kind": "reference",
+    "format": "yaml",
+    "instance_path": "core/reference/research-analysis.yaml",
+    "consumers": ["portfolio:market-scan"]
+  },
+
+  "type": "object",
+  "required": ["version", "patterns", "lists", "market", "opportunities"],
+  "properties": {
+    "version": { "type": "string", "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$" },
+    "patterns": {
+      "type": "object",
+      "required": ["min_support", "min_denominator", "pairs", "benchmarks"],
+      "properties": {
+        "min_support": { "type": "integer", "minimum": 1 },
+        "min_denominator": { "type": "integer", "minimum": 1 },
+        "pairs": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["id", "a", "b", "kind"],
+            "properties": {
+              "id": { "type": "string", "pattern": "^[a-z][a-z0-9-]*$" },
+              "a": { "type": "string" },
+              "b": { "type": "string" },
+              "kind": { "enum": ["gameplay", "theme", "visual", "audience", "session", "retention", "progression", "monetization", "ux", "market", "production"] }
+            },
+            "additionalProperties": false
+          }
+        },
+        "benchmarks": { "type": "array", "items": { "type": "string" } }
+      },
+      "additionalProperties": false
+    },
+    "lists": {
+      "type": "object",
+      "required": ["popularity", "editorial"],
+      "properties": {
+        "popularity": { "type": "array", "items": { "type": "string" } },
+        "editorial": { "type": "array", "items": { "type": "string" } }
+      },
+      "additionalProperties": false
+    },
+    "market": {
+      "type": "object",
+      "required": ["saturation_band", "min_history_frames"],
+      "properties": {
+        "saturation_band": { "type": "number", "exclusiveMinimum": 1 },
+        "min_history_frames": { "type": "integer", "minimum": 2 }
+      },
+      "additionalProperties": false
+    },
+    "opportunities": {
+      "type": "object",
+      "required": ["generators", "axes", "transfer_min_prevalence", "max_per_generator"],
+      "properties": {
+        "generators": { "type": "array", "items": { "enum": ["proven-core-new-axis", "supply-gap", "pattern-transfer", "portal-difference", "capability-screen"] } },
+        "axes": { "type": "array", "items": { "type": "string" } },
+        "transfer_min_prevalence": { "type": "number", "minimum": 0, "maximum": 1 },
+        "max_per_generator": { "type": "integer", "minimum": 1 }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}

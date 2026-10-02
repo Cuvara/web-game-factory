@@ -1,0 +1,79 @@
+# Research analysis: how a game corpus becomes patterns, market cells and opportunities.
+#
+# Data, not code, for the same reason the scoring model is: a threshold that decides whether
+# "3 of 5 games" is a pattern is a methodological choice a reviewer must be able to see,
+# diff and version. Versioned; a report records the version it ran under.
+#
+# Nothing here invents evidence. Every threshold only decides when an observed count is
+# large enough to be reported as a pattern or used as a signal; below it the report says
+# "insufficient support", never a smaller number.
+
+version: 1.0.0
+
+# A derived pattern needs at least `min_support` games showing it, out of at least
+# `min_denominator` games coded on both facets. Below that it is not reported.
+patterns:
+  min_support: 2
+  min_denominator: 2
+  # Facet pairs analysed for co-occurrence. `a` is the conditioning facet ("of the games
+  # coded a=X ..."), `b` the facet counted. `market` facets are not game codings: `platform`
+  # is where a game was observed listed; `saturation` is its market cell's status there.
+  pairs:
+    - {id: genre-gameplay, a: genre, b: mechanics, kind: gameplay}
+    - {id: genre-loop, a: genre, b: gameplay_steps, kind: gameplay}
+    - {id: theme-genre, a: theme, b: genre, kind: theme}
+    - {id: theme-art, a: theme, b: art_rendering, kind: visual}
+    - {id: theme-tone, a: theme, b: art_tone, kind: visual}
+    - {id: genre-audience, a: genre, b: audience_type, kind: audience}
+    - {id: genre-intent, a: genre, b: intent, kind: audience}
+    - {id: genre-session, a: genre, b: session_band, kind: session}
+    - {id: gameplay-session, a: mechanics, b: session_band, kind: session}
+    - {id: genre-retention, a: genre, b: retention_hooks, kind: retention}
+    - {id: genre-progression, a: genre, b: progression, kind: progression}
+    - {id: gameplay-retention, a: mechanics, b: retention_hooks, kind: retention}
+    - {id: gameplay-progression, a: mechanics, b: progression, kind: progression}
+    - {id: gameplay-monetization, a: mechanics, b: ad_triggers, kind: monetization}
+    - {id: genre-monetization, a: genre, b: ad_triggers, kind: monetization}
+    - {id: genre-ux, a: genre, b: tutorial, kind: ux}
+    - {id: genre-platform, a: genre, b: platform, kind: market}
+    - {id: art-production, a: art_rendering, b: animation, kind: production}
+    - {id: theme-saturation, a: theme, b: saturation, kind: market}
+    - {id: genre-saturation, a: genre, b: saturation, kind: market}
+  # Numeric facets summarised per genre node as benchmarks (median, range, members).
+  benchmarks:
+    - run_seconds
+    - retry_seconds
+    - first_failure_seconds
+    - time_to_first_play_seconds
+    - time_to_first_reward_seconds
+    - taps_before_play
+    - interstitial_interval_seconds
+    - unique_assets
+    - bundle_mb
+
+# How a captured list is read. A list is a demand signal only when the portal orders it by
+# popularity; an editorial or alphabetical list shows that a game exists, not that it is
+# played. A snapshot may state `list_kind` on the reference_title fact; otherwise these
+# substrings of the list name decide, and anything else is `category` (supply/visibility).
+lists:
+  popularity: [most-popular, most popular, popular, top, trending, hot, most-played]
+  editorial: [editorial, featured, staff, picks, relaxing, recommended]
+
+market:
+  # A cell's demand share above its supply share by at least this factor reads as
+  # under-supplied; below 1/this factor as over-supplied. Between: balanced.
+  saturation_band: 1.5
+  # Growth needs the same list on the same portal captured on at least this many dates.
+  min_history_frames: 2
+
+opportunities:
+  # A corpus-generated opportunity needs demand that rests on an observation. Every
+  # generator refuses a cell without it; low supply alone is recorded as
+  # `insufficient-demand-evidence`, never as an opportunity.
+  generators: [proven-core-new-axis, supply-gap, pattern-transfer, portal-difference, capability-screen]
+  # Axes a proven core may change, in the order they are tried.
+  axes: [theme, art_tone, art_rendering, player_fantasy]
+  # A pattern transfers when it reaches this prevalence in its home genre.
+  transfer_min_prevalence: 0.6
+  # At most this many opportunities per generator, after deterministic ordering.
+  max_per_generator: 6

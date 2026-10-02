@@ -1813,6 +1813,39 @@ class LinksInTheCheckout(DevelopCase):
             handle.write("# rendered\n")
         self.assertIsNone(step._scope(GitRepo(self.repo, Runner()), settings, **record))
 
+    def test_new_out_of_scope_files_are_quarantined_and_the_attempt_retried(self):
+        # A live greybox developer wrote a diagnostic script into the checkout to see its
+        # own frames; it has no tool to delete a file, so failing for good lost the hour.
+        for rel in (".scratch-diag.mjs", ".claude/settings.json"):
+            path = os.path.join(self.repo, *rel.split("/"))
+            os.makedirs(os.path.dirname(path), exist_ok=True)
+            with open(path, "w", encoding="utf-8") as handle:
+                handle.write("scratch\n")
+        quarantine = os.path.join(self.scratch, "quarantine", "1-1")
+        record = dict(checkout=self.repo, key="k", engine="pixijs",
+                      checks_json=os.path.join(self.scratch, "unused.json"), logger=Log(),
+                      write=False, quarantine=quarantine)
+        settings = Settings.resolve(self.config())
+        step = step_with(FakeRunner())
+        refused = step._scope(GitRepo(self.repo, Runner()), settings, **record)
+        self.assertEqual((refused.outcome, refused.retryable), (StepOutcome.FAILED, True))
+        self.assertIn("Keep scratch files in /tmp", refused.error)
+        self.assertTrue(os.path.isfile(os.path.join(quarantine, ".scratch-diag.mjs")))
+        self.assertTrue(os.path.isfile(os.path.join(quarantine, ".claude", "settings.json")))
+        self.assertFalse(os.path.lexists(os.path.join(self.repo, ".claude")))
+        self.assertIsNone(step._scope(GitRepo(self.repo, Runner()), settings, **record))
+
+    def test_a_tracked_out_of_scope_change_still_fails_for_good(self):
+        with open(os.path.join(self.repo, "game.config.yaml"), "a", encoding="utf-8") as handle:
+            handle.write("# edited\n")
+        record = dict(checkout=self.repo, key="k", engine="pixijs",
+                      checks_json=os.path.join(self.scratch, "unused.json"), logger=Log(),
+                      write=False, quarantine=os.path.join(self.scratch, "q"))
+        refused = step_with(FakeRunner())._scope(GitRepo(self.repo, Runner()),
+                                                Settings.resolve(self.config()), **record)
+        self.assertEqual((refused.outcome, refused.retryable), (StepOutcome.FAILED, False))
+        self.assertFalse(os.path.exists(os.path.join(self.scratch, "q")))
+
     def test_the_writer_stays_inside_the_checkout(self):
         with self.assertRaises(safewrite.UnsafeCheckoutPath):
             safewrite.write_text(self.repo, os.path.join(self.scratch, "elsewhere.txt"), "x")

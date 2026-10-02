@@ -177,7 +177,7 @@ reading, and `DocumentedIoContract` fails if the two disagree.
 | `release` | `release` | `qa-report`, `verification-report`, `sdk-report`, `prototype-report`, `scaffold-record`, `review-report`, `production-quality-report`, `visual-qa-report`, `store-listing`, `listing-validation-report` | `release-manifest` |
 | `platform-validate` | `platform-validate` | `release-manifest`, `verification-report`, `qa-report`, `sdk-report`, `scaffold-record` | `platform-publication` |
 | `release-review` | `human-checkpoint` | `qa-report`, `verification-report`, `release-manifest` | `decision-record` |
-| `publish-review` | `human-checkpoint` | `release-manifest`, `platform-publication` | `decision-record` |
+| `publish-review` | `human-checkpoint` | `release-manifest`, `platform-publication`, `store-listing`, `listing-validation-report` | `decision-record` |
 | `submit` | `publish` | `release-manifest`, `platform-publication`, `decision-record`, `scaffold-record` | `platform-publication` |
 <!-- io-contract:end -->
 

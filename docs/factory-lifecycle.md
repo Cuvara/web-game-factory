@@ -202,10 +202,12 @@ input — asking nobody — until the run holds them:
 |---|---|---|---|---|
 | `strategy-review` | G2 | strategy → design | `title-strategy` | approve, reject |
 | `tech-plan-review` | G3 | tech-plan → init | `game-design`, `tech-plan` | approve, reject |
-| `prototype-review` | G4 | verify (PASS) → release | `qa-report`, `verification-report`, `prototype-report` | pass, iterate, kill |
+| `prototype-review` | G4 | verify (PASS) → store-listing → listing-validation → release | `qa-report`, `verification-report`, `prototype-report` | pass, iterate, kill |
 
 G4 judges the *verified* prototype: it runs only after verification passes, and a
-verification that runs again after a pass makes G4 ask again. `pass` continues to release;
+verification that runs again after a pass makes G4 ask again. `pass` continues to the store
+listing - the verified build's store package, captured and validated per platform
+([store-listing-module.md](store-listing-module.md)) - and then to release, which ships it;
 `iterate` sends the work back to develop and ends at G4 again; `kill` — the machine's
 `abandon` — ends the run: the decision is recorded (`DECISION_RECORDED`, and a
 `decision-record` with `decision: abandon` — see below), the run is

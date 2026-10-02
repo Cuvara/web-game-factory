@@ -10,7 +10,7 @@
     "format": "json",
     "version": "1.1.0",
     "producer": "title:prototype",
-    "consumers": ["title:prototype", "title:prototype-review", "release:qa"],
+    "consumers": ["title:prototype", "title:prototype-review", "release:qa", "release:store-listing"],
     "repo_path": "<game-repo>/qa/playability/<commit>.json",
     "run_path": "<storage>/workflows/<run-id>/artifacts/playability-report/v<n>.json",
     "required_for_gates": []

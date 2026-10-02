@@ -18,7 +18,7 @@
 # Each adapter carries a CONFORMANCE.md mapping every surface id below to its file, so
 # reviewing adapter completeness is a two-file diff rather than a directory crawl.
 
-version: 1.6.0
+version: 1.7.0
 
 surface_kinds:
   agent: A persistent role the runtime can delegate to.
@@ -137,14 +137,19 @@ agents:
       - core/lifecycle/stages/release-candidate.md
       - core/lifecycle/stages/platform-validation.md
       - core/lifecycle/stages/publish.md
+      - core/lifecycle/stages/store-listing.md
       - core/artifacts/release-manifest.schema.json
       - core/artifacts/platform-publication.schema.json
       - core/artifacts/review-report.schema.json
+      - core/artifacts/store-listing.schema.json
+      - core/artifacts/listing-validation-report.schema.json
       - core/reference/platforms/
+      - core/reference/store-listing.yaml
       - core/templates/release-report.md
       - core/craft/onboarding-and-portal-ux.md
-    produces: [scaffold-record, release-manifest, platform-publication]
-    consumes: [tech-plan, qa-report, verification-report, sdk-report, prototype-report, review-report, scaffold-record]
+      - core/craft/store-listing.md
+    produces: [scaffold-record, release-manifest, platform-publication, store-listing, listing-validation-report]
+    consumes: [tech-plan, qa-report, verification-report, sdk-report, prototype-report, review-report, scaffold-record, game-design]
 
   - id: liveops
     role: liveops
@@ -560,8 +565,25 @@ skills:
     reads:
       - core/lifecycle/stages/release-candidate.md
       - core/lifecycle/stages/publish.md
+      - core/lifecycle/stages/store-listing.md
       - core/artifacts/release-manifest.schema.json
       - core/craft/onboarding-and-portal-ux.md
+      - core/craft/store-listing.md
+  - id: store-listing
+    supports: [release]
+    covers: >
+      The store listing: the canonical package captured from the verified build (branding
+      from the game's own assets, screenshots and a gameplay recording of real play, copy
+      grounded in the design), one rendition per platform under its profile's
+      store_listing block, and the validation that reports unknown requirements as unknown.
+    reads:
+      - core/lifecycle/stages/store-listing.md
+      - core/artifacts/store-listing.schema.json
+      - core/artifacts/listing-validation-report.schema.json
+      - core/reference/store-listing.yaml
+      - core/artifacts/shared/platform-profile.schema.json
+      - core/reference/platforms/
+      - core/craft/store-listing.md
   - id: production-art-2d
     supports: [asset, gameplay, game-designer]
     covers: >

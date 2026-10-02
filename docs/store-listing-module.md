@@ -1,0 +1,231 @@
+# Store Listing Module
+
+The `store-listing` and `listing-validation` steps of `core/workflows/new-game.workflow.yaml`
+(stage `release:store-listing`): after a person passes G4, capture the verified build's
+**store package** - branding, screenshots, a gameplay recording, store copy, one rendition
+per targeted platform - and validate it against each platform's requirements, so the
+release ships with it and `release-manifest.store_metadata` is filled from it. Implemented
+in `scripts/wgf_listing/`, registered from `workspace/config/factory.yaml`, written against
+[workflow-module-contract.md](workflow-module-contract.md) without touching the kernel.
+
+```
+bin/wgf new-game                                  # ... verify -> G4 -> store-listing -> listing-validation -> release
+bin/wgf store-listing --run <run-id>              # capture the run's verified build again
+bin/wgf listing-validation --run <run-id>         # judge the run's newest listing
+python3 scripts/wgf-listing.py validate <package-dir>        # the judge, outside a run
+python3 scripts/wgf-listing.py copy --design game-design.json --dist ../my-game/dist
+python3 scripts/wgf-listing.py requirements [PLATFORM ...]   # what each profile asks, and what is UNKNOWN
+```
+
+A request for this phase called it "campaign / store listing setup". In the Factory
+**campaign** already means paid acquisition (gate G7, `core/lifecycle/stages/campaign.md`), so
+the phase, its artifacts and its steps are named **store listing**. The canonical package is
+the "campaign package" of that request, platform-independent first; the platform renditions
+are its variants.
+
+## Why it exists, and where it sits
+
+`core/lifecycle/stages/release-draft.md` step 5 has always said "assemble store metadata per
+platform", and `store_metadata_complete` has always guarded G6 - and nothing produced it:
+`release-manifest.store_metadata` was never filled, the template's `public/metadata/` is
+empty. The release machine gains no state: the listing is a sub-activity of `draft`
+(`core/lifecycle/stages/store-listing.md`), made for the draft's commit and frozen with it at
+`rc`. In the workflow it is two steps between the G4 pass and `release`:
+
+```
+verify -> [G4 pass] -> store-listing -> listing-validation -> release
+                            ^                |
+                            └──── listing ───┘   (FAIL: capture, render or rewrite again)
+```
+
+It runs **after** G4 because a listing of a build a person may still kill is wasted work, and
+because the screenshots must be of the commit that ships: the step requires G4 in
+`context.gates_passed` (`with: required_gates`, default `[G4]`, the release step's rule), the
+qa-report's and verification-report's commit to be the checkout's HEAD, and the bundle on
+disk to hash to `verification-report.build_artifact.content_hash`. Anything else is BLOCKED.
+
+## What it produces
+
+| Where | What |
+|---|---|
+| the run, `<run>/store-listing/<visit>-<attempt>/package/` | the canonical package: `branding/` (icon-1024/512/256, logo-wordmark, thumbnail-16x9/4x3/1x1, promo-1920x1080), `screenshots/<viewport>-<nn>-<scene>.png`, `trailer/trailer.webm` (and `trailer.mp4` when an encoder is there; else `trailer/frames/` + `storyboard.json`), `copy/<locale>.json`, `platforms/<id>/` (the rendition: resized images, `listing.json` with the cut texts), `listing.json` (the artifact), `validation.json` (the report) |
+| the run, `<run>/store-listing/<visit>-<attempt>/capture/` | the raw capture: every frame taken, `capture.json`, the recording, the capture logs |
+| the run | `store-listing` and `listing-validation-report` artifacts, every file named with its sha256 and a path relative to the run directory |
+| the game repository, `release/<release-id>/listing/` | the whole package, copied by the release step beside the archives; `release-manifest.store_metadata` names its files |
+
+The package directory is deterministic (`core/reference/store-listing.yaml` `package`): a
+publishing workflow finds every file without reading the artifact. Nothing lands in the
+checkout: the bundle is served read-only, Playwright is resolved from the checkout's
+`node_modules` through `createRequire`, and every output goes under the run directory.
+
+## How it works
+
+1. **Facts** (`facts.py`). From `game-design` (`build_spec`: mechanics, controls, the
+   experience contract's objective, win and lose conditions, visual identity, features,
+   engine, orientation, locales; `research.gameplay.genre`), `sdk-report` (capabilities
+   observed `working`), `scaffold-record` (the targeted platforms), the checkout's
+   `game.config.yaml` (the game's name), the bundle's own `locales/<locale>.json` strings and
+   its runtime asset manifest (`assets/assets.json`: the asset that draws the player, the
+   fonts). Every fact records where it was read (`facts.sources`).
+2. **Capture** (`capture.py`, `capture.mjs`). The bundle is served by the Factory's own
+   static server on 127.0.0.1 (no package manager, no preview server); the capture script
+   runs in the checkout on Node, resolving the game's own Playwright, behind the refusing
+   proxy (`wgflib.netguard`; enforced on Linux, recorded as `set-not-enforced` elsewhere). It
+   plays the build through its play probe exactly as the playability bot does - the probe is
+   read, never acted through; the oracle plays well - on a landscape and a portrait viewport
+   (the design's orientation first), and takes the scenes `core/reference/store-listing.yaml`
+   names: the title screen, play early, play after several inputs, play late, the result
+   screen. A separate context records `trailer.seconds` of play as video; Playwright's
+   bundled ffmpeg (found through its registry, else under the browsers path) cuts it to play
+   and, when it has an H.264 encoder, derives an mp4 - else the listing says `untrimmed` or
+   `webm only`.
+3. **Selection** (`package.select_screenshots`). Play frames lead, the title screen comes
+   last; a frame in an excluded probe state (`loading`, `other`), below the readability
+   floors (`frame_bars`, the playability step's), or indistinct from an earlier one of the
+   same viewport (`distinct.min_changed_fraction`) is dropped with its reason. Fewer usable
+   frames than `renditions.screenshots.min`: the capture runs again with a longer play
+   window, `retries` times, then the listing says `screenshots-insufficient`.
+4. **Branding** (`brand.py`). One HTML page lays out every rendition from the game's own
+   material - palette tokens, display face (the bundle's font asset), the player asset over
+   the ground colour as the icon (else the title's initials in the display face), the best
+   play frame under a title band as thumbnail and promo, the title as wordmark - and the
+   capture script screenshots each box (`browser-composed`). With no browser the icon,
+   thumbnails and promo are crops of the best play frame and there is no wordmark
+   (`frame-derived`, said so).
+5. **Copy** (`copywriter.py`). The `template` writer assembles English from the facts - the
+   first sentence is the objective in the player's words, then the loop, the mechanics,
+   what ends a run, the controls per device, the session length, the look - and, in every
+   locale the bundle ships strings for, the game's own title and rules text. It never
+   translates: a locale a platform requires with no strings and no agent is a missing
+   deliverable (`locale-missing`). A `command` writer (an agent host, read-only, once per
+   locale) may write instead; its texts go through the same grounding check and a refused
+   answer is asked once more with its problems, then the template text stands in
+   (`writer.fallback: true`). Texts are fitted to the canonical bounds at sentence or word
+   boundaries, never mid-word.
+6. **Grounding** (`grounding.py`). Every text is checked against the claim vocabulary
+   (`claims`): a term that promises a capability - multiplayer, leaderboards, cloud save,
+   achievements, controller, 3D, levels, story, bosses, endless, offline - needs its backing
+   in the facts (an `sdk:` capability, an `engine:` dimension, a `feature:` text, a `design:`
+   field); superlatives the vocabulary forbids are errors; rating adjectives are warnings;
+   every feature bullet names the fact it comes from and shares words with it.
+7. **Platform renditions** (`platforms.py`, `package.render_platform`). For each targeted
+   platform (the scaffold-record's `game_config.platforms`, or `listing.platforms`), the
+   profile's `store_listing` block becomes an explicit requirement list - texts and their
+   limits, tags and categories, icon and covers with sizes, aspects and formats, screenshots,
+   video, locales, age rating, file naming. Images are cover-cropped and downscaled from the
+   canonical masters and **never upscaled**; texts are cut to the limits; tags mapped through
+   the portal's vocabulary when the block has one; the trailer included when its container
+   is accepted. Everything the package cannot make is an `unmet` problem on the rendition -
+   a size larger than any master, a format no encoder here writes (`jpg`/`webp` come from
+   the browser's encoder during the capture; PNG from the Factory), a locale no writer
+   produces, an age rating nobody stated (`factory.listing.age_rating`).
+8. **Validation** (`validation.py`). The judge, shared with `scripts/wgf-listing.py`: every
+   canonical rendition present at its size and unchanged; the copy within bounds, the first
+   sentence not an article; the screenshots present, in an allowed state, readable, distinct;
+   the trailer a video within bounds (or an honestly reported fallback, which fails only
+   where a platform requires a video); no unbacked claim in any text that reaches a platform;
+   every platform rendition against its requirement list. A requirement a profile leaves
+   `null` is **UNKNOWN**: listed per platform in `unknown`, never counted as passed.
+
+## Outcomes
+
+| Step | Outcome | When |
+|---|---|---|
+| `store-listing` | SUCCESS, `status: complete` | every canonical rendition, enough screenshots, copy in every required locale, every platform rendition |
+| | SUCCESS, `status: incomplete` | something required is missing or fell back; `problems` says what. Loud, never silent: validation decides whether a person must act |
+| | BLOCKED, `status: blocked` | a required gate not passed; no checkout, HEAD not the verified commit, the bundle not the verified one; `capture.kind: none`; no browser / no Playwright in the checkout; the build answered no play probe |
+| | FAILED (not retryable) | the verification did not pass, or the qa-report and verification-report name different commits |
+| | FAILED (retryable) | the capture timed out or crashed |
+| `listing-validation` | SUCCESS (PASS) | no required check failed; `unknown` lists what the profiles do not state |
+| | FAILED, route `listing` | a required check failed that the step can act on (`fix`: recapture, rerender, rewrite): the workflow routes it back to `store-listing`, twice |
+| | BLOCKED | every failed check needs a person (`fix: configure`): a required locale with no writer, a missing age rating, a format no encoder writes, a profile asking for more than any master; or the listing itself is blocked |
+
+The route back to `store-listing` is bounded (`max_visits_by_route: listing-validation.listing: 2`);
+G4's `iterate` comes through both steps again, so each carries develop's bound plus its own.
+
+## The release step
+
+`release` consumes `store-listing` and `listing-validation-report` (`with: required_listing`,
+default true; a workflow without the listing steps says `required_listing: false`), and
+refuses:
+
+| Code | Outcome | Means |
+|---|---|---|
+| `no-store-listing` | BLOCKED | no listing in the run: run `store-listing` and `listing-validation` |
+| `listing-commit-mismatch` | FAILED | the newest listing shows another commit than the one shipped |
+| `listing-incomplete` | FAILED | the newest listing's status is not `complete` |
+| `listing-not-validated` | BLOCKED | no validation report, or the newest judged another listing (by hash) |
+| `listing-not-passed` | FAILED | the newest validation's verdict is not PASS |
+| `listing-package-missing` | BLOCKED | the listing's package is gone from the run directory |
+
+Otherwise it copies the package to `release/<release-id>/listing/`, fills
+`store_metadata` per platform (title, descriptions by locale, screenshots, icon, age rating,
+`locales_included`, with paths relative to the release directory) and records
+`evidence.store_listing` (release-manifest 1.3.0). G6 is decided on `release-manifest`,
+`store-listing` and `listing-validation-report` (`core/lifecycle/gates.yaml`).
+
+## Platform requirements are data, and unknown is unknown
+
+`core/artifacts/shared/platform-profile.schema.json` `storeListing`: text limits, list
+limits (with the portal's own vocabulary), image requirements (sizes, aspect, formats,
+`max_kb`, which canonical family they render from), screenshots, video, locales, age rating,
+naming. Every limit may be `null` = **not known**; `status: verified` says every figure was
+read from `source`. The shipped profiles state what their sources say and nothing more:
+GameDistribution's thumbnail sizes come from its developer guidelines, the cover aspect
+ratios CrazyGames asks for are stated, Yandex's `ru` and age rating follow its binding
+requirements; every pixel size and text limit nobody has read is `null`. Filling a block in -
+with the portal's documentation URL and date - is done once per portal, not once per game,
+and `python3 scripts/wgf-listing.py requirements` lists what is still unknown. A profile's
+`version` does not move for the block: the listing records the block's own hash per platform
+(`platforms[].spec_hash`) instead, so what a rendition was made under is pinned.
+
+## Configuration
+
+`factory.listing` in `workspace/config/factory.yaml` (every key optional; a step's `with:`
+overrides any): `capture.kind` (`browser` | `none` - BLOCKED), `capture.node`,
+`capture.timeout_seconds`, `capture.trailer`, `capture.viewports`; `writer.kind` (`template` |
+`command`), `writer.argv` (`{brief}` `{output}` `{prompt}`), `writer.text_from`,
+`writer.timeout_seconds`, `writer.idle_timeout_seconds`; `platforms`; `locales`;
+`reference`; `age_rating` (per platform id or `default`). The capture runs with the game
+environment (`factory.agents.game_env_passthrough`), the writer with the agent environment
+(`factory.agents.env_passthrough`). Child variables: `WGF_LISTING_BRIEF`,
+`WGF_LISTING_OUTPUT` for the writer ([env-vars.md](env-vars.md)).
+
+## Evidence and honesty
+
+- `measurement_class: automation-bot`: moments chosen by a bot through the probe, never a
+  person's eye. Playing with `?wgf-probe=1` enables the oracle only; the probe draws nothing.
+- Nothing is upscaled, translated, or invented: a smaller master, a missing locale, a
+  missing age rating, an absent encoder are problems on the listing and failures or blocks
+  in validation, never quiet substitutions.
+- A trailer that could not be made is a labelled frame sequence (`status: fallback`), never
+  presented as a video; one that could not be trimmed says how many milliseconds precede play.
+- The platform renditions carry `spec_status` (`verified` | `unverified` | `absent`) and the
+  validation report `unknown` per platform. PASS means "passed what the profiles state".
+- `network_guard` records whether the refusing proxy governed the browser: it does on Linux;
+  on Windows and macOS Chromium ignores the environment and the listing says so.
+
+## Tests
+
+`scripts/tests/test_listing.py` (offline; a fake capture runner writes synthetic frames, a
+synthetic WebM and the branding images in `capture.json`'s shape): imaging and the media
+readers (PNG, WebM, MP4 headers); facts with their sources; the template writer's bounds,
+grounding and locale behaviour; the grounding check's errors and warnings; platform
+requirements and the UNKNOWN markers; screenshot selection; platform rendering (sizes,
+never upscaling, unmet problems, age rating); the step (complete, retries with a longer
+window, incomplete on dark frames, the trailer fallback, no browser, a crash, kind `none`,
+the gate, the checkout, the bundle, a failed verification, a command writer refused and
+replaced); validation (PASS with unknowns, FAIL routed back, grounding, BLOCKED for a
+person, a video a platform requires); the mock steps; both steps through the real engine;
+the release step shipping the listing and refusing without it; the bundle server.
+`RealBuild` captures a real build when `WGF_LISTING_BROWSER=1` and `WGF_LISTING_REPO` name a
+checkout with `dist/` and Playwright. The golden runs (`WGF_GOLDEN=1`) run both steps on the
+replayed games for real and assert a complete, validated, shipped listing (`summary.listing`).
+
+The first real capture ran against the 2D golden game's build on a Windows machine: 6
+screenshots on two viewports (play first, title last), an 18.8 s VP8 trailer trimmed to play
+with Playwright's bundled ffmpeg (no mp4 encoder in that build, recorded as such),
+browser-composed branding from the design's palette and the game's title, copy in `en` and
+`ru` with no unbacked claim, renditions for poki, crazygames and yandex; validation PASS for
+poki and crazygames with their unknown limits listed, BLOCKED on yandex's age rating until
+`factory.listing.age_rating` states one.

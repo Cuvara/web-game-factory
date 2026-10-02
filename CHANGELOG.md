@@ -9,6 +9,39 @@ and `core/` is still the contract.
 
 ## [Unreleased]
 
+**Store listing** ([docs/store-listing-module.md](docs/store-listing-module.md)). Workflow 6:
+after G4 passes, the verified build's store package is captured from the running build and
+validated per platform before release ships it. The `store-listing` step serves the verified
+bundle locally, plays it through its play probe in the game's own Chromium on a landscape and
+a portrait viewport, and writes the canonical package: screenshots of real play (play first,
+title last; excluded states, unreadable and indistinct frames dropped, with retries), a
+gameplay recording trimmed to play with Playwright's bundled ffmpeg (an honest frame-sequence
+fallback when no recording can be made), branding composed in the browser from the game's own
+palette, display face and player asset (a frame-derived fallback without a browser), store
+copy grounded in the design and the game's own strings (a deterministic writer, or an agent
+writer whose texts pass the same grounding check), and one rendition per targeted platform
+under its profile's new `store_listing` block (`shared/platform-profile.schema.json`
+`storeListing`; every shipped profile states what its sources say and leaves the rest
+`null`; the eight shipped profiles are 1.1.0, since a profile's identity is its version and
+its content hash and the block is content - a game pinned at 1.0.0 keeps verifying against
+its vendored 1.0.0 copy). The `listing-validation` step judges it - every text and file present and within its
+limits, screenshots real and distinct, the trailer within bounds, no unbacked claim
+(`core/reference/store-listing.yaml` `claims`), every platform rendition - reporting a `null`
+requirement as UNKNOWN, never passed; a failure the step can redo routes `listing` back to it
+(bounded), one only a person can fix blocks. `release` requires the listing of the commit it
+ships, validated PASS (`required_listing`, refusals `no-store-listing`,
+`listing-commit-mismatch`, `listing-incomplete`, `listing-not-validated`,
+`listing-not-passed`), copies the package to `release/<id>/listing/` and fills
+`store_metadata` from it (release-manifest 1.3.0, `evidence.store_listing`). G6 is decided on
+`release-manifest`, `store-listing` and `listing-validation-report` (gates.yaml 1.2.0).
+
+New: `core/artifacts/store-listing.schema.json`, `listing-validation-report.schema.json`,
+`core/reference/store-listing.yaml`, `core/lifecycle/stages/store-listing.md`,
+`core/craft/store-listing.md`, `scripts/wgf_listing/`, `scripts/wgf-listing.py`, the
+`store-listing` skill (adapter binding 1.7.0), `factory.listing` configuration. The golden
+runs expect both steps and assert a complete, validated, shipped listing. Phase naming:
+"campaign" stays G7's paid acquisition; this is the store listing.
+
 **Research V2** ([docs/research-v2.md](docs/research-v2.md)). Research is game-corpus based:
 listings and teardown records (`game-record`, `<corpus>/games/`) are coded on a shared,
 versioned vocabulary (`core/reference/research-vocabulary.yaml`: a genre tree, market

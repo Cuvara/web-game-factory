@@ -48,7 +48,7 @@ GAME_CONFIG = textwrap.dedent("""\
     build:
       output: dist
     platforms:
-      - { id: generic-web, profile: generic-web@1.0.0, role: required }
+      - { id: generic-web, profile: generic-web@1.1.0, role: required }
       - { id: example-portal, profile: example-portal@1.0.0, role: optional }
     """)
 PACKAGE_JSON = {
@@ -276,7 +276,7 @@ class GameRepository:
             schema_version="1.0.0")
         upstream = [pin(a) for a in (prototype, sdk, scaffold)]
         readiness = platforms if platforms is not None else [
-            {"platform_id": "generic-web", "profile": "generic-web@1.0.0", "role": "required",
+            {"platform_id": "generic-web", "profile": "generic-web@1.1.0", "role": "required",
              "readiness": "ready", "checks": ["platform.hooks:generic-web"],
              "blocking_checks": [], "external_approval": "not-claimed",
              "evidence_status": "PASS_MOCK", "portal_status": "NOT_APPLICABLE"},
@@ -351,11 +351,13 @@ def review_report(prototype, sdk=None, verdict="approve", reviewed_commit=None):
 
 
 def step(**params):
+    # These tests predate the store listing; the ones about it set this themselves.
+    params.setdefault("required_listing", False)
     definition = StepDefinition({
         "id": "release", "type": "release",
         "inputs": ["qa-report", "verification-report", "sdk-report", "prototype-report",
                    "scaffold-record", "review-report", "production-quality-report",
-                   "visual-qa-report"],
+                   "visual-qa-report", "store-listing", "listing-validation-report"],
         "outputs": ["release-manifest"], "with": params}, retry=None, max_visits=None)
     return ReleaseStep(definition)
 
@@ -368,6 +370,8 @@ class ReleaseCase(unittest.TestCase):
 
     def release(self, artifacts=None, flags=(), context=None, missing=(), **params):
         params.setdefault("repo_dir", self.game.root)
+        # These tests predate the store listing; the ones about it set this themselves.
+        params.setdefault("required_listing", False)
         instance = step(**{k: v for k, v in params.items() if v is not None})
         instance.environ = self.game.environ(flags)
         instance.clock = staticmethod(lambda: NOW)
@@ -636,6 +640,7 @@ class ThroughTheEngine(ReleaseCase):
                       with:
                         repo_dir: %s
                         required_gates: []    # this workflow has no G4 checkpoint
+                        required_listing: false   # nor the store-listing steps
                       next: $end
                 """ % json.dumps(self.game.root)))
         return path

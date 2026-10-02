@@ -1,0 +1,117 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://webgamefactory.dev/schemas/artifacts/listing-validation-report.schema.json",
+  "title": "Listing Validation Report",
+  "description": "Whether a store-listing may go to the portals: every required text present and within its limits, every asset present with the dimensions, format and size required, the screenshots real frames of the build and distinct from one another, the trailer a video within its bounds (or an honestly reported fallback), the copy free of unbacked claims, and every targeted platform's rendition satisfying its profile's `store_listing` block. Machine-readable: one check per fact, a section verdict per area, a verdict per platform, and one overall verdict.\n\nA requirement a platform profile does not state (a null limit, no block at all) is reported UNKNOWN - listed in `unknown`, named per platform - and is never counted as passed. The overall verdict is PASS only when no required check failed; a listing with unknowns passes against what the profiles state, and the report says exactly what was not checked.",
+
+  "x-wgf": {
+    "id": "listing-validation-report",
+    "kind": "artifact",
+    "format": "json",
+    "version": "1.0.0",
+    "producer": "release:store-listing",
+    "consumers": ["release:store-listing", "release:draft", "release:approved", "release:validating", "release:submitting"],
+    "repo_path": "<game-repo>/release/<release-id>/listing/validation.json",
+    "run_path": "<storage>/workflows/<run-id>/artifacts/listing-validation-report/v<n>.json",
+    "required_for_gates": ["G6"]
+  },
+
+  "type": "object",
+  "required": ["provenance", "title_id", "commit", "listing", "verdict", "sections", "checks", "platform_requirements", "failed", "unknown", "routes"],
+  "properties": {
+    "provenance": { "$ref": "shared/provenance.schema.json#/$defs/provenance" },
+    "title_id": { "type": "string" },
+    "commit": { "type": "string", "pattern": "^[0-9a-f]{40}$", "description": "The store-listing's commit." },
+    "listing": {
+      "type": "object",
+      "description": "The store-listing judged, pinned.",
+      "required": ["artifact_id", "content_hash"],
+      "properties": {
+        "artifact_id": { "$ref": "shared/provenance.schema.json#/$defs/artifactId" },
+        "content_hash": { "$ref": "shared/provenance.schema.json#/$defs/hash" },
+        "status": { "type": "string" }
+      },
+      "additionalProperties": false
+    },
+    "verdict": { "enum": ["PASS", "FAIL", "BLOCKED"] },
+    "sections": {
+      "type": "object",
+      "description": "The verdict per area: PASS when every required check in it passed, FAIL otherwise; UNKNOWN when the area has no check that could be evaluated.",
+      "required": ["assets", "metadata", "screenshots", "video", "grounding", "platforms"],
+      "properties": {
+        "assets": { "$ref": "#/$defs/sectionStatus" },
+        "metadata": { "$ref": "#/$defs/sectionStatus" },
+        "screenshots": { "$ref": "#/$defs/sectionStatus" },
+        "video": { "$ref": "#/$defs/sectionStatus" },
+        "grounding": { "$ref": "#/$defs/sectionStatus" },
+        "platforms": { "$ref": "#/$defs/sectionStatus" }
+      },
+      "additionalProperties": false
+    },
+    "checks": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "section", "status", "required", "summary"],
+        "properties": {
+          "id": { "type": "string" },
+          "section": { "enum": ["assets", "metadata", "screenshots", "video", "grounding", "platforms"] },
+          "platform_id": { "type": ["string", "null"] },
+          "locale": { "type": ["string", "null"] },
+          "status": { "enum": ["PASS", "FAIL", "WARNING", "UNKNOWN", "BLOCKED"] },
+          "required": { "type": "boolean" },
+          "summary": { "type": "string" },
+          "measured": {},
+          "expected": {},
+          "files": { "type": "array", "items": { "type": "string" }, "description": "File ids it concerns." },
+          "fix": {
+            "enum": ["recapture", "rerender", "rewrite", "configure", "none"],
+            "description": "What the store-listing step does about a failure on its next pass: capture again, render the file again from the canonical source, rewrite the text within its limit, or nothing it can do (a person configures the profile)."
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "platform_requirements": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["platform_id", "profile_version", "spec_status", "status", "failed", "unknown"],
+        "properties": {
+          "platform_id": { "type": "string" },
+          "profile_version": { "type": "string" },
+          "role": { "enum": ["required", "optional"] },
+          "spec_status": { "enum": ["verified", "unverified", "absent"] },
+          "status": { "enum": ["PASS", "FAIL"] },
+          "failed": { "type": "array", "items": { "type": "string" }, "description": "Check ids." },
+          "unknown": { "type": "array", "items": { "type": "string" }, "description": "Requirements the profile leaves null: not checked, not passed." },
+          "warnings": { "type": "array", "items": { "type": "string" } }
+        },
+        "additionalProperties": false
+      }
+    },
+    "failed": { "type": "array", "items": { "type": "string" } },
+    "unknown": { "type": "array", "items": { "type": "string" } },
+    "warnings": { "type": "array", "items": { "type": "string" } },
+    "routes": {
+      "type": "array",
+      "items": { "enum": ["listing"] },
+      "description": "Where a FAIL goes back to: the store-listing step, with this report."
+    },
+    "blocked_reason": { "type": ["string", "null"] },
+    "reference": {
+      "type": "object",
+      "properties": {
+        "version": { "type": "string" },
+        "sha256": { "$ref": "shared/provenance.schema.json#/$defs/hash" }
+      },
+      "additionalProperties": false
+    },
+    "workflow": { "$ref": "shared/evidence.schema.json#/$defs/workflowRef" }
+  },
+  "additionalProperties": false,
+
+  "$defs": {
+    "sectionStatus": { "enum": ["PASS", "FAIL", "UNKNOWN"] }
+  }
+}

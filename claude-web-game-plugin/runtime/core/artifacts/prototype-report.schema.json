@@ -10,7 +10,7 @@
     "format": "json",
     "version": "1.0.0",
     "producer": "title:prototype",
-    "consumers": ["title:prototype-review", "title:production", "title:prototype", "release:qa", "release:draft"],
+    "consumers": ["title:prototype-review", "title:production", "title:prototype", "release:qa", "release:draft", "release:store-listing"],
     "repo_path": "workspace/titles/<title-id>/prototype-report.json",
     "run_path": "<storage>/workflows/<run-id>/artifacts/prototype-report/v<n>.json",
     "required_for_gates": ["G4"]

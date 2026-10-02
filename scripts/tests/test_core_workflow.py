@@ -1328,7 +1328,11 @@ class PrototypeReviewGate(_MockNewGame):
         state = api.run(RunRequest(resume=run.run_id, decision="pass", note="criteria hold",
                                    decided_by="human"))
         self.assertEqual(state.status, RunStatus.COMPLETED, state.message)
-        self.assertEqual(self.executed(state)[-2:], ["prototype-review", "release"])
+        # G4's pass continues to the store listing and its validation, then release.
+        self.assertEqual(self.executed(state)[-4:],
+                         ["prototype-review", "store-listing", "listing-validation", "release"])
+        self.assertIsNotNone(state.latest_artifact("store-listing"))
+        self.assertIsNotNone(state.latest_artifact("listing-validation-report"))
         self.assertIsNotNone(state.latest_artifact("release-manifest"))
         self.assertEqual(state.decisions["prototype-review"]["decision"], "pass")
         recorded = [e for e in api.store.read_events(run.run_id)
@@ -1534,7 +1538,10 @@ class GateAnsweredWithoutPassing(EngineCase):
         self.assertNotIn("asset-manifest", checkpoint.required_artifacts("G3"))
         ids = definition.step_ids
         self.assertEqual(ids[ids.index("verify") + 1], "prototype-review")
-        self.assertEqual(ids[ids.index("prototype-review") + 1], "release")
+        # The store listing is made only after G4 passes, and release ships it.
+        self.assertEqual(ids[ids.index("prototype-review") + 1], "store-listing")
+        self.assertEqual(ids[ids.index("store-listing") + 1], "listing-validation")
+        self.assertEqual(ids[ids.index("listing-validation") + 1], "release")
         g4 = definition.step("prototype-review")
         self.assertEqual(g4.on, {"iterate": "develop", "kill": "$end"})
         self.assertEqual(definition.step("design").on, {"descope": "$fail"})

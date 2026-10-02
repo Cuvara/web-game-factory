@@ -235,6 +235,45 @@ def _production(contents):
     }
 
 
+def _listing(contents, repo):
+    """The store listing a golden run captured from its verified build, and its validation:
+    `passed` only when the listing is complete with real screenshots, a recorded trailer and
+    browser-composed branding, validated PASS, and shipped beside the release's packages."""
+    listing = contents.get("store-listing") or {}
+    report = contents.get("listing-validation-report") or {}
+    manifest = contents.get("release-manifest") or {}
+    shipped = ((manifest.get("evidence") or {}).get("store_listing") or {})
+    release_id = manifest.get("release_id")
+    shipped_dir = (os.path.join(repo, "release", release_id, "listing")
+                   if repo and release_id else None)
+    return {
+        "status": listing.get("status"),
+        "commit": listing.get("commit"),
+        "screenshots": [{"id": s.get("id"), "scene": s.get("scene"), "viewport": s.get("viewport"),
+                         "state": s.get("state")} for s in listing.get("screenshots") or []],
+        "trailer": {k: (listing.get("trailer") or {}).get(k)
+                    for k in ("status", "container", "duration_s", "trimmed")},
+        "branding": {"method": (listing.get("branding") or {}).get("method"),
+                     "items": [i.get("id") for i in (listing.get("branding") or {}).get("items") or []]},
+        "locales": sorted(((listing.get("copy") or {}).get("locales") or {})),
+        "platforms": [{"platform_id": p.get("platform_id"), "files": len(p.get("files") or []),
+                       "unmet": [u.get("code") for u in p.get("unmet") or []]}
+                      for p in listing.get("platforms") or []],
+        "problems": [p.get("code") for p in listing.get("problems") or []],
+        "validation": {"verdict": report.get("verdict"), "failed": list(report.get("failed") or []),
+                       "unknown": len(report.get("unknown") or []),
+                       "platforms": {p.get("platform_id"): p.get("status")
+                                     for p in report.get("platform_requirements") or []}},
+        "shipped": bool(shipped) and bool(shipped_dir and os.path.isdir(shipped_dir)),
+        "store_metadata_platforms": sorted((manifest.get("store_metadata") or {})),
+        "passed": (listing.get("status") == "complete" and report.get("verdict") == "PASS"
+                   and len(listing.get("screenshots") or []) >= 3
+                   and (listing.get("trailer") or {}).get("status") == "recorded"
+                   and (listing.get("branding") or {}).get("method") == "browser-composed"
+                   and bool(shipped)),
+    }
+
+
 def build(run, api, state, seconds, browser):
     artifacts, contents = _artifacts(api, state)
     steps, steps_ok, extra = _steps(state)
@@ -251,8 +290,10 @@ def build(run, api, state, seconds, browser):
     # And only through the production gates: the port's art delivered and drawn
     # (production-quality) and its frames matching the approved ones (visual-qa).
     production = _production(contents)
+    # And only with its store listing: captured from the verified build, validated, shipped.
+    listing = _listing(contents, run.repo if repository else None)
     passed = (steps_ok and drafted and engine["consistent"] and review_status == "approved"
-              and production["passed"])
+              and production["passed"] and listing["passed"])
     return {
         "format": 1,
         "golden": run.game.key,
@@ -272,6 +313,7 @@ def build(run, api, state, seconds, browser):
         "auto_approved_gates": list(run.config_data["checkpoints"]["auto_approve"]),
         "review_status": review_status,
         "production": production,
+        "listing": listing,
         "steps": steps,
         "unexpected_steps": extra,
         "artifacts": artifacts,

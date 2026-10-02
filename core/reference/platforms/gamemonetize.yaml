@@ -15,7 +15,7 @@
 
 id: gamemonetize
 name: GameMonetize
-version: 1.0.0
+version: 1.1.0  # 1.1.0: the store_listing block (listing requirements, null = unknown)
 status: unverified
 docs: https://gamemonetize.com/sdk
 
@@ -71,6 +71,21 @@ review:
   common_rejections:
     - No interstitial placed, so "Verify Game" never sees the SDK used.
     - Audio audible, or gameplay running, during an advertisement.
+
+# What the portal's listing takes. Not read from the portal: every limit is null (UNKNOWN
+# to validation, never passed) until someone records it with its source.
+store_listing:
+  status: unverified
+  source: null
+  notes: Read the portal's own submission form; nothing here is known yet.
+  title: {required: true, max_chars: null}
+  short_description: {required: true, max_chars: null}
+  long_description: {required: false, max_chars: null}
+  locales: [en]
+  icon: {id: icon, required: null, sizes: null, aspect: "1:1", formats: null, max_kb: null, source: icon}
+  covers: []
+  screenshots: {required: false, min: 0, max: null, sizes: null, aspect: null, formats: null, max_kb: null}
+  video: {required: false, formats: null, min_seconds: null, max_seconds: null, max_mb: null}
 
 assertions:
   - id: gamemonetize_sdk_present

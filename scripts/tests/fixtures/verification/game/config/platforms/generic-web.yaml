@@ -9,7 +9,7 @@
 
 id: generic-web
 name: Generic Web
-version: 1.0.0
+version: 1.1.0  # 1.1.0: the store_listing block (listing requirements, null = unknown)
 status: verified
 docs: null
 
@@ -51,6 +51,21 @@ review:
   process: none
   typical_days: [0, 0]
   common_rejections: []
+
+# No portal, so no listing requirement: nothing is required, and the canonical package is
+# what a self-hosted page gets. Verified by construction.
+store_listing:
+  status: verified
+  source: null
+  notes: Self-hosted; the canonical package is the listing.
+  title: {required: true, max_chars: null}
+  short_description: {required: false, max_chars: null}
+  long_description: {required: false, max_chars: null}
+  locales: [en]
+  icon: {id: icon, required: false, sizes: null, aspect: "1:1", formats: null, max_kb: null, source: icon}
+  covers: []
+  screenshots: {required: false, min: 0, max: null, sizes: null, aspect: null, formats: null, max_kb: null}
+  video: {required: false, formats: null, min_seconds: null, max_seconds: null, max_mb: null}
 
 assertions:
   - id: generic_web_https_only

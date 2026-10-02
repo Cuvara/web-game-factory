@@ -20,6 +20,7 @@ It never pushes, tags, publishes or contacts a portal. A draft is the input to `
 | Where | What |
 |---|---|
 | the game repository, `release/<release-id>/` | `<platform>.zip` for the one platform the build targets, `packages.json`, `checksums.txt` — written by the game's own `release:package` — and `manifest.json` |
+| the game repository, `release/<release-id>/listing/` | the validated store listing's package, copied from the run (branding, screenshots, trailer, copy, per-platform renditions, `listing.json`, `validation.json`); `store_metadata` names its files ([store-listing-module.md](store-listing-module.md)) |
 | the run | `release-manifest` (state `draft`), the same document as `release/<release-id>/manifest.json` |
 
 On the pinned template contract one bundle boots one adapter (`template_contract.build_target`:
@@ -41,6 +42,8 @@ all optional fields):
 | `provenance.inputs` | the qa-report, verification-report, sdk-report, prototype-report, scaffold-record and review-report it was drafted from, by content hash |
 | `evidence.qa_report`, `evidence.verification_report` | id, hash, verdict, evidence status |
 | `evidence.commit_lineage` | the commit each report names, and the checkout's HEAD: the verified commit (qa-report, verification-report, sdk-report, checkout), and the commit develop made (`sdk-report.base`, `prototype-report`) — related by the lineage rule below |
+| `store_metadata` | since 1.3.0: per targeted platform, from the store-listing's rendition - title, descriptions by locale, screenshots and icon (paths under `listing/`), age rating, `locales_included` |
+| `evidence.store_listing` | since 1.3.0: the store-listing's status, id and hash, the package path, its trailer and branding status, and its validation (id, hash, verdict, unknown count) |
 | `evidence.review` | `approved` (the newest review-report — `sdk-review`'s — approved exactly the commit shipped: the sdk commit, HEAD), or, only when `factory.release.allow_unreviewed: true`, `skipped` (no reviewer configured) or `absent` (no review-report in the run), both **UNREVIEWED** in the note and the step's message, never an approval; with the verdict, the reviewed commit and the review-report's id and hash |
 | `evidence.bundle_hash` | the digest of the bundle that was verified and packaged |
 | `evidence.platforms[]` | per target: readiness, `evidence_status`, `portal_status`, `external_approval: not-claimed` — carried from the verification exactly |
@@ -74,6 +77,12 @@ when its preconditions held is what makes a draft mean something. The refusals a
 | `no-production-quality-report`, `no-visual-qa-report` | BLOCKED | a production gate the step's `required_reports` names (default both) has not judged the build in this run |
 | `production-quality-not-passed`, `visual-qa-not-passed` | FAILED | the newest report of that gate is not `PASS`: the build's art or UI was not passed |
 | `production-quality-commit-mismatch`, `visual-qa-commit-mismatch` | FAILED | the newest report judged another commit than the development commit the shipped sdk commit sits on (`sdk-report.build_ref.base_commit_sha`, else the prototype-report's commit): its verdict is about another build |
+| `no-store-listing` | BLOCKED | the step's `required_listing` (default true) and the run holds no store-listing: run `store-listing` and `listing-validation` first |
+| `listing-commit-mismatch` | FAILED | the newest store-listing shows another commit than the one shipped |
+| `listing-incomplete` | FAILED | the newest store-listing's status is not `complete` (its `problems` say what) |
+| `listing-not-validated` | BLOCKED | no listing-validation-report in the run, or the newest judged another listing (by content hash) |
+| `listing-not-passed` | FAILED | the newest listing-validation-report's verdict is not PASS |
+| `listing-package-missing` | BLOCKED | the listing's package directory is gone from the run directory |
 | `verified-dirty-tree` | BLOCKED | verification ran on uncommitted changes, which no commit reproduces |
 | `dirty-checkout` | BLOCKED | the checkout has uncommitted or untracked changes |
 | `bundle-not-verified` | BLOCKED | the build output on disk is not the bundle verification digested |
@@ -179,6 +188,7 @@ test seam, when set, is used as given.
 | `kind` | `initial` for `r1`, else `content` | |
 | `timeouts` | git 30, package 900, manifest 300 | seconds |
 | `required_reports` | `[production-quality-report, visual-qa-report]` | Production gate reports that must be `PASS` for the shipped build's development commit. **`with:` only**, like `required_gates`. A workflow without the production gates says so: `required_reports: []` |
+| `required_listing` | `true` | Whether the release ships only with the run's validated store listing (`listing_refusals`). **`with:` only**. A workflow without the listing steps says so: `required_listing: false` |
 | `required_gates` | `[G4]` | Gates the run must have passed, current (`context.gates_passed`). **`with:` only** - never read from `factory.release`, so an installation cannot loosen what the workflow requires. A workflow with no G4 checkpoint (a test workflow) says so: `required_gates: []` |
 
 And one key read **only** from `factory.release`, never from `with:` - an installation's

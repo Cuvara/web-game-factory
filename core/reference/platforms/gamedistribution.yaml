@@ -14,7 +14,7 @@
 
 id: gamedistribution
 name: GameDistribution
-version: 1.0.0
+version: 1.1.0  # 1.1.0: the store_listing block (listing requirements, null = unknown)
 status: unverified
 docs: https://github.com/GameDistribution/GD-HTML5/wiki
 
@@ -83,6 +83,24 @@ review:
     - A reward granted without a completed rewarded impression.
     - Outgoing links, app-store references, third-party analytics or trackers.
     - Default language other than English.
+
+# What the portal's listing takes. The three thumbnail sizes are the ones the developer
+# guidelines name (see the comment on metadata_requirements); their formats, size limits
+# and the text limits were not read and stay null - UNKNOWN to validation, never passed.
+store_listing:
+  status: unverified
+  source: https://static.gamedistribution.com/developer/developers-guidelines.html
+  notes: Thumbnail sizes from the guidelines; formats, size caps and text limits not read.
+  title: {required: true, max_chars: null}
+  short_description: {required: true, max_chars: null}
+  long_description: {required: false, max_chars: null}
+  locales: [en]
+  icon: {id: icon, required: true, sizes: [{width: 512, height: 512}], aspect: "1:1", formats: null, max_kb: null, source: icon}
+  covers:
+    - {id: thumbnail-512x384, label: Thumbnail 512x384, required: true, sizes: [{width: 512, height: 384}], aspect: "4:3", formats: null, max_kb: null, source: thumbnail}
+    - {id: thumbnail-200x120, label: Thumbnail 200x120, required: true, sizes: [{width: 200, height: 120}], aspect: "5:3", formats: null, max_kb: null, source: thumbnail}
+  screenshots: {required: false, min: 0, max: null, sizes: null, aspect: null, formats: null, max_kb: null}
+  video: {required: false, formats: null, min_seconds: null, max_seconds: null, max_mb: null}
 
 assertions:
   - id: gamedistribution_sdk_present

@@ -292,7 +292,7 @@ class ResearchReport(unittest.TestCase):
     def test_a_source_contradicting_a_profile_is_a_discrepancy(self):
         crazy = next(p for p in self.report["platforms"] if p["platform"] == "crazygames")
         self.assertEqual(crazy["constraints"]["max_bundle_mb"], 50)
-        self.assertIn("max_bundle_mb: source says 50, profile crazygames@1.0.0 says 250",
+        self.assertIn("max_bundle_mb: source says 50, profile crazygames@1.1.0 says 250",
                       crazy["discrepancies"])
         self.assertIn("profile-discrepancy", {g["kind"] for g in self.report["gaps"]})
 

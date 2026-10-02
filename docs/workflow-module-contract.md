@@ -19,6 +19,7 @@ what a module owes the engine, and what the engine promises back.
 | SDK — platform SDK adapters | events and logs |
 | Verification — QA, policy and technical verification | artifact references, versions, checksums |
 | Init — repository scaffolding from the template | the workflow run lifecycle |
+| Listing — the store package captured from the verified build, and its validation per platform | |
 
 If a module needs something the engine does not offer, that is a gap in the kernel: raise it
 and fix it there once, for every module — never special-case one module in `engine.py`.
@@ -170,7 +171,9 @@ reading, and `DocumentedIoContract` fails if the two disagree.
 | `sdk-review` | `review` | `sdk-report`, `prototype-report`, `game-design`, `scaffold-record` | `review-report` |
 | `verify` | `verify` | `prototype-report`, `sdk-report`, `game-design`, `scaffold-record`, `asset-manifest` | `verification-report`, `qa-report` |
 | `prototype-review` | `human-checkpoint` | `qa-report`, `verification-report`, `prototype-report`, `title-strategy`, `game-design` | `decision-record` |
-| `release` | `release` | `qa-report`, `verification-report`, `sdk-report`, `prototype-report`, `scaffold-record`, `review-report`, `production-quality-report`, `visual-qa-report` | `release-manifest` |
+| `store-listing` | `store-listing` | `qa-report`, `verification-report`, `sdk-report`, `prototype-report`, `game-design`, `title-strategy`, `scaffold-record`, `asset-manifest`, `playability-report`, `listing-validation-report` | `store-listing` |
+| `listing-validation` | `listing-validation` | `store-listing`, `game-design`, `sdk-report`, `scaffold-record` | `listing-validation-report` |
+| `release` | `release` | `qa-report`, `verification-report`, `sdk-report`, `prototype-report`, `scaffold-record`, `review-report`, `production-quality-report`, `visual-qa-report`, `store-listing`, `listing-validation-report` | `release-manifest` |
 <!-- io-contract:end -->
 
 A `human-checkpoint` lists the artifacts its gate is decided on (gates.yaml

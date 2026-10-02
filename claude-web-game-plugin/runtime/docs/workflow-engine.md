@@ -53,18 +53,20 @@ python -m unittest discover scripts/tests   # includes the acceptance tests belo
 
   research → strategy → [G2] → design → tech-plan → [G3] → init → greybox → greybox-playability
     → assets → develop → playability → production-quality → visual-qa → review → sdk → sdk-review
-    → verify → [G4] → release
+    → verify → [G4] → store-listing → listing-validation → release
 
   greybox-playability  fail             → greybox
+  listing-validation   listing          → store-listing
   playability          fail             → develop
   production-quality   assets / develop → assets (which continues to develop) / develop
   visual-qa            assets / develop → assets (which continues to develop) / develop
   review, sdk-review   request-changes  → develop
   verify               fail             → develop
-  [G4]                 iterate → develop · kill → $end · pass → release
+  [G4]                 iterate → develop · kill → $end · pass → store-listing
 
-  release (refuses unless G4 passed, the shipped commit was reviewed, and production-quality
-  and visual-qa passed its development commit)
+  release (refuses unless G4 passed, the shipped commit was reviewed, production-quality
+  and visual-qa passed its development commit, and the store listing of the shipped
+  commit is complete and validated)
                                release-manifest (draft) ─► game repo CI ─► G5 ─► G6 ─► publish
                                ─────────── Factory ends here ───────────   (outside the engine)
 ```
@@ -482,7 +484,8 @@ gates' asset failures on `assets`: `production-quality.assets: 2`, `visual-qa.as
 `max_visits` is 19 - the first visit, its own route budgets and assets' - and it is never
 what a loop meets first; every step after develop (playability, production-quality,
 visual-qa, review, sdk, sdk-review, verify, prototype-review), each visited at most once per
-develop visit, carries 19 as well. A reviewer that never approves blocks the run on its own
+develop visit, carries 19 as well; store-listing and listing-validation carry 21 - the same
+plus listing-validation's own route back into store-listing (`listing-validation.listing: 2`). A reviewer that never approves blocks the run on its own
 third request for changes; a verification that always fails, on its third failure; a third
 G4 iterate stops for a person too; none spends another's budget. What a whole run may spend
 on unattended developer sessions is bounded separately, by `factory.develop.budget`

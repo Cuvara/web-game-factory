@@ -61,8 +61,15 @@ class ParsesValidDefinitions(unittest.TestCase):
             ["research", "strategy", "strategy-review", "design", "tech-plan",
              "tech-plan-review", "init", "greybox", "greybox-playability", "assets", "develop",
              "playability", "production-quality", "visual-qa", "review", "sdk",
-             "sdk-review", "verify", "prototype-review", "release"],
+             "sdk-review", "verify", "prototype-review", "store-listing", "listing-validation",
+             "release"],
         )
+        # The store listing is made after G4 passes and before release ships it; a failed
+        # validation goes back to the listing step, and release reads both.
+        self.assertEqual(definition.step("listing-validation").on, {"listing": "store-listing"})
+        self.assertEqual(definition.step("store-listing").params.get("required_gates"), ["G4"])
+        self.assertTrue({"store-listing", "listing-validation-report"}
+                        <= set(definition.step("release").inputs))
         self.assertEqual(definition.step("verify").on, {"fail": "develop"})
         # The production gates route by what failed: an asset to assets, the game to develop.
         for step_id in ("production-quality", "visual-qa"):
@@ -287,7 +294,8 @@ class RouteScopedVisitLimits(unittest.TestCase):
         self.assertEqual(develop.max_visits, 1 + sum(develop.max_visits_by_route.values())
                          + sum(assets.max_visits_by_route.values()))
         for step_id in ("playability", "production-quality", "visual-qa", "review", "sdk",
-                        "sdk-review", "verify", "prototype-review"):
+                        "sdk-review", "verify", "prototype-review", "store-listing",
+                        "listing-validation"):
             self.assertGreaterEqual(definition.step(step_id).max_visits, develop.max_visits,
                                     step_id)
 

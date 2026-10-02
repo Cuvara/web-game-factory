@@ -1299,13 +1299,15 @@ class FalsePass(unittest.TestCase):
         # is what these tests vary.
         review = {"verdict": "approve", "reviewed_commit": SHA,
                   "reviewer": {"kind": "command"}, "provenance": {"inputs": []}}
-        # The production gates passed the build, so their reports are not what varies either.
+        # The production gates passed the build, so their reports are not what varies either;
+        # nor does the store listing (a workflow without the listing steps says so).
         gates = {t: {"verdict": "PASS", "commit": SHA}
                  for t in ("production-quality-report", "visual-qa-report")}
         return {r.code for r in evidence_refusals(refs, {"qa-report": qa,
                                                          "verification-report": vr,
                                                          "review-report": review, **gates},
-                                                  "run", gates_passed=["G4"])}
+                                                  "run", gates_passed=["G4"],
+                                                  required_listing=False)}
 
     def test_release_preconditions_hold_for_a_clean_pass(self):
         self.assertEqual(self.release_codes(), set())

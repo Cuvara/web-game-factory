@@ -38,7 +38,7 @@ __all__ = ["Refusal", "FAILED", "BLOCKED", "evidence_refusals", "commit_lineage"
            "verified_commits", "checkout_lineage", "review_status", "gate_refusals",
            "shipped_commit", "ACCEPTED_EVIDENCE", "DEFAULT_REQUIRED_GATES", "UNREVIEWED",
            "REVIEW_MISMATCH", "DEFAULT_REQUIRED_REPORTS", "production_refusals",
-           "developed_commit"]
+           "developed_commit", "listing_refusals", "DEFAULT_REQUIRED_LISTING"]
 
 FAILED, BLOCKED = "failed", "blocked"
 ACCEPTED_EVIDENCE = ("PASS", "PASS_MOCK")
@@ -50,6 +50,10 @@ DEFAULT_REQUIRED_GATES = ("G4",)
 # The production gates: nothing ships whose art and UI they did not pass. A workflow without
 # them says so on its release step (`with: required_reports: []`).
 DEFAULT_REQUIRED_REPORTS = ("production-quality-report", "visual-qa-report")
+# The store listing: a release ships only with the listing of its own build, validated. A
+# workflow without the listing steps says so on its release step (`with: required_listing:
+# false`).
+DEFAULT_REQUIRED_LISTING = True
 
 
 def _short(sha):
@@ -257,6 +261,55 @@ def production_refusals(loaded, required_reports=DEFAULT_REQUIRED_REPORTS):
     return out
 
 
+def listing_refusals(refs, loaded, required=DEFAULT_REQUIRED_LISTING):
+    """[Refusal] for the store listing: absent (BLOCKED when required: run store-listing),
+    of another commit than the one shipped, not complete, not validated by the newest
+    listing-validation-report of exactly this listing, or validated FAIL/BLOCKED."""
+    out = []
+    listing = loaded.get("store-listing")
+    report = loaded.get("listing-validation-report")
+    if listing is None:
+        if required:
+            out.append(Refusal(BLOCKED, "no-store-listing",
+                               "no store-listing in this run: the store package (branding, "
+                               "screenshots, trailer, copy, per-platform renditions) has not "
+                               "been made, and a release ships with its listing. Run "
+                               "store-listing and listing-validation first."))
+        return out
+    shipped = shipped_commit(loaded)
+    judged = listing.get("commit")
+    if is_placeholder(judged) or is_placeholder(shipped) or not same_commit(judged, shipped):
+        out.append(Refusal(FAILED, "listing-commit-mismatch",
+                           f"the newest store-listing shows {_short(judged)}, but the release ships "
+                           f"{_short(shipped)}: its screenshots and recording are of another build. "
+                           "Run store-listing on this one."))
+    if listing.get("status") != "complete":
+        problems = [p.get("code") for p in listing.get("problems") or [] if p.get("severity") == "error"]
+        out.append(Refusal(FAILED, "listing-incomplete",
+                           f"the newest store-listing is {listing.get('status')!r}"
+                           + (f" ({', '.join(str(p) for p in problems[:6])})" if problems else "")
+                           + ": a release ships a complete listing or none."))
+    if report is None:
+        out.append(Refusal(BLOCKED, "listing-not-validated",
+                           "no listing-validation-report in this run: the store listing has not "
+                           "been validated against the platforms' requirements. Run "
+                           "listing-validation first."))
+        return out
+    ref = refs.get("store-listing")
+    pinned = (report.get("listing") or {}).get("content_hash")
+    if ref is not None and pinned != ref.content_hash:
+        out.append(Refusal(BLOCKED, "listing-not-validated",
+                           f"the newest listing-validation-report judged another listing ({pinned or 'none'}; "
+                           f"the run's newest is {ref.content_hash}). Run listing-validation again."))
+    if report.get("verdict") != "PASS":
+        failed = [str(f) for f in report.get("failed") or []]
+        out.append(Refusal(FAILED, "listing-not-passed",
+                           f"the newest listing-validation-report's verdict is {report.get('verdict')!r}"
+                           + (f" (failed: {', '.join(failed[:8])})" if failed else "")
+                           + ": the listing did not pass the platforms' requirements."))
+    return out
+
+
 def gate_refusals(gates_passed, required_gates):
     """[Refusal] for each gate in `required_gates` that this run has not passed, or whose
     approval later work superseded (the engine's `context.gates_passed`)."""
@@ -270,7 +323,8 @@ def gate_refusals(gates_passed, required_gates):
 
 def evidence_refusals(refs, loaded, run_id, *, gates_passed,
                       required_gates=DEFAULT_REQUIRED_GATES, allow_unreviewed=False,
-                      required_reports=DEFAULT_REQUIRED_REPORTS):
+                      required_reports=DEFAULT_REQUIRED_REPORTS,
+                      required_listing=DEFAULT_REQUIRED_LISTING):
     """Every precondition on the run's evidence that does not hold. `refs` are the newest
     ArtifactRefs per type, `loaded` their contents.
 
@@ -362,6 +416,7 @@ def evidence_refusals(refs, loaded, run_id, *, gates_passed,
     out.extend(problems)
     out.extend(gate_refusals(gates_passed, required_gates))
     out.extend(production_refusals(loaded, required_reports))
+    out.extend(listing_refusals(refs, loaded, required_listing))
     if (vr.get("commit") or {}).get("dirty") is None:
         out.append(Refusal(BLOCKED, "verified-tree-unknown",
                            "the verification could not establish whether its working tree "

@@ -15,7 +15,7 @@
 
 id: yandex
 name: Yandex Games
-version: 1.0.0
+version: 1.1.0  # 1.1.0: the store_listing block (listing requirements, null = unknown)
 status: unverified
 docs: https://yandex.ru/dev/games/
 
@@ -64,6 +64,28 @@ review:
     - Game does not report loading progress through the SDK.
     - Ads shown before any gameplay.
     - External network requests to undeclared domains.
+
+# What the portal's listing takes. Every figure here is a starting value (status
+# unverified): a limit that is null is UNKNOWN to validation and never passed. The locales
+# follow the binding requirement above: the listing texts are needed in ru.
+store_listing:
+  status: unverified
+  source: null
+  notes: >
+    Read the exact icon and cover sizes, the screenshot bounds and the description limits
+    from the developer console's own form, then set status: verified with the source.
+  title: {required: true, max_chars: null}
+  short_description: {required: true, max_chars: null}
+  long_description: {required: true, max_chars: null}
+  tags: {required: false, min: null, max: null, allowed: null}
+  categories: {required: true, min: 1, max: null, allowed: null}
+  locales: [ru]
+  age_rating: {required: true, system: null}
+  icon: {id: icon, required: true, sizes: null, aspect: "1:1", formats: null, max_kb: null, source: icon}
+  covers:
+    - {id: cover, label: Cover image, required: true, sizes: null, aspect: null, formats: null, max_kb: null, source: thumbnail}
+  screenshots: {required: true, min: 3, max: null, sizes: null, aspect: null, formats: null, max_kb: null}
+  video: {required: false, formats: null, min_seconds: null, max_seconds: null, max_mb: null}
 
 assertions:
   - id: yandex_bundle_size

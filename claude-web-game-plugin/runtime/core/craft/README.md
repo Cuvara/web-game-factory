@@ -38,6 +38,7 @@ rule is.
 | [`3d-diagnostics.md`](3d-diagnostics.md) | gameplay, architect (as reviewer), qa | prototype, qa | `known_issues`, `perf_measurements`, the repair loop |
 | [`playtesting.md`](playtesting.md) | qa, game-designer | prototype, prototype-review, qa | `playtest_sessions`, gameplay-session scenarios, `kill_criteria_eval` |
 | [`gameplay-review.md`](gameplay-review.md) | architect (as reviewer) | prototype | `review-report` blockers |
+| [`store-listing.md`](store-listing.md) | release | release (store-listing) | `store-listing` copy, screenshots and branding, `release-manifest.store_metadata`, the profiles' `store_listing` blocks |
 | [`competitive-teardown.md`](competitive-teardown.md) | research, game-designer | market-scan, strategy | claims and research snapshots |
 | [`research-evidence.md`](research-evidence.md) | research | market-scan | the snapshot format, and the project concept for a brief no catalog shape carries, when a run's research step waits for them |
 | [`tool-capabilities.md`](tool-capabilities.md) | every role | every stage | what tools each stage may use, and the limits on them |

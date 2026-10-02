@@ -166,6 +166,11 @@ class TheFactoryContainsNoGameSource(unittest.TestCase):
         # game and run there against its build (scripts/wgf_playability/step.py). It
         # records what a player's device would see; it contains no game.
         "scripts/wgf_playability/bot.spec.ts",
+        # The store-listing step's capture script: run by Node in the game checkout against
+        # its built bundle, resolving the game's own Playwright, writing only under the run
+        # directory (scripts/wgf_listing/capture.py). It records frames, a recording and the
+        # branding composition; it contains no game.
+        "scripts/wgf_listing/capture.mjs",
     )
     # The Claude plugin's bundled runtime (scripts/build-plugin-runtime.py) is a byte-identical
     # copy of the Factory's own files, so each exception above holds for its copy too.

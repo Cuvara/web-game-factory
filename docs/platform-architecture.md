@@ -98,8 +98,8 @@ exist when the work was signed off.
 
 ```yaml
 platforms:
-  - { id: yandex,      profile: yandex@1.0.0,      role: required }
-  - { id: crazygames,  profile: crazygames@1.0.0,  role: optional }
+  - { id: yandex,      profile: yandex@1.1.0,      role: required }
+  - { id: crazygames,  profile: crazygames@1.1.0,  role: optional }
 ```
 
 The pin names a version, but a profile's identity is id + version + content hash. Init
@@ -276,7 +276,7 @@ what the integration can do today, not a claim that the portal would reject the 
 | CrazyGames | Basic vs Full Launch is only learned when an ad fails with `adsDisabledBasicLaunch`; the Progress Save toggle is a manual submission step | docs.crazygames.com/sdk/video-ads, /sdk/data |
 | Poki | No loading-progress or language call exists in Poki's HTML5 SDK; whether a `commercialBreak` shows an ad is always Poki's decision | developers.poki.com/guide/sdk-html5, /guide/sdk-overview |
 | GameVui | No SDK, JavaScript API or publishing API is published; builds run on `generic-web`: no ad revenue, local saves only (fragile two iframes deep), submission by email | template `docs/platforms/gamevui/`; gamevui.vn returned 403 on 2026-09-23 |
-| GameVui | The Factory profile `gamevui@1.0.0` lists interstitial and banner ads no API can deliver, and `age_rating_required: false` against the terms; it needs a new profile version | `core/reference/platforms/gamevui.yaml` |
+| GameVui | The Factory profile `gamevui@1.1.0` lists interstitial and banner ads no API can deliver, and `age_rating_required: false` against the terms; it needs a new profile version | `core/reference/platforms/gamevui.yaml` |
 
 What the step does not do: write gameplay (the develop step places the hook calls), pick an
 analytics sink, commit, push or submit.

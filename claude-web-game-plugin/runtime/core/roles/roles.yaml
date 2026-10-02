@@ -100,7 +100,7 @@ roles:
       - release:validating
       - release:submitting
       - release:partially-live
-    produces: [release-manifest, platform-publication]
+    produces: [release-manifest, platform-publication, store-listing, listing-validation-report]
     consumes: [tech-plan, qa-report]
     responsibility: >
       Create the game repository from the template, assemble and freeze release

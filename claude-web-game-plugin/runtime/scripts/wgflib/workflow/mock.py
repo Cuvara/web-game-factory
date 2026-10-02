@@ -301,6 +301,60 @@ class MockVisualQAStep(MockStep):
             body["routes"] = [route]
 
 
+class MockStoreListingStep(MockStep):
+    """`incomplete` in a mock plan is a listing with a problem recorded (status incomplete,
+    still SUCCESS, as the real step returns one); otherwise the placeholder package."""
+
+    type, role = "store-listing", "release"
+
+    def execute(self, inputs, context):
+        result = super().execute(inputs, context)
+        if result.route == "incomplete":
+            return StepResult.success(result.artifacts, message=f"{self.id} incomplete (mock)")
+        return result
+
+    def customize(self, body, artifact_type, context, entry):
+        if artifact_type != "store-listing":
+            return
+        body["package_dir"] = f"store-listing/{context.visit}-{context.attempt}/package"
+        if entry == "incomplete":
+            body["status"] = "incomplete"
+            body["problems"] = [{"code": "locale-missing", "severity": "error",
+                                 "message": "Scripted missing locale (mock).", "subject": "ru"}]
+
+
+class MockListingValidationStep(MockStep):
+    """`fail` in a mock plan is a validation failure routed back to the listing step
+    (FAILED, route `listing`, not retryable, the report emitted); `blocked` is the shape the
+    real step returns when only a person can act."""
+
+    type, role = "listing-validation", "release"
+
+    def execute(self, inputs, context):
+        entry = self._scripted(context)
+        if entry == "blocked":
+            artifacts = [self._artifact(t, inputs, context, entry) for t in self.definition.outputs]
+            return StepResult("BLOCKED", artifacts=artifacts,
+                              message=f"{self.id} blocked: a person must act (mock)")
+        result = super().execute(inputs, context)
+        if result.route == "fail":
+            return StepResult("FAILED", route="listing", artifacts=result.artifacts, retryable=False,
+                              error=f"{self.id} failed the listing (mock)")
+        return result
+
+    def customize(self, body, artifact_type, context, entry):
+        if artifact_type != "listing-validation-report":
+            return
+        if entry in ("fail", "blocked"):
+            body["verdict"] = "FAIL" if entry == "fail" else "BLOCKED"
+            body["checks"][0].update(status="FAIL", summary="scripted failure (mock)")
+            body["sections"]["screenshots"] = "FAIL"
+            body["failed"] = ["screenshots.count"]
+            body["routes"] = ["listing"] if entry == "fail" else []
+            if entry == "blocked":
+                body["blocked_reason"] = "scripted block (mock)"
+
+
 class MockReleaseStep(MockStep):
     type, role = "release", "release"
 
@@ -319,6 +373,8 @@ MOCK_STEPS = (
     MockReviewStep,
     MockSDKStep,
     MockVerificationStep,
+    MockStoreListingStep,
+    MockListingValidationStep,
     MockReleaseStep,
 )
 

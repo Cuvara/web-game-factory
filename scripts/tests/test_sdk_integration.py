@@ -212,10 +212,10 @@ game:
 engine:
   type: pixijs
 platforms:
-  - { id: yandex, profile: yandex@1.0.0, role: required }
-  - { id: crazygames, profile: crazygames@1.0.0, role: optional }
-  - { id: poki, profile: poki@1.0.0, role: optional }
-  - { id: gamevui, profile: gamevui@1.0.0, role: optional }
+  - { id: yandex, profile: yandex@1.1.0, role: required }
+  - { id: crazygames, profile: crazygames@1.1.0, role: optional }
+  - { id: poki, profile: poki@1.1.0, role: optional }
+  - { id: gamevui, profile: gamevui@1.1.0, role: optional }
 monetization:
   ad_kinds: [rewarded, interstitial]
   iap: false
@@ -1311,8 +1311,8 @@ class FailurePaths(SdkCase):
 
     def test_a_required_platform_without_an_adapter_fails_with_evidence(self):
         make_repo(self.repo, game_config=GAME_CONFIG.replace(
-            "{ id: poki, profile: poki@1.0.0, role: optional }",
-            "{ id: poki, profile: poki@1.0.0, role: required }"))
+            "{ id: poki, profile: poki@1.1.0, role: optional }",
+            "{ id: poki, profile: poki@1.1.0, role: required }"))
         result = self.execute()
         self.assertEqual((result.outcome, result.retryable), (StepOutcome.FAILED, False))
         self.assertIn("poki", result.error)

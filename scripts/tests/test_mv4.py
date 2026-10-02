@@ -245,8 +245,8 @@ class TheSessionHarness(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             write(directory, "game.config.yaml",
                   "platforms:\n"
-                  "  - { id: crazygames, profile: 'crazygames@1.0.0', role: optional }\n"
-                  "  - { id: poki, profile: 'poki@1.0.0', role: required }\n")
+                  "  - { id: crazygames, profile: 'crazygames@1.1.0', role: optional }\n"
+                  "  - { id: poki, profile: 'poki@1.1.0', role: required }\n")
             self.assertEqual(session_module.target_platform(directory), "poki")
 
     def test_no_platforms_has_no_target(self):

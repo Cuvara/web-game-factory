@@ -10,6 +10,8 @@ command it was given and records what it printed (preview.txt beside the brief).
                      another's outline three times as heavy; a repair session fixes both
     inconsistent     every session draws the second entity without an outline
     partial          writes only the first file
+    crash-then-good  the first session writes the first file and exits 3 (a host bound hit
+                     mid-set); the repair session draws the rest
 """
 
 import json
@@ -57,7 +59,7 @@ os.makedirs(out, exist_ok=True)
 with open(os.path.join(out, "STYLE.md"), "w", encoding="utf-8") as handle:
     handle.write("| outline | 2.5px ink |\n")
 files = [(req, f) for req in brief["requirements"] for f in req["files"]]
-if mode == "partial":
+if mode == "partial" or (mode == "crash-then-good" and not repair):
     files = files[:1]
 entity = 0
 for index, (req, entry) in enumerate(files):
@@ -81,6 +83,8 @@ for index, (req, entry) in enumerate(files):
     with open(entry["path"], "w", encoding="utf-8") as handle:
         handle.write(drawing(width, height, k, outline, text))
 
+if mode == "crash-then-good" and not repair:
+    sys.exit(3)
 done = subprocess.run(shlex.split(preview), capture_output=True, text=True)
 with open(os.path.join(os.path.dirname(request_path), "preview.txt"), "a",
           encoding="utf-8") as handle:

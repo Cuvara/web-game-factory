@@ -143,6 +143,12 @@ class TheFactoryContainsNoGameSource(unittest.TestCase):
         # behaviour (load, frame times, visibility, resize, audio, heap) on the bytes that
         # ship. Drives whatever game is in the checkout through the template's hooks.
         "scripts/mv4/session.spec.ts",
+        # The developer's frame capture: serves any built game's dist/ and saves what a
+        # first-time player sees, for the developer to read. It contains no game.
+        "scripts/wgf_develop/tools/look.mjs",
+        # The 2D set author's renderer: draws SVG files the assets step judges into a
+        # contact sheet with the checkout's Playwright. It contains no game.
+        "scripts/wgf_assets/tools/render-svgs.mjs",
     }
     # The sdk step's integration layer (gameplay seam + its SDK-mock suite), written into a
     # game by scripts/wgf_sdk/integrate.py. Game- and renderer-agnostic platform wiring the

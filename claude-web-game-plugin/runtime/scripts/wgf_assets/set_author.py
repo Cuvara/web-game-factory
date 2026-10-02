@@ -64,7 +64,8 @@ PROMPT = (
     "displayed px and its colour, shadow treatment, highlight, texture, edges and corners, "
     "the role of each palette colour) - then draw every file the brief lists, each a "
     "self-contained SVG at exactly its path, applying the same kit to every drawing so they "
-    "read as one game. Write only inside {out}. No scripts, no embedded images, no references "
+    "read as one game. Draw every listed file before polishing any one: a file not written "
+    "is a failed one, and your turns and budget are bounded. Write only inside {out}. No scripts, no embedded images, no references "
     "to other files; draw lettering as outlined paths (an SVG drawn as an image cannot load "
     "the game's fonts). Then run `{preview}`: it judges every file against the bars and "
     "renders the contact sheet {sheet} - every drawing at its in-game size on the game's "
@@ -185,13 +186,16 @@ class SetAuthor:
             if logger:
                 logger.info("set authored", round=round_, failing=len(failing),
                             files=len(review["files"]), error=error)
-            if not failing or error:
+            # A host that ended early (its turn or budget bound, a timeout) after drawing
+            # something gets the next round like any other; one that drew nothing is done.
+            if not failing or (error and not any(r["exists"] for r in review["files"].values())):
                 break
             brief = dict(brief, repair={
                 "round": round_ + 1,
                 "problems": {vid: problems[:12] for vid, problems in failing.items()},
                 "contact_sheet": sheet,
-                "passing": sorted(set(review["files"]) - set(failing))})
+                "passing": sorted(set(review["files"]) - set(failing)),
+                **({"previous_session": error} if error else {})})
         return review, rounds
 
 

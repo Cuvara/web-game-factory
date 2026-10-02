@@ -175,6 +175,15 @@ class SetMode(SetCase):
         for item_id in ("tile", "spike", "board", "badge"):
             self.assertTrue(self.items(manifest)[item_id]["placeholder"], item_id)
 
+    def test_a_host_that_ends_mid_set_gets_the_repair_round(self):
+        manifest, _ = self.run_prod(design(), author=self.set_author("crash-then-good"))
+        calls = self.calls()
+        self.assertEqual(len(calls), 2)
+        self.assertIn("exit 3", calls[1]["repair"]["previous_session"])
+        self.assertIn("hero", calls[1]["repair"]["passing"])
+        for item_id in ("hero", "tile", "spike", "board", "badge"):
+            self.assertFalse(self.items(manifest)[item_id]["placeholder"], item_id)
+
     def test_re_execution_reuses_the_set_without_a_session(self):
         first, _ = self.run_prod(design(), author=self.set_author("good"))
         self.assertEqual(len(self.calls()), 1)

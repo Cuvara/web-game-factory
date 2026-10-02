@@ -242,7 +242,9 @@ helpers drew every file, and a lead iterated it while looking at renders
    (`source: ai-generated`, `quality.author` `author:set`, each file's `quality` including
    `set.consistent`). While one fails and `repair_rounds` remain (default 1), a new session is
    given `repair: {round, problems: {variant: [...]}, contact_sheet, passing}` with its files
-   left in `{out}`. A requirement still failing after the last round, or not drawn at all,
+   left in `{out}`. A session that ended early - its turn or budget bound, a timeout - after
+   drawing something gets that round too (`repair.previous_session` says how it ended);
+   one that drew nothing ends the rounds. A requirement still failing after the last round, or not drawn at all,
    falls back to a placeholder with `author-rejected` naming why. Each round's contact sheet
    is kept (`author-set/sheet-<round>.png`), and `author-set/rounds.json` records the rounds,
    what failed and the measurements.

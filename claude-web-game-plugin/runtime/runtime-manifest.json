@@ -152,7 +152,7 @@
     "scripts/wgf_assets/raster.py": "sha256:015296eb6b42df861ff394b830b0f32d3224f20fcb008065e5bb5e88d4d87cec",
     "scripts/wgf_assets/requirements.py": "sha256:a4e6cb098de72c31e45d62dcfb9468852b742b998715558cd86e729ba5269e06",
     "scripts/wgf_assets/runtime.py": "sha256:b06b1b638886e91d2dbd43e13f8499620e391d113fe0978a107189edade39282",
-    "scripts/wgf_assets/set_author.py": "sha256:f97a21757b315617198d218f2ff8c1e51c8075ddff4142ce147a2299c02a64bd",
+    "scripts/wgf_assets/set_author.py": "sha256:504379a3762959c5560bb9be8d8d03a0735fb78e43ffefa3b1cfca3c2a041da2",
     "scripts/wgf_assets/step.py": "sha256:8d5c6c3b2077eee04159523da02da252f3ed9a6df5338e27aac0f69228e0787a",
     "scripts/wgf_assets/tools/render-svgs.mjs": "sha256:29e34163fe9bcc33a0133168b75052ac517b288870586dbef81b0339064419c7",
     "scripts/wgf_design/__init__.py": "sha256:eb9f88c07b9177df51093883953a25f3bbb463c7a6a02d5f12d8178f9b0285f9",

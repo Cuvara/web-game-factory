@@ -398,6 +398,81 @@ In `new-game` (workflow 5) both production gates route `assets` here (budgets
 `develop` as on the first pass: develop integrates what was rebuilt, and its brief carries
 the reports' failures.
 
+## Fonts and audio: the producers
+
+No agent author makes a font, a music loop or a sound effect, so an unattended run had only
+placeholders for them - a system font stack and an 8-second 8-bit loop - and
+`production-quality` (`assets.present`) refuses a placeholder for an `mvp` item: the run
+looped back to `assets` and blocked. Two producers make them instead, with no person, no
+network and no paid service. They are tried after the libraries and the authors and before
+any placeholder (`factory.assets.producers: [fonts, audio]`; off by default, on in the
+autonomous profile), and what they make is final: `placeholder: false`, judged like any
+file, `production_ready` when it passes.
+
+**`fonts` - the Factory font library** (`wgf_assets/fontlib.py`,
+`workspace/library/fonts/`). Every face an identity kit can name, and every `ALTERNATES` face
+a kit swaps in for a script (`wgf_design/identity.py`) - 20 families - pre-built from the
+Google Fonts repository at a pinned commit, under the SIL Open Font License 1.1:
+
+- one WOFF2 per family: a variable font cut to the weight range the kits use (other axes
+  pinned: `fontlib.PINNED_AXES`), or the static face of that weight; subset to the family's
+  latin, latin-ext, cyrillic, cyrillic-ext, greek and vietnamese characters, with every
+  OpenType feature kept (tabular figures);
+- its `OFL.txt` beside it, and `fonts.json`: the source URL and file, the source's and the
+  output's sha256, weights, subsets, designer and copyright line.
+
+It ships in the plugin runtime (~0.75 MB). For a `font` requirement the producer delivers one
+file per distinct family of the design's typography, in order (display, body, numeric) -
+`fonts-1`, `fonts-2`, ... - cut further to the subsets `scope.locales` needs when fontTools is
+importable (otherwise the library file as built), with each family's licence written beside
+it as `LICENSE-<family>.txt` (licence texts are not "unused files" to `validate`). The
+runtime manifest names each file's face: `family` is the face's own CSS family and `weight`
+its weight or variable range (`"500 700"`), so a game declares
+`new FontFace(e.family, url, { weight: e.weight })`. The licence is `OFL-1.1` (permitted,
+attribution recorded from the copyright line). The design module refuses a typography face
+the library does not hold (`presentation.font_library`), so a design an agent edits stays
+within what a run can ship. `wgf-assets.py fonts check` verifies the shipped files against
+`fonts.json` and the kits; `fonts build` rebuilds the library (maintainers: fontTools,
+Brotli, network). Why shipped rather than fetched: a run has no network, and the whole
+library is smaller than one music loop.
+
+**`audio` - the composer** (`wgf_assets/sound/`). Music and sound effects composed as code,
+the approach the reference games' audio was made with (a score per game, rendered through a
+small synthesiser studio), reimplemented in standard-library Python:
+
+- `style.py` reads the design's words - identity kit, audio direction, the music cues'
+  descriptions, fantasy, art direction - and decides a style (synthwave, chiptune, toybox
+  pop, lo-fi, adventure, electro), mode, key (seeded by the title id), tempo and swing. The
+  decision and its reasons are recorded on every produced item.
+- `music.py` writes one song per design - two 4-chord progressions, a 2-bar hook fitted to
+  each chord - and arranges each music requirement as a cue of it: `main` (A A' B A'' with a
+  breakdown), `title` (a calmer variant: pads, slow arpeggio, the hook on bells), `layer` (an
+  intensity layer: arpeggio, lead, open hats, claps, risers; the same bars as its base,
+  which is then rendered without those parts), `ambience`. A cue lasts at least what its
+  description states (60 s for a main loop, 30 s otherwise), a whole number of bars and of
+  512-sample blocks; tails, reverb, echo and compression run over the loop's own end, so
+  it loops without a seam. 44.1 kHz stereo, -16 dBFS RMS (-18 for title and layer), peak
+  -1 dBFS.
+- `voices.py`, `dsp.py`: the instruments (drums, basses, mallets, bells, electric piano,
+  plucked strings, leads, pads, brass) and effects (biquads, Freeverb-style reverb,
+  ping-pong delay, compressor, limiter), notes cached so a loop renders in ~20-30 s.
+- `sfx.py`: each `sfx`/`ui` cue's recipe from its id first, then its words (tap, drop, pop,
+  combo, reward, coin, fanfare, game over, hit, whoosh, near miss, jump, power-up, error,
+  tick, engine), played in the song's key on the style's instruments; mono 44.1 kHz 16-bit
+  WAV, -1 dBFS peak; a looping cue (an engine) is built from whole cycles.
+- `vorbis.py`: an Ogg Vorbis I encoder (one 1024-sample block size, floor 1, residue 1,
+  lattice VQ, Huffman codes from the file's own statistics, square-polar stereo coupling),
+  so music ships compressed (~190-270 kbps; 60-70 s is 1.7-2.1 MB, under the 4 MB music
+  budget) without an external tool. Its streams decode in Chromium with the exact input
+  length and ~28 dB SNR. `WGF_AUDIO_ENCODER=wav` ships WAV instead.
+
+The standard library cannot decode Ogg, so the producer measures its own PCM before encoding
+and adds two checks to the item's quality: `audio.rendered-level` (RMS, peak, integrated
+loudness in LUFS against the level floor) and `audio.rendered-seam` (the loop's end-to-start
+step and edge levels against `asset-quality.yaml` `audio.loop_seam`). The licence is the
+Factory's own (`LicenseRef-factory-generated`): nothing is sampled from anyone. Not covered:
+3D sky/spark textures and 3D VFX still have no producer.
+
 ## Placeholders
 
 Backends are tried in `placeholders.backends` order; the first that is available, supports
@@ -567,6 +642,7 @@ build still loads); every other error FAILs.
 | `libraries` | `[]` | directories with a `library.json` and/or an `index.json` (see `library.py`); relative to the project directory |
 | `model_author` | `{kind: none}` | the 3D model author (`model_author.py`): `{kind: command, mode: each\|set, argv, spec_from: file\|stdout, max_repair_rounds: 2, review_rounds: 1, render: {enabled: true}}`; only a configured one is asked |
 | `author` | `{kind: none}` | `{kind: command, mode: asset\|set, argv, ...}`. `asset` (default): `svg_from: file\|stdout, timeout_seconds: 600, idle_timeout_seconds: 300, repair_rounds: 2`, placeholders `{request} {output} {prompt}`. `set`: `timeout_seconds: 2400, idle_timeout_seconds: null, repair_rounds: 1`, placeholders `{request} {out} {preview} {sheet} {prompt}` ([The set author](#the-set-author)). A misconfigured author - an unknown mode, a placeholder the mode does not provide, `svg_from: stdout` with `set` - fails the step, not retryably. The verified Claude Code set author is commented in `factory.yaml` and set in the autonomous profile ([autonomous-runs.md](autonomous-runs.md)) |
+| `producers` | `[]` | `fonts`, `audio`: final fonts and audio made from the design itself, after libraries and authors, before placeholders (see "Fonts and audio: the producers"). The autonomous profile turns both on |
 | `placeholders` | `{enabled: true, backends: [2d-assets-mcp, procedural]}` | plus a settings block per backend |
 | `optimize` | `true` | lossless, only on files the step writes — never on the design's own |
 | `runtime_manifest` | `true` | write `public/assets/assets.json` |
@@ -632,6 +708,12 @@ python3 scripts/wgf-assets.py validate ../my-game [--strict] [--no-unused]
 python3 scripts/wgf-assets.py pack out/hud frames/ [--trim] [--animation run=hero-run-]
 # What a file really is: format, size, alpha, SVG hazards, atlas problems.
 python3 scripts/wgf-assets.py inspect public/assets/ui/*.svg
+# Fonts and audio from the design itself (the producers), the title id seeding the key.
+python3 scripts/wgf-assets.py build --design design.json --root ../my-game \
+    --producers fonts,audio --title-id my-game
+# The Factory font library: list it, check it against fonts.json and the kits, rebuild it
+# (maintainers only: needs fontTools, Brotli and the network).
+python3 scripts/wgf-assets.py fonts list|check|build
 ```
 
 `build` accepts a whole game-design or any JSON with `asset_requirements`. It prints items

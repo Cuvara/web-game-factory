@@ -306,6 +306,7 @@ class _Item:
         }
         self.payload = []  # [(repository-relative path, bytes)] of the files, as recorded
         self.generation = None  # a generating backend's `model.generation` block
+        self.faces = None   # {runtime id: {family, weight}} of a font producer's files
         self.variants = []  # runtime ids of the drawings, when the requirement has a count
         self.short = None   # (supplied, wanted) when a library supplies fewer drawings
         self.model_deferred = False  # waiting for the 3D set author, which runs once for all
@@ -346,7 +347,8 @@ class AssetPipeline:
                  placeholders=True, optimize=True, runtime_manifest=True, prune=True,
                  title_id=None, author=None, model_author=None, model_set=None, palette=(),
                  identity=None, design=None, bars=None, rebuild=None, work_dir=None,
-                 settings=None, context=None, locales=(), design_context=None):
+                 settings=None, context=None, locales=(), design_context=None,
+                 producers=()):
         self.policy = policy
         self.store = store
         self.backends = backends  # [(id, backend or None, note)]
@@ -375,6 +377,10 @@ class AssetPipeline:
         self.bars = bars or quality_mod.load_bars()
         # The design's scope.locales: a delivered font must set each of them.
         self.locales = [str(x) for x in locales or [] if x]
+        # Producers that make a kind's final asset from the design itself, tried after the
+        # libraries and authors and before any placeholder: the font library
+        # (fontlib.FontProducer), the composer (sound.producer.AudioProducer).
+        self.producers = list(producers or [])
         # {requirement id: {"reasons": [text], "frames": [PNG path]}}: what a re-entry was
         # sent back for (feedback.py); only these are rebuilt, and the reasons and frames
         # reach the author. A bare list is reasons alone.
@@ -529,6 +535,9 @@ class AssetPipeline:
                     item.model_deferred = True
                     return item
                 if self._model_authored(req, item):
+                    return item
+            for producer in self.producers:
+                if producer.supports(req) and self._produced(producer, req, item):
                     return item
         return self._fallback(req, item)
 
@@ -772,6 +781,63 @@ class AssetPipeline:
         if failures:
             item.issue("generation-failed", "warning", f"{req.id}: " + " | ".join(failures))
         return False
+
+    def _produced(self, producer, req, item):
+        """A producer's files for `req` (one per drawing or face when it counts several),
+        or False with the reason recorded as an info issue."""
+        from .fontlib import ProducerError
+        try:
+            made = producer.produce(req)
+        except ProducerError as exc:
+            item.issue("generation-failed", "info", f"{req.id}: {producer.id}: {exc}")
+            return False
+        files = made.get("files") or []
+        if not files:
+            return False
+        names = self._variant_paths(req, files[0]["format"], len(files))
+        errors = []
+        for (_vid, relative), entry in zip(names, files):
+            found, problems = validate_file(req.policy, relative, entry["data"],
+                                            policy=self.policy)
+            bad = [m for _, sev, m in problems if sev == "error"]
+            if found is None or bad:
+                errors.extend(bad or [f"{relative} is invalid"])
+        if errors:
+            item.issue("generation-failed", "warning",
+                       f"{req.id}: {producer.id} made files the policy refuses: "
+                       + "; ".join(errors[:4]))
+            return False
+        stored = [self._store(relative, entry["data"], entry["format"])
+                  for (_vid, relative), entry in zip(names, files)]
+        directory = self._directory(req, files[0]["format"])
+        for name, data in made.get("extra") or []:
+            # Companion files that ship beside the asset (a font's OFL.txt).
+            self.store.write(f"{directory}/{name}", data)
+        item.variants = [vid for vid, _ in names] if len(names) > 1 else []
+        faces = {vid: {k: entry[k] for k in ("family", "weight") if entry.get(k)}
+                 for (vid, _relative), entry in zip(names, files)}
+        if any(faces.values()):
+            item.faces = faces
+        origin = dict(made.get("origin") or {"kind": "generated", "generator": producer.id})
+        item.data["source"] = getattr(producer, "source", "procedural")
+        item.data["origin"] = origin
+        item.data["placeholder"] = False
+        item.quality_author = made.get("author") or f"builtin:{producer.id}"
+        verdict = self._license(item, made.get("license"))
+        if verdict.status != "generated":
+            self._check_clearance(item, verdict, origin)
+        self._record_files(item, stored)
+        optimization = self._optimization(req, stored)
+        done = set(made.get("done") or []) & set(req.policy.optimize)
+        if done:
+            optimization["applied"] = list(optimization["applied"]) + sorted(done)
+            optimization["deferred"] = [s for s in optimization["deferred"] if s not in done]
+        item.data["optimization"] = optimization
+        item.generation = made.get("metadata")
+        item.data["notes"] = " ".join(filter(None, [req.notes, made.get("notes")]))
+        item.data["status"] = "delivered"
+        self._log("produced", asset=req.id, producer=producer.id, files=len(stored))
+        return True
 
     # -- library.json, author, model author -------------------------------------------------
 
@@ -1453,6 +1519,7 @@ class AssetPipeline:
                         blob, kind=req.kind, loop=req.loop, min_duration_s=req.min_duration_s,
                         max_bytes=req.policy.max_bytes, license_ok=licensed, bars=self.bars,
                         author=author)) for relative, blob in sounds], author)
+                judged = self._rendered_checks(item, judged)
             elif fonts and not files:
                 judged = _merge_quality([(relative, quality_mod.font_quality(
                     blob, locales=self.locales, bars=self.bars, author=author))
@@ -1507,6 +1574,37 @@ class AssetPipeline:
             severity = "error" if req.scope_tier in LOAD_BEARING_TIERS else "warning"
             item.issue("quality-failed", severity,
                        f"{req.id}: " + "; ".join(quality_mod.problems(judged)[:4]))
+
+    def _rendered_checks(self, item, judged):
+        """A producer that measured its own PCM before encoding (sound.producer) adds what
+        the standard library cannot read back from an Ogg file: the level and the seam."""
+        measured = ((item.generation or {}).get("measured") or {}) if isinstance(
+            item.generation, dict) else {}
+        if not measured:
+            return judged
+        bars = self.bars.audio
+        checks = list(judged.get("checks") or [])
+        loudest = measured.get("loudest_s_dbfs")
+        rms = measured.get("rms_dbfs")
+        level = loudest if loudest is not None else rms
+        if level is not None:
+            checks.append({"id": "audio.rendered-level",
+                           "status": "pass" if level >= bars.min_rms_dbfs else "fail",
+                           "summary": f"measured before encoding: RMS {rms} dBFS, peak "
+                                      f"{measured.get('peak_dbfs')} dBFS"
+                                      + (f", loudness {measured['lufs']} LUFS"
+                                         if measured.get("lufs") is not None else "")
+                                      + f"; floor {bars.min_rms_dbfs:g} dBFS"})
+        seam = measured.get("seam")
+        if seam and item.req.loop:
+            ok = seam["ratio"] <= bars.seam_ratio and seam["edge_db"] <= bars.seam_edge_db
+            checks.append({"id": "audio.rendered-seam", "status": "pass" if ok else "fail",
+                           "summary": f"measured before encoding: end-to-start jump "
+                                      f"{seam['ratio']}x the typical step (bar "
+                                      f"{bars.seam_ratio:g}x), edges differ {seam['edge_db']}"
+                                      f" dB (bar {bars.seam_edge_db:g} dB)"})
+        verdict = "fail" if any(c["status"] == "fail" for c in checks) else judged["verdict"]
+        return dict(judged, checks=checks, verdict=verdict)
 
     def _image_files(self, item):
         """[(runtime id, path, bytes, format)] of the SVG/PNG drawings of an item (not an
@@ -1765,6 +1863,9 @@ class AssetPipeline:
         payload = [(relative, blob)]
         if data["type"] == "font":
             entry["family"] = req.id
+            if item.faces:
+                entry.update(item.faces.get(item.variants[0] if item.variants else req.id)
+                             or {})
         if req.policy.tiles and record.get("width"):
             tw, th = (edge * int(req.scale) for edge in req.tile_size())
             entry.update({"tile_width": tw, "tile_height": th,
@@ -1798,6 +1899,8 @@ class AssetPipeline:
                        if k not in ("url", "width", "height", "variants", "model")}
             variant.update({"url": url, "format": record["format"],
                             "width": record.get("width"), "height": record.get("height")})
+            if item.faces and item.faces.get(vid):
+                variant.update(item.faces[vid])
             out[vid] = (variant, [(relative, blob)])
         entry["variants"] = list(item.variants)
         return out

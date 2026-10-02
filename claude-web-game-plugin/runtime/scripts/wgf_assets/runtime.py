@@ -49,6 +49,8 @@ SCHEMA_PATH = os.path.join(paths.ROOT, "core", "artifacts", "shared",
                            "runtime-assets.schema.json")
 DEFAULT_MAX_EDGE, DEFAULT_WARN_EDGE = 4096, 2048
 IGNORED = {".gitkeep", ".DS_Store", "Thumbs.db"}
+# Licence texts that must ship beside what they license (a font's OFL.txt): not assets.
+_LICENCE = re.compile(r"^(LICEN[CS]E|OFL|COPYING)([-_.][A-Za-z0-9._-]*)?\.(txt|md)$")
 _SCHEME = re.compile(r"^[a-zA-Z][a-zA-Z0-9+.-]*:")
 
 
@@ -241,7 +243,7 @@ def validate(root, *, max_edge=DEFAULT_MAX_EDGE, warn_edge=DEFAULT_WARN_EDGE,
         for directory, dirs, names in os.walk(base):
             dirs.sort()
             for name in sorted(names):
-                if name in IGNORED or name.startswith(".wgf-asset-"):
+                if name in IGNORED or name.startswith(".wgf-asset-") or _LICENCE.match(name):
                     continue
                 relative = os.path.relpath(os.path.join(directory, name), root).replace(
                     os.sep, "/")

@@ -54,7 +54,11 @@ DEFAULT_AUTHOR = "archetype"
 # How often an author that can repair its draft (the `agent` author) is shown what made the
 # composed design invalid - the game-design schema and the buildability check - and asked
 # again, before the step fails. Each round is one more author session.
-MAX_REPAIR_ROUNDS = 2
+MAX_REPAIR_ROUNDS = 3
+# Where a visit's last rejected draft and its problems are kept between executions
+# (`<run_dir>/design/<visit>-last-draft.json`): a resumed step continues the repair from it
+# instead of asking the author for a new game.
+LAST_DRAFT = "{visit}-last-draft.json"
 
 
 def utc_now():
@@ -132,6 +136,14 @@ class DesignStep(WorkflowStep):
         except AuthorError as exc:
             return StepResult.failed(f"design author {author_name!r}: {exc}", retryable=False)
         contracts = ArtifactContracts()
+        # A resumed execution of this visit continues the repair of the last rejected draft
+        # (an author that repairs is not asked for a new game and billed for it again).
+        last = self._last_draft(context) if getattr(author, "repairs", False) else None
+        if last:
+            brief = dict(brief, repair={"round": 0, "problems": last["problems"][:60],
+                                        "previous_draft": last["draft"]})
+            context.logger.info("design resumes the repair of the last rejected draft",
+                                problems=last["problems"][:20])
         for repair_round in range(MAX_REPAIR_ROUNDS + 1):
             try:
                 draft = author.draft(brief)
@@ -147,7 +159,12 @@ class DesignStep(WorkflowStep):
                 # breach becomes a descope.
                 problems = outcome["consistency_problems"]
             if not problems:
+                if outcome["consistency_problems"] and getattr(author, "repairs", False):
+                    # Descoped after its rounds: the draft is kept, so a resume continues.
+                    self._keep_last_draft(context, draft, outcome["consistency_problems"])
                 break
+            if getattr(author, "repairs", False):
+                self._keep_last_draft(context, draft, problems)
             if not getattr(author, "repairs", False) or repair_round == MAX_REPAIR_ROUNDS:
                 after = f" after {repair_round} repair round(s)" if repair_round else ""
                 if outcome["unbuildable"]:
@@ -211,6 +228,7 @@ class DesignStep(WorkflowStep):
             return StepResult("FAILED", route="descope", retryable=False, artifacts=[output],
                               error=f"design consistency failed on {', '.join(blocking)}: cut scope, "
                                     "do not relax the rules")
+        self._drop_last_draft(context)
         return StepResult.success(
             [output], message=f"{engine} design, {mvp} mvp features, consistency {block['status']}"
                               + (f", {len(warnings)} warning(s) for G3" if warnings else ""))
@@ -305,6 +323,46 @@ class DesignStep(WorkflowStep):
         outcome.update(artifact=artifact, block=block, blocking=blocking, warnings=warnings,
                        problems=list(contracts("game-design", artifact)))
         return outcome
+
+    @staticmethod
+    def _last_draft_path(context):
+        run_dir = getattr(context, "run_dir", None)
+        if not run_dir:
+            return None
+        return os.path.join(run_dir, "design",
+                            LAST_DRAFT.format(visit=getattr(context, "visit", 1)))
+
+    def _last_draft(self, context):
+        path = self._last_draft_path(context)
+        if not path or not os.path.exists(path):
+            return None
+        try:
+            with open(path, encoding="utf-8") as handle:
+                kept = json.load(handle)
+        except (OSError, ValueError):
+            return None
+        if isinstance(kept, dict) and isinstance(kept.get("draft"), dict)                 and isinstance(kept.get("problems"), list):
+            return kept
+        return None
+
+    def _keep_last_draft(self, context, draft, problems):
+        path = self._last_draft_path(context)
+        if not path:
+            return
+        try:
+            os.makedirs(os.path.dirname(path), exist_ok=True)
+            with open(path, "w", encoding="utf-8") as handle:
+                json.dump({"problems": list(problems), "draft": draft}, handle)
+        except (OSError, TypeError, ValueError):
+            pass
+
+    def _drop_last_draft(self, context):
+        path = self._last_draft_path(context)
+        if path and os.path.exists(path):
+            try:
+                os.remove(path)
+            except OSError:
+                pass
 
     @staticmethod
     def _previous_design(context):

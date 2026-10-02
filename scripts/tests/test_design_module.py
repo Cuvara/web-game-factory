@@ -521,6 +521,43 @@ class FailurePaths(unittest.TestCase):
         for term in rules["detail_terms"]:
             self.assertIn(term, rules["concept_terms"])
 
+    def test_a_resumed_execution_continues_the_repair_of_the_last_draft(self):
+        # A repairing author that used up its rounds leaves its last rejected draft and the
+        # problems in the run directory; the next execution of the visit (a resume) starts the
+        # repair from it instead of asking for a new game, and a success clears it.
+        scratch = tempfile.mkdtemp(prefix="wgf-design-last-")
+        self.addCleanup(shutil.rmtree, scratch, ignore_errors=True)
+        context = FakeContext(run_dir=scratch, visit=1)
+
+        class Stubborn(authors.ArchetypeAuthor):
+            repairs = True
+            briefs = []
+
+            def draft(self, brief):
+                Stubborn.briefs.append(copy.deepcopy(brief.get("repair")))
+                if brief.get("repair") and brief["repair"].get("round") == 0:
+                    # The resumed repair: fix what was asked, starting from the kept draft.
+                    draft = copy.deepcopy(brief["repair"]["previous_draft"])
+                    draft["core_loop"] = draft["core_loop"].replace(" Shoot the gate to open it.", "")
+                    return draft
+                draft = super().draft(brief)
+                draft["core_loop"] += " Shoot the gate to open it."
+                return draft
+
+        Stubborn.briefs = []
+        authors.register_author("stubborn-last", Stubborn)
+        self.addCleanup(authors.AUTHORS.pop, "stubborn-last", None)
+        first = run_step(load_strategy(), params={"author": "stubborn-last"}, context=context)
+        self.assertEqual((first.outcome, first.route), (StepOutcome.FAILED, "descope"))
+        kept = os.path.join(scratch, "design", "1-last-draft.json")
+        self.assertTrue(os.path.exists(kept))
+        Stubborn.briefs = []
+        second = run_step(load_strategy(), params={"author": "stubborn-last"}, context=context)
+        self.assertEqual(second.outcome, StepOutcome.SUCCESS, second.error)
+        self.assertEqual(Stubborn.briefs[0]["round"], 0)
+        self.assertIn("design_adds_no_foreign_mechanic", " ".join(Stubborn.briefs[0]["problems"]))
+        self.assertFalse(os.path.exists(kept))
+
     def test_an_author_exception_is_left_to_the_runtime_as_retryable(self):
         class Flaky(authors.DesignAuthor):
             def draft(self, brief):

@@ -13,9 +13,13 @@ You are the **asset** role as defined by Web Game Factory core.
 2. `${CLAUDE_PLUGIN_ROOT}/runtime/core/artifacts/asset-manifest.schema.json`
 3. `${CLAUDE_PLUGIN_ROOT}/runtime/core/reference/asset-policy.yaml`
 4. `${CLAUDE_PLUGIN_ROOT}/runtime/core/craft/art-direction.md`
-5. `${CLAUDE_PLUGIN_ROOT}/runtime/core/craft/audio.md`
+5. `${CLAUDE_PLUGIN_ROOT}/runtime/core/craft/game-audio.md`
 6. `${CLAUDE_PLUGIN_ROOT}/runtime/core/craft/2d-assets.md`
 7. `${CLAUDE_PLUGIN_ROOT}/runtime/core/craft/production-art-and-ui.md`
+8. `${CLAUDE_PLUGIN_ROOT}/runtime/core/craft/production-art-2d.md`
+9. `${CLAUDE_PLUGIN_ROOT}/runtime/core/craft/production-art-3d.md`
+10. `${CLAUDE_PLUGIN_ROOT}/runtime/core/craft/game-ui-kit.md`
+11. `${CLAUDE_PLUGIN_ROOT}/runtime/core/craft/production-wiring.md`
 
 Core is authoritative. Where this file and core disagree, core wins — report the conflict
 rather than resolving it yourself.

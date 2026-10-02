@@ -163,6 +163,49 @@ agent. Tests: `test_design_agent` (including
 `test_the_host_gets_the_allowlisted_agent_environment`). **Status: VERIFIED offline,
 UNVERIFIED live** - no live design-agent run has been made.
 
+### The asset authors and the visual-QA judge (workflow 5)
+
+Workflow 5 refuses placeholder art and blocks visual QA without a judge, so an unattended
+run needs three more agents: the 2D asset author (`factory.assets.author`,
+`scripts/wgf_assets/author.py`), the 3D model author (`factory.assets.model_author`,
+`scripts/wgf_assets/model_author.py`) and the visual-QA judge (`factory.visualqa.judge`,
+`scripts/wgf_visualqa/judge.py`). All three use the design author's read-only flags, commented
+in the shipped `factory.yaml` beside each key and set verbatim in the autonomous profile
+(`test_autonomous_profile.TheWorkflow5Agents` holds them equal):
+
+| | Output | `--max-turns` | `--max-budget-usd` | `timeout_seconds` |
+|---|---|---|---|---|
+| 2D author | `svg_from: stdout`: the last complete `<svg>` printed | 15 | 1 | 600 |
+| 3D model author | `spec_from: stdout`: the last JSON object printed | 20 | 2 | 900 |
+| visual-QA judge | `verdict_from: stdout` | 40 | 2 | 900 |
+
+`--safe-mode` (no hooks, plugins, MCP servers or CLAUDE.md), `--strict-mcp-config`,
+`--tools Read` and `--allowedTools Read` (the request, the craft playbooks it names, the
+model-spec schema, the frames), `--disallowedTools Edit,Write,NotebookEdit,Bash,WebFetch,WebSearch`,
+`--permission-mode dontAsk`, `--no-session-persistence`, `--output-format text` (prints only at
+exit, hence `idle_timeout_seconds: null`). None of the three can write anything: what they
+print is written, validated and judged by the Factory. The 2D author could only deliver
+through a file at `{output}` before; `svg_from: stdout` was added so it needs no write tool.
+What the Factory enforces does not depend on the host: `wgflib.procs` (timeout, whole-tree
+cleanup), the allowlisted environment, the unchanged quality checks with bounded repair
+rounds, and for the judge the guarded-path fingerprint around it.
+
+**Status: VERIFIED_LIVE** (2026-10-02, Claude Code 2.1.280, `--model sonnet`; outputs kept
+under `~/wgf-runs/autonomous-profile-2026-10-02/`):
+
+| Agent | Run | Result | Wall time |
+|---|---|---|---|
+| 2D author | `wgf-assets.py build --author-svg-from stdout` on the real `drop-merge` archetype design's `pieces` (count cut to 2 to bound spend) and `backdrop` | 3 drawings, each accepted on its first round: `svg.well-formed`, `svg.safe`, `svg.not-primitive` (12+ elements), `svg.palette`, `svg.dimensions` and `variants.distinct` pass; `wgf-assets.py validate`: 0 errors, 0 warnings | 5 min 25 s for the build; 95-125 s a drawing |
+| 3D model author | `model_author.produce_model` on the real `arena-dodge` design's `craft`, pinned Blender 4.5.14 | round 0 refused (three bevels over a third of the part's smallest side), round 1 accepted: 10 parts, 1012 triangles, `primitive_only: false`, every `model.*` check pass | 186 s for both rounds |
+| visual-QA judge | `wgf-visualqa.py` on Neon Drift Arena's 16 frames (`/tmp/play-3d`, flat primitive shapes) | verdict parsed first time: FAIL, route `assets`, blocker `flat-primitive-entities`, `art_completeness` 0 - as the calibration's round 1 found for the same frames | 111 s |
+
+Text output reports no cost. The same prompt and request run once more with
+`--output-format json` cost US$0.19 (4 turns, 164 s) for a drawing and US$0.15 (5 turns,
+79 s) for a model spec, well inside the caps. A first judge run failed
+`judge-isolation-violation`: Factory files were being edited in the same checkout while it
+ran, the fingerprint caught it and restored them - the isolation working as designed. The
+recorded run was made from an untouched copy of the commit.
+
 ## Live evidence
 
 **How to reproduce any live run from here on.** The live tests read the developer and

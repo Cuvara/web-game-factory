@@ -17,13 +17,19 @@ rule is.
 | Playbook | Primary role(s) | Stage(s) | Serves |
 |---|---|---|---|
 | [`core-loop-and-difficulty.md`](core-loop-and-difficulty.md) | game-designer, gameplay | strategy, design, prototype | `core_loop`, `build_spec.mechanics`, `.difficulty`, `.session_flow`, `.failure` |
+| [`retention-and-progression.md`](retention-and-progression.md) | game-designer, gameplay, liveops | design, prototype, production, live | `build_spec.depth`, `.player_goals`, `.progression`, `retention`, `session` |
 | [`game-feel.md`](game-feel.md) | gameplay, ui | design, prototype | `build_spec.rewards[].feedback`, `.hud[].feedback`, `.failure.feedback`, `visual_identity.motion` |
 | [`onboarding-and-portal-ux.md`](onboarding-and-portal-ux.md) | ui, game-designer | design, prototype, release | `session.time_to_first_*`, `build_spec.tutorial`, `.monetization_touchpoints`, store metadata |
 | [`ui-hud-mobile.md`](ui-hud-mobile.md) | ui | design, prototype | `build_spec.screens`, `.hud`, `.menus`, `.responsive` |
-| [`audio.md`](audio.md) | asset, gameplay | design, prototype | `audio_direction`, `build_spec.audio` |
+| [`game-audio.md`](game-audio.md) | asset, gameplay, ui | design, prototype, production | `audio_direction`, `build_spec.audio`, the asset manifest's `sfx`/`music`, the play probe's `audio` |
 | [`art-direction.md`](art-direction.md) | game-designer, asset | design, prototype | `art_direction`, `build_spec.visual_identity`, `.assets`, the asset manifest |
 | [`accessibility.md`](accessibility.md) | ui, game-designer | design, prototype, qa | `ux.accessibility`, `visual_identity`, `.controls` |
 | [`production-art-and-ui.md`](production-art-and-ui.md) | game-designer, asset, gameplay, ui | design, prototype, production | `build_spec.assets[].role`/`.readability`, `visual_identity.ui`/`.primitive_style`, the play probe's `asset`/`render` |
+| [`production-art-2d.md`](production-art-2d.md) | asset, gameplay, game-designer | design, production | the 2D style kit, a silhouette per variant, layered SVG authoring, backgrounds, VFX, sizes and anchors, `library.json` and the author |
+| [`production-art-3d.md`](production-art-3d.md) | asset, gameplay, game-designer | design, production | model specs by part decomposition, materials and emissive, the light rig, fog and sky, portrait camera framing |
+| [`game-ui-kit.md`](game-ui-kit.md) | ui, asset, game-designer | design, production | fonts as assets and locale glyphs, tokens, contrast and target floors, buttons, HUD, title/pause/result/retry, portrait layout |
+| [`juice.md`](juice.md) | gameplay, ui | prototype, production | the feedback numbers: acknowledgement within 100 ms, drop, merge, combo, shake, near-miss, crash, opening grace |
+| [`production-wiring.md`](production-wiring.md) | gameplay, ui, asset | production | loading `assets.json` by id and role, the probe's `asset`/`render`/`assets_loaded`, the art regression guard, self-checking against the gates with frames |
 | [`2d-assets.md`](2d-assets.md) | asset, gameplay, ui | design, prototype | `asset_requirements`, the asset manifest, the runtime asset manifest |
 | [`web-performance.md`](web-performance.md) | architect, gameplay, qa | tech-plan, prototype, qa | `perf_budgets`, `perf_measurements`, the asset pipeline |
 | [`phaser.md`](phaser.md) | gameplay, ui | tech-plan, prototype | `build_spec.mechanics`, `.controls`, `.screens`, `.responsive` — only when `engine.type` is `phaserjs` |
@@ -35,6 +41,12 @@ rule is.
 | [`competitive-teardown.md`](competitive-teardown.md) | research, game-designer | market-scan, strategy | claims and research snapshots |
 | [`research-evidence.md`](research-evidence.md) | research | market-scan | the snapshot format, and the project concept for a brief no catalog shape carries, when a run's research step waits for them |
 | [`tool-capabilities.md`](tool-capabilities.md) | every role | every stage | what tools each stage may use, and the limits on them |
+
+The five production playbooks (`production-art-2d`, `production-art-3d`, `game-ui-kit`,
+`juice`, `production-wiring`) are distilled from the template's two reference ports - the
+2D and 3D games whose production builds passed the production gate - and carry their
+numbers. Each ends with **Distilled from**: the reference files and frames it came from, so
+a rule can be checked against the build that proved it.
 
 ## The one tension to hold
 

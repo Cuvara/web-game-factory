@@ -107,9 +107,11 @@ pass, and changing the lock in the same commit. The summary records `template_re
 The Factory holds no game source, so the hand-made part of each replay lives in the template,
 beside the example it adapts. The pinned **release** (v1.1.0) does not ship those ports: they
 are test fixtures, so the lock names them separately (`golden_ports`: the local template
-branch `wgf-golden-production`, `21226d2` - the play-probe ports `1c5afcb` with both
-reference ports' production art merged in, `8f49d28` and `7c132ef`), and the replay
-developer reads them from a
+branch `wgf-golden-content`, `db7b140` - `wgf-golden-production` (the play-probe ports
+`1c5afcb` with both reference ports' production art merged in, `8f49d28` and `7c132ef`) plus
+the content the production gate's `font.coverage` and `variants` checks require: towers 9
+and 10 in the 2D library, Latin + Cyrillic faces in both, both baselines re-captured), and
+the replay developer reads them from a
 checkout of that commit (`--ports`, `wgflib.template.golden_ports_checkout()`). The game
 repository itself is still created from the pinned release, exactly.
 
@@ -195,15 +197,28 @@ ports a known-good example into the layout the brief requires:
    provenance header (the mapping: `fixtures/<game>/port.json`);
 3. copies the hand-made adaptation **from the ports checkout** (`--ports`) — port.json's
    `overlays`, `examples/wgf-golden-shared/` then `examples/<example>/wgf-golden/`, laid onto
-   the repository root (their READMEs and the old default integration excepted): `main.ts`,
-   the scene calling the brief's `GameIntegration` seam instead of `platform.showRewarded` /
-   `withAdBreak`, UI and pause screens, a small audio service, `en`/`ru` locales,
-   `index.html`, and a browser spec tagged `@boot @loading @start @input @core-loop
-   @progression @game-over @restart @pause-resume @responsive`;
-4. moves that `main.ts` onto the seam the develop step already wrote, as the brief asks any
+   the repository root (their READMEs, `library/`, `baseline/`, `release-1/` and the old
+   default integration excepted): the game's entry `src/game/index.ts` (`createGame(context)`,
+   the template's contract 2), the scene calling the brief's `GameIntegration` seam instead
+   of `platform.showRewarded` / `withAdBreak`, UI and pause screens, a small audio service,
+   `en`/`ru` locales, `index.html`, and a browser spec tagged `@boot @loading @start @input
+   @core-loop @progression @game-over @restart @pause-resume @responsive`;
+4. boots that entry through the seam the develop step already wrote, as the brief asks any
    developer to: `await createGamePlatform()` for the platform, `createGameIntegration(game,
-   platform)` for the seam, no `createPlatform` (`SEAM_REWRITES`: each line must be found
-   exactly once, or the replay refuses). `src/game/integration.ts` is the develop step's;
+   platform)` for the seam, no `createPlatform`. The ports carry no `main.ts`. **Temporary
+   release-1 bridge:** the pinned release (`v1.2.0`) is still contract 1 - its `main.ts`
+   starts the template boot scene and there is no `src/game/context.ts` - so on such a
+   repository (detected, never assumed: no `src/game/context.ts`, or only the bridge's own from
+   an earlier visit, which carries the replay header) the replay writes the
+   template-owned bridge port.json names under `boot_bridge`
+   (`examples/wgf-golden-shared/release-1/` of the ports checkout): a `src/main.ts` that is
+   the release's boot order with the seam lines, calling `createGame` with the `GameContext`
+   it builds, and that type as `src/game/context.ts`. The report's `replay.boot_bridge`
+   records it. On a contract-2 repository the template's own `main.ts` calls `createGame` and
+   nothing is bridged; the bridge goes away when the lock's release moves to a contract-2
+   template. (A legacy port that still carries `main.ts` is moved onto the seam by
+   `SEAM_REWRITES`: each line must be found exactly once, or the replay refuses.)
+   `src/game/integration.ts` is the develop step's;
 5. adds the engine package the example pins (`pixi.js`, or `three` + `@types/three`) and
    updates the lockfile offline;
 6. points the template smoke's `data-scene` assertion at the game's scene (the template
@@ -220,7 +235,8 @@ build, smoke — and commits.
 
 Every file written into a game carries a `GOLDEN-RUN REPLAY` header. The Factory keeps
 only data about the replay — `fixtures/<game>/port.json` (copy and replace rules, overlays,
-MVP notes, placements, known issues) and the seam rewrites — and no game source: the
+MVP notes, placements, known issues, the boot bridge's path) and the seam rewrites — and no
+game source (the release-1 bridge too is template code): the
 adaptation itself is template code, versioned with the template and pinned in the lock.
 
 ## The golden reviewer — not an AI reviewer
@@ -266,6 +282,13 @@ reads as asset files (`assets.formats`); and the 3D port refused to boot without
 manifest, so the greybox phase - before any asset exists - failed every browser test. And
 one in the Factory: the playability bot measured a pause card mid fade-in (text at 0.75
 alpha, 3.93:1), so it now waits for finite CSS animations before measuring a screen.
+
+Validated again on 2026-10-02 (golden ports `db7b140`), after `font.coverage` and the
+`variants` checks made both runs fail `assets.present` on their own art: 2D and 3D `Ran 11
+tests ... OK`, one run at a time; each COMPLETED all 20 steps with production-quality 18 of
+18 checks and visual-qa PASS on 26 frames (2D 0.769-0.990, 3D 0.756-0.987 against the
+re-captured frames); the 2D `pieces` ten drawings with `variants.distinct` pass, every
+delivered face `font.coverage` pass for `en` and `ru`.
 
 ## The independent browser evidence
 

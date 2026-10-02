@@ -13,9 +13,10 @@
 # nobody chose, a file that fetches something at load time - not a judgement of whether the
 # art is good: that is visual QA, reading the running game against its rubric.
 #
-# Sections are per medium and keep disjoint keys: `svg` and `raster` (2D), `models` (3D, GLB).
+# Sections are per medium and keep disjoint keys: `svg` and `raster` (2D), `models` (3D, GLB),
+# `audio` (sfx and music: WAV decoded, Ogg and MP3 read by their headers).
 
-version: 1.0.0
+version: 1.2.0
 
 svg:
   # Larger files are refused before parsing; an SVG sprite that big is a traced raster.
@@ -89,3 +90,116 @@ models:
   # visual identity (Euclidean, sRGB 0-255 per channel), so a model belongs to the game's
   # look. Skipped when the design has no palette; textured materials are not decoded.
   palette_distance: 48
+
+fonts:
+  # Glyph coverage. A font that cannot set a locale in the design's scope.locales is a design
+  # error, not a runtime fallback: the browser would draw those strings in a system face the
+  # design never chose. Two readers use this table:
+  #
+  #   * the design module (scripts/wgf_design/presentation.py): every family the typography
+  #     names must cover each locale's `subsets` (any one of them). A family listed under
+  #     `families` is judged by that list; any other family's font asset must state, in its
+  #     spec or description, the subsets its files cover.
+  #   * the asset quality check `font.coverage` (scripts/wgf_assets/quality.py): the delivered
+  #     file's cmap must map every character of each locale's `chars` to a glyph. TTF, OTF
+  #     and WOFF are read with the standard library; WOFF2 tables are Brotli-compressed and
+  #     are read only when the system Brotli decoder (libbrotlidec) can be loaded through
+  #     ctypes; otherwise the check is `skipped` with "coverage unchecked", never passed.
+  #
+  # `chars` items: "X..Y" is the inclusive range X to Y; any other string is its characters.
+  # A locale is matched by its language subtag (pt-BR -> pt). A locale not listed here is
+  # reported, not judged.
+  locales:
+    en: {subsets: [latin], chars: ["A..Z", "a..z"]}
+    id: {subsets: [latin], chars: ["A..Z", "a..z"]}
+    nl: {subsets: [latin], chars: ["A..Z", "a..z", "ëïÉé"]}
+    de: {subsets: [latin], chars: ["A..Z", "a..z", "ÄÖÜäöüß"]}
+    fr: {subsets: [latin], chars: ["A..Z", "a..z", "ÀÂÆÇÉÈÊËÎÏÔŒÙÛÜàâæçéèêëîïôœùûüÿ"]}
+    es: {subsets: [latin], chars: ["A..Z", "a..z", "ÁÉÍÓÚÑÜáéíóúñü¿¡"]}
+    pt: {subsets: [latin], chars: ["A..Z", "a..z", "ÀÁÂÃÇÉÊÍÓÔÕÚàáâãçéêíóôõú"]}
+    it: {subsets: [latin], chars: ["A..Z", "a..z", "ÀÈÉÌÒÙàèéìòù"]}
+    tr: {subsets: [latin-ext], chars: ["A..Z", "a..z", "ÇĞİÖŞÜçğıöşü"]}
+    pl: {subsets: [latin-ext], chars: ["A..Z", "a..z", "ĄĆĘŁŃÓŚŹŻąćęłńóśźż"]}
+    vi: {subsets: [vietnamese], chars: ["A..Z", "a..z", "ĂăÂâĐđÊêÔôƠơƯưẠạẢảẤấẦầẾếỀềỐốỒồỚớỜờỨứỪừ"]}
+    ru: {subsets: [cyrillic], chars: ["А..Я", "а..я", "Ёё"]}
+    uk: {subsets: [cyrillic], chars: ["АБВГҐДЕЄЖЗИІЇЙКЛМНОПРСТУФХЦЧШЩЬЮЯ", "абвгґдеєжзиіїйклмнопрстуфхцчшщьюя"]}
+    be: {subsets: [cyrillic], chars: ["АБВГДЕЁЖЗІЙКЛМНОПРСТУЎФХЦЧШЫЬЭЮЯ", "абвгдеёжзійклмнопрстуўфхцчшыьэюя"]}
+    kk: {subsets: [cyrillic-ext], chars: ["А..Я", "а..я", "ӘәҒғҚқҢңӨөҰұҮүҺһІі"]}
+    el: {subsets: [greek], chars: ["ΑΒΓΔΕΖΗΘΙΚΛΜΝΞΟΠΡΣΤΥΦΧΨΩ", "αβγδεζηθικλμνξοπρστυφχψω"]}
+    ar: {subsets: [arabic], chars: ["ابتثجحخدذرزسشصضطظعغفقكلمنهوي"]}
+    hi: {subsets: [devanagari], chars: ["अआइईउऊएऐओऔकखगघचछजझटठडढणतथदधनपफबभमयरलवशषसह"]}
+    th: {subsets: [thai], chars: ["กขคงจฉชซญดตถทธนบปผพฟภมยรลวศษสหอฮ"]}
+    ja: {subsets: [japanese], chars: ["あいうえおかきくけこさしすせそアイウエオカキクケコ日本語"]}
+    ko: {subsets: [korean], chars: ["가나다라마바사아자차카타파하한국어"]}
+    zh: {subsets: [chinese-simplified, chinese-traditional], chars: ["的一是不了人我在有他这中大来上国个到说们"]}
+  # The subsets each family's files are published with: the Google Fonts catalogue,
+  # ofl/<family>/METADATA.pb `subsets` (github.com/google/fonts, read 2026-10-01). These
+  # are the families the design module's identity kits name, and the faces it substitutes
+  # when a kit's face cannot set a locale in scope. What a delivered file covers is the
+  # asset check's to read: a subset build can cover less than its family.
+  families:
+    Unbounded: [cyrillic, cyrillic-ext, latin, latin-ext, vietnamese]
+    Instrument Sans: [latin, latin-ext]
+    JetBrains Mono: [cyrillic, cyrillic-ext, greek, latin, latin-ext, vietnamese]
+    Bungee: [latin, latin-ext, vietnamese]
+    Figtree: [latin, latin-ext]
+    Archivo Black: [latin, latin-ext]
+    Archivo: [latin, latin-ext, vietnamese]
+    Fraunces: [latin, latin-ext, vietnamese]
+    Commissioner: [cyrillic, cyrillic-ext, greek, latin, latin-ext, vietnamese]
+    Cinzel Decorative: [latin]
+    Alegreya Sans: [cyrillic, cyrillic-ext, greek, greek-ext, latin, latin-ext, vietnamese]
+    Alegreya Sans SC: [cyrillic, cyrillic-ext, greek, greek-ext, latin, latin-ext, vietnamese]
+    Syne: [greek, latin, latin-ext]
+    Manrope: [cyrillic, cyrillic-ext, greek, latin, latin-ext, vietnamese]
+    Syne Mono: [latin, latin-ext]
+    Rubik Mono One: [cyrillic, cyrillic-ext, hebrew, latin, latin-ext]
+    Rubik: [arabic, cyrillic, cyrillic-ext, hebrew, latin, latin-ext]
+    Russo One: [cyrillic, latin, latin-ext]
+    Playfair Display: [cyrillic, latin, latin-ext, vietnamese]
+    Cormorant SC: [cyrillic, cyrillic-ext, latin, latin-ext, vietnamese]
+
+variants:
+  # A counted requirement (a count above 1: tower levels, enemy kinds) is drawn once per
+  # variant, and the player must tell the variants apart by shape, not by colour alone. Each
+  # drawing is reduced to a silhouette on a `grid` x `grid` mask over its own canvas (an SVG's
+  # viewBox, a PNG's pixels): SVG shapes are filled as polygons (curves through their control
+  # points, transforms applied), a PNG's opaque pixels (alpha >= 16, or differing from its
+  # corner colour by `png_background_delta` when it has no transparency). Two drawings differ
+  # by 1 - IoU of their masks. Every pair must differ by at least `min_silhouette_distance`:
+  # a recoloured copy, or one with only its numeral changed, is 0.
+  grid: 32
+  min_silhouette_distance: 0.08
+  png_background_delta: 24
+
+audio:
+  # A WAV is decoded with the standard library (`wave`); Ogg (Vorbis, Opus) and MP3 are read
+  # by their headers only - page CRCs, the codec header, the duration - because the standard
+  # library has no codec. What a header cannot say (silence, the loop seam of a compressed
+  # file) is measured in the running game by the production check audio.plays
+  # (core/reference/production-quality.yaml `audio`).
+
+  # The loudest window of this many seconds - about one bar - must reach this RMS. Below it
+  # the file is silence or a stand-in nobody can hear over the music.
+  window_s: 2.0
+  min_rms_dbfs: -45
+
+  # Music is a loop a session hears many times: shorter than this and it repeats audibly
+  # within the first minute. A requirement whose description states a length ("a 60 s
+  # loop") raises it. Any other looping asset (an engine hum) needs at least loop.min.
+  music:
+    min_duration_s: 30
+  loop:
+    min_duration_s: 1
+  # A one-shot longer than this is a wrongly chosen file (music in an sfx slot), not a cue.
+  sfx:
+    max_duration_s: 6
+
+  # A loop (build_spec.audio[].loop) must meet itself: the step from its last frame to its
+  # first at most this many times the file's typical sample-to-sample step, and the RMS of
+  # the first and last `edge_ms` within `max_edge_db` of each other. A click or a gap at the
+  # seam fails both.
+  loop_seam:
+    max_step_ratio: 8
+    max_edge_db: 6
+    edge_ms: 50

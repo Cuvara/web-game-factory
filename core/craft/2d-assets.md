@@ -21,7 +21,7 @@ becomes art, moved when a sprite joins an atlas, re-encoded when a format change
 | A particle or burst texture | `vfx` | `atlas` |
 | A full-screen backdrop | `background` | — (opaque; never in an atlas) |
 | A tile grid for a tilemap | `tileset` | `tile_width`, `tile_height`; size a multiple of them |
-| Tap, coin, hit, jingle; a loop | `sfx`, `music` | see `audio.md` |
+| Tap, coin, hit, jingle; a loop | `sfx`, `music` | see `game-audio.md` |
 | Text face | `font` | — (a system stack stands in until one is chosen) |
 
 ## Atlas groups: what is drawn together, packed together
@@ -119,7 +119,7 @@ for (const [id, e] of Object.entries<any>(m.assets)) {
 Fonts: an entry with a `url` is a file — `new FontFace(e.family, \`url(${at(e.url)})\`)`,
 `await face.load()`, `document.fonts.add(face)`; an entry with only `family` is a system
 stack to use as the CSS `font-family`. Audio: load through the engine's audio or Web Audio,
-and unlock on the first gesture (`audio.md`).
+and unlock on the first gesture (`game-audio.md`).
 
 ## What not to do
 

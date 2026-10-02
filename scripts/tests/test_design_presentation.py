@@ -149,6 +149,14 @@ class TheGoalkeeperDesign(unittest.TestCase):
         spec["visual_identity"]["ui"] = {
             "font_px": {"body": 16, "hud": 20, "heading": 32}, "min_target_px": 48,
             "button": {"fill": "signal", "text": "turf", "radius_px": 28}, "surface": "surface"}
+        # The run's typography could not set its own scope: ru is in scope.locales, and
+        # Instrument Sans is published with Latin only. The check says so; a covering face
+        # (the kit's alternate) repairs it.
+        self.assertIn("ru", self.design["scope"]["locales"])
+        problems = presentation.check(self.design)
+        self.assertEqual(len(problems), 1, problems)
+        self.assertIn("Instrument Sans cannot set ru - it needs cyrillic", problems[0])
+        spec["visual_identity"]["typography"]["body"] = "Commissioner (500)"
         self.assertEqual(presentation.check(self.design), [])
 
 
@@ -229,3 +237,82 @@ class TheStepFailsADesignThatOmitsIt(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class FontCoverage(unittest.TestCase):
+    """Every face of the typography can set every locale in scope.locales (defect: bundled
+    fonts with no Cyrillic, a `ru` title falling back to a system face at runtime)."""
+
+    def setUp(self):
+        self.design = design_of("drop-merge", identity="riso-arcade")
+        self.look = self.design["build_spec"]["visual_identity"]
+        self.fonts = next(a for a in self.design["build_spec"]["assets"] if a["id"] == "fonts")
+
+    def problems(self):
+        return [p for p in presentation.check(self.design) if "cannot set" in p
+                or "coverage table" in p]
+
+    def test_a_known_face_without_the_script_is_a_design_error(self):
+        self.design["scope"]["locales"] = ["en", "ru"]
+        self.look["typography"].update(display="Bungee (400)", body="Figtree (600)",
+                                       numeric="Bungee (400)")
+        problems = self.problems()
+        self.assertEqual(len(problems), 2, problems)
+        self.assertIn("Bungee cannot set ru - it needs cyrillic", problems[0])
+        self.assertIn("Figtree cannot set ru", problems[1])
+
+    def test_latin_only_scope_holds(self):
+        self.design["scope"]["locales"] = ["en", "de-DE", "pt-BR"]
+        self.look["typography"].update(display="Bungee (400)", body="Figtree (600)")
+        self.assertEqual(self.problems(), [])
+
+    def test_an_unknown_face_must_state_its_subsets(self):
+        self.design["scope"]["locales"] = ["en", "ru"]
+        self.look["typography"].update(display="Some Display (700)", body="Manrope (600)",
+                                       numeric="Manrope (600)")
+        self.fonts["spec"] = "Files: Some Display; WOFF2."
+        problems = self.problems()
+        self.assertEqual(len(problems), 2, problems)
+        self.assertIn("Some Display is not in the coverage table", problems[0])
+        self.assertIn("cover latin for en", problems[0])
+        self.assertIn("cover cyrillic for ru", problems[1])
+        self.fonts["spec"] = "Files: Some Display; WOFF2, subsets: latin, cyrillic."
+        self.assertEqual(self.problems(), [])
+
+    def test_an_unlisted_locale_is_not_judged(self):
+        self.design["scope"]["locales"] = ["en", "xx"]
+        self.assertEqual(self.problems(), [])
+
+    def test_the_author_swaps_a_face_that_cannot_set_the_scope(self):
+        coverage = presentation.load_font_coverage()
+        kit = copy.deepcopy(identity.KITS["riso-arcade"])
+        look, swapped = identity.cover(kit, ["ru", "en"], coverage)
+        self.assertEqual(swapped, [("Bungee", "Rubik Mono One"), ("Figtree", "Manrope")])
+        self.assertEqual(look["typography"]["display"], "Rubik Mono One (400)")
+        self.assertEqual(look["typography"]["body"], "Manrope (600)")
+        self.assertIn("cyrillic in scope (ru, en): Rubik Mono One for Bungee",
+                      look["typography"]["source"])
+        same, none = identity.cover(kit, ["en"], coverage)
+        self.assertEqual((same, none), (kit, []))
+
+    def test_every_kit_has_a_covering_face_for_each_tabled_script(self):
+        coverage = presentation.load_font_coverage()
+        for kit_id, kit in identity.KITS.items():
+            for locale in ("ru", "en", "de", "es", "pt"):
+                look, _ = identity.cover(copy.deepcopy(kit), [locale, "en"], coverage)
+                design = {"scope": {"locales": [locale, "en"]},
+                          "build_spec": {"visual_identity": look, "assets": []}}
+                self.assertEqual(presentation.font_coverage(design, coverage), [],
+                                 f"{kit_id} / {locale}")
+
+    def test_the_archetype_author_designs_a_ru_title_with_covering_faces(self):
+        # The worked example targets Yandex: ru is in scope.
+        result = design_tests.run_step(design_tests.load_strategy())
+        self.assertEqual(result.outcome, StepOutcome.SUCCESS, result.error)
+        design = result.artifacts[0].content
+        self.assertIn("ru", design["scope"]["locales"])
+        self.assertEqual(presentation.font_coverage(design), [])
+        fonts = next(a for a in design["build_spec"]["assets"] if a["id"] == "fonts")
+        self.assertIn("subsets: ", fonts["spec"])
+        self.assertIn("cyrillic", fonts["spec"])
+

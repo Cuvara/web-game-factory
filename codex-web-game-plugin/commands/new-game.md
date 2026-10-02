@@ -17,6 +17,19 @@ Arguments: the text given with this prompt.
 4. the factory configuration `bin/wgf where --json` reports: `config_layers` (the shipped
    file, then the project's own, layered) and the resolved `autonomy`
 
+## The production bar
+
+The run's agents are pointed at these craft playbooks by their briefs and requests - what a
+finished build looks like, plays like and is checked against. Read them to report a run's
+output honestly; never to steer a step, which is the engine's:
+
+- `core/craft/production-art-and-ui.md`
+- `core/craft/production-art-2d.md`
+- `core/craft/production-art-3d.md`
+- `core/craft/game-ui-kit.md`
+- `core/craft/juice.md`
+- `core/craft/production-wiring.md`
+
 ## Arguments
 
 Accept exactly these (the engine's own flags, `bin/wgf new-game --help` and
@@ -57,16 +70,18 @@ ask the user to give the idea as one quoted string).
    is not `eligible` — report the gate (step 6) and stop. Anything else (a stopped,
    blocked, stale or failed run, or one waiting for input) is resumed at step 4.
 2. **Report the effective autonomy** from `where`'s `autonomy`, as configured — never change
-   it: `developer`, `reviewer`, `auto_approve` (and `timeout_auto_approve`),
-   `init_source`, `develop_budget`. With `--mock` every step is a placeholder, and a mock
+   it: `developer`, `reviewer`, `design_author`, `asset_author`, `model_author`,
+   `visualqa_judge`, `auto_approve` (and `timeout_auto_approve`), `init_source`,
+   `develop_budget`. With `--mock` every step is a placeholder, and a mock
    run approves the reversible gates itself unless `--hold-gates` is given; gates in
    `auto_approve` are approved either way. An unattended run is the project's own choice
    (`profiles` lists the shipped overlays, e.g. `autonomous`); never install one.
 3. **Outward effects.** For a new run without `--mock` (a mock run starts no session and
    creates nothing): with `init_source` `github`, warn that once G3 is passed the init
-   step creates a GitHub repository (`gh repo create`); with a `command` developer or
-   reviewer, say that agent sessions will run unattended and cost money, within
-   `develop_budget` when one is set. Either way, start that run only after the user
+   step creates a GitHub repository (`gh repo create`); with a `command` developer,
+   reviewer, asset or model author or visual-QA judge (or an `agent` design author), say
+   that agent sessions will run unattended and cost money, within `develop_budget` when
+   one is set (the budget bounds the developer; each other agent has its own per-call cap). Either way, start that run only after the user
    confirms. A `--mock` run, or a run with neither, starts without asking.
 4. **Start** as a long-running background process, not a blocking call: a run can take hours.
    Poll `bin/wgf status <run-id>` for progress.

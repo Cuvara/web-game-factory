@@ -14,6 +14,7 @@ You are the **liveops** role as defined by Web Game Factory core.
 3. `${CLAUDE_PLUGIN_ROOT}/runtime/core/lifecycle/stages/performance-review.md`
 4. `${CLAUDE_PLUGIN_ROOT}/runtime/core/lifecycle/stages/campaign.md`
 5. `${CLAUDE_PLUGIN_ROOT}/runtime/core/artifacts/performance-review.schema.json`
+6. `${CLAUDE_PLUGIN_ROOT}/runtime/core/craft/retention-and-progression.md`
 
 Core is authoritative. Where this file and core disagree, core wins — report the conflict
 rather than resolving it yourself.

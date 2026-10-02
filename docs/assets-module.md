@@ -58,6 +58,23 @@ the work list (`requirements.bridge`). Each entry carries onto its requirement:
 | `count` | `count` | > 1: one drawing per `<id>-<n>`, each its own runtime asset ([variants](#the-runtime-manifest)) |
 | `spec` sizes | `width`/`height` | `96x96` or `960x540` sets both; `64px` sets a square for sprite, icon, ui, vfx |
 
+`build_spec.audio` joins the same work list (`requirements.bridge_audio`), after the assets
+(and beside an older `asset_requirements` list too); an id an asset already uses is not
+repeated. Each cue becomes a requirement:
+
+| build_spec.audio field | Requirement | |
+|---|---|---|
+| `type` | `kind` (+ `role`) | `music` and `ambience` → `music`; `sfx`, `voice` → `sfx`; `ui` → `sfx` with role `ui` |
+| `tier` | `scope_tier` | as for assets: `mvp` produced now, `post-mvp`/`optional` recorded |
+| `loop` | `loop` | the file must loop without a seam (`audio.loop-seam`); the runtime manifest records it |
+| `description` | `min_duration_s` | a length it states ("at least 60 s", "0.5 sec") is the shortest the file may be |
+| `trigger` | `trigger` | kept in the item's notes: when it plays |
+
+Audio is delivered like art: a `library.json` entry maps the cue id to its file (WAV, Ogg
+Vorbis or Opus, MP3, M4A - the asset policy's `sfx`/`music` formats) with its licence and
+source, else a placeholder (a shaped procedural WAV) stands in. Files go to
+`public/assets/audio/`.
+
 An `asset_requirements` entry with the same id adds what only it can say (atlas group, exact
 size, scale, a `model` spec, `existing`); one build_spec does not name is kept as well. A
 design with `asset_requirements` and no `build_spec.assets` is read as before.
@@ -145,7 +162,8 @@ in the policy's permitted list and the entry must say where it came from (`sourc
 becomes `origin.source_url`, anything else `origin.evidence`; or `author`/`vendor`), else it
 is passed over (`library-candidate-rejected`). Imported items are `source: library`,
 `placeholder: false`, and are judged like anything else. Fewer files than the requirement's
-`count` is `variants-short`. This is how golden fixtures and purchased packs supply real art.
+`count` is `variants-short` (an error for mvp and prototype items, and a failed
+`variants.count`). This is how golden fixtures and purchased packs supply real art.
 
 **Author** (`factory.assets.author`, 2D). `kind: command` runs an agent host once per drawing
 (`author.py`, through `wgflib.procs`, with the agent environment of `wgflib.agentenv` plus
@@ -154,8 +172,12 @@ placeholders: `{request}`, `{output}`, `{prompt}`. The request JSON carries the 
 (`id`, `variant`, `count`, `type`, `kind`, `role`, `dimension`, `tier`, `description`,
 `readability`, `spec`, `width`, `height`, `transparency`), the design's `palette` and
 `visual_identity` (concept, shape language, texture, avoid, primitive_style), the
-`quality_bars` it is held to, and its repository `destination`. The host writes one SVG at
-`{output}`; the step validates it (format, unsafe constructs) and judges it
+`quality_bars` it is held to, its repository `destination`, and `craft`: the absolute paths
+of the playbooks the drawing follows (`core/craft/production-art-2d.md`,
+`production-art-and-ui.md`; not part of the reuse key below). The host writes one SVG at
+`{output}` - or, with `svg_from: stdout`, prints it last and the step writes `{output}`
+itself (the last complete `<svg>` element printed, fenced or not; nothing printed is a host
+failure), so a read-only host with no write tool can draw; the step validates it (format, unsafe constructs) and judges it
 ([Quality](#quality)). A file that fails is shown to the host with exactly those problems -
 `repair: {round, problems, previous}` - and asked again, `repair_rounds` times (default 2);
 one that still fails is not delivered (`author-rejected`) and the requirement falls back to a
@@ -176,13 +198,15 @@ them asks again.
 visual_identity, out_dir, settings, context)`, which returns `{files, quality, source,
 license, placeholder, notes}` or raises `ModelAuthorError`. Its files are validated as any
 GLB (`gltf.py`) and its `quality` is recorded as given. Absent, or failing, 3D requirements
-fall back to placeholders. See [blender-pipeline.md](blender-pipeline.md).
+fall back to placeholders. See [blender-pipeline.md](blender-pipeline.md); its request
+carries `craft` too (`core/craft/production-art-3d.md`, `3d-assets-and-animation.md`).
 
 ## Quality
 
 `quality.py` judges every delivered SVG and PNG against `core/reference/asset-quality.yaml`
 and records the result as the item's `quality`. A placeholder is never judged (`skipped`,
-author `placeholder`); a GLB, audio or font has no 2D check (`skipped`). A `fail` verdict is a
+author `placeholder`); a GLB is judged by its model inspection, a font by its tables, and a
+sound file by the `audio` checks below. A `fail` verdict is a
 `quality-failed` issue (an error for mvp and prototype items) and the item is never
 `production_ready`.
 
@@ -196,9 +220,50 @@ author `placeholder`); a GLB, audio or font has no 2D check (`skipped`). A `fail
 | `raster.decodes` | not a PNG `wgf_assets.raster` can read |
 | `raster.not-flat` | fewer than `min_distinct_colors` distinct opaque colours: one flat colour |
 | `raster.alpha` | a kind with `transparency: required` (sprite, vfx) has no alpha channel |
+| `font.format`, `font.tables`, `font.glyphs`, `font.header` | not a TTF/OTF/WOFF/WOFF2; a TTF/OTF without `cmap`, `name` and outlines, or under 60 glyphs; a WOFF/WOFF2 header that does not add up |
+| `font.coverage` | the font's cmap leaves a character of a locale in the design's `scope.locales` without a glyph (`fonts.locales[].chars`: all of А-Я, а-я, Ёё for `ru`). TTF and OTF are read directly, WOFF tables inflated with `zlib`; WOFF2 tables are Brotli-compressed, and Python's standard library has no Brotli, so they are decompressed by the system decoder (`libbrotlidec`, loaded through `ctypes`, nothing spawned). Where it cannot be loaded the check is `skipped` with "coverage unchecked" - never `pass` |
+| `variants.distinct` | two drawings of a counted requirement (`count` > 1: tower levels, enemy kinds) share a silhouette: each is reduced to a `grid` x `grid` mask over its canvas (SVG shapes filled as polygons, transforms applied, curves through their control points; a PNG's opaque pixels), and a pair whose masks differ by less than `min_silhouette_distance` (1 - IoU) fails. A recolour, or the same drawing with another numeral, differs by 0 |
+| `variants.count` | a library supplied fewer drawings than the requirement's `count`: the drawings past it are missing (the `variants-short` issue is then an error for mvp and prototype items) |
 
 `parts` is the number of drawing elements, `colors` the distinct colours used. The bars are a
 floor against stand-ins, not a judgement of the art: that is visual QA.
+
+A 2D author is held to `variants.distinct` while it draws: each variant after the first is
+compared with the ones already accepted, and one with a sibling's silhouette is sent back
+(`repair.problems` names the sibling, the request lists `siblings`) like any failed check.
+The whole set is judged again when the item is recorded, whoever drew it.
+
+What these checks were proven on (2026-10-01, `scripts/wgf-assets.py build` with the 2D
+reference library of Tower Merge Rush, web-game-template branch `agent-ref-2d-tower-merge`):
+its subset WOFF2 Bungee and Figtree (209 and 204 mapped characters, Latin only) pass with
+`scope.locales: [en]` and fail `font.coverage` with `[en, ru]` (66 of 66 Cyrillic letters
+missing); its eight tower SVGs pass `variants.distinct` (closest pair levels 6 and 7, 0.20);
+the same library with level 3 replaced by level 2 recoloured fails it (0.00); the 2D asset
+agent's first six pieces fail it on levels 5 and 6 (0.00 - the same drawing); and a design
+that counts the ten levels its rules reach fails `variants.count` against the eight drawings.
+The golden ports' libraries were then brought up to these checks (template branch
+`wgf-golden-content`, 2026-10-02): the 2D library draws all ten towers (closest pair still
+levels 6 and 7, 0.20; the new ones at least 0.45 from every other) and bundles Rubik Mono One
+and Manrope, the 3D library Commissioner for Instrument Sans - every delivered face Latin +
+Cyrillic, `font.coverage` pass with `[en, ru]` in both golden runs.
+
+Sound files (`sfx`, `music`) are read by `audiofile.py` with the standard library - a WAV is
+decoded (`wave`; 32-bit float from its chunks), an Ogg (Vorbis or Opus) or MP3 is read by its
+headers: page CRCs, the codec header, the duration from the last granule (less the Opus
+pre-skip) or the frame count - and held to the `audio` bars:
+
+| Check | Fails when |
+|---|---|
+| `audio.decodes` | not a WAV, Ogg or MP3 the reader can open; a bad Ogg CRC; no audio in it |
+| `audio.duration` | music (and any loop) shorter than the bar (`music.min_duration_s`, `loop.min_duration_s`) or the length the design states; a one-shot longer than `sfx.max_duration_s` |
+| `audio.not-silent` | WAV: the loudest `window_s` window is under `min_rms_dbfs`. A compressed file is `skipped` here - its level is measured in the running game (`audio.plays`) |
+| `audio.loop-seam` | a loop (WAV) whose last frame jumps to its first by more than `max_step_ratio` typical sample steps, or whose first and last `edge_ms` differ by more than `max_edge_db`. Compressed: `skipped`, the container's gapless trim is trusted |
+| `audio.size` | over the asset policy's `max_bytes` for the kind |
+| `audio.licence` | no permitted licence recorded |
+
+The runtime manifest gives every sound an `audio` block - `loop`, `duration_s`, `channels`,
+`sample_rate`, read from the file - so a game can start music in lock-step with its layers
+without decoding first. How a game should use them: `core/craft/game-audio.md`.
 
 ## Re-entry
 
@@ -243,7 +308,7 @@ the kind and returns a valid file wins. Every backend's availability and use is 
 
   Both are still placeholders (`placeholder: true`, `LicenseRef-factory-generated`, never
   production-ready). They are shaped so a playtest can tell a reward from a failure
-  (`core/craft/audio.md`).
+  (`core/craft/game-audio.md`).
 - **`2d-assets-mcp`** — optional. A 2D asset generator run as an MCP server over stdio, used
   for sprites, backgrounds, UI, icons, VFX and textures when configured. Not configured, not on
   PATH, failing to start, erroring or returning a non-image: recorded, and the next backend is
@@ -384,8 +449,8 @@ build still loads); every other error FAILs.
 |---|---|---|
 | `root` | the run's game repository checkout | files go under `<root>/public/assets/`; see below |
 | `libraries` | `[]` | directories with a `library.json` and/or an `index.json` (see `library.py`); relative to the project directory |
-| `model_author` | `{kind: none}` | the 3D model author (`model_author.py`): `{kind: command, argv, spec_from: file\|stdout, repair_rounds: 2}`; only a configured one is asked |
-| `author` | `{kind: none}` | `{kind: command, argv, timeout_seconds: 600, idle_timeout_seconds: 300, repair_rounds: 2}`; a misconfigured author fails the step, not retryably |
+| `model_author` | `{kind: none}` | the 3D model author (`model_author.py`): `{kind: command, argv, spec_from: file\|stdout, max_repair_rounds: 2}`; only a configured one is asked |
+| `author` | `{kind: none}` | `{kind: command, argv, svg_from: file\|stdout, timeout_seconds: 600, idle_timeout_seconds: 300, repair_rounds: 2}`; a misconfigured author fails the step, not retryably. A verified read-only Claude Code example is commented in `factory.yaml` and set in the autonomous profile ([autonomous-runs.md](autonomous-runs.md)) |
 | `placeholders` | `{enabled: true, backends: [2d-assets-mcp, procedural]}` | plus a settings block per backend |
 | `optimize` | `true` | lossless, only on files the step writes — never on the design's own |
 | `runtime_manifest` | `true` | write `public/assets/assets.json` |
@@ -434,6 +499,9 @@ python3 scripts/wgf-assets.py build --design design.json --root ../my-game [--li
 # The same with the 2D author: a command, last on the line, its argv with placeholders.
 python3 scripts/wgf-assets.py build --design design.json --root ../my-game \
     --author-command my-agent-host --request {request} --output {output}
+# A host that prints the SVG instead of writing it (the read-only Claude Code author).
+python3 scripts/wgf-assets.py build --design design.json --root ../my-game \
+    --author-svg-from stdout --author-command claude -p {prompt} --tools Read ...
 # Check a checkout against its runtime manifest (what the verify step runs).
 python3 scripts/wgf-assets.py validate ../my-game [--strict] [--no-unused]
 # Pack loose PNGs into one atlas (frame name = file stem), deterministically.

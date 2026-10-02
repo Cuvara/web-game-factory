@@ -17,7 +17,7 @@ workflow can pin one with `with: {identity: <id>}`.
 import copy
 import hashlib
 
-__all__ = ["KITS", "choose", "families", "font_source"]
+__all__ = ["KITS", "ALTERNATES", "choose", "cover", "families", "font_source"]
 
 UNIVERSAL_AVOID = [
     "System or default UI fonts (Arial, Roboto, Inter, the browser default)",
@@ -158,6 +158,23 @@ KITS = {
 }
 
 
+# The face each kit falls back to when its own cannot set a locale in scope - a Cyrillic,
+# Greek or Vietnamese title keeps the kit's palette, shapes and motion, and gets a face of the
+# same voice that covers its script. Coverage is core/reference/asset-quality.yaml
+# `fonts.families`; a substitute is used only when that table says it covers the locale.
+ALTERNATES = {
+    "Bungee": "Rubik Mono One",          # chunky display caps
+    "Figtree": "Manrope",                # geometric sans body
+    "Instrument Sans": "Commissioner",   # neutral grotesque body
+    "Archivo Black": "Russo One",        # heavy display
+    "Archivo": "Rubik",                  # sturdy grotesque body
+    "Fraunces": "Playfair Display",      # high-contrast display serif
+    "Cinzel Decorative": "Cormorant SC",  # engraved capitals
+    "Syne": "Unbounded",                 # wide display
+    "Syne Mono": "JetBrains Mono",       # monospace numerals
+}
+
+
 def choose(title_id, affinity, pinned=None):
     """Return (kit_id, kit dict with the universal avoid list applied)."""
     if pinned:
@@ -187,3 +204,46 @@ def families(typography):
 def font_source(family):
     """Where a family's files and licence are: the Google Fonts repository's OFL directory."""
     return f"https://github.com/google/fonts/tree/main/ofl/{family.lower().replace(' ', '')}"
+
+
+def cover(look, locales, coverage):
+    """`look` with each typography face that cannot set a locale in `locales` replaced by its
+    ALTERNATES face, when the coverage table (asset-quality.yaml `fonts`) says that one can;
+    the substitution is recorded in typography.source. Returns (look, [(from, to)])."""
+    import re
+    from .presentation import family_subsets, locale_subsets
+    typography = dict(look.get("typography") or {})
+    needed = [(locale, locale_subsets(locale, coverage)) for locale in locales or []]
+    needed = [(locale, subsets) for locale, subsets in needed if subsets]
+
+    def sets(family):
+        known = family_subsets(family, coverage)
+        return known is not None and all(set(s) & set(known) for _l, s in needed)
+
+    swapped = []
+    for key in ("display", "body", "numeric"):
+        face = typography.get(key) or ""
+        family = face.split("(")[0].split(",")[0].strip()
+        known = family_subsets(family, coverage)
+        if not family or known is None or sets(family):
+            continue
+        alternate = ALTERNATES.get(family)
+        if not alternate or not sets(alternate):
+            continue
+        rest = face[len(face.split("(")[0].split(",")[0]):].strip()
+        weight = re.match(r"\((\d+)", rest)
+        typography[key] = (f"{alternate} ({weight.group(1)})" if weight
+                           else f"{alternate}{rest if rest.startswith(',') else ''}")
+        if (family, alternate) not in swapped:
+            swapped.append((family, alternate))
+    if not swapped:
+        return look, []
+    scripts = sorted({s for _l, subsets in needed for s in subsets
+                      if any(s not in (family_subsets(f, coverage) or []) for f, _a in swapped)})
+    typography["source"] = ((typography.get("source") or "").rstrip(". ")
+                            + f"; {', '.join(scripts) or 'the locales'} in scope "
+                              f"({', '.join(l for l, _s in needed)}): "
+                            + ", ".join(f"{a} for {f}" for f, a in swapped)
+                            + ", which cover it").lstrip("; ")
+    return dict(look, typography=typography), swapped
+

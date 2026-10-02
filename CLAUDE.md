@@ -386,6 +386,9 @@ seen by the engine — validate what you write there with ajv.
   it found and fixed, PASS / PASS_MOCK / UNVERIFIED / BLOCKED_EXTERNAL
 - `docs/v2-release.md` — 2.0.0: what was validated on which commit, the release audit's
   fixes, and what the evidence does not cover (no live agent host, shimmed golden runs)
+- `docs/v2.6-release.md` — 2.6.0: workflow 5 (greybox, playability, production-quality,
+  visual-qa), real 2D/3D assets and audio, design depth, the production skills, the reference
+  games, the completed autonomous profile; what was validated where
 - `docs/v2.5-release.md` — 2.5.0: a game idea for `new-game` (#16), the opt-in autonomous
   profile, project config layered over the shipped one, research selecting only buildable
   concepts; what was validated where

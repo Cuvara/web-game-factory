@@ -20,7 +20,7 @@ pipeline configuration.
 | design | `wgf_design` archetype author; opt-in `agent` author (F4) | `build_spec` slots, which the craft playbooks describe |
 | tech-plan → G3 | `wgf_techplan`, deterministic | Budgets, per `web-performance.md` |
 | init | `wgf_init` from the pinned template | – |
-| assets | `wgf_assets`: procedural placeholders; optional `2d-assets-mcp` stdio backend | `art-direction.md`, `audio.md` |
+| assets | `wgf_assets`: procedural placeholders; optional `2d-assets-mcp` stdio backend | `art-direction.md`, `game-audio.md` |
 | develop | an agent (`claude -p`) or a human handoff, from `docs/development/brief.md` | The brief carries the build spec and plan (F1), points at `docs/GDD.md` (F3), and recommends the plugin's craft skills (F7) |
 | review | an agent, read-only | The brief's gameplay lens and design-fidelity section (F2), condensed from `gameplay-review.md` |
 | sdk | `wgf_sdk` | – |
@@ -40,7 +40,7 @@ for its job.
 | research | `market-intelligence` | `competitive-teardown.md` |
 | strategy, design | `game-design`, `core-loop`, `onboarding-ux`, `art-direction`, `monetization` | loop, onboarding, UI, audio, art, accessibility |
 | tech-plan | `architecture`, `development-planning`, `web-performance` | `web-performance.md` |
-| assets | `assets`, `art-direction`, `audio` | `art-direction.md`, `audio.md` |
+| assets | `assets`, `art-direction`, `audio` | `art-direction.md`, `game-audio.md` |
 | develop | `game-feel`, `core-loop`, `pixijs` / `phaser` / `threejs`, `web-performance`, `onboarding-ux` | feel, loop, UI, performance |
 | review | `gameplay-review` | `gameplay-review.md` |
 | verify / QA | `qa`, `playtesting`, `web-performance` | `playtesting.md`, `accessibility.md` |

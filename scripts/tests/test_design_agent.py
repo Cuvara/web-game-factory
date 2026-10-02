@@ -78,6 +78,18 @@ elif mode == "hang":
     time.sleep(30)
 elif mode == "nothing":
     sys.exit(0)
+elif mode == "deleted":
+    os.remove(draft_path)
+    sys.exit(0)
+elif mode == "edit-in-place":
+    # Edits the seeded file rather than reproducing the request's starting draft.
+    with open(draft_path, encoding="utf-8") as handle:
+        draft = json.load(handle)
+    draft["fantasy"] = "Edited in place: " + draft["fantasy"]
+elif mode == "truncated":
+    # What a host whose reply overflowed its output limit returns: the tail of the draft.
+    print("```json\n" + json.dumps(draft)[-3000:] + "\n```\nThat completes the draft.")
+    sys.exit(0)
 if mode == "stdout":
     print("Here is the design.\n```json\n" + json.dumps(draft) + "\n```")
 else:
@@ -201,9 +213,24 @@ class TheModuleStillJudges(AgentCase):
         self.assertIn("not readable JSON", result.error)
 
     def test_no_draft_at_all_is_refused(self):
-        result = self.run_design(self.config("nothing"))
+        result = self.run_design(self.config("deleted"))
         self.assertEqual((result.outcome, result.retryable), (StepOutcome.FAILED, False))
         self.assertIn("wrote no draft", result.error)
+
+    def test_a_draft_left_as_seeded_is_refused(self):
+        result = self.run_design(self.config("nothing"))
+        self.assertEqual((result.outcome, result.retryable), (StepOutcome.FAILED, False))
+        self.assertIn("unchanged", result.error)
+
+    def test_the_draft_file_is_seeded_so_the_agent_edits_it_in_place(self):
+        result = self.run_design(self.config("edit-in-place"))
+        self.assertEqual(result.outcome, StepOutcome.SUCCESS, result.error)
+        self.assertTrue(result.artifacts[0].content["fantasy"].startswith("Edited in place: "))
+
+    def test_a_truncated_stdout_draft_names_the_cause(self):
+        result = self.run_design(self.config("truncated", draft_from="stdout"))
+        self.assertEqual((result.outcome, result.retryable), (StepOutcome.FAILED, False))
+        self.assertIn("draft_from: file", result.error)
 
     def test_the_shape_check_names_every_problem(self):
         self.assertEqual(check_shape([]), ["the draft is not a JSON object"])

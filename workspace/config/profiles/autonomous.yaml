@@ -45,7 +45,10 @@ factory:
   design:
     author: agent
     agent:
-      draft_from: stdout
+      # The draft is edited in place: printing a whole design (tens of kilobytes) in one
+      # reply overflows the host's output limit, and `claude -p` then returns only its tail.
+      # Edit is allowed on that one file only (`//` = an absolute path).
+      draft_from: file
       argv:
         - claude
         - -p
@@ -55,20 +58,20 @@ factory:
         - --safe-mode
         - --strict-mcp-config
         - --tools
-        - "Read"
+        - "Read,Edit"
         - --allowedTools
-        - "Read"
+        - "Read,Edit(/{draft})"
         - --disallowedTools
-        - "Edit,Write,NotebookEdit,Bash,WebFetch,WebSearch"
+        - "Write,NotebookEdit,Bash,WebFetch,WebSearch"
         - --permission-mode
         - dontAsk
         - --no-session-persistence
         - --output-format
         - text
         - --max-turns
-        - "30"
+        - "80"
         - --max-budget-usd
-        - "5"
+        - "8"
       timeout_seconds: 1800
       idle_timeout_seconds: null
 

@@ -22,6 +22,9 @@ Outcomes, per docs/workflow-module-contract.md §7:
     no depth stated (no meta loop, goal ladder,  FAILED, not retryable, nothing persisted
     content schedule, first session or return    (depth.py, core/reference/design-depth.yaml;
     hooks; an MVP entry the MVP does not build)  checked only when no blocking rule breached)
+    the content is not stated (no units, a     FAILED, not retryable, nothing persisted
+    unit kind, curve or ending the genre       (content.py, core/reference/genre-models.yaml;
+    family refuses, mastery unstated)          checked only when no blocking rule breached)
     a blocking consistency rule breached       FAILED, route `descope`, not retryable, with the
                                                game-design persisted as evidence - cut scope;
                                                never relax the rule
@@ -29,13 +32,15 @@ Outcomes, per docs/workflow-module-contract.md §7:
 """
 
 import datetime
+import json
+import os
 import re
 
 from wgflib import provenance
 from wgflib.workflow import ArtifactOutput, StepResult, WorkflowStep
 from wgflib.workflow.contracts import ArtifactContracts
 
-from . import consistency, depth, experience, presentation
+from . import consistency, content, depth, experience, presentation
 from .authors import AUTHORS, AuthorError, resolve_author
 from .compose import buildability, finalize
 from .platforms import PlatformError, load_platforms
@@ -73,6 +78,7 @@ class DesignStep(WorkflowStep):
     rules = None
     experience_rules = None
     depth_rules = None
+    content_models = None
 
     def execute(self, inputs, context):
         if "title-strategy" in inputs.missing:
@@ -106,6 +112,21 @@ class DesignStep(WorkflowStep):
                  "run_dir": getattr(context, "run_dir", None),
                  "visit": getattr(context, "visit", 1),
                  "attempt": getattr(context, "attempt", 1)}
+        # Re-entered through `design-gap`: the prototype-report names what the design did not
+        # decide, and the draft starts from the design those gaps were found in (this step's
+        # own previous output), so the design is repaired, never replaced.
+        gaps = []
+        if "prototype-report" in inputs.refs:
+            report = inputs.load("prototype-report")
+            gaps = [g for g in report.get("design_gaps") or [] if isinstance(g, dict)]
+        if gaps:
+            previous = self._previous_design(context)
+            if previous is None:
+                return StepResult.failed(
+                    "a prototype-report names design gaps but this run holds no earlier "
+                    "game-design to repair", retryable=False)
+            brief["gaps"] = gaps
+            brief["previous_design"] = previous
         try:
             author = resolve_author(author_name)
         except AuthorError as exc:
@@ -150,6 +171,13 @@ class DesignStep(WorkflowStep):
                                          problems=problems, repair_rounds=repair_round)
                     return StepResult.failed(
                         f"the design does not state why a player comes back{after} "
+                        f"({len(problems)} problem(s)): " + "; ".join(problems[:6]),
+                        retryable=False)
+                if outcome["content"]:
+                    context.logger.error("the design does not specify its content",
+                                         problems=problems, repair_rounds=repair_round)
+                    return StepResult.failed(
+                        f"the design does not specify its content{after} "
                         f"({len(problems)} problem(s)): " + "; ".join(problems[:6]),
                         retryable=False)
                 context.logger.error("design is not a valid game-design", problems=problems[:20],
@@ -207,7 +235,8 @@ class DesignStep(WorkflowStep):
                     f"a design change: an agent author, or a new concept, not this draft.")
         outcome = {"design": design, "artifact": None, "block": None, "blocking": None,
                    "warnings": None, "problems": [], "unbuildable": False,
-                   "experience": False, "presentation": False, "depth": False}
+                   "experience": False, "presentation": False, "depth": False,
+                   "content": False}
         problems = buildability(design)
         if problems:
             outcome.update(problems=problems, unbuildable=True)
@@ -231,12 +260,39 @@ class DesignStep(WorkflowStep):
             if problems:
                 outcome.update(problems=problems, depth=True)
                 return outcome
+            # What the player actually plays: every unit, held to its genre family's bars.
+            models = self.content_models or content.load_models()
+            problems, results = content.check(design, strategy, models)
+            if problems:
+                outcome.update(problems=problems, content=True)
+                return outcome
+            block["rule_results"] = list(block["rule_results"]) + results
+            family, _why = content.resolve_family(strategy, design, models)
+            if family:
+                block["content_model"] = content.content_model_record(models, family)
         design["consistency"] = block
         artifact = self._with_provenance(design, strategy, ref, title_id, now, context,
                                          getattr(author, "actor", "automation"))
         outcome.update(artifact=artifact, block=block, blocking=blocking, warnings=warnings,
                        problems=list(contracts("game-design", artifact)))
         return outcome
+
+    @staticmethod
+    def _previous_design(context):
+        """The game-design this step produced last, read from the run directory; None when
+        there is none (or it cannot be read)."""
+        run_dir = getattr(context, "run_dir", None)
+        for ref in getattr(context, "previous_outputs", None) or []:
+            if getattr(ref, "type", None) != "game-design" or not run_dir:
+                continue
+            path = os.path.join(run_dir, ref.location)
+            try:
+                with open(path, encoding="utf-8") as handle:
+                    loaded = json.load(handle)
+            except (OSError, ValueError):
+                return None
+            return loaded if isinstance(loaded, dict) else None
+        return None
 
     def _with_provenance(self, design, strategy, ref, title_id, now, context, actor):
         pinned = provenance.pin("title-strategy", strategy, ref.content_hash)

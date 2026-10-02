@@ -51,7 +51,7 @@ restates none of it and never answers a gate.
 |---|---|---|---|
 | `/new-game` | `codex-web-game-plugin/commands/new-game.md` | `core/workflows/new-game.workflow.yaml` | covered |
 
-## Skills (27 of 27)
+## Skills (28 of 28)
 
 | Skill | File | Status |
 |---|---|---|
@@ -66,6 +66,7 @@ restates none of it and never answers a gate.
 | `game-ui-kit` | `codex-web-game-plugin/skills/game-ui-kit/SKILL.md` | covered |
 | `gameplay-review` | `codex-web-game-plugin/skills/gameplay-review/SKILL.md` | covered |
 | `juice` | `codex-web-game-plugin/skills/juice/SKILL.md` | covered |
+| `level-design` | `codex-web-game-plugin/skills/level-design/SKILL.md` | covered |
 | `localization` | `codex-web-game-plugin/skills/localization/SKILL.md` | covered |
 | `market-intelligence` | `codex-web-game-plugin/skills/market-intelligence/SKILL.md` | covered |
 | `monetization` | `codex-web-game-plugin/skills/monetization/SKILL.md` | covered |
@@ -245,6 +246,34 @@ playbook is in the `must_read` of the `asset`, `gameplay` and `ui` agents and th
 the `assets` skill - in `core/bindings/adapter-binding.yaml` and the
 `scripts/gen-adapters.sh` tables alike. No surface was added or removed, so the manifest
 version is unchanged.
+
+## Content and level design (binding manifest 1.7.0)
+
+One new skill and one new craft playbook, for the content a game is made of rather than the
+systems underneath it.
+
+- **New surface:** the `level-design` skill, supporting `game-designer`, `gameplay` and `qa`.
+  It reads `core/reference/genre-models.yaml` (the eight genre families: unit kinds,
+  difficulty axes, win and lose shapes, unit counts, variety dimensions, mastery),
+  `core/craft/content-and-level-design.md`, `core/artifacts/game-design.schema.json` and
+  `core/reference/design-depth.yaml`.
+- **New playbook:** `core/craft/content-and-level-design.md` - what a content unit is, the
+  purpose arc (teach, test, twist, breather, climax, bonus), introduce-then-reuse, variety
+  against scaling, difficulty as values on the family's named axes, objectives and win/lose
+  per unit, acceptance a bot can check, authored / parametric / procedural generation,
+  mastery, and one section per family with its trap.
+- `core/reference/genre-models.yaml`, `core/reference/design-depth.yaml` and the new playbook
+  are added to the `must_read` of the `game-designer` and `gameplay` agents and to the `reads`
+  of the `game-design` and `core-loop` skills, in `core/bindings/adapter-binding.yaml` and the
+  `scripts/gen-adapters.sh` tables alike.
+- Three `core/craft/` playbooks changed with it and are already read by existing surfaces:
+  `core-loop-and-difficulty.md` (difficulty is data per content unit on named axes, not one
+  hand-tuned curve), `retention-and-progression.md` (a first release carries at least the
+  family's `units.min_total` units) and `gameplay-review.md` (the content table, the mechanic
+  rules and `design_gaps` as review items).
+
+No agent, command, workflow, role, machine, gate or schema was added or removed; the manifest
+goes to 1.7.0 for the new skill id.
 
 ## Not covered, deliberately
 

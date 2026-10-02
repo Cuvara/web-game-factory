@@ -85,7 +85,8 @@ class VerifyStep(WorkflowStep):
                 runner.env = game_env
             session = VerificationSession(root, runner, params=self.params,
                                           inputs=loaded, config=context.config,
-                                          logger=context.logger)
+                                          logger=context.logger,
+                                          missing_inputs=inputs.missing)
             # The lineage rule accepts only this run's sdk commits between develop's and sdk's.
             session.run_id = getattr(context, "run_id", None)
             checks = run_checks(session, where)

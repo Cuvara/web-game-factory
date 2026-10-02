@@ -8,7 +8,7 @@
     "id": "qa-report",
     "kind": "artifact",
     "format": "json",
-    "version": "1.1.0",
+    "version": "1.2.0",
     "template": "templates/qa-report.md",
     "producer": "release:qa",
     "consumers": ["release:rc", "title:production", "title:prototype", "title:prototype-review", "release:draft"],
@@ -43,7 +43,7 @@
         "type": "object",
         "required": ["name", "passed", "failed"],
         "properties": {
-          "name": { "enum": ["lint", "typecheck", "unit", "integration", "e2e", "build", "smoke", "performance", "platform-validation"] },
+          "name": { "enum": ["lint", "typecheck", "unit", "integration", "e2e", "build", "smoke", "performance", "platform-validation", "gameplay-quality"] },
           "passed": { "type": "integer", "minimum": 0 },
           "failed": { "type": "integer", "minimum": 0 },
           "skipped": { "type": "integer", "minimum": 0 },

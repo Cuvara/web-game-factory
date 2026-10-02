@@ -31,6 +31,15 @@ GAMEPLAY_LENS = (
     "and respects mute.",
     "Unit tests exercise the design's rules; a browser test tagged with an aspect actually "
     "reaches it (a `@game-over` test that never loses is not evidence).",
+    "Every mvp content unit of the brief's content table exists: its id is in "
+    "`public/content/units.json`, and the code reaches it from the previous unit by playing - "
+    "no unit only a debug jump or a URL parameter can enter.",
+    "Every mechanic rule in the brief is implemented as a rule with a unit test, and each "
+    "unit's difficulty values are read from the data file rather than re-typed or recomputed "
+    "in logic.",
+    "Gaps are reported, not filled in: a unit, mechanic or rule the brief asked for and the "
+    "commit does not deliver belongs in `design_gaps` in `docs/development/report.json`. One "
+    "the commit invented instead of the designed one is a design-fidelity blocker.",
 )
 
 
@@ -50,6 +59,112 @@ def _feedback_lines(build_spec):
         lines.append(f"tutorial: {tutorial['approach']}"
                      + (f" - {tutorial['rationale']}" if tutorial.get("rationale") else ""))
     return lines
+
+
+def _content_block(develop_brief):
+    """(the content contract, the difficulty axes, the mastery block) the developer was given.
+
+    The brief carries the design's `build_spec` section by section; some briefs also carry the
+    content table at the top level. Read both, prefer the explicit one.
+    """
+    spec = develop_brief.get("build_spec") or {}
+    sections = spec.get("sections") or {}
+    content = develop_brief.get("content") or sections.get("content") or {}
+    difficulty = sections.get("difficulty") or {}
+    return (content if isinstance(content, dict) else {},
+            [a for a in (difficulty.get("axes") or []) if isinstance(a, dict)],
+            sections.get("mastery") if isinstance(sections.get("mastery"), dict) else None)
+
+
+def _design_fidelity(develop_brief, prototype, develop_report):
+    """The lines of the brief's `## Design fidelity` section; [] when there is nothing to show.
+
+    The content the developer was asked to build, unit by unit, beside what the development
+    report says it built and where the design did not say enough (`design_gaps`). A reviewer
+    reading only the code cannot tell an invented unit from a designed one; this is what makes
+    that visible.
+    """
+    content, axes, mastery = _content_block(develop_brief)
+    units = [u for u in content.get("units") or [] if isinstance(u, dict)]
+    report = develop_report or {}
+    gaps = [g for g in (report.get("design_gaps") or prototype.get("design_gaps") or [])
+            if isinstance(g, dict)]
+    built = {u.get("id"): u for u in (report.get("content_units") or []) if isinstance(u, dict)}
+    coverage = prototype.get("content_coverage") if isinstance(
+        prototype.get("content_coverage"), dict) else None
+    if not (units or axes or mastery or gaps or coverage):
+        return []
+    experience = ((develop_brief.get("build_spec") or {}).get("sections") or {}).get("experience") \
+        or {}
+    out = ["## Design fidelity\n",
+           "What the design committed this build to contain. A unit, mechanic or rule the "
+           "commit does not deliver, or delivers as something else, is a design-fidelity "
+           "blocker - not a style note.\n"]
+    if content.get("unit_kind") or content.get("generation"):
+        mode = (content.get("generation") or {}).get("mode")
+        out.append(f"Content: {len(units)} mvp {content.get('unit_kind') or 'unit'}(s), "
+                   f"generation `{mode or 'not stated'}`"
+                   + (" - every listed unit is built as data"
+                      if mode == "authored" else
+                      " - the listed units are the segments the design commits to") + ".\n")
+    if units:
+        out.append("| unit | purpose | objective | mechanics | difficulty | built |")
+        out.append("|---|---|---|---|---|---|")
+        for entry in units:
+            uid = entry.get("id")
+            state = (built.get(uid) or {}).get("status") or next(
+                (u.get("status") for u in ((coverage or {}).get("units") or [])
+                 if isinstance(u, dict) and u.get("id") == uid), "not reported")
+            difficulty = ", ".join(f"{k} {v}" for k, v in
+                                   sorted((entry.get("difficulty") or {}).items()))
+            out.append(f"| `{uid}` | {entry.get('purpose', '')} | "
+                       f"{str(entry.get('objective', '')).replace('|', '/')} | "
+                       f"{', '.join(entry.get('mechanics') or [])} | {difficulty} | {state} |")
+        out.append("")
+        out.append("Per-unit acceptance - each line must be true of the built unit:\n")
+        for entry in units:
+            out.append(f"- `{entry.get('id')}`: "
+                       + "; ".join(entry.get("acceptance") or ["(none stated)"]))
+            if entry.get("variation_from_previous"):
+                out.append("  - differs from the previous unit in: "
+                           + ", ".join(entry["variation_from_previous"]))
+        out.append("")
+    if axes:
+        out.append("Difficulty axes (the values above are on these, and live in the data file, "
+                   "not in logic):\n")
+        for axis in axes:
+            out.append(f"- `{axis.get('id')}` {axis.get('range')}: "
+                       f"{axis.get('description', '')}"
+                       + ("; relief dips allowed" if axis.get("relief_allowed") else ""))
+        out.append("")
+    win, lose = experience.get("win"), experience.get("lose")
+    if win or lose:
+        out.append("Win and loss, as the design states them:\n")
+        if win:
+            out.append(f"- win: {win.get('condition')} (metric `{win.get('metric')}`)")
+        if lose:
+            out.append(f"- loss: {lose.get('condition')} (metric `{lose.get('metric')}`)")
+        out.append("")
+    if mastery:
+        out.append(f"Mastery ({mastery.get('model')}): {mastery.get('statement')} - shown in "
+                   f"{', '.join(mastery.get('signals') or [])}\n")
+    if coverage:
+        out.append(f"Content coverage reported by development: {coverage.get('built')} built, "
+                   f"{coverage.get('partial', 0)} partial, {coverage.get('cut')} cut of "
+                   f"{coverage.get('designed')} designed.\n")
+    if gaps:
+        out.append("Design gaps the developer reported - what the design did not decide, and "
+                   "what was assumed instead. Check the assumption against the code; an "
+                   "assumption the code does not match is a blocker:\n")
+        for gap in gaps:
+            out.append(f"- ({gap.get('severity')}) `{gap.get('field')}`: {gap.get('question')} "
+                       f"-> assumed: {gap.get('assumed') or 'nothing; the work stopped'}")
+        out.append("")
+    elif units:
+        out.append("The development report lists no design gaps: every unit, mechanic and rule "
+                   "above was buildable as written. A place where the code had to decide "
+                   "something the design did not say, and no gap was reported, is a finding.\n")
+    return out
 # The architect contributes to title:prototype and owns the plan the code is reviewed
 # against; the reviewer is never the gameplay implementer that wrote the commit.
 ROLE = "architect"
@@ -73,10 +188,13 @@ PROMPT_STDOUT = (
 
 
 def render_brief(*, title_id, commit, baseline, design, prototype, develop_brief,
-                 verdict_path, repo, to_stdout=False, sdk=None):
+                 verdict_path, repo, to_stdout=False, sdk=None, develop_report=None):
     """`sdk` is the sdk-report when the commit under review is the sdk step's (subject
     sdk-report): the change is then the platform integration on top of `baseline`, the
-    development commit an earlier review read."""
+    development commit an earlier review read. `develop_report` is the developer's own
+    `docs/development/report.json`, whose `content_units` and `design_gaps` say what it built
+    and where the design was silent; the prototype-report carries the same fields and stands in
+    for it."""
     design = design or {}
     prototype = prototype or {}
     develop_brief = develop_brief or {}
@@ -142,6 +260,7 @@ def render_brief(*, title_id, commit, baseline, design, prototype, develop_brief
                 add(f"- `{task.get('id')}` {task.get('title', '')}: "
                     + "; ".join(task.get("acceptance_criteria") or []))
             add("")
+    out += _design_fidelity(develop_brief, prototype, develop_report)
     add("## Look for\n")
     add("- Defects in the game logic: wrong rules, broken state transitions, crashes, "
         "unhandled input, restart that does not reset.")

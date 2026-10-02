@@ -1,5 +1,11 @@
 {
   "title_id": "mock-title",
+  "genre": {
+    "family": "arcade",
+    "node": "rhythm",
+    "session_profile": "standard",
+    "ending": "endless"
+  },
   "fantasy": "Being effortlessly in the groove. The player should feel skilled slightly before they actually are.",
   "core_loop": "Hear the beat → anticipate the next gate → tap to switch lanes on the beat → combo climbs and the track responds → miss, and the run ends → retry immediately.",
   "pillars": [

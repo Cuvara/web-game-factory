@@ -72,7 +72,10 @@ def _strategy_concept(strategy):
 
 
 def _strategy_all(strategy):
-    parts = [_strategy_concept(strategy), (strategy.get("concept") or {}).get("gameplay_direction") or ""]
+    concept = strategy.get("concept") or {}
+    parts = [_strategy_concept(strategy), concept.get("gameplay_direction") or ""]
+    model = concept.get("content_model") or {}
+    parts += [str(model.get(k) or "") for k in ("unit_kind", "progression", "family")]
     parts += [str(item) for item in strategy.get("mvp") or []]
     parts += [str(item) for item in strategy.get("prototype_must_prove") or []]
     return " ".join(parts)
@@ -113,6 +116,7 @@ def projection(design, strategy, platform=None, concept_terms=None):
         "session": design.get("session") or {},
         "retention": design.get("retention") or {},
         "scope": design.get("scope") or {},
+        "genre": design.get("genre") or {},
         "audience": strategy.get("audience") or {},
         "asset_manifest": {"total_est_cost": cost},
         "platform": _platform_view(platform),

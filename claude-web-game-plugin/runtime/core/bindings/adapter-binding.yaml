@@ -18,7 +18,7 @@
 # Each adapter carries a CONFORMANCE.md mapping every surface id below to its file, so
 # reviewing adapter completeness is a two-file diff rather than a directory crawl.
 
-version: 1.6.0
+version: 1.7.0
 
 surface_kinds:
   agent: A persistent role the runtime can delegate to.
@@ -84,6 +84,9 @@ agents:
       - core/craft/game-ui-kit.md
       - core/craft/juice.md
       - core/craft/retention-and-progression.md
+      - core/craft/content-and-level-design.md
+      - core/reference/genre-models.yaml
+      - core/reference/design-depth.yaml
       - core/artifacts/shared/research-opportunity.schema.json
     produces: [title-strategy, game-design]
     consumes: [opportunity, evaluation, claim]
@@ -177,6 +180,9 @@ agents:
       - core/craft/juice.md
       - core/craft/production-wiring.md
       - core/craft/retention-and-progression.md
+      - core/craft/content-and-level-design.md
+      - core/reference/genre-models.yaml
+      - core/reference/design-depth.yaml
       - core/craft/game-audio.md
     produces: [prototype-report]
     consumes: [tech-plan, game-design, review-report, qa-report]
@@ -363,6 +369,9 @@ skills:
       - core/craft/production-art-and-ui.md
       - core/craft/game-ui-kit.md
       - core/craft/retention-and-progression.md
+      - core/craft/content-and-level-design.md
+      - core/reference/genre-models.yaml
+      - core/reference/design-depth.yaml
   - id: core-loop
     supports: [game-designer, gameplay]
     covers: >
@@ -373,6 +382,19 @@ skills:
       - core/artifacts/game-design.schema.json
       - core/lifecycle/stages/strategy.md
       - core/craft/retention-and-progression.md
+      - core/craft/content-and-level-design.md
+      - core/reference/genre-models.yaml
+      - core/reference/design-depth.yaml
+  - id: level-design
+    supports: [game-designer, gameplay, qa]
+    covers: >
+      Content and level design per genre family: units, purpose arc, difficulty axes,
+      variety, win/lose, acceptance.
+    reads:
+      - core/reference/genre-models.yaml
+      - core/craft/content-and-level-design.md
+      - core/artifacts/game-design.schema.json
+      - core/reference/design-depth.yaml
   - id: game-feel
     supports: [gameplay, ui]
     covers: >

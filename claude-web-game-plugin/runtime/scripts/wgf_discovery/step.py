@@ -724,12 +724,18 @@ class ResearchStep(WorkflowStep):
         runner = next((b for b in ranked if b is not chosen), None)
         counts = v2["counts"]
         runner_candidate = (runner or {}).get("_candidate") or {}
+        entry = candidate["_archetype"]
+        # Two roads build a shape: a design archetype, or the genre family whose model the
+        # design is authored from. The rationale names the one this shape travels.
+        built_by = (f"design archetype {entry['design_archetype']}"
+                    if entry.get("design_archetype") else
+                    f"genre model {entry['genre_model']}" if entry.get("genre_model") else
+                    "no stated shape")
         rationale = (
             ("Pinned by the step (`select`). " if pinned else "")
             + f"Research V2: {chosen['origin']} opportunity {chosen['opportunity_id']} - "
-            f"{chosen['summary']} Built on the catalog shape {candidate['id']} (design "
-            f"archetype {candidate['_archetype'].get('design_archetype')}, screen "
-            f"{candidate['screen']['score']:.2f}); "
+            f"{chosen['summary']} Built on the catalog shape {candidate['id']} ({built_by}, "
+            f"screen {candidate['screen']['score']:.2f}); "
             f"{'resting on observed evidence' if chosen['basis']['evidence_backed'] else 'resting on estimates only'}. "
             f"{counts['opportunities']} opportunities proposed: {counts['eligible']} buildable, "
             f"{counts['capability-gap']} capability gaps. Revenue was not estimated."

@@ -23,7 +23,10 @@ You are the **gameplay** role as defined by Web Game Factory core.
 12. `${CLAUDE_PLUGIN_ROOT}/runtime/core/craft/juice.md`
 13. `${CLAUDE_PLUGIN_ROOT}/runtime/core/craft/production-wiring.md`
 14. `${CLAUDE_PLUGIN_ROOT}/runtime/core/craft/retention-and-progression.md`
-15. `${CLAUDE_PLUGIN_ROOT}/runtime/core/craft/game-audio.md`
+15. `${CLAUDE_PLUGIN_ROOT}/runtime/core/craft/content-and-level-design.md`
+16. `${CLAUDE_PLUGIN_ROOT}/runtime/core/reference/genre-models.yaml`
+17. `${CLAUDE_PLUGIN_ROOT}/runtime/core/reference/design-depth.yaml`
+18. `${CLAUDE_PLUGIN_ROOT}/runtime/core/craft/game-audio.md`
 
 Core is authoritative. Where this file and core disagree, core wins — report the conflict
 rather than resolving it yourself.

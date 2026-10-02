@@ -7,6 +7,8 @@ and core/lifecycle/stages/design.md for the procedure this implements.
     authors.py      who writes the creative draft; `archetype` is built in, others register
     agent.py        the opt-in `agent` author: an agent host improves the archetype draft
     archetypes.py   genre shapes the built-in author fits to a strategy
+    seed.py         the `genre-seed` author: a design from a genre family's own model
+    content.py      every unit of play the design commits to, held to its genre family
     identity.py     visual identity kits - a committed look, never a default one
     platforms.py    pinned platform profiles as binding constraints, and SDK touchpoints
     compose.py      draft -> game-design body; the "buildable without guessing" check
@@ -15,8 +17,9 @@ and core/lifecycle/stages/design.md for the procedure this implements.
 """
 
 from .authors import AuthorError, DesignAuthor, register_author
+from .seed import GenreSeedAuthor
 from .agent import AgentAuthor, AgentRunFailed
 from .step import DesignStep, register
 
 __all__ = ["AgentAuthor", "AgentRunFailed", "AuthorError", "DesignAuthor", "DesignStep",
-           "register", "register_author"]
+           "GenreSeedAuthor", "register", "register_author"]

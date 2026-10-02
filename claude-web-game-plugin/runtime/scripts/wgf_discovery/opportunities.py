@@ -20,12 +20,18 @@ low supply alone, or a hypothesis alone, never becomes an opportunity. Every opp
 carries a thesis - a hypothesis claim, confidence <= 0.6 - and the claims it rests on.
 
 Buildability is checked last, against the capability catalog: an opportunity no entry can
-build is kept, status `capability-gap`, with what is missing. It is never discarded.
+build is kept, status `capability-gap`, with what is missing. It is never discarded. An entry
+builds its shape either from a design archetype or from a genre family's model
+(core/reference/genre-models.yaml) - and when it does, the opportunity carries
+`design_constraints`: the content shape design is held to, in the genre model's own
+vocabulary, with the claims each value rests on.
 """
 
 import hashlib
 import statistics
 from collections import Counter
+
+from wgflib import genre_models
 
 from .analysis import ACTED_ON, _idea_rank, idea_dimension, idea_terms
 
@@ -55,6 +61,29 @@ GAME_FACET = {"mechanics": "mechanics", "gameplay_steps": "gameplay_steps",
               "progression": "progression", "difficulty_shape": "difficulty_shape",
               "retention_hooks": "retention_hooks"}
 COST = ("xs", "s", "m", "l", "xl")
+
+# A convention is counted, never asserted: a pattern of these kinds, prevalent in the games of
+# this genre, is what a player of it expects as a matter of course.
+CONVENTION_KINDS = ("ux", "retention", "session", "progression")
+CONVENTION_MIN_PREVALENCE = 0.5
+
+
+def families():
+    """The genre families (core/reference/genre-models.yaml): the content shape a game of each
+    family must state. Read for the family a cell resolves to, its unit kind and its difficulty
+    axes; no rule here branches on a family id."""
+    return genre_models.load().get("families") or {}
+
+
+def family_of_node(vocabulary, node):
+    """The genre family whose `nodes` list `node` or its nearest listed ancestor, or None -
+    a node no family lists is a capability gap, not a forced fit."""
+    listed = families()
+    for level in vocabulary.lineage(node):
+        for fid in sorted(listed):
+            if level in (listed[fid].get("nodes") or []):
+                return fid
+    return None
 
 
 def _unknown(reason):
@@ -327,27 +356,105 @@ def _capability(space, node, candidate, dimension):
     vocabulary = space.vocabulary
     label = vocabulary.genres[node]["label"]
     if candidate is None:
+        family = family_of_node(vocabulary, node)
         return {"buildable": False, "catalog_entry": None, "design_archetype": None,
-                "requires": [],
+                "genre_model": family, "requires": [],
                 "missing": [f"no capability-catalog entry covers {label} ({node})"],
                 "reason": f"The Factory has no shape for {label}: nothing in the capability "
-                          f"catalog says what it would take to build it."}
+                          f"catalog says what it would take to build it."
+                          + (f" The {family} genre model covers the genre, so a catalog entry "
+                             f"naming it is what is missing - not a new design archetype."
+                             if family else
+                             " No genre family lists this genre node either.")}
     entry = candidate["_archetype"]
+    model = entry.get("genre_model")
     out = {"catalog_entry": candidate["id"],
            "design_archetype": entry.get("design_archetype"),
+           "genre_model": model,
            "requires": list(entry.get("requires") or [])}
     missing = []
-    if "design_archetype" in entry and not entry["design_archetype"]:
-        missing.append(entry.get("unavailable") or "no design archetype carries this concept")
+    # Either road builds it: a design archetype that designs the concept, or a genre family
+    # whose model the genre seed author designs it from. Neither is the capability gap.
+    if not entry.get("design_archetype") and not model and \
+            ("design_archetype" in entry or "genre_model" in entry):
+        missing.append(entry.get("unavailable")
+                       or "no design archetype and no genre model carries this concept")
     rendering = entry.get("rendering", "2d")
     if isinstance(dimension, str) and dimension in ("2d", "3d") and dimension != rendering:
         missing.append(f"the buildable shape renders {rendering}; this opportunity's art is "
                        f"{dimension}")
     out["buildable"] = not missing
     out["missing"] = missing
-    out["reason"] = (f"Built by catalog entry {candidate['id']} (design archetype "
-                     f"{entry.get('design_archetype')})." if not missing else
+    built_by = (f"design archetype {entry['design_archetype']}"
+                if entry.get("design_archetype") else
+                f"genre model {model}, no design archetype" if model else "no stated shape")
+    out["reason"] = (f"Built by catalog entry {candidate['id']}: {built_by}."
+                     if not missing else
                      f"Not buildable yet through {candidate['id']}: {'; '.join(missing)}.")
+    return out
+
+
+def _design_constraints(space, node, candidate, cell, games, estimate_claim):
+    """The content shape design is held to, in the genre model's vocabulary: the family, what
+    one unit of content is, and the progression, difficulty and retention the corpus coded for
+    these games - each keeping its own tier and claims. None when nothing can design the cell
+    (no catalog entry, or one with neither a design archetype nor a genre model), or when no
+    family lists its genre node."""
+    vocabulary = space.vocabulary
+    entry = candidate["_archetype"] if candidate else None
+    if entry is None:
+        return None
+    declared = entry.get("genre_model")
+    if not declared and not entry.get("design_archetype"):
+        return None
+    node_family = family_of_node(vocabulary, node)
+    family = declared or node_family
+    model = families().get(family)
+    if model is None:
+        return None
+    ref = [estimate_claim] if estimate_claim else []
+    if declared and declared != node_family:
+        family_value = {"value": family, "label": model.get("label", family),
+                        "tier": "hypothesis", "source": "catalog", "claim_refs": ref}
+    else:
+        genre = cell["genre"]
+        family_value = {"value": family, "label": model.get("label", family),
+                        "tier": genre["tier"], "source": genre["source"],
+                        "claim_refs": list(genre.get("claim_refs") or [])}
+        if genre.get("reason"):
+            family_value["reason"] = genre["reason"]
+    unit_kinds = list(model.get("unit_kinds") or [])
+    out = {"family": family_value}
+    if unit_kinds:
+        out["unit_kind"] = {
+            "value": unit_kinds[0], "tier": "hypothesis", "source": "catalog",
+            "label": f"one {unit_kinds[0]} of {model.get('label', family)}",
+            "claim_refs": ref,
+            "reason": f"the {family} genre model's first unit kind; no teardown codes it"}
+    for key in ("progression", "difficulty_shape", "retention_hooks", "session_band"):
+        value = cell.get(key)
+        if isinstance(value, dict):
+            out[key] = dict(value)
+    axes = space.from_games(games, "difficulty_axes")
+    if axes is None:
+        ids = [axis["id"] for axis in model.get("axes") or []]
+        axes = {"value": ids, "label": ", ".join(ids), "tier": "hypothesis",
+                "source": "catalog", "claim_refs": ref,
+                "reason": f"no teardown codes what the ramp raises; the {family} genre "
+                          f"model's axes are the fallback"}
+    out["difficulty_axes"] = axes
+    conventions = []
+    for level in vocabulary.lineage(node):
+        for pattern in space.patterns:
+            if pattern["kind"] in CONVENTION_KINDS and pattern["a"]["facet"] == "genre" and \
+                    pattern["a"]["value"] == level and \
+                    pattern["prevalence"] >= CONVENTION_MIN_PREVALENCE:
+                conventions.append({"statement": pattern["statement"], "tier": "derived",
+                                    "claim_refs": [pattern["claim"]]})
+        if conventions:
+            break
+    if conventions:
+        out["conventions"] = conventions[:5]
     return out
 
 
@@ -454,6 +561,7 @@ def build(space, *, origin, node, platforms, basis, summary, identity=(), overri
     oid = opportunity_id or space.opportunity_id(origin, node, *identity)
     cell = _cell(space, node, games, candidate, overrides, estimate_claim)
     capability = _capability(space, node, candidate, cell["art_dimension"].get("value"))
+    constraints = _design_constraints(space, node, candidate, cell, games, estimate_claim)
     rests = [c for c in basis if space.book.rests_on_observation(c)]
     thesis = space.book.hypothesis(
         ("thesis", oid),
@@ -528,6 +636,11 @@ def build(space, *, origin, node, platforms, basis, summary, identity=(), overri
         "_candidate": candidate,
         "_platforms": list(platforms),
     }
+    if constraints is not None:
+        block["design_constraints"] = constraints
+        for value in constraints.values():
+            for item in (value if isinstance(value, list) else [value]):
+                claim_refs.update((item or {}).get("claim_refs") or [])
     if changed_axis:
         block["changed_axis"] = changed_axis
     if candidate is not None:
@@ -864,6 +977,12 @@ def _vocabulary_words(space, block):
         a = candidate["_archetype"]
         texts += [a.get("genre"), a.get("subgenre"), a.get("title"), a.get("core_mechanic")]
         texts += list(a.get("market_tags") or [])
+        # The shape's genre family, as the catalog screen reads it (analysis._vocabulary): the
+        # family label in words, its genre nodes whole and never split into parts.
+        family = families().get(a.get("genre_model"))
+        if family:
+            texts.append(family.get("label"))
+            words.update(str(node).lower() for node in family.get("nodes") or [])
     import re
     for text in texts:
         for word in re.findall(r"[a-z0-9][a-z0-9-]*", str(text or "").lower()):

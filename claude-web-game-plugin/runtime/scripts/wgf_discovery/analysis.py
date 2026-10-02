@@ -35,9 +35,10 @@ import json
 import math
 import re
 
-from wgflib import criteria
+from wgflib import criteria, genre_models
 
-__all__ = ["ClaimBook", "analyse", "claim_id", "idea_match", "idea_terms", "idea_dimension"]
+__all__ = ["ClaimBook", "analyse", "claim_id", "idea_match", "idea_terms", "idea_dimension",
+           "genre_families"]
 
 CONFIDENCE_OBSERVED = 0.85
 CONFIDENCE_STALE = 0.6
@@ -69,6 +70,13 @@ _IDEA_STOP = frozenset("""
 _DIMENSION_WORDS = {"3d": "3d", "three-dimensional": "3d", "2d": "2d", "two-dimensional": "2d"}
 
 
+def genre_families():
+    """`families` of core/reference/genre-models.yaml: for an entry that names a family rather
+    than a design archetype, the family's label and the genre nodes it covers are words for the
+    same game."""
+    return genre_models.load().get("families") or {}
+
+
 def idea_terms(idea):
     """The brief's content words, lowercased, in order, without repeats or dimension words.
     Whole words only: a brief's "blocks" is not the catalog's "block"."""
@@ -90,9 +98,19 @@ def idea_dimension(idea):
 def _vocabulary(archetype):
     words = set()
     # `brief` only exists on a concept authored for one: it matches the brief it was written for.
-    for value in ([archetype.get("genre"), archetype.get("subgenre"), archetype.get("title"),
-                   archetype.get("core_mechanic"), archetype.get("brief")]
-                  + list(archetype.get("market_tags") or [])):
+    # A genre-model entry is also the shape of its whole family: the family label and the genre
+    # nodes the family covers name the same game ("tower defense", "tycoon", "platformer"), so a
+    # brief that uses those words finds the entry that builds them. A node id matches whole and
+    # is never split into parts - a block puzzle is not a bubble-shooter and not a physics-puzzle.
+    values = ([archetype.get("genre"), archetype.get("subgenre"), archetype.get("title"),
+               archetype.get("core_mechanic"), archetype.get("brief"),
+               archetype.get("genre_node")]
+              + list(archetype.get("market_tags") or []))
+    family = genre_families().get(archetype.get("genre_model"))
+    if family:
+        values.append(family.get("label"))
+        words.update(str(node).lower() for node in family.get("nodes") or [])
+    for value in values:
         for word in _IDEA_WORD.findall(str(value or "").lower()):
             words.add(word)
             words.update(part for part in word.split("-") if part)
@@ -892,8 +910,13 @@ def _candidate(book, archetype, views, platform_info, model, backlog, report_key
 
 def buildable(archetype):
     """False only when the catalog says so: `design_archetype: null`. A catalog that does not
-    declare the field (an installation's own) makes no claim, and nothing is excluded."""
-    return "design_archetype" not in archetype or bool(archetype["design_archetype"])
+    declare the field (an installation's own) makes no claim, and nothing is excluded.
+
+    Either road builds it: a design archetype that designs the concept, or a genre family whose
+    model (core/reference/genre-models.yaml) the genre seed author designs it from."""
+    if "design_archetype" not in archetype and "genre_model" not in archetype:
+        return True
+    return bool(archetype.get("design_archetype")) or bool(archetype.get("genre_model"))
 
 
 def analyse(*, sources, profiles, archetypes, model, backlog, as_of_text, report_key,
@@ -944,8 +967,8 @@ def analyse(*, sources, profiles, archetypes, model, backlog, as_of_text, report
             # relax the rules) whatever a person approved at G2. Kept, like every exclusion.
             candidate["status"] = "excluded"
             candidate["exclusion_reason"] = (
-                "not buildable: no design archetype carries this concept's mechanics "
-                "(catalog design_archetype is null)")
+                "not buildable: no design archetype carries this concept's mechanics and no "
+                "genre model covers it (catalog design_archetype and genre_model are null)")
 
     # Evidence of demand outranks imagined demand: when the scan observed any listings at all,
     # a candidate nobody was seen playing ranks after every candidate somebody was.

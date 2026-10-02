@@ -2,8 +2,9 @@
 
 `plan_strategy(opportunity, profiles, title_id, policy)` returns the body of a
 title-strategy artifact (everything but provenance) or raises StrategyRefused. It reads
-nothing but its arguments, so the same opportunity and profiles always produce the same
-strategy - which is what makes it testable, and what lets a G2 reviewer re-derive it.
+nothing but its arguments and the versioned genre models (core/reference/genre-models.yaml),
+so the same opportunity and profiles always produce the same strategy - which is what makes it
+testable, and what lets a G2 reviewer re-derive it.
 
 What it decides, following core/lifecycle/stages/strategy.md:
 
@@ -13,6 +14,12 @@ What it decides, following core/lifecycle/stages/strategy.md:
                 placements cut to what the required platform supports
   scope         estimate -> timebox (7-14 days, refused beyond 21), one control scheme, a
                 capped asset budget, reusable template systems, named exclusions
+  content       the genre family the design will be held to, and its content shape: what one
+                unit is, how many the MVP carries, the progression and difficulty models and
+                the axes difficulty moves on - from research's `design_constraints` when it
+                coded them, else the family's own default. An opportunity that resolves to no
+                family (nothing before Research V2 did) commits to no content model, and the
+                concept reads as it always has.
   bet terms     prototype_must_prove, success and kill criteria as criteria-expressions
   honesty       risks carried from the opportunity plus the ones this plan introduces,
                 and the assumptions it takes on without checking
@@ -31,6 +38,8 @@ It does not approve anything. The result is a draft that waits at G2.
 import math
 import re
 
+from wgflib import genre_models
+
 __all__ = ["Policy", "StrategyRefused", "plan_strategy", "PLANNABLE_STATES"]
 
 PLANNABLE_STATES = ("discovered", "scored", "shortlisted", "approved", "promoted")
@@ -48,6 +57,20 @@ MONETIZATION_CLASS = {
     "none": "none",
 }
 PLACEMENTS = ("rewarded", "interstitial", "banner", "iap")
+
+# The research vocabulary's progression codes (core/reference/research-vocabulary.yaml) in the
+# genre model's own progression models (core/reference/genre-models.yaml). One table, here:
+# research says what carries across runs, the genre model says which models a family allows.
+PROGRESSION_MODEL = {
+    "level-sequence": "linear-levels",
+    "unlock-track": "unlock-track",
+    "collection": "unlock-track",
+    "meta-currency": "meta-currency",
+    "upgrades": "meta-currency",
+    "prestige": "meta-currency",
+    "best-score": "skill-only",
+    "none": "skill-only",
+}
 
 # Concept keywords that raise technical cost. One category counts once.
 TECH_SIGNALS = (
@@ -162,6 +185,30 @@ def _known(fv):
         and fv.get("value") not in (None, [], "")
 
 
+def _first(value):
+    """A facet value's first entry: research codes `many` facets as a list."""
+    if isinstance(value, list):
+        return value[0] if value else None
+    return value
+
+
+def _family_for(families, *nodes):
+    """The genre family whose `nodes` list one of `nodes`, or None. The opportunity's cell
+    carries both its genre node and the vocabulary family it sits under, so no tree walk is
+    needed here; a node no family lists resolves to nothing, and nothing is assumed."""
+    for node in nodes:
+        if not isinstance(node, str) or not node:
+            continue
+        for fid in sorted(families):
+            if node in (families[fid].get("nodes") or []):
+                return fid
+    return None
+
+
+def _plural(unit_kind):
+    return f"{unit_kind}s"
+
+
 class _Plan:
     def __init__(self, opportunity, profiles, title_id, policy, vocabulary=None):
         self.opp = opportunity
@@ -181,6 +228,10 @@ class _Plan:
         self.risks = []
         self.assumptions = []
         self.decisions = []
+        # Set by content(): the content shape the title commits to, or None when no genre
+        # family covers the opportunity.
+        self.content_model = None
+        self._content_total = 0
 
     def risk(self, description, severity, mitigation=None, origin="strategy", claims=None):
         entry = {"description": description, "severity": severity, "origin": origin}
@@ -353,6 +404,93 @@ class _Plan:
         self.assume(f"Players sustain a {target}-second session",
                     "median_session_seconds in the prototype playtest or first performance "
                     "review")
+
+    # -- content --------------------------------------------------------------------------
+
+    def content(self):
+        """`concept.content_model`: the content shape the design is held to. None when no
+        genre family resolves - then the concept keeps the wording it had before genre models
+        existed, because nothing here knows what a unit of this game is."""
+        self.content_model = None
+        self._content_total = 0
+        research = self.research or {}
+        constraints = research.get("design_constraints")
+        constraints = constraints if isinstance(constraints, dict) else {}
+        cell = research.get("cell") or {}
+        families = genre_models.load().get("families") or {}
+        refs = set()
+        family, source = None, "default"
+        declared = constraints.get("family")
+        if isinstance(declared, dict) and declared.get("value") in families:
+            family, source = declared["value"], "research"
+            refs.update(declared.get("claim_refs") or [])
+        if family is None:
+            model_id = (research.get("capability") or {}).get("genre_model")
+            if isinstance(model_id, str) and model_id in families:
+                family = model_id
+        if family is None:
+            family = _family_for(families,
+                                 (cell.get("genre") or {}).get("value"),
+                                 (cell.get("family") or {}).get("value"))
+        if family is None:
+            if self.research is not None:
+                self.apply("concept.content_model", "default",
+                           "none: no genre family covers this opportunity's genre node, so "
+                           "the strategy commits to no content shape and design states one")
+            return
+        model = families[family]
+        units = model.get("units") or {}
+        kinds = list(model.get("unit_kinds") or []) or ["level"]
+        allowed = list(model.get("progression_models") or []) or ["linear-levels"]
+
+        def coded(key):
+            """What research coded for `key`, or None. An unknown facet stays unknown: the
+            family's default is used, and `applied` says a default decided it."""
+            value = constraints.get(key)
+            if isinstance(value, dict) and value.get("tier") in ("observed", "derived") \
+                    and value.get("value") not in (None, [], ""):
+                refs.update(value.get("claim_refs") or [])
+                return value["value"]
+            return None
+
+        unit_kind = _first(coded("unit_kind"))
+        if unit_kind not in kinds:
+            unit_kind = kinds[0]
+        researched = coded("progression")
+        researched = researched if isinstance(researched, list) else [researched]
+        progression = next((PROGRESSION_MODEL[v] for v in researched
+                            if v in PROGRESSION_MODEL and PROGRESSION_MODEL[v] in allowed),
+                           allowed[0])
+        shape = _first(coded("difficulty_shape"))
+        if not isinstance(shape, str):
+            shape = (model.get("difficulty_models") or ["level-authored"])[0]
+        axes = coded("difficulty_axes")
+        if not isinstance(axes, list) or not axes:
+            axes = [a["id"] for a in model.get("axes") or [] if isinstance(a, dict)
+                    and a.get("id")]
+        self.content_model = {
+            "family": family,
+            "unit_kind": unit_kind,
+            "progression": progression,
+            "difficulty_shape": shape,
+            "difficulty_axes": list(axes),
+            "min_units": int(units.get("min_mvp") or 1),
+            "source": source,
+        }
+        self._content_total = int(units.get("min_total") or self.content_model["min_units"])
+        if self.research is not None:
+            detail = (f"{family} ({model.get('label', family)}): "
+                      f"{self.content_model['min_units']} {_plural(unit_kind)} in the MVP, "
+                      f"progression {progression}, {shape} difficulty on "
+                      f"{', '.join(self.content_model['difficulty_axes'])}")
+            if self.content_model["source"] == "research":
+                self.apply("concept.content_model", "research",
+                           f"{detail} - the shape research coded for this cell",
+                           sorted(refs))
+            else:
+                self.apply("concept.content_model", "default",
+                           f"{detail} - the genre model's default; research coded no content "
+                           f"shape for this cell")
 
     # -- platforms and monetization -------------------------------------------------------
 
@@ -573,19 +711,32 @@ class _Plan:
         mobile = self.audience.get("device") in (None, "mobile", "both")
 
         replay = self._replayability()
+        content = self.content_model
+        if content is None:
+            content_direction = ("Difficulty comes from one data-driven ramp, not hand-built "
+                                 "levels.")
+        else:
+            units = _plural(content["unit_kind"])
+            axes = ", ".join(content["difficulty_axes"])
+            content_direction = (
+                f"Content: {content['min_units']} specified {units} in the prototype, "
+                f"{self._content_total} in the release, difficulty authored per unit on "
+                f"{axes}; progression {content['progression']}; "
+                f"{content['difficulty_shape']} ramp.")
         concept_body = {
             "genre": concept["genre"],
             "core_mechanic": concept["core_mechanic"],
             "core_loop": concept["core_loop"],
             "gameplay_direction": (
                 f"{_sentence(genre)} built on {concept['core_mechanic']}. A session is a short "
-                f"run: {concept['core_loop']}. Difficulty comes from one data-driven ramp, "
-                f"not hand-built levels."),
+                f"run: {concept['core_loop']}. {content_direction}"),
             "control_scheme": self.control_scheme,
             "replayability": replay,
         }
         if concept.get("subgenre"):
             concept_body["subgenre"] = concept["subgenre"]
+        if content is not None:
+            concept_body["content_model"] = content
 
         platform_set = []
         for platform_id in self.chosen:
@@ -644,7 +795,9 @@ class _Plan:
         mvp = [
             f"Core loop: {concept['core_loop']}",
             f"A single {self.control_scheme} control: {concept['core_mechanic']}",
-            "One content set with a data-driven difficulty ramp",
+            "One content set with a data-driven difficulty ramp" if content is None else
+            f"{content['min_units']} designed {_plural(content['unit_kind'])} with authored "
+            f"difficulty on {', '.join(content['difficulty_axes'])}",
             "Score and personal best, persisted"
             + (" through the platform's cloud save" if "cloud-save" in
                self._sdk(required_profile)["features"] else " locally"),
@@ -851,7 +1004,8 @@ class _Plan:
 
     def handoff(self):
         """The research carried to design. Every facet keeps its tier and claims; an unknown
-        facet stays unknown."""
+        facet stays unknown, and `design_constraints` - the content shape, in the genre model's
+        vocabulary - is carried whole beside the buildability it belongs to."""
         r = self.research
         cell = r.get("cell") or {}
 
@@ -895,6 +1049,8 @@ class _Plan:
             "applied": list(self.applied),
         }
         out["art"]["camera"] = fv("camera")
+        if isinstance(r.get("design_constraints"), dict):
+            out["design_constraints"] = r["design_constraints"]
         if intent:
             out["changed_axis"] = intent
         if statement:
@@ -932,5 +1088,6 @@ def plan_strategy(opportunity, profiles, title_id, policy=None, vocabulary=None)
     plan.scope()
     plan.controls()
     plan.session()
+    plan.content()
     plan.platforms()
     return plan.body()

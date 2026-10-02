@@ -16,6 +16,11 @@
 Outcomes, per docs/workflow-module-contract.md section 7:
 
     SUCCESS            every check passed and the work is committed
+    FAILED design-gap  every check passed and the work is committed, and the developer
+                       reported a blocking design gap: the design does not say enough to
+                       build what was asked. Routed back to design (`design-gap`), which
+                       repairs the design from the prototype-report's `design_gaps`. Not
+                       retryable - another developer session would meet the same silence.
     WAITING_FOR_INPUT  a required input is not in the run
     WAITING_FOR_HUMAN  handoff developer: the brief is out, or the last checks failed
     BLOCKED            the game repository is not checked out where the config says; a
@@ -54,12 +59,17 @@ from .budget import Budget
 from .checks import read_report, run_checks
 from .gdd import GDD_PATH, render_gdd
 from .developers import Outcome, create_developer
-from .report import build_report
+from .report import blocking_gaps, build_report, design_gaps
 from .seam import ensure_seam
 from .repository import GitError, GitRepo, Runner, read_game_config
 from .settings import Settings, SettingsError
 
-__all__ = ["DevelopStep"]
+__all__ = ["DevelopStep", "DESIGN_GAP_ROUTE"]
+
+# The route a blocking design gap takes out of this step. The workflow maps it
+# (`develop.on.design-gap: design`, `greybox.on.design-gap: design`); the engine knows no
+# route of its own, so the label is the module's.
+DESIGN_GAP_ROUTE = "design-gap"
 
 REQUIRED_INPUTS = ("game-design", "asset-manifest", "scaffold-record")
 # `with: {phase: greybox}`: the loop is built and played before any asset exists, so the
@@ -509,6 +519,21 @@ class DevelopStep(WorkflowStep):
             "checks": {c.id: c.status for c in checks},
         })
 
+        # A gap the developer could not build around. The build is kept - it is real work,
+        # and the design is repaired from this report - but the run goes back to design
+        # rather than carrying an invented decision forward as if the designer had made it.
+        gaps = blocking_gaps(design_gaps(dev_report))
+        if green and gaps:
+            context.logger.warning("develop found a blocking design gap",
+                                   fields=[gap["field"] for gap in gaps])
+            return StepResult("FAILED", route=DESIGN_GAP_ROUTE, artifacts=[artifact],
+                              retryable=False,
+                              error=(f"{len(gaps)} blocking design gap(s) at "
+                                     f"{commit_sha[:12]}: "
+                                     + "; ".join(f"{gap['field']}: {gap['question']}"
+                                                 for gap in gaps[:4])
+                                     + ". The design does not say enough to build it; it is "
+                                       "repaired at design, not guessed at here."))
         if green:
             return StepResult.success([artifact], message=(
                 f"{title_id} built at {commit_sha[:12]} ({engine}); "

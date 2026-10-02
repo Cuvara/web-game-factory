@@ -44,7 +44,7 @@ Accept exactly these (the engine's own flags, `python3 "${CLAUDE_PLUGIN_ROOT}/ru
 - new run: `--mock`, `--mock-plan <JSON|@FILE>` (with `--mock` only),
   `--hold-gates`, `--project <ID>`, `--from <STEP>`, `--store <DIR>`, and at most
   one **game idea**: the quoted text that is not a flag or a flag's value, e.g.
-  `"3D goalkeeper game where the player blocks penalty shots"`. The idea is the run's
+  `"3D goalkeeper game where the player saves penalty kicks"`. The idea is the run's
   brief - research screens the catalog against it, strategy and design build from it - and
   `--project <ID>` is only the run's identity; never take one for the other. Pass the idea
   verbatim as one argument: never reword, summarise, translate, split or complete it, and

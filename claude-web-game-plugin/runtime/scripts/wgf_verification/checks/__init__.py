@@ -6,12 +6,15 @@ from .build import check_build, check_source
 from .code import check_code
 from .gameplay import check_gameplay
 from .platform import check_platform, check_policy
+from .quality import check_quality
 
 __all__ = ["GROUPS", "run_checks"]
 
 # Policy runs before platform: platform requirements read the runtime facts it measures.
-GROUPS = (check_source, check_build, check_code, check_gameplay, check_policy, check_platform,
-          check_assets)
+# Quality runs before gameplay: gameplay.progression is only a pass on evidence that the
+# design's progression was actually played, which is what quality carries.
+GROUPS = (check_source, check_build, check_code, check_quality, check_gameplay, check_policy,
+          check_platform, check_assets)
 
 
 def run_checks(session, checkout_evidence):

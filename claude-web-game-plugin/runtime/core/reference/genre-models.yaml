@@ -1,0 +1,4076 @@
+# Genre models: the content shape a game of each family must state, and the bars it is held to.
+#
+# A game-design (core/artifacts/game-design.schema.json, 1.9.0) names its family in `genre`
+# and lists its content in `build_spec.content.units[]` - every level, wave, track, encounter,
+# scenario or round the player meets, with its purpose, objective, mechanics, difficulty on
+# the family's named axes, duration, success, failure and acceptance. This file says, per
+# family, what that list must look like: the unit kinds, the progression and difficulty
+# models that fit, the axes difficulty is measured on, the shape of win and loss, how many
+# units a prototype and a release carry, what counts as variety, and how mastery shows.
+#
+# Read by:
+#   scripts/wgf_design/content.py          the design step's content check (rule ids content.*)
+#   scripts/wgf_design/seed.py             the deterministic genre seed author (`seed` blocks)
+#   scripts/wgf_develop/brief.py           the developer brief and the content data-file check
+#   scripts/wgf_playability/analysis.py    the genre-aware playability checks (`qa` blocks)
+#   scripts/wgf_techplan/devplan.py        content tasks (`implementation`)
+#
+# Universal contract + genre rules as data. No consumer branches on a family id: everything a
+# family changes is a value here. A new family is a new entry, never a new code path.
+#
+# "casual" is not a family. It is a session profile (`genre.session_profile`) that tightens
+# unit length, first-session length and how many axes a unit may raise at once; it never
+# changes what the game is.
+#
+# Families cover the research vocabulary's genre nodes (core/reference/research-vocabulary.yaml):
+# a node resolves to the family whose `nodes` lists it or its nearest listed ancestor. Nodes
+# no family lists (io, card, board, word, physics sandbox, sports) are capability gaps, kept
+# as such by research; they are not forced into a family that does not fit them.
+#
+# Change a bar only with a reason a person could defend from a playtest; a looser bar here lets
+# a one-level prototype through as a game.
+
+version: 1.0.0
+
+session_profiles:
+  # max_unit_s: the longest a single unit is designed to last. max_first_session_s: the
+  # first session. relief_every_units: at most this many units between breathers (purpose
+  # `breather`, or a unit whose every axis dips). max_axes_raised_per_unit: a unit raises at
+  # most this many axes over the previous one (core/craft/core-loop-and-difficulty.md).
+  casual:   {max_unit_s: 90,  max_first_session_s: 300, relief_every_units: 3, max_axes_raised_per_unit: 1}
+  standard: {max_unit_s: 240, max_first_session_s: 900, relief_every_units: 5, max_axes_raised_per_unit: 2}
+
+variety:
+  # Bars content.py reads for every family unless the family overrides a key.
+  # Consecutive units differ on at least this many of the family's variety dimensions
+  # (`variation_from_previous`).
+  min_dimensions_changed_between_units: 1
+  # A unit whose only change is a number (no new mechanic, same objective, same declared
+  # variety dimensions) is scaling-only; at most this many in a row.
+  max_consecutive_scaling_only_units: 2
+  # Every MVP mechanic is used in at least this many units after the unit that introduces it.
+  mechanic_reuse_min_units: 2
+  # At most this share of units may share one normalized objective.
+  max_identical_objectives_ratio: 0.5
+  # Acceptance: at least this many lines per unit; two lines anywhere in the design closer
+  # than this (token-set Jaccard) are near-duplicates.
+  acceptance_min_items: 2
+  acceptance_max_similarity: 0.8
+  # Relief: a dip on an axis no deeper than this share of the previous value is a breather,
+  # not a regression; deeper, or not recovered within `relief_recovery_units`, breaches.
+  relief_dip_max: 0.35
+  relief_recovery_units: 2
+
+implementation:
+  # The developer writes every MVP unit as data (public/content/units.json) with the design's
+  # difficulty values; a value may differ from the design's by at most this (absolute, on the
+  # axis's 0..1 range) before the content check reports it.
+  difficulty_tolerance: 0.05
+  # The tech plan groups MVP units into tasks of at most this many.
+  task_batch: 3
+  content_unit_hours: 1.5
+
+# ---------------------------------------------------------------------------------------------
+# Families. Keys:
+#   nodes               research-vocabulary genre nodes the family covers (subtrees included)
+#   unit_kinds          allowed build_spec.content.unit_kind values
+#   progression_models  allowed build_spec.progression.model values
+#   difficulty_models   allowed build_spec.difficulty.model values
+#   ending              allowed genre.ending values; `finite` requires build_spec.experience.win
+#   axes                the difficulty dimensions, each 0..1; `escalates`: the axis must end
+#                       higher than it starts over the MVP units; `probe`: the build reports it
+#                       as metrics.difficulty.<id> (required | optional)
+#   win / lose          the shape of success and failure; per_unit: every unit states its own
+#   units               min_mvp: MVP units the prototype builds; min_total: units at any tier
+#                       a release carries; generation: allowed build_spec.content.generation.mode
+#   variety.dimensions  what `variation_from_previous` may name
+#   mastery             how a player gets better: the model, the signals a hud metric shows
+#   qa                  parameters the playability checks read (fixed vocabulary:
+#                       min_units_traversed, reset_in_unit, checkpoint, min_new_kinds_per_unit,
+#                       resource_metric, time_target_axis, failure_state, endless_window_s)
+#   seed                what the genre seed author starts a design from (scripts/wgf_design/seed.py).
+#                       `seed.units` templates are rendered per unit, and every placeholder
+#                       names what it means - one symbol, one meaning, so a renderer can give
+#                       each a number a player could read:
+#                         {unit}    the unit's id
+#                         {s}       seconds the unit is designed to take (its duration)
+#                         {count}   how many things it sends, holds or asks for
+#                         {kinds}   distinct kinds of thing in play at once
+#                         {few}     a small number the player counts at a glance
+#                         {budget}  a spend or limit it allows: moves, gold, cash, flips
+#                         {level}   a tier or level number
+#                       A quantity the seed already pins (three gems, ten base lives, three
+#                       rivals) is written as a literal, never as a placeholder that rises.
+#                       `seed.units.numbers` gives the scale this family counts in per
+#                       placeholder - {start, step, max} against the unit's index; the rest
+#                       take scripts/wgf_design/seed.py's defaults.
+# ---------------------------------------------------------------------------------------------
+families:
+
+  puzzle:
+    label: Level puzzle
+    nodes: [puzzle, match, match-3, tile-match, bubble-shooter, merge-puzzle, block-puzzle, sort-puzzle, physics-puzzle, logic-puzzle, screw-puzzle]
+    unit_kinds: [level]
+    progression_models: [linear-levels, unlock-track]
+    difficulty_models: [level-authored]
+    ending: [finite]
+    axes:
+      - id: depth
+        range: [0, 1]
+        escalates: true
+        probe: optional
+        description: Moves of lookahead a clean solution needs
+      - id: move-limit
+        range: [0, 1]
+        escalates: true
+        probe: optional
+        description: How tight the move or time budget is against the clean solution
+      - id: board-complexity
+        range: [0, 1]
+        escalates: false
+        probe: optional
+        description: Board size, blockers, locked cells, irregular shape
+      - id: piece-variety
+        range: [0, 1]
+        escalates: true
+        probe: optional
+        description: Distinct piece or rule kinds in play at once
+    win:
+      shape: goal-state-reached
+      per_unit: true
+      description: The level's goal counters reach zero or the target state is reached
+    lose:
+      shape: budget-exhausted
+      per_unit: true
+      description: Moves or time run out before the goal; the level restarts intact
+    units: {min_mvp: 6, min_total: 20, generation: [authored, parametric]}
+    variety: {dimensions: [introduces, objective, board_shape, blocker_set, rule_twist, pacing]}
+    mastery:
+      model: reading
+      signals: [moves-left, stars, solve-time]
+      statement_required: true
+    qa: {min_units_traversed: 4, reset_in_unit: true, checkpoint: false, min_new_kinds_per_unit: 0, failure_state: true}
+    seed:
+      archetype:
+        id: grid-logic
+        label: Colour grid logic puzzle
+        keywords: [puzzle, logic, grid, board, tile, tiles, colour, slide, line, clear, deduction]
+        signature: [slide, slide a row, logic grid, line of three, colour line]
+        dimension: 2d
+        structure: level
+        camera: Fixed, the board centred, no scrolling.
+        orientation: portrait
+        identity_affinity: [paper-diorama, lacquer-brass, riso-arcade]
+        fantasy: Seeing three moves ahead on a board that holds still while you think.
+        core_loop: Read the board -> slide one row or column -> lines of three clear and the board opens up -> the tile counter falls -> clear the board inside the move budget -> the next level adds a colour or takes moves away.
+        pillars:
+          - A slide is fully predictable before the player commits to it
+          - The board never changes except by a move the player made
+          - A level is readable in one glance and finished inside ninety seconds
+        run_seconds: 90
+        first_reward_s: 20
+        content_units: 20
+        content_unit_kind: level
+        retention_hooks: [progression, collection]
+        return_reason: I left a star on level 12 and I can already see the slide I missed.
+        progression_model: linear-levels
+        difficulty_model: level-authored
+        mechanics:
+          - id: board
+            name: Colour board
+            tier: mvp
+            description: A 6x6 grid of coloured tiles with a few anchored cells that never move.
+            rules:
+              - The board is 6x6; every cell holds one coloured tile or one anchored cell.
+              - Between two and four colours are in play, and every colour on a board appears at least three times.
+              - Every authored board is solvable inside its move budget, and the level data stores that solution's length.
+            parameters: {cols: 6, rows: 6, colours_min: 2, colours_max: 4, anchors_max: 4}
+          - id: slide
+            name: Row and column slide
+            tier: mvp
+            description: One drag shifts a whole row or column by one cell and wraps the tile that leaves the board back in at the far end.
+            rules:
+              - A slide moves every tile of one row or column exactly one cell and wraps the edge tile to the other end.
+              - A slide costs one move whether or not it clears anything.
+              - A row or column holding an anchored cell cannot be slid at all.
+            parameters: {shift_cells: 1, slide_ms: 140, cost_moves: 1}
+          - id: line-clear
+            name: Line clear
+            tier: mvp
+            description: Three or more tiles of one colour in an orthogonal line clear once the slide settles.
+            rules:
+              - After a slide settles, every orthogonal line of three or more tiles of one colour clears at once.
+              - A cleared cell stays empty - nothing falls into it, so the board opens up as the level goes on.
+              - Two or more lines clearing from one slide pay a chain bonus of 50 points for each extra line.
+            parameters: {min_line: 3, settle_ms: 180, chain_bonus: 50}
+          - id: level-goal
+            name: Move budget and goal
+            tier: mvp
+            description: Each level asks for every coloured tile to be cleared inside a stated move budget.
+            rules:
+              - Clearing a tile decrements the level's tile counter.
+              - The counter reaching zero clears the level, and each unspent move pays 25 bonus points.
+              - Moves reaching zero with tiles left fails the level and offers an immediate retry on the same board.
+            parameters: {moves_level_1: 18, moves_min: 9, unspent_move_points: 25}
+          - id: locked-tiles
+            name: Locked tiles
+            tier: post-mvp
+            description: Tiles under a lock take two clears beside them before they join a slide.
+            rules:
+              - A locked tile does not move and does not count toward a line.
+              - Two clears orthogonally adjacent to a locked tile break the lock.
+            parameters: {clears_to_unlock: 2}
+        actions:
+          - id: slide-row
+            action: Slide a row one cell
+            tier: mvp
+            mechanic: slide
+            touch: Drag any tile left or right
+            mouse: Drag any tile left or right
+            keyboard: Arrows move the cursor, then Shift with Left or Right slides that row
+            gamepad: D-pad cursor, shoulder buttons slide the row
+          - id: slide-column
+            action: Slide a column one cell
+            tier: mvp
+            mechanic: slide
+            touch: Drag any tile up or down
+            mouse: Drag any tile up or down
+            keyboard: Arrows move the cursor, then Shift with Up or Down slides that column
+            gamepad: D-pad cursor, triggers slide the column
+        goals:
+          moment: Find the slide that completes a line of three.
+          session: Clear three levels without dropping a star.
+          long_term: Three-star all 20 levels.
+        progression_steps:
+          - id: levels-1-6
+            tier: mvp
+            unlock_condition: Available from the start
+            grants: Levels 1-6, two colours and six moves of slack over the clean solution
+          - id: levels-7-13
+            tier: mvp
+            unlock_condition: Clear level 6
+            grants: A third colour and the first anchored cells
+          - id: levels-14-20
+            tier: mvp
+            unlock_condition: Clear level 13
+            grants: A fourth colour and move budgets within one move of the clean solution
+        curve:
+          - at: Levels 1-3
+            description: Two colours, no anchored cells, six moves of slack; the level cannot realistically be failed.
+            parameters: {colours: 2, moves_slack: 6, anchors: 0}
+          - at: Levels 4-13
+            description: A third colour and up to two anchored cells; slack falls to three moves.
+            parameters: {colours: 3, moves_slack: 3, anchors: 2}
+          - at: Levels 14-20
+            description: Four colours and up to four anchored cells; slack falls to one move, and every fourth level is a breather with slack back at four.
+            parameters: {colours: 4, moves_slack: 1, anchors: 4}
+        assist: After two failed attempts on one level, the next attempt starts with two extra moves and outlines one solvable line once.
+        failure_condition: Moves reach zero with coloured tiles still on the board.
+        failure_feedback: The board dims, the tile counter shakes, the last slide replays once, and the fail card shows how many tiles were left.
+        rewards:
+          - id: chain
+            tier: mvp
+            trigger: Two or more lines clear from one slide
+            grants: A chain bonus of 50 points for each extra line
+            feedback: Each line clears in turn at a rising pitch, and the bonus counts up on the score.
+          - id: level-clear
+            tier: mvp
+            trigger: The last coloured tile clears
+            grants: The level is cleared, with one to three stars by moves left
+            feedback: Stars stamp in one by one with a chord, and the next level's number slides in.
+          - id: moves-saved
+            tier: mvp
+            trigger: A level is cleared with at least a third of its move budget unspent
+            grants: The third star and 25 points for each unspent move
+            feedback: Unspent moves fly into the score one at a time.
+        hud:
+          - id: moves
+            tier: mvp
+            shows: Moves remaining
+            anchor: top-left
+            updates_on: Each slide
+            feedback: Turns the danger colour at three moves left
+          - id: tiles-left
+            tier: mvp
+            shows: Coloured tiles still on the board
+            anchor: top-center
+            updates_on: Each clear
+            feedback: Ticks down with one pop per line
+          - id: level
+            tier: mvp
+            shows: Level number and the stars already earned on it
+            anchor: top-right
+            updates_on: Level start
+        tutorial:
+          approach: diegetic
+          rationale: The first board has exactly one slide that clears a line, and its shape teaches the rule without a sentence.
+          steps:
+            - id: first-slide
+              tier: mvp
+              trigger: Level 1 start, first time
+              prompt: Three tiles of one colour sit one cell apart in the bottom row, and that row glows under a drifting hand
+              completes_on: The player slides that row and the line clears
+            - id: column-slide
+              tier: mvp
+              trigger: Level 1, after the first clear
+              prompt: The only line left needs a column slide, and that column glows
+              completes_on: The player slides a column
+        assets:
+          - id: tiles
+            type: sprite
+            tier: mvp
+            description: Four tile colours with idle, selected and clearing states
+            count: 4
+            source_preference: procedural
+            est_cost: 0
+            spec: Vector, 96px, distinct by shape as well as by colour
+            role: target
+            dimension: 2d
+            readability: Four tiles told apart by shape as much as colour - circle, square, triangle, hexagon - each recognisable at 40 px in a full board, and a line of three readable as one group before the clear
+          - id: board-frame
+            type: ui
+            tier: mvp
+            description: Board frame, cell backing and the anchored-cell plate
+            count: 2
+            source_preference: procedural
+            est_cost: 0
+            spec: 9-slice frame plus one anchored-cell plate
+            role: environment
+            dimension: 2d
+            readability: A board that is plainly a 6x6 grid, its cell backing quieter than every tile, and the anchored cells unmistakably bolted down at 40 px
+          - id: clear-vfx
+            type: vfx
+            tier: mvp
+            description: Line clear burst and chain streak
+            count: 2
+            source_preference: procedural
+            est_cost: 0
+            spec: Particle presets, 300 ms
+            role: vfx
+            dimension: 2d
+            readability: A burst on each cleared cell and a streak along a chain, readable without hiding the tiles that slide in behind them
+          - id: backdrop
+            type: texture
+            tier: mvp
+            description: Ground behind the board
+            count: 1
+            source_preference: procedural
+            est_cost: 0
+            spec: Gradient plus a paper texture overlay
+            role: background
+            dimension: 2d
+            readability: A quiet ground behind the board, lower in contrast than the board so the tiles lead the frame
+          - id: counter-bar
+            type: ui
+            tier: mvp
+            description: Move counter, tile counter and the star row, drawn in the identity kit
+            count: 1
+            source_preference: procedural
+            est_cost: 0
+            spec: One bar, three slots, star states empty and filled
+            role: ui
+            dimension: 2d
+            readability: Moves left and tiles left legible at 18 CSS px on a phone, the move counter changing colour at three left, and the star row readable without a label
+          - id: locked-tile
+            type: sprite
+            tier: post-mvp
+            description: Locked tile and its two break states
+            count: 1
+            source_preference: procedural
+            est_cost: 0
+            spec: Vector, 96px, two damage states
+            role: target
+            dimension: 2d
+            readability: A tile behind a visible lock, told apart from an ordinary tile at 40 px, with its two break states obviously a countdown
+        audio:
+          - id: music-think
+            type: music
+            tier: mvp
+            description: Unhurried loop under play
+            trigger: Level start
+            loop: true
+            source_preference: library
+            est_cost: 40
+          - id: sfx-slide
+            type: sfx
+            tier: mvp
+            description: Slide click, one per cell of travel
+            trigger: Slide
+            loop: false
+            source_preference: library
+            est_cost: 5
+          - id: sfx-clear
+            type: sfx
+            tier: mvp
+            description: Line clear pop, pitched up per chain step
+            trigger: Line clear
+            loop: false
+            source_preference: library
+            est_cost: 5
+          - id: sfx-stars
+            type: sfx
+            tier: mvp
+            description: Star stamp chord
+            trigger: Level clear
+            loop: false
+            source_preference: library
+            est_cost: 5
+        post_mvp:
+          - id: level-set-2
+            name: Second level set
+            description: Levels 21-40, built around locked tiles and boards with a hole in the middle.
+        optional:
+          - id: daily-board
+            name: Daily board
+            description: One seeded board a day, the same for everyone, with a days-played streak.
+          - id: timed-mode
+            name: Timed mode
+            description: The same boards against a clock instead of a move budget.
+      experience:
+        goal: Clear every coloured tile before your moves run out.
+        goal_metric: tiles-left
+        win:
+          condition: Every coloured tile is cleared from the board.
+          metric: tiles-left
+        lose:
+          condition: Moves reach zero with coloured tiles left on the board.
+          metric: moves
+        actions:
+          slide-row:
+            visual: The whole row shifts one cell, the wrapped tile slides in from the far edge, and any completed line flashes before it clears.
+            audio: Slide click, then a rising tick for each line cleared
+            updates: [moves, tiles-left]
+          slide-column:
+            visual: The whole column shifts one cell, the wrapped tile slides in from the far edge, and any completed line flashes before it clears.
+            audio: Slide click, then a rising tick for each line cleared
+            updates: [moves, tiles-left]
+        teaches: [slide-row, slide-column]
+        grace: {until: first-success}
+        hud_metrics: {moves: moves, tiles-left: tiles-left, level: level}
+      depth:
+        features:
+          - id: level-stars
+            name: Level stars
+            description: One to three stars a level by moves left, kept across sessions; replaying a level keeps the most stars, and the level map shows the total out of 60.
+          - id: colour-mastery
+            name: Colour mastery track
+            description: A track counting lines cleared per colour across sessions, opening a board theme at 50, 150 and 400 lines.
+        meta:
+          statement: Clear a level -> earn its stars and open the next -> the star total opens the next level set and a board theme -> come back for the stars left behind.
+          tier: mvp
+          delivered_by: levels-7-13
+          persists:
+            - kind: stage-progress
+              what: Levels cleared and the level the player is on
+              tier: mvp
+              delivered_by: levels-7-13
+            - kind: collection
+              what: Stars earned per level
+              tier: post-mvp
+              delivered_by: level-stars
+            - kind: cosmetics
+              what: Board themes opened by the colour mastery track
+              tier: post-mvp
+              delivered_by: colour-mastery
+        goals:
+          - id: next-line
+            horizon: short
+            goal: Find the slide that completes a line of three.
+            measure: lines cleared
+            tier: mvp
+            delivered_by: line-clear
+          - id: clear-level
+            horizon: mid
+            goal: Clear this level with at least two stars.
+            measure: stars earned on the level
+            tier: mvp
+            delivered_by: level-clear
+          - id: clear-set
+            horizon: long
+            goal: Clear all 20 levels.
+            measure: levels cleared of 20
+            tier: mvp
+            delivered_by: levels-14-20
+          - id: all-stars
+            horizon: long
+            goal: Three-star every level.
+            measure: stars of 60
+            tier: post-mvp
+            delivered_by: level-stars
+        content:
+          - id: third-colour
+            kind: piece
+            name: Third colour
+            introduced: From level 7
+            after_runs: 6
+            rule: Boards carry three colours, so a slide that helps one colour can break another.
+            tier: mvp
+            delivered_by: levels-7-13
+          - id: anchored-cells
+            kind: obstacle
+            name: Anchored cells
+            introduced: From level 7, 30 s into the level
+            at_s: 30
+            after_runs: 6
+            rule: An anchored cell locks its row and its column out of sliding.
+            tier: mvp
+            delivered_by: levels-7-13
+          - id: tight-budgets
+            kind: modifier
+            name: Tight move budgets
+            introduced: From level 14
+            after_runs: 13
+            rule: Move budgets fall to within one move of the clean solution.
+            tier: mvp
+            delivered_by: levels-14-20
+          - id: locked-tiles
+            kind: special-piece
+            name: Locked tiles
+            introduced: From level 21
+            after_runs: 20
+            rule: A tile under a lock needs two clears beside it before it slides.
+            tier: post-mvp
+            delivered_by: locked-tiles
+          - id: board-themes
+            kind: zone
+            name: Board themes
+            introduced: After 50 lines of one colour
+            after_runs: 4
+            rule: A new board palette and tile set from the colour mastery track.
+            tier: post-mvp
+            delivered_by: colour-mastery
+        first_session_ends_on: A cleared level with its stars stamped, and the next level's colour count shown on the card.
+        hooks:
+          - id: next-level
+            kind: stage-map
+            statement: There is a next level and I can already see its board.
+            tier: mvp
+            delivered_by: levels-7-13
+          - id: missing-stars
+            kind: collection
+            statement: I left a star on level 12 and I know the slide I missed.
+            tier: post-mvp
+            delivered_by: level-stars
+      units:
+        unit_arc: [teach, teach, test, twist, breather, test, climax]
+        objective_templates:
+          - Clear all {count} coloured tiles of {unit} in {budget} moves
+          - Clear all {count} coloured tiles of {unit} in {budget} moves without sliding one row twice in a row
+          - Clear every tile of the {kinds} target colours in {unit} in {budget} moves
+          - Clear all {count} tiles of {unit} in {budget} moves around {few} anchored cells
+        success_template: Every coloured tile is cleared with at least one move left.
+        failure_template: Moves reach zero with coloured tiles still on the board.
+        numbers:
+          count: {start: 14, step: 2, max: 52}
+          budget: {start: 24, step: 1, max: 44}
+          kinds: {start: 2, step: 1, max: 4}
+          few: {start: 1, step: 1, max: 4}
+        acceptance_templates:
+          - A recorded solution clears {unit} inside its {budget} moves with at least 2 to spare, and the level data stores that length
+          - A bot sliding at random fails {unit} in at least 9 of 10 attempts
+          - Clearing the last tile of {unit} shows the star card inside 1.5 s with the tile counter at 0
+          - Every colour on {unit} appears at least 3 times, so every colour can form a line
+        introduce_order: [board, slide, line-clear, level-goal]
+        variation_cycle: [introduces, objective, board_shape, blocker_set, rule_twist, pacing]
+        axis_profile:
+          depth: {start: 0.12, step: 0.12}
+          move-limit: {start: 0.1, step: 0.13}
+          board-complexity: {start: 0.15, step: 0.1}
+          piece-variety: {start: 0.2, step: 0.1}
+
+  platformer:
+    label: Platformer
+    nodes: [platformer]
+    unit_kinds: [level]
+    progression_models: [linear-levels, unlock-track]
+    difficulty_models: [level-authored]
+    ending: [finite]
+    axes:
+      - id: precision
+        range: [0, 1]
+        escalates: true
+        probe: optional
+        description: Jump windows and landing targets
+      - id: timing
+        range: [0, 1]
+        escalates: true
+        probe: optional
+        description: Moving hazards and cycles the player must read
+      - id: hazard-density
+        range: [0, 1]
+        escalates: true
+        probe: optional
+        description: Hazards per screen
+      - id: spatial-complexity
+        range: [0, 1]
+        escalates: false
+        probe: optional
+        description: Branching, verticality, backtracking
+    win:
+      shape: reach-exit
+      per_unit: true
+      description: The player reaches the level exit
+    lose:
+      shape: lives-or-fall
+      per_unit: true
+      description: A hazard or a fall costs a life; no lives left ends the attempt
+    units: {min_mvp: 5, min_total: 12, generation: [authored, parametric]}
+    variety: {dimensions: [introduces, objective, layout_motif, hazard_set, pacing, verticality]}
+    mastery:
+      model: execution
+      signals: [time-to-exit, deaths, collectibles-found]
+      statement_required: true
+    qa: {min_units_traversed: 3, reset_in_unit: false, checkpoint: true, min_new_kinds_per_unit: 0, failure_state: true}
+    seed:
+      archetype:
+        id: pad-platformer
+        label: Single-screen precision platformer
+        keywords: [platformer, platform, jump, jumping, run, precision, hazard, spikes, exit, gems, screen]
+        signature: [jump, jumps, platform, platforms, exit door, single screen]
+        dimension: 2d
+        structure: level
+        camera: Fixed on one screen; the whole level is visible at once, no scrolling.
+        orientation: landscape
+        identity_affinity: [riso-arcade, paper-diorama, signal-brutal]
+        fantasy: Nailing on the tenth try the jump you had planned on the first.
+        core_loop: Read the whole screen -> commit to a route -> run and jump past the hazards -> take the gems on the way -> touch the exit door -> the next screen adds one hazard that changes the route.
+        pillars:
+          - The whole level is on one screen, so every death is information
+          - Back at the entrance inside one second of dying
+          - Movement obeys the same numbers at 30 Hz and at 144 Hz
+        run_seconds: 45
+        first_reward_s: 12
+        content_units: 12
+        content_unit_kind: level
+        retention_hooks: [progression, collection]
+        return_reason: Two gems on screen 7 are still sitting there, and I know the route now.
+        progression_model: linear-levels
+        difficulty_model: level-authored
+        mechanics:
+          - id: run
+            name: Run and turn
+            tier: mvp
+            description: Horizontal movement with a short ramp and an instant turn.
+            rules:
+              - Horizontal input reaches the full 240 px per second in 0.1 s and stops in 0.08 s.
+              - A direction change reverses at once and never slides more than 4 px past the turn.
+              - Every movement number is applied on a fixed 60 Hz step, so the same input gives the same path at any frame rate.
+            parameters: {max_speed_px_s: 240, accel_s: 0.1, stop_s: 0.08, step_hz: 60}
+          - id: jump
+            name: Jump
+            tier: mvp
+            description: One variable-height jump with a forgiving input window.
+            rules:
+              - A held jump reaches 96 px of height in 0.32 s, and releasing early cuts the rise at once.
+              - A jump pressed up to 100 ms after leaving a ledge still fires, and one pressed up to 120 ms before landing is buffered.
+              - There is no second jump in the MVP, so every gap is crossed with one jump or not at all.
+            parameters: {jump_height_px: 96, rise_s: 0.32, coyote_ms: 100, buffer_ms: 120}
+          - id: hazards
+            name: Hazards and walkers
+            tier: mvp
+            description: Static spikes and patrolling enemies that cost a life on contact.
+            rules:
+              - Contact with a spike or an enemy costs one life and restarts the screen at its entrance, which is the screen's only checkpoint.
+              - A walking enemy paces its platform at 90 px per second and turns at the platform edge, never at the player.
+              - Every hazard on a screen is visible from the entrance, so no death can be unforeseeable.
+            parameters: {walker_speed_px_s: 90, lives: 3, respawn_ms: 400}
+          - id: exit-and-gems
+            name: Exit door and gems
+            tier: mvp
+            description: Touching the exit door clears the screen and banks the gems taken on the way.
+            rules:
+              - Touching the exit door clears the level at once and banks every gem collected on that attempt.
+              - The three gems of a screen sit off the fastest route, so taking them is a choice and never the only path.
+              - A death before the exit door returns that attempt's gems to the screen.
+            parameters: {gems_per_level: 3, exit_radius_px: 24}
+          - id: wall-jump
+            name: Wall jump
+            tier: post-mvp
+            description: A jump taken against a wall pushes off it.
+            rules:
+              - A jump pressed within 150 ms of touching a wall pushes off at 180 px per second away from it.
+              - Two pushes off the same wall without touching ground are refused.
+            parameters: {wall_window_ms: 150, push_px_s: 180}
+        actions:
+          - id: move-left
+            action: Run left
+            tier: mvp
+            mechanic: run
+            touch: Hold the left pad in the lower-left corner
+            mouse: Hold the left pad, or hold A
+            keyboard: Left arrow or A
+            gamepad: Left stick or D-pad left
+          - id: move-right
+            action: Run right
+            tier: mvp
+            mechanic: run
+            touch: Hold the right pad in the lower-left corner
+            mouse: Hold the right pad, or hold D
+            keyboard: Right arrow or D
+            gamepad: Left stick or D-pad right
+          - id: jump
+            action: Jump
+            tier: mvp
+            mechanic: jump
+            touch: Tap or hold the jump button in the lower-right corner
+            mouse: Click the jump button, or hold Space
+            keyboard: Space, W or Up arrow
+            gamepad: A button
+        goals:
+          moment: Land the next jump without touching a hazard.
+          session: Clear three screens and keep the lives that are left.
+          long_term: Clear all 12 screens with every gem taken.
+        progression_steps:
+          - id: levels-1-4
+            tier: mvp
+            unlock_condition: Available from the start
+            grants: Screens 1-4, running, jumping and static spikes
+          - id: levels-5-8
+            tier: mvp
+            unlock_condition: Clear screen 4
+            grants: Walking enemies and crumbling tiles
+          - id: levels-9-12
+            tier: mvp
+            unlock_condition: Clear screen 8
+            grants: Moving platforms and routes that ask for two hazards at once
+        curve:
+          - at: Screens 1-3
+            description: Two-platform routes, gaps at two thirds of the jump's reach, spikes only; a first-time player reaches the exit door before losing a life.
+            parameters: {gap_fraction: 0.66, hazards_per_screen: 2, walkers: 0}
+          - at: Screens 4-8
+            description: Walking enemies and crumbling tiles; gaps reach four fifths of the jump and a route crosses itself once.
+            parameters: {gap_fraction: 0.8, hazards_per_screen: 5, walkers: 2}
+          - at: Screens 9-12
+            description: Moving platforms over spikes, gaps at nine tenths of the jump, and every third screen is a breather with half the hazards.
+            parameters: {gap_fraction: 0.9, hazards_per_screen: 8, walkers: 3}
+        assist: After three deaths on one screen, its walking enemies pace 20% slower and a checkpoint appears at the midpoint of the route.
+        failure_condition: A hazard or a fall takes the last of the three lives.
+        failure_feedback: The player bursts into four shards, 200 ms of hit-stop, one screen flash, and the retry starts at the entrance with the hazard that killed outlined for a second.
+        rewards:
+          - id: gem-taken
+            tier: mvp
+            trigger: A gem is touched
+            grants: One of the screen's three gems, banked at the exit door
+            feedback: The gem pops into the counter with a rising chime, one semitone up per gem on the screen.
+          - id: level-clear
+            tier: mvp
+            trigger: The player touches the exit door
+            grants: The screen is cleared and the next one opens
+            feedback: The door swallows the player, the screen wipes, and the clear card names the time and the gems taken.
+          - id: no-death-clear
+            tier: mvp
+            trigger: A screen is cleared without losing a life
+            grants: A clean marker on the screen and a life back, up to three
+            feedback: The life pips flash once and the clean marker stamps onto the level card.
+        hud:
+          - id: lives
+            tier: mvp
+            shows: Lives left, as pips
+            anchor: top-left
+            updates_on: Death and clean clear
+            feedback: The lost pip shatters rather than fading
+          - id: gems
+            tier: mvp
+            shows: Gems taken on this screen, out of three
+            anchor: top-center
+            updates_on: Each gem taken
+            feedback: The slot fills with a pop
+          - id: level
+            tier: mvp
+            shows: Screen number and its clean marker
+            anchor: top-right
+            updates_on: Screen start
+        tutorial:
+          approach: diegetic
+          rationale: Running, jumping and the exit door are one screen's worth of teaching, and the first screen is built so the route itself is the lesson.
+          steps:
+            - id: first-gap
+              tier: mvp
+              trigger: Screen 1, first time
+              prompt: A gem floats over a gap one jump wide, with the jump button pulsing and the exit door in plain sight beyond it
+              completes_on: The player jumps the gap
+            - id: first-spike
+              tier: mvp
+              trigger: Screen 1, after the first gap
+              prompt: A single spike sits under the only route, lit and ringed, with a slow arrow showing the arc over it
+              completes_on: The player clears the spike and touches the exit door
+        assets:
+          - id: player
+            type: spritesheet
+            tier: mvp
+            description: Player character with idle, run, jump, fall and burst frames
+            count: 1
+            source_preference: procedural
+            est_cost: 0
+            spec: Vector-drawn, 48px tall, 6 run frames, 2 air frames, 4 burst frames
+            role: player
+            dimension: 2d
+            readability: One solid silhouette in the identity's lead accent, its head and leading foot clear, readable at 48 px tall against tiles and sky, and plainly airborne the frame it leaves the ground
+          - id: hazards
+            type: sprite
+            tier: mvp
+            description: Spikes, crumbling tile and the walking enemy
+            count: 3
+            source_preference: procedural
+            est_cost: 0
+            spec: Vector, 32px grid, the walker with 4 pace frames and a 2-frame turn
+            role: threat
+            dimension: 2d
+            readability: Every hazard hard-edged and in the danger colour, never in the player's colour - spikes point, the walker has a face and a direction, the crumbling tile is cracked before it is stepped on - all readable at 32 px from across the screen
+          - id: exit-door
+            type: sprite
+            tier: mvp
+            description: Exit door, closed and open states
+            count: 1
+            source_preference: procedural
+            est_cost: 0
+            spec: Vector, 64px tall, 2 states plus a 4-frame open
+            role: goal
+            dimension: 2d
+            readability: A door that reads as the way out from the entrance of the screen - lit frame, inward arrow, brighter than the tiles around it - and obviously open once the player is on the route to it
+          - id: gems
+            type: sprite
+            tier: mvp
+            description: Gem collectible with an idle spin
+            count: 1
+            source_preference: procedural
+            est_cost: 0
+            spec: Vector, 24px, 8-frame spin
+            role: collectible
+            dimension: 2d
+            readability: A small bright faceted token, round where hazards are angular, readable at 24 px and never mistaken for a hazard or for the door
+          - id: tiles
+            type: texture
+            tier: mvp
+            description: Platform and wall tiles, with the moving-platform variant
+            count: 3
+            source_preference: procedural
+            est_cost: 0
+            spec: Tileable 32px set, top edge distinct from the body
+            role: environment
+            dimension: 2d
+            readability: Solid ground told apart from background at a glance, the standable top edge a clear line, and the moving platform marked so it is not mistaken for static ground
+          - id: backdrop
+            type: texture
+            tier: mvp
+            description: Two-layer parallax sky and hills
+            count: 2
+            source_preference: procedural
+            est_cost: 0
+            spec: Tileable 512px, 2 layers at 0.2 and 0.5 parallax
+            role: background
+            dimension: 2d
+            readability: A low-contrast sky and hill band that never competes with the tiles, so the route is the brightest structure on screen
+          - id: impact-vfx
+            type: vfx
+            tier: mvp
+            description: Landing dust, gem pop and death burst
+            count: 3
+            source_preference: procedural
+            est_cost: 0
+            spec: Particle presets, 200-400 ms
+            role: vfx
+            dimension: 2d
+            readability: Dust at the feet on every landing, a pop at the gem, and a four-shard burst at the point of death that shows what was touched and clears before the retry
+          - id: hud-bar
+            type: ui
+            tier: mvp
+            description: Life pips, gem slots and the screen plate
+            count: 1
+            source_preference: procedural
+            est_cost: 0
+            spec: Three pip states, three gem slots, one plate
+            role: ui
+            dimension: 2d
+            readability: Pips and gem slots countable at a glance at 24 px without a label, held inside the safe area and never over the route
+        audio:
+          - id: music-run
+            type: music
+            tier: mvp
+            description: Bright loop under play, one bar of silence after a death
+            trigger: Screen start
+            loop: true
+            source_preference: library
+            est_cost: 40
+          - id: sfx-jump
+            type: sfx
+            tier: mvp
+            description: Jump hop, pitched by how long the button is held
+            trigger: Jump
+            loop: false
+            source_preference: library
+            est_cost: 5
+          - id: sfx-land
+            type: sfx
+            tier: mvp
+            description: Landing tap
+            trigger: Landing on ground
+            loop: false
+            source_preference: library
+            est_cost: 5
+          - id: sfx-gem
+            type: sfx
+            tier: mvp
+            description: Gem chime, a semitone up per gem on the screen
+            trigger: Gem taken
+            loop: false
+            source_preference: library
+            est_cost: 5
+          - id: sfx-death
+            type: sfx
+            tier: mvp
+            description: Death burst
+            trigger: Life lost
+            loop: false
+            source_preference: library
+            est_cost: 5
+        post_mvp:
+          - id: level-set-2
+            name: Second screen set
+            description: Screens 13-24, built around wall jumps and vertical routes.
+        optional:
+          - id: speedrun-timer
+            name: Speedrun timer
+            description: A visible per-screen timer with a split against the player's best.
+          - id: character-skins
+            name: Character skins
+            description: Cosmetic player variants opened by clean clears.
+      experience:
+        goal: Reach the exit door - take the three gems on the way if you can.
+        goal_metric: gems
+        win:
+          condition: The player touches the exit door of the screen.
+          metric: level
+        lose:
+          condition: Hazards and falls take all three lives.
+          metric: lives
+        actions:
+          move-left:
+            visual: The player accelerates left inside two frames, the run cycle starts, and dust kicks from the trailing foot.
+            audio: Footfall per stride, quieter than the jump
+          move-right:
+            visual: The player accelerates right inside two frames, the run cycle starts, and dust kicks from the trailing foot.
+            audio: Footfall per stride, quieter than the jump
+          jump:
+            visual: The player leaves the ground on the frame of the press, squashing once, and the arc is readable from its first 100 ms.
+            audio: Jump hop, pitched by how long the button is held
+        teaches: [move-left, move-right, jump]
+        grace: {until: first-success}
+        hud_metrics: {lives: lives, gems: gems, level: level}
+      depth:
+        features:
+          - id: level-medals
+            name: Screen time medals
+            description: Bronze, silver and gold target times a screen, kept across sessions and shown on the level map beside each screen's clean marker.
+          - id: gem-collection
+            name: Gem collection
+            description: The 36 gems of the set tracked across sessions, with a mural on the title screen that fills in as they are found.
+        meta:
+          statement: Clear a screen -> bank its gems and its clean marker -> the set opens the next screens and fills the mural -> come back for the gems and the times left behind.
+          tier: mvp
+          delivered_by: levels-5-8
+          persists:
+            - kind: stage-progress
+              what: Screens cleared and the screen the player is on
+              tier: mvp
+              delivered_by: levels-5-8
+            - kind: collection
+              what: Gems found, of 36
+              tier: post-mvp
+              delivered_by: gem-collection
+            - kind: collection
+              what: Time medals a screen
+              tier: post-mvp
+              delivered_by: level-medals
+        goals:
+          - id: next-jump
+            horizon: short
+            goal: Land the next jump without touching a hazard.
+            measure: jumps landed without a death
+            tier: mvp
+            delivered_by: jump
+          - id: clear-screen
+            horizon: mid
+            goal: Clear this screen without losing a life.
+            measure: clean markers earned
+            tier: mvp
+            delivered_by: no-death-clear
+          - id: clear-set
+            horizon: long
+            goal: Clear all 12 screens.
+            measure: screens cleared of 12
+            tier: mvp
+            delivered_by: levels-9-12
+          - id: all-gems
+            horizon: long
+            goal: Find every gem in the set.
+            measure: gems of 36
+            tier: post-mvp
+            delivered_by: gem-collection
+        content:
+          - id: crumbling-tiles
+            kind: hazard
+            name: Crumbling tiles
+            introduced: From screen 5, 25 s into the screen
+            at_s: 25
+            after_runs: 4
+            rule: A cracked tile falls away one second after it is stood on, so a route over it cannot be walked back.
+            tier: mvp
+            delivered_by: hazards
+          - id: walkers
+            kind: enemy
+            name: Walking enemies
+            introduced: From screen 5
+            after_runs: 4
+            rule: An enemy paces a platform of the route, so the gap has a timing as well as a width.
+            tier: mvp
+            delivered_by: levels-5-8
+          - id: moving-platforms
+            kind: obstacle
+            name: Moving platforms
+            introduced: From screen 9
+            after_runs: 8
+            rule: A platform carries the player over spikes on a fixed cycle.
+            tier: mvp
+            delivered_by: levels-9-12
+          - id: time-medals
+            kind: modifier
+            name: Screen time medals
+            introduced: After the first screen is cleared
+            after_runs: 1
+            rule: A medal target time appears on every screen already cleared.
+            tier: post-mvp
+            delivered_by: level-medals
+          - id: wall-jump-screens
+            kind: level-set
+            name: Wall-jump screens
+            introduced: From screen 13
+            after_runs: 12
+            rule: Screens built around pushing off walls to climb.
+            tier: post-mvp
+            delivered_by: wall-jump
+        first_session_ends_on: A screen cleared with its gems counted and its clean marker stamped, with the next screen's new hazard visible behind the card.
+        hooks:
+          - id: next-screen
+            kind: stage-map
+            statement: The next screen is right there and I can see how it starts.
+            tier: mvp
+            delivered_by: levels-5-8
+          - id: missing-gems
+            kind: collection
+            statement: Two gems on screen 7 are still sitting there.
+            tier: post-mvp
+            delivered_by: gem-collection
+      units:
+        unit_arc: [teach, teach, test, twist, breather, test, climax]
+        objective_templates:
+          - Reach the exit door of {unit} with at least 1 life left
+          - Reach the exit door of {unit} taking all 3 of its gems
+          - Reach the exit door of {unit} inside {s} s
+          - Reach the exit door of {unit} without touching one of its {count} walking enemies
+        success_template: The player touches the exit door with at least one life left.
+        failure_template: Hazards and falls take the player's last life before the exit door.
+        numbers:
+          count: {start: 2, step: 1, max: 8}
+        acceptance_templates:
+          - A recorded route clears {unit} inside its {s} s with 3 s to spare, and the level data stores that time
+          - Every hazard of {unit} is on screen from its entrance at the design resolution
+          - All 3 gems of {unit} are reachable on a route at most 3 s slower than the fastest one
+          - A death on {unit} puts the player back at its entrance inside 1 s with lives down by 1
+        introduce_order: [run, jump, hazards, exit-and-gems]
+        variation_cycle: [introduces, layout_motif, hazard_set, pacing, verticality, objective]
+        axis_profile:
+          precision: {start: 0.1, step: 0.12}
+          timing: {start: 0.08, step: 0.13}
+          hazard-density: {start: 0.12, step: 0.11}
+          spatial-complexity: {start: 0.15, step: 0.08}
+
+  arcade:
+    label: Arcade / action
+    nodes: [arcade, runner, endless-runner, lane-runner, one-touch, rhythm, snake]
+    unit_kinds: [run-segment, round, wave]
+    progression_models: [skill-only, unlock-track, endless-scaling]
+    difficulty_models: [time-ramp, level-authored]
+    ending: [endless, finite]
+    axes:
+      - id: speed
+        range: [0, 1]
+        escalates: true
+        # optional, not required: the golden ports at the pinned template commit report no
+        # metrics.difficulty.speed; a build that reports it is held to the rise, one that does
+        # not gets a WARNING. Promote to required when the ports report it.
+        probe: optional
+        description: Scroll or tempo
+      - id: density
+        range: [0, 1]
+        escalates: true
+        probe: optional
+        description: Obstacles or targets per second
+      - id: variety
+        range: [0, 1]
+        escalates: true
+        probe: optional
+        description: Distinct obstacle or pattern kinds active
+      - id: precision
+        range: [0, 1]
+        escalates: false
+        probe: optional
+        description: Input window width
+    win:
+      shape: best-score
+      per_unit: false
+      description: An endless run chases a best; a finite round has a target
+    lose:
+      shape: collision
+      per_unit: false
+      description: A hit, a miss or a fall ends the run
+    units: {min_mvp: 3, min_total: 6, generation: [authored, parametric, procedural]}
+    variety: {dimensions: [introduces, pattern_set, hazard_kind, tempo, objective]}
+    mastery:
+      model: execution
+      signals: [best, multiplier, near-misses]
+      statement_required: true
+    qa: {min_units_traversed: 3, reset_in_unit: false, checkpoint: false, min_new_kinds_per_unit: 1, failure_state: true, endless_window_s: 30}
+    seed:
+      archetype:
+        id: flip-arcade
+        label: One-touch gravity flip
+        keywords: [arcade, one-touch, one touch, tap, flip, gravity, dodge, endless, obstacle, wave, reflex]
+        signature: [flip, flip gravity, one touch, thread the gap, gravity]
+        dimension: 2d
+        structure: run
+        camera: Fixed, the craft anchored in the left third, the world scrolling right to left.
+        orientation: portrait
+        identity_affinity: [neon-night, riso-arcade, signal-brutal]
+        fantasy: Holding your nerve one beat longer than feels sensible.
+        core_loop: Read the gap ahead -> tap to flip gravity -> fall through the gap and bank distance -> the wave changes its hazard mix -> one touch ends the run -> tap again at once.
+        pillars:
+          - One input, learned in two seconds, mastered in two hundred runs
+          - Every gap is reachable from the moment it comes on screen
+          - Back in a run inside one second of failing
+        run_seconds: 60
+        first_reward_s: 15
+        content_units: 6
+        content_unit_kind: wave
+        retention_hooks: [streak, progression]
+        return_reason: I died 40 m short of my best and I know which flip was late.
+        progression_model: skill-only
+        difficulty_model: time-ramp
+        mechanics:
+          - id: gravity-flip
+            name: Gravity flip
+            tier: mvp
+            description: The craft falls toward the floor or the ceiling, and one tap inverts which.
+            rules:
+              - A tap inverts gravity on the next frame and zeroes the craft's vertical speed at that instant.
+              - Gravity is 2400 px per second squared with a terminal speed of 900 px per second, applied on a fixed step so the arc is the same at any frame rate.
+              - Touching the floor or the ceiling is a crash and ends the run.
+            parameters: {gravity_px_s2: 2400, terminal_px_s: 900, flip_frames: 1}
+          - id: hazards
+            name: Hazard waves
+            tier: mvp
+            description: Pillars, spinning bars and gaps scroll in from the right, drawn from the wave's hazard mix.
+            rules:
+              - Every spawned obstacle pattern leaves a gap at least 2.2 craft heights tall.
+              - Contact with an obstacle is a crash and ends the run.
+              - The hazard mix changes every 20 s, and each wave adds one obstacle kind the wave before it did not use.
+            parameters: {min_gap_heights: 2.2, wave_s: 20, start_scroll_px_s: 300}
+          - id: score-streak
+            name: Distance and streak
+            tier: mvp
+            description: Score is distance, with a streak for obstacles passed close.
+            rules:
+              - Score rises continuously with distance travelled.
+              - Passing an obstacle within 40 px of it adds 1 to the streak, up to 8, and the streak multiplies the distance score.
+              - A hit ends the run and the streak; a flip that was not needed costs nothing.
+            parameters: {max_streak: 8, close_px: 40}
+          - id: shield-pickup
+            name: Shield pickup
+            tier: post-mvp
+            description: A charge collected in a gap that absorbs one hit.
+            rules:
+              - A shield absorbs exactly one hit and is spent on it.
+              - At most one shield is in play, and it never spawns inside an obstacle's gap line.
+            parameters: {shield_hits: 1, spawn_every_s: 25}
+        actions:
+          - id: flip
+            action: Flip gravity
+            tier: mvp
+            mechanic: gravity-flip
+            touch: Tap anywhere on the screen
+            mouse: Click anywhere, or press Space
+            keyboard: Space, W or Up arrow
+            gamepad: A button
+        goals:
+          moment: Get through the gap ahead without touching anything.
+          session: Beat the personal best at least once.
+          long_term: Reach wave 6 and hold a streak of 8 through it.
+        progression_steps:
+          - id: wave-2
+            tier: mvp
+            unlock_condition: Survive 20 s in one run
+            grants: Wave 2's hazard mix, spinning bars, for the rest of that run
+          - id: wave-3
+            tier: mvp
+            unlock_condition: Survive 40 s in one run
+            grants: Wave 3's hazard mix, staggered double pillars
+          - id: waves-4-6
+            tier: mvp
+            unlock_condition: Survive 60 s in one run
+            grants: Waves 4 to 6, which cycle for the rest of the run
+        curve:
+          - at: 0-20s
+            description: Single pillars, wide gaps, slow scroll; a first-time player banks a streak before failing.
+            parameters: {scroll_px_s: 300, gap_heights: 3.0}
+          - at: 20-60s
+            description: Spinning bars and staggered pillars; scroll rises 3% every 5 s.
+            parameters: {scroll_step: 0.03, gap_heights: 2.6}
+          - at: 60s+
+            description: All six waves cycle and the scroll caps, so a skilled player can hold a run.
+            parameters: {scroll_cap_px_s: 620, gap_heights: 2.2}
+        assist: After three runs under 10 s, the next run's first 15 s use wave 1's spacing with gaps at 3 craft heights.
+        failure_condition: The craft touches an obstacle, the floor or the ceiling.
+        failure_feedback: 150 ms of hit-stop, one screen shake, the obstacle that was hit flashes white, and the result card slides up with distance, streak and best.
+        rewards:
+          - id: new-best
+            tier: mvp
+            trigger: A run ends above the personal best
+            grants: A new personal best, saved
+            feedback: The best counter bursts and re-colours, over a two-note sting.
+          - id: streak-up
+            tier: mvp
+            trigger: An obstacle is passed within 40 px
+            grants: Streak plus one, up to 8
+            feedback: The streak badge pulses and the pass sound rises a semitone per step.
+          - id: wave-change
+            tier: mvp
+            trigger: A new wave's hazard mix starts
+            grants: A named wave and its new obstacle kind
+            feedback: A thin banner names the wave, the palette shifts hue, and the new obstacle kind enters alone first.
+        hud:
+          - id: score
+            tier: mvp
+            shows: Distance this run
+            anchor: top-center
+            updates_on: Every frame
+            feedback: Digits roll rather than jump
+          - id: streak
+            tier: mvp
+            shows: Close-pass streak, hidden at zero
+            anchor: top-right
+            updates_on: Close pass and run end
+            feedback: Pulses on each step and drains visibly on a hit
+          - id: best
+            tier: mvp
+            shows: Personal best, with a marker crossing the track when it is reached
+            anchor: top-left
+            updates_on: When distance passes the best
+        tutorial:
+          approach: diegetic
+          rationale: There is one input; the first gap is placed so that tapping is the only thing a player can do, and the arc teaches the rest.
+          steps:
+            - id: first-tap
+              tier: mvp
+              trigger: First run, before the first obstacle
+              prompt: The craft rests on the floor under a pulsing tap ring, with the first gap high and the obstacle still four seconds away
+              completes_on: The player taps and the craft rises
+            - id: first-gap
+              tier: mvp
+              trigger: First run, first obstacle
+              prompt: The gap is drawn with a faint dotted arc from the craft through it
+              completes_on: The player passes the first obstacle
+        assets:
+          - id: craft
+            type: spritesheet
+            tier: mvp
+            description: Player craft with thrust, flip and burst frames
+            count: 1
+            source_preference: procedural
+            est_cost: 0
+            spec: Vector-drawn, 64px wide, 4 thrust frames, 2 flip frames, 4 burst frames
+            role: player
+            dimension: 2d
+            readability: One bright wedge in the identity's lead accent with a clear nose and a trailing thrust flame, readable at 48 px against the scrolling field, and plainly inverted the frame after a flip
+          - id: obstacles
+            type: sprite
+            tier: mvp
+            description: Pillar, spinning bar, staggered pillar and crown, one per hazard kind
+            count: 4
+            source_preference: procedural
+            est_cost: 0
+            spec: Vector, gap-aligned, 96px wide, the bar with 8 rotation frames
+            role: threat
+            dimension: 2d
+            readability: Hard-edged shapes outlined in the danger colour, never in the craft's colour, each one reading as solid at 48 px while its gap reads as empty from the moment it enters the screen
+          - id: shield
+            type: sprite
+            tier: post-mvp
+            description: Shield pickup and the shielded craft overlay
+            count: 2
+            source_preference: procedural
+            est_cost: 0
+            spec: Vector, 32px token plus a craft ring overlay
+            role: collectible
+            dimension: 2d
+            readability: A round token where obstacles are angular, readable at 24 px, and once taken an unmistakable ring around the craft that disappears the instant it is spent
+          - id: field
+            type: texture
+            tier: mvp
+            description: Floor, ceiling and the scrolling field between them
+            count: 3
+            source_preference: procedural
+            est_cost: 0
+            spec: Tileable 512px, floor and ceiling bands with hazard striping
+            role: environment
+            dimension: 2d
+            readability: Floor and ceiling bands obviously fatal, striped and brighter at their inner edge, with the field between them low in contrast so the craft and the obstacles lead
+          - id: backdrop
+            type: texture
+            tier: mvp
+            description: Two-layer parallax background
+            count: 2
+            source_preference: procedural
+            est_cost: 0
+            spec: Tileable 512px, 2 layers at 0.15 and 0.4 parallax, one palette per wave
+            role: background
+            dimension: 2d
+            readability: A quiet depth field that shifts hue per wave so progress is visible, never brighter than the craft
+          - id: flip-vfx
+            type: vfx
+            tier: mvp
+            description: Flip puff, close-pass streak and hit burst
+            count: 3
+            source_preference: procedural
+            est_cost: 0
+            spec: Particle presets, 120-400 ms
+            role: vfx
+            dimension: 2d
+            readability: A puff at the point of every flip, a streak along a close pass, and a burst at the point of contact that shows what was hit and clears before the result card
+          - id: streak-badge
+            type: ui
+            tier: mvp
+            description: Streak badge, distance readout and the best marker
+            count: 1
+            source_preference: procedural
+            est_cost: 0
+            spec: One badge with 8 steps, one rolling readout, one track marker
+            role: ui
+            dimension: 2d
+            readability: The streak step countable at a glance at 24 px, the distance readout legible at 20 CSS px, and the best marker obviously a line the craft crosses
+        audio:
+          - id: music-run
+            type: music
+            tier: mvp
+            description: Driving loop, one layer added per wave
+            trigger: Run start
+            loop: true
+            source_preference: library
+            est_cost: 40
+          - id: sfx-flip
+            type: sfx
+            tier: mvp
+            description: Flip whoosh, pitched by the direction of the flip
+            trigger: Flip
+            loop: false
+            source_preference: library
+            est_cost: 5
+          - id: sfx-pass
+            type: sfx
+            tier: mvp
+            description: Close-pass tick, a semitone up per streak step
+            trigger: Close pass
+            loop: false
+            source_preference: library
+            est_cost: 5
+          - id: sfx-hit
+            type: sfx
+            tier: mvp
+            description: Impact
+            trigger: Run ends
+            loop: false
+            source_preference: library
+            est_cost: 5
+        post_mvp:
+          - id: second-theme
+            name: Second visual theme
+            description: A second palette and obstacle skin from wave 4 on.
+        optional:
+          - id: weekly-seed
+            name: Weekly seeded run
+            description: A fixed obstacle sequence everyone plays for a week.
+          - id: craft-skins
+            name: Craft skins
+            description: Cosmetic craft variants opened by distance.
+      experience:
+        goal: Tap to flip gravity and thread every gap - how far can you get?
+        goal_metric: score
+        lose:
+          condition: Touching an obstacle, the floor or the ceiling ends the run.
+        actions:
+          flip:
+            visual: Gravity inverts on the next frame, the craft rolls over and a puff marks the point of the flip.
+            audio: Flip whoosh, pitched by the direction of the flip
+            updates: [score]
+        teaches: [flip]
+        grace: {until: first-success}
+        hud_metrics: {score: score, streak: streak, best: best}
+      depth:
+        features:
+          - id: run-missions
+            name: Run missions
+            description: Three missions active at a time - pass 60 obstacles, hold a streak of 6, reach wave 4 - each replaced from a list of 30 when it is finished, kept across sessions.
+          - id: wave-log
+            name: Wave log
+            description: A log of the six hazard waves, each filled in the first time a run reaches it and shown on the title screen as six stamps.
+        meta:
+          statement: Run -> finish missions and stamp the waves reached -> the next mission and the next wave stamp are waiting -> start the next run chasing them.
+          tier: post-mvp
+          delivered_by: run-missions
+          persists:
+            - kind: best-score
+              what: Best distance
+              tier: mvp
+              delivered_by: new-best
+            - kind: missions
+              what: Active missions and their progress
+              tier: post-mvp
+              delivered_by: run-missions
+            - kind: collection
+              what: Wave stamps, of six
+              tier: post-mvp
+              delivered_by: wave-log
+        goals:
+          - id: next-gap
+            horizon: short
+            goal: Get through the gap ahead without touching anything.
+            measure: obstacles passed
+            tier: mvp
+            delivered_by: hazards
+          - id: beat-best
+            horizon: mid
+            goal: Beat the best distance at least once this session.
+            measure: distance above the best
+            tier: mvp
+            delivered_by: new-best
+          - id: next-wave
+            horizon: mid
+            goal: Reach the next wave in this run.
+            measure: 20 s, then 40 s, then 60 s survived
+            tier: mvp
+            delivered_by: wave-2
+          - id: missions-list
+            horizon: long
+            goal: Work through the mission list and stamp every wave.
+            measure: missions finished of 30
+            tier: post-mvp
+            delivered_by: run-missions
+        content:
+          - id: shield
+            kind: pickup
+            name: Shield pickup
+            introduced: From the third run, 15 s into a run
+            at_s: 15
+            after_runs: 2
+            rule: A shield in a gap absorbs one hit when it is taken.
+            tier: post-mvp
+            delivered_by: shield-pickup
+          - id: wave-2
+            kind: obstacle
+            name: Wave 2, spinning bars
+            introduced: 20 s into a run
+            at_s: 20
+            rule: Spinning bars join the mix, so a gap has a timing as well as a height.
+            tier: mvp
+            delivered_by: wave-2
+          - id: wave-3
+            kind: obstacle
+            name: Wave 3, staggered pillars
+            introduced: 40 s into a run
+            at_s: 40
+            rule: Staggered pillars join the mix, so two flips are needed in under a second.
+            tier: mvp
+            delivered_by: wave-3
+          - id: waves-4-6
+            kind: obstacle
+            name: Waves 4 to 6
+            introduced: 60 s into a run
+            at_s: 60
+            rule: Crowns, moving floors and mixed sets cycle for the rest of the run.
+            tier: mvp
+            delivered_by: waves-4-6
+          - id: missions
+            kind: event
+            name: Run missions
+            introduced: From the fourth run
+            after_runs: 3
+            rule: Three missions are active at a time and are tracked across runs.
+            tier: post-mvp
+            delivered_by: run-missions
+        first_session_ends_on: A new best, with the wave the run reached named on the result card and the next mission shown under it.
+        hooks:
+          - id: best-to-beat
+            kind: best-score
+            statement: My best is 40 m away and I know which flip was late.
+            tier: mvp
+            delivered_by: new-best
+          - id: next-mission
+            kind: missions
+            statement: One mission is two obstacles from done.
+            tier: post-mvp
+            delivered_by: run-missions
+      units:
+        unit_arc: [teach, test, twist, breather, test, climax]
+        objective_templates:
+          - Survive {unit} for {s} s
+          - Pass {count} obstacles in {unit} without a hit
+          - Hold a streak of {few} through {unit}
+          - Pass {count} obstacles in {unit} using at most {budget} flips
+        success_template: The wave's {s} s pass without a hit.
+        failure_template: Contact with an obstacle, the floor or the ceiling.
+        numbers:
+          count: {start: 8, step: 4, max: 40}
+          few: {start: 3, step: 1, max: 8}
+          budget: {start: 6, step: 3, max: 30}
+        acceptance_templates:
+          - Every gap in {unit} is at least 2.2 craft heights tall, measured from the wave data
+          - A bot tapping at a fixed 500 ms interval survives less than half of {unit}'s {s} s
+          - Wave {unit} uses at least 1 obstacle kind the wave before it did not
+          - Scroll speed in {unit} is within 0.05 of its design value at 30 Hz and at 144 Hz
+        introduce_order: [gravity-flip, hazards, score-streak]
+        variation_cycle: [introduces, pattern_set, hazard_kind, tempo, objective]
+        axis_profile:
+          speed: {start: 0.2, step: 0.12}
+          density: {start: 0.15, step: 0.13}
+          variety: {start: 0.1, step: 0.15}
+          precision: {start: 0.2, step: 0.08}
+
+  shooter:
+    label: Shooter
+    nodes: [shooter]
+    unit_kinds: [wave, encounter]
+    progression_models: [linear-levels, unlock-track, endless-scaling]
+    difficulty_models: [level-authored, time-ramp]
+    ending: [finite, endless]
+    axes:
+      - id: enemy-count
+        range: [0, 1]
+        escalates: true
+        probe: optional
+        description: Enemies alive at once
+      - id: enemy-variety
+        range: [0, 1]
+        escalates: true
+        probe: required
+        description: Distinct enemy kinds in the encounter
+      - id: composition
+        range: [0, 1]
+        escalates: true
+        probe: optional
+        description: How enemy kinds combine to force a choice - shield plus rusher, sniper plus swarm
+      - id: resource-pressure
+        range: [0, 1]
+        escalates: false
+        probe: optional
+        description: Ammo, health or cover scarcity
+    win:
+      shape: encounter-cleared
+      per_unit: true
+      description: Every enemy of the wave is down, or the boss falls
+    lose:
+      shape: health-zero
+      per_unit: true
+      description: The player's health reaches zero
+    units: {min_mvp: 4, min_total: 10, generation: [authored, parametric]}
+    variety: {dimensions: [introduces, enemy_mix, arena_layout, objective, weapon_available, pacing]}
+    mastery:
+      model: routing
+      signals: [accuracy, wave-time, damage-taken]
+      statement_required: true
+    qa: {min_units_traversed: 3, reset_in_unit: false, checkpoint: false, min_new_kinds_per_unit: 1, failure_state: true}
+    seed:
+      archetype:
+        id: twin-stick-waves
+        label: Top-down wave shooter
+        keywords: [shooter, shoot, twin-stick, twin stick, arena, wave, waves, enemy, enemies, aim, boss]
+        signature: [shoot, aim, twin-stick, wave, waves, arena]
+        dimension: 2d
+        structure: level
+        camera: Fixed on the arena; the whole arena and every spawn edge are on screen, no scrolling.
+        orientation: landscape
+        identity_affinity: [neon-night, signal-brutal, riso-arcade]
+        fantasy: Reading a room full of trouble and taking it apart in the right order.
+        core_loop: Read the wave's mix -> move to the angle that answers it -> hold fire and cut the dangerous kind first -> the wave clears -> the next wave adds a kind that breaks the last answer -> the boss asks for all of it.
+        pillars:
+          - Every enemy telegraphs before it can hurt the player
+          - The whole arena is on screen, so nothing kills from off camera
+          - A wave is lost to a decision, never to a surprise
+        run_seconds: 60
+        first_reward_s: 10
+        content_units: 10
+        content_unit_kind: wave
+        retention_hooks: [progression, collection]
+        return_reason: Wave 8 took me down with two shielded walkers left and I know which weapon answers them.
+        progression_model: linear-levels
+        difficulty_model: level-authored
+        mechanics:
+          - id: move
+            name: Free movement
+            tier: mvp
+            description: The player moves in any direction and never has to stop to fire.
+            rules:
+              - The player moves at 260 px per second in any direction, reaching full speed in at most 0.08 s.
+              - Firing never slows or stops movement.
+              - The player is never spawned or respawned within 120 px of an enemy.
+            parameters: {speed_px_s: 260, accel_s: 0.08, safe_spawn_px: 120}
+          - id: aim-shoot
+            name: Aim and shoot
+            tier: mvp
+            description: Aim is independent of movement, and the weapon fires while held.
+            rules:
+              - The weapon fires 4 shots a second along the aim direction while the input is held.
+              - A shot travels 700 px per second, lives 0.9 s and deals 1 damage; it stops on the first enemy it meets.
+              - Aim is readable without firing - a 64 px lead marker sits ahead of the player at all times.
+            parameters: {fire_per_s: 4, shot_px_s: 700, shot_life_s: 0.9, shot_damage: 1}
+          - id: enemies
+            name: Enemy kinds
+            tier: mvp
+            description: Three enemy kinds that have to be answered differently.
+            rules:
+              - A rusher has 2 health and closes at 180 px per second straight at the player.
+              - A spitter has 3 health, holds at 90 px per second and fires one slow shot every 1.5 s after a 500 ms telegraph.
+              - A shielded walker has 6 health, moves at 70 px per second and takes no damage from the front, so it must be flanked.
+            parameters: {rusher_health: 2, spitter_health: 3, walker_health: 6, telegraph_ms: 500}
+          - id: waves
+            name: Waves and boss
+            tier: mvp
+            description: A fixed sequence of waves against a five-point health pool, ending in a boss.
+            rules:
+              - A wave ends when its last enemy is down, and the next wave starts 3 s later with the arena cleared of shots.
+              - The player has 5 health, a hit costs 1, and there is half a second of invulnerability after each hit.
+              - Wave 10 is one boss with 40 health and three attack patterns, each telegraphed for 700 ms.
+            parameters: {player_health: 5, wave_gap_s: 3, boss_health: 40, invuln_s: 0.5}
+          - id: pickups
+            name: Pickups
+            tier: post-mvp
+            description: Drops from downed enemies that heal or upgrade the weapon briefly.
+            rules:
+              - A downed enemy drops a health pickup with probability 0.15, at most 2 a wave.
+              - A double-shot pickup lasts 8 s and does not stack with itself.
+            parameters: {drop_chance: 0.15, drop_cap_per_wave: 2, double_shot_s: 8}
+        actions:
+          - id: move
+            action: Move
+            tier: mvp
+            mechanic: move
+            touch: Drag the left virtual stick
+            mouse: Hold W, A, S, D or drag the left stick
+            keyboard: W, A, S, D or the arrow keys
+            gamepad: Left stick
+          - id: aim-shoot
+            action: Aim and shoot
+            tier: mvp
+            mechanic: aim-shoot
+            touch: Drag the right virtual stick; firing is automatic while it is held
+            mouse: Aim with the pointer, hold the left button to fire
+            keyboard: Aim with the pointer, hold the left button or Space to fire
+            gamepad: Right stick, fire automatic while it is held
+        goals:
+          moment: Cut down the kind that is about to reach you.
+          session: Clear two or three waves further than last time.
+          long_term: Clear all ten waves, boss included, without losing a run.
+        progression_steps:
+          - id: waves-1-3
+            tier: mvp
+            unlock_condition: Available from the start
+            grants: Waves 1-3, rushers only, and the starting blaster
+          - id: waves-4-7
+            tier: mvp
+            unlock_condition: Clear wave 3
+            grants: Spitters, and the spread shot as a second weapon
+          - id: waves-8-10
+            tier: mvp
+            unlock_condition: Clear wave 7
+            grants: Shielded walkers, the piercing shot and the boss wave
+        curve:
+          - at: Waves 1-3
+            description: Rushers only, at most 6 alive, spawning from one edge; a first-time player clears the wave before taking two hits.
+            parameters: {alive_cap: 6, kinds: 1, spawn_edges: 1}
+          - at: Waves 4-7
+            description: Rushers and spitters together, up to 10 alive from two edges, so cover and angle start to matter.
+            parameters: {alive_cap: 10, kinds: 2, spawn_edges: 2}
+          - at: Waves 8-10
+            description: All three kinds from three edges, up to 14 alive; wave 9 is a breather at half the count before the boss.
+            parameters: {alive_cap: 14, kinds: 3, spawn_edges: 3}
+        assist: After two failures on one wave, the next attempt starts with 7 health instead of 5 and that wave's spitters fire every 2 s.
+        failure_condition: The player's health reaches zero.
+        failure_feedback: Half a second of slow motion, the arena desaturates, the enemy that landed the last hit is ringed, and the result card shows the wave reached, the accuracy and the hits taken.
+        rewards:
+          - id: wave-clear
+            tier: mvp
+            trigger: The last enemy of a wave goes down
+            grants: The wave is cleared and the next one is named
+            feedback: The arena flashes once, the shots left on screen fade, and the next wave's kinds are shown as icons for the three-second gap.
+          - id: no-hit-wave
+            tier: mvp
+            trigger: A wave is cleared without taking a hit
+            grants: One health back, up to five, and a clean marker on the wave
+            feedback: The health pip refills with a rising chord and the clean marker stamps beside the wave number.
+          - id: weapon-unlocked
+            tier: mvp
+            trigger: A progression step grants a weapon
+            grants: A second or third weapon, chosen before the next wave
+            feedback: The weapon card slides in and fires once into the arena as a demonstration.
+        hud:
+          - id: health
+            tier: mvp
+            shows: Health, as five pips
+            anchor: bottom-left
+            updates_on: Each hit and each heal
+            feedback: The lost pip cracks and the screen edge pulses red once
+          - id: wave
+            tier: mvp
+            shows: Wave number and its clean marker
+            anchor: top-center
+            updates_on: Wave start and clear
+            feedback: Counts up with the wave banner
+          - id: enemies-left
+            tier: mvp
+            shows: Enemies still alive in this wave
+            anchor: top-right
+            updates_on: Each enemy down
+            feedback: Ticks down with a pop, and turns the accent colour at the last one
+        tutorial:
+          approach: diegetic
+          rationale: Move and shoot are one gesture each; wave 1 is built so the first rusher arrives alone and slowly, which teaches both without a sentence.
+          steps:
+            - id: first-move
+              tier: mvp
+              trigger: Wave 1 start, first time
+              prompt: The arena is empty, the left stick zone glows, and a ring on the floor asks the player to step into it
+              completes_on: The player moves into the ring
+            - id: first-kill
+              tier: mvp
+              trigger: Wave 1, first rusher
+              prompt: One rusher walks in at half speed with the right stick zone glowing and a dotted line from the player to it
+              completes_on: The player downs the first rusher
+        assets:
+          - id: player
+            type: spritesheet
+            tier: mvp
+            description: Player character with idle, move, fire and hit frames
+            count: 1
+            source_preference: procedural
+            est_cost: 0
+            spec: Vector-drawn, 64px, 8 move frames, 2 fire frames, 2 hit frames, 8 facings
+            role: player
+            dimension: 2d
+            readability: One silhouette in the identity's lead accent with a clearly drawn weapon arm, its facing readable at 48 px from above, and plainly flashing white for the half second after a hit
+          - id: enemies
+            type: spritesheet
+            tier: mvp
+            description: Rusher, spitter and shielded walker, each with move, telegraph and death frames
+            count: 3
+            source_preference: procedural
+            est_cost: 0
+            spec: Vector, 56px, 6 move frames and a 3-frame telegraph each
+            role: threat
+            dimension: 2d
+            readability: Three enemies told apart by silhouette alone at 40 px - the rusher a lean wedge, the spitter a round body with a barrel, the walker a broad slab with a visible shield plate on its front - each in the danger palette and never in the player's colour, and each unmistakable while it telegraphs
+          - id: shots
+            type: sprite
+            tier: mvp
+            description: Player shot and enemy shot
+            count: 2
+            source_preference: procedural
+            est_cost: 0
+            spec: Vector, 16px and 24px, with a 3-frame trail
+            role: projectile
+            dimension: 2d
+            readability: The player's shot a thin bright dart, the enemy's a fatter slower orb in the danger colour, each drawn with a trail that is visible for at least three frames so a player can see it travel and get out of the way
+          - id: arena
+            type: texture
+            tier: mvp
+            description: Arena floor, wall band and the spawn-edge markers
+            count: 3
+            source_preference: procedural
+            est_cost: 0
+            spec: Tileable 256px floor, wall band, three edge markers
+            role: environment
+            dimension: 2d
+            readability: A floor low enough in contrast that every shot reads against it, walls plainly the arena's limit, and each spawn edge marked before enemies come through it
+          - id: backdrop
+            type: texture
+            tier: mvp
+            description: Ground outside the arena walls
+            count: 1
+            source_preference: procedural
+            est_cost: 0
+            spec: Gradient plus a grid overlay
+            role: background
+            dimension: 2d
+            readability: A quiet surround outside the walls that never competes with the arena floor
+          - id: combat-vfx
+            type: vfx
+            tier: mvp
+            description: Muzzle flash, enemy hit spark, enemy death burst and player hit flash
+            count: 4
+            source_preference: procedural
+            est_cost: 0
+            spec: Particle presets, 80-400 ms
+            role: vfx
+            dimension: 2d
+            readability: A muzzle flash on every shot, a spark on every enemy hit so damage is never silent, a burst where an enemy dies, and a full-screen edge flash the player cannot miss when they are hit
+          - id: health-bar
+            type: ui
+            tier: mvp
+            description: Health pips, wave banner and the enemies-left counter
+            count: 1
+            source_preference: procedural
+            est_cost: 0
+            spec: Five pip states, one banner, one counter
+            role: ui
+            dimension: 2d
+            readability: Pips countable at a glance at 24 px, the wave banner legible for its full 3 s at 28 CSS px, and the enemies-left counter readable without looking away from the player
+          - id: health-pickup
+            type: sprite
+            tier: post-mvp
+            description: Health and double-shot pickups
+            count: 2
+            source_preference: procedural
+            est_cost: 0
+            spec: Vector, 32px, 8-frame idle pulse
+            role: collectible
+            dimension: 2d
+            readability: Round tokens where enemies are angular, the health one in the heal colour and the double-shot in the player's accent, both readable at 24 px in a busy arena
+        audio:
+          - id: music-combat
+            type: music
+            tier: mvp
+            description: Combat loop, one percussion layer added per wave band
+            trigger: Wave start
+            loop: true
+            source_preference: library
+            est_cost: 40
+          - id: sfx-shoot
+            type: sfx
+            tier: mvp
+            description: Weapon shot, one per weapon
+            trigger: Shot fired
+            loop: false
+            source_preference: library
+            est_cost: 5
+          - id: sfx-enemy-hit
+            type: sfx
+            tier: mvp
+            description: Enemy hit and enemy death
+            trigger: Enemy takes damage or dies
+            loop: false
+            source_preference: library
+            est_cost: 5
+          - id: sfx-player-hit
+            type: sfx
+            tier: mvp
+            description: Player hit, dry and loud
+            trigger: Player takes damage
+            loop: false
+            source_preference: library
+            est_cost: 5
+          - id: sfx-wave-clear
+            type: sfx
+            tier: mvp
+            description: Wave clear sting
+            trigger: Wave cleared
+            loop: false
+            source_preference: library
+            est_cost: 5
+        post_mvp:
+          - id: wave-set-2
+            name: Second wave set
+            description: Waves 11-20 with two boss patterns and a fourth enemy kind.
+        optional:
+          - id: endless-mode
+            name: Endless mode
+            description: Waves that keep scaling after wave 10, scored on waves held.
+          - id: weapon-skins
+            name: Weapon skins
+            description: Cosmetic weapon variants opened by clean waves.
+      experience:
+        goal: Clear every enemy in the wave before your health runs out.
+        goal_metric: enemies-left
+        win:
+          condition: Every enemy of the wave is down, or the boss falls.
+          metric: enemies-left
+        lose:
+          condition: The player's health reaches zero.
+          metric: health
+        actions:
+          move:
+            visual: The player accelerates within two frames and the move cycle starts, with the facing turning to the movement when not aiming.
+            audio: Footfall loop under the weapon, ducked while firing
+          aim-shoot:
+            visual: The lead marker snaps to the aim direction on the frame of the input, the muzzle flashes, and each shot is drawn travelling for at least three frames.
+            audio: Weapon shot, one per shot fired
+            updates: [enemies-left]
+        teaches: [move, aim-shoot]
+        grace: {until: seconds, seconds: 12}
+        hud_metrics: {health: health, wave: wave, enemies-left: enemies-left}
+      depth:
+        features:
+          - id: weapon-unlocks
+            name: Weapon unlocks
+            description: Three weapons - blaster, spread, piercing - opened by waves cleared and kept across sessions, chosen before each wave.
+          - id: wave-medals
+            name: Wave medals
+            description: Bronze, silver and gold a wave by hits taken and clear time, kept across sessions and shown on the wave list.
+        meta:
+          statement: Clear waves -> open the next weapon and bank wave medals -> choose the weapon that answers the wave that stopped you -> come back for the waves and medals left.
+          tier: mvp
+          delivered_by: waves-4-7
+          persists:
+            - kind: stage-progress
+              what: Waves cleared and the wave the player is on
+              tier: mvp
+              delivered_by: waves-4-7
+            - kind: unlocks
+              what: Weapons opened
+              tier: post-mvp
+              delivered_by: weapon-unlocks
+            - kind: collection
+              what: Wave medals
+              tier: post-mvp
+              delivered_by: wave-medals
+        goals:
+          - id: cut-the-closest
+            horizon: short
+            goal: Down the kind that is about to reach you.
+            measure: enemies down before they land a hit
+            tier: mvp
+            delivered_by: enemies
+          - id: clear-wave
+            horizon: mid
+            goal: Clear this wave without taking a hit.
+            measure: clean markers earned
+            tier: mvp
+            delivered_by: no-hit-wave
+          - id: clear-ten
+            horizon: long
+            goal: Clear all ten waves, boss included.
+            measure: waves cleared of 10
+            tier: mvp
+            delivered_by: waves-8-10
+          - id: all-medals
+            horizon: long
+            goal: Gold every wave.
+            measure: golds of 10
+            tier: post-mvp
+            delivered_by: wave-medals
+        content:
+          - id: spitters
+            kind: enemy
+            name: Spitters
+            introduced: From wave 4
+            after_runs: 3
+            rule: A spitter holds its distance and fires, so standing still is no longer safe.
+            tier: mvp
+            delivered_by: waves-4-7
+          - id: second-edge
+            kind: modifier
+            name: Second spawn edge
+            introduced: From wave 4, 20 s into the wave
+            at_s: 20
+            rule: A second arena edge starts spawning, so the player can be caught between two groups.
+            tier: mvp
+            delivered_by: waves
+          - id: shielded-walkers
+            kind: enemy
+            name: Shielded walkers
+            introduced: From wave 8
+            after_runs: 7
+            rule: A walker takes no damage from the front, so it must be flanked while the rest of the wave is live.
+            tier: mvp
+            delivered_by: waves-8-10
+          - id: boss
+            kind: enemy
+            name: Boss
+            introduced: At wave 10
+            after_runs: 9
+            rule: One boss with 40 health and three telegraphed patterns.
+            tier: post-mvp
+            delivered_by: waves-8-10
+          - id: drops
+            kind: pickup
+            name: Health and double-shot drops
+            introduced: From wave 2, 35 s into the wave
+            at_s: 35
+            after_runs: 1
+            rule: A downed enemy may drop a heal or a short double-shot.
+            tier: post-mvp
+            delivered_by: pickups
+        first_session_ends_on: A cleared wave with its clean marker and medal shown, and the next wave's enemy kinds named on the card.
+        hooks:
+          - id: next-wave
+            kind: stage-map
+            statement: Wave 8 is one good run away and I know what stopped me.
+            tier: mvp
+            delivered_by: waves-4-7
+          - id: next-weapon
+            kind: next-unlock
+            statement: The piercing shot is two waves off and it is the answer to the walkers.
+            tier: post-mvp
+            delivered_by: weapon-unlocks
+      units:
+        unit_arc: [teach, teach, test, twist, breather, test, climax]
+        objective_templates:
+          - Clear {unit} - {count} enemies of {kinds} kinds
+          - Clear {unit} without taking a hit
+          - Clear {unit} inside {s} s
+          - Clear {unit} while {few} spitters hold the far side
+        success_template: Every enemy of the wave is down.
+        failure_template: The player's health reaches zero before the wave is cleared.
+        numbers:
+          count: {start: 8, step: 4, max: 40}
+          kinds: {start: 2, step: 1, max: 4}
+          few: {start: 2, step: 1, max: 5}
+        acceptance_templates:
+          - The wave data for {unit} spawns exactly {count} enemies, counted at run time
+          - No enemy of {unit} spawns within 120 px of the player
+          - A bot that stands still and holds fire loses {unit} in at least 9 of 10 attempts
+          - Every enemy kind in {unit} telegraphs its attack for at least 400 ms before it can land
+        introduce_order: [move, aim-shoot, enemies, waves]
+        variation_cycle: [introduces, enemy_mix, arena_layout, objective, weapon_available, pacing]
+        axis_profile:
+          enemy-count: {start: 0.15, step: 0.12}
+          enemy-variety: {start: 0.1, step: 0.15}
+          composition: {start: 0.1, step: 0.14}
+          resource-pressure: {start: 0.2, step: 0.08}
+
+  racing:
+    label: Racing / driving
+    nodes: [racing, parking]
+    unit_kinds: [track, lap]
+    progression_models: [linear-levels, unlock-track]
+    difficulty_models: [level-authored]
+    ending: [finite]
+    axes:
+      - id: route-complexity
+        range: [0, 1]
+        escalates: true
+        probe: optional
+        description: Corner count and tightness, elevation, width changes
+      - id: opponent-skill
+        range: [0, 1]
+        escalates: true
+        probe: optional
+        description: Rival pace and aggression, or the ghost's time
+      - id: hazards
+        range: [0, 1]
+        escalates: false
+        probe: optional
+        description: Obstacles, surfaces, traffic on the route
+      - id: time-target
+        range: [0, 1]
+        escalates: true
+        probe: optional
+        description: How tight the medal time is against a clean lap
+    win:
+      shape: finish-target
+      per_unit: true
+      description: Finish the race in the required position or under the target time
+    lose:
+      shape: out-of-time-or-placed
+      per_unit: true
+      description: The time runs out or the position target is missed
+    units: {min_mvp: 3, min_total: 8, generation: [authored, parametric]}
+    variety: {dimensions: [introduces, route_shape, surface, hazard_set, objective, opponents]}
+    mastery:
+      model: optimisation
+      signals: [best-lap, medal, drift-chain]
+      statement_required: true
+    qa: {min_units_traversed: 2, reset_in_unit: false, checkpoint: false, min_new_kinds_per_unit: 0, failure_state: true, time_target_axis: time-target}
+    seed:
+      archetype:
+        id: lap-racer
+        label: Arcade lap racer
+        keywords: [racing, race, driving, drive, car, kart, lap, laps, track, drift, rival, medal, time]
+        signature: [lap, laps, track, race, drift, finish line]
+        dimension: 3d
+        structure: level
+        camera: Third-person chase camera, slightly high and behind the car, leading into the next corner; the player never moves the camera.
+        orientation: landscape
+        identity_affinity: [solar-bleach, neon-night, signal-brutal]
+        fantasy: Carrying more speed through a corner than anyone should, and keeping it.
+        core_loop: Read the corner coming -> brake late and lay the car into a drift -> spend the boost down the straight -> cross the finish line under the medal time -> the next track asks for a line you have not driven.
+        pillars:
+          - The car does the same thing every time the same input is given
+          - Every corner is visible two seconds before it has to be driven
+          - A lost race is a corner the player can name
+        run_seconds: 90
+        first_reward_s: 20
+        content_units: 8
+        content_unit_kind: track
+        retention_hooks: [progression, collection]
+        return_reason: Silver on track 4 is 0.8 s away and I know which corner I am losing it in.
+        progression_model: unlock-track
+        difficulty_model: level-authored
+        mechanics:
+          - id: drive
+            name: Throttle, brake and steering
+            tier: mvp
+            description: Arcade handling with grip that is readable from the first corner.
+            rules:
+              - The car reaches its top speed of 180 km/h in 4 s and brakes to a stop in 1.6 s.
+              - Steering is rate-based and loses 30% of its authority above 150 km/h, so speed costs turning.
+              - Off the track surface the car loses 25% of its speed each second and the camera pulls back to show the way home.
+            parameters: {top_speed_kmh: 180, accel_s: 4.0, brake_s: 1.6, offtrack_loss_per_s: 0.25}
+          - id: drift
+            name: Drift and boost
+            tier: mvp
+            description: A held drift banks a boost meter that is spent on the next straight.
+            rules:
+              - Holding the drift input past 25 degrees of slip angle fills the boost meter at 20% a second.
+              - Releasing the drift spends the meter as up to 1.5 s of 25% extra speed, scaled by how full it was.
+              - A drift that leaves the track surface loses the whole meter, so the line matters more than the angle.
+            parameters: {slip_deg: 25, meter_per_s: 0.2, boost_s: 1.5, boost_speed: 0.25}
+          - id: laps
+            name: Laps, finish line and medals
+            tier: mvp
+            description: Three laps against three target times, with a split at the finish line each lap.
+            rules:
+              - A race is 3 laps, and crossing the finish line splits the lap time and shows the gap to the player's best lap.
+              - Bronze, silver and gold are awarded on total time against the track's three target times, which the track data stores.
+              - Cutting the track by more than 2 m invalidates that lap, which is shown at once rather than at the finish.
+            parameters: {laps: 3, cut_limit_m: 2.0, medals: 3}
+          - id: rivals
+            name: Rival cars
+            tier: mvp
+            description: Three rival opponents that drive a recorded line at a per-track pace.
+            rules:
+              - Each of the three opponents drives the track's recorded racing line at its own pace, set per track in the track data.
+              - A rival never closes to less than 1.5 s behind the player, so a lead that was earned is kept.
+              - Contact with a rival costs both cars 15% of their speed and never spins either of them out.
+            parameters: {rivals: 3, min_gap_s: 1.5, contact_loss: 0.15}
+          - id: ghost
+            name: Best-lap ghost
+            tier: post-mvp
+            description: The player's best lap replayed as a translucent car.
+            rules:
+              - The ghost drives the player's best recorded lap of that track and is never collidable.
+              - The ghost is drawn at 40% opacity so it never hides a corner or a rival.
+            parameters: {opacity: 0.4}
+        actions:
+          - id: steer
+            action: Steer left or right
+            tier: mvp
+            mechanic: drive
+            touch: Hold the left or right third of the screen
+            mouse: Move the pointer left or right of centre
+            keyboard: Left and Right arrows, or A and D
+            gamepad: Left stick
+          - id: throttle
+            action: Accelerate and brake
+            tier: mvp
+            mechanic: drive
+            touch: Throttle is held by default; press and hold the brake pad in the lower right to slow
+            mouse: Hold the left button to accelerate, the right button to brake
+            keyboard: Up arrow or W to accelerate, Down arrow or S to brake
+            gamepad: Right trigger throttle, left trigger brake
+          - id: drift
+            action: Drift
+            tier: mvp
+            mechanic: drift
+            touch: Hold both steer thirds at once while turning
+            mouse: Hold Shift while turning
+            keyboard: Shift
+            gamepad: A button
+        goals:
+          moment: Get this corner on the right line and keep the drift alive.
+          session: Take a medal on a track that only gave bronze before.
+          long_term: Gold all 8 tracks.
+        progression_steps:
+          - id: tracks-1-3
+            tier: mvp
+            unlock_condition: Available from the start
+            grants: Tracks 1-3 and the starting car
+          - id: tracks-4-6
+            tier: mvp
+            unlock_condition: Bronze or better on tracks 1-3
+            grants: Tracks 4-6, and rivals one pace step faster
+          - id: tracks-7-8
+            tier: mvp
+            unlock_condition: Silver on any four tracks
+            grants: Tracks 7 and 8, with wet surface sections
+        curve:
+          - at: Tracks 1-2
+            description: Wide tracks, four corners none tighter than 90 degrees, rivals 12% off the bronze pace; a first-time player takes bronze on the first attempt.
+            parameters: {corners: 4, min_corner_deg: 90, rival_pace: 0.88}
+          - at: Tracks 3-6
+            description: Eight to ten corners with two hairpins and an elevation change, rivals at bronze pace, bronze within 3 s of a clean lap.
+            parameters: {corners: 9, min_corner_deg: 50, rival_pace: 1.0}
+          - at: Tracks 7-8
+            description: Wet sections, narrowing exits and a blind crest, rivals at silver pace; track 7 is a short breather before track 8.
+            parameters: {corners: 12, min_corner_deg: 35, rival_pace: 1.06}
+        assist: After three races outside the medals on one track, the rivals drop 8% of their pace and the racing line is drawn through every corner on the next attempt.
+        failure_condition: The race ends outside the bronze target time or outside the top three.
+        failure_feedback: The car coasts and the camera swings to the finish line, then the card shows the gap to bronze and names the three corners that cost the most time.
+        rewards:
+          - id: medal
+            tier: mvp
+            trigger: A race ends inside a target time
+            grants: Bronze, silver or gold on that track
+            feedback: The medal stamps over the finish-line replay with its own chord, and the next medal's time is shown under it.
+          - id: new-best-lap
+            tier: mvp
+            trigger: A lap is finished under the player's best lap for that track
+            grants: A new best lap, saved
+            feedback: The split flashes green, the lap time re-colours, and the ghost line redraws from that lap.
+          - id: drift-chain
+            tier: mvp
+            trigger: A drift is held through a whole corner and released on the exit
+            grants: A full boost meter and a chain count for that lap
+            feedback: Sparks build along the drift, the chain count stamps on release, and the boost roars.
+        hud:
+          - id: lap-time
+            tier: mvp
+            shows: Lap time and the split against the best lap
+            anchor: top-center
+            updates_on: Every frame, split at the finish line
+            feedback: The split flashes green under the best and red over it
+          - id: position
+            tier: mvp
+            shows: Position of four, and the gap to the car ahead
+            anchor: top-left
+            updates_on: Each overtake
+            feedback: Swaps with a slide rather than a jump
+          - id: best
+            tier: mvp
+            shows: Best lap for this track and the next medal time
+            anchor: top-right
+            updates_on: Lap finish
+            feedback: Re-colours on a new best
+          - id: boost
+            tier: mvp
+            shows: Boost meter
+            anchor: bottom-center
+            updates_on: Every frame while drifting or boosting
+            feedback: Fills with the drift and drains visibly as it is spent
+        tutorial:
+          approach: diegetic
+          rationale: Throttle is automatic and steering is one input; the drift needs one demonstration, so track 1 opens with a corner wide enough to take badly and still finish.
+          steps:
+            - id: first-corner
+              tier: mvp
+              trigger: Track 1, first race, the first corner
+              prompt: The racing line is drawn through the first corner only, with the steer zones glowing
+              completes_on: The player takes the first corner on the surface
+            - id: first-drift
+              tier: mvp
+              trigger: Track 1, first race, the first hairpin
+              prompt: The drift input pulses as the hairpin comes into view and the line shows the drift arc
+              completes_on: The player holds a drift through the hairpin
+        assets:
+          - id: car
+            type: model
+            tier: mvp
+            description: Player car with wheels, body and brake lights
+            count: 1
+            source_preference: procedural
+            est_cost: 0
+            spec: Low-poly GLB from a model spec, under 4k triangles, vertex colours, 4 steered wheels
+            role: player
+            dimension: 3d
+            readability: A car with a clear front, four visible wheels and a cabin, in the identity's lead accent, readable at 120 px wide from the chase camera, its brake lights and its drift angle obvious from behind
+          - id: rivals
+            type: model
+            tier: mvp
+            description: Three rival cars, one silhouette each
+            count: 3
+            source_preference: procedural
+            est_cost: 0
+            spec: Low-poly GLB from model specs, under 4k triangles each, one palette per opponent
+            role: threat
+            dimension: 3d
+            readability: Three opponents told apart from the player's car and from each other by silhouette and palette at 100 px wide, none of them using the player's accent colour
+          - id: track-kit
+            type: model
+            tier: mvp
+            description: Modular road, kerb, barrier, bridge and scenery pieces
+            count: 8
+            source_preference: procedural
+            est_cost: 0
+            spec: Low-poly GLB modules from model specs, road 12 m wide, kerbs and barriers as separate pieces, vertex colours
+            role: environment
+            dimension: 3d
+            readability: Road plainly drivable and everything off it plainly not, kerbs striped at every corner entry, and barriers tall enough to read the track's shape two seconds ahead at top speed
+          - id: finish-gate
+            type: model
+            tier: mvp
+            description: Finish line gate and the lap banner
+            count: 1
+            source_preference: procedural
+            est_cost: 0
+            spec: Low-poly GLB arch from a model spec, with an emissive band
+            role: goal
+            dimension: 3d
+            readability: An arch over the finish line that is the brightest structure on the track, readable from 150 m out, and obviously the same gate on every lap
+          - id: skybox
+            type: texture
+            tier: mvp
+            description: Gradient sky and distant horizon band
+            count: 1
+            source_preference: procedural
+            est_cost: 0
+            spec: Shader gradient with a horizon band, no texture fetch
+            role: background
+            dimension: 3d
+            readability: A sky that sets the horizon and the time of day and is never brighter than the finish gate or the cars
+          - id: drive-vfx
+            type: vfx
+            tier: mvp
+            description: Drift smoke, boost flame, off-track dust and contact sparks
+            count: 4
+            source_preference: procedural
+            est_cost: 0
+            spec: Instanced particles, drift smoke tied to slip angle
+            role: vfx
+            dimension: 3d
+            readability: Smoke that grows with the slip angle so a drift is visible before it is felt, a boost flame that cannot be missed, and dust the instant a wheel leaves the surface
+          - id: race-hud
+            type: ui
+            tier: mvp
+            description: Lap and split readout, position board, boost meter and the medal strip
+            count: 1
+            source_preference: procedural
+            est_cost: 0
+            spec: One readout, one board, one meter, three medal states
+            role: ui
+            dimension: 2d
+            readability: Lap time legible at 28 CSS px at a glance, the split colour readable without reading the number, and the boost meter readable in peripheral vision while the player watches the corner
+        audio:
+          - id: music-race
+            type: music
+            tier: mvp
+            description: Driving loop, filtered down while a boost is active
+            trigger: Race start
+            loop: true
+            source_preference: library
+            est_cost: 40
+          - id: sfx-engine
+            type: sfx
+            tier: mvp
+            description: Engine note, pitch following speed and load
+            trigger: Throughout the race
+            loop: true
+            source_preference: procedural
+            est_cost: 0
+          - id: sfx-drift
+            type: sfx
+            tier: mvp
+            description: Tyre scrub, louder with slip angle
+            trigger: Drift held
+            loop: true
+            source_preference: library
+            est_cost: 5
+          - id: sfx-boost
+            type: sfx
+            tier: mvp
+            description: Boost release
+            trigger: Boost spent
+            loop: false
+            source_preference: library
+            est_cost: 5
+          - id: sfx-medal
+            type: sfx
+            tier: mvp
+            description: Medal chord, one per medal tier
+            trigger: Medal awarded
+            loop: false
+            source_preference: library
+            est_cost: 5
+        post_mvp:
+          - id: time-trial
+            name: Time trial
+            description: Every track without rivals, scored on the clean lap alone.
+        optional:
+          - id: car-skins
+            name: Car skins
+            description: Cosmetic liveries opened by medals.
+          - id: mirror-tracks
+            name: Mirrored tracks
+            description: Every track reversed, with its own target times.
+      experience:
+        goal: Finish three laps inside the track's target time.
+        goal_metric: lap-time
+        win:
+          condition: The three laps are finished inside the track's bronze target time and inside the top three.
+          metric: lap-time
+        lose:
+          condition: The total time passes the bronze target, or the car finishes outside the top three.
+          metric: position
+        actions:
+          steer:
+            visual: The car turns toward the input on the next frame and the body rolls into the turn, with the camera leading the nose.
+            audio: Tyre note rises with the steering load
+          throttle:
+            visual: The engine note and the wheels answer on the frame of the input, and the brake lights come on the instant the brake is held.
+            audio: Engine pitch follows the throttle, with a brake hiss
+            updates: [lap-time]
+          drift:
+            visual: The rear steps out past 25 degrees, smoke builds with the slip angle, and the boost meter starts filling visibly.
+            audio: Tyre scrub, louder with slip angle
+            updates: [boost]
+        teaches: [steer, throttle, drift]
+        grace: {until: seconds, seconds: 20}
+        hud_metrics: {lap-time: lap-time, position: position, best: best-lap, boost: boost}
+      depth:
+        features:
+          - id: track-medals
+            name: Track medals
+            description: Bronze, silver and gold a track, kept across sessions, with the 24 medals shown on the track select.
+          - id: car-unlocks
+            name: Car unlocks
+            description: Three cars with different grip and top speed, opened by medal count and kept across sessions.
+        meta:
+          statement: Race a track -> take its medal and bank the best lap -> medals open the next tracks and the next car -> come back for the medals that are still bronze.
+          tier: mvp
+          delivered_by: tracks-4-6
+          persists:
+            - kind: stage-progress
+              what: Tracks unlocked and the track the player is on
+              tier: mvp
+              delivered_by: tracks-4-6
+            - kind: best-score
+              what: Best lap a track
+              tier: mvp
+              delivered_by: new-best-lap
+            - kind: collection
+              what: Medals a track, of 24
+              tier: post-mvp
+              delivered_by: track-medals
+            - kind: unlocks
+              what: Cars opened
+              tier: post-mvp
+              delivered_by: car-unlocks
+        goals:
+          - id: next-corner
+            horizon: short
+            goal: Take this corner on the line and keep the drift.
+            measure: corners taken without leaving the surface
+            tier: mvp
+            delivered_by: drift
+          - id: take-medal
+            horizon: mid
+            goal: Take a medal on this track.
+            measure: medal awarded
+            tier: mvp
+            delivered_by: medal
+          - id: unlock-all
+            horizon: long
+            goal: Open all 8 tracks.
+            measure: tracks unlocked of 8
+            tier: mvp
+            delivered_by: tracks-7-8
+          - id: all-gold
+            horizon: long
+            goal: Gold every track.
+            measure: golds of 8
+            tier: post-mvp
+            delivered_by: track-medals
+        content:
+          - id: hairpins
+            kind: obstacle
+            name: Hairpins and elevation
+            introduced: From track 3, 45 s into the race
+            at_s: 45
+            after_runs: 2
+            rule: A hairpin and a crest that cannot be taken flat, so the drift has to be used rather than chosen.
+            tier: mvp
+            delivered_by: laps
+          - id: faster-rivals
+            kind: modifier
+            name: Faster rivals
+            introduced: From track 4
+            after_runs: 3
+            rule: The opponents move up one pace step, so bronze is no longer free.
+            tier: mvp
+            delivered_by: tracks-4-6
+          - id: wet-surface
+            kind: hazard
+            name: Wet sections
+            introduced: From track 7
+            after_runs: 6
+            rule: A wet section cuts grip by a quarter and is marked on the road before it starts.
+            tier: mvp
+            delivered_by: tracks-7-8
+          - id: ghost-lap
+            kind: event
+            name: Best-lap ghost
+            introduced: After the first finished race
+            after_runs: 1
+            rule: The player's best lap races alongside as a translucent car.
+            tier: post-mvp
+            delivered_by: ghost
+          - id: new-car
+            kind: mode
+            name: Second car
+            introduced: After four medals
+            after_runs: 4
+            rule: A car with more grip and less top speed, chosen before a race.
+            tier: post-mvp
+            delivered_by: car-unlocks
+        first_session_ends_on: A medal screen with the next track unlocked and the gap to the next medal named.
+        hooks:
+          - id: next-track
+            kind: next-unlock
+            statement: Two more bronzes and track 4 opens.
+            tier: mvp
+            delivered_by: tracks-4-6
+          - id: medals-left
+            kind: collection
+            statement: Track 2 is still only bronze and silver is under a second away.
+            tier: post-mvp
+            delivered_by: track-medals
+      units:
+        unit_arc: [teach, test, twist, breather, test, climax]
+        objective_templates:
+          - Finish {unit} inside {s} s for bronze
+          - Finish {unit} in the top 3 against its three rivals
+          - Finish {unit} with a clean lap under {budget} s
+          - Finish {unit} holding a drift through {few} of its corners
+        success_template: Three laps are finished inside the track's bronze target time and inside the top three.
+        failure_template: The total time passes the bronze target, or the car finishes outside the top three.
+        numbers:
+          budget: {start: 14, step: 2, max: 30}
+          few: {start: 2, step: 1, max: 6}
+        acceptance_templates:
+          - A recorded clean lap of {unit} is at most {budget} s, and the track data stores that time
+          - Every corner of {unit} is on screen 2 s before the car reaches it at top speed
+          - Leaving the surface of {unit} costs 25% of speed each second, measured from the play probe
+          - The rivals of {unit} finish within {few} s of its silver target in 10 of 10 unattended runs
+        introduce_order: [drive, laps, drift, rivals]
+        variation_cycle: [introduces, route_shape, surface, hazard_set, objective, opponents]
+        axis_profile:
+          route-complexity: {start: 0.15, step: 0.12}
+          opponent-skill: {start: 0.1, step: 0.14}
+          hazards: {start: 0.1, step: 0.1}
+          time-target: {start: 0.2, step: 0.12}
+
+  strategy:
+    label: Strategy (tower defense)
+    nodes: [strategy, tower-defense]
+    unit_kinds: [wave, map, scenario]
+    progression_models: [linear-levels, unlock-track, meta-currency]
+    difficulty_models: [level-authored]
+    ending: [finite]
+    axes:
+      - id: decision-density
+        range: [0, 1]
+        escalates: true
+        probe: optional
+        description: Placements and upgrades the wave demands per minute
+      - id: economy-pressure
+        range: [0, 1]
+        escalates: true
+        probe: optional
+        description: Income against the cost of the answer the wave needs
+      - id: opponent-escalation
+        range: [0, 1]
+        escalates: true
+        probe: required
+        description: Enemy count, speed and armour
+      - id: composition
+        range: [0, 1]
+        escalates: true
+        probe: optional
+        description: Enemy kinds mixed so one tower type is not enough
+    win:
+      shape: survive-all-waves
+      per_unit: true
+      description: Every wave of the map is held
+    lose:
+      shape: base-health-zero
+      per_unit: true
+      description: The base's lives reach zero
+    units: {min_mvp: 4, min_total: 10, generation: [authored, parametric]}
+    variety: {dimensions: [introduces, enemy_mix, path_shape, economy_rule, objective, tower_available]}
+    mastery:
+      model: planning
+      signals: [leaks, gold-banked, waves-held-clean]
+      statement_required: true
+    qa: {min_units_traversed: 2, reset_in_unit: false, checkpoint: false, min_new_kinds_per_unit: 1, failure_state: true, resource_metric: gold}
+    seed:
+      archetype:
+        id: path-defense
+        label: Path tower defense
+        keywords: [strategy, tower, towers, defense, defence, lane, lanes, wave, waves, place, upgrade, gold, base]
+        signature: [tower, towers, place a tower, lane, waves, defend the base]
+        dimension: 2d
+        structure: level
+        camera: Fixed on the whole map; both paths, every build site and the base are on screen at once.
+        orientation: landscape
+        identity_affinity: [paper-diorama, lacquer-brass, signal-brutal]
+        fantasy: Reading what is coming and having the answer already built.
+        core_loop: Read the wave the map announces -> spend gold on the tower that answers it -> watch the paths and upgrade or sell mid-wave -> hold the base -> bank the wave bonus -> the next wave breaks the answer that just worked.
+        pillars:
+          - The next wave's kinds are known before a single coin is spent
+          - Every wrong build is recoverable, at a price the player can see
+          - A leak is always traceable to one path and one decision
+        run_seconds: 120
+        first_reward_s: 20
+        content_units: 10
+        content_unit_kind: wave
+        retention_hooks: [progression, collection]
+        return_reason: Wave 8 leaked twice down the left path and I know which tower I should have sold.
+        progression_model: linear-levels
+        difficulty_model: level-authored
+        mechanics:
+          - id: placement
+            name: Tower placement
+            tier: mvp
+            description: Towers go on the map's marked build sites, one tower a site, and fire at enemies in range.
+            rules:
+              - A tower is placed only on a marked build site, one tower a site, and starts firing within 0.5 s of being placed.
+              - Selecting a site shows the tower's range ring and its damage per second before any gold is spent.
+              - A tower's shots travel 600 px per second and stop on the first enemy they meet, so range and angle both matter.
+            parameters: {sites_map_1: 8, place_delay_s: 0.5, shot_px_s: 600}
+          - id: upgrades
+            name: Upgrade and sell
+            tier: mvp
+            description: Three levels a tower, and a sell price that makes a wrong answer recoverable.
+            rules:
+              - Each tower has three levels; an upgrade costs 1.6 times the level before it, raising damage 70% and range 10%.
+              - Selling a tower returns 60% of everything spent on it, at once, to the gold counter.
+              - A tower may be upgraded or sold during a wave, so a leak can be answered while it is happening.
+            parameters: {levels: 3, cost_step: 1.6, damage_step: 0.7, sell_ratio: 0.6}
+          - id: waves
+            name: Waves, enemy kinds and base lives
+            tier: mvp
+            description: A fixed wave sequence of three enemy kinds walking two paths toward a base with ten lives.
+            rules:
+              - A wave's kinds and counts are shown 8 s before it starts, and the next wave starts 8 s after the last enemy of the one before is down or has leaked.
+              - Three enemy kinds walk the paths - a sprinter with 10 health at 110 px per second, a shielded walker with 40 health that takes half damage from the front, and a flier with 15 health that ignores the path and is only hit by towers marked anti-air.
+              - An enemy reaching the base costs one of its 10 lives, and zero lives fails the map.
+            parameters: {base_lives: 10, announce_s: 8, wave_gap_s: 8, lanes: 2}
+          - id: economy
+            name: Gold
+            tier: mvp
+            description: Gold comes only from play, so a leak costs twice.
+            rules:
+              - A downed enemy pays gold equal to a tenth of its health, and holding a whole wave pays a 25 gold bonus.
+              - The map starts with 150 gold, which buys exactly two level-one towers.
+              - Gold is never bought with money and never granted outside play.
+            parameters: {start_gold: 150, wave_bonus: 25, kill_pay_ratio: 0.1}
+          - id: abilities
+            name: Strike ability
+            tier: post-mvp
+            description: A tapped strike on a cooldown, for the leak nothing else can answer.
+            rules:
+              - The strike deals 30 damage in a 120 px radius and has a 45 s cooldown shown on its button.
+              - The strike is never available in the first 20 s of a wave, so it cannot replace a build.
+            parameters: {strike_damage: 30, radius_px: 120, cooldown_s: 45}
+        actions:
+          - id: place
+            action: Place a tower
+            tier: mvp
+            mechanic: placement
+            touch: Tap a build site, then tap the tower in the tray
+            mouse: Click a build site, then click the tower in the tray
+            keyboard: Tab cycles build sites, 1 to 3 place a tower
+            gamepad: D-pad cycles sites, A places the selected tower
+          - id: upgrade
+            action: Upgrade a tower
+            tier: mvp
+            mechanic: upgrades
+            touch: Tap a tower, then tap its upgrade button
+            mouse: Click a tower, then click its upgrade button
+            keyboard: Tab selects a tower, U upgrades it
+            gamepad: D-pad selects a tower, Y upgrades it
+          - id: sell
+            action: Sell a tower
+            tier: mvp
+            mechanic: upgrades
+            touch: Tap a tower, then hold its sell button for half a second
+            mouse: Click a tower, then click its sell button
+            keyboard: Tab selects a tower, X sells it
+            gamepad: D-pad selects a tower, B sells it
+        goals:
+          moment: Get a tower in range of the path that is about to leak.
+          session: Hold two waves further than last time.
+          long_term: Hold all ten waves with all ten base lives.
+        progression_steps:
+          - id: waves-1-4
+            tier: mvp
+            unlock_condition: Available from the start
+            grants: Waves 1-4, sprinters only, and the dart tower
+          - id: waves-5-7
+            tier: mvp
+            unlock_condition: Hold wave 4
+            grants: Shielded walkers, and the frost tower that slows them
+          - id: waves-8-10
+            tier: mvp
+            unlock_condition: Hold wave 7
+            grants: Fliers, the anti-air cannon, and the final mixed wave
+        curve:
+          - at: Waves 1-3
+            description: Sprinters in one path, 8 to 14 of them, paying enough gold that two towers become four; the base cannot realistically be reached.
+            parameters: {kinds: 1, count: 14, lanes_used: 1}
+          - at: Waves 4-7
+            description: Both lanes used and shielded walkers mixed into the sprinters, so one tower type is no longer enough.
+            parameters: {kinds: 2, count: 24, lanes_used: 2}
+          - at: Waves 8-10
+            description: Fliers over both lanes with walkers underneath; wave 9 is a breather at half the count before the final mixed wave.
+            parameters: {kinds: 3, count: 36, lanes_used: 2}
+        assist: After two failures on one wave, the next attempt starts with 50 extra gold and the path the leak came down is highlighted for the whole wave.
+        failure_condition: The base's lives reach zero.
+        failure_feedback: The base cracks and the camera pushes in on it, the wave that broke through replays as a two-second route overlay, and the card shows which lane leaked, how many leaked, and how much gold was still banked.
+        rewards:
+          - id: wave-held
+            tier: mvp
+            trigger: The last enemy of a wave goes down
+            grants: The wave is held, and 25 gold
+            feedback: The wave banner stamps held, the gold counts up coin by coin, and the next wave's kinds appear as icons.
+          - id: clean-wave
+            tier: mvp
+            trigger: A wave is held without losing a base life
+            grants: A clean marker on the wave and 25 more gold
+            feedback: The base pulses once in the accent colour and the clean marker stamps beside the wave number.
+          - id: map-clear
+            tier: mvp
+            trigger: The last wave of the map is held
+            grants: The map is cleared, with one to three stars by lives left
+            feedback: Stars stamp in one by one over a slow pan across the surviving towers.
+        hud:
+          - id: gold
+            tier: mvp
+            shows: Gold banked, and the cost of the selected tower
+            anchor: top-left
+            updates_on: Each kill, each build, each sale
+            feedback: Counts up coin by coin, and a cost the player cannot afford greys out
+          - id: lives
+            tier: mvp
+            shows: Base lives left, of ten
+            anchor: top-right
+            updates_on: Each leak
+            feedback: The base flashes and the counter shakes on every leak
+          - id: wave
+            tier: mvp
+            shows: Wave number, its kinds and the countdown to it
+            anchor: top-center
+            updates_on: Wave announce, start and end
+            feedback: The countdown ring drains in the last 8 s
+        tutorial:
+          approach: guided-first-run
+          rationale: Placing, upgrading and selling are three different gestures on the same object, and one demonstration each removes the only real barrier.
+          steps:
+            - id: first-place
+              tier: mvp
+              trigger: Wave 1 announce, first time
+              prompt: One build site glows beside the path with the dart tower lifted out of the tray and a hand resting on it
+              completes_on: The player places a tower on that site
+            - id: first-upgrade
+              tier: mvp
+              trigger: After wave 1 is held
+              prompt: The placed tower pulses with its upgrade button open and the gold counter circled
+              completes_on: The player upgrades that tower
+        assets:
+          - id: enemies
+            type: spritesheet
+            tier: mvp
+            description: Sprinter, shielded walker and flier, each with walk, hit and death frames
+            count: 3
+            source_preference: procedural
+            est_cost: 0
+            spec: Vector, 48px, 6 walk frames and 3 death frames each
+            role: threat
+            dimension: 2d
+            readability: Three enemies told apart by silhouette at 36 px - the sprinter lean and leaning forward, the walker broad with a shield plate drawn on its front, the flier winged and above the lane - all in the danger palette, with health bars only while damaged
+          - id: towers
+            type: sprite
+            tier: mvp
+            description: Dart, frost and anti-air cannon towers, three levels each
+            count: 3
+            source_preference: procedural
+            est_cost: 0
+            spec: Vector, 64px, three level variants and a firing frame each
+            role: prop
+            dimension: 2d
+            readability: Each tower kind readable by shape alone at 48 px, its level obvious from added bulk rather than a number, and its firing frame unmistakable so the player can see which towers are working
+          - id: shots
+            type: sprite
+            tier: mvp
+            description: Dart shot, frost shard and flak burst
+            count: 3
+            source_preference: procedural
+            est_cost: 0
+            spec: Vector, 16px, with a 3-frame trail each
+            role: projectile
+            dimension: 2d
+            readability: Each shot kind drawn travelling for at least three frames with its own colour, so the player can see which tower is covering which path without selecting it
+          - id: base
+            type: sprite
+            tier: mvp
+            description: Base, with intact, damaged and broken states
+            count: 1
+            source_preference: procedural
+            est_cost: 0
+            spec: Vector, 128px, three damage states
+            role: goal
+            dimension: 2d
+            readability: The thing being defended, plainly the end of both paths, its damage state readable at a glance so the player knows how close the map is to being lost
+          - id: map-kit
+            type: texture
+            tier: mvp
+            description: Path surface, build-site plates and the terrain around them
+            count: 3
+            source_preference: procedural
+            est_cost: 0
+            spec: Tileable 128px path, build-site plate, terrain fill
+            role: environment
+            dimension: 2d
+            readability: Paths obviously walkable and the terrain obviously not, with every build site a plate that reads as empty and buildable from across the map
+          - id: build-vfx
+            type: vfx
+            tier: mvp
+            description: Placement puff, upgrade flash, leak burst and the range ring
+            count: 4
+            source_preference: procedural
+            est_cost: 0
+            spec: Particle presets plus one ring shader
+            role: vfx
+            dimension: 2d
+            readability: A puff that confirms a placement inside 100 ms, a flash on upgrade, an unmissable burst at the base on a leak, and a range ring that reads as a boundary rather than decoration
+          - id: build-tray
+            type: ui
+            tier: mvp
+            description: Tower tray, selection panel, wave countdown ring and the star row
+            count: 1
+            source_preference: procedural
+            est_cost: 0
+            spec: Three tray slots with affordable and unaffordable states, one panel, one ring
+            role: ui
+            dimension: 2d
+            readability: Tray slots at least 48 CSS px with the price legible at 16 px, an unaffordable tower visibly disabled rather than silently failing, and the countdown ring readable in peripheral vision
+        audio:
+          - id: music-defend
+            type: music
+            tier: mvp
+            description: Loop that adds a percussion layer while a wave is live
+            trigger: Map start
+            loop: true
+            source_preference: library
+            est_cost: 40
+          - id: sfx-place
+            type: sfx
+            tier: mvp
+            description: Tower placed, with a different thud per tower kind
+            trigger: Tower placed
+            loop: false
+            source_preference: library
+            est_cost: 5
+          - id: sfx-shoot
+            type: sfx
+            tier: mvp
+            description: Tower fire, one per tower kind, quietened when many fire at once
+            trigger: Tower fires
+            loop: false
+            source_preference: library
+            est_cost: 5
+          - id: sfx-leak
+            type: sfx
+            tier: mvp
+            description: Base hit, dry and loud
+            trigger: An enemy reaches the base
+            loop: false
+            source_preference: library
+            est_cost: 5
+          - id: sfx-wave-held
+            type: sfx
+            tier: mvp
+            description: Wave held sting with the gold bonus
+            trigger: Wave held
+            loop: false
+            source_preference: library
+            est_cost: 5
+        post_mvp:
+          - id: second-map
+            name: Second map
+            description: A four-path map with a crossing and its own ten waves.
+        optional:
+          - id: endless-waves
+            name: Endless waves
+            description: Waves that keep scaling after wave 10, scored on waves held.
+          - id: tower-skins
+            name: Tower skins
+            description: Cosmetic tower variants opened by clean waves.
+      experience:
+        goal: Hold every wave - no enemy reaches the base.
+        goal_metric: wave
+        win:
+          condition: Every wave of the map is held.
+          metric: wave
+        lose:
+          condition: The base's lives reach zero.
+          metric: lives
+        actions:
+          place:
+            visual: The tower drops onto the site with a puff inside 100 ms, its range ring shows for one second, and the gold counter ticks down.
+            audio: Placement thud, one per tower kind
+            updates: [gold]
+          upgrade:
+            visual: The tower gains visible bulk and its range ring grows on the frame of the press, with the gold counter ticking down.
+            audio: Upgrade flash chime
+            updates: [gold]
+          sell:
+            visual: The tower folds away and the refunded coins fly into the gold counter.
+            audio: Sell chime, lower than the upgrade
+            updates: [gold]
+        teaches: [place, upgrade, sell]
+        grace: {until: first-success}
+        hud_metrics: {gold: gold, lives: lives, wave: wave}
+      depth:
+        features:
+          - id: map-stars
+            name: Map stars
+            description: One to three stars a wave set by base lives left, kept across sessions and shown on the map list.
+          - id: tower-unlocks
+            name: Tower unlocks
+            description: Five tower kinds opened by waves held and kept across sessions, with a loadout of three chosen before a map.
+        meta:
+          statement: Hold waves -> bank stars and open the next tower -> build the loadout that answers the wave that broke you -> come back for the stars still missing.
+          tier: mvp
+          delivered_by: waves-5-7
+          persists:
+            - kind: stage-progress
+              what: Waves held and the wave the player is on
+              tier: mvp
+              delivered_by: waves-5-7
+            - kind: unlocks
+              what: Tower kinds opened
+              tier: post-mvp
+              delivered_by: tower-unlocks
+            - kind: collection
+              what: Stars a wave set
+              tier: post-mvp
+              delivered_by: map-stars
+        goals:
+          - id: answer-the-path
+            horizon: short
+            goal: Get a tower in range of the path that is about to leak.
+            measure: enemies downed before the base
+            tier: mvp
+            delivered_by: placement
+          - id: hold-wave
+            horizon: mid
+            goal: Hold this wave without losing a base life.
+            measure: clean markers earned
+            tier: mvp
+            delivered_by: clean-wave
+          - id: clear-map
+            horizon: long
+            goal: Hold all ten waves.
+            measure: waves held of 10
+            tier: mvp
+            delivered_by: waves-8-10
+          - id: all-stars
+            horizon: long
+            goal: Three-star every wave set.
+            measure: stars of 9
+            tier: post-mvp
+            delivered_by: map-stars
+        content:
+          - id: second-path
+            kind: modifier
+            name: Second path
+            introduced: From wave 3, 50 s into the wave
+            at_s: 50
+            after_runs: 2
+            rule: The second path starts sending, so one cluster of towers can no longer cover the map.
+            tier: mvp
+            delivered_by: waves
+          - id: shielded-walkers
+            kind: enemy
+            name: Shielded walkers
+            introduced: From wave 5
+            after_runs: 4
+            rule: A walker takes half damage from the front, so a path needs a tower behind it or a frost tower in it.
+            tier: mvp
+            delivered_by: waves-5-7
+          - id: fliers
+            kind: enemy
+            name: Fliers
+            introduced: From wave 8
+            after_runs: 7
+            rule: A flier ignores the path and is only hit by towers marked anti-air.
+            tier: mvp
+            delivered_by: waves-8-10
+          - id: new-tower
+            kind: power-up
+            name: Third tower kind
+            introduced: After wave 2 is held
+            after_runs: 2
+            rule: A tower kind joins the tray, chosen into the loadout before a map.
+            tier: post-mvp
+            delivered_by: tower-unlocks
+          - id: strike
+            kind: power-up
+            name: Strike ability
+            introduced: From wave 9
+            after_runs: 8
+            rule: A tapped strike on a 45 s cooldown, for the leak nothing built can answer.
+            tier: post-mvp
+            delivered_by: abilities
+        first_session_ends_on: A wave held clean with its stars shown, and the next wave's enemy kinds already named on the card.
+        hooks:
+          - id: next-wave
+            kind: stage-map
+            statement: Wave 8 is one build away and I know what leaked.
+            tier: mvp
+            delivered_by: waves-5-7
+          - id: stars-left
+            kind: collection
+            statement: I held wave 7 with four lives gone and the third star is still there.
+            tier: post-mvp
+            delivered_by: map-stars
+      units:
+        unit_arc: [teach, teach, test, twist, breather, test, climax]
+        objective_templates:
+          - Hold {unit} with all 10 base lives
+          - Hold {unit} against {count} enemies of {kinds} kinds
+          - Hold {unit} spending at most {budget} gold
+          - Hold {unit} with no tower above level {level}
+        success_template: Every enemy of the wave is down before it reaches the base.
+        failure_template: The base's lives reach zero.
+        numbers:
+          count: {start: 10, step: 6, max: 60}
+          kinds: {start: 1, step: 1, max: 3}
+          budget: {start: 180, step: 40, max: 600}
+          level: {start: 1, step: 1, max: 2}
+          few: {start: 2, step: 1, max: 5}
+        acceptance_templates:
+          - The wave data for {unit} sends exactly {count} enemies on its stated schedule
+          - A loadout of {few} level-one dart towers holds {unit} with at least 1 base life left
+          - Selling a tower during {unit} returns 60% of everything spent on it to the gold counter inside one frame
+          - Every path of {unit} is covered by at least 2 build sites within range of it
+        introduce_order: [placement, economy, waves, upgrades]
+        variation_cycle: [introduces, enemy_mix, path_shape, economy_rule, objective, tower_available]
+        axis_profile:
+          decision-density: {start: 0.15, step: 0.12}
+          economy-pressure: {start: 0.1, step: 0.13}
+          opponent-escalation: {start: 0.15, step: 0.14}
+          composition: {start: 0.1, step: 0.15}
+
+  survival:
+    label: Survival (arena survivor)
+    nodes: [arena-survivor, action]
+    unit_kinds: [run-segment, wave, encounter]
+    progression_models: [meta-currency, unlock-track, endless-scaling]
+    difficulty_models: [time-ramp, adaptive, level-authored]
+    ending: [endless, finite]
+    axes:
+      - id: spawn-rate
+        range: [0, 1]
+        escalates: true
+        probe: required
+        description: Enemies spawned per second
+      - id: enemy-variety
+        range: [0, 1]
+        escalates: true
+        probe: optional
+        description: Distinct enemy kinds on screen
+      - id: elite-frequency
+        range: [0, 1]
+        escalates: true
+        probe: optional
+        description: Elites and bosses per minute
+      - id: build-pressure
+        range: [0, 1]
+        escalates: false
+        probe: optional
+        description: How much the upgrade choice matters to surviving the next segment
+    win:
+      shape: survive-timer
+      per_unit: false
+      description: Survive to the run's timer; a finite campaign ends on its last segment
+    lose:
+      shape: health-zero
+      per_unit: false
+      description: The player's health reaches zero
+    units: {min_mvp: 3, min_total: 8, generation: [authored, parametric, procedural]}
+    variety: {dimensions: [introduces, enemy_mix, event, upgrade_pool, arena_zone, objective]}
+    mastery:
+      model: planning
+      signals: [survived-s, kills, build-synergy]
+      statement_required: true
+    qa: {min_units_traversed: 3, reset_in_unit: false, checkpoint: false, min_new_kinds_per_unit: 1, failure_state: true, endless_window_s: 30}
+    seed:
+      archetype:
+        id: swarm-survivor
+        label: Arena survivor
+        keywords: [survivor, survival, survive, arena, swarm, horde, enemies, upgrade, level up, elite, timer, build]
+        signature: [survive, swarm, horde, auto attack, level up, upgrade choice]
+        dimension: 2d
+        structure: run
+        camera: Follows the player with a short lag, the arena larger than the screen; the player is kept inside the middle half of the frame.
+        orientation: landscape
+        identity_affinity: [neon-night, signal-brutal, riso-arcade]
+        fantasy: Starting helpless and ending the run as the most dangerous thing on screen.
+        core_loop: Move through the swarm -> the weapon fires itself -> kills fill the bar -> pick one of three upgrades -> the build changes what you can stand in -> the spawn rate outgrows the build -> die, and start again with the next weapon open.
+        pillars:
+          - One input, and every decision is an upgrade choice
+          - Nothing kills the player from off screen
+          - A build is readable on screen, never only in a stat sheet
+        run_seconds: 180
+        first_reward_s: 12
+        content_units: 8
+        content_unit_kind: run-segment
+        retention_hooks: [progression, collection]
+        return_reason: I died at 7 minutes with a build that was finally working, and the orbit weapon is one run away.
+        progression_model: unlock-track
+        difficulty_model: time-ramp
+        mechanics:
+          - id: move
+            name: Move
+            tier: mvp
+            description: Movement is the only input during play.
+            rules:
+              - The player moves at 200 px per second in any direction and reaches full speed in at most 0.08 s.
+              - There is no dash and no attack input in the MVP, so every escape is a route rather than a button.
+              - The camera keeps the player inside the middle half of the screen, so nothing reaches the player from off screen without being seen.
+            parameters: {speed_px_s: 200, accel_s: 0.08, camera_lag_s: 0.15}
+          - id: auto-attack
+            name: Auto attack
+            tier: mvp
+            description: The weapon fires at the nearest enemy on its own cadence.
+            rules:
+              - The starting weapon fires at the nearest enemy every 0.6 s without any input.
+              - A shot deals 3 damage, travels 500 px per second and pierces one enemy before it stops.
+              - The weapon's reach is drawn as a faint ring, so the player can read what is in range before stepping.
+            parameters: {fire_every_s: 0.6, shot_damage: 3, shot_px_s: 500, pierce: 1}
+          - id: swarm
+            name: Swarms and elites
+            tier: mvp
+            description: Three enemy kinds spawning off screen at a rate that climbs with the elapsed run.
+            rules:
+              - The spawn rate climbs from 1.5 to 9 enemies a second over ten minutes, on a curve the run data states.
+              - Three kinds walk the arena - a crawler with 4 health at 90 px per second, a charger with 8 health that lunges after a 500 ms telegraph, and a splitter with 10 health that becomes two crawlers when it dies.
+              - An elite with ten times the health of its kind arrives every 90 s and leaves a guaranteed upgrade chest.
+            parameters: {spawn_start_per_s: 1.5, spawn_end_per_s: 9, elite_every_s: 90, player_health: 10}
+          - id: level-up
+            name: Level up and upgrades
+            tier: mvp
+            description: Kills fill a bar, and every level is a choice of three upgrades from a pool of twelve.
+            rules:
+              - Killing enemies fills an experience bar, and each level offers three distinct upgrades drawn from the pool of twelve.
+              - An upgrade is permanent for the run and always visible in play - a new orbit, a wider ring, a second shot - never a hidden number.
+              - Play pauses while the choice is open, and the choice cannot be skipped or re-rolled in the MVP.
+            parameters: {pool: 12, offered: 3, first_level_kills: 8}
+          - id: second-weapon
+            name: Second weapon slot
+            tier: post-mvp
+            description: A second weapon that fires on its own cadence beside the first.
+            rules:
+              - A second weapon slot opens at level 6 and is filled from the upgrade choice.
+              - Two weapons never fire on the same frame, so the player can hear which one is working.
+            parameters: {slot_level: 6}
+        actions:
+          - id: move
+            action: Move
+            tier: mvp
+            mechanic: move
+            touch: Drag anywhere; the player follows the thumb
+            mouse: Hold W, A, S, D, or drag with the left button held
+            keyboard: W, A, S, D or the arrow keys
+            gamepad: Left stick
+          - id: choose-upgrade
+            action: Choose an upgrade
+            tier: mvp
+            mechanic: level-up
+            touch: Tap one of the three cards
+            mouse: Click one of the three cards
+            keyboard: 1, 2 or 3, or arrows and Enter
+            gamepad: D-pad and A
+        goals:
+          moment: Get out of the gap that is closing around you.
+          session: Survive longer than the best run so far.
+          long_term: Survive fifteen minutes and open every weapon.
+        progression_steps:
+          - id: weapon-2
+            tier: mvp
+            unlock_condition: Survive 5 minutes in one run
+            grants: The scatter weapon as a starting choice
+          - id: weapon-3
+            tier: mvp
+            unlock_condition: Kill 1500 enemies in total
+            grants: The orbit weapon as a starting choice
+          - id: arena-2
+            tier: mvp
+            unlock_condition: Survive 10 minutes in one run
+            grants: A second arena with its own hazard and its own elite
+        curve:
+          - at: 0-3 min
+            description: Crawlers only, spawning at 1.5 to 3 a second, with the first level-up inside 20 s; a first-time player reaches level 3 before taking real damage.
+            parameters: {spawn_per_s: 2.0, kinds: 1, elites: 0}
+          - at: 3-8 min
+            description: Chargers and splitters join, spawn rate to 6 a second, an elite every 90 s; the build has to answer a direction rather than a distance.
+            parameters: {spawn_per_s: 6.0, kinds: 3, elites: 3}
+          - at: 8 min+
+            description: Spawn rate to 9 a second with two elites at once, and a 20 s lull every two minutes so a build can be spent rather than only survived.
+            parameters: {spawn_per_s: 9.0, kinds: 3, elites: 6}
+        assist: After three runs under 2 minutes, the next run spawns at 60% of the rate for its first 60 s and its first level-up arrives at 15 s.
+        failure_condition: The player's health reaches zero.
+        failure_feedback: Half a second of slow motion with the killing enemy ringed, the arena desaturates, and the card shows time survived, kills, the build that was carried and the next weapon's unlock condition.
+        rewards:
+          - id: level-up
+            tier: mvp
+            trigger: The experience bar fills
+            grants: A choice of three upgrades from the pool
+            feedback: Play freezes with a flash, the three cards slide in, and the chosen upgrade is visible in play on the next frame.
+          - id: elite-down
+            tier: mvp
+            trigger: An elite dies
+            grants: A guaranteed upgrade chest
+            feedback: The elite breaks apart in slow motion, the chest lands with a beam, and the swarm is briefly cleared around it.
+          - id: new-best-time
+            tier: mvp
+            trigger: A run ends above the best survived time
+            grants: A new best time, saved
+            feedback: The best clock bursts and re-colours, over a two-note sting.
+        hud:
+          - id: timer
+            tier: mvp
+            shows: Time survived this run, and the best beside it
+            anchor: top-center
+            updates_on: Every frame
+            feedback: Marks each minute with a tick and a soft chime
+          - id: health
+            tier: mvp
+            shows: Health, as a bar over the player
+            anchor: bottom-center
+            updates_on: Each hit and each heal
+            feedback: Flashes red on a hit and the screen edge pulses once
+          - id: level
+            tier: mvp
+            shows: Level and the experience bar
+            anchor: top-left
+            updates_on: Each kill and each level
+            feedback: The bar fills visibly and flashes at a level
+        tutorial:
+          approach: diegetic
+          rationale: Moving is the only input in play, and the first level-up arrives before the first real threat, so the upgrade choice teaches itself once.
+          steps:
+            - id: first-move
+              tier: mvp
+              trigger: Run start, first time
+              prompt: Three crawlers walk in slowly from one side with the weapon's reach ring drawn and a drag hint under the thumb
+              completes_on: The player moves and the weapon downs a crawler
+            - id: first-choice
+              tier: mvp
+              trigger: First level-up of the first run
+              prompt: Play freezes and the three cards slide in, each showing what will change on screen
+              completes_on: The player picks a card
+        assets:
+          - id: player
+            type: spritesheet
+            tier: mvp
+            description: Player character with idle, move and hit frames, plus the build overlays
+            count: 1
+            source_preference: procedural
+            est_cost: 0
+            spec: Vector-drawn, 48px, 8 move frames, 2 hit frames, 4 build overlay slots
+            role: player
+            dimension: 2d
+            readability: One bright silhouette in the identity's lead accent that stays readable at 40 px inside a crowd of forty enemies, its facing clear, and every chosen upgrade visible on or around it
+          - id: enemies
+            type: spritesheet
+            tier: mvp
+            description: Crawler, charger and splitter, with walk, telegraph and death frames
+            count: 3
+            source_preference: procedural
+            est_cost: 0
+            spec: Vector, 40px, 4 walk frames and a 3-frame telegraph each, one elite variant each
+            role: threat
+            dimension: 2d
+            readability: Three enemies told apart by silhouette at 32 px even forty deep - the crawler small and round, the charger spiked and leaning, the splitter fat and seamed - all in the danger palette, with the elite twice the size and outlined
+          - id: shots
+            type: sprite
+            tier: mvp
+            description: Weapon shots, one per weapon kind
+            count: 3
+            source_preference: procedural
+            est_cost: 0
+            spec: Vector, 16px, with a 3-frame trail each
+            role: projectile
+            dimension: 2d
+            readability: Each shot drawn travelling for at least three frames in the player's accent, never the danger colour, so the player can see their damage working inside a crowd
+          - id: arena
+            type: texture
+            tier: mvp
+            description: Arena floor, zone bands and the hazard tile
+            count: 3
+            source_preference: procedural
+            est_cost: 0
+            spec: Tileable 256px floor with zone bands, one hazard tile
+            role: environment
+            dimension: 2d
+            readability: A floor dark and low in contrast so every enemy and every shot reads against it, with zone bands that tell the player where in the arena they are
+          - id: chest
+            type: sprite
+            tier: mvp
+            description: Upgrade chest and its open state
+            count: 1
+            source_preference: procedural
+            est_cost: 0
+            spec: Vector, 48px, closed and open with a beam
+            role: collectible
+            dimension: 2d
+            readability: A chest under a vertical beam, visible across the arena and plainly a reward rather than a threat
+          - id: swarm-vfx
+            type: vfx
+            tier: mvp
+            description: Enemy death pops, level-up flash, elite spawn ring and player hit flash
+            count: 4
+            source_preference: procedural
+            est_cost: 0
+            spec: Pooled particle presets, capped at 120 live emitters
+            role: vfx
+            dimension: 2d
+            readability: A pop on every kill so progress is felt without reading a counter, a level flash that cannot be missed, a ring where an elite spawns, and a screen-edge flash the instant the player is hit
+          - id: upgrade-cards
+            type: ui
+            tier: mvp
+            description: The three upgrade cards, the experience bar and the run clock
+            count: 1
+            source_preference: procedural
+            est_cost: 0
+            spec: Three card faces with icon, name and one-line effect, one bar, one clock
+            role: ui
+            dimension: 2d
+            readability: Each card readable in two seconds at 18 CSS px with its effect in one line, the three cards obviously exclusive, and the run clock legible at a glance while the player keeps moving
+        audio:
+          - id: music-survive
+            type: music
+            tier: mvp
+            description: Loop that adds a layer every three minutes and drops to a pad while a choice is open
+            trigger: Run start
+            loop: true
+            source_preference: library
+            est_cost: 40
+          - id: sfx-attack
+            type: sfx
+            tier: mvp
+            description: Weapon fire, one per weapon, voice-limited to 6 at once
+            trigger: Weapon fires
+            loop: false
+            source_preference: library
+            est_cost: 5
+          - id: sfx-kill
+            type: sfx
+            tier: mvp
+            description: Enemy death pop, voice-limited and pitched down as the crowd grows
+            trigger: Enemy dies
+            loop: false
+            source_preference: library
+            est_cost: 5
+          - id: sfx-level
+            type: sfx
+            tier: mvp
+            description: Level-up chord under the card slide
+            trigger: Level reached
+            loop: false
+            source_preference: library
+            est_cost: 5
+          - id: sfx-player-hit
+            type: sfx
+            tier: mvp
+            description: Player hit, dry and loud over the swarm
+            trigger: Player takes damage
+            loop: false
+            source_preference: library
+            est_cost: 5
+        post_mvp:
+          - id: boss-at-ten
+            name: Ten-minute boss
+            description: One boss at ten minutes with three telegraphed patterns, which ends the run if it is not beaten.
+        optional:
+          - id: daily-seed
+            name: Daily seeded run
+            description: One seeded run a day with the same spawns and upgrade offers for everyone.
+          - id: character-variants
+            name: Character variants
+            description: Starting characters with different weapons and move speeds.
+      experience:
+        goal: Survive as long as you can - the weapon fires itself, you choose what it becomes.
+        goal_metric: time
+        lose:
+          condition: The player's health reaches zero.
+          metric: health
+        actions:
+          move:
+            visual: The player accelerates within two frames, the move cycle starts, and the weapon's reach ring moves with them.
+            audio: Footfall under the swarm, ducked while the weapon fires
+          choose-upgrade:
+            visual: The chosen card flies into the player and its effect is drawn in play on the next frame.
+            audio: Level-up chord, one note higher per level
+            updates: [level]
+        teaches: [move, choose-upgrade]
+        grace: {until: seconds, seconds: 20}
+        hud_metrics: {timer: time, health: health, level: level}
+      depth:
+        features:
+          - id: permanent-perks
+            name: Permanent perks
+            description: Coins banked from runs buy small permanent perks - 5% move speed, one extra starting level, a longer first grace - from a list of ten, kept across sessions and never sold for money.
+          - id: survivor-log
+            name: Survivor log
+            description: A log of the elites met and the builds that reached five minutes, filled in across sessions and shown on the title screen.
+        meta:
+          statement: Run -> bank coins and open the next weapon -> spend coins on a permanent perk -> start the next run a little stronger and chasing the time that beat you.
+          tier: post-mvp
+          delivered_by: permanent-perks
+          persists:
+            - kind: best-score
+              what: Best time survived
+              tier: mvp
+              delivered_by: new-best-time
+            - kind: unlocks
+              what: Weapons and arenas opened
+              tier: mvp
+              delivered_by: weapon-2
+            - kind: upgrades
+              what: Permanent perks bought
+              tier: post-mvp
+              delivered_by: permanent-perks
+            - kind: collection
+              what: Elites met and builds logged
+              tier: post-mvp
+              delivered_by: survivor-log
+        goals:
+          - id: close-the-gap
+            horizon: short
+            goal: Get out of the gap closing around you.
+            measure: seconds survived without a hit
+            tier: mvp
+            delivered_by: swarm
+          - id: beat-best
+            horizon: mid
+            goal: Survive longer than the best run so far.
+            measure: time above the best
+            tier: mvp
+            delivered_by: new-best-time
+          - id: next-level
+            horizon: mid
+            goal: Reach the next level and take the upgrade the build needs.
+            measure: levels reached in the run
+            tier: mvp
+            delivered_by: level-up
+          - id: open-everything
+            horizon: long
+            goal: Open every weapon and buy every perk.
+            measure: weapons of 3 and perks of 10
+            tier: post-mvp
+            delivered_by: permanent-perks
+        content:
+          - id: chargers
+            kind: enemy
+            name: Chargers
+            introduced: 45 s into a run
+            at_s: 45
+            rule: A charger lunges after a 500 ms telegraph, so standing in a gap is no longer safe.
+            tier: mvp
+            delivered_by: swarm
+          - id: elites
+            kind: enemy
+            name: Elites
+            introduced: 90 s into a run, and every 90 s after
+            at_s: 90
+            rule: An elite with ten times the health of its kind arrives and leaves a guaranteed chest.
+            tier: mvp
+            delivered_by: swarm
+          - id: splitters
+            kind: enemy
+            name: Splitters
+            introduced: 180 s into a run
+            at_s: 180
+            rule: A splitter becomes two crawlers when it dies, so clearing a side can make it worse.
+            tier: mvp
+            delivered_by: swarm
+          - id: second-weapon
+            kind: power-up
+            name: Scatter weapon
+            introduced: After a run reaches 5 minutes
+            after_runs: 3
+            rule: A second starting weapon, chosen before the run.
+            tier: mvp
+            delivered_by: weapon-2
+          - id: second-arena
+            kind: zone
+            name: Second arena
+            introduced: After a run reaches 10 minutes
+            after_runs: 6
+            rule: An arena with its own hazard tile and its own elite.
+            tier: mvp
+            delivered_by: arena-2
+          - id: perks
+            kind: modifier
+            name: Permanent perks
+            introduced: After the third run
+            after_runs: 2
+            rule: Coins banked from runs buy a small permanent perk before the next run.
+            tier: post-mvp
+            delivered_by: permanent-perks
+        first_session_ends_on: A run that ended past the previous best, with the build it carried shown and the next weapon's unlock condition under it.
+        hooks:
+          - id: best-to-beat
+            kind: best-score
+            statement: I died at 7 minutes with a build that was finally working.
+            tier: mvp
+            delivered_by: new-best-time
+          - id: next-weapon
+            kind: next-unlock
+            statement: The orbit weapon is 300 kills away.
+            tier: mvp
+            delivered_by: weapon-3
+      units:
+        unit_arc: [teach, test, twist, breather, test, climax]
+        objective_templates:
+          - Survive {unit} for {s} s
+          - Survive {unit} with {few} elites on screen
+          - Survive {unit} taking at most {few} hits
+          - Reach level {level} before {unit} ends
+        success_template: The segment's {s} s pass with health above zero.
+        failure_template: The player's health reaches zero.
+        numbers:
+          few: {start: 1, step: 1, max: 4}
+          level: {start: 2, step: 1, max: 8}
+        acceptance_templates:
+          - The spawn rate during {unit} is within 0.2 enemies a second of its design value, measured over any 10 s
+          - A bot that does not move is dead before the first level-up of {unit}
+          - Every level-up during {unit} offers 3 distinct upgrades from the pool of 12
+          - No enemy in {unit} spawns inside the camera, and none reaches the player without being on screen for 1 s
+        introduce_order: [move, auto-attack, swarm, level-up]
+        variation_cycle: [introduces, enemy_mix, event, upgrade_pool, arena_zone, objective]
+        axis_profile:
+          spawn-rate: {start: 0.15, step: 0.14}
+          enemy-variety: {start: 0.1, step: 0.13}
+          elite-frequency: {start: 0.1, step: 0.12}
+          build-pressure: {start: 0.2, step: 0.1}
+
+  simulation:
+    label: Simulation / management
+    nodes: [simulation, time-management, tycoon, idle, idle-merge, clicker]
+    unit_kinds: [scenario, shift, round]
+    progression_models: [unlock-track, meta-currency, linear-levels]
+    difficulty_models: [level-authored, player-chosen]
+    ending: [finite]
+    axes:
+      - id: demand-rate
+        range: [0, 1]
+        escalates: true
+        probe: optional
+        description: Customers, orders or events per minute
+      - id: resource-scarcity
+        range: [0, 1]
+        escalates: true
+        probe: optional
+        description: How far income falls short of what the target needs without good decisions
+      - id: concurrency
+        range: [0, 1]
+        escalates: true
+        probe: optional
+        description: Systems the player juggles at once
+      - id: decision-density
+        range: [0, 1]
+        escalates: false
+        probe: optional
+        description: Meaningful choices per minute
+    win:
+      shape: target-reached
+      per_unit: true
+      description: The scenario's target is met before its end
+    lose:
+      shape: collapse-or-unmet
+      per_unit: true
+      description: Bankruptcy, collapse, or the target unmet when the scenario ends
+    units: {min_mvp: 4, min_total: 10, generation: [authored, parametric]}
+    variety: {dimensions: [introduces, objective, economy_rule, event_set, unlock_available, pacing]}
+    mastery:
+      model: optimisation
+      signals: [profit, target-margin, days-to-target]
+      statement_required: true
+    qa: {min_units_traversed: 2, reset_in_unit: false, checkpoint: false, min_new_kinds_per_unit: 0, failure_state: true, resource_metric: cash}
+    seed:
+      archetype:
+        id: stand-tycoon
+        label: Stand tycoon
+        keywords: [simulation, management, tycoon, shop, stand, lemonade, price, stock, demand, staff, upgrade, day, shift]
+        signature: [set a price, stock, demand, day, shift, serve the queue, tycoon]
+        dimension: 2d
+        structure: level
+        camera: Fixed on the stand and the queue in front of it; no scrolling.
+        orientation: portrait
+        identity_affinity: [paper-diorama, solar-bleach, lacquer-brass]
+        fantasy: Reading a day before it happens and pricing it exactly right.
+        core_loop: Read the day's forecast -> set the price and buy the stock -> open, serve the queue and watch the rush -> spend the till on an upgrade -> the next shift raises the target and changes the weather.
+        pillars:
+          - Every number the player sets is visible in its result the same day
+          - A bad day is explained on the till screen, never just lost
+          - A shift fits in two minutes and ends on a figure
+        run_seconds: 120
+        first_reward_s: 20
+        content_units: 10
+        content_unit_kind: shift
+        retention_hooks: [progression, collection]
+        return_reason: Shift 6 ended 12 short of its target and I know I over-bought the stock.
+        progression_model: unlock-track
+        difficulty_model: level-authored
+        mechanics:
+          - id: price-and-stock
+            name: Price and stock
+            tier: mvp
+            description: Before the day opens the player sets a cup price and buys stock.
+            rules:
+              - The price is set between 0.25 and 3.00 in steps of 0.05, and stock is bought in units of ten.
+              - Demand falls 12% for every 0.25 above the day's fair price and rises 8% for every 0.25 below it, and the forecast states the fair price as a range.
+              - Unsold stock spoils at the end of the day unless a cooler is owned, so over-buying is a real loss the till screen names.
+            parameters: {price_min: 0.25, price_max: 3.0, price_step: 0.05, stock_unit: 10, demand_step: 0.12}
+          - id: serve
+            name: Serving the queue
+            tier: mvp
+            description: Customers queue, wait, and leave if they are not served.
+            rules:
+              - A customer waits 12 s before leaving, and every customer who leaves unserved costs one reputation of twenty.
+              - Serving takes 2 s a cup, and one stand serves one customer at a time.
+              - A customer served inside 6 s of arriving tips 15% on top of the price.
+            parameters: {patience_s: 12, serve_s: 2.0, tip_window_s: 6, reputation: 20}
+          - id: day-cycle
+            name: Day cycle and events
+            tier: mvp
+            description: A day of two minutes with a midday rush and one drawn event.
+            rules:
+              - A day runs 120 s split into a quiet morning, a midday rush at three times demand, and a slow afternoon.
+              - One event is drawn a day from a deck of eight - heatwave at plus 40% demand, rain at minus 35%, a bulk stock offer, a broken cooler - and is announced 15 s before it lands.
+              - The day ends on a till screen that lists revenue, stock cost, wages and profit as separate lines.
+            parameters: {day_s: 120, rush_multiplier: 3.0, event_deck: 8, event_warning_s: 15}
+          - id: cash-target
+            name: Cash target
+            tier: mvp
+            description: Each shift states a cash figure the till must reach before the day ends.
+            rules:
+              - A shift states its cash target, and the till at the end of the day decides whether it is met.
+              - Cash carries between shifts, and a replayed shift starts with the cash the player had when it opened.
+              - Cash below zero at any point ends the shift at once.
+            parameters: {start_cash: 50, target_shift_1: 120}
+          - id: upgrades-staff
+            name: Upgrades and staff
+            tier: mvp
+            description: The till buys permanent upgrades and a helper for the shift.
+            rules:
+              - Cash buys permanent upgrades between days and never during one - a second stand that serves in parallel, a cooler that keeps stock overnight, and a sign that raises demand 15%.
+              - One helper can be hired a shift, serving at 70% of the player's speed for a flat wage whether the day is busy or not.
+              - Every upgrade states its payback in days at the current demand before it is bought.
+            parameters: {stand_cost: 120, cooler_cost: 90, sign_cost: 150, helper_wage: 25, helper_speed: 0.7}
+          - id: second-product
+            name: Second product
+            tier: post-mvp
+            description: A second line with its own price, stock and demand curve.
+            rules:
+              - The second product has its own price and stock and shares the queue and the serving time.
+              - A customer wants one of the two products, shown as an icon above their head while they queue.
+            parameters: {products: 2}
+        actions:
+          - id: set-price
+            action: Set the cup price
+            tier: mvp
+            mechanic: price-and-stock
+            touch: Drag the price slider, or tap its plus and minus
+            mouse: Drag the price slider, or click its plus and minus
+            keyboard: Left and Right arrows on the slider
+            gamepad: Left stick on the slider
+          - id: buy-stock
+            action: Buy stock
+            tier: mvp
+            mechanic: price-and-stock
+            touch: Tap the plus ten button on the stock tray
+            mouse: Click the plus ten button on the stock tray
+            keyboard: S then a number, or plus and minus
+            gamepad: D-pad to the tray, A buys ten
+          - id: serve
+            action: Serve the next customer
+            tier: mvp
+            mechanic: serve
+            touch: Tap the customer at the head of the queue
+            mouse: Click the customer at the head of the queue
+            keyboard: Space serves the head of the queue
+            gamepad: A serves the head of the queue
+          - id: buy-upgrade
+            action: Buy an upgrade
+            tier: mvp
+            mechanic: upgrades-staff
+            touch: Tap an upgrade card between days
+            mouse: Click an upgrade card between days
+            keyboard: Arrows and Enter on the upgrade cards
+            gamepad: D-pad and A on the upgrade cards
+        goals:
+          moment: Serve the customer at the head of the queue before they walk.
+          session: Clear two shifts and buy the upgrade they paid for.
+          long_term: Clear all ten shifts and own every upgrade.
+        progression_steps:
+          - id: shifts-1-3
+            tier: mvp
+            unlock_condition: Available from the start
+            grants: Shifts 1-3, price and stock, one stand and no events
+          - id: shifts-4-7
+            tier: mvp
+            unlock_condition: Clear shift 3
+            grants: The event deck, the second stand and helpers
+          - id: shifts-8-10
+            tier: mvp
+            unlock_condition: Clear shift 7
+            grants: The cooler, the sign and two-product days
+        curve:
+          - at: Shifts 1-2
+            description: Fair price stated exactly, demand flat, target at 60% of what a careless day earns; the shift cannot realistically be failed.
+            parameters: {target_ratio: 0.6, events: 0, systems: 2}
+          - at: Shifts 3-7
+            description: The fair price becomes a range, one event a day, and the second stand and helper arrive together so wages start to matter.
+            parameters: {target_ratio: 0.85, events: 1, systems: 3}
+          - at: Shifts 8-10
+            description: Two products, two events on the hardest day, and targets within 5% of a well-run day; shift 9 is a breather with a guaranteed heatwave.
+            parameters: {target_ratio: 0.95, events: 2, systems: 5}
+        assist: After two failed attempts at one shift, the next attempt starts with 40 extra cash and the day's event is named before the day opens.
+        failure_condition: The day ends with the till short of the shift's cash target.
+        failure_feedback: The till screen stays up with the shortfall in red, the three largest costs listed, the customers lost counted, and one line naming the decision that cost the most; retry re-opens the same day with the cash it started with.
+        rewards:
+          - id: tip
+            tier: mvp
+            trigger: A customer is served inside 6 s of arriving
+            grants: A 15% tip on that cup
+            feedback: A coin arcs from the customer into the till with a bright chime, and the tip total sits beside the cash counter.
+          - id: rush-cleared
+            tier: mvp
+            trigger: Every customer of the midday rush is served
+            grants: Two reputation back and a rush bonus of 10% of the rush's takings
+            feedback: The queue empties, the stand lights up, and the bonus counts into the till over a rising run of notes.
+          - id: target-hit
+            tier: mvp
+            trigger: The till reaches the shift's cash target
+            grants: The shift is cleared, with one to three stars by the margin
+            feedback: The target bar fills and overflows, stars stamp in one by one, and the next shift's target and forecast slide in.
+        hud:
+          - id: cash
+            tier: mvp
+            shows: Cash in the till, with the day's costs under it
+            anchor: top-left
+            updates_on: Each sale, each purchase, each wage tick
+            feedback: Counts up coin by coin and flashes red while it falls
+          - id: target
+            tier: mvp
+            shows: The shift's target and the gap still to go
+            anchor: top-center
+            updates_on: Each sale
+            feedback: The bar fills, and the gap turns the accent colour inside 10%
+          - id: stock
+            tier: mvp
+            shows: Stock left, of what was bought
+            anchor: top-right
+            updates_on: Each cup served
+            feedback: Turns the danger colour under ten cups and reads sold out at zero
+          - id: clock
+            tier: mvp
+            shows: Time left in the day, with the rush marked on it
+            anchor: bottom-left
+            updates_on: Every second
+            feedback: The rush band glows as it is entered
+        tutorial:
+          approach: guided-first-run
+          rationale: Price, stock and serving are three different screens on the first day, and one pass through them in order is the only way a player can see the link between them.
+          steps:
+            - id: first-price
+              tier: mvp
+              trigger: Shift 1, before the day opens
+              prompt: The forecast names the fair price and the slider rests one step under it, pulsing
+              completes_on: The player sets a price and confirms
+            - id: first-serve
+              tier: mvp
+              trigger: Shift 1, first customer
+              prompt: One customer arrives alone with their patience ring drawn and the stand highlighted
+              completes_on: The player serves that customer
+        assets:
+          - id: customers
+            type: spritesheet
+            tier: mvp
+            description: Four customer types with walk, queue, served and leaving frames
+            count: 4
+            source_preference: procedural
+            est_cost: 0
+            spec: Vector, 72px tall, 4 walk frames each, a patience ring and a want icon
+            role: target
+            dimension: 2d
+            readability: Four customers told apart at 48 px by shape and palette, each with a patience ring that reads as time running out and a want icon above the head, so who to serve next is readable without tapping anything
+          - id: stand
+            type: sprite
+            tier: mvp
+            description: The stand, its second-stand variant and the upgrade fittings
+            count: 4
+            source_preference: procedural
+            est_cost: 0
+            spec: Vector, 256px wide, one base plus cooler, sign and second-stand fittings
+            role: prop
+            dimension: 2d
+            readability: A stand that plainly sells something, with every bought upgrade visible on it - the cooler, the sign, the second counter - so progress is seen before it is read
+          - id: street
+            type: texture
+            tier: mvp
+            description: Street, pavement and the queue line
+            count: 3
+            source_preference: procedural
+            est_cost: 0
+            spec: Tileable 256px, with a marked queue line and three weather tints
+            role: environment
+            dimension: 2d
+            readability: A street whose queue line is unmistakable so the order of customers is never in doubt, and whose weather tint names the day's event at a glance
+          - id: skyline
+            type: texture
+            tier: mvp
+            description: Background skyline with the day's light
+            count: 2
+            source_preference: procedural
+            est_cost: 0
+            spec: Two parallax layers, four light states across the day
+            role: background
+            dimension: 2d
+            readability: A quiet skyline that shifts light from morning to afternoon so the time of day is visible without the clock, never brighter than the stand
+          - id: money-vfx
+            type: vfx
+            tier: mvp
+            description: Coin arc, tip sparkle, customer-leaving puff and the sold-out stamp
+            count: 4
+            source_preference: procedural
+            est_cost: 0
+            spec: Particle presets, 200-600 ms
+            role: vfx
+            dimension: 2d
+            readability: A coin that arcs from customer to till on every sale, a sparkle on a tip, and an unmissable puff where a customer walks away unserved so a loss is never silent
+          - id: shop-ui
+            type: ui
+            tier: mvp
+            description: Price slider, stock tray, upgrade cards, forecast panel and the till screen
+            count: 1
+            source_preference: procedural
+            est_cost: 0
+            spec: One slider with 56 steps, one tray, five card faces, one forecast panel, one till screen with four lines
+            role: ui
+            dimension: 2d
+            readability: The price readable to the cent at 20 CSS px while the slider is dragged, every upgrade card stating its cost and its payback in days, and the till screen's four lines each legible at 16 px on a phone
+        audio:
+          - id: music-day
+            type: music
+            tier: mvp
+            description: Daytime loop that lifts a layer during the rush and resolves on the till screen
+            trigger: Day opens
+            loop: true
+            source_preference: library
+            est_cost: 40
+          - id: sfx-serve
+            type: sfx
+            tier: mvp
+            description: Cup poured and handed over
+            trigger: Customer served
+            loop: false
+            source_preference: library
+            est_cost: 5
+          - id: sfx-coin
+            type: sfx
+            tier: mvp
+            description: Coin into the till, brighter on a tip
+            trigger: Sale or tip
+            loop: false
+            source_preference: library
+            est_cost: 5
+          - id: sfx-walkout
+            type: sfx
+            tier: mvp
+            description: Customer leaves unserved, a dull two-note fall
+            trigger: Customer leaves unserved
+            loop: false
+            source_preference: library
+            est_cost: 5
+          - id: sfx-till
+            type: sfx
+            tier: mvp
+            description: Till screen chord, one per star earned
+            trigger: Day ends
+            loop: false
+            source_preference: library
+            est_cost: 5
+        post_mvp:
+          - id: shift-set-2
+            name: Second shift set
+            description: Shifts 11-20 at a second location with rent, two products and staff shifts.
+        optional:
+          - id: free-play
+            name: Free play
+            description: Days with no target, kept only for the profit record.
+          - id: stand-skins
+            name: Stand skins
+            description: Cosmetic stand styles opened by stars.
+      experience:
+        goal: Hit the shift's cash target before the day ends.
+        goal_metric: cash
+        win:
+          condition: The till reaches the shift's cash target before the day ends.
+          metric: cash
+        lose:
+          condition: The day ends with the till short of the target, or cash falls below zero.
+          metric: cash
+        actions:
+          set-price:
+            visual: The price reads out to the cent as the slider moves, and the forecast's demand bar shifts with it on the same frame.
+            audio: Slider tick per step
+            updates: [target-gap]
+          buy-stock:
+            visual: Ten cups stack onto the counter and the cash counter ticks down by their cost.
+            audio: Crate thud
+            updates: [cash, stock]
+          serve:
+            visual: The cup is poured, the customer leaves the queue, and the coin arcs into the till.
+            audio: Cup poured, then a coin into the till
+            updates: [cash, stock]
+          buy-upgrade:
+            visual: The upgrade appears on the stand itself and the cash counter ticks down by its cost.
+            audio: Fitting clunk, then a confirming chime
+            updates: [cash]
+        teaches: [set-price, buy-stock, serve, buy-upgrade]
+        grace: {until: first-success}
+        hud_metrics: {cash: cash, target: target-gap, stock: stock, clock: day-time}
+      depth:
+        features:
+          - id: shift-stars
+            name: Shift stars
+            description: One to three stars a shift by the margin over its target, kept across sessions and shown on the shift list out of 30.
+          - id: business-ranks
+            name: Business ranks
+            description: Five ranks from total profit across all shifts, each opening a product line or a location and kept across sessions.
+        meta:
+          statement: Run a shift -> bank the profit and its stars -> spend the till on a permanent upgrade -> the next shift's target needs that upgrade -> come back for the stars and the next rank.
+          tier: mvp
+          delivered_by: shifts-4-7
+          persists:
+            - kind: stage-progress
+              what: Shifts cleared and the shift the player is on
+              tier: mvp
+              delivered_by: shifts-4-7
+            - kind: currency
+              what: Cash carried between shifts
+              tier: mvp
+              delivered_by: cash-target
+            - kind: upgrades
+              what: Upgrades owned on the stand
+              tier: mvp
+              delivered_by: upgrades-staff
+            - kind: collection
+              what: Stars a shift, of 30
+              tier: post-mvp
+              delivered_by: shift-stars
+        goals:
+          - id: serve-the-head
+            horizon: short
+            goal: Serve the customer at the head of the queue before they walk.
+            measure: customers served inside their patience
+            tier: mvp
+            delivered_by: serve
+          - id: hit-target
+            horizon: mid
+            goal: Hit this shift's target with a margin worth two stars.
+            measure: cash over the target
+            tier: mvp
+            delivered_by: target-hit
+          - id: clear-shifts
+            horizon: long
+            goal: Clear all ten shifts.
+            measure: shifts cleared of 10
+            tier: mvp
+            delivered_by: shifts-8-10
+          - id: all-stars
+            horizon: long
+            goal: Three-star every shift.
+            measure: stars of 30
+            tier: post-mvp
+            delivered_by: shift-stars
+        content:
+          - id: midday-rush
+            kind: event
+            name: Midday rush
+            introduced: 45 s into the day
+            at_s: 45
+            rule: Demand triples for 30 s, so the stock and the serving speed are both tested at once.
+            tier: mvp
+            delivered_by: day-cycle
+          - id: event-deck
+            kind: event
+            name: Weather and offer events
+            introduced: From shift 4
+            after_runs: 3
+            rule: One event a day from a deck of eight, announced 15 s before it lands.
+            tier: mvp
+            delivered_by: shifts-4-7
+          - id: helpers
+            kind: power-up
+            name: Second stand and helper
+            introduced: From shift 4
+            after_runs: 3
+            rule: A second stand serves in parallel and a helper serves at 70% speed for a flat wage.
+            tier: mvp
+            delivered_by: upgrades-staff
+          - id: two-products
+            kind: mode
+            name: Two-product days
+            introduced: From shift 8
+            after_runs: 7
+            rule: A second line with its own price, stock and demand curve, sharing the queue.
+            tier: mvp
+            delivered_by: shifts-8-10
+          - id: ranks
+            kind: modifier
+            name: Business ranks
+            introduced: After the fifth shift is cleared
+            after_runs: 5
+            rule: A rank from total profit opens a product line or a location.
+            tier: post-mvp
+            delivered_by: business-ranks
+        first_session_ends_on: A till screen that hit its target, with the stars stamped and the next shift's forecast and target shown.
+        hooks:
+          - id: next-shift
+            kind: stage-map
+            statement: The next shift's target is up and I already know the price I will set.
+            tier: mvp
+            delivered_by: shifts-4-7
+          - id: stars-left
+            kind: collection
+            statement: Shift 6 only gave me one star and I know I over-bought the stock.
+            tier: post-mvp
+            delivered_by: shift-stars
+      units:
+        unit_arc: [teach, teach, test, twist, breather, test, climax]
+        objective_templates:
+          - Bank {budget} cash before {unit} closes
+          - Bank {budget} cash in {unit} losing at most {few} customers
+          - Bank {budget} cash in {unit} with the cooler broken
+          - Serve {count} customers in {unit} without running out of stock
+        success_template: The till reaches the shift's cash target before the day ends.
+        failure_template: The day ends short of the target, or cash falls below zero.
+        numbers:
+          budget: {start: 120, step: 40, max: 600}
+          count: {start: 20, step: 10, max: 120}
+          few: {start: 2, step: 1, max: 6}
+        acceptance_templates:
+          - A recorded play of {unit} banks at least {budget} cash, and the shift data stores that figure
+          - Pricing {unit} inside its fair range and buying {count} stock clears its target with at least 10% to spare
+          - Every event {unit} can draw is announced at least 15 s before it lands
+          - Stock bought at {count} units runs out at most once during {unit}, and the stock counter reads sold out when it does
+        introduce_order: [price-and-stock, serve, day-cycle, cash-target, upgrades-staff]
+        variation_cycle: [introduces, objective, economy_rule, event_set, unlock_available, pacing]
+        axis_profile:
+          demand-rate: {start: 0.15, step: 0.13}
+          resource-scarcity: {start: 0.1, step: 0.12}
+          concurrency: {start: 0.1, step: 0.14}
+          decision-density: {start: 0.2, step: 0.1}

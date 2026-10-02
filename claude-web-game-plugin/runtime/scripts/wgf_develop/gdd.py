@@ -11,6 +11,7 @@ Deterministic and standard-library only. The template's list and table placehold
 this is a small renderer for this one document rather than a generic template engine.
 """
 
+from . import content as content_contract
 from .brief import _inline, _spec_lines, select_build_spec, BUILD_SPEC_SECTIONS
 
 __all__ = ["GDD_PATH", "render_gdd"]
@@ -38,6 +39,38 @@ def _table(header, rows, empty="(none)"):
     out += ["| " + " | ".join(_cell(c) for c in row) + " |" for row in rows]
     if not rows:
         out.append("| " + " | ".join([empty] + [""] * (len(header) - 1)) + " |")
+    return "\n".join(out)
+
+
+def _content_block(design, content, axes):
+    """The content units as a table, the way the development brief renders them: one row per
+    unit with its difficulty on each axis, then the acceptance each unit is built against."""
+    out = []
+    add = out.append
+    units = content_contract.expected_units(design)
+    generation = content.get("generation") or {}
+    add(f"**{_text(content.get('unit_kind'), 'unit')}s** · generation "
+        f"**{_text(generation.get('mode'))}**"
+        + (f" · {_inline(generation.get('parameters'))}" if generation.get("parameters") else "")
+        + (f" · about {generation['expected_units']} a session"
+           if generation.get("expected_units") else "") + "\n")
+    header, rows = content_contract.table_rows(units, axes)
+    add(_table(header, rows) + "\n")
+    for unit in units:
+        acceptance = unit.get("acceptance") or []
+        variation = unit.get("variation_from_previous") or []
+        if not (acceptance or variation):
+            continue
+        add(f"**{unit.get('id')}**\n")
+        add(_list(acceptance))
+        if variation:
+            add(f"- Varies from the previous unit in: {', '.join(variation)}")
+        add("")
+    designed = ((design.get("build_spec") or {}).get("content") or {}).get("units") or []
+    later = [u.get("id") for u in designed
+             if isinstance(u, dict) and u.get("tier") not in (None, "mvp")]
+    if later:
+        add("Later tiers: " + ", ".join(str(uid) for uid in later if uid) + "\n")
     return "\n".join(out)
 
 
@@ -136,6 +169,14 @@ def render_gdd(design, strategy=None, content_hash=None):
 
     add("## 9. Difficulty\n")
     add(f"{_text(design.get('difficulty'))}\n")
+    # The axes every content unit states a value on. The values themselves are in the
+    # content table (10b); this is the dimensions they move on.
+    axes = ((design.get("build_spec") or {}).get("difficulty") or {}).get("axes") or []
+    if axes:
+        add("**Axes.**\n")
+        add(_table(["Axis", "Range", "Relief allowed", "What it measures"], [
+            (a.get("id"), a.get("range"), "yes" if a.get("relief_allowed") else "no",
+             a.get("description")) for a in axes if isinstance(a, dict)]) + "\n")
 
     add("## 10. Art and audio direction\n")
     add(f"{_text(design.get('art_direction'))}\n")
@@ -153,12 +194,22 @@ def render_gdd(design, strategy=None, content_hash=None):
 
     add("## 10b. Build specification — MVP\n")
     spec = select_build_spec(design)
+    genre = design.get("genre") if isinstance(design.get("genre"), dict) else {}
+    if genre:
+        add(f"**Genre family** {_text(genre.get('family'))}"
+            + (f" (node {genre['node']})" if genre.get("node") else "")
+            + f" · **Session profile** {_text(genre.get('session_profile'))} · "
+              f"**Ending** {_text(genre.get('ending'))}\n")
     if spec and spec.get("sections"):
         for key, label in BUILD_SPEC_SECTIONS:
-            if key in spec["sections"]:
-                add(f"### {label}\n")
-                add("\n".join(_spec_lines(spec["sections"][key])) or "- (none)")
-                add("")
+            if key not in spec["sections"]:
+                continue
+            add(f"### {label}\n")
+            if key == "content":
+                add(_content_block(design, spec["sections"][key], axes))
+                continue
+            add("\n".join(_spec_lines(spec["sections"][key])) or "- (none)")
+            add("")
         full = design.get("build_spec") or {}
         for key, label in (("sdk_touchpoints", "Platform SDK touchpoints"),
                            ("assets", "Assets")):

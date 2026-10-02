@@ -2,7 +2,7 @@
 
 **Machine** title · **State** `design` · **Kind** AI-assisted · **Role** game-designer
 **Contributors** analysis, asset, architect
-**Inputs** `title-strategy`, `claim` · **Outputs** `game-design`, `asset-manifest`
+**Inputs** `title-strategy`, `claim`, `prototype-report` (on a design-gap return) · **Outputs** `game-design`, `asset-manifest`
 
 One state producing one design artifact covering scope, session, retention, monetization,
 progression and economy.
@@ -77,17 +77,52 @@ consistency result is atomic.
    what the MVP builds, and depth the strategy excludes is stated as optional, not dropped.
    The bars are `core/reference/design-depth.yaml`.
 
-8. **List features by tier.** `features` is the canonical tier list; `scope.tiers` is
+8. **State the content, unit by unit.** Name the genre family in `genre`
+   (`core/reference/genre-models.yaml`), with the session profile and whether play is
+   `finite` or `endless` — a finite game must state its win. Then list in
+   `build_spec.content` what one unit of content is (`unit_kind`), whether the units are
+   `authored`, `parametric` or `procedural`, and every unit the player meets: its `purpose`
+   (teach, test, twist, breather, climax, bonus), its `objective` in the words the player is
+   shown, the mechanics it asks for and which it `introduces`, its difficulty on each axis
+   `build_spec.difficulty.axes` declares, how long it should take, how it is won and lost, the
+   `acceptance` lines that make it built, and what it varies from the unit before it. Declare
+   the axes once and put every difficulty number on the units, so there is exactly one place
+   each lives. Say what getting better means in `build_spec.mastery` — the model, one sentence,
+   and the HUD metrics it shows up in.
+
+   A design that states one unit and the word "more" is not a game, and a prototype of it
+   proves the verb and nothing else. The family's entry says how many units the MVP and a
+   release carry, which progression and difficulty models fit, what counts as variety and how
+   mastery shows; the design step checks the design against it (22 `content.*` rules) and
+   records the model in `consistency.content_model`. The bars are not a formality: the
+   developer builds these units as data, the tech plan makes `CONTENT-nnn` tasks of them, and
+   the playability bot plays them. Craft: `core/craft/content-and-level-design.md`.
+
+9. **List features by tier.** `features` is the canonical tier list; `scope.tiers` is
    derived from it (mvp → mvp and prototype, post-mvp → production, optional → future).
    An mvp feature carries acceptance criteria. Every item of the strategy's `mvp` is carried
    into an mvp feature; every item of its `out_of_scope` stays out.
 
-9. **Run the consistency check.** Evaluate `core/reference/design-consistency-rules.yaml`
-   and write the result into `game_design.consistency`. This is the exit guard.
+10. **Run the consistency check.** Evaluate `core/reference/design-consistency-rules.yaml`
+    and write the result into `game_design.consistency`. This is the exit guard.
+
+## Returning here from the build
+
+A developer that finds this design silent on something it must decide reports a **design gap**
+in the `prototype-report` (`design_gaps`: the field, the question, what it assumed instead, and
+whether it was blocking) rather than inventing the answer. A blocking gap brings the work back
+here with that report: answer each gap at the field it names, which repairs the design in place
+— it is not replaced, and the build that found the gap is kept as evidence. tech-plan and G3
+then run again on the repaired design. One return from each source, and then a person looks:
+a design that keeps producing gaps is a design decision nobody has made, not a loop to widen.
+
+An assumption the developer could build around is a `minor` gap. It does not come back here; it
+is carried to review and to G4 as something to confirm.
 
 ## Craft references
 
-What *good* looks like inside `build_spec`: `core/craft/core-loop-and-difficulty.md`,
+What *good* looks like inside `build_spec`: `core/craft/content-and-level-design.md`,
+`core/craft/core-loop-and-difficulty.md`,
 `core/craft/game-feel.md`, `core/craft/onboarding-and-portal-ux.md`,
 `core/craft/ui-hud-mobile.md`, `core/craft/game-audio.md`, `core/craft/art-direction.md`,
 `core/craft/accessibility.md`, `core/craft/retention-and-progression.md`.
@@ -110,3 +145,5 @@ nobody reads is just a comment.
   four facets contradict each other. A design that trips one is telling you something.
 - **Leaving progression open-ended.** No terminal state and no deliberate loop means an
   endless content obligation, which a 7-14 day production model cannot service.
+- **Calling a tuning curve content.** Three difficulty tiers of the same level are one unit
+  with a parameter, not three units. A unit is the thing a player would name.

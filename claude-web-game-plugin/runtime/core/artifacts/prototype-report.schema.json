@@ -2,15 +2,15 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://webgamefactory.dev/schemas/artifacts/prototype-report.schema.json",
   "title": "Prototype Report",
-  "description": "The evidence package for gate G4 — the kill gate.\n\nIts job is to make an honest kill possible. That means it must evaluate each kill criterion authored at strategy time with a MEASURED value, and it must carry playtest observations from someone who had not seen the game before. A report that only describes what was built cannot support a decision to stop.\n\nThe recommendation field is the producing role's view, not the verdict. The verdict is a decision-record.",
+  "description": "The evidence package for gate G4 — the kill gate.\n\nIts job is to make an honest kill possible. That means it must evaluate each kill criterion authored at strategy time with a MEASURED value, and it must carry playtest observations from someone who had not seen the game before. A report that only describes what was built cannot support a decision to stop.\n\nThe recommendation field is the producing role's view, not the verdict. The verdict is a decision-record.\n\n1.1.0 adds two things the gate needs in order to read the build against the design rather than against itself: `design_gaps`, every place the design did not say enough to build from and what was assumed instead, which is how a design is corrected rather than silently reinterpreted; and `content_coverage`, how many of the designed content units were built, partly built or cut - a prototype that built two of six levels is not a prototype of the design.",
 
   "x-wgf": {
     "id": "prototype-report",
     "kind": "artifact",
     "format": "json",
-    "version": "1.0.0",
+    "version": "1.1.0",
     "producer": "title:prototype",
-    "consumers": ["title:prototype-review", "title:production", "title:prototype", "release:qa", "release:draft"],
+    "consumers": ["title:prototype-review", "title:production", "title:prototype", "title:design", "release:qa", "release:draft"],
     "repo_path": "workspace/titles/<title-id>/prototype-report.json",
     "run_path": "<storage>/workflows/<run-id>/artifacts/prototype-report/v<n>.json",
     "required_for_gates": ["G4"]
@@ -127,6 +127,56 @@
         },
         "additionalProperties": false
       }
+    },
+
+    "design_gaps": {
+      "type": "array",
+      "description": "Every place the design did not say enough to build from, with the question it left open and what was assumed instead. Added in 1.1.0, and read back by title:design: a gap recorded here is a design fix, not a note. A blocking gap is one the prototype could not be built honestly around.",
+      "items": {
+        "type": "object",
+        "required": ["field", "question", "severity"],
+        "properties": {
+          "field": {
+            "type": "string",
+            "description": "The path into the game-design that is missing or ambiguous, e.g. build_spec.content.units[l-03].success, build_spec.difficulty.axes[speed].range."
+          },
+          "question": { "type": "string", "description": "What the developer needed to know, as a question the designer can answer." },
+          "assumed": { "type": ["string", "null"], "description": "What was built instead, or null when the gap stopped the work." },
+          "severity": {
+            "enum": ["blocking", "minor"],
+            "description": "blocking: the thing could not be built as designed. minor: an assumption was made and should be confirmed."
+          },
+          "unit": { "type": "string", "description": "The content unit id the gap is in, when it is in one." }
+        },
+        "additionalProperties": false
+      }
+    },
+
+    "content_coverage": {
+      "type": "object",
+      "description": "The designed content against the built content: how many units the design specified and how many the prototype actually carries. Added in 1.1.0. `designed` counts the units of the tier this prototype was asked for; a report where built is far below designed says the prototype is of a smaller game than the one reviewed.",
+      "required": ["designed", "built", "cut"],
+      "properties": {
+        "designed": { "type": "integer", "minimum": 0 },
+        "built": { "type": "integer", "minimum": 0, "description": "Units built to their acceptance criteria." },
+        "partial": { "type": "integer", "minimum": 0, "description": "Units present but not meeting every acceptance line." },
+        "cut": { "type": "integer", "minimum": 0 },
+        "units": {
+          "type": "array",
+          "description": "Per unit, so the count can be checked rather than believed.",
+          "items": {
+            "type": "object",
+            "required": ["id", "status"],
+            "properties": {
+              "id": { "type": "string", "description": "A build_spec.content.units id." },
+              "status": { "enum": ["built", "partial", "cut"] },
+              "notes": { "type": "string" }
+            },
+            "additionalProperties": false
+          }
+        }
+      },
+      "additionalProperties": false
     },
 
     "recommendation": {

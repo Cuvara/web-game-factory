@@ -4,7 +4,11 @@ Derived, not invented. Every task comes from something the design or a pinned pr
 already states:
 
     M1  prototype   one task per `mvp` feature (acceptance = the feature's own acceptance)
-                    plus CORE-001, boot on the template with the selected engine
+                    plus CORE-001, boot on the template with the selected engine, plus one
+                    CONTENT task per batch of MVP content units (the batch size and the hours
+                    per unit are core/reference/genre-models.yaml `implementation`). A design
+                    whose content is generated - `generation.mode` other than `authored` -
+                    gets no CONTENT task: there is no list of units to build one against.
     M2  production  one task per `post-mvp` feature; omitted when there are none
     M3  hardening   one task per target platform (acceptance = the profile's blocking
                     assertions) plus QA-001, the verify suite green
@@ -22,7 +26,81 @@ was fitted (core/lifecycle/stages/tech-plan.md).
 import math
 import re
 
-__all__ = ["Estimates", "build_dev_plan"]
+from wgflib import genre_models
+
+__all__ = ["Estimates", "build_dev_plan", "GENRE_MODELS_PATH", "content_units"]
+
+# core/reference/genre-models.yaml, read through the one loader every step that holds a build
+# to its genre family uses.
+GENRE_MODELS_PATH = genre_models.PATH
+# The data file the developer writes the units into, and the unit test over it
+# (wgf_develop.content). Named here so a CONTENT task's acceptance says where a unit lives.
+CONTENT_FILE = "public/content/units.json"
+CONTENT_TEST = "tests/unit/content.spec.ts"
+
+def content_units(design):
+    """The MVP content units a plan owes tasks for, in index order.
+
+    Empty unless the design's content is `authored`: a parametric or procedural design
+    generates its units from parameters, and its listed units are examples, not a build
+    list."""
+    content = ((design or {}).get("build_spec") or {}).get("content") or {}
+    if (content.get("generation") or {}).get("mode") != "authored":
+        return []
+    units = [u for u in content.get("units") or []
+             if isinstance(u, dict) and u.get("tier") in (None, "mvp")]
+    return sorted(units, key=lambda u: (u.get("index") if isinstance(u.get("index"), int)
+                                        else 10 ** 6, str(u.get("id"))))
+
+
+def _content_tasks(design, by_feature, models, unit_kind=None):
+    """One CONTENT task per batch of `implementation.task_batch` MVP units.
+
+    Batched because a unit is small and a task per unit would make a plan nobody reads; kept
+    in the design's order, because the order is the difficulty curve. Each task depends on the
+    GAME tasks of the mechanics its units ask for: a level cannot be built before the verb it
+    is made of."""
+    units = content_units(design)
+    if not units:
+        return []
+    implementation = (models or {}).get("implementation") or {}
+    batch_size = implementation.get("task_batch")
+    batch_size = int(batch_size) if isinstance(batch_size, int) and batch_size > 0 else 3
+    hours = implementation.get("content_unit_hours")
+    hours = float(hours) if isinstance(hours, (int, float)) and hours > 0 else 1.5
+    kind = unit_kind or "unit"
+    tasks = []
+    for number, start in enumerate(range(0, len(units), batch_size), start=1):
+        batch = units[start:start + batch_size]
+        ids = [unit.get("id") for unit in batch]
+        criteria, mechanics = [], []
+        for unit in batch:
+            criteria.extend(line for line in unit.get("acceptance") or [])
+            criteria.append(f"Unit {unit.get('id')} is in {CONTENT_FILE} with the design's "
+                            f"difficulty values")
+            index = unit.get("index")
+            if isinstance(index, int) and index > 1:
+                criteria.append(f"Reachable from unit {index - 1} in play")
+            else:
+                criteria.append(f"Unit {unit.get('id')} is where play starts")
+            mechanics.extend(m for m in unit.get("mechanics") or [])
+        tasks.append({
+            "id": f"CONTENT-{number:03d}",
+            "title": f"Build {kind}s " + ", ".join(str(i) for i in ids),
+            "milestone": "M1",
+            "phase": "prototype",
+            "description": (f"The design's content units {', '.join(str(i) for i in ids)} as "
+                            f"data in {CONTENT_FILE}, loaded at boot and reachable in play in "
+                            f"the design's order. Difficulty values are the design's; nothing "
+                            f"here is invented."),
+            "dependencies": ["CORE-001"] + sorted(
+                {by_feature[m] for m in mechanics if m in by_feature}),
+            "acceptance_criteria": criteria,
+            "tests": [CONTENT_TEST],
+            "est_hours": round(hours * len(batch), 2),
+            "status": "todo",
+        })
+    return tasks
 
 
 class Estimates:
@@ -91,8 +169,12 @@ def _features(design):
     return derived
 
 
-def build_dev_plan(design, engine, platforms, estimates):
-    """dev_plan for the tech-plan, and the ids of the tasks per milestone."""
+def build_dev_plan(design, engine, platforms, estimates, models=None):
+    """dev_plan for the tech-plan, and the ids of the tasks per milestone.
+
+    `models` is core/reference/genre-models.yaml, read when not given: its `implementation`
+    block says how MVP content units are batched into tasks and what one costs."""
+    models = genre_models.load() if models is None else models
     tasks, by_feature = [], {}
     core = {
         "id": "CORE-001",
@@ -142,6 +224,12 @@ def build_dev_plan(design, engine, platforms, estimates):
         task = next(t for t in tasks if t["id"] == task_id)
         task["dependencies"] = ["CORE-001"] + [by_feature[d] for d in deps if d in by_feature]
 
+    # The content after the features it is made of: a level is built from the verbs, and
+    # its task depends on theirs.
+    tasks.extend(_content_tasks(
+        design, by_feature, models,
+        unit_kind=(((design.get("build_spec") or {}).get("content") or {}).get("unit_kind"))))
+
     m1_ids = [t["id"] for t in tasks if t["milestone"] == "M1"]
     for index, platform in enumerate(platforms, start=1):
         assertions = platform.blocking_assertions()
@@ -173,9 +261,12 @@ def build_dev_plan(design, engine, platforms, estimates):
         "status": "todo",
     })
 
+    content_exit = (["Every MVP content unit is in public/content/units.json and reachable "
+                     "in play"] if any(t["id"].startswith("CONTENT-") for t in tasks) else [])
     labels = {"M1": ("Playable core loop", "prototype",
-                     ["Every mvp feature meets its acceptance criteria",
-                      "The prototype answers the strategy's prototype_must_prove questions"]),
+                     ["Every mvp feature meets its acceptance criteria"] + content_exit
+                     + ["The prototype answers the strategy's prototype_must_prove "
+                        "questions"]),
               "M2": ("Production scope", "production",
                      ["Every post-mvp feature meets its acceptance criteria"]),
               "M3": ("Platform integration and hardening", "hardening",

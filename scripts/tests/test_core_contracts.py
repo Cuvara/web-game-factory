@@ -84,6 +84,8 @@ REFERENCE_FILES = (
      (os.path.join(paths.REFERENCE, "research-analysis.yaml"), "research-analysis")]
     + [(path, "platform-profile")
        for path in sorted(glob.glob(os.path.join(paths.PLATFORMS, "*.yaml")))]
+    + [(path, "publication-profile")
+       for path in sorted(glob.glob(os.path.join(paths.REFERENCE, "publication", "*.yaml")))]
     + [(path, "scoring-model")
        for path in sorted(glob.glob(os.path.join(paths.SCORING, "*.yaml")))]
 )
@@ -997,9 +999,20 @@ class MockOutputs(unittest.TestCase):
         return self.api.run(RunRequest(resume=state.run_id, decision="pass",
                                        decided_by="human"))
 
+    def publish(self, state):
+        """`wgf publish --run <id>`: the publish group in the drafting run. G5 a mock run
+        approves itself; G6 only a person decides."""
+        state = self.api.run(RunRequest(run_id=state.run_id, scope="publish"))
+        self.assertEqual((state.status, state.cursor), (RunStatus.WAITING, "publish-review"))
+        return self.api.run(RunRequest(resume=state.run_id, decision="publish",
+                                       decided_by="human", note="contract probe"))
+
     def test_a_full_mock_run_emits_only_valid_artifacts(self):
         state = self.pass_g4(self.api.run(RunRequest(mock=True, project_id="contract-probe")))
         self.assertEqual(state.status, RunStatus.COMPLETED)
+        # `wgf new-game` ends with the draft; the publish group is the same run, continued.
+        state = self.publish(state)
+        self.assertEqual(state.status, RunStatus.COMPLETED, state.message)
         seen = self.audit(state)
         declared = {t for step in self.api.definition().steps for t in step.outputs}
         self.assertEqual(seen, declared)

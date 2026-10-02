@@ -79,6 +79,13 @@ bin/wgf decide <run-id> pass              # G4 (pass|iterate|kill): only a perso
 bin/wgf verify --mock                     # one step; `plan` = strategy, checkpoint, design
 bin/wgf resume <run-id> [--from STEP]     # = wgf <cmd> --resume <run-id>, which still works
 bin/wgf decide <run-id> approve [--note TEXT]   # answer a waiting checkpoint
+bin/wgf publish --run <run-id>            # the `publish` group in the run that drafted the release:
+                                          # platform-validate, G5 (approve|reject), G6 (publish|
+                                          # reject, a person only), submit (docs/publish-module.md)
+python3 scripts/wgf-publish.py profiles   # every portal's submission method, terms, credential name
+python3 scripts/wgf-publish.py capture crazygames --out ~/secrets/cg.json --checkout ../my-game
+                                          # a person logs in once; the session is what the submit
+                                          # step acts with (never a typed password)
 bin/wgf runs --waiting [--json]           # runs waiting for a decision: step, gate, choices,
                                           # timeout eligibility (reported; `resume` applies it)
 bin/wgf status [<run-id>] [--json]        # liveness: running | hung | stale; exits as the run
@@ -128,7 +135,10 @@ validate against.
 | game repositories | Game source and release artifacts | Created from the template, never from scratch |
 
 Release artifacts (`release-manifest`, `qa-report`, `platform-publication`) belong in the game
-repository under `release/<release-id>/`, not in `workspace/`.
+repository under `release/<release-id>/`, not in `workspace/`. So does the store metadata the
+publication guards read (`release/<release-id>/store-metadata.json`). A portal session a
+person captured for the `submit` step lives where the installation keeps secrets - never in
+any repository (`docs/publish-module.md`).
 
 ## Lifecycle — two tiers, not one chain
 
@@ -181,11 +191,20 @@ recommendation); a run snapshots the windows at start, and the approval is appli
 `wgf resume` and recorded like a decision (`automation`, `mode: timeout`) — `wgf status`
 only reports eligibility.
 
-In `new-game`, G2, G3 and G4 are `human-checkpoint` steps decided on their gate's
+In `new-game`, G2, G3, G4, G5 and G6 are `human-checkpoint` steps decided on their gate's
 `required_artifacts`. G4 (`prototype-review`) sits after `verify` passes and before
 `release`: `pass` releases, `iterate` loops back to develop, `kill` ends the run (exit 0,
 `Ended: kill at G4`). Release cannot run until G4 passes, and a newer verification makes G4
-ask again. A `--mock` run therefore stops at G4. Workflow 5 judges the production build
+ask again. A `--mock` run therefore stops at G4, and `wgf new-game` ends with the drafted
+release. G5 and G6 are the `publish` group's, after `release`: `wgf publish --run <run-id>`
+continues the same run through `platform-validate` (release:validating: the publication
+guards, readiness READY | BLOCKED | HUMAN_REQUIRED | UNKNOWN), G5 (`approve`/`reject`), G6
+(`publish`/`reject`, pinning the release-manifest by hash; a person only) and `submit`
+(release:submitting: the platform adapter, one attempt, the portal state read back;
+`factory.publish.mode` is dry-run until an installation sets live AND `WGF_PUBLISH_LIVE=1`).
+A login, CAPTCHA, second factor, unconfirmed portal terms, a missing session or a portal
+without an automated method stops `submit` WAITING_FOR_HUMAN (`wgf decide <run> done|abandon`).
+See `docs/publish-module.md`. Workflow 5 judges the production build
 before review: `production-quality` and `visual-qa` route `assets` (an asset must be made
 again) to `assets` and `develop` to `develop`, and `release` refuses unless both passed the
 development commit it ships (`docs/production-architecture.md`).
@@ -252,8 +271,8 @@ Real step modules register via `factory.steps.modules` in `workspace/config/fact
 every step type in `new-game` has one: `wgf_discovery` (research), `wgf_strategy`,
 `wgf_design`, `wgf_techplan`, `wgf_init`, `wgf_assets`, `wgf_develop`, `wgf_review`,
 `wgf_sdk`, `wgf_verification`, `wgf_release`, `wgf_playability`, `wgf_production`
-(production-quality) and `wgf_visualqa` (visual-qa). `--mock` still replaces all of them with
-placeholders for a run. Discovery reads evidence snapshots from
+(production-quality), `wgf_visualqa` (visual-qa) and `wgf_publish` (platform-validate and
+publish). `--mock` still replaces all of them with placeholders for a run. Discovery reads evidence snapshots from
 `workspace/research/snapshots/` and teardown records from `workspace/research/games/`, codes
 every game on `core/reference/research-vocabulary.yaml`, and proposes several opportunities
 (Research V2, `docs/research-v2.md`); strategy and design read the `research` block. A
@@ -379,6 +398,11 @@ seen by the engine — validate what you write there with ajv.
 - `docs/review-module.md` — the `review` step: enforced read-only reviewer, verdict contract
 - `docs/techplan-module.md` — the `tech-plan` step: engine and platform pins, G3
 - `docs/release-module.md` — the `release` step: what it refuses, packaging checks
+- `docs/publish-module.md` — the `publish` group: `platform-validate` (the publication guards,
+  readiness), G5/G6 in the run, `submit` (platform adapters: the portal's API or CLI where
+  one exists, a deterministic direct-Playwright run of its console where none does, a person
+  otherwise), the idempotency key, the captured session, redaction, dry-run vs live, the
+  fixture portal; Playwright MCP is not the submission executor
 - `docs/core-contracts.md` — every pipeline boundary, lineage rules, the validator
 - `docs/checkouts.md` — where the game checkout is: one precedence for every step
   (`with:` → `WGF_GAME_REPO` → scaffold-record `local_path` → `factory.checkouts`), the
@@ -434,4 +458,9 @@ Update `docs/` when a machine, contract or role changes.
 
 Creating repositories, pushing code, submitting to portals and spending money are
 outward-facing and largely irreversible. Do not perform them unless explicitly instructed,
-even when a procedure or stage file describes them. Secrets never enter source.
+even when a procedure or stage file describes them. The `submit` step submits to a portal
+only behind a person's G6 decision pinning the manifest, only in `factory.publish.mode:
+live` with `WGF_PUBLISH_LIVE=1`, only where a person has recorded that the portal's terms
+permit it, and only through its documented tool or its own console - never through an agent
+deciding what to click, never past a login, a CAPTCHA or a second factor. Secrets never enter
+source; a portal session is named by an environment variable and redacted everywhere.

@@ -312,6 +312,7 @@ class FreshPackage(unittest.TestCase):
                          "scripts/wgf_assets/blender_scripts/build_model.py",
                          "scripts/wgf_assets/gltf.py", "scripts/wgf_assets/modelspec.py",
                          "scripts/wgf-model.py",
+                         "scripts/wgf-publish.py",
                          "core/artifacts/shared/model-spec.schema.json",
                          "core/craft/3d-assets-and-animation.md",
                          "core/artifacts/shared/runtime-assets.schema.json",

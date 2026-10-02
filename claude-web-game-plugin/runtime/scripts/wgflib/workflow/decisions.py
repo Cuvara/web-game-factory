@@ -36,10 +36,13 @@ class DecisionRecordError(ValueError):
 # THE mapping, workflow choice -> (decision-record `decision`, lifecycle machine event).
 # The event is the machine edge the decision authorizes (core/lifecycle/*.machine.yaml);
 # None where no edge corresponds (a deferral decides nothing yet). `kill` is gates.yaml's
-# `abandon` (G4 outcomes: pass, iterate, abandon). A choice missing here has no
+# `abandon` (G4 outcomes: pass, iterate, abandon); `publish` is G6's approval, named after
+# the release machine's `publish` edge (approved -> validating), so the word a person types
+# at the publish gate is the thing it authorizes. A choice missing here has no
 # decision-record meaning, and a checkpoint that must emit a record refuses it.
 CHOICES = {
     "approve": ("approved", "approve"),
+    "publish": ("approved", "publish"),
     "reject": ("rejected", "reject"),
     "pass": ("pass", "pass"),
     "iterate": ("iterate", "iterate"),

@@ -118,7 +118,13 @@ def fast_case(key):
             from wgflib.workflow.definition import load_definition
             config = harness.build_config(game, self.workdir, harness.TEMPLATE_DIR)
             self.assertIs(config["release"].get("allow_unreviewed", False), False)
-            self.assertEqual(harness.step_ids(), load_definition("new-game").step_ids)
+            # `wgf new-game` ends with the drafted release; the `publish` group after it
+            # (G5, G6, submit: docs/publish-module.md) is entered only by a person, with
+            # `wgf publish --run`, and a golden run never contacts a portal.
+            definition = load_definition("new-game")
+            publish = set(definition.resolve_scope("publish"))
+            self.assertEqual(harness.step_ids(),
+                             [s for s in definition.step_ids if s not in publish])
             ids = harness.step_ids()
             self.assertEqual(ids[ids.index("sdk") + 1], "sdk-review")
             self.assertEqual(dict(games.EXPECTED_STEPS)["sdk-review"], "SUCCESS")

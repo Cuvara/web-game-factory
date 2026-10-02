@@ -1,0 +1,29 @@
+# Publication profile - Y8 (docs/publish-module.md)
+#
+# Checked 2026-10-02: Y8 publishes no upload or submission API; games are submitted through
+# its developer account web UI. No console flow has been exercised, and automated use of the
+# console is not addressed by a public document found: unverified on both counts, so the
+# publish step stops HUMAN_REQUIRED and hands the packaged release to a person.
+
+id: y8
+version: 1.0.0
+status: unverified
+docs: https://www.y8.com/
+
+submission:
+  method: console
+  automation_terms: unverified
+  console:
+    url: https://account.y8.com/
+    allowed_origins: [https://account.y8.com, https://www.y8.com]
+    upload_max_mb: null
+    upload_timeout_s: 900
+  credential:
+    kind: storage-state
+    env: WGF_PUBLISH_Y8_STORAGE_STATE
+  human_required: [login, two-factor, terms, review]
+  verification:
+    states: [Pending, Approved, Rejected]
+    submitted_states: [Pending]
+    live_states: [Approved]
+    rejected_states: [Rejected]

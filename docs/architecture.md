@@ -144,5 +144,9 @@ under which to revisit the decision.
 
 ## Status
 
-Core methodology, contracts and adapters are implemented. Real portal integrations,
-publishing credentials and campaign automation are deliberately not.
+Core methodology, contracts and adapters are implemented. Publication runs inside the
+Factory as the `publish` group (validating, G5, G6, submitting; `docs/publish-module.md`),
+through platform adapters whose console flows ship unverified and off until a person
+confirms each portal's terms; no portal publishes an upload API. Publishing credentials are
+captured by a person and never stored here. Campaign automation is deliberately not
+implemented.

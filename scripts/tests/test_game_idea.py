@@ -44,7 +44,9 @@ from wgflib.workflow.engine import EngineError  # noqa: E402
 from wgflib.workflow.model import RunStatus, StepOutcome  # noqa: E402
 from wgflib.yamllite import load_file  # noqa: E402
 
-GOALKEEPER = "3D goalkeeper game where the player blocks penalty shots"
+# A brief the catalog cannot answer: no catalog entry, genre family or genre-node alias holds
+# any of its words, which is what makes it the fixture for "nothing matches the brief".
+GOALKEEPER = "3D goalkeeper game where the player saves penalty kicks"
 DISCOVERY = os.path.join(HERE, "fixtures", "discovery")
 CONCEPTS = os.path.join(DISCOVERY, "concepts", "concepts.yaml")
 AS_OF = "2026-09-23T00:00:00Z"
@@ -343,15 +345,17 @@ class RealModules(Scratch):
         self.assertEqual([g for g in report["gaps"] if g["kind"] == "idea-unmatched"], [])
 
     def test_an_unbuildable_match_is_never_selected_for_the_idea(self):
-        # sort-puzzle matches every word, but the catalog declares no design archetype for
-        # it: research keeps it excluded and carries the brief to a buildable concept.
-        state = self.real_api().run(RunRequest(scope="research", project_id="sorter",
-                                               idea="A calm sort puzzle with colored balls"))
+        # physics-puzzle matches the most words, but the catalog declares neither a design
+        # archetype nor a genre model for it: research keeps it excluded and carries the brief
+        # to a buildable concept.
+        state = self.real_api().run(RunRequest(
+            scope="research", project_id="dropper",
+            idea="A calm physics puzzle with falling blocks"))
         report = self.artifact(state, "research-report")
-        sort = next(c for c in report["candidates"] if c["id"] == "sort-puzzle")
-        self.assertEqual(sort["status"], "excluded")
-        self.assertEqual(sort["idea_match"]["terms"], ["sort", "puzzle"])
-        self.assertNotEqual(report["selection"]["candidate_id"], "sort-puzzle")
+        physics = next(c for c in report["candidates"] if c["id"] == "physics-puzzle")
+        self.assertEqual(physics["status"], "excluded")
+        self.assertEqual(physics["idea_match"]["terms"], ["physics", "puzzle"])
+        self.assertNotEqual(report["selection"]["candidate_id"], "physics-puzzle")
 
     def test_without_an_idea_research_is_unchanged(self):
         api = self.real_api()
@@ -628,6 +632,33 @@ class IdeaMatching(unittest.TestCase):
         self.assertEqual(analysis.idea_dimension("a 2d runner"), "2d")
         self.assertIsNone(analysis.idea_dimension("2D or 3D"))
         self.assertIsNone(analysis.idea_dimension("goalkeeper"))
+
+    def test_idea_matches_a_family_label(self):
+        """An entry built from a genre model is the shape of its whole family: the family's
+        label and the genre nodes it covers are words for the same game."""
+        survivor = {"genre": "action", "subgenre": "arena-survivor", "title": "Arena Survivor",
+                    "core_mechanic": "weapons fire themselves", "genre_model": "survival",
+                    "market_tags": ["action"]}
+        # "survival" is in neither the genre, the subgenre, the title nor the tags: only the
+        # family label (Survival (arena survivor)) holds it.
+        self.assertEqual(analysis.idea_match(survivor, "a survival game")["terms"],
+                         ["survival"])
+        self.assertEqual(analysis.idea_match(dict(survivor, genre_model=None),
+                                            "a survival game")["terms"], [])
+        # A node id matches whole and is never split: the puzzle family covers bubble-shooter,
+        # which does not make a block puzzle a shooter.
+        block = {"genre": "puzzle", "subgenre": "block-puzzle", "title": "Block Grid Puzzle",
+                 "core_mechanic": "drag given block shapes onto a grid",
+                 "genre_model": "puzzle", "market_tags": ["puzzle"]}
+        self.assertEqual(analysis.idea_match(block, "a shooter game")["terms"], [])
+        self.assertEqual(analysis.idea_match(block, "a bubble-shooter game")["terms"],
+                         ["bubble-shooter"])
+        # End to end, on the fixture corpus: the brief selects the shape its family names.
+        report = outputs(research(idea="a tower defense game"))["research-report"]
+        self.assertEqual(report["selection"]["candidate_id"], "tower-defense")
+        chosen = next(c for c in report["candidates"] if c["status"] == "selected")
+        self.assertEqual(chosen["idea_match"]["terms"], ["tower", "defense"])
+        self.assertEqual([g for g in report["gaps"] if g["kind"] == "idea-unmatched"], [])
 
 
 # -- the surfaces -----------------------------------------------------------------------------

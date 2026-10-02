@@ -161,8 +161,10 @@ class Scratch(unittest.TestCase):
 
 class Buildability(unittest.TestCase):
     """Research carries forward only a concept the design module can build: one whose catalog
-    entry names a `design_archetype`. The rest stay in the report, excluded, with the reason.
-    scripts/tests/test_research_to_design.py ties each declaration to the real design step."""
+    entry names a `design_archetype`, or a `genre_model` - the genre family whose model
+    (core/reference/genre-models.yaml) the design is authored from. The rest stay in the
+    report, excluded, with the reason. scripts/tests/test_research_to_design.py ties each
+    declaration to the real design step."""
 
     @classmethod
     def setUpClass(cls):
@@ -177,7 +179,8 @@ class Buildability(unittest.TestCase):
 
     def test_only_a_buildable_concept_is_selected(self):
         self.assertEqual(self.result.outcome, StepOutcome.SUCCESS, self.result.error)
-        buildable = {a["id"] for a in self.catalog if a["design_archetype"]}
+        buildable = {a["id"] for a in self.catalog
+                     if a["design_archetype"] or a.get("genre_model")}
         self.assertIn(self.report["selection"]["candidate_id"], buildable)
         for candidate in self.report["candidates"]:
             if candidate["id"] not in buildable:
@@ -188,11 +191,13 @@ class Buildability(unittest.TestCase):
                                         ("veto fired", "duplicate of", "no scoped platform")))
 
     def test_nothing_buildable_blocks_with_the_report(self):
-        result = run_step(genres=["block-puzzle"])
+        # `word` scopes the scan to word-puzzle alone: no design archetype, and no genre
+        # family lists the word genre node either.
+        result = run_step(genres=["word"])
         self.assertEqual(result.outcome, StepOutcome.BLOCKED)
         report = artifacts(result)["research-report"]
         self.assertEqual(report["selection"]["candidate_id"], "none")
-        block = next(c for c in report["candidates"] if c["id"] == "block-puzzle")
+        block = next(c for c in report["candidates"] if c["id"] == "word-puzzle")
         self.assertIn("not buildable", block["exclusion_reason"])
 
     def test_a_catalog_that_does_not_declare_it_excludes_nothing_for_it(self):
@@ -200,6 +205,48 @@ class Buildability(unittest.TestCase):
         self.assertTrue(buildable({"id": "x"}))
         self.assertFalse(buildable({"id": "x", "design_archetype": None}))
         self.assertTrue(buildable({"id": "x", "design_archetype": "lane-runner"}))
+
+    def test_genre_model_entry_is_buildable(self):
+        from wgf_discovery.analysis import buildable
+        entry = next(a for a in self.catalog if a["id"] == "tower-defense")
+        self.assertIsNone(entry["design_archetype"])
+        self.assertEqual(entry["genre_model"], "strategy")
+        self.assertNotIn("unavailable", entry)
+        self.assertTrue(buildable(entry))
+        self.assertTrue(buildable({"id": "x", "design_archetype": None,
+                                   "genre_model": "strategy"}))
+        candidate = next(c for c in self.report["candidates"] if c["id"] == "tower-defense")
+        self.assertNotEqual(candidate["status"], "excluded")
+        self.assertNotIn("exclusion_reason", candidate)
+
+    def test_null_entry_stays_a_capability_gap(self):
+        nulls = [a for a in self.catalog
+                 if not a["design_archetype"] and not a.get("genre_model")]
+        self.assertTrue(nulls, "the catalog must keep what the Factory cannot build")
+        for entry in nulls:
+            with self.subTest(entry=entry["id"]):
+                self.assertTrue(entry.get("unavailable"), "a null entry says why")
+                candidate = next(c for c in self.report["candidates"]
+                                 if c["id"] == entry["id"])
+                self.assertEqual(candidate["status"], "excluded", "kept, never dropped")
+                self.assertTrue(candidate["exclusion_reason"].startswith(
+                    ("not buildable", "veto fired", "duplicate of", "no scoped platform")))
+
+    def test_catalog_entries_name_a_genre_model_that_exists(self):
+        from wgf_discovery.analysis import genre_families
+        from wgf_discovery.opportunities import family_of_node
+        from wgf_discovery.vocabulary import Vocabulary
+        families, vocabulary = genre_families(), Vocabulary()
+        declared = [a for a in self.catalog if a.get("genre_model")]
+        self.assertTrue(declared)
+        for entry in declared:
+            with self.subTest(entry=entry["id"]):
+                family = entry["genre_model"]
+                self.assertIn(family, families)
+                # The family covers the genre node the entry builds, and resolving the node
+                # over the vocabulary tree reaches the same family: one answer, two roads.
+                self.assertIn(entry["genre_node"], families[family]["nodes"])
+                self.assertEqual(family_of_node(vocabulary, entry["genre_node"]), family)
 
 
 # -- the successful scan --------------------------------------------------------------------
@@ -353,8 +400,16 @@ class ResearchReport(unittest.TestCase):
     def test_observed_market_presence_outranks_estimates(self):
         selected = next(c for c in self.report["candidates"] if c["status"] == "selected")
         self.assertTrue(selected["market_signal"]["observed"])
-        self.assertIn(selected["id"], ("block-puzzle", "sort-puzzle"))
-        self.assertIn("Fixture", " ".join(selected["concept"]["reference_titles"]))
+        # Observed from the corpus, by claim - never from the catalog's own figures.
+        self.assertTrue(selected["market_signal"]["claim_refs"])
+        # A candidate whose market figures are only catalog estimates does not win, even when
+        # it screens higher: `flip-arcade` does here, and is still only considered.
+        estimated = [c for c in self.report["candidates"]
+                     if c["status"] == "considered" and not c["market_signal"]["observed"]]
+        self.assertTrue(estimated)
+        self.assertTrue(any(c["screen"]["score"] > selected["screen"]["score"]
+                            for c in estimated),
+                        [(c["id"], c["screen"]["score"]) for c in estimated])
 
     def test_web_exclusivity_becomes_an_opportunity_risk(self):
         self.assertIn("poki", self.opportunity["candidate_platforms"])

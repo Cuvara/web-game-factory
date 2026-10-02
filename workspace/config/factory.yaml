@@ -579,7 +579,7 @@ factory:
   design:
     author: archetype
     # agent:
-    #   draft_from: stdout
+    #   draft_from: file           # edits {draft} in place; stdout overflows a host's reply
     #   argv:
     #     - claude
     #     - -p
@@ -589,20 +589,20 @@ factory:
     #     - --safe-mode
     #     - --strict-mcp-config
     #     - --tools
-    #     - "Read"
+    #     - "Read,Edit"
     #     - --allowedTools
-    #     - "Read"
+    #     - "Read,Edit(/{draft})"
     #     - --disallowedTools
-    #     - "Edit,Write,NotebookEdit,Bash,WebFetch,WebSearch"
+    #     - "Write,NotebookEdit,Bash,WebFetch,WebSearch"
     #     - --permission-mode
     #     - dontAsk
     #     - --no-session-persistence
     #     - --output-format
     #     - text
     #     - --max-turns
-    #     - "30"
+    #     - "80"
     #     - --max-budget-usd
-    #     - "5"
+    #     - "8"
     #   timeout_seconds: 1800
     #   idle_timeout_seconds: null
 

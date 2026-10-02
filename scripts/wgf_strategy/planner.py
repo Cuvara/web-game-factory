@@ -100,6 +100,9 @@ class Policy:
         "default_session_seconds": 180,
         "min_session_seconds": 60,
         "max_session_seconds": 300,
+        # Design's depth bar (core/reference/design-depth.yaml first_session.min_s, held equal
+        # by test_strategy): a first session shorter is refused at design, after G2.
+        "min_first_session_seconds": 120,
         "sessions_per_day_target": 3,
         "max_prototype_iterations": 2,
     }
@@ -335,7 +338,13 @@ class _Plan:
                 f"sessions keep content needs small and fit portal play patterns")
             target = policy.max_session_seconds
         target = max(policy.min_session_seconds, int(round(target)))
-        first = max(policy.min_session_seconds, int(round(target * 0.75 / 10.0)) * 10)
+        first = max(policy.min_session_seconds, policy.min_first_session_seconds,
+                    int(round(target * 0.75 / 10.0)) * 10)
+        if first > target:
+            self.decisions.append(
+                f"Target session raised from {target}s to {first}s: a first session must "
+                f"last {policy.min_first_session_seconds}s to show the loop more than once")
+            target = first
         self.session_body = {
             "first_session_seconds": min(first, target),
             "target_seconds": target,
@@ -461,13 +470,27 @@ class _Plan:
                             "not state")
         required_profile = self.profiles[required]
         interval = (required_profile.get("ads") or {}).get("interstitial_min_interval_s")
-        if "interstitial" in placements and isinstance(interval, (int, float)) and \
-                self.session_body["target_seconds"] < interval:
-            self.risk(f"The {self.session_body['target_seconds']}s session is shorter than "
-                      f"{required_profile.get('name', required)}'s {interval:g}s interstitial "
-                      f"interval: at most one interstitial per session", "low",
-                      "Interstitials go between sessions only; revenue rests on the primary "
-                      "placement")
+        target = self.session_body["target_seconds"]
+        if isinstance(interval, (int, float)) and target < interval:
+            # Design's consistency rule `interstitial_interval_fits_session` blocks a session
+            # shorter than a required platform's interstitial interval; a strategy that set
+            # one would be approved at G2 and then refused at design.
+            name = required_profile.get("name", required)
+            if interval <= self.policy.max_session_seconds:
+                raised = int(math.ceil(interval))
+                self.session_body["target_seconds"] = raised
+                self.decisions.append(
+                    f"Target session raised from {target}s to {raised}s: {name}'s "
+                    f"interstitial interval is {interval:g}s, and a shorter session cannot "
+                    f"hold the ad model")
+                for entry in self.assumptions:
+                    if entry["statement"] == f"Players sustain a {target}-second session":
+                        entry["statement"] = f"Players sustain a {raised}-second session"
+            else:
+                self.risk(f"The {target}s session is shorter than {name}'s {interval:g}s "
+                          f"interstitial interval: at most one interstitial per session",
+                          "high", "Lengthen the session in design or choose another "
+                          "required platform at G2")
         locales = self._locales()
         if [locale for locale in locales if locale != "en"]:
             self.risk(f"Required locales {', '.join(locales)} must be localized by a person, "

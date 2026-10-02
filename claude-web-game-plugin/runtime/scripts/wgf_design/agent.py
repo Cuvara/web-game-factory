@@ -9,7 +9,8 @@ Opt-in. An installation selects it in workspace/config/factory.yaml:
           argv: [...]                # the host's non-interactive command; placeholders below
           timeout_seconds: 1800      # wall clock
           idle_timeout_seconds: 600  # no output for this long ends the attempt
-          draft_from: file           # file: the agent writes {draft}
+          draft_from: file           # file: the agent edits {draft}, seeded with the
+                                     # starting (or, on a repair, the previous) draft
                                      # stdout: it prints the draft JSON last
 
 `argv` placeholders, substituted per element and never re-formatted: {request} (the request
@@ -64,7 +65,9 @@ PROMPT = (
     "Improve the design - the core loop, feel, onboarding, difficulty, rewards and failure "
     "feedback, audio and visual identity - within the strategy's scope: never add a feature, "
     "a monetization placement or a platform the strategy did not approve, and keep every key "
-    "and id reference valid. Write the complete draft, and nothing else, as JSON to {draft}."
+    "and id reference valid. {draft} already holds the starting draft (when you are asked "
+    "again, your previous draft): edit that file in place, a section at a time, so it stays "
+    "one valid JSON object of the required shape. Do not print the draft."
 )
 PROMPT_STDOUT = (
     "You are the game designer for this title. Read the request at {request}: the approved "
@@ -247,6 +250,14 @@ class AgentAuthor(DesignAuthor):
             raise AuthorError(str(exc)) from exc
         values = {"request": request_path, "draft": draft_path}
         stdout_mode = settings["draft_from"] == "stdout"
+        seed = None
+        if not stdout_mode:
+            # The agent edits the draft in place rather than reproducing all of it: a full
+            # design is tens of kilobytes, more than a host reliably emits in one reply.
+            seed = json.dumps((repair.get("previous_draft") if repair else None) or starting,
+                              indent=2, ensure_ascii=False, default=str) + "\n"
+            with open(draft_path, "w", encoding="utf-8", newline="\n") as handle:
+                handle.write(seed)
         values["prompt"] = (PROMPT_STDOUT if stdout_mode else PROMPT).format(**values)
         if idea:
             values["prompt"] += PROMPT_BRIEF
@@ -279,13 +290,19 @@ class AgentAuthor(DesignAuthor):
                 raise AuthorError("the design draft is larger than 4 MiB")
             try:
                 with open(draft_path, encoding="utf-8") as handle:
-                    draft = json.load(handle)
+                    text = handle.read()
+                draft = json.loads(text)
             except (OSError, UnicodeDecodeError, ValueError) as exc:
                 raise AuthorError(f"the design draft is not readable JSON: {exc}") from exc
+            if text == seed:
+                raise AuthorError(f"the design agent left the draft at {draft_path} "
+                                  f"unchanged")
         problems = check_shape(draft)
         if problems:
+            hint = (" - in stdout mode this is usually a reply cut by the host's output limit; "
+                    "use draft_from: file" if stdout_mode else "")
             raise AuthorError("the design draft does not have the required shape: "
-                              + "; ".join(problems[:8]))
+                              + "; ".join(problems[:8]) + hint)
         return draft
 
 

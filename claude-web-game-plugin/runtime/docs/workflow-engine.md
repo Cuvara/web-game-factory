@@ -949,8 +949,11 @@ lets an agent host write the draft:
   It holds the strategy, the platform profiles, and the archetype's draft as a starting point
   in exactly the required shape.
 - **Run and read.** It runs `factory.design.agent.argv`, with `{request}`, `{draft}` and
-  `{prompt}` substituted, through `wgflib.procs` with a timeout and a log. It reads the draft
-  back from `{draft}`, or with `draft_from: stdout` from the last JSON object printed.
+  `{prompt}` substituted, through `wgflib.procs` with a timeout and a log. With
+  `draft_from: file` (the default) `{draft}` is seeded with the starting draft - on a repair,
+  the previous one - and the agent edits it in place; a draft left unchanged is refused. With
+  `draft_from: stdout` it reads the last JSON object printed, which fails on a host whose
+  reply is cut at its output limit: a whole design is tens of kilobytes.
 - **Shape check.** A draft that is not JSON or lacks a required section is an `AuthorError`
   (not retryable). This check runs before `finalize`.
 - **Host failures.** A host that fails, times out or goes silent raises `AgentRunFailed`,

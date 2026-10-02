@@ -167,6 +167,26 @@ class Planner(unittest.TestCase):
         small = plan(opportunity(estimates={"dev_speed_days": 3}))
         self.assertEqual(small["timebox_days"], 7)
 
+    def test_a_session_is_never_shorter_than_the_required_interstitial_interval(self):
+        # Design's blocking rule `interstitial_interval_fits_session` would refuse it after G2.
+        short = {"session_seconds": 90}
+        us = plan(opportunity(estimates=short, audience__regions=["us", "gb"]))
+        self.assertEqual(us["session"]["target_seconds"], 180)  # CrazyGames: 180s
+        self.assertIn("Target session raised from 120s to 180s: CrazyGames",
+                      " ".join(us["production_scope"]["scope_decisions"]))
+        self.assertTrue(any(a["statement"] == "Players sustain a 180-second session"
+                            for a in us["assumptions"]))
+        # Yandex (60s) holds no bar above the first-session one.
+        self.assertEqual(plan(opportunity(estimates=short))["session"]["target_seconds"], 120)
+
+    def test_the_first_session_meets_the_design_depth_bar(self):
+        from wgf_design.depth import load_rules
+        bar = load_rules()["first_session"]["min_s"]
+        self.assertEqual(Policy.FIELDS["min_first_session_seconds"], bar)
+        body = plan(opportunity(estimates={"session_seconds": 60}))
+        self.assertEqual(body["session"]["first_session_seconds"], bar)
+        self.assertGreaterEqual(body["session"]["target_seconds"], bar)
+
     def test_rapid_production_bias(self):
         body = plan()
         scope = body["production_scope"]

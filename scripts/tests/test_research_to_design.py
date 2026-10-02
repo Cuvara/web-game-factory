@@ -1,14 +1,18 @@
-"""Research selects only what design can build: the catalog's `design_archetype`, held true.
+"""Research selects only what design can build: the catalog's two roads, held true.
 
-scripts/wgf_discovery/archetypes.yaml declares, per concept, the design module's archetype
-that designs it (`design_archetype`), or null. Research never selects a null one (it is kept
-in the report as excluded, "not buildable"). This test makes the declaration a measurement:
-for every catalog entry, the real research, strategy and design steps run on that concept
-alone, and
+scripts/wgf_discovery/archetypes.yaml declares, per concept, how the design module builds it:
+a `design_archetype` (a hand-written shape in scripts/wgf_design/archetypes.py), a
+`genre_model` (a family of core/reference/genre-models.yaml, which the genre seed author
+designs from), or neither - and then it is not buildable, research never selects it, and it
+stays in the report as excluded. This test makes the declaration a measurement: for every
+catalog entry, the real research, strategy and design steps run on that concept alone, and
 
-  * a declared entry's design passes consistency, built from exactly the declared archetype;
-  * a null entry's design fails consistency - so when the design module learns a concept,
-    this test fails until the catalog declares it.
+  * an entry with a `design_archetype` gets a design built from exactly that archetype;
+  * an entry with only a `genre_model` gets a design of exactly that genre family, carrying at
+    least the family's `units.min_mvp` content units, with no content rule breached and the
+    content recorded in `research.applied`;
+  * an entry with neither fails design - so when the design module learns a concept, this test
+    fails until the catalog declares it.
 
 In 2.4.1 nothing tied the two, and 9 of the 11 concepts research could select failed at
 design (concept_mechanics_carried, design_adds_no_foreign_mechanic): a real new-game run
@@ -35,12 +39,15 @@ SCRIPTS = os.path.dirname(HERE)
 sys.path.insert(0, SCRIPTS)
 
 from wgf_design import archetypes as design_archetypes  # noqa: E402
+from wgf_design import consistency  # noqa: E402
 from wgf_discovery.step import CATALOG  # noqa: E402
+from wgflib import genre_models  # noqa: E402
 from wgflib.yamllite import load_file  # noqa: E402
 
 CORPUS = os.path.join(HERE, "fixtures", "discovery", "corpus")
 AS_OF = "2026-09-23T00:00:00Z"
 ENGINE = os.path.join(SCRIPTS, "wgf.py")
+FAMILIES = genre_models.load()["families"]
 
 
 def catalog_entries():
@@ -58,7 +65,7 @@ class ResearchToDesign(unittest.TestCase):
     def setUpClass(cls):
         cls.base = tempfile.mkdtemp(prefix="wgf-research-design-")
         cls.addClassCleanup(shutil.rmtree, cls.base, ignore_errors=True)
-        cls.declared = {a["id"]: a["design_archetype"]
+        cls.declared = {a["id"]: (a["design_archetype"], a.get("genre_model"))
                         for a in load_file(CATALOG)["archetypes"]}
         cls.head, cls.entries = catalog_entries()
 
@@ -100,26 +107,58 @@ class ResearchToDesign(unittest.TestCase):
                 return json.load(handle)
         return state, artifact
 
+    @staticmethod
+    def why(breached, design, artifact):
+        """The breached rules, and - for the two concept rules - which mechanic words the
+        design and the strategy disagree on. A genre family's seed wording and a catalog
+        entry's concept wording have to name the same mechanics, and when they do not this is
+        where it shows: `uncarried` is a word the concept names and the design does not,
+        `foreign` a word the design names and the strategy nowhere does."""
+        if not {"concept_mechanics_carried", "design_adds_no_foreign_mechanic"} & set(breached):
+            return breached
+        view = consistency.concept_view(design, artifact("title-strategy"),
+                                        consistency.load_rules().get("concept_terms") or {})
+        return (f"{breached}: uncarried {view['uncarried']}, foreign {view['foreign']} "
+                f"(the genre model's seed wording and the catalog entry's concept wording "
+                f"name different mechanics)")
+
     def test_each_declaration_matches_what_design_does(self):
         self.assertEqual(sorted(self.declared), sorted(i for i, _ in self.entries))
-        self.assertTrue(any(self.declared.values()), "at least one concept must be buildable")
+        self.assertTrue(any(a for a, _ in self.declared.values()),
+                        "at least one concept must be buildable from a design archetype")
+        self.assertTrue(any(m for _, m in self.declared.values()),
+                        "at least one concept must be buildable from a genre model")
         for archetype_id, entry in self.entries:
-            with self.subTest(concept=archetype_id,
-                              declared=self.declared[archetype_id]):
+            archetype, family = self.declared[archetype_id]
+            with self.subTest(concept=archetype_id, design_archetype=archetype,
+                              genre_model=family):
                 state, artifact = self.run_concept(archetype_id, entry)
                 design = state["steps"]["design"]["status"]
-                breached = [r["criterion_id"] for r in
-                            artifact("game-design")["consistency"]["rule_results"]
+                body = artifact("game-design")
+                breached = [r["criterion_id"] for r in body["consistency"]["rule_results"]
                             if r.get("breached")]
                 chosen, _why = design_archetypes.select(artifact("title-strategy"))
-                if self.declared[archetype_id]:
+                if archetype:
                     self.assertEqual(design, "SUCCESS", breached)
                     self.assertEqual(state["steps"]["tech-plan-review"]["status"], "SUCCESS")
-                    self.assertEqual(chosen, self.declared[archetype_id])
+                    self.assertEqual(chosen, archetype)
+                elif family:
+                    # The genre seed author designs it from the family's own model. No
+                    # hand-written archetype is involved, and none is expected to match.
+                    self.assertEqual(design, "SUCCESS", self.why(breached, body, artifact))
+                    self.assertEqual(state["steps"]["tech-plan-review"]["status"], "SUCCESS")
+                    self.assertEqual(body["genre"]["family"], family)
+                    units = [u for u in body["build_spec"]["content"]["units"]
+                             if u["tier"] == "mvp"]
+                    self.assertGreaterEqual(len(units), FAMILIES[family]["units"]["min_mvp"])
+                    self.assertEqual([r for r in breached if r.startswith("content.")], [])
+                    applied = {e["field"] for e in body["research"]["applied"]}
+                    self.assertIn("build_spec.content", applied)
+                    self.assertIn("genre.family", applied)
                 else:
                     self.assertEqual(design, "FAILED",
                                      f"design now builds {archetype_id} with {chosen}: "
-                                     "declare design_archetype in the catalog")
+                                     "declare design_archetype or genre_model in the catalog")
                     self.assertTrue(breached)
 
 

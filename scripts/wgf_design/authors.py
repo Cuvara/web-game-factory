@@ -21,18 +21,34 @@ and an installation selects it in workspace/config/factory.yaml:
         author: agent
 
 A workflow step may also pin one with `with: {author: <name>}`. Names only - never a path.
+
+The brief the step hands an author:
+
+    title_id, strategy, platforms, params, config, run_dir, visit, attempt
+    repair          {round, problems, previous_draft} - the composed design was invalid and
+                    this author `repairs`; the same author is asked again
+    gaps            [{field, question, ...}] - the gaps a prototype-report named in the design
+                    (`design_gaps`), to be answered at their own fields
+    previous_design the game-design those gaps were found in; the draft starts from it
+
+`gaps` and `previous_design` are the repair-a-shipped-design path and only the `agent` author
+can answer them: a deterministic author cannot invent the answer to a question about its own
+design, so `archetype` and `genre-seed` refuse the brief rather than silently ignore it.
 """
 
+import copy
 import re
+from collections import namedtuple
 
+from wgflib import genre_models
 from wgflib import template_contract as contract
 
 from . import archetypes, identity, presentation
 from . import depth as depth_check
 from .platforms import supported_placements, tightest_interval
 
-__all__ = ["DesignAuthor", "ArchetypeAuthor", "AUTHORS", "register_author", "resolve_author",
-           "AuthorError"]
+__all__ = ["DesignAuthor", "ArchetypeAuthor", "AUTHORS", "Resolved", "register_author",
+           "resolve_author", "AuthorError"]
 
 TIER_ORDER = ("mvp", "post-mvp", "optional")
 
@@ -52,6 +68,17 @@ STOP = {"with", "that", "this", "than", "from", "into", "only", "beyond", "more"
 
 class AuthorError(Exception):
     """The author cannot write a design from this brief. Not retryable."""
+
+
+# What designs this strategy, and everything that comes with it: the archetype's id and its
+# whole shape (`archetype`, including its `genre`, `content`, `difficulty_axes` and `mastery`),
+# its experience contract, its depth plan, why it was chosen, and the research-applied entries
+# the choice produced. `archetype` is a hand-written entry of archetypes.ARCHETYPES or one the
+# genre seed author synthesized from a family's model - the rest of the author reads one shape.
+Resolved = namedtuple("Resolved", "archetype_id archetype experience depth why applied")
+
+# The brief keys only an agent author can act on (see the module docstring).
+GAPS_NEED_AGENT = ("design gaps need the agent author; configure factory.design.author: agent")
 
 
 class DesignAuthor:
@@ -165,31 +192,61 @@ def _subsets_clause(locales):
 class ArchetypeAuthor(DesignAuthor):
     name = "archetype"
 
+    def _resolve(self, brief):
+        """`Resolved` for this brief: which archetype designs the strategy, and its shape.
+
+        One order, so the same strategy always resolves the same way:
+
+            1. the archetype the workflow step pinned (`with: {archetype: <id>}`);
+            2. the design archetype research's capability catalog declares buildable;
+            3. the genre family that catalog names instead (`capability.genre_model`) - the
+               genre seed author synthesizes the archetype from the family's own model;
+            4. the strategy's own words (archetypes.select).
+        """
+        strategy = brief["strategy"]
+        params = brief.get("params") or {}
+        research = research_of(strategy)
+        capability = (research or {}).get("capability") or {}
+        pinned = params.get("archetype")
+        applied = []
+        if not pinned and capability.get("buildable") and \
+                capability.get("design_archetype") in archetypes.ARCHETYPES:
+            archetype_id = capability["design_archetype"]
+            why = (f"research's capability catalog builds this opportunity with it "
+                   f"(entry {capability.get('catalog_entry')})")
+            applied.append({"field": "archetype", "source": "research",
+                            "detail": f"{archetype_id}: {capability.get('reason')}"})
+        else:
+            models = genre_models.load()
+            families = models.get("families") or {}
+            family = capability.get("genre_model") if not pinned else None
+            if family in families:
+                from .seed import GenreSeedAuthor
+                return GenreSeedAuthor().synthesize(family, models, strategy, families[family])
+            archetype_id, why = archetypes.select(strategy, pinned)
+            if research is not None:
+                applied.append({"field": "archetype", "source": "default",
+                                "detail": f"{archetype_id}: {why} (research named "
+                                          f"no buildable design archetype)"})
+        return Resolved(archetype_id, archetypes.ARCHETYPES[archetype_id],
+                        archetypes.EXPERIENCE[archetype_id], archetypes.DEPTH[archetype_id],
+                        why, applied)
+
     def draft(self, brief):
+        if brief.get("gaps"):
+            raise AuthorError(GAPS_NEED_AGENT)
         strategy = brief["strategy"]
         platforms = brief["platforms"]
         params = brief.get("params") or {}
         title_id = brief["title_id"]
 
         research = research_of(strategy)
-        applied = []
         try:
-            pinned_archetype = params.get("archetype")
-            capability = (research or {}).get("capability") or {}
-            if not pinned_archetype and capability.get("buildable") and \
-                    capability.get("design_archetype") in archetypes.ARCHETYPES:
-                archetype_id = capability["design_archetype"]
-                why_archetype = (f"research's capability catalog builds this opportunity with it "
-                                 f"(entry {capability.get('catalog_entry')})")
-                applied.append({"field": "archetype", "source": "research",
-                                "detail": f"{archetype_id}: {capability.get('reason')}"})
-            else:
-                archetype_id, why_archetype = archetypes.select(strategy, pinned_archetype)
-                if research is not None:
-                    applied.append({"field": "archetype", "source": "default",
-                                    "detail": f"{archetype_id}: {why_archetype} (research named "
-                                              f"no buildable design archetype)"})
-            affinity = archetypes.ARCHETYPES[archetype_id]["identity_affinity"]
+            resolved = self._resolve(brief)
+            archetype_id, why_archetype, applied = (resolved.archetype_id, resolved.why,
+                                                    list(resolved.applied))
+            a = resolved.archetype
+            affinity = a["identity_affinity"]
             art = research_art(research)
             kit_id, basis, matched = identity.pick(title_id, affinity, params.get("identity"), art)
             look = identity.look(kit_id)
@@ -208,7 +265,6 @@ class ArchetypeAuthor(DesignAuthor):
                                        f"art tone, palette or rendering for this cell")})
             if basis == "research" and art_refs:
                 applied[-1]["claim_refs"] = art_refs
-        a = archetypes.ARCHETYPES[archetype_id]
         exclusions = Exclusions(strategy.get("out_of_scope") or [])
         out_of_scope = [{"item": item, "why_excluded": why} for item, why in exclusions.entries]
         open_questions = list(strategy.get("prototype_must_prove") or [])
@@ -343,10 +399,22 @@ class ArchetypeAuthor(DesignAuthor):
                               "The player sets a new personal best, or three runs pass without improvement."),
         }
 
-        # 4. Scope fitted to the session: never more content than the retention curve surfaces.
-        content_units = a["content_units"]
-        if target <= 300:
-            content_units = min(content_units, 12)
+        # 4. Scope fitted to the session: the content block is what the game carries, so
+        # scope counts exactly what it lists (content.scope_count_agrees). A procedural
+        # design is counted by the units a session meets, since no list can be exhaustive.
+        content = copy.deepcopy(a["content"])
+        # Not a family: the session profile the content is held to. A casual audience playing
+        # in short bursts gets shorter units and one difficulty axis raised at a time.
+        session_profile = ("casual" if audience.get("type") == "casual" and target <= 300
+                           else "standard")
+        models = genre_models.load()
+        family_block = (models.get("families") or {}).get(a["genre"]["family"]) or {}
+        generation = content.get("generation") or {}
+        listed = content.get("units") or []
+        content_units = (generation.get("expected_units") if generation.get("mode") == "procedural"
+                         else len(listed))
+        content_unit_kind = content["unit_kind"]
+        kinds_word = content_unit_kind + ("" if content_unit_kind.endswith("s") else "s")
         locales = []
         for p in sorted(platforms, key=lambda p: not p.required):
             for locale in p.get("requirements", "locales_required", default=[]):
@@ -359,10 +427,10 @@ class ArchetypeAuthor(DesignAuthor):
         look, _swapped = identity.cover(look, locales, presentation.load_font_coverage())
         terminal = {
             "skill-only": f"Progression is the personal best. The loop is deliberately open, bounded by "
-                          f"{content_units} {a['content_unit_kind']} - there is no content treadmill to feed.",
+                          f"{content_units} {kinds_word} - there is no content treadmill to feed.",
             "linear-levels": f"Ends after level {content_units}: the set is complete, and replaying for stars "
                              "is the deliberate loop after that.",
-            "unlock-track": f"Ends when all {content_units} {a['content_unit_kind']} are unlocked; after that the "
+            "unlock-track": f"Ends when all {content_units} {kinds_word} are unlocked; after that the "
                             "loop is chasing best times.",
         }.get(a["progression_model"], "Loops deliberately on score.")
 
@@ -468,7 +536,7 @@ class ArchetypeAuthor(DesignAuthor):
         # The features depth rests on are matched without the words that name the core game
         # itself (its MVP mechanics): the strategy approved "track" and "level" as the game, so
         # an exclusion of music tracks or a level editor does not remove a stage map.
-        depth_plan = archetypes.DEPTH[archetype_id]
+        depth_plan = resolved.depth
         depth_features = {f["id"] for f in depth_plan["features"]}
         core = _stems(" ".join(" ".join([m["name"], m["description"]] + list(m["rules"]))
                                for m in a["mechanics"] if m["tier"] == "mvp"))
@@ -490,8 +558,15 @@ class ArchetypeAuthor(DesignAuthor):
         # 7. The build spec.
         spec = self._build_spec(a, look, engine, orientation, resolution, is_level, touchpoints,
                                 time_to_first_play, time_to_first_reward, run, target, audience,
-                                exclusions, features, archetypes.EXPERIENCE[archetype_id],
-                                locales)
+                                exclusions, features, resolved.experience, locales)
+
+        # The content, the axes it is measured on, and what getting better means. The genre
+        # family (core/reference/genre-models.yaml) says which axes exist and what they mean;
+        # the design declares the ones it uses and the units carry every number.
+        genre = dict(a["genre"], session_profile=session_profile)
+        spec["content"] = content
+        spec["difficulty"]["axes"] = self._axes(a, family_block)
+        spec["mastery"] = copy.deepcopy(a["mastery"])
 
         spec["depth"], optional = self._depth(depth_plan, features, spec, session, deferred)
         if optional:
@@ -554,15 +629,40 @@ class ArchetypeAuthor(DesignAuthor):
             if basis == "research":
                 art_direction = (f"Research art direction ({', '.join(matched)}). "
                                  + art_direction)
+        # The content shape: research's `design_constraints` when the opportunity carries them,
+        # the genre family's own model otherwise. Either way it is recorded, with the claims.
+        constraints = (research or {}).get("design_constraints")
+        constraints = constraints if isinstance(constraints, dict) and constraints else None
+        source = "research" if constraints else "default"
+        refs = sorted({ref for value in (constraints or {}).values() if isinstance(value, dict)
+                       for ref in (value.get("claim_refs") or []) if ref})
+        mvp_units = [u for u in listed if u.get("tier") == "mvp"]
+        axis_ids = [axis["id"] for axis in spec["difficulty"]["axes"]]
+        for field, detail in (
+                ("genre.family",
+                 f"{genre['family']}: the {family_block.get('label', genre['family'])} content "
+                 f"model, {'the shape research coded for this cell' if constraints else
+                           'the family this design shape belongs to'}; play is "
+                 f"{genre['ending']} on a {session_profile} session"),
+                ("build_spec.content",
+                 f"{len(listed)} {content_unit_kind} unit(s), {generation.get('mode')} "
+                 f"generation, {len(mvp_units)} of them in the MVP"),
+                ("build_spec.difficulty.axes",
+                 f"difficulty moves on {', '.join(axis_ids)}")):
+            entry = {"field": field, "source": source, "detail": detail}
+            if constraints and refs:
+                entry["claim_refs"] = refs
+            applied.append(entry)
         out = {
             "fantasy": fantasy,
             "core_loop": a["core_loop"],
+            "genre": genre,
             "pillars": list(a["pillars"]),
             "engine": engine,
             "features": features,
             "scope": {
                 "content_units": content_units,
-                "content_unit_kind": a["content_unit_kind"],
+                "content_unit_kind": content_unit_kind,
                 "locales": locales,
                 "asset_budget": params.get("asset_budget", 400),
                 "progression_terminal": terminal,
@@ -604,6 +704,23 @@ class ArchetypeAuthor(DesignAuthor):
         return out
 
     # -----------------------------------------------------------------------------------
+
+    @staticmethod
+    def _axes(a, family_block):
+        """`build_spec.difficulty.axes`: the axes this design uses, declared from its genre
+        family's own definitions. The declaration only - every value lives on a content unit,
+        so there is exactly one place a difficulty number is written."""
+        declared = list(a.get("difficulty_axes") or [])
+        axes = []
+        for axis in family_block.get("axes") or []:
+            if axis.get("id") not in declared:
+                continue
+            entry = {"id": axis["id"], "range": list(axis.get("range") or [0, 1]),
+                     "relief_allowed": True}
+            if axis.get("description"):
+                entry["description"] = str(axis["description"])
+            axes.append(entry)
+        return axes
 
     def _build_spec(self, a, look, engine, orientation, resolution, is_level, touchpoints,
                     time_to_first_play, time_to_first_reward, run, target, audience, exclusions,

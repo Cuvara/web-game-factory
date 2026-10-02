@@ -31,7 +31,7 @@ from wgflib.workflow.api import RunRequest, WorkflowAPI  # noqa: E402
 from wgflib.workflow.config import FactoryConfig  # noqa: E402
 from wgflib.workflow.contracts import ArtifactContracts  # noqa: E402
 from wgflib.workflow.model import ArtifactRef, RunStatus, StepOutcome, StepStatus  # noqa: E402
-from wgf_design import archetypes, authors, compose, consistency, identity  # noqa: E402
+from wgf_design import archetypes, authors, compose, consistency, content, identity  # noqa: E402
 from wgf_design.platforms import load_platforms  # noqa: E402
 from wgf_design.step import SCHEMA_VERSION, DesignStep  # noqa: E402
 
@@ -51,17 +51,26 @@ def rehash(artifact):
 
 
 class FakeInputs:
-    def __init__(self, strategy, schema_version="1.0.0"):
+    """`extra` is the other artifacts a visit has - the `prototype-report` a `design-gap`
+    route brings back, keyed by type."""
+
+    def __init__(self, strategy, schema_version="1.0.0", extra=None):
         self.strategy = strategy
+        self.extra = dict(extra or {})
         self.missing = [] if strategy is not None else ["title-strategy"]
         self.refs = {} if strategy is None else {"title-strategy": ArtifactRef(
             id="title-strategy", type="title-strategy", version=1, location="mem", checksum="-",
             content_hash=strategy["provenance"]["content_hash"], schema_version=schema_version)}
+        for artifact_type in self.extra:
+            self.refs[artifact_type] = ArtifactRef(
+                id=artifact_type, type=artifact_type, version=1, location="mem", checksum="-")
 
     def __contains__(self, artifact_type):
         return artifact_type in self.refs
 
     def load(self, artifact_type):
+        if artifact_type in self.extra:
+            return copy.deepcopy(self.extra[artifact_type])
         return copy.deepcopy(self.strategy)
 
 
@@ -74,11 +83,17 @@ class FakeLogger:
 
 
 class FakeContext:
-    def __init__(self, config=None, execution=1):
+    def __init__(self, config=None, execution=1, run_dir=None, previous_outputs=None,
+                 visit=1):
         self.config = config or {}
         self.project_id = "demo"
         self.execution = execution
         self.logger = FakeLogger()
+        self.run_dir = run_dir
+        self.visit, self.attempt = visit, 1
+        # What this step produced on an earlier visit (wgflib.workflow.model.ArtifactRef),
+        # which is where DesignStep._previous_design reads the design to repair.
+        self.previous_outputs = list(previous_outputs or [])
 
 
 class FakeDefinition:
@@ -94,9 +109,11 @@ class FixedClockStep(DesignStep):
     clock = staticmethod(lambda: NOW)
 
 
-def run_step(strategy, params=None, config=None, schema_version="1.0.0", step_class=FixedClockStep):
+def run_step(strategy, params=None, config=None, schema_version="1.0.0", step_class=FixedClockStep,
+             inputs=None, context=None):
     step = step_class(FakeDefinition(params))
-    return step.execute(FakeInputs(strategy, schema_version), FakeContext(config))
+    return step.execute(inputs or FakeInputs(strategy, schema_version),
+                        context or FakeContext(config))
 
 
 def variant(**changes):
@@ -198,7 +215,13 @@ class DesignFromWorkedExample(unittest.TestCase):
         block = self.design["consistency"]
         self.assertEqual(block["status"], "pass")
         self.assertEqual(block["ruleset_version"], consistency.load_rules()["version"])
-        self.assertEqual(len(block["rule_results"]), len(consistency.load_rules()["rules"]))
+        # One result per consistency rule, and - the design names a genre family - one per
+        # content rule beside them (content.py, core/reference/genre-models.yaml).
+        self.assertEqual(len(block["rule_results"]),
+                         len(consistency.load_rules()["rules"]) + len(content.RULES))
+        self.assertEqual(block["content_model"],
+                         {"id": self.design["genre"]["family"],
+                          "version": str(content.load_models()["version"])})
         self.assertIs(block["warnings_acknowledged"], False)
 
     def test_visual_identity_is_deliberate(self):
@@ -550,6 +573,106 @@ class ThroughTheEngine(unittest.TestCase):
         api = self.api(workflow=os.path.join(ROOT, "core", "workflows", "new-game.workflow.yaml"))
         state = api.run(RunRequest(scope="design"))
         self.assertEqual(state.status, RunStatus.WAITING)
+
+
+class ScriptedGapAgent(authors.DesignAuthor):
+    """Stands in for the agent author: records the brief it was given and answers the gap at
+    the field it names, starting from the design the gaps were found in."""
+
+    name = "scripted-gap-agent"
+    actor = "ai"
+    seen = None
+
+    def draft(self, brief):
+        ScriptedGapAgent.seen = {"gaps": copy.deepcopy(brief.get("gaps")),
+                                 "previous_design": copy.deepcopy(brief.get("previous_design"))}
+        previous = brief["previous_design"]
+        draft = {key: value for key, value in copy.deepcopy(previous).items()
+                 if key not in ("provenance", "consistency")}
+        unit = next(u for u in draft["build_spec"]["content"]["units"]
+                    if u["id"] == "seg-two-rows")
+        unit["parameters"]["row_gap_s"] = 0.75
+        return draft
+
+
+class DesignGapsReenterTheStep(unittest.TestCase):
+    """Re-entered through `design-gap` (core/workflows/new-game.workflow.yaml): the
+    prototype-report names what the design did not decide, and the step hands the author both
+    the gaps and the design they were found in - its own previous output - so the design is
+    repaired, never replaced. A deterministic author refuses: it cannot answer a question
+    about a design it did not write.
+    """
+
+    GAP = {"field": "build_spec.content.units[seg-two-rows].parameters",
+           "question": "What row gap does the two-obstacle segment spawn at?",
+           "assumed": None, "severity": "blocking"}
+
+    def setUp(self):
+        self.scratch = tempfile.mkdtemp(prefix="wgf-design-gaps-")
+        self.addCleanup(shutil.rmtree, self.scratch, ignore_errors=True)
+        self.strategy = load_strategy()
+        first = run_step(self.strategy)
+        self.assertEqual(first.outcome, StepOutcome.SUCCESS, first.error)
+        self.design = first.artifacts[0].content
+        # Where the run keeps it: ArtifactRef.location is relative to the run directory.
+        self.location = os.path.join("artifacts", "game-design", "v1.json")
+        path = os.path.join(self.scratch, self.location)
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "w", encoding="utf-8") as handle:
+            json.dump(self.design, handle)
+        self.ref = ArtifactRef(id="game-design", type="game-design", version=1,
+                               location=self.location, checksum="-",
+                               content_hash=self.design["provenance"]["content_hash"],
+                               schema_version=SCHEMA_VERSION)
+
+    def second_visit(self, author=None, gaps=(GAP,)):
+        report = {"design_gaps": [copy.deepcopy(g) for g in gaps]}
+        return run_step(
+            self.strategy, params={"author": author} if author else None,
+            inputs=FakeInputs(self.strategy, extra={"prototype-report": report}),
+            context=FakeContext(run_dir=self.scratch, previous_outputs=[self.ref], visit=2))
+
+    def test_the_archetype_author_refuses_to_answer_design_gaps(self):
+        result = self.second_visit()
+        self.assertEqual((result.outcome, result.retryable), (StepOutcome.FAILED, False))
+        self.assertIn(authors.GAPS_NEED_AGENT, result.error)
+        self.assertEqual(result.artifacts, [])
+
+    def test_a_prototype_report_with_no_gaps_is_designed_as_any_other_visit(self):
+        result = self.second_visit(gaps=())
+        self.assertEqual(result.outcome, StepOutcome.SUCCESS, result.error)
+        self.assertEqual(result.artifacts[0].metadata["author"], "archetype")
+
+    def test_an_agent_author_gets_the_gaps_and_the_design_they_were_found_in(self):
+        ScriptedGapAgent.seen = None
+        authors.register_author(ScriptedGapAgent.name, ScriptedGapAgent)
+        try:
+            result = self.second_visit(author=ScriptedGapAgent.name)
+        finally:
+            authors.AUTHORS.pop(ScriptedGapAgent.name, None)
+        self.assertEqual(result.outcome, StepOutcome.SUCCESS, result.error)
+        self.assertEqual(ScriptedGapAgent.seen["gaps"], [self.GAP])
+        self.assertEqual(ScriptedGapAgent.seen["previous_design"], self.design)
+        repaired = result.artifacts[0].content
+        unit = next(u for u in repaired["build_spec"]["content"]["units"]
+                    if u["id"] == "seg-two-rows")
+        self.assertEqual(unit["parameters"]["row_gap_s"], 0.75)
+        # The same game, specified further: nothing else moved, and the step re-derived the
+        # provenance and the consistency block itself.
+        self.assertEqual(repaired["core_loop"], self.design["core_loop"])
+        self.assertEqual([u["id"] for u in repaired["build_spec"]["content"]["units"]],
+                         [u["id"] for u in self.design["build_spec"]["content"]["units"]])
+        self.assertEqual(repaired["consistency"]["status"], "pass")
+        self.assertEqual(repaired["provenance"]["produced_by"]["actor"], "ai")
+
+    def test_gaps_with_no_earlier_design_in_the_run_fail_the_step(self):
+        result = run_step(
+            self.strategy,
+            inputs=FakeInputs(self.strategy,
+                              extra={"prototype-report": {"design_gaps": [dict(self.GAP)]}}),
+            context=FakeContext(run_dir=self.scratch, previous_outputs=[], visit=2))
+        self.assertEqual((result.outcome, result.retryable), (StepOutcome.FAILED, False))
+        self.assertIn("no earlier game-design to repair", result.error)
 
 
 @unittest.skipUnless(shutil.which("npx"), "npx is not on PATH")

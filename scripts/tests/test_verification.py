@@ -788,8 +788,9 @@ class PlatformAndPolicy(VerificationCase):
     def test_a_profile_version_other_than_the_pinned_one_fails(self):
         with open(os.path.join(self.repo, "config/platforms/generic-web.yaml")) as handle:
             text = handle.read()
+        self.assertIn("version: 1.1.0", text)
         self.write("config/platforms/generic-web.yaml",
-                   text.replace("version: 1.0.0", "version: 1.1.0"))
+                   text.replace("version: 1.1.0", "version: 1.2.0"))
         _, report, _ = self.verify()
         self.assertEqual(self.check(report, "platform.profile:generic-web")["status"], "FAIL")
 

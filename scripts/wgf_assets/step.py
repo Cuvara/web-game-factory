@@ -28,9 +28,10 @@ step's `with:` block:
     libraries      directories holding an index.json of reusable assets and/or a
                    library.json mapping requirement ids and roles to licensed files.
                    Relative paths resolve against the project directory. Default: none.
-    author         {kind: none | command, argv, timeout_seconds, idle_timeout_seconds,
-                   repair_rounds}: who draws a 2D requirement as SVG (author.py). Default:
-                   none - no author, so what no library supplies is a placeholder.
+    author         {kind: none | command, argv, svg_from, timeout_seconds,
+                   idle_timeout_seconds, repair_rounds}: who draws a 2D requirement as SVG
+                   (author.py). Default: none - no author, so what no library supplies is
+                   a placeholder.
     placeholders   {enabled: true, backends: [2d-assets-mcp, procedural], <backend>: {...}}.
                    `blender` is put first automatically when a requirement carries a
                    buildable `model` spec; its settings block is `placeholders.blender`.
@@ -283,7 +284,8 @@ class AssetsStep(WorkflowStep):
                                                if settings["model_author"].get("kind")
                                                not in (None, "none") else None),
                                  rebuild=rebuild, settings=settings, context=context,
-                                 work_dir=self._work_dir(context, slug))
+                                 work_dir=self._work_dir(context, slug),
+                                 locales=(design.get("scope") or {}).get("locales") or ())
         context.logger.info("asset pipeline", requirements=len(requirements),
                             dimension=dimension, root=store.root,
                             derived=bool(requirements and requirements[0].derived))

@@ -19,6 +19,9 @@ Outcomes, per docs/workflow-module-contract.md §7:
     production art or UI not stated            FAILED, not retryable, nothing persisted
                                                (presentation.py: a role, readability or
                                                UI token missing)
+    no depth stated (no meta loop, goal ladder,  FAILED, not retryable, nothing persisted
+    content schedule, first session or return    (depth.py, core/reference/design-depth.yaml;
+    hooks; an MVP entry the MVP does not build)  checked only when no blocking rule breached)
     a blocking consistency rule breached       FAILED, route `descope`, not retryable, with the
                                                game-design persisted as evidence - cut scope;
                                                never relax the rule
@@ -32,7 +35,7 @@ from wgflib import provenance
 from wgflib.workflow import ArtifactOutput, StepResult, WorkflowStep
 from wgflib.workflow.contracts import ArtifactContracts
 
-from . import consistency, experience, presentation
+from . import consistency, depth, experience, presentation
 from .authors import AUTHORS, AuthorError, resolve_author
 from .compose import buildability, finalize
 from .platforms import PlatformError, load_platforms
@@ -69,6 +72,7 @@ class DesignStep(WorkflowStep):
     platforms_dir = None
     rules = None
     experience_rules = None
+    depth_rules = None
 
     def execute(self, inputs, context):
         if "title-strategy" in inputs.missing:
@@ -141,6 +145,13 @@ class DesignStep(WorkflowStep):
                         f"the design does not state its production art and UI{after} "
                         f"({len(problems)} problem(s)): " + "; ".join(problems[:6]),
                         retryable=False)
+                if outcome["depth"]:
+                    context.logger.error("the design does not state its depth",
+                                         problems=problems, repair_rounds=repair_round)
+                    return StepResult.failed(
+                        f"the design does not state why a player comes back{after} "
+                        f"({len(problems)} problem(s)): " + "; ".join(problems[:6]),
+                        retryable=False)
                 context.logger.error("design is not a valid game-design", problems=problems[:20],
                                      repair_rounds=repair_round)
                 return StepResult.failed(
@@ -196,7 +207,7 @@ class DesignStep(WorkflowStep):
                     f"a design change: an agent author, or a new concept, not this draft.")
         outcome = {"design": design, "artifact": None, "block": None, "blocking": None,
                    "warnings": None, "problems": [], "unbuildable": False,
-                   "experience": False, "presentation": False}
+                   "experience": False, "presentation": False, "depth": False}
         problems = buildability(design)
         if problems:
             outcome.update(problems=problems, unbuildable=True)
@@ -214,6 +225,12 @@ class DesignStep(WorkflowStep):
         now = self.clock()
         block, blocking, warnings = consistency.evaluate(design, strategy, platforms, now,
                                                          self.rules)
+        if not blocking:
+            # Why a player comes back: a design that must cut scope first is not asked yet.
+            problems = depth.check(design, self.depth_rules)
+            if problems:
+                outcome.update(problems=problems, depth=True)
+                return outcome
         design["consistency"] = block
         artifact = self._with_provenance(design, strategy, ref, title_id, now, context,
                                          getattr(author, "actor", "automation"))

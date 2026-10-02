@@ -2,13 +2,13 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://webgamefactory.dev/schemas/artifacts/game-design.schema.json",
   "title": "Game Design",
-  "description": "One artifact covering scope, session, retention, monetization, progression and economy.\n\nThese are NOT separate stages and not separate documents. Scope depends on monetization, which depends on session, which depends on scope — sequencing them invents an order that does not exist, and splitting them into four files guarantees they drift apart. One artifact with a recorded consistency result is atomic; four files cannot be.\n\nThe `consistency` block is what makes 'these were co-designed' checkable rather than asserted. It is produced by evaluating core/reference/design-consistency-rules.yaml and is the exit guard on title:design.\n\nThe human-readable GDD is a RENDERING of this artifact (see core/templates/gdd.md), not a separate source of truth.\n\nSchema 1.1.0 adds three optional blocks — `engine`, `features` and `build_spec` — which carry the design down to what an implementation agent needs to build the MVP without guessing. They are optional so 1.0.0 artifacts stay valid; the design module always emits them.",
+  "description": "One artifact covering scope, session, retention, monetization, progression and economy.\n\nThese are NOT separate stages and not separate documents. Scope depends on monetization, which depends on session, which depends on scope — sequencing them invents an order that does not exist, and splitting them into four files guarantees they drift apart. One artifact with a recorded consistency result is atomic; four files cannot be.\n\nThe `consistency` block is what makes 'these were co-designed' checkable rather than asserted. It is produced by evaluating core/reference/design-consistency-rules.yaml and is the exit guard on title:design.\n\nThe human-readable GDD is a RENDERING of this artifact (see core/templates/gdd.md), not a separate source of truth.\n\nSchema 1.1.0 adds three optional blocks — `engine`, `features` and `build_spec` — which carry the design down to what an implementation agent needs to build the MVP without guessing. They are optional so 1.0.0 artifacts stay valid; the design module always emits them. Schema 1.7.0 adds `build_spec.depth`: the meta loop, goal ladder, content schedule, first-session length and return hooks, each tiered.",
 
   "x-wgf": {
     "id": "game-design",
     "kind": "artifact",
     "format": "json",
-    "version": "1.7.0",
+    "version": "1.8.0",
     "template": "templates/gdd.md",
     "producer": "title:design",
     "consumers": ["title:tech-plan", "title:prototype", "title:prototype-review", "title:production", "release:qa", "title:scaffolding"],
@@ -24,7 +24,7 @@
     "provenance": { "$ref": "./shared/provenance.schema.json#/$defs/provenance" },
     "research": {
       "$ref": "./shared/research-opportunity.schema.json#/$defs/handoff",
-      "description": "Research V2 (added in 1.7.0): the research this design was derived from, carried from the strategy, and `applied`: which design decisions (archetype, fantasy, identity kit, timing targets) came from research and which fell back to a default. Absent when the strategy carries no research."
+      "description": "Research V2 (added in 1.8.0): the research this design was derived from, carried from the strategy, and `applied`: which design decisions (archetype, fantasy, identity kit, timing targets) came from research and which fell back to a default. Absent when the strategy carries no research."
     },
     "title_id": { "type": "string" },
     "brief": { "type": "string", "minLength": 1, "maxLength": 500, "description": "The game idea a person started the run with (`wgf new-game \"...\"`), verbatim in its canonical form: NFC, trimmed, whitespace runs as one space. Absent when the run was a blank market scan. Copied from the title-strategy. An agent author designs the game it describes; the built-in author fits the buildable concept research selected, and records in open_questions a dimension the brief names that the design does not use. Added in 1.4.0." },
@@ -853,6 +853,104 @@
                 "retry_s": { "type": "number", "minimum": 0 }
               },
               "additionalProperties": false
+            }
+          },
+          "additionalProperties": false
+        },
+
+        "depth": {
+          "type": "object",
+          "description": "Why a player plays longer and comes back: the loop above the run and what it persists, a goal at every horizon, content-variety items introduced on a schedule, the first session's designed length, and the stated reasons to return. Every entry carries a tier, so depth the prototype does not build is visible as post-mvp or optional rather than claimed. `delivered_by` names what builds an entry (a feature, mechanic, progression step, reward or hud id); an mvp entry may only rest on an mvp one. Added in 1.7.0, optional in the schema; the design module requires it of every design it produces and checks it against core/reference/design-depth.yaml. Craft: core/craft/retention-and-progression.md.",
+          "required": ["meta_loop", "goal_ladder", "content_schedule", "first_session", "return_hooks"],
+          "properties": {
+            "meta_loop": {
+              "type": "object",
+              "required": ["statement", "tier", "persists"],
+              "properties": {
+                "statement": { "type": "string", "minLength": 12, "description": "The loop across sessions as a cycle: play -> earn -> spend or unlock -> a reason to play again." },
+                "tier": { "$ref": "#/$defs/tier" },
+                "delivered_by": { "$ref": "#/$defs/localId" },
+                "persists": {
+                  "type": "array",
+                  "minItems": 1,
+                  "description": "What survives between sessions, each with its own tier.",
+                  "items": {
+                    "type": "object",
+                    "required": ["kind", "what", "tier"],
+                    "properties": {
+                      "kind": { "enum": ["best-score", "settings", "stage-progress", "unlocks", "currency", "upgrades", "cosmetics", "achievements", "missions", "streak", "collection"] },
+                      "what": { "type": "string" },
+                      "tier": { "$ref": "#/$defs/tier" },
+                      "delivered_by": { "$ref": "#/$defs/localId" }
+                    },
+                    "additionalProperties": false
+                  }
+                }
+              },
+              "additionalProperties": false
+            },
+            "goal_ladder": {
+              "type": "array",
+              "minItems": 1,
+              "description": "Goals at three horizons: short (seconds to a minute, inside a run), mid (this run or this session), long (across sessions).",
+              "items": {
+                "type": "object",
+                "required": ["id", "horizon", "goal", "tier"],
+                "properties": {
+                  "id": { "$ref": "#/$defs/localId" },
+                  "horizon": { "enum": ["short", "mid", "long"] },
+                  "goal": { "type": "string", "minLength": 8 },
+                  "measure": { "type": "string", "description": "How reaching it is counted: a metric, a threshold." },
+                  "tier": { "$ref": "#/$defs/tier" },
+                  "delivered_by": { "$ref": "#/$defs/localId" }
+                },
+                "additionalProperties": false
+              }
+            },
+            "content_schedule": {
+              "type": "array",
+              "description": "Content-variety items the player meets over time, in the order they arrive. `at_s` is seconds into a run; `after_runs` is runs completed (or a stage reached) before it appears; `introduced` says when in words.",
+              "items": {
+                "type": "object",
+                "required": ["id", "kind", "name", "introduced", "rule", "tier"],
+                "properties": {
+                  "id": { "$ref": "#/$defs/localId" },
+                  "kind": { "enum": ["piece", "special-piece", "power-up", "pickup", "obstacle", "hazard", "enemy", "zone", "event", "modifier", "level-set", "mode"] },
+                  "name": { "type": "string" },
+                  "introduced": { "type": "string" },
+                  "at_s": { "type": "number", "minimum": 0 },
+                  "after_runs": { "type": "integer", "minimum": 0 },
+                  "rule": { "type": "string", "minLength": 8, "description": "What it does, testably." },
+                  "tier": { "$ref": "#/$defs/tier" },
+                  "delivered_by": { "$ref": "#/$defs/localId" }
+                },
+                "additionalProperties": false
+              }
+            },
+            "first_session": {
+              "type": "object",
+              "required": ["target_s", "ends_on", "tier"],
+              "properties": {
+                "target_s": { "type": "number", "minimum": 0, "description": "Equal to session.first_session_seconds." },
+                "ends_on": { "type": "string", "description": "The beat a first session is designed to end on, and what the player leaves wanting." },
+                "tier": { "$ref": "#/$defs/tier" }
+              },
+              "additionalProperties": false
+            },
+            "return_hooks": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "required": ["id", "kind", "statement", "tier"],
+                "properties": {
+                  "id": { "$ref": "#/$defs/localId" },
+                  "kind": { "enum": ["best-score", "next-unlock", "stage-map", "daily-seed", "streak", "missions", "collection", "achievements", "leaderboard"] },
+                  "statement": { "type": "string", "minLength": 8, "description": "The reason, in the player's words." },
+                  "tier": { "$ref": "#/$defs/tier" },
+                  "delivered_by": { "$ref": "#/$defs/localId" }
+                },
+                "additionalProperties": false
+              }
             }
           },
           "additionalProperties": false

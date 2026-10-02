@@ -30,15 +30,22 @@ What it does, in order:
    provenance header. See fixtures/<game>/port.json.
 3. Copies the adaptation from the port overlays in `--ports` (port.json `overlays`:
    examples/wgf-golden-shared/, then examples/<example>/wgf-golden/) onto the repository
-   root: main.ts on the template's boot sequence, the scene wired to the integration seam,
-   UI, audio, locales, index.html and a browser test tagged by gameplay aspect. Refuses
-   (exit 3) if an overlay is missing.
-4. Moves main.ts onto the seam the develop step provided (wgflib.gameseam), as the brief
-   asks any developer to: the platform from createGamePlatform(), the seam from
-   createGameIntegration(), no createPlatform. The overlay's own default integration is not
-   copied - the Factory's default wiring is already in the repository. Each rewrite must
-   find its line exactly once, or the replay refuses (exit 3). src/game/integration.ts is
-   the develop step's, and must already be there.
+   root: the game's entry (src/game/index.ts, createGame - the template's contract 2), the
+   scene wired to the integration seam, UI, audio, locales, index.html and a browser test
+   tagged by gameplay aspect. Refuses (exit 3) if an overlay is missing.
+4. Boots the entry through the seam the develop step provided (wgflib.gameseam), as the
+   brief asks any developer to: the platform from createGamePlatform(), the seam from
+   createGameIntegration(), no createPlatform. A contract-2 port carries no main.ts. On a
+   repository created from a contract-1 template release (no src/game/context.ts, or only the
+   bridge's own from an earlier visit - detected, never assumed) the replay writes the
+   template-owned boot bridge port.json names under `boot_bridge`
+   (examples/wgf-golden-shared/release-1/: the release's main.ts boot order with the seam
+   lines, calling createGame; and the GameContext type it builds) and records it in the
+   report; it is temporary, until the Factory pins a contract-2 release. On a
+   contract-2 repository the template's own main.ts calls createGame and nothing is bridged.
+   A legacy contract-1 port that still carries src/main.ts is moved onto the seam by
+   SEAM_REWRITES, each of which must find its line exactly once, or the replay refuses
+   (exit 3). src/game/integration.ts is the develop step's, and must already be there.
 5. Adds the engine package the example itself depends on (pixi.js / three) to package.json
    at the version the example pins, and updates the lockfile offline
    (`pnpm install --offline`) - the store already holds it, since the template's own
@@ -76,7 +83,9 @@ OVERLAY_SKIP = ("README.md", "src/platform/default-integration.ts")
 # Directories of an overlay that are fixtures of the golden run, never game files: the assets
 # library the assets step imports (factory.assets.libraries) and the approved frames visual
 # QA compares against. Matched as path prefixes.
-OVERLAY_SKIP_DIRS = ("library/", "baseline/")
+# The boot bridge (port.json `boot_bridge`) sits inside the shared overlay and is applied only
+# to a contract-1 repository, by boot_files(), never copied with the rest.
+OVERLAY_SKIP_DIRS = ("library/", "baseline/", "release-1/")
 # The overlays' main.ts, moved onto the seam: (old, new), each found exactly once.
 SEAM_REWRITES = (
     ('import { createPlatform } from "@wgf/platform-sdk";\n', ""),
@@ -90,6 +99,11 @@ SEAM_REWRITES = (
     ("new DefaultGameIntegration(game, platform)", "createGameIntegration(game, platform)"),
 )
 MAIN_PATH = "src/main.ts"
+# The template's contract 2: the game's entry, and the GameContext type its main.ts builds.
+ENTRY_PATH = "src/game/index.ts"
+CONTEXT_PATH = "src/game/context.ts"
+# In the bridge's context.ts, never in the template's own.
+BRIDGE_MARK = "GOLDEN-RUN REPLAY"
 REPORT_PATH = "docs/development/report.json"
 INTEGRATION_PATH = "src/game/integration.ts"
 SMOKE_SPEC = "tests/e2e/smoke.spec.ts"
@@ -100,7 +114,8 @@ SOURCE_SUFFIXES = (".ts", ".tsx", ".js", ".mjs")
 # The systems the brief requires (wgf_develop.brief.REQUIRED_SYSTEMS), and where the port
 # provides each. Read from the brief itself; this is only the explanation per system.
 SYSTEM_NOTES = {
-    "boot": "src/main.ts keeps the template's boot order; the boot scene is replaced",
+    "boot": "the template's boot order is kept; createGame (src/game/index.ts) replaces the "
+            "boot scene",
     "game-state": "state model in src/game/ (rules or simulation), unit-tested",
     "scenes": "one Scene (src/game/app.ts) publishing its id to #hud[data-scene]",
     "input": "src/input/ maps keyboard, mouse and touch to game actions; ignored while paused",
@@ -112,9 +127,11 @@ SYSTEM_NOTES = {
     "tutorial": "one-sentence rules on the title screen; first play in one tap",
     "game-over": "game-over screen with the result and the best result",
     "restart": "one action from game over, no reload",
-    "asset-loading": "everything is procedural; loading progress reported through the platform",
+    "asset-loading": "art, music and sound from public/assets/assets.json; loading progress "
+                     "reported through the platform",
     "responsive-layout": "renderer and view resize with the window and visual viewport",
-    "audio-hooks": "src/audio/audio.ts: named cues, muted until first input and while paused",
+    "audio-hooks": "src/audio/audio.ts: the manifest's music and sfx on the design's triggers, "
+                   "silent until first input and while paused, muted or in an ad",
 }
 
 
@@ -204,6 +221,34 @@ def seam_main(text):
     return text
 
 
+def boot_files(port, overlay_files, repo, ports):
+    """({relative path: text}, bridge directory or None): how the port's entry gets booted
+    through the seam in `repo`. Planned before anything is written."""
+    overlay = dict(overlay_files)
+    if MAIN_PATH in overlay:
+        # A contract-1 port: its own main.ts, moved onto the seam.
+        return {MAIN_PATH: seam_main(read(overlay[MAIN_PATH]))}, None
+    if ENTRY_PATH not in overlay:
+        raise ReplayError(f"the port overlays carry neither {ENTRY_PATH} nor {MAIN_PATH}")
+    context = os.path.join(repo, *CONTEXT_PATH.split("/"))
+    if os.path.exists(context) and BRIDGE_MARK not in read(context):
+        # A contract-2 repository: the template's main.ts already calls createGame. A
+        # context.ts carrying the replay header is the bridge an earlier visit (greybox)
+        # wrote: still a contract-1 repository, bridged again.
+        return {}, None
+    bridge = port.get("boot_bridge")
+    if not bridge:
+        raise ReplayError(f"{repo} has no {CONTEXT_PATH} (a contract-1 template release) and "
+                          f"port.json names no boot_bridge for the contract-2 port")
+    files = {}
+    for relative in (MAIN_PATH, CONTEXT_PATH):
+        source = os.path.join(ports, *bridge.split("/"), *relative.split("/"))
+        if not os.path.exists(source):
+            raise ReplayError(f"{bridge}/{relative} does not exist in {ports}")
+        files[relative] = read(source)
+    return files, bridge
+
+
 def engine_dependencies(port, repo):
     """{name: version} from the example's own package.json."""
     manifest = json.loads(read(os.path.join(repo, "examples", port["example"], "package.json")))
@@ -255,7 +300,7 @@ def point_smoke_at_scene(repo, scene_id):
     return True
 
 
-def build_report(brief, port, written):
+def build_report(brief, port, written, bridge=None):
     trigger_by_kind = {}
     for placement in brief.get("placements") or []:
         trigger_by_kind.setdefault(placement.get("kind"), placement.get("trigger"))
@@ -299,6 +344,8 @@ def build_report(brief, port, written):
             "example": f"examples/{port['example']}",
             "overlays": list(port["overlays"]),
             "files": sorted(written),
+            # The template-owned release-1 boot bridge, when the repository needed it.
+            "boot_bridge": bridge,
         },
     }
 
@@ -324,10 +371,9 @@ def replay(game_key, brief_md_path, repo, ports):
     if not os.path.exists(os.path.join(repo, *INTEGRATION_PATH.split("/"))):
         raise ReplayError(f"{INTEGRATION_PATH} is not in the repository: the develop step "
                           "provides the seam before any developer runs")
-    main_source = dict(overlay_files).get(MAIN_PATH)
-    if main_source is None:
-        raise ReplayError(f"the port overlays carry no {MAIN_PATH}")
-    main_text = seam_main(read(main_source))
+    boot, bridge = boot_files(port, overlay_files, repo, ports)
+    if bridge:
+        log(f"contract-1 repository (no {CONTEXT_PATH}): applying the boot bridge {bridge}")
     written = []
     for relative, text in copies:
         write(os.path.join(repo, *relative.split("/")), text)
@@ -335,10 +381,11 @@ def replay(game_key, brief_md_path, repo, ports):
     for relative, source in overlay_files:
         target = os.path.join(repo, *relative.split("/"))
         os.makedirs(os.path.dirname(target), exist_ok=True)
-        if relative == MAIN_PATH:
-            write(target, main_text)
-        else:
+        if relative not in boot:
             shutil.copyfile(source, target)
+            written.append(relative)
+    for relative, text in boot.items():
+        write(os.path.join(repo, *relative.split("/")), text)
         written.append(relative)
 
     for relative in port.get("remove") or []:
@@ -360,7 +407,7 @@ def replay(game_key, brief_md_path, repo, ports):
                and not p.startswith("public/")]
     run(["pnpm", "exec", "prettier", "--write", *sorted(set(sources))], repo, timeout=300)
 
-    report = build_report(brief, port, written)
+    report = build_report(brief, port, written, bridge)
     write(os.path.join(repo, *REPORT_PATH.split("/")),
           json.dumps(report, indent=2, ensure_ascii=False) + "\n")
     log(f"wrote {len(written)} file(s) and {REPORT_PATH}")

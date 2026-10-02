@@ -14,6 +14,9 @@
 // fetched under /assets/ (and the runtime manifest it fetched), every runtime asset id the
 // probe reported loaded, and the DOM UI measured on each screen state it saw - title,
 // playing, paused, won/lost and after a retry - each with its own frame `state-<name>.png`.
+// When the probe reports `audio`, every record carries the samples it saw (state, music,
+// playing, measured level), and the first session also records the level while the page has
+// lost focus - the platform rule every portal shares: no sound when the player looks away.
 // Factory tooling: it contains no game, and is not part of one.
 
 import { test, type Page } from "@playwright/test";
@@ -30,6 +33,7 @@ interface Snapshot {
   entities: { id: string; role: string; x: number; y: number; w: number; h: number; visible: boolean; asset?: string | null; render?: string }[];
   inputs: Move[];
   assets_loaded?: string[];
+  audio?: { music: string | null; playing: boolean; level: number; muted?: boolean };
   oracle?: Move | null;
 }
 
@@ -64,6 +68,8 @@ class Watch {
   runtimeAssets: unknown = null;
   loaded = new Set<string>();
   ui: Record<string, unknown> = {};
+  audio: { ms: number; state: string; music: string | null; playing: boolean; level: number; muted: boolean | null }[] = [];
+  readonly t0 = Date.now();
 
   constructor(readonly page: Page, readonly project: string, readonly frames: string[]) {
     page.on("pageerror", (e) => this.errors.push(e.message.slice(0, 300)));
@@ -87,6 +93,10 @@ class Watch {
 
   saw(s: Snapshot | null): Snapshot | null {
     for (const id of s?.assets_loaded ?? []) this.loaded.add(id);
+    if (s?.audio && this.audio.length < 600) {
+      this.audio.push({ ms: Date.now() - this.t0, state: s.state, music: s.audio.music, playing: s.audio.playing,
+                        level: s.audio.level, muted: s.audio.muted ?? null });
+    }
     return s;
   }
 
@@ -107,7 +117,7 @@ class Watch {
 
   record(): Record<string, unknown> {
     return { errors: this.errors, asset_requests: this.requests, runtime_assets: this.runtimeAssets,
-             assets_loaded: [...this.loaded].sort(), ui: this.ui };
+             assets_loaded: [...this.loaded].sort(), ui: this.ui, audio: this.audio };
   }
 }
 
@@ -373,7 +383,22 @@ test("first session: objective, and no failure before the grace", async ({ page 
     }
     await frame(page, project, "first-session-idle-end", frames);
   }
-  write(project, "first-session", { ...started, texts: [...new Set(texts)], states, lostAtMs, ...watch.record(), frames });
+  // The page loses focus (another window, the portal's chrome): the game must fall silent.
+  // A window blur event is what the template's platform binding listens for.
+  const unfocused: { ms: number; level: number | null; muted: boolean | null; playing: boolean | null }[] = [];
+  if (started.playingMs !== null && (await snap(page))?.audio) {
+    await page.evaluate(() => window.dispatchEvent(new Event("blur")));
+    await page.waitForTimeout(700);
+    for (let k = 0; k < 4; k++) {
+      const s = await snap(page);
+      unfocused.push({ ms: 700 + k * 150, level: s?.audio?.level ?? null, muted: s?.audio?.muted ?? null,
+                       playing: s?.audio?.playing ?? null });
+      await page.waitForTimeout(150);
+    }
+    await page.evaluate(() => window.dispatchEvent(new Event("focus")));
+  }
+  write(project, "first-session", { ...started, texts: [...new Set(texts)], states, lostAtMs, ...watch.record(),
+                                    audio_unfocused: unfocused, frames });
 });
 
 test("act: every action is acknowledged on screen", async ({ page }, info) => {

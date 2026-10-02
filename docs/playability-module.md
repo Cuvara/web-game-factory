@@ -104,6 +104,10 @@ reads these from `records_dir`:
   a failed request), and `runtime_assets`: the body of `assets/assets.json` as the page
   fetched it;
 - `assets_loaded`: every runtime asset id any snapshot reported in `assets_loaded`;
+- `audio`: every snapshot's `audio` (state, music, playing, measured level) when the probe
+  reports one; the first-session record also carries `audio_unfocused` - the level after a
+  window blur, the platform mute every portal requires - for the production check
+  `audio.plays`;
 - the win test's per-frame entity samples are
   `[id, role, visible, x, y, w, h, asset, render]` (the last two `null` when the probe
   does not report them);

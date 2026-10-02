@@ -328,7 +328,10 @@ silent raises `ModelAuthorError` with `retryable = True`; Blender missing or unp
 refused before the author runs. Requests, specs, logs and the accepted spec are kept under
 `context.run_dir/<id>/`. The requirement's own `model` (clips, collision, fit, budget) is
 held to the authored model like any delivered GLB. Wiring it into the `assets` step is the
-step's.
+step's. A verified read-only Claude Code author (`spec_from: stdout`, only `Read`) is
+commented in the shipped `factory.yaml` and set in the autonomous profile
+([claude-capabilities.md](claude-capabilities.md), "The asset authors and the visual-QA
+judge").
 
 ## Runtime integration (three.js)
 

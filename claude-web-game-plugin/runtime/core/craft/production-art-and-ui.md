@@ -12,6 +12,11 @@ screen that makes playing again the easiest thing to do. None of that is polish 
 end. It is stated at design time, as data a check can read, and built in the production phase
 on top of a greybox that already plays.
 
+This file is the bar. How the reference ports reached it, with their numbers:
+`production-art-2d.md` and `production-art-3d.md` (the art), `game-ui-kit.md` (fonts,
+buttons, HUD, screens), `juice.md` (feedback timings) and `production-wiring.md` (loading,
+the probe, the regression guard, checking yourself before reporting).
+
 ## What separates a finished game from a prototype
 
 | | Prototype (greybox) | Finished |

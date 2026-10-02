@@ -2,7 +2,8 @@
 """The 2D asset pipeline from the command line: build, validate, pack, inspect.
 
     python3 scripts/wgf-assets.py build    --design DESIGN.json --root CHECKOUT [--json]
-                                           [--library DIR]... [--author-command ARG...]
+                                           [--library DIR]... [--author-svg-from file|stdout]
+                                           [--author-command ARG...]
     python3 scripts/wgf-assets.py validate [CHECKOUT] [--json] [--strict]
     python3 scripts/wgf-assets.py pack     OUT INPUT... [--padding N] [--extrude N]
                                            [--max-size N] [--no-pot] [--trim] [--scale N]
@@ -13,7 +14,8 @@ build     Runs the same pipeline as the workflow's `assets` step on a game desig
           build_spec.assets, or any JSON with an `asset_requirements` list) against a game
           repository checkout: libraries (index.json, library.json), the 2D command author
           when --author-command names one (its argv; {request}, {output}, {prompt}
-          substituted), placeholders for the rest, every delivered file judged; files
+          substituted; with --author-svg-from stdout it prints the SVG and the
+          pipeline writes it), placeholders for the rest, every delivered file judged; files
           into public/assets/ (atlas sources into src/assets/), atlases packed, the runtime
           manifest public/assets/assets.json written, stale placeholders pruned. It prints
           what it did; the asset-manifest artifact itself is only produced inside a run.
@@ -99,7 +101,8 @@ def cmd_build(args):
     store = AssetStore(args.root)
     try:
         author = build_author({"kind": "command", "argv": args.author_command,
-                               "repair_rounds": args.repair_rounds}
+                               "repair_rounds": args.repair_rounds,
+                               "svg_from": args.author_svg_from}
                               if args.author_command else None)
     except AuthorError as exc:
         raise Usage(f"author: {exc}")
@@ -111,7 +114,8 @@ def cmd_build(args):
                              placeholders=not args.no_placeholders,
                              optimize=not args.no_optimize, prune=not args.no_prune,
                              title_id=design.get("title_id"), author=author,
-                             identity=identity, work_dir=work_dir)
+                             identity=identity, work_dir=work_dir,
+                             locales=(design.get("scope") or {}).get("locales") or ())
     result = pipeline.run(requirements)
     payload = {
         "root": os.path.abspath(args.root),
@@ -302,6 +306,8 @@ def main(argv=None):
     build.add_argument("--no-prune", action="store_true")
     build.add_argument("--author-command", nargs=argparse.REMAINDER,
                        help="the 2D author's argv (last option): {request} {output} {prompt}")
+    build.add_argument("--author-svg-from", choices=("file", "stdout"), default="file",
+                       help="file: the author writes {output}; stdout: it prints the SVG last")
     build.add_argument("--repair-rounds", type=int, default=2)
     build.add_argument("--work-dir", help="author requests, logs and rejected files "
                                           "(default: a fresh temporary directory)")

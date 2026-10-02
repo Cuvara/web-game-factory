@@ -79,6 +79,11 @@ agents:
       - core/craft/onboarding-and-portal-ux.md
       - core/craft/art-direction.md
       - core/craft/production-art-and-ui.md
+      - core/craft/production-art-2d.md
+      - core/craft/production-art-3d.md
+      - core/craft/game-ui-kit.md
+      - core/craft/juice.md
+      - core/craft/retention-and-progression.md
       - core/artifacts/shared/research-opportunity.schema.json
     produces: [title-strategy, game-design]
     consumes: [opportunity, evaluation, claim]
@@ -150,6 +155,7 @@ agents:
       - core/lifecycle/stages/performance-review.md
       - core/lifecycle/stages/campaign.md
       - core/artifacts/performance-review.schema.json
+      - core/craft/retention-and-progression.md
     produces: [performance-review, claim]
     consumes: [release-manifest, platform-publication]
 
@@ -166,6 +172,12 @@ agents:
       - core/craft/game-feel.md
       - core/craft/core-loop-and-difficulty.md
       - core/craft/production-art-and-ui.md
+      - core/craft/production-art-2d.md
+      - core/craft/production-art-3d.md
+      - core/craft/juice.md
+      - core/craft/production-wiring.md
+      - core/craft/retention-and-progression.md
+      - core/craft/game-audio.md
     produces: [prototype-report]
     consumes: [tech-plan, game-design, review-report, qa-report]
 
@@ -182,6 +194,10 @@ agents:
       - core/craft/accessibility.md
       - core/craft/game-feel.md
       - core/craft/production-art-and-ui.md
+      - core/craft/game-ui-kit.md
+      - core/craft/juice.md
+      - core/craft/production-wiring.md
+      - core/craft/game-audio.md
     produces: []
     consumes: [game-design, tech-plan]
 
@@ -193,9 +209,13 @@ agents:
       - core/artifacts/asset-manifest.schema.json
       - core/reference/asset-policy.yaml
       - core/craft/art-direction.md
-      - core/craft/audio.md
+      - core/craft/game-audio.md
       - core/craft/2d-assets.md
       - core/craft/production-art-and-ui.md
+      - core/craft/production-art-2d.md
+      - core/craft/production-art-3d.md
+      - core/craft/game-ui-kit.md
+      - core/craft/production-wiring.md
     produces: [asset-manifest]
     consumes: [game-design]
 
@@ -292,6 +312,16 @@ workflows:
     runs: core/workflows/new-game.workflow.yaml
     role: null
     gates: [G2, G3, G4]
+    # The production bar the run's agents are held to: the develop brief and the asset and
+    # model author requests point at these by path; the surface names them so the person
+    # starting a run knows what a finished build is judged against.
+    craft:
+      - core/craft/production-art-and-ui.md
+      - core/craft/production-art-2d.md
+      - core/craft/production-art-3d.md
+      - core/craft/game-ui-kit.md
+      - core/craft/juice.md
+      - core/craft/production-wiring.md
 
 # ---------------------------------------------------------------------------
 # Skills — reference capability, loaded on demand.
@@ -331,6 +361,8 @@ skills:
       - core/craft/onboarding-and-portal-ux.md
       - core/templates/gdd.md
       - core/craft/production-art-and-ui.md
+      - core/craft/game-ui-kit.md
+      - core/craft/retention-and-progression.md
   - id: core-loop
     supports: [game-designer, gameplay]
     covers: >
@@ -340,6 +372,7 @@ skills:
       - core/craft/core-loop-and-difficulty.md
       - core/artifacts/game-design.schema.json
       - core/lifecycle/stages/strategy.md
+      - core/craft/retention-and-progression.md
   - id: game-feel
     supports: [gameplay, ui]
     covers: >
@@ -349,6 +382,7 @@ skills:
     reads:
       - core/craft/game-feel.md
       - core/artifacts/game-design.schema.json
+      - core/craft/juice.md
   - id: onboarding-ux
     supports: [ui, game-designer]
     covers: >
@@ -359,6 +393,7 @@ skills:
       - core/craft/ui-hud-mobile.md
       - core/craft/accessibility.md
       - core/craft/production-art-and-ui.md
+      - core/craft/game-ui-kit.md
   - id: monetization
     supports: [game-designer, sdk]
     covers: >
@@ -403,6 +438,8 @@ skills:
       - core/craft/web-performance.md
       - core/craft/game-feel.md
       - core/craft/2d-assets.md
+      - core/craft/production-art-2d.md
+      - core/craft/production-wiring.md
   - id: phaser
     supports: [gameplay, ui]
     covers: >
@@ -414,6 +451,8 @@ skills:
       - core/craft/web-performance.md
       - core/craft/game-feel.md
       - core/craft/2d-assets.md
+      - core/craft/production-art-2d.md
+      - core/craft/production-wiring.md
   - id: threejs
     supports: [gameplay]
     covers: >
@@ -426,6 +465,8 @@ skills:
       - core/craft/3d-assets-and-animation.md
       - core/craft/web-performance.md
       - core/craft/game-feel.md
+      - core/craft/production-art-3d.md
+      - core/craft/production-wiring.md
   - id: assets
     supports: [asset]
     covers: >
@@ -435,8 +476,11 @@ skills:
       - core/artifacts/asset-manifest.schema.json
       - core/reference/asset-policy.yaml
       - core/craft/art-direction.md
-      - core/craft/audio.md
+      - core/craft/game-audio.md
       - core/craft/2d-assets.md
+      - core/craft/production-art-2d.md
+      - core/craft/production-art-3d.md
+      - core/craft/production-wiring.md
   - id: art-direction
     supports: [game-designer, asset]
     covers: >
@@ -447,14 +491,20 @@ skills:
       - core/lifecycle/stages/design.md
       - core/reference/asset-policy.yaml
       - core/craft/production-art-and-ui.md
+      - core/craft/production-art-2d.md
+      - core/craft/production-art-3d.md
+      - core/craft/game-ui-kit.md
   - id: audio
-    supports: [asset, gameplay]
+    supports: [asset, gameplay, ui]
     covers: >
-      Game audio for the browser: unlock on first gesture, mute, cue lists per event, mix
-      and variation, size budgets.
+      Game audio for the browser: music as a produced, seamless, adaptive loop; designed
+      sound effects and their timing; mixing levels and ducking; unlock on first gesture,
+      mute, pause and ad silence; formats, budgets and the quality checks.
     reads:
-      - core/craft/audio.md
+      - core/craft/game-audio.md
       - core/reference/asset-policy.yaml
+      - core/reference/asset-quality.yaml
+      - core/reference/production-quality.yaml
   - id: platform-sdk
     supports: [sdk]
     covers: >
@@ -512,7 +562,62 @@ skills:
       - core/lifecycle/stages/publish.md
       - core/artifacts/release-manifest.schema.json
       - core/craft/onboarding-and-portal-ux.md
-
+  - id: production-art-2d
+    supports: [asset, gameplay, game-designer]
+    covers: >
+      2D production art that reads as a product: silhouette-first sprites with a distinct
+      shape per level and variant, palette roles, the layered-SVG style kit (outlines,
+      misregistration, halftone), backgrounds, VFX sprites, sizes and anchors, and authoring
+      through the assets step or a library.
+    reads:
+      - core/craft/production-art-2d.md
+      - core/craft/production-art-and-ui.md
+      - core/craft/2d-assets.md
+      - core/reference/asset-policy.yaml
+  - id: production-art-3d
+    supports: [asset, gameplay, game-designer]
+    covers: >
+      3D production art from model specs: part decomposition of recognisable low-poly
+      objects, bevel, taper and mirror, materials and emissive, the lighting rig, fog and
+      sky, chase camera and portrait framing, and building and inspecting models.
+    reads:
+      - core/craft/production-art-3d.md
+      - core/craft/production-art-and-ui.md
+      - core/craft/3d-assets-and-animation.md
+      - core/craft/3d-scene-and-physics.md
+      - core/artifacts/shared/model-spec.schema.json
+  - id: game-ui-kit
+    supports: [ui, asset, game-designer]
+    covers: >
+      The game's own interface kit: fonts as licensed assets with locale glyph coverage,
+      HUD layout without overlap, contrast and touch-target minimums, drawn buttons, title,
+      pause, result and retry screens, and the mobile portrait layout.
+    reads:
+      - core/craft/game-ui-kit.md
+      - core/craft/production-art-and-ui.md
+      - core/craft/ui-hud-mobile.md
+      - core/craft/accessibility.md
+  - id: juice
+    supports: [gameplay, ui]
+    covers: >
+      Game feel with numbers: drop bounce, merge pop and burst, combo text, shake,
+      near-miss and crash feedback, opening grace, and acknowledgement within 100 ms.
+    reads:
+      - core/craft/juice.md
+      - core/craft/game-feel.md
+  - id: production-wiring
+    supports: [gameplay, ui, asset]
+    covers: >
+      Wiring production art into a build: loading the runtime asset manifest (variants,
+      roles, fonts), the play probe's asset, render and assets_loaded, the regression guard
+      end-to-end test, and self-checking against the production gate and visual QA before
+      reporting.
+    reads:
+      - core/craft/production-wiring.md
+      - core/craft/2d-assets.md
+      - core/artifacts/shared/play-probe.schema.json
+      - core/reference/visual-quality.yaml
+      - core/reference/experience-rules.yaml
 # ---------------------------------------------------------------------------
 # What an adapter must NOT do.
 # ---------------------------------------------------------------------------

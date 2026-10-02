@@ -14,6 +14,7 @@ Making the core loop worth repeating: decisions, risk and reward, mastery signal
 - `${CLAUDE_PLUGIN_ROOT}/runtime/core/craft/core-loop-and-difficulty.md`
 - `${CLAUDE_PLUGIN_ROOT}/runtime/core/artifacts/game-design.schema.json`
 - `${CLAUDE_PLUGIN_ROOT}/runtime/core/lifecycle/stages/strategy.md`
+- `${CLAUDE_PLUGIN_ROOT}/runtime/core/craft/retention-and-progression.md`
 
 This skill is a pointer, not a copy. Read the paths above rather than relying on anything
 restated here; core is authoritative and this file is not a substitute for it.

@@ -1,13 +1,12 @@
 {
-  "comment": "Golden-run replay of examples/neon-drift-arena. Read by scripts/golden/replay_developer.py. This file is a mapping only: the Factory holds no game source. `copy` entries are taken from the game repository's own examples/neon-drift-arena/ (the template ships them) and written with a provenance header. `overlays` are directories of the game repository - shipped by the pinned web-game-template commit - holding the hand-made adaptation to the template layout the development brief asks for; each is copied onto the repository root in order (a later one wins), its README.md excepted. The template's boot scene (src/game/boot-scene.ts) is left in place: main.ts no longer starts it, and the template's own SDK matrix harness (tests/sdk-matrix/main.ts) imports it.",
+  "comment": "Golden-run replay of examples/neon-drift-arena. Read by scripts/golden/replay_developer.py. This file is a mapping only: the Factory holds no game source. `copy` entries are taken from the game repository's own examples/neon-drift-arena/ (the template ships them) and written with a provenance header. `overlays` are directories of the game repository - shipped by the pinned web-game-template commit - holding the hand-made adaptation to the template layout the development brief asks for; each is copied onto the repository root in order (a later one wins), its README.md excepted. The ports implement the template's contract 2 (src/game/index.ts, createGame) and carry no main.ts; `boot_bridge` is the template-owned directory of the ports checkout whose src/main.ts and src/game/context.ts the replay writes only into a repository created from a contract-1 release (no src/game/context.ts) - temporary, until the Factory pins a contract-2 release. The template's boot scene (src/game/boot-scene.ts) is left in place: main.ts no longer starts it, and the template's own SDK matrix harness (tests/sdk-matrix/main.ts) imports it.",
+  "boot_bridge": "examples/wgf-golden-shared/release-1",
   "overlays": ["examples/wgf-golden-shared", "examples/neon-drift-arena/wgf-golden"],
   "example": "neon-drift-arena",
   "engine": "threejs",
   "scene_id": "neon-drift-arena",
   "copy": [
     {"from": "src/game/simulation.ts", "to": "src/game/simulation.ts"},
-    {"from": "src/game/arena-view.ts", "to": "src/rendering/threejs/arena-view.ts",
-     "replace": [["from \"./simulation.js\"", "from \"../../game/simulation.js\""]]},
     {"from": "src/input.ts", "to": "src/input/steering.ts"},
     {"from": "tests/unit/simulation.test.ts", "to": "tests/unit/neon-drift-arena-simulation.test.ts"}
   ],

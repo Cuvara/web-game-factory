@@ -10,7 +10,9 @@ control's size, colours and style are what the browser computed.
 
 Every check carries `route`: `assets` when an asset itself must be made again (missing, a
 placeholder, failing its own quality checks), `develop` when the game's use of assets or its
-UI must change. Bars: core/reference/production-quality.yaml.
+UI must change. Bars: core/reference/production-quality.yaml. Sound is judged the same way:
+`audio.plays` hears the game through the probe's measured output level while the bot plays,
+checks the music's file was fetched, and that the level falls away when the page loses focus.
 """
 
 import os
@@ -18,7 +20,8 @@ import statistics
 
 from wgf_assets.raster import RasterError, decode_png
 
-__all__ = ["judge", "contrast_ratio", "required_assets", "served_paths"]
+__all__ = ["judge", "contrast_ratio", "required_assets", "served_paths", "scene_contrast",
+           "audio_plays"]
 
 ASSETS, DEVELOP = "assets", "develop"
 
@@ -131,6 +134,38 @@ class _Frames:
                 if max(abs(px[i + k] - background[k]) for k in range(3)) >= min_delta:
                     changed += 1
         return round(changed / total, 4) if total else None
+
+
+    def local_contrast(self, frame_id, box, viewport, bars):
+        """The entity's contrast with its surround in a frame: the WCAG ratio, at the bars'
+        percentile, of the pixels inside `box` against the median luminance of a ring around
+        it. None when the frame or the box cannot be read."""
+        image = self.image(frame_id)
+        if image is None or not box or not viewport or not viewport[0]:
+            return None
+        scale = image.width / float(viewport[0])
+        ring = max(float(bars.get("min_ring_px", 2)),
+                   float(bars.get("ring_fraction", 0.25)) * min(box[2], box[3])) * scale
+        x0, y0 = int(box[0] * scale), int(box[1] * scale)
+        x1, y1 = int((box[0] + box[2]) * scale), int((box[1] + box[3]) * scale)
+        rx0, ry0 = max(0, int(x0 - ring)), max(0, int(y0 - ring))
+        rx1, ry1 = min(image.width, int(x1 + ring)), min(image.height, int(y1 + ring))
+        x0, y0, x1, y1 = max(0, x0), max(0, y0), min(image.width, x1), min(image.height, y1)
+        if x1 <= x0 or y1 <= y0:
+            return None
+        step = max(1, min(x1 - x0, y1 - y0) // 48)
+        px, inner, outer = image.pixels, [], []
+        for y in range(ry0, ry1, step):
+            for x in range(rx0, rx1, step):
+                i = (y * image.width + x) * 4
+                value = _luminance((px[i], px[i + 1], px[i + 2]))
+                (inner if x0 <= x < x1 and y0 <= y < y1 else outer).append(value)
+        if not inner or not outer:
+            return None
+        surround = statistics.median(outer)
+        ratios = sorted((max(v, surround) + 0.05) / (min(v, surround) + 0.05) for v in inner)
+        at = ratios[min(len(ratios) - 1, int(float(bars.get("percentile", 0.9)) * len(ratios)))]
+        return {"ratio": round(at, 2), "surround_luminance": round(surround, 4)}
 
 
 # -- assets --------------------------------------------------------------------------------
@@ -476,6 +511,51 @@ def scene_no_primitives(project, tests, wanted, rules, runtime, design):
                   expected="no readable-role entity with render `primitive`", assets=concerned)
 
 
+def scene_contrast(project, tests, rules, frames):
+    """Each readable role's entities stand out from their surround in the state frames: the
+    best-scoring box of the role reaches the bar (production-quality.yaml `contrast`)."""
+    bars = rules.get("contrast") or {}
+    roles = set((rules.get("entities") or {}).get("readable_roles") or [])
+    bar = float(bars.get("min_ratio", 3.0))
+    smallest = float(bars.get("min_box_px", 12))
+    best, frames_used, small = {}, {}, set()
+    for state, ui in _ui_states(tests):
+        for e in ui.get("entities") or []:
+            if not isinstance(e, dict) or e.get("role") not in roles or not e.get("visible"):
+                continue
+            box = [e.get("x"), e.get("y"), e.get("w"), e.get("h")]
+            if any(not isinstance(v, (int, float)) for v in box):
+                continue
+            if min(box[2], box[3]) < smallest:
+                small.add(e["role"])
+                continue
+            measured = frames.local_contrast(ui.get("frame"), box, ui.get("viewport"), bars)
+            if measured is None:
+                continue
+            role = e["role"]
+            if role not in best or measured["ratio"] > best[role]["ratio"]:
+                best[role] = dict(measured, frame=ui.get("frame"), state=state,
+                                  entity=e.get("id"), asset=e.get("asset"),
+                                  box=[round(v, 1) for v in box])
+                frames_used[role] = ui.get("frame")
+    if not best:
+        return _check("scene.contrast", True,
+                      "no readable entity box large enough to judge in a state frame"
+                      + (f" ({', '.join(sorted(small))} only below {smallest:g} px)" if small else ""),
+                      DEVELOP, project=project, required=False, status="WARNING",
+                      expected=f">= {bar:g}:1 for each readable role")
+    low = {role: m for role, m in best.items() if m["ratio"] < bar}
+    summary = ("; ".join(f"{role} at best {m['ratio']:.2f}:1 against its surround ({m['frame']})"
+                         for role, m in sorted(low.items()))
+               + f" - below {bar:g}:1: light it, outline it or change its colour so it stands "
+                 "out from what is around it") if low else \
+        ", ".join(f"{role} {m['ratio']:.2f}:1" for role, m in sorted(best.items()))
+    return _check("scene.contrast", not low, summary, DEVELOP, project=project,
+                  measured=best, expected=f">= {bar:g}:1 for each readable role (best box)",
+                  assets=[m["asset"] for m in low.values() if m.get("asset")],
+                  frames=sorted(set(frames_used.values())))
+
+
 def _ui_states(tests):
     for name, record in tests.items():
         for state, ui in ((record or {}).get("ui") or {}).items():
@@ -604,18 +684,103 @@ def ui_states(project, tests, design, rules):
                   frames=[seen[s] for s in wanted if seen.get(s)])
 
 
+# -- audio --------------------------------------------------------------------------------------
+
+def _music_items(manifest, design, rules):
+    """{id: manifest item or None} of the music the gate requires: build_spec.audio entries of
+    type music of a required tier, and manifest music items of a required tier."""
+    tiers = set((rules.get("assets") or {}).get("required_tiers") or ["mvp"])
+    items = {i.get("id"): i for i in (manifest or {}).get("items") or [] if isinstance(i, dict)}
+    wanted = {}
+    for cue in ((design or {}).get("build_spec") or {}).get("audio") or []:
+        if isinstance(cue, dict) and cue.get("type") == "music" and cue.get("tier") in tiers:
+            wanted[cue.get("id")] = items.get(cue.get("id"))
+    for item_id, item in items.items():
+        if item.get("type") == "music" and item.get("scope_tier") in tiers:
+            wanted.setdefault(item_id, item)
+    return wanted
+
+
+def audio_plays(records, manifest, design, rules):
+    """While the bot plays, the probe reports music playing and a measured output level above
+    the floor, the music's file was fetched, and the level falls to about zero when the page
+    loses focus (the platform mute every portal shares). None when the design has no music."""
+    bars = rules.get("audio") or {}
+    floor = float(bars.get("min_level", 0.005))
+    ceiling = float(bars.get("max_muted_level", 0.001))
+    music = _music_items(manifest, design, rules)
+    if not music:
+        return None
+    missing = sorted(i for i, item in music.items()
+                     if not item or item.get("status") in ("planned", "cut") or item.get("placeholder"))
+    samples, unfocused, requests, runtime = [], [], [], None
+    for _p, _n, record in _all_records(records):
+        samples += [a for a in record.get("audio") or [] if isinstance(a, dict)]
+        unfocused += [a for a in record.get("audio_unfocused") or [] if isinstance(a, dict)]
+        requests += [r for r in record.get("asset_requests") or [] if isinstance(r, dict)]
+        if runtime is None and isinstance(record.get("runtime_assets"), dict):
+            runtime = record["runtime_assets"]
+    measured = {"music_required": sorted(music), "samples": len(samples)}
+    if missing:
+        return _check("audio.plays", False,
+                      f"no delivered music for {', '.join(missing)}: the asset must be made",
+                      ASSETS, measured=measured, assets=missing)
+    if not samples:
+        return _check("audio.plays", False,
+                      "the play probe reports no `audio`: the game's sound cannot be heard from "
+                      "outside (core/artifacts/shared/play-probe.schema.json)", DEVELOP,
+                      measured=measured)
+    playing = [a for a in samples if a.get("state") == "playing"]
+    levels = [float(a.get("level") or 0) for a in playing]
+    heard = [a for a in playing if a.get("playing") and float(a.get("level") or 0) >= floor]
+    tracks = sorted({a.get("music") for a in playing if a.get("playing") and a.get("music")})
+    fetched = {_relative(r["url"].split("/assets/", 1)[-1]) for r in requests
+               if isinstance(r.get("url"), str) and "/assets/" in r["url"]
+               and r.get("status") is not None and r.get("status") < 400}
+    unfetched = sorted(i for i, item in music.items()
+                       if item and not (served_paths(item, runtime) & fetched))
+    muted = [float(a["level"]) for a in unfocused if isinstance(a.get("level"), (int, float))]
+    measured.update({"playing_samples": len(playing), "max_level": round(max(levels, default=0), 4),
+                     "median_level": round(statistics.median(levels), 4) if levels else 0,
+                     "music_heard": tracks, "unfocused_levels": muted,
+                     "music_unfetched": unfetched})
+    expected = {"min_level": floor, "max_muted_level": ceiling}
+    problems = []
+    if not heard:
+        problems.append(f"no sample during play had music playing at or above {floor} RMS "
+                        f"(loudest {measured['max_level']})")
+    if not tracks:
+        problems.append("the probe never named the music playing")
+    if unfetched:
+        problems.append(f"the music's file was never fetched: {', '.join(unfetched)}")
+    if not muted:
+        problems.append("no level was recorded while the page had lost focus")
+    elif max(muted) > ceiling:
+        problems.append(f"still {max(muted)} RMS with the page unfocused (platform mute): the "
+                        f"bar is {ceiling}")
+    return _check("audio.plays", not problems,
+                  "; ".join(problems) if problems else
+                  f"music {', '.join(tracks)} heard at up to {measured['max_level']} RMS in "
+                  f"{len(heard)} of {len(playing)} samples during play; "
+                  f"{max(muted)} RMS unfocused", DEVELOP, measured=measured, expected=expected,
+                  assets=sorted(music))
+
+
 def judge(records, manifest, design, rules, frames_dirs):
     """Checks for a build: global asset checks, then each viewport's."""
     wanted = required_assets(manifest, design, rules)
     runtime = next((r["runtime_assets"] for _p, _n, r in _all_records(records)
                     if isinstance(r.get("runtime_assets"), dict)), None)
     checks = [assets_present(wanted), assets_loaded(wanted, records, rules),
-              assets_runtime(wanted, records, rules, frames_dirs)]
+              assets_runtime(wanted, records, rules, frames_dirs),
+              audio_plays(records, manifest, design, rules)]
+    checks = [c for c in checks if c is not None]
     for project in sorted(records):
         tests = records[project]
         frames = _Frames(frames_dirs.get(project))
         checks.append(assets_used(project, tests, wanted, rules, runtime, design))
         checks.append(scene_no_primitives(project, tests, wanted, rules, runtime, design))
+        checks.append(scene_contrast(project, tests, rules, frames))
         if project == "mobile":
             checks.append(ui_targets(project, tests, design, rules))
         checks.append(ui_overlap(project, tests, rules))

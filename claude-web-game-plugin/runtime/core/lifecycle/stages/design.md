@@ -70,6 +70,13 @@ consistency result is atomic.
    colour, a display face with character, a shape language, a motion rule and an explicit
    list of what to avoid. Generic UI is a design failure.
 
+   State why a player plays longer and comes back in `build_spec.depth`: the meta loop
+   above the run and what it persists (more than a score), a goal at every horizon,
+   content-variety items introduced on a schedule, the first session's length and the beat
+   it ends on, and the return hooks. Tier each entry honestly. An MVP entry rests only on
+   what the MVP builds, and depth the strategy excludes is stated as optional, not dropped.
+   The bars are `core/reference/design-depth.yaml`.
+
 8. **List features by tier.** `features` is the canonical tier list; `scope.tiers` is
    derived from it (mvp → mvp and prototype, post-mvp → production, optional → future).
    An mvp feature carries acceptance criteria. Every item of the strategy's `mvp` is carried
@@ -82,8 +89,8 @@ consistency result is atomic.
 
 What *good* looks like inside `build_spec`: `core/craft/core-loop-and-difficulty.md`,
 `core/craft/game-feel.md`, `core/craft/onboarding-and-portal-ux.md`,
-`core/craft/ui-hud-mobile.md`, `core/craft/audio.md`, `core/craft/art-direction.md`,
-`core/craft/accessibility.md`.
+`core/craft/ui-hud-mobile.md`, `core/craft/game-audio.md`, `core/craft/art-direction.md`,
+`core/craft/accessibility.md`, `core/craft/retention-and-progression.md`.
 
 ## Exit
 

@@ -20,7 +20,8 @@ A derived baseline requirement (the design listed no assets) skips straight to t
 placeholder backends: nobody designed it, so nothing is imported or authored for it.
 
 Every delivered item gets a `quality` (quality.py): an SVG or PNG is judged against
-core/reference/asset-quality.yaml; a placeholder is `skipped`, never judged; a failed
+core/reference/asset-quality.yaml (and a sound file - WAV decoded, Ogg or MP3 by its headers -
+against its `audio` bars: length, level, loop seam, size, licence); a placeholder is `skipped`, never judged; a failed
 verdict is a `quality-failed` issue and keeps the item from being production-ready.
 
 Every file the pipeline writes goes under the asset root (a game repository checkout) at
@@ -51,9 +52,11 @@ import os
 import tempfile
 from collections import namedtuple
 
+from wgflib import paths
+
 from . import atlas as atlases_mod
 from . import formats, gltf, modelspec, quality as quality_mod, raster, runtime
-from .author import AuthorError, AuthorRunFailed
+from .author import AUTHOR_CRAFT, AuthorError, AuthorRunFailed
 from .library import LibraryError, match_all, search_all
 from .optimize import optimize as optimize_bytes
 from .placeholders import BackendError
@@ -74,6 +77,14 @@ ORIGIN_KEYS = ("source_url", "author", "vendor", "attribution", "license_url", "
 LEDGER_PATH = f"{SOURCE_DIR}/authored.json"
 LEDGER_FORMAT = "wgf-authored-assets"
 SOURCES = ("library", "procedural", "ai-generated", "purchased", "commissioned")
+AUDIO_KINDS = ("sfx", "music")
+
+
+def _is_audio(blob):
+    head = bytes(blob[:12])
+    return (head[:4] == b"OggS" or (head[:4] == b"RIFF" and head[8:12] == b"WAVE")
+            or head[:3] == b"ID3" or (len(head) > 1 and head[0] == 0xFF
+                                      and head[1] & 0xE0 == 0xE0))
 
 
 def file_hash(data):
@@ -292,6 +303,7 @@ class _Item:
         self.payload = []  # [(repository-relative path, bytes)] of the files, as recorded
         self.generation = None  # a generating backend's `model.generation` block
         self.variants = []  # runtime ids of the drawings, when the requirement has a count
+        self.short = None   # (supplied, wanted) when a library supplies fewer drawings
         self.quality_author = None  # what made it, for quality.author
         self.quality = None  # set when the backend judged it already
     def issue(self, code, severity, message):
@@ -326,7 +338,8 @@ class AssetPipeline:
     def __init__(self, policy, store, backends, libraries=(), *, logger=None,
                  placeholders=True, optimize=True, runtime_manifest=True, prune=True,
                  title_id=None, author=None, model_author=None, palette=(), identity=None,
-                 bars=None, rebuild=None, work_dir=None, settings=None, context=None):
+                 bars=None, rebuild=None, work_dir=None, settings=None, context=None,
+                 locales=()):
         self.policy = policy
         self.store = store
         self.backends = backends  # [(id, backend or None, note)]
@@ -346,6 +359,8 @@ class AssetPipeline:
             self.palette = list(palette)
         self.primitive_style = bool(self.identity.get("primitive_style"))
         self.bars = bars or quality_mod.load_bars()
+        # The design's scope.locales: a delivered font must set each of them.
+        self.locales = [str(x) for x in locales or [] if x]
         # {requirement id: [finding]}: what a re-entry was sent back for; only these are
         # rebuilt, and the findings reach the author.
         self.rebuild = dict(rebuild or {})
@@ -748,10 +763,6 @@ class AssetPipeline:
             if not blobs:
                 continue
             wanted = max(1, req.count)
-            if len(blobs) < wanted:
-                item.issue("variants-short", "warning",
-                           f"{req.id}: {entry.qualified_id} supplies {len(blobs)} of the "
-                           f"{wanted} drawings the design asks for")
             blobs = blobs[:wanted]
             checked, errors = [], []
             for relative, data in blobs:
@@ -769,6 +780,14 @@ class AssetPipeline:
             stored = [self._store(path, data, found.format)
                       for (vid, path), (data, found) in zip(names, checked)]
             item.variants = [vid for vid, _ in names] if len(names) > 1 else []
+            item.short = (len(names), wanted) if len(names) < wanted else None
+            if item.short:
+                # Each counted drawing is one the game shows (a tower level, an enemy kind):
+                # a short set leaves some undrawn, so a load-bearing one fails its quality.
+                item.issue("variants-short",
+                           "error" if req.scope_tier in LOAD_BEARING_TIERS else "warning",
+                           f"{req.id}: {entry.qualified_id} supplies {len(names)} of the "
+                           f"{wanted} drawings the design asks for")
             origin = {"kind": "library", "library_id": entry.qualified_id}
             for key in ORIGIN_KEYS:
                 if getattr(entry, key, None):
@@ -875,6 +894,8 @@ class AssetPipeline:
             "quality_bars": self.bars.summary(req.role),
             "format": "svg",
             "destination": relative,
+            # The playbooks the drawing follows: silhouettes, palette, the style kit.
+            "craft": [os.path.join(paths.CORE, "craft", name) for name in AUTHOR_CRAFT],
         }
         if notes:
             request["notes"] = list(notes)
@@ -882,19 +903,40 @@ class AssetPipeline:
             request["repair"] = repair
         return request
 
-    def _ask_author(self, req, vid, n, relative, notes):
-        """(bytes, quality, problems): the first file that passes, or None and why not."""
+    def _same_as(self, vid, data, siblings):
+        """Problems when `data` has the silhouette of an accepted sibling variant."""
+        out = []
+        for other, other_data in siblings:
+            found = quality_mod.variants_distinct([(other, other_data, "svg"), (vid, data, "svg")],
+                                                  self.bars)
+            if found and found[0]["status"] == "fail":
+                distance = next(iter(found[1]["pairs"].values()), 0.0)
+                out.append(f"variants.distinct: {vid} has the silhouette of {other} (they "
+                           f"differ by {distance:.2f}; the bar is {found[1]['bar']:.2f}) - draw "
+                           f"this variant as its own shape and size, never a recolour of "
+                           f"{other} or the same drawing with another numeral")
+        return out
+
+    def _ask_author(self, req, vid, n, relative, notes, siblings=()):
+        """(bytes, quality, problems): the first file that passes, or None and why not.
+        `siblings`: [(variant id, bytes)] already accepted for the same requirement; a file
+        with one's silhouette is sent back like any failed check."""
         work = os.path.join(self.work_dir or tempfile.gettempdir(), "author")
         repair, judged, problems = None, None, []
         for round_ in range(self.author.repair_rounds + 1):
             stem = f"{vid}-{round_}"
             output = os.path.join(work, f"{stem}.svg")
             request = self._author_request(req, vid, n, relative, notes, repair)
+            if siblings:
+                request["siblings"] = [{"variant": other, "destination":
+                                        f"{self._directory(req, 'svg')}/{other}.svg"}
+                                       for other, _data in siblings]
             try:
                 data = self.author.write(request, output, work, stem)
             except (AuthorRunFailed, AuthorError) as exc:
                 return None, judged, [str(exc)]
             problems, judged = self._judge_svg(req, relative, data)
+            problems = list(problems) + self._same_as(vid, data, siblings)
             self._log("authored", asset=vid, round=round_, problems=len(problems))
             if not problems:
                 return data, judged, []
@@ -912,12 +954,14 @@ class AssetPipeline:
             key = self._author_key(req, vid, n)
             data = None if notes else self._reusable(relative, key)
             judged = None
+            siblings = [(other, entry.data) for other, entry in zip(ids, stored)]
             if data is not None:
                 problems, judged = self._judge_svg(req, relative, data)
-                if problems:
+                if problems or self._same_as(vid, data, siblings):
                     data = None
             if data is None:
-                data, judged, problems = self._ask_author(req, vid, n, relative, notes)
+                data, judged, problems = self._ask_author(req, vid, n, relative, notes,
+                                                          siblings)
                 if data is None:
                     rounds = self.author.repair_rounds
                     item.issue("author-rejected", "warning",
@@ -1043,8 +1087,18 @@ class AssetPipeline:
                      if quality_mod.font_format(blob)]
             models = [(relative, blob) for relative, blob in item.payload
                       if bytes(blob[:4]) == b"glTF"]
-            if fonts and not files:
-                judged = _merge_quality([(relative, quality_mod.font_quality(blob, author=author))
+            sounds = [(relative, blob) for relative, blob in item.payload
+                      if req.kind in AUDIO_KINDS and _is_audio(blob)]
+            if sounds:
+                licensed = data.get("license_status") in ("verified", "generated")
+                judged = _merge_quality(
+                    [(relative, quality_mod.audio_quality(
+                        blob, kind=req.kind, loop=req.loop, min_duration_s=req.min_duration_s,
+                        max_bytes=req.policy.max_bytes, license_ok=licensed, bars=self.bars,
+                        author=author)) for relative, blob in sounds], author)
+            elif fonts and not files:
+                judged = _merge_quality([(relative, quality_mod.font_quality(
+                    blob, locales=self.locales, bars=self.bars, author=author))
                                          for relative, blob in fonts], author)
             elif models and not files:
                 # A GLB from a library (or the repository) is judged like a built one: the
@@ -1073,6 +1127,27 @@ class AssetPipeline:
                             blob, needs_alpha=req.policy.transparency == "required",
                             bars=self.bars, author=author)))
                 judged = _merge_quality(results, author)
+        if item.variants and item.payload and not data.get("placeholder") \
+                and judged.get("verdict") != "skipped":
+            # A counted requirement's drawings are told apart by shape: a recolour or a
+            # changed numeral is the same drawing (asset-quality.yaml `variants`). Whoever
+            # judged the files one by one (an author's own loop included), the set is
+            # judged here.
+            files = self._image_files(item)
+            distinct = quality_mod.variants_distinct(
+                [(vid, blob, fmt) for vid, _relative, blob, fmt in files], self.bars) \
+                if len(files) > 1 else None
+            if distinct:
+                checks = [c for c in judged.get("checks") or [] if c["id"] != "variants.distinct"]
+                judged = dict(judged, checks=checks + [distinct[0]])
+                if distinct[0]["status"] == "fail":
+                    judged["verdict"] = "fail"
+        if item.short and judged.get("verdict") != "skipped":
+            supplied, wanted = item.short
+            judged = dict(judged, verdict="fail", checks=list(judged.get("checks") or []) + [
+                {"id": "variants.count", "status": "fail",
+                 "summary": f"{supplied} of the {wanted} drawings the design counts were "
+                            f"delivered: drawings {supplied + 1}-{wanted} are missing"}])
         data["quality"] = judged
         if judged["verdict"] == "fail":
             severity = "error" if req.scope_tier in LOAD_BEARING_TIERS else "warning"
@@ -1331,6 +1406,8 @@ class AssetPipeline:
                       "height": record.get("height")})
         if data.get("model"):
             entry["model"] = self._runtime_model(data["model"])
+        if req.kind in AUDIO_KINDS and _is_audio(blob):
+            entry["audio"] = _runtime_audio(blob, req)
         payload = [(relative, blob)]
         if data["type"] == "font":
             entry["family"] = req.id
@@ -1445,6 +1522,19 @@ class AssetPipeline:
             self.store.remove(relative)
             self._log("pruned", path=relative)
         result.removed = list(self.store.removed)
+
+
+def _runtime_audio(blob, req):
+    """What a game's audio loader wants without decoding: length, channels, rate, looping."""
+    from . import audiofile
+    block = {"loop": bool(req.loop)}
+    try:
+        info = audiofile.read(blob)
+    except audiofile.AudioError:
+        return block
+    block.update({"duration_s": round(info.duration_s, 4), "channels": info.channels,
+                  "sample_rate": info.sample_rate})
+    return block
 
 
 def _merge_quality(results, author):

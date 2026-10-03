@@ -62,10 +62,14 @@ PLATFORM_FACTS = ("ads.rewarded", "ads.interstitial", "ads.banner", "iap", "max_
 
 _IDEA_WORD = re.compile(r"[a-z0-9][a-z0-9-]*")
 # Words that describe any game, or no game: they match nothing, whatever the catalog says.
+# Counts are here on purpose: "three weapons" and "three in a row" share only a number, and a
+# tycoon idea once selected a match-3 shape because both said "three".
 _IDEA_STOP = frozenset("""
-    a an and are as at be by for from game games has have in into is it its of on one or
+    a an and are as at be by for from game games has have in into is it its of on or
     player players play plays playing the their them then there they this to where which
     while who with without you your web browser mobile simple casual fun new
+    one two three four five six seven eight nine ten eleven twelve twenty thirty fifty
+    hundred first second third several many few more most each every per
 """.split())
 _DIMENSION_WORDS = {"3d": "3d", "three-dimensional": "3d", "2d": "2d", "two-dimensional": "2d"}
 
@@ -82,8 +86,9 @@ def idea_terms(idea):
     Whole words only: a brief's "blocks" is not the catalog's "block"."""
     seen = []
     for word in _IDEA_WORD.findall((idea or "").lower()):
-        if word in _IDEA_STOP or word in _DIMENSION_WORDS or len(word) < 3 or word in seen:
-            continue
+        if (word in _IDEA_STOP or word in _DIMENSION_WORDS or len(word) < 3 or word in seen
+                or word[0].isdigit()):
+            continue  # a bare number ("24", "15-day") names no game
         seen.append(word)
     return seen
 

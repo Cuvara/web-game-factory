@@ -266,6 +266,30 @@ class TheTemplatesRenderAsSentences(unittest.TestCase):
                                     [u["objective"] for u in mvp])
 
 
+class TheSeedRefusesAnIdeaItCannotDesign(unittest.TestCase):
+    """A catalog entry that names only a family is a capability, and the strategy then carries
+    the person's idea as the concept. The seed is one game of that family; designing it would
+    describe a different game, which the consistency rules refuse. It says so up front."""
+
+    def test_a_brief_led_concept_needs_the_agent_author(self):
+        from wgf_design.authors import AuthorError
+        strategy = strategy_for("simulation")
+        idea = "A lemonade-stand tycoon: price, upgrades, staff and market events"
+        strategy["brief"] = idea
+        strategy["concept"]["core_mechanic"] = idea
+        with self.assertRaises(AuthorError) as caught:
+            GenreSeedAuthor()._resolve({"strategy": strategy, "platforms": [],
+                                        "params": {}, "title_id": "t"})
+        self.assertIn("agent author", str(caught.exception))
+
+    def test_a_catalog_concept_is_designed_as_before(self):
+        strategy = strategy_for("simulation")
+        strategy["brief"] = "a tycoon game"
+        resolved = GenreSeedAuthor()._resolve({"strategy": strategy, "platforms": [],
+                                               "params": {}, "title_id": "t"})
+        self.assertTrue(resolved.archetype["mechanics"])
+
+
 class TheSeedIsDeterministic(unittest.TestCase):
     def test_seed_is_deterministic(self):
         strategy = strategy_for("shooter")

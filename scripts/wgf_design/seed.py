@@ -410,6 +410,20 @@ class GenreSeedAuthor(ArchetypeAuthor):
         if not family_id:
             raise AuthorError(
                 f"the genre seed author designs from a genre family and none resolves: {why}")
+        # The seed is one game per family - the slide-and-clear grid, the lane defense - and
+        # it is the whole of what this author can design. When the strategy's concept is the
+        # person's own idea (a catalog entry that names only a family: the entry is the
+        # capability, the brief is the game), designing the seed instead would describe a
+        # different game, which the consistency rules then refuse. Say so here instead.
+        brief_text = strategy.get("brief")
+        concept = (strategy.get("concept") or {}).get("core_mechanic") or ""
+        if brief_text and concept.strip() == str(brief_text).strip():
+            raise AuthorError(
+                f"this title's concept is the person's idea, and the {family_id} family's seed "
+                f"is one particular game of that family: designing it would describe a "
+                f"different game. An idea needs the agent author "
+                f"(factory.design.author: agent); the seed designs a title whose concept "
+                f"research took from the catalog.")
         return self.synthesize(family_id, models, strategy,
                                (models.get("families") or {})[family_id])
 

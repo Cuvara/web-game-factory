@@ -239,8 +239,9 @@ def check_binding_workflows(roles):
 
     `runs` is a core/ path to `<id>.workflow.yaml` whose definition has that id, and the
     entry's informational `gates` are exactly the gates that workflow's human checkpoints
-    name - so the surface can neither point at a missing workflow nor describe gates the
-    workflow does not have. The workflow file stays the authority; this only checks the
+    name, and every group it `continues` is one of that workflow's `groups` - so the surface
+    can neither point at a missing workflow nor describe gates or groups the workflow does
+    not have. The workflow file stays the authority; this only checks the
     pointer."""
     sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
     from wgflib.workflow.definition import DefinitionError, load_definition
@@ -298,6 +299,14 @@ def check_binding_workflows(roles):
         if sorted(set(declared)) != sorted(set(actual)) or len(declared) != len(set(declared)):
             ERRORS.append(f"{where}: workflow '{wid}' lists gates {declared}; '{runs}' has "
                           f"human checkpoints on {sorted(set(actual))}")
+        continues = entry.get("continues") or []
+        if not isinstance(continues, list):
+            ERRORS.append(f"{where}: workflow '{wid}' `continues` must be a list of group names")
+            continues = []
+        for group in continues:
+            if group not in definition.groups:
+                ERRORS.append(f"{where}: workflow '{wid}' continues '{group}', which is not a "
+                              f"group of '{runs}' ({', '.join(sorted(definition.groups)) or '-'})")
     return ids
 
 

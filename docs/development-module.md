@@ -298,8 +298,9 @@ Run in this order; `conformance` cannot be switched off.
 Each visit commits once, locally, with a `Wgf-Develop-Key: <run>:<step>:<visit>` trailer.
 Re-executing a visit that already committed — a crash, a resume, `--run` — finds that
 commit, skips development, re-runs the checks and reports the same commit. A new visit (a
-verify → develop loop) is a new commit. Nothing is pushed: publishing a branch is the game
-repository's CI, behind its own gates.
+verify → develop loop) is a new commit. Nothing is pushed: develop never publishes a branch.
+Publishing a release is the run's `publish` group, behind G5 and G6 (`wgf publish --run`,
+[publish-module.md](publish-module.md)).
 
 ## The prototype report
 

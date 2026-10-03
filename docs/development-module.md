@@ -84,6 +84,14 @@ fails the step.
 `docs/development/brief.md` is the whole interface between the Factory and whoever writes
 the game, regenerated on every visit and committed with the code it asked for. It states:
 
+- **Your shell** — only for a `command` developer. It lists the `Bash(...)` rules that the
+  developer's own argv allows and denies (`brief.shell_contract`). It says one command per
+  call, what to use instead of a refused command, and that scratch files go in
+  `tests/scratch-*` and are deleted before the report. It also says that the Factory runs
+  the checks and commits. A refused command is never a reason to stop. A session that was
+  refused a tool call and then changed no file fails the attempt with that cause
+  (`developers.permission_stall`), and the retry's brief carries the cause. See
+  docs/claude-capabilities.md.
 - **Ground rules** — the engine and where it may be imported (`src/rendering/<engine>/`
   only); the template-owned paths a game may not edit (`packages/`, `game.config.yaml`,
   `.github/`, `scripts/`, the build and test configs, `package.json`, `tsconfig.json`,

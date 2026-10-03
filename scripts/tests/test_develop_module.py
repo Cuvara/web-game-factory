@@ -2495,5 +2495,146 @@ class NoPlaceholderCommit(DevelopCase):
         self.assertIn("cannot be established", result.message)
 
 
+
+def _shipped_developer():
+    from wgflib.yamllite import load_file
+    root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    profile = load_file(os.path.join(root, "workspace", "config", "profiles",
+                                     "autonomous.yaml"))
+    return profile["factory"]["develop"]["developer"]
+
+
+def stream_line(event):
+    return "[stdout] " + json.dumps(event) + "\n"
+
+
+def tool_call(call_id, name, **args):
+    return stream_line({"type": "assistant", "message": {"content": [
+        {"type": "tool_use", "id": call_id, "name": name, "input": args}]}})
+
+
+def tool_result(call_id, text, error=False):
+    return stream_line({"type": "user", "message": {"content": [
+        {"type": "tool_result", "tool_use_id": call_id, "content": text,
+         "is_error": error}]}})
+
+
+DENIED = ("Permission to use Bash has been denied because Claude Code is running in don't "
+          "ask mode.")
+
+
+class TranscriptRunner(FakeRunner):
+    """A command developer that leaves a stream-json transcript, as the host does."""
+
+    def __init__(self, lines, **kwargs):
+        super().__init__(**kwargs)
+        self.lines = lines
+
+    def run(self, argv, cwd, timeout=None, env=None, log_path=None):
+        if argv[0] not in ("git", "pnpm") and log_path:
+            with open(log_path, "a", encoding="utf-8") as handle:
+                handle.write(stream_line({"type": "system", "subtype": "init",
+                                          "message": "a string, not an object"}))
+                handle.writelines(self.lines)
+        return super().run(argv, cwd, timeout, env)
+
+
+class ShellContract(DevelopCase):
+    """The live runs of 2026-10-03: unattended developers were refused compound commands,
+    `sed -i`, `python3` and `netstat`, then stopped asking for a shell - an attempt lost
+    each time. The brief states the shell the argv grants; a session that gave up says so."""
+
+    def test_the_contract_is_read_from_the_shipped_argv(self):
+        shell = briefs.shell_contract(_shipped_developer())
+        for rule in ("pnpm *", "node *", "git status *", "git diff *", "tail *",
+                     "git clean -f -- tests/*"):
+            self.assertIn(rule, shell["allowed"])
+        for rule in ("git commit *", "git push *", "git reset *", "git checkout *"):
+            self.assertIn(rule, shell["denied"])
+        for never in ("cat *", "sed *", "python3 *", "rm *", "curl *", "git -C *"):
+            self.assertNotIn(never, shell["allowed"])
+        self.assertIsNone(briefs.shell_contract({"kind": "handoff", "argv": []}))
+        self.assertEqual(briefs.shell_contract({"kind": "command", "argv": [
+            "agent", "--allowedTools=Read,Bash(pnpm *)", "--disallowedTools", "Bash(git x *)",
+            "Bash(git y *)", "-p", "{prompt}"]}),
+            {"allowed": ["pnpm *"], "denied": ["git x *", "git y *"]})
+
+    def rendered(self, developer):
+        config = self.config(developer=developer)
+        step_with(FakeRunner(on_develop=write_game)).execute(inputs_for(), context(config))
+        with open(os.path.join(self.repo, briefs.BRIEF_DIR, "brief.md"),
+                  encoding="utf-8") as handle:
+            return handle.read()
+
+    def test_a_command_developers_brief_states_the_shell_contract(self):
+        text = self.rendered(_shipped_developer())
+        section = text[text.index("## Your shell"):text.index("## See your build")]
+        for needle in ("**A refused command is never a reason to stop.**",
+                       "**One command per Bash call.**", "`&&`", "never `cd`",
+                       "`pnpm *`", "`node *`", "`git commit *`", "`sed`", "`netstat`",
+                       "`git clean -f -- <path>`", "`tests/scratch-*`",
+                       "The Factory runs the checks after you, and commits.",
+                       "still write the report"):
+            self.assertIn(needle, section)
+        yours = text[text.index("## Which files are yours"):]
+        self.assertIn("Scratch files are `tests/scratch-*` only.", yours)
+        self.assertNotIn("Write scratch scripts under /tmp", text)
+
+    def test_a_handoff_brief_has_no_shell_section(self):
+        text = self.rendered({"kind": "handoff", "argv": []})
+        self.assertNotIn("## Your shell", text)
+        self.assertIn("`$TMPDIR`", text)
+
+    def run_session(self, lines, on_develop=None):
+        ctx = context(self.command_config())
+        ctx.run_dir = os.path.join(self.scratch, "run")
+        ctx.current_step = "greybox"
+        runner = TranscriptRunner(lines, on_develop=on_develop)
+        return step_with(runner).execute(inputs_for(), ctx), runner
+
+    def test_a_session_that_quit_after_a_refusal_fails_with_that_cause(self):
+        result, runner = self.run_session([
+            tool_call("t1", "Read", file_path="docs/development/brief.md"),
+            tool_result("t1", "# Development brief"),
+            tool_call("t2", "Bash", command="git status --short && netstat -ano"),
+            tool_result("t2", DENIED, error=True),
+        ])
+        self.assertEqual((result.outcome, result.retryable), (StepOutcome.FAILED, True))
+        self.assertIn("stopped after 1 refused tool call(s) without changing a file",
+                      result.error)
+        self.assertIn("`git status --short && netstat -ano`", result.error)
+        self.assertEqual([c for c in runner.calls if c[0] == "pnpm"], [])  # no checks blamed
+        with open(os.path.join(self.repo, briefs.BRIEF_DIR, "checks.json"),
+                  encoding="utf-8") as handle:
+            recorded = json.load(handle)["checks"]
+        self.assertIn("never a reason to stop", recorded[0]["summary"])
+
+    def test_a_session_that_was_refused_and_carried_on_is_not_a_stall(self):
+        result, _ = self.run_session([
+            tool_call("t1", "Bash", command="pnpm lint | sed -n 1,5p"),
+            tool_result("t1", DENIED, error=True),
+            tool_call("t2", "Write", file_path="src/game/app.ts", content="x"),
+            tool_result("t2", "File created successfully"),
+        ], on_develop=write_game)
+        self.assertEqual(result.outcome, StepOutcome.SUCCESS, result.error)
+
+    def test_the_stall_reader_ignores_what_it_cannot_parse(self):
+        from wgf_develop.developers import permission_stall
+        self.assertEqual(permission_stall(None), ([], False))
+        self.assertEqual(permission_stall(os.path.join(self.scratch, "absent.log")),
+                         ([], False))
+        path = os.path.join(self.scratch, "t.log")
+        with open(path, "w", encoding="utf-8") as handle:
+            handle.write("plain text\n[stdout] {not json\n")
+            handle.write(tool_call("e", "Edit", file_path="src/a.ts"))
+            handle.write(tool_result("e", DENIED.replace("Bash", "Edit"), error=True))
+        self.assertEqual(permission_stall(path), (["src/a.ts"], False))
+        size = os.path.getsize(path)
+        with open(path, "a", encoding="utf-8") as handle:
+            handle.write(tool_call("w", "Write", file_path="src/b.ts"))
+            handle.write(tool_result("w", "ok"))
+        self.assertEqual(permission_stall(path, size), ([], True))
+
+
 if __name__ == "__main__":
     unittest.main()

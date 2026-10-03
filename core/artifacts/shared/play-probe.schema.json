@@ -27,7 +27,7 @@
         "objective": { "type": "string", "description": "The unit's objective, in the words the player is shown." },
         "progress": {
           "type": "object",
-          "description": "How far through the unit the player is, on the unit's own measure.",
+          "description": "How far through the unit the player is, on the unit's own measure. `value` rises toward `target` and the unit's objective is met when value >= target (gems 2 of 3, waves cleared 4 of 5, goal reached 0 of 1): never a count that falls (moves left, time left) - that is a lose metric, reported in metrics.",
           "required": ["metric", "value", "target"],
           "properties": {
             "metric": { "type": "string", "description": "The metric progress is counted in, named as `metrics` names it." },

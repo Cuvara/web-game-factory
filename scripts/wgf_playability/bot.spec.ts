@@ -391,9 +391,18 @@ function advanceOf(s: Snapshot | null): Move | null {
 }
 
 /** The unit in play has reached its own target: its progress says so. */
+// A unit is done on its own measure when progress has RISEN to its target: value rises
+// toward target (gems 2 of 3), so a target of 0, or a value that already met the target when
+// the unit began (a count that falls - moves left 12 of 0 - is a lose metric, not progress),
+// never counts as done. Only `won` is trusted without that.
+const progressAtEntry = new Map<string, number>();
 function progressDone(s: Snapshot | null): boolean {
   const progress = s?.content?.progress;
-  return Boolean(progress && progress.value >= progress.target);
+  if (!progress || !(progress.target > 0)) return false;
+  const key = `${s?.content?.unit_id ?? ""}#${s?.content?.unit_index ?? 0}`;
+  if (!progressAtEntry.has(key)) progressAtEntry.set(key, progress.value);
+  const entry = progressAtEntry.get(key) ?? progress.value;
+  return progress.value >= progress.target && entry < progress.target;
 }
 
 /** Back into play after an attempt ended: the retry the probe lists, else the visible button. */

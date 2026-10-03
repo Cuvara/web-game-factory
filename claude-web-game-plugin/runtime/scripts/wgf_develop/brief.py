@@ -60,7 +60,7 @@ REQUIRED_SYSTEMS = (
                 "not say enough to build it."),
     ("win-lose", "The experience contract's win (unless the genre is endless) and lose are "
                  "reachable from play; each unit's own success and failure end it in "
-                 "won/lost or advance it (content.progress reaches target)."),
+                 "won/lost or advance it (content.progress: a value that RISES to its target - gems 2 of 3, goal reached 0 of 1 - never a count that falls; moves or time left are metrics)."),
     ("difficulty-curve", "Each axis in the design's difficulty.axes is a data value per unit "
                          "read from units.json (authored) or a function of time (parametric), "
                          "exposed in the probe as metrics.difficulty.<axis>."),

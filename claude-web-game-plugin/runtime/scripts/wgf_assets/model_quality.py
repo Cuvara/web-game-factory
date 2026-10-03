@@ -56,7 +56,7 @@ DEFAULT_BARS = {
     "silhouette_roles": ["player", "threat"],
     "max_dominance": 0.6,
     "round_body": {"words": ["ball", "marble", "sphere", "orb", "bubble", "globe", "planet"],
-                   "min_fill": 0.7, "max_fill": 0.86, "max_aspect": 1.18, "min_parts": 2},
+                   "min_fill": 0.62, "max_fill": 0.86, "max_aspect": 1.18, "min_parts": 2},
     "min_contrast_share": {"player": 0.5, "collectible": 0.4, "threat": 0.25, "hazard": 0.25},
 }
 _COMPONENT = {5120: ("b", 1), 5121: ("B", 1), 5122: ("h", 2), 5123: ("H", 2),

@@ -216,7 +216,7 @@ class RoundBody(unittest.TestCase):
         self.assertEqual(rule["words"],
                          ["ball", "marble", "sphere", "orb", "bubble", "globe", "planet"])
         self.assertEqual((rule["min_fill"], rule["max_fill"], rule["max_aspect"],
-                          rule["min_parts"]), (0.7, 0.86, 1.18, 2))
+                          rule["min_parts"]), (0.62, 0.86, 1.18, 2))
         self.assertEqual(model_quality.DEFAULT_BARS["round_body"], rule)
 
 

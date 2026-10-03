@@ -335,8 +335,9 @@ drum, then a placeholder). `models.round_body` in `core/reference/asset-quality.
 `model.primitive` and `model.silhouette` for a model only when all three hold: the
 requirement's own description, readability or spec names one of its `words` (ball, marble,
 sphere, orb, bubble, globe, planet - a whole word or its plural); the outline is a disk in
-every one of the three views (fill 0.70-0.86 of its rectangle - a disk is 0.785, a box or a
-drum's side 1.0 - and the rectangle at most 1.18 to 1); and it is composed of at least two
+every one of the three views (fill 0.62-0.86 of its rectangle - a disk is 0.785, a faceted
+low-poly shell down to 0.65, a box or a drum's side 1.0 - and the rectangle at most 1.18
+to 1); and it is composed of at least two
 different pieces (a shell and a swirl band) or modelled. A lone sphere is still a
 placeholder, and a goalkeeper drawn as a blob is not a round body. The passing check's
 summary says "a round body: ..." so the asset report shows the exemption, and

@@ -120,11 +120,14 @@ models:
   #   * it is composed - at least `min_parts` pieces of at least two different shapes or
   #     proportions (a shell and a swirl band, a core and a rim), or modelled. A lone sphere
   #     standing for the ball is still a placeholder.
-  # Bounds measured on the 64-cell outline grid: UV and ico spheres of 16-32 segments fill
-  # 0.78-0.82 of their rectangle in every view; a cylinder's side, a box, a cube 1.0.
+  # Bounds measured on the 64-cell outline grid: a composed icosphere marble fills 0.77-0.80
+  # of its rectangle in every view, a faceted low-poly marble (a 14-16 segment shell and
+  # lathe bands, the run that found this) 0.65-0.79 - a regular hexagon is 0.65, an octagon
+  # 0.71, a disk 0.785; the same run's drum 0.86-0.93 at an aspect of 1.31-1.36; a box, a
+  # cylinder's side 1.0.
   round_body:
     words: [ball, marble, sphere, orb, bubble, globe, planet]
-    min_fill: 0.7
+    min_fill: 0.62
     max_fill: 0.86
     max_aspect: 1.18
     min_parts: 2

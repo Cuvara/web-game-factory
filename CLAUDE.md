@@ -466,6 +466,9 @@ seen by the engine — validate what you write there with ajv.
 - `docs/development.md` — working on the Factory
 - `docs/handoff/2026-09-27-production-validation.md` — post-2.0.0 validation: the live
   builds, the G3 timebox rejection and the G4 hold, and the fixes they produced
+- `docs/handoff/2026-10-03-two-game-validation.md` — the 2D and 3D validation runs and the
+  plugin `/new-game` dogfood on Windows: every defect found, its fix PR or open, and what is
+  still unverified
 - `docs/research-v2.md` — Research V2: the game corpus and vocabulary, teardown records,
   market cells (demand, supply, saturation, competition, trend), counted patterns, the five
   opportunity generators, capability gaps, the research handoff strategy and design read,

@@ -31,6 +31,7 @@ Outcomes, per docs/workflow-module-contract.md §7:
     otherwise                                  SUCCESS
 """
 
+import copy
 import datetime
 import json
 import os
@@ -136,17 +137,25 @@ class DesignStep(WorkflowStep):
         except AuthorError as exc:
             return StepResult.failed(f"design author {author_name!r}: {exc}", retryable=False)
         contracts = ArtifactContracts()
+        self._inputs = inputs
         # A resumed execution of this visit continues the repair of the last rejected draft
         # (an author that repairs is not asked for a new game and billed for it again).
         last = self._last_draft(context) if getattr(author, "repairs", False) else None
-        if last:
+        accepted = None
+        if last and not last["problems"]:
+            # The step accepted this draft and something after it (the engine's lineage
+            # check, a dead driver) lost it: compose it again, no author session.
+            accepted = last["draft"]
+            context.logger.info("design composes the draft the step last accepted")
+        elif last:
             brief = dict(brief, repair={"round": 0, "problems": last["problems"][:60],
                                         "previous_draft": last["draft"]})
             context.logger.info("design resumes the repair of the last rejected draft",
                                 problems=last["problems"][:20])
         for repair_round in range(MAX_REPAIR_ROUNDS + 1):
             try:
-                draft = author.draft(brief)
+                draft = accepted if accepted is not None else author.draft(brief)
+                accepted = None
             except AuthorError as exc:
                 return StepResult.failed(f"design author {author_name!r}: {exc}",
                                          retryable=False)
@@ -228,7 +237,8 @@ class DesignStep(WorkflowStep):
             return StepResult("FAILED", route="descope", retryable=False, artifacts=[output],
                               error=f"design consistency failed on {', '.join(blocking)}: cut scope, "
                                     "do not relax the rules")
-        self._drop_last_draft(context)
+        if getattr(author, "repairs", False):
+            self._keep_last_draft(context, outcome["draft"], [])
         return StepResult.success(
             [output], message=f"{engine} design, {mvp} mvp features, consistency {block['status']}"
                               + (f", {len(warnings)} warning(s) for G3" if warnings else ""))
@@ -256,7 +266,8 @@ class DesignStep(WorkflowStep):
                     f"The brief names {named}; this design is {built}, the dimension of the "
                     f"buildable concept research selected. Realising the brief in {named} is "
                     f"a design change: an agent author, or a new concept, not this draft.")
-        outcome = {"design": design, "artifact": None, "block": None, "blocking": None,
+        outcome = {"draft": copy.deepcopy(draft), "design": design, "artifact": None,
+                   "block": None, "blocking": None,
                    "warnings": None, "problems": [], "unbuildable": False,
                    "experience": False, "presentation": False, "depth": False,
                    "content": False, "consistency_problems": []}
@@ -319,7 +330,8 @@ class DesignStep(WorkflowStep):
             return outcome
         design["consistency"] = block
         artifact = self._with_provenance(design, strategy, ref, title_id, now, context,
-                                         getattr(author, "actor", "automation"))
+                                         getattr(author, "actor", "automation"),
+                                         inputs=self._inputs)
         outcome.update(artifact=artifact, block=block, blocking=blocking, warnings=warnings,
                        problems=list(contracts("game-design", artifact)))
         return outcome
@@ -381,14 +393,21 @@ class DesignStep(WorkflowStep):
             return loaded if isinstance(loaded, dict) else None
         return None
 
-    def _with_provenance(self, design, strategy, ref, title_id, now, context, actor):
-        pinned = provenance.pin("title-strategy", strategy, ref.content_hash)
+    def _with_provenance(self, design, strategy, ref, title_id, now, context, actor,
+                         inputs=None):
+        # Every input this execution consumed is pinned - the strategy, and the
+        # prototype-report a design-gap return carries - or the engine refuses the lineage.
+        pins = provenance.pin_inputs(inputs) if inputs is not None else []
+        if not any(p.get("artifact_type") == "title-strategy" for p in pins):
+            pinned = provenance.pin("title-strategy", strategy, ref.content_hash)
+            if pinned:
+                pins.insert(0, pinned)
         record = provenance.build(
             "game-design",
             artifact_id=provenance.artifact_id("game-design", title_id, now, context.execution),
             produced_by=provenance.producer(ROLE, actor),
             produced_at=now,
-            inputs=[pinned] if pinned else [],
+            inputs=pins,
             schema_version=SCHEMA_VERSION,
             opportunity_id=strategy.get("opportunity_id") or None,
             title_id=title_id)

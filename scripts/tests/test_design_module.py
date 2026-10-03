@@ -61,9 +61,12 @@ class FakeInputs:
         self.refs = {} if strategy is None else {"title-strategy": ArtifactRef(
             id="title-strategy", type="title-strategy", version=1, location="mem", checksum="-",
             content_hash=strategy["provenance"]["content_hash"], schema_version=schema_version)}
-        for artifact_type in self.extra:
+        for artifact_type, body in self.extra.items():
+            digest = ((body.get("provenance") or {}).get("content_hash")
+                      if isinstance(body, dict) else None)
             self.refs[artifact_type] = ArtifactRef(
-                id=artifact_type, type=artifact_type, version=1, location="mem", checksum="-")
+                id=artifact_type, type=artifact_type, version=1, location="mem", checksum="-",
+                content_hash=digest)
 
     def __contains__(self, artifact_type):
         return artifact_type in self.refs
@@ -556,7 +559,17 @@ class FailurePaths(unittest.TestCase):
         self.assertEqual(second.outcome, StepOutcome.SUCCESS, second.error)
         self.assertEqual(Stubborn.briefs[0]["round"], 0)
         self.assertIn("design_adds_no_foreign_mechanic", " ".join(Stubborn.briefs[0]["problems"]))
-        self.assertFalse(os.path.exists(kept))
+        # The accepted draft stays, with no problems: a re-execution of the visit (the engine
+        # refused the lineage, the driver died before persisting) composes it again without
+        # another author session.
+        with open(kept, encoding="utf-8") as handle:
+            self.assertEqual(json.load(handle)["problems"], [])
+        Stubborn.briefs = []
+        third = run_step(load_strategy(), params={"author": "stubborn-last"}, context=context)
+        self.assertEqual(third.outcome, StepOutcome.SUCCESS, third.error)
+        self.assertEqual(Stubborn.briefs, [])
+        self.assertEqual(third.artifacts[0].content["core_loop"],
+                         second.artifacts[0].content["core_loop"])
 
     def test_an_author_exception_is_left_to_the_runtime_as_retryable(self):
         class Flaky(authors.DesignAuthor):
@@ -750,11 +763,22 @@ class DesignGapsReenterTheStep(unittest.TestCase):
                                schema_version=SCHEMA_VERSION)
 
     def second_visit(self, author=None, gaps=(GAP,)):
-        report = {"design_gaps": [copy.deepcopy(g) for g in gaps]}
+        report = {"design_gaps": [copy.deepcopy(g) for g in gaps],
+                  "provenance": {"artifact_id": "wgf:prototype-report:mock-title:20260101-01",
+                                 "content_hash": "sha256:" + "ab" * 32}}
         return run_step(
             self.strategy, params={"author": author} if author else None,
             inputs=FakeInputs(self.strategy, extra={"prototype-report": report}),
             context=FakeContext(run_dir=self.scratch, previous_outputs=[self.ref], visit=2))
+
+    def test_the_repaired_design_pins_the_prototype_report_it_answered(self):
+        authors.register_author(ScriptedGapAgent.name, ScriptedGapAgent)
+        self.addCleanup(authors.AUTHORS.pop, ScriptedGapAgent.name, None)
+        result = self.second_visit(author=ScriptedGapAgent.name)
+        self.assertEqual(result.outcome, StepOutcome.SUCCESS, result.error)
+        pinned = {p["artifact_type"] for p in result.artifacts[0].content["provenance"]["inputs"]}
+        self.assertIn("title-strategy", pinned)
+        self.assertIn("prototype-report", pinned)
 
     def test_the_archetype_author_refuses_to_answer_design_gaps(self):
         result = self.second_visit()

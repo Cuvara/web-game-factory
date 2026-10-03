@@ -129,6 +129,8 @@ SCAFFOLD_FILES = {
 
 def dev_report(brief):
     return {
+        # What a handoff brief asks for (brief["report_visit"]); absent from a command brief.
+        **({"visit": brief["report_visit"]} if brief.get("report_visit") else {}),
         "engine": brief["engine"],
         "systems": {name: "done" for name, _ in briefs.REQUIRED_SYSTEMS},
         "mvp": [{"item": item, "status": "built"} for item in brief["mvp"]],
@@ -1274,6 +1276,69 @@ class Handoff(DevelopCase):
         with open(os.path.join(self.repo, briefs.BRIEF_DIR, "brief.md")) as handle:
             self.assertIn("checks that failed on the previous attempt", handle.read())
 
+    def _report(self):
+        with open(os.path.join(self.repo, briefs.REPORT_PATH), encoding="utf-8") as handle:
+            return json.loads(handle.read())
+
+    def test_the_brief_asks_for_this_visits_report(self):
+        result = step_with(FakeRunner()).execute(inputs_for(), context(self.config()))
+        with open(os.path.join(self.repo, briefs.BRIEF_DIR, "brief.json")) as handle:
+            brief = json.load(handle)
+        self.assertEqual(brief["report_visit"], "run-1:develop:1")
+        with open(os.path.join(self.repo, briefs.BRIEF_DIR, "brief.md")) as handle:
+            self.assertIn('"visit": "run-1:develop:1"', handle.read())
+        self.assertIn('"visit": "run-1:develop:1"', result.message)
+
+    def test_an_earlier_visits_report_is_not_this_visits(self):
+        # The Sky Marble run (2026-10-04): handoff visits left report.json as an earlier
+        # command visit wrote it, and review raised blockers against what it no longer said.
+        step_with(FakeRunner()).execute(inputs_for(), context(self.config()))
+        write_game(self.repo)
+        step_with(FakeRunner()).execute(
+            inputs_for(), context(self.config(), decision={"decision": "done"}))
+        self.assertEqual(self._report()["visit"], "run-1:develop:1")
+        commits = len(self.commits())
+
+        # Visit 2: the person changes the game and resumes, the report untouched.
+        key = "run-1:develop:2"
+        step_with(FakeRunner()).execute(inputs_for(), context(self.config(), key=key, visit=2))
+        with open(os.path.join(self.repo, "src/game/app.ts"), "a", encoding="utf-8") as handle:
+            handle.write("// the second visit's change\n")
+        result = step_with(FakeRunner()).execute(
+            inputs_for(), context(self.config(), key=key, visit=2,
+                                  decision={"decision": "done"}))
+        self.assertEqual(result.outcome, StepOutcome.WAITING_FOR_HUMAN)
+        self.assertIn("conformance", result.message)
+        with open(os.path.join(self.repo, briefs.BRIEF_DIR, "checks.json")) as handle:
+            conformance = next(c for c in json.load(handle)["checks"]
+                               if c["id"] == "conformance")
+        self.assertIn(f"{briefs.REPORT_PATH} is not this visit's", conformance["output_tail"])
+        self.assertIn(f'set "visit": "{key}"', conformance["output_tail"])
+        self.assertEqual(len(self.commits()), commits)  # nothing committed
+
+        # Rewritten for this visit, it passes and is committed.
+        report = self._report()
+        report["visit"] = key
+        with open(os.path.join(self.repo, briefs.REPORT_PATH), "w", encoding="utf-8") as handle:
+            json.dump(report, handle)
+        result = step_with(FakeRunner()).execute(
+            inputs_for(), context(self.config(), key=key, visit=2,
+                                  decision={"decision": "done"}))
+        self.assertEqual(result.outcome, StepOutcome.SUCCESS, result.message)
+        self.assertEqual(len(self.commits()), commits + 1)
+
+    def test_a_report_without_a_visit_fails_a_handoff(self):
+        step_with(FakeRunner()).execute(inputs_for(), context(self.config()))
+        write_game(self.repo)
+        report = self._report()
+        del report["visit"]
+        with open(os.path.join(self.repo, briefs.REPORT_PATH), "w", encoding="utf-8") as handle:
+            json.dump(report, handle)
+        result = step_with(FakeRunner()).execute(
+            inputs_for(), context(self.config(), decision={"decision": "done"}))
+        self.assertEqual(result.outcome, StepOutcome.WAITING_FOR_HUMAN)
+        self.assertEqual(len(self.commits()), 1)
+
     def test_a_declined_handoff_fails_without_retry(self):
         result = step_with(FakeRunner()).execute(
             inputs_for(), context(self.config(), decision={"decision": "abandon",
@@ -1283,6 +1348,17 @@ class Handoff(DevelopCase):
 
 
 class Command(DevelopCase):
+    def test_a_command_report_needs_no_visit(self):
+        # Unchanged for a command developer: its brief asks for no visit, and a report
+        # without one passes as it always did.
+        runner = FakeRunner(on_develop=write_game)
+        result = step_with(runner).execute(inputs_for(), context(self.command_config()))
+        self.assertEqual(result.outcome, StepOutcome.SUCCESS, result.error)
+        with open(os.path.join(self.repo, briefs.BRIEF_DIR, "brief.json")) as handle:
+            self.assertIsNone(json.load(handle)["report_visit"])
+        with open(os.path.join(self.repo, briefs.REPORT_PATH), encoding="utf-8") as handle:
+            self.assertNotIn("visit", json.load(handle))
+
     def test_runs_the_configured_developer_in_the_checkout(self):
         seen = []
         runner = FakeRunner(on_develop=lambda cwd: (seen.append(cwd), write_game(cwd)))

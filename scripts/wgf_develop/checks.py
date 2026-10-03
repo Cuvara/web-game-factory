@@ -275,6 +275,15 @@ def _content_report_findings(report, brief, content_issues):
 
 def _report_findings(report, brief, content_issues=()):
     findings = []
+    visit = brief.get("report_visit")
+    if visit and report.get("visit") != visit:
+        # A handoff visit: nothing else refreshes the report, so one from an earlier visit
+        # would reach review as this visit's account of the build.
+        findings.append(f"{REPORT_PATH} is not this visit's: its visit is "
+                        f"{report.get('visit')!r}, this visit is {visit!r}. Rewrite it for "
+                        f"what the checkout holds now (systems, mvp, content_units, "
+                        f"design_gaps, known_issues, how_to_play) and set \"visit\": "
+                        f"\"{visit}\"")
     if report.get("engine") != brief["engine"]:
         findings.append(f"report engine is {report.get('engine')!r}, game.config.yaml says "
                         f"{brief['engine']!r}")

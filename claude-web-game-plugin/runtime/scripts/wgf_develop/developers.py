@@ -31,6 +31,7 @@ import os
 from wgflib import paths
 from wgflib import agentenv
 
+from .brief import REPORT_PATH
 from .budget import transcript_path
 from .repository import ExactEnv
 
@@ -78,7 +79,9 @@ class HandoffDeveloper:
         if not choice:
             return Outcome(Outcome.WAITING, (
                 f"development brief written to {brief_path}. Implement it in {checkout}, "
-                f"then resume this run with --decision done (or --decision abandon)."
+                f"write {REPORT_PATH} for this visit (\"visit\": "
+                f"\"{context.idempotency_key}\"), then resume this run with --decision done "
+                f"(or --decision abandon)."
             ))
         if choice in DECLINE_DECISIONS:
             return Outcome(Outcome.DECLINED,

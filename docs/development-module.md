@@ -215,6 +215,8 @@ the game, regenerated on every visit and committed with the code it asked for. I
   `design_gaps[].{field,question,assumed,severity}` — where the design did not say enough to
   build from, as a question the designer can answer, with what was built instead. A gap is how
   a design is corrected; filling one in silently is a design-fidelity blocker at review.
+  On a `handoff` visit the report must also carry `"visit": "<this visit's idempotency key>"`
+  (`brief.json` `report_visit`; the brief and the waiting message both name the key).
 - **Why this is another iteration** — on a visit a loop brought back (`brief.json` `loop`),
   the step and route that did (`verify.fail`, `review.request-changes`,
   `sdk-review.request-changes`, `prototype-review.iterate`: the engine's
@@ -261,6 +263,17 @@ section (`brief.json` `look`):
 |---|---|---|
 | `handoff` (default) | A person, or an agent-host session a person drives. The step returns `WAITING_FOR_HUMAN`; resume with `--decision done` (or `abandon`). | Waits again, with the failures in `checks.json` and in the next brief |
 | `command` | A configured process, unattended — typically an agent host's non-interactive mode. `argv` gets `{brief}`, `{repo}`, `{key}`, `{prompt}`. | Retryable `FAILED`; the next attempt's brief carries the failure output |
+
+A handoff visit's report is checked for being this visit's. Nothing else rewrites
+`docs/development/report.json` between handoff visits, and review reads it as the account of
+the commit it reviews: in the Sky Marble run (2026-10-04) handoff visits left a report an
+earlier command visit had written, and review raised five blockers against an old port, an
+old skybox and a pause-menu note that were no longer true. So a handoff brief sets
+`report_visit` to the visit's idempotency key, and `conformance` fails a report whose `visit`
+is not that key (missing, or an earlier visit's), naming the file and the value to set. The
+step waits again, like any failed check, and commits nothing. The step does not write the
+report itself: only the person who built the visit knows what it built. A `command` brief has
+`report_visit: null` and its report is checked as before.
 
 `command` runs are bounded by `timeout_seconds` (wall clock) and, optionally,
 `idle_timeout_seconds` (no output at all for that long — a hung agent, not a slow one).
@@ -327,7 +340,7 @@ Run in this order; `conformance` cannot be switched off.
 | Check | What |
 |---|---|
 | `install` | `pnpm install --frozen-lockfile`. A failure stops the rest |
-| `conformance` | Static, and the content contract: engine imports only in `src/rendering/<engine>/`, no other engine, no portal SDK identifiers, ad APIs called only from `src/platform/`, the template's `BootScene` (`src/game/boot-scene.ts`) imported by no game source - judged by the module an import resolves to, so a game's own first scene may also be called `BootScene`, the seam files as the Factory provided them and `src/main.ts` booting through them (`wgflib.gameseam`), the sdk step's files (`gameseam.SDK_OWNED_PATHS`) as the visit's baseline commit has them - absent before the sdk step first runs - since the sdk step rewrites them whole, template-owned paths unchanged since the visit began, `package.json` changed only by allowed dependency changes and the lockfile only with them, and `report.json` complete — every required system `done`, every MVP item and placement reported. With the content contract, also `public/content/units.json` against the design (`scripts/wgf_develop/content.py`), as findings named by code: `content.file_missing`, `content.design_pin` (its `design.content_hash` is not the brief's pin), `content.unit_missing:<id>`, `content.unit_extra:<id>`, `content.unit_field:<id>.<field>` (index, objective, mechanics, success or failure differ), `content.difficulty:<id>.<axis>` (further from the design's value than `implementation.difficulty_tolerance`, 0.05), `content.tuning:<mechanic>.<param>`, `content.test_missing` and `content.not_loaded` (no file under `src/` reads the data file) |
+| `conformance` | Static, and the content contract: engine imports only in `src/rendering/<engine>/`, no other engine, no portal SDK identifiers, ad APIs called only from `src/platform/`, the template's `BootScene` (`src/game/boot-scene.ts`) imported by no game source - judged by the module an import resolves to, so a game's own first scene may also be called `BootScene`, the seam files as the Factory provided them and `src/main.ts` booting through them (`wgflib.gameseam`), the sdk step's files (`gameseam.SDK_OWNED_PATHS`) as the visit's baseline commit has them - absent before the sdk step first runs - since the sdk step rewrites them whole, template-owned paths unchanged since the visit began, `package.json` changed only by allowed dependency changes and the lockfile only with them, and `report.json` complete and, on a `handoff` visit, this visit's (`visit` equals the brief's `report_visit`) — every required system `done`, every MVP item and placement reported. With the content contract, also `public/content/units.json` against the design (`scripts/wgf_develop/content.py`), as findings named by code: `content.file_missing`, `content.design_pin` (its `design.content_hash` is not the brief's pin), `content.unit_missing:<id>`, `content.unit_extra:<id>`, `content.unit_field:<id>.<field>` (index, objective, mechanics, success or failure differ), `content.difficulty:<id>.<axis>` (further from the design's value than `implementation.difficulty_tolerance`, 0.05), `content.tuning:<mechanic>.<param>`, `content.test_missing` and `content.not_loaded` (no file under `src/` reads the data file) |
 | `format` | `pnpm format` — optional |
 | `typecheck`, `lint`, `unit`, `build` | the repository's own scripts, as CI runs them |
 | `smoke` | `pnpm test:e2e`, behind a proxy that refuses every non-local request (`wgflib.netguard`): a portal build would otherwise load the portal's real SDK from its CDN - dev traffic to the portal, and a result that depends on it (a Poki build's own "makes no insecure requests" failed on Poki's http:// ad bridge). The game must boot and play with the SDK refused, as for an ad-blocker; the summary says what was refused. Where Chromium ignores the proxy variables (Windows, macOS) the suite runs with `-c` on a wrapper of the game's `playwright.config.ts`, written outside the checkout, that hands the browser the proxy itself (`netguard.guarded_playwright_config`); the summary still names the plain command. Skipped, and reported as skipped, only when no browser is installed |

@@ -461,6 +461,102 @@ class Brief(unittest.TestCase):
         self.assertIn("READ-ONLY", report.PROMPT_STDOUT)
 
 
+def qa_report(verdict="fail", run_id="run-1", evidence_status="FAIL", defects=None):
+    report = {"build_ref": {"commit_sha": OTHER}, "verdict": verdict,
+              "evidence_status": evidence_status,
+              "blocking_defects": [{
+                  "id": "vr-gameplay-boot", "severity": "blocker",
+                  "summary": "Boots without errors: FAIL - 1 of 4 observation(s) failed",
+                  "repro": "[desktop] smoke.spec.ts: Test timeout of 30000ms exceeded."}]
+              if defects is None else defects}
+    if run_id:
+        report["workflow"] = {"run_id": run_id, "step_id": "verify", "visit": 1}
+    return report
+
+
+class VerifyFailure(unittest.TestCase):
+    """The deadlock of 2026-10-04: verify failed, the run went back to develop, and the
+    reviewer - which runs before verify - twice asked for verify's pass on the new commit. A
+    review inside a loop a verify failure started is shown that failure and told verify
+    re-runs after its approval; any other review is not."""
+
+    SECTION = "## Verify failed on an earlier commit"
+
+    def brief(self, qa, run_id="run-1", develop_brief=None):
+        develop_brief = develop_brief if develop_brief is not None else {
+            "loop": {"entered_by": "verify.fail"}}
+        return report.render_brief(
+            title_id="demo-game", commit=HEAD, baseline=OTHER, design=None, prototype=None,
+            develop_brief=develop_brief, verdict_path="/tmp/run/verdict.json",
+            repo="/games/demo-game",
+            verify_failure=report.verify_failure(qa, run_id, develop_brief))
+
+    def test_a_failure_of_this_run_is_shown_with_its_cause(self):
+        text = self.brief(qa_report())
+        self.assertIn(self.SECTION, text)
+        self.assertIn(f"Verification failed `{OTHER[:12]}` in this run (its qa-report, verify "
+                      f"visit 1)", text)
+        self.assertIn("Development was re-entered through `verify.fail`.", text)
+        self.assertIn("`vr-gameplay-boot` (blocker) Boots without errors", text)
+        self.assertIn("Repro: [desktop] smoke.spec.ts: Test timeout of 30000ms exceeded.", text)
+        self.assertIn("evidence status `FAIL`", text)
+        self.assertIn("records no attribution", text)
+        self.assertIn("never request changes because verify has not passed this commit", text)
+        self.assertIn("Verify runs again only after this review", text)
+        self.assertLess(text.index(self.SECTION), text.index("## Look for"))
+
+    def test_the_reviewer_stays_strict_about_the_game(self):
+        text = self.brief(qa_report())
+        self.assertIn("A failure whose cause you can find in the source", text)
+        self.assertIn("is a blocker", text)
+        self.assertIn("a defect you find is a blocker whether or not verify saw it", text)
+        # The rest of the brief - the lens, the contract - is exactly what it was.
+        self.assertIn("\n".join(f"- {item}" for item in report.GAMEPLAY_LENS), text)
+        self.assertIn(json.dumps(verdict.CONTRACT, indent=2), text)
+
+    def test_an_environment_failure_is_named_as_outside_the_game(self):
+        for status in ("UNVERIFIED", "BLOCKED_EXTERNAL"):
+            text = self.brief(qa_report(evidence_status=status))
+            self.assertIn(f"could not establish these checks (evidence status `{status}`)",
+                          text)
+            self.assertIn("outside the game", text)
+
+    def test_a_report_without_an_evidence_status_says_so(self):
+        text = self.brief(qa_report(evidence_status=None))
+        self.assertIn("Recorded cause: none", text)
+
+    def test_a_long_repro_is_cut(self):
+        defects = [{"id": "d", "severity": "major", "summary": "s",
+                    "repro": "x" * (report.REPRO_LIMIT + 50)}]
+        text = self.brief(qa_report(defects=defects))
+        self.assertIn("x" * report.REPRO_LIMIT + " ...", text)
+        self.assertNotIn("x" * (report.REPRO_LIMIT + 1), text)
+
+    def test_a_later_entry_still_shows_the_open_failure(self):
+        # The second request for changes of 2026-10-04 came after develop was re-entered by
+        # review, not verify: verify had still not run, so the failure is still open.
+        text = self.brief(qa_report(), develop_brief={
+            "loop": {"entered_by": "review.request-changes"}})
+        self.assertIn(self.SECTION, text)
+        self.assertIn("re-entered through `review.request-changes`", text)
+        text = self.brief(qa_report(), develop_brief={})
+        self.assertIn(self.SECTION, text)
+        self.assertNotIn("re-entered through", text)
+
+    def test_a_placeholder_report_naming_no_run_is_this_runs(self):
+        self.assertIn(self.SECTION, self.brief(qa_report(run_id=None)))
+
+    def test_nothing_is_shown_otherwise(self):
+        for qa in (None, qa_report(verdict="pass", evidence_status="PASS"),
+                   qa_report(run_id="another-run"), "not a report"):
+            with self.subTest(qa=qa):
+                self.assertIsNone(report.verify_failure(qa, "run-1"))
+                self.assertNotIn(self.SECTION, self.brief(qa))
+        self.assertNotIn(self.SECTION, report.render_brief(
+            title_id="demo-game", commit=HEAD, baseline=OTHER, design=None, prototype=None,
+            develop_brief=None, verdict_path="/tmp/v.json", repo="/games/demo-game"))
+
+
 class Report(unittest.TestCase):
     PIN = {"artifact_id": "wgf:prototype-report:demo-game:20260925-01",
            "artifact_type": "prototype-report", "content_hash": "sha256:" + "a" * 64}
@@ -593,7 +689,7 @@ class Subject(unittest.TestCase):
         self.git("add", "-A")
         self.git("commit", "-q", "-m", message)
 
-    def review(self, subject=None, sdk_commit=None, drop=()):
+    def review(self, subject=None, sdk_commit=None, drop=(), qa=None):
         import types
         from wgf_review.step import ReviewStep
         from wgflib.workflow.model import ArtifactRef
@@ -606,6 +702,8 @@ class Subject(unittest.TestCase):
                 "base_commit_sha": self.developed}, "platforms": []},
             "scaffold-record": {"title_id": "demo", "repository": {"name": "demo"}},
         }
+        if qa is not None:
+            contents["qa-report"] = qa
         refs = {t: ArtifactRef(id=t, type=t, version=1, location=f"artifacts/{t}/v1.json",
                                checksum="sha256:0", schema_version="1.0.0")
                 for t in contents if t not in drop}
@@ -616,7 +714,8 @@ class Subject(unittest.TestCase):
                                           "argv": [sys.executable, self.approver,
                                                    "{verdict}", "{commit}"]}}}
         context = types.SimpleNamespace(config=config, run_dir=self.run_dir, visit=1,
-                                        attempt=1, execution=1, logger=_Logger())
+                                        attempt=1, execution=1, logger=_Logger(),
+                                        run_id="run-1")
         params = {} if subject is None else {"subject": subject}
         step_id = "review" if subject is None else "sdk-review"
         step = ReviewStep(types.SimpleNamespace(id=step_id, type="review", params=params,
@@ -633,6 +732,23 @@ class Subject(unittest.TestCase):
             brief = handle.read()
         self.assertIn(f"git diff {self.developed}..{self.integrated}", brief)
         self.assertIn("committed on top of the development commit", brief)
+
+    def sdk_brief(self):
+        with open(os.path.join(self.run_dir, "review", "sdk-review-1-1.brief.md")) as handle:
+            return handle.read()
+
+    def test_the_step_shows_the_runs_open_verify_failure(self):
+        result = self.review(subject="sdk-report", qa=qa_report())
+        self.assertEqual(result.outcome, "SUCCESS", result.error)
+        self.assertIn(VerifyFailure.SECTION, self.sdk_brief())
+        self.assertIn("`vr-gameplay-boot`", self.sdk_brief())
+
+    def test_the_step_shows_no_failure_without_an_open_one(self):
+        for qa in (None, qa_report(verdict="pass"), qa_report(run_id="another-run")):
+            with self.subTest(qa=qa):
+                result = self.review(subject="sdk-report", qa=qa)
+                self.assertEqual(result.outcome, "SUCCESS", result.error)
+                self.assertNotIn(VerifyFailure.SECTION, self.sdk_brief())
 
     def test_another_run_in_the_checkout_blocks_the_review(self):
         # wgflib.checkout: the checkout must hold still while it is reviewed.

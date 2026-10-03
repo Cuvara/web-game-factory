@@ -6,8 +6,8 @@ from wgflib import provenance
 
 from .verdict import CONTRACT
 
-__all__ = ["build_report", "render_brief", "PROMPT", "PROMPT_STDOUT", "SCHEMA_VERSION",
-           "ROLE"]
+__all__ = ["build_report", "render_brief", "verify_failure", "PROMPT", "PROMPT_STDOUT",
+           "SCHEMA_VERSION", "ROLE"]
 
 SCHEMA_VERSION = provenance.version_of("review-report")
 
@@ -178,6 +178,96 @@ PROMPT = (
     "gives."
 )
 
+# How much of a defect's repro the brief quotes: enough to see the failure, not the log.
+REPRO_LIMIT = 600
+
+
+def verify_failure(qa, run_id, develop_brief=None):
+    """What the reviewer is told when the run is inside a loop verify's failure started.
+
+    Verify runs after review and sdk-review approve, so once it fails, every review until it
+    runs again reads a commit nobody can have verified yet - and a reviewer not told so asks
+    for the one thing no commit can carry: verify's pass. `qa` is the newest qa-report the
+    run gave the step. It applies only when it is a fail of this run: a run's inputs are its
+    own artifacts, so a report that names no run (a placeholder's) counts, and one whose
+    `workflow` names another run does not. A pass, another run's report or none at all means
+    no verify failure is open, and the brief says nothing. `develop_brief`'s `loop` names how
+    development was re-entered (`verify.fail`, or a later `review.request-changes`), when it
+    says."""
+    if not isinstance(qa, dict) or qa.get("verdict") != "fail":
+        return None
+    workflow = qa.get("workflow") or {}
+    if workflow.get("run_id") and workflow.get("run_id") != run_id:
+        return None
+    loop = (develop_brief or {}).get("loop") or {}
+    return {
+        "commit": (qa.get("build_ref") or {}).get("commit_sha"),
+        "evidence_status": qa.get("evidence_status"),
+        "visit": workflow.get("visit"),
+        "entered_by": loop.get("entered_by") if isinstance(loop, dict) else None,
+        "defects": [{k: d.get(k) for k in ("id", "severity", "summary", "repro")
+                     if d.get(k) is not None}
+                    for d in qa.get("blocking_defects") or [] if isinstance(d, dict)],
+    }
+
+
+def _verify_failure_lines(failure):
+    """The brief's `## Verify failed on an earlier commit` section; [] when none is open."""
+    if not failure:
+        return []
+    out = []
+    add = out.append
+    commit = failure.get("commit") or ""
+    visit = f", verify visit {failure['visit']}" if failure.get("visit") else ""
+    add("## Verify failed on an earlier commit\n")
+    line = (f"Verification failed `{commit[:12] or 'unknown'}` in this run (its qa-report"
+            f"{visit}), and the run has not verified since.")
+    if failure.get("entered_by"):
+        line += f" Development was re-entered through `{failure['entered_by']}`."
+    add(line)
+    add("Verify runs again only after this review (and the sdk review) approve. No commit "
+        "can show a verify pass before you decide, so never request changes because verify "
+        "has not passed this commit, or because its failures are \"unproven\" until it does. "
+        "Judge the code.\n")
+    status = failure.get("evidence_status")
+    if status in ("UNVERIFIED", "BLOCKED_EXTERNAL"):
+        add(f"Recorded cause: verify could not establish these checks (evidence status "
+            f"`{status}`). The cause it recorded is outside the game - the environment it "
+            f"ran in, its harness or an external service - not a defect it showed.\n")
+    elif status == "FAIL":
+        add("Recorded cause: verify saw these checks fail (evidence status `FAIL`). It "
+            "records no attribution: whether the game or the environment verify ran in (its "
+            "harness, a timeout, a port, its worker count) is responsible is not recorded. "
+            "The developer's account, if it gave one, is `known_issues` in "
+            "`docs/development/report.json` - a claim to check, not evidence.\n")
+    else:
+        add("Recorded cause: none - the qa-report carries no evidence status.\n")
+    defects = failure.get("defects") or []
+    if defects:
+        add("Failing checks:\n")
+        for defect in defects:
+            add(f"- `{defect.get('id')}` ({defect.get('severity')}) {defect.get('summary')}")
+            repro = str(defect.get("repro") or "")
+            if repro:
+                if len(repro) > REPRO_LIMIT:
+                    repro = repro[:REPRO_LIMIT].rstrip() + " ..."
+                add(f"  Repro: {repro}")
+        add("")
+    add("- A failure whose cause you can find in the source - a rule, a state transition, a "
+        "pause or a timer, a test that cannot pass against the design - is a blocker. Name "
+        "the file, and the line where you can.")
+    add("- A failure you cannot connect to anything in the code - a timeout, a port, a "
+        "harness or environment problem - is not a blocker of this commit. Say in `notes` "
+        "what you read and why you found no cause in the code; verify judges it again after "
+        "your approval.")
+    add("- A commit that changes no game code after a verify failure is not a defect by "
+        "itself. It is one only when a failure above has a cause in the code that is still "
+        "there.")
+    add("- Everything else in this brief applies unchanged: a defect you find is a blocker "
+        "whether or not verify saw it.\n")
+    return out
+
+
 PROMPT_STDOUT = (
     "You are the code reviewer for this game repository, not its developer. Read {brief} in "
     "full, then review commit {commit} in {repo}. You are READ-ONLY: do not edit, create, "
@@ -188,13 +278,16 @@ PROMPT_STDOUT = (
 
 
 def render_brief(*, title_id, commit, baseline, design, prototype, develop_brief,
-                 verdict_path, repo, to_stdout=False, sdk=None, develop_report=None):
+                 verdict_path, repo, to_stdout=False, sdk=None, develop_report=None,
+                 verify_failure=None):
     """`sdk` is the sdk-report when the commit under review is the sdk step's (subject
     sdk-report): the change is then the platform integration on top of `baseline`, the
     development commit an earlier review read. `develop_report` is the developer's own
     `docs/development/report.json`, whose `content_units` and `design_gaps` say what it built
     and where the design was silent; the prototype-report carries the same fields and stands in
-    for it."""
+    for it. `verify_failure` (from `verify_failure()`) is the open verify failure the run is
+    looping on, when there is one: the reviewer is shown its failing checks and recorded cause
+    and told verify re-runs only after it approves."""
     design = design or {}
     prototype = prototype or {}
     develop_brief = develop_brief or {}
@@ -242,6 +335,7 @@ def render_brief(*, title_id, commit, baseline, design, prototype, develop_brief
             add(f"- `{blocker.get('id')}` ({blocker.get('severity')}) "
                 f"{blocker.get('file') or '(whole build)'}: {blocker.get('summary')}")
         add("")
+    out += _verify_failure_lines(verify_failure)
     feedback = _feedback_lines(develop_brief.get("build_spec"))
     tasks = [t for t in ((develop_brief.get("dev_plan") or {}).get("tasks") or [])
              if isinstance(t, dict)]

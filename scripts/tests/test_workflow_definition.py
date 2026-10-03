@@ -106,8 +106,10 @@ class ParsesValidDefinitions(unittest.TestCase):
             self.assertEqual(definition.step(step_id).outputs, ["review-report"])
         sdk_review = definition.step("sdk-review")
         self.assertEqual(sdk_review.params.get("subject"), "sdk-report")
+        # qa-report: an open verify failure is shown to the reviewer (wgf_review.report).
         self.assertEqual(set(sdk_review.inputs), {"sdk-report", "prototype-report",
-                                                  "game-design", "scaffold-record"})
+                                                  "game-design", "scaffold-record",
+                                                  "qa-report"})
         self.assertNotIn("subject", definition.step("review").params)
         self.assertEqual(definition.step("release").params.get("required_gates"), ["G4"])
         g4 = definition.step("prototype-review")

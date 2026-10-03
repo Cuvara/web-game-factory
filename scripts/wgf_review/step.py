@@ -1,7 +1,9 @@
 """The `review` step: fingerprint -> reviewer -> fingerprint -> verdict -> review-report.
 
     inputs   prototype-report, scaffold-record (required); game-design (read when present);
-             with `subject: sdk-report`, the sdk-report too (required)
+             with `subject: sdk-report`, the sdk-report too (required); qa-report (read
+             when present: a fail this run recorded is the verify failure the run is looping
+             on, and the brief shows it - see report.verify_failure)
     subject  `with: subject` names the artifact whose build_ref.commit_sha is reviewed:
              prototype-report (the default: the commit develop made; the change is its
              visit's baseline..commit) or sdk-report (the commit the sdk step made on top of
@@ -46,7 +48,7 @@ from wgflib import agentenv, isolation, procs
 from wgflib import checkout as checkout_lock
 from wgflib.workflow import ArtifactOutput, StepResult, WorkflowStep
 
-from .report import PROMPT, PROMPT_STDOUT, build_report, render_brief
+from .report import PROMPT, PROMPT_STDOUT, build_report, render_brief, verify_failure
 from .settings import Settings, SettingsError
 from .verdict import from_output, parse
 
@@ -110,6 +112,7 @@ class ReviewStep(WorkflowStep):
         prototype = inputs.load("prototype-report")
         scaffold = inputs.load("scaffold-record")
         design = inputs.load("game-design") if "game-design" in inputs else None
+        qa = inputs.load("qa-report") if "qa-report" in inputs else None
         title_id = scaffold.get("title_id") or prototype.get("title_id")
         subject_artifact = inputs.load(subject_type)
         subject = ((subject_artifact or {}).get("build_ref") or {}).get("commit_sha") or ""
@@ -202,7 +205,9 @@ class ReviewStep(WorkflowStep):
                 prototype=prototype, develop_brief=develop_brief, verdict_path=verdict_path,
                 repo=checkout, to_stdout=settings.verdict_from == "stdout",
                 develop_report=develop_report,
-                sdk=subject_artifact if subject_type == "sdk-report" else None))
+                sdk=subject_artifact if subject_type == "sdk-report" else None,
+                verify_failure=verify_failure(qa, getattr(context, "run_id", None),
+                                              develop_brief)))
 
         values = {"repo": checkout, "verdict": verdict_path, "brief": brief_path,
                   "commit": head}

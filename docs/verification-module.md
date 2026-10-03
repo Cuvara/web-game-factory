@@ -75,6 +75,14 @@ The step returns a result; the workflow file decides where it goes.
 `FAIL` wins over `BLOCKED`: a failure is actionable now, a blocked check may pass once
 whatever blocked it is fixed.
 
+After a `FAIL` the run passes through `review` and `sdk-review` again before verify runs, so
+the failing qa-report is also a review input. While it is the run's newest qa-report, both
+review briefs show its blocking defects and `evidence_status`, and tell the reviewer that
+verify re-runs only after its approval and that it judges the code, not verify's result
+(`docs/review-module.md`, "After verify fails"). The qa-report records no attribution of a
+`FAIL` to the game or to the environment verify ran in; `UNVERIFIED` and `BLOCKED_EXTERNAL`
+are the only recorded "not the game" causes.
+
 ## The checks
 
 | Category | Checks | Evidence from |

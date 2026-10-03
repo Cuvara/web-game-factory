@@ -440,7 +440,13 @@ its weight or variable range (`"500 700"`), so a game declares
 `new FontFace(e.family, url, { weight: e.weight })`. The licence is `OFL-1.1` (permitted,
 attribution recorded from the copyright line). The design module refuses a typography face
 the library does not hold (`presentation.font_library`), so a design an agent edits stays
-within what a run can ship. `wgf-assets.py fonts check` verifies the shipped files against
+within what a run can ship, and holds the font requirement's `count` to the typography's
+distinct families (`compose.finalize`): a family's file covers its weights, so a draft
+counting a file per weight is corrected rather than left for the producer. A requirement
+that still counts more files than families gets one file per family, and the notes say so.
+When the producer refuses (a family the library lacks), the step logs a `producer refused`
+warning naming the asset and the reason, beside the manifest's `generation-failed` issue:
+the asset is then a placeholder the production gate refuses. `wgf-assets.py fonts check` verifies the shipped files against
 `fonts.json` and the kits; `fonts build` rebuilds the library (maintainers: fontTools,
 Brotli, network). Why shipped rather than fetched: a run has no network, and the whole
 library is smaller than one music loop.

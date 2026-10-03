@@ -660,6 +660,25 @@ class Schema(unittest.TestCase):
         self.assertEqual(done.returncode, 0, output)
 
 
+class FontFilesPerFamily(unittest.TestCase):
+    """F23: the font requirement counts one file per distinct typography family, whatever
+    the draft counted (an agent counted one per weight), so the font library can make it."""
+
+    def test_finalize_holds_the_count_to_the_families(self):
+        typography = {"display": "Playfair Display (800)", "body": "Commissioner (500)",
+                      "numeric": "Commissioner (700), tabular"}
+        spec = {"visual_identity": {"typography": typography},
+                "assets": [{"id": "fonts", "type": "font", "role": "font", "count": 3},
+                           {"id": "icons", "type": "icon", "role": "icon", "count": 6}]}
+        compose._font_files_per_family(spec)
+        self.assertEqual([a["count"] for a in spec["assets"]], [2, 6])
+
+    def test_no_typography_leaves_the_count(self):
+        spec = {"assets": [{"id": "fonts", "type": "font", "count": 3}]}
+        compose._font_files_per_family(spec)
+        self.assertEqual(spec["assets"][0]["count"], 3)
+
+
 class SelectionKeepsTheDimension(unittest.TestCase):
     """F09: archetypes.select() scored keywords alone and handed a 2D strategy ("dodges
     obstacles") the 3D arena-dodge. It now picks only among the archetypes of the dimension

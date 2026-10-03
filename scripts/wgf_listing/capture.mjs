@@ -40,6 +40,10 @@ try {
 const { chromium, devices } = pw;
 
 const GL = ["--use-gl=angle", "--use-angle=swiftshader", "--enable-unsafe-swiftshader", "--ignore-gpu-blocklist"];
+// The Factory's refusing proxy, handed to the browser itself: Chromium ignores the proxy
+// environment variables everywhere but Linux (wgflib.netguard). capture.py reads `proxied`.
+const PROXY_SERVER = process.env.WGF_BROWSER_PROXY;
+const PROXY = PROXY_SERVER ? { proxy: { server: PROXY_SERVER, bypass: "localhost,127.0.0.1,[::1]" } } : {};
 const PROBE_URL = "/?wgf-probe=1";
 const BEGIN = /^(play|start|begin|tap-to-start|continue)$/i;
 const UTILITY = /pause|resume|menu|settings|sound|mute|music|fullscreen/i;
@@ -49,7 +53,7 @@ const settings = Object.assign({
 }, job.settings ?? {});
 
 fs.mkdirSync(job.out, { recursive: true });
-const result = { browser: null, viewports: [], trailer: null, branding: [], derived: [], ffmpeg: null, errors: [] };
+const result = { browser: null, proxied: Boolean(PROXY_SERVER), viewports: [], trailer: null, branding: [], derived: [], ffmpeg: null, errors: [] };
 const log = (line) => process.stdout.write(`[capture] ${line}\n`);
 
 function snap(page) {
@@ -380,7 +384,7 @@ async function derive(browser, jobs) {
 }
 
 async function main() {
-  const browser = await chromium.launch({ args: GL });
+  const browser = await chromium.launch({ args: GL, ...PROXY });
   result.browser = `chromium ${browser.version()}`;
   try {
     for (const viewport of job.viewports ?? []) await captureViewport(browser, viewport);

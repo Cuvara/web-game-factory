@@ -98,7 +98,10 @@ that refuses every non-local request (`wgflib.netguard`, as the develop step's s
 the golden runs always have). A portal build would otherwise load the portal's real SDK from
 its CDN, and "no insecure requests" or time to interactive would measure the portal's CDN, not
 the game (a Poki build pulls an `http://` ad bridge). The portal SDK is refused as an ad
-blocker would refuse it; live portal behaviour stays `BLOCKED_EXTERNAL`.
+blocker would refuse it; live portal behaviour stays `BLOCKED_EXTERNAL`. Where Chromium
+ignores the proxy variables (Windows, macOS) the command runs with `-c` on a wrapper of the
+game's `playwright.config.ts`, written outside the checkout, that hands the browser the proxy
+itself (`netguard.guarded_playwright_config`); the game's config is never edited.
 
 ### Which gameplay aspects are required
 

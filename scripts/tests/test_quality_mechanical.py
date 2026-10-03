@@ -261,6 +261,22 @@ class VariantsDistinct(unittest.TestCase):
         check, _ = quality.variants_distinct([("a", base, "svg"), ("b", moved, "svg")])
         self.assertEqual(check["status"], "pass", check)
 
+    def test_backdrops_are_told_apart_by_their_motif_not_their_sky(self):
+        def backdrop(motif, sky="#0B0B12"):
+            return (f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 720 1280">'
+                    f'<rect width="720" height="1280" fill="{sky}"/>'
+                    f'<rect width="720" height="1280" fill="#9B6BFF" opacity="0.1"/>'
+                    f'{motif}</svg>').encode()
+        moon = '<circle cx="520" cy="300" r="120" fill="#161630"/>'
+        skyline = '<path d="M0 1000h120v-200h100v120h140v-260h120v180h240v160H0Z" fill="#14112A"/>'
+        check, _ = quality.variants_distinct(
+            [("world-1", backdrop(moon), "svg"), ("world-2", backdrop(skyline), "svg")])
+        self.assertEqual(check["status"], "pass", check)
+        # The same motif under another sky is still a recolour.
+        check, _ = quality.variants_distinct(
+            [("world-1", backdrop(moon), "svg"), ("world-2", backdrop(moon, "#200A0A"), "svg")])
+        self.assertEqual(check["status"], "fail", check)
+
     def test_png_silhouettes(self):
         a = blob_png((64, 64), (8, 8, 20, 40))
         b = blob_png((64, 64), (8, 8, 20, 40), colour=(40, 120, 220))

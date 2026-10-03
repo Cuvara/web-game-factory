@@ -1255,6 +1255,16 @@ def _inside(x, y, poly):
     return inside
 
 
+# A filled shape covering at least this share of the canvas in both directions is a base
+# layer (a backdrop's sky, a wash), not part of the drawing's silhouette.
+_FULL_BLEED = 0.9
+
+
+def _full_bleed(xs, ys, box):
+    return ((max(xs) - min(xs)) >= _FULL_BLEED * box[2]
+            and (max(ys) - min(ys)) >= _FULL_BLEED * box[3])
+
+
 def _svg_silhouette(data, grid):
     if len(data) > 1048576 or re.search(rb"<!\s*(DOCTYPE|ENTITY)", data, re.I):
         return None
@@ -1275,6 +1285,8 @@ def _svg_silhouette(data, grid):
     mask = set()
     for poly, filled in shapes:
         xs, ys = [p[0] for p in poly], [p[1] for p in poly]
+        if filled and _full_bleed(xs, ys, box):
+            continue
         c0 = max(0, int((min(xs) - box[0]) / cell_w))
         c1 = min(grid - 1, int((max(xs) - box[0]) / cell_w))
         r0 = max(0, int((min(ys) - box[1]) / cell_h))

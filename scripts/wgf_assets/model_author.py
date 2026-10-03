@@ -217,6 +217,12 @@ RULES = [
     "main body's outline in at least one view: a hull with small parts inside its own "
     "outline reads as a brick, and the `model.silhouette` check refuses one component "
     "covering more than `quality_bars.max_dominance` of every view's outline.",
+    "A round body - a ball, a marble, an orb, when the requirement names one - keeps its "
+    "round outline: never reshape it into a drum or a capsule to pass the silhouette check. "
+    "Compose it instead: a sphere or icosphere shell plus what the player recognises it by "
+    "(a swirl band or ring, a core, a seam, stripes as separate parts). A lone sphere is a "
+    "placeholder; a composed ball whose outline is a disk in every view passes "
+    "(`quality_bars.round_body`).",
     "Shape each part: `taper` [x, z] narrows or widens its top (a torso wider at the "
     "shoulders), `bevel` (metres) rounds a box's, cylinder's, cone's or extrude's edges, "
     "`capsule` makes limbs, `mirror: \"x\"` writes the other arm, leg, wing or wheel for you "
@@ -515,7 +521,8 @@ class _Session:
         judged = model_quality.assess(data, role=req["role"], visual_identity=self.look,
                                       spec=spec, kind=req["build_kind"],
                                       name=f"{req['id']}.glb", bars=self.bars,
-                                      policy=self.policy, author="author:command")
+                                      policy=self.policy, author="author:command",
+                                      requirement=req)
         problems = [f"{code}: {message}" for code, severity, message in judged["findings"]
                     if severity == "error"]
         problems += _expectation_problems(judged["summary"], req["expectations"], data,

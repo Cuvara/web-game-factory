@@ -297,8 +297,8 @@ of body, cabin and wheels, is composed.
 | `model.normals` | a visible primitive has no `NORMAL` |
 | `model.palette` | no material base colour within `palette_distance` of the visual identity's palette (skipped without a palette, or when only textured materials could match) |
 | `model.bounds` | no bounding box, or not the spec's fitted size |
-| `model.primitive` | `primitive_only` and the role is readable (`player`, `threat`, `goal`, `target`, `projectile`, `collectible`, `hazard`) — unless `visual_identity.primitive_style` is stated |
-| `model.silhouette` | a box with bumps: the role is in `silhouette_roles` (`player`, `threat`) and, in every view, one component covers more than `max_dominance` (0.6) of the outline — unless `primitive_style` is stated |
+| `model.primitive` | `primitive_only` and the role is readable (`player`, `threat`, `goal`, `target`, `projectile`, `collectible`, `hazard`) — unless `visual_identity.primitive_style` is stated, or the model is a composed round body (below) |
+| `model.silhouette` | a box with bumps: the role is in `silhouette_roles` (`player`, `threat`) and, in every view, one component covers more than `max_dominance` (0.6) of the outline — unless `primitive_style` is stated, or the model is a composed round body (below) |
 | `model.contrast` | a dark model on a dark scene: under `min_contrast_share` of the visible surface (by area; base or emissive colour, the brighter) stands off the design's background by 3:1 - player 0.5, collectible 0.4, threat and hazard 0.25 (calibrated: the reference craft 0.76 and wall 0.30 pass, a black-hulled craft 0.35 and a near-black asteroid 0.07 fail) |
 
 **The silhouette proxy.** `model.primitive` passes a hull with a canopy and a fin hidden
@@ -327,6 +327,22 @@ from the reference craft — the brick's protrusions widen its box — and ranke
 boxier than the brick: the brick's defect is that its parts do not reach the silhouette,
 which is what the part share measures. It is a proxy, not taste: it catches a box with
 bumps, it does not judge whether a ship reads as a ship. That is the renders' job, below.
+
+**A round body.** A ball, a marble, an orb has no wings or limbs: its outline *is* the disk,
+and a faceted sphere is what its design asks for, so both checks above refuse every correct
+model of it (a marble game's player, 2026-10-03: refused three rounds running, bent into a
+drum, then a placeholder). `models.round_body` in `core/reference/asset-quality.yaml` passes
+`model.primitive` and `model.silhouette` for a model only when all three hold: the
+requirement's own description, readability or spec names one of its `words` (ball, marble,
+sphere, orb, bubble, globe, planet - a whole word or its plural); the outline is a disk in
+every one of the three views (fill 0.70-0.86 of its rectangle - a disk is 0.785, a box or a
+drum's side 1.0 - and the rectangle at most 1.18 to 1); and it is composed of at least two
+different pieces (a shell and a swirl band) or modelled. A lone sphere is still a
+placeholder, and a goalkeeper drawn as a blob is not a round body. The passing check's
+summary says "a round body: ..." so the asset report shows the exemption, and
+`primitive_only` is false for it. The author is told to compose a round body, never to
+reshape it (`model_author.RULES`). `wgf-model.py inspect --design --asset` reads the
+requirement the same way.
 
 The verdict is `fail` when any check fails. For a person:
 

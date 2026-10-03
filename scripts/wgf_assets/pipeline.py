@@ -1548,7 +1548,7 @@ class AssetPipeline:
                     [(relative, model_quality.assess(
                         blob, role=req.role, visual_identity=self.identity,
                         spec=req.model, kind=req.kind or "model", name=req.id,
-                        policy=self.policy, author=author)["quality"])
+                        policy=self.policy, author=author, requirement=req)["quality"])
                      for relative, blob in models], author)
             elif not files:
                 fmt = data["files"][0]["format"] if data.get("files") else "?"

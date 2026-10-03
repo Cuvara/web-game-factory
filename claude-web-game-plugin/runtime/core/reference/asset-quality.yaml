@@ -106,6 +106,28 @@ models:
   # no wings" 0.66, a box hull with a sphere canopy and a fan 0.63, and one box 1.0 fail.
   silhouette_roles: [player, threat]
   max_dominance: 0.6
+  # A round body: a ball, a marble, an orb. Its outline IS the disk - it has no wings, limbs
+  # or fins to stand out of it - and a faceted sphere is what the design asks for, so the
+  # silhouette and primitive checks above would refuse every correct model of it (val-3d,
+  # 2026-10-03: a marble game's player was refused three rounds running, the author bent it
+  # into a drum, and the run fell back to a placeholder). A model is a round body only when
+  # all three hold, and the check that passes it says so:
+  #   * its requirement's own text (description, readability, spec) names one of `words`
+  #     (a whole word, or its plural) - a goalkeeper drawn as a blob is not one;
+  #   * its outline is a disk in every one of the three views: the outline's share of its
+  #     bounding rectangle (pi/4 = 0.785 for a disk; 1.0 for a box or a drum's side) within
+  #     [`min_fill`, `max_fill`], and that rectangle no longer than `max_aspect` to 1;
+  #   * it is composed - at least `min_parts` pieces of at least two different shapes or
+  #     proportions (a shell and a swirl band, a core and a rim), or modelled. A lone sphere
+  #     standing for the ball is still a placeholder.
+  # Bounds measured on the 64-cell outline grid: UV and ico spheres of 16-32 segments fill
+  # 0.78-0.82 of their rectangle in every view; a cylinder's side, a box, a cube 1.0.
+  round_body:
+    words: [ball, marble, sphere, orb, bubble, globe, planet]
+    min_fill: 0.7
+    max_fill: 0.86
+    max_aspect: 1.18
+    min_parts: 2
   # model.contrast: the share of a model's visible surface (by area, untextured materials)
   # whose colour - base or emissive, the brighter - stands off the design's background (the
   # palette's background/ground token, else its darkest colour) by WCAG 3:1 or more. A dark

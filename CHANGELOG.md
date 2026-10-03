@@ -14,6 +14,8 @@ what the game is actually made of: a genre model per family, a content unit list
 held to, and a return route when the design did not say enough.
 Record: [docs/v2.7-release.md](docs/v2.7-release.md).
 
+**`/new-game` reaches publication and reports a run honestly** (adapter binding 1.8.0). `/web-game-factory:new-game publish <run-id>` continues a drafted release into the workflow's `publish` group (`wgf publish --run`), still answering no gate; the binding's new `continues` field names the group and `check-integrity.py` checks it. A `FAILED` or `BLOCKED` run is shown with its logs and resumed only when the user confirms; a resumed run's approvals and develop budget are reported from its own `params`, not the current config; decision lines are complete, with a note to replace; the Claude surface declares `allowed-tools` for its own engine calls (never `decide`). No artifact changes.
+
 **Publication runs inside the Factory** ([docs/publish-module.md](docs/publish-module.md)).
 The release lifecycle's tail - `release:validating`, G5, G6, `release:submitting` - is now the
 `publish` group of `new-game` (workflow version 6), continued in the run that drafted the
@@ -210,6 +212,25 @@ passes 656/656 on Windows. The golden runs still need Linux CI for `pnpm`.
 To bring an artifact forward: re-run the design step. A 1.8.0 design with no `genre` is
 validated as legacy — one warning, no bar applied, and no content check in the build — so
 nothing already produced fails; it simply gets none of this.
+
+**A command developer never runs without a budget** (F26). A run started under the shipped,
+supervised config has no `develop_budget`; when its project then switched to a paid
+`command` developer (the autonomous profile copied in mid-run), the developer ran unbounded -
+a validation run spent 14 sessions against a documented cap of 12. Now develop and the
+greybox return BLOCKED, no agent spawned, for a command developer in a run with no budget,
+naming `factory.develop.budget`; and the first `wgf resume` by a person that finds one
+configured records it for the run as a `BUDGET_ADOPTED` operator event (corroborated like
+`BUDGET_RAISED`, counted once; params are not edited). Handoff developers are unaffected.
+**Upgrading:** an installation that runs a command developer without `factory.develop.budget`
+must set one; a run already in progress adopts it at its next resume.
+
+**Windows: process liveness without signals** (F12). `procs.pid_alive` and the run lock's
+check used `os.kill(pid, 0)`, which on Windows is `GenerateConsoleCtrlEvent(CTRL_C_EVENT)`:
+a live driver started from another terminal read as dead (`wgf status` said `stale`, and a
+second driver could take its lock), and a process group on the same console could be sent
+Ctrl+C. Windows now asks the process itself (`OpenProcess` + wait/exit code, through
+`ctypes`) and records its creation time in the lock, so a recycled pid is told apart as on
+Linux. POSIX is unchanged.
 
 ## [2.6.0] - 2026-10-02
 

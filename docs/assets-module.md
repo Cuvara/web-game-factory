@@ -56,7 +56,7 @@ the work list (`requirements.bridge`). Each entry carries onto its requirement:
 | build_spec field | Requirement | |
 |---|---|---|
 | `id` | `id` | the manifest item id and the runtime asset id |
-| `type` + `role` + dimension | `kind` | 2D: `sprite`; `texture` or role `background`/`environment` → `background`; `ui`, `icon`, `vfx`, `font` as named; a `spritesheet` or `animation` → `sprite` (one vector drawing, animated in code; the frames stay in the notes). 3D: `model` (role `environment` → `environment`), `texture`, `animation` |
+| `type` + `role` + dimension | `kind` | 2D: `sprite`; `texture` or role `background`/`environment` → `background`; `ui`, `icon`, `vfx`, `font` as named; a `spritesheet` or `animation` → `sprite` (one vector drawing, animated in code; the frames stay in the notes). 3D: `model` (role `environment` → `environment`), `texture`, `animation`; a `texture` with role `background`/`environment` (a sky, a backdrop) → `background`, a flat 2D drawing the author makes |
 | `dimension` | `dimension` | as stated, else `model` → 3d, else the engine's (`engine.dimension`, `threejs` → 3d); a flat kind (sprite, ui, icon, background) is 2D in any game |
 | `tier` | `scope_tier` | `mvp` → mvp, produced now; `post-mvp` → production and `optional` → future, recorded, not produced |
 | `role`, `description`, `readability`, `spec` | the same | what the author is asked for and the production gate judges |
@@ -221,8 +221,10 @@ helpers drew every file, and a lead iterated it while looking at renders
 2. **It writes only into a Factory-owned scratch directory**, `author-set/out/`
    (`{out}`), and runs only one command, the Factory's preview (`{preview}`:
    `python3 wgf_assets/preview.py author-set/job.json`). The host enforces both: in Claude
-   Code, `--allowedTools "Read" "Edit(/{out}/**)" "Bash({preview})"` with `--permission-mode
-   dontAsk` - an `Edit` rule covers every file-writing tool, `//` makes the path absolute, and
+   Code, `--allowedTools "Read" "Edit({out_rule}/**)" "Bash({preview})"` with `--permission-mode
+   dontAsk` - an `Edit` rule covers every file-writing tool, `{out_rule}` is `{out}` as a
+   permission rule names it (`//` and the POSIX form, `//c/Users/...` on Windows;
+   `wgflib/permpath.py`; the older `Edit(/{out}/**)` is read as this), and
    the `Bash` rule matches exactly that command (verified by a real call on CLI 2.1.280:
    a write outside `{out}`, the script with other arguments, and any other command were each
    refused). The job file it is run with sits outside `{out}`, so the author cannot point the
@@ -438,7 +440,13 @@ its weight or variable range (`"500 700"`), so a game declares
 `new FontFace(e.family, url, { weight: e.weight })`. The licence is `OFL-1.1` (permitted,
 attribution recorded from the copyright line). The design module refuses a typography face
 the library does not hold (`presentation.font_library`), so a design an agent edits stays
-within what a run can ship. `wgf-assets.py fonts check` verifies the shipped files against
+within what a run can ship, and holds the font requirement's `count` to the typography's
+distinct families (`compose.finalize`): a family's file covers its weights, so a draft
+counting a file per weight is corrected rather than left for the producer. A requirement
+that still counts more files than families gets one file per family, and the notes say so.
+When the producer refuses (a family the library lacks), the step logs a `producer refused`
+warning naming the asset and the reason, beside the manifest's `generation-failed` issue:
+the asset is then a placeholder the production gate refuses. `wgf-assets.py fonts check` verifies the shipped files against
 `fonts.json` and the kits; `fonts build` rebuilds the library (maintainers: fontTools,
 Brotli, network). Why shipped rather than fetched: a run has no network, and the whole
 library is smaller than one music loop.
@@ -478,7 +486,7 @@ and adds two checks to the item's quality: `audio.rendered-level` (RMS, peak, in
 loudness in LUFS against the level floor) and `audio.rendered-seam` (the loop's end-to-start
 step and edge levels against `asset-quality.yaml` `audio.loop_seam`). The licence is the
 Factory's own (`LicenseRef-factory-generated`): nothing is sampled from anyone. Not covered:
-3D sky/spark textures and 3D VFX still have no producer.
+3D spark and surface textures and 3D VFX still have no producer (a 3D sky or backdrop texture is a `background` the 2D author draws). A looping sound effect is always one of the loop recipes (`engine`, or `rumble` for a rolling or rumbling cue), never a one-shot its other words name.
 
 ## Placeholders
 
@@ -706,7 +714,7 @@ python3 scripts/wgf-assets.py build --design design.json --root ../my-game \
 # The set author: one session for every 2D drawing, shown the rendered contact sheet.
 python3 scripts/wgf-assets.py build --design design.json --root ../my-game --author-mode set \
     --author-command claude -p {prompt} --tools Read,Write,Edit,Bash \
-    --allowedTools Read "Edit(/{out}/**)" "Bash({preview})" --permission-mode dontAsk ...
+    --allowedTools Read "Edit({out_rule}/**)" "Bash({preview})" --permission-mode dontAsk ...
 # Judge and render a set by hand (what the set author runs): problems, then the sheet's path.
 python3 scripts/wgf_assets/preview.py <work>/author-set/job.json
 # Check a checkout against its runtime manifest (what the verify step runs).

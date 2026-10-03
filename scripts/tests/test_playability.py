@@ -132,6 +132,26 @@ class Judge(unittest.TestCase):
         self.records["first-session"]["texts"] = ["0", "Tap the glowing zone to dive"]
         self.assertIn("start.objective", self.failed())
 
+    def test_start_playable_is_judged_on_the_wall_clock(self):
+        self.records["first-session"]["playingMs"] = 5400
+        checks = self.judge()
+        self.assertEqual(checks["start.playable"]["status"], "FAIL")
+        self.assertEqual(checks["start.playable"]["measured"], 5400)
+
+    def test_start_playable_leaves_out_the_bots_own_title_screen_measurement(self):
+        # 1500 ms of the 6300 were the bot settling, measuring and framing the title screen.
+        self.records["first-session"].update(playingMs=6300, observerMs=1500)
+        checks = self.judge()
+        self.assertEqual(checks["start.playable"]["status"], "PASS")
+        self.assertEqual(checks["start.playable"]["measured"], 4800)
+        self.assertIn("1500 ms", checks["start.playable"]["summary"])
+
+    def test_a_slow_start_still_fails_with_the_bots_time_left_out(self):
+        self.records["first-session"].update(playingMs=6800, observerMs=1500)
+        checks = self.judge()
+        self.assertEqual(checks["start.playable"]["status"], "FAIL")
+        self.assertEqual(checks["start.playable"]["measured"], 5300)
+
     def test_a_loss_with_no_input_inside_the_grace(self):
         self.records["first-session"]["lostAtMs"] = 2727
         checks = self.judge()

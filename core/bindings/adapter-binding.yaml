@@ -18,7 +18,7 @@
 # Each adapter carries a CONFORMANCE.md mapping every surface id below to its file, so
 # reviewing adapter completeness is a two-file diff rather than a directory crawl.
 
-version: 1.7.0
+version: 1.8.0
 
 surface_kinds:
   agent: A persistent role the runtime can delegate to.
@@ -326,6 +326,11 @@ workflows:
     runs: core/workflows/new-game.workflow.yaml
     role: null
     gates: [G2, G3, G4, G5, G6]
+    # Groups of the workflow the surface continues inside a run it already drafted
+    # (`<surface> <group> <run-id>` = `wgf <group> --run <run-id>`), each named in the
+    # workflow's `groups:`. `publish` takes a drafted release to G5, G6 and submit; the
+    # surface still answers no gate, and submission stays behind G6 and the live switches.
+    continues: [publish]
     # The production bar the run's agents are held to: the develop brief and the asset and
     # model author requests point at these by path; the surface names them so the person
     # starting a run knows what a finished build is judged against.

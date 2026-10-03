@@ -301,6 +301,11 @@ def design_kind(entry, dimension):
         # 3D game's production gate could never be met (goalkeeper-royale, 2026-10-02).
         if kind in ("model", "other") and role not in ("ui", "icon", "font"):
             return "environment" if role in ("environment", "background") else "model"
+        # A sky or backdrop TEXTURE is a flat image whatever the scene: kept a 3D `texture`
+        # it had no producer and the production gate could never be met (sky-marble,
+        # 2026-10-03); as a `background` the 2D author draws it, like a 3D game's vfx.
+        if kind == "texture" and role in ("background", "environment"):
+            return "background"
         if kind in ("animation", "texture"):
             return kind
     if kind == "font" or role == "font":
@@ -363,8 +368,10 @@ def bridge(design, game_dim):
             continue
         dimension = entry_dimension(entry, design) or game_dim
         kind = design_kind(entry, dimension)
-        if kind in FLAT_KINDS and entry.get("dimension") not in ("2d", "3d"):
-            # A HUD icon in a 3D game is still a 2D image.
+        if kind in FLAT_KINDS and (entry.get("dimension") not in ("2d", "3d")
+                                   or entry.get("type") == "texture"):
+            # A HUD icon in a 3D game is still a 2D image, and so is a sky texture: a design
+            # that says `dimension: 3d` for it is naming the scene, not the file.
             dimension = "2d"
         notes = [entry.get("spec")] if entry.get("spec") else []
         if entry.get("type") in ("spritesheet", "animation") and kind == "sprite":
@@ -401,12 +408,19 @@ def bridge(design, game_dim):
 AUDIO_KINDS = {"music": ("music", None), "ambience": ("music", None), "sfx": ("sfx", None),
                "ui": ("sfx", "ui"), "voice": ("sfx", None)}
 _SECONDS = re.compile(r"\b(\d{1,3}(?:\.\d+)?)\s*(?:s|sec|secs|seconds?)\b", re.I)
+# A number of seconds after one of these words is how often or how soon the sound plays
+# ("quiet enough to repeat every 0.45 s"), not how long it lasts.
+_NOT_A_LENGTH = re.compile(r"\b(?:every|each|per|after|within|than)\s*$", re.I)
 
 
 def audio_duration(text):
-    """The length a description states ("a 60 s loop", "0.5 sec"), in seconds, or None."""
-    match = _SECONDS.search(text or "")
-    return float(match.group(1)) if match else None
+    """The length a description states ("a 60 s loop", "0.5 sec"), in seconds, or None.
+    An interval ("repeats every 0.45 s") is not a length."""
+    text = text or ""
+    for match in _SECONDS.finditer(text):
+        if not _NOT_A_LENGTH.search(text[:match.start()]):
+            return float(match.group(1))
+    return None
 
 
 def bridge_audio(design, named):

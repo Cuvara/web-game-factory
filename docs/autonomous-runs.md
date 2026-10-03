@@ -38,7 +38,7 @@ those, and nothing else:
 | `develop.budget` | `max_sessions: 12`, `max_cost: 60` (US$, from `total_cost_usd`) | develop blocks, nothing spawned, once reached; only a person raises it (`wgf resume <run> --budget-sessions N`) |
 | `review.reviewer` | `kind: command`, the verified read-only `claude -p` argv | Approves or requests changes; the Factory fingerprints the checkout and undoes any write |
 | `design` | `author: agent`, the verified read-only `claude -p` argv | Writes the design draft for a brief no design archetype carries; the module judges it unchanged, and shows it any schema, buildability, depth or content problem for a bounded repair (`MAX_REPAIR_ROUNDS`). It is also the only author that can answer a design gap (the brief's `gaps` + `previous_design`); the deterministic authors refuse one |
-| `assets.model_author` | `kind: command`, `mode: set`, `spec_from: file`, `review_rounds: 1`; the read-only argv plus `Write,Edit` allowed only by `Edit(/{dir}/**)` | One session writes every 3D model of the design as a set (at most US$3 a call; one call per repair or review round); the pinned Blender 4.5 builds each spec, the Factory judges the GLB (`primitive_only`, silhouette, parts, palette) and renders contact sheets and the set, which the author opens to repair and to revise what does not read ([blender-pipeline.md](blender-pipeline.md), "Set mode"). Needs Blender on `PATH` or in `WGF_BLENDER` |
+| `assets.model_author` | `kind: command`, `mode: set`, `spec_from: file`, `review_rounds: 1`; the read-only argv plus `Write,Edit` allowed only by `Edit({dir_rule}/**)` | One session writes every 3D model of the design as a set (at most US$3 a call; one call per repair or review round); the pinned Blender 4.5 builds each spec, the Factory judges the GLB (`primitive_only`, silhouette, parts, palette) and renders contact sheets and the set, which the author opens to repair and to revise what does not read ([blender-pipeline.md](blender-pipeline.md), "Set mode"). Needs Blender on `PATH` or in `WGF_BLENDER` |
 | `assets.author` | `kind: command`, `mode: set`, the verified `claude -p` argv: writes only under the Factory's `{out}`, runs only the Factory's `{preview}` | Draws every 2D requirement as ONE set in one session (at most US$6), from the whole visual identity, the art direction and the craft guides; runs the preview, which judges every file and renders the contact sheet it then looks at, and revises. The Factory judges again and delivers what passes; one repair session is shown what still fails and the last sheet ([assets-module.md](assets-module.md#the-set-author)) |
 | `assets.producers` | `[fonts, audio]` | Bundles the typography's faces from the Factory font library and composes the music and sound effects; no agent, no network, no cost (the shipped default is `[]`) |
 | `visualqa.judge` | `kind: command`, `verdict_from: stdout`, the verified read-only `claude -p` argv | Reads the captured frames and returns scores and findings (at most US$2 a judgement); the step decides PASS or FAIL and routes `assets` / `develop` |
@@ -89,6 +89,13 @@ a mapping merges, a list or a value replaces. Edit the copy to change anything -
 repository (`init: {source: github}`), another budget, `design: {author: agent}` - and
 remove a key to fall back to the shipped value. `wgf where` shows `config_layers`.
 
+Copying the profile into a project whose run already started under the shipped config
+changes that run's developer to a paid `command` one at once (the config is read live), but
+not its budget, which a run takes when it starts. Such a run takes the profile's budget at
+the next `wgf resume` by a person, recorded as a `BUDGET_ADOPTED` event; until then develop
+refuses to start the developer (BLOCKED, naming `factory.develop.budget`). A command
+developer never runs without a budget (development-module.md#budget).
+
 The game checkout goes to `factory.checkouts` + the repository name, and the shipped
 `checkouts` is `..`: beside the project. A project directory named like the game
 (`my-game` for `--project my-game`) would then be the checkout itself, which init refuses
@@ -104,16 +111,14 @@ Then, in Claude Code:
 The command reports the autonomy, says that agent sessions will run unattended and cost
 money within the budget, and starts after you confirm.
 
-## On Windows: the design author's Edit rule
-
-The profile lets the design author edit one file, by the host's path rule
-`Edit(/{draft})`, where `//` means an absolute path. That rule is written for POSIX paths: on
-Windows `{draft}` substitutes to a drive-letter path (`C:/.../design/1-1.draft.json`), the rule never matches, the host
-refuses every Edit, and the author ends its session asking for permission it cannot be
-given - the step fails with "the design agent left the draft ... unchanged" (seen on the
-2.7.0 genre-depth runs). A project overlay on Windows allows `Edit` without a path
-(`--allowedTools "Read,Edit"`); the author still has no Write, Bash or network, and its
-working directory holds nothing but the request and the draft.
+Copy the profile **before** starting the run. A run snapshots its gate approvals
+(`auto_approve`, `timeout_auto_approve`) and its develop budget when it starts, in its
+`params`; the agents, the design author and `init.source` are read from the configuration
+each time a step runs. A profile copied into a run that already started is therefore applied
+by half: its authors, developer and init change, but its gates still wait for you and its
+develop step has no budget it did not start with. `/web-game-factory:new-game resume <run>`
+reports the run's own approvals and budget (`wgf status <run> --json`, `params`), not the
+copied file's; start a new run to get the profile's.
 
 ## Research needs evidence, which the research role fetches
 
@@ -136,6 +141,11 @@ substitution on purpose). The research agent writes the idea's concept to the pr
 `workspace/research/concepts.yaml` (its `brief` exactly the run's idea, `design_archetype:
 agent`, every figure an estimate the scan records as a hypothesis), and the run is resumed.
 Such a concept can only be designed by an agent design author, which the profile configures.
+Without it (the shipped `design: {author: archetype}`), research waits as soon as it selects
+the concept, naming `design: {author: agent}`: it no longer spends strategy and G2 to fail at
+design, where the archetype author used to swap in a catalog archetype by keyword (a 2D brief
+designed as the 3D arena-dodge). The archetype author refuses such a concept too, and its
+keyword selection keeps to the dimension research states (`art.dimension`).
 
 Research carries forward only a concept the design module can build: each entry of
 `scripts/wgf_discovery/archetypes.yaml` declares its `design_archetype`, or `null`, and a
@@ -148,7 +158,7 @@ step. Before this, 9 of 11 concepts reached design and failed its consistency ru
 
 | | |
 |---|---|
-| G4 prototype review | pass, iterate or kill - always a person: `! … wgf.py decide <run> pass --note "..."` |
+| G4 prototype review | pass, iterate or kill - always a person: `! … wgf.py decide new-game-20261003-085640-5dc4c9 pass --note "hits the session target; retry reads well"`, the run id and the note your own |
 | release | runs after a G4 pass; drafts only. `wgf new-game` ends there |
 | publication | `wgf publish --run <run>` is a person's act. G5 (reversible; the autonomous profile does not auto-approve it either) and G6 (`publish`/`reject`: irreversible, always a person). The `submit` step is dry-run until an installation sets `factory.publish.mode: live` AND `WGF_PUBLISH_LIVE=1`; a login, CAPTCHA, second factor, unconfirmed portal terms or a missing session stops it for a person. G7 (spend) stays the game repository's, and human |
 | budget | raising it after it is spent |

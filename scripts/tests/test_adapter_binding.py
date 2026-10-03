@@ -83,9 +83,12 @@ class AdapterBindingDrift(unittest.TestCase):
     def test_generated_workflow_runs_the_binding_workflow(self):
         runs = {entry["id"]: entry["runs"] for entry in self.binding["workflows"]}
         craft = {entry["id"]: entry.get("craft") or [] for entry in self.binding["workflows"]}
+        continues = {entry["id"]: entry.get("continues") or [] for entry in self.binding["workflows"]}
         for wid, path, _summary, *rest in generator_rows("workflows"):
             self.assertEqual(path, runs[wid])
             self.assertEqual(rest[0].split(";") if rest else [], craft[wid])
+            self.assertEqual(rest[1].split(";") if len(rest) > 1 and rest[1] else [],
+                             continues[wid])
 
     def test_every_surface_is_on_disk_and_nothing_else_is(self):
         expected_commands = ({f"wgf-{cid}.md" for cid in self.ids("commands")}
@@ -168,6 +171,74 @@ class WorkflowEntryPoints(unittest.TestCase):
                             line.lstrip().startswith(("Never run", "Refuse", "`--decision`"))
                             or f"`! {engine}" in line,
                             f"{plugin}: answers a checkpoint: {line.strip()}")
+
+    def test_continues_each_group_inside_the_run_that_drafted_it(self):
+        """A group the binding says the surface continues is reachable from the surface, as
+        `wgf <group> --run <run-id>` - and nothing says it belongs elsewhere (F02)."""
+        for entry, plugin, text in self.surfaces():
+            engine = ENGINE[plugin]
+            for group in entry.get("continues") or []:
+                with self.subTest(plugin=plugin, workflow=entry["id"], group=group):
+                    self.assertIn(f"- `{group} <run-id>`", text)
+                    self.assertIn(f"`{engine} {group} --run <run-id> [--store <DIR>] --json`",
+                                  text)
+            with self.subTest(plugin=plugin, workflow=entry["id"]):
+                self.assertNotIn("game repository's CI", text)
+        for doc in ("workflow-engine.md", "core-v1.md", "development-module.md"):
+            with self.subTest(doc=doc):
+                self.assertNotRegex(read("docs", doc), r"(publishing|G5)[^.]*repository's\s+CI")
+
+    def test_a_failed_or_blocked_run_is_reported_before_it_is_resumed(self):
+        """Resuming re-runs the failed step and spends again; the surface shows why it failed
+        and resumes only when the user confirms (F21)."""
+        for entry, plugin, text in self.surfaces():
+            preflight = text.split("1. **Preflight.**", 1)[1].split("\n2. ", 1)[0]
+            with self.subTest(plugin=plugin, workflow=entry["id"]):
+                self.assertIn("`FAILED` or `BLOCKED`", preflight)
+                self.assertIn("resume only when the user confirms", preflight)
+                self.assertNotRegex(preflight, r"Anything else[^.]*failed")
+
+    def test_an_existing_run_reports_its_own_autonomy(self):
+        """Approvals and the develop budget are snapshotted when a run starts: for a run that
+        exists, the surface reports its params, not the current configuration (F16)."""
+        for entry, plugin, text in self.surfaces():
+            autonomy = text.split("2. **Report the effective autonomy**", 1)[1].split("\n3. ",
+                                                                                     1)[0]
+            with self.subTest(plugin=plugin, workflow=entry["id"]):
+                self.assertIn("`params` in", autonomy)
+                self.assertIn(f"{ENGINE[plugin]} status <run-id> --json", autonomy)
+
+    def test_a_decision_line_is_complete_and_its_note_is_to_be_replaced(self):
+        """A `!` line the user pastes is run by a shell: no `<...>` or `a|b` placeholder, and
+        no `"..."` note recorded as the reason of an irreversible gate (F05)."""
+        for entry, plugin, text in self.surfaces():
+            lines = [line for line in text.splitlines() if f"`! {ENGINE[plugin]} decide" in line]
+            with self.subTest(plugin=plugin, workflow=entry["id"]):
+                self.assertTrue(lines)
+                for line in lines:
+                    command = line.split("`! ", 1)[1].split("`", 1)[0]
+                    self.assertNotRegex(command, r"[<>|]")
+                    self.assertNotIn('"..."', command)
+                    self.assertRegex(command, r'--note "replace: ')
+                self.assertIn("the note must be replaced", text)
+
+    def test_claude_surface_pre_approves_reading_its_own_run_never_a_decision(self):
+        """Without allowed-tools a restrictive host blocks the surface from reading its own
+        run (F15). It pre-approves the engine calls of its procedure - never `decide`."""
+        for entry in self.entries:
+            text = read("claude-web-game-plugin", "commands", f"{entry['id']}.md")
+            front = text.split("---")[1]
+            rules = re.findall(r"(?m)^  - (Bash\(.*\))$", front)
+            commands = {re.match(r'Bash\((python3?) "\$\{CLAUDE_PLUGIN_ROOT\}/runtime/scripts/'
+                                 r'wgf\.py" (\S+) \*\)$', rule).group(1, 2) for rule in rules}
+            expected = {"where", "status", "logs", "resume", entry["id"],
+                        *(entry.get("continues") or [])}
+            with self.subTest(workflow=entry["id"]):
+                self.assertRegex(front, r"(?m)^allowed-tools:$")
+                self.assertEqual(len(rules), len(commands))
+                self.assertEqual(commands, {(py, sub) for py in ("python3", "python")
+                                            for sub in expected})
+                self.assertNotIn("decide", front)
 
     def test_claude_preflight_checks_the_plugin_runtime_not_the_working_directory(self):
         for entry in self.entries:
@@ -273,6 +344,18 @@ class BindingWorkflowIntegrity(unittest.TestCase):
                 del self.ci.ERRORS[:]
                 _ids, errors = self.check(entry)
                 self.assertTrue(errors, f"{name}: accepted")
+
+    def test_a_continued_group_the_workflow_lacks_is_an_error(self):
+        shipped = "    continues: [publish]\n"
+        self.assertIn(shipped, self.real)
+        real = self.real
+        for continues in ("[nope]", "publish"):
+            with self.subTest(continues=continues):
+                del self.ci.ERRORS[:]
+                self.real = real.replace(shipped, f"    continues: {continues}\n")
+                _ids, errors = self.check(self.ENTRY)
+                self.assertTrue(errors, f"continues {continues}: accepted")
+        self.real = real
 
 
 if __name__ == "__main__":

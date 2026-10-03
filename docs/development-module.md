@@ -84,6 +84,14 @@ fails the step.
 `docs/development/brief.md` is the whole interface between the Factory and whoever writes
 the game, regenerated on every visit and committed with the code it asked for. It states:
 
+- **Your shell** — only for a `command` developer. It lists the `Bash(...)` rules that the
+  developer's own argv allows and denies (`brief.shell_contract`). It says one command per
+  call, what to use instead of a refused command, and that scratch files go in
+  `tests/scratch-*` and are deleted before the report. It also says that the Factory runs
+  the checks and commits. A refused command is never a reason to stop. A session that was
+  refused a tool call and then changed no file fails the attempt with that cause
+  (`developers.permission_stall`), and the retry's brief carries the cause. See
+  docs/claude-capabilities.md.
 - **Ground rules** — the engine and where it may be imported (`src/rendering/<engine>/`
   only); the template-owned paths a game may not edit (`packages/`, `game.config.yaml`,
   `.github/`, `scripts/`, the build and test configs, `package.json`, `tsconfig.json`,
@@ -322,15 +330,16 @@ Run in this order; `conformance` cannot be switched off.
 | `conformance` | Static, and the content contract: engine imports only in `src/rendering/<engine>/`, no other engine, no portal SDK identifiers, ad APIs called only from `src/platform/`, the template's `BootScene` (`src/game/boot-scene.ts`) imported by no game source - judged by the module an import resolves to, so a game's own first scene may also be called `BootScene`, the seam files as the Factory provided them and `src/main.ts` booting through them (`wgflib.gameseam`), the sdk step's files (`gameseam.SDK_OWNED_PATHS`) as the visit's baseline commit has them - absent before the sdk step first runs - since the sdk step rewrites them whole, template-owned paths unchanged since the visit began, `package.json` changed only by allowed dependency changes and the lockfile only with them, and `report.json` complete — every required system `done`, every MVP item and placement reported. With the content contract, also `public/content/units.json` against the design (`scripts/wgf_develop/content.py`), as findings named by code: `content.file_missing`, `content.design_pin` (its `design.content_hash` is not the brief's pin), `content.unit_missing:<id>`, `content.unit_extra:<id>`, `content.unit_field:<id>.<field>` (index, objective, mechanics, success or failure differ), `content.difficulty:<id>.<axis>` (further from the design's value than `implementation.difficulty_tolerance`, 0.05), `content.tuning:<mechanic>.<param>`, `content.test_missing` and `content.not_loaded` (no file under `src/` reads the data file) |
 | `format` | `pnpm format` — optional |
 | `typecheck`, `lint`, `unit`, `build` | the repository's own scripts, as CI runs them |
-| `smoke` | `pnpm test:e2e`, behind a proxy that refuses every non-local request (`wgflib.netguard`): a portal build would otherwise load the portal's real SDK from its CDN - dev traffic to the portal, and a result that depends on it (a Poki build's own "makes no insecure requests" failed on Poki's http:// ad bridge). The game must boot and play with the SDK refused, as for an ad-blocker; the summary says what was refused. Skipped, and reported as skipped, only when no browser is installed |
+| `smoke` | `pnpm test:e2e`, behind a proxy that refuses every non-local request (`wgflib.netguard`): a portal build would otherwise load the portal's real SDK from its CDN - dev traffic to the portal, and a result that depends on it (a Poki build's own "makes no insecure requests" failed on Poki's http:// ad bridge). The game must boot and play with the SDK refused, as for an ad-blocker; the summary says what was refused. Where Chromium ignores the proxy variables (Windows, macOS) the suite runs with `-c` on a wrapper of the game's `playwright.config.ts`, written outside the checkout, that hands the browser the proxy itself (`netguard.guarded_playwright_config`); the summary still names the plain command. Skipped, and reported as skipped, only when no browser is installed |
 
 ## Idempotency
 
 Each visit commits once, locally, with a `Wgf-Develop-Key: <run>:<step>:<visit>` trailer.
 Re-executing a visit that already committed — a crash, a resume, `--run` — finds that
 commit, skips development, re-runs the checks and reports the same commit. A new visit (a
-verify → develop loop) is a new commit. Nothing is pushed: publishing a branch is the game
-repository's CI, behind its own gates.
+verify → develop loop) is a new commit. Nothing is pushed: develop never publishes a branch.
+Publishing a release is the run's `publish` group, behind G5 and G6 (`wgf publish --run`,
+[publish-module.md](publish-module.md)).
 
 ## The prototype report
 
@@ -393,11 +402,28 @@ factory:
         jsonl_key: <key>        # read the cost from the transcript's JSON lines
 ```
 
-Every key is optional; without `budget` there is none, as before. The installation's value
-is snapshotted into the run's params when the run starts (`develop_budget`, recorded in
-`WORKFLOW_STARTED` and corroborated on every resume), so a config change never reaches a
-running run and an edit of `state.json` is refused. A value the Factory cannot act on (not a
-positive number, an unknown key, `max_cost` without `cost_from`) refuses the run at start.
+Every key is optional. The installation's value is snapshotted into the run's params when
+the run starts (`develop_budget`, recorded in `WORKFLOW_STARTED` and corroborated on every
+resume), so a change to it never reaches a running run and an edit of `state.json` is
+refused. A value the Factory cannot act on (not a positive number, an unknown key,
+`max_cost` without `cost_from`) refuses the run at start.
+
+**A command developer never runs without a budget.** A run with none - no `budget` when it
+started, none adopted since - reaches develop (or the greybox) with a `command` developer and
+gets `BLOCKED`, no agent spawned: `no developer-session budget ... Set factory.develop.budget
+... then run: wgf resume <run-id>`. A handoff developer is a person and needs none. The
+shipped config has no budget because its developer is a handoff; the case this closes is a
+run started under it whose project then switched to a paid developer (the autonomous
+profile copied in mid-run), which used to run that developer unbounded.
+
+**Adopting** is how such a run gets one: the first `wgf resume` by a person that finds
+`factory.develop.budget` set in the config, while the run has no budget, records a
+`BUDGET_ADOPTED` operator event (`budget`, `decided_by`, `decided_at`, corroborated by the
+resume like a raise) and from then on that is the run's budget, exactly as if it had been
+snapshotted - the params are not edited. Only the first adoption counts; a run that started
+with a budget adopts nothing, and later config changes reach neither (a person raises
+instead). A resume from inside a step's process tree (`decided_by: automation`) adopts
+nothing, and the step stays blocked.
 
 **Sessions** are counted from the run's event log, never from memory or state, so neither a
 resume nor a crash gives one back. Before it spawns a command developer, develop emits a
@@ -432,8 +458,9 @@ Factory's timeout kills never writes that line: its cost is unknown.
 `--budget-cost X` records a `BUDGET_RAISED` event (`decided_by`, `decided_at`) and resumes.
 The effective limit is the largest of the snapshot and every raise a person recorded. It is
 refused from inside a step's process tree (`decided_by: automation` - an agent does not raise
-its own budget; the same rule as G4/G6/G7), for a run started without that limit, and for a
-value that is not positive; a `BUDGET_RAISED` recorded by automation counts for nothing.
+its own budget; the same rule as G4/G6/G7), for a run without that limit (one with no
+budget at all adopts the configured one first, in the same resume), and for a value that is
+not positive; a `BUDGET_RAISED` recorded by automation counts for nothing.
 
 What is enforced, and what is not:
 - **Corroboration.** A raise counts only when the engine's own resume record corroborates

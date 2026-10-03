@@ -733,6 +733,14 @@ class Selection(unittest.TestCase):
         report = outputs(scan(context=_with_idea("an endless runner with zombies")))
         self.assertIn("runner", report["opportunity"]["concept"]["subgenre"])
 
+    def test_a_brief_sharing_one_incidental_word_waits(self):
+        # "collect gems, beat the par time for stars" names no genre: it is not a runner.
+        result = scan(context=_with_idea(
+            "A 3D marble-roll game: tilt a marble across sky-island courses, ramps and "
+            "bumpers; collect gems, beat the par time for stars"))
+        self.assertEqual(result.outcome, StepOutcome.WAITING_FOR_INPUT, result.message)
+        self.assertNotIn("opportunity", outputs(result))
+
     def test_a_brief_nothing_matches_waits_unless_the_nearest_is_asked_for(self):
         idea = _with_idea("goalkeeper penalty shootout")
         waiting = scan(context=idea)

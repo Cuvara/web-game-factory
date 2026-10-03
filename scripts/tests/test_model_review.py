@@ -139,6 +139,106 @@ class Silhouette(unittest.TestCase):
         self.assertEqual(bars["max_dominance"], 0.6)
 
 
+class RoundBody(unittest.TestCase):
+    """A ball, a marble, an orb: its outline is the disk, with nothing to stand out of it
+    (val-3d, 2026-10-03: a marble game's player was refused by model.primitive and
+    model.silhouette three rounds running, and the author bent it into a drum). Passed only
+    when the requirement names a round body AND the outline is a disk in every view AND it is
+    composed or modelled; the passing check names the rule."""
+
+    MARBLE_REQ = {"id": "marble", "role": "player",
+                  "description": "The player's glass marble: a coral sphere with a cream "
+                                 "swirl band",
+                  "readability": "a coral marble with a cream band", "spec": "low-poly GLB"}
+    # A shell and an equatorial band: two different pieces, the outline still a disk.
+    MARBLE = [part("sphere", (1, 1, 1), (0, 0, 0)),
+              part("cylinder", (1.04, 0.16, 1.04), (0, 0, 0), "dark")]
+
+    def judged(self, parts, requirement, role="player"):
+        data = glb_synth.build(parts, MATS)
+        return model_quality.assess(data, role=role, visual_identity=LOOK,
+                                    requirement=requirement)["quality"]
+
+    def test_a_composed_marble_passes_and_says_why(self):
+        quality = self.judged(self.MARBLE, self.MARBLE_REQ)
+        for check_id in ("model.primitive", "model.silhouette"):
+            found = check(quality, check_id)
+            self.assertEqual(found["status"], "pass", found)
+            self.assertIn("a round body: the requirement names a marble", found["summary"])
+            self.assertIn("2 different pieces show on its surface", found["summary"])
+            self.assertIn("models.round_body", found["summary"])
+        self.assertFalse(quality["primitive_only"])
+        self.assertEqual(quality["verdict"], "pass", quality["checks"])
+
+    def test_a_lone_sphere_is_still_a_placeholder(self):
+        quality = self.judged([part("sphere", (1, 1, 1), (0, 0, 0))], self.MARBLE_REQ)
+        self.assertEqual(check(quality, "model.primitive")["status"], "fail")
+        self.assertEqual(check(quality, "model.silhouette")["status"], "fail")
+        self.assertTrue(quality["primitive_only"])
+        self.assertEqual(quality["verdict"], "fail")
+
+    def test_a_blob_goalkeeper_is_not_a_round_body(self):
+        quality = self.judged(self.MARBLE, KEEPER_REQ)
+        self.assertEqual(check(quality, "model.silhouette")["status"], "fail")
+        self.assertIn("box with bumps", check(quality, "model.silhouette")["summary"])
+        self.assertEqual(quality["verdict"], "fail")
+
+    def test_a_disk_outline_needs_a_requirement_that_names_a_round_body(self):
+        drone = {"id": "drone", "role": "threat", "description": "a scout drone",
+                 "readability": "a hovering drone"}
+        quality = self.judged(self.MARBLE, drone, role="threat")
+        self.assertEqual(check(quality, "model.silhouette")["status"], "fail")
+        # A word inside another word is not the word.
+        orbital = dict(drone, description="an orbital scout drone, marbled hull")
+        quality = self.judged(self.MARBLE, orbital, role="threat")
+        self.assertEqual(check(quality, "model.silhouette")["status"], "fail")
+
+    def test_a_round_requirement_with_a_drum_outline_fails(self):
+        # What the refused author made of the marble: a cylinder with rims.
+        drum = [part("cylinder", (1, 1, 1), (0, 0, 0)),
+                part("cylinder", (1.05, 0.12, 1.05), (0, 0.45, 0), "dark"),
+                part("cylinder", (1.05, 0.12, 1.05), (0, -0.45, 0), "dark")]
+        quality = self.judged(drum, self.MARBLE_REQ)
+        self.assertEqual(check(quality, "model.silhouette")["status"], "fail")
+        found, why = model_quality.round_body(
+            self.MARBLE_REQ, model_quality.analyse(glb_synth.build(drum, MATS))["pieces"],
+            model_quality.analyse(glb_synth.build(drum, MATS))["silhouette"])
+        self.assertIsNone(found)
+        self.assertIn("not a disk", why)
+        # The author is told what a round body needs, not to grow wings on a marble.
+        summary = check(quality, "model.silhouette")["summary"]
+        self.assertIn("not passed as a round body: the requirement names a marble", summary)
+        self.assertIn("keep it round", summary)
+        self.assertNotIn("wings", summary)
+
+    def test_bands_sunk_inside_the_shell_compose_nothing(self):
+        # The run's author tried this: two rings at half the radius, invisible in every
+        # render, under a shell that alone would be a placeholder.
+        sunk = [part("sphere", (1, 1, 1), (0, 0, 0)),
+                part("cylinder", (0.5, 0.2, 0.5), (0, 0, 0), "dark"),
+                part("cylinder", (0.5, 0.05, 0.5), (0, 0.1, 0), "dark")]
+        quality = self.judged(sunk, self.MARBLE_REQ)
+        self.assertEqual(check(quality, "model.silhouette")["status"], "fail")
+        self.assertIn("hidden inside", check(quality, "model.silhouette")["summary"])
+        data = glb_synth.build(sunk, MATS)
+        reaches = sorted(p["reach"] for p in model_quality.analyse(data)["pieces"])
+        self.assertLess(reaches[1], 0.9 * reaches[-1])
+
+    def test_a_plural_names_it_too(self):
+        req = dict(self.MARBLE_REQ, description="one of the marbles", readability="",
+                   spec="")
+        quality = self.judged(self.MARBLE, req)
+        self.assertEqual(check(quality, "model.silhouette")["status"], "pass")
+
+    def test_the_rule_is_the_reference_file(self):
+        rule = model_quality.load_bars()["round_body"]
+        self.assertEqual(rule["words"],
+                         ["ball", "marble", "sphere", "orb", "bubble", "globe", "planet"])
+        self.assertEqual((rule["min_fill"], rule["max_fill"], rule["max_aspect"],
+                          rule["min_parts"], rule["visible_reach"]), (0.62, 0.86, 1.18, 2, 0.9))
+        self.assertEqual(model_quality.DEFAULT_BARS["round_body"], rule)
+
+
 class ReferenceLibrary(unittest.TestCase):
     """The calibration: the 3D reference game's library - hand-iterated specs built by the
     pinned Blender, read from the pinned golden ports - passes for the roles it plays."""

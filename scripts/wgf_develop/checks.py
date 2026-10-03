@@ -18,10 +18,13 @@ import json
 import os
 import posixpath
 import re
+import shutil
+import tempfile
 
 from wgflib import agentenv
 from wgflib import template_contract as contract
-from wgflib.netguard import RefusingProxy, sandbox_env
+from wgflib.netguard import (RefusingProxy, guarded_playwright_config, sandbox_env,
+                             wraps_game_config)
 
 from .brief import (ENGINE_DIRS, GREYBOX_DEFERRABLE, PROTECTED_PATHS, REPORT_PATH,
                     REQUIRED_SYSTEMS,
@@ -484,15 +487,24 @@ def run_checks(root, brief, settings, runner, git, logger=None):
             # Code the developer wrote: an allowlisted environment, never the Factory's.
             env = agentenv.scrubbed(getattr(settings, "game_env_passthrough", ()))
             guard = RefusingProxy().start() if check_id in NETWORK_GUARDED else None
+            wrapper_dir, run_argv = None, argv
             if guard:
                 env.update(sandbox_env(guard.url))
+                if wraps_game_config():
+                    # Chromium here ignores the proxy variables: the suite runs on the game's
+                    # config, wrapped to hand the browser the proxy itself (wgflib.netguard).
+                    wrapper_dir = tempfile.mkdtemp(prefix="wgf-pw-")
+                    run_argv = [*argv, "-c", guarded_playwright_config(
+                        root, wrapper_dir, contract.PLAYWRIGHT_CONFIG)]
             try:
-                run = runner.run(argv, cwd=root, timeout=settings.check_timeout,
+                run = runner.run(run_argv, cwd=root, timeout=settings.check_timeout,
                                  env=ExactEnv(env))
             finally:
-                refused = guard.summary() if guard else None
+                refused = guard.summary(explicit=wrapper_dir is not None) if guard else None
                 if guard:
                     guard.stop()
+                if wrapper_dir:
+                    shutil.rmtree(wrapper_dir, ignore_errors=True)
             unavailable = _UNAVAILABLE.get(check_id)
             if not run.ok and unavailable and unavailable.search(run.output):
                 result = CheckResult(check_id, "skipped",

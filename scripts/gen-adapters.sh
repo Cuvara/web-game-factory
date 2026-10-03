@@ -210,7 +210,8 @@ EOF
 done
 
 # ------------------------------------------------------ workflow entry points
-# id|runs|summary|craft (semicolon-separated: the binding entry's `craft`)
+# id|runs|summary|craft (semicolon-separated: the binding entry's `craft`)|continues (the
+# binding entry's `continues`: groups continued inside a run, `<surface> <group> <run-id>`)
 #
 # Not transitions. An entry point starts or resumes a run of one core workflow through the
 # workflow engine (bin/wgf) and reports where it stands. It restates nothing the workflow
@@ -218,7 +219,7 @@ done
 # every decision is a person's, typed by that person. Only the host mechanics differ between
 # the two adapters; the procedure is one text, emitted by entry_body below.
 workflows=(
-"new-game|core/workflows/new-game.workflow.yaml|Run the Factory's new-game workflow end to end through the wgf engine; stop at every gate for a person.|core/craft/production-art-and-ui.md;core/craft/production-art-2d.md;core/craft/production-art-3d.md;core/craft/game-ui-kit.md;core/craft/juice.md;core/craft/production-wiring.md"
+"new-game|core/workflows/new-game.workflow.yaml|Run the Factory's new-game workflow end to end through the wgf engine; stop at every gate for a person.|core/craft/production-art-and-ui.md;core/craft/production-art-2d.md;core/craft/production-art-3d.md;core/craft/game-ui-kit.md;core/craft/juice.md;core/craft/production-wiring.md|publish"
 )
 
 # entry_body <id> <runs> <arguments> <background> <invoke> <preflight> <engine-note>
@@ -271,7 +272,7 @@ Accept exactly these (the engine's own flags, \`bin/wgf $id --help\` and
 - \`resume <run-id>\`, optionally with \`--from <STEP>\` and \`--store <DIR>\`: continues that
   run with the settings it started with - its idea among them, so an idea given with
   \`resume\` is refused
-
+$continues_md
 With \`--store <DIR>\`, pass the same \`--store <DIR>\` to every \`bin/wgf\` command for that
 run (status, logs, resume).
 
@@ -279,33 +280,45 @@ Refuse, and run nothing, if the arguments contain anything else — in particula
 \`--decision\`, \`--note\`, \`decide\`, \`--budget-sessions\`, \`--budget-cost\` or any other
 \`--budget-*\` (a decision or a budget is a person's, typed by that person), \`--config\` or
 \`--workflow\` (this surface runs this workflow under the configuration it reports),
-\`--resume\`, \`--run\` or \`--force\` (use \`resume <run-id>\`), \`--quiet\` or \`--json\`
+\`--resume\`, \`--run\` or \`--force\` (use \`resume <run-id>\`$continues_use), \`--quiet\` or \`--json\`
 (the surface sets the output), a second command, or more than one idea (two quoted texts;
 ask the user to give the idea as one quoted string).
 
 ## Procedure
 
-1. **Preflight.** $preflight For \`resume <run-id>\`, read
+1. **Preflight.** $preflight For \`resume <run-id>\`$continues_pre, read
    \`bin/wgf status <run-id> --json\` first and stop unless \`workflow_id\` is \`$id\`.
    Then act on it without starting anything when there is nothing to continue:
-   \`COMPLETED\` — report it (step 6); \`RUNNING\` with liveness \`running\` — another
+   \`COMPLETED\` — report it (step 6)$continues_completed; \`RUNNING\` with liveness \`running\` — another
    process drives it, only report progress; \`WAITING\` at a gate whose \`pending.timeout\`
-   is not \`eligible\` — report the gate (step 6) and stop. Anything else (a stopped,
-   blocked, stale or failed run, or one waiting for input) is resumed at step 4.
-2. **Report the effective autonomy** from \`where\`'s \`autonomy\`, as configured — never change
-   it: \`developer\`, \`reviewer\`, \`design_author\`, \`asset_author\`, \`model_author\`,
-   \`visualqa_judge\`, \`auto_approve\` (and \`timeout_auto_approve\`), \`init_source\`,
-   \`develop_budget\`. With \`--mock\` every step is a placeholder, and a mock
-   run approves the reversible gates itself unless \`--hold-gates\` is given; gates in
-   \`auto_approve\` are approved either way. An unattended run is the project's own choice
-   (\`profiles\` lists the shipped overlays, e.g. \`autonomous\`); never install one.
+   is not \`eligible\` — report the gate (step 6) and stop. \`FAILED\` or \`BLOCKED\` —
+   report it first as step 6 does, with why: \`blocked_reason\` and the logs of the step at
+   \`cursor\`, its last agent message among them. Resuming re-runs that step, and a
+   deterministic failure fails again: resume only when the user confirms, after that report,
+   with step 3's warning for any agent session it starts; otherwise stop. Anything else (a
+   stopped, cancelled or stale run, or one waiting for input) is resumed at step 4.
+2. **Report the effective autonomy** — never change it. For a new run, from \`where\`'s
+   \`autonomy\`, as configured: \`developer\`, \`reviewer\`, \`design_author\`,
+   \`asset_author\`, \`model_author\`, \`visualqa_judge\`, \`auto_approve\` (and
+   \`timeout_auto_approve\`), \`init_source\`, \`develop_budget\`. A run that already exists
+   keeps what it started with: \`auto_approve\`, \`timeout_auto_approve\` and
+   \`develop_budget\` are the run's \`params\` in \`bin/wgf status <run-id> --json\` (a key
+   that is absent there is none - no gate approves itself, no develop budget), never
+   \`where\`'s; the agents and \`init_source\` are read from the configuration when each step
+   runs, so those are \`where\`'s. When the two differ, say so: a configuration changed after
+   the run started does not change which of its gates approve themselves. With \`--mock\`
+   every step is a placeholder, and a mock run approves the reversible gates itself unless
+   \`--hold-gates\` is given; gates in \`auto_approve\` are approved either way - report the
+   gates that were approved, never the list as if it had happened. An unattended run is the
+   project's own choice (\`profiles\` lists the shipped overlays, e.g. \`autonomous\`); never
+   install one.
 3. **Outward effects.** For a new run without \`--mock\` (a mock run starts no session and
    creates nothing): with \`init_source\` \`github\`, warn that once G3 is passed the init
    step creates a GitHub repository (\`gh repo create\`); with a \`command\` developer,
    reviewer, asset or model author or visual-QA judge (or an \`agent\` design author), say
    that agent sessions will run unattended and cost money, within \`develop_budget\` when
    one is set (the budget bounds the developer; each other agent has its own per-call cap). Either way, start that run only after the user
-   confirms. A \`--mock\` run, or a run with neither, starts without asking.
+   confirms. A \`--mock\` run, or a run with neither, starts without asking.$continues_effects
 4. **Start** $background
 
    - new run: \`bin/wgf $id <flags> --json\`, or with an idea
@@ -315,7 +328,7 @@ ask the user to give the idea as one quoted string).
      the idea as the engine recorded it: \`params.idea\` in \`WORKFLOW_STARTED\`, whitespace
      runs collapsed and nothing else changed - or that there is none.
    - resume: \`bin/wgf resume <run-id> [--from <STEP>] [--store <DIR>] --json\`
-
+$continues_start
    $engine_note
    Read \`run_id\` from the first event, \`WORKFLOW_STARTED\` (on resume, \`WORKFLOW_RESUMED\`),
    and tell the user.
@@ -345,9 +358,8 @@ ask the user to give the idea as one quoted string).
      concept to \`workspace/research/concepts.yaml\`. Then resume the run (step 4) and
      continue. Evidence is fetched, never written: if nothing relevant can be fetched, report
      that and stop. Never edit \`.factory/\` or an artifact, and never relax a setting.
-7. **Result.** Run id, final status, artifacts, and what comes next. The workflow ends at a
-   drafted release; G5 and G6 — building, packaging and publishing — are not part of it and
-   belong to the game repository's CI.
+7. **Result.** Run id, final status, artifacts, and what comes next. \`bin/wgf $id\` ends
+   at a drafted release (a \`--mock\` run stops earlier, at G4).${continues_next//@INVOKE@/$invoke}
 
 ## The gate rule
 
@@ -359,7 +371,16 @@ decision and drives the run on, in the user's own shell, to its next stop — an
 next stop can be hours away. \`$invoke resume <run-id>\` afterwards reports where it
 stopped, and continues it if that shell was interrupted.
 
-- at a gate: \`! bin/wgf decide <run-id> <choice> --note "..."\`, then \`$invoke resume <run-id>\`
+- at a gate: one complete line per choice in \`pending.choices\`, the run id and the choice
+  filled in - never \`<run-id>\`, \`<choice>\` or \`a|b\`, which the shell reads as
+  redirections and pipes - and a note for the user to replace with their own reason, which
+  is the decision record's only reason. At G4 of run \`new-game-20261003-085640-5dc4c9\`:
+
+  - \`! bin/wgf decide new-game-20261003-085640-5dc4c9 pass --note "replace: why it passes"\`
+  - \`! bin/wgf decide new-game-20261003-085640-5dc4c9 iterate --note "replace: what to change"\`
+  - \`! bin/wgf decide new-game-20261003-085640-5dc4c9 kill --note "replace: which criterion"\`
+
+  Say that the note must be replaced before the line is run, then \`$invoke resume <run-id>\`
 - at \`develop\` with \`factory.develop.developer.kind: handoff\` (\`pending\` names no gate):
   report the step, its message and the brief path it gives; the developer finishes the work
   and runs \`! bin/wgf resume <run-id> --decision done\`, then \`$invoke resume <run-id>\`.
@@ -371,17 +392,57 @@ EOF
 }
 
 for row in "${workflows[@]}"; do
-  IFS='|' read -r id runs summary craft <<< "$row"
+  IFS='|' read -r id runs summary craft continues <<< "$row"
   craft_md=""
   IFS=';' read -ra arr <<< "$craft"
   for p in "${arr[@]}"; do craft_md+="- \`$p\`"$'\n'; done
+  # The groups this surface continues inside a run (`<surface> <group> <run-id>` =
+  # `wgf <group> --run <run-id>`). Only `publish` exists; its text is the publication rule.
+  continues_md="" continues_use="" continues_pre="" continues_completed=""
+  continues_effects="" continues_start="" continues_next=""
+  hint_continues="" allow_continues=()
+  IFS=';' read -ra arr <<< "$continues"
+  for g in "${arr[@]}"; do
+    [ "$g" = publish ] || { echo "gen-adapters.sh: no surface text for group '$g'" >&2; exit 1; }
+    continues_md+="- \`$g <run-id>\`, optionally with \`--store <DIR>\`: continues a run that
+  drafted a release into the workflow's \`$g\` group (\`bin/wgf $g --run <run-id>\`),
+  with the settings that run started with
+"
+    continues_use+=" or \`$g <run-id>\`"
+    continues_pre+=" and \`$g <run-id>\`"
+    continues_completed+=" - for \`$g <run-id>\`, a run that drafted a release is
+   continued (step 4) rather than reported: its \`$g\` group has not run yet"
+    continues_effects+="
+   For \`$g <run-id>\`, say before starting that nothing reaches a portal until a person
+   decides G6, and that a portal submission after it is a dry run unless the installation
+   set \`factory.publish.mode: live\` and \`WGF_PUBLISH_LIVE=1\` - never set either. It
+   starts without asking."
+    continues_start+="   - $g: \`bin/wgf $g --run <run-id> [--store <DIR>] --json\`
+"
+    continues_next+=" Publication is the workflow's \`$g\` group, in the same run:
+   \`@INVOKE@ $g <run-id>\` (\`bin/wgf $g --run <run-id>\`) validates the release per
+   platform and stops at G5 and then G6, each a person's decision; the portal submission
+   follows only a G6 \`publish\` and is a dry run unless the installation made it live."
+    hint_continues+=" | $g <run-id>"
+    allow_continues+=("$g")
+  done
+  # Claude Code pre-approves these engine calls for this surface, so a host in a restrictive
+  # permission mode lets it read its own run. Starting and continuing a run are here because
+  # the surface asks the user first where they cost money (step 3); `decide` is never listed.
+  allowed="allowed-tools:"
+  for py in python3 python; do
+    for sub in where status logs "$id" resume "${allow_continues[@]}"; do
+      allowed+=$'\n'"  - Bash($py \"\${CLAUDE_PLUGIN_ROOT}/runtime/scripts/wgf.py\" $sub *)"
+    done
+  done
 
   {
     cat <<EOF
 ---
 description: $summary
-argument-hint: "[--mock [--mock-plan JSON] [--hold-gates]] [--project ID] [--from STEP] [--store DIR] [\"<game idea>\"] | resume <run-id> [--from STEP]"
+argument-hint: "[--mock [--mock-plan JSON] [--hold-gates]] [--project ID] [--from STEP] [--store DIR] [\"<game idea>\"] | resume <run-id> [--from STEP]$hint_continues"
 disable-model-invocation: true
+$allowed
 ---
 
 # /$id

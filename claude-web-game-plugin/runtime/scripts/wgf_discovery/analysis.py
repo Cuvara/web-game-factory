@@ -19,7 +19,13 @@ The discipline, mechanised:
 With a brief - the game idea a person started the run with - candidates are ranked by how
 well they match it before anything else (`idea_match`): first how many of its words the
 archetype's own vocabulary holds - the genre and mechanic are the game - then the dimension
-it names ("3D"), which design can still adapt. The screen itself is unchanged. A selection
+it names ("3D"), which design can still adapt. A shared word is not yet a match. Words that
+describe any game's progression, presentation, input or engine ("collect", "stars",
+"levels", "touch", "Three.js") are not the brief's words at all (`_IDEA_STOP`). Of the rest,
+the archetype's defining vocabulary - genre, subgenre, title, market tags, a concept's brief -
+matches on one word; its mechanic sentence only describes it, and matches on at least
+`IDEA_MIN_DESCRIPTIVE` words. One incidental verb shared with a mechanic sentence ("collect
+gems" against "collect pickups") is how a marble-roll brief once selected an endless runner. The screen itself is unchanged. A selection
 that holds none of the brief's words, or renders in another dimension than it names, says so
 as an `idea-unmatched` gap instead of pretending to fit. When no eligible candidate holds any
 of its words, `idea_fallback="wait"` selects nothing and names the nearest shape only as
@@ -37,8 +43,8 @@ import re
 
 from wgflib import criteria, genre_models
 
-__all__ = ["ClaimBook", "analyse", "claim_id", "idea_match", "idea_terms", "idea_dimension",
-           "genre_families"]
+__all__ = ["ClaimBook", "analyse", "archetype_vocabulary", "brief_terms", "claim_id",
+           "genre_families", "idea_match", "idea_terms", "idea_dimension", "words_of"]
 
 CONFIDENCE_OBSERVED = 0.85
 CONFIDENCE_STALE = 0.6
@@ -62,15 +68,28 @@ PLATFORM_FACTS = ("ads.rewarded", "ads.interstitial", "ads.banner", "iap", "max_
 
 _IDEA_WORD = re.compile(r"[a-z0-9][a-z0-9-]*")
 # Words that describe any game, or no game: they match nothing, whatever the catalog says.
-# Counts are here on purpose: "three weapons" and "three in a row" share only a number, and a
-# tycoon idea once selected a match-3 shape because both said "three".
+# The second block is counts, here on purpose: "three weapons" and "three in a row" share only
+# a number, and a tycoon idea once selected a match-3 shape because both said "three". The
+# third is generic gameplay vocabulary - progression, scoring, presentation, input and the
+# engine - which a brief of any genre may use and no genre is defined by.
 _IDEA_STOP = frozenset("""
     a an and are as at be by for from game games has have in into is it its of on or
     player players play plays playing the their them then there they this to where which
     while who with without you your web browser mobile simple casual fun new
+
     one two three four five six seven eight nine ten eleven twelve twenty thirty fifty
     hundred first second third several many few more most each every per
+
+    collect collects collecting beat beats time times timer star stars score scores points
+    best bests personal level levels stage stages world worlds mode modes unlock unlocks
+    unlocked unlockable progress progression save saves saved theme themed hand-designed
+    designed reward rewards win wins lose music sound sounds audio controls control keys
+    keyboard mouse touch tap click desktop camera three js threejs three-js pixi pixijs
+    phaser phaserjs webgl html5
 """.split())
+# A brief matches on one word of an archetype's defining vocabulary, or on at least this many
+# words of the prose that only describes it (a mechanic sentence, a cell's facet labels).
+IDEA_MIN_DESCRIPTIVE = 2
 _DIMENSION_WORDS = {"3d": "3d", "three-dimensional": "3d", "2d": "2d", "two-dimensional": "2d"}
 
 
@@ -100,34 +119,50 @@ def idea_dimension(idea):
     return named.pop() if len(named) == 1 else None
 
 
-def _vocabulary(archetype):
+def words_of(texts):
+    """Every word of `texts`, lowercased, each hyphenated word also split into its parts."""
     words = set()
-    # `brief` only exists on a concept authored for one: it matches the brief it was written for.
-    # A genre-model entry is also the shape of its whole family: the family label and the genre
-    # nodes the family covers name the same game ("tower defense", "tycoon", "platformer"), so a
-    # brief that uses those words finds the entry that builds them. A node id matches whole and
-    # is never split into parts - a block puzzle is not a bubble-shooter and not a physics-puzzle.
-    values = ([archetype.get("genre"), archetype.get("subgenre"), archetype.get("title"),
-               archetype.get("core_mechanic"), archetype.get("brief"),
-               archetype.get("genre_node")]
-              + list(archetype.get("market_tags") or []))
-    family = genre_families().get(archetype.get("genre_model"))
-    if family:
-        values.append(family.get("label"))
-        words.update(str(node).lower() for node in family.get("nodes") or [])
-    for value in values:
+    for value in texts:
         for word in _IDEA_WORD.findall(str(value or "").lower()):
             words.add(word)
             words.update(part for part in word.split("-") if part)
     return words
 
 
+def archetype_vocabulary(archetype):
+    """(defining, descriptive) words of a catalog archetype or concept: what names the game,
+    and the mechanic sentence that describes it."""
+    # `brief` only exists on a concept authored for one: it matches the brief it was written for.
+    # A genre-model entry is also the shape of its whole family: the family label and the genre
+    # nodes the family covers name the same game ("tower defense", "tycoon", "platformer"), so a
+    # brief that uses those words finds the entry that builds them - all of it defining. A node
+    # id matches whole and is never split into parts - a block puzzle is not a bubble-shooter
+    # and not a physics-puzzle.
+    values = [archetype.get("genre"), archetype.get("subgenre"), archetype.get("title"),
+              archetype.get("brief"), archetype.get("genre_node")]
+    values += list(archetype.get("market_tags") or [])
+    nodes = set()
+    family = genre_families().get(archetype.get("genre_model"))
+    if family:
+        values.append(family.get("label"))
+        nodes = {str(node).lower() for node in family.get("nodes") or []}
+    return words_of(values) | nodes, words_of([archetype.get("core_mechanic")])
+
+
+def brief_terms(idea, defining, descriptive):
+    """The brief's words that match: every one the vocabulary holds when one of them is
+    defining or at least IDEA_MIN_DESCRIPTIVE are descriptive; otherwise none."""
+    terms = [t for t in idea_terms(idea) if t in defining or t in descriptive]
+    if any(t in defining for t in terms) or len(terms) >= IDEA_MIN_DESCRIPTIVE:
+        return terms
+    return []
+
+
 def idea_match(archetype, idea):
-    """{"terms": the brief's words the archetype's vocabulary holds, "dimension": whether its
-    rendering is the dimension the brief names (False when it names none)}."""
-    vocabulary = _vocabulary(archetype)
+    """{"terms": the brief's words that match the archetype (brief_terms), "dimension":
+    whether its rendering is the dimension the brief names (False when it names none)}."""
     dimension = idea_dimension(idea)
-    return {"terms": [t for t in idea_terms(idea) if t in vocabulary],
+    return {"terms": brief_terms(idea, *archetype_vocabulary(archetype)),
             "dimension": dimension is not None
             and (archetype.get("rendering") or "2d") == dimension}
 

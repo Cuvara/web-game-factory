@@ -56,7 +56,9 @@ checkout itself.
 1. Clones the checkout at the reported commit, detached.
 2. Runs `pnpm install --frozen-lockfile --prefer-offline` and `pnpm build`. Every process
    goes through `wgflib.procs`. The game's environment is scrubbed (`wgflib.agentenv`) and
-   network access is refused outside localhost.
+   network access is refused outside localhost: the refusing proxy (`wgflib.netguard`) is
+   set in the environment and handed to the browser as Playwright's `proxy` by the bot's
+   generated config, since Chromium ignores the environment off Linux.
 3. Runs `bot.spec.ts` with the repository's own Playwright against `pnpm preview`. Two
    projects: desktop (1280×720) and mobile (Pixel 5, touch). Each test is a fresh browser
    context, so each one starts as a first session.
@@ -155,7 +157,7 @@ reads these from `records_dir`:
 |---|---|
 | `probe.present` | `snapshot()` answers. Without it nothing else is judged |
 | `probe.valid` | snapshots match the schema and carry the contract's goal, win and lose metrics; with authored content, every playing snapshot reports `content` and its `unit_id` is one of the design's |
-| `start.playable` | play begins within `first_30s.playable_s` |
+| `start.playable` | play begins within `first_30s.playable_s` of navigation, less the time the bot itself spent measuring the title screen (settling, styles, a frame; recorded as `observerMs` beside the wall-clock `playingMs`) |
 | `start.objective` | ≥ 60 % of the objective statement's content words are on screen in the first 3 s of play |
 | `idle.grace` | no loss during the idle window |
 | `act.acknowledged` | every action changes ≥ `min_changed_fraction` of the frame by ≥ `min_pixel_delta` luminance; each is measured in play (a pause goes last, and the bot resumes through the game's own resume input before the next action) |

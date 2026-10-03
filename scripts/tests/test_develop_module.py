@@ -90,11 +90,22 @@ class Log:
         return lambda message, **fields: self.lines.append((level, message, fields))
 
 
-def context(config, key="run-1:develop:1", visit=1, attempt=1, decision=None):
-    return SimpleNamespace(config=config, params={}, idempotency_key=key, visit=visit,
-                           attempt=attempt, execution=visit, decision=decision,
-                           logger=Log(), previous_outputs=[], run_id=key.split(":")[0],
-                           mock=False, environment={})
+# A command developer is never started without a run budget (budget.py, F26): the unit
+# context carries one, and its event log is what its logger recorded.
+TEST_BUDGET = {"develop_budget": {"max_sessions": 100}}
+
+
+def context(config, key="run-1:develop:1", visit=1, attempt=1, decision=None,
+            environment=None):
+    ctx = SimpleNamespace(config=config, params={}, idempotency_key=key, visit=visit,
+                          attempt=attempt, execution=visit, decision=decision,
+                          logger=Log(), previous_outputs=[], run_id=key.split(":")[0],
+                          mock=False,
+                          environment=dict(TEST_BUDGET if environment is None
+                                           else environment))
+    ctx.read_events = lambda: [{"event": "STEP_LOG", "data": fields}
+                               for _level, _message, fields in ctx.logger.lines]
+    return ctx
 
 
 # -- a conformant game, as a developer would leave it -----------------------------------------
@@ -1368,7 +1379,10 @@ class Command(DevelopCase):
             self.assertEqual(result.outcome, StepOutcome.BLOCKED)
             self.assertIn("could not be recorded in the run's event log", result.message)
         else:
-            self.assertEqual(result.outcome, StepOutcome.SUCCESS, result.error)
+            # Without a budget the brief is still written, and no command developer is
+            # started for it (Budget.missing).
+            self.assertEqual(result.outcome, StepOutcome.BLOCKED)
+            self.assertIn("no developer-session budget", result.message)
         with open(os.path.join(self.repo, briefs.BRIEF_DIR, "brief.json")) as handle:
             data = json.load(handle)
         with open(os.path.join(self.repo, briefs.BRIEF_DIR, "brief.md")) as handle:
@@ -1513,8 +1527,9 @@ class Command(DevelopCase):
         # mobile suite three sessions running (a production build's first frame missed its
         # wait under load) and passed it whole at one worker. The count is the machine's.
         runner = FakeRunner(on_develop=write_game)
-        result = step_with(runner).execute(
-            inputs_for(), context(self.command_config(smoke_workers=2)))
+        with mock_env.patch("wgf_develop.checks.wraps_game_config", return_value=False):
+            result = step_with(runner).execute(
+                inputs_for(), context(self.command_config(smoke_workers=2)))
         self.assertEqual(result.outcome, StepOutcome.SUCCESS, result.error)
         smoke = [c for c in runner.calls if c[:3] == ["pnpm", "run", "test:e2e"]]
         self.assertEqual(smoke, [["pnpm", "run", "test:e2e", "--workers=2"]])
@@ -1525,6 +1540,42 @@ class Command(DevelopCase):
                 inputs_for(), context(self.command_config(smoke_workers=bad)))
             self.assertEqual((result.outcome, result.retryable), (StepOutcome.FAILED, False))
             self.assertIn("smoke_workers", result.error)
+
+    def test_where_chromium_ignores_the_proxy_variables_the_suite_runs_on_a_wrapped_config(self):
+        # val-3d, 2026-10-03: on Windows the smoke check's refusing proxy was set as
+        # environment variables Chromium never reads, and a Poki build's real SDK pulled
+        # http://imasdk.googleapis.com/... into the template's "no insecure requests" test.
+        # There the suite runs with -c on a wrapper outside the checkout that hands the
+        # browser the proxy itself; the game's own config is not touched.
+        seen = {}
+
+        class Wrapped(FakeRunner):
+            def run(self, argv, cwd, timeout=None, env=None):
+                if argv[:3] == ["pnpm", "run", "test:e2e"]:
+                    seen["argv"] = list(argv)
+                    seen["env"] = dict(env or {})
+                    wrapper = argv[argv.index("-c") + 1]
+                    seen["existed"] = os.path.isfile(wrapper)
+                    with open(wrapper, encoding="utf-8") as handle:
+                        seen["text"] = handle.read()
+                return super().run(argv, cwd, timeout, env)
+
+        runner = Wrapped(on_develop=write_game)
+        with mock_env.patch("wgf_develop.checks.wraps_game_config", return_value=True):
+            result = step_with(runner).execute(
+                inputs_for(), context(self.command_config(smoke_workers=1)))
+        self.assertEqual(result.outcome, StepOutcome.SUCCESS, result.error)
+        argv = seen["argv"]
+        self.assertEqual(argv[:5], ["pnpm", "run", "test:e2e", "--workers=1", "-c"])
+        wrapper = argv[5]
+        self.assertTrue(seen["existed"])
+        self.assertFalse(os.path.exists(wrapper))          # removed after the run
+        self.assertFalse(os.path.abspath(wrapper).startswith(os.path.abspath(self.repo)))
+        self.assertIn("playwright.config.ts", seen["text"])
+        self.assertTrue(seen["env"]["WGF_BROWSER_PROXY"].startswith("http://127.0.0.1:"))
+        with open(os.path.join(self.repo, briefs.BRIEF_DIR, "checks.json")) as handle:
+            smoke = next(c for c in json.load(handle)["checks"] if c["id"] == "smoke")
+        self.assertEqual(smoke["summary"], "pnpm run test:e2e --workers=1")  # no scratch path
 
     def test_no_browser_skips_the_smoke_suite_and_says_so(self):
         runner = FakeRunner(unavailable={"test:e2e"}, on_develop=write_game)
@@ -2140,7 +2191,8 @@ class ThroughTheEngine(unittest.TestCase):
             "storage": {"fsync": False}, "checkpoints": {"auto_approve": ["G2", "G3"]},
             "develop": {"checkouts": os.path.join(self.scratch, "checkouts"),
                         "author": AUTHOR,
-                        "developer": {"kind": "command", "argv": ["agent", "{brief}"]}},
+                        "developer": {"kind": "command", "argv": ["agent", "{brief}"]},
+                        "budget": {"max_sessions": 100}},
             "review": {"guarded_paths": [os.path.join(self.scratch, "factory")]},
         })
         return API(config=config, store_dir=os.path.join(self.scratch, "store")), runner
@@ -2259,14 +2311,76 @@ class DevelopBudget(unittest.TestCase):
         return [e["data"] for e in api.store.read_events(run_id)
                 if e["event"] == "STEP_LOG" and (e.get("data") or {}).get("budget") == kind]
 
-    def test_no_budget_changes_nothing(self):
+    def test_a_command_developer_is_never_started_without_a_budget(self):
+        # F26: a run with no budget at all ran an unattended paid developer unbounded.
         api, runner = self.api()
         state = api.run(RunRequest(project_id=TITLE))
-        self.assertEqual(state.cursor, "prototype-review", state.message)
+        self.assertEqual((state.status, state.cursor), (RunStatus.BLOCKED, "greybox"))
         self.assertNotIn("develop_budget", state.params)
-        # Sessions are still recorded, for the record - the greybox's and develop's; nothing
-        # is enforced.
-        self.assertEqual(len(self.budget_events(api, state.run_id, "developer-session")), 2)
+        message = state.steps["greybox"].message
+        self.assertIn("no developer-session budget", message)
+        self.assertIn("factory.develop.budget", message)
+        self.assertIn(f"wgf resume {state.run_id}", message)
+        self.assertEqual(runner.developer_calls(), [])
+        self.assertEqual(self.budget_events(api, state.run_id, "developer-session"), [])
+
+    def adopted(self, api, run_id):
+        return [e for e in api.store.read_events(run_id) if e["event"] == "BUDGET_ADOPTED"]
+
+    def test_a_run_started_without_a_budget_adopts_the_one_configured_by_its_resume(self):
+        # The F26 path: started under the shipped config (no budget), the project then
+        # configures one (the autonomous profile copied in), and a person resumes.
+        api, runner = self.api(runner=FakeRunner(develop_exit=1))
+        state = api.run(RunRequest(project_id=TITLE))
+        self.assertEqual(state.status, RunStatus.BLOCKED)
+        api, _ = self.api({"max_sessions": 2}, runner)
+        state = api.run(RunRequest(resume=state.run_id, decided_by="human"))
+        self.assertEqual((state.status, state.cursor), (RunStatus.BLOCKED, "greybox"))
+        self.assertIn("budget exhausted: 2 developer sessions used of 2",
+                      state.steps["greybox"].message)
+        self.assertEqual(len(runner.developer_calls()), 2)
+        adopted = self.adopted(api, state.run_id)
+        self.assertEqual([(e["data"]["budget"], e["data"]["decided_by"]) for e in adopted],
+                         [({"max_sessions": 2}, "human")])
+        # Recorded as the person's act, never as an edit of the run's params.
+        self.assertNotIn("develop_budget", state.params)
+        # Adopted once: a later config does not replace it - a person raises it instead.
+        api, _ = self.api({"max_sessions": 40}, runner)
+        state = api.run(RunRequest(resume=state.run_id, decided_by="human"))
+        self.assertIn("used of 2", state.steps["greybox"].message)
+        self.assertEqual(len(self.adopted(api, state.run_id)), 1)
+        self.assertEqual(len(runner.developer_calls()), 2)
+        state = api.run(RunRequest(resume=state.run_id, decided_by="human", budget_sessions=3))
+        self.assertEqual(len(runner.developer_calls()), 3)
+        self.assertIn("used of 3", state.steps["greybox"].message)
+
+    def test_a_budget_is_adopted_and_raised_in_one_resume(self):
+        api, runner = self.api(runner=FakeRunner(develop_exit=1))
+        state = api.run(RunRequest(project_id=TITLE))
+        api, _ = self.api({"max_sessions": 1}, runner)
+        state = api.run(RunRequest(resume=state.run_id, decided_by="human", budget_sessions=2))
+        self.assertEqual(len(runner.developer_calls()), 2)
+        self.assertIn("used of 2", state.steps["greybox"].message)
+
+    def test_a_run_with_its_own_budget_adopts_nothing(self):
+        api, runner = self.api({"max_sessions": 1}, FakeRunner(develop_exit=1))
+        state = api.run(RunRequest(project_id=TITLE))
+        api, _ = self.api({"max_sessions": 30}, runner)
+        state = api.run(RunRequest(resume=state.run_id, decided_by="human"))
+        self.assertEqual(self.adopted(api, state.run_id), [])
+        self.assertIn("used of 1", state.steps["greybox"].message)
+        self.assertEqual(len(runner.developer_calls()), 1)
+
+    def test_a_resume_from_inside_a_step_adopts_no_budget(self):
+        api, runner = self.api()
+        state = api.run(RunRequest(project_id=TITLE))
+        api, _ = self.api({"max_sessions": 5}, runner)
+        with mock_env.patch.dict(os.environ, {"WGF_PROC_TAG": "a-step-child"}):
+            state = api.run(RunRequest(resume=state.run_id))
+        self.assertEqual(self.adopted(api, state.run_id), [])
+        self.assertIn("no developer-session budget", state.steps["greybox"].message)
+        self.assertEqual(runner.developer_calls(), [])
+
 
     def test_blocked_at_the_limit_without_spawning_and_counted_across_a_resume(self):
         # The run's first developer sessions are the greybox's: two failures spend it.
@@ -2400,8 +2514,12 @@ class DevelopBudget(unittest.TestCase):
     def test_a_raise_needs_a_budget_to_raise(self):
         api, _ = self.api(None, FakeRunner(develop_exit=1))
         state = api.run(RunRequest(project_id=TITLE))
-        with self.assertRaisesRegex(Exception, "nothing to raise"):
+        with self.assertRaisesRegex(Exception, "has no budget .factory.develop.budget."):
             api.run(RunRequest(resume=state.run_id, decided_by="human", budget_sessions=5))
+        api, _ = self.api({"max_sessions": 3}, FakeRunner(develop_exit=1))
+        state = api.run(RunRequest(project_id=TITLE))
+        with self.assertRaisesRegex(Exception, "nothing to raise"):
+            api.run(RunRequest(resume=state.run_id, decided_by="human", budget_cost=5))
 
     def test_cost_is_summed_from_the_transcripts_and_blocks_at_the_limit(self):
         runner = CostRunner(costs=[6, 6, 6], develop_exit=1)
@@ -3012,6 +3130,145 @@ class GameDesignDocumentContent(unittest.TestCase):
         self.assertIn("### Depth (reason to return)", text)
         self.assertIn("unlock the next island", text)
         self.assertIn(f"Later tiers: {LATER_UNIT}", text)
+
+def _shipped_developer():
+    from wgflib.yamllite import load_file
+    root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    profile = load_file(os.path.join(root, "workspace", "config", "profiles",
+                                     "autonomous.yaml"))
+    return profile["factory"]["develop"]["developer"]
+
+
+def stream_line(event):
+    return "[stdout] " + json.dumps(event) + "\n"
+
+
+def tool_call(call_id, name, **args):
+    return stream_line({"type": "assistant", "message": {"content": [
+        {"type": "tool_use", "id": call_id, "name": name, "input": args}]}})
+
+
+def tool_result(call_id, text, error=False):
+    return stream_line({"type": "user", "message": {"content": [
+        {"type": "tool_result", "tool_use_id": call_id, "content": text,
+         "is_error": error}]}})
+
+
+DENIED = ("Permission to use Bash has been denied because Claude Code is running in don't "
+          "ask mode.")
+
+
+class TranscriptRunner(FakeRunner):
+    """A command developer that leaves a stream-json transcript, as the host does."""
+
+    def __init__(self, lines, **kwargs):
+        super().__init__(**kwargs)
+        self.lines = lines
+
+    def run(self, argv, cwd, timeout=None, env=None, log_path=None):
+        if argv[0] not in ("git", "pnpm") and log_path:
+            with open(log_path, "a", encoding="utf-8") as handle:
+                handle.write(stream_line({"type": "system", "subtype": "init",
+                                          "message": "a string, not an object"}))
+                handle.writelines(self.lines)
+        return super().run(argv, cwd, timeout, env)
+
+
+class ShellContract(DevelopCase):
+    """The live runs of 2026-10-03: unattended developers were refused compound commands,
+    `sed -i`, `python3` and `netstat`, then stopped asking for a shell - an attempt lost
+    each time. The brief states the shell the argv grants; a session that gave up says so."""
+
+    def test_the_contract_is_read_from_the_shipped_argv(self):
+        shell = briefs.shell_contract(_shipped_developer())
+        for rule in ("pnpm *", "node *", "git status *", "git diff *", "tail *",
+                     "git clean -f -- tests/*"):
+            self.assertIn(rule, shell["allowed"])
+        for rule in ("git commit *", "git push *", "git reset *", "git checkout *"):
+            self.assertIn(rule, shell["denied"])
+        for never in ("cat *", "sed *", "python3 *", "rm *", "curl *", "git -C *"):
+            self.assertNotIn(never, shell["allowed"])
+        self.assertIsNone(briefs.shell_contract({"kind": "handoff", "argv": []}))
+        self.assertEqual(briefs.shell_contract({"kind": "command", "argv": [
+            "agent", "--allowedTools=Read,Bash(pnpm *)", "--disallowedTools", "Bash(git x *)",
+            "Bash(git y *)", "-p", "{prompt}"]}),
+            {"allowed": ["pnpm *"], "denied": ["git x *", "git y *"]})
+
+    def rendered(self, developer):
+        config = self.config(developer=developer)
+        step_with(FakeRunner(on_develop=write_game)).execute(inputs_for(), context(config))
+        with open(os.path.join(self.repo, briefs.BRIEF_DIR, "brief.md"),
+                  encoding="utf-8") as handle:
+            return handle.read()
+
+    def test_a_command_developers_brief_states_the_shell_contract(self):
+        text = self.rendered(_shipped_developer())
+        section = text[text.index("## Your shell"):text.index("## See your build")]
+        for needle in ("**A refused command is never a reason to stop.**",
+                       "**One command per Bash call.**", "`&&`", "never `cd`",
+                       "`pnpm *`", "`node *`", "`git commit *`", "`sed`", "`netstat`",
+                       "`git clean -f -- <path>`", "`tests/scratch-*`",
+                       "The Factory runs the checks after you, and commits.",
+                       "still write the report"):
+            self.assertIn(needle, section)
+        yours = text[text.index("## Which files are yours"):]
+        self.assertIn("Scratch files are `tests/scratch-*` only.", yours)
+        self.assertNotIn("Write scratch scripts under /tmp", text)
+
+    def test_a_handoff_brief_has_no_shell_section(self):
+        text = self.rendered({"kind": "handoff", "argv": []})
+        self.assertNotIn("## Your shell", text)
+        self.assertIn("`$TMPDIR`", text)
+
+    def run_session(self, lines, on_develop=None):
+        ctx = context(self.command_config())
+        ctx.run_dir = os.path.join(self.scratch, "run")
+        ctx.current_step = "greybox"
+        runner = TranscriptRunner(lines, on_develop=on_develop)
+        return step_with(runner).execute(inputs_for(), ctx), runner
+
+    def test_a_session_that_quit_after_a_refusal_fails_with_that_cause(self):
+        result, runner = self.run_session([
+            tool_call("t1", "Read", file_path="docs/development/brief.md"),
+            tool_result("t1", "# Development brief"),
+            tool_call("t2", "Bash", command="git status --short && netstat -ano"),
+            tool_result("t2", DENIED, error=True),
+        ])
+        self.assertEqual((result.outcome, result.retryable), (StepOutcome.FAILED, True))
+        self.assertIn("stopped after 1 refused tool call(s) without changing a file",
+                      result.error)
+        self.assertIn("`git status --short && netstat -ano`", result.error)
+        self.assertEqual([c for c in runner.calls if c[0] == "pnpm"], [])  # no checks blamed
+        with open(os.path.join(self.repo, briefs.BRIEF_DIR, "checks.json"),
+                  encoding="utf-8") as handle:
+            recorded = json.load(handle)["checks"]
+        self.assertIn("never a reason to stop", recorded[0]["summary"])
+
+    def test_a_session_that_was_refused_and_carried_on_is_not_a_stall(self):
+        result, _ = self.run_session([
+            tool_call("t1", "Bash", command="pnpm lint | sed -n 1,5p"),
+            tool_result("t1", DENIED, error=True),
+            tool_call("t2", "Write", file_path="src/game/app.ts", content="x"),
+            tool_result("t2", "File created successfully"),
+        ], on_develop=write_game)
+        self.assertEqual(result.outcome, StepOutcome.SUCCESS, result.error)
+
+    def test_the_stall_reader_ignores_what_it_cannot_parse(self):
+        from wgf_develop.developers import permission_stall
+        self.assertEqual(permission_stall(None), ([], False))
+        self.assertEqual(permission_stall(os.path.join(self.scratch, "absent.log")),
+                         ([], False))
+        path = os.path.join(self.scratch, "t.log")
+        with open(path, "w", encoding="utf-8") as handle:
+            handle.write("plain text\n[stdout] {not json\n")
+            handle.write(tool_call("e", "Edit", file_path="src/a.ts"))
+            handle.write(tool_result("e", DENIED.replace("Bash", "Edit"), error=True))
+        self.assertEqual(permission_stall(path), (["src/a.ts"], False))
+        size = os.path.getsize(path)
+        with open(path, "a", encoding="utf-8") as handle:
+            handle.write(tool_call("w", "Write", file_path="src/b.ts"))
+            handle.write(tool_result("w", "ok"))
+        self.assertEqual(permission_stall(path, size), ([], True))
 
 
 if __name__ == "__main__":

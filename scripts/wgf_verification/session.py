@@ -8,10 +8,13 @@ bundle checks without a build) can say so instead of producing noise.
 import hashlib
 import json
 import os
+import shutil
+import tempfile
 
 from wgflib import checkout, paths
 from wgflib import template_contract as contract
-from wgflib.netguard import RefusingProxy, sandbox_env
+from wgflib.netguard import (RefusingProxy, guarded_playwright_config, sandbox_env,
+                             wraps_game_config)
 from wgflib.yamllite import YamlError, load_file
 
 from wgf_init.profiles import pin_identity
@@ -240,17 +243,34 @@ class VerificationSession:
         the runtime-facts run) goes through a proxy that refuses every non-local request
         (wgflib.netguard): a portal build would otherwise load the portal's real SDK from its
         CDN, and a verdict - "no insecure requests", time to interactive - would measure the
-        portal's CDN rather than the game. Refused requests are logged."""
+        portal's CDN rather than the game. Refused requests are logged.
+
+        Every browser command is a script running the game's own Playwright config. Where
+        Chromium ignores the proxy variables (wgflib.netguard.wraps_game_config) it runs with
+        `-c` on a wrapper of that config handing the browser the proxy itself."""
         if self.logger:
             self.logger.info("verification command", command=" ".join(command))
         guard = RefusingProxy().start() if timeout_key == "browser" else None
+        wrapper_dir, plain = None, list(command)
+        if guard and wraps_game_config():
+            wrapper_dir = tempfile.mkdtemp(prefix="wgf-pw-")
+            wrapper = guarded_playwright_config(self.root, wrapper_dir, contract.PLAYWRIGHT_CONFIG)
+            separator = ["--"] if self.package_manager == "npm" and "--" not in command else []
+            command = [*command, *separator, "-c", wrapper]
         try:
-            return self.runner.run(command, cwd=self.root, timeout=self.timeouts[timeout_key],
-                                   env=dict(env or {}, **sandbox_env(guard.url)) if guard
-                                   else env)
+            result = self.runner.run(command, cwd=self.root, timeout=self.timeouts[timeout_key],
+                                     env=dict(env or {}, **sandbox_env(guard.url)) if guard
+                                     else env)
+            if wrapper_dir and isinstance(getattr(result, "command", None), list):
+                # Evidence names the game command, not the scratch wrapper's path: the same
+                # verification twice gives the same report (the summary says it was guarded).
+                result.command = plain
+            return result
         finally:
+            if wrapper_dir:
+                shutil.rmtree(wrapper_dir, ignore_errors=True)
             if guard:
-                refused = guard.summary()
+                refused = guard.summary(explicit=wrapper_dir is not None)
                 guard.stop()
                 self.network_refusals.append(refused)
                 if self.logger and refused["refused_requests"]:

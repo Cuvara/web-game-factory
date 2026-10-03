@@ -2,8 +2,10 @@
 
 A `command` developer is a paid agent session per attempt; loop limits bound the passes
 before a person looks, and a person resuming refills them. This bounds the run:
-`factory.develop.budget` (wgflib.budget), snapshotted into the run's params when it started,
-raised only by a person's BUDGET_RAISED event.
+`factory.develop.budget` (wgflib.budget), snapshotted into the run's params when it started
+(or adopted by a person's resume, BUDGET_ADOPTED, when it started with none), raised only by
+a person's BUDGET_RAISED event. A run with no budget never starts a command developer
+(`missing`): an unattended paid agent with no bound is what this exists to prevent.
 
 Everything is counted from the run's event log, never from memory or state.json, so neither
 a resume nor a crash gives a session back:
@@ -135,6 +137,18 @@ class Budget:
     def cost_key(self):
         source = (self.limits or {}).get("cost_from") or {}
         return source.get("jsonl_key")
+
+    def missing(self, run_id):
+        """The BLOCKED message when the run has no budget at all, else None. Asked only for
+        a command developer: a handoff developer is a person, and costs no session."""
+        if self.active:
+            return None
+        return ("no developer-session budget: this run has none, so no command developer "
+                "(a paid, unattended agent session) is started. Set factory.develop.budget "
+                "- max_sessions, and max_cost with cost_from - in the project's "
+                "workspace/config/factory.yaml (the autonomous profile sets one), then run: "
+                f"wgf resume {run_id} - the resume records it for this run (BUDGET_ADOPTED). "
+                "Or set factory.develop.developer.kind: handoff. No agent was started.")
 
     def exhausted(self, run_id):
         """The BLOCKED message when another session would exceed the budget, else None."""

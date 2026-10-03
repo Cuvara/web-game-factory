@@ -192,6 +192,18 @@ the shape's screen score, then generator order. A step may carry another with
 later one. Only an eligible, buildable opportunity can be carried, and a scan waiting for
 evidence carries nothing, pinned or not.
 
+**Brief match.** With a game idea, an opportunity matches the brief only on words that say
+what game it is (`analysis.brief_terms`, used by both the screen and `rank`). Generic
+gameplay vocabulary - collect, beat, time, stars, levels, unlocks, modes, touch, camera, the
+engine's name - is no word of any brief and never matches. Of the rest, one word of the
+opportunity's defining vocabulary is a match: its genre lineage (ids, labels, aliases) and
+its shape's genre, subgenre, title, market tags and, for a project concept, the brief it was
+authored for. Descriptive vocabulary - the shape's mechanic sentence and the cell's facet
+labels - matches only on at least two words (`IDEA_MIN_DESCRIPTIVE`). A shared incidental
+word is therefore not a match: a marble-roll brief that says "collect gems" is not an
+endless runner because the runner's mechanic says "collect pickups", and with
+`idea_fallback: wait` the scan waits instead of carrying a different game.
+
 **The backlog.** With `persist_backlog: true` (in `factory.discovery` or the step's
 `with:`), every eligible and capability-gap opportunity is written to the backlog as
 `discovered`, once: an opportunity already on file is left as it is. Off by default, like
@@ -252,7 +264,7 @@ Design reads `title-strategy.research` and records its own `applied`:
 
 | Design decision | From research | Otherwise |
 |---|---|---|
-| archetype | the `design_archetype` research's capability check named; with no design archetype but a `genre_model`, the genre seed author synthesizes the design from the family's own `seed` block | keyword selection on the strategy |
+| archetype | the `design_archetype` research's capability check named; `agent` is refused by the archetype author (research already waits for it); with no design archetype but a `genre_model`, the genre seed author synthesizes the design from the family's own `seed` block | keyword selection on the strategy, among the archetypes of the dimension research states (`art.dimension`); none of that dimension is refused |
 | `genre` and `build_spec.content` | the strategy's `concept.content_model` (itself from `research.design_constraints`): the family the design is held to, the unit kind, the progression and difficulty models and the axes | the family the design's own genre node resolves to; with no family at all, nothing is applied and no content check runs |
 | visual identity kit | the kit matching most of the supported tone, palette and rendering (`wgf_design/identity.py` `TRAITS`); the title digest only breaks ties | the title digest within the archetype's affinity |
 | fantasy | the research fantasy, in its theme and setting | the archetype's fantasy |

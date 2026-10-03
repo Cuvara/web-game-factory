@@ -33,7 +33,8 @@ from collections import Counter
 
 from wgflib import genre_models
 
-from .analysis import ACTED_ON, _idea_rank, idea_dimension, idea_terms
+from .analysis import (ACTED_ON, _idea_rank, archetype_vocabulary, brief_terms,
+                       idea_dimension, words_of)
 
 __all__ = ["generate", "rank", "CELL_FACETS"]
 
@@ -958,37 +959,32 @@ def generate(space):
 
 
 def _vocabulary_words(space, block):
-    words = set()
+    """(defining, descriptive) words of an opportunity, as analysis.brief_terms reads them:
+    its genre lineage and its shape's names define it; its cell's facets and the shape's
+    mechanic sentence describe it."""
     vocabulary = space.vocabulary
     node = block["_node"]
-    texts = []
+    defining = []
     for n in vocabulary.lineage(node):
         g = vocabulary.genres[n]
-        texts += [g["id"], g["label"]] + list(g.get("aliases") or [])
+        defining += [g["id"], g["label"]] + list(g.get("aliases") or [])
+    descriptive = []
     for facet in ("mechanics", "theme", "setting", "player_fantasy", "art_tone",
                   "art_rendering"):
         fv = block["cell"].get(facet) or {}
         values = fv.get("value")
         for v in (values if isinstance(values, list) else [values]):
             if isinstance(v, str):
-                texts += [v, vocabulary.label(GAME_FACET.get(facet, facet), v)]
+                descriptive += [v, vocabulary.label(GAME_FACET.get(facet, facet), v)]
+    defining, descriptive = words_of(defining), words_of(descriptive)
     candidate = block.get("_candidate")
     if candidate:
-        a = candidate["_archetype"]
-        texts += [a.get("genre"), a.get("subgenre"), a.get("title"), a.get("core_mechanic")]
-        texts += list(a.get("market_tags") or [])
-        # The shape's genre family, as the catalog screen reads it (analysis._vocabulary): the
-        # family label in words, its genre nodes whole and never split into parts.
-        family = families().get(a.get("genre_model"))
-        if family:
-            texts.append(family.get("label"))
-            words.update(str(node).lower() for node in family.get("nodes") or [])
-    import re
-    for text in texts:
-        for word in re.findall(r"[a-z0-9][a-z0-9-]*", str(text or "").lower()):
-            words.add(word)
-            words.update(part for part in word.split("-") if part)
-    return words
+        # The shape's names and its genre family (analysis.archetype_vocabulary: the family
+        # label in words, its genre nodes whole and never split into parts) define it too.
+        shape_defining, shape_descriptive = archetype_vocabulary(candidate["_archetype"])
+        defining |= shape_defining
+        descriptive |= shape_descriptive
+    return defining, descriptive
 
 
 def rank(space, opportunities, idea=None):
@@ -1001,10 +997,10 @@ def rank(space, opportunities, idea=None):
     eligible = [o for o in opportunities if o["status"] == "eligible"]
     for block in opportunities:
         if idea:
-            vocabulary = _vocabulary_words(space, block)
+            defining, descriptive = _vocabulary_words(space, block)
             built = (block["production"].get("dimension")
                      or (block.get("_candidate") or {}).get("_archetype", {}).get("rendering"))
-            block["brief_match"] = {"terms": [t for t in idea_terms(idea) if t in vocabulary],
+            block["brief_match"] = {"terms": brief_terms(idea, defining, descriptive),
                                     "dimension": dimension is not None and built == dimension}
     backed = any(o["basis"]["evidence_backed"] for o in eligible)
 

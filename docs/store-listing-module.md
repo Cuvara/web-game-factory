@@ -70,7 +70,8 @@ checkout: the bundle is served read-only, Playwright is resolved from the checko
 2. **Capture** (`capture.py`, `capture.mjs`). The bundle is served by the Factory's own
    static server on 127.0.0.1 (no package manager, no preview server); the capture script
    runs in the checkout on Node, resolving the game's own Playwright, behind the refusing
-   proxy (`wgflib.netguard`; enforced on Linux, recorded as `set-not-enforced` elsewhere). It
+   proxy (`wgflib.netguard`), which the script also hands the browser as its launch `proxy`,
+   so it holds on every platform (recorded as `set-not-enforced` only when it was not). It
    plays the build through its play probe exactly as the playability bot does - the probe is
    read, never acted through; the oracle plays well - on a landscape and a portrait viewport
    (the design's orientation first), and takes the scenes `core/reference/store-listing.yaml`
@@ -202,8 +203,9 @@ environment (`factory.agents.game_env_passthrough`), the writer with the agent e
   presented as a video; one that could not be trimmed says how many milliseconds precede play.
 - The platform renditions carry `spec_status` (`verified` | `unverified` | `absent`) and the
   validation report `unknown` per platform. PASS means "passed what the profiles state".
-- `network_guard` records whether the refusing proxy governed the browser: it does on Linux;
-  on Windows and macOS Chromium ignores the environment and the listing says so.
+- `network_guard` records whether the refusing proxy governed the browser: `enforced` when
+  the capture handed the browser the proxy itself (`proxied` in capture.json) or on Linux;
+  `set-not-enforced` otherwise, since Chromium ignores the proxy environment off Linux.
 
 ## Tests
 

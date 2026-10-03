@@ -17,8 +17,8 @@ strategy approved (design-consistency rule `concept_mechanics_carried` checks it
 Tiers use the game-design vocabulary: mvp, post-mvp, optional.
 """
 
-__all__ = ["ARCHETYPES", "CONTENT", "DEPTH", "EXPERIENCE", "FALLBACK", "select",
-           "drop_merge_top_level"]
+__all__ = ["ARCHETYPES", "CONTENT", "DEPTH", "EXPERIENCE", "FALLBACK", "dimension_of",
+           "select", "drop_merge_top_level"]
 
 import re
 
@@ -1854,32 +1854,55 @@ def _hits(terms, text):
     return [t for t in terms if re.search(r"(?<![a-z0-9])" + re.escape(t) + r"(?![a-z0-9])", text)]
 
 
+def dimension_of(strategy):
+    """'2d' or '3d' when the strategy's research handoff states the art's dimension, else
+    None. The value is research's (art.dimension), whatever its tier: a strategy that says
+    2D is never designed as 3D by a keyword match."""
+    research = (strategy or {}).get("research")
+    if not isinstance(research, dict):
+        return None
+    value = (((research.get("art") or {}).get("dimension")) or {}).get("value")
+    return value if value in ("2d", "3d") else None
+
+
 def select(strategy, pinned=None):
     """Pick an archetype id for this strategy. Returns (id, reason).
 
-    Signature hits in the concept rank first, keyword hits in the whole strategy second, and
-    declaration order breaks what is left, so the choice is stable.
+    Only archetypes of the strategy's dimension (dimension_of) are considered when it states
+    one; KeyError when no archetype renders it. Signature hits in the concept rank first,
+    keyword hits in the whole strategy second, and declaration order breaks what is left, so
+    the choice is stable.
     """
     if pinned:
         if pinned not in ARCHETYPES:
             raise KeyError(f"unknown archetype {pinned!r}; known: {', '.join(sorted(ARCHETYPES))}")
         return pinned, "pinned by the workflow step"
 
+    dimension = dimension_of(strategy)
+    candidates = {a: spec for a, spec in ARCHETYPES.items()
+                  if dimension is None or spec.get("dimension") == dimension}
+    if not candidates:
+        raise KeyError(f"no design archetype renders {dimension}; the strategy's art is "
+                       f"{dimension} - configure the agent design author (design: "
+                       f"{{author: agent}}) to design it")
     text = _text(strategy)
     concept = concept_text(strategy)
     words = set(_WORD.findall(text))
     scores = {}
-    for archetype_id, archetype in ARCHETYPES.items():
+    for archetype_id, archetype in candidates.items():
         signature = _hits(archetype.get("signature") or [], concept)
         hits = [k for k in archetype["keywords"] if (k in words if " " not in k else k in text)]
         if signature or hits:
             scores[archetype_id] = (signature, hits)
     if not scores:
-        return FALLBACK, "no archetype keyword in the strategy; fell back to the simplest shape"
+        fallback = FALLBACK if FALLBACK in candidates else next(iter(candidates))
+        return fallback, ("no archetype keyword in the strategy; fell back to the simplest "
+                          "shape" + (f" that renders {dimension}" if dimension else ""))
     order = list(ARCHETYPES)
     best = max(scores, key=lambda a: (len(scores[a][0]), len(scores[a][1]), -order.index(a)))
     signature, hits = scores[best]
+    within = f" (among the {dimension} archetypes)" if dimension else ""
     if signature:
         return best, (f"strategy's concept names its core mechanic ({', '.join(signature)})"
-                      + (f" and mentions {', '.join(hits)}" if hits else ""))
-    return best, f"strategy mentions {', '.join(hits)}"
+                      + (f" and mentions {', '.join(hits)}" if hits else "") + within)
+    return best, f"strategy mentions {', '.join(hits)}{within}"

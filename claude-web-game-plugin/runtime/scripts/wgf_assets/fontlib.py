@@ -284,9 +284,11 @@ class FontProducer:
             raise ProducerError(f"the font library has no {', '.join(unknown)} (it holds "
                                 f"{', '.join(self.library.names())})")
         wanted = max(1, req.count)
-        if len(faces) < wanted:
-            raise ProducerError(f"{req.id} counts {wanted} files and the typography names "
-                                f"{len(faces)} famil{'y' if len(faces) == 1 else 'ies'}")
+        # One file per distinct family: a family's file covers its weights, so a count above
+        # the families (a file per weight) is met by the families' files, and said so.
+        covered = (f"{req.id} counts {wanted} files and the typography names {len(faces)} "
+                   f"famil{'y' if len(faces) == 1 else 'ies'}: one file per family, its "
+                   f"weights covered by that file") if len(faces) < wanted else None
         faces = faces[:wanted]
         needed = subsets_for(self.locales)
         files, extra, notes, sources = [], [], [], []
@@ -332,7 +334,8 @@ class FontProducer:
                   "license_url": "https://openfontlicense.org"}
         return {"files": files, "extra": extra, "license": LICENSE_ID, "origin": origin,
                 "notes": "Faces, in file order: " + "; ".join(notes)
-                         + ". Each file's OFL.txt ships beside it as LICENSE-<family>.txt.",
+                         + ". Each file's OFL.txt ships beside it as LICENSE-<family>.txt."
+                         + (f" {covered[0].upper()}{covered[1:]}." if covered else ""),
                 "metadata": {"producer": self.id, "library_commit":
                              self.library.index.get("source", {}).get("commit"),
                              "subsets": needed, "faces": sources},

@@ -649,6 +649,36 @@ class Gameplay(VerificationCase):
         self.assertEqual(session.network_refusals[0]["targets"],
                          ["CONNECT game-cdn.poki.com:443"])
 
+    def test_where_chromium_ignores_the_proxy_variables_browser_commands_run_a_wrapped_config(self):
+        # val-3d, 2026-10-03: on Windows Chromium never read the proxy variables, so a Poki
+        # build loaded its real SDK. There every browser command runs with -c on a wrapper of
+        # the game config that hands the browser the proxy itself; other commands do not.
+        from unittest import mock
+        seen = {}
+
+        def browser(command, cwd, env):
+            seen["command"] = list(command)
+            seen["env"] = dict(env or {})
+            seen["existed"] = os.path.isfile(command[command.index("-c") + 1])
+            return ok()
+
+        def script(command, cwd, env):
+            seen["script"] = list(command)
+            return ok()
+
+        runner = FakeRunner({"run test:verify": browser, "run lint": script})
+        session = VerificationSession(self.repo, runner)
+        with mock.patch("wgf_verification.session.wraps_game_config", return_value=True):
+            session.run(session.script_command("test:verify"), "browser")
+            session.run(session.script_command("lint"))
+        command = seen["command"]
+        self.assertEqual(command[:4], ["pnpm", "run", "test:verify", "-c"])
+        self.assertTrue(seen["existed"])
+        self.assertFalse(os.path.exists(command[4]))        # removed after the command
+        self.assertNotIn("-c", seen["script"])
+        self.assertTrue(seen["env"]["WGF_BROWSER_PROXY"].startswith("http://127.0.0.1:"))
+        self.assertTrue(session.network_refusals[0]["enforced"])
+
     def test_required_aspects_follow_the_design(self):
         session = VerificationSession(self.repo, self.runner)
         self.assertEqual(required_aspects(session), {"boot", "loading", "core-loop", "responsive"})

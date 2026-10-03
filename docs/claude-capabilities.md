@@ -58,6 +58,7 @@ golden-run work and use port 4173.
 | Request-changes workflow | `wgf_review/step.py:240-243` (FAILED, route `request-changes`); routing is data in `core/workflows/new-game.workflow.yaml` (`review.on`) | Engine `_route` (`wgflib/workflow/engine.py:909`) | `AgentLoop.test_developer_reviewer_request_changes_developer_reviewer_approve`, `Registration.test_the_workflow_routes_request_changes_back_to_develop`; live run below | VERIFIED_LIVE |
 | Unattended Claude execution | argv in `workspace/config/factory.yaml` (commented `developer:` / `reviewer:`); stdin is `/dev/null` (`procs`) | Host: `-p`, `--permission-mode dontAsk` (no prompts); Factory: stdin closed, timeouts | `ShippedConfig.test_the_commented_agent_host_examples_are_valid_config`; live run below | VERIFIED_LIVE |
 | Scoped permissions | Developer `Edit(./**)`, `Write(./**)`, `Bash(pnpm *)`, read-only git; reviewer reads plus `git diff/log/show` | Host permission rules | Probes (c) and (d) below: a write outside the checkout was refused and a write inside was allowed; five Bash writes refused | VERIFIED_LIVE |
+| Author write scope on every host OS | Design agent `Edit({draft_rule})`, 2D set author `Edit({out_rule}/**)`, 3D model author `Edit({dir_rule}/**)` (`workspace/config/profiles/autonomous.yaml`, the commented examples in `workspace/config/factory.yaml`); `scripts/wgflib/permpath.py` renders each `{<path>_rule}` as `//` and the POSIX form (`//c/Users/...` on Windows, `//home/...` on POSIX) and reads the older `Edit(/{draft})` form as the rule. Until this was fixed the single-slash form rendered `Edit(/C:\...)` on Windows, which the host reads as project-relative: in `dontAsk` every author write was denied (finding F11) | Host permission rules; the Factory renders the path | `test_permpath` (Windows and POSIX rendering, the legacy form, the shipped profile's three rules, the authors use it); host probe on Windows (2026-10-03, `claude -p`, `dontAsk`): `Edit(/C:\...)` denied, `Edit(//c/...)` and `Edit(./x.json)` allowed | VERIFIED (rendering); VERIFIED_LIVE (host rule forms) |
 | Agent environment | `scripts/wgflib/agentenv.py` `scrubbed`; developer `wgf_develop/developers.py` (`env=ExactEnv(...)`), reviewer `wgf_review/step.py` (`agentenv.scrubbed`); `factory.agents.env_passthrough`. Game code the Factory runs (develop checks, verify, sdk conformance, release packaging): `agentenv.game_code_env` plus `factory.agents.game_env_passthrough`, never `env_passthrough` | Factory: an allowlist, never the Factory's environment; names that say secret dropped even under an allowed prefix | `test_core_security.AgentEnvironment` (a planted `WGF_TEST_SECRET_TOKEN`, `GH_TOKEN`, `npm_config__authToken` invisible to a real developer and reviewer process); `test_core_security.GameCodeEnvironment` (the same secret and the agents' passthrough invisible to a develop check, a verification command, `pnpm sdk:conformance` and `release:package`) | VERIFIED |
 | Developer write boundary | `wgf_develop/step.py` `_Guard`: `factory.review.guarded_paths` fingerprinted before the developer, compared after it and after the checks (`wgflib/isolation.py` `take_guarded`/`restore_guarded`) | Factory, whatever `Bash(pnpm *)` admits | `test_core_security.DeveloperBoundary.test_a_guarded_factory_path_written_by_the_developer_is_detected_and_restored`, `test_a_guarded_path_written_by_a_check_is_caught_too` | VERIFIED |
 | Development commit scope | `wgf_develop/scope.py` (`writable_paths`; hidden paths and instruction files refused), `repository.py` `commit_paths` (never `add --all`); `checks.py` `package_findings` (`package.json` field by field, lockfile only with an allowed dependency change); `brief.py` `PROTECTED_PATHS` (+ `package.json`, `tsconfig.json`, `pnpm-lock.yaml`) | Factory | `DeveloperBoundary.test_agent_host_settings_and_instruction_files_are_refused` (`.claude/settings.json`, `CLAUDE.md`, `.github/`, `.husky/`), `test_a_package_json_script_rewrite_is_caught`, `test_a_tsconfig_change_is_caught`, `test_a_dependency_from_a_path_or_url_is_refused`; `test_develop_module.PackageAndScope` | VERIFIED |
@@ -98,7 +99,7 @@ against `claude --help` for 2.1.281, and every flag appears in a live run below.
 | `--safe-mode` | | ✓ | no hooks, plugins, MCP or CLAUDE.md, so nothing the developer committed runs in or instructs the reviewer |
 | `--strict-mcp-config` | ✓ | ✓ | no MCP servers (the opt-in self-playtest block below: only its listed file) |
 | `--tools` | `Read,Edit,Write,Glob,Grep,Bash` | `Read,Glob,Grep,Bash` | tools outside the set do not exist |
-| `--allowedTools` | reads, `Edit(./**)`, `Write(./**)`, `Bash(pnpm *)`, read-only git | reads, `Bash(git diff/log/show *)` | pre-approved without a prompt |
+| `--allowedTools` | reads, `Edit(./**)`, `Write(./**)`, `Bash(pnpm *)`, `Bash(node *)`, read-only git, the read-only filters `ls`/`head`/`tail`/`grep`/`wc`, `git clean -f` under `src/`, `tests/`, `public/` | reads, `Bash(git diff/log/show *)` | pre-approved without a prompt |
 | `--disallowedTools` | network tools; git that moves history, refs or config; `git * --output*` | `Edit,Write,NotebookEdit`, network tools, `git * --output*` | deny beats allow |
 | `--permission-mode dontAsk` | ✓ | ✓ | anything not pre-approved is refused, never prompted |
 | `--output-format` | `stream-json --verbose` | `text` | the developer's output keeps the idle timer honest. The reviewer's stdout must end with the bare or fenced verdict, and `json`/`stream-json` would wrap it and fail as `malformed-verdict` |
@@ -115,6 +116,28 @@ Configuration consequences:
   an allowlist, the Factory's guarded paths are fingerprinted and restored, the Factory's
   git runs nothing the checkout's config names, and only `writable_paths` are committed.
   `$HOME` and the network stay unwatched: wrap the argv in an OS sandbox for those.
+- **The developer's shell contract** (added after the live runs of 2026-10-03). Under
+  `dontAsk`, a Bash line runs only when every program on it matches an allow rule. Sessions
+  sent compound lines (`git status && netstat ...`, `pnpm lint 2>&1 | tail -10`), `sed -i`,
+  `python3` heredocs, `cd`, `curl` and `netstat`. Each line was refused. Six sessions then
+  stopped without changing a file, and asked for a shell nobody could grant. Two changes
+  answer this:
+  - The brief has a *Your shell* section (`wgf_develop/brief.py` `shell_contract`). It reads
+    the `Bash(...)` rules from this argv, so the brief and the host cannot differ. It says
+    a refusal is never a reason to stop, one command per call, what to use instead, that
+    scratch files go in `tests/scratch-*`, and that the Factory runs the checks and commits.
+    A session that was refused a tool call and then changed no file fails the attempt with
+    that cause (`developers.permission_stall`), not with the checks of an unchanged tree.
+  - The allowlist gained only commands that add no capability the developer does not
+    already have:
+    - `Bash(node *)` is `pnpm exec node`, which `Bash(pnpm *)` already admits.
+    - `Bash(ls *)`, `Bash(head *)`, `Bash(tail *)`, `Bash(grep *)` and `Bash(wc *)` read.
+      They are what a session pipes `pnpm` output through. The `Read` rule already reads
+      any file.
+    - Not added: `cat` (the `cat > file <<EOF` write habit), `sed`, `python`, `find`
+      (`-delete`, `-exec`), `sort` (`-o`), `rm`/`mv`, `curl`/`netstat`/`kill`, and `git -C`.
+      The deny rules match `git commit *`, not `git -C <dir> commit`.
+    - Nothing added commits, pushes, resets or fetches. Every deny rule is unchanged.
 - The agent host's credential must be named in `factory.agents.env_passthrough` if the
   host authenticates by an environment variable (`ANTHROPIC_API_KEY`,
   `CLAUDE_CODE_OAUTH_TOKEN`); a CLI logged in with `claude login` reads its credentials

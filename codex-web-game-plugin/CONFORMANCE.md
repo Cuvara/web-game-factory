@@ -279,6 +279,30 @@ systems underneath it.
 No agent, command, workflow, role, machine, gate or schema was added or removed; the manifest
 goes to 1.7.0 for the new skill id.
 
+## `/new-game`: publication, failed runs, snapshotted autonomy (binding manifest 1.8.0)
+
+Fixes from the plugin validation run, all in the `new-game` entry point and generated from
+`scripts/gen-adapters.sh`; no agent, transition command, role, machine, gate or schema changed.
+
+- **Publication is reachable.** The binding's `new-game` entry gains `continues: [publish]`:
+  the workflow groups the surface continues inside a run (`check-integrity.py` checks each is a
+  group of the workflow). `/new-game publish <run-id>` runs `bin/wgf publish --run <run-id>`
+  - platform validation, then G5 and G6, each a person's decision. The surface still answers
+  no gate, and says that a portal submission after G6 is a dry run unless the installation
+  set `factory.publish.mode: live` and `WGF_PUBLISH_LIVE=1`. The text that put G5 and G6 in
+  "the game repository's CI" is gone, from the surface and from `docs/`.
+- **A failed or blocked run is shown before it is resumed.** `resume <run-id>` on a `FAILED`
+  or `BLOCKED` run reports its blocked reason and the failing step's logs, and resumes only
+  when the user confirms: resuming re-runs the step and spends again.
+- **A run reports its own autonomy.** For a run that exists, `auto_approve`,
+  `timeout_auto_approve` and `develop_budget` come from the run's `params`
+  (`status <run-id> --json`), snapshotted when it started, not from `where`; a difference
+  from the current configuration is reported.
+- **Decision lines are complete.** At a gate the surface prints one line per choice with the
+  run id and the choice filled in, and a note the user must replace - never `<run-id>`,
+  `<choice>` or `a|b`, which a shell reads as redirections and pipes, and never `"..."`,
+  which was recorded as the reason of a G4.
+
 ## Not covered, deliberately
 
 - **`workflows/` tree** — removed. A per-provider copy of a workflow duplicates

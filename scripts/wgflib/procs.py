@@ -41,6 +41,14 @@ Everything a Factory step spawns goes through `run()` (to completion) or `spawn(
     trees it orphaned through that name (`sweep_run`, Linux only - on Windows the job object
     already ended them when the driver's handle closed, so there is nothing left to find).
 
+A command that binds one of the template's fixed host ports (`wgflib.portlock.ports_for`:
+`pnpm run test:e2e`, `test:verify`, `test:sdk:browser`, a bare `playwright test`) runs inside
+that port's machine-wide lock, so two runs on one host take turns on port 4173 instead of
+the second failing "already used". Waiting is reported as a `port-wait` event every
+`heartbeat_seconds` (a lifecycle event: liveness reads it as activity, and the hung-child
+watchdog never fires on it), `should_stop` ends the wait (`cancelled`), and a wait longer
+than `$WGF_PORT_LOCK_TIMEOUT` returns `error` naming the holder. `ports=()` opts out.
+
 Nothing global is installed on import except an `atexit` hook that takes down trees this
 process still owns. A CLI entry point that wants SIGTERM/SIGHUP to clean up too calls
 `install_signal_cleanup()` once, from the main thread.
@@ -63,11 +71,13 @@ import sys
 import threading
 import time
 
+from . import portlock
+
 __all__ = ["run", "spawn", "OwnedProcess", "ProcessResult", "TAG_ENV", "LINEAGE_ENV",
            "RUN_ENV", "HEARTBEAT_ENV", "tagged_pids", "terminate_tree", "live_groups",
            "terminate_all", "install_subreaper", "bound", "install_signal_cleanup",
-           "default_heartbeat_seconds", "pid_alive", "run_token", "run_pids", "sweep_run",
-           "can_sweep"]
+           "default_heartbeat_seconds", "pid_alive", "process_started", "run_token",
+           "run_pids", "sweep_run", "can_sweep"]
 
 TAG_ENV = "WGF_PROC_TAG"
 LINEAGE_ENV = "WGF_PROC_LINEAGE"
@@ -449,6 +459,7 @@ _SYNCHRONIZE = 0x00100000
 _ERROR_ACCESS_DENIED = 5
 _ERROR_MORE_DATA = 234
 _WAIT_OBJECT_0 = 0
+_STILL_ACTIVE = 259
 # kernel32 (False once it could not be loaded), the limit structure, whether a job can be made
 # here at all, and how many times assigning a live child to one was refused.
 _WIN = {"k32": None, "struct": None, "jobs": None, "refused": 0}
@@ -480,6 +491,10 @@ def _kernel32():
             lib.OpenProcess.argtypes = [dword, flag, dword]
             lib.WaitForSingleObject.restype = dword
             lib.WaitForSingleObject.argtypes = [handle, dword]
+            lib.GetExitCodeProcess.restype = flag
+            lib.GetExitCodeProcess.argtypes = [handle, ctypes.POINTER(dword)]
+            lib.GetProcessTimes.restype = flag
+            lib.GetProcessTimes.argtypes = [handle] + [ctypes.POINTER(wintypes.FILETIME)] * 4
             lib.CloseHandle.restype = flag
             lib.CloseHandle.argtypes = [handle]
             _WIN["k32"] = lib
@@ -612,13 +627,52 @@ def _windows_alive(pid):
         return False
     import ctypes
     handle = lib.OpenProcess(_PROCESS_QUERY_LIMITED_INFORMATION | _SYNCHRONIZE, False, int(pid))
+    if handle:
+        try:
+            # WAIT_OBJECT_0 = the process object is signalled = it has exited. Anything else
+            # (WAIT_TIMEOUT, and WAIT_FAILED, which should not happen) counts as still running:
+            # cleanup may then signal a corpse, never skip a survivor.
+            return lib.WaitForSingleObject(handle, 0) != _WAIT_OBJECT_0
+        finally:
+            lib.CloseHandle(handle)
+    if ctypes.get_last_error() != _ERROR_ACCESS_DENIED:
+        return False                      # the pid names no process
+    # Allowed to query but not to wait on (a process of another user, a system one): its exit
+    # code says whether it is still running, and a pid we may not even query exists.
+    handle = lib.OpenProcess(_PROCESS_QUERY_LIMITED_INFORMATION, False, int(pid))
     if not handle:
-        return ctypes.get_last_error() == _ERROR_ACCESS_DENIED  # exists, someone else's
+        return True
     try:
-        # WAIT_OBJECT_0 = the process object is signalled = it has exited. Anything else
-        # (WAIT_TIMEOUT, and WAIT_FAILED, which should not happen) counts as still running:
-        # cleanup may then signal a corpse, never skip a survivor.
-        return lib.WaitForSingleObject(handle, 0) != _WAIT_OBJECT_0
+        from ctypes import wintypes
+        code = wintypes.DWORD()
+        if not lib.GetExitCodeProcess(handle, ctypes.byref(code)):
+            return True
+        return code.value == _STILL_ACTIVE
+    finally:
+        lib.CloseHandle(handle)
+
+
+def process_started(pid):
+    """On Windows, the process's creation time (100 ns units since 1601), or None when it
+    cannot be read. Together with the pid it names one process: a recycled pid comes back with
+    a different creation time. None elsewhere: there /proc answers this
+    (workflow.store._start_time)."""
+    if POSIX:
+        return None
+    lib = _kernel32()
+    if lib is None or not pid:  # pragma: no cover - not Windows
+        return None
+    import ctypes
+    from ctypes import wintypes
+    handle = lib.OpenProcess(_PROCESS_QUERY_LIMITED_INFORMATION, False, int(pid))
+    if not handle:
+        return None
+    try:
+        times = [wintypes.FILETIME() for _ in range(4)]
+        if not lib.GetProcessTimes(handle, *(ctypes.byref(each) for each in times)):
+            return None
+        created = (times[0].dwHighDateTime << 32) | times[0].dwLowDateTime
+        return created or None
     finally:
         lib.CloseHandle(handle)
 
@@ -910,6 +964,12 @@ def _child_env(env, tag):
         base[RUN_ENV] = ",".join(runs)
     else:
         base.pop(RUN_ENV, None)
+    # The ports held for this tree: a descendant Factory process never waits on them.
+    held = portlock.held_ports()
+    if held:
+        base[portlock.HELD_ENV] = held
+    else:
+        base.pop(portlock.HELD_ENV, None)
     return base
 
 
@@ -1148,7 +1208,7 @@ class _Stream:
 
 def run(argv, cwd=None, timeout=None, env=None, input=None, on_event=None, on_output=None,
         should_stop=None, heartbeat_seconds=None, idle_timeout=None, log_path=None,
-        grace_seconds=5.0, poll_seconds=0.1, stderr_to_stdout=False):
+        grace_seconds=5.0, poll_seconds=0.1, stderr_to_stdout=False, ports=None):
     """Run `argv` to completion as an owned process tree. Never raises for the child's own
     failure: a missing executable is `error`, a non-zero exit is `returncode`.
 
@@ -1164,6 +1224,8 @@ def run(argv, cwd=None, timeout=None, env=None, input=None, on_event=None, on_ou
                     is then always "".
     `input`         str or bytes written to stdin, which is then closed; otherwise stdin is
                     /dev/null, so a child can never wait on a prompt.
+    `ports`         the fixed host ports the command binds, held machine-wide while it
+                    runs (wgflib.portlock); None = `portlock.ports_for(argv)`, () = none.
 
     stdout/stderr keep the last 4 MiB of each stream (`truncated` counts what was dropped).
     """
@@ -1171,6 +1233,46 @@ def run(argv, cwd=None, timeout=None, env=None, input=None, on_event=None, on_ou
     on_event, should_stop = _with_bound(on_event, should_stop)
     if heartbeat_seconds is None:
         heartbeat_seconds = default_heartbeat_seconds()
+    ports = portlock.ports_for(argv) if ports is None else tuple(sorted(set(ports)))
+    if not ports:
+        return _run(argv, cwd, timeout, env, input, on_event, on_output, should_stop,
+                    heartbeat_seconds, idle_timeout, log_path, grace_seconds, poll_seconds,
+                    stderr_to_stdout)
+
+    def emit(kind, **data):
+        if on_event is not None:
+            try:
+                on_event(kind, **data)
+            except Exception:
+                pass
+
+    began = time.monotonic()
+    command = " ".join(argv)
+    with contextlib.ExitStack() as held:
+        for port in ports:
+            def waiting(waited_s, holder, port=port):
+                emit("port-wait", port=port, waited_s=round(waited_s, 3),
+                     holder=portlock.describe(holder))
+            try:
+                waited = held.enter_context(portlock.hold(
+                    port, command=command, run=_RUN.get(), on_wait=waiting,
+                    should_stop=should_stop, report_seconds=heartbeat_seconds or 15.0))
+            except portlock.PortWaitCancelled:
+                emit("cancelled", pid=None, port=port)
+                return ProcessResult(argv, cancelled=True, duration_s=time.monotonic() - began)
+            except portlock.PortBusy as exc:
+                emit("exited", status="not-started", error=str(exc))
+                return ProcessResult(argv, error=str(exc), exception=exc,
+                                     duration_s=time.monotonic() - began)
+            if waited:
+                emit("port-acquired", port=port, waited_s=round(waited, 3))
+        return _run(argv, cwd, timeout, env, input, on_event, on_output, should_stop,
+                    heartbeat_seconds, idle_timeout, log_path, grace_seconds, poll_seconds,
+                    stderr_to_stdout)
+
+
+def _run(argv, cwd, timeout, env, input, on_event, on_output, should_stop, heartbeat_seconds,
+         idle_timeout, log_path, grace_seconds, poll_seconds, stderr_to_stdout):
     tag = secrets.token_hex(8)
     child_env = _child_env(env, tag)
 

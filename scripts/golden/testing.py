@@ -103,6 +103,8 @@ def fast_case(key):
             self.assertEqual(developer["kind"], "command")
             self.assertTrue(developer["argv"][1].endswith("scripts/golden/replay_developer.py"))
             self.assertIn(key, developer["argv"])
+            # A command developer is never started without a run budget (wgf_develop).
+            self.assertTrue(config["develop"]["budget"]["max_sessions"])
             reviewer_cfg = config["review"]["reviewer"]
             self.assertEqual(reviewer_cfg["kind"], "command")
             self.assertTrue(reviewer_cfg["argv"][1].endswith("scripts/golden/reviewer.py"))

@@ -287,6 +287,10 @@ def build_config(game, workdir, template_dir=None, python=None, with_library=Tru
                          "--ports", template.golden_ports_checkout(), "--key", "{key}"],
                 "timeout_seconds": 1800,
             },
+            # A command developer is never started without a run budget (wgf_develop).
+            # The replay costs nothing; this bounds sessions only, far above what a
+            # golden run uses.
+            "budget": {"max_sessions": 50},
         },
         "review": {
             "reviewer": {
@@ -380,6 +384,9 @@ class GoldenRun:
         with self.sandbox() as guard:
             api, state, seconds = self.run_workflow(resume=resume, from_step=from_step)
             pipeline_network = guard.proxy.summary()
+            # Pass or fail, the playability reports and the bot's records reach the evidence:
+            # the run store is deleted at teardown, and a budget miss needs its numbers.
+            summaries.collect_playability(api.store, state, self.evidence_dir)
             browser = None
             developed = (state.steps.get("develop") and
                          state.steps["develop"].status == "SUCCESS")

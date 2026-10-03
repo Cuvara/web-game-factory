@@ -69,8 +69,24 @@ def finalize(draft, platforms, title_id):
         "out_of_scope": out_of_scope,
     }}, **scope)
 
+    _font_files_per_family(spec)
+
     design["platform_constraints_applied"] = constraints_applied(platforms, design)
     return design
+
+
+def _font_files_per_family(spec):
+    """A font requirement counts one file per distinct family the typography names: a family
+    ships as one file covering its weights, so a draft counting a file per weight ('Commissioner
+    500 and 700') asked the font library for files it does not have, and the fonts stayed a
+    placeholder production-quality refuses (F23)."""
+    from .identity import families
+    named = families((spec.get("visual_identity") or {}).get("typography"))
+    if not named:
+        return
+    for asset in spec.get("assets") or []:
+        if asset.get("type") == "font" or asset.get("role") == "font":
+            asset["count"] = len(named)
 
 
 def _duplicates(items, label):

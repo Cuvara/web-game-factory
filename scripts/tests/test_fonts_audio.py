@@ -114,6 +114,46 @@ class TheFontLibrary(unittest.TestCase):
         with self.assertRaises(fontlib.ProducerError):
             producer.produce(_requirements(design)["fonts"])
 
+    def test_a_file_per_weight_count_is_met_by_one_file_per_family(self):
+        # F23: an agent's design counted 3 font files (Playfair Display; Commissioner 500
+        # and 700) for 2 families; the producer refused, and the fonts stayed a placeholder.
+        design = _design()
+        typography = design["build_spec"]["visual_identity"]["typography"]
+        families = identity.families(typography)
+        design["build_spec"]["assets"][0]["count"] = len(families) + 1
+        made = fontlib.FontProducer(fontlib.load(), typography, ["en"]).produce(
+            _requirements(design)["fonts"])
+        self.assertEqual([f["family"] for f in made["files"]], families)
+        self.assertIn("one file per family", made["notes"])
+
+    def test_a_refusal_is_a_warning_in_the_step_log(self):
+        design = _design(locales=("en",))
+        design["build_spec"]["visual_identity"]["typography"]["display"] = "Comic Sans (700)"
+        design["build_spec"]["audio"] = []
+        warnings = []
+
+        class Logger:
+            def info(self, *_a, **_k):
+                pass
+
+            def warning(self, message, **fields):
+                warnings.append((message, fields))
+
+        root = tempfile.mkdtemp(prefix="wgf-font-refusal-")
+        self.addCleanup(shutil.rmtree, root, ignore_errors=True)
+        policy = load_policy()
+        requirements, _dim = inspect(copy.deepcopy(design), policy)
+        producer = fontlib.FontProducer(fontlib.load(),
+                                        design["build_spec"]["visual_identity"]["typography"],
+                                        ["en"])
+        AssetPipeline(policy, AssetStore(root), build_backends([], {}), title_id="t",
+                      producers=[producer], locales=["en"], logger=Logger()).run(
+            [r for r in requirements if r.id == "fonts"])
+        refused = [f for m, f in warnings if m == "producer refused"]
+        self.assertEqual(len(refused), 1, warnings)
+        self.assertEqual((refused[0]["asset"], refused[0]["producer"]), ("fonts", "font-library"))
+        self.assertIn("Comic Sans", refused[0]["reason"])
+
 
 class TheVorbisEncoder(unittest.TestCase):
     def test_mdct_matches_the_definition(self):
@@ -236,6 +276,30 @@ class TheComposer(unittest.TestCase):
                 self.assertLessEqual(stats["seam"]["ratio"], 8)
             rendered[name] = out
         self.assertEqual(len({tuple(v[:200]) for v in rendered.values()}), len(rendered))
+
+    def test_a_looping_cue_is_always_a_seamless_loop(self):
+        # sky-marble, 2026-10-03: "Rolling rumble: pitch and level follow speed, cut out when
+        # airborne, a soft thud on landing" matched the one-shot `drop` (thud, landing) and
+        # shipped 0.5 s, failing audio.duration and both seam checks on every visit.
+        song = music.Song(style.brief_for(_design(), title_id="x"))
+        words = {"sfx", "roll", "rolling", "rumble", "pitch", "level", "speed", "airborne",
+                 "soft", "thud", "on", "landing"}
+        self.assertEqual(sfx.role(words, {"sfx", "roll"}), "drop")    # as a one-shot
+        cases = ((words, {"sfx", "roll"}, "rumble"),
+                 ({"sfx", "wind", "gust"}, {"sfx", "wind"}, "rumble"),
+                 ({"sfx", "laser", "hit"}, {"sfx", "laser"}, "engine"),
+                 ({"sfx", "engine", "hum"}, {"sfx", "engine"}, "engine"))
+        for cue, primary, expected in cases:
+            out, info = sfx.render_sfx(cue, song, 22050, loop=True, primary=primary)
+            self.assertEqual(info["recipe"], expected, cue)
+            stats = measure.stats([out], 22050, loop=True, loudness=False)
+            self.assertGreaterEqual(stats["duration_s"], 1.0)
+            self.assertLessEqual(stats["seam"]["ratio"], 8)
+            self.assertLessEqual(stats["seam"]["edge_db"], 6)
+            self.assertAlmostEqual(stats["peak_dbfs"], -1.0, delta=0.05)
+        # Not looping, the same words stay the one-shot they name.
+        out, info = sfx.render_sfx(words, song, 22050, loop=False, primary={"sfx", "roll"})
+        self.assertEqual(info["recipe"], "drop")
 
     def test_cue_kinds(self):
         design = _design(music_entries=[

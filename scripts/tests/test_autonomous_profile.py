@@ -250,7 +250,7 @@ class TheWorkflow5Agents(unittest.TestCase):
                     # exactly {preview}; nothing else is allowed, nothing is prompted.
                     allowed = argv[argv.index("--allowedTools") + 1:
                                    argv.index("--disallowedTools")]
-                    self.assertEqual(allowed, ["Read", "Edit(/{out}/**)", "Bash({preview})"])
+                    self.assertEqual(allowed, ["Read", "Edit({out_rule}/**)", "Bash({preview})"])
                     self.assertEqual(agent["mode"], "set")
                     self.assertLessEqual(float(argv[argv.index("--max-budget-usd") + 1]), 8)
                     continue
@@ -258,7 +258,7 @@ class TheWorkflow5Agents(unittest.TestCase):
                     # The 3D set author writes its spec files, and only under its session
                     # directory: an Edit rule governs every file-editing tool.
                     self.assertEqual(argv[argv.index("--allowedTools") + 1],
-                                     "Read,Edit(/{dir}/**)")
+                                     "Read,Edit({dir_rule}/**)")
                     denied = argv[argv.index("--disallowedTools") + 1].split(",")
                     self.assertIn("Bash", denied)
                     self.assertLessEqual(float(argv[argv.index("--max-budget-usd") + 1]), 3)

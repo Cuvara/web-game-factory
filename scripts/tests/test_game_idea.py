@@ -34,7 +34,7 @@ sys.path.insert(0, SCRIPTS)
 sys.path.insert(0, HERE)
 
 from wgf_discovery import analysis  # noqa: E402
-from wgf_discovery.step import ResearchStep  # noqa: E402
+from wgf_discovery.step import CATALOG, ResearchStep  # noqa: E402
 from wgflib.workflow import integrity  # noqa: E402
 from wgflib.workflow.api import (  # noqa: E402
     IDEA_MAX_LENGTH, RunRequest, WorkflowAPI, canonical_idea)
@@ -46,7 +46,15 @@ from wgflib.yamllite import load_file  # noqa: E402
 
 # A brief the catalog cannot answer: no catalog entry, genre family or genre-node alias holds
 # any of its words, which is what makes it the fixture for "nothing matches the brief".
+# "saves penalty kicks", not "blocks penalty shots": "blocks" is a genre node of the
+# block-puzzle family, and a goalkeeper is not a block puzzle.
 GOALKEEPER = "3D goalkeeper game where the player saves penalty kicks"
+# The live brief that once selected the endless runner on one incidental verb ("collect").
+MARBLE = ("A 3D low-poly marble-roll game (Three.js): tilt/steer a marble across floating "
+          "sky-island courses, ramps, moving platforms, gaps and bumpers; collect gems, beat "
+          "the par time for stars; 3 themed worlds of hand-designed courses, unlocks and saved "
+          "progress, a time-trial mode with personal bests. Chase camera, desktop keys and "
+          "mobile touch.")
 DISCOVERY = os.path.join(HERE, "fixtures", "discovery")
 CONCEPTS = os.path.join(DISCOVERY, "concepts", "concepts.yaml")
 AS_OF = "2026-09-23T00:00:00Z"
@@ -275,10 +283,11 @@ class Resume(Scratch):
 class RealModules(Scratch):
     """research, strategy, G2 and design, with the real modules on the fixture corpus."""
 
-    def real_api(self, **discovery):
+    def real_api(self, design=None, **discovery):
         return WorkflowAPI(config=FactoryConfig({
             "steps": {"modules": ["wgf_discovery", "wgf_strategy", "wgf_design"]},
             "storage": {"fsync": False},
+            "design": design or {},
             "discovery": dict({"corpus": os.path.join(DISCOVERY, "corpus"),
                                "backlog": os.path.join(DISCOVERY, "backlog"), "as_of": AS_OF},
                               **discovery),
@@ -405,8 +414,29 @@ class RealModules(Scratch):
         report = self.artifact(state, "research-report")
         self.assertEqual(report["selection"]["candidate_id"], "none")
 
+    def assert_only_the_agent_designs_it(self, strategy):
+        """F09 at design: the archetype author refuses an agent-only concept with the fix,
+        never swapping in a catalog archetype; as the agent's starting point it picks
+        within the strategy's dimension."""
+        from wgf_design import archetypes
+        from wgf_design.authors import ArchetypeAuthor, AuthorError
+        from wgf_design.platforms import load_platforms
+        self.assertEqual(strategy["research"]["capability"]["design_archetype"], "agent")
+        brief = {"title_id": "goalkeeper-3d", "strategy": strategy,
+                 "platforms": load_platforms(strategy, None), "params": {}}
+        with self.assertRaises(AuthorError) as raised:
+            ArchetypeAuthor().draft(brief)
+        self.assertIn("design: {author: agent}", str(raised.exception))
+        dimension = archetypes.dimension_of(strategy)
+        self.assertIn(dimension, ("2d", "3d"))
+        chosen, _why = archetypes.select(strategy)
+        self.assertEqual(archetypes.ARCHETYPES[chosen]["dimension"], dimension)
+        starting = ArchetypeAuthor(starting_point=True).draft(brief)
+        self.assertIn(f"Archetype {chosen!r} was chosen", " ".join(starting["open_questions"]))
+
     def test_a_concept_for_the_idea_is_carried_through_strategy(self):
-        api = self.real_api(concepts=CONCEPTS)
+        # The fixture concept is `design_archetype: agent`: only the agent author designs it.
+        api = self.real_api(design={"author": "agent"}, concepts=CONCEPTS)
         state = api.run(RunRequest(scope="research", idea=GOALKEEPER,
                                    project_id="goalkeeper-3d"))
         self.assertEqual(state.status, RunStatus.COMPLETED, state.message)
@@ -414,13 +444,16 @@ class RealModules(Scratch):
         self.assertEqual(state.status, RunStatus.COMPLETED, state.message)
         entry = load_file(CONCEPTS)["archetypes"][0]
         strategy = self.artifact(state, "title-strategy")
+        self.assert_only_the_agent_designs_it(strategy)
         self.assertEqual(strategy["concept"]["core_mechanic"], entry["core_mechanic"])
         self.assertEqual(strategy["concept"]["core_loop"], entry["core_loop"])
         self.assertEqual(strategy["brief"], GOALKEEPER)
 
 
-def research(idea=GOALKEEPER, **params):
-    """The research step alone on the fixture corpus, as the engine would hand it the idea."""
+def research(idea=GOALKEEPER, config=None, **params):
+    """The research step alone on the fixture corpus, as the engine would hand it the idea.
+    `config` is the factory section (default: the agent design author, which the fixture
+    concepts - `design_archetype: agent` - need)."""
     base = {"corpus": os.path.join(DISCOVERY, "corpus"),
             "backlog": os.path.join(DISCOVERY, "backlog"), "as_of": AS_OF}
     base.update(params)
@@ -431,11 +464,15 @@ def research(idea=GOALKEEPER, **params):
     logger = types.SimpleNamespace(**{level: (lambda *a, **k: None)
                                       for level in ("debug", "info", "warning", "error")})
     context = types.SimpleNamespace(
-        config={}, execution=1, attempt=1, visit=1, project_id=None, run_id="run-test",
+        config=AGENT_AUTHOR if config is None else config, execution=1, attempt=1,
+        visit=1, project_id=None, run_id="run-test",
         current_step="research", idempotency_key="run-test:research:1", logger=logger,
         mock=False, environment={"idea": idea} if idea else {}, previous_outputs=[],
         decision=None)
     return step.execute(types.SimpleNamespace(refs={}, missing=[]), context)
+
+
+AGENT_AUTHOR = {"design": {"author": "agent"}}
 
 
 def outputs(result):
@@ -466,6 +503,17 @@ class IdeaFallback(unittest.TestCase):
         self.assertIn("nothing was selected", gaps[0]["description"])
         self.assertIn("endless-runner", gaps[0]["description"])
         self.assertNotIn("concepts", {c["id"] for c in report["method"]["collectors"]})
+
+    def test_a_brief_sharing_one_incidental_word_waits(self):
+        # The live defect: the marble brief selected endless-runner on "collect" alone.
+        result = research(idea=MARBLE)
+        self.assertEqual(result.outcome, StepOutcome.WAITING_FOR_INPUT, result.message)
+        out = outputs(result)
+        self.assertEqual(list(out), ["research-report"])
+        report = out["research-report"]
+        self.assertEqual(report["selection"]["candidate_id"], "none")
+        self.assertEqual([c["id"] for c in report["candidates"] if c["idea_match"]["terms"]],
+                         [])
 
     def test_missing_external_evidence_still_waits_first(self):
         empty = tempfile.mkdtemp(prefix="wgf-idea-corpus-")
@@ -525,6 +573,21 @@ class ConceptsFile(unittest.TestCase):
         self.assertIn(old, text)
         return self.write(text.replace(old, new, 1),
                           name=f"concepts-{len(os.listdir(self.scratch))}.yaml")
+
+    def test_a_concept_only_the_agent_designs_waits_under_the_archetype_author(self):
+        # F09: the shipped default author is archetype. Selecting an agent-only concept used
+        # to reach design (after strategy and a person's G2), which swapped in a catalog
+        # archetype by keyword - a 2D brief designed as a 3D arena-dodge - and failed.
+        for config in ({}, {"design": {"author": "archetype"}}):
+            with self.subTest(config=config):
+                result = research(concepts=CONCEPTS, config=config)
+                self.assertEqual(result.outcome, StepOutcome.WAITING_FOR_INPUT,
+                                 result.message)
+                self.assertIn(self.entry["id"], result.message)
+                self.assertIn("design: {author: agent}", result.message)
+                self.assertIn("workspace/config/factory.yaml", result.message)
+                types_out = [a.type for a in result.artifacts]
+                self.assertEqual(types_out, ["research-report"])  # no opportunity carried
 
     def test_the_concept_is_selected_and_carried_verbatim(self):
         result = research(concepts=CONCEPTS)
@@ -621,11 +684,33 @@ class IdeaMatching(unittest.TestCase):
     def test_whole_words_only(self):
         block = {"genre": "puzzle", "subgenre": "block-puzzle", "title": "Block Puzzle",
                  "core_mechanic": "place blocks", "market_tags": ["puzzle"]}
-        self.assertEqual(analysis.idea_match(block, "the keeper blocks shots")["terms"],
-                         ["blocks"])
+        self.assertEqual(analysis.idea_match(block, "a puzzle where the keeper blocks shots")
+                         ["terms"], ["puzzle", "blocks"])
         self.assertEqual(analysis.idea_match(block, "a block game")["terms"], ["block"])
         self.assertEqual(analysis.idea_match(block, "3D keeper"),
                          {"terms": [], "dimension": False})
+
+    def test_one_incidental_word_is_not_a_match(self):
+        # The defect: the marble brief shares only "collect" with the endless runner's
+        # mechanic sentence, and "three" (Three.js) with match-3's. Neither is the brief.
+        catalog = {a["id"]: a for a in load_file(CATALOG)["archetypes"]}
+        for archetype_id in ("endless-runner", "match-3", "one-touch-arcade", "io-arena",
+                             "car-parking"):
+            with self.subTest(archetype=archetype_id):
+                self.assertEqual(analysis.idea_match(catalog[archetype_id], MARBLE)["terms"],
+                                 [])
+        # Generic gameplay and engine vocabulary is no word of any brief.
+        for word in ("collect", "stars", "levels", "time", "touch", "three", "js"):
+            self.assertNotIn(word, analysis.idea_terms(MARBLE + " levels"))
+
+    def test_a_brief_naming_the_genre_still_matches(self):
+        runner = {a["id"]: a for a in load_file(CATALOG)["archetypes"]}["endless-runner"]
+        self.assertEqual(analysis.idea_match(runner, "an endless runner where you collect "
+                                                     "coins")["terms"], ["endless", "runner"])
+        # Its mechanic sentence alone matches on two of its words, never on one.
+        self.assertEqual(analysis.idea_match(runner, "dodge obstacles across lanes")["terms"],
+                         ["dodge", "obstacles", "lanes"])
+        self.assertEqual(analysis.idea_match(runner, "dodge the goalkeeper")["terms"], [])
 
     def test_dimension(self):
         self.assertEqual(analysis.idea_dimension("3D goalkeeper"), "3d")

@@ -276,6 +276,9 @@ async function measureUI(page: Page): Promise<unknown> {
       elements.push({
         tag: el.tagName.toLowerCase(), role: el.getAttribute("role"),
         text: ((el as HTMLElement).innerText || (el as HTMLInputElement).value || el.getAttribute("aria-label") || "").trim().slice(0, 60),
+        // Whether that text is drawn: an icon-only control is named by its aria-label, which is
+        // read to the player but never painted, so it has no colour to measure.
+        text_drawn: Boolean(((el as HTMLElement).innerText || (el as HTMLInputElement).value || "").trim()),
         box: box(r), font_px: parseFloat(s.fontSize), font_weight: Number(s.fontWeight) || 400,
         color: ink(el), background: background(el), ua_default: differs.length === 0,
         ua_differs: differs,
@@ -426,9 +429,12 @@ async function retry(page: Page, s: Snapshot | null, touch: boolean): Promise<st
 
 // Opens the game as a first session and waits for play, pressing the title screen's own
 // begin input (as the probe lists it) as a player would. Returns the timings it measured.
-// With `screens`, the title screen's UI is measured before it is pressed.
-async function start(page: Page, touch: boolean, watch: Watch, screens = false): Promise<{ firstSnapshotMs: number | null; playingMs: number | null; samples: Snapshot[]; began: string | null }> {
+// With `screens`, the title screen's UI is measured before it is pressed; that measurement
+// (settling, styles, a frame) is the bot's time, not the game's, and is returned as
+// `observerMs` so start.playable can leave it out. `playingMs` stays the wall clock.
+async function start(page: Page, touch: boolean, watch: Watch, screens = false): Promise<{ firstSnapshotMs: number | null; playingMs: number | null; observerMs: number; samples: Snapshot[]; began: string | null }> {
   const t0 = Date.now();
+  let observerMs = 0;
   await page.goto(URL, { waitUntil: "domcontentloaded" });
   let firstSnapshotMs: number | null = null;
   let began: string | null = null;
@@ -438,8 +444,12 @@ async function start(page: Page, touch: boolean, watch: Watch, screens = false):
     const s = watch.saw(await snap(page));
     if (s && firstSnapshotMs === null) firstSnapshotMs = Date.now() - t0;
     if (s && samples.length < 3) samples.push(s);
-    if (s?.state === "playing") return { firstSnapshotMs, playingMs: Date.now() - t0, samples, began };
-    if (screens && s?.state === "title") await watch.screen("title");
+    if (s?.state === "playing") return { firstSnapshotMs, playingMs: Date.now() - t0, observerMs, samples, began };
+    if (screens && s?.state === "title") {
+      const observing = Date.now();
+      await watch.screen("title");
+      observerMs += Date.now() - observing;
+    }
     const begin = s && s.state !== "loading" ? s.inputs?.find((m) => BEGIN.test(m.action)) : undefined;
     if (begin && Date.now() - pressedAt > 1000) {
       await act(page, begin, touch);
@@ -448,7 +458,7 @@ async function start(page: Page, touch: boolean, watch: Watch, screens = false):
     }
     await page.waitForTimeout(50);
   }
-  return { firstSnapshotMs, playingMs: null, samples, began };
+  return { firstSnapshotMs, playingMs: null, observerMs, samples, began };
 }
 
 test("first session: objective, and no failure before the grace", async ({ page }, info) => {

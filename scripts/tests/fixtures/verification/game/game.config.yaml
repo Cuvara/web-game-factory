@@ -8,7 +8,7 @@ engine:
   type: pixijs
 
 platforms:
-  - { id: generic-web, profile: generic-web@1.0.0, role: required }
+  - { id: generic-web, profile: generic-web@1.1.0, role: required }
 
 monetization:
   ad_kinds: []

@@ -59,7 +59,22 @@ def rehash(artifact):
 
 
 def strategy():
-    return load_json(STRATEGY_PATH)
+    return repinned(load_json(STRATEGY_PATH))
+
+
+def repinned(strategy):
+    """The worked example with its platform_set pinned at the profiles' CURRENT versions.
+
+    The instance under workspace/ is immutable and pins the versions in force when it was
+    written; the design and tech-plan modules refuse a pin that is not the current profile
+    ("re-pin in a superseding strategy"), which these tests check separately with 9.9.9.
+    Here the strategy is a live input, so its pins follow the profiles, and the hash follows
+    the content."""
+    for entry in strategy.get("platform_set") or []:
+        path = os.path.join(paths.PLATFORMS, f"{entry.get('id')}.yaml")
+        if os.path.isfile(path):
+            entry["profile_version"] = str((load_file(path) or {}).get("version"))
+    return rehash(strategy)
 
 
 class _Definition:
@@ -382,7 +397,7 @@ class PortalRegistrations(unittest.TestCase):
     def test_a_registered_game_id_reaches_the_game_config_entry(self):
         self.register(f"gamedistribution: {{game_id: {self.GD_ID}}}\n")
         entry = self.entry(self.plan(self.targeting("gamedistribution")), "gamedistribution")
-        self.assertEqual(entry, {"id": "gamedistribution", "profile": "gamedistribution@1.0.0",
+        self.assertEqual(entry, {"id": "gamedistribution", "profile": "gamedistribution@1.1.0",
                                  "role": "optional", "game_id": self.GD_ID})
 
     def test_an_optional_game_id_is_written_only_when_registered(self):

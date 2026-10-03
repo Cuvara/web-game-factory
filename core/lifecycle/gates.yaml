@@ -27,7 +27,7 @@
 # `required_artifacts` is what a gate is decided on. A workflow checkpoint for the gate
 # lists them as its inputs, and waits for input - asks nobody - until the run holds them.
 
-version: 1.2.0  # 1.1.0: G3 and G4 required_artifacts (Factory 2.0.0); 1.2.0: G4 reads playability and review (2.7.0)
+version: 1.3.0  # 1.1.0: G3 and G4 required_artifacts (Factory 2.0.0); 1.2.0: G6 decided on the store listing too; 1.3.0: G4 reads playability and review (2.7.0)
 
 defaults:
   approvers: [portfolio-owner]
@@ -161,7 +161,11 @@ gates:
     irreversible: true
     irreversible_because: Publication is public and cannot be fully undone; portals cache and index.
     auto_approve_after: null
-    required_artifacts: [release-manifest]
+    # The release manifest, and the store listing it ships with: the canonical package
+    # (branding, screenshots, trailer, copy, one rendition per platform) captured from the
+    # verified build at release:store-listing, and its validation against each targeted
+    # platform's profile. store_metadata_complete is read from the validation report.
+    required_artifacts: [release-manifest, store-listing, listing-validation-report]
     required_predicates:
       - store_metadata_complete
     presents:

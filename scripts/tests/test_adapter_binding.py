@@ -227,7 +227,7 @@ class BindingWorkflowIntegrity(unittest.TestCase):
 
     ENTRY = ("workflows:\n  - id: new-game\n"
              "    runs: core/workflows/new-game.workflow.yaml\n"
-             "    role: null\n    gates: [G2, G3, G4]\n")
+             "    role: null\n    gates: [G2, G3, G4, G5, G6]\n")
 
     def setUp(self):
         cwd = os.getcwd()
@@ -264,8 +264,8 @@ class BindingWorkflowIntegrity(unittest.TestCase):
                 "new-game.workflow", "nope.workflow"),
             "outside core": self.ENTRY.replace("runs: core/", "runs: workspace/"),
             "no runs": self.ENTRY.replace("    runs: core/workflows/new-game.workflow.yaml\n", ""),
-            "gates drift": self.ENTRY.replace("[G2, G3, G4]", "[G2, G4]"),
-            "gate the workflow lacks": self.ENTRY.replace("[G2, G3, G4]", "[G2, G3, G4, G6]"),
+            "gates drift": self.ENTRY.replace("[G2, G3, G4, G5, G6]", "[G2, G4, G5, G6]"),
+            "gate the workflow lacks": self.ENTRY.replace("[G2, G3, G4, G5, G6]", "[G2, G3, G4, G5, G6, G7]"),
             "unknown role": self.ENTRY.replace("role: null", "role: nobody"),
         }
         for name, entry in cases.items():

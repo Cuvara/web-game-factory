@@ -16,7 +16,7 @@
 # Sections are per medium and keep disjoint keys: `svg` and `raster` (2D), `models` (3D, GLB),
 # `audio` (sfx and music: WAV decoded, Ogg and MP3 read by their headers).
 
-version: 1.2.0
+version: 1.4.0
 
 svg:
   # Larger files are refused before parsing; an SVG sprite that big is a traced raster.
@@ -90,6 +90,32 @@ models:
   # visual identity (Euclidean, sRGB 0-255 per channel), so a model belongs to the game's
   # look. Skipped when the design has no palette; textured materials are not decoded.
   palette_distance: 48
+
+  # Silhouette: a model of one of these roles is not a box with bumps. The visual model is
+  # projected orthographically from the front, the side and the top (a 64-cell grid on the
+  # longer side, every triangle covering each cell it touches), and in each view the share of
+  # the outline covered by its single largest component is measured - a part (a mesh node),
+  # or for a model that is one mesh, the largest rectangle inside the outline. The model
+  # fails when even its most distinctive view (the smallest share) is over `max_dominance`:
+  # its wings, limbs, fins, engines or gaps stay inside the main body's outline, and at
+  # gameplay distance it reads as a brick. Skipped under `primitive_style`, and for views in
+  # which the model is flat (an edge, not an outline).
+  # Calibrated on the 3D reference game's library (Blender builds of hand-iterated specs):
+  # craft 0.29, wall 0.53, skyline 0.27, track 0.39, a 13-part goalkeeper 0.38 and a
+  # body-cabin-wheels car 0.53 pass; an autonomous craft that read as "an orange brick with
+  # no wings" 0.66, a box hull with a sphere canopy and a fan 0.63, and one box 1.0 fail.
+  silhouette_roles: [player, threat]
+  max_dominance: 0.6
+  # model.contrast: the share of a model's visible surface (by area, untextured materials)
+  # whose colour - base or emissive, the brighter - stands off the design's background (the
+  # palette's background/ground token, else its darkest colour) by WCAG 3:1 or more. A dark
+  # model on a dark scene passes every geometric check and vanishes at gameplay distance.
+  # Calibrated 2026-10-02 on the neon-night ground #0B0B12: the 3D reference game's craft
+  # 0.76 and wall 0.30 (a dark frame around a large amber panel with emissive edges) pass;
+  # an autonomous set's black-hulled craft 0.35 and near-black asteroid 0.07 - both judged
+  # "vanish against the background" on their renders - fail. Per role; a role not listed is
+  # not judged.
+  min_contrast_share: {player: 0.5, collectible: 0.4, threat: 0.25, hazard: 0.25}
 
 fonts:
   # Glyph coverage. A font that cannot set a locale in the design's scope.locales is a design
@@ -171,6 +197,53 @@ variants:
   grid: 32
   min_silhouette_distance: 0.08
   png_background_delta: 24
+
+text:
+  # svg.text-font: a <text> (or <tspan>) is set in a face the design's typography names
+  # (visual_identity.typography display/body/numeric, the family before any "(weight)"),
+  # first in its font-family list; generic families may follow it as a fallback. A <text>
+  # with no font-family, or one led by another family, is set in a system font - the generic
+  # UI the identity kits exist to prevent. An SVG drawn as an image cannot load the game's
+  # web fonts at all, so lettering that must look right is drawn as outlines (paths).
+  generic_families: [serif, sans-serif, monospace, cursive, fantasy, system-ui, ui-serif, ui-sans-serif, ui-monospace, ui-rounded, emoji, math, fangsong]
+
+avoid:
+  # svg.avoid: the visual identity's `avoid` list, where a line can be measured on the file.
+  # A rule applies when an avoid line contains one of its phrases (case-insensitive); the
+  # other lines are for the author and visual QA to read, never failed here.
+  #   blur                  a Gaussian blur, a drop-shadow filter, or a CSS blur(): glow and
+  #                         soft shadows
+  #   emoji                 an emoji character in a <text>
+  #   purple-blue-gradient  a gradient whose stops run from purple to blue
+  #   text-gradient         a <text> filled or stroked with a gradient
+  #   rounded-corners       a <rect> with rx or ry above 0
+  rules:
+    blur: [neon glow, glow effects, soft blurred, blurred, blur]
+    emoji: [emoji]
+    purple-blue-gradient: [purple-to-blue, purple to blue]
+    text-gradient: [gradients inside text, gradient text]
+    rounded-corners: [rounded corners]
+
+set:
+  # set.consistent: drawings authored as one set (the 2D author's `set` mode, or any item
+  # judged with others) share one treatment, measured on simple proxies per group of roles.
+  # A group with fewer than `min_group` drawings is not compared.
+  #   outlined   a drawing is outlined when at least `outlined_share` of its shapes carry a
+  #              stroke; within a group, outlined and unoutlined drawings do not mix (the
+  #              minority fails)
+  #   width      an outlined drawing's outline - its widest stroke, in displayed px
+  #              (stroke-width x displayed size / viewBox width) - within
+  #              `max_outline_ratio` of the group's median
+  #   colour     its outline colour within `outline_colour_tolerance` (RGB distance) of the
+  #              group's most common outline colour
+  #   effects    blur filters (soft shadows, glow) used by all of a group or by none
+  groups:
+    entities: [player, threat, goal, target, projectile, collectible, hazard, prop]
+    icons: [icon]
+  min_group: 2
+  outlined_share: 0.3
+  max_outline_ratio: 1.6
+  outline_colour_tolerance: 60
 
 audio:
   # A WAV is decoded with the standard library (`wave`); Ogg (Vorbis, Opus) and MP3 are read

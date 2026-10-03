@@ -34,6 +34,8 @@ from wgflib.workflow.model import ArtifactRef, RunStatus, StepOutcome, StepStatu
 from wgf_design import archetypes, authors, compose, consistency, content, identity  # noqa: E402
 from wgf_design.platforms import load_platforms  # noqa: E402
 from wgf_design.step import SCHEMA_VERSION, DesignStep  # noqa: E402
+from wgflib import paths  # noqa: E402
+from wgflib.yamllite import load_file  # noqa: E402
 
 STRATEGY_PATH = os.path.join(ROOT, "workspace", "titles", "neon-drift", "title-strategy.json")
 NOW = "2026-09-23T10:00:00Z"
@@ -41,13 +43,28 @@ NOW = "2026-09-23T10:00:00Z"
 
 def load_strategy():
     with open(STRATEGY_PATH, encoding="utf-8") as handle:
-        return json.load(handle)
+        return repinned(json.load(handle))
 
 
 def rehash(artifact):
     artifact["provenance"]["content_hash"] = ""
     artifact["provenance"]["content_hash"] = content_hash(artifact)
     return artifact
+
+
+def repinned(strategy):
+    """The worked example with its platform_set pinned at the profiles' CURRENT versions.
+
+    The instance under workspace/ is immutable and pins the versions in force when it was
+    written; the design and tech-plan modules refuse a pin that is not the current profile
+    ("re-pin in a superseding strategy"), which these tests check separately with 9.9.9.
+    Here the strategy is a live input, so its pins follow the profiles, and the hash follows
+    the content."""
+    for entry in strategy.get("platform_set") or []:
+        path = os.path.join(paths.PLATFORMS, f"{entry.get('id')}.yaml")
+        if os.path.isfile(path):
+            entry["profile_version"] = str((load_file(path) or {}).get("version"))
+    return rehash(strategy)
 
 
 class FakeInputs:
@@ -370,13 +387,22 @@ class ConceptFidelity(unittest.TestCase):
         found = consistency._terms_in("a gateway to a seven-column track", self.TERMS)
         self.assertEqual(found, {"column"})
 
+    def test_the_english_verb_to_match_is_not_the_match_mechanic(self):
+        # A goalkeeper design: "the telegraphed zone always matches the zone the ball is
+        # struck toward" read as match-3 and descoped the run (2026-10-02).
+        self.assertEqual(consistency._terms_in(
+            "the telegraphed zone always matches the zone the ball is struck toward, on a "
+            "night match day", self.TERMS), set())
+        self.assertEqual(consistency._terms_in("swap to match three gems", self.TERMS),
+                         {"swap", "match"})
+
 
     def test_identity_is_stable_per_title(self):
         first = identity.choose("neon-drift", ["neon-night", "riso-arcade"])[0]
         self.assertEqual(first, identity.choose("neon-drift", ["neon-night", "riso-arcade"])[0])
 
     def test_a_placement_a_required_platform_lacks_is_cut_not_designed(self):
-        strategy = variant(platform_set=[{"id": "gamevui", "profile_version": "1.0.0", "role": "required"}])
+        strategy = variant(platform_set=[{"id": "gamevui", "profile_version": "1.1.0", "role": "required"}])
         result = run_step(strategy)
         design = result.artifacts[0].content
         self.assertEqual(result.outcome, StepOutcome.SUCCESS, result.error)
@@ -489,6 +515,34 @@ class FailurePaths(unittest.TestCase):
         self.assertIn("design_adds_no_foreign_mechanic", " ".join(Foreign.rounds[1]))
         self.assertIn("shoot", " ".join(Foreign.rounds[1]))
 
+    def test_an_author_that_repairs_is_shown_the_breaches_and_asked_again(self):
+        # The breach is the design's, not the strategy's: the first draft prices its assets
+        # over the budget, and the author cuts them when it is shown the rule it broke.
+        seen = []
+
+        class Overpriced(authors.ArchetypeAuthor):
+            repairs = True
+
+            def draft(self, brief):
+                draft = super().draft(brief)
+                seen.append(brief.get("repair"))
+                if brief.get("repair"):
+                    return draft
+                budget = draft["scope"]["asset_budget"]
+                draft["build_spec"]["assets"][0]["est_cost"] = budget * 2
+                return draft
+
+        authors.register_author("overpriced", Overpriced)
+        self.addCleanup(authors.AUTHORS.pop, "overpriced", None)
+        result = run_step(load_strategy(), params={"author": "overpriced"})
+        self.assertEqual(result.outcome, StepOutcome.SUCCESS, result.error)
+        self.assertEqual(len(seen), 2)
+        self.assertIsNone(seen[0])
+        problems = seen[1]["problems"]
+        self.assertTrue(any("asset_cost_within_scope" in p for p in problems), problems)
+        self.assertTrue(any("Cut scope" in p for p in problems), problems)
+        self.assertEqual(result.artifacts[0].content["consistency"]["status"], "pass")
+
     def test_a_breach_the_author_keeps_still_descopes(self):
         class Stubborn(authors.ArchetypeAuthor):
             repairs = True
@@ -504,6 +558,8 @@ class FailurePaths(unittest.TestCase):
         self.assertEqual((result.outcome, result.route, result.retryable),
                          (StepOutcome.FAILED, "descope", False))
         self.assertEqual(len(result.artifacts), 1)
+        self.assertIn("design_adds_no_foreign_mechanic", result.error)
+        self.assertEqual(result.artifacts[0].content["consistency"]["status"], "fail")
 
     def test_a_detail_term_is_never_foreign(self):
         # Walls, crashes and locks are details most games have: a penguin that stops at a
@@ -608,7 +664,7 @@ class ConsistencyRules(unittest.TestCase):
     def test_a_designed_placement_a_required_platform_lacks_is_a_breach(self):
         self.design["monetization"]["placements"].append({"kind": "iap", "trigger": "Shop"})
         crazygames = load_platforms({"platform_set": [
-            {"id": "crazygames", "profile_version": "1.0.0", "role": "required"}]})
+            {"id": "crazygames", "profile_version": "1.1.0", "role": "required"}]})
         results, blocking = self.results(platforms=crazygames)
         self.assertTrue(results["monetization_supported_by_platform"]["breached"])
         self.assertIn("monetization_supported_by_platform", blocking)
@@ -620,7 +676,7 @@ class ConsistencyRules(unittest.TestCase):
 
     def test_a_platform_without_the_value_makes_a_rule_inapplicable(self):
         generic = load_platforms({"platform_set": [
-            {"id": "generic-web", "profile_version": "1.0.0", "role": "required"}]})
+            {"id": "generic-web", "profile_version": "1.1.0", "role": "required"}]})
         results, _ = self.results(platforms=generic)
         rule = results["interstitial_interval_fits_session"]
         self.assertFalse(rule["breached"])
@@ -676,8 +732,13 @@ class ThroughTheEngine(unittest.TestCase):
         self.addCleanup(shutil.rmtree, self.scratch, ignore_errors=True)
         modules = os.path.join(self.scratch, "modules")
         os.makedirs(modules)
+        # The seed hands the engine the worked example re-pinned at the profiles' current
+        # versions (load_strategy), written beside the module: the instance itself is immutable.
+        seeded = os.path.join(self.scratch, "title-strategy.json")
+        with open(seeded, "w", encoding="utf-8") as handle:
+            json.dump(load_strategy(), handle)
         with open(os.path.join(modules, "wgf_test_seed.py"), "w", encoding="utf-8") as handle:
-            handle.write(SEED_MODULE.format(path=STRATEGY_PATH))
+            handle.write(SEED_MODULE.format(path=seeded))
         sys.path.insert(0, modules)
         self.addCleanup(sys.path.remove, modules)
         self.addCleanup(sys.modules.pop, "wgf_test_seed", None)

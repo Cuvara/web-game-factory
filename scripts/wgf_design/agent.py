@@ -42,9 +42,10 @@ import copy
 import json
 import os
 
-from wgflib import agentenv, genre_models, paths, procs
+from wgflib import agentenv, genre_models, paths, procs, quality_bar
 
 from . import content as content_rules
+from . import identity
 from .authors import ArchetypeAuthor, AuthorError, DesignAuthor, register_author
 from .depth import load_rules as load_depth_rules
 from .experience import load_rules
@@ -149,6 +150,17 @@ PROMPT_ART = (
     " token, within the request's `production_art` bars. Set visual_identity.primitive_style"
     " (with a reason) only when the art direction itself is geometric - a character is never"
     " a cube for convenience. The craft guide is the request's `craft`."
+    " The starting draft's visual identity was picked from a fixed set by a digest of the"
+    " title id, not from the idea: choose from the request's `identity_kits` the one that"
+    " best fits this game's idea, subjects and genre, and make visual_identity that kit -"
+    " keep its typography exactly as listed there (those faces are already chosen to set"
+    " every locale in scope, and the asset step can deliver them), shape language, motion"
+    " and ui rules - adapted to the game: add palette tokens for the colours its subjects"
+    " need (each piece, character or object a player tells apart by colour gets a token), and"
+    " rewrite art_direction and every asset's description and readability to follow it."
+    " The request's `quality_bar` lists frames of finished games: open them - the level of"
+    " finish (a composed frame, one visual language, designed typography and UI) is the bar"
+    " your art direction must make reachable; their style is not this game's."
 )
 # Appended always: why a player comes back (depth.py), so a draft states more than one loop.
 # The bars are the request's `depth`, read from core/reference/design-depth.yaml.
@@ -196,6 +208,22 @@ def _last_json_object(text):
         if isinstance(value, dict):
             found = value
         index = end
+
+
+def _kits(locales):
+    """Every identity kit the agent may choose from, each with its faces already swapped for
+    the covering alternates the design's locales need (identity.cover) - the same rule the
+    archetype author applies, so a chosen kit's typography can set every locale in scope."""
+    from .presentation import load_font_coverage
+    coverage = load_font_coverage()
+    out = {}
+    for kit_id, kit in identity.KITS.items():
+        look = {key: copy.deepcopy(kit.get(key)) for key in (
+            "concept", "palette", "typography", "shape_language", "motion", "texture",
+            "avoid", "ui")}
+        look, _swapped = identity.cover(look, list(locales or []), coverage)
+        out[kit_id] = look
+    return out
 
 
 def check_shape(draft):
@@ -287,6 +315,10 @@ class AgentAuthor(DesignAuthor):
                    "depth": load_depth_rules(),
                    "depth_craft": os.path.join(paths.CORE, "craft",
                                                "retention-and-progression.md"),
+                   # The committed looks to choose from, and frames of finished games.
+                   "identity_kits": _kits((starting.get("scope") or {}).get("locales")),
+                   "quality_bar": quality_bar.frames(),
+                   "quality_bar_qualities": quality_bar.qualities(),
                    # The genre family the content is held to, exactly as content.py reads it -
                    # its unit kinds, models, ending, axes, win and lose shape, unit counts,
                    # variety dimensions and mastery model. `seed` is the built-in author's own

@@ -69,6 +69,11 @@ DEFAULTS = {
                   "idle_timeout_seconds": None},
     "checks": ["install", "conformance", "typecheck", "lint", "unit", "build", "smoke"],
     "check_timeout_seconds": 900,
+    # Playwright workers for the smoke suite (`--workers=N` after the script); None leaves
+    # the repository's own setting. The suite is desktop and mobile, fully parallel, against
+    # one preview server: on a machine that cannot stand that, a production build's heavier
+    # load misses the first-frame wait and the same tree fails here and passes at one worker.
+    "smoke_workers": None,
     "commit": True,
     "build_url": None,
     "skills": {},
@@ -149,6 +154,12 @@ class Settings:
                                 "threejs, ui, craft, ...) to a list of skill names")
         if not isinstance(data.get("self_playtest", False), bool):
             raise SettingsError("factory.develop.self_playtest must be true or false")
+        workers = data.get("smoke_workers")
+        if workers is not None and (isinstance(workers, bool) or not isinstance(workers, int)
+                                    or workers < 1):
+            raise SettingsError("factory.develop.smoke_workers must be a whole number of "
+                                "Playwright workers, 1 or more, or unset")
+        self.smoke_workers = workers
 
     @staticmethod
     def _package_changes(value):

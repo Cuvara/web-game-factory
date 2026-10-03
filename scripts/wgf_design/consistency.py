@@ -26,7 +26,8 @@ from wgflib import paths
 from wgflib.criteria import MISSING, Unevaluable, evaluate_named, resolve
 from wgflib.yamllite import load_file
 
-__all__ = ["RULES_PATH", "load_rules", "projection", "concept_view", "evaluate"]
+__all__ = ["RULES_PATH", "load_rules", "projection", "concept_view", "evaluate",
+           "breach_problems"]
 
 RULES_PATH = os.path.join(paths.REFERENCE, "design-consistency-rules.yaml")
 
@@ -208,3 +209,27 @@ def evaluate(design, strategy, platforms, evaluated_at, rules=None):
         "warnings_acknowledged": False,
     }
     return block, blocking_breached, warnings
+
+
+def breach_problems(block, blocking, rules=None):
+    """The blocking breaches in `block`, as problems an author that repairs its draft can act
+    on: the rule's label, what was measured against what, and that the answer is to cut scope.
+
+    A breach is the one invalid-design class the author was never shown (the step failed on it
+    immediately), so an agent author could not fix a design whose only fault was three assets
+    too many - the run died at `descope` with the fix one round away."""
+    ruleset = rules or load_rules()
+    labels = {rule["id"]: rule.get("label") or rule["id"] for rule in ruleset["rules"]}
+    problems = []
+    for result in block.get("rule_results") or []:
+        rule_id = result["criterion_id"]
+        if rule_id not in blocking:
+            continue
+        measured = result.get("measured")
+        if isinstance(measured, (list, tuple)):
+            measured = ", ".join(str(m) for m in measured)
+        detail = f": measured {measured}" if measured else ""
+        note = f" ({result['note']})" if result.get("note") else ""
+        problems.append(f"consistency {rule_id} - {labels.get(rule_id, rule_id)}{detail}{note}. "
+                        f"Cut scope to hold the rule; never relax the rule.")
+    return problems

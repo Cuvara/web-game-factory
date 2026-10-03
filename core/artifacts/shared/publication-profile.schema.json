@@ -1,0 +1,118 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://webgamefactory.dev/schemas/artifacts/shared/publication-profile.schema.json",
+  "title": "Publication Profile",
+  "description": "Validates files in core/reference/publication/. How a release reaches one portal: the submission method the portal supports, the console a deterministic browser run drives when it supports no API, what only a person can do there, and whether automated use of the console is permitted by the portal's terms.\n\nDATA, not integration code: the publish step's adapters read it, and the pipeline never names a portal. Kept apart from core/reference/platforms/<id>.yaml on purpose - a platform profile is pinned by content hash by every game built against it and changes only with the portal's compliance rules; this changes with the portal's console and is pinned by a publication record, never by a game.\n\nNothing here is a credential. Credentials are named (an environment variable the installation sets) and never written.",
+
+  "x-wgf": {
+    "id": "publication-profile",
+    "kind": "reference",
+    "format": "yaml",
+    "instance_path": "core/reference/publication/*.yaml",
+    "consumers": ["release:validating", "release:submitting"]
+  },
+
+  "type": "object",
+  "required": ["id", "version", "status", "submission"],
+  "properties": {
+    "id": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9-]*$",
+      "description": "The platform id: core/reference/platforms/<id>.yaml must exist."
+    },
+    "version": { "type": "string", "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$" },
+    "status": {
+      "enum": ["verified", "unverified", "deprecated"],
+      "description": "unverified: the console flow below has not been exercised against the live portal by a person; the publish step then stops HUMAN_REQUIRED before contacting it."
+    },
+    "docs": { "type": ["string", "null"] },
+
+    "submission": {
+      "type": "object",
+      "required": ["method", "automation_terms"],
+      "properties": {
+        "method": {
+          "enum": ["api", "cli", "console", "email", "manual"],
+          "description": "The portal's supported way in, preferred in this order: an official API or CLI when the portal publishes one; the developer console by a deterministic browser run when it does not; email or manual when neither exists. Never an undocumented API."
+        },
+        "api": {
+          "type": "object",
+          "description": "method api/cli only: the documented endpoint or tool, by name.",
+          "properties": {
+            "docs": { "type": "string" },
+            "tool": { "type": "string" }
+          },
+          "additionalProperties": false
+        },
+        "console": {
+          "type": "object",
+          "description": "method console only: the console a browser run drives. Origins are the only ones the browser may reach; everything else is refused at the browser.",
+          "required": ["url", "allowed_origins"],
+          "properties": {
+            "url": { "type": "string" },
+            "allowed_origins": { "type": "array", "minItems": 1, "items": { "type": "string" } },
+            "upload_max_mb": { "type": ["number", "null"] },
+            "upload_timeout_s": { "type": "integer", "minimum": 30 }
+          },
+          "additionalProperties": false
+        },
+        "automation_terms": {
+          "enum": ["permitted", "prohibited", "unverified"],
+          "description": "Whether the portal's terms allow automated use of its developer console, as a person established from the portal's own documents. unverified or prohibited: the publish step never drives the console and stops HUMAN_REQUIRED (reason terms-unconfirmed); an installation records a person's finding in factory.publish.platforms.<id>.terms_confirmed."
+        },
+        "terms_checked": {
+          "type": "object",
+          "description": "Who established automation_terms, when, from which document.",
+          "properties": {
+            "by": { "type": "string" },
+            "at": { "type": "string", "format": "date" },
+            "source": { "type": "string" },
+            "note": { "type": "string" }
+          },
+          "additionalProperties": false
+        },
+        "credential": {
+          "type": "object",
+          "description": "The credential the adapter needs and where the installation keeps it - by variable NAME only. A storage state is a Playwright storageState JSON a person captured by logging in once; the step never types a password.",
+          "required": ["kind", "env"],
+          "properties": {
+            "kind": { "enum": ["storage-state", "token", "none"] },
+            "env": { "type": "string", "pattern": "^[A-Z][A-Z0-9_]*$" },
+            "capture": { "type": "string", "description": "How a person captures or rotates it." }
+          },
+          "additionalProperties": false
+        },
+        "human_required": {
+          "type": "array",
+          "description": "What this portal makes a person do, whatever the method: login and its challenges, accepting terms, payout setup, a console switch the automation does not touch.",
+          "items": { "enum": ["login", "captcha", "two-factor", "terms", "payout-setup", "review", "console-switch", "email"] }
+        },
+        "constraints": {
+          "type": "object",
+          "description": "Portal rules an adapter checks before acting.",
+          "properties": {
+            "one_moderation_at_a_time": { "type": "boolean" },
+            "postpone_publication": { "type": "boolean", "description": "The portal can hold a verified draft unpublished; the adapter sets it so publication timing stays a person's." },
+            "replaces_index_html": { "type": "boolean" },
+            "archive_root_index": { "type": "boolean" }
+          },
+          "additionalProperties": false
+        },
+        "verification": {
+          "type": "object",
+          "description": "How the portal's own state is read back after acting: the states its console shows, and which of them mean what.",
+          "properties": {
+            "states": { "type": "array", "items": { "type": "string" } },
+            "submitted_states": { "type": "array", "items": { "type": "string" } },
+            "live_states": { "type": "array", "items": { "type": "string" } },
+            "rejected_states": { "type": "array", "items": { "type": "string" } }
+          },
+          "additionalProperties": false
+        },
+        "notes": { "type": "string" }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}

@@ -169,7 +169,9 @@ def check_contract_roles(path, definition, meta=None):
     thing in `stage`, `outputs` and `inputs`. Two statements of one fact drift unless one is
     checked against the other, so:
 
-      * every type a step outputs names the step's stage as its x-wgf `producer`;
+      * every type a step outputs names the step's stage as its x-wgf `producer`, or lists
+        it in its x-wgf `updated_by` (a record one stage creates and a later one advances:
+        platform-publication at release:validating, then release:submitting);
       * every type a step takes as input lists the step's stage in its x-wgf `consumers`.
 
     An artifact whose x-wgf `producer` is `gate` (GATE_PRODUCER: the decision-record) is
@@ -204,10 +206,12 @@ def check_contract_roles(path, definition, meta=None):
                                  f"step deciding a gate produces (x-wgf producer "
                                  f"'{GATE_PRODUCER}'), but names no gate")
                 continue
-            if block is not None and block.get("producer") != step.stage:
+            if (block is not None and block.get("producer") != step.stage
+                    and step.stage not in (block.get("updated_by") or ())):
                 found.append(f"{path}: step '{step.id}' outputs '{aid}' at stage "
                              f"'{step.stage}', but its x-wgf producer is "
-                             f"'{block.get('producer')}'")
+                             f"'{block.get('producer')}' and updated_by does not name "
+                             f"the stage")
         for aid in step.inputs or ():
             block = meta.get(aid)
             if block is not None and step.stage not in (block.get("consumers") or ()):

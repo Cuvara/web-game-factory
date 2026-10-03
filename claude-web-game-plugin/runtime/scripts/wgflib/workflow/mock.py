@@ -301,8 +301,98 @@ class MockVisualQAStep(MockStep):
             body["routes"] = [route]
 
 
+class MockStoreListingStep(MockStep):
+    """`incomplete` in a mock plan is a listing with a problem recorded (status incomplete,
+    still SUCCESS, as the real step returns one); otherwise the placeholder package."""
+
+    type, role = "store-listing", "release"
+
+    def execute(self, inputs, context):
+        result = super().execute(inputs, context)
+        if result.route == "incomplete":
+            return StepResult.success(result.artifacts, message=f"{self.id} incomplete (mock)")
+        return result
+
+    def customize(self, body, artifact_type, context, entry):
+        if artifact_type != "store-listing":
+            return
+        body["package_dir"] = f"store-listing/{context.visit}-{context.attempt}/package"
+        if entry == "incomplete":
+            body["status"] = "incomplete"
+            body["problems"] = [{"code": "locale-missing", "severity": "error",
+                                 "message": "Scripted missing locale (mock).", "subject": "ru"}]
+
+
+class MockListingValidationStep(MockStep):
+    """`fail` in a mock plan is a validation failure routed back to the listing step
+    (FAILED, route `listing`, not retryable, the report emitted); `blocked` is the shape the
+    real step returns when only a person can act."""
+
+    type, role = "listing-validation", "release"
+
+    def execute(self, inputs, context):
+        entry = self._scripted(context)
+        if entry == "blocked":
+            artifacts = [self._artifact(t, inputs, context, entry) for t in self.definition.outputs]
+            return StepResult("BLOCKED", artifacts=artifacts,
+                              message=f"{self.id} blocked: a person must act (mock)")
+        result = super().execute(inputs, context)
+        if result.route == "fail":
+            return StepResult("FAILED", route="listing", artifacts=result.artifacts, retryable=False,
+                              error=f"{self.id} failed the listing (mock)")
+        return result
+
+    def customize(self, body, artifact_type, context, entry):
+        if artifact_type != "listing-validation-report":
+            return
+        if entry in ("fail", "blocked"):
+            body["verdict"] = "FAIL" if entry == "fail" else "BLOCKED"
+            body["checks"][0].update(status="FAIL", summary="scripted failure (mock)")
+            body["sections"]["screenshots"] = "FAIL"
+            body["failed"] = ["screenshots.count"]
+            body["routes"] = ["listing"] if entry == "fail" else []
+            if entry == "blocked":
+                body["blocked_reason"] = "scripted block (mock)"
+
+
 class MockReleaseStep(MockStep):
     type, role = "release", "release"
+
+
+class MockPlatformValidateStep(MockStep):
+    """`fail` in a mock plan is a validation that found the release not publishable here:
+    FAILED, route `fail`, not retryable, the record kept (readiness BLOCKED) - the shape
+    the real step (scripts/wgf_publish) returns."""
+
+    type, role = "platform-validate", "release"
+
+    def customize(self, body, artifact_type, context, entry):
+        if artifact_type == "platform-publication" and entry == "fail":
+            body["state"] = "validation-failed"
+            body["readiness"] = "BLOCKED"
+            body["guards"] = [{"guard": "assertions_pass", "verdict": "RED",
+                               "reason": "scripted breach (mock)"}]
+
+
+class MockPublishStep(MockStep):
+    """A mock publication contacts nothing: the record it emits says `dry_run` and outcome
+    DRY_RUN, the state stays `validated`. `human` in a mock plan is a portal that needs a
+    person (WAITING_FOR_HUMAN), the way the real step stops at a login or a CAPTCHA."""
+
+    type, role = "publish", "release"
+
+    def execute(self, inputs, context):
+        if self._scripted(context) == "human" and context.decision is None:
+            context.logger.info("mock step", script="human")
+            return StepResult.waiting_for_human(
+                f"{self.id}: the portal needs a person (mock); resume with --decision done")
+        return super().execute(inputs, context)
+
+    def customize(self, body, artifact_type, context, entry):
+        if artifact_type == "platform-publication":
+            body["outcome"] = "DRY_RUN"
+            body["submission"] = {"method": "console", "dry_run": True, "attempts": 1,
+                                  "idempotency_key": f"{context.run_id}:publish:mock"}
 
 
 MOCK_STEPS = (
@@ -319,7 +409,11 @@ MOCK_STEPS = (
     MockReviewStep,
     MockSDKStep,
     MockVerificationStep,
+    MockStoreListingStep,
+    MockListingValidationStep,
     MockReleaseStep,
+    MockPlatformValidateStep,
+    MockPublishStep,
 )
 
 

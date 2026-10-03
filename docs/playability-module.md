@@ -158,7 +158,7 @@ reads these from `records_dir`:
 | `start.playable` | play begins within `first_30s.playable_s` |
 | `start.objective` | ≥ 60 % of the objective statement's content words are on screen in the first 3 s of play |
 | `idle.grace` | no loss during the idle window |
-| `act.acknowledged` | every action changes ≥ `min_changed_fraction` of the frame by ≥ `min_pixel_delta` luminance |
+| `act.acknowledged` | every action changes ≥ `min_changed_fraction` of the frame by ≥ `min_pixel_delta` luminance; each is measured in play (a pause goes last, and the bot resumes through the game's own resume input before the next action) |
 | `win.reachable` | good play reaches `won`. Never degraded to "the metric rose" when the contract states a win; and a design whose genre family wins by anything but a best score, with no `experience.win`, fails here - there is nothing for good play to reach |
 | `lose.reachable` | bad play reaches `lost`, and - when the family names a `resource_metric` - that number is seen to fall under the anti-oracle |
 | `restart.works` | the retry returns to play within `retry_s` + 1 s, with the goal metric reset; and, when the family says a unit can be restarted from inside it (`reset_in_unit`), a restart pressed mid-unit returns to a clean unit. Reported **BLOCKED** with `measured.reason` "no loss to retry from" when bad play never reached `lost` and nothing offered a retry: this check waits on `lose.reachable`, which fails on its own |

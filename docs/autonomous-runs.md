@@ -38,8 +38,9 @@ those, and nothing else:
 | `develop.budget` | `max_sessions: 12`, `max_cost: 60` (US$, from `total_cost_usd`) | develop blocks, nothing spawned, once reached; only a person raises it (`wgf resume <run> --budget-sessions N`) |
 | `review.reviewer` | `kind: command`, the verified read-only `claude -p` argv | Approves or requests changes; the Factory fingerprints the checkout and undoes any write |
 | `design` | `author: agent`, the verified read-only `claude -p` argv | Writes the design draft for a brief no design archetype carries; the module judges it unchanged, and shows it any schema, buildability, depth or content problem for a bounded repair (`MAX_REPAIR_ROUNDS`). It is also the only author that can answer a design gap (the brief's `gaps` + `previous_design`); the deterministic authors refuse one |
-| `assets.author` | `kind: command`, `svg_from: stdout`, the verified read-only `claude -p` argv | Draws each 2D requirement as an SVG it prints (one call per drawing, at most US$1 each); the Factory writes it, validates and judges it, and shows a rejected one its problems for up to two repairs |
-| `assets.model_author` | `kind: command`, `spec_from: stdout`, the same read-only argv | Writes a model spec per 3D requirement (at most US$2 a call); the pinned Blender 4.5 builds it and the Factory judges the GLB (`primitive_only`, parts, palette). Needs Blender on `PATH` or in `WGF_BLENDER` |
+| `assets.model_author` | `kind: command`, `mode: set`, `spec_from: file`, `review_rounds: 1`; the read-only argv plus `Write,Edit` allowed only by `Edit(/{dir}/**)` | One session writes every 3D model of the design as a set (at most US$3 a call; one call per repair or review round); the pinned Blender 4.5 builds each spec, the Factory judges the GLB (`primitive_only`, silhouette, parts, palette) and renders contact sheets and the set, which the author opens to repair and to revise what does not read ([blender-pipeline.md](blender-pipeline.md), "Set mode"). Needs Blender on `PATH` or in `WGF_BLENDER` |
+| `assets.author` | `kind: command`, `mode: set`, the verified `claude -p` argv: writes only under the Factory's `{out}`, runs only the Factory's `{preview}` | Draws every 2D requirement as ONE set in one session (at most US$6), from the whole visual identity, the art direction and the craft guides; runs the preview, which judges every file and renders the contact sheet it then looks at, and revises. The Factory judges again and delivers what passes; one repair session is shown what still fails and the last sheet ([assets-module.md](assets-module.md#the-set-author)) |
+| `assets.producers` | `[fonts, audio]` | Bundles the typography's faces from the Factory font library and composes the music and sound effects; no agent, no network, no cost (the shipped default is `[]`) |
 | `visualqa.judge` | `kind: command`, `verdict_from: stdout`, the verified read-only `claude -p` argv | Reads the captured frames and returns scores and findings (at most US$2 a judgement); the step decides PASS or FAIL and routes `assets` / `develop` |
 | `checkpoints.auto_approve` | `[G2, G3]` | The two reversible gates in `new-game` are approved by the run, each with a decision record (`automation`). This is also what lets a design repair finish unattended: a `design-gap` return re-runs `design`, `tech-plan` and **G3** on the repaired design before the build starts again, so an installation that holds G3 for a person stops there once per return — by design |
 | `init.source` | `local` | A project from the pinned template, `git archive`-style, **no GitHub repository, no remote** |
@@ -51,11 +52,23 @@ Factory's own tree and the project's `workspace/config` - against the agents.
 Without the two authors and the judge, workflow 5 cannot finish unattended: every asset is a
 placeholder, `production-quality` refuses placeholder art and routes back to `assets`, which
 makes the same placeholders until the loop limit blocks the run; and `visual-qa` blocks with
-no judge. The authors and the judge have only `Read` - they print what they make, and the
-Factory writes it - so none of them can change the checkout or the Factory. `develop.budget`
-bounds the developer only; each other agent is bounded per call by its `--max-budget-usd`.
-A drop-merge design asks the 2D author 22 times (10 pieces, 6 icons, the frame, the
-backdrop, ...), each about 2 minutes, plus a repair call for each rejected file.
+no judge. The model author and the judge have only `Read` - they print what they make, and
+the Factory writes it. The 2D set author writes, but only SVG files under a scratch directory
+the Factory owns (`{out}`), and runs exactly one command, the Factory's preview; the Factory
+copies what passes into the checkout. None of them can change the checkout or the Factory.
+`develop.budget` bounds the developer only; each other agent is bounded per call by its
+`--max-budget-usd`. A drop-merge design's 22 drawings (10 pieces, 6 icons, the frame, the
+backdrop, ...) are one set session, plus at most one repair session.
+
+Fonts and audio need no agent: the profile sets `assets.producers: [fonts, audio]`. The
+typography's faces come from the Factory font library (OFL WOFF2s shipped with the runtime,
+`workspace/library/fonts`), and the design's music and sound effects are composed from its
+audio direction and encoded by the Factory itself (Ogg Vorbis loops, WAV effects) - about a
+minute per design, no network, no paid service, nothing a person must source. Before them
+an unattended run could only ship a system font stack and an 8-second placeholder loop for
+items its design marks `mvp`, which production-quality refuses. See
+[assets-module.md](assets-module.md), "Fonts and audio: the producers". Still without a
+producer: 3D textures (sky, sparks) and 3D VFX.
 
 ## Enabling it
 
@@ -136,7 +149,8 @@ step. Before this, 9 of 11 concepts reached design and failed its consistency ru
 | | |
 |---|---|
 | G4 prototype review | pass, iterate or kill - always a person: `! … wgf.py decide <run> pass --note "..."` |
-| release | runs after a G4 pass; drafts only. G5, G6 (publish) and G7 (spend) are the game repository's, and human |
+| release | runs after a G4 pass; drafts only. `wgf new-game` ends there |
+| publication | `wgf publish --run <run>` is a person's act. G5 (reversible; the autonomous profile does not auto-approve it either) and G6 (`publish`/`reject`: irreversible, always a person). The `submit` step is dry-run until an installation sets `factory.publish.mode: live` AND `WGF_PUBLISH_LIVE=1`; a login, CAPTCHA, second factor, unconfirmed portal terms or a missing session stops it for a person. G7 (spend) stays the game repository's, and human |
 | budget | raising it after it is spent |
 | evidence | nothing, when the research agent can fetch it; a person when it cannot |
 | a GitHub repository | only if you set `init.source: github`, and `/new-game` asks first |

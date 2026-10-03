@@ -107,7 +107,7 @@ design:
 
 ---
 
-## The sixteen artifacts
+## The eighteen artifacts
 
 | Artifact | Producer | Consumers | Gates |
 |---|---|---|---|
@@ -124,6 +124,8 @@ design:
 | `sdk-report` | prototype (updated in production) | prototype-review, QA, release draft, validating | — |
 | `qa-report` | release QA | prototype (develop, on a failed verification), prototype-review, release draft, rc, production | G5 |
 | `verification-report` | release QA (with `qa-report`) | prototype-review, release draft, rc, production | G5 |
+| `store-listing` | release draft (the `store-listing` step, stage `release:store-listing`) | listing validation, release draft, approved, validating, submitting | G6 |
+| `listing-validation-report` | release draft (the `listing-validation` step) | the listing step (on a failure routed back), release draft, approved, validating, submitting | G6 |
 | `release-manifest` | release draft | QA, rc, validating, submitting, live | G5, G6 |
 | `platform-publication` | validating | submitting, partially-live, live | — |
 | `performance-review` | live | live, production, market-scan | G7 |
@@ -337,7 +339,7 @@ prose guidance does not.
 | Scope / session / monetization documents | Sections of `game-design`. Four files drift; one artifact with a recorded consistency result is atomic. |
 | `task_breakdown.json` | `tech-plan.dev_plan.tasks`. |
 | `concepts.json` | Superseded by `opportunity` + `evaluation`. |
-| `metadata.json` | `release-manifest.store_metadata`. |
+| `metadata.json` | `release-manifest.store_metadata`, filled from the `store-listing` the release ships. |
 | Experiment / hypothesis / change plan | Fields on `performance-review`. |
 
 The test applied: **if nothing downstream parses it, it is not a contract.** Rendering it for

@@ -5,6 +5,9 @@ Opt-in, configured under `factory.assets.author` (workspace/config/factory.yaml)
 
     author:
       kind: command                # none (default) | command
+      mode: asset                  # asset (default): one session per drawing, below
+                                   # set: one session authors every drawing together, looking
+                                   # at a rendered contact sheet - set_author.py
       argv: [...]                  # the host's non-interactive command; placeholders below
       svg_from: file               # file (default): it writes {output} | stdout: it prints
                                    # the SVG last, and the Factory writes {output}
@@ -17,8 +20,9 @@ JSON), {output} (where to write the SVG), {prompt} (a one-paragraph instruction)
 request carries the requirement - id, type, role, dimension, description, readability,
 count and variant, spec, size - the design's palette and visual identity, the quality bars
 the file is held to (core/reference/asset-quality.yaml), and, when asked again, the
-problems with the previous file (`repair`) or the findings that sent the step back
-(`notes`).
+problems with the previous file (`repair`), or, when a failed gate sent the step back
+(wgf_assets.feedback), why in the judge's words (`notes`), the frames of the running game
+that show it (`frames`, absolute PNG paths) and the file that was judged (`current`).
 
 With `svg_from: stdout` the author needs no write tool at all: the last complete <svg>
 element in what it prints (fenced or not) is the file, written at {output} by the Factory
@@ -43,9 +47,10 @@ import re
 from wgflib import agentenv, procs
 
 __all__ = ["CommandAuthor", "AuthorError", "AuthorRunFailed", "build_author", "last_svg",
-           "KINDS", "SVG_FROM", "MAX_REPAIR_ROUNDS", "AUTHOR_CRAFT"]
+           "KINDS", "MODES", "SVG_FROM", "MAX_REPAIR_ROUNDS", "AUTHOR_CRAFT"]
 
 KINDS = ("none", "command")
+MODES = ("asset", "set")
 MAX_REPAIR_ROUNDS = 2
 SVG_FROM = ("file", "stdout")
 DEFAULTS = {"kind": "none", "argv": [], "svg_from": "file", "timeout_seconds": 600,
@@ -79,8 +84,11 @@ PROMPT_REPAIR = (
     "`repair.problems`. Write it again with exactly those fixed."
 )
 PROMPT_NOTES = (
-    " The running game was judged and this asset was named in the findings in `notes`: "
-    "address them."
+    " This asset was drawn before, and the running game was judged and sent it back: the "
+    "request's `notes` say why, in the judge's words. Open every PNG in the request's "
+    "`frames` - screenshots of the running game - find this asset in them, and fix what "
+    "they show and the notes say; `current` is the file that was judged. Draw it anew - "
+    "resubmitting the same drawing fails the game again."
 )
 
 
@@ -94,6 +102,7 @@ class AuthorRunFailed(RuntimeError):
 
 class CommandAuthor:
     kind = "command"
+    mode = "asset"
 
     def __init__(self, settings, config=None):
         self.settings = dict(DEFAULTS)
@@ -214,4 +223,11 @@ def build_author(settings, config=None):
                           f"not {kind!r}")
     if kind == "none":
         return None
+    mode = settings.get("mode") or "asset"
+    if mode not in MODES:
+        raise AuthorError(f"factory.assets.author.mode must be one of {', '.join(MODES)}, "
+                          f"not {mode!r}")
+    if mode == "set":
+        from .set_author import SetAuthor
+        return SetAuthor({k: v for k, v in settings.items() if k != "mode"}, config)
     return CommandAuthor(settings, config)

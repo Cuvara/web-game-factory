@@ -200,6 +200,19 @@ class PrimitiveDetection(unittest.TestCase):
         self.assertEqual(set(bars), set(model_quality.DEFAULT_BARS))
         self.assertEqual(bars, model_quality.DEFAULT_BARS)
 
+    def test_a_dark_player_on_a_dark_ground_fails_contrast(self):
+        # Calibration: the reference craft 0.76 and wall 0.30 pass; an autonomous set's
+        # black-hulled craft 0.35 and near-black asteroid 0.07 vanished on their renders.
+        look = {"palette": [{"token": "ground", "hex": "#0B0B12", "role": "Background"},
+                            {"token": "signal", "hex": "#FF2E88", "role": "accent"}]}
+        dark = [{"color": "#16162a", "emissive": "#000000", "area": 3.0, "textured": False},
+                {"color": "#ff2e88", "emissive": "#000000", "area": 1.0, "textured": False}]
+        self.assertEqual(model_quality.background_colour(look), "#0B0B12")
+        self.assertAlmostEqual(model_quality.contrast_share(dark, "#0B0B12"), 0.25)
+        lit = [dict(dark[0], emissive="#2ef2ff")] + dark[1:]
+        self.assertEqual(model_quality.contrast_share(lit, "#0B0B12"), 1.0)
+        self.assertLess(model_quality.contrast_ratio("#16162a", "#0B0B12"), 1.2)
+
     def test_the_quality_block_is_the_manifests(self):
         schema = ArtifactContracts().schemas["asset-manifest"]
         block = schema["properties"]["items"]["items"]["properties"]["quality"]
@@ -263,6 +276,8 @@ with open({log!r}, "a") as log:
     log.write(json.dumps({{"mode": mode, "asset": request["asset"],
                           "repair": request.get("repair"),
                           "craft": request.get("craft"),
+                          "notes": request.get("notes"),
+                          "frames": request.get("frames"),
                           "palette": request["palette"]}}) + "\n")
 keeper = json.load(open({keeper!r}))
 box = {box!r}
@@ -305,8 +320,9 @@ class ModelAuthor(unittest.TestCase):
         return path
 
     def settings(self, mode, **extra):
+        # Repair rounds only: the review rounds over renders are test_model_review.py's.
         return dict({"kind": "command", "argv": [self.author, mode, "{request}", "{spec}"],
-                     "blender": {"executable": self.blender}}, **extra)
+                     "blender": {"executable": self.blender}, "review_rounds": 0}, **extra)
 
     def produce(self, mode, requirement=KEEPER_REQ, look=LOOK, **extra):
         return model_author.produce_model(requirement, look, self.out, self.settings(mode, **extra),
@@ -339,6 +355,21 @@ class ModelAuthor(unittest.TestCase):
         self.assertTrue(call["craft"][0].endswith("production-art-3d.md"))
         for path in call["craft"]:
             self.assertTrue(os.path.isfile(path), path)
+
+    def test_a_gates_feedback_reaches_the_request_with_its_frames(self):
+        frame = os.path.join(self.scratch, "run", "playability", "desktop", "play-2s.png")
+        requirement = dict(KEEPER_REQ, feedback={
+            "notes": ["blocker assets finding `flat`: the keeper is a grey box"],
+            "frames": [frame]})
+        self.produce("keeper", requirement=requirement)
+        (call,) = self.calls()
+        self.assertEqual(call["asset"]["notes"],
+                         ["blocker assets finding `flat`: the keeper is a grey box"])
+        self.assertEqual(call["asset"]["frames"], [frame])
+        self.assertIn("Open every PNG in its `frames`", model_author.PROMPT_NOTES)
+        # Without feedback the request carries neither.
+        self.produce("keeper")
+        self.assertNotIn("notes", self.calls()[1]["asset"])
 
     def test_a_single_box_fails_for_a_readable_role(self):
         with self.assertRaises(model_author.ModelAuthorError) as raised:

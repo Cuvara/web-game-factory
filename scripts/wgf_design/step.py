@@ -27,7 +27,9 @@ Outcomes, per docs/workflow-module-contract.md §7:
     family refuses, mastery unstated)          checked only when no blocking rule breached)
     a blocking consistency rule breached       FAILED, route `descope`, not retryable, with the
                                                game-design persisted as evidence - cut scope;
-                                               never relax the rule
+                                               never relax the rule. An author that repairs its
+                                               draft is shown the breaches and asked again
+                                               first (consistency.breach_problems)
     otherwise                                  SUCCESS
 """
 
@@ -53,8 +55,9 @@ ROLE = "game-designer"
 READS_STRATEGY_MAJOR = "1"
 DEFAULT_AUTHOR = "archetype"
 # How often an author that can repair its draft (the `agent` author) is shown what made the
-# composed design invalid - the game-design schema and the buildability check - and asked
-# again, before the step fails. Each round is one more author session.
+# composed design invalid - the game-design schema, the buildability check, and the blocking
+# consistency breaches - and asked again, before the step fails. Each round is one more
+# author session.
 MAX_REPAIR_ROUNDS = 3
 # Where a visit's last rejected draft and its problems are kept between executions
 # (`<run_dir>/design/<visit>-last-draft.json`): a resumed step continues the repair from it
@@ -162,7 +165,9 @@ class DesignStep(WorkflowStep):
             outcome = self._compose(draft, platforms, title_id, strategy, ref, context, author,
                                     contracts)
             problems = outcome["problems"]
-            if not problems and outcome["consistency_problems"] and                     getattr(author, "repairs", False) and repair_round < MAX_REPAIR_ROUNDS:
+            if (not problems and outcome["consistency_problems"]
+                    and getattr(author, "repairs", False)
+                    and repair_round < MAX_REPAIR_ROUNDS):
                 # A blocking consistency breach is repairable by an author that repairs:
                 # it is asked to carry the concept or drop the foreign mechanic before the
                 # breach becomes a descope.
@@ -292,22 +297,30 @@ class DesignStep(WorkflowStep):
                                                          self.rules)
         if blocking:
             # A breached blocking rule is `descope` for an author that cannot repair; one
-            # that can is told which rule, and what the concept view found, first.
+            # that can is told which rule it breached, what was measured against what
+            # (consistency.breach_problems) and - for the two concept rules - what the
+            # concept view found, first. A breach was the one invalid-design class the
+            # author was never shown, so a design whose only fault was three assets too
+            # many died at `descope` with the fix one round away.
             ruleset = self.rules or consistency.load_rules()
             concept = consistency.concept_view(
                 design, strategy, ruleset.get("concept_terms") or {},
                 tuple(ruleset.get("detail_terms") or ()))
+            notes = {
+                "concept_mechanics_carried":
+                    f"The strategy's concept names {concept.get('uncarried')} and the "
+                    "design's core loop, MVP features and MVP controls do not.",
+                "design_adds_no_foreign_mechanic":
+                    f"The design's own text names {concept.get('foreign')}, which the "
+                    "strategy nowhere does - remove it, or say it in the strategy's words.",
+            }
             for rule_id in blocking:
-                note = ""
-                if rule_id == "concept_mechanics_carried":
-                    note = (f": the strategy's concept names {concept.get('uncarried')} and "
-                            "the design's core loop, MVP features and MVP controls do not")
-                elif rule_id == "design_adds_no_foreign_mechanic":
-                    note = (f": the design's own text names {concept.get('foreign')}, which "
-                            "the strategy nowhere does - remove it, or say it in the "
-                            "strategy's words")
-                outcome["consistency_problems"].append(
-                    f"design consistency rule {rule_id} is breached{note}")
+                stated = consistency.breach_problems(block, [rule_id], ruleset) or [
+                    f"consistency {rule_id} is breached. "
+                    "Cut scope to hold the rule; never relax the rule."]
+                note = notes.get(rule_id)
+                outcome["consistency_problems"] += [
+                    f"{problem} {note}" if note else problem for problem in stated]
         else:
             # Why a player comes back: a design that must cut scope first is not asked yet.
             found = depth.check(design, self.depth_rules)
@@ -353,7 +366,8 @@ class DesignStep(WorkflowStep):
                 kept = json.load(handle)
         except (OSError, ValueError):
             return None
-        if isinstance(kept, dict) and isinstance(kept.get("draft"), dict)                 and isinstance(kept.get("problems"), list):
+        if (isinstance(kept, dict) and isinstance(kept.get("draft"), dict)
+                and isinstance(kept.get("problems"), list)):
             return kept
         return None
 

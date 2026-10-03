@@ -77,8 +77,12 @@ factory:
   #   wgf_strategy   the `strategy` step (scripts/wgf_strategy/)
   #   wgf_release    the `release` step (scripts/wgf_release/, docs/release-module.md)
   #   wgf_visualqa   the `visual-qa` step (scripts/wgf_visualqa/, docs/visual-qa-module.md)
+  #   wgf_listing    the `store-listing` and `listing-validation` steps (scripts/wgf_listing/,
+  #                  docs/store-listing-module.md)
+  #   wgf_publish    the `platform-validate` and `publish` steps (scripts/wgf_publish/,
+  #                  docs/publish-module.md)
   steps:
-    modules: [wgf_discovery, wgf_strategy, wgf_init, wgf_assets, wgf_develop, wgf_review, wgf_verification, wgf_design, wgf_sdk, wgf_techplan, wgf_release, wgf_playability, wgf_production, wgf_visualqa]
+    modules: [wgf_discovery, wgf_strategy, wgf_init, wgf_assets, wgf_develop, wgf_review, wgf_verification, wgf_design, wgf_sdk, wgf_techplan, wgf_release, wgf_playability, wgf_production, wgf_visualqa, wgf_listing, wgf_publish]
 
   # The tech-plan module (scripts/wgf_techplan, docs/techplan-module.md): engine from the
   # design, pinned platforms from the strategy, a heuristic dev plan. Every key is optional.
@@ -150,6 +154,39 @@ factory:
     # of another commit, or G4.
     allow_unreviewed: false
 
+  # The publish module (scripts/wgf_publish, docs/publish-module.md): the `publish` group
+  # of the workflow - release:validating (platform-validate), G5, G6, release:submitting
+  # (publish) - run in the drafting run by `wgf publish --run <run-id>`. Every key is
+  # optional; a step's `with:` overrides any of them.
+  publish:
+    # dry-run (default): everything up to the irreversible submit - the session is checked,
+    # the draft found or made, the listing filled, the portal state read back - and the
+    # submit is NOT made; the record says outcome DRY_RUN. live: the submit is made, once,
+    # and only when the Factory's environment also has WGF_PUBLISH_LIVE=1. Production
+    # submission is opted into twice, never by one edit.
+    mode: dry-run
+    # The credential variables the publish step may read - one per platform, named in
+    # core/reference/publication/<id>.yaml (submission.credential.env), each the path of a
+    # Playwright storage state a PERSON captured by logging in once (python
+    # scripts/wgf-publish.py capture <platform>). A third allowlist beside
+    # factory.agents.env_passthrough and game_env_passthrough: a portal session never reaches
+    # an agent or a build. Empty: every console platform is HUMAN_REQUIRED.
+    env_passthrough: []
+    # env_passthrough: [WGF_PUBLISH_CRAZYGAMES_STORAGE_STATE]
+    # Per platform. terms_confirmed: a person established, from the portal's own terms, that
+    # automated use of its developer console is permitted (the publication profile says
+    # `automation_terms: unverified` for every console portal shipped: until this is set,
+    # the step stops HUMAN_REQUIRED before contacting it). adapter: another adapter for the
+    # platform (tests point one at the fixture portal). console_url: override the profile's.
+    platforms: {}
+    # platforms:
+    #   crazygames: {terms_confirmed: true}
+    # More publication profiles (directories, relative to the project): a test's fixture.
+    # profiles_extra: []
+    # The console executor's timeouts, ms: action 5000, navigation 60000, upload from the
+    # profile (upload_timeout_s) else 900000.
+    # timeouts: {}
+
   # The assets step (scripts/wgf_assets). Every key is optional; a step's `with:` block
   # overrides any of them. See docs/assets-module.md.
   assets:
@@ -167,29 +204,74 @@ factory:
     # assets and/or a library.json mapping requirement ids and roles to licensed files -
     # how golden fixtures and purchased packs supply real art.
     libraries: []
+    # Producers of final assets from the design itself, tried after libraries and authors
+    # and before placeholders: `fonts` (the typography's faces from the Factory font library,
+    # workspace/library/fonts - OFL, pre-built WOFF2) and `audio` (music composed from the
+    # design's audio direction, encoded Ogg Vorbis; sound effects as WAV - ~1-2 min per
+    # design). Off by default; the autonomous profile turns both on.
+    producers: []
     # Who draws a 2D requirement as SVG: kind none (default: what no library supplies is a
     # placeholder) or command - an agent host run through wgflib.procs with the agent
-    # environment, once per drawing. argv placeholders: {request} (the request JSON: the
-    # requirement, palette, visual identity, quality bars, repair problems, re-entry
-    # findings), {output} (where to write the SVG), {prompt}. svg_from: file (it writes
-    # {output}) or stdout (it prints the SVG last; the Factory writes {output}). A rejected
-    # file is shown its problems and asked again, repair_rounds times; then the requirement
-    # is a placeholder.
+    # environment. mode asset (default): once per drawing; argv placeholders {request} (the
+    # request JSON: the requirement, palette, visual identity, art direction, quality bars,
+    # repair problems, re-entry findings), {output} (where to write the SVG), {prompt};
+    # svg_from: file (it writes {output}) or stdout (it prints the SVG last; the Factory
+    # writes {output}). mode set: ONE session draws every 2D requirement of the design as one
+    # set (wgf_assets/set_author.py); argv placeholders {request} (the set brief), {out} (the
+    # only directory it writes), {preview} (the only command it runs: the Factory's judge and
+    # contact-sheet render, wgf_assets/preview.py), {sheet}, {prompt}. A rejected file (asset)
+    # or set (set) is shown its problems and asked again, repair_rounds times; then the
+    # requirement is a placeholder.
     author:
       kind: none
-    # Read-only 2D author on Claude Code's headless mode: it reads the request and the craft
-    # playbooks it names, and prints the SVG (svg_from: stdout), so it needs no write tool.
-    # Checked against CLI 2.1.280 and run on a real design's requirements through
-    # scripts/wgf-assets.py build: 95-125 s a drawing, each accepted on its first round
-    # (docs/claude-capabilities.md, "The asset authors").
+    # The 2D set author on Claude Code's headless mode (mode: set). Checked against CLI
+    # 2.1.280 - the permission rules by a real call: an Edit rule scopes every file-writing
+    # tool (Write included) to {out}, `//` making it absolute, and the Bash rule allows
+    # exactly the preview command and nothing else - and run on a live design's 2D
+    # requirements (docs/assets-module.md, "The set author").
     #   --safe-mode                 no hooks, plugins, MCP servers or CLAUDE.md
-    #   --tools Read                the one tool in the session: the request, the craft files
-    #   --permission-mode dontAsk   nothing is ever prompted; everything but Read is refused
-    #   --output-format text        svg_from: stdout takes the last <svg> printed. Text prints
-    #                               only at exit, so no idle timeout: rely on timeout_seconds
-    #   --max-budget-usd            the host's own bound on ONE drawing; a design asks once
-    #                               per variant (a count of 10 is 10 calls) plus repairs
+    #   --tools                     Read (the brief, the craft, the contact sheet), Write and
+    #                               Edit (only under {out}), Bash (only {preview})
+    #   --permission-mode dontAsk   nothing is ever prompted; what no rule allows is refused
+    #   --output-format text        prints only at exit, so no idle timeout
+    #   --max-budget-usd            the host's own bound on ONE session (the whole set);
+    #                               repair_rounds adds at most one more session each
     # author:
+    #   kind: command
+    #   mode: set
+    #   argv:
+    #     - claude
+    #     - -p
+    #     - "{prompt}"
+    #     - --model
+    #     - sonnet
+    #     - --safe-mode
+    #     - --strict-mcp-config
+    #     - --tools
+    #     - "Read,Write,Edit,Bash"
+    #     - --allowedTools
+    #     - "Read"
+    #     - "Edit(/{out}/**)"
+    #     - "Bash({preview})"
+    #     - --disallowedTools
+    #     - "NotebookEdit,WebFetch,WebSearch"
+    #     - --permission-mode
+    #     - dontAsk
+    #     - --no-session-persistence
+    #     - --output-format
+    #     - text
+    #     - --max-turns
+    #     - "150"
+    #     - --max-budget-usd
+    #     - "6"
+    #   timeout_seconds: 2700
+    #   idle_timeout_seconds: null
+    #   repair_rounds: 1
+    # The per-asset author (mode: asset) the set mode replaced in the autonomous profile:
+    # read-only, it prints one SVG per drawing (svg_from: stdout). 95-125 s a drawing on a
+    # real design, each accepted on its first round (docs/claude-capabilities.md, "The asset
+    # authors"); it never sees the other drawings or a render of its own.
+    # author:   (mode: asset)
     #   kind: command
     #   svg_from: stdout
     #   argv:
@@ -219,24 +301,33 @@ factory:
     #   idle_timeout_seconds: null
     #   repair_rounds: 2
     # The 3D model author (scripts/wgf_assets/model_author.py, docs/blender-pipeline.md):
-    # kind none, or command - an agent host that writes a MODEL SPEC per 3D requirement,
-    # built by the pinned Blender and judged (parts, normals, palette, primitive_only) with
-    # up to repair_rounds re-asks. Only a configured author is asked; without one, a
-    # design's own model spec is built by Blender, else the requirement is a placeholder.
-    # argv placeholders: {request}, {spec} (where to write the spec JSON), {prompt};
-    # spec_from: file (it writes {spec}) or stdout (it prints the spec JSON last). Blender
-    # 4.5 LTS must be on PATH or in WGF_BLENDER, or the author is refused.
+    # kind none, or command - an agent host that writes MODEL SPECS, built by the pinned
+    # Blender, judged (parts, normals, palette, primitive_only, silhouette) and RENDERED
+    # (contact sheets from the design's camera and at gameplay size): repair rounds show the
+    # problems and the renders, review_rounds ask it to open the renders and revise what does
+    # not read. mode: each (a session per requirement) or set (one session for every 3D
+    # requirement: one palette, material language and detail level, plus a set render).
+    # Only a configured author is asked; without one, a design's own model spec is built by
+    # Blender, else the requirement is a placeholder. argv placeholders: {request}, {spec}
+    # (each mode: where to write the spec), {dir} (the session's directory; set mode writes
+    # {dir}/specs/<id>.model.json), {prompt}; spec_from: file (it writes the specs; on a
+    # repair or review they hold the previous ones, edited in place) or stdout (each: the
+    # spec JSON last; set: {"models": {...}} last). Blender 4.5 LTS must be on PATH or in
+    # WGF_BLENDER, or the author is refused.
     model_author:
       kind: none
-    # Read-only 3D model author on Claude Code's headless mode, the same flags as the 2D
-    # author: it reads the request, the model-spec schema and the craft playbooks, and
-    # prints the spec (spec_from: stdout). Checked against CLI 2.1.280 and run through
-    # model_author.produce_model and the pinned Blender: 186 s for two rounds, the first
-    # refused for three over-large bevels and repaired (docs/claude-capabilities.md, "The
-    # asset authors"). Each repair round is one more call.
+    # The set author on Claude Code's headless mode: it reads the request, the schema, the
+    # craft playbooks and the renders, and writes spec files under its session directory
+    # only - an Edit rule on {dir} (`//` = an absolute path) governs every file-editing tool
+    # (verified with a real claude -p call: a write inside was allowed, one outside refused;
+    # a Write(...) rule is ignored by the host). Run on the space-dodge design with the
+    # pinned Blender (docs/blender-pipeline.md, "Set mode"). Each repair or review round is
+    # one more call. A read-only per-model author is the same argv with mode: each,
+    # spec_from: stdout and --tools/--allowedTools "Read".
     # model_author:
     #   kind: command
-    #   spec_from: stdout
+    #   mode: set
+    #   spec_from: file
     #   argv:
     #     - claude
     #     - -p
@@ -246,23 +337,24 @@ factory:
     #     - --safe-mode
     #     - --strict-mcp-config
     #     - --tools
-    #     - "Read"
+    #     - "Read,Write,Edit"
     #     - --allowedTools
-    #     - "Read"
+    #     - "Read,Edit(/{dir}/**)"
     #     - --disallowedTools
-    #     - "Edit,Write,NotebookEdit,Bash,WebFetch,WebSearch"
+    #     - "NotebookEdit,Bash,WebFetch,WebSearch"
     #     - --permission-mode
     #     - dontAsk
     #     - --no-session-persistence
     #     - --output-format
     #     - text
     #     - --max-turns
-    #     - "20"
+    #     - "80"
     #     - --max-budget-usd
-    #     - "2"
-    #   timeout_seconds: 900
+    #     - "3"
+    #   timeout_seconds: 1800
     #   idle_timeout_seconds: null
     #   max_repair_rounds: 2
+    #   review_rounds: 1
     placeholders:
       enabled: true
       # Tried in order; the procedural backend is always last and always works. An
@@ -331,9 +423,9 @@ factory:
     #     - --tools
     #     - "Read,Edit,Write,Glob,Grep,Bash"
     #     - --allowedTools
-    #     - "Read,Glob,Grep,Edit(./**),Write(./**),Bash(pnpm *),Bash(git status *),Bash(git diff *),Bash(git log *),Bash(git show *)"
+    #     - "Read,Glob,Grep,Edit(./**),Write(./**),Bash(pnpm *),Bash(git status *),Bash(git diff *),Bash(git log *),Bash(git show *),Bash(git clean -f -- src/*),Bash(git clean -f -- tests/*),Bash(git clean -f -- public/*)"
     #     - --disallowedTools
-    #     - "WebFetch,WebSearch,Bash(git commit *),Bash(git push *),Bash(git reset *),Bash(git checkout *),Bash(git switch *),Bash(git rebase *),Bash(git stash *),Bash(git tag *),Bash(git branch *),Bash(git clean *),Bash(git config *),Bash(git remote *),Bash(git * --output*)"
+    #     - "WebFetch,WebSearch,Bash(git commit *),Bash(git push *),Bash(git reset *),Bash(git checkout *),Bash(git switch *),Bash(git rebase *),Bash(git stash *),Bash(git tag *),Bash(git branch *),Bash(git config *),Bash(git remote *),Bash(git * --output*)"
     #     - --permission-mode
     #     - dontAsk
     #     - --no-session-persistence
@@ -384,7 +476,7 @@ factory:
     #     - --allowedTools
     #     - "Read,Glob,Grep,Edit(./**),Write(./**),Bash(pnpm *),Bash(git status *),Bash(git diff *),Bash(git log *),Bash(git show *),Skill,mcp__playwright"
     #     - --disallowedTools
-    #     - "WebFetch,WebSearch,Bash(git commit *),Bash(git push *),Bash(git reset *),Bash(git checkout *),Bash(git switch *),Bash(git rebase *),Bash(git stash *),Bash(git tag *),Bash(git branch *),Bash(git clean *),Bash(git config *),Bash(git remote *),Bash(git * --output*)"
+    #     - "WebFetch,WebSearch,Bash(git commit *),Bash(git push *),Bash(git reset *),Bash(git checkout *),Bash(git switch *),Bash(git rebase *),Bash(git stash *),Bash(git tag *),Bash(git branch *),Bash(git config *),Bash(git remote *),Bash(git * --output*)"
     #     - --permission-mode
     #     - dontAsk
     #     - --no-session-persistence
@@ -503,6 +595,70 @@ factory:
     # its judge. claude-web-game-plugin is here because the opt-in self-playtest developer
     # loads its skills (--plugin-dir): instructions an agent must not be able to rewrite.
     guarded_paths: [core, scripts, bin, workspace/config, claude-web-game-plugin]
+
+  # The store listing module (scripts/wgf_listing, docs/store-listing-module.md): after G4
+  # passes, the verified build is served locally and played through its play probe in the
+  # game's own Playwright Chromium; screenshots, a gameplay recording (trimmed with the
+  # browser's bundled ffmpeg when it is there), branding composed from the game's own assets
+  # and identity, store copy grounded in the design, and one rendition per targeted platform
+  # under its profile's `store_listing` block (core/reference/store-listing.yaml). Every key
+  # is optional; a step's `with:` block overrides any of them.
+  listing:
+    # reference: core/reference/store-listing.yaml   # the canonical package and its bars
+    # platforms: null            # default: the scaffold-record's game.config platforms
+    # locales: null              # default: en plus every targeted platform's required locales
+    capture:
+      kind: browser              # browser | none. `none` BLOCKS the step: a listing without
+                                 # screenshots of the running build is never a silent pass
+      node: node                 # the Node executable the capture script runs on
+      timeout_seconds: 900       # one capture attempt, wall clock
+      trailer: true              # record the gameplay trailer
+      # viewports: [{id: landscape, width: 1920, height: 1080}, {id: portrait, width: 1080, height: 1920, mobile: true}]
+    # Who writes the store copy. template (default): the Factory's own deterministic writer,
+    # from the design's facts and the game's own strings - English, plus any locale whose
+    # strings the bundle ships; it never translates. command: an agent host run read-only
+    # once per locale with {brief} {output} {prompt} placeholders; its texts go through the
+    # same grounding check (unbacked claims are refused and asked again once, then the
+    # template writer's text stands in and the listing says so).
+    writer:
+      kind: template             # template | command
+      argv: []
+      timeout_seconds: 600
+      idle_timeout_seconds: null
+      text_from: file            # file: the writer writes {output} | stdout: prints the JSON last
+    # Read-only writer on Claude Code's headless mode, the same flags as the visual-QA judge
+    # (docs/claude-capabilities.md). Not yet run live.
+    # writer:
+    #   kind: command
+    #   text_from: stdout
+    #   argv:
+    #     - claude
+    #     - -p
+    #     - "{prompt}"
+    #     - --model
+    #     - sonnet
+    #     - --safe-mode
+    #     - --strict-mcp-config
+    #     - --tools
+    #     - "Read"
+    #     - --allowedTools
+    #     - "Read"
+    #     - --disallowedTools
+    #     - "Edit,Write,NotebookEdit,Bash,WebFetch,WebSearch"
+    #     - --permission-mode
+    #     - dontAsk
+    #     - --no-session-persistence
+    #     - --output-format
+    #     - text
+    #     - --max-turns
+    #     - "10"
+    #     - --max-budget-usd
+    #     - "1"
+    #   timeout_seconds: 600
+    # An age rating a platform requires (yandex: `age_rating.required`): nothing in the run
+    # states one, so the installation does, per platform id or `default`. Without it the
+    # platform's rendition fails validation, which blocks for a person.
+    # age_rating: {default: "12+"}
 
   # The visual QA module (scripts/wgf_visualqa, docs/visual-qa-module.md): a vision judge
   # reads every frame playability captured of the production build - each state, desktop

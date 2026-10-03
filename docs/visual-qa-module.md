@@ -34,7 +34,7 @@ first-time players see or understand.
 | `game-design` (required) | `build_spec.visual_identity` (concept, palette, typography, shape language, avoid, `primitive_style`, `ui`), `build_spec.assets[]` (`role`, `readability`) |
 | `asset-manifest` (required) | per item: `role`, `source`, `placeholder`, `quality` |
 | `production-quality-report` (optional) | its failed checks, to confirm or dismiss by eye |
-| `visual-qa-report` (output) | `scores`, `findings`, `failed`, `routes`, `verdict`, the frames judged, the `rubric` pinned by sha256, `judge_runs` |
+| `visual-qa-report` (output, 1.2.0) | `scores` and the judge's `score_reasons`, `findings`, `states` (answers, comment, frames), `look` (verdict, reason), `failed`, `routes`, `verdict`, the frames judged, the `rubric` pinned by sha256, `judge_runs` |
 
 The report is emitted on PASS, FAIL and BLOCKED. A judge that could not produce a usable
 verdict leaves no report (nothing was judged); its brief, log and raw output stay under
@@ -65,16 +65,42 @@ null (nothing on screen the question is about): `entities_recognisable` (assets)
 `lighting_materials_coherent` (develop; null in 2D), `typography_readable` - and not a
 fallback font (develop), `buttons_polished` - not browser defaults (develop),
 `objective_obvious` (initial, gameplay, interaction; develop), `outcome_understandable`
-(win, loss, retry; develop). And once, the `look`: `finished-game` or
-`developer-prototype`.
+(win, loss, retry; develop). And once, the `look`: `finished-game`, `unremarkable` (competent
+but plain) or `developer-prototype`. The brief shows the judge the installation's quality
+bar (`workspace/quality-bar/`, `wgflib.quality_bar`) as what a 4 and `finished-game` look
+like.
 
 **Decision** (`rubric.decide`): FAIL when any finding is a blocker, any dimension is below
-`pass_bar` (3), any per-state answer equals its question's `fail_when`, or the look is
-`developer-prototype`. `failed` lists `finding:<id>`, `score:<dimension>`,
+`pass_bar` (3), the mean of all scores is below `mean_pass_bar` (3.5; each dimension below 4
+then contributes its route), any per-state answer equals its question's `fail_when`, or the
+look is anything but `finished-game`. `failed` lists `finding:<id>`, `score:<dimension>`,
 `state:<viewport>/<state>:<question>` and `look:developer-prototype`; `routes` the routes
 of every failure, `assets` before `develop`; the step's route is the first. A `major` or
 `minor` finding is recorded and does not fail the build on its own. The report lists every
 rubric state on every viewport; one no frame shows is `captured: false`, unanswered.
+
+## What a failure sends back
+
+A FAIL is only useful if the agent who fixes it can see what the judge saw. The report keeps
+the judge's words beside every failure - a score's `score_reasons` entry, a state's
+`comment` and `frames`, the look's `reason`, a finding's `summary` and `frame` - and both
+receivers get them with the absolute paths of the frames (frame `path`s are relative to the
+run directory):
+
+- **Route `assets`** (`scripts/wgf_assets/feedback.py`, [assets-module.md](assets-module.md#re-entry)).
+  Every failure routed `assets` - findings of any severity, failing scores, state answers and
+  the look - is mapped to the design's asset requirements by id, by role word ("the
+  player"), by the play probe's entity -> asset records and by the rubric's `rebuild_roles`
+  (`rebuild` at the end of the rubric: which roles `environment`, `character_readability`,
+  `art_completeness`, `consistency`, the look, `primitive-entity`, `entities_recognisable`
+  and `primitives_or_placeholders` concern). Each remade asset's author gets the reasons and
+  the frames, and is told to open them. Nothing resolving remakes every readable entity and
+  the scene; nothing able to remake (no author) blocks the assets step rather than reuse
+  every file.
+- **Route `develop`** (`scripts/wgf_develop/brief.py`, "Fix first: what visual QA saw").
+  Every `failed` entry with its reason - the score's reason, the state's comment and frames,
+  the look's reason, the finding's frame - and every `major` finding that did not fail the
+  build on its own.
 
 ## Outcomes
 
@@ -129,7 +155,9 @@ What the step does around it (`scripts/wgf_visualqa/judge.py`):
    other keys; findings with a unique kebab-case `id`, `severity`, `category`, `route`,
    a `frame` that is one of the given ids or null, and a summary; exactly one `states`
    entry per (state, viewport) with frames, answering exactly its questions; a `look` among
-   the rubric's values. A malformed verdict is
+   the rubric's values; `score_reasons`, when given, strings for rubric dimensions only (the
+   brief asks for one per dimension; a verdict without it is still well formed). A
+   malformed verdict is
    asked for once more, with the reason at the top of the new brief; a second one fails the
    step.
 
@@ -138,6 +166,8 @@ The judge writes:
 ```json
 {
   "scores": {"art_completeness": 0, "character_readability": 1, "...": 5},
+  "score_reasons": {"art_completeness": "the keeper is an untextured capsule in every frame",
+                    "...": "..."},
   "findings": [{"id": "primitive-keeper", "severity": "blocker", "category": "assets",
                 "frame": "desktop/play-2s", "summary": "...", "route": "assets"}],
   "states": [{"state": "gameplay", "viewport": "mobile",
@@ -243,8 +273,11 @@ below the bar, a per-state answer routed by its question, a developer-prototype 
 `primitive_style` waiving only the primitive answer, unanswered or extra states, a verdict
 on stdout, a malformed verdict retried once then failed (and one
 fixed on the retry), an unknown frame id, no judge (BLOCKED), a non-zero exit (retryable),
-a changed and a missing frame, a judge writing to a frame or a guarded path, the mock, and
-the CLI harness.
+a changed and a missing frame, a judge writing to a frame or a guarded path, the mock, the
+CLI harness, the judge's `score_reasons` reaching the report (and checked when malformed),
+and the rubric's `rebuild_roles` for every `assets` failure. What a failure sends back is
+tested where it lands: `test_assets_production.py` (re-entry, including the real arena-dodge
+verdict that must remake the player) and `test_develop_module.py` (the brief).
 
 ## Calibration
 
@@ -840,3 +873,33 @@ Neon Drift Arena golden port, round 2, verbatim:
   "notes": "No win or retry frames were captured, so those outcomes are not assessed."
 }
 ```
+
+**Round 3** (2026-10-02, rubric 1.2.0). Why: the bar of 3 passes a plain game - level 3 reads
+"plain", "little character" - and no good game had ever been judged. Frames: the reference
+games' production builds (`workspace/quality-bar/` sources, captured with
+`scripts/wgf_develop/tools/look.mjs`, desktop and phone, title / play / play-later) and a
+live autonomous 3D greybox (styled HUD, primitive ship and obstacles). Same judge argv as
+the autonomous profile.
+
+Without anchors, three runs per reference (scores in dimension order art, readability,
+environment, ui, typography, composition, consistency, no_debug):
+
+| frames | runs | means | look |
+|---|---|---|---|
+| 2D reference | 3 | 4.00, 3.88, 3.88 | finished-game x3 (one run raised a mobile-cropping blocker) |
+| 3D reference | 3 | 3.88, 4.13, 3.63 | finished-game x3 |
+| 3D greybox | 1 | 3.13 | developer-prototype |
+
+Single dimensions moved by a point (sometimes two) between runs on identical frames, so no
+dimension can carry a bar of 4 without failing the references half the time. What held:
+the look, and the mean. Rubric 1.2.0 therefore adds `mean_pass_bar: 3.5` and a third look,
+`unremarkable` (competent but plain), which fails like `developer-prototype`; and the judge
+brief now carries the installation's quality-bar frames as what a 4 and `finished-game`
+look like.
+
+With the quality bar in the brief (one run each): 2D reference 3.88 PASS; 3D reference 4.88
+PASS (inflated - its own frames are among the anchors); 3D greybox 2.12 FAIL (ui and
+typography fell from 3-4 to 1-2: compared with a finished game, a styled default is not
+polish). The separation is wider with the anchors. Open: no *mid* game - finished art but
+generic - has been judged yet; that is the next calibration point when an autonomous run
+produces one.

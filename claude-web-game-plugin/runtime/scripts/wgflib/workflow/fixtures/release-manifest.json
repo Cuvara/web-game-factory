@@ -9,12 +9,12 @@
     {
       "id": "yandex",
       "role": "required",
-      "profile_version": "1.0.0"
+      "profile_version": "1.1.0"
     },
     {
       "id": "crazygames",
       "role": "optional",
-      "profile_version": "1.0.0"
+      "profile_version": "1.1.0"
     }
   ],
   "changelog": [

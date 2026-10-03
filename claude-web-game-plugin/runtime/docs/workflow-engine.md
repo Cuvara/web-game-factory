@@ -5,8 +5,9 @@ step, persists every change, and can be stopped, resumed, retried and routed wit
 calling a step by hand. It ships with a placeholder for every step type. Discovery, strategy,
 design, init ([init-module.md](init-module.md)), assets, development, review
 ([review-module.md](review-module.md)), SDK and verification
-([verification-module.md](verification-module.md)) are real modules that plug into it;
-`release` is still a placeholder —
+([verification-module.md](verification-module.md)), release
+([release-module.md](release-module.md)) and publication
+([publish-module.md](publish-module.md)) are real modules that plug into it —
 **[workflow-module-contract.md](workflow-module-contract.md) is what they implement against.**
 
 Standard library Python, like every other script here. No database, no toolchain.
@@ -53,20 +54,29 @@ python -m unittest discover scripts/tests   # includes the acceptance tests belo
 
   research → strategy → [G2] → design → tech-plan → [G3] → init → greybox → greybox-playability
     → assets → develop → playability → production-quality → visual-qa → review → sdk → sdk-review
-    → verify → [G4] → release
+    → verify → [G4] → store-listing → listing-validation → release
 
+  greybox, develop     design-gap       → design (then tech-plan, [G3], greybox again)
   greybox-playability  fail             → greybox
+  listing-validation   listing          → store-listing
   playability          fail             → develop
   production-quality   assets / develop → assets (which continues to develop) / develop
   visual-qa            assets / develop → assets (which continues to develop) / develop
   review, sdk-review   request-changes  → develop
   verify               fail             → develop
-  [G4]                 iterate → develop · kill → $end · pass → release
+  [G4]                 iterate → develop · kill → $end · pass → store-listing
 
-  release (refuses unless G4 passed, the shipped commit was reviewed, and production-quality
-  and visual-qa passed its development commit)
-                               release-manifest (draft) ─► game repo CI ─► G5 ─► G6 ─► publish
-                               ─────────── Factory ends here ───────────   (outside the engine)
+  release (refuses unless G4 passed, the shipped commit was reviewed, production-quality
+  and visual-qa passed its development commit, and the store listing of the shipped
+  commit is complete and validated)
+                               release-manifest (draft)   ─── `wgf new-game` ends here ───
+
+  the `publish` group, in the same run: `wgf publish --run <run-id>`
+    → platform-validate → [G5] → [G6] → submit
+  platform-validate    fail                 → (unrouted: the run stops for a person)
+  [G5]                 approve · reject → $end
+  [G6]                 publish · reject → $end         (a person only; pins the manifest)
+  submit               submitted / dry-run → $end · a person needed → WAITING_FOR_HUMAN
 ```
 
 The boundary the whole design protects: **the engine knows `Workflow`, `WorkflowStep`,
@@ -478,7 +488,7 @@ new-game bounds develop's seven loops this way: `playability.fail: 2`,
 `production-quality.develop: 2`, `visual-qa.develop: 2`, `review.request-changes: 2`,
 `sdk-review.request-changes: 2`, `verify.fail: 2` and `iterate: 2` (G4) - and the production
 gates' asset failures on `assets`: `production-quality.assets: 2`, `visual-qa.assets: 2`
-(assets' `max_visits` 5). Workflow 6 adds an eighth route out of the build, and the only one
+(assets' `max_visits` 5). Workflow 8 adds an eighth route out of the build, and the only one
 that leads back before init: `design-gap`, from `greybox` and from `develop` to `design`,
 taken when a developer reports a blocking design gap - the design does not say enough to build
 what was asked, and inventing the answer would carry a decision nobody made into the build.
@@ -487,9 +497,12 @@ It is bounded on `design`, one pass from each source: `greybox.design-gap: 1`,
 G3 on the repaired design, and the build starts again at `greybox`, so each return costs a
 greybox visit and a develop visit: `greybox`'s `max_visits` is 5 (the first visit, two
 playability passes, two returns) and develop's is 21 - the first visit, its own route budgets,
-assets' and the two returns - and it is never what a loop meets first; every step after
-develop (playability, production-quality, visual-qa, review, sdk, sdk-review, verify,
-prototype-review), each visited at most once per develop visit, carries 21 as well. A reviewer that never approves blocks the run on its own
+assets' (each pass through assets enters develop once more) and the two returns - and it is
+never what a loop meets first; every step after develop (playability, production-quality,
+visual-qa, review, sdk, sdk-review, verify, prototype-review), each visited at most once per
+develop visit, carries 21 as well, and so do store-listing and listing-validation, which add
+listing-validation's own route back into store-listing (`listing-validation.listing: 2`).
+A reviewer that never approves blocks the run on its own
 third request for changes; a verification that always fails, on its third failure; a third
 G4 iterate stops for a person too; none spends another's budget. What a whole run may spend
 on unattended developer sessions is bounded separately, by `factory.develop.budget`
@@ -583,7 +596,7 @@ artifact type): each kill criterion as `breached`, `not breached` (with its meas
 or `unmeasured`, a warning when any is unmeasured - `breached: false` on an unmeasured
 criterion is not evidence - the playtest sessions by `player_context`, and the verdict and
 `evidence_status` of each report that carries one (`status --json`: `pending.evidence`).
-Since workflow 6 it also prints what the inputs say about the content the design committed
+Since workflow 8 it also prints what the inputs say about the content the design committed
 to: the design's `content.*` consistency rules and the genre model they were checked against,
 the prototype's `content_coverage` (built against designed units) and `design_gaps`, each
 `content.` / `difficulty.` / `progression.` / `depth.` check the playability bot ran - with

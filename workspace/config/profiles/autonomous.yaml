@@ -18,10 +18,11 @@
 #   review     a read-only headless Claude Code reviewer approves or requests changes
 #   design     a headless Claude Code design author writes the design draft the module then
 #              checks unchanged - needed for a brief no design archetype carries
-#   assets     a read-only headless Claude Code 2D author prints an SVG per drawing, and a
-#              3D model author a model spec per 3D requirement that the pinned Blender
-#              builds; the Factory writes, validates and judges both, and asks again with
-#              the problems (repair rounds). Without them every asset is a placeholder,
+#   assets     a headless Claude Code 2D author draws every 2D requirement as one set,
+#              writing only into a Factory scratch directory and looking at the contact
+#              sheet the Factory renders; a read-only 3D model author prints a model spec
+#              per 3D requirement that the pinned Blender builds; the Factory validates and
+#              judges both, and asks again with the problems (repair rounds). Without them every asset is a placeholder,
 #              which production-quality refuses: the run loops back to assets and blocks
 #   visual-qa  a read-only headless Claude Code judge reads the captured frames and returns
 #              scores; the step decides. Without a judge visual-qa BLOCKS
@@ -90,9 +91,9 @@ factory:
         - --tools
         - "Read,Edit,Write,Glob,Grep,Bash"
         - --allowedTools
-        - "Read,Glob,Grep,Edit(./**),Write(./**),Bash(pnpm *),Bash(git status *),Bash(git diff *),Bash(git log *),Bash(git show *)"
+        - "Read,Glob,Grep,Edit(./**),Write(./**),Bash(pnpm *),Bash(git status *),Bash(git diff *),Bash(git log *),Bash(git show *),Bash(git clean -f -- src/*),Bash(git clean -f -- tests/*),Bash(git clean -f -- public/*)"
         - --disallowedTools
-        - "WebFetch,WebSearch,Bash(git commit *),Bash(git push *),Bash(git reset *),Bash(git checkout *),Bash(git switch *),Bash(git rebase *),Bash(git stash *),Bash(git tag *),Bash(git branch *),Bash(git clean *),Bash(git config *),Bash(git remote *),Bash(git * --output*)"
+        - "WebFetch,WebSearch,Bash(git commit *),Bash(git push *),Bash(git reset *),Bash(git checkout *),Bash(git switch *),Bash(git rebase *),Bash(git stash *),Bash(git tag *),Bash(git branch *),Bash(git config *),Bash(git remote *),Bash(git * --output*)"
         - --permission-mode
         - dontAsk
         - --no-session-persistence
@@ -142,12 +143,21 @@ factory:
       idle_timeout_seconds: null
 
   assets:
+    # Fonts and audio have no agent author: the Factory makes them itself. `fonts` bundles
+    # the typography's faces from the Factory font library (OFL, workspace/library/fonts);
+    # `audio` composes the design's music (Ogg Vorbis loops) and sound effects (WAV) from its
+    # audio direction. Both run before any placeholder (docs/assets-module.md).
+    producers: [fonts, audio]
     # Workflow 5 refuses placeholder art (production-quality routes it back to `assets`), so
-    # an unattended run needs authors. Both are read-only and print what they make; the
-    # Factory writes it, validates it and judges it (core/reference/asset-quality.yaml).
+    # an unattended run needs authors. The 2D author draws the whole set in ONE session
+    # (mode: set): it writes SVGs only into the Factory's scratch directory {out}, runs only
+    # the Factory's preview {preview} - the drawings judged and rendered into a contact sheet
+    # it then looks at - and revises; the Factory judges again and delivers what passes. The
+    # 3D model author is read-only and prints its spec. Both are judged by
+    # core/reference/asset-quality.yaml.
     author:
       kind: command
-      svg_from: stdout
+      mode: set
       argv:
         - claude
         - -p
@@ -157,28 +167,37 @@ factory:
         - --safe-mode
         - --strict-mcp-config
         - --tools
-        - "Read"
+        - "Read,Write,Edit,Bash"
         - --allowedTools
         - "Read"
+        - "Edit(/{out}/**)"
+        - "Bash({preview})"
         - --disallowedTools
-        - "Edit,Write,NotebookEdit,Bash,WebFetch,WebSearch"
+        - "NotebookEdit,WebFetch,WebSearch"
         - --permission-mode
         - dontAsk
         - --no-session-persistence
         - --output-format
         - text
         - --max-turns
-        - "15"
+        - "150"
         - --max-budget-usd
-        - "1"
-      timeout_seconds: 600
+        - "6"
+      timeout_seconds: 2700
       idle_timeout_seconds: null
-      repair_rounds: 2
+      repair_rounds: 1
     # Builds through the pinned Blender 4.5 LTS: on PATH, or WGF_BLENDER
     # (docs/blender-pipeline.md). Without it, every 3D requirement is a placeholder.
+    # One session authors every 3D model of the design as a set (docs/blender-pipeline.md,
+    # "Set mode"); after each round the pinned Blender renders contact sheets and the set,
+    # and the author opens them: repairs see what was refused, and a review round asks it
+    # to revise what does not read at gameplay size. It writes <id>.model.json files under
+    # its session directory only: an Edit rule on {dir} (`//` = an absolute path) governs
+    # every file-editing tool - verified with a real claude -p call.
     model_author:
       kind: command
-      spec_from: stdout
+      mode: set
+      spec_from: file
       argv:
         - claude
         - -p
@@ -188,23 +207,24 @@ factory:
         - --safe-mode
         - --strict-mcp-config
         - --tools
-        - "Read"
+        - "Read,Write,Edit"
         - --allowedTools
-        - "Read"
+        - "Read,Edit(/{dir}/**)"
         - --disallowedTools
-        - "Edit,Write,NotebookEdit,Bash,WebFetch,WebSearch"
+        - "NotebookEdit,Bash,WebFetch,WebSearch"
         - --permission-mode
         - dontAsk
         - --no-session-persistence
         - --output-format
         - text
         - --max-turns
-        - "20"
+        - "80"
         - --max-budget-usd
-        - "2"
-      timeout_seconds: 900
+        - "3"
+      timeout_seconds: 1800
       idle_timeout_seconds: null
       max_repair_rounds: 2
+      review_rounds: 1
 
   visualqa:
     # Without a judge visual-qa BLOCKS: it is never a silent pass.

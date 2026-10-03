@@ -79,7 +79,7 @@ GAME_CONFIG = textwrap.dedent("""\
     engine:
       type: pixijs
     platforms:
-      - { id: generic-web, profile: generic-web@1.0.0, role: required }
+      - { id: generic-web, profile: generic-web@1.1.0, role: required }
     monetization:
       ad_kinds: []
       iap: false
@@ -381,7 +381,7 @@ class InitStepTest(InitCase):
         game_config = record["game_config"]
         self.assertEqual(game_config["path"], "game.config.yaml")
         self.assertEqual(game_config["platforms"],
-                         [{"id": "generic-web", "profile": "generic-web@1.0.0",
+                         [{"id": "generic-web", "profile": "generic-web@1.1.0",
                            "role": "required"}])
         self.assertRegex(game_config["checksum"], r"^sha256:[0-9a-f]{64}$")
 
@@ -513,7 +513,7 @@ class Refusals(InitCase):
     def test_an_unpinned_platform_fails(self):
         with open(os.path.join(self.template_tree, "game.config.yaml"), "w") as handle:
             handle.write(GAME_CONFIG.replace(
-                "  - { id: generic-web, profile: generic-web@1.0.0, role: required }",
+                "  - { id: generic-web, profile: generic-web@1.1.0, role: required }",
                 "  - generic-web"))
         result = self.execute()
         self.assertEqual((result.outcome, result.retryable), (StepOutcome.FAILED, False))
@@ -739,8 +739,8 @@ def make_git_template(root, bootstrap=True):
 
 class GameConfigRewrite(unittest.TestCase):
     PLAN = {"engine": {"type": "threejs"},
-            "platforms": [{"id": "yandex", "profile": "yandex@1.0.0", "role": "required"},
-                          {"id": "poki", "profile": "poki@1.0.0", "role": "optional"}],
+            "platforms": [{"id": "yandex", "profile": "yandex@1.1.0", "role": "required"},
+                          {"id": "poki", "profile": "poki@1.1.0", "role": "optional"}],
             "monetization": {"ad_kinds": ["rewarded"], "iap": True}}
 
     def test_writes_only_the_owned_fields_and_keeps_comments(self):
@@ -763,7 +763,7 @@ class GameConfigRewrite(unittest.TestCase):
 
     def test_block_style_and_missing_sections(self):
         text = ("game:\n  id: example-game\n  name: Example Game\n  version: 0.1.0\n"
-                "platforms:\n  - id: generic-web\n    profile: generic-web@1.0.0\n"
+                "platforms:\n  - id: generic-web\n    profile: generic-web@1.1.0\n"
                 "    role: required\n# trailing comment\nbuild:\n  command: pnpm build\n")
         result = yaml_load(apply_game_config(text, self.PLAN))
         self.assertEqual(result["platforms"], self.PLAN["platforms"])
@@ -774,19 +774,19 @@ class GameConfigRewrite(unittest.TestCase):
         # Before this, a plan's game_id was dropped on the floor: the line writer knew only
         # id, profile and role, and a GameDistribution build then failed in the template.
         platforms = [
-            {"id": "gamedistribution", "profile": "gamedistribution@1.0.0", "role": "required",
+            {"id": "gamedistribution", "profile": "gamedistribution@1.1.0", "role": "required",
              "game_id": "0123456789abcdef0123456789abcdef", "hosting": "self-hosted",
              "game_url": "https://games.example.com/neon/?v=1"},
-            {"id": "gamemonetize", "profile": "gamemonetize@1.0.0", "role": "optional",
+            {"id": "gamemonetize", "profile": "gamemonetize@1.1.0", "role": "optional",
              "game_id": "gm-title_0001"},
-            {"id": "y8", "profile": "y8@1.0.0", "role": "optional"},
+            {"id": "y8", "profile": "y8@1.1.0", "role": "optional"},
         ]
         text = apply_game_config(GAME_CONFIG, dict(self.PLAN, platforms=platforms))
         self.assertEqual(yaml_load(text)["platforms"], platforms)
         self.assertEqual(apply_game_config(text, dict(self.PLAN, platforms=platforms)), text)
 
     def test_a_platform_key_the_file_has_no_place_for_is_refused(self):
-        platforms = [{"id": "poki", "profile": "poki@1.0.0", "role": "required",
+        platforms = [{"id": "poki", "profile": "poki@1.1.0", "role": "required",
                       "api_key": "secret"}]
         with self.assertRaises(GameConfigError):
             apply_game_config(GAME_CONFIG, dict(self.PLAN, platforms=platforms))

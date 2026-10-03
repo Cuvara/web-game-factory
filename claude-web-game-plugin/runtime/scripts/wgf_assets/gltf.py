@@ -305,6 +305,25 @@ def _view_bytes(doc, binary, view_index):
     return binary[start:start + (view.get("byteLength") or 0)]
 
 
+def _positions(doc, binary, accessor_index):
+    """The float positions of a POSITION accessor, or None when they cannot be read plainly
+    (not float, sparse, no buffer view, or out of range)."""
+    accessor = doc["accessors"][accessor_index]
+    if accessor.get("componentType") != 5126 or "bufferView" not in accessor \
+            or "sparse" in accessor or binary is None:
+        return None
+    data = _view_bytes(doc, binary, accessor["bufferView"])
+    if data is None:
+        return None
+    stride = doc["bufferViews"][accessor["bufferView"]].get("byteStride") or 12
+    offset = accessor.get("byteOffset") or 0
+    count = accessor.get("count", 0)
+    if count and offset + (count - 1) * stride + 12 > len(data):
+        return None
+    points = [struct.unpack_from("<fff", data, offset + i * stride) for i in range(count)]
+    return points if points and _finite([c for p in points for c in p]) else None
+
+
 def _positions_range(doc, binary, accessor_index):
     """(min, max) of a POSITION accessor: its declared min/max, else read from the buffer."""
     accessor = doc["accessors"][accessor_index]
@@ -312,15 +331,7 @@ def _positions_range(doc, binary, accessor_index):
     if isinstance(lo, list) and isinstance(hi, list) and len(lo) == 3 and len(hi) == 3 \
             and _finite(lo + hi):
         return lo, hi
-    if accessor.get("componentType") != 5126 or "bufferView" not in accessor or binary is None:
-        return None
-    data = _view_bytes(doc, binary, accessor["bufferView"])
-    if data is None:
-        return None
-    stride = doc["bufferViews"][accessor["bufferView"]].get("byteStride") or 12
-    offset = accessor.get("byteOffset") or 0
-    points = [struct.unpack_from("<fff", data, offset + i * stride)
-              for i in range(accessor["count"])]
+    points = _positions(doc, binary, accessor_index)
     if not points:
         return None
     return ([min(p[k] for p in points) for k in range(3)],
@@ -634,11 +645,17 @@ def inspect(data, *, name="model", kind=None):
         for prim in doc["meshes"][node["mesh"]].get("primitives") or []:
             position = prim["attributes"]["POSITION"]
             vertices += doc["accessors"][position].get("count", 0)
-            rng = _positions_range(doc, binary, position)
-            if rng is None:
-                continue
-            (x0, y0, z0), (x1, y1, z1) = rng
-            for corner in ((x, y, z) for x in (x0, x1) for y in (y0, y1) for z in (z0, z1)):
+            # The vertices themselves, placed: the corners of a rotated part's local box
+            # stand outside the part, so a box-of-boxes is larger than the model - a fitted
+            # model with rotated parts would read as missing its fit.
+            points = _positions(doc, binary, position)
+            if points is None:
+                rng = _positions_range(doc, binary, position)
+                if rng is None:
+                    continue
+                (x0, y0, z0), (x1, y1, z1) = rng
+                points = [(x, y, z) for x in (x0, x1) for y in (y0, y1) for z in (z0, z1)]
+            for corner in points:
                 p = _apply(world[index], corner)
                 for k in range(3):
                     lo[k], hi[k] = min(lo[k], p[k]), max(hi[k], p[k])

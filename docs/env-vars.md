@@ -21,6 +21,8 @@ set `=1` and both readings agree.
 |---|---|---|---|
 | `WGF_GAME_REPO` | `scripts/wgflib/checkout.py` | The game checkout EVERY step that works in the game repository uses - init (where it creates the project), assets, develop, review, sdk, verify and release - when the step's own `with: repo_dir` / `game_repo` is not set. Checked before the scaffold-record's `local_path` and `factory.checkouts`. A relative path resolves against the Factory root ([checkouts.md](checkouts.md)). | unset: the scaffold-record's `local_path`, else `factory.checkouts` + the repository name |
 | `WGF_PROJECT_DIR` | `scripts/wgflib/paths.py` | The project root: where `workspace/` (instance data and the installation's own `workspace/config/`), the run store and the checkouts base resolve. Never where `core/` or the engine is read - that is always beside `wgflib/`. Set by the installed runtime for every process it starts, so a child in another directory finds the same project. ([plugin-runtime.md](plugin-runtime.md)) | development checkout: the repository; installed plugin runtime: the working directory |
+| `WGF_PUBLISH_LIVE` | `scripts/wgf_publish/common.py` | `1`, together with `factory.publish.mode: live`, lets the `submit` step make the irreversible portal submit. Either alone is a dry run. ([publish-module.md](publish-module.md)) | unset: dry run |
+| `WGF_PUBLISH_<PLATFORM>_STORAGE_STATE` | `scripts/wgf_publish/session.py` (the name is each publication profile's `submission.credential.env`) | The path (or JSON) of the Playwright storage state a person captured for that portal's console (`scripts/wgf-publish.py capture`). Read only when `factory.publish.env_passthrough` lists the name, only for its platform, and redacted everywhere. | unset: the platform is HUMAN_REQUIRED |
 | `WGF_RESEARCH_LIVE` | `scripts/wgf_discovery/step.py` | `1` makes the `research` step fetch the pages in `probes.yaml` during the run, like `live: true` on the step. | off: evidence snapshots only |
 | `WGF_TEMPLATE_COMMIT` | `scripts/wgflib/template.py` | A deliberate override of the web-game-template commit in `workspace/config/template.lock.json`. Must be a full 40-hex sha. Used to validate a new pin before moving the lock. | the lock's `commit` |
 | `WGF_TEMPLATE_DIR` | `scripts/wgflib/template.py` | Offer an existing template checkout instead of the cache. Refused (`TemplateDrift`) unless its HEAD is exactly the expected commit; never moved. | unset: cache, then clone |
@@ -45,6 +47,7 @@ Python, not by its children.
 | `WGF_REVIEW_REPO`, `WGF_REVIEW_VERDICT`, `WGF_REVIEW_BRIEF`, `WGF_REVIEW_COMMIT` | `scripts/wgf_review/step.py` | Given to a `command` reviewer: the checkout (read-only), where to write the verdict, the brief, and the sha under review - the same values as the `{repo}`, `{verdict}`, `{brief}`, `{commit}` argv placeholders. |
 | `WGF_E2E_PLATFORM`, `WGF_E2E_ENGINE`, `WGF_E2E_EXPECT`, `WGF_E2E_REPORT` | `scripts/wgf_sdk/e2e.py`; read by `scripts/wgf_sdk/e2e/smoke.spec.ts`, `playwright.config.ts` | One SDK browser e2e case: which portal and engine the build is for, what the smoke must observe, and where Playwright writes its JSON report (`e2e.json` if unset). |
 | `WGF_VISUALQA_FRAMES`, `WGF_VISUALQA_BRIEF`, `WGF_VISUALQA_VERDICT` | `scripts/wgf_visualqa/judge.py` | Given to a `command` visual-qa judge: the directory of staged frame copies, the judge brief, and where to write the verdict - the same values as the `{frames_dir}`, `{brief}`, `{verdict}` argv placeholders. |
+| `WGF_LISTING_BRIEF`, `WGF_LISTING_OUTPUT` | `scripts/wgf_listing/copywriter.py` | Given to a `command` store copy writer: the brief (the facts, the claim vocabulary, the shape to produce) and where to write the JSON answer - the same values as the `{brief}` and `{output}` argv placeholders. |
 | `WGF_PLAY_OUT`, `WGF_PLAY_CONFIG` | `scripts/wgf_playability/step.py`; read by `scripts/wgf_playability/bot.spec.ts` | Where the playability bot writes what it recorded (per viewport: JSON and frames), and its settings file (idle, acknowledgement and play windows, the goal metric). |
 | `WGF_E2E_PORT` | not set; read by `scripts/wgf_sdk/e2e/playwright.config.ts` | The preview server port for the SDK browser e2e; `4461` when unset. |
 | `WGF_Y8_APP_ID`, `WGF_Y8_GAME_ID` | `scripts/wgf_sdk/e2e.py` (placeholder ids) | The Y8 build ids the template's build reads; the e2e sets test values so a Y8 build can be made. |
@@ -59,8 +62,13 @@ run at anything but its own checkout.
 
 ## Tests
 
+| Variable | Read by | Meaning |
+|---|---|---|
+| `WGF_LISTING_BROWSER`, `WGF_LISTING_REPO` | `scripts/tests/test_listing.py` | `WGF_LISTING_BROWSER=1` with `WGF_LISTING_REPO=<game checkout holding dist/ and node_modules/>` runs the real store-listing capture against that build in the game's own Chromium (`RealBuild`). Off: skipped, and a skip is not a pass. |
+
 | Variable | Read by | Meaning | Default |
 |---|---|---|---|
+| `WGF_PUBLISH_BROWSER_TEST` | `test_publish_module` | `1` drives the fixture portal (`scripts/tests/fixtures/publish/portal.py`) with real Chromium through the publish module's console executor, in the pinned template's checkout. Contacts nothing but 127.0.0.1. | off |
 | `WGF_GOLDEN` | `scripts/golden/testing.py` (via `test_golden_2d`, `test_golden_3d`) | `1` runs the 2D and 3D golden pipelines (minutes each). Otherwise the `2D GOLDEN` / `3D GOLDEN` categories are `SKIP`. | off |
 | `WGF_GOLDEN_KEEP` | `scripts/golden/testing.py` | `1` keeps a golden run's work directory after the test. | off: removed |
 | `WGF_GOLDEN_DIR` | `scripts/golden/harness.py` | Parent of a golden run's fresh work directory. | `/tmp` |

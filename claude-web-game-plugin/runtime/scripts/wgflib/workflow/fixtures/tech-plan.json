@@ -22,8 +22,8 @@
       "game": {"id": "mock-title", "name": "Mock Title", "version": "0.1.0"},
       "engine": {"type": "pixijs"},
       "platforms": [
-        {"id": "yandex", "profile": "yandex@1.0.0", "role": "required"},
-        {"id": "crazygames", "profile": "crazygames@1.0.0", "role": "optional"}
+        {"id": "yandex", "profile": "yandex@1.1.0", "role": "required"},
+        {"id": "crazygames", "profile": "crazygames@1.1.0", "role": "optional"}
       ],
       "build": {"command": "pnpm build", "output": "dist"},
       "monetization": {"ad_kinds": ["interstitial", "rewarded"], "iap": false}

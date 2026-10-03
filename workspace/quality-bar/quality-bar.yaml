@@ -1,0 +1,72 @@
+# The installation's quality bar: frames of finished games, captured from their production
+# builds with scripts/wgf_develop/tools/look.mjs, that every agent which makes or judges how a
+# game looks is shown - the designer, the developer, the asset authors and the visual judge.
+#
+# Why it exists: no agent in a run ever saw a picture of "good". Each worked from prose
+# (core/craft/) and tokens, and built what prose and tokens allow: primitives on a dark
+# void, unstyled text. A frame is the one specification that carries composition, density,
+# hierarchy, depth and finish at once.
+#
+# What it is NOT: a style to copy. A new game takes its own art direction from its own idea;
+# these frames set the level of finish and the qualities listed, never the palette, the
+# subject or the layout. Replace them with your own games' frames to raise the bar.
+#
+# Paths are relative to this file. `dimension` matches build_spec.assets[].dimension.
+version: 1
+frames:
+  - file: 2d-desktop-1-title.png
+    dimension: 2d
+    state: title
+    shows: >
+      A title screen that is a designed object, not a form: a lettered wordmark in the
+      display face with an outline and an offset shadow, one dominant call to action styled
+      from the palette with an icon, a short rules paragraph in the body face, and the game
+      board visible behind it so the first frame already sells the game.
+  - file: 2d-desktop-3-play-later.png
+    dimension: 2d
+    state: playing
+    shows: >
+      Play with a complete composition: a layered background (sky, clouds, a skyline band,
+      a halftone texture) fills every pixel; the playfield is framed; the next piece hovers
+      over its target with a pointer; HUD cards share one style (label above value, hard
+      offset shadow) in a single row; every piece shares one drawing language (outline
+      weight, flat fills, halftone shading, a level badge).
+  - file: 2d-mobile-2-play.png
+    dimension: 2d
+    state: playing
+    shows: >
+      The same game re-composed for a portrait phone, not shrunk: the board spans the
+      width, the HUD and objective sit in the top band, controls are at least 48 px, and
+      nothing important sits under a thumb.
+  - file: 3d-desktop-1-title.png
+    dimension: 3d
+    state: title
+    shows: >
+      A 3D title over the live scene: the world is already lit, fogged and dressed behind
+      the menu, so the title frame carries the art direction.
+  - file: 3d-desktop-3-play-later.png
+    dimension: 3d
+    state: playing
+    shows: >
+      A 3D scene with depth and a horizon: a backdrop (sky gradient, sun disc, mountain
+      silhouettes, distant towers), a lit track with emissive edges and lamp halos receding
+      into fog, a chase camera that frames the player low-centre with the threats readable
+      ahead, a modelled player craft (wings, cockpit, glowing thrusters) rather than a box,
+      an in-world call-out ("close call") as feedback, and a HUD with a clear hierarchy
+      (score large and centred, best small, objective boxed, icon buttons in the corners).
+  - file: 3d-mobile-3-play-later.png
+    dimension: 3d
+    state: playing
+    shows: >
+      The 3D scene framed for portrait: a wider field of view, the player low with the
+      track ahead, the HUD stacked in the top band, buttons sized for touch.
+# What every frame above has, and what a judge or an author looks for first. Generic: none of
+# these names a style.
+qualities:
+  - "Every pixel is composed - no empty void, no flat default background."
+  - "The player and what threatens or rewards it are read in under a second, by shape and contrast, at gameplay size."
+  - "One visual language across every asset and the UI - outline, shading, corner radius, shadow, palette - so the frame reads as one game."
+  - "Typography is designed - a display face for titles and numbers, a body face for sentences, a clear size hierarchy - never a system font."
+  - "The UI is part of the art direction - styled cards, buttons and icons, never browser defaults."
+  - "Feedback is visible in a still - a call-out, a burst, a highlight - not only in motion."
+  - "3D: lighting, fog and a backdrop give depth; materials differ (emissive, metallic, matte); the camera frames the action."

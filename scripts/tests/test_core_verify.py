@@ -304,8 +304,8 @@ class PassMockNeverPromoted(VerificationCase):
         with open(self.path_of("game.config.yaml")) as handle:
             config = handle.read()
         config = config.replace(
-            "  - { id: generic-web, profile: generic-web@1.0.0, role: required }",
-            "  - { id: generic-web, profile: generic-web@1.0.0, role: required }\n"
+            "  - { id: generic-web, profile: generic-web@1.1.0, role: required }",
+            "  - { id: generic-web, profile: generic-web@1.1.0, role: required }\n"
             "  - { id: example-portal, profile: example-portal@1.0.0, role: optional }")
         self.write("game.config.yaml", config)
         sdk = sdk_report("fake portal SDK")

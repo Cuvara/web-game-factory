@@ -104,7 +104,8 @@
         "tile_height": { "type": "integer", "minimum": 1 },
         "columns": { "type": "integer", "minimum": 1 },
         "rows": { "type": "integer", "minimum": 1 },
-        "family": { "type": "string", "description": "A font's CSS font-family: the asset id for a font file, or the fallback stack when no file is delivered." },
+        "family": { "type": "string", "description": "A font's CSS font-family: the face's own family name when the file is one face of the design's typography (the Factory font library), else the asset id for a font file, or the fallback stack when no file is delivered." },
+        "weight": { "type": "string", "pattern": "^[1-9][0-9]{0,3}( [1-9][0-9]{0,3})?$", "description": "A font file's CSS font-weight descriptor: one weight ('800'), or the range a variable file covers ('500 700'). Pass it to FontFace as { weight }." },
         "model": {
           "type": "object",
           "description": "A GLB's lookups, read from its bytes: clip names for the animation mixer, the nodes that are levels of detail, and the node that is the collision proxy (hidden; handed to physics). Node names are the glTF node names, as the loader names the objects.",

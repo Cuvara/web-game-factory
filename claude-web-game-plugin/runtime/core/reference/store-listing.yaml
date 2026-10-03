@@ -1,0 +1,173 @@
+# Store listing: the canonical package every release carries to a portal, and the bars it is
+# held to before a platform's own requirements are applied.
+#
+# The store-listing step (release:store-listing, core/lifecycle/stages/store-listing.md)
+# captures the verified production build - screenshots and a gameplay recording from the
+# running game through its play probe - derives the branding from the game's own visual
+# identity and assets, writes store copy grounded in the design and the shipped build, and
+# lays it all out as ONE platform-independent package. Each targeted platform's listing is
+# then rendered FROM that package under the platform profile's `store_listing` block
+# (core/reference/platforms/<id>.yaml). The listing-validation step checks the package and
+# every platform rendition against these bars and those blocks, and reports unknown
+# requirements as unknown - never as passed.
+#
+# Platform-neutral on purpose: no portal is named here. A platform's own numbers live in its
+# profile; a value a profile does not state stays null there and is reported UNKNOWN.
+
+version: 1.0.0
+
+# -- the canonical package ----------------------------------------------------------------
+# Paths inside the package directory, relative to it. Deterministic: the same build makes
+# the same names, so a publishing workflow can find every file without reading the artifact.
+package:
+  listing: listing.json                 # the store-listing artifact, as written to the run
+  branding_dir: branding
+  screenshots_dir: screenshots
+  trailer_dir: trailer
+  copy_dir: copy                        # <locale>.json per locale
+  platforms_dir: platforms              # <platform-id>/ per targeted platform
+  validation: validation.json           # the listing-validation-report, when it has run
+
+# What the canonical package renders, whatever the platforms ask. Every platform rendition is
+# derived from these masters by downscaling and cropping; a platform asking for something
+# larger than a master is reported, not upscaled.
+renditions:
+  icon:
+    # Square. The 1024 master is the source of every smaller icon.
+    - {id: icon-1024, width: 1024, height: 1024}
+    - {id: icon-512, width: 512, height: 512}
+    - {id: icon-256, width: 256, height: 256}
+  thumbnail:
+    - {id: thumbnail-16x9, width: 1280, height: 720}
+    - {id: thumbnail-4x3, width: 1024, height: 768}
+    - {id: thumbnail-1x1, width: 512, height: 512}
+  promo:
+    - {id: promo-1920x1080, width: 1920, height: 1080}
+  logo:
+    # The wordmark: the title set in the design's display face over a transparent ground.
+    - {id: logo-wordmark, width: 1600, height: 400}
+  screenshots:
+    # Captured at these viewports, never upscaled to them. One set per orientation the game
+    # supports (game-design build_spec.responsive.orientation; both when unknown).
+    landscape: {width: 1920, height: 1080}
+    portrait: {width: 1080, height: 1920}
+    min: 3
+    max: 8
+  trailer:
+    width: 1280
+    height: 720
+    min_seconds: 8
+    max_seconds: 30
+    # The container the browser records natively. Other containers are derived only when an
+    # encoder for them is present, and recorded as unavailable otherwise.
+    container: webm
+    max_mb: 50
+
+# Image formats the package can write. PNG is written by the Factory itself. JPEG and WebP
+# need the browser's encoder: a rendition in one of them is produced only during a browser
+# capture, and reported `format-unavailable` otherwise.
+formats:
+  native: [png]
+  browser: [jpg, webp]
+
+# -- capture ------------------------------------------------------------------------------
+# What the screenshots must show. Each scene is a moment of the game's own play, read from
+# the play probe (core/artifacts/shared/play-probe.schema.json): the title screen, three
+# moments of play (early, after the player has acted, late), and the result screen. A scene
+# whose probe state is one of `excluded_states` is never a screenshot, whatever it looks like.
+capture:
+  scenes:
+    - {id: title, state: title, description: the title screen as a first-time player sees it}
+    - {id: play-early, state: playing, after_ms: 1500, description: play just begun}
+    - {id: play-mid, state: playing, after_ms: 6000, after_inputs: 6, description: play after the player has acted several times}
+    - {id: play-late, state: playing, after_ms: 12000, description: play well under way}
+    - {id: result, state: [won, lost], description: the result screen}
+  # Debug, loading and error states are never shown. `other` is the probe's catch-all.
+  excluded_states: [loading, other]
+  # A frame a player cannot read is not a screenshot: the same floors the playability step
+  # holds play frames to (core/reference/visual-quality.yaml `frames`).
+  frame_bars:
+    lit_luminance: 64
+    min_lit_share: 0.01
+    max_mean_luminance: 225
+    min_contrast: 18
+  # Two screenshots that differ in fewer than this share of sampled pixels (each by at least
+  # `min_pixel_delta` luminance) show the same scene; the later one is dropped.
+  distinct:
+    min_changed_fraction: 0.05
+    min_pixel_delta: 24
+  # How often a capture that produced too few usable frames is tried again, with a longer
+  # play window each time, before the step reports it.
+  retries: 2
+  # The gameplay recording: from the first frame of play, for `seconds` of oracle-driven
+  # play, through the game's own inputs. Trimmed to play when an encoder is available; else
+  # kept whole and reported untrimmed.
+  trailer:
+    seconds: 20
+    avoid_states: [loading, title, paused, other]
+
+# -- copy ---------------------------------------------------------------------------------
+# The texts the canonical package carries per locale, and the bounds the package itself
+# applies before any platform's. A platform block may tighten any of them; none may be
+# exceeded by relaxing these.
+copy:
+  title: {max_chars: 60}
+  subtitle: {max_chars: 80, variants: 3}
+  short_description: {max_chars: 160, min_chars: 40}
+  long_description: {min_chars: 200, max_chars: 2000}
+  features: {min: 3, max: 8, max_chars: 120}
+  tags: {min: 3, max: 10}
+  categories: {min: 1, max: 3}
+  promo: {variants: 3, max_chars: 200}
+  controls: {max_chars: 200}
+  # The first sentence of every description says what the player DOES: the core verb, not
+  # the fantasy (core/craft/store-listing.md).
+  first_sentence_names_the_verb: true
+
+# -- grounding ----------------------------------------------------------------------------
+# Store copy may claim nothing the shipped game does not have. Every claim below is a term a
+# description might use, and what in the run's artifacts must back it. A text containing the
+# term with no backing is a grounding failure, whoever wrote it.
+#
+#   terms       words or phrases, matched case-insensitively as whole words
+#   backed_by   where the evidence is:
+#                 sdk:<capability>      the sdk-report lists the capability `working` on a
+#                                       targeted platform, or the design's sdk_touchpoints
+#                                       name it as MVP
+#                 design:<path>         the game-design field is present and non-empty
+#                 engine:<dimension>    the design's engine.dimension
+#                 feature:<pattern>     an MVP feature or mechanic whose name or description
+#                                       contains the pattern
+#                 none                  never backed: the term is forbidden in store copy
+claims:
+  - {id: multiplayer, terms: [multiplayer, online multiplayer, co-op, coop, pvp, versus friends], backed_by: [feature:multiplayer, feature:co-op, feature:pvp]}
+  - {id: leaderboards, terms: [leaderboard, leaderboards, global ranking, rankings], backed_by: [sdk:leaderboards]}
+  - {id: cloud-save, terms: [cloud save, cloud saves, cross-device, sync your progress], backed_by: [sdk:cloud-save]}
+  - {id: achievements, terms: [achievements, trophies], backed_by: [sdk:achievements]}
+  - {id: gamepad, terms: [controller, gamepad, joystick], backed_by: [design:build_spec.controls.actions.gamepad]}
+  - {id: three-d, terms: [3d, three-dimensional], backed_by: [engine:3d]}
+  - {id: levels, terms: [levels, stages, worlds, chapters], backed_by: [design:scope.content_units, feature:level]}
+  - {id: ad-free, terms: [no ads, ad-free, ad free, without ads], backed_by: [none]}
+  - {id: award, terms: [award-winning, award winning, best game, "#1", number one], backed_by: [none]}
+  - {id: offline, terms: [offline, play offline, no internet], backed_by: [design:offline]}
+  - {id: story, terms: [story, campaign, narrative], backed_by: [feature:story, feature:campaign, feature:narrative]}
+  - {id: boss, terms: [boss, bosses, boss fights], backed_by: [feature:boss]}
+  - {id: endless, terms: [endless, infinite, never-ending], backed_by: [design:endless]}
+
+# -- categories ---------------------------------------------------------------------------
+# Tags and categories come from the research vocabulary's genre tree
+# (core/reference/research-vocabulary.yaml `genres`): the genre the design's research block
+# names, its ancestors, and the facet values the design carries (controls, session). A
+# platform with its own category list maps these through `store_listing.categories.allowed`
+# in its profile; one without is handed the vocabulary ids.
+categories:
+  vocabulary: research-vocabulary.yaml
+  # Tags every web game gets, when true of the build: read from the design and the build.
+  derived_tags:
+    - {tag: single-player, when: "always"}
+    - {tag: casual, when: "session.target_seconds at most 300"}
+    - {tag: mobile, when: "responsive.orientation is portrait or both, or a targeted platform's device_mix.mobile is at least 0.5"}
+    - {tag: one-touch, when: "controls.primary_input is touch and there is one action"}
+    - {tag: "3d", when: "engine.dimension is 3d"}
+    - {tag: "2d", when: "engine.dimension is 2d"}
+    - {tag: high-score, when: "experience.win is absent"}

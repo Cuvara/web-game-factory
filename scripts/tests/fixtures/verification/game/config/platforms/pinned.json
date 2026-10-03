@@ -9,9 +9,9 @@
   "profiles": [
     {
       "id": "generic-web",
-      "version": "1.0.0",
+      "version": "1.1.0",
       "file": "generic-web.yaml",
-      "content_hash": "sha256:d33a9fd7fced439e503cf769036fefa3a0824c3c51cc862786630d807cf80f00"
+      "content_hash": "sha256:65cd7c637ee56ea67e0eba143bbeb673051635c4fc8167d9bf1a68116d790f22"
     }
   ]
 }

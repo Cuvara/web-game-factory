@@ -12,7 +12,7 @@
 # artifact plus the resolved platform profiles. Keep them few and obvious — a rule nobody
 # understands gets waived, and a waived rule is worse than no rule.
 
-version: 1.4.0  # 1.3.0: scope_fits_session_count applies only without a genre family; 1.4.0: detail_terms
+version: 1.4.0  # 1.2.1: match never the bare verb; 1.3.0: scope_fits_session_count applies only without a genre family; 1.4.0: detail_terms
 
 rules:
   - id: rewarded_ads_need_reward_moments
@@ -149,7 +149,9 @@ rules:
 concept_terms:
   drop: [drop, drops, dropped, dropping]
   swap: [swap, swaps, swapping, swapped]
-  match: [match, matches, match-3, line of three, lines of three]
+  # Never the bare verb: "the telegraphed zone always matches the zone the ball is struck
+  # toward" is a goalkeeper design, not a match-3 one, and it breached this rule.
+  match: [match-3, match 3, match three, matches three, matching three, line of three, lines of three]
   merge: [merge, merges, merged, merging]
   column: [column, columns]
   lane: [lane, lanes]

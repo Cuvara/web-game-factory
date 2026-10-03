@@ -14,6 +14,79 @@ what the game is actually made of: a genre model per family, a content unit list
 held to, and a return route when the design did not say enough.
 Record: [docs/v2.7-release.md](docs/v2.7-release.md).
 
+**Publication runs inside the Factory** ([docs/publish-module.md](docs/publish-module.md)).
+The release lifecycle's tail - `release:validating`, G5, G6, `release:submitting` - is now the
+`publish` group of `new-game` (workflow version 6), continued in the run that drafted the
+release by `wgf publish --run <run-id>`; `wgf new-game` still ends with the draft, because G6
+is irreversible and never auto-approves. `platform-validate` (`scripts/wgf_publish`) computes
+the publication guards the machines name - `candidate_frozen`, `store_metadata_complete`,
+`package_shaped_to_profile`, `assertions_pass`, `metadata_and_locales_present` and the quorum
+guards, all UNKNOWN before - through `wgflib/publication.py`, which `wgf-state.py` now reads
+too, and writes a `platform-publication` with a `readiness` (READY, BLOCKED, HUMAN_REQUIRED,
+UNKNOWN; UNKNOWN is never READY). `release-review` (G5) and `publish-review` (G6:
+`publish`/`reject`, a person only, pinning the release-manifest by hash) are
+`human-checkpoint` steps; the release machine gains the matching `reject` edges. `submit`
+refuses any manifest but the one G6 pinned, finds a draft by a deterministic idempotency key
+before any upload, submits once (`retry: max_attempts 1`, never retryable), and advances the
+record only from the portal's own state read back; `factory.publish.mode` is dry-run until an
+installation sets live and `WGF_PUBLISH_LIVE=1`. Platform behaviour lives in adapters
+(`scripts/wgf_publish/adapters/`) and in new, separately versioned publication profiles
+(`core/reference/publication/<id>.yaml`, `shared/publication-profile.schema.json`): the
+portal's method (api/cli/console/email/manual), console origins, the credential's variable
+name, what only a person does, `automation_terms`. No shipped portal documents an upload API;
+the console adapter is direct Playwright under `wgflib.procs` with fixed selectors
+(`browser/console.spec.ts`), never Playwright MCP, and every shipped console flow is
+unverified and off until a person records the portal's terms
+(`factory.publish.platforms.<id>.terms_confirmed`). A login, CAPTCHA, second factor,
+unconfirmed terms, missing session, unmapped portal state or a method only a person performs
+stops the step WAITING_FOR_HUMAN (`wgf decide <run> done|abandon`). A portal session is
+captured by a person (`scripts/wgf-publish.py capture`), read through a third allowlist
+(`factory.publish.env_passthrough`), copied privately for one browser run and deleted;
+`wgflib/redact.py` scrubs every workflow event (kernel: `events.py`) and every publish
+artifact. `platform-publication` 1.1.0 (additive: readiness, guards, submission method/key/
+draft id/dry run/authorized_by, outcome, human_required, verified_state, evidence,
+measurement_class, workflow); `decision-record`, `scaffold-record`, `qa-report`,
+`verification-report`, `release-manifest` consumers gain the publication stages;
+`check-integrity.py` accepts an artifact's `updated_by` stage as a producer. The lifecycle
+bridge picks a decision's edge by the record's transition (`approved` is G2's `approve` and
+G6's `publish`). Tests: `test_publish_module` (RELEASE category) with a fake console and,
+opt-in (`WGF_PUBLISH_BROWSER_TEST=1`), real Chromium against a fixture portal; no test
+contacts a real portal. Not done: a live run against any real console, a Poki CLI adapter,
+per-platform builds (one bundle still targets one portal).
+
+**Store listing** ([docs/store-listing-module.md](docs/store-listing-module.md)). Workflow 7:
+after G4 passes, the verified build's store package is captured from the running build and
+validated per platform before release ships it. The `store-listing` step serves the verified
+bundle locally, plays it through its play probe in the game's own Chromium on a landscape and
+a portrait viewport, and writes the canonical package: screenshots of real play (play first,
+title last; excluded states, unreadable and indistinct frames dropped, with retries), a
+gameplay recording trimmed to play with Playwright's bundled ffmpeg (an honest frame-sequence
+fallback when no recording can be made), branding composed in the browser from the game's own
+palette, display face and player asset (a frame-derived fallback without a browser), store
+copy grounded in the design and the game's own strings (a deterministic writer, or an agent
+writer whose texts pass the same grounding check), and one rendition per targeted platform
+under its profile's new `store_listing` block (`shared/platform-profile.schema.json`
+`storeListing`; every shipped profile states what its sources say and leaves the rest
+`null`; the eight shipped profiles are 1.1.0, since a profile's identity is its version and
+its content hash and the block is content - a game pinned at 1.0.0 keeps verifying against
+its vendored 1.0.0 copy). The `listing-validation` step judges it - every text and file present and within its
+limits, screenshots real and distinct, the trailer within bounds, no unbacked claim
+(`core/reference/store-listing.yaml` `claims`), every platform rendition - reporting a `null`
+requirement as UNKNOWN, never passed; a failure the step can redo routes `listing` back to it
+(bounded), one only a person can fix blocks. `release` requires the listing of the commit it
+ships, validated PASS (`required_listing`, refusals `no-store-listing`,
+`listing-commit-mismatch`, `listing-incomplete`, `listing-not-validated`,
+`listing-not-passed`), copies the package to `release/<id>/listing/` and fills
+`store_metadata` from it (release-manifest 1.3.0, `evidence.store_listing`). G6 is decided on
+`release-manifest`, `store-listing` and `listing-validation-report` (gates.yaml 1.2.0).
+
+New: `core/artifacts/store-listing.schema.json`, `listing-validation-report.schema.json`,
+`core/reference/store-listing.yaml`, `core/lifecycle/stages/store-listing.md`,
+`core/craft/store-listing.md`, `scripts/wgf_listing/`, `scripts/wgf-listing.py`, the
+`store-listing` skill (adapter binding 1.7.0), `factory.listing` configuration. The golden
+runs expect both steps and assert a complete, validated, shipped listing. Phase naming:
+"campaign" stays G7's paid acquisition; this is the store listing.
+
 **Research V2** ([docs/research-v2.md](docs/research-v2.md)). Research is game-corpus based:
 listings and teardown records (`game-record`, `<corpus>/games/`) are coded on a shared,
 versioned vocabulary (`core/reference/research-vocabulary.yaml`: a genre tree, market
@@ -84,7 +157,7 @@ reviewer's new `## Design fidelity` brief section. `play-probe` gains `content`,
 bounds instead); `design-depth.yaml` 1.1.0 (the playability bars). Every change is additive and
 **every earlier artifact remains valid**.
 
-**Workflow 6** adds one route and one input set. `design-gap`, from `greybox` and `develop` back
+**Workflow 8** adds one route and one input set. `design-gap`, from `greybox` and `develop` back
 to `design`, is taken when a developer reports a blocking design gap — the design does not say
 enough to build what was asked — and is bounded on design, one pass from each source
 (`greybox.design-gap: 1`, `develop.design-gap: 1`); the build commit and its report are kept,

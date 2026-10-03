@@ -506,11 +506,29 @@ test("act: every action is acknowledged on screen", async ({ page }, info) => {
   const acted: unknown[] = [];
   if (started.playingMs !== null) {
     const s0 = watch.saw(await snap(page));
+    // Every action is measured in play. A pause leaves play, so it goes last: measured
+    // first, in the probe's own order, it left every later action tapping a paused game
+    // (a goalkeeper's dive read as "no visible change" through two development rounds).
+    // And each action is taken from the inputs live NOW, not from the first snapshot: a
+    // zone, a lane, a piece moves between snapshots.
+    const isPause = (move: Move): boolean => /pause/i.test(move.action);
+    const isResume = (move: Move): boolean => /resume|continue|unpause|^play$/i.test(move.action);
+    const order = [...(s0?.inputs ?? [])].sort((a, b) => Number(isPause(a)) - Number(isPause(b)));
     const seen = new Set<string>();
-    for (const move of s0?.inputs ?? []) {
-      if (seen.has(move.action) || seen.size >= 4) continue;
-      seen.add(move.action);
-      const before = watch.saw(await snap(page));
+    for (const first of order) {
+      if (seen.has(first.action) || seen.size >= 4) continue;
+      seen.add(first.action);
+      let before = watch.saw(await snap(page));
+      if (before && before.state !== "playing") {
+        // Brought back to play the way the game offers, when it does; else measured as is.
+        const resume = before.inputs.find(isResume);
+        if (resume) {
+          await act(page, resume, touch);
+          await page.waitForTimeout(300);
+          before = watch.saw(await snap(page));
+        }
+      }
+      const move = before?.inputs.find((m) => m.action === first.action) ?? first;
       const id = `act-${move.action}`;
       await frame(page, project, `${id}-before`, frames);
       await act(page, move, touch);

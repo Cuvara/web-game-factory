@@ -14,22 +14,39 @@
 #
 # The anchors describe 0, 3 and 5; 1, 2 and 4 lie between them. The build fails on any of: a
 # dimension scored below `pass_bar`, a finding of severity `blocker`, a per-state answer equal
-# to its question's `fail_when` (state_questions below), or the look judged a
-# `developer-prototype`. Each names where its failure goes back to: `assets` when an asset
+# to its question's `fail_when` (state_questions below), a mean score below `mean_pass_bar`,
+# or the look judged anything but `finished-game`. Each names where its failure goes back to: `assets` when an asset
 # itself must change, `develop` when the game's use of it must (the step's route is `assets`
 # when anything failing routes there, else `develop`).
+#
+# What an `assets` failure makes again: on re-entry the assets step remakes the design's asset
+# requirements (game-design build_spec.assets) a failure concerns, and hands their authors the
+# judge's reasons and the frames that show them (docs/assets-module.md, "Re-entry"). A failure
+# concerns the requirements whose id it names, those of a role whose word it names
+# (`rebuild.role_words`), those whose runtime asset the play probe reported drawing an entity
+# of that role, and those of its own `rebuild_roles` - a dimension's, a blocker's, a state
+# question's or the look's. Roles are the design's asset roles; a name in `rebuild.groups`
+# stands for its roles. An `assets` failure that names nothing remakes `rebuild.fallback`: a
+# run sent back to make its art again never reuses every file.
 #
 # Calibrated once against real frames (docs/visual-qa-module.md, "Calibration"): a game whose
 # characters were untextured cubes on a near-black pitch, and the template's two golden
 # ports. Recalibrate as verdicts accumulate - never to make one build pass.
 
-version: 1.0.0
+version: 1.2.0
 
 pass_bar: 3
+# The mean of every dimension's score must reach this too. Per-dimension scores from one
+# judge vary by a point between runs on the same frames, so no single dimension can carry a
+# bar of 4; the mean does. Calibration 2026-10-02 (three runs per reference, one on a
+# greybox): two finished reference games scored means of 3.63-4.13, a styled greybox 3.13.
+# A dimension below 4 then contributes its route.
+mean_pass_bar: 3.5
 
 dimensions:
   art_completeness:
     route: assets
+    rebuild_roles: [art]
     question: Is every thing on screen finished art, in the style the design specifies?
     anchors:
       "0": Placeholder art everywhere - untextured primitives, flat boxes, missing-texture colours, stand-in rectangles.
@@ -37,6 +54,7 @@ dimensions:
       "5": Every entity, surface and UI element is finished art consistent with the art direction.
   character_readability:
     route: assets
+    rebuild_roles: [entities]
     question: Can a first-time player tell at a glance what each readable entity (player, threat, goal, target, projectile) is, at its size on both viewports?
     anchors:
       "0": Entities are anonymous shapes; the player cannot tell themself from a threat or a goal.
@@ -44,6 +62,7 @@ dimensions:
       "5": Each entity reads instantly by silhouette and colour, on desktop and mobile alike.
   environment:
     route: assets
+    rebuild_roles: [scene]
     question: Does the scene (background, ground, arena, lighting) give a sense of place and frame the play?
     anchors:
       "0": An empty, black or flat-colour void; or so dark nothing reads.
@@ -72,6 +91,7 @@ dimensions:
       "5": Deliberate composition on both viewports; the eye goes to the play first.
   consistency:
     route: assets
+    rebuild_roles: [art]
     question: Do all the visuals belong to one game - one palette, one shape language, one rendering style?
     anchors:
       "0": Mixed styles - flat clip-art beside photo textures, palettes that clash, assets from different games.
@@ -91,6 +111,7 @@ blockers:
   - id: primitive-entity
     category: assets
     route: assets
+    rebuild_roles: [entities]
     rule: A readable entity (player, threat, goal, target, projectile) drawn as a plain cube, sphere, capsule, cylinder or rectangle, when the design's visual identity has no primitive_style.
   - id: missing-asset
     category: assets
@@ -140,10 +161,12 @@ state_questions:
     ask: Are the entities on screen recognisable production assets - a player can tell what each one is?
     fail_when: false
     route: assets
+    rebuild_roles: [entities]
   - id: primitives_or_placeholders
     ask: Is any entity or element drawn as a plain primitive (cube, sphere, capsule, rectangle) or a placeholder?
     fail_when: true
     route: assets
+    rebuild_roles: [entities, scene]
     unless: primitive_style
   - id: lighting_materials_coherent
     ask: In a 3D scene, are lighting and materials coherent - lit, shaded, one material language? (null for 2D)
@@ -170,7 +193,37 @@ state_questions:
 
 # Asked once, of the whole set of frames. `developer-prototype` fails the build.
 look:
-  ask: Does this look like a finished game a portal would publish, or a developer prototype?
-  values: [finished-game, developer-prototype]
-  fail_on: developer-prototype
+  ask: >-
+    Does this look like a finished game a portal would feature (finished-game), a competent
+    but plain game nobody would remember - generic shapes, default-looking UI, an empty or
+    flat scene, no visual identity of its own (unremarkable) - or a developer prototype?
+    Compare with the quality bar frames in the brief.
+  values: [finished-game, unremarkable, developer-prototype]
+  # Both fail: the bar is a game a portal would feature, not one that merely works.
+  fail_on: [unremarkable, developer-prototype]
   route: assets
+  rebuild_roles: [art]
+
+# Roles and words for the assets step's re-entry (see the header). A word matches a whole word
+# of a finding's id or summary, singular or plural.
+rebuild:
+  groups:
+    entities: [player, threat, goal, target, projectile, collectible, hazard]
+    scene: [environment, background, prop]
+    art: [entities, scene, vfx]
+  fallback: [entities, scene]
+  role_words:
+    player: [player, hero, avatar, character, protagonist]
+    threat: [threat, enemy, obstacle, wall, monster]
+    hazard: [hazard, spike, trap]
+    goal: [goal, finish, exit]
+    target: [target]
+    projectile: [projectile, bullet, missile, shot]
+    collectible: [collectible, pickup, coin, gem, powerup]
+    environment: [environment, arena, ground, floor, terrain, track, scenery]
+    background: [background, backdrop, sky, horizon]
+    prop: [prop, decoration]
+    vfx: [vfx, effect, particle, explosion, debris, burst, trail, spark]
+    ui: [ui, button, panel, hud, menu]
+    icon: [icon, glyph]
+    font: [font, typeface]

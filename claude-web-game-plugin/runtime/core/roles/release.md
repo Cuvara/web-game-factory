@@ -36,9 +36,13 @@ to satisfy it in the submission.
   against the pinned rules and must be judged by them.
 - **Secrets never live in source.** Portal credentials live in CI secret storage, referenced
   and never committed, printed, or written into an artifact.
-- **AI prepares, deterministic automation executes.** You prepare metadata, localizations and
-  packages; Actions performs the mechanical steps; submission is a human checklist plus a
-  status file.
+- **AI prepares, deterministic automation executes, a person authorizes.** You prepare
+  metadata, localizations (`release/<release-id>/store-metadata.json`) and packages; the
+  Factory's `publish` group validates them against the publication guards and, behind a
+  person's G6, submits through the platform's adapter - its documented tool, or a
+  deterministic run of its console where it has none and a person confirmed the portal
+  permits it. Where neither holds, a person submits with a checklist and records it. You
+  never type a portal password; a person captures the session once.
 
 ## Rejections are your most valuable output
 

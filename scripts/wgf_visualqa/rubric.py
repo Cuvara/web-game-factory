@@ -4,6 +4,7 @@ The judge writes:
 
     {
       "scores":   {"<every rubric dimension>": 0..5, ...},
+      "score_reasons": {"<dimension>": "why that score: what, in which frames"},  # optional
       "findings": [{"id": "short-kebab-id", "severity": "blocker|major|minor",
                     "category": "assets|ui|composition|readability|consistency|debug",
                     "frame": "<viewport>/<frame-id>" | null, "summary": "...",
@@ -11,7 +12,7 @@ The judge writes:
       "states":   [{"state": "<rubric state>", "viewport": "<viewport>",
                     "answers": {"<every question for that state>": true | false | null},
                     "comment": "..."}],      # one per (state, viewport) that has frames
-      "look":     "finished-game" | "developer-prototype",
+      "look":     "finished-game" | "unremarkable" | "developer-prototype",
       "look_reason": "...",
       "notes":    "free text (optional)"
     }
@@ -20,6 +21,10 @@ The judge does not write a verdict: the step decides it (`decide`) from the rubr
 when any finding is a blocker, any dimension is below the pass bar, any per-state answer
 equals its question's `fail_when`, or the look is a developer prototype. A judge cannot pass
 a build its own answers fail, and a malformed verdict is never read charitably.
+
+`score_reasons` is optional - a verdict without it is well formed - but the brief asks for
+it for every dimension: it is what a failing score sends back to the asset authors and the
+developer (wgf_assets.feedback, wgf_develop.brief) besides a number.
 """
 
 import hashlib
@@ -31,14 +36,14 @@ from wgflib import paths
 from wgflib.yamllite import load_file
 
 __all__ = ["RUBRIC_PATH", "load_rubric", "parse", "decide", "contract", "RubricError",
-           "state_ids", "questions_for", "judged_pairs",
+           "state_ids", "questions_for", "judged_pairs", "expand_roles",
            "SEVERITIES", "CATEGORIES", "ROUTES"]
 
 RUBRIC_PATH = os.path.join(paths.REFERENCE, "visual-qa-rubric.yaml")
 SEVERITIES = ("blocker", "major", "minor")
 CATEGORIES = ("assets", "ui", "composition", "readability", "consistency", "debug")
 ROUTES = ("assets", "develop")
-_TOP = {"scores", "findings", "states", "look", "look_reason", "notes"}
+_TOP = {"scores", "score_reasons", "findings", "states", "look", "look_reason", "notes"}
 _STATE = {"state", "viewport", "answers", "comment"}
 _FINDING = {"id", "severity", "category", "frame", "summary", "route"}
 _ID = re.compile(r"^[a-z0-9][a-z0-9-]*$")
@@ -85,12 +90,71 @@ def load_rubric(path=None):
             raise RubricError(f"{path}: state question {question!r} needs id, fail_when, "
                               f"route and known states")
     look = data.get("look") or {}
-    if (look.get("fail_on") not in (look.get("values") or [])
+    fail_on = look.get("fail_on")
+    fail_on = fail_on if isinstance(fail_on, list) else [fail_on]
+    if (not fail_on or not set(fail_on) <= set(look.get("values") or [])
             or look.get("route") not in ROUTES):
         raise RubricError(f"{path}: `look` needs values, fail_on among them and a route")
+    look["fail_on"] = fail_on
+    mean_bar = data.get("mean_pass_bar")
+    if mean_bar is not None and not (isinstance(mean_bar, (int, float))
+                                     and 0 <= mean_bar <= 5):
+        raise RubricError(f"{path}: mean_pass_bar must be a number 0..5")
+    problem = _check_rebuild(data)
+    if problem:
+        raise RubricError(f"{path}: {problem}")
     data["path"] = path
     data["sha256"] = digest
     return data
+
+
+def _names(value):
+    return isinstance(value, list) and all(isinstance(v, str) and v for v in value)
+
+
+def _check_rebuild(data):
+    """The re-entry data (`rebuild`, and `rebuild_roles` on dimensions, blockers, state
+    questions and the look) is well formed, or the problem."""
+    rebuild = data.get("rebuild")
+    if rebuild is None:
+        return None
+    if not isinstance(rebuild, dict):
+        return "`rebuild` must be a map"
+    for key in ("groups", "role_words"):
+        entries = rebuild.get(key) or {}
+        if not isinstance(entries, dict) or not all(_names(v) for v in entries.values()):
+            return f"`rebuild.{key}` must map names to lists of names"
+    if "fallback" in rebuild and not _names(rebuild["fallback"]):
+        return "`rebuild.fallback` must be a list of roles or groups"
+    owners = [("dimension " + n, d) for n, d in data["dimensions"].items()]
+    owners += [("blocker " + str(b.get("id")), b) for b in data.get("blockers") or []]
+    owners += [("state question " + q["id"], q) for q in data.get("state_questions") or []]
+    owners.append(("look", data.get("look") or {}))
+    for name, owner in owners:
+        if "rebuild_roles" in owner and not _names(owner["rebuild_roles"]):
+            return f"{name}: `rebuild_roles` must be a list of roles or groups"
+    return None
+
+
+def expand_roles(rubric, names):
+    """The design asset roles `names` stand for: a name in `rebuild.groups` is its roles
+    (groups may name groups), anything else is a role."""
+    groups = ((rubric or {}).get("rebuild") or {}).get("groups") or {}
+    out, seen = [], set()
+
+    def add(name):
+        if name in seen:
+            return
+        seen.add(name)
+        if name in groups:
+            for member in groups[name]:
+                add(member)
+        elif name not in out:
+            out.append(name)
+
+    for name in names or ():
+        add(name)
+    return out
 
 
 def state_ids(rubric):
@@ -127,6 +191,8 @@ def contract(rubric, frames):
     look = rubric.get("look") or {}
     return {
         "scores": {name: "0..5" for name in rubric["dimensions"]},
+        "score_reasons": {name: "why this score: what you saw, in which frames"
+                          for name in rubric["dimensions"]},
         "findings": [
             {"id": "primitive-keeper", "severity": "blocker", "category": "assets",
              "frame": example_frame, "summary": "what is wrong, on which entity or element",
@@ -184,6 +250,16 @@ def parse(source, rubric, frames):
         if (not isinstance(value, (int, float)) or isinstance(value, bool)
                 or not 0 <= value <= 5):
             return None, f"scores.{name} must be a number 0..5, not {value!r}"
+    reasons = data.get("score_reasons")
+    if reasons is not None:
+        if not isinstance(reasons, dict):
+            return None, "score_reasons must be an object of dimension -> a sentence"
+        unknown = sorted(set(reasons) - set(dimensions))
+        if unknown:
+            return None, f"score_reasons has dimensions the rubric does not: {', '.join(unknown)}"
+        for name, value in reasons.items():
+            if not isinstance(value, str):
+                return None, f"score_reasons.{name} must be a string"
     findings = data["findings"]
     if not isinstance(findings, list):
         return None, "findings must be a list"
@@ -289,8 +365,16 @@ def decide(verdict, rubric, primitive_style=False):
                 continue
             failed.append(f"state:{entry['viewport']}/{entry['state']}:{qid}")
             routes.add(question["route"])
+    mean_bar = rubric.get("mean_pass_bar")
+    scores = [verdict["scores"][name] for name in rubric["dimensions"]]
+    if mean_bar is not None and scores and sum(scores) / len(scores) < mean_bar:
+        failed.append(f"mean:{sum(scores) / len(scores):.2f}")
+        for name, dimension in rubric["dimensions"].items():
+            if verdict["scores"][name] < 4:
+                routes.add(dimension["route"])
     look = rubric.get("look") or {}
-    if verdict.get("look") == look.get("fail_on"):
+    fail_on = look.get("fail_on")
+    if verdict.get("look") in (fail_on if isinstance(fail_on, list) else [fail_on]):
         failed.append(f"look:{verdict['look']}")
         routes.add(look["route"])
     ordered = [r for r in ROUTES if r in routes]

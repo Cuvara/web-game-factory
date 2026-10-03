@@ -39,7 +39,7 @@ import re
 import shutil
 import subprocess
 
-__all__ = ["DelegationError", "Delegation", "spawn", "audit", "worktrees", "ledger_path",
+__all__ = ["DelegationError", "Delegation", "spawn", "adopt", "audit", "worktrees", "ledger_path",
            "read_ledger", "parse_receipt", "preamble", "CLASSES"]
 
 # The states a worktree can be in, from the coordinator's point of view.
@@ -170,7 +170,8 @@ def parse_receipt(result):
         problems.append("no dispatch")
     if not worktree:
         problems.append("no worktree effect")
-    elif worktree.get("action") != "created":
+    elif not str(worktree.get("action") or "").startswith("created"):
+        # Orca reports "created" or "created_top_level"; "reused" is someone else's checkout.
         problems.append(f"worktree was {worktree.get('action')!r}, not created for this task")
     if not terminal:
         problems.append("no agent terminal")
@@ -180,8 +181,11 @@ def parse_receipt(result):
     if launch and not launch.get("agent"):
         problems.append("no agent launched")
     if problems:
+        started = (f" (dispatch {result['dispatchId']} WAS started: inspect it with "
+                   f"`orca orchestration worker-show --dispatch {result['dispatchId']}`)"
+                   if result.get("dispatchId") else "")
         raise DelegationError("worker-start did not prove an agent working in a new worktree: "
-                              + "; ".join(problems))
+                              + "; ".join(problems) + started)
     worktree_id = worktree.get("id") or ""
     path = worktree_id.split("::", 1)[1] if "::" in worktree_id else worktree_id
     return {"dispatch": result["dispatchId"], "task": result.get("taskId"),
@@ -231,6 +235,36 @@ def spawn(task_id, title, spec, name, repo, base="main", agent="claude", run=Non
         branch = out
     entry = Delegation(task_id=task_id, title=title, name=name, repo=repo, base=base,
                        branch=branch, created_at=_now(), **placed)
+    _append_ledger(dict(entry), ledger)
+    return entry
+
+
+def adopt(dispatch, task_id, title, name=None, base="main", runner=None, ledger=None):
+    """Record a dispatch that already runs in its own Orca-created worktree (a delegation
+    whose receipt this module failed to read, or one started by hand with
+    `worker-start --worktree new-top-level`). Refuses a dispatch whose terminal sits in a
+    main checkout or in no git worktree."""
+    shown = _orca(["orchestration", "worker-show", "--dispatch", dispatch, "--json"], runner)
+    projection = shown.get("projection") or shown
+    workspace = (projection.get("workspace") or {}).get("id") or ""
+    path = workspace.split("::", 1)[-1]
+    if not path:
+        raise DelegationError(f"dispatch {dispatch}: no workspace")
+    code, top = _git(path, "rev-parse", "--path-format=absolute", "--git-common-dir")
+    code2, own = _git(path, "rev-parse", "--path-format=absolute", "--git-dir")
+    if code or code2:
+        raise DelegationError(f"dispatch {dispatch} runs in {path!r}, not a git worktree")
+    if _norm(top) == _norm(own):
+        raise DelegationError(f"dispatch {dispatch} runs in a main checkout ({path!r}), "
+                              "not in a worktree of its own")
+    _, branch = _git(path, "rev-parse", "--abbrev-ref", "HEAD")
+    _, repo = _git(path, "rev-parse", "--show-toplevel")
+    entry = Delegation(task_id=task_id, title=title, name=name or pathlib.Path(path).name,
+                       repo=str(pathlib.Path(top).parent), base=base, branch=branch,
+                       created_at=_now(), dispatch=dispatch, task=projection.get("taskId"),
+                       run=projection.get("runId"), worktree_id=workspace, worktree=path,
+                       terminal=None, agent=(projection.get("provider") or {}).get("id"),
+                       adopted=True)
     _append_ledger(dict(entry), ledger)
     return entry
 

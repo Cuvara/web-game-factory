@@ -5,6 +5,7 @@
         --title "3D environment pass" --spec-file task.md --repo ../my-game [--base main] \\
         [--run <orca-run>] [--agent claude] [--model opus]
     python3 scripts/wgf-delegate.py audit --repo . [--run <orca-run>] [--base-ref origin/main] [--json]
+    python3 scripts/wgf-delegate.py adopt --dispatch <ctx_...> --task-id T1 --title "..."
     python3 scripts/wgf-delegate.py ledger [--json]
 
 `spawn` exits 0 only when Orca's receipt proves a new worktree, an agent terminal in it and
@@ -36,6 +37,11 @@ def main(argv=None):
     s.add_argument("--run")
     s.add_argument("--agent", default="claude")
     s.add_argument("--model")
+    d = sub.add_parser("adopt", help="record a dispatch already running in its own worktree")
+    d.add_argument("--dispatch", required=True)
+    d.add_argument("--task-id", required=True)
+    d.add_argument("--title", required=True)
+    d.add_argument("--base", default="main")
     a = sub.add_parser("audit", help="classify every worktree of a repository")
     a.add_argument("--repo", default=".")
     a.add_argument("--run")
@@ -51,6 +57,10 @@ def main(argv=None):
             entry = wgf_delegate.spawn(args.task_id, args.title, spec, args.name, args.repo,
                                        base=args.base, agent=args.agent, run=args.run,
                                        model=args.model)
+            print(json.dumps(dict(entry), indent=2))
+            return 0
+        if args.command == "adopt":
+            entry = wgf_delegate.adopt(args.dispatch, args.task_id, args.title, base=args.base)
             print(json.dumps(dict(entry), indent=2))
             return 0
         if args.command == "audit":

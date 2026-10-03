@@ -140,6 +140,43 @@ class Spawn(Base):
                                ledger=self.ledger)
         self.assertEqual(wgf_delegate.read_ledger(self.ledger), [])
 
+    def test_orca_reports_a_top_level_worktree_as_created_top_level(self):
+        # Observed live 2026-10-03: worker-start --worktree new-top-level answers
+        # action "created_top_level"; it is a worktree created for this task.
+        orca = FakeOrca(self.repo)
+        real = orca.__call__
+
+        def top_level(argv):
+            code, out = real(argv)
+            data = json.loads(out)
+            for effect in (data.get("result") or {}).get("effects", []):
+                if effect.get("kind") == "worktree":
+                    effect["action"] = "created_top_level"
+            return code, json.dumps(data)
+        entry = wgf_delegate.spawn("T9", "t", "do it", "top-level", self.repo,
+                                   runner=top_level, ledger=self.ledger)
+        self.assertEqual(entry["dispatch"], "ctx_x")
+
+    def test_a_refusal_names_a_dispatch_that_was_started_anyway(self):
+        orca = FakeOrca(self.repo, receipt_overrides={"effects": [
+            {"kind": "worktree", "action": "reused", "id": "repo-id::C:/x"},
+            {"kind": "terminal", "role": "agent", "id": "term_x"},
+            {"kind": "dispatch_input", "state": "accepted"}]})
+        with self.assertRaisesRegex(DelegationError, "ctx_x WAS started"):
+            wgf_delegate.spawn("T10", "t", "do it", "some-task", self.repo, runner=orca,
+                               ledger=self.ledger)
+
+    def test_adopt_records_a_dispatch_in_its_own_worktree_and_refuses_a_main_checkout(self):
+        orca = FakeOrca(self.repo)
+        orca(["orca", "orchestration", "worker-start", "--name", "adopted-task"])
+        entry = wgf_delegate.adopt("ctx_x", "T11", "t", runner=orca, ledger=self.ledger)
+        self.assertEqual(entry["branch"], "user/adopted-task")
+        self.assertTrue(entry["adopted"])
+        main = FakeOrca(self.repo, shown_path=str(self.repo).replace("\\", "/"))
+        main.worktree = str(self.repo)
+        with self.assertRaisesRegex(DelegationError, "main checkout"):
+            wgf_delegate.adopt("ctx_x", "T12", "t", runner=main, ledger=self.ledger)
+
     def test_a_receipt_without_an_agent_terminal_is_refused(self):
         orca = FakeOrca(self.repo, receipt_overrides={"effects": [
             {"kind": "worktree", "action": "created", "id": "repo-id::C:/x"},

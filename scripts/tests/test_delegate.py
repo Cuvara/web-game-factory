@@ -330,7 +330,9 @@ class Audit(Base):
         git(root / "local", "add", "c.txt")
         git(root / "local", "-c", "user.email=t@x", "-c", "user.name=t", "commit", "-q",
             "-m", "c")
-        rows = wgf_delegate.audit(self.repo, base_ref="main", runner=orca, ledger=self.ledger)
+        # The repository has no remote: origin/main falls back to main.
+        rows = wgf_delegate.audit(self.repo, base_ref="origin/main", runner=orca,
+                                  ledger=self.ledger)
         by_path = {wgf_delegate._norm(r["path"]): r for r in rows}
         self.assertEqual(rows[0]["class"], wgf_delegate.MAIN)
         self.assertEqual(by_path[wgf_delegate._norm(live)]["class"], wgf_delegate.ACTIVE)

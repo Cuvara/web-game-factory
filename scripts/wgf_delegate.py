@@ -37,7 +37,8 @@ import os
 import pathlib
 import re
 import shutil
-import subprocess
+
+from wgflib import procs
 
 __all__ = ["DelegationError", "Delegation", "spawn", "adopt", "audit", "worktrees", "ledger_path",
            "read_ledger", "parse_receipt", "preamble", "CLASSES"]
@@ -78,12 +79,11 @@ def orca_executable():
 
 
 def _orca(args, runner=None):
-    """Run orca with `args`, return its parsed JSON envelope. `runner` replaces subprocess
+    """Run orca with `args`, return its parsed JSON envelope. `runner` replaces wgflib.procs
     in tests: runner(argv) -> (returncode, stdout)."""
     argv = [orca_executable()] + list(args)
     if runner is None:
-        proc = subprocess.run(argv, capture_output=True, text=True, encoding="utf-8",
-                              errors="replace", timeout=600)
+        proc = procs.run(argv, timeout=600, heartbeat_seconds=0)
         code, out = proc.returncode, proc.stdout
     else:
         code, out = runner(argv)
@@ -231,9 +231,8 @@ def accept_trust(terminal, runner=None, sleep=None, attempts=6):
 
 
 def _git(path, *args):
-    proc = subprocess.run(["git", "-C", str(path)] + list(args), capture_output=True,
-                          text=True, encoding="utf-8", errors="replace")
-    return proc.returncode, proc.stdout.strip()
+    proc = procs.run(["git", "-C", str(path)] + list(args), timeout=120, heartbeat_seconds=0)
+    return proc.returncode, (proc.stdout or "").strip()
 
 
 def ensure_repo(repo, runner=None):
@@ -252,8 +251,7 @@ def _start(args, runner):
     receipt still names the dispatch, task, worktree and terminal it created)."""
     argv = [orca_executable()] + list(args)
     if runner is None:
-        proc = subprocess.run(argv, capture_output=True, text=True, encoding="utf-8",
-                              errors="replace", timeout=600)
+        proc = procs.run(argv, timeout=600, heartbeat_seconds=0)
         code, out = proc.returncode, proc.stdout
     else:
         code, out = runner(argv)
@@ -488,6 +486,11 @@ def audit(repo, run=None, base_ref="origin/main", runner=None, ledger=None, git=
     task (from the ledger) and dispatch."""
     entries = read_ledger(ledger)
     fleet = _fleet(run, runner)
+    # A repository with no remote (a game the Factory's init created locally) has no
+    # origin/main: compare against its local branch instead.
+    code, _ = (git or _git)(repo, "rev-parse", "--verify", "--quiet", base_ref)
+    if code != 0 and base_ref.startswith("origin/"):
+        base_ref = base_ref.split("/", 1)[1]
     rows = []
     trees = worktrees(repo)
     for index, tree in enumerate(trees):

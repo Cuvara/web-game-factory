@@ -272,6 +272,23 @@ class Judge(unittest.TestCase):
         self.assertEqual((chain["status"], chain["route"]), ("FAIL", "develop"))
         self.assertEqual(chain["measured"]["keeper"]["failed_at"], "visible")
 
+    def test_a_transient_asset_seen_only_in_a_glimpse_of_play_is_rendered_and_visible(self):
+        # A pickup or a shot exists for a second: no state frame holds it, the bot's glimpse
+        # of play (Watch.glimpse) does, with the snapshot of that moment.
+        recs = records()
+        keep = lambda es: [e for e in es if e["id"] != "striker"]  # noqa: E731
+        recs["first-session"]["samples"][0]["entities"] = keep(recs["first-session"]["samples"][0]["entities"])
+        recs["first-session"]["ui"]["playing"]["entities"] = keep(recs["first-session"]["ui"]["playing"]["entities"])
+        recs["win"]["sampled"]["frames"] = [[x for x in f if x[0] != "striker"]
+                                         for f in recs["win"]["sampled"]["frames"]]
+        hidden = next(c for c in self.judge({"desktop": copy.deepcopy(recs)}) if c["id"] == "assets.runtime")
+        self.assertEqual(hidden["measured"]["striker"]["failed_at"], "rendered")
+        recs["win"]["ui"]["glimpse-striker"] = dict(screen("playing"), glimpse=True,
+                                                    entities=entities())
+        chain = next(c for c in self.judge({"desktop": recs}) if c["id"] == "assets.runtime")
+        self.assertTrue(chain["measured"]["striker"]["rendered"], chain["measured"]["striker"])
+        self.assertTrue(chain["measured"]["striker"]["visible"], chain["measured"]["striker"])
+
     def test_the_chain_stops_at_the_first_broken_link(self):
         greybox = next(c for c in self.judge({"desktop": records(asset=False, render="primitive")})
                        if c["id"] == "assets.runtime")

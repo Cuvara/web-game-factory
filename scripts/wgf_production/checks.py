@@ -377,6 +377,14 @@ def assets_runtime(wanted, records, rules, frames_by_project):
         for state, ui in _ui_states(tests):
             for e in ui.get("entities") or []:
                 if isinstance(e, dict) and e.get("asset") and e.get("visible"):
+                    # A screen's snapshot (a state frame, or a glimpse of play) names what
+                    # it drew as much as the per-frame samples do.
+                    rendered.setdefault(canon(e["asset"]), set()).add(e.get("render"))
+                    vw, vh = ui.get("viewport") or [0, 0]
+                    x, y, w, h = (e.get(k) or 0 for k in ("x", "y", "w", "h"))
+                    if vw and vh and w and h and x + w > 0 and y + h > 0 and x < vw and y < vh:
+                        key = canon(e["asset"])
+                        largest[key] = max(largest.get(key, 0.0), w * h / float(vw * vh))
                     boxes.setdefault(canon(e["asset"]), []).append(
                         (project, ui.get("frame"), [e.get("x"), e.get("y"), e.get("w"), e.get("h")],
                          ui.get("viewport")))

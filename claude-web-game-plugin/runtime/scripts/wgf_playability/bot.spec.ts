@@ -359,6 +359,10 @@ const BEGIN = /^(play|start|begin|tap-to-start|continue)$/i;
 const UTILITY = /pause|resume|menu|settings|sound|mute|music|fullscreen/i;
 // The input that goes back into play after an attempt ended.
 const RETRY = /retry|restart|again|replay/i;
+// Inputs that undo play rather than play it: never "bad play" (the live puzzle offered a
+// restart during play, and an anti-oracle that pressed it reset its own moves every third
+// press and never lost).
+const UNDO = /retry|restart|again|replay|reset|undo|rewind/i;
 
 // The difficulty in force now, on the axes the design declared: the probe reports each as
 // `metrics.difficulty.<axis>` (play-probe.schema.json). An axis the build does not report is
@@ -654,7 +658,7 @@ test("lose and restart: the anti-oracle plays badly, then retries", async ({ pag
         // player has slid into a dead end the game cannot solve from - bad play goes on all
         // the same: a puzzle still loses by running out of moves, and a game that never
         // ends from there is what this test exists to show.
-        const moves = s.inputs.filter((m) => !UTILITY.test(m.action));
+        const moves = s.inputs.filter((m) => !UTILITY.test(m.action) && !UNDO.test(m.action));
         const others = s.oracle
           ? moves.filter((m) => JSON.stringify(m) !== JSON.stringify(s.oracle))
           : moves;

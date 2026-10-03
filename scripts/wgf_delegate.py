@@ -286,6 +286,9 @@ def _recover_trust(result, run, runner, sleep=None):
     if run:
         args += ["--run", run]
     retry = _start(args, runner)
+    # A retry onto a live terminal launches nothing: the agent is the one the first attempt
+    # launched (observed live: launch.effective carries no agent on the retry).
+    retry["launch"] = result.get("launch") or retry.get("launch")
     # The retry reuses the worktree this task's first attempt created.
     for effect in retry.get("effects") or []:
         if effect.get("kind") == "worktree":

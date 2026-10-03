@@ -260,6 +260,7 @@ class TrustBlocked(FakeOrca):
                 return 1, json.dumps({"ok": False, "error": {"message": "agent not ready"}})
             return 0, json.dumps({"ok": True, "result": {
                 "dispatchId": "ctx_retry", "taskId": "task_x", "runId": "run_x",
+                "launch": {"effective": {"agent": None}},
                 "effects": [{"kind": "worktree", "action": "reused",
                              "id": f"repo-id::{self.worktree}"},
                             {"kind": "terminal", "action": "reused", "id": "term_x"},

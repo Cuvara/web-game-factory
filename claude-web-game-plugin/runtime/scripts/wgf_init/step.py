@@ -166,6 +166,26 @@ def _utc_now():
     return datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
+def _same_template(recorded, shown, template):
+    """Whether `recorded` (the template path a project's config names, as the Factory that
+    made it displayed it - relative to that Factory's root) names the template `shown`
+    names. The same cached checkout displays differently from another Factory root (a
+    worktree three directories down writes `../../../.cache/...`, the original
+    `../../../../.cache/...`), so the comparison is by the path's last component - the cache
+    directory named by the template commit, which the commit check right after this holds to
+    the pin - or by resolved path when both resolve."""
+    if not recorded or not shown:
+        return False
+    try:
+        if os.path.normcase(os.path.realpath(recorded)) == os.path.normcase(
+                os.path.realpath(template)):
+            return True
+    except (OSError, ValueError):
+        pass
+    tail = lambda p: os.path.basename(str(p).replace("\\", "/").rstrip("/"))
+    return bool(tail(recorded)) and tail(recorded) == tail(shown) == tail(template)
+
+
 class _Refused(Exception):
     """Ends the execution with a prepared StepResult."""
 
@@ -472,7 +492,7 @@ class InitStep(WorkflowStep):
                 f"{found or 'none'}). Init never overwrites a directory: resume the run that "
                 "created it, move it, or set factory.init.adopt_existing: true."))
         made_from = self.git.get_config(local, "wgf.template") if found else None
-        if made_from != shown:
+        if made_from != shown and not _same_template(made_from, shown, template):
             raise _Refused(StepResult.failed(
                 f"{local} was not generated from {shown} (recorded: {made_from or 'nothing'}). "
                 "A game project must originate from the template.", retryable=False))

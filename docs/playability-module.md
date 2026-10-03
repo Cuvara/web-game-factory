@@ -129,7 +129,7 @@ reads these from `records_dir`:
 |---|---|
 | `probe.present` | `snapshot()` answers. Without it nothing else is judged |
 | `probe.valid` | snapshots match the schema and carry the contract's goal, win and lose metrics |
-| `start.playable` | play begins within `first_30s.playable_s` |
+| `start.playable` | play begins within `first_30s.playable_s` of navigation, less the time the bot itself spent measuring the title screen (settling, styles, a frame; recorded as `observerMs` beside the wall-clock `playingMs`) |
 | `start.objective` | ≥ 60 % of the objective statement's content words are on screen in the first 3 s of play |
 | `idle.grace` | no loss during the idle window |
 | `act.acknowledged` | every action changes ≥ `min_changed_fraction` of the frame by ≥ `min_pixel_delta` luminance; each is measured in play (a pause goes last, and the bot resumes through the game's own resume input before the next action) |

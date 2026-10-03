@@ -121,9 +121,15 @@ def judge(records, frames_dir, design, rules, experience_rules, project):
     budget = ex.get("first_30s") or {}
     playable_bar = (budget.get("playable_s") or
                     (experience_rules.get("first_30s") or {}).get("max_playable_s", 10)) * 1000
+    # The bot's own title-screen measurement ran inside the wall clock; a player spends none.
     playing = first.get("playingMs")
+    observer = first.get("observerMs") or 0
+    if playing is not None:
+        playing = max(playing - observer, 0)
     add(_check("start.playable", project, playing is not None and playing <= playable_bar,
-               f"play began {playing} ms after navigation" if playing is not None else
+               (f"play began {playing} ms after navigation"
+                + (f" ({observer} ms the bot spent measuring the title screen left out)"
+                   if observer else "")) if playing is not None else
                "play never began", measured=playing, expected=f"<= {playable_bar} ms"))
     seen = objective_seen((ex.get("goal") or {}).get("statement"), first.get("texts"))
     add(_check("start.objective", project, seen >= 0.6,

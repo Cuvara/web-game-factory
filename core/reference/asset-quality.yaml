@@ -121,7 +121,19 @@ models:
   #     shapes or proportions (a shell and a swirl band, a core and a rim), each reaching at
   #     least `visible_reach` of the ball's radius from its centre. A lone sphere standing
   #     for the ball is still a placeholder, and so is a sphere with bands sunk inside it (the
-  #     same run's author tried exactly that: two rings at half the radius, invisible).
+  #     same run's author tried exactly that: two rings at half the radius, invisible);
+  #   * a second piece SHOWS: one piece other than the shell (the piece nearest the camera
+  #     over most of the outline) and of another shape or proportion is the nearest surface
+  #     over at least `min_shown` of the outline in at least `min_shown_views` of the three
+  #     views - a depth buffer on the outline grid, sampled at cell centres, from the view's
+  #     front or back. Reaching the surface is not showing on it: a live run (2026-10-04)
+  #     passed a shell whose band sat at half its radius because two specks on the surface
+  #     reached it, and visual QA judged the model a plain sphere. Measured on Blender 4.5
+  #     builds of a 16-segment shell of diameter 1: an equatorial band 0.16 high hugging the
+  #     surface 0.22 of the front and side outlines (0.14 of the top), a lathe band 0.18 high
+  #     0.17 / 0.21 (a band 0.08 high, synthetic: 0.11); a band sunk inside the shell, or
+  #     just under its surface (diameter 0.94), 0.00 in every view; specks of 0.05-0.06 at
+  #     most 0.004.
   # Bounds measured on the 64-cell outline grid: a composed icosphere marble fills 0.77-0.80
   # of its rectangle in every view, a faceted low-poly marble (a 14-16 segment shell and
   # lathe bands, the run that found this) 0.65-0.79 - a regular hexagon is 0.65, an octagon
@@ -134,6 +146,8 @@ models:
     max_aspect: 1.18
     min_parts: 2
     visible_reach: 0.9
+    min_shown: 0.1
+    min_shown_views: 2
   # model.contrast: the share of a model's visible surface (by area, untextured materials)
   # whose colour - base or emissive, the brighter - stands off the design's background (the
   # palette's background/ground token, else its darkest colour) by WCAG 3:1 or more. A dark

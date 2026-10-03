@@ -248,7 +248,7 @@ class AgentAuthor(DesignAuthor):
 
         # The built-in author's draft is the starting point: the exact shape the module
         # requires, already inside the strategy's scope. The agent improves it.
-        starting = ArchetypeAuthor().draft(brief)
+        starting = ArchetypeAuthor(starting_point=True).draft(brief)
         idea = (brief.get("strategy") or {}).get("brief")
         rules = load_rules()
         request = {"title_id": brief.get("title_id"), "strategy": brief.get("strategy"),

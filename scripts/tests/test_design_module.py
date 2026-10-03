@@ -20,6 +20,7 @@ import sys
 import tempfile
 import textwrap
 import unittest
+from unittest import mock
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 SCRIPTS = os.path.dirname(HERE)
@@ -657,6 +658,44 @@ class Schema(unittest.TestCase):
         if done.returncode != 0 and ("ENOTCACHED" in output or "could not determine executable" in output):
             self.skipTest("ajv-cli is not in the local npm cache")
         self.assertEqual(done.returncode, 0, output)
+
+
+class SelectionKeepsTheDimension(unittest.TestCase):
+    """F09: archetypes.select() scored keywords alone and handed a 2D strategy ("dodges
+    obstacles") the 3D arena-dodge. It now picks only among the archetypes of the dimension
+    the strategy's research states, and refuses when none renders it."""
+
+    @staticmethod
+    def strategy(dimension, one_liner):
+        strategy = load_strategy()
+        strategy["one_liner"] = one_liner
+        strategy["concept"] = {"core_mechanic": one_liner, "core_loop": one_liner}
+        strategy["research"] = {"research_version": 2,
+                                "art": {"dimension": {"value": dimension, "tier": "hypothesis"}}}
+        return strategy
+
+    def test_a_2d_strategy_never_gets_a_3d_archetype(self):
+        text = "A 3d neon arena where the player steers, dodges obstacles and walls."
+        unconstrained, _ = archetypes.select(dict(self.strategy("2d", text), research=None))
+        self.assertEqual(archetypes.ARCHETYPES[unconstrained]["dimension"], "3d")
+        chosen, why = archetypes.select(self.strategy("2d", text))
+        self.assertEqual(archetypes.ARCHETYPES[chosen]["dimension"], "2d")
+        self.assertIn("2d", why)
+
+    def test_a_3d_strategy_without_keywords_falls_back_within_3d(self):
+        chosen, _ = archetypes.select(self.strategy("3d", "Something nobody has a word for."))
+        self.assertEqual(archetypes.ARCHETYPES[chosen]["dimension"], "3d")
+
+    def test_no_archetype_of_the_dimension_is_refused(self):
+        only_2d = {k: v for k, v in archetypes.ARCHETYPES.items() if v["dimension"] == "2d"}
+        with mock.patch.object(archetypes, "ARCHETYPES", only_2d):
+            with self.assertRaises(KeyError) as raised:
+                archetypes.select(self.strategy("3d", "dodge the walls"))
+        self.assertIn("author: agent", str(raised.exception))
+
+    def test_a_pin_is_still_the_pin(self):
+        self.assertEqual(archetypes.select(self.strategy("2d", "x"), "arena-dodge")[0],
+                         "arena-dodge")
 
 
 if __name__ == "__main__":

@@ -273,10 +273,11 @@ class Resume(Scratch):
 class RealModules(Scratch):
     """research, strategy, G2 and design, with the real modules on the fixture corpus."""
 
-    def real_api(self, **discovery):
+    def real_api(self, design=None, **discovery):
         return WorkflowAPI(config=FactoryConfig({
             "steps": {"modules": ["wgf_discovery", "wgf_strategy", "wgf_design"]},
             "storage": {"fsync": False},
+            "design": design or {},
             "discovery": dict({"corpus": os.path.join(DISCOVERY, "corpus"),
                                "backlog": os.path.join(DISCOVERY, "backlog"), "as_of": AS_OF},
                               **discovery),
@@ -401,8 +402,29 @@ class RealModules(Scratch):
         report = self.artifact(state, "research-report")
         self.assertEqual(report["selection"]["candidate_id"], "none")
 
+    def assert_only_the_agent_designs_it(self, strategy):
+        """F09 at design: the archetype author refuses an agent-only concept with the fix,
+        never swapping in a catalog archetype; as the agent's starting point it picks
+        within the strategy's dimension."""
+        from wgf_design import archetypes
+        from wgf_design.authors import ArchetypeAuthor, AuthorError
+        from wgf_design.platforms import load_platforms
+        self.assertEqual(strategy["research"]["capability"]["design_archetype"], "agent")
+        brief = {"title_id": "goalkeeper-3d", "strategy": strategy,
+                 "platforms": load_platforms(strategy, None), "params": {}}
+        with self.assertRaises(AuthorError) as raised:
+            ArchetypeAuthor().draft(brief)
+        self.assertIn("design: {author: agent}", str(raised.exception))
+        dimension = archetypes.dimension_of(strategy)
+        self.assertIn(dimension, ("2d", "3d"))
+        chosen, _why = archetypes.select(strategy)
+        self.assertEqual(archetypes.ARCHETYPES[chosen]["dimension"], dimension)
+        starting = ArchetypeAuthor(starting_point=True).draft(brief)
+        self.assertIn(f"Archetype {chosen!r} was chosen", " ".join(starting["open_questions"]))
+
     def test_a_concept_for_the_idea_is_carried_through_strategy(self):
-        api = self.real_api(concepts=CONCEPTS)
+        # The fixture concept is `design_archetype: agent`: only the agent author designs it.
+        api = self.real_api(design={"author": "agent"}, concepts=CONCEPTS)
         state = api.run(RunRequest(scope="research", idea=GOALKEEPER,
                                    project_id="goalkeeper-3d"))
         self.assertEqual(state.status, RunStatus.COMPLETED, state.message)
@@ -410,13 +432,16 @@ class RealModules(Scratch):
         self.assertEqual(state.status, RunStatus.COMPLETED, state.message)
         entry = load_file(CONCEPTS)["archetypes"][0]
         strategy = self.artifact(state, "title-strategy")
+        self.assert_only_the_agent_designs_it(strategy)
         self.assertEqual(strategy["concept"]["core_mechanic"], entry["core_mechanic"])
         self.assertEqual(strategy["concept"]["core_loop"], entry["core_loop"])
         self.assertEqual(strategy["brief"], GOALKEEPER)
 
 
-def research(idea=GOALKEEPER, **params):
-    """The research step alone on the fixture corpus, as the engine would hand it the idea."""
+def research(idea=GOALKEEPER, config=None, **params):
+    """The research step alone on the fixture corpus, as the engine would hand it the idea.
+    `config` is the factory section (default: the agent design author, which the fixture
+    concepts - `design_archetype: agent` - need)."""
     base = {"corpus": os.path.join(DISCOVERY, "corpus"),
             "backlog": os.path.join(DISCOVERY, "backlog"), "as_of": AS_OF}
     base.update(params)
@@ -427,11 +452,15 @@ def research(idea=GOALKEEPER, **params):
     logger = types.SimpleNamespace(**{level: (lambda *a, **k: None)
                                       for level in ("debug", "info", "warning", "error")})
     context = types.SimpleNamespace(
-        config={}, execution=1, attempt=1, visit=1, project_id=None, run_id="run-test",
+        config=AGENT_AUTHOR if config is None else config, execution=1, attempt=1,
+        visit=1, project_id=None, run_id="run-test",
         current_step="research", idempotency_key="run-test:research:1", logger=logger,
         mock=False, environment={"idea": idea} if idea else {}, previous_outputs=[],
         decision=None)
     return step.execute(types.SimpleNamespace(refs={}, missing=[]), context)
+
+
+AGENT_AUTHOR = {"design": {"author": "agent"}}
 
 
 def outputs(result):
@@ -521,6 +550,21 @@ class ConceptsFile(unittest.TestCase):
         self.assertIn(old, text)
         return self.write(text.replace(old, new, 1),
                           name=f"concepts-{len(os.listdir(self.scratch))}.yaml")
+
+    def test_a_concept_only_the_agent_designs_waits_under_the_archetype_author(self):
+        # F09: the shipped default author is archetype. Selecting an agent-only concept used
+        # to reach design (after strategy and a person's G2), which swapped in a catalog
+        # archetype by keyword - a 2D brief designed as a 3D arena-dodge - and failed.
+        for config in ({}, {"design": {"author": "archetype"}}):
+            with self.subTest(config=config):
+                result = research(concepts=CONCEPTS, config=config)
+                self.assertEqual(result.outcome, StepOutcome.WAITING_FOR_INPUT,
+                                 result.message)
+                self.assertIn(self.entry["id"], result.message)
+                self.assertIn("design: {author: agent}", result.message)
+                self.assertIn("workspace/config/factory.yaml", result.message)
+                types_out = [a.type for a in result.artifacts]
+                self.assertEqual(types_out, ["research-report"])  # no opportunity carried
 
     def test_the_concept_is_selected_and_carried_verbatim(self):
         result = research(concepts=CONCEPTS)

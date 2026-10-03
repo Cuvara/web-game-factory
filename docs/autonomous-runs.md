@@ -125,6 +125,11 @@ substitution on purpose). The research agent writes the idea's concept to the pr
 `workspace/research/concepts.yaml` (its `brief` exactly the run's idea, `design_archetype:
 agent`, every figure an estimate the scan records as a hypothesis), and the run is resumed.
 Such a concept can only be designed by an agent design author, which the profile configures.
+Without it (the shipped `design: {author: archetype}`), research waits as soon as it selects
+the concept, naming `design: {author: agent}`: it no longer spends strategy and G2 to fail at
+design, where the archetype author used to swap in a catalog archetype by keyword (a 2D brief
+designed as the 3D arena-dodge). The archetype author refuses such a concept too, and its
+keyword selection keeps to the dimension research states (`art.dimension`).
 
 Research carries forward only a concept the design module can build: each entry of
 `scripts/wgf_discovery/archetypes.yaml` declares its `design_archetype`, or `null`, and a

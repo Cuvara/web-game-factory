@@ -32,7 +32,10 @@ state: there is no entity to hold it.
   hypothesis claims, and each carries one more hypothesis claim saying it was authored for
   the brief, is not a catalog shape and is unmeasured. The file is read only when the run has
   a brief; its hash is part of the report's identity, and its use is listed among the report's
-  collectors. A selected entry's concept is the opportunity's concept, verbatim.
+  collectors. A selected entry's concept is the opportunity's concept, verbatim. A selected
+  `agent` entry while the installation's design author is not the agent stops the scan
+  waiting for input, naming the design author setting: design would otherwise build another
+  game than the concept.
   When a workflow run's research step waits for either input - evidence, or a concept for
   its brief - the research role supplies it and the run is resumed: `core/craft/research-evidence.md`.
 - `core/reference/platforms/*.yaml` — what each portal carries, rewards, and forbids

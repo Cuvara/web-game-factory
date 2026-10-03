@@ -984,7 +984,8 @@ breach returns `FAILED` with route `descope` and the design persisted as evidenc
 The opt-in **`agent` author** (`scripts/wgf_design/agent.py`, `factory.design.author: agent`)
 lets an agent host write the draft:
 - **Request.** The author writes a request under `<run>/design/<visit>-<attempt>.request.json`.
-  It holds the strategy, the platform profiles, and the archetype's draft as a starting point
+  It holds the strategy, the platform profiles, and a starting draft - the archetype's for a
+  first design, the run's previous game-design on a re-entry (below) -
   in exactly the required shape.
 - **Run and read.** It runs `factory.design.agent.argv`, with `{request}`, `{draft}` and
   `{prompt}` substituted, through `wgflib.procs` with a timeout and a log. With
@@ -999,6 +1000,25 @@ lets an agent host write the draft:
 - **Checks unchanged.** Everything after the draft stays the same, so an agent's design passes
   the same buildability and consistency checks as the archetype's. The `descope` route still
   applies.
+- **Revision on re-entry.** When the run already holds a game-design this step produced and
+  the step runs in a new visit (a re-entry: the strategy changed and the run came back
+  through `design`), the starting draft is that design, not the archetype's
+  (`scripts/wgf_design/revision.py`). The request's `revision` names the version it revises
+  and the `strategy_delta`: every strategy field that changed since the strategy that design
+  pinned, by dotted path with its before and after (`found: false` when that strategy is no
+  longer in the run). The prompt tells the agent to change the design exactly as far as the
+  delta requires and to keep everything else - identity, palette, fonts, assets, controls and
+  UI - so nothing already built or drawn has to be made again; no identity kits are offered.
+  Repair rounds edit the revised draft and name the same base and delta. A resumed execution
+  of the same visit is not a re-entry: it continues the repair of that visit's last draft
+  (`<run>/design/<visit>-last-draft.json`), and its request names the same base and delta. A
+  `design-gap` return keeps its own base, the design the gaps were found in, and is not a
+  revision. A revision whose strategy did not change may stand unchanged. The design records
+  the one it revises in `provenance.supersedes` and the artifact metadata's `revises`. A
+  previous design that changed on disk after the run recorded it fails the step, not
+  retryably. The deterministic authors do not revise. Found live (2026-10-04): a
+  brick-breaker whose strategy grew from 12 to 32 levels was redesigned from scratch with
+  another identity kit.
 - **Provenance.** The design's `produced_by.actor` is `ai`.
 
 `workspace/config/factory.yaml` carries a commented read-only host example.

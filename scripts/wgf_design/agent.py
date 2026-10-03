@@ -14,8 +14,10 @@ Opt-in. An installation selects it in workspace/config/factory.yaml:
                                      # stdout: it prints the draft JSON last
 
 `argv` placeholders, substituted per element and never re-formatted: {request} (the request
-JSON: strategy, resolved platforms, title id, and the built-in archetype's draft as a
-schema-shaped starting point), {draft} (where to write the draft JSON), {prompt} (a
+JSON: strategy, resolved platforms, title id, and the starting draft - the built-in
+archetype's draft as a schema-shaped starting point for a first design, or, when the run
+already holds a game-design, that design to revise, with the strategy's change since it in
+`revision`: revision.py), {draft} (where to write the draft JSON), {prompt} (a
 one-paragraph instruction), and {request_rule} / {draft_rule}: the same paths as a host
 permission rule names them, `//` and the POSIX form (`//c/Users/...` on Windows;
 wgflib.permpath) - `Edit({draft_rule})` restricts the agent's writes to the draft on every
@@ -52,6 +54,7 @@ from . import identity
 from .authors import ArchetypeAuthor, AuthorError, DesignAuthor, register_author
 from .depth import load_rules as load_depth_rules
 from .experience import load_rules
+from .revision import as_draft
 
 __all__ = ["AgentAuthor", "AgentRunFailed", "REQUIRED_KEYS", "BUILD_SPEC_KEYS",
            "check_shape"]
@@ -98,6 +101,26 @@ PROMPT_BRIEF = (
     " The strategy carries the person's game idea as `brief` (also the request's `brief`): "
     "design the game it describes - its mechanic, fantasy, controls and dimension - and "
     "treat the starting draft as a schema-shaped starting point, not as the game."
+)
+# Appended instead of PROMPT_BRIEF when the design is a revision: the starting draft IS the game.
+PROMPT_BRIEF_REVISION = (
+    " The strategy carries the person's game idea as `brief` (also the request's `brief`):"
+    " the starting draft is the design already made for it - revise it, do not replace it."
+)
+# Appended when the run already holds a game-design (a re-entry): the starting draft is that
+# design, and only what the strategy's change requires may change (revision.py).
+PROMPT_REVISION = (
+    " This is a REVISION. The starting draft is this run's game-design version {version},"
+    " already made for this title; the request's `revision.strategy_delta` lists"
+    " what changed in the strategy since that design (each changed field's before and after;"
+    " when `found` is false, compare the design with the strategy yourself). Change the design"
+    " exactly as far as that delta requires - new content counts, units, levels, worlds,"
+    " mechanics, features or placements the strategy now states - and keep everything the"
+    " change does not require you to change: the identity, palette, fonts and typography,"
+    " assets, controls and UI stay exactly as they are (add a palette token or an asset only"
+    " for something new the delta introduces), so nothing already built or drawn has to be"
+    " made again. Every new entry is held to the same checks as the rest: tier it, give an"
+    " mvp entry its delivered_by, and specify every new content unit in full."
 )
 # Appended always: what the module checks the draft against, so the agent is not left to
 # discover the consistency rules by failing them. It changes no rule.
@@ -153,6 +176,13 @@ PROMPT_ART = (
     " token, within the request's `production_art` bars. Set visual_identity.primitive_style"
     " (with a reason) only when the art direction itself is geometric - a character is never"
     " a cube for convenience. The craft guide is the request's `craft`."
+    " The request's `quality_bar` lists frames of finished games: open them - the level of"
+    " finish (a composed frame, one visual language, designed typography and UI) is the bar"
+    " your art direction must make reachable; their style is not this game's."
+)
+# Appended to a first design: the archetype's kit is a placeholder, so the agent chooses one.
+# A revision keeps the identity it already has and is offered no kits.
+PROMPT_ART_KIT = (
     " The starting draft's visual identity was picked from a fixed set by a digest of the"
     " title id, not from the idea: choose from the request's `identity_kits` the one that"
     " best fits this game's idea, subjects and genre, and make visual_identity that kit -"
@@ -161,9 +191,6 @@ PROMPT_ART = (
     " and ui rules - adapted to the game: add palette tokens for the colours its subjects"
     " need (each piece, character or object a player tells apart by colour gets a token), and"
     " rewrite art_direction and every asset's description and readability to follow it."
-    " The request's `quality_bar` lists frames of finished games: open them - the level of"
-    " finish (a composed frame, one visual language, designed typography and UI) is the bar"
-    " your art direction must make reachable; their style is not this game's."
 )
 # Appended always: why a player comes back (depth.py), so a draft states more than one loop.
 # The bars are the request's `depth`, read from core/reference/design-depth.yaml.
@@ -184,6 +211,9 @@ PROMPT_REPAIR = (
     " in `repair.problems`. Return the complete draft again with exactly those fixed and"
     " nothing else changed."
 )
+
+# What a revision keeps unless the strategy's change requires it - named in the request.
+KEEP = ("identity", "palette", "fonts", "assets", "controls", "ui")
 
 DEFAULTS = {"argv": [], "timeout_seconds": 1800, "idle_timeout_seconds": 600,
             "draft_from": "file"}
@@ -254,6 +284,9 @@ class AgentAuthor(DesignAuthor):
     actor = "ai"
     # The design step shows it what made its draft invalid and asks again (step.py).
     repairs = True
+    # Re-entered in a new visit, it revises the run's previous game-design instead of
+    # starting again (revision.py; the step passes it as brief['revision']).
+    revises = True
 
     def draft(self, brief):
         settings = dict(DEFAULTS)
@@ -286,11 +319,17 @@ class AgentAuthor(DesignAuthor):
         if gaps and not isinstance(previous, dict):
             raise AuthorError("the design step passed design gaps without the design they were "
                               "found in (brief['previous_design']): there is nothing to repair")
+        # A re-entry (a new visit after the strategy changed) starts from the run's previous
+        # game-design and revises it - on every repair round too, so the request always names
+        # the base the draft came from. Design gaps carry their own base and take precedence.
+        revision = None if gaps else brief.get("revision")
         if gaps:
             # Repairing a design that was built: start from it, not from a fresh draft, so
             # answering a gap cannot quietly redesign the game around it.
             starting = {key: value for key, value in copy.deepcopy(previous).items()
                         if key not in ("provenance", "consistency")}
+        elif revision:
+            starting = as_draft(revision["design"], brief.get("strategy"))
         else:
             # The built-in author's draft is the starting point: the exact shape the module
             # requires, already inside the strategy's scope. The agent improves it.
@@ -318,8 +357,7 @@ class AgentAuthor(DesignAuthor):
                    "depth": load_depth_rules(),
                    "depth_craft": os.path.join(paths.CORE, "craft",
                                                "retention-and-progression.md"),
-                   # The committed looks to choose from, and frames of finished games.
-                   "identity_kits": _kits((starting.get("scope") or {}).get("locales")),
+                   # Frames of finished games.
                    "quality_bar": quality_bar.frames(),
                    "quality_bar_qualities": quality_bar.qualities(),
                    # The genre family the content is held to, exactly as content.py reads it -
@@ -340,6 +378,15 @@ class AgentAuthor(DesignAuthor):
                    },
                    "content_craft": os.path.join(paths.CORE, "craft",
                                                  "content-and-level-design.md")}
+        if revision:
+            # The identity is kept, so no other look is offered.
+            request["revision"] = {"revises_version": revision.get("version"),
+                                   "revises": revision.get("artifact_id"),
+                                   "strategy_delta": revision.get("strategy_delta"),
+                                   "keep": list(KEEP)}
+        else:
+            # The committed looks to choose from.
+            request["identity_kits"] = _kits((starting.get("scope") or {}).get("locales"))
         if idea:
             request["brief"] = idea
         if repair:
@@ -373,9 +420,13 @@ class AgentAuthor(DesignAuthor):
                 handle.write(seed)
         values["prompt"] = (PROMPT_STDOUT if stdout_mode else PROMPT).format(**values)
         if idea:
-            values["prompt"] += PROMPT_BRIEF
-        values["prompt"] += (PROMPT_CONCEPT + PROMPT_SCHEMA + PROMPT_ART + PROMPT_DEPTH
-                             + PROMPT_CONTENT)
+            values["prompt"] += PROMPT_BRIEF_REVISION if revision else PROMPT_BRIEF
+        if revision:
+            values["prompt"] += PROMPT_REVISION.format(version=revision.get("version"))
+        values["prompt"] += PROMPT_CONCEPT + PROMPT_SCHEMA + PROMPT_ART
+        if not revision:
+            values["prompt"] += PROMPT_ART_KIT
+        values["prompt"] += PROMPT_DEPTH + PROMPT_CONTENT
         if gaps:
             values["prompt"] += PROMPT_GAPS.format(draft=draft_path)
         if repair:
@@ -410,7 +461,10 @@ class AgentAuthor(DesignAuthor):
                 draft = json.loads(text)
             except (OSError, UnicodeDecodeError, ValueError) as exc:
                 raise AuthorError(f"the design draft is not readable JSON: {exc}") from exc
-            if text == seed:
+            # A revision of a design whose strategy did not change may stand as it was.
+            unchanged_ok = (bool(revision) and not repair and
+                            (revision.get("strategy_delta") or {}).get("unchanged") is True)
+            if text == seed and not unchanged_ok:
                 raise AuthorError(f"the design agent left the draft at {draft_path} "
                                   f"unchanged")
         problems = check_shape(draft)

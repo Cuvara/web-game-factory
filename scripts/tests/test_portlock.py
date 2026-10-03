@@ -12,10 +12,12 @@ temporary directory, and the port number is only its name.
 
 import json
 import os
+import socket
 import subprocess
 import sys
 import tempfile
 import textwrap
+import threading
 import time
 import unittest
 from unittest import mock
@@ -36,7 +38,8 @@ HOLDER = textwrap.dedent("""
     import sys, time
     sys.path.insert(0, {scripts!r})
     from wgflib import portlock
-    with portlock.hold({port}, command="holder-under-test", run="run-x", directory={dir!r}):
+    with portlock.hold({port}, command="holder-under-test", run="run-x", directory={dir!r},
+                       probe=False):
         print("held", flush=True)
         time.sleep({seconds})
 """)
@@ -50,6 +53,11 @@ class LockDir(unittest.TestCase):
         env.start()
         self.addCleanup(env.stop)
         os.environ.pop(portlock.HELD_ENV, None)
+        # PORT is only the lock's name here: whatever this machine has on the real port
+        # must not decide these tests. ListenerOutsideTheLock probes a port of its own.
+        free = mock.patch.object(portlock, "port_free", lambda port: True)
+        free.start()
+        self.addCleanup(free.stop)
 
     def tearDown(self):
         for child in self.children:
@@ -131,6 +139,65 @@ class OneProcess(LockDir):
                                   capture_output=True, timeout=30)
             self.assertEqual(done.stdout.strip(), "ok", done.stderr)
         self.assertNotIn(portlock.HELD_ENV, procs._child_env(None, "t"))
+
+
+class ListenerOutsideTheLock(unittest.TestCase):
+    """A process that never takes the lock (a developer agent's own `pnpm preview`) still
+    holds the port: hold() waits until it is actually free. The port is a free one the test
+    picks and listens on itself."""
+
+    def setUp(self):
+        self.dir = tempfile.mkdtemp(prefix="wgf-portlock-")
+        self.server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self.server.bind(("127.0.0.1", 0))
+        self.server.listen()
+        self.port = self.server.getsockname()[1]
+        self.addCleanup(self.server.close)
+
+    def test_the_probe_sees_a_listener_and_its_absence(self):
+        self.assertFalse(portlock.port_free(self.port))
+        self.server.close()
+        self.assertTrue(portlock.port_free(self.port))
+
+    def test_hold_waits_while_it_listens_and_proceeds_after_it_closes(self):
+        closer = threading.Timer(1.5, self.server.close)
+        closer.start()
+        self.addCleanup(closer.cancel)
+        reports = []
+        began = time.monotonic()
+        with portlock.hold(self.port, directory=self.dir, timeout=30, poll_seconds=0.1,
+                           report_seconds=0.2,
+                           on_wait=lambda waited, who: reports.append(who)) as waited:
+            self.assertGreater(time.monotonic() - began, 1.0)
+            self.assertGreater(waited, 1.0)
+        self.assertTrue(reports)
+        self.assertIn(f"listening on port {self.port}", portlock.describe(reports[0]))
+
+    def test_a_bounded_wait_names_the_port_and_releases_the_lock(self):
+        with self.assertRaises(portlock.PortInUse) as caught:
+            with portlock.hold(self.port, directory=self.dir, timeout=0.5, poll_seconds=0.1):
+                self.fail("proceeded while the port was in use")
+        message = str(caught.exception)
+        self.assertIn(f"port {self.port} is still in use", message)
+        self.assertIn(f"pid {os.getpid()}", message)  # the listener, identified
+        self.assertIsInstance(caught.exception, portlock.PortBusy)
+        # The lock was released with the failure: the next taker is not kept waiting.
+        with portlock.hold(self.port, directory=self.dir, timeout=1, probe=False) as waited:
+            self.assertLess(waited, 1)
+
+    def test_procs_run_waits_for_the_listener_too(self):
+        closer = threading.Timer(1.0, self.server.close)
+        closer.start()
+        self.addCleanup(closer.cancel)
+        events = []
+        with mock.patch.dict(os.environ, {portlock.LOCK_DIR_ENV: self.dir}):
+            done = procs.run([sys.executable, "-c", "print('ran')"], ports=(self.port,),
+                             heartbeat_seconds=0.2,
+                             on_event=lambda kind, **data: events.append((kind, data)))
+        self.assertTrue(done.ok, done.tail())
+        waits = [data for kind, data in events if kind == "port-wait"]
+        self.assertTrue(waits)
+        self.assertIn("outside the Factory's port lock", waits[0]["holder"])
 
 
 class PortsFor(unittest.TestCase):

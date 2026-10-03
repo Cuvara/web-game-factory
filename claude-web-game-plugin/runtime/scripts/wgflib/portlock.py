@@ -17,6 +17,16 @@ that is gone holds nothing. Who holds it is written beside it (`port-<port>.hold
 pid, run, command, since) for the message a waiter shows; that file is information only,
 never the lock, and a stale one is simply overwritten by the next holder.
 
+The lock only orders Factory commands. A process outside it - a developer agent's own
+`pnpm test:e2e` or `pnpm preview` in another run - can still be listening on the port, and
+`--strictPort` would fail at once. So after taking the lock `hold` also waits until the port
+is actually free: nothing accepts a connection on 127.0.0.1 or ::1, and a probe socket can
+bind it (SO_EXCLUSIVEADDRUSE on Windows; SO_REUSEADDR on POSIX, as Node's own server sets,
+so a closed server's TIME_WAIT connections do not read as a listener - Linux still refuses
+the bind while anything listens). The wait for the listener is reported, cancelled and
+bounded exactly like the wait for the lock; `PortInUse` names the listener's pid and
+command line where `netstat`/`tasklist` (Windows) or `lsof`/`ss` (POSIX) can tell.
+
 A waiter polls until the lock is free, reporting through `on_wait(waited_s, holder)` every
 `report_seconds`, honouring `should_stop`, and giving up after `timeout` seconds with
 `PortBusy`, which names the holder. `wgflib.procs.run` takes the lock itself for every
@@ -34,13 +44,15 @@ The lock directory is `$WGF_LOCK_DIR`, else `~/.cache/wgf/locks`; the wait bound
 import contextlib
 import json
 import os
+import re
+import socket
 import threading
 import time
 
 from . import template_contract as contract
 
 __all__ = ["hold", "ports_for", "lock_dir", "default_timeout", "holder", "held_ports",
-           "describe", "PortBusy",
+           "describe", "port_free", "listener", "PortBusy", "PortInUse",
            "PortWaitCancelled", "LOCK_DIR_ENV", "TIMEOUT_ENV", "HELD_ENV",
            "CONFIG_PORTS", "SCRIPT_CONFIGS"]
 
@@ -78,6 +90,17 @@ class PortBusy(RuntimeError):
         super().__init__(f"port {port} is still held after {waited_s:.0f}s by "
                          f"{describe(holder_info)} (lock {path}; raise ${TIMEOUT_ENV} to "
                          f"wait longer)")
+
+
+class PortInUse(PortBusy):
+    """The lock was ours, but a process outside it kept listening on the port."""
+
+    def __init__(self, port, waited_s, listener, path):
+        self.port, self.waited_s, self.holder, self.path = port, waited_s, listener, path
+        RuntimeError.__init__(
+            self, f"port {port} is still in use after {waited_s:.0f}s by a process outside "
+                  f"the Factory's port lock: {listener or 'listener not identified'} (lock "
+                  f"{path} is held by this process; raise ${TIMEOUT_ENV} to wait longer)")
 
 
 class PortWaitCancelled(RuntimeError):
@@ -153,6 +176,9 @@ def holder(port, directory=None):
 
 
 def describe(info):
+    if info and info.get("listening"):
+        return (f"a process listening on port {info.get('port')} outside the Factory's "
+                f"port lock")
     if not info:
         return "an unknown process (no holder record)"
     parts = [f"pid {info.get('pid')}"]
@@ -163,6 +189,90 @@ def describe(info):
     if info.get("since"):
         parts.append(f"since {info['since']}")
     return ", ".join(parts)
+
+
+def _probe_addresses():
+    addresses = [(socket.AF_INET, "127.0.0.1")]
+    if socket.has_ipv6:
+        addresses.append((socket.AF_INET6, "::1"))
+    return addresses
+
+
+def port_free(port):
+    """True when nothing listens on `port` on the loopback addresses: no connection is
+    accepted on 127.0.0.1 or ::1, and a probe socket can bind 127.0.0.1 (and ::1 where the
+    host has IPv6). An address family the host cannot use is skipped."""
+    for family, address in _probe_addresses():
+        try:
+            with socket.socket(family, socket.SOCK_STREAM) as probe:
+                probe.settimeout(0.5)
+                if probe.connect_ex((address, port)) == 0:
+                    return False
+        except OSError:
+            pass
+    for family, address in _probe_addresses():
+        try:
+            probe = socket.socket(family, socket.SOCK_STREAM)
+        except OSError:
+            continue
+        try:
+            if os.name == "nt":
+                exclusive = getattr(socket, "SO_EXCLUSIVEADDRUSE", None)
+                if exclusive is not None:
+                    probe.setsockopt(socket.SOL_SOCKET, exclusive, 1)
+            else:
+                probe.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            probe.bind((address, port))
+        except OSError as exc:
+            # No such address on this host (an IPv6 stack without ::1) is not a listener.
+            if getattr(exc, "errno", None) in _ADDRESS_ABSENT:
+                continue
+            return False
+        finally:
+            probe.close()
+    return True
+
+
+# EADDRNOTAVAIL / EAFNOSUPPORT on POSIX, WSAEADDRNOTAVAIL / WSAEAFNOSUPPORT on Windows.
+_ADDRESS_ABSENT = {99, 97, 49, 47, 10049, 10047}
+
+
+def listener(port):
+    """Best effort: "pid N (command line)" of whatever listens on `port`, or None."""
+    from . import procs  # procs imports this module; only needed here, at a timeout
+
+    def run(argv):
+        try:
+            done = procs.run(argv, timeout=20, ports=(), heartbeat_seconds=0)
+        except Exception:
+            return ""
+        return done.stdout if done.returncode == 0 else ""
+
+    pids = []
+    if os.name == "nt":
+        for line in run(["netstat", "-ano", "-p", "TCP"]).splitlines() + \
+                run(["netstat", "-ano", "-p", "TCPv6"]).splitlines():
+            fields = line.split()
+            if (len(fields) >= 5 and fields[3].upper() == "LISTENING"
+                    and fields[1].rsplit(":", 1)[-1] == str(port)):
+                pids.append(fields[4])
+    else:
+        found = run(["lsof", "-nP", f"-iTCP:{port}", "-sTCP:LISTEN", "-t"])
+        pids = found.split()
+        if not pids:
+            pids = re.findall(r"pid=(\d+)", run(["ss", "-ltnpH", f"sport = :{port}"]))
+    pids = list(dict.fromkeys(p for p in pids if p.isdigit() and p != "0"))
+    if not pids:
+        return None
+    described = []
+    for pid in pids:
+        if os.name == "nt":
+            row = run(["tasklist", "/FI", f"PID eq {pid}", "/FO", "CSV", "/NH"]).strip()
+            name = row.split('","')[0].strip('"') if row.startswith('"') else ""
+        else:
+            name = run(["ps", "-o", "args=", "-p", pid]).strip()
+        described.append(f"pid {pid}" + (f" ({name})" if name else ""))
+    return ", ".join(described)
 
 
 if os.name == "nt":  # pragma: no cover - exercised on Windows only
@@ -225,12 +335,16 @@ def _utc_now():
 
 @contextlib.contextmanager
 def hold(port, command=None, run=None, timeout=None, on_wait=None, should_stop=None,
-         report_seconds=15.0, directory=None, poll_seconds=POLL_SECONDS, clock=time.monotonic):
+         report_seconds=15.0, directory=None, poll_seconds=POLL_SECONDS, clock=time.monotonic,
+         probe=None):
     """Hold `port` exclusively, machine-wide, for the block.
 
-    Waits while another process holds it: `on_wait(waited_s, holder)` right away and every
+    Waits while another process holds the lock, then while anything still listens on the
+    port (`probe(port)` false): `on_wait(waited_s, holder)` right away and every
     `report_seconds`, `should_stop()` polled (PortWaitCancelled), `timeout` seconds at most
-    (default `default_timeout()`; PortBusy names the holder). Yields the seconds waited."""
+    over both waits (default `default_timeout()`; PortBusy names the holder, PortInUse the
+    listener). `probe` defaults to `port_free`; False skips the listener wait. Yields the
+    seconds waited."""
     port = int(port)
     me = threading.get_ident()
     with _HELD_LOCK:
@@ -256,23 +370,38 @@ def hold(port, command=None, run=None, timeout=None, on_wait=None, should_stop=N
     timeout = default_timeout() if timeout is None else timeout
     handle = open(lock_path, "a+b")
     began = clock()
-    next_report = began
+    next_report = [began]
+
+    def tick(info, busy):
+        """One poll of a wait: report, honour a stop, give up at the bound."""
+        now = clock()
+        waited = now - began
+        if on_wait is not None and now >= next_report[0]:
+            try:
+                on_wait(waited, info())
+            except Exception:
+                pass
+            next_report[0] = now + report_seconds
+        if should_stop is not None and should_stop():
+            raise PortWaitCancelled(f"stopped while waiting for port {port}")
+        if waited >= timeout:
+            raise busy(waited)
+        time.sleep(poll_seconds)
+
+    locked = False
     try:
         while not _try_lock(handle):
-            now = clock()
-            waited = now - began
-            if on_wait is not None and now >= next_report:
-                try:
-                    on_wait(waited, holder(port, directory))
-                except Exception:
-                    pass
-                next_report = now + report_seconds
-            if should_stop is not None and should_stop():
-                raise PortWaitCancelled(f"stopped while waiting for port {port}")
-            if waited >= timeout:
-                raise PortBusy(port, waited, holder(port, directory), lock_path)
-            time.sleep(poll_seconds)
+            tick(lambda: holder(port, directory),
+                 lambda waited: PortBusy(port, waited, holder(port, directory), lock_path))
+        locked = True
+        # The lock orders Factory commands only; wait out a listener outside it too.
+        probe = port_free if probe is None else probe
+        while probe and not probe(port):
+            tick(lambda: {"listening": True, "port": port},
+                 lambda waited: PortInUse(port, waited, listener(port), lock_path))
     except BaseException:
+        if locked:
+            _unlock(handle)
         handle.close()
         raise
     waited = clock() - began

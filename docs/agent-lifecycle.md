@@ -216,6 +216,18 @@ messages below; it is never the lock, and the next holder overwrites a stale one
   after 3600s by pid 4242, run new-game-...@..., running `pnpm run test:e2e --workers=1`,
   since 2026-10-03T08:31:02Z` - which each module reports as its own "could not be
   started" outcome. Nothing is retried on the module's behalf.
+- **The port must be free, not just the lock.** The lock orders Factory commands only. A
+  process outside it - most often a developer agent's own `pnpm test:e2e` or `pnpm preview`
+  in another run, the commonest collision seen live - can be listening on the port, and
+  `--strictPort` would fail at once. So after taking the lock `hold` also waits until
+  nothing accepts a connection on 127.0.0.1 or ::1 and a probe socket can bind the port
+  (`portlock.port_free`: `SO_EXCLUSIVEADDRUSE` on Windows; `SO_REUSEADDR` on POSIX, as Node's
+  own server sets, so a closed server's TIME_WAIT connections are not taken for a listener).
+  That wait is reported (`port-wait`, holder `a process listening on port 4173 outside the
+  Factory's port lock`), cancelled and bounded like the lock's, under the same
+  `$WGF_PORT_LOCK_TIMEOUT` for both; at the bound the error (`PortInUse`) names the
+  listener's pid and image or command line where `netstat`/`tasklist` (Windows) or
+  `lsof`/`ss` (POSIX) can tell, and releases the lock.
 - **Re-entrant.** A thread already holding the port takes it again at once, and every child
   started while a port is held carries `WGF_PROC_PORTS`, so a nested Factory process never
   waits on the lock its own ancestor holds for it.
@@ -223,11 +235,11 @@ messages below; it is never the lock, and the next holder overwrites a stale one
 Not covered: what a developer agent runs by itself inside its session (the brief tells it to
 run `pnpm test:e2e`, and to serve the build on 4173 for the browser tool). The step that
 runs the agent holds no lock - that would serialize whole development sessions - so an
-agent's own suite can still meet another run's. It fails the agent's own command, not the
-step; the step's checks run afterwards, under the lock. The reverse also holds: a
-`pnpm preview` the agent left serving 4173 is not under the lock, and another run's check
-that takes the lock meanwhile still finds the port in use. What the agent left running ends
-with its session - the agent CLI is an owned tree, and on Windows its job object reaches
+agent's own suite can still meet a Factory check of another run that already holds the
+port. It fails the agent's own command, not the step; the step's checks run afterwards,
+under the lock. The reverse no longer fails a check: a `pnpm preview` an agent is serving on
+4173 makes another run's check wait until the port is free (above), not fail. What the agent
+left running ends with its session - the agent CLI is an owned tree, and on Windows its job object reaches
 servers whose shell already exited ([Known limits](#known-limits)) - so that window closes
 when the session does. `procs.spawn` (long-lived servers) takes no lock either; nothing the
 Factory spawns binds a fixed port.

@@ -59,6 +59,10 @@ function write(project: string, name: string, data: unknown): void {
   fs.writeFileSync(path.join(dir(project), `${name}.json`), JSON.stringify(data, null, 1));
 }
 
+// The roles a glimpse is taken for, and how many a test takes.
+const GLIMPSE_ROLES = new Set(["player", "threat", "goal", "target", "projectile", "collectible", "hazard"]);
+const GLIMPSES = 6;
+
 // What one test saw beside play itself: page errors, every response for a file under
 // /assets/ (and the runtime manifest's body), the runtime asset ids the probe reported
 // loaded, and the UI measured per screen state. Spread into the test's record.
@@ -68,6 +72,7 @@ class Watch {
   runtimeAssets: unknown = null;
   loaded = new Set<string>();
   ui: Record<string, unknown> = {};
+  glimpsed = new Set<string>();
   audio: { ms: number; state: string; music: string | null; playing: boolean; level: number; muted: boolean | null }[] = [];
   readonly t0 = Date.now();
 
@@ -113,6 +118,31 @@ class Watch {
     this.ui[name] = { probe_state: snapshot?.state ?? null, frame: `state-${name}`, ...(measured as object),
                       probe_ui: (snapshot?.entities ?? []).filter((e) => e.role === "ui"),
                       entities: snapshot?.entities ?? [] };
+  }
+
+  // The first moment of play that draws an entity with a runtime asset no measured screen
+  // has shown yet (a falling pickup, a shot): its frame and the snapshot taken right after
+  // it, kept as screen `glimpse-<asset>`. A transient thing is otherwise never in a state
+  // frame, and the production gate could not see it drawn. Only the roles the player must
+  // read; at most GLIMPSES per test.
+  async glimpse(s: Snapshot | null): Promise<void> {
+    if (!s || s.state !== "playing" || this.glimpsed.size >= GLIMPSES) return;
+    const shown = new Set<string>();
+    for (const ui of Object.values(this.ui) as { entities?: Snapshot["entities"] }[]) {
+      for (const e of ui.entities ?? []) if (e.asset && e.visible) shown.add(e.asset);
+    }
+    const fresh = s.entities.find((e) => e.asset && e.visible && GLIMPSE_ROLES.has(e.role)
+      && !shown.has(e.asset) && !this.glimpsed.has(e.asset));
+    if (!fresh?.asset) return;
+    this.glimpsed.add(fresh.asset);
+    const name = `glimpse-${fresh.asset}`;
+    await frame(this.page, this.project, `state-${name}`, this.frames);
+    const after = this.saw(await snap(this.page));
+    const viewport = this.page.viewportSize();
+    this.ui[name] = { probe_state: after?.state ?? null, frame: `state-${name}`,
+                      viewport: viewport ? [viewport.width, viewport.height] : null,
+                      elements: [], texts: [], overlaps: [], probe_ui: [], glimpse: true,
+                      entities: after?.entities ?? [] };
   }
 
   record(): Record<string, unknown> {
@@ -486,6 +516,7 @@ test("win: the oracle plays well", async ({ page }, info) => {
       const s = watch.saw(await snap(page));
       if (!s) break;
       series.push({ ms: Date.now() - t0, value: s.metrics?.[CFG.goal_metric] ?? null, state: s.state });
+      await watch.glimpse(s);
       if (s.state === "won" || s.state === "lost") {
         reached = s.state;
         break;

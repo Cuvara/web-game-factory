@@ -51,7 +51,7 @@ restates none of it and never answers a gate.
 |---|---|---|---|
 | `/new-game` | `codex-web-game-plugin/commands/new-game.md` | `core/workflows/new-game.workflow.yaml` | covered |
 
-## Skills (27 of 27)
+## Skills (28 of 28)
 
 | Skill | File | Status |
 |---|---|---|
@@ -80,6 +80,7 @@ restates none of it and never answers a gate.
 | `production-wiring` | `codex-web-game-plugin/skills/production-wiring/SKILL.md` | covered |
 | `qa` | `codex-web-game-plugin/skills/qa/SKILL.md` | covered |
 | `release` | `codex-web-game-plugin/skills/release/SKILL.md` | covered |
+| `store-listing` | `codex-web-game-plugin/skills/store-listing/SKILL.md` | covered |
 | `threejs` | `codex-web-game-plugin/skills/threejs/SKILL.md` | covered |
 | `web-performance` | `codex-web-game-plugin/skills/web-performance/SKILL.md` | covered |
 
@@ -138,6 +139,20 @@ One new skill, `phaser`, pointing at `core/craft/phaser.md`. `engine.type` now h
 this skill only for a Phaser title, and `pixijs` is unchanged and still the 2D default.
 No agent, command, role, machine or gate changed.
 
+## Research V2 (binding manifest 1.6.0)
+
+Research became game-corpus based (`docs/research-v2.md`). No surface was added or removed;
+must-read lists widened so the surfaces point at the new core files:
+
+- `research` reads `core/reference/research-vocabulary.yaml`,
+  `core/reference/research-analysis.yaml`, `core/artifacts/shared/game-record.schema.json`
+  and `core/artifacts/shared/research-opportunity.schema.json`; its execution note says
+  where teardowns go (`workspace/research/games/`) and that a gameplay observation nobody
+  made is never recorded.
+- `game-designer` reads `core/artifacts/shared/research-opportunity.schema.json`: the
+  handoff strategy and design carry (`title-strategy.research`, `game-design.research`).
+- `market-intelligence` reads the vocabulary and the game-record schema.
+
 ## Workflow entry points (binding manifest 1.5.0)
 
 A new surface kind, `workflow`, and its first entry, `new-game`
@@ -155,7 +170,10 @@ workflow engine: the `wgf-*` commands are agent-driven transitions over `workspa
 - The 13 `wgf-*` transition commands, the agents and the skills are unchanged.
 - `scripts/check-integrity.py` checks each `workflows:` entry against its workflow file
   (path, id, gates); `scripts/tests/test_adapter_binding.py` checks the binding, the
-  generator tables, the files on disk and this table name the same surfaces.
+  generator tables, the files on disk and this table name the same surfaces. Binding 1.6.0
+  lists `new-game`'s gates as G2, G3, G4, G5, G6: G5 and G6 are the workflow's `publish`
+  group (`wgf publish --run <run-id>`, `docs/publish-module.md`), which `wgf new-game`
+  never enters on its own. This surface still answers no gate.
 - `new-game` takes an optional game idea: one quoted argument, the engine's positional
   `IDEA` (`params.idea`, the run's brief; `docs/workflow-engine.md` § Game idea). The surface
   passes it verbatim after `--` as one single-quoted shell word, never rewords or invents

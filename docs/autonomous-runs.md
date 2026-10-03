@@ -138,7 +138,8 @@ step. Before this, 9 of 11 concepts reached design and failed its consistency ru
 | | |
 |---|---|
 | G4 prototype review | pass, iterate or kill - always a person: `! … wgf.py decide <run> pass --note "..."` |
-| release | runs after a G4 pass; drafts only. G5, G6 (publish) and G7 (spend) are the game repository's, and human |
+| release | runs after a G4 pass; drafts only. `wgf new-game` ends there |
+| publication | `wgf publish --run <run>` is a person's act. G5 (reversible; the autonomous profile does not auto-approve it either) and G6 (`publish`/`reject`: irreversible, always a person). The `submit` step is dry-run until an installation sets `factory.publish.mode: live` AND `WGF_PUBLISH_LIVE=1`; a login, CAPTCHA, second factor, unconfirmed portal terms or a missing session stops it for a person. G7 (spend) stays the game repository's, and human |
 | budget | raising it after it is spent |
 | evidence | nothing, when the research agent can fetch it; a person when it cannot |
 | a GitHub repository | only if you set `init.source: github`, and `/new-game` asks first |

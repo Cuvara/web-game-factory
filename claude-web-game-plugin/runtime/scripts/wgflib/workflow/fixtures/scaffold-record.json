@@ -14,8 +14,8 @@
   "game_config": {
     "path": "game.config.yaml",
     "platforms": [
-      {"id": "yandex", "profile": "yandex@1.0.0", "role": "required"},
-      {"id": "crazygames", "profile": "crazygames@1.0.0", "role": "optional"}
+      {"id": "yandex", "profile": "yandex@1.1.0", "role": "required"},
+      {"id": "crazygames", "profile": "crazygames@1.1.0", "role": "optional"}
     ]
   },
   "outcome": "created",

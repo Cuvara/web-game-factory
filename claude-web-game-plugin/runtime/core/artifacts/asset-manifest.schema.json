@@ -11,7 +11,7 @@
     "version": "1.4.0",
     "producer": "title:prototype",
     "updated_by": ["title:design", "title:tech-plan", "title:production"],
-    "consumers": ["title:tech-plan", "title:prototype", "title:production", "release:qa", "release:draft"],
+    "consumers": ["title:tech-plan", "title:prototype", "title:production", "release:qa", "release:draft", "release:store-listing"],
     "repo_path": "workspace/titles/<title-id>/asset-manifest.json",
     "run_path": "<storage>/workflows/<run-id>/artifacts/asset-manifest/v<n>.json",
     "required_for_gates": []

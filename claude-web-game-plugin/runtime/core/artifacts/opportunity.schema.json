@@ -8,7 +8,7 @@
     "id": "opportunity",
     "kind": "artifact",
     "format": "json",
-    "version": "1.1.0",
+    "version": "1.2.0",
     "producer": "portfolio:market-scan",
     "consumers": ["portfolio:scored", "portfolio:shortlisted", "title:concept", "title:strategy"],
     "repo_path": "workspace/opportunities/<opportunity-id>/opportunity.json",
@@ -61,6 +61,7 @@
 
     "audience": {
       "type": "object",
+      "description": "The coarse audience. `type` is set only when research has evidence for it; an unknown type is omitted, never defaulted. The evidence-backed model is `research.audience`.",
       "properties": {
         "type": { "enum": ["casual", "midcore", "core"] },
         "device": { "enum": ["mobile", "desktop", "both"] },
@@ -117,6 +118,11 @@
         },
         "additionalProperties": false
       }
+    },
+
+    "research": {
+      "$ref": "./shared/research-opportunity.schema.json#/$defs/research",
+      "description": "Research V2 (added in 1.2.0): the structured cell, the evidence each facet rests on, market cells, competitors, adopted patterns, benchmarks, monetization evidence, production profile, buildability and an evidence-backed audience model. Strategy and design read it. Absent on opportunities written before Research V2."
     },
 
     "latest_evaluation_id": { "type": ["string", "null"] },

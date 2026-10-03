@@ -17,6 +17,14 @@ What it decides, following core/lifecycle/stages/strategy.md:
   honesty       risks carried from the opportunity plus the ones this plan introduces,
                 and the assumptions it takes on without checking
 
+  research      a Research V2 opportunity (`opportunity.research`) is carried whole into
+                `research` - theme, fantasy, art, gameplay, audience, competitors,
+                benchmarks, patterns, monetization evidence, production, buildability and
+                the claims behind them - and decides what it has evidence for: the control
+                scheme it observed, a session target from measured run lengths, the
+                audience type. Where it has nothing, the default is used and `applied` says
+                so; nothing unknown is filled in.
+
 It does not approve anything. The result is a draft that waits at G2.
 """
 
@@ -149,9 +157,19 @@ def _placement_supported(profile, placement):
 # -- the plan -----------------------------------------------------------------------------
 
 
+def _known(fv):
+    return isinstance(fv, dict) and fv.get("tier") in ("observed", "derived") \
+        and fv.get("value") not in (None, [], "")
+
+
 class _Plan:
-    def __init__(self, opportunity, profiles, title_id, policy):
+    def __init__(self, opportunity, profiles, title_id, policy, vocabulary=None):
         self.opp = opportunity
+        research = opportunity.get("research")
+        self.research = research if isinstance(research, dict) and \
+            research.get("research_version") == 2 else None
+        self.vocabulary = vocabulary or {}
+        self.applied = []
         self.profiles = profiles
         self.title_id = title_id
         self.policy = policy
@@ -171,6 +189,12 @@ class _Plan:
         if claims:
             entry["claim_refs"] = list(claims)
         self.risks.append(entry)
+
+    def apply(self, field, source, detail, claims=None):
+        entry = {"field": field, "source": source, "detail": detail}
+        if claims:
+            entry["claim_refs"] = sorted(set(claims))
+        self.applied.append(entry)
 
     def assume(self, statement, invalidated_by, tier="hypothesis"):
         self.assumptions.append(
@@ -267,6 +291,19 @@ class _Plan:
         text = _text(self.concept.get("core_mechanic"), self.concept.get("core_loop"))
         self.control_scheme = next(
             (scheme for scheme, keywords in CONTROL_SCHEMES if _has(text, keywords)), "tap")
+        observed = ((self.research or {}).get("cell") or {}).get("controls")
+        scheme = (self.vocabulary.get("control_schemes") or {}).get(
+            (observed or {}).get("value")) if _known(observed) else None
+        if scheme:
+            self.control_scheme = scheme
+            self.apply("concept.control_scheme", "research",
+                       f"{scheme}: the control comparable games were coded with "
+                       f"({observed.get('label') or observed['value']})",
+                       observed.get("claim_refs"))
+        elif self.research is not None:
+            self.apply("concept.control_scheme", "default",
+                       f"{self.control_scheme}: read from the concept's wording; research "
+                       f"coded no control scheme for this cell")
         if self.control_scheme == "keyboard" and self.audience.get("device") in (None, "mobile",
                                                                                  "both"):
             self.risk("Keyboard controls do not exist on the mobile share of the audience",
@@ -279,6 +316,18 @@ class _Plan:
     def session(self):
         policy = self.policy
         target = self.estimates.get("session_seconds")
+        measured = next((b for b in (self.research or {}).get("benchmarks") or []
+                         if b.get("facet") == "run_seconds"), None)
+        if measured:
+            target = measured["median"]
+            self.apply("session.target_seconds", "research",
+                       f"median run of {measured['n']} comparable games: "
+                       f"{measured['median']:g} s (range {measured['min']:g}-"
+                       f"{measured['max']:g})", [measured["claim"]])
+        elif self.research is not None:
+            self.apply("session.target_seconds", "default",
+                       "no comparable game's run length was measured; the catalog estimate "
+                       "or the policy default is used")
         if not isinstance(target, (int, float)) or target <= 0:
             target = policy.default_session_seconds
             self.assume(f"A {target}-second session suits this loop (no research estimate)",
@@ -382,6 +431,20 @@ class _Plan:
             cls = "hybrid"
         self.monetization = {"class": cls, "placements": placements}
         rationale = hypothesis.get("rationale")
+        observed = [p for p in ((self.research or {}).get("monetization") or {}).get(
+            "placements") or [] if p.get("numerator")]
+        if observed:
+            seen = "; ".join(f"{p['trigger']} in {p['numerator']} of {p['denominator']}"
+                             for p in observed[:4])
+            rationale = ((rationale + " ") if rationale else "") + \
+                f"Comparable games offer placements at: {seen}."
+            self.apply("monetization.rationale", "research",
+                       f"placement moments comparable games use: {seen}",
+                       [p["claim"] for p in observed])
+        elif self.research is not None:
+            self.apply("monetization.rationale", "default",
+                       "no comparable game's placements were coded; the shape's own "
+                       "hypothesis stands")
         if rationale:
             self.monetization["rationale"] = rationale
         if primary != "none":
@@ -540,8 +603,36 @@ class _Plan:
                                  "role": "required" if platform_id == self.required
                                  else "optional", "rationale": rationale})
 
-        audience = {"type": self.audience.get("type") or "casual",
-                    "device": self.audience.get("device") or "both"}
+        audience_type = self.audience.get("type")
+        if audience_type:
+            if self.research is not None:
+                player = (self.research.get("audience") or {}).get("player_type") or {}
+                self.apply("audience.type", "research",
+                           f"{audience_type}: {player.get('label') or player.get('value')}",
+                           player.get("claim_refs"))
+        else:
+            audience_type = "casual"
+            self.assume("The audience type is casual: research found no evidence for it, and "
+                        "casual retention targets are the least demanding",
+                        "platform analytics after launch")
+            if self.research is not None:
+                self.apply("audience.type", "default",
+                           "casual: research coded no player type for this cell; it was "
+                           "not assumed there, only here, as the planning default")
+        device = self.audience.get("device")
+        if not device:
+            device = "both"
+            self.assume("The audience plays on phone and desktop: no device split was "
+                        "researched for it", "platform analytics device split after launch")
+            if self.research is not None:
+                self.apply("audience.device", "default",
+                           "both: research recorded no device for this cell")
+        elif self.research is not None:
+            source = (self.research.get("audience") or {}).get("device") or {}
+            self.apply("audience.device", "research",
+                       f"{device}: {source.get('label') or source.get('source')} "
+                       f"({source.get('tier')})", source.get("claim_refs"))
+        audience = {"type": audience_type, "device": device}
         if self.audience.get("regions"):
             audience["regions"] = list(self.audience["regions"])
         audience["player_description"] = (
@@ -607,6 +698,14 @@ class _Plan:
         if mobile:
             must_prove.append("It holds 30 fps on a mid-range mobile browser"
                               + (f" inside a {bundle:g} MB bundle" if bundle else ""))
+        for benchmark in (self.research or {}).get("benchmarks") or []:
+            if benchmark.get("facet") == "time_to_first_reward_seconds":
+                must_prove.append(
+                    f"The first reward arrives within {benchmark['median']:g} s, the median of "
+                    f"{benchmark['n']} comparable games")
+                self.apply("prototype_must_prove", "research",
+                           "first-reward bar from measured comparable games",
+                           [benchmark["claim"]])
 
         retention = {"casual": 0.25, "midcore": 0.3, "core": 0.35}[audience["type"]]
         success = [
@@ -708,7 +807,12 @@ class _Plan:
                 f"{concept['core_mechanic']}",
                 "design cannot realise the brief's mechanic within this shape and timebox; "
                 "the prototype then plays as the shape, not as the brief")
-        why = (f"{opp.get('title', opp.get('id'))} offers {(concept.get('fantasy') or concept['core_loop']).rstrip('.')}. "
+        research_note = ""
+        if self.research is not None:
+            research_note = (f" Research ({self.research['origin']}): "
+                             f"{self.research.get('summary', '').rstrip('.')}.")
+            claims = sorted(self.research["basis"]["claim_refs"]) or claims
+        why = (f"{opp.get('title', opp.get('id'))} offers {(concept.get('fantasy') or concept['core_loop']).rstrip('.')}.{research_note} "
                f"The opportunity rests on {opp.get('hypothesis') or 'an unstated hypothesis'}"
                + (f" and cites {', '.join(claims)}" if claims else ", with no claims cited")
                + f". {required_profile.get('name', self.required)} is primary"
@@ -741,7 +845,61 @@ class _Plan:
         }
         if brief:
             body["brief"] = brief
+        if self.research is not None:
+            body["research"] = self.handoff()
         return body
+
+    def handoff(self):
+        """The research carried to design. Every facet keeps its tier and claims; an unknown
+        facet stays unknown."""
+        r = self.research
+        cell = r.get("cell") or {}
+
+        def fv(name):
+            value = cell.get(name)
+            if isinstance(value, dict):
+                return value
+            return {"value": None, "tier": "unknown", "source": "unknown",
+                    "reason": f"research recorded no {name}"}
+
+        player, emotional = fv("player_fantasy"), fv("emotional_fantasy")
+        intent = r.get("changed_axis") or {}
+        statement = None
+        if _known(player) or (intent.get("facet") == "player_fantasy" and player.get("value")):
+            statement = player.get("label", player["value"]).split(" (")[0]
+            if _known(emotional):
+                statement += " - " + emotional.get("label", emotional["value"]).split(" (")[0].lower()
+        out = {
+            "research_version": 2,
+            "report_id": r["report_id"],
+            "opportunity_id": self.opp["id"],
+            "origin": r["origin"],
+            "summary": r.get("summary", ""),
+            "theme": {"theme": fv("theme"), "setting": fv("setting")},
+            "fantasy": {"player": player, "emotional": emotional},
+            "art": {k: fv(f"art_{k}") for k in ("dimension", "rendering", "tone", "palette")},
+            "gameplay": {k: fv(k) for k in ("genre", "mechanics", "gameplay_steps", "controls",
+                                            "core_loop", "progression", "difficulty_shape",
+                                            "retention_hooks")},
+            "audience": r["audience"],
+            "competitors": r["competitors"],
+            "benchmarks": r["benchmarks"],
+            "patterns": r["patterns"],
+            "monetization": r["monetization"],
+            "production": r["production"],
+            "capability": r["capability"],
+            "market": r.get("market") or [],
+            "risks": r.get("risks") or [],
+            "confidence": r["confidence"],
+            "claim_refs": sorted(set(r.get("claim_refs") or [])),
+            "applied": list(self.applied),
+        }
+        out["art"]["camera"] = fv("camera")
+        if intent:
+            out["changed_axis"] = intent
+        if statement:
+            out["fantasy"]["statement"] = statement
+        return out
 
     def _fit_reason(self, profile):
         regions = sorted(set(self.audience.get("regions") or [])
@@ -763,11 +921,13 @@ class _Plan:
                 "to improve on")
 
 
-def plan_strategy(opportunity, profiles, title_id, policy=None):
-    """The body of a title-strategy for `opportunity`. Raises StrategyRefused."""
+def plan_strategy(opportunity, profiles, title_id, policy=None, vocabulary=None):
+    """The body of a title-strategy for `opportunity`. Raises StrategyRefused.
+    `vocabulary` maps research codes onto strategy terms: {"control_schemes": {control id:
+    scheme}} (the research vocabulary's `control_scheme` attributes)."""
     if not isinstance(opportunity, dict):
         raise StrategyRefused("opportunity content is not a JSON object")
-    plan = _Plan(opportunity, profiles, title_id, policy or Policy())
+    plan = _Plan(opportunity, profiles, title_id, policy or Policy(), vocabulary)
     plan.check_opportunity()
     plan.scope()
     plan.controls()

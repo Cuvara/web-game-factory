@@ -1,0 +1,409 @@
+# Research vocabulary: the shared codes every researched game is described in.
+#
+# Research is game-corpus based. Each game in a corpus - seen in a portal listing, or played
+# and timed in a teardown - is coded against the facets below, and every coding is a claim
+# with its own tier. One vocabulary is what makes games comparable: "4 of 6 puzzle games
+# offer a rewarded continue" is only countable when every teardown says `fail-continue` the
+# same way. Free text describes; codes count.
+#
+# Versioned like a scoring model. A game record and a research report name the version they
+# were coded against; renaming or removing a value is a MAJOR change (old codings stop
+# resolving), adding one is MINOR. Never repurpose an id.
+#
+# Sections
+#   genres       a tree, not a flat list: family -> subgenre -> (optionally) a narrower kind.
+#                `aliases` are the strings portals and snapshot authors use, in any locale;
+#                matching is case-insensitive on the whole string. A portal's own category is
+#                an observation; mapping a game onto this tree is an interpretation (derived).
+#   descriptors  market descriptors (hyper-casual, casual, midcore). Deliberately NOT genre
+#                branches: they describe audience and production size, and cut across genres.
+#   facets       every dimension a game can be coded on: its kind (one value, several values,
+#                or a number with a unit), and which vocabulary its values come from.
+#   vocabularies the value lists. Entries may carry attributes the analysis reads (an art
+#                rendering's production `cost`, a control's `control_scheme` in the strategy
+#                contract, an audience band's seconds).
+
+version: 1.0.0
+
+genres:
+  # -- puzzle --------------------------------------------------------------------------------
+  - {id: puzzle, label: Puzzle, aliases: [puzzle, puzzles, puzzle games, головоломки]}
+  - {id: match, label: Match, parent: puzzle, aliases: [matching, match games]}
+  - {id: match-3, label: Match-3, parent: match, aliases: [match-3, match3, three in a row, три в ряд]}
+  - {id: tile-match, label: Tile matching, parent: match, aliases: [tile-match, tile matching, mahjong, mahjongg, маджонг]}
+  - {id: bubble-shooter, label: Bubble shooter, parent: match, aliases: [bubble-shooter, bubble shooter]}
+  - {id: merge-puzzle, label: Merge puzzle, parent: puzzle, aliases: [merge, merge-puzzle, merge puzzles, merge-puzzles, "2048"]}
+  - {id: block-puzzle, label: Block puzzle, parent: puzzle, aliases: [block-puzzle, block puzzle, blocks]}
+  - {id: sort-puzzle, label: Sort puzzle, parent: puzzle, aliases: [sorting, sort, sort-puzzle, color sort, сортировка]}
+  - {id: physics-puzzle, label: Physics puzzle, parent: puzzle, aliases: [physics-puzzle, physics puzzle]}
+  - {id: logic-puzzle, label: Logic puzzle, parent: puzzle, aliases: [logic, logic-puzzle, brain, brain teaser]}
+  - {id: screw-puzzle, label: Screw / pin puzzle, parent: puzzle, aliases: [screw, screw-puzzle, pin puzzle, bolts]}
+  # -- arcade --------------------------------------------------------------------------------
+  - {id: arcade, label: Arcade, aliases: [arcade, arcade games, аркады]}
+  - {id: runner, label: Runner, parent: arcade, aliases: [runner, running, runners]}
+  - {id: endless-runner, label: Endless runner, parent: runner, aliases: [endless-runner, endless runner]}
+  - {id: lane-runner, label: Lane runner, parent: runner, aliases: [lane-runner, lane runner, subway]}
+  - {id: one-touch, label: One-touch arcade, parent: arcade, aliases: [one-touch, one tap, one-tap, tap games]}
+  - {id: rhythm, label: Rhythm, parent: arcade, aliases: [rhythm, music, beat]}
+  - {id: snake, label: Snake-like, parent: arcade, aliases: [snake]}
+  # -- action / shooter / io -----------------------------------------------------------------
+  - {id: action, label: Action, aliases: [action, экшен]}
+  - {id: shooter, label: Shooter, aliases: [shooter, shooting, shooters, стрелялки]}
+  - {id: io, label: .io arena, aliases: [io, .io, io games, multiplayer]}
+  - {id: arena-survivor, label: Arena survivor, parent: action, aliases: [survivor, arena survivor, bullet heaven, arena]}
+  # -- idle / merge-idle ---------------------------------------------------------------------
+  - {id: idle, label: Idle, aliases: [idle, incremental, idle games]}
+  - {id: idle-merge, label: Merge idle, parent: idle, aliases: [merge-idle, merge idle]}
+  - {id: clicker, label: Clicker, parent: idle, aliases: [clicker, clickers, кликеры]}
+  # -- simulation / strategy -----------------------------------------------------------------
+  - {id: simulation, label: Simulation, aliases: [simulation, simulator, симуляторы]}
+  - {id: time-management, label: Time management, parent: simulation, aliases: [time-management, time management]}
+  - {id: tycoon, label: Tycoon, parent: simulation, aliases: [tycoon, business]}
+  - {id: strategy, label: Strategy, aliases: [strategy, стратегии]}
+  - {id: tower-defense, label: Tower defense, parent: strategy, aliases: [tower-defense, tower defense, td]}
+  # -- physics -------------------------------------------------------------------------------
+  - {id: physics, label: Physics sandbox, aliases: [physics, physics games, ragdoll]}
+  # -- sports / racing -----------------------------------------------------------------------
+  - {id: sports, label: Sports, aliases: [sports, sport, спорт]}
+  - {id: racing, label: Racing / driving, aliases: [racing, driving, car, cars, гонки]}
+  - {id: parking, label: Parking, parent: racing, aliases: [parking, car parking]}
+  # -- card / board / word -------------------------------------------------------------------
+  - {id: card, label: Card, aliases: [card, cards, card games, карточные]}
+  - {id: solitaire, label: Solitaire, parent: card, aliases: [solitaire, пасьянс]}
+  - {id: board, label: Board, aliases: [board, board games, настольные]}
+  - {id: word, label: Word, aliases: [word, words, word games, словесные]}
+  - {id: word-search, label: Word search, parent: word, aliases: [word-search, word search, filwords, филворды]}
+  - {id: word-build, label: Word building, parent: word, aliases: [word-build, anagram, crossword]}
+  # -- platformer ----------------------------------------------------------------------------
+  - {id: platformer, label: Platformer, aliases: [platformer, platform, платформеры]}
+
+descriptors:
+  - {id: hyper-casual, label: Hyper-casual, aliases: [hyper-casual, hypercasual]}
+  - {id: casual, label: Casual, aliases: [casual]}
+  - {id: midcore, label: Midcore, aliases: [midcore]}
+
+facets:
+  # classification
+  - {id: genre, kind: one, values: genres, label: Genre node (any depth)}
+  - {id: descriptor, kind: many, values: descriptors, label: Market descriptor}
+  - {id: mechanics, kind: many, values: mechanics, label: Mechanics}
+  # gameplay
+  - {id: gameplay_steps, kind: many, values: gameplay_steps, label: Core-loop beats present}
+  - {id: controls, kind: one, values: controls, label: Control scheme}
+  - {id: decision_type, kind: one, values: decision_types, label: Main decision type}
+  - {id: skill, kind: one, values: skills, label: Primary skill}
+  - {id: randomness, kind: one, values: levels, label: Outcome randomness}
+  # theme and fantasy
+  - {id: theme, kind: one, values: themes, label: Theme}
+  - {id: setting, kind: one, values: settings, label: Setting}
+  - {id: player_fantasy, kind: one, values: player_fantasies, label: Player fantasy (role)}
+  - {id: emotional_fantasy, kind: one, values: emotional_fantasies, label: Emotional fantasy}
+  # art
+  - {id: art_dimension, kind: one, values: art_dimensions, label: Art dimension}
+  - {id: art_rendering, kind: one, values: art_renderings, label: Rendering style}
+  - {id: art_tone, kind: one, values: art_tones, label: Tone}
+  - {id: art_palette, kind: one, values: art_palettes, label: Palette class}
+  - {id: camera, kind: one, values: cameras, label: Camera}
+  - {id: animation, kind: one, values: animations, label: Animation class}
+  # audience
+  - {id: audience_type, kind: one, values: audience_types, label: Player type}
+  - {id: intent, kind: one, values: intents, label: Player intent}
+  - {id: device, kind: one, values: devices, label: Device}
+  - {id: age_band, kind: one, values: age_bands, label: Age band (only as a portal states it)}
+  # session, progression, difficulty, retention
+  - {id: run_seconds, kind: number, unit: s, label: Median run length}
+  - {id: retry_seconds, kind: number, unit: s, label: Time from failure to playing again}
+  - {id: first_failure_seconds, kind: number, unit: s, label: Time to first failure}
+  - {id: progression, kind: many, values: progressions, label: What carries across runs}
+  - {id: difficulty_shape, kind: one, values: difficulty_shapes, label: Difficulty ramp shape}
+  - {id: difficulty_axes, kind: many, values: difficulty_axes, label: What the ramp raises}
+  - {id: retention_hooks, kind: many, values: retention_hooks, label: Return hooks}
+  # UX and onboarding
+  - {id: tutorial, kind: one, values: tutorials, label: Tutorial approach}
+  - {id: time_to_first_play_seconds, kind: number, unit: s, label: Load to control in hand}
+  - {id: time_to_first_reward_seconds, kind: number, unit: s, label: Play to first reward}
+  - {id: taps_before_play, kind: number, unit: taps, label: Taps before play}
+  # monetization
+  - {id: ad_formats, kind: many, values: ad_formats, label: Monetization formats seen}
+  - {id: ad_triggers, kind: many, values: ad_triggers, label: Moments a placement is offered}
+  - {id: interstitial_interval_seconds, kind: number, unit: s, label: Seconds between interstitials}
+  # production and technology
+  - {id: physics_engine, kind: one, values: physics_kinds, label: Physics}
+  - {id: networking, kind: one, values: networking_kinds, label: Networking}
+  - {id: unique_assets, kind: number, unit: count, label: Distinct visual entities seen}
+  - {id: bundle_mb, kind: number, unit: MB, label: Initial download}
+  - {id: orientation, kind: one, values: orientations, label: Orientation}
+
+vocabularies:
+  mechanics:
+    - {id: swap-match, label: Swap adjacent pieces to match}
+    - {id: pair-match, label: Select matching pairs}
+    - {id: merge-combine, label: Combine equal items into a higher one}
+    - {id: drag-place, label: Drag a piece onto a board}
+    - {id: line-clear, label: Clear full lines}
+    - {id: sort-move, label: Move units between containers to sort}
+    - {id: lane-switch, label: Switch between lanes}
+    - {id: tap-timing, label: Tap at the right moment}
+    - {id: jump, label: Jump over obstacles}
+    - {id: aim-shoot, label: Aim and shoot}
+    - {id: physics-launch, label: Launch with physics}
+    - {id: stack, label: Stack objects}
+    - {id: steer, label: Steer a vehicle}
+    - {id: unscrew, label: Remove pins or screws in order}
+    - {id: word-form, label: Form words from letters}
+    - {id: card-move, label: Move cards between piles}
+    - {id: auto-attack, label: Character attacks automatically}
+    - {id: upgrade-tap, label: Tap or wait to accumulate and upgrade}
+    - {id: tower-place, label: Place towers on a path}
+    - {id: dodge, label: Dodge hazards}
+    - {id: collect, label: Collect pickups}
+    - {id: grow, label: Grow by absorbing}
+  gameplay_steps:
+    - {id: act, label: Player acts (the core verb)}
+    - {id: feedback, label: Immediate feedback}
+    - {id: reward, label: Reward}
+    - {id: progress, label: Progress toward a goal}
+    - {id: challenge, label: New or harder challenge}
+    - {id: fail, label: Failure state}
+    - {id: retry, label: Retry}
+    - {id: meta, label: Meta layer between runs}
+  controls:
+    - {id: one-touch, label: "One input, timing only", control_scheme: one-touch}
+    - {id: tap, label: Tap targets, control_scheme: tap}
+    - {id: hold, label: Press and hold, control_scheme: one-touch}
+    - {id: swipe, label: Swipe, control_scheme: swipe}
+    - {id: drag, label: Drag, control_scheme: drag}
+    - {id: point-and-click, label: Point and click, control_scheme: point-and-click}
+    - {id: mouse-aim, label: Aim with the pointer, control_scheme: point-and-click}
+    - {id: virtual-joystick, label: On-screen joystick, control_scheme: drag}
+    - {id: keyboard, label: Keyboard, control_scheme: keyboard}
+  decision_types:
+    - {id: spatial-planning, label: Where to place}
+    - {id: sequencing, label: In which order}
+    - {id: timing, label: When to act}
+    - {id: routing, label: Which path}
+    - {id: resource, label: What to spend}
+    - {id: aiming, label: Where to aim}
+    - {id: vocabulary, label: Which word}
+  skills:
+    - {id: planning, label: Planning}
+    - {id: reflex, label: Reflex}
+    - {id: timing, label: Timing}
+    - {id: pattern, label: Pattern recognition}
+    - {id: aim, label: Aim}
+    - {id: language, label: Language}
+    - {id: patience, label: Patience / optimisation}
+  levels:
+    - {id: low, label: Low}
+    - {id: medium, label: Medium}
+    - {id: high, label: High}
+  themes:
+    - {id: abstract, label: Abstract}
+    - {id: geometric, label: Geometric shapes, parent: abstract}
+    - {id: colors, label: Colours, parent: abstract}
+    - {id: numbers, label: Numbers, parent: abstract}
+    - {id: gems, label: Gems and jewels, parent: abstract}
+    - {id: food, label: Food}
+    - {id: cooking, label: Cooking, parent: food}
+    - {id: fruit, label: Fruit, parent: food}
+    - {id: candy, label: Candy and sweets, parent: food}
+    - {id: bakery, label: Bakery, parent: food}
+    - {id: nature, label: Nature}
+    - {id: animals, label: Animals, parent: nature}
+    - {id: farm, label: Farm, parent: nature}
+    - {id: ocean, label: Ocean, parent: nature}
+    - {id: garden, label: Garden, parent: nature}
+    - {id: fantasy-world, label: Fantasy world}
+    - {id: kingdom, label: Kingdom and castles, parent: fantasy-world}
+    - {id: magic, label: Magic, parent: fantasy-world}
+    - {id: dragons, label: Dragons and monsters, parent: fantasy-world}
+    - {id: undead, label: Undead}
+    - {id: zombies, label: Zombies, parent: undead}
+    - {id: sci-fi, label: Science fiction}
+    - {id: space, label: Space, parent: sci-fi}
+    - {id: robots, label: Robots, parent: sci-fi}
+    - {id: urban, label: Urban}
+    - {id: cars, label: Cars and traffic, parent: urban}
+    - {id: city, label: City, parent: urban}
+    - {id: domestic, label: Home and everyday}
+    - {id: organizing, label: Tidying and organising, parent: domestic}
+    - {id: mechanical, label: Mechanical}
+    - {id: screws, label: "Screws, bolts and pins", parent: mechanical}
+    - {id: construction, label: Construction, parent: mechanical}
+    - {id: tabletop, label: Tabletop}
+    - {id: cards-theme, label: Playing cards, parent: tabletop}
+    - {id: mahjong-tiles, label: Mahjong tiles, parent: tabletop}
+    - {id: letters, label: Letters and words}
+    - {id: sports-theme, label: Sports}
+    - {id: neon-abstract, label: Neon and music, parent: abstract}
+  settings:
+    - {id: abstract-void, label: Abstract space}
+    - {id: kitchen, label: Kitchen or restaurant}
+    - {id: city-street, label: City streets}
+    - {id: urban-ruin, label: Ruined city}
+    - {id: outer-space, label: Outer space}
+    - {id: countryside, label: Countryside or farm}
+    - {id: castle, label: Castle or kingdom}
+    - {id: underwater, label: Underwater}
+    - {id: workshop, label: Workshop}
+    - {id: tabletop-surface, label: A table or board}
+    - {id: arena, label: Arena}
+    - {id: track, label: Track or road}
+  player_fantasies:
+    - {id: survivor, label: Survive against the odds}
+    - {id: builder, label: Build something up}
+    - {id: organizer, label: Bring order to a mess}
+    - {id: racer, label: Go fast}
+    - {id: chef, label: Run a kitchen}
+    - {id: strategist, label: Outthink the board}
+    - {id: collector, label: Complete a collection}
+    - {id: hero, label: Be the hero}
+    - {id: explorer, label: Discover a world}
+    - {id: solver, label: Crack the puzzle}
+    - {id: athlete, label: Win the match}
+    - {id: tycoon, label: Grow an empire}
+    - {id: destroyer, label: Smash and wreck}
+  emotional_fantasies:
+    - {id: tension-mastery, label: "Tension, then mastery"}
+    - {id: calm-order, label: Calm order}
+    - {id: chaos-power, label: Chaotic power}
+    - {id: cozy-progress, label: Cozy progress}
+    - {id: wit-insight, label: The insight moment}
+    - {id: speed-flow, label: Speed and flow}
+    - {id: satisfaction-release, label: Satisfying release}
+  art_dimensions:
+    - {id: 2d, label: 2D}
+    - {id: 2.5d, label: 2.5D}
+    - {id: 3d, label: 3D}
+  art_renderings:
+    - {id: vector-flat, label: Flat vector, cost: xs}
+    - {id: pixel, label: Pixel art, cost: s}
+    - {id: hand-drawn, label: Hand-drawn, cost: m}
+    - {id: low-poly, label: Low-poly 3D, cost: m}
+    - {id: stylized-3d, label: Stylized 3D, cost: l}
+    - {id: realistic, label: Realistic, cost: xl}
+    - {id: photo-collage, label: Photo or collage, cost: s}
+  art_tones:
+    - {id: cute, label: Cute}
+    - {id: neutral, label: Neutral}
+    - {id: dark, label: Dark}
+    - {id: neon, label: Neon}
+    - {id: minimal, label: Minimal}
+    - {id: retro, label: Retro}
+    - {id: cozy, label: Cozy}
+    - {id: bold, label: Bold and graphic}
+  art_palettes:
+    - {id: saturated, label: Saturated}
+    - {id: pastel, label: Pastel}
+    - {id: muted, label: Muted}
+    - {id: monochrome-accent, label: Monochrome with one accent}
+    - {id: dark-glow, label: "Dark ground, glowing accents"}
+    - {id: warm-paper, label: Warm paper tones}
+  cameras:
+    - {id: top-down, label: Top-down}
+    - {id: side, label: Side view}
+    - {id: isometric, label: Isometric}
+    - {id: behind, label: "Third person, behind"}
+    - {id: fixed-three-quarter, label: Fixed three-quarter}
+    - {id: first-person, label: First person}
+    - {id: fixed-screen, label: Fixed screen (board)}
+  animations:
+    - {id: tween-only, label: Tweens only, cost: xs}
+    - {id: sprite-frames, label: Frame animation, cost: m}
+    - {id: skeletal, label: Skeletal rigs, cost: l}
+    - {id: physics-driven, label: Physics-driven motion, cost: s}
+  audience_types:
+    - {id: hyper-casual, label: Hyper-casual, strategy_type: casual}
+    - {id: casual, label: Casual, strategy_type: casual}
+    - {id: midcore, label: Midcore, strategy_type: midcore}
+    - {id: core, label: Core, strategy_type: core}
+  intents:
+    - {id: kill-time, label: Kill a few minutes}
+    - {id: relax, label: Relax}
+    - {id: challenge, label: Be challenged}
+    - {id: compete, label: Compete}
+    - {id: collect, label: Collect and complete}
+    - {id: social, label: Play with others}
+  devices:
+    - {id: mobile, label: Phone}
+    - {id: desktop, label: Desktop}
+    - {id: both, label: Phone and desktop}
+  age_bands:
+    - {id: kids, label: Children}
+    - {id: teens, label: Teens}
+    - {id: adults, label: Adults}
+    - {id: all-ages, label: All ages}
+  progressions:
+    - {id: best-score, label: Personal best}
+    - {id: level-sequence, label: Level sequence}
+    - {id: unlock-track, label: Unlock track}
+    - {id: meta-currency, label: Meta currency}
+    - {id: upgrades, label: Permanent upgrades}
+    - {id: collection, label: Collection}
+    - {id: prestige, label: Prestige reset}
+    - {id: none, label: Nothing carries over}
+  difficulty_shapes:
+    - {id: linear, label: Linear ramp}
+    - {id: sawtooth, label: Sawtooth}
+    - {id: stepped, label: Stepped by level}
+    - {id: flat, label: Flat}
+    - {id: adaptive, label: Adaptive}
+  difficulty_axes:
+    - {id: speed, label: Speed}
+    - {id: density, label: Density}
+    - {id: variety, label: Variety}
+    - {id: precision, label: Precision}
+    - {id: depth, label: Puzzle depth}
+    - {id: move-limit, label: Move or time limit}
+  retention_hooks:
+    - {id: daily-challenge, label: Daily challenge}
+    - {id: streak, label: Streak}
+    - {id: login-reward, label: Login reward}
+    - {id: leaderboard, label: Leaderboard}
+    - {id: missions, label: Missions or quests}
+    - {id: collection-hook, label: Collection to complete}
+    - {id: cosmetics, label: Cosmetic unlocks}
+    - {id: energy, label: Energy or lives timer}
+    - {id: events, label: Timed events}
+    - {id: level-map, label: Visible level map}
+  tutorials:
+    - {id: none, label: No tutorial}
+    - {id: diegetic, label: Taught by the first level}
+    - {id: guided, label: Guided hand or highlights}
+    - {id: text, label: Text instructions}
+  ad_formats:
+    - {id: rewarded, label: Rewarded}
+    - {id: interstitial, label: Interstitial}
+    - {id: banner, label: Banner}
+    - {id: iap, label: In-app purchase}
+    - {id: none, label: None seen}
+  ad_triggers:
+    - {id: run-end, label: Between runs}
+    - {id: level-complete, label: After a level}
+    - {id: fail-continue, label: Continue after failing}
+    - {id: fail-near-goal, label: Continue offered near a goal}
+    - {id: booster-offer, label: Booster before a level}
+    - {id: hint, label: Hint}
+    - {id: extra-moves, label: Extra moves or time}
+    - {id: double-reward, label: Double the reward}
+    - {id: shop, label: Shop}
+    - {id: timed, label: On a timer}
+  physics_kinds:
+    - {id: none, label: None}
+    - {id: arcade, label: "Arcade (overlap, simple motion)"}
+    - {id: rigid-body, label: Rigid-body simulation}
+  networking_kinds:
+    - {id: none, label: Offline}
+    - {id: async, label: "Asynchronous (scores, ghosts)"}
+    - {id: realtime, label: Realtime multiplayer}
+  orientations:
+    - {id: portrait, label: Portrait}
+    - {id: landscape, label: Landscape}
+    - {id: any, label: Either}
+
+# Session bands an audience reads run length in. Bands, not targets.
+session_bands:
+  - {id: snack, max_seconds: 90}
+  - {id: short, max_seconds: 300}
+  - {id: medium, max_seconds: 900}
+  - {id: long, max_seconds: 1000000}

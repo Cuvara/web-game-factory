@@ -17,7 +17,10 @@ Assemble what is shipping.
    recognize.
 5. **Assemble store metadata per platform**: title, descriptions per required locale,
    screenshots, icon, age rating. Completeness here is the guard on G6, and a missing
-   required locale is the classic late failure.
+   required locale is the classic late failure. This is the store-listing sub-activity
+   (`stages/store-listing.md`): captured from the verified build and validated per
+   platform, it becomes the `store-listing` and `listing-validation-report` the draft
+   ships beside its packages and `store_metadata` is filled from.
 6. **Name the rollback target** — the previous known-good release manifest. Named now,
    calmly, rather than found later under pressure.
 

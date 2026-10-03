@@ -40,7 +40,7 @@ from wgflib.workflow.store import RunStore  # noqa: E402
 NEW_GAME = ["research", "strategy", "strategy-review", "design", "tech-plan", "tech-plan-review",
             "init", "greybox", "greybox-playability", "assets", "develop", "playability",
             "production-quality", "visual-qa", "review", "sdk", "sdk-review", "verify",
-            "prototype-review", "prototype-review", "release"]
+            "prototype-review", "prototype-review", "store-listing", "listing-validation", "release"]
 SCHEMATIZED = {
     "research": "opportunity",
     "strategy": "title-strategy",
@@ -54,6 +54,8 @@ SCHEMATIZED = {
     "sdk": "sdk-report",
     "production-quality": "production-quality-report",
     "visual-qa": "visual-qa-report",
+    "store-listing": "store-listing",
+    "listing-validation": "listing-validation-report",
 }
 
 
@@ -253,7 +255,7 @@ class FailureAndResume(CliCase):
                           "review", "sdk", "sdk-review", "verify",
                           "develop", "playability", "production-quality", "visual-qa",
                           "review", "sdk", "sdk-review", "verify",
-                          "prototype-review", "prototype-review", "release"])
+                          "prototype-review", "prototype-review", "store-listing", "listing-validation", "release"])
         self.assertEqual(self.artifact(state, "qa-report", 1)["verdict"], "fail")
         self.assertEqual(self.artifact(state, "qa-report", 2)["verdict"], "pass")
         # v1 is the greybox's; v2 and v3 are develop's two visits.
@@ -271,7 +273,7 @@ class FailureAndResume(CliCase):
                          ["develop", "playability", "develop", "playability",
                           "production-quality", "visual-qa", "review", "sdk",
                           "sdk-review", "verify", "prototype-review", "prototype-review",
-                          "release"])
+                          "store-listing", "listing-validation", "release"])
         # v1 is the greybox's (passed); v2 and v3 are the production build's two plays.
         self.assertEqual(self.artifact(state, "playability-report", 2)["verdict"], "FAIL")
         self.assertEqual(self.artifact(state, "playability-report", 3)["verdict"], "PASS")
@@ -313,7 +315,7 @@ class FailureAndResume(CliCase):
                 self.assertEqual([t["step"] for t in state["trail"]][9:],
                                  ["assets"] + first_gate + back + gated
                                  + ["review", "sdk", "sdk-review", "verify",
-                                    "prototype-review", "prototype-review", "release"])
+                                    "prototype-review", "prototype-review", "store-listing", "listing-validation", "release"])
                 gate = route.split(".")[0]
                 report = f"{gate}-report"
                 self.assertEqual(self.artifact(state, report, 1)["verdict"], "FAIL")
@@ -350,7 +352,7 @@ class FailureAndResume(CliCase):
                           "review", "sdk", "sdk-review",
                           "develop", "playability", "production-quality", "visual-qa",
                           "review", "sdk", "sdk-review", "verify",
-                          "prototype-review", "prototype-review", "release"])
+                          "prototype-review", "prototype-review", "store-listing", "listing-validation", "release"])
         rejected = self.artifact(state, "review-report", 2)
         self.assertEqual(rejected["verdict"], "request-changes")
         # Both mock reviews approve the commit their subject names.
@@ -551,11 +553,14 @@ class RunStatesThroughTheCli(CliCase):
                                                   ["develop", "playability",
                                                    "production-quality", "visual-qa",
                                                    "review", "sdk", "sdk-review", "verify",
-                                                   "prototype-review", "release"]))
+                                                   "prototype-review", "store-listing",
+                                                   "listing-validation", "release"]))
 
     def test_mock_auto_approves_only_the_workflows_own_checkpoint(self):
         self.wgf("new-game", "--mock", "--quiet", expect=3)  # G4 is never auto-approved
-        self.assertEqual(self.state()["params"]["auto_approve"], ["G2", "G3"])
+        # The reversible gates the workflow checkpoints, G5 (the publish group) included;
+        # G4 and G6 are never auto-approved.
+        self.assertEqual(self.state()["params"]["auto_approve"], ["G2", "G3", "G5"])
         self.wgf("new-game", "--mock", "--hold-gates", "--quiet", expect=3)
         self.assertNotIn("auto_approve", self.state()["params"])
 

@@ -1,0 +1,102 @@
+# A small store-listing reference for the tests: the shipped one's shape and rules with tiny
+# renditions, so a test renders every file in pure Python in a moment. The claims and copy
+# bounds are the shipped file's.
+version: 1.0.0-test
+
+package:
+  listing: listing.json
+  branding_dir: branding
+  screenshots_dir: screenshots
+  trailer_dir: trailer
+  copy_dir: copy
+  platforms_dir: platforms
+  validation: validation.json
+
+renditions:
+  icon:
+    - {id: icon-1024, width: 96, height: 96}
+    - {id: icon-512, width: 48, height: 48}
+    - {id: icon-256, width: 24, height: 24}
+  thumbnail:
+    - {id: thumbnail-16x9, width: 128, height: 72}
+    - {id: thumbnail-4x3, width: 96, height: 72}
+    - {id: thumbnail-1x1, width: 64, height: 64}
+  promo:
+    - {id: promo-1920x1080, width: 192, height: 108}
+  logo:
+    - {id: logo-wordmark, width: 160, height: 40}
+  screenshots:
+    landscape: {width: 320, height: 180}
+    portrait: {width: 180, height: 320}
+    min: 3
+    max: 8
+  trailer:
+    width: 160
+    height: 90
+    min_seconds: 8
+    max_seconds: 30
+    container: webm
+    max_mb: 50
+
+formats:
+  native: [png]
+  browser: [jpg, webp]
+
+capture:
+  scenes:
+    - {id: title, state: title, description: the title screen}
+    - {id: play-early, state: playing, after_ms: 1500, description: play just begun}
+    - {id: play-mid, state: playing, after_ms: 6000, after_inputs: 6, description: play after several inputs}
+    - {id: play-late, state: playing, after_ms: 12000, description: play well under way}
+    - {id: result, state: [won, lost], description: the result screen}
+  excluded_states: [loading, other]
+  frame_bars:
+    lit_luminance: 64
+    min_lit_share: 0.01
+    max_mean_luminance: 225
+    min_contrast: 18
+  distinct:
+    min_changed_fraction: 0.05
+    min_pixel_delta: 24
+  retries: 2
+  trailer:
+    seconds: 20
+    avoid_states: [loading, title, paused, other]
+
+copy:
+  title: {max_chars: 60}
+  subtitle: {max_chars: 80, variants: 3}
+  short_description: {max_chars: 160, min_chars: 40}
+  long_description: {min_chars: 200, max_chars: 2000}
+  features: {min: 3, max: 8, max_chars: 120}
+  tags: {min: 3, max: 10}
+  categories: {min: 1, max: 3}
+  promo: {variants: 3, max_chars: 200}
+  controls: {max_chars: 200}
+  first_sentence_names_the_verb: true
+
+claims:
+  - {id: multiplayer, terms: [multiplayer, online multiplayer, co-op, coop, pvp, versus friends], backed_by: [feature:multiplayer, feature:co-op, feature:pvp]}
+  - {id: leaderboards, terms: [leaderboard, leaderboards, global ranking, rankings], backed_by: [sdk:leaderboards]}
+  - {id: cloud-save, terms: [cloud save, cloud saves, cross-device, sync your progress], backed_by: [sdk:cloud-save]}
+  - {id: achievements, terms: [achievements, trophies], backed_by: [sdk:achievements]}
+  - {id: gamepad, terms: [controller, gamepad, joystick], backed_by: [design:build_spec.controls.actions.gamepad]}
+  - {id: three-d, terms: [3d, three-dimensional], backed_by: [engine:3d]}
+  - {id: levels, terms: [levels, stages, worlds, chapters], backed_by: [design:scope.content_units, feature:level]}
+  - {id: ad-free, terms: [no ads, ad-free, ad free, without ads], backed_by: [none]}
+  - {id: award, terms: [award-winning, award winning, best game, "#1", number one], backed_by: [none]}
+  - {id: offline, terms: [offline, play offline, no internet], backed_by: [design:offline]}
+  - {id: story, terms: [story, campaign, narrative], backed_by: [feature:story, feature:campaign, feature:narrative]}
+  - {id: boss, terms: [boss, bosses, boss fights], backed_by: [feature:boss]}
+  - {id: endless, terms: [endless, infinite, never-ending], backed_by: [design:endless]}
+
+categories:
+  vocabulary: research-vocabulary.yaml
+  derived_tags:
+    - {tag: single-player, when: "always"}
+    - {tag: casual, when: "session.target_seconds at most 300"}
+    - {tag: mobile, when: "portrait or touch"}
+    - {tag: one-touch, when: "touch with one action"}
+    - {tag: "3d", when: "engine.dimension is 3d"}
+    - {tag: "2d", when: "engine.dimension is 2d"}
+    - {tag: high-score, when: "experience.win is absent"}

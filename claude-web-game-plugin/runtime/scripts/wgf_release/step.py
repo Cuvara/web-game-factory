@@ -34,6 +34,7 @@ import datetime
 import json
 import os
 import re
+import shutil
 
 from wgflib import agentenv, checkout, provenance
 from wgflib import template_contract as contract
@@ -44,9 +45,9 @@ from wgflib.yamllite import YamlError, load_file
 from wgf_verification.checks.platform import same_commit
 from wgf_verification.session import locate_checkout
 
-from .lineage import (BLOCKED, DEFAULT_REQUIRED_GATES, DEFAULT_REQUIRED_REPORTS, FAILED,
-                      Refusal, checkout_lineage, commit_lineage, evidence_refusals,
-                      review_status)
+from .lineage import (BLOCKED, DEFAULT_REQUIRED_GATES, DEFAULT_REQUIRED_LISTING,
+                      DEFAULT_REQUIRED_REPORTS, FAILED, Refusal, checkout_lineage,
+                      commit_lineage, evidence_refusals, review_status)
 from .package import RULES, audit_package, file_sha256
 from .runner import ReleaseRunner, describe
 
@@ -59,7 +60,9 @@ RELEASE_ID = re.compile(r"^r([0-9]+)$")
 SEMVER = re.compile(r"^[0-9]+\.[0-9]+\.[0-9]+$")
 DEFAULT_TIMEOUTS = {"git": 30, "package": 900, "manifest": 300}
 INPUTS = ("qa-report", "verification-report", "sdk-report", "prototype-report",
-          "scaffold-record", "review-report", "production-quality-report", "visual-qa-report")
+          "scaffold-record", "review-report", "production-quality-report", "visual-qa-report",
+          "store-listing", "listing-validation-report")
+LISTING_DIR = "listing"
 
 
 def utc_now():
@@ -183,6 +186,12 @@ class ReleaseStep(WorkflowStep):
             return StepResult.failed("release `with: required_reports` must be a list of "
                                      f"{', '.join(DEFAULT_REQUIRED_REPORTS)}, not "
                                      f"{required_reports!r}", retryable=False)
+        # And whether a release ships only with its validated store listing: the workflow's
+        # (`with: required_listing`, default true).
+        required_listing = (self.params or {}).get("required_listing", DEFAULT_REQUIRED_LISTING)
+        if not isinstance(required_listing, bool):
+            return StepResult.failed("release `with: required_listing` must be true or false, "
+                                     f"not {required_listing!r}", retryable=False)
         allow_unreviewed = ((context.config or {}).get("release") or {}).get(
             "allow_unreviewed", False)
         if not isinstance(allow_unreviewed, bool):
@@ -193,7 +202,7 @@ class ReleaseStep(WorkflowStep):
                 inputs.refs, loaded, getattr(context, "run_id", None),
                 gates_passed=getattr(context, "gates_passed", None) or (),
                 required_gates=required_gates, allow_unreviewed=allow_unreviewed,
-                required_reports=required_reports)
+                required_reports=required_reports, required_listing=required_listing)
             if refusals:
                 raise _Refused(refusals)
             # The step's own `with:` only: a factory.release key is not a checkout path.
@@ -213,8 +222,9 @@ class ReleaseStep(WorkflowStep):
             version = self._version(root, game_config, settings)
             self._package(runner, root, release_id, version, settings, timeouts, game_config)
             manifest, packages = self._collect(root, release_id, head, loaded, game_config)
+            listing = self._ship_listing(root, release_id, loaded, inputs, context)
             artifact = self._manifest(manifest, packages, release_id, head, root, loaded,
-                                      inputs, context, game_config)
+                                      inputs, context, game_config, listing)
         except _Refused as refused:
             return self._refusal(refused.refusals, context)
 
@@ -241,6 +251,8 @@ class ReleaseStep(WorkflowStep):
                       if review == "skipped" else
                       "; UNREVIEWED (no review in this run; factory.release.allow_unreviewed)"
                       if review == "absent" else f"; review approved {head[:12]}")
+                   + ("; listing shipped under release/" + release_id + "/" + LISTING_DIR
+                      if artifact.get("store_metadata") else "; no store listing")
                    + "; nothing published")
         pruned = [pid for pid in getattr(self, "pruned", []) if pid]
         if pruned:
@@ -559,8 +571,71 @@ class ReleaseStep(WorkflowStep):
             template.update(version=version, source=source)
         return template
 
+    def _ship_listing(self, root, release_id, loaded, inputs, context):
+        """Copy the validated store listing's package beside the release's archives
+        (release/<id>/listing/) and return (store_metadata, evidence.store_listing), or
+        (None, None) when the run holds no listing (allowed only with required_listing
+        false, which listing_refusals has already decided)."""
+        listing = loaded.get("store-listing")
+        report = loaded.get("listing-validation-report")
+        if listing is None:
+            return None, None
+        run_dir = getattr(context, "run_dir", None)
+        package_dir = listing.get("package_dir") or ""
+        source = os.path.join(run_dir, *package_dir.split("/")) if run_dir and package_dir else None
+        if not source or not os.path.isdir(source):
+            raise _Refused([Refusal(BLOCKED, "listing-package-missing",
+                                    f"the store-listing's package ({package_dir or 'unnamed'}) is "
+                                    "not on disk under the run directory: the listing's files "
+                                    "are gone. Run store-listing again.")])
+        target = os.path.join(root, *contract.release_path(release_id, LISTING_DIR))
+        shutil.rmtree(target, ignore_errors=True)
+        shutil.copytree(source, target)
+        store_metadata = {}
+        for rendition in listing.get("platforms") or []:
+            texts = rendition.get("text") or {}
+            first = next(iter(texts.values()), {}) if texts else {}
+            entry = {"descriptions": {}, "locales_included": sorted(texts)}
+            if first.get("title"):
+                entry["title"] = first["title"]
+            for locale, text in sorted(texts.items()):
+                description = text.get("long_description") or text.get("short_description")
+                if description:
+                    entry["descriptions"][locale] = description
+            prefix = LISTING_DIR + "/"
+            # Paths relative to release/<id>/: the files sit under listing/ there.
+            def shipped(record):
+                path = record.get("path") or ""
+                marker = package_dir.rstrip("/") + "/"
+                return prefix + (path[len(marker):] if path.startswith(marker) else path)
+            shots = [shipped(f) for f in rendition.get("files") or [] if f.get("kind") == "screenshot"]
+            if shots:
+                entry["screenshots"] = shots
+            icon = next((shipped(f) for f in rendition.get("files") or [] if f.get("kind") == "icon"), None)
+            if icon:
+                entry["icon"] = icon
+            rating = next((t.get("age_rating") for t in texts.values() if t.get("age_rating")), None)
+            if rating:
+                entry["age_rating"] = rating
+            store_metadata[rendition["platform_id"]] = entry
+        evidence = {
+            "status": listing.get("status"),
+            "artifact_id": listing["provenance"]["artifact_id"],
+            "content_hash": inputs.refs["store-listing"].content_hash,
+            "path": LISTING_DIR + "/",
+            "trailer": (listing.get("trailer") or {}).get("status"),
+            "branding": (listing.get("branding") or {}).get("method"),
+            "screenshots": len(listing.get("screenshots") or []),
+        }
+        if report is not None:
+            evidence["validation"] = {"artifact_id": report["provenance"]["artifact_id"],
+                                      "content_hash": inputs.refs["listing-validation-report"].content_hash,
+                                      "verdict": report.get("verdict"),
+                                      "unknown": len(report.get("unknown") or [])}
+        return store_metadata, evidence
+
     def _manifest(self, game_manifest, packages, release_id, head, root, loaded, inputs,
-                  context, game_config):
+                  context, game_config, listing=(None, None)):
         qa, vr = loaded["qa-report"], loaded["verification-report"]
         refs = inputs.refs
         produced_at = self.clock()
@@ -641,6 +716,11 @@ class ReleaseStep(WorkflowStep):
         }
         if not artifact["build_ref"]:
             del artifact["build_ref"]
+        store_metadata, listing_evidence = listing
+        if store_metadata:
+            artifact["store_metadata"] = store_metadata
+        if listing_evidence:
+            artifact["evidence"]["store_listing"] = listing_evidence
         if workflow.get("run_id"):
             artifact["workflow"] = workflow
         template = self._template(root, loaded.get("scaffold-record"))

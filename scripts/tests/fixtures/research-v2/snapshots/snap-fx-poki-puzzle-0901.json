@@ -1,0 +1,87 @@
+{
+  "id": "snap-fx-poki-puzzle-0901",
+  "source_uri": "https://fixtures.invalid/research-v2/snap-fx-poki-puzzle-0901",
+  "source_kind": "portal-listing",
+  "title": "FIXTURE poki listing",
+  "observed_at": "2026-09-01T00:00:00Z",
+  "retrieved_via": "fixture",
+  "platform": "poki",
+  "observations": [
+    {
+      "statement": "FIXTURE: FX Candy Swap is listed in poki 'category:puzzle most-popular'.",
+      "excerpt": "FIXTURE listing excerpt: FX Candy Swap",
+      "subject": {
+        "platform": "poki",
+        "dimension": "competition"
+      },
+      "facts": {
+        "reference_title": {
+          "name": "FX Candy Swap",
+          "genre": "match-3",
+          "list": "category:puzzle most-popular"
+        }
+      },
+      "tags": [
+        "reference-title",
+        "fixture"
+      ]
+    },
+    {
+      "statement": "FIXTURE: FX Fruit Swap is listed in poki 'category:puzzle most-popular'.",
+      "excerpt": "FIXTURE listing excerpt: FX Fruit Swap",
+      "subject": {
+        "platform": "poki",
+        "dimension": "competition"
+      },
+      "facts": {
+        "reference_title": {
+          "name": "FX Fruit Swap",
+          "genre": "match-3",
+          "list": "category:puzzle most-popular"
+        }
+      },
+      "tags": [
+        "reference-title",
+        "fixture"
+      ]
+    },
+    {
+      "statement": "FIXTURE: FX Cozy Merge is listed in poki 'category:puzzle most-popular'.",
+      "excerpt": "FIXTURE listing excerpt: FX Cozy Merge",
+      "subject": {
+        "platform": "poki",
+        "dimension": "competition"
+      },
+      "facts": {
+        "reference_title": {
+          "name": "FX Cozy Merge",
+          "genre": "merge",
+          "list": "category:puzzle most-popular"
+        }
+      },
+      "tags": [
+        "reference-title",
+        "fixture"
+      ]
+    },
+    {
+      "statement": "FIXTURE: FX Logic Grid is listed in poki 'category:puzzle most-popular'.",
+      "excerpt": "FIXTURE listing excerpt: FX Logic Grid",
+      "subject": {
+        "platform": "poki",
+        "dimension": "competition"
+      },
+      "facts": {
+        "reference_title": {
+          "name": "FX Logic Grid",
+          "genre": "logic",
+          "list": "category:puzzle most-popular"
+        }
+      },
+      "tags": [
+        "reference-title",
+        "fixture"
+      ]
+    }
+  ]
+}

@@ -11,6 +11,13 @@ Find out what is actually happening on web game portals — which genres and mec
 performing, for which audiences, on which platforms, with what monetization — and record it
 in a form that can be scored.
 
+Research the games themselves, not only the portals: list them, tear the comparable ones
+down, and code every game on the shared research vocabulary
+(`core/reference/research-vocabulary.yaml`) — genre, mechanics, core loop, controls, theme,
+fantasy, art, audience, session, progression, difficulty, retention, monetization and
+production. A corpus coded the same way is what lets patterns be counted across games
+instead of described one game at a time.
+
 ## The discipline
 
 **Observation and interpretation are separate claims.** Always.
@@ -33,10 +40,16 @@ the failure this role exists to prevent.
   readable, which is the only way anyone can see that a belief moved.
 - Platforms expose different data and none of them expose the same schema. Record what a
   portal actually shows; do not invent the fields it does not.
+- A coding read off a capture (a theme, a tone, a fantasy) is an interpretation, and is
+  recorded as one. A timing is observed only if it was timed.
+- A share states its numerator, its denominator and what was counted. Low supply without
+  demand evidence is not an opportunity. A gameplay observation nobody made is never
+  written; test data is marked as fixture data.
 
 ## Output expectations
 
-A scan produces four to eight opportunities, not one. The job is to widen the field — one
+A scan produces four to eight opportunities, not one, each tracing every facet to the
+claims it rests on - and keeps those the Factory cannot build yet as capability gaps. The job is to widen the field — one
 candidate means the decision was made before the looking started.
 
 Deduplicate against the whole backlog including `rejected` entries. A previously rejected

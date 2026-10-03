@@ -118,7 +118,13 @@ def fast_case(key):
             from wgflib.workflow.definition import load_definition
             config = harness.build_config(game, self.workdir, harness.TEMPLATE_DIR)
             self.assertIs(config["release"].get("allow_unreviewed", False), False)
-            self.assertEqual(harness.step_ids(), load_definition("new-game").step_ids)
+            # `wgf new-game` ends with the drafted release; the `publish` group after it
+            # (G5, G6, submit: docs/publish-module.md) is entered only by a person, with
+            # `wgf publish --run`, and a golden run never contacts a portal.
+            definition = load_definition("new-game")
+            publish = set(definition.resolve_scope("publish"))
+            self.assertEqual(harness.step_ids(),
+                             [s for s in definition.step_ids if s not in publish])
             ids = harness.step_ids()
             self.assertEqual(ids[ids.index("sdk") + 1], "sdk-review")
             self.assertEqual(dict(games.EXPECTED_STEPS)["sdk-review"], "SUCCESS")
@@ -438,6 +444,18 @@ def end_to_end_case(key):
             self.assertEqual(production["visual_qa"]["judge"], "baseline", production)
             self.assertGreater(production["visual_qa"]["frames"], 0, production)
             self.assertTrue(production["passed"], production)
+
+        def test_the_store_listing_was_captured_validated_and_shipped(self):
+            listing = self.summary["listing"]
+            self.assertEqual(listing["status"], "complete", listing)
+            self.assertGreaterEqual(len(listing["screenshots"]), 3)
+            self.assertTrue(any(s["state"] == "playing" for s in listing["screenshots"]))
+            self.assertEqual(listing["trailer"]["status"], "recorded")
+            self.assertEqual(listing["branding"]["method"], "browser-composed")
+            self.assertEqual(listing["validation"]["verdict"], "PASS", listing["validation"])
+            self.assertTrue(listing["shipped"])
+            self.assertTrue(listing["store_metadata_platforms"])
+            self.assertTrue(listing["passed"], listing)
 
         def test_the_engine_is_the_games_everywhere(self):
             self.assertTrue(self.summary["engine"]["consistent"], self.summary["engine"])

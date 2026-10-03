@@ -96,6 +96,12 @@ states:
         gate: G5
         guard: [verify_suite_green, candidate_frozen]
         outputs: [decision-record]
+      - event: reject
+        to: cancelled
+        kind: human-approval
+        gate: G5
+        outputs: [decision-record]
+        note: The gate's rejection (gates.yaml G5 rejection_routes_to), recorded like its approval.
       - event: cancel
         to: cancelled
         kind: human-approval
@@ -115,6 +121,12 @@ states:
         gate: G6
         guard: [publish_authorized, store_metadata_complete]
         outputs: [decision-record]
+      - event: reject
+        to: cancelled
+        kind: human-approval
+        gate: G6
+        outputs: [decision-record]
+        note: Publication refused by the person asked at G6, recorded like an authorization.
       - event: cancel
         to: cancelled
         kind: human-approval
@@ -149,9 +161,13 @@ states:
     inputs: [release-manifest, platform-publication]
     outputs: [platform-publication]
     description: >
-      Packaging and metadata preparation are automated; the submission itself is a human
-      checklist plus a status file. No portal APIs are integrated — see
-      platform-publication.machine.yaml.
+      Packaging and metadata preparation are automated. The submission is made by the
+      Factory's publish step through a platform adapter - the portal's own API or CLI where
+      it publishes one, a deterministic browser run of its developer console where it does
+      not (no portal in core/reference/publication/ documents an upload API today) - or by
+      a person with a checklist where neither is permitted or verified. Every path records
+      the same platform-publication, advanced only from an observed portal state; see
+      platform-publication.machine.yaml and docs/publish-module.md.
     transitions:
       - event: progress
         to: live

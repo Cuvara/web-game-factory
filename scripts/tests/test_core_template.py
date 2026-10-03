@@ -143,6 +143,7 @@ class TheFactoryContainsNoGameSource(unittest.TestCase):
         # behaviour (load, frame times, visibility, resize, audio, heap) on the bytes that
         # ship. Drives whatever game is in the checkout through the template's hooks.
         "scripts/mv4/session.spec.ts",
+        "scripts/mv4/session.spec.ts",
         # The developer's frame capture: serves any built game's dist/ and saves what a
         # first-time player sees, for the developer to read. It contains no game.
         "scripts/wgf_develop/tools/look.mjs",
@@ -172,6 +173,16 @@ class TheFactoryContainsNoGameSource(unittest.TestCase):
         # game and run there against its build (scripts/wgf_playability/step.py). It
         # records what a player's device would see; it contains no game.
         "scripts/wgf_playability/bot.spec.ts",
+        # The store-listing step's capture script: run by Node in the game checkout against
+        # its built bundle, resolving the game's own Playwright, writing only under the run
+        # directory (scripts/wgf_listing/capture.py). It records frames, a recording and the
+        # branding composition; it contains no game.
+        "scripts/wgf_listing/capture.mjs",
+        # The publish step's console executor: a Playwright spec that drives a portal's
+        # developer console through fixed phases from a flow file (scripts/wgf_publish/
+        # browser.py), copied into the checkout's release/ scratch directory for one run.
+        # Portal plumbing, no game in it.
+        "scripts/wgf_publish/browser/console.spec.ts",
         # The developer's frame tool: serves a game's built dist/ and screenshots it with
         # the game's own Playwright (scripts/wgf_develop/brief.py, "See your build").
         # Tooling that looks at a game; it contains none.

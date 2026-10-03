@@ -62,6 +62,9 @@ FILES = [
     # (Blender doctor, model build, GLB inspect). Both import only the bundled wgf_assets.
     "scripts/wgf-assets.py",
     "scripts/wgf-model.py",
+    # Publication outside a run: the publication profiles, capturing a portal session,
+    # the publication guards on a manifest (wgf_publish, docs/publish-module.md).
+    "scripts/wgf-publish.py",
     # Shipped installation defaults. An instance overrides any of them with its own
     # workspace/config/<name> (paths.config_file); the template pin is the release's own.
     "workspace/config/factory.yaml",

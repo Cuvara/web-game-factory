@@ -1,0 +1,90 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://webgamefactory.dev/schemas/artifacts/shared/game-record.schema.json",
+  "title": "Game Record (teardown)",
+  "description": "One researched game in a research corpus: <corpus>/games/<game-id>.json. The discovery module's input format for game-level research, the way snapshots are for portal facts. A record is a set of dated sessions (a timed play, a listing read, a store page) and the facet codings each session supports, every coding in the shared research vocabulary (core/reference/research-vocabulary.yaml).\n\nA coding is `observed` when its excerpt is the thing itself - a portal's own category tag, a stopwatch reading, an ad the observer saw offered - and `interpreted` when it is the observer's reading of a capture (a theme seen on a thumbnail, a tone, a fantasy). Interpreted codings become derived claims whose parent is the session's own observed claim, so an interpretation never passes as an observation. An observation without an excerpt is refused.\n\nA record marked `fixture: true` is test data. It is never real evidence: every claim it yields is tagged `fixture` and the report says so.",
+
+  "x-wgf": {
+    "id": "game-record",
+    "kind": "reference",
+    "format": "json",
+    "instance_path": "<corpus>/games/<game-id>.json",
+    "consumers": ["portfolio:market-scan"]
+  },
+
+  "type": "object",
+  "required": ["id", "name", "vocabulary_version", "sessions", "observations"],
+  "properties": {
+    "id": { "type": "string", "pattern": "^game-[a-z0-9][a-z0-9-]*$" },
+    "name": { "type": "string", "minLength": 1 },
+    "listing_names": {
+      "type": "array",
+      "description": "Names the game is listed under on portals, in any locale, so listing observations join this record.",
+      "items": { "type": "string" }
+    },
+    "fixture": { "type": "boolean", "default": false },
+    "vocabulary_version": { "type": "string", "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$" },
+    "sessions": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["id", "source_uri", "source_kind", "observed_at", "method", "observer", "note"],
+        "properties": {
+          "id": { "type": "string", "pattern": "^ts-[a-z0-9][a-z0-9-]*$" },
+          "source_uri": { "type": "string", "minLength": 1 },
+          "source_kind": { "enum": ["competitor-teardown", "portal-listing", "portal-docs", "playtest", "other"] },
+          "observed_at": { "type": "string", "format": "date-time" },
+          "method": { "enum": ["played", "listing", "store-page", "screenshot", "video"] },
+          "observer": { "type": "string", "minLength": 1, "description": "Role or person who observed. An agent may observe; it may not invent." },
+          "platform": { "type": "string" },
+          "viewport": { "type": "string", "description": "e.g. '390x844 phone, throttled 4G'. Required in practice for played sessions." },
+          "runs": { "type": "integer", "minimum": 1 },
+          "capture_uri": { "type": "string", "description": "Recording, screenshot set or notes the session's excerpts can be checked against." },
+          "note": { "type": "string", "minLength": 8, "description": "What was done, verbatim enough to re-check: the session's own excerpt." }
+        },
+        "additionalProperties": false,
+        "allOf": [
+          { "if": { "properties": { "method": { "const": "played" } }, "required": ["method"] },
+            "then": { "required": ["viewport", "runs"] } }
+        ]
+      }
+    },
+    "observations": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["session", "facet", "value", "coding", "excerpt"],
+        "properties": {
+          "session": { "type": "string" },
+          "facet": { "type": "string", "pattern": "^[a-z][a-z0-9_]*$" },
+          "value": {
+            "description": "A vocabulary id (facet kind `one`), a list of ids (`many`), or a number in the facet's unit (`number`).",
+            "type": ["string", "number", "array"],
+            "items": { "type": "string" }
+          },
+          "coding": { "enum": ["observed", "interpreted"] },
+          "statement": { "type": "string" },
+          "excerpt": { "type": "string", "minLength": 1 }
+        },
+        "additionalProperties": false
+      }
+    },
+    "notes": {
+      "type": "array",
+      "description": "Free observations worth keeping that no facet counts: a standout strength, an exception to a pattern, something that felt bad. Kept as observed claims, never counted.",
+      "items": {
+        "type": "object",
+        "required": ["session", "kind", "statement", "excerpt"],
+        "properties": {
+          "session": { "type": "string" },
+          "kind": { "enum": ["strength", "exception", "ux", "production", "technical", "other"] },
+          "statement": { "type": "string", "minLength": 8 },
+          "excerpt": { "type": "string", "minLength": 1 }
+        },
+        "additionalProperties": false
+      }
+    }
+  },
+  "additionalProperties": false
+}

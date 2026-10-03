@@ -59,6 +59,16 @@ python3 scripts/wgf-assets.py build --design design.json --root ../my-game  # fi
 python3 scripts/wgf-assets.py validate ../my-game [--strict]   # the checkout vs its assets.json
 python3 scripts/wgf-assets.py pack out/hud frames/             # deterministic texture atlas
 
+# The research corpus (docs/research-v2.md). Exit 0 clean, 1 problems, 2 unusable.
+python3 scripts/wgf-corpus.py validate [CORPUS]             # teardown records vs schema + vocabulary
+python3 scripts/wgf-corpus.py template game-x --name "X"    # a record skeleton to fill in after playing
+python3 scripts/wgf-corpus.py facets [FACET]                # the codes a game is coded on
+
+# The store listing outside a run (docs/store-listing-module.md). Exit 0 PASS, 1 FAIL, 3 BLOCKED.
+python3 scripts/wgf-listing.py validate .factory/workflows/<run>/store-listing/1-1/package
+python3 scripts/wgf-listing.py copy --design game-design.json --dist ../my-game/dist  # the grounded copy
+python3 scripts/wgf-listing.py requirements poki yandex   # what each profile asks; what is UNKNOWN
+
 # 3D models (docs/blender-pipeline.md). Blender 4.5 LTS via WGF_BLENDER or PATH; inspect needs none.
 python3 scripts/wgf-model.py doctor                     # is the pinned Blender usable?
 python3 scripts/wgf-model.py build spec.json --id car -o car.glb --twice   # build, check, reproduce
@@ -75,6 +85,13 @@ bin/wgf decide <run-id> pass              # G4 (pass|iterate|kill): only a perso
 bin/wgf verify --mock                     # one step; `plan` = strategy, checkpoint, design
 bin/wgf resume <run-id> [--from STEP]     # = wgf <cmd> --resume <run-id>, which still works
 bin/wgf decide <run-id> approve [--note TEXT]   # answer a waiting checkpoint
+bin/wgf publish --run <run-id>            # the `publish` group in the run that drafted the release:
+                                          # platform-validate, G5 (approve|reject), G6 (publish|
+                                          # reject, a person only), submit (docs/publish-module.md)
+python3 scripts/wgf-publish.py profiles   # every portal's submission method, terms, credential name
+python3 scripts/wgf-publish.py capture crazygames --out ~/secrets/cg.json --checkout ../my-game
+                                          # a person logs in once; the session is what the submit
+                                          # step acts with (never a typed password)
 bin/wgf runs --waiting [--json]           # runs waiting for a decision: step, gate, choices,
                                           # timeout eligibility (reported; `resume` applies it)
 bin/wgf status [<run-id>] [--json]        # liveness: running | hung | stale; exits as the run
@@ -124,7 +141,10 @@ validate against.
 | game repositories | Game source and release artifacts | Created from the template, never from scratch |
 
 Release artifacts (`release-manifest`, `qa-report`, `platform-publication`) belong in the game
-repository under `release/<release-id>/`, not in `workspace/`.
+repository under `release/<release-id>/`, not in `workspace/`. So does the store metadata the
+publication guards read (`release/<release-id>/store-metadata.json`). A portal session a
+person captured for the `submit` step lives where the installation keeps secrets - never in
+any repository (`docs/publish-module.md`).
 
 ## Lifecycle — two tiers, not one chain
 
@@ -177,14 +197,32 @@ recommendation); a run snapshots the windows at start, and the approval is appli
 `wgf resume` and recorded like a decision (`automation`, `mode: timeout`) — `wgf status`
 only reports eligibility.
 
-In `new-game`, G2, G3 and G4 are `human-checkpoint` steps decided on their gate's
+In `new-game`, G2, G3, G4, G5 and G6 are `human-checkpoint` steps decided on their gate's
 `required_artifacts`. G4 (`prototype-review`) sits after `verify` passes and before
-`release`: `pass` releases, `iterate` loops back to develop, `kill` ends the run (exit 0,
+`release`: `pass` continues to the store listing and then release, `iterate` loops back to
+develop, `kill` ends the run (exit 0,
 `Ended: kill at G4`). Release cannot run until G4 passes, and a newer verification makes G4
-ask again. A `--mock` run therefore stops at G4. Workflow 5 judges the production build
+ask again. A `--mock` run therefore stops at G4, and `wgf new-game` ends with the drafted
+release. G5 and G6 are the `publish` group's, after `release`: `wgf publish --run <run-id>`
+continues the same run through `platform-validate` (release:validating: the publication
+guards, readiness READY | BLOCKED | HUMAN_REQUIRED | UNKNOWN), G5 (`approve`/`reject`), G6
+(`publish`/`reject`, pinning the release-manifest by hash; a person only) and `submit`
+(release:submitting: the platform adapter, one attempt, the portal state read back;
+`factory.publish.mode` is dry-run until an installation sets live AND `WGF_PUBLISH_LIVE=1`).
+A login, CAPTCHA, second factor, unconfirmed portal terms, a missing session or a portal
+without an automated method stops `submit` WAITING_FOR_HUMAN (`wgf decide <run> done|abandon`).
+See `docs/publish-module.md`. Workflow 5 judges the production build
 before review: `production-quality` and `visual-qa` route `assets` (an asset must be made
 again) to `assets` and `develop` to `develop`, and `release` refuses unless both passed the
-development commit it ships (`docs/production-architecture.md`).
+development commit it ships (`docs/production-architecture.md`). Workflow 7 adds the **store listing** after G4
+(`docs/store-listing-module.md`): `store-listing` captures the verified build's package -
+screenshots and a gameplay recording of real play through the probe, branding from the
+game's own assets and identity, copy grounded in the design, one rendition per targeted
+platform under its profile's `store_listing` block - and `listing-validation` judges it
+against each platform's stated requirements (a `null` limit is UNKNOWN, never passed),
+routing `listing` back for what the step can redo and blocking for what a person must
+configure. `release` ships the validated listing under `release/<id>/listing/` and fills
+`store_metadata` from it; G6 is decided on all three.
 
 Every gate emits a `decision-record` pinning its subject by content hash. Decided by hand,
 the person writes it and `wgf-state.py` refuses the gated edge without it. Decided in a run,
@@ -248,11 +286,14 @@ Real step modules register via `factory.steps.modules` in `workspace/config/fact
 every step type in `new-game` has one: `wgf_discovery` (research), `wgf_strategy`,
 `wgf_design`, `wgf_techplan`, `wgf_init`, `wgf_assets`, `wgf_develop`, `wgf_review`,
 `wgf_sdk`, `wgf_verification`, `wgf_release`, `wgf_playability`, `wgf_production`
-(production-quality) and `wgf_visualqa` (visual-qa). `--mock` still replaces all of them with
-placeholders for a run. Discovery reads evidence snapshots from
-`workspace/research/snapshots/`. A module owns its domain logic; the engine owns
-orchestration — a module never edits `scripts/wgflib/workflow/` to implement domain
-behaviour. See `docs/workflow-module-contract.md`.
+(production-quality), `wgf_visualqa` (visual-qa), `wgf_listing` (store-listing and
+listing-validation) and `wgf_publish` (platform-validate and publish). `--mock` still
+replaces all of them with placeholders for a run. Discovery reads evidence snapshots from
+`workspace/research/snapshots/` and teardown records from `workspace/research/games/`, codes
+every game on `core/reference/research-vocabulary.yaml`, and proposes several opportunities
+(Research V2, `docs/research-v2.md`); strategy and design read the `research` block. A
+module owns its domain logic; the engine owns orchestration — a module never edits
+`scripts/wgflib/workflow/` to implement domain behaviour. See `docs/workflow-module-contract.md`.
 
 Every child process a step starts goes through `scripts/wgflib/procs.py`: its own session,
 an environment tag, whole-tree termination on exit, timeout, cancel or `wgf` being
@@ -368,11 +409,21 @@ seen by the engine — validate what you write there with ajv.
 - `docs/visual-qa-module.md` — the `visual-qa` step: a judge reads runtime frames against
   `core/reference/visual-qa-rubric.yaml`; the `baseline` judge a golden run uses; routes
   `assets` / `develop`
+- `docs/store-listing-module.md` — the `store-listing` and `listing-validation` steps: the
+  store package captured from the verified build (branding, screenshots, trailer, grounded
+  copy, per-platform renditions under `core/reference/store-listing.yaml` and the profiles'
+  `store_listing` blocks), its validation with UNKNOWN requirements named, the release
+  shipping it; `scripts/wgf-listing.py`
 - `docs/platform-sdk-verification.md` — how platform SDK integration is verified, and where the
   platform profiles disagree with current portal documentation
 - `docs/review-module.md` — the `review` step: enforced read-only reviewer, verdict contract
 - `docs/techplan-module.md` — the `tech-plan` step: engine and platform pins, G3
 - `docs/release-module.md` — the `release` step: what it refuses, packaging checks
+- `docs/publish-module.md` — the `publish` group: `platform-validate` (the publication guards,
+  readiness), G5/G6 in the run, `submit` (platform adapters: the portal's API or CLI where
+  one exists, a deterministic direct-Playwright run of its console where none does, a person
+  otherwise), the idempotency key, the captured session, redaction, dry-run vs live, the
+  fixture portal; Playwright MCP is not the submission executor
 - `docs/core-contracts.md` — every pipeline boundary, lineage rules, the validator
 - `docs/checkouts.md` — where the game checkout is: one precedence for every step
   (`with:` → `WGF_GAME_REPO` → scaffold-record `local_path` → `factory.checkouts`), the
@@ -415,6 +466,10 @@ seen by the engine — validate what you write there with ajv.
 - `docs/development.md` — working on the Factory
 - `docs/handoff/2026-09-27-production-validation.md` — post-2.0.0 validation: the live
   builds, the G3 timebox rejection and the G4 hold, and the fixes they produced
+- `docs/research-v2.md` — Research V2: the game corpus and vocabulary, teardown records,
+  market cells (demand, supply, saturation, competition, trend), counted patterns, the five
+  opportunity generators, capability gaps, the research handoff strategy and design read,
+  what the shipped corpus supports, and what is not implemented
 - `docs/env-vars.md` — every `WGF_*` environment variable: runtime and test, who reads it, default
 
 Documentation that contradicts a machine file is worse than none, because people believe it.
@@ -424,4 +479,9 @@ Update `docs/` when a machine, contract or role changes.
 
 Creating repositories, pushing code, submitting to portals and spending money are
 outward-facing and largely irreversible. Do not perform them unless explicitly instructed,
-even when a procedure or stage file describes them. Secrets never enter source.
+even when a procedure or stage file describes them. The `submit` step submits to a portal
+only behind a person's G6 decision pinning the manifest, only in `factory.publish.mode:
+live` with `WGF_PUBLISH_LIVE=1`, only where a person has recorded that the portal's terms
+permit it, and only through its documented tool or its own console - never through an agent
+deciding what to click, never past a login, a CAPTCHA or a second factor. Secrets never enter
+source; a portal session is named by an environment variable and redacted everywhere.

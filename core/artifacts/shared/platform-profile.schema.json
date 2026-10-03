@@ -113,6 +113,7 @@
 
     "metadata_requirements": {
       "type": "object",
+      "description": "The coarse store metadata requirements the design and the release read. The store-listing step reads the finer `store_listing` block below, falling back to these.",
       "properties": {
         "descriptions_locales": { "type": "array", "items": { "type": "string" } },
         "screenshots_min": { "type": "integer", "minimum": 0 },
@@ -159,6 +160,8 @@
       }
     },
 
+    "store_listing": { "$ref": "#/$defs/storeListing" },
+
     "scoring_hints": {
       "type": "object",
       "description": "Advisory input to the platform_fit dimension. Prose on purpose — this informs a judgement, it does not compute one.",
@@ -169,5 +172,126 @@
       "additionalProperties": false
     }
   },
-  "additionalProperties": false
+  "additionalProperties": false,
+
+  "$defs": {
+    "storeListing": {
+      "type": "object",
+      "description": "What this portal's listing requires, read by the store-listing step (which renders the platform's listing from the canonical package) and by listing validation (core/reference/store-listing.yaml; docs/store-listing-module.md). Every limit may be null: null means NOT KNOWN - validation reports the requirement UNKNOWN and never passes it - so a figure nobody read from the portal's own documentation is never invented here. `status: verified` says every figure in the block was read from `source`.",
+      "required": ["status"],
+      "properties": {
+        "status": { "enum": ["verified", "unverified"], "description": "unverified: the figures are a starting point; treat each as a hypothesis until read from the portal." },
+        "source": { "type": ["string", "null"], "description": "Where the figures were read: the portal's developer documentation URL, with the date." },
+        "notes": { "type": "string" },
+        "title": { "$ref": "#/$defs/textLimit" },
+        "subtitle": { "$ref": "#/$defs/textLimit" },
+        "short_description": { "$ref": "#/$defs/textLimit" },
+        "long_description": { "$ref": "#/$defs/textLimit" },
+        "promo": { "$ref": "#/$defs/textLimit" },
+        "tags": { "$ref": "#/$defs/listLimit" },
+        "categories": { "$ref": "#/$defs/listLimit" },
+        "locales": {
+          "type": ["array", "null"],
+          "items": { "type": "string" },
+          "description": "Locales the listing texts are required in. Null: metadata_requirements.descriptions_locales, then requirements.locales_required."
+        },
+        "age_rating": {
+          "type": "object",
+          "properties": {
+            "required": { "type": "boolean" },
+            "system": { "type": ["string", "null"] }
+          },
+          "additionalProperties": false
+        },
+        "icon": { "$ref": "#/$defs/imageRequirement" },
+        "covers": {
+          "type": "array",
+          "description": "Thumbnails, covers, banners, promotional images: one entry per image the portal asks for.",
+          "items": { "$ref": "#/$defs/imageRequirement" }
+        },
+        "screenshots": {
+          "type": "object",
+          "properties": {
+            "required": { "type": ["boolean", "null"] },
+            "min": { "type": ["integer", "null"], "minimum": 0 },
+            "max": { "type": ["integer", "null"], "minimum": 1 },
+            "sizes": { "type": ["array", "null"], "items": { "$ref": "#/$defs/size" }, "description": "Accepted exact sizes; null: any size of the stated aspect." },
+            "aspect": { "type": ["string", "null"], "pattern": "^[0-9]+:[0-9]+$" },
+            "formats": { "type": ["array", "null"], "items": { "enum": ["png", "jpg", "webp", "gif"] } },
+            "max_kb": { "type": ["integer", "null"], "minimum": 1 },
+            "orientation": { "type": ["array", "null"], "items": { "enum": ["landscape", "portrait"] } }
+          },
+          "additionalProperties": false
+        },
+        "video": {
+          "type": "object",
+          "properties": {
+            "required": { "type": "boolean" },
+            "formats": { "type": ["array", "null"], "items": { "enum": ["webm", "mp4", "mov", "gif"] } },
+            "min_seconds": { "type": ["number", "null"], "minimum": 0 },
+            "max_seconds": { "type": ["number", "null"], "minimum": 0 },
+            "max_mb": { "type": ["number", "null"], "minimum": 0 },
+            "min_width": { "type": ["integer", "null"], "minimum": 1 },
+            "min_height": { "type": ["integer", "null"], "minimum": 1 },
+            "aspect": { "type": ["string", "null"], "pattern": "^[0-9]+:[0-9]+$" },
+            "hosted": { "type": ["string", "null"], "description": "Where the portal wants the video: `upload`, or a video host's name when it takes only a link." }
+          },
+          "additionalProperties": false
+        },
+        "naming": {
+          "type": "object",
+          "properties": {
+            "files": { "type": ["string", "null"], "description": "A regular expression file names must match, when the portal requires one." }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    "textLimit": {
+      "type": "object",
+      "properties": {
+        "required": { "type": "boolean" },
+        "min_chars": { "type": ["integer", "null"], "minimum": 0 },
+        "max_chars": { "type": ["integer", "null"], "minimum": 1 }
+      },
+      "additionalProperties": false
+    },
+    "listLimit": {
+      "type": "object",
+      "properties": {
+        "required": { "type": "boolean" },
+        "min": { "type": ["integer", "null"], "minimum": 0 },
+        "max": { "type": ["integer", "null"], "minimum": 1 },
+        "allowed": { "type": ["array", "null"], "items": { "type": "string" }, "description": "The portal's own vocabulary, when it has one; null: free text." },
+        "max_chars": { "type": ["integer", "null"], "minimum": 1 }
+      },
+      "additionalProperties": false
+    },
+    "size": {
+      "type": "object",
+      "required": ["width", "height"],
+      "properties": {
+        "width": { "type": "integer", "minimum": 1 },
+        "height": { "type": "integer", "minimum": 1 }
+      },
+      "additionalProperties": false
+    },
+    "imageRequirement": {
+      "type": "object",
+      "required": ["id"],
+      "properties": {
+        "id": { "type": "string", "pattern": "^[a-z][a-z0-9-]*$" },
+        "label": { "type": "string" },
+        "required": { "type": ["boolean", "null"], "description": "null: not known whether the portal requires it." },
+        "sizes": { "type": ["array", "null"], "items": { "$ref": "#/$defs/size" }, "description": "Accepted exact sizes, the first preferred; null: not known." },
+        "aspect": { "type": ["string", "null"], "pattern": "^[0-9]+:[0-9]+$" },
+        "formats": { "type": ["array", "null"], "items": { "enum": ["png", "jpg", "webp", "gif", "svg"] } },
+        "max_kb": { "type": ["integer", "null"], "minimum": 1 },
+        "transparent": { "type": ["boolean", "null"] },
+        "source": { "enum": ["icon", "thumbnail", "promo", "logo", "screenshot"], "description": "Which canonical rendition family the image is rendered from (core/reference/store-listing.yaml renditions)." }
+      },
+      "additionalProperties": false
+    }
+  }
 }

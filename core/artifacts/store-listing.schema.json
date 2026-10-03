@@ -1,0 +1,338 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://webgamefactory.dev/schemas/artifacts/store-listing.schema.json",
+  "title": "Store Listing",
+  "description": "The canonical, platform-independent store package of one verified build: branding derived from the game's own visual identity and assets, screenshots and a gameplay recording captured from the running production build through its play probe, store copy grounded in the design and the shipped build, and one rendition per targeted platform made from that canonical material under the platform profile's `store_listing` block. Every file it names is a run artifact at a deterministic path under `package_dir`, with its sha256.\n\nIt claims nothing the shipped game does not have: `facts` records where every statement in the copy comes from, `copy.grounding` the mechanical check that the texts contain no unbacked claim (core/reference/store-listing.yaml `claims`). What could not be made is said so - a trailer that fell back to a frame sequence, a format no encoder here can write - never left out silently. The listing-validation step judges it; the release step ships it beside the packages and fills `release-manifest.store_metadata` from it, which is what gate G6's `store_metadata_complete` guard reads.",
+
+  "x-wgf": {
+    "id": "store-listing",
+    "kind": "artifact",
+    "format": "json",
+    "version": "1.0.0",
+    "producer": "release:store-listing",
+    "consumers": ["release:store-listing", "release:draft", "release:approved", "release:validating", "release:submitting"],
+    "repo_path": "<game-repo>/release/<release-id>/listing/listing.json",
+    "run_path": "<storage>/workflows/<run-id>/artifacts/store-listing/v<n>.json",
+    "required_for_gates": ["G6"]
+  },
+
+  "type": "object",
+  "required": ["provenance", "title_id", "commit", "measurement_class", "status", "package_dir", "facts", "copy", "branding", "screenshots", "trailer", "platforms", "capture", "problems"],
+  "properties": {
+    "provenance": { "$ref": "shared/provenance.schema.json#/$defs/provenance" },
+    "title_id": { "type": "string" },
+    "commit": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{40}$",
+      "description": "The verified commit whose build was captured: the qa-report's and verification-report's, and the checkout's HEAD at capture."
+    },
+    "measurement_class": {
+      "const": "automation-bot",
+      "description": "Captured by a bot driving the real build through its play probe. Never a person's choice of moments."
+    },
+    "status": {
+      "enum": ["complete", "incomplete", "blocked"],
+      "description": "complete: every canonical rendition, the screenshots the package requires, the copy for every required locale and every platform rendition exist. incomplete: something required is missing or fell back; `problems` says what. blocked: nothing could be captured here (no build, no browser)."
+    },
+    "package_dir": {
+      "type": "string",
+      "description": "The package directory, relative to the run directory, forward slashes. Every `path` below is relative to the run directory too."
+    },
+    "build": {
+      "type": "object",
+      "description": "The build that was captured.",
+      "properties": {
+        "bundle_hash": { "$ref": "shared/provenance.schema.json#/$defs/hash", "description": "The verification-report's build_artifact.content_hash, recomputed from the checkout before capture." },
+        "path": { "type": "string", "description": "The bundle directory in the checkout (game.config.yaml build.output)." },
+        "served_at": { "type": "string", "description": "The local origin the build was served from during capture." }
+      },
+      "additionalProperties": false
+    },
+    "facts": { "$ref": "#/$defs/facts" },
+    "copy": {
+      "type": "object",
+      "required": ["locales", "writer", "grounding"],
+      "properties": {
+        "locales": {
+          "type": "object",
+          "description": "Keyed by locale (BCP 47 language tag, lower case).",
+          "propertyNames": { "pattern": "^[a-z]{2,3}(-[a-z0-9]{2,8})*$" },
+          "additionalProperties": { "$ref": "#/$defs/localeCopy" }
+        },
+        "writer": {
+          "type": "object",
+          "required": ["kind"],
+          "properties": {
+            "kind": { "enum": ["template", "command"], "description": "template: the Factory's own deterministic writer, from the facts alone. command: an agent host, whose texts went through the same grounding check." },
+            "argv0": { "type": "string" },
+            "model": { "type": ["string", "null"] },
+            "runs": { "type": "integer", "minimum": 0 },
+            "fallback": { "type": "boolean", "description": "True when a configured command writer failed and the template writer's texts are what shipped." }
+          },
+          "additionalProperties": false
+        },
+        "grounding": {
+          "type": "object",
+          "required": ["checked", "problems"],
+          "properties": {
+            "checked": { "type": "boolean" },
+            "claims_version": { "type": "string" },
+            "problems": { "type": "array", "items": { "$ref": "#/$defs/problem" } }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    "branding": {
+      "type": "object",
+      "required": ["method", "items"],
+      "properties": {
+        "method": {
+          "enum": ["browser-composed", "frame-derived", "none"],
+          "description": "browser-composed: icon, logo and promo laid out in the browser from the game's own assets, palette and faces. frame-derived: cropped from the best gameplay frame when no browser composition was possible. none: nothing could be made."
+        },
+        "source_asset": { "type": ["string", "null"], "description": "The runtime asset id the icon is built around (a player or icon asset), or null." },
+        "items": { "type": "array", "items": { "$ref": "#/$defs/file" } }
+      },
+      "additionalProperties": false
+    },
+    "screenshots": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "path", "sha256", "bytes", "format", "scene", "viewport", "state"],
+        "properties": {
+          "id": { "type": "string" },
+          "kind": { "const": "screenshot" },
+          "path": { "type": "string" },
+          "sha256": { "$ref": "shared/provenance.schema.json#/$defs/hash" },
+          "bytes": { "type": "integer", "minimum": 0 },
+          "format": { "type": "string" },
+          "width": { "type": "integer", "minimum": 1 },
+          "height": { "type": "integer", "minimum": 1 },
+          "source": { "type": "string" },
+          "scene": { "type": "string" },
+          "viewport": { "type": "string", "description": "landscape | portrait, or the viewport id." },
+          "state": { "type": "string", "description": "The probe state at capture." },
+          "attempt": { "type": "integer", "minimum": 1 },
+          "stats": {
+            "type": "object",
+            "properties": {
+              "mean_luminance": { "type": "number" },
+              "contrast": { "type": "number" },
+              "lit_share": { "type": "number" }
+            },
+            "additionalProperties": false
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "trailer": {
+      "type": "object",
+      "required": ["status"],
+      "properties": {
+        "status": {
+          "enum": ["recorded", "fallback", "none"],
+          "description": "recorded: a video of real play. fallback: no recording could be made here, so a deterministic frame sequence stands in (`frames`, `storyboard`); it is not a video and validation says so. none: nothing."
+        },
+        "reason": { "type": ["string", "null"] },
+        "path": { "type": "string" },
+        "sha256": { "$ref": "shared/provenance.schema.json#/$defs/hash" },
+        "bytes": { "type": "integer", "minimum": 0 },
+        "container": { "type": "string" },
+        "codec": { "type": ["string", "null"] },
+        "width": { "type": "integer", "minimum": 1 },
+        "height": { "type": "integer", "minimum": 1 },
+        "duration_s": { "type": "number", "minimum": 0 },
+        "trimmed": { "type": "boolean", "description": "Whether the recording was cut to play (loading and title removed)." },
+        "leading_ms": { "type": "integer", "minimum": 0, "description": "Milliseconds before play begins in the file; 0 when trimmed." },
+        "derived": {
+          "type": "array",
+          "description": "Other containers made from the recording, when an encoder was present.",
+          "items": { "$ref": "#/$defs/file" }
+        },
+        "storyboard": { "type": "string", "description": "fallback only: the JSON naming each frame and its time." },
+        "frames": { "type": "array", "items": { "$ref": "#/$defs/file" } }
+      },
+      "additionalProperties": false
+    },
+    "platforms": {
+      "type": "array",
+      "description": "One rendition per targeted platform, made from the canonical package under the platform profile's `store_listing` block.",
+      "items": {
+        "type": "object",
+        "required": ["platform_id", "profile_version", "spec_status", "dir", "files", "text"],
+        "properties": {
+          "platform_id": { "type": "string", "pattern": "^[a-z][a-z0-9-]*$" },
+          "profile_version": { "type": "string" },
+          "role": { "enum": ["required", "optional"] },
+          "spec_status": {
+            "enum": ["verified", "unverified", "absent"],
+            "description": "The profile's `store_listing.status`; `absent` when the profile has no block and the rendition follows the canonical package alone."
+          },
+          "dir": { "type": "string", "description": "The rendition's directory, relative to the run directory." },
+          "listing": { "type": "string", "description": "The rendition's own listing.json, relative to the run directory." },
+          "spec_hash": { "type": ["string", "null"], "description": "sha256 of the profile's `store_listing` block the rendition was made under (canonical JSON), since a profile's version does not move for that block alone." },
+          "files": { "type": "array", "items": { "$ref": "#/$defs/file" } },
+          "text": {
+            "type": "object",
+            "description": "Keyed by locale: the texts cut to this platform's limits.",
+            "additionalProperties": { "$ref": "#/$defs/localeCopy" }
+          },
+          "locales_required": { "type": "array", "items": { "type": "string" } },
+          "unmet": {
+            "type": "array",
+            "description": "Requirements of the block this rendition could not meet (a size larger than any master, a format no encoder writes), each a problem.",
+            "items": { "$ref": "#/$defs/problem" }
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "capture": {
+      "type": "object",
+      "required": ["kind"],
+      "properties": {
+        "kind": { "enum": ["browser", "none"] },
+        "attempts": { "type": "integer", "minimum": 0 },
+        "browser": { "type": ["string", "null"] },
+        "network_guard": { "enum": ["enforced", "set-not-enforced", "none"], "description": "Whether the refusing proxy governed the browser here (wgflib.netguard.enforced)." },
+        "viewports": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["id", "width", "height"],
+            "properties": {
+              "id": { "type": "string" },
+              "width": { "type": "integer", "minimum": 1 },
+              "height": { "type": "integer", "minimum": 1 },
+              "mobile": { "type": "boolean" },
+              "ran": { "type": "boolean" },
+              "page_errors": { "type": "array", "items": { "type": "string" } }
+            },
+            "additionalProperties": false
+          }
+        },
+        "records_dir": { "type": ["string", "null"], "description": "Where the raw capture (every frame taken, the recording, the capture log) is kept, relative to the run directory." },
+        "blocked_reason": { "type": ["string", "null"] }
+      },
+      "additionalProperties": false
+    },
+    "problems": {
+      "type": "array",
+      "description": "Everything that kept the package from being complete, or was made another way than intended. Empty on a complete package.",
+      "items": { "$ref": "#/$defs/problem" }
+    },
+    "workflow": { "$ref": "shared/evidence.schema.json#/$defs/workflowRef" }
+  },
+  "additionalProperties": false,
+
+  "$defs": {
+    "file": {
+      "type": "object",
+      "required": ["id", "path", "sha256", "bytes", "format"],
+      "properties": {
+        "id": { "type": "string" },
+        "kind": { "enum": ["icon", "logo", "thumbnail", "promo", "screenshot", "trailer", "frame", "text"] },
+        "path": { "type": "string", "description": "Relative to the run directory, forward slashes." },
+        "sha256": { "$ref": "shared/provenance.schema.json#/$defs/hash" },
+        "bytes": { "type": "integer", "minimum": 0 },
+        "format": { "type": "string", "description": "png | jpg | webp | webm | mp4 | json | ..." },
+        "width": { "type": "integer", "minimum": 1 },
+        "height": { "type": "integer", "minimum": 1 },
+        "source": { "type": "string", "description": "What it was made from: a canonical rendition id, a screenshot id, an asset id." },
+        "requirement": { "type": "string", "description": "The platform block entry it satisfies, when a platform rendition." }
+      },
+      "additionalProperties": false
+    },
+    "problem": {
+      "type": "object",
+      "required": ["code", "severity", "message"],
+      "properties": {
+        "code": { "type": "string", "pattern": "^[a-z][a-z0-9-]*$" },
+        "severity": { "enum": ["error", "warning", "info"] },
+        "message": { "type": "string" },
+        "subject": { "type": ["string", "null"], "description": "What it is about: a file id, a locale, a platform id, a text field." }
+      },
+      "additionalProperties": false
+    },
+    "localeCopy": {
+      "type": "object",
+      "required": ["title", "short_description", "long_description", "features", "tags"],
+      "properties": {
+        "title": { "type": "string", "minLength": 1 },
+        "subtitle": { "type": "string" },
+        "subtitle_variants": { "type": "array", "items": { "type": "string" } },
+        "short_description": { "type": "string", "minLength": 1 },
+        "long_description": { "type": "string", "minLength": 1 },
+        "features": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["text", "source"],
+            "properties": {
+              "text": { "type": "string" },
+              "source": { "type": "string", "description": "The fact id the bullet comes from (facts.sources)." }
+            },
+            "additionalProperties": false
+          }
+        },
+        "controls": { "type": "string" },
+        "tags": { "type": "array", "items": { "type": "string" } },
+        "categories": { "type": "array", "items": { "type": "string" } },
+        "promo": { "type": "array", "items": { "type": "string" } },
+        "age_rating": { "type": ["string", "null"] }
+      },
+      "additionalProperties": false
+    },
+    "facts": {
+      "type": "object",
+      "description": "What the copy is written from, each with where it was read. Nothing in the copy may rest on anything not here.",
+      "required": ["title", "sources"],
+      "properties": {
+        "title": { "type": "string" },
+        "concept": { "type": ["string", "null"] },
+        "core_loop": { "type": ["string", "null"] },
+        "objective": { "type": ["string", "null"], "description": "build_spec.experience.goal.statement: the objective in the player's words." },
+        "win": { "type": ["string", "null"] },
+        "lose": { "type": ["string", "null"] },
+        "mechanics": { "type": "array", "items": { "type": "object", "required": ["id", "name"], "properties": { "id": { "type": "string" }, "name": { "type": "string" }, "description": { "type": "string" } }, "additionalProperties": false } },
+        "features": { "type": "array", "items": { "type": "object", "required": ["id", "name"], "properties": { "id": { "type": "string" }, "name": { "type": "string" }, "description": { "type": "string" } }, "additionalProperties": false } },
+        "controls": {
+          "type": "object",
+          "properties": {
+            "primary_input": { "type": ["string", "null"] },
+            "touch": { "type": "array", "items": { "type": "string" } },
+            "mouse": { "type": "array", "items": { "type": "string" } },
+            "keyboard": { "type": "array", "items": { "type": "string" } },
+            "gamepad": { "type": "array", "items": { "type": "string" } },
+            "summary": { "type": ["string", "null"] }
+          },
+          "additionalProperties": false
+        },
+        "genre": { "type": "array", "items": { "type": "string" }, "description": "Research vocabulary genre ids, most specific first." },
+        "visual_style": { "type": ["string", "null"] },
+        "audience": { "type": ["string", "null"] },
+        "engine": { "type": "object", "properties": { "type": { "type": ["string", "null"] }, "dimension": { "type": ["string", "null"] } }, "additionalProperties": false },
+        "orientation": { "type": ["string", "null"] },
+        "session_target_s": { "type": ["number", "null"] },
+        "locales": { "type": "array", "items": { "type": "string" } },
+        "platforms": { "type": "array", "items": { "type": "string" } },
+        "capabilities": { "type": "array", "items": { "type": "string" }, "description": "Platform capabilities the sdk-report observed working or the design names as MVP: leaderboards, cloud-save, achievements, ..." },
+        "monetization": { "type": "array", "items": { "type": "string" }, "description": "Ad kinds the design places." },
+        "content_units": { "type": ["integer", "null"] },
+        "content_unit_kind": { "type": ["string", "null"] },
+        "endless": { "type": "boolean" },
+        "strings": { "type": "object", "description": "The game's own on-screen strings read from the shipped bundle's locale files, keyed by locale then key.", "additionalProperties": { "type": "object", "additionalProperties": { "type": "string" } } },
+        "sources": {
+          "type": "object",
+          "description": "Fact id -> where it was read (artifact type and JSON path, or a bundle file).",
+          "additionalProperties": { "type": "string" }
+        }
+      },
+      "additionalProperties": false
+    }
+  }
+}

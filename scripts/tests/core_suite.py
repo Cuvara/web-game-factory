@@ -15,7 +15,7 @@ SUITE = {
     "AGENTS": ["test_core_agents", "test_live_loop"],
     "CONTRACTS": ["test_core_contracts", "test_core_lineage", "test_core_template", "test_golden_fast"],
     "VERIFY": ["test_core_verify"],
-    "RELEASE": ["test_core_release"],
+    "RELEASE": ["test_core_release", "test_publish_module"],
     "2D GOLDEN": ["test_golden_2d"],
     "3D GOLDEN": ["test_golden_3d"],
     "PROCESS CLEANUP": ["test_core_process"],

@@ -10,7 +10,14 @@ Every event is a flat JSON-able dict:
      "attempt": 2, "status": "FAILED", "duration_ms": 12, "error": "...", "data": {...}}
 
 Keys that do not apply are omitted rather than null.
+
+Every record is passed through wgflib.redact before any subscriber sees it: the bus is the
+one channel a step's messages, log lines, errors and progress reports take to events.jsonl
+and the terminal, so a credential a step handled (a portal session the publish step read)
+is replaced here even when the step forgot. Redaction is the last line, not the first.
 """
+
+from .. import redact
 
 __all__ = ["Events", "EventBus", "EVENT_FORMAT"]
 
@@ -72,6 +79,7 @@ class EventBus:
     def emit(self, event, **fields):
         record = {"format": EVENT_FORMAT, "ts": self._clock(), "event": event}
         record.update({key: value for key, value in fields.items() if value is not None})
+        record = redact.scrub(record)
         for callback in list(self._subscribers):
             try:
                 callback(record)

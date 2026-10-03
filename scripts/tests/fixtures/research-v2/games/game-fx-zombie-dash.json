@@ -1,0 +1,183 @@
+{
+  "id": "game-fx-zombie-dash",
+  "name": "FX Zombie Dash",
+  "fixture": true,
+  "vocabulary_version": "1.0.0",
+  "listing_names": [
+    "FX Zombie Dash"
+  ],
+  "sessions": [
+    {
+      "id": "ts-fx-zombie-dash-a",
+      "source_uri": "https://fixtures.invalid/research-v2/crazygames/fx-zombie-dash",
+      "source_kind": "competitor-teardown",
+      "observed_at": "2026-09-20T10:00:00Z",
+      "method": "played",
+      "observer": "research (FIXTURE)",
+      "platform": "crazygames",
+      "viewport": "390x844 phone, throttled 4G",
+      "runs": 3,
+      "capture_uri": "https://fixtures.invalid/research-v2/captures/fx-zombie-dash.webm",
+      "note": "FIXTURE: played FX Zombie Dash three runs from a cold load, stopwatch on every timing."
+    }
+  ],
+  "observations": [
+    {
+      "session": "ts-fx-zombie-dash-a",
+      "facet": "genre",
+      "value": "lane-runner",
+      "coding": "observed",
+      "excerpt": "FIXTURE genre: lane-runner"
+    },
+    {
+      "session": "ts-fx-zombie-dash-a",
+      "facet": "mechanics",
+      "value": [
+        "lane-switch",
+        "dodge",
+        "collect"
+      ],
+      "coding": "observed",
+      "excerpt": "FIXTURE mechanics: ['lane-switch', 'dodge', 'collect']"
+    },
+    {
+      "session": "ts-fx-zombie-dash-a",
+      "facet": "gameplay_steps",
+      "value": [
+        "act",
+        "feedback",
+        "reward",
+        "challenge",
+        "fail",
+        "retry"
+      ],
+      "coding": "observed",
+      "excerpt": "FIXTURE gameplay_steps: ['act', 'feedback', 'reward', 'challenge', 'fail', 'retry']"
+    },
+    {
+      "session": "ts-fx-zombie-dash-a",
+      "facet": "controls",
+      "value": "swipe",
+      "coding": "observed",
+      "excerpt": "FIXTURE controls: swipe"
+    },
+    {
+      "session": "ts-fx-zombie-dash-a",
+      "facet": "theme",
+      "value": "zombies",
+      "coding": "interpreted",
+      "excerpt": "FIXTURE theme: zombies"
+    },
+    {
+      "session": "ts-fx-zombie-dash-a",
+      "facet": "setting",
+      "value": "urban-ruin",
+      "coding": "interpreted",
+      "excerpt": "FIXTURE setting: urban-ruin"
+    },
+    {
+      "session": "ts-fx-zombie-dash-a",
+      "facet": "player_fantasy",
+      "value": "survivor",
+      "coding": "interpreted",
+      "excerpt": "FIXTURE player_fantasy: survivor"
+    },
+    {
+      "session": "ts-fx-zombie-dash-a",
+      "facet": "emotional_fantasy",
+      "value": "tension-mastery",
+      "coding": "interpreted",
+      "excerpt": "FIXTURE emotional_fantasy: tension-mastery"
+    },
+    {
+      "session": "ts-fx-zombie-dash-a",
+      "facet": "art_dimension",
+      "value": "3d",
+      "coding": "observed",
+      "excerpt": "FIXTURE art_dimension: 3d"
+    },
+    {
+      "session": "ts-fx-zombie-dash-a",
+      "facet": "art_rendering",
+      "value": "low-poly",
+      "coding": "interpreted",
+      "excerpt": "FIXTURE art_rendering: low-poly"
+    },
+    {
+      "session": "ts-fx-zombie-dash-a",
+      "facet": "art_tone",
+      "value": "dark",
+      "coding": "interpreted",
+      "excerpt": "FIXTURE art_tone: dark"
+    },
+    {
+      "session": "ts-fx-zombie-dash-a",
+      "facet": "art_palette",
+      "value": "dark-glow",
+      "coding": "interpreted",
+      "excerpt": "FIXTURE art_palette: dark-glow"
+    },
+    {
+      "session": "ts-fx-zombie-dash-a",
+      "facet": "run_seconds",
+      "value": 95,
+      "coding": "observed",
+      "excerpt": "FIXTURE run_seconds: 95 (stopwatch)"
+    },
+    {
+      "session": "ts-fx-zombie-dash-a",
+      "facet": "time_to_first_play_seconds",
+      "value": 5,
+      "coding": "observed",
+      "excerpt": "FIXTURE time_to_first_play_seconds: 5 (stopwatch)"
+    },
+    {
+      "session": "ts-fx-zombie-dash-a",
+      "facet": "retention_hooks",
+      "value": [
+        "daily-challenge",
+        "missions"
+      ],
+      "coding": "observed",
+      "excerpt": "FIXTURE retention_hooks: ['daily-challenge', 'missions']"
+    },
+    {
+      "session": "ts-fx-zombie-dash-a",
+      "facet": "ad_formats",
+      "value": [
+        "rewarded",
+        "interstitial"
+      ],
+      "coding": "observed",
+      "excerpt": "FIXTURE ad_formats: ['rewarded', 'interstitial']"
+    },
+    {
+      "session": "ts-fx-zombie-dash-a",
+      "facet": "ad_triggers",
+      "value": [
+        "fail-continue",
+        "run-end"
+      ],
+      "coding": "observed",
+      "excerpt": "FIXTURE ad_triggers: ['fail-continue', 'run-end']"
+    },
+    {
+      "session": "ts-fx-zombie-dash-a",
+      "facet": "progression",
+      "value": [
+        "best-score",
+        "unlock-track"
+      ],
+      "coding": "observed",
+      "excerpt": "FIXTURE progression: ['best-score', 'unlock-track']"
+    },
+    {
+      "session": "ts-fx-zombie-dash-a",
+      "facet": "audience_type",
+      "value": "casual",
+      "coding": "interpreted",
+      "excerpt": "FIXTURE audience_type: casual"
+    }
+  ],
+  "notes": []
+}

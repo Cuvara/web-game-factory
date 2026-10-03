@@ -66,6 +66,7 @@ or Claude Code user scope, used in interactive sessions.
 | develop, QA | interactive-browser | Playwright MCP (`@playwright/mcp`) against `vite preview` on localhost; writes `build/verification/gameplay-session.json` per `playtesting.md` §A | add in Desktop | `--allowed-origins` localhost only; preview build, never the dev server |
 | QA | performance-trace | Chrome DevTools MCP (`chrome-devtools-mcp`) | add in Desktop | localhost only; traces attached to defects |
 | release | interactive-browser | Playwright MCP screenshots of the release build, for thumbnails and screenshots | add in Desktop | real build at the release commit |
+| release:submitting | (not an MCP) | The `submit` step's console executor: **direct Playwright** under `wgflib.procs`, fixed selectors from `core/reference/publication/<id>.yaml`, one submit click behind a person's G6 (`docs/publish-module.md`) | Factory step | **Playwright MCP is not the portal submission executor**: an agent re-reasoning under UI drift is the property refused on an irreversible action. MCP stays localhost QA and diagnosis |
 | release | repository-host | GitHub MCP (read) | connected | no push, repo creation or submission without instruction; G6 is human |
 | release (optional) | video-generation | Kling AI `image_to_video`, for a store trailer | connected | paid; human approval; provenance recorded |
 | live | analytics-query | BigQuery MCP; Google Drive for report storage | BigQuery **needs OAuth**, not yet authorised | read-only; per-platform reporting |

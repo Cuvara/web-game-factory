@@ -120,6 +120,36 @@ class Exclusions:
 
 # -- the built-in author -----------------------------------------------------------------
 
+def research_of(strategy):
+    """The Research V2 handoff the strategy carries, or None."""
+    research = (strategy or {}).get("research")
+    return research if isinstance(research, dict) and research.get("research_version") == 2 \
+        else None
+
+
+def usable(research, fv, facet):
+    """How a research facet may drive a design decision: "evidence" when research observed or
+    derived it, "proposal" when it is the one axis the opportunity proposes to change (a
+    hypothesis the title exists to test), else None - and the design decides it by default."""
+    fv = fv or {}
+    if fv.get("tier") in ("observed", "derived") and fv.get("value") not in (None, [], ""):
+        return "evidence"
+    intent = (research or {}).get("changed_axis") or {}
+    if intent.get("facet") == facet and fv.get("value") not in (None, [], ""):
+        return "proposal"
+    return None
+
+
+def research_art(research):
+    """{tone, palette, rendering} research supports or proposes, for the kit."""
+    out = {}
+    for key in ("tone", "palette", "rendering"):
+        fv = ((research or {}).get("art") or {}).get(key) or {}
+        if usable(research, fv, f"art_{key}") and isinstance(fv.get("value"), str):
+            out[key] = fv["value"]
+    return out
+
+
 def _subsets_clause(locales):
     """' (subsets: latin, cyrillic - en, ru)': what the font files must cover, stated so the
     asset step's coverage check and whoever builds the files read the same thing."""
@@ -141,12 +171,43 @@ class ArchetypeAuthor(DesignAuthor):
         params = brief.get("params") or {}
         title_id = brief["title_id"]
 
+        research = research_of(strategy)
+        applied = []
         try:
-            archetype_id, why_archetype = archetypes.select(strategy, params.get("archetype"))
-            kit_id, look = identity.choose(title_id, archetypes.ARCHETYPES[archetype_id]["identity_affinity"],
-                                           params.get("identity"))
+            pinned_archetype = params.get("archetype")
+            capability = (research or {}).get("capability") or {}
+            if not pinned_archetype and capability.get("buildable") and \
+                    capability.get("design_archetype") in archetypes.ARCHETYPES:
+                archetype_id = capability["design_archetype"]
+                why_archetype = (f"research's capability catalog builds this opportunity with it "
+                                 f"(entry {capability.get('catalog_entry')})")
+                applied.append({"field": "archetype", "source": "research",
+                                "detail": f"{archetype_id}: {capability.get('reason')}"})
+            else:
+                archetype_id, why_archetype = archetypes.select(strategy, pinned_archetype)
+                if research is not None:
+                    applied.append({"field": "archetype", "source": "default",
+                                    "detail": f"{archetype_id}: {why_archetype} (research named "
+                                              f"no buildable design archetype)"})
+            affinity = archetypes.ARCHETYPES[archetype_id]["identity_affinity"]
+            art = research_art(research)
+            kit_id, basis, matched = identity.pick(title_id, affinity, params.get("identity"), art)
+            look = identity.look(kit_id)
         except KeyError as exc:
             raise AuthorError(str(exc.args[0])) from None
+        if research is not None:
+            art_refs = sorted({c for k in ("tone", "palette", "rendering")
+                               for c in ((research["art"].get(k) or {}).get("claim_refs") or [])
+                               if (research["art"].get(k) or {}).get("tier") in ("observed",
+                                                                                 "derived")})
+            applied.append({"field": "art_direction", "source": "research" if basis == "research"
+                            else "default",
+                            "detail": (f"identity kit {kit_id} matches research's "
+                                       f"{', '.join(matched)}" if basis == "research" else
+                                       f"identity kit {kit_id} by {basis}: research supports no "
+                                       f"art tone, palette or rendering for this cell")})
+            if basis == "research" and art_refs:
+                applied[-1]["claim_refs"] = art_refs
         a = archetypes.ARCHETYPES[archetype_id]
         exclusions = Exclusions(strategy.get("out_of_scope") or [])
         out_of_scope = [{"item": item, "why_excluded": why} for item, why in exclusions.entries]
@@ -185,7 +246,24 @@ class ArchetypeAuthor(DesignAuthor):
         first = session_intent.get("first_session_seconds") or min(target, 180)
         audience = strategy.get("audience") or {}
         time_to_first_play = {"casual": 5, "midcore": 8, "core": 10}.get(audience.get("type"), 6)
+        measured = next((b for b in (research or {}).get("benchmarks") or []
+                         if b.get("facet") == "time_to_first_play_seconds"), None)
+        if measured and measured["median"] < time_to_first_play:
+            time_to_first_play = max(1, int(measured["median"]))
+            applied.append({"field": "build_spec.time_to_first_play_s", "source": "research",
+                            "detail": f"{time_to_first_play} s: the median of {measured['n']} "
+                                      f"comparable games beats the audience default",
+                            "claim_refs": [measured["claim"]]})
         time_to_first_reward = min(a["first_reward_s"], max(5, int(first * 0.5)))
+        rewarded = next((b for b in (research or {}).get("benchmarks") or []
+                         if b.get("facet") == "time_to_first_reward_seconds"), None)
+        if rewarded and rewarded["median"] < time_to_first_reward:
+            # The strategy's prototype_must_prove holds the title to this bar.
+            time_to_first_reward = max(1, int(rewarded["median"]))
+            applied.append({"field": "build_spec.time_to_first_reward_s", "source": "research",
+                            "detail": f"{time_to_first_reward} s: the median of "
+                                      f"{rewarded['n']} comparable games",
+                            "claim_refs": [rewarded["claim"]]})
         run = a["run_seconds"]
         units_per_session = max(1, round(target / run))
         is_level = a["structure"] == "level"
@@ -422,12 +500,62 @@ class ArchetypeAuthor(DesignAuthor):
                 + "; ".join(optional) + ". A superseding strategy admits it, or production "
                 "adds it after G4.")
 
+        for adopted in ((research or {}).get("patterns") or {}).get("adopt") or []:
+            open_questions.append(
+                f"Research: {adopted['numerator']} of {adopted['denominator']} comparable games "
+                f"show {adopted['pattern']} - adopt it, or say why not (a co-occurrence, not "
+                f"a proven effect).")
+        if research is not None and ((research.get("patterns") or {}).get("adopt")):
+            applied.append({"field": "open_questions", "source": "research",
+                            "detail": "the patterns comparable games share, put to G3 as "
+                                      "questions rather than built in unasked",
+                            "claim_refs": sorted({p["claim"] for p in
+                                                  research["patterns"]["adopt"]})})
         open_questions.insert(0, f"Archetype '{archetype_id}' was chosen because the {why_archetype}. "
                                  "Confirm at G3 that the loop is the one the strategy meant.")
 
         mvp_actions = [x for x in spec["controls"]["actions"] if x["tier"] == "mvp"]
-        return {
-            "fantasy": a["fantasy"],
+        fantasy, art_direction = a["fantasy"], f"{look['concept']} Identity kit '{kit_id}'. {look['shape_language']}"
+        if research is not None:
+            statement = research["fantasy"].get("statement")
+            theme = research["theme"]["theme"]
+            setting = research["theme"]["setting"]
+            context = ", ".join(x["label"].split(" (")[0] for x, facet in
+                                ((theme, "theme"), (setting, "setting"))
+                                if usable(research, x, facet) and x.get("label"))
+            proposed = any(usable(research, x, f) == "proposal" for x, f in
+                           ((theme, "theme"), (setting, "setting")))
+            if statement:
+                fantasy = (f"{statement}" + (f", in a {context.lower()} world" if context else "")
+                           + f". In play: {a['fantasy']}")
+                applied.append({"field": "fantasy", "source": "research",
+                                "detail": f"research fantasy: {statement}",
+                                "claim_refs": sorted(set(
+                                    (research["fantasy"]["player"].get("claim_refs") or [])
+                                    + (research["fantasy"]["emotional"].get("claim_refs") or [])))})
+            else:
+                applied.append({"field": "fantasy", "source": "default",
+                                "detail": "the archetype's fantasy: research coded no player "
+                                          "fantasy for this cell"})
+            if context:
+                art_direction = f"Theme from research: {context}. " + art_direction
+                applied.append({"field": "theme", "source": "research",
+                                "detail": (f"the opportunity's proposed theme - the hypothesis "
+                                           f"this title tests, not an observation: {context}"
+                                           if proposed else
+                                           f"theme carried into fantasy and art direction: "
+                                           f"{context}"),
+                                "claim_refs": sorted(set((theme.get("claim_refs") or [])
+                                                         + (setting.get("claim_refs") or [])))})
+            else:
+                applied.append({"field": "theme", "source": "default",
+                                "detail": "no theme: research coded none for this cell, and none "
+                                          "is invented"})
+            if basis == "research":
+                art_direction = (f"Research art direction ({', '.join(matched)}). "
+                                 + art_direction)
+        out = {
+            "fantasy": fantasy,
             "core_loop": a["core_loop"],
             "pillars": list(a["pillars"]),
             "engine": engine,
@@ -464,12 +592,16 @@ class ArchetypeAuthor(DesignAuthor):
                                   "never the only signal. Text is at least 16 CSS px at the design resolution. A "
                                   "reduced-motion setting (and prefers-reduced-motion) disables shake and flashes."),
             },
-            "art_direction": f"{look['concept']} Identity kit '{kit_id}'. {look['shape_language']}",
+            "art_direction": art_direction,
             "audio_direction": "Library music loop plus short library SFX, all compressed and loaded after first "
                                "play so audio never delays time to first play. Every cue has a visual twin.",
             "build_spec": spec,
             "open_questions": open_questions,
         }
+        if research is not None:
+            carried = {k: v for k, v in research.items() if k != "applied"}
+            out["research"] = dict(carried, applied=applied)
+        return out
 
     # -----------------------------------------------------------------------------------
 

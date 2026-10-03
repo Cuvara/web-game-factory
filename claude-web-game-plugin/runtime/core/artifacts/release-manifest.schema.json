@@ -2,17 +2,17 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://webgamefactory.dev/schemas/artifacts/release-manifest.schema.json",
   "title": "Release Manifest",
-  "description": "An immutable, versioned description of one shipment.\n\nImmutability is the point. Once frozen at RC, a release manifest never changes — any correction produces a new release. That is what makes rollback possible as an operation rather than a rebuild: rolling back means re-publishing a previous manifest, which only works if manifests are retained and trustworthy.\n\nTarget platforms carry their role (required/optional) HERE rather than in the strategy, because which platforms must succeed is a per-release policy: r1 may ship Yandex-only and r2 may add CrazyGames.\n\nSince 1.1.0 a manifest the Factory drafts also says what it rests on: the qa-report and verification-report it was cleared by, the commit every upstream report named, the evidence status per platform (PASS_MOCK and BLOCKED_EXTERNAL are carried as such, never upgraded), the audit of every package, the template revision, and the workflow run that produced it. All of it is optional, so a 1.0.0 manifest written by a game repository's own tooling still validates.",
+  "description": "An immutable, versioned description of one shipment.\n\nImmutability is the point. Once frozen at RC, a release manifest never changes — any correction produces a new release. That is what makes rollback possible as an operation rather than a rebuild: rolling back means re-publishing a previous manifest, which only works if manifests are retained and trustworthy.\n\nTarget platforms carry their role (required/optional) HERE rather than in the strategy, because which platforms must succeed is a per-release policy: r1 may ship Yandex-only and r2 may add CrazyGames.\n\nSince 1.3.0 `store_metadata` is filled from the validated store-listing the release ships beside its packages (`evidence.store_listing`, release/<release-id>/listing/). Since 1.1.0 a manifest the Factory drafts also says what it rests on: the qa-report and verification-report it was cleared by, the commit every upstream report named, the evidence status per platform (PASS_MOCK and BLOCKED_EXTERNAL are carried as such, never upgraded), the audit of every package, the template revision, and the workflow run that produced it. All of it is optional, so a 1.0.0 manifest written by a game repository's own tooling still validates.",
 
   "x-wgf": {
     "id": "release-manifest",
     "kind": "artifact",
     "format": "json",
-    "version": "1.2.0",
+    "version": "1.3.0",
     "template": "templates/release-report.md",
     "producer": "release:draft",
     "frozen_at": "release:rc",
-    "consumers": ["release:qa", "release:rc", "release:validating", "release:submitting", "title:live"],
+    "consumers": ["release:qa", "release:rc", "release:approved", "release:validating", "release:submitting", "title:live"],
     "repo_path": "<game-repo>/release/<release-id>/manifest.json",
     "run_path": "<storage>/workflows/<run-id>/artifacts/release-manifest/v<n>.json",
     "required_for_gates": ["G5", "G6"],
@@ -211,6 +211,32 @@
         "source_manifest_hash": {
           "$ref": "./shared/provenance.schema.json#/$defs/hash",
           "description": "content_hash of the manifest the game repository's own tooling wrote, which this one extends."
+        },
+        "store_listing": {
+          "type": "object",
+          "description": "Since 1.3.0. The store listing shipped with this release: the store-listing artifact, its validation, and where the package sits under release/<release-id>/. `status` is the listing's own; a release is drafted only from a complete, validated one (or none, when the workflow says `required_listing: false`).",
+          "required": ["status", "artifact_id", "content_hash", "path"],
+          "properties": {
+            "status": { "type": "string" },
+            "artifact_id": { "$ref": "./shared/provenance.schema.json#/$defs/artifactId" },
+            "content_hash": { "$ref": "./shared/provenance.schema.json#/$defs/hash" },
+            "path": { "type": "string", "description": "Relative to release/<release-id>/." },
+            "trailer": { "type": ["string", "null"] },
+            "branding": { "type": ["string", "null"] },
+            "screenshots": { "type": "integer", "minimum": 0 },
+            "validation": {
+              "type": "object",
+              "required": ["artifact_id", "content_hash", "verdict"],
+              "properties": {
+                "artifact_id": { "$ref": "./shared/provenance.schema.json#/$defs/artifactId" },
+                "content_hash": { "$ref": "./shared/provenance.schema.json#/$defs/hash" },
+                "verdict": { "type": "string" },
+                "unknown": { "type": "integer", "minimum": 0, "description": "Requirements the profiles left null: not checked, listed in the report." }
+              },
+              "additionalProperties": false
+            }
+          },
+          "additionalProperties": false
         },
         "review": {
           "type": "object",

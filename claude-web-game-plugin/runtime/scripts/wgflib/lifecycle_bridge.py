@@ -50,8 +50,13 @@ __all__ = ["LifecycleBridge", "SyncResult", "wgf_state", "PARAM"]
 # The run param the bridge obeys (api.run snapshots factory.lifecycle.sync into it).
 PARAM = "lifecycle_sync"
 
-# decision-record `decision` -> the machine event it authorizes, from the one table.
-_EVENTS = {decision: event for decision, event in CHOICES.values() if event}
+# decision-record `decision` -> the machine events it may authorize, from the one table. A
+# decision can stand for more than one event (`approved` is G2's `approve` and G6's
+# `publish`); the record's own transition (source -> target) picks the edge.
+_EVENTS = {}
+for _decision, _event in CHOICES.values():
+    if _event and _event not in _EVENTS.setdefault(_decision, []):
+        _EVENTS[_decision].append(_event)
 
 _module = None
 
@@ -231,10 +236,15 @@ class LifecycleBridge:
                               f"cursor is a {machine.name}")
         source, _, target = (record.get("transition") or "").partition("->")
         source, target = source.strip(), target.strip()
-        event = _EVENTS.get(record.get("decision"))
-        if event is None:
+        events = _EVENTS.get(record.get("decision")) or []
+        if not events:
             raise cli.Refused(f"decision {record.get('decision')!r} authorizes no edge")
         current = entity.state.get("current_state")
+        # The edge the record names: the event among the decision's that leads from the
+        # cursor to the record's target; else the decision's first event (the error names it).
+        matching = [t.event for t in machine.transitions_from(current)
+                    if t.event in events and t.target == target]
+        event = matching[0] if matching else events[0]
         if current != source:
             raise cli.Refused(f"the cursor is at {machine.name}:{current}, but the decision "
                               f"authorizes {source} -> {target}; move it there with "

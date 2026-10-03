@@ -27,19 +27,19 @@
   "platform_set": [
     {
       "id": "crazygames",
-      "profile_version": "1.0.0",
+      "profile_version": "1.1.0",
       "role": "optional",
       "rationale": "Secondary: CrazyGames is compatible from the same build; not required to ship."
     },
     {
       "id": "poki",
-      "profile_version": "1.0.0",
+      "profile_version": "1.1.0",
       "role": "required",
       "rationale": "Primary: best audience fit among compatible candidates (audience regions br, de, fr, gb, id, us; supports rewarded placements); the title is not shippable without it."
     },
     {
       "id": "yandex",
-      "profile_version": "1.0.0",
+      "profile_version": "1.1.0",
       "role": "optional",
       "rationale": "Secondary: Yandex Games is compatible from the same build; not required to ship."
     }
@@ -205,7 +205,7 @@
   "platform_compatibility": [
     {
       "id": "y8",
-      "profile_version": "1.0.0",
+      "profile_version": "1.1.0",
       "compatible": true,
       "issues": [
         "profile figures are unverified",
@@ -228,7 +228,7 @@
     },
     {
       "id": "crazygames",
-      "profile_version": "1.0.0",
+      "profile_version": "1.1.0",
       "compatible": true,
       "issues": [
         "profile figures are unverified"
@@ -255,7 +255,7 @@
     },
     {
       "id": "gamedistribution",
-      "profile_version": "1.0.0",
+      "profile_version": "1.1.0",
       "compatible": true,
       "issues": [
         "profile figures are unverified",
@@ -279,7 +279,7 @@
     },
     {
       "id": "poki",
-      "profile_version": "1.0.0",
+      "profile_version": "1.1.0",
       "compatible": true,
       "issues": [
         "profile figures are unverified"
@@ -306,7 +306,7 @@
     },
     {
       "id": "yandex",
-      "profile_version": "1.0.0",
+      "profile_version": "1.1.0",
       "compatible": true,
       "issues": [
         "profile figures are unverified"

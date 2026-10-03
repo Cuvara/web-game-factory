@@ -1,0 +1,38 @@
+# Publication profile - Yandex Games (docs/publish-module.md)
+#
+# Checked 2026-10-02 against https://yandex.com/dev/games/doc/en/console/update-game: no API
+# or CLI for uploading a draft or submitting it for moderation is documented; everything goes
+# through the Games Console (Draft tab: upload archive, Submit for moderation). Only one
+# moderation can be in progress at a time. Automated use of the console is not addressed by
+# a public document found: `automation_terms: unverified` - the publish step stops
+# HUMAN_REQUIRED before contacting the console until a person records otherwise.
+
+id: yandex
+version: 1.0.0
+status: unverified
+docs: https://yandex.com/dev/games/doc/en/
+
+submission:
+  method: console
+  automation_terms: unverified
+  console:
+    url: https://games.yandex.com/console/
+    allowed_origins: [https://games.yandex.com, https://games.yandex.ru, https://yandex.ru, https://yandex.com]
+    upload_max_mb: 100
+    upload_timeout_s: 900
+  credential:
+    kind: storage-state
+    env: WGF_PUBLISH_YANDEX_STORAGE_STATE
+    capture: >
+      A person logs into the Games Console once in a headed browser and saves the Playwright
+      storage state where the installation keeps secrets; the variable names the file.
+  human_required: [login, captcha, two-factor, terms, review]
+  constraints:
+    one_moderation_at_a_time: true
+    postpone_publication: true   # the adapter sets it: publication timing stays a person's
+    archive_root_index: true
+  verification:
+    states: [Created, Waiting for moderation, Rejected, Verified, Published]
+    submitted_states: [Waiting for moderation]
+    live_states: [Published]
+    rejected_states: [Rejected]

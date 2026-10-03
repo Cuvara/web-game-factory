@@ -28,6 +28,18 @@ theoretical one. If you remove nothing else from this methodology, keep this.
 - What is the intended session?
 - What is the MVP?
 - **What is explicitly out of scope?**
+
+## Reading the research
+
+An opportunity from a Research V2 scan carries `research`: the facet cell it proposes
+(genre, mechanics, loop, controls, theme, fantasy, art, session), each facet with its tier
+and claims or marked `unknown`; its market cells, competitors, cross-game patterns,
+measured benchmarks, monetization evidence, production profile, buildability and audience.
+Strategy carries it whole into `title-strategy.research` - nothing is dropped and nothing
+unknown is filled in - and decides from it what it has evidence for: the control scheme
+comparable games were coded with, a session target from their measured run lengths, the
+audience type, a first-reward bar for `prototype_must_prove`. `research.applied` records
+each such decision, and each one that fell back to a default because research had nothing.
 - How long do we give it?
 - What must the prototype prove?
 - What would make us stop?

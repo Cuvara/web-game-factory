@@ -2,17 +2,18 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://webgamefactory.dev/schemas/artifacts/platform-publication.schema.json",
   "title": "Platform Publication",
-  "description": "The status of one release on one platform. Publication is not atomic — Yandex can reject what CrazyGames approved — so each (release × platform) pair carries its own state, and the release computes its quorum from these.\n\nThe rejection path is the important one. A rejection MUST emit a compliance finding that versions the platform profile, either as a new assertion or an entry in review.common_rejections. A rejection that only sets a status field teaches the factory nothing, and the next title hits the same wall. This is the highest-return feedback loop in the system.",
+  "description": "The status of one release on one platform. Publication is not atomic — Yandex can reject what CrazyGames approved — so each (release × platform) pair carries its own state, and the release computes its quorum from these.\n\nThe rejection path is the important one. A rejection MUST emit a compliance finding that versions the platform profile, either as a new assertion or an entry in review.common_rejections. A rejection that only sets a status field teaches the factory nothing, and the next title hits the same wall. This is the highest-return feedback loop in the system.\n\nSince 1.1.0 the record also carries what the Factory's own publication steps established: a `readiness` (READY, BLOCKED, HUMAN_REQUIRED, UNKNOWN) computed at release:validating from the publication guards, an `outcome` of the last publication attempt at release:submitting, the `submission` method and its idempotency key and portal draft id, every piece of evidence (hashed, redacted), and a `measurement_class` saying who observed the portal state. `state` is set only from an observed portal state, never from the success of a click; a state the step could not observe stays where it was and the outcome says `UNKNOWN`. Every 1.1.0 field is optional, so a 1.0.0 record written by hand still validates.",
 
   "x-wgf": {
     "id": "platform-publication",
     "kind": "artifact",
     "format": "json",
-    "version": "1.0.0",
+    "version": "1.1.0",
     "producer": "release:validating",
     "updated_by": ["release:submitting"],
-    "consumers": ["release:submitting", "release:partially-live", "title:live"],
+    "consumers": ["release:approved", "release:submitting", "release:partially-live", "title:live"],
     "repo_path": "<game-repo>/release/<release-id>/publications/<platform-id>.json",
+    "run_path": "<storage>/workflows/<run-id>/artifacts/platform-publication/v<n>.json",
     "updates": "core/reference/platforms/<platform-id>.yaml"
   },
 
@@ -28,7 +29,28 @@
     "role": { "enum": ["required", "optional"] },
 
     "state": {
-      "enum": ["pending", "packaged", "validated", "validation-failed", "submitted", "in-review", "live", "rejected", "withdrawn"]
+      "enum": ["pending", "packaged", "validated", "validation-failed", "submitted", "in-review", "live", "rejected", "withdrawn"],
+      "description": "The platform-publication machine's state. Advanced by an observed portal state or a person's record; never by a click that returned."
+    },
+
+    "readiness": {
+      "enum": ["READY", "BLOCKED", "HUMAN_REQUIRED", "UNKNOWN"],
+      "description": "Since 1.1.0. What release:validating established about publishing this release here: READY (every publication guard GREEN and the package validated), BLOCKED (a guard RED, an assertion breached, a package missing), HUMAN_REQUIRED (publishable only by a person: no automated submission method, terms of automated console use unconfirmed, a credential nobody captured), UNKNOWN (a guard could not be evaluated). A publication step never proceeds on BLOCKED, HUMAN_REQUIRED or UNKNOWN; UNKNOWN is never read as READY."
+    },
+
+    "guards": {
+      "type": "array",
+      "description": "Since 1.1.0. The lifecycle guards release:validating evaluated for this platform (release.machine.yaml, platform-publication.machine.yaml), with their verdicts.",
+      "items": {
+        "type": "object",
+        "required": ["guard", "verdict", "reason"],
+        "properties": {
+          "guard": { "type": "string", "pattern": "^[a-z][a-z0-9_]*$" },
+          "verdict": { "enum": ["GREEN", "RED", "UNKNOWN"] },
+          "reason": { "type": "string" }
+        },
+        "additionalProperties": false
+      }
     },
 
     "assertion_results": {
@@ -37,10 +59,45 @@
       "items": { "$ref": "./shared/criteria-expression.schema.json#/$defs/criterionResult" }
     },
 
+    "package": {
+      "type": "object",
+      "description": "Since 1.1.0. The package this record is about, as the release manifest lists it and as validating found it on disk.",
+      "properties": {
+        "filename": { "type": "string" },
+        "size_mb": { "type": "number" },
+        "checksum": { "$ref": "./shared/provenance.schema.json#/$defs/hash" },
+        "content_digest": { "$ref": "./shared/provenance.schema.json#/$defs/hash" },
+        "verified_on_disk": { "type": "boolean", "description": "The file exists in the checkout and its sha256 equals `checksum`." }
+      },
+      "additionalProperties": false
+    },
+
     "submission": {
       "type": "object",
-      "description": "Submission is a human checklist plus this record — no portal APIs are integrated. The machine's value here is structure and learning, not automation.",
+      "description": "How this release reaches the portal. Before 1.1.0: a human checklist plus this record. Since 1.1.0 the Factory's publish step may carry it out through a platform adapter - an API where the portal publishes one, a deterministic browser run of the portal's console where it does not - and records here what it did, keyed so that a second attempt finds the first.",
       "properties": {
+        "method": {
+          "enum": ["api", "cli", "console", "email", "manual"],
+          "description": "Since 1.1.0. How the submission is made: api/cli through the portal's own tooling, console through a deterministic browser run of its developer console, email or manual by a person."
+        },
+        "publication_profile_version": { "type": "string", "description": "Since 1.1.0. The core/reference/publication/<platform-id>.yaml version the adapter followed." },
+        "idempotency_key": {
+          "type": "string",
+          "description": "Since 1.1.0. Deterministic for (run, release manifest hash, platform). Written into the portal draft's name or note, and looked up before any upload, so a crash or retry finds the draft it already made."
+        },
+        "portal_draft_id": { "type": ["string", "null"], "description": "Since 1.1.0. The draft, build or game id the portal assigned, read from the console or API after the upload; recorded before any submit." },
+        "dry_run": { "type": "boolean", "description": "Since 1.1.0. True when the publish step stopped before the irreversible submit by policy (factory.publish.mode)." },
+        "attempts": { "type": "integer", "minimum": 0, "description": "Since 1.1.0. Publication attempts made in this run for this platform." },
+        "authorized_by": {
+          "type": "object",
+          "description": "Since 1.1.0. The G6 decision the submit was checked against: its artifact id and the release-manifest hash it pinned.",
+          "required": ["decision_record", "release_manifest_hash"],
+          "properties": {
+            "decision_record": { "type": "string" },
+            "release_manifest_hash": { "$ref": "./shared/provenance.schema.json#/$defs/hash" }
+          },
+          "additionalProperties": false
+        },
         "submitted_at": { "type": "string", "format": "date-time" },
         "submitted_by": { "type": "string" },
         "package_filename": { "type": "string" },
@@ -61,6 +118,64 @@
       },
       "additionalProperties": false
     },
+
+    "outcome": {
+      "enum": ["UNKNOWN", "READY", "BLOCKED", "HUMAN_REQUIRED", "SUBMITTING", "SUBMITTED", "VERIFIED", "RETRYABLE_FAILURE", "PLATFORM_ERROR", "AUTH_REQUIRED", "CAPTCHA_REQUIRED", "INVALID_BUILD", "INVALID_METADATA", "REJECTED", "DRY_RUN"],
+      "description": "Since 1.1.0. The last publication attempt's result in the one vocabulary every adapter maps its platform's failures into. SUBMITTED means the portal was observed holding the submission; VERIFIED that its state was read back after; UNKNOWN that the portal state could not be observed - never a success."
+    },
+
+    "human_required": {
+      "type": "object",
+      "description": "Since 1.1.0. Present when a person must act before publication continues, and why. The step stopped here; it never worked around it.",
+      "required": ["reason", "detail"],
+      "properties": {
+        "reason": { "enum": ["login", "captcha", "two-factor", "security-challenge", "terms-unconfirmed", "no-automated-method", "credential-missing", "ambiguous-portal-state", "platform-rejection", "manual-submission"] },
+        "detail": { "type": "string" },
+        "resume_with": { "type": "string", "description": "What a person does next, e.g. `wgf decide <run> done` after submitting by hand." }
+      },
+      "additionalProperties": false
+    },
+
+    "verified_state": {
+      "type": "object",
+      "description": "Since 1.1.0. The portal's own state as the adapter read it back after acting - the only thing `state` is ever advanced from.",
+      "required": ["observed", "at", "source"],
+      "properties": {
+        "observed": { "type": "string" },
+        "at": { "type": "string", "format": "date-time" },
+        "source": { "type": "string", "description": "Where it was read: a console page's status text, an API response field." },
+        "url": { "type": "string" }
+      },
+      "additionalProperties": false
+    },
+
+    "evidence": {
+      "type": "array",
+      "description": "Since 1.1.0. What was observed, hashed and redacted. A screenshot is cited by run-relative path and sha256; text read from the console is kept after redaction; nothing here ever carries a credential.",
+      "items": {
+        "type": "object",
+        "required": ["kind", "summary"],
+        "properties": {
+          "kind": { "enum": ["command", "file", "observation", "artifact", "reference", "screenshot", "console-text", "guard"] },
+          "summary": { "type": "string", "minLength": 1 },
+          "phase": { "type": "string" },
+          "path": { "type": "string", "description": "Relative to the run's directory." },
+          "content_hash": { "$ref": "./shared/provenance.schema.json#/$defs/hash" },
+          "command": { "type": "string" },
+          "exit_code": { "type": ["integer", "null"] },
+          "output_tail": { "type": "string" },
+          "data": { "type": "object" }
+        },
+        "additionalProperties": false
+      }
+    },
+
+    "measurement_class": {
+      "enum": ["automation-check", "automation-console", "automation-api", "human"],
+      "description": "Since 1.1.0. Who observed what this record says: the validating step's deterministic checks, a browser run of the console, an API, or a person. A portal's moderation verdict is never an automation observation."
+    },
+
+    "workflow": { "$ref": "./shared/evidence.schema.json#/$defs/workflowRef" },
 
     "review": {
       "type": "object",
@@ -119,6 +234,14 @@
     {
       "if": { "properties": { "state": { "const": "live" } }, "required": ["state"] },
       "then": { "required": ["live_url"] }
+    },
+    {
+      "if": { "properties": { "outcome": { "const": "HUMAN_REQUIRED" } }, "required": ["outcome"] },
+      "then": { "required": ["human_required"] }
+    },
+    {
+      "if": { "properties": { "outcome": { "enum": ["SUBMITTED", "VERIFIED"] } }, "required": ["outcome"] },
+      "then": { "required": ["verified_state", "submission"] }
     }
   ]
 }

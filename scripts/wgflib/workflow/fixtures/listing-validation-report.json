@@ -1,0 +1,21 @@
+{
+  "title_id": "mock-title",
+  "commit": "0000000000000000000000000000000000000000",
+  "listing": {"artifact_id": "wgf:store-listing:mock-title:20260101-01", "content_hash": "sha256:0000000000000000000000000000000000000000000000000000000000000000", "status": "complete"},
+  "verdict": "PASS",
+  "sections": {"assets": "PASS", "metadata": "PASS", "screenshots": "PASS", "video": "PASS", "grounding": "PASS", "platforms": "PASS"},
+  "checks": [
+    {"id": "screenshots.count", "section": "screenshots", "status": "PASS", "required": true, "summary": "3 screenshot(s) (mock)", "fix": "recapture"},
+    {"id": "grounding.en", "section": "grounding", "status": "PASS", "required": true, "summary": "no unbacked claim (mock)", "locale": "en", "fix": "rewrite"},
+    {"id": "platforms.yandex.locale:ru", "section": "platforms", "status": "PASS", "required": true, "summary": "yandex: texts in ru present (mock)", "platform_id": "yandex", "locale": "ru", "fix": "configure"}
+  ],
+  "platform_requirements": [
+    {"platform_id": "yandex", "profile_version": "1.1.0", "role": "required", "spec_status": "unverified", "status": "PASS", "failed": [], "unknown": ["text:title"], "warnings": []},
+    {"platform_id": "crazygames", "profile_version": "1.1.0", "role": "optional", "spec_status": "unverified", "status": "PASS", "failed": [], "unknown": ["text:title"], "warnings": []}
+  ],
+  "failed": [],
+  "unknown": ["platforms.yandex.text:title", "platforms.crazygames.text:title"],
+  "warnings": [],
+  "routes": [],
+  "blocked_reason": null
+}

@@ -1,0 +1,75 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://webgamefactory.dev/schemas/artifacts/shared/research-vocabulary.schema.json",
+  "title": "Research Vocabulary",
+  "description": "Validates core/reference/research-vocabulary.yaml: the shared, versioned codes every researched game is described in (genre tree, market descriptors, facets and their value lists). One vocabulary is what makes games in a corpus comparable, and therefore countable.",
+
+  "x-wgf": {
+    "id": "research-vocabulary",
+    "kind": "reference",
+    "format": "yaml",
+    "instance_path": "core/reference/research-vocabulary.yaml",
+    "consumers": ["portfolio:market-scan", "title:strategy", "title:design"]
+  },
+
+  "type": "object",
+  "required": ["version", "genres", "descriptors", "facets", "vocabularies", "session_bands"],
+  "properties": {
+    "version": { "type": "string", "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$" },
+    "genres": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/node" } },
+    "descriptors": { "type": "array", "items": { "$ref": "#/$defs/node" } },
+    "facets": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["id", "kind", "label"],
+        "properties": {
+          "id": { "type": "string", "pattern": "^[a-z][a-z0-9_]*$" },
+          "kind": { "enum": ["one", "many", "number"] },
+          "values": { "type": "string", "description": "`genres`, `descriptors`, or a key of `vocabularies`. Required unless kind is number." },
+          "unit": { "type": "string" },
+          "label": { "type": "string" }
+        },
+        "additionalProperties": false,
+        "allOf": [
+          { "if": { "properties": { "kind": { "const": "number" } }, "required": ["kind"] },
+            "then": { "required": ["unit"] },
+            "else": { "required": ["values"] } }
+        ]
+      }
+    },
+    "vocabularies": {
+      "type": "object",
+      "additionalProperties": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/node" } }
+    },
+    "session_bands": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["id", "max_seconds"],
+        "properties": { "id": { "type": "string" }, "max_seconds": { "type": "number" } },
+        "additionalProperties": false
+      }
+    }
+  },
+  "additionalProperties": false,
+
+  "$defs": {
+    "node": {
+      "type": "object",
+      "required": ["id", "label"],
+      "properties": {
+        "id": { "type": "string", "pattern": "^[a-z0-9][a-z0-9.-]*$" },
+        "label": { "type": "string" },
+        "parent": { "type": "string" },
+        "aliases": { "type": "array", "items": { "type": "string" } },
+        "cost": { "enum": ["xs", "s", "m", "l", "xl"], "description": "Production cost class of this value (art renderings, animation classes)." },
+        "control_scheme": { "enum": ["one-touch", "tap", "swipe", "drag", "point-and-click", "keyboard"], "description": "The title-strategy control scheme this control maps to." },
+        "strategy_type": { "enum": ["casual", "midcore", "core"], "description": "The title-strategy audience type this player type maps to." }
+      },
+      "additionalProperties": false
+    }
+  }
+}

@@ -6,13 +6,13 @@
   "platform_set": [
     {
       "id": "yandex",
-      "profile_version": "1.0.0",
+      "profile_version": "1.1.0",
       "role": "required",
       "rationale": "Primary audience and the only targeted portal with both rewarded video and a matching category."
     },
     {
       "id": "crazygames",
-      "profile_version": "1.0.0",
+      "profile_version": "1.1.0",
       "role": "optional",
       "rationale": "Cheap secondary once the build exists; no IAP dependency to unwind."
     }

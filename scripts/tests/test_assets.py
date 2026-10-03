@@ -203,6 +203,27 @@ class Requirements(AssetsCase):
         self.assertTrue(AssetPipeline._authorable(by_id["save-vfx"]))
         self.assertFalse(AssetPipeline._authorable(by_id["stadium-backdrop"]))
 
+    def test_a_3d_sky_texture_is_a_flat_background_the_2d_author_draws(self):
+        # sky-marble, 2026-10-03: the skybox (type texture, role background, dimension 3d)
+        # stayed a 3D `texture`, which no producer makes: a procedural placeholder on every
+        # assets visit, and production-quality refused it every time.
+        from wgf_assets.pipeline import AssetPipeline
+        body = fixture("design-3d.json")
+        body["build_spec"] = dict(body.get("build_spec") or {}, assets=[
+            {"id": "skybox", "type": "texture", "role": "background", "dimension": "3d",
+             "tier": "mvp", "description": "Dusk gradient sky with a low sun disc",
+             "spec": "Shader gradient, a sun disc and fog colour match"},
+            {"id": "ground-detail", "type": "texture", "role": "prop", "dimension": "3d",
+             "tier": "mvp", "spec": "A tiling grass texture for the island tops"}])
+        design = with_provenance(body, "game-design", body["title_id"])
+        reqs, _dimension = inspect(design, self.policy)
+        by_id = {r.id: r for r in reqs}
+        self.assertEqual((by_id["skybox"].kind, by_id["skybox"].dimension), ("background", "2d"))
+        self.assertTrue(AssetPipeline._authorable(by_id["skybox"]))
+        # A surface texture is still a 3D texture: only a sky or backdrop is a flat drawing.
+        self.assertEqual(by_id["ground-detail"].kind, "texture")
+        self.assertFalse(AssetPipeline._authorable(by_id["ground-detail"]))
+
     def test_a_design_without_requirements_gets_a_derived_baseline(self):
         design = self.design()
         del design["asset_requirements"]

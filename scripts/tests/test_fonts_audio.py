@@ -237,6 +237,30 @@ class TheComposer(unittest.TestCase):
             rendered[name] = out
         self.assertEqual(len({tuple(v[:200]) for v in rendered.values()}), len(rendered))
 
+    def test_a_looping_cue_is_always_a_seamless_loop(self):
+        # sky-marble, 2026-10-03: "Rolling rumble: pitch and level follow speed, cut out when
+        # airborne, a soft thud on landing" matched the one-shot `drop` (thud, landing) and
+        # shipped 0.5 s, failing audio.duration and both seam checks on every visit.
+        song = music.Song(style.brief_for(_design(), title_id="x"))
+        words = {"sfx", "roll", "rolling", "rumble", "pitch", "level", "speed", "airborne",
+                 "soft", "thud", "on", "landing"}
+        self.assertEqual(sfx.role(words, {"sfx", "roll"}), "drop")    # as a one-shot
+        cases = ((words, {"sfx", "roll"}, "rumble"),
+                 ({"sfx", "wind", "gust"}, {"sfx", "wind"}, "rumble"),
+                 ({"sfx", "laser", "hit"}, {"sfx", "laser"}, "engine"),
+                 ({"sfx", "engine", "hum"}, {"sfx", "engine"}, "engine"))
+        for cue, primary, expected in cases:
+            out, info = sfx.render_sfx(cue, song, 22050, loop=True, primary=primary)
+            self.assertEqual(info["recipe"], expected, cue)
+            stats = measure.stats([out], 22050, loop=True, loudness=False)
+            self.assertGreaterEqual(stats["duration_s"], 1.0)
+            self.assertLessEqual(stats["seam"]["ratio"], 8)
+            self.assertLessEqual(stats["seam"]["edge_db"], 6)
+            self.assertAlmostEqual(stats["peak_dbfs"], -1.0, delta=0.05)
+        # Not looping, the same words stay the one-shot they name.
+        out, info = sfx.render_sfx(words, song, 22050, loop=False, primary={"sfx", "roll"})
+        self.assertEqual(info["recipe"], "drop")
+
     def test_cue_kinds(self):
         design = _design(music_entries=[
             {"id": "music-drive", "type": "music", "description": "Flight loop, 60 s"},

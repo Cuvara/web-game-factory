@@ -8,7 +8,10 @@ the first recipe whose words match (RECIPES, in order). Every tonal recipe plays
 song's key on the song's instruments - a toybox game's reward is a marimba-and-bell chime in
 its key, a synthwave game's a saw-brass stab - so the effects sit with the music. Mono,
 normalised to -1 dBFS peak, the tail faded; a looping cue (an engine) is built from partials
-that complete whole cycles in the loop, so it repeats without a click.
+that complete whole cycles in the loop, so it repeats without a click. A looping cue is always
+rendered by a loop recipe: a rolling or rumbling one by `rumble`, anything else by `engine` -
+never a one-shot that its other words name (a "rolling rumble ... soft thud on landing" was
+rendered as a 0.5 s drop and failed every loop check, sky-marble 2026-10-03).
 """
 
 import math
@@ -16,7 +19,7 @@ import math
 from . import dsp
 from .voices import Voices
 
-__all__ = ["RECIPES", "role", "render_sfx"]
+__all__ = ["RECIPES", "LOOP_RECIPES", "role", "render_sfx"]
 
 # (recipe, words) - the first match wins; "blip" when none does.
 RECIPES = (
@@ -41,6 +44,12 @@ RECIPES = (
     ("tap", {"tap", "click", "button", "ui", "menu", "select", "toggle", "confirm", "back",
              "press"}),
 )
+
+
+# Recipes that are seamless loops, and the words that pick `rumble` for a looping cue.
+LOOP_RECIPES = ("engine", "rumble")
+RUMBLE_WORDS = {"roll", "rolling", "rumble", "rumbling", "grind", "grinding", "wind", "rain",
+                "whirr", "whir", "rattle", "gravel", "surf", "waves"}
 
 
 def role(words, primary=()):
@@ -78,8 +87,8 @@ def render_sfx(words, song, rate=44100, *, loop=False, seed=0, primary=()):
     """(samples, info): one mono effect for a cue described by `words` (`primary`: the
     words of its id, which decide first)."""
     recipe = role(words, primary)
-    if loop and recipe == "blip":
-        recipe = "engine"
+    if loop and recipe not in LOOP_RECIPES:
+        recipe = "rumble" if (set(words) | set(primary)) & RUMBLE_WORDS else "engine"
     voices = Voices(rate, dsp.Rng(song.brief.seed * 31 + seed))
     style = song.brief.style
     tonal = {"synthwave": "saw", "electro": "saw", "chiptune": "chip", "toybox": "mallet",
@@ -331,6 +340,30 @@ def _tick(voices, song, rate, tonal):
     wave = dsp.osc("sine", dsp.midi_hz(_scale_note(song, 4, 6)), n, rate)
     _place(out, dsp.mul(wave, dsp.hit(n, rate, decay=0.05, peak=0.6)), 0, rate)
     return out
+
+
+def _rumble(voices, song, rate, tonal):
+    """A 2 s seamless rolling rumble: band-limited noise (a quarter of the loop, its seam
+    crossfaded, repeated and filtered circularly), a low tonic hum on whole cycles, and a
+    4 Hz roll flutter (8 whole cycles in the loop)."""
+    length = 2.0
+    n = int(length * rate)
+    quarter = n // 4
+    noise = voices.rng.noise(quarter, rate)
+    fade = int(0.005 * rate)
+    for i in range(fade):
+        k = i / fade
+        noise[i] = noise[i] * k + noise[quarter - fade + i] * (1 - k)
+    noise = noise * 4
+    n = len(noise)
+    low = dsp.biquad(noise + noise, "lowpass", 380, rate)[n:]
+    body = dsp.biquad(noise + noise, "bandpass", 160, rate, q=0.7)[n:]
+    base = round(dsp.midi_hz(_scale_note(song, 0, 1)) * 2) / 2.0
+    two_pi = 2 * math.pi
+    w = two_pi * base / rate
+    return [(0.6 * a + 0.5 * b + 0.15 * math.sin(w * i))
+            * (1.0 + 0.35 * math.sin(two_pi * 4.0 * i / rate))
+            for i, (a, b) in enumerate(zip(low, body))]
 
 
 def _engine(voices, song, rate, tonal):

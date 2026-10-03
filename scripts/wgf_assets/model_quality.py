@@ -34,6 +34,7 @@ Standard library only.
 
 import math
 import os
+import re
 import struct
 
 from wgflib import paths, yamllite
@@ -41,7 +42,7 @@ from wgflib import paths, yamllite
 from . import gltf, modelspec
 
 __all__ = ["QUALITY_PATH", "DEFAULT_BARS", "load_bars", "analyse", "classify",
-           "primitive_only", "assess", "palette_colours"]
+           "primitive_only", "round_body", "assess", "palette_colours"]
 
 QUALITY_PATH = os.path.join(paths.REFERENCE, "asset-quality.yaml")
 DEFAULT_BARS = {
@@ -54,6 +55,9 @@ DEFAULT_BARS = {
     "palette_distance": 48,
     "silhouette_roles": ["player", "threat"],
     "max_dominance": 0.6,
+    "round_body": {"words": ["ball", "marble", "sphere", "orb", "bubble", "globe", "planet"],
+                   "min_fill": 0.62, "max_fill": 0.86, "max_aspect": 1.18, "min_parts": 2,
+                   "visible_reach": 0.9},
     "min_contrast_share": {"player": 0.5, "collectible": 0.4, "threat": 0.25, "hazard": 0.25},
 }
 _COMPONENT = {5120: ("b", 1), 5121: ("B", 1), 5122: ("h", 2), 5123: ("H", 2),
@@ -299,7 +303,8 @@ def analyse(data, *, tolerance=0.02, name="model"):
                 pieces.append({"node": node.get("name") or f"nodes[{index}]",
                                "shape": classify(points, tolerance),
                                "vertices": len(points), "triangles": triangles,
-                               "dimensions": [round(hi[k] - lo[k], 4) + 0.0 for k in range(3)]})
+                               "dimensions": [round(hi[k] - lo[k], 4) + 0.0 for k in range(3)],
+                               "_placed": [gltf._apply(matrix, p) for p in points]})
     colours = []
     for i in sorted(used_materials):
         if i >= len(materials):
@@ -315,9 +320,23 @@ def analyse(data, *, tolerance=0.02, name="model"):
                                                for c in emissive]),
                         "area": round(surface.get(i, 0.0), 6),
                         "textured": isinstance(pbr.get("baseColorTexture"), dict)})
+    _reach(pieces)
     return {"pieces": pieces, "mesh_nodes": mesh_nodes, "normals": normals and mesh_nodes > 0,
             "decoded": decoded, "materials": colours,
             "silhouette": silhouette(world) if decoded and world else None}
+
+
+def _reach(pieces):
+    """Each piece's `reach`: its farthest vertex from the centre of the whole model's
+    bounding box, in model space - a part of a ball that never reaches its surface is hidden
+    inside it (round_body)."""
+    placed = [p.pop("_placed") for p in pieces]
+    points = [q for group in placed for q in group]
+    if not points:
+        return
+    centre = [(min(q[k] for q in points) + max(q[k] for q in points)) / 2.0 for k in range(3)]
+    for piece, group in zip(pieces, placed):
+        piece["reach"] = round(max(math.dist(q, centre) for q in group), 4) if group else 0.0
 
 
 def _area(a, b, c):
@@ -454,6 +473,7 @@ def silhouette(triangles, grid=SILHOUETTE_GRID):
     (each 0..1):
 
         fill       the outline's share of its bounding rectangle
+        aspect     that rectangle's longer side over its shorter (1 or more)
         block      the largest rectangle inside the outline, over the outline
         part       the largest single part's outline, over the outline
         dominance  `part` when the model has several parts; `block` when it is one mesh (a
@@ -478,6 +498,7 @@ def silhouette(triangles, grid=SILHOUETTE_GRID):
             continue
         measures = {
             "fill": round(len(union) / float(width * height), 3),
+            "aspect": round(max(width, height) / float(min(width, height)), 3),
             "block": round(_largest_rectangle(union, width, height) / float(len(union)), 3),
             "part": round(max(len(m) for m in masks.values()) / float(len(union)), 3),
         }
@@ -533,16 +554,81 @@ def primitive_only(pieces, bars=None):
     return not composed
 
 
+def _requirement_text(requirement):
+    if requirement is None:
+        return ""
+    get = requirement.get if isinstance(requirement, dict) \
+        else (lambda key: getattr(requirement, key, None))
+    return " ".join(str(get(key)) for key in ("description", "readability", "spec")
+                    if isinstance(get(key), str))
+
+
+def round_body(requirement, pieces, outline, bars=None):
+    """(word, reason) when the model is a round body (asset-quality.yaml `models.round_body`):
+    its requirement names one, its outline is a disk in all three views and it is composed or
+    modelled; (None, why not) otherwise. Every condition is required."""
+    bars = bars or DEFAULT_BARS
+    rule = bars.get("round_body") if isinstance(bars.get("round_body"), dict) else None
+    if not rule:
+        return None, "no round_body rule"
+    text = _requirement_text(requirement).lower()
+    word = next((w for w in rule.get("words") or []
+                 if re.search(r"(?<![a-z0-9])" + re.escape(str(w).lower()) + r"(e?s)?(?![a-z0-9])",
+                              text)), None)
+    if word is None:
+        return None, "the requirement names no round body"
+    named = f"the requirement names a {word}, but"
+    views = (outline or {}).get("views") or {}
+    lo, hi = float(rule.get("min_fill", 0.7)), float(rule.get("max_fill", 0.86))
+    longest = float(rule.get("max_aspect", 1.18))
+    measured = [v for v in views.values() if v is not None]
+    if len(measured) < 3 or len(views) < 3:
+        return None, f"{named} the outline is not measured in all three views"
+    off = [f"{name} (fill {float(v.get('fill', 0)):.2f}, aspect {float(v.get('aspect', 99)):.2f})"
+           for name, v in sorted(views.items())
+           if not (lo <= float(v.get("fill", 0)) <= hi and float(v.get("aspect", 99)) <= longest)]
+    if off:
+        return None, (f"{named} its outline is not a disk in the {', '.join(off)} view(s); a "
+                      f"round body's outline fills {lo:g}-{hi:g} of its rectangle and is at "
+                      f"most {longest:g} to 1 in every view: keep it round - every part inside "
+                      f"the ball's disk, nothing widening or stretching it")
+    if not pieces:
+        return None, f"{named} it has no pieces"
+    # Only a piece that reaches the ball's surface shows: a band or core sunk inside the shell
+    # composes nothing a player sees.
+    outer = max(float(p.get("reach", 0.0)) for p in pieces) or 1.0
+    share = float(rule.get("visible_reach", 0.9))
+    visible = [p for p in pieces if float(p.get("reach", outer)) >= share * outer]
+    largest = max(max(p["dimensions"]) for p in visible) or 1.0
+    signatures = {(p["shape"], tuple(sorted(round(d / largest, 2) for d in p["dimensions"])))
+                  for p in visible}
+    need = int(rule.get("min_parts", 2))
+    if len(visible) < need or len(signatures) < 2:
+        hidden = len(pieces) - len(visible)
+        return None, (f"{named} " + (f"{hidden} of its {len(pieces)} pieces are hidden inside "
+                                     f"it (reaching under {share:g} of its radius) and "
+                                     if hidden else "")
+                      + f"a lone shell (or copies of one piece) is what shows: compose it of at "
+                        f"least {need} different pieces on its surface - a shell and a swirl "
+                        f"band, a core showing through a rim")
+    fills = [float(v["fill"]) for v in measured]
+    return word, (f"a round body: the requirement names a {word}, its outline is a disk in "
+                  f"every view (fill {min(fills):.2f}-{max(fills):.2f}) and {len(visible)} "
+                  f"different pieces show on its surface (asset-quality.yaml "
+                  f"models.round_body)")
+
+
 # -- the verdict ----------------------------------------------------------------------------
 
 def assess(data, *, role=None, visual_identity=None, spec=None, kind="model", name="model",
-           bars=None, policy=None, author=None, inspection=None):
+           bars=None, policy=None, author=None, inspection=None, requirement=None):
     """{quality, geometry, findings}: the manifest `quality` block for a GLB, the geometry it
     was judged on, and the inspector's and the spec's findings [(code, severity, message)].
 
     `spec` is the model spec (buildable or an expectation): its declared fit, clips, budget
     and part count are held against the file. `policy` is the asset policy (for the kind's
-    budgets; optional)."""
+    budgets; optional). `requirement` is the design's asset requirement (description,
+    readability, spec): what tells a round body from a blob (`round_body`)."""
     bars = dict(DEFAULT_BARS, **(bars or load_bars()))
     inspection = inspection or gltf.inspect(data, name=name, kind=kind)
     kind_policy = policy.kind(kind) if policy is not None else None
@@ -633,10 +719,18 @@ def assess(data, *, role=None, visual_identity=None, spec=None, kind="model", na
     styled = bool((visual_identity or {}).get("primitive_style")) \
         if isinstance(visual_identity, dict) else False
     shapes = sorted({p["shape"] or "modelled" for p in pieces})
+    outline = (geometry or {}).get("silhouette")
+    ball, ball_reason = round_body(requirement, pieces, outline, bars) \
+        if geometry is not None and geometry["decoded"] else (None, "")
+    if ball and only:
+        only = False     # composed, by the round-body rule: not a primitive standing in
     if only is None:
         check("model.primitive", "skipped" if geometry is not None else "fail",
               "the geometry could not be decoded (compressed or quantised)"
               if geometry is not None else "the geometry could not be read")
+    elif ball:
+        check("model.primitive", "pass", f"{len(pieces)} pieces ({', '.join(shapes)}); "
+                                         f"{ball_reason}")
     elif not only:
         check("model.primitive", "pass",
               f"{len(pieces)} pieces ({', '.join(shapes)}): modelled or composed")
@@ -652,7 +746,6 @@ def assess(data, *, role=None, visual_identity=None, spec=None, kind="model", na
               f"primitive only ({len(pieces)} piece(s): {', '.join(shapes)}) for the readable "
               f"role {role}: a primitive standing in for a {role} is a placeholder")
 
-    outline = (geometry or {}).get("silhouette")
     silhouette_roles = bars.get("silhouette_roles") or []
     limit = bars.get("max_dominance")
     if outline is None or outline.get("dominance") is None:
@@ -667,6 +760,11 @@ def assess(data, *, role=None, visual_identity=None, spec=None, kind="model", na
         elif styled:
             check("model.silhouette", "pass", f"{text}; the visual identity states "
                                               f"primitive_style")
+        elif share > float(limit) and ball:
+            check("model.silhouette", "pass", f"{text}; {ball_reason}")
+        elif share > float(limit) and ball_reason.startswith("the requirement names a"):
+            check("model.silhouette", "fail",
+                  f"{text}, over {float(limit):.0%}; not passed as a round body: {ball_reason}")
         elif share > float(limit):
             check("model.silhouette", "fail",
                   f"{text}, over {float(limit):.0%}: a box with bumps - the parts a player "

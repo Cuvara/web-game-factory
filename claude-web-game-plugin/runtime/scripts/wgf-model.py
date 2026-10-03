@@ -164,7 +164,8 @@ def inspect_command(args):
         print(f"wgf-model: {exc}", file=sys.stderr)
         return 1
     judged = model_quality.assess(data, role=role, visual_identity=look, spec=spec,
-                                  kind=args.kind, name=args.file, policy=policy)
+                                  kind=args.kind, name=args.file, policy=policy,
+                                  requirement=getattr(args, "requirement", None))
     quality = judged["quality"]
     stamp = blender.read_stamp(data)
     payload = {"file": args.file, "bytes": len(data), "summary": summary, "stamp": stamp,
@@ -192,6 +193,7 @@ def _judging(args):
     """(role, visual identity) from --design/--asset, overridden by --role, --palette and
     --primitive-style."""
     role, look = None, {}
+    args.requirement = None
     if args.design:
         with open(args.design, encoding="utf-8") as handle:
             design = json.load(handle)
@@ -203,6 +205,7 @@ def _judging(args):
             if asset is None:
                 raise ValueError(f"{args.design}: no build_spec.assets entry {args.asset!r}")
             role = asset.get("role")
+            args.requirement = asset
     if args.role:
         role = args.role
     if args.palette:

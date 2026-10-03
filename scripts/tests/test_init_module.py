@@ -288,7 +288,7 @@ class TemplateOriginTest(unittest.TestCase):
         sha = "b1062619457f427bac91b45f6a96762f256a945a"
         recorded = f"../../../../.cache/wgf/templates/{sha}"
         shown = f"../../../.cache/wgf/templates/{sha}"
-        template = os.path.join("C:\Users\x\.cache\wgf\templates", sha)
+        template = os.path.join(r"C:\Users\x\.cache\wgf\templates", sha)
         self.assertTrue(_same_template(recorded, shown, template))
         self.assertFalse(_same_template(recorded.replace("b106", "c106"), shown, template))
         self.assertFalse(_same_template(None, shown, template))

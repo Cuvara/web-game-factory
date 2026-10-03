@@ -86,18 +86,24 @@ def pin(artifact):
 
 APPROVE = {"verdict": "approve"}
 GATES_PASS = {"production-quality-report": "PASS", "visual-qa-report": "PASS"}
+# The report G4 is decided on beside them (gates.yaml 1.3.0): what the bot saw of the build.
+PLAYABILITY_PASS = {"playability-report": "PASS"}
 FIXTURES = os.path.join(SCRIPTS, "wgflib", "workflow", "fixtures")
 
 
 def gate_report(artifact_type, commit, verdict="PASS", upstream=()):
-    """A production gate report (production-quality-report or visual-qa-report) of
-    `commit` with `verdict`, from the mock fixture's shape."""
+    """A gate report of `commit` with `verdict`, from the mock fixture's shape: a production
+    gate (production-quality-report, visual-qa-report) or the playability-report G4 reads."""
     with open(os.path.join(FIXTURES, f"{artifact_type}.json"), encoding="utf-8") as handle:
         body = json.load(handle)
     body.update(title_id="fixture-game", commit=commit, verdict=verdict)
     if verdict != "PASS":
         body.update(failed=["fixture-check"], routes=["develop"])
-    return seal(artifact_type, body, inputs=list(upstream), schema_version="1.0.0")
+    if artifact_type == "playability-report":
+        body.pop("failed", None)
+        body.pop("routes", None)
+    version = "1.2.0" if artifact_type == "playability-report" else "1.0.0"
+    return seal(artifact_type, body, inputs=list(upstream), schema_version=version)
 
 
 class Inputs:

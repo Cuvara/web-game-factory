@@ -302,6 +302,21 @@ class Checkout(DevelopCase):
         self.assertFalse(os.path.exists(os.path.join(self.repo, "scratch-check.mjs")))
         self.assertNotIn("scratch-check.mjs", self.git("show", "--stat", "HEAD"))
 
+    def test_a_stray_in_a_directory_of_its_own_is_refused_not_swept(self):
+        # A scratch file at the root is a leftover; `tools/x.sh` is a place the developer
+        # chose to write, and the commit scope refuses it as before.
+        def leave_tool(root):
+            write_game(root)
+            os.makedirs(os.path.join(root, "tools"), exist_ok=True)
+            with open(os.path.join(root, "tools", "x.sh"), "w", encoding="utf-8") as handle:
+                handle.write("echo hi" + chr(10))
+
+        result = step_with(FakeRunner(on_develop=leave_tool)).execute(
+            inputs_for(), context(self.command_config()))
+        self.assertEqual((result.outcome, result.retryable), (StepOutcome.FAILED, False))
+        self.assertIn("tools/x.sh", result.error)
+        self.assertTrue(os.path.exists(os.path.join(self.repo, "tools", "x.sh")))
+
     def test_a_tracked_file_outside_the_writable_paths_still_fails(self):
         def edit_readme(root):
             write_game(root)

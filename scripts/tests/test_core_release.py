@@ -400,7 +400,7 @@ class ContinueIn(ReleaseCase):
           "      type: human-checkpoint\n"
           "      stage: title:prototype-review\n"
           "      inputs: [qa-report, verification-report, prototype-report, title-strategy,"
-          " game-design]\n"
+          " game-design, playability-report, review-report]\n"
           "      with: {gate: G4, choices: [pass, iterate, kill]}\n"
           "      on: {iterate: verify, kill: $end}\n")
 
@@ -412,7 +412,11 @@ class ContinueIn(ReleaseCase):
 
             def execute(self, inputs, context):
                 outcome = plan.pop(0) if plan else "pass"
-                artifacts = game.evidence(run_id=context.run_id, **(
+                # G4 is decided on the playability-report too (gates.yaml 1.3.0), so the
+                # fixture's verification produces it beside the production gates' reports.
+                from test_release_module import GATES_PASS, PLAYABILITY_PASS
+                artifacts = game.evidence(run_id=context.run_id,
+                                          gates=dict(GATES_PASS, **PLAYABILITY_PASS), **(
                     {"qa_verdict": "fail", "verdict": "FAIL", "evidence_status": "FAIL"}
                     if outcome == "fail" else {}))
                 outputs = [ArtifactOutput(t, a) for t, a in artifacts.items()]
@@ -447,7 +451,7 @@ class ContinueIn(ReleaseCase):
                     - id: verify
                       type: test.verify
                       stage: release:qa
-                      outputs: [prototype-report, sdk-report, scaffold-record, verification-report, qa-report, review-report, production-quality-report, visual-qa-report]
+                      outputs: [prototype-report, sdk-report, scaffold-record, verification-report, qa-report, review-report, playability-report, production-quality-report, visual-qa-report]
                       on:
                         fail: $fail
                     - id: release

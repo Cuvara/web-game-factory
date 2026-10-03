@@ -71,9 +71,13 @@ def refusal(path, writable=DEFAULT_WRITABLE):
 
 
 def stray(path, writable=DEFAULT_WRITABLE):
-    """True for a path whose only problem is being outside the writable paths: a scratch
-    file a developer left at the root, not a hidden path, an instruction file or a package
-    file. An untracked one may be swept before the commit scope is judged."""
+    """True for a scratch file a developer left AT THE ROOT of the checkout and could not
+    delete: outside the writable paths, no directory of its own, not hidden, not an
+    instruction file, not a package file. An untracked one may be swept before the commit
+    scope is judged. A path with a directory - `tools/x.sh`, `scripts/run.mjs` - is a place
+    the developer chose to write and is refused, never swept."""
+    if "/" in path or "\\" in path:
+        return False
     reason = refusal(path, writable)
     return bool(reason) and reason.startswith("outside the paths")
 

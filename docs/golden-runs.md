@@ -83,6 +83,9 @@ conformance, the reviewer) always runs, in about 20 s, and needs no node.
     browser-<2d|3d>/browser-evidence.json   the independent browser evidence
     browser-<2d|3d>/suites.json             Playwright JSON report of the game's own suites
     browser-<2d|3d>/probe/<viewport>/       the harness probe: probe.json + screenshots
+    playability/reports/                    every playability-report version, as the store holds it
+    playability/<step>/<visit>-<attempt>/   the bot's settings.json and <project>/first-session.json,
+                                            act.json, ... (no frames, no logs), pass or fail
 ```
 
 The summary holds: `run_id`; every step's status, expected outcome, route, duration,

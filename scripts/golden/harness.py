@@ -384,6 +384,9 @@ class GoldenRun:
         with self.sandbox() as guard:
             api, state, seconds = self.run_workflow(resume=resume, from_step=from_step)
             pipeline_network = guard.proxy.summary()
+            # Pass or fail, the playability reports and the bot's records reach the evidence:
+            # the run store is deleted at teardown, and a budget miss needs its numbers.
+            summaries.collect_playability(api.store, state, self.evidence_dir)
             browser = None
             developed = (state.steps.get("develop") and
                          state.steps["develop"].status == "SUCCESS")

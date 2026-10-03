@@ -337,3 +337,63 @@ def write(summary, evidence_dir, key):
         handle.write("\n")
     summary["summary_path"] = path
     return path
+
+
+PLAYABILITY_REPORT = "playability-report"
+
+
+def collect_playability(store, state, evidence_dir):
+    """Copy the run's playability evidence into <evidence_dir>/playability/.
+
+    Every version of every playability-report artifact, as the store holds it
+    (reports/<artifact-id>-v<n>.json), and the bot's JSON records of every playability step
+    attempt (<step>/<visit>-<attempt>/settings.json and <project>/first-session.json, ...),
+    so a failing check's measured numbers can be read from CI. Frames, videos and logs are
+    left behind. Copying is best effort: it never fails the run. Returns the copied paths,
+    relative to evidence_dir.
+    """
+    import shutil
+    target = os.path.join(evidence_dir, "playability")
+    copied = []
+
+    def copy(source, *parts):
+        destination = os.path.join(target, *parts)
+        try:
+            os.makedirs(os.path.dirname(destination), exist_ok=True)
+            shutil.copyfile(source, destination)
+        except OSError:
+            return
+        copied.append(os.path.relpath(destination, evidence_dir).replace(os.sep, "/"))
+
+    run_dir = store.run_dir(state.run_id)
+    steps = set()
+    for versions in (state.artifacts or {}).values():
+        for ref in versions:
+            if ref.type != PLAYABILITY_REPORT:
+                continue
+            if ref.produced_by:
+                steps.add(ref.produced_by)
+            copy(os.path.join(run_dir, *ref.location.split("/")),
+                 "reports", f"{ref.id}-v{ref.version}.json")
+    # A playability step that wrote no report (it crashed) may still have left records.
+    for step_id in (state.steps or {}):
+        if "playability" in step_id:
+            steps.add(step_id)
+    for step_id in sorted(steps):
+        step_dir = os.path.join(run_dir, step_id)
+        if not os.path.isdir(step_dir):
+            continue
+        for attempt in sorted(os.listdir(step_dir)):
+            out = os.path.join(step_dir, attempt, "out")
+            if not os.path.isdir(out):
+                continue
+            for name in sorted(os.listdir(out)):
+                path = os.path.join(out, name)
+                if os.path.isfile(path) and name.endswith(".json"):
+                    copy(path, step_id, attempt, name)
+                elif os.path.isdir(path):
+                    for record in sorted(os.listdir(path)):
+                        source = os.path.join(path, record)
+                        if os.path.isfile(source) and record.endswith(".json"):
+                            copy(source, step_id, attempt, name, record)
+    return copied

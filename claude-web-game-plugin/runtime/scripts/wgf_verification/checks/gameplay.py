@@ -207,7 +207,10 @@ class RepositoryPlaywrightDriver:
         if os.path.exists(report_file):
             os.remove(report_file)          # never read a previous run's report
         os.makedirs(os.path.dirname(report_file), exist_ok=True)
-        result = session.run(session.script_command(contract.SCRIPT_TEST_E2E, "--reporter=json"),
+        extra = ["--reporter=json"]
+        if session.e2e_workers:
+            extra.append(f"--workers={session.e2e_workers}")
+        result = session.run(session.script_command(contract.SCRIPT_TEST_E2E, *extra),
                              "browser", env={"PLAYWRIGHT_JSON_OUTPUT_NAME": report_file})
         command_evidence = Evidence.of_command(result)
         if result.unavailable:

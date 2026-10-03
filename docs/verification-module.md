@@ -93,6 +93,10 @@ A check that depends on another (nothing is played until it builds) is `BLOCKED`
 Checks about an `optional` platform are not required: they decide that platform's readiness
 without blocking the release.
 
+The game's `test:e2e` runs at `e2e_workers` Playwright workers (the step's `with:`), else at the
+machine's `factory.develop.smoke_workers`, the same suite develop's smoke check runs; unset
+leaves the suite's own parallelism.
+
 Browser commands - the game's `test:e2e`, the runtime-facts `test:verify` - run behind a proxy
 that refuses every non-local request (`wgflib.netguard`, as the develop step's smoke does and
 the golden runs always have). A portal build would otherwise load the portal's real SDK from

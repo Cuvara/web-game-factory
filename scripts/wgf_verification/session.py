@@ -66,6 +66,7 @@ class VerificationSession:
         self.config = config or {}
         self.logger = logger
         self.results = {}                   # check id -> Check
+        self.e2e_workers = self._e2e_workers()
         self.timeouts = dict(DEFAULT_TIMEOUTS)
         self.timeouts.update(self.params.get("timeouts") or {})
         self.package = self.read_json(contract.PACKAGE_JSON) or {}
@@ -233,6 +234,18 @@ class VerificationSession:
         if manager == "npm":
             return ["npx", "--no-install", *command]
         return [manager, "exec", *command]
+
+    def _e2e_workers(self):
+        """Playwright workers for the game's own browser suite: the step's `e2e_workers`, else
+        the machine's `factory.develop.smoke_workers` - the same suite on the same machine,
+        which cannot stand desktop + mobile in parallel when that is set. None: the suite's
+        own setting."""
+        value = self.params.get("e2e_workers")
+        if value is None and hasattr(self.config, "section"):
+            value = self.config.section("develop").get("smoke_workers")
+        if isinstance(value, bool) or not isinstance(value, int) or value < 1:
+            return None
+        return value
 
     def run(self, command, timeout_key="script", env=None):
         """Run a command in the checkout. A browser command (the game's Playwright suites,

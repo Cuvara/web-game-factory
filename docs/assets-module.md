@@ -409,6 +409,13 @@ any placeholder (`factory.assets.producers: [fonts, audio]`; off by default, on 
 autonomous profile), and what they make is final: `placeholder: false`, judged like any
 file, `production_ready` when it passes.
 
+On a [re-entry](#re-entry) the two differ. The composer *varies*: a gate that sends a cue
+back gets a different composition (the song's seed offset by the visit, every cue moving
+together so base and layer stay in lock-step), recorded as a rebuild like an author's, so
+`can_remake` counts a music or sound requirement as remakable. A font is a fixed file
+(`FontProducer.varies = False`): sent back, it blocks the run as before, because the same
+bytes would come back.
+
 **`fonts` - the Factory font library** (`wgf_assets/fontlib.py`,
 `workspace/library/fonts/`). Every face an identity kit can name, and every `ALTERNATES` face
 a kit swaps in for a script (`wgf_design/identity.py`) - 20 families - pre-built from the

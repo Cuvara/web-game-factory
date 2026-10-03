@@ -185,6 +185,40 @@ class TheComposer(unittest.TestCase):
         self.assertAlmostEqual(stats["rms_dbfs"], music.TARGET_RMS["title"], delta=2.5)
         self.assertLessEqual(stats["seam"]["ratio"], 8)
 
+    def test_every_cue_kind_meets_both_seam_bars(self):
+        # goalkeeper-royale, 2026-10-02: the intensity layer's turnaround riser swelled into
+        # a bar 0 with no downbeat crash, and the rendered seam's edges differed 6.46 dB
+        # (bar 6). A base or layer cue cannot move its loop point (it stays in lock-step
+        # with the main cue), so its arrangement has to land the turnaround.
+        rate = 22050
+        for title in ("x", "goalkeeper-royale"):
+            song = music.Song(style.brief_for(_design("neon-night"), title_id=title))
+            for kind in ("main", "base", "layer"):
+                left, right, _ = music.render_cue(song, kind, 12, rate)
+                seam = measure.seam([left, right], rate)
+                with self.subTest(title=title, kind=kind, seam=seam):
+                    self.assertLessEqual(seam["ratio"], 8)
+                    self.assertLessEqual(seam["edge_db"], 6)
+
+    def test_a_variation_recomposes_the_song_for_a_re_entry(self):
+        # A gate that sends a composed cue back must get different art (the assets step's
+        # re-entry contract): the composer offsets its seed by the variation, every cue
+        # moving together. The font library hands over fixed files and says so.
+        from wgf_assets import fontlib
+        from wgf_assets.sound.producer import AudioProducer
+        design = _design("neon-night")
+        same = AudioProducer(design, "x", encoder="wav")
+        again = AudioProducer(design, "x", encoder="wav")
+        varied = AudioProducer(design, "x", encoder="wav", variation=1)
+        self.assertTrue(AudioProducer.varies)
+        self.assertFalse(fontlib.FontProducer.varies)
+        self.assertEqual(same.brief.seed, again.brief.seed)
+        self.assertNotEqual(same.brief.seed, varied.brief.seed)
+        rate = 22050
+        a = music.render_cue(same.song, "layer", 8, rate)[0]
+        b = music.render_cue(varied.song, "layer", 8, rate)[0]
+        self.assertNotEqual(a[:4096], b[:4096])
+
     def test_sfx_roles_and_bounds(self):
         song = music.Song(style.brief_for(_design(), title_id="x"))
         self.assertEqual(sfx.role({"merge", "cascade"}, {"sfx", "merge"}), "pop")

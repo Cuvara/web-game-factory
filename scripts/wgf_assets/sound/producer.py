@@ -87,10 +87,19 @@ def wav_bytes(channels, rate, *, seed=0):
 class AudioProducer:
     id = "composer"
     source = "procedural"
+    # A gate that sends a composed cue back gets a different composition, not the same
+    # bytes: `variation` offsets the song's seed, and every cue of the song moves with it
+    # (base and layer stay in lock-step). The pipeline counts such a producer as able to
+    # make a requirement again (can_remake); the font library, which hands over fixed
+    # files, is not.
+    varies = True
 
-    def __init__(self, design, title_id=None, *, encoder=None, logger=None):
+    def __init__(self, design, title_id=None, *, encoder=None, logger=None, variation=0):
         self.design = design or {}
         self.brief = style.brief_for(self.design, title_id=title_id)
+        self.variation = int(variation or 0)
+        if self.variation:
+            self.brief.seed = (self.brief.seed + self.variation) & 0xFFFFFFFF
         self.song = music.Song(self.brief)
         self.encoder = (encoder or os.environ.get("WGF_AUDIO_ENCODER") or "vorbis").lower()
         self.logger = logger

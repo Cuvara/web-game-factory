@@ -836,6 +836,15 @@ class AssetPipeline:
         item.generation = made.get("metadata")
         item.data["notes"] = " ".join(filter(None, [req.notes, made.get("notes")]))
         item.data["status"] = "delivered"
+        notes, _ = self._feedback(req)
+        if notes and getattr(producer, "varies", False):
+            # A re-entry's finding answered with different art (can_remake): recorded as a
+            # rebuild, like an author's, so the step never reports a reuse as a remake.
+            item.rebuilt = True
+            item.data["notes"] = " ".join(filter(None, [
+                item.data.get("notes"),
+                f"Rebuilt for {len(notes)} finding(s): variation "
+                f"{getattr(producer, 'variation', 0)} of the composition."]))
         self._log("produced", asset=req.id, producer=producer.id, files=len(stored))
         return True
 
@@ -928,6 +937,10 @@ class AssetPipeline:
             return False
         if self.author is not None and self._authorable(req):
             return True
+        if any(getattr(p, "varies", False) and p.supports(req) for p in self.producers):
+            # The composer re-composes for a re-entry (a variation of the song); the font
+            # library cannot, and says so with `varies`.
+            return True
         return (self.model_author is not None and req.dimension == "3d"
                 and req.policy is not None and req.policy.dimension in ("3d", "any")
                 and req.kind in ("model", "environment", "animation"))
@@ -942,9 +955,12 @@ class AssetPipeline:
 
     @staticmethod
     def _authorable(req):
-        """A 2D kind that may be delivered as SVG, outside an atlas (atlases pack PNG)."""
-        return (req.dimension == "2d" and "svg" in req.policy.formats and not req.atlas
-                and not req.policy.companion)
+        """A 2D kind that may be delivered as SVG, outside an atlas (atlases pack PNG). A kind
+        the policy calls `dimension: any` (vfx) is drawn whatever scene it lands in: a 3D
+        game's particle or flash is a flat texture, and a design that says `dimension: 3d`
+        for it is naming the scene, not the file (goalkeeper-royale, 2026-10-02)."""
+        return ((req.dimension == "2d" or req.policy.dimension == "any")
+                and "svg" in req.policy.formats and not req.atlas and not req.policy.companion)
 
     def _judge_svg(self, req, relative, data):
         """([problem], quality) of one SVG for `req`."""

@@ -37,6 +37,8 @@ def main(argv=None):
     s.add_argument("--run")
     s.add_argument("--agent", default="claude")
     s.add_argument("--model")
+    s.add_argument("--trust-workspace", action="store_true",
+                   help="answer Claude Code's workspace-trust dialog (repositories you own only)")
     d = sub.add_parser("adopt", help="record a dispatch already running in its own worktree")
     d.add_argument("--dispatch", required=True)
     d.add_argument("--task-id", required=True)
@@ -56,7 +58,8 @@ def main(argv=None):
             spec = pathlib.Path(args.spec_file).read_text(encoding="utf-8")
             entry = wgf_delegate.spawn(args.task_id, args.title, spec, args.name, args.repo,
                                        base=args.base, agent=args.agent, run=args.run,
-                                       model=args.model)
+                                       model=args.model,
+                                       trust_workspace=args.trust_workspace)
             print(json.dumps(dict(entry), indent=2))
             return 0
         if args.command == "adopt":

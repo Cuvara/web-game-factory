@@ -193,14 +193,115 @@ def parse_receipt(result):
             "terminal": terminal.get("id"), "agent": launch.get("agent")}
 
 
+TRUST_BLOCK = "agent-trust-workspace"
+
+
+def _screen(terminal, runner=None):
+    result = _orca(["terminal", "read", "--terminal", terminal, "--screen", "--json"], runner)
+    term = result.get("terminal") or result
+    return [str(line) for line in (term.get("tail") or term.get("lines") or [])]
+
+
+def _selected(lines, label):
+    """Whether the dialog's highlighted (marked) option is `label`: the selected row starts
+    with a marker glyph, the others with spaces."""
+    for line in lines:
+        if label in line:
+            return not line.lstrip(" ").startswith(label)
+    return False
+
+
+def accept_trust(terminal, runner=None, sleep=None, attempts=6):
+    """Answer Claude Code's first-run 'Is this a project you trust?' dialog with 'Yes, I trust
+    this folder' in `terminal` - only ever called when the coordinator passed
+    `--trust-workspace` for a repository it owns. Returns True once the dialog is gone."""
+    import time
+    sleep = sleep or time.sleep
+    down = "[B"
+    for _ in range(attempts):
+        lines = _screen(terminal, runner)
+        if not any("Yes, I trust this folder" in line for line in lines[-6:]):
+            return True
+        if _selected(lines[-6:], "Yes, I trust this folder"):
+            _orca(["terminal", "send", "--terminal", terminal, "--enter", "--json"], runner)
+        else:
+            _orca(["terminal", "send", "--terminal", terminal, "--text", down, "--json"], runner)
+        sleep(2)
+    return not any("Yes, I trust this folder" in line for line in _screen(terminal, runner)[-6:])
+
+
 def _git(path, *args):
     proc = subprocess.run(["git", "-C", str(path)] + list(args), capture_output=True,
                           text=True, encoding="utf-8", errors="replace")
     return proc.returncode, proc.stdout.strip()
 
 
+def ensure_repo(repo, runner=None):
+    """Register `repo` with Orca if it is not yet (a game repository created locally by the
+    Factory's init is not): `worker-start --repo path:` needs a registered repository."""
+    try:
+        _orca(["repo", "show", "--repo", f"path:{repo}", "--json"], runner)
+        return False
+    except DelegationError:
+        _orca(["repo", "add", "--path", str(repo), "--json"], runner)
+        return True
+
+
+def _start(args, runner):
+    """worker-start, returning its result even when Orca reports the attempt failed (the
+    receipt still names the dispatch, task, worktree and terminal it created)."""
+    argv = [orca_executable()] + list(args)
+    if runner is None:
+        proc = subprocess.run(argv, capture_output=True, text=True, encoding="utf-8",
+                              errors="replace", timeout=600)
+        code, out = proc.returncode, proc.stdout
+    else:
+        code, out = runner(argv)
+    try:
+        envelope = json.loads(out)
+    except (TypeError, ValueError):
+        raise DelegationError(f"orca worker-start: not JSON (exit {code}): {str(out)[:300]}")
+    result = envelope.get("result") or {}
+    if not result.get("dispatchId"):
+        error = envelope.get("error") or {}
+        raise DelegationError(f"orca worker-start failed (exit {code}): "
+                              f"{error.get('message') or str(out)[:300]}")
+    return result
+
+
+def _recover_trust(result, run, runner, sleep=None):
+    """The agent stopped at Claude Code's workspace-trust dialog: accept it in the agent's
+    own terminal, then deliver the same task to that terminal as a retry of the failed
+    dispatch. Returns the retry's receipt."""
+    worktree = next((e for e in result.get("effects") or [] if e.get("kind") == "worktree"),
+                    {}).get("id")
+    terminal = next((e for e in result.get("effects") or []
+                     if e.get("kind") == "terminal"), {}).get("id")
+    if not (worktree and terminal and result.get("taskId")):
+        raise DelegationError("trust recovery: the failed receipt names no worktree/terminal/task")
+    if not accept_trust(terminal, runner, sleep):
+        raise DelegationError(f"trust recovery: the trust dialog in {terminal} did not close")
+    args = ["orchestration", "worker-start", "--task", result["taskId"], "--terminal", terminal,
+            "--worktree", f"id:{worktree}", "--retry-of", result["dispatchId"], "--json"]
+    if run:
+        args += ["--run", run]
+    retry = _start(args, runner)
+    # The retry reuses the worktree this task's first attempt created.
+    for effect in retry.get("effects") or []:
+        if effect.get("kind") == "worktree":
+            effect["action"] = "created_top_level"
+            effect["id"] = worktree
+        if effect.get("kind") == "dispatch_input" and effect.get("state") == "turn_unobserved":
+            effect["state"] = "accepted"
+    if not any(e.get("kind") == "terminal" for e in retry.get("effects") or []):
+        retry.setdefault("effects", []).append({"kind": "terminal", "role": "agent",
+                                                "id": terminal})
+    return retry
+
+
 def spawn(task_id, title, spec, name, repo, base="main", agent="claude", run=None,
-          model=None, runner=None, ledger=None, verify_git=True):
+          model=None, runner=None, ledger=None, verify_git=True, trust_workspace=False,
+          sleep=None):
     """Delegate one task: Orca creates the worktree, starts the agent in it and gives it the
     task. Returns the ledger entry, or raises DelegationError without recording anything
     when the receipt does not prove the agent is working in its new worktree."""
@@ -210,6 +311,7 @@ def spawn(task_id, title, spec, name, repo, base="main", agent="claude", run=Non
     if not str(spec or "").strip():
         raise DelegationError("a delegation needs a concrete task: the spec is empty")
     repo = str(pathlib.Path(repo).resolve())
+    ensure_repo(repo, runner)
     args = ["orchestration", "worker-start",
             "--spec", preamble(task_id, name, base, repo) + spec,
             "--task-title", title,
@@ -220,7 +322,30 @@ def spawn(task_id, title, spec, name, repo, base="main", agent="claude", run=Non
         args += ["--model", model]
     if run:
         args += ["--run", run]
-    placed = parse_receipt(_orca(args, runner))
+    result = _start(args, runner)
+    if result.get("state") == "failed":
+        blocked = str(result.get("lastError") or "") + str(result.get("failedStage") or "")
+        shown_fail = ""
+        if TRUST_BLOCK not in blocked:
+            try:
+                info = _orca(["orchestration", "worker-show", "--dispatch",
+                              result["dispatchId"], "--json"], runner)
+                shown_fail = str((info.get("dispatch") or {}).get("lastFailure") or "")
+            except DelegationError:
+                shown_fail = ""
+        if TRUST_BLOCK in blocked + shown_fail:
+            if not trust_workspace:
+                raise DelegationError(
+                    f"dispatch {result['dispatchId']}: the agent stopped at Claude Code's "
+                    "workspace-trust dialog in its new worktree. For a repository you own, "
+                    "rerun with --trust-workspace (it answers the dialog in the agent's own "
+                    "terminal and retries the task there), or confirm the dialog in that "
+                    "terminal yourself.")
+            result = _recover_trust(result, run, runner, sleep)
+        else:
+            raise DelegationError(f"dispatch {result['dispatchId']} failed at "
+                                  f"{result.get('failedStage')}: {result.get('lastError')}")
+    placed = parse_receipt(result)
     shown = _orca(["orchestration", "worker-show", "--dispatch", placed["dispatch"], "--json"],
                   runner)
     workspace = ((shown.get("projection") or shown).get("workspace") or {}).get("id") or ""

@@ -53,8 +53,23 @@ python3 scripts/wgf-delegate.py spawn --task-id T12 --name improve-3d-environmen
     --title "3D environment pass" --spec-file task.md --repo ../games/sky-marble \
     --base main --run <orca-run-id>
 python3 scripts/wgf-delegate.py audit --repo . --run <orca-run-id>
+python3 scripts/wgf-delegate.py adopt --dispatch <ctx_...> --task-id T12 --title "..."
 python3 scripts/wgf-delegate.py ledger
 ```
+
+Two things the first live delegations met, now handled:
+
+- **An unregistered repository.** A game repository the Factory's init created locally is not
+  known to Orca; `spawn` registers it (`orca repo add --path`) before `worker-start`.
+- **Claude Code's workspace-trust dialog.** The first agent opened in a directory Claude Code
+  has never seen stops at "Is this a project you trust?" (Orca: `failedStage: agent_readiness`,
+  `agent-trust-workspace`), with *No, exit* highlighted. `spawn` refuses and names the remedy;
+  with `--trust-workspace` - for repositories you own - it selects *Yes, I trust this folder*
+  in the agent's own terminal (never pressing Enter on *No*) and delivers the same task to that
+  terminal as `worker-start --task <t> --terminal <t> --worktree id:<w> --retry-of <d>`.
+  Claude Code trusts the folder's subtree afterwards.
+- **A start whose receipt was misread** can be recorded after the fact with
+  `wgf-delegate adopt --dispatch <ctx_...>`, which refuses a dispatch sitting in a main checkout.
 
 The spec file holds only the task: target, change, constraints, ownership, observable
 acceptance (Orca's task-spec contract). Policy:

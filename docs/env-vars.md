@@ -27,6 +27,8 @@ set `=1` and both readings agree.
 | `WGF_TEMPLATE_COMMIT` | `scripts/wgflib/template.py` | A deliberate override of the web-game-template commit in `workspace/config/template.lock.json`. Must be a full 40-hex sha. Used to validate a new pin before moving the lock. | the lock's `commit` |
 | `WGF_TEMPLATE_DIR` | `scripts/wgflib/template.py` | Offer an existing template checkout instead of the cache. Refused (`TemplateDrift`) unless its HEAD is exactly the expected commit; never moved. | unset: cache, then clone |
 | `WGF_TEMPLATE_CACHE` | `scripts/wgflib/template.py` | Where pinned template checkouts are cached, one directory per sha. | `~/.cache/wgf/templates` |
+| `WGF_ORCA` | `scripts/wgf_delegate.py` | The orca executable `scripts/wgf-delegate.py` starts delegated agents with ([orca-delegation.md](orca-delegation.md)). | `orca` on PATH |
+| `WGF_DELEGATION_LEDGER` | `scripts/wgf_delegate.py` | The JSON-lines ledger of delegations (task, worktree, branch, dispatch, terminal) that `wgf-delegate audit` reads. | `~/.cache/wgf/delegations.jsonl` |
 | `WGF_BLENDER` | `scripts/wgf_assets/blender.py` | The Blender executable the `assets` step and `scripts/wgf-model.py` build models with, when `factory.assets.placeholders.blender.executable` is not set. Must be the pinned series (4.5) unless `allow_unpinned` ([blender-pipeline.md](blender-pipeline.md)). Not passed to Blender itself: its environment is an allowlist. | unset: `blender` on PATH |
 | `WGF_HEARTBEAT_SECONDS` | `scripts/wgflib/procs.py` | Heartbeat interval for every owned child process (`STEP_PROGRESS`, `last_activity_at`). A positive number; anything else falls back to the default. | `15` |
 

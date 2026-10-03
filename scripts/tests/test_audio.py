@@ -272,6 +272,9 @@ class Bridge(unittest.TestCase):
         self.assertEqual(audio_duration("0.5 sec whoosh"), 0.5)
         self.assertEqual(audio_duration("at least 30 seconds"), 30.0)
         self.assertIsNone(audio_duration("Driving loop"))
+        # An interval is not a length: the zap repeats every 0.45 s, it does not last it.
+        self.assertIsNone(audio_duration("Short zap, quiet enough to repeat every 0.45 s"))
+        self.assertEqual(audio_duration("a 2 s sting, once per 10 s"), 2.0)
 
 
 # -- the pipeline: a library of audio, imported with its licence ----------------------------------

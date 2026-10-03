@@ -401,12 +401,19 @@ def bridge(design, game_dim):
 AUDIO_KINDS = {"music": ("music", None), "ambience": ("music", None), "sfx": ("sfx", None),
                "ui": ("sfx", "ui"), "voice": ("sfx", None)}
 _SECONDS = re.compile(r"\b(\d{1,3}(?:\.\d+)?)\s*(?:s|sec|secs|seconds?)\b", re.I)
+# A number of seconds after one of these words is how often or how soon the sound plays
+# ("quiet enough to repeat every 0.45 s"), not how long it lasts.
+_NOT_A_LENGTH = re.compile(r"\b(?:every|each|per|after|within|than)\s*$", re.I)
 
 
 def audio_duration(text):
-    """The length a description states ("a 60 s loop", "0.5 sec"), in seconds, or None."""
-    match = _SECONDS.search(text or "")
-    return float(match.group(1)) if match else None
+    """The length a description states ("a 60 s loop", "0.5 sec"), in seconds, or None.
+    An interval ("repeats every 0.45 s") is not a length."""
+    text = text or ""
+    for match in _SECONDS.finditer(text):
+        if not _NOT_A_LENGTH.search(text[:match.start()]):
+            return float(match.group(1))
+    return None
 
 
 def bridge_audio(design, named):

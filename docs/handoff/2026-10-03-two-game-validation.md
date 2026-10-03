@@ -20,7 +20,7 @@ started from authored `concepts.yaml` briefs, plus a dogfood of the Claude plugi
 | Worker | Game / task | Run | Notes |
 |---|---|---|---|
 | A | 2D brick-breaker, **Brick Breaker Worlds** | `new-game-20261003-081154-4e5e0a` | engine-driven |
-| B | 3D marble-roll, **Sky Marble** | `new-game-20261003-081332-f7bb0b` | engine-driven |
+| B | 3D marble-roll, **Sky Marble** | `new-game-20261003-082542-0de9b5` | engine-driven (an earlier attempt, `new-game-20261003-081332-f7bb0b`, failed at design) |
 | D | Plugin `/new-game` dogfood (plugin 2.6.0 via `--plugin-dir`, Claude Code 2.1.288, auto permission mode, an empty project) | mock `new-game-20261003-085640-5dc4c9`; real `new-game-20261003-085910-1e7ead` | the real run was **cancelled** before G4 (no budget, F26) |
 
 Fix workers (C, E-J and delegated agents) turned findings into the PRs below while the game

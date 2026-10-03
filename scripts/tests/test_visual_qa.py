@@ -4,7 +4,9 @@ The judge here is a fixture command - a Python script that writes the verdict a 
 names - so every path the step takes is exercised without an agent host: a pass, a blocker
 routed to assets, a blocker routed to develop, a dimension below the bar, a per-state
 answer and a developer-prototype look (the lead's per-state questions), a malformed
-verdict retried once and then failed, a malformed verdict fixed on the retry, a verdict on
+verdict sent back in repair rounds and then a fresh attempt before it fails, a verdict
+missing an answer fixed in a repair round, trivially fixable shapes coerced and recorded,
+a malformed verdict fixed on the retry, a verdict on
 stdout, no judge (BLOCKED), a frame changed since playability recorded it, and a judge that
 writes into what it may only read. The real judge's calibration run is in
 docs/visual-qa-module.md.
@@ -155,7 +157,7 @@ class Base(unittest.TestCase):
         with open(self.judge, "w") as handle:
             handle.write(JUDGE)
 
-    def config(self, plan, verdict_from="file", kind="command"):
+    def config(self, plan, verdict_from="file", kind="command", **judge):
         """A verdict object in `plan` without `states` gets every judged (state, viewport)
         answered the passing way, and look finished-game."""
         plan = [complete(entry) if isinstance(entry, dict) else entry for entry in plan]
@@ -168,7 +170,7 @@ class Base(unittest.TestCase):
         return {"visualqa": {"judge": {
                     "kind": kind, "verdict_from": verdict_from, "timeout_seconds": 60,
                     "argv": [sys.executable, self.judge, scenario, self.counter, "{verdict}",
-                             "{frames_dir}"] if kind == "command" else []}},
+                             "{frames_dir}"] if kind == "command" else [], **judge}},
                 "review": {"guarded_paths": [self.guard]}}
 
     def runs(self):
@@ -309,22 +311,100 @@ class TheVerdicts(Base):
 
 
 class TheFailures(Base):
-    def test_a_malformed_verdict_is_retried_once_then_fails(self):
+    def brief(self, run):
+        with open(os.path.join(self.run_dir, "visual-qa", "visual-qa-1-1",
+                               f"visual-qa-{run}.brief.md")) as handle:
+            return handle.read()
+
+    def test_a_malformed_verdict_is_repaired_then_retried_then_fails(self):
+        # Two repair rounds (the default), then the second fresh attempt; then it fails.
         result = self.run_step(self.config(["malformed"]))
         self.assertEqual(result.outcome, StepOutcome.FAILED)
         self.assertFalse(result.retryable)
         self.assertIn("malformed-verdict", result.error)
+        self.assertIn("2 fresh attempt(s) and 2 repair round(s)", result.error)
+        self.assertIn("verdict file is not JSON", result.error)
+        self.assertEqual(self.runs(), 4)
+        for run in (2, 3):
+            brief = self.brief(run)
+            self.assertIn("Repair your previous verdict", brief)
+            self.assertIn("{not json", brief)
+            self.assertIn("verdict file is not JSON", brief)
+        self.assertIn("Your previous verdict was rejected", self.brief(4))
+        self.assertNotIn("Repair your previous verdict", self.brief(4))
+
+    def test_no_repair_rounds_is_two_fresh_attempts(self):
+        result = self.run_step(self.config(["malformed"], repair_rounds=0))
+        self.assertEqual(result.outcome, StepOutcome.FAILED)
+        self.assertIn("malformed-verdict", result.error)
         self.assertEqual(self.runs(), 2)
-        second = os.path.join(self.run_dir, "visual-qa", "visual-qa-1-1",
-                              "visual-qa-2.brief.md")
-        with open(second) as handle:
-            self.assertIn("Your previous verdict was rejected", handle.read())
+        self.assertIn("Your previous verdict was rejected", self.brief(2))
 
     def test_a_malformed_verdict_fixed_on_the_retry(self):
         result = self.run_step(self.config([
             "malformed", {"scores": scores(4), "findings": []}]))
         self.assertEqual(result.outcome, StepOutcome.SUCCESS, result.error)
-        self.assertEqual(self.report(result)["judge_runs"], 2)
+        report = self.report(result)
+        self.assertEqual(report["judge_runs"], 2)
+        self.assertEqual(report["judge_repairs"], 1)
+
+    def omitted(self, qid="buttons_polished", index=1):
+        """A complete verdict with one answer left out, as the live judge did."""
+        verdict = complete({"scores": scores(4), "findings": []})
+        del verdict["states"][index]["answers"][qid]
+        return verdict
+
+    def test_an_omitted_answer_is_repaired_never_invented(self):
+        result = self.run_step(self.config([self.omitted(),
+                                            {"scores": scores(4), "findings": []}]))
+        self.assertEqual(result.outcome, StepOutcome.SUCCESS, result.error)
+        report = self.report(result)
+        self.assertEqual((report["judge_runs"], report["judge_repairs"]), (2, 1))
+        self.assertEqual(report["coercions"], [])
+        brief = self.brief(2)
+        self.assertIn("Repair your previous verdict", brief)
+        self.assertIn("states[1].answers must answer exactly", brief)
+        self.assertIn("(missing buttons_polished)", brief)
+        # The judge's own reply is quoted back to it, verbatim.
+        self.assertIn('"primitives_or_placeholders"', brief.split("## The frames")[0])
+        # The whole brief follows: the shape and the questions are there to answer from.
+        self.assertIn("## Your verdict", brief)
+
+    def test_a_judge_that_never_repairs_fails_with_the_errors(self):
+        result = self.run_step(self.config([self.omitted()]))
+        self.assertEqual(result.outcome, StepOutcome.FAILED)
+        self.assertFalse(result.retryable)
+        self.assertIn("malformed-verdict", result.error)
+        self.assertIn("states[1].answers must answer exactly", result.error)
+        self.assertIn("(missing buttons_polished)", result.error)
+        self.assertEqual(self.runs(), 4)
+        self.assertEqual(result.artifacts, [])
+
+    def test_a_one_item_list_reason_is_coerced_and_recorded(self):
+        verdict = complete({"scores": scores(4), "findings": [], "score_reasons": {
+            "character_readability": ["the keeper reads at a glance"],
+            "environment": "a lit arena"}})
+        result = self.run_step(self.config([verdict]))
+        self.assertEqual(result.outcome, StepOutcome.SUCCESS, result.error)
+        report = self.report(result)
+        self.assertEqual(report["judge_runs"], 1)
+        self.assertEqual(report["judge_repairs"], 0)
+        self.assertEqual(report["score_reasons"]["character_readability"],
+                         "the keeper reads at a glance")
+        self.assertEqual(report["coercions"], [{
+            "path": "score_reasons.character_readability", "rule": "unwrap-one-item-list",
+            "from": ["the keeper reads at a glance"], "to": "the keeper reads at a glance"}])
+
+    def test_every_error_reaches_the_repair_round_at_once(self):
+        verdict = self.omitted()
+        verdict["score_reasons"] = {"environment": 3}
+        verdict["look"] = "pretty"
+        result = self.run_step(self.config([verdict, {"scores": scores(4), "findings": []}]))
+        self.assertEqual(result.outcome, StepOutcome.SUCCESS, result.error)
+        brief = self.brief(2)
+        for fragment in ("score_reasons.environment must be a string",
+                         "states[1].answers must answer exactly", "look must be one of"):
+            self.assertIn("- " + fragment, brief)
 
     def test_a_verdict_naming_an_unknown_frame_is_malformed(self):
         result = self.run_step(self.config([{"scores": scores(4), "findings": [
@@ -458,6 +538,66 @@ class TheRubric(unittest.TestCase):
         self.assertEqual(failed, ["state:desktop/initial:buttons_polished"])
         status, failed, routes = rubric_mod.decide(verdict, RUBRIC)
         self.assertEqual(routes, ["assets", "develop"])
+
+    def test_coercion_never_changes_meaning_or_invents(self):
+        verdict = complete({"scores": scores(4), "findings": [
+            finding("x", " Blocker", "ASSETS", "assets ", "desktop/x-initial ")]})
+        verdict["look"] = "Finished-Game"
+        answers0 = verdict["states"][0]["answers"]
+        answers0["Entities_Recognisable"] = answers0.pop("entities_recognisable")
+        verdict["score_reasons"] = {"Environment": "a lit arena"}
+        coerced, coercions = rubric_mod.coerce(verdict, RUBRIC, self.FRAMES)
+        self.assertIsNone(self.parse(coerced)[1])
+        self.assertEqual(coerced["findings"][0]["severity"], "blocker")
+        self.assertEqual(coerced["findings"][0]["frame"], "desktop/x-initial")
+        self.assertEqual(coerced["look"], "finished-game")
+        self.assertIn("entities_recognisable", coerced["states"][0]["answers"])
+        self.assertEqual({c["rule"] for c in coercions},
+                         {"strip-whitespace", "enum-case", "key-case"})
+        self.assertEqual(len(coercions), 7)
+        # The input is not modified; the coercion works on a copy.
+        self.assertEqual(verdict["look"], "Finished-Game")
+        # What would need a guess is never coerced: a missing answer, a score or a boolean
+        # written as a string, a two-item list, an unknown key.
+        for breaks, fragment in (
+                (lambda v: v["states"][0]["answers"].pop("buttons_polished"),
+                 "must answer exactly"),
+                (lambda v: v["scores"].update(environment="3"), "must be a number 0..5"),
+                (lambda v: v["states"][0]["answers"].update(buttons_polished="yes"),
+                 "must be true, false or null"),
+                (lambda v: v.update(score_reasons={"environment": ["a", "b"]}),
+                 "must be a string"),
+                (lambda v: v["scores"].update(vibes=4), "dimensions the rubric does not")):
+            broken = complete({"scores": scores(4), "findings": []})
+            breaks(broken)
+            coerced, coercions = rubric_mod.coerce(broken, RUBRIC, self.FRAMES)
+            self.assertEqual(coercions, [])
+            self.assertIn(fragment, self.parse(coerced)[1])
+
+    def test_the_required_questions_are_unchanged(self):
+        # Repair and coercion never relax what is asked: every state answers the same
+        # questions it did before, and a verdict missing any of them is malformed.
+        asked = {s: [q["id"] for q in rubric_mod.questions_for(RUBRIC, s)]
+                 for s in rubric_mod.state_ids(RUBRIC)}
+        self.assertEqual(asked["retry"], [
+            "entities_recognisable", "primitives_or_placeholders",
+            "lighting_materials_coherent", "typography_readable", "buttons_polished",
+            "outcome_understandable"])
+        for index, (state, _viewport) in enumerate(PAIRS):
+            for qid in asked[state]:
+                verdict = complete({"scores": scores(4), "findings": []})
+                del verdict["states"][index]["answers"][qid]
+                coerced, _ = rubric_mod.coerce(verdict, RUBRIC, self.FRAMES)
+                self.assertIn(f"(missing {qid})", self.parse(coerced)[1])
+
+    def test_repair_rounds_are_configured(self):
+        from wgf_visualqa.settings import Settings, SettingsError
+        self.assertEqual(Settings.resolve({}).repair_rounds, 2)
+        self.assertEqual(Settings.resolve(
+            {"visualqa": {"judge": {"repair_rounds": 0}}}).repair_rounds, 0)
+        for bad in (-1, "2", True, 11):
+            with self.assertRaises(SettingsError):
+                Settings.resolve({"visualqa": {"judge": {"repair_rounds": bad}}})
 
     def test_frame_states(self):
         self.assertEqual(frame_state("act-dive-after")[0], "interaction")

@@ -11,8 +11,12 @@ exactly what a run's judge saw.
               (wgflib.agentenv), one owned process tree (wgflib.procs)
     isolation the Factory's guarded paths and the staged frames are fingerprinted around it;
               a judge that changed either is refused, and the guarded paths are restored
-    verdict   parsed strictly (rubric.parse). A malformed one is asked for once more, with
-              the reason in the brief; the second malformed verdict ends the judging.
+    verdict   trivially fixable shapes coerced and recorded (rubric.coerce), then parsed
+              strictly (rubric.parse). A malformed one goes back to the judge in a repair
+              round - its own reply and every error, asking for the corrected full verdict -
+              up to `factory.visualqa.judge.repair_rounds` times in all; with none left, a
+              fresh attempt (MAX_JUDGE_RUNS in all). Nothing missing is ever invented: when
+              both budgets are spent the judging ends malformed, with the last errors.
 """
 
 import hashlib
@@ -25,13 +29,15 @@ from wgflib import agentenv, isolation, procs
 from wgf_review.verdict import from_output
 
 from .brief import PROMPT, PROMPT_STDOUT, frame_state, render_brief
-from .rubric import parse
+from .rubric import coerce, load_verdict, problems
 
 __all__ = ["FrameError", "Outcome", "stage_frames", "run_judge", "MAX_JUDGE_RUNS"]
 
-# One retry of a malformed verdict; then the step fails. A judge that cannot write the shape
-# twice will not on a third try, and every try is paid for.
+# Fresh attempts: the second only after the repair rounds are spent. A judge that cannot
+# write the shape from scratch twice will not on a third try, and every try is paid for.
 MAX_JUDGE_RUNS = 2
+# The largest previous reply a repair brief quotes back to the judge.
+_REPLY_CHARS = 200_000
 
 
 class FrameError(Exception):
@@ -94,7 +100,9 @@ class Outcome:
     def __init__(self):
         self.verdict = None
         self.failure = None
-        self.runs = []          # per judge invocation: {exit_code, status, problem, ...}
+        self.runs = []          # per judge invocation: {run, kind, exit_code, status, ...}
+        self.repairs = 0        # how many of `runs` were repair rounds
+        self.coercions = []     # {path, rule, from, to} applied to the accepted verdict
         self.verdict_path = None
         self.brief_path = None
         self.duration_s = 0.0
@@ -130,14 +138,53 @@ def _process_failure(result, settings):
     return None
 
 
+def _reply(verdict_path, stdout):
+    """What the judge answered, as text for a repair brief, or None when it answered nothing."""
+    text = None
+    if os.path.isfile(verdict_path):
+        try:
+            with open(verdict_path, encoding="utf-8", errors="replace") as handle:
+                text = handle.read(_REPLY_CHARS + 1)
+        except OSError:
+            text = None
+    if not (text or "").strip() and stdout:
+        text = stdout[-_REPLY_CHARS:]
+    if not (text or "").strip():
+        return None
+    if len(text) > _REPLY_CHARS:
+        text = text[:_REPLY_CHARS] + f"\n[... cut at {_REPLY_CHARS} characters]"
+    return text
+
+
+def _check(verdict_path, rubric, frames):
+    """(verdict, coercions, errors): the verdict file coerced and parsed. `errors` is the
+    list of every problem, empty when the verdict is usable."""
+    data, problem = load_verdict(verdict_path)
+    if problem:
+        return None, [], [problem]
+    data, coercions = coerce(data, rubric, frames)
+    errors = problems(data, rubric, frames)
+    return (None, coercions, errors) if errors else (data, coercions, [])
+
+
 def run_judge(settings, rubric, workdir, frames, frames_dir, *, title_id, commit, design=None,
               manifest=None, quality=None, guarded=(), logger=None, stem="judge"):
     """Judge staged `frames`. Never raises for the judge's own failure."""
     outcome = Outcome()
     to_stdout = settings.verdict_from == "stdout"
+    repair_budget = getattr(settings, "repair_rounds", 0)
     problem = None
+    repair = None
+    fresh = 0
+    run = 0
     began = time.monotonic()
-    for run in range(1, MAX_JUDGE_RUNS + 1):
+    while True:
+        run += 1
+        kind = "repair" if repair else "fresh"
+        if kind == "fresh":
+            fresh += 1
+        else:
+            outcome.repairs += 1
         verdict_path = os.path.join(workdir, f"{stem}-{run}.verdict.json")
         brief_path = os.path.join(workdir, f"{stem}-{run}.brief.md")
         log_path = os.path.join(workdir, f"{stem}-{run}.log")
@@ -148,7 +195,7 @@ def run_judge(settings, rubric, workdir, frames, frames_dir, *, title_id, commit
             handle.write(render_brief(
                 title_id=title_id, commit=commit, frames=frames, rubric=rubric, design=design,
                 manifest=manifest, quality=quality, verdict_path=verdict_path,
-                to_stdout=to_stdout, previous_problem=problem))
+                to_stdout=to_stdout, previous_problem=problem, repair=repair))
         outcome.verdict_path, outcome.brief_path = verdict_path, brief_path
         values = {"frames_dir": frames_dir, "brief": brief_path, "verdict": verdict_path}
         values["prompt"] = (PROMPT_STDOUT if to_stdout else PROMPT).format(**values)
@@ -159,19 +206,19 @@ def run_judge(settings, rubric, workdir, frames, frames_dir, *, title_id, commit
         before = _snapshot(frames_dir, guarded)
         if logger is not None:
             logger.info("visual-qa judge", argv0=os.path.basename(argv[0]), run=run,
-                        frames=len(frames), timeout_s=settings.timeout)
+                        kind=kind, frames=len(frames), timeout_s=settings.timeout)
         result = procs.run(argv, cwd=workdir, env=env, timeout=settings.timeout,
                            idle_timeout=settings.idle_timeout, log_path=log_path,
                            heartbeat_seconds=15.0)
         after = _snapshot(frames_dir, guarded)
-        record = {"run": run, "argv0": os.path.basename(argv[0]),
+        record = {"run": run, "kind": kind, "argv0": os.path.basename(argv[0]),
                   "exit_code": result.returncode, "status": result.status, "log": log_path}
         outcome.runs.append(record)
         changed_frames = sorted(p for p in set(before[0]) | set(after[0])
                                 if before[0].get(p) != after[0].get(p))
         violations = isolation.diff(before[1], after[1])
         if changed_frames or violations:
-            restored, problems = (isolation.restore_guarded(before[1], guarded)
+            restored, failures = (isolation.restore_guarded(before[1], guarded)
                                   if violations else (True, []))
             listed = [os.path.relpath(p, workdir) for p in changed_frames[:5]] + [
                 v["path"] for v in violations[:5]]
@@ -179,7 +226,7 @@ def run_judge(settings, rubric, workdir, frames, frames_dir, *, title_id, commit
                 "code": "judge-isolation-violation", "retryable": False,
                 "message": f"the judge changed what it may only read: {', '.join(listed)}"
                            + ("" if restored else "; RESTORING FAILED: "
-                              + "; ".join(problems[:5]))}
+                              + "; ".join(failures[:5]))}
             break
         failure = _process_failure(result, settings)
         if failure is not None:
@@ -191,18 +238,34 @@ def run_judge(settings, rubric, workdir, frames, frames_dir, *, title_id, commit
             if extracted is not None:
                 with open(verdict_path, "w", encoding="utf-8") as handle:
                     handle.write(extracted)
-        verdict, problem = parse(verdict_path, rubric, frames)
-        if verdict is None and to_stdout and problem.startswith("no "):
-            problem = "the judge's output ends with no JSON verdict"
+        verdict, coercions, errors = _check(verdict_path, rubric, frames)
+        if verdict is None and to_stdout and errors[0].startswith("no verdict file"):
+            errors[0] = "the judge's output ends with no JSON verdict"
+        if coercions:
+            record["coercions"] = coercions
         if verdict is not None:
             outcome.verdict = verdict
+            outcome.coercions = coercions
+            if logger is not None and coercions:
+                logger.info("visual-qa judge verdict coerced", run=run,
+                            coercions=[f"{c['path']}: {c['rule']}" for c in coercions])
             break
+        problem = "; ".join(errors)
         record["problem"] = problem
         if logger is not None:
-            logger.warning("visual-qa judge verdict malformed", run=run, problem=problem)
+            logger.warning("visual-qa judge verdict malformed", run=run, kind=kind,
+                           problem=problem)
+        reply = _reply(verdict_path, result.stdout if to_stdout else None)
+        if reply is not None and outcome.repairs < repair_budget:
+            repair = {"reply": reply, "problems": errors}
+        elif fresh < MAX_JUDGE_RUNS:
+            repair = None
+        else:
+            break
     if outcome.verdict is None and outcome.failure is None:
         outcome.failure = {"code": "malformed-verdict", "retryable": False,
-                           "message": f"the judge's verdict was malformed {MAX_JUDGE_RUNS} "
-                                      f"times; last: {problem}"}
+                           "message": f"the judge's verdict was malformed after {fresh} fresh "
+                                      f"attempt(s) and {outcome.repairs} repair round(s); "
+                                      f"last: {problem}"}
     outcome.duration_s = time.monotonic() - began
     return outcome

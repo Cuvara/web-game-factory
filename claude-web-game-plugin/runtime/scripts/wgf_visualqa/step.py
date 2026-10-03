@@ -19,7 +19,9 @@ The judge is a command (an agent able to read images) or, for a game whose look 
 approved once, `baseline`: each frame against the approved frame of its state (baseline.py),
 no agent, the same verdict shape.
 
-    FAILED final      malformed verdict twice (judge.MAX_JUDGE_RUNS), a judge that could not
+    FAILED final      a verdict still malformed once the repair rounds
+                      (factory.visualqa.judge.repair_rounds) and fresh attempts
+                      (judge.MAX_JUDGE_RUNS) are spent, a judge that could not
                       start or changed what it may only read, a frame that is not the one
                       the playability step recorded, bad configuration or rubric
     FAILED retryable  the judge timed out, went idle or exited non-zero
@@ -168,6 +170,7 @@ class VisualQAStep(WorkflowStep):
                               score_reasons=verdict.get("score_reasons"),
                               findings=verdict["findings"], failed=failed, routes=routes,
                               notes=verdict.get("notes"), runs=len(outcome.runs),
+                              repairs=outcome.repairs, coercions=outcome.coercions,
                               states=report_states(rubric, frames, verdict["states"]),
                               look={"verdict": verdict["look"],
                                     "reason": verdict.get("look_reason")})
@@ -216,7 +219,7 @@ class VisualQAStep(WorkflowStep):
 
     def _report(self, *, verdict, frames, scores=None, findings=None, failed=(), routes=(),
                 notes=None, runs=0, blocked_reason=None, states=None, look=None,
-                score_reasons=None):
+                score_reasons=None, repairs=0, coercions=()):
         ctx = self._ctx
         context, settings, rubric = ctx["context"], ctx["settings"], ctx["rubric"]
         now = self.clock()
@@ -246,6 +249,8 @@ class VisualQAStep(WorkflowStep):
                        "version": str(rubric.get("version")), "sha256": rubric["sha256"],
                        "pass_bar": rubric["pass_bar"]},
             "judge_runs": runs,
+            "judge_repairs": repairs,
+            "coercions": [dict(c) for c in coercions],
             "frames": [{"id": f["key"], "project": f["project"], "state": f["state"],
                         "path": f["path"], "sha256": f["sha256"]} for f in frames],
             "scores": dict(scores or {}),
@@ -265,4 +270,5 @@ class VisualQAStep(WorkflowStep):
         return ArtifactOutput("visual-qa-report", provenance.seal(report), metadata={
             "verdict": verdict, "failed": len(failed), "commit": ctx["commit"],
             "route": routes[0] if routes else None, "judge_runs": runs,
-            "max_judge_runs": MAX_JUDGE_RUNS})
+            "judge_repairs": repairs,
+            "max_judge_runs": MAX_JUDGE_RUNS + getattr(settings, "repair_rounds", 0)})

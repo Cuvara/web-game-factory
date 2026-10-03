@@ -133,16 +133,35 @@ def _quality_bar(design):
 
 
 def render_brief(*, title_id, commit, frames, rubric, design=None, manifest=None,
-                 quality=None, verdict_path=None, to_stdout=False, previous_problem=None):
+                 quality=None, verdict_path=None, to_stdout=False, previous_problem=None,
+                 repair=None):
     """`frames`: [{key, project, id, state, description, viewport, file}] - `key` is the
-    frame's id in the verdict (<viewport>/<frame-id>), `file` its path for the judge."""
+    frame's id in the verdict (<viewport>/<frame-id>), `file` its path for the judge.
+    `repair` ({reply, problems}) makes it a repair round: the judge's own previous reply and
+    every validation error come first, then the whole brief again."""
     out = []
     add = out.append
     add(f"# Visual QA brief: {title_id or 'a game'}"
         + (f" at {commit[:12]}" if commit else "") + "\n")
     add("Written by the Factory's visual-qa step. You judge what the frames show; you do not "
         "fix anything, and you judge only what is visible - not what the code may intend.\n")
-    if previous_problem:
+    if repair:
+        add("## Repair your previous verdict\n")
+        add("Your previous verdict could not be used. It is below, with every error the "
+            "Factory found in it. Return the corrected verdict in full - every key, every "
+            "score, every (state, viewport) entry and every answer - exactly in the shape "
+            "given at the end of this brief, not only the parts that changed. Fix what the "
+            "errors name; keep every judgement the errors do not touch. Where an answer is "
+            "missing, look at that state's frames and answer it: `true`, `false`, or `null` "
+            "when the frames cannot tell. Never drop a question or a state to make the "
+            "verdict pass the check.\n")
+        add("Errors:\n")
+        for problem in repair["problems"]:
+            add(f"- {problem}")
+        add("")
+        add("Your previous reply, verbatim:\n")
+        add("```\n" + repair["reply"] + "\n```\n")
+    elif previous_problem:
         add("## Your previous verdict was rejected\n")
         add(f"It could not be used: {previous_problem}. Write it again, exactly in the shape "
             "below.\n")

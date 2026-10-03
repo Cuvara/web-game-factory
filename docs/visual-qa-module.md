@@ -34,7 +34,7 @@ first-time players see or understand.
 | `game-design` (required) | `build_spec.visual_identity` (concept, palette, typography, shape language, avoid, `primitive_style`, `ui`), `build_spec.assets[]` (`role`, `readability`) |
 | `asset-manifest` (required) | per item: `role`, `source`, `placeholder`, `quality` |
 | `production-quality-report` (optional) | its failed checks, to confirm or dismiss by eye |
-| `visual-qa-report` (output, 1.2.0) | `scores` and the judge's `score_reasons`, `findings`, `states` (answers, comment, frames), `look` (verdict, reason), `failed`, `routes`, `verdict`, the frames judged, the `rubric` pinned by sha256, `judge_runs` |
+| `visual-qa-report` (output, 1.3.0) | `scores` and the judge's `score_reasons`, `findings`, `states` (answers, comment, frames), `look` (verdict, reason), `failed`, `routes`, `verdict`, the frames judged, the `rubric` pinned by sha256, `judge_runs`, `judge_repairs` and `coercions` (see "Repair rounds and coercion") |
 
 The report is emitted on PASS, FAIL and BLOCKED. A judge that could not produce a usable
 verdict leaves no report (nothing was judged); its brief, log and raw output stay under
@@ -109,7 +109,7 @@ run directory):
 | SUCCESS | PASS |
 | FAILED, route `assets` / `develop`, not retryable | FAIL: the workflow routes it back |
 | BLOCKED (with a report) | no judge configured (`kind: none`) - visual QA needs a judge and is never a silent pass; no frames in the playability-report; a frame no longer on disk |
-| FAILED, not retryable | a malformed verdict twice; a judge that could not start, or that changed a frame or a guarded path; a frame whose sha256 is not the one playability recorded; bad configuration or rubric |
+| FAILED, not retryable | a verdict still malformed once the repair rounds and both fresh attempts are spent (`malformed-verdict`, with the last errors); a judge that could not start, or that changed a frame or a guarded path; a frame whose sha256 is not the one playability recorded; bad configuration or rubric |
 | FAILED, retryable | the judge timed out, went idle, or exited non-zero |
 | WAITING_FOR_INPUT | a required input is not in the run |
 
@@ -156,10 +156,47 @@ What the step does around it (`scripts/wgf_visualqa/judge.py`):
    a `frame` that is one of the given ids or null, and a summary; exactly one `states`
    entry per (state, viewport) with frames, answering exactly its questions; a `look` among
    the rubric's values; `score_reasons`, when given, strings for rubric dimensions only (the
-   brief asks for one per dimension; a verdict without it is still well formed). A
-   malformed verdict is
-   asked for once more, with the reason at the top of the new brief; a second one fails the
-   step.
+   brief asks for one per dimension; a verdict without it is still well formed). Before
+   the check, shapes that cannot change meaning are coerced and recorded; a verdict that
+   still fails it goes to a repair round (below).
+
+### Repair rounds and coercion
+
+The verdict is long - one entry per (state, viewport), each answering five or six
+questions, plus eight scores and their reasons - and a judge that read every frame
+correctly occasionally writes it slightly wrong: one answer left out of one state, or a
+reason wrapped in a list. Throwing that judgement away and paying for a fresh one is the
+wrong repair, and before 2026-10-04 two such slips failed the run (`malformed-verdict`).
+
+**Coercion** (`rubric.coerce`). Only what cannot change what the judge said: surrounding
+whitespace on an id or enum value (`" blocker"`, a frame id), the case of an enum value
+(`"Finished-Game"`, `"ASSETS"`) or of a key the rubric names (a dimension, a question id,
+a top-level key), and a one-item list of a string where a string is asked for (a
+`score_reasons` value). Each coercion is recorded in the report's `coercions` as `{path,
+rule, from, to}` (rules `strip-whitespace`, `enum-case`, `key-case`,
+`unwrap-one-item-list`) and logged. Never coerced, because it would need a guess: a missing
+key, a missing answer, a missing state, a score written as a string, a boolean written as
+`"yes"`, a list of two reasons, an unknown key.
+
+**Repair round.** A verdict that still fails the check goes back to the judge: a new brief,
+`<step>-<n>.brief.md`, opens with "Repair your previous verdict", every validation error
+the check found (all of them, not the first only - `rubric.problems`), and the judge's own
+previous reply verbatim (cut at 200,000 characters), then the whole brief again. The judge
+is asked for the corrected verdict in full, to keep every judgement the errors do not
+touch, to answer a missing question from that state's frames (`null` when the frames
+cannot tell) and never to drop a question or a state. What comes back goes through the
+same coercion and the same check; nothing the judge left out is ever filled in by the
+step.
+
+**Budgets.** `factory.visualqa.judge.repair_rounds` (default 2, 0-10) counts repair rounds
+for the whole judging, separately from fresh attempts (`judge.MAX_JUDGE_RUNS`, 2). A
+malformed verdict goes to a repair round while any are left and the judge replied
+something; otherwise to the second fresh attempt (the brief from scratch, with the last
+problem at the top); with neither left, the step FAILS as before - `malformed-verdict`,
+not retryable, with the last errors. The default is therefore at most four judge
+invocations: fresh, repair, repair, fresh. `repair_rounds: 0` is the old behaviour, two
+fresh attempts. The report's `judge_runs` counts every invocation and `judge_repairs` the
+repair rounds among them; each invocation's brief, log and verdict stay in the workdir.
 
 The judge writes:
 
@@ -271,8 +308,13 @@ to assets, unmatched states reported, bad configuration, the measure's tolerance
 primitive-entity blocker routed to assets, debug output routed to develop, a dimension
 below the bar, a per-state answer routed by its question, a developer-prototype look,
 `primitive_style` waiving only the primitive answer, unanswered or extra states, a verdict
-on stdout, a malformed verdict retried once then failed (and one
-fixed on the retry), an unknown frame id, no judge (BLOCKED), a non-zero exit (retryable),
+on stdout, a malformed verdict sent to two repair rounds and a fresh attempt then failed
+(and `repair_rounds: 0` failing after two fresh attempts, and one fixed on the repair), a
+verdict missing one answer fixed in a repair round (with the errors and its own reply in the
+repair brief), a judge that never fixes it failing with the errors, a one-item list
+`score_reasons` value coerced and recorded, every error reaching the repair round at once,
+coercion changing no meaning and inventing nothing, the required questions unchanged, the
+`repair_rounds` setting, an unknown frame id, no judge (BLOCKED), a non-zero exit (retryable),
 a changed and a missing frame, a judge writing to a frame or a guarded path, the mock, the
 CLI harness, the judge's `score_reasons` reaching the report (and checked when malformed),
 and the rubric's `rebuild_roles` for every `assets` failure. What a failure sends back is

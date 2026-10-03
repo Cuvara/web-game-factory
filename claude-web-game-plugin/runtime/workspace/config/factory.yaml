@@ -551,6 +551,7 @@ factory:
       timeout_seconds: 1800
       idle_timeout_seconds: 600 # no output for this long ends the reviewer's process tree
       verdict_from: file        # file: it writes {verdict} | stdout: it prints the JSON last
+      repair_rounds: 2          # malformed verdict -> judge repairs it (0-10, 0 = none)
     # Read-only reviewer on Claude Code's headless mode. Checked against CLI 2.1.281 and run
     # live through the real review step (docs/claude-capabilities.md). Two independent
     # layers: the host refuses writes (below), and the Factory fingerprints the checkout and
@@ -675,7 +676,8 @@ factory:
   # `assets` or `develop`. `none` BLOCKS the step: visual QA needs a judge, and is never a
   # silent pass. The judge gets copies of the frames in a directory under the run, the
   # allowlisted environment (factory.agents.env_passthrough), and the Factory's guarded paths
-  # are fingerprinted around it. A malformed verdict is asked for once more, then fails.
+  # are fingerprinted around it. A malformed verdict goes back to the judge with its own
+  # reply and every error (repair_rounds), then once more from scratch, then fails.
   visualqa:
     judge:
       kind: none                # none | command: run argv unattended, read-only

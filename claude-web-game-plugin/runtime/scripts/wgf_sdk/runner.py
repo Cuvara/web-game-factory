@@ -12,8 +12,10 @@ import tempfile
 from wgflib import agentenv, procs
 from wgflib import template_contract as contract
 
+from wgf_develop.checks import TOOLCHAIN
+
 __all__ = ["CommandRunner", "CommandResult", "TEST_FILE", "TEST_DIR", "SCENARIOS", "run_tests",
-           "git_state"]
+           "git_state", "GAME_SUITE", "failed_tests"]
 
 TEST_FILE = "tests/unit/platform/gameplay-integration.test.ts"
 # The describe blocks of TEST_FILE, which is where these names are defined.
@@ -128,7 +130,63 @@ def run_tests(runner, repo, timeout=600, typecheck=True, touched=()):
         _typecheck(runner, repo, timeout, touched, record)
     else:
         record["typecheck"] = "not-run"
+    _game_suite(runner, repo, timeout, record)
     return record
+
+
+# The game's own unit suite: the command develop's `unit` check runs (wgf_develop.checks).
+GAME_SUITE = TOOLCHAIN["unit"][0]
+_ANSI = re.compile(r"\x1b\[[0-9;]*m")
+# vitest's failure summary (` FAIL  file > suite > test`) and its tree, where a failed test
+# is a cross mark (` x suite > test 3ms`).
+_FAILED_TEST = re.compile(
+    r"^\s*(?:FAIL|\u00d7|\u2717|\u2715)\s+(?P<name>\S.*?)(?:\s+\d+\s*ms)?\s*$")
+
+
+def failed_tests(output):
+    """The failing tests (or files) a vitest run names, in order, each once."""
+    names = []
+    for line in _ANSI.sub("", output or "").splitlines():
+        match = _FAILED_TEST.match(line)
+        if match and match.group("name") not in names:
+            names.append(match.group("name"))
+    return names
+
+
+def _has_script(repo, script):
+    try:
+        with open(os.path.join(repo, contract.PACKAGE_JSON), encoding="utf-8") as stream:
+            return script in (json.load(stream).get("scripts") or {})
+    except (OSError, ValueError, AttributeError):
+        return False
+
+
+def _game_suite(runner, repo, timeout, record):
+    """Run the game's own unit suite against the integration, before it is committed.
+
+    The integration rewrites the platform seam the game's tests exercise: a green
+    integration suite with the game's tests broken is a commit verify's `code.unit` fails
+    two steps later. A failure fails the integration, naming the failing tests.
+    """
+    script = TOOLCHAIN["unit"][1]
+    if not _has_script(repo, script):
+        record["note"] = (record.get("note", "") + f" game suite: package.json has no "
+                          f"{script!r} script; not run").strip()
+        return
+    result = runner.run(list(GAME_SUITE), repo, timeout)
+    command = " ".join(GAME_SUITE)
+    if result is None:
+        record["note"] = (record.get("note", "") + f" game suite: {command} not run, "
+                          "pnpm is not installed").strip()
+        return
+    record["command"] = f"{record['command']}; {command}" if record.get("command") else command
+    if result.returncode == 0:
+        return
+    names = failed_tests((result.stdout or "") + "\n" + (result.stderr or ""))
+    why = ("failing: " + "; ".join(names[:20])) if names else _tail(result)
+    record["status"] = "failed"
+    record["note"] = (record.get("note", "") + f" the game's unit suite ({command}) failed "
+                      f"after the integration's write, exit {result.returncode}: {why}").strip()
 
 
 _TSC_ERROR = re.compile(r"^(?P<path>[^\s(][^(]*)\(\d+,\d+\): error ", re.M)

@@ -43,7 +43,8 @@ import wgf_sdk  # noqa: E402
 from wgf_sdk import evidence, integrate  # noqa: E402
 from wgf_sdk.design import classify_trigger  # noqa: E402
 from wgf_sdk.inspect_sdk import inspect_sdk  # noqa: E402
-from wgf_sdk.runner import SCENARIOS, TEST_FILE, CommandResult, run_tests  # noqa: E402
+from wgf_sdk.runner import (GAME_SUITE, SCENARIOS, TEST_FILE, CommandResult,  # noqa: E402
+                            failed_tests, run_tests)
 from wgf_sdk.step import SdkStep  # noqa: E402
 
 CONFORMANCE = os.path.join(HERE, "fixtures", "sdk-conformance.json")
@@ -276,10 +277,12 @@ def make_repo(root, scene=True, node_modules=True, main=MAIN_TS, game_config=GAM
 class FakeRunner:
     """node and pnpm, scripted; git real (or absent, `git=False`). Records every command."""
 
-    def __init__(self, failing_scenarios=(), tsc_output=None, git=True, pnpm=True):
+    def __init__(self, failing_scenarios=(), tsc_output=None, git=True, pnpm=True,
+                 game_suite=(0, "Tests  12 passed (12)")):
         self.calls = []
         self.failing = set(failing_scenarios)
         self.tsc_output = tsc_output
+        self.game_suite = game_suite  # (exit code, output) of the game's own unit suite
         self.git = git
         self.pnpm = pnpm
 
@@ -292,6 +295,8 @@ class FakeRunner:
             return CommandResult(done.returncode, done.stdout, done.stderr)
         if not self.pnpm:
             return None
+        if argv == list(GAME_SUITE):
+            return CommandResult(self.game_suite[0], self.game_suite[1], "")
         if "vitest" in argv:
             output = next(a.split("=", 1)[1] for a in argv if a.startswith("--outputFile="))
             results = [{"ancestorTitles": [s], "status": "failed" if s in self.failing
@@ -1154,6 +1159,44 @@ class Commits(SdkCase):
         self.assertEqual(self.report(result)["build_ref"],
                          {"commit_sha": base, "base_commit_sha": base, "sdk_commits": []})
 
+    def with_unit_suite(self):
+        make_repo(self.repo)
+        write(self.repo, "package.json", json.dumps({"scripts": {"test": "vitest run"}}))
+        return commit_checkout(self.repo)
+
+    def test_the_games_failing_unit_suite_fails_the_step_before_it_commits(self):
+        # Sky Marble, 2026-10-03: the sdk commit changed the platform seam, four of the
+        # game's own platform-integration tests broke, and only verify's code.unit noticed.
+        base = self.with_unit_suite()
+        output = ("\x1b[31m \u00d7\x1b[39m platform seam > grants the reward once 4ms\n"
+                  " FAIL  tests/unit/platform/seam.test.ts > platform seam > grants the "
+                  "reward once\n"
+                  " FAIL  tests/unit/platform/seam.test.ts > platform seam > pauses on ad\n"
+                  " Tests  2 failed | 10 passed (12)\n")
+        result = self.execute(FakeRunner(game_suite=(1, output)),
+                              prototype_report=prototype_at(base))
+        self.assertEqual((result.outcome, result.retryable), (StepOutcome.FAILED, False))
+        self.assertIn("tests/unit/platform/seam.test.ts > platform seam > grants the reward "
+                      "once", result.error)
+        self.assertIn("platform seam > pauses on ad", result.error)
+        self.assertEqual(self.head(), base)  # nothing committed
+        tests = self.report(result)["integration"]["tests"]
+        self.assertEqual(tests["status"], "failed")
+        self.assertIn(" ".join(GAME_SUITE), tests["command"])
+        self.assertIn(list(GAME_SUITE), self.runner.calls)
+        self.assertFalse([c for c in self.runner.calls if c[0] == "git" and "commit" in c])
+
+    def test_a_green_unit_suite_runs_before_the_commit(self):
+        base = self.with_unit_suite()
+        result = self.execute(prototype_report=prototype_at(base))
+        self.assertEqual(result.outcome, StepOutcome.SUCCESS, result.error or result.message)
+        self.assertNotEqual(self.head(), base)
+        calls = self.runner.calls
+        suite = calls.index(list(GAME_SUITE))
+        committed = next(i for i, c in enumerate(calls) if c[0] == "git" and "commit" in c)
+        self.assertLess(suite, committed)
+        self.assertEqual(self.report(result)["integration"]["tests"]["status"], "passed")
+
     def test_a_commit_forging_its_trailer_is_not_taken_for_its_own(self):
         make_repo(self.repo)
         base = self.head()
@@ -1351,6 +1394,14 @@ class FailurePaths(SdkCase):
         self.assertEqual(result.outcome, StepOutcome.BLOCKED)
         self.assertEqual(result.artifacts, [])
         self.assertIn("cannot be established", result.message)
+
+
+class GameSuiteNames(unittest.TestCase):
+    def test_names_each_failing_test_once_without_colour(self):
+        self.assertEqual(failed_tests("\x1b[31m FAIL \x1b[39m a.test.ts > s > t\n"
+                                      " \u00d7 s > u 12ms\n \u2713 s > ok 1ms\n"
+                                      " FAIL  a.test.ts > s > t\n"),
+                         ["a.test.ts > s > t", "s > u"])
 
 
 class Runner(unittest.TestCase):

@@ -32,8 +32,10 @@ Outcomes (docs/workflow-module-contract.md §7):
     the build does not boot through the integration seam     FAILED, not retryable: main.ts
     (wgflib.gameseam: main.ts importing createGamePlatform   must use the develop step's seam;
     and createGameIntegration, no createPlatform)            nothing is written or committed
-    the integration's own mock suite or typecheck failed     FAILED, not retryable, sdk-report
-                                                             persisted as evidence
+    the integration's own mock suite or typecheck failed,    FAILED, not retryable, sdk-report
+    or the game's own unit suite (`pnpm run test`, the       persisted as evidence, the failing
+    command of develop's `unit` check) failed after the      tests named; nothing committed
+    integration's write
     no readable git HEAD, a prototype-report naming no
     commit, HEAD not the prototype commit (or this run's
     sdk commits on it), uncommitted changes the
@@ -394,7 +396,7 @@ class SdkStep(WorkflowStep):
             metadata["integration"] = tests["status"]
             if tests["status"] == "failed":
                 return StepResult("FAILED", retryable=False, artifacts=[output],
-                                  error="the integration's own suite failed: "
+                                  error="the integration's checks failed: "
                                         + tests.get("note", "see integration.tests"))
         if blocking:
             return StepResult("FAILED", retryable=False, artifacts=[output],

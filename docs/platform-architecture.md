@@ -184,6 +184,13 @@ integrate (`BLOCKED`, nothing written) when the last commit to change one is not
 ledger records: rewriting it would erase that work without a word (a regression test added to
 the SDK-mock suite was, in the 2.1.1 production run).
 
+Before it commits, the step runs the SDK-mock suite, the typecheck, and then the game's own
+unit suite - `pnpm run test`, the command develop's `unit` check runs - because the wiring
+replaces the seam the game's tests exercise. A failing game test fails the step (`FAILED`,
+not retryable, the sdk-report kept as evidence, the failing tests named in its error and in
+`integration.tests.note`) and nothing is committed; verify's `code.unit` would otherwise be
+the first to notice, two steps later (the 2026-10-03 3D run).
+
 `src/main.ts` is never edited: it already boots through the seam, because the develop step
 provided it and its conformance check requires it (`wgflib.gameseam`). A build whose main.ts
 does not import and call `createGamePlatform` and `createGameIntegration` from

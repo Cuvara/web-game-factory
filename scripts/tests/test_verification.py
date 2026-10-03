@@ -418,6 +418,35 @@ class BuildAndCode(VerificationCase):
         self.assertEqual(check["status"], "FAIL")
         self.assertIn("assets/boss.png", json.dumps(check["evidence"]))
 
+    def css_build(self, css):
+        def build(command, cwd, env):
+            FakeRunner.build(command, cwd, env)
+            with open(os.path.join(cwd, "dist", "assets", "style-9c1e.css"), "w") as handle:
+                handle.write(css)
+            return ok()
+
+        _, report, _ = self.verify(runner=FakeRunner({"pnpm build": build}))
+        return self.check(report, "build.asset-resolution")
+
+    # The 3D run's built CSS: an SVG inlined as a data: URL, referring to its own gradient.
+    DATA_SVG = (".glow{background:url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/"
+                "2000/svg'%3E%3Cpath fill='url(%23n)' d='M0 0h1v1z'/%3E%3C/svg%3E\")}\n"
+                ".ring{mask:url(data:image/svg+xml;utf8,<svg><circle fill=\"url(%23n)\"/>"
+                "</svg>) no-repeat}\n"
+                ".mark{filter:url(%23n)}\n")
+
+    def test_a_url_inside_a_data_url_is_not_a_bundle_reference(self):
+        check = self.css_build(self.DATA_SVG)
+        self.assertEqual(check["status"], "PASS", check["message"])
+        self.assertNotIn("%23n", json.dumps(check["evidence"]))
+
+    def test_a_missing_css_url_still_fails_beside_a_data_url(self):
+        check = self.css_build(self.DATA_SVG + ".hero{background:url(img/missing.png)}\n")
+        self.assertEqual(check["status"], "FAIL")
+        evidence = json.dumps(check["evidence"])
+        self.assertIn("img/missing.png", evidence)
+        self.assertNotIn("%23n", evidence)
+
     def test_a_build_without_an_entry_point_fails_the_bundle(self):
         def build(command, cwd, env):
             FakeRunner.build(command, cwd, env)

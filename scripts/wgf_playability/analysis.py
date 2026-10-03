@@ -801,10 +801,17 @@ def judge(records, frames_dir, design, rules, experience_rules, project, qa=None
         mid_ok = (bool(mid.get("clicked")) and mid.get("playingMs") is not None
                   and now is not None and (now == 0 or (was is not None and now < was)))
         ok = ok and mid_ok
-        mid_note = ("; a restart inside the unit returned to play with its progress at "
-                    f"{now}" if mid_ok else
-                    "; a restart inside the unit did not return to a clean unit "
-                    f"(progress {was} -> {now}, retry {mid.get('clicked')})")
+        if mid_ok:
+            mid_note = ("; a restart inside the unit returned to play with its progress at "
+                        f"{now}")
+        elif not mid.get("clicked"):
+            mid_note = ("; no reset was offered DURING play: this family resets inside a "
+                        "unit, so the probe must list an input named reset, retry or restart "
+                        "while playing, and it must return the unit to its start state")
+        else:
+            mid_note = ("; a restart inside the unit did not return to a clean unit "
+                        f"(progress {was} -> {now}, retry {mid.get('clicked')}): progress "
+                        "rises from 0 to its target, so a reset reads 0 again")
     # Nothing offered a retry because play never ended: this check waits on lose.reachable, and
     # says so rather than reporting a build defect it could not reach.
     no_loss = lose.get("reached") != "lost" and not restart

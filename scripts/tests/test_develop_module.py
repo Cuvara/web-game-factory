@@ -2478,6 +2478,18 @@ class ContentInTheBrief(DevelopCase):
         with open(os.path.join(self.repo, briefs.BRIEF_DIR, "brief.md")) as handle:
             return data, handle.read()
 
+    def test_the_brief_names_the_familys_qa_obligations(self):
+        # The live puzzle greybox failed restart.works on a reset DURING play that nobody had
+        # asked the developer for: the family's `qa` block obliges the build, so the brief
+        # says what the bot will hold it to (platformer: a checkpoint keeps the unit's
+        # progress on a loss; a reachable loss).
+        data, text = self.brief(with_authored_content())
+        genre = text[text.index("## Genre"):text.index("## Content units")]
+        self.assertIn("checked from outside", genre)
+        self.assertIn("last checkpoint", genre)
+        self.assertIn("A loss is reachable", genre)
+        self.assertNotIn("reset or retry input is offered DURING play", genre)
+
     def test_the_brief_renders_the_content_table_mvp_only(self):
         data, text = self.brief(with_authored_content())
         content_block = data["content"]

@@ -866,6 +866,39 @@ def _md_table(header, rows):
     return "\n".join(out)
 
 
+# What a family's `qa` parameters oblige the BUILD to do (the rest parametrise the judge).
+_QA_OBLIGATIONS = {
+    "reset_in_unit": "A reset or retry input is offered DURING play (the probe lists it as an "
+                     "input named reset, retry or restart) and returns the current unit to its "
+                     "start state - progress, moves and board - without leaving the unit.",
+    "checkpoint": "A loss inside a unit returns the player to the unit's last checkpoint with "
+                  "the unit's progress kept (content.progress), not to the unit's start.",
+    "resource_metric": "The probe reports metrics.{value}, the resource whose fall ends play; "
+                       "bad play must drive it down.",
+    "time_target_axis": "Each unit's parameters carry its time target, and a unit succeeds "
+                        "only inside it (metrics.time <= the target).",
+    "failure_state": "A loss is reachable in every unit that states a failure: bad play ends "
+                     "in `lost`, with a retry.",
+}
+
+
+def _qa_obligations(family):
+    """The obligations a family's `qa` block puts on the build, in the brief's words."""
+    if not family:
+        return []
+    try:
+        models = load_file(os.path.join(paths.REFERENCE, "genre-models.yaml"))
+    except (OSError, ValueError):
+        return []
+    qa = ((models.get("families") or {}).get(family) or {}).get("qa") or {}
+    lines = []
+    for key, text in _QA_OBLIGATIONS.items():
+        value = qa.get(key)
+        if value is True or (value and not isinstance(value, bool)):
+            lines.append(text.replace("{value}", str(value)))
+    return lines
+
+
 def _content_section(brief):
     """The content the build owes: the genre it is held to, every MVP unit in order with its
     acceptance, the axes difficulty is stated on, what mastery means, and - when the content
@@ -892,6 +925,13 @@ def _content_section(brief):
             + (f", {genre['ending']}" if genre.get("ending") else "")
             + ". The unit kinds, difficulty axes, win and loss shapes and variety bars this "
               "family is held to are `core/reference/genre-models.yaml` in the Factory.\n")
+        obligations = _qa_obligations(genre.get("family"))
+        if obligations:
+            add("The playability bot holds a build of this family to these, from the family's "
+                "`qa` block - build them, they are checked from outside:\n")
+            for line in obligations:
+                add(f"- {line}\n")
+            add("\n")
 
     if not units and not generation:
         return "\n".join(out)

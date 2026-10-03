@@ -443,7 +443,9 @@ a requirement it could not make falls back to placeholders exactly as in `each` 
 With `spec_from: file` the session writes `<id>.model.json` files in `{dir}/specs/` (the
 request's `spec_paths`); on a repair or review they hold the previous specs, to be edited in
 place, and an untouched file is unchanged. Scope the host's writes to that directory: for
-Claude Code, `--allowedTools "Read,Edit(/{dir}/**)"` — `//` makes it absolute, and an
+Claude Code, `--allowedTools "Read,Edit({dir_rule}/**)"` — `{dir_rule}` is `{dir}` as a
+permission rule names it, `//` and the POSIX form, so it is absolute on Windows too
+(`//c/Users/...`; `wgflib/permpath.py`; the older `Edit(/{dir}/**)` is read as this), and an
 `Edit(...)` rule governs every file-editing tool (verified 2026-10-02 with a real `claude -p`:
 a `Write(...)` rule is ignored with a warning; a write inside the directory and a
 subdirectory succeeded, one outside was refused). With `spec_from: stdout` the answer ends

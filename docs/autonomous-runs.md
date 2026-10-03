@@ -38,7 +38,7 @@ those, and nothing else:
 | `develop.budget` | `max_sessions: 12`, `max_cost: 60` (US$, from `total_cost_usd`) | develop blocks, nothing spawned, once reached; only a person raises it (`wgf resume <run> --budget-sessions N`) |
 | `review.reviewer` | `kind: command`, the verified read-only `claude -p` argv | Approves or requests changes; the Factory fingerprints the checkout and undoes any write |
 | `design` | `author: agent`, the verified read-only `claude -p` argv | Writes the design draft for a brief no design archetype carries; the module judges it unchanged, and shows it any schema or buildability problem for a bounded repair (`MAX_REPAIR_ROUNDS`) |
-| `assets.model_author` | `kind: command`, `mode: set`, `spec_from: file`, `review_rounds: 1`; the read-only argv plus `Write,Edit` allowed only by `Edit(/{dir}/**)` | One session writes every 3D model of the design as a set (at most US$3 a call; one call per repair or review round); the pinned Blender 4.5 builds each spec, the Factory judges the GLB (`primitive_only`, silhouette, parts, palette) and renders contact sheets and the set, which the author opens to repair and to revise what does not read ([blender-pipeline.md](blender-pipeline.md), "Set mode"). Needs Blender on `PATH` or in `WGF_BLENDER` |
+| `assets.model_author` | `kind: command`, `mode: set`, `spec_from: file`, `review_rounds: 1`; the read-only argv plus `Write,Edit` allowed only by `Edit({dir_rule}/**)` | One session writes every 3D model of the design as a set (at most US$3 a call; one call per repair or review round); the pinned Blender 4.5 builds each spec, the Factory judges the GLB (`primitive_only`, silhouette, parts, palette) and renders contact sheets and the set, which the author opens to repair and to revise what does not read ([blender-pipeline.md](blender-pipeline.md), "Set mode"). Needs Blender on `PATH` or in `WGF_BLENDER` |
 | `assets.author` | `kind: command`, `mode: set`, the verified `claude -p` argv: writes only under the Factory's `{out}`, runs only the Factory's `{preview}` | Draws every 2D requirement as ONE set in one session (at most US$6), from the whole visual identity, the art direction and the craft guides; runs the preview, which judges every file and renders the contact sheet it then looks at, and revises. The Factory judges again and delivers what passes; one repair session is shown what still fails and the last sheet ([assets-module.md](assets-module.md#the-set-author)) |
 | `assets.producers` | `[fonts, audio]` | Bundles the typography's faces from the Factory font library and composes the music and sound effects; no agent, no network, no cost (the shipped default is `[]`) |
 | `visualqa.judge` | `kind: command`, `verdict_from: stdout`, the verified read-only `claude -p` argv | Reads the captured frames and returns scores and findings (at most US$2 a judgement); the step decides PASS or FAIL and routes `assets` / `develop` |
@@ -141,6 +141,11 @@ substitution on purpose). The research agent writes the idea's concept to the pr
 `workspace/research/concepts.yaml` (its `brief` exactly the run's idea, `design_archetype:
 agent`, every figure an estimate the scan records as a hypothesis), and the run is resumed.
 Such a concept can only be designed by an agent design author, which the profile configures.
+Without it (the shipped `design: {author: archetype}`), research waits as soon as it selects
+the concept, naming `design: {author: agent}`: it no longer spends strategy and G2 to fail at
+design, where the archetype author used to swap in a catalog archetype by keyword (a 2D brief
+designed as the 3D arena-dodge). The archetype author refuses such a concept too, and its
+keyword selection keeps to the dimension research states (`art.dimension`).
 
 Research carries forward only a concept the design module can build: each entry of
 `scripts/wgf_discovery/archetypes.yaml` declares its `design_archetype`, or `null`, and a

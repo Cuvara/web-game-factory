@@ -111,8 +111,20 @@ class ResearchToDesign(unittest.TestCase):
                 breached = [r["criterion_id"] for r in
                             artifact("game-design")["consistency"]["rule_results"]
                             if r.get("breached")]
-                chosen, _why = design_archetypes.select(artifact("title-strategy"))
-                if self.declared[archetype_id]:
+                strategy = artifact("title-strategy")
+                declared = self.declared[archetype_id]
+                rendering = design_archetypes.dimension_of(strategy)
+                if declared and rendering and                         design_archetypes.ARCHETYPES[declared]["dimension"] != rendering:
+                    # The catalog builds this concept in another dimension than it renders
+                    # (endless-runner: rendering 3d, lane-runner 2d). That is the catalog's
+                    # explicit declaration; without it, design never crosses the dimension
+                    # the strategy states by a keyword match (F09) - it picks within it.
+                    chosen, _why = design_archetypes.select(strategy)
+                    self.assertEqual(design_archetypes.ARCHETYPES[chosen]["dimension"],
+                                     rendering)
+                    continue
+                chosen, _why = design_archetypes.select(strategy)
+                if declared:
                     self.assertEqual(design, "SUCCESS", breached)
                     self.assertEqual(state["steps"]["tech-plan-review"]["status"], "SUCCESS")
                     self.assertEqual(chosen, self.declared[archetype_id])

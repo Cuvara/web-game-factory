@@ -17,8 +17,10 @@ looking at renders. Configured under `factory.assets.author` like the per-asset 
 writes: <out>/<variant id>.svg per drawing, plus its style sheet <out>/STYLE.md), {preview}
 (the one command it may run: `<python> <wgf_assets/preview.py> <job.json>`), {sheet} (where
 that command writes the contact sheet) and {prompt}. A host restricts its writes to {out}
-and its shell to exactly {preview} - in Claude Code: `--allowedTools "Edit(/{out}/**)"
-"Bash({preview})"` (`//` is an absolute path; an Edit rule covers every file-writing tool).
+and its shell to exactly {preview} - in Claude Code: `--allowedTools "Edit({out_rule}/**)"
+"Bash({preview})"`. {out_rule} is {out} as a permission rule names it, `//` and the POSIX
+form (`//c/Users/...` on Windows; wgflib.permpath); an Edit rule covers every file-writing
+tool. The older `Edit(/{out}/**)` is read as `Edit({out_rule}/**)`.
 
 The brief carries every 2D requirement the author is asked for (role, description,
 readability, spec, size, count, the file of each variant, and which are already accepted),
@@ -41,7 +43,7 @@ import shlex
 import shutil
 import sys
 
-from wgflib import agentenv, paths, procs
+from wgflib import agentenv, paths, permpath, procs
 
 from . import preview as preview_mod
 from .author import AuthorError, AuthorRunFailed
@@ -49,6 +51,9 @@ from .author import AuthorError, AuthorRunFailed
 __all__ = ["SetAuthor", "SET_CRAFT", "PLACEHOLDERS"]
 
 PLACEHOLDERS = ("request", "out", "preview", "sheet", "prompt")
+# The placeholders that are paths: each is also offered as {<name>_rule}, the form a host
+# permission rule names it by (wgflib.permpath).
+PATH_PLACEHOLDERS = ("request", "out", "sheet")
 DEFAULTS = {"timeout_seconds": 2400, "idle_timeout_seconds": None, "repair_rounds": 1}
 # The craft playbooks the brief names, in reading order.
 SET_CRAFT = ("production-art-2d.md", "art-direction.md", "game-ui-kit.md",
@@ -124,11 +129,13 @@ class SetAuthor:
     @staticmethod
     def _format(argv, values):
         try:
-            return [part.format(**values) for part in argv]
+            return permpath.format_argv(argv, values, PATH_PLACEHOLDERS)
         except (KeyError, IndexError, ValueError) as exc:
             raise AuthorError(
                 f"factory.assets.author.argv has a placeholder the set author does not "
-                f"provide ({exc}); use " + ", ".join("{%s}" % p for p in PLACEHOLDERS)
+                f"provide ({exc}); use " + ", ".join(
+                    ["{%s}" % p for p in PLACEHOLDERS]
+                    + ["{%s_rule}" % p for p in PATH_PLACEHOLDERS])
                 + ", and double any literal brace") from exc
 
     @property

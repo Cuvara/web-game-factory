@@ -221,7 +221,7 @@ Design reads `title-strategy.research` and records its own `applied`:
 
 | Design decision | From research | Otherwise |
 |---|---|---|
-| archetype | the `design_archetype` research's capability check named | keyword selection on the strategy |
+| archetype | the `design_archetype` research's capability check named; `agent` is refused by the archetype author (research already waits for it) | keyword selection on the strategy, among the archetypes of the dimension research states (`art.dimension`); none of that dimension is refused |
 | visual identity kit | the kit matching most of the supported tone, palette and rendering (`wgf_design/identity.py` `TRAITS`); the title digest only breaks ties | the title digest within the archetype's affinity |
 | fantasy | the research fantasy, in its theme and setting | the archetype's fantasy |
 | art direction | prefixed with the theme and the matched art direction | the kit alone |

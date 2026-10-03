@@ -16,7 +16,10 @@ Opt-in. An installation selects it in workspace/config/factory.yaml:
 `argv` placeholders, substituted per element and never re-formatted: {request} (the request
 JSON: strategy, resolved platforms, title id, and the built-in archetype's draft as a
 schema-shaped starting point), {draft} (where to write the draft JSON), {prompt} (a
-one-paragraph instruction).
+one-paragraph instruction), and {request_rule} / {draft_rule}: the same paths as a host
+permission rule names them, `//` and the POSIX form (`//c/Users/...` on Windows;
+wgflib.permpath) - `Edit({draft_rule})` restricts the agent's writes to the draft on every
+host OS. The older `Edit(/{draft})` is read as `Edit({draft_rule})`.
 
 The agent only writes a DRAFT. Everything after it is the design module's, unchanged: platform
 absorption and tier derivation (`finalize`), the buildability check and the consistency rules,
@@ -42,7 +45,7 @@ import copy
 import json
 import os
 
-from wgflib import agentenv, paths, procs, quality_bar
+from wgflib import agentenv, paths, permpath, procs, quality_bar
 
 from . import identity
 from .authors import ArchetypeAuthor, AuthorError, DesignAuthor, register_author
@@ -245,7 +248,7 @@ class AgentAuthor(DesignAuthor):
 
         # The built-in author's draft is the starting point: the exact shape the module
         # requires, already inside the strategy's scope. The agent improves it.
-        starting = ArchetypeAuthor().draft(brief)
+        starting = ArchetypeAuthor(starting_point=True).draft(brief)
         idea = (brief.get("strategy") or {}).get("brief")
         rules = load_rules()
         request = {"title_id": brief.get("title_id"), "strategy": brief.get("strategy"),
@@ -298,11 +301,11 @@ class AgentAuthor(DesignAuthor):
         if repair:
             values["prompt"] += PROMPT_REPAIR
         try:
-            command = [part.format(**values) for part in argv]
+            command = permpath.format_argv(argv, values, ("request", "draft"))
         except (KeyError, IndexError, ValueError) as exc:
             raise AuthorError(f"factory.design.agent.argv has a placeholder this author does "
                               f"not provide ({exc}); use {{request}}, {{draft}}, {{prompt}}, "
-                              f"and double any literal brace") from exc
+                              f"{{draft_rule}}, and double any literal brace") from exc
         result = procs.run(command, cwd=directory, env=env,
                            timeout=settings.get("timeout_seconds"),
                            idle_timeout=settings.get("idle_timeout_seconds"),

@@ -70,7 +70,9 @@ Outcomes (docs/workflow-module-contract.md §7):
 
     SUCCESS            research-report + opportunity
     WAITING_FOR_INPUT  no external evidence at all - the report is still emitted, and says so;
-                       or (idea_fallback: wait) the idea matches no eligible candidate
+                       or (idea_fallback: wait) the idea matches no eligible candidate;
+                       or the selected concept needs the agent design author
+                       (`design_archetype: agent`) and `factory.design.author` is not agent
     BLOCKED            evidence read, but no candidate survived screening - report emitted
     FAILED, permanent  a malformed snapshot, game record, probe file, catalog, concepts file,
                        vocabulary or scope; a `select` naming no eligible opportunity
@@ -118,6 +120,9 @@ __all__ = ["ResearchStep", "DEFAULTS", "CATALOG"]
 CATALOG = os.path.join(os.path.dirname(os.path.abspath(__file__)), "archetypes.yaml")
 CONTROL_PLATFORMS = ("generic-web",)
 CONCEPTS_FILE = "concepts.yaml"
+# A concept design_archetype naming no catalog archetype: only the agent design author can
+# design it, and research waits rather than hand it to another author (F09).
+AGENT_ONLY = "agent"
 IDEA_FALLBACKS = ("wait", "nearest")
 REQUIRED = ("id", "title", "genre", "subgenre", "core_mechanic", "fantasy", "core_loop",
             "session_seconds", "replayability", "technical_complexity", "asset_complexity",
@@ -407,6 +412,20 @@ class ResearchStep(WorkflowStep):
 
         block = next(b for b in v2["opportunities"]
                      if b["opportunity_id"] == selection["opportunity_id"])
+        author = self._design_author(context)
+        if (block.get("capability") or {}).get("design_archetype") == AGENT_ONLY and \
+                author != AGENT_ONLY:
+            # Known now, not after strategy and a person's G2: the archetype author cannot
+            # design a concept outside the catalog, and must not swap in another game.
+            message = (f"the selected concept {selection['candidate_id']!r} needs the agent "
+                       f"design author (design_archetype: agent), and factory.design.author "
+                       f"is {author!r}: set `design: {{author: agent}}` with a "
+                       f"`design.agent` host in workspace/config/factory.yaml (or copy the "
+                       f"autonomous profile: docs/autonomous-runs.md), then resume")
+            context.logger.warning("research selection needs the agent design author",
+                                   candidate=selection["candidate_id"], author=author)
+            return StepResult(StepOutcome.WAITING_FOR_INPUT, artifacts=[report_out],
+                              message=message)
         opportunity = self._opportunity(block, report, profiles, context, as_of_text, idea,
                                         selected=block["opportunity_id"])
         persisted = []
@@ -426,6 +445,12 @@ class ResearchStep(WorkflowStep):
                     f"({counts['eligible']} buildable, {counts['capability-gap']} capability "
                     f"gaps) over {len(candidates)} catalog candidates"
                     + (f"; {len(persisted)} written to the backlog" if persisted else ""))
+
+    @staticmethod
+    def _design_author(context):
+        """The design author this run's configuration names (`factory.design.author`), as
+        the design step resolves it when its `with:` block names none."""
+        return ((context.config or {}).get("design") or {}).get("author") or "archetype"
 
     # -- inputs ---------------------------------------------------------------------------
 

@@ -790,6 +790,11 @@ class AssetPipeline:
             made = producer.produce(req)
         except ProducerError as exc:
             item.issue("generation-failed", "info", f"{req.id}: {producer.id}: {exc}")
+            # Not only in the manifest: a refusal here leaves the asset a placeholder the
+            # production gate refuses, so the run's log says why (F23).
+            if self.logger:
+                self.logger.warning("producer refused", asset=req.id, producer=producer.id,
+                                    reason=str(exc))
             return False
         files = made.get("files") or []
         if not files:

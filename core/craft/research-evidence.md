@@ -106,7 +106,9 @@ those mechanics and add none. Where the brief is ambiguous, resolve it from the 
 words and say so in `fantasy` or the loop; never trade it for an easier game. `brief` must be
 the run's idea verbatim: a concept written for another idea is refused. `design_archetype:
 agent` means only an agent design author can design it, and the run must be configured with
-one. Its figures are unmeasured; the scan records them as hypotheses and says so.
+one: when it selects such a concept and the configured design author is not the agent, the
+scan waits for input and names the setting, rather than letting design swap in another game.
+Its figures are unmeasured; the scan records them as hypotheses and says so.
 
 Then resume the run. The scan screens the concept like any catalog entry, against the same
 evidence, the same vetoes and the same platform fit.

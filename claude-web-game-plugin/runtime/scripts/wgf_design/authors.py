@@ -162,8 +162,18 @@ def _subsets_clause(locales):
     return (f" (subsets: {', '.join(subsets)} - {', '.join(locales)})" if subsets else "")
 
 
+# A concept's `design_archetype` naming no catalog archetype: only the agent author can
+# design it (the discovery step's concepts file, core/craft/research-evidence.md).
+AGENT_ONLY = "agent"
+
+
 class ArchetypeAuthor(DesignAuthor):
     name = "archetype"
+
+    def __init__(self, starting_point=False):
+        # True when another author (the agent) only takes this draft as its starting point:
+        # then a concept only the agent can design is not refused, the agent designs it.
+        self.starting_point = starting_point
 
     def draft(self, brief):
         strategy = brief["strategy"]
@@ -176,6 +186,17 @@ class ArchetypeAuthor(DesignAuthor):
         try:
             pinned_archetype = params.get("archetype")
             capability = (research or {}).get("capability") or {}
+            if not pinned_archetype and not self.starting_point and \
+                    capability.get("design_archetype") == AGENT_ONLY:
+                # Research selected a concept only the agent author can design (one authored
+                # for the brief, outside the catalog). Picking a catalog archetype by keyword
+                # instead designs another game: a 2D brief became a 3D arena-dodge (F09).
+                raise AuthorError(
+                    f"research selected concept {capability.get('catalog_entry')!r}, which "
+                    f"only the agent design author can design (design_archetype: agent), and "
+                    f"the configured author is archetype. Set `design: {{author: agent}}` "
+                    f"with a `design.agent` host in workspace/config/factory.yaml (or copy the "
+                    f"autonomous profile: docs/autonomous-runs.md), then resume")
             if not pinned_archetype and capability.get("buildable") and \
                     capability.get("design_archetype") in archetypes.ARCHETYPES:
                 archetype_id = capability["design_archetype"]

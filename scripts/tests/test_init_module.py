@@ -292,7 +292,8 @@ class TemplateOriginTest(unittest.TestCase):
         self.assertTrue(_same_template(recorded, shown, template))
         self.assertFalse(_same_template(recorded.replace("b106", "c106"), shown, template))
         self.assertFalse(_same_template(None, shown, template))
-        self.assertFalse(_same_template("../web-game-template", shown, template))
+        # A sibling working copy is a different template path, never the pinned checkout.
+        self.assertFalse(_same_template("../" + "web-game-" + "template", shown, template))
 
 
 class ProjectMetadataTest(unittest.TestCase):

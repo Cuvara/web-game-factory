@@ -602,6 +602,7 @@ class EventLogLoss(EngineCase):
         self.assertEqual(engine.start().status, RunStatus.COMPLETED)
 
 
+# /proc/<pid>/stat on Linux; the process creation time on Windows (procs.process_started).
 HAS_PROC_STAT = store_module._start_time(os.getpid()) is not None
 
 
@@ -632,7 +633,7 @@ class LockIdentity(EngineCase):
         self.assertEqual(read(self.lock(run_id)).split(),
                          [str(os.getpid()), str(store_module._start_time(os.getpid()))])
 
-    @unittest.skipUnless(HAS_PROC_STAT, "needs /proc/<pid>/stat")
+    @unittest.skipUnless(HAS_PROC_STAT and os.name == "posix", "needs /proc/<pid>/stat")
     def test_start_time_is_field_22_even_with_a_hostile_command_name(self):
         fake = os.path.join(self.scratch, "proc")
         os.makedirs(os.path.join(fake, "77"))

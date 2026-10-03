@@ -1060,7 +1060,8 @@ class AgentEnvironment(unittest.TestCase):
                 return super().run(argv, cwd, timeout, env, **kwargs)
 
         settings = DevelopSettings.resolve({
-            "develop": {"developer": {"kind": "command", "argv": [PY, "-c", self.DUMP, dump]}},
+            "develop": {"developer": {"kind": "command", "argv": [PY, "-c", self.DUMP, dump]},
+                        "budget": {"max_sessions": 100}},
             "agents": {"env_passthrough": ["WGF_TEST_PASSED"]}})
         ctx = types.SimpleNamespace(idempotency_key="k", logger=_Logger(), visit=1, attempt=1)
         outcome = CommandDeveloper(settings, Developing()).develop("brief.md", self.scratch,
@@ -1757,6 +1758,43 @@ class BudgetTampering(StateCase):
         limits = budget.effective(run.params, self.store.read_events(run.run_id))
         self.assertEqual(limits["max_sessions"], 7)
         self.assertEqual([r["max_sessions"] for r in limits["raises"]], [7])
+
+    def test_an_adopted_budget_counts_only_as_a_persons_corroborated_act(self):
+        # BUDGET_ADOPTED gives a run started without a budget the one its project now
+        # configures (F26). Like a raise: an agent's, or a lone line, is nobody's act.
+        from wgflib import budget
+        adopt = {"budget": {"max_sessions": 50}, "decided_by": "human", "decided_at": "x"}
+        resumed = {"event": "WORKFLOW_RESUMED", "data": {"resume_nonce": "ab"}}
+        for events in (
+                [{"event": "BUDGET_ADOPTED", "data": adopt}],
+                [{"event": "BUDGET_ADOPTED", "data": dict(adopt, resume_nonce="ab")}],
+                [{"event": "BUDGET_ADOPTED",
+                  "data": dict(adopt, resume_nonce="ab", decided_by="automation")}, resumed],
+                [{"event": "BUDGET_ADOPTED", "data": dict(adopt, resume_nonce="ab",
+                                                          budget={"max_sessions": -1})},
+                 resumed]):
+            self.assertIsNone(budget.effective({}, events), events)
+        events = [{"event": "BUDGET_ADOPTED", "data": dict(adopt, resume_nonce="ab")}, resumed]
+        limits = budget.effective({}, events)
+        self.assertEqual((limits["max_sessions"], limits["source"]), (50, "adopted"))
+        # A run that started with a budget keeps it: an adoption does not replace it.
+        self.assertEqual(budget.effective({"develop_budget": {"max_sessions": 2}},
+                                          events)["max_sessions"], 2)
+
+    def test_the_engine_records_an_adoption_and_a_later_one_changes_nothing(self):
+        from wgflib import budget
+        self.script.set("verify", *[self.defects()] * 5)
+        engine = self.engine(ROUTED_LOOP)
+        run = engine.start()  # no budget: the shipped, supervised config
+        self.assertIsNone(budget.effective(run.params, self.store.read_events(run.run_id)))
+        for sessions in (4, 90):
+            engine.resume(run.run_id, decided_by="human", operator_events=[
+                ("BUDGET_ADOPTED", {"budget": {"max_sessions": sessions}})])
+        limits = budget.effective(run.params, self.store.read_events(run.run_id))
+        self.assertEqual((limits["max_sessions"], limits["source"]), (4, "adopted"))
+        with self.assertRaisesRegex(EngineError, "automation"):
+            engine.resume(run.run_id, decided_by="automation", operator_events=[
+                ("BUDGET_ADOPTED", {"budget": {"max_sessions": 1}})])
 
     def test_the_budget_snapshot_is_a_guarded_param(self):
         from wgflib.workflow import integrity

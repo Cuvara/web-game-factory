@@ -287,6 +287,10 @@ def build_config(game, workdir, template_dir=None, python=None, with_library=Tru
                          "--ports", template.golden_ports_checkout(), "--key", "{key}"],
                 "timeout_seconds": 1800,
             },
+            # A command developer is never started without a run budget (wgf_develop).
+            # The replay costs nothing; this bounds sessions only, far above what a
+            # golden run uses.
+            "budget": {"max_sessions": 50},
         },
         "review": {
             "reviewer": {

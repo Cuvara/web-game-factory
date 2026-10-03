@@ -21,7 +21,9 @@ Outcomes, per docs/workflow-module-contract.md section 7:
     BLOCKED            the game repository is not checked out where the config says; a
                        guarded Factory path was changed and could not be put back; or the
                        run's developer-session budget is spent (budget.py) - no agent is
-                       started, and only a person's `wgf resume --budget-sessions` raises it
+                       started, and only a person's `wgf resume --budget-sessions` raises it;
+                       or, for a command developer, the run has no budget at all - set
+                       factory.develop.budget and resume, which adopts it
     FAILED retryable   command developer failed, or its result failed a check
     FAILED final       bad input, bad config, the development was declined, a guarded
                        Factory path was changed (and restored), or the tree holds a change
@@ -409,8 +411,12 @@ class DevelopStep(WorkflowStep):
             if developer.kind == "command":
                 # A paid agent session: counted against the run's budget from its event
                 # log - which a resume does not reset - and refused, before anything is
-                # spawned, once the budget is spent.
+                # spawned, once the budget is spent or when the run has none.
                 budget = Budget.load(context)
+                missing = budget.missing(context.run_id)
+                if missing:
+                    context.logger.warning("develop budget missing", **budget.summary())
+                    return StepResult.blocked(missing, budget=budget.summary())
                 exhausted = budget.exhausted(context.run_id)
                 if exhausted:
                     context.logger.warning("develop budget exhausted", **budget.summary())

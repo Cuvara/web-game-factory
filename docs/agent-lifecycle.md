@@ -308,6 +308,8 @@ any orphan keeps running. A descendant that cleared its environment is not found
   job (`CREATE_BREAKAWAY_FROM_JOB`), or a host that refuses nested jobs, is not covered.
   Because the job closes with the Factory process, a Factory killed outright takes its
   trees with it on Windows - there is no SIGKILL recovery to do there.
+  On Windows `pid_alive` asks the process (`OpenProcess`, then whether it has exited) - never
+  `os.kill(pid, 0)`, which there sends a console Ctrl+C instead of probing.
   The zombie hold (`waitid(WNOWAIT)`) is Linux-only too. Elsewhere the child is reaped
   first and its group is signalled only while it still has live members.
 - **A descendant that clears its environment *and* detaches** cannot be found by tag or by

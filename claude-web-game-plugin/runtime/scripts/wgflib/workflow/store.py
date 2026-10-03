@@ -40,6 +40,7 @@ import secrets
 import threading
 import time
 
+from .. import procs
 from .model import ArtifactRef, RunState
 
 __all__ = ["RunStore", "StoreError", "RunLocked", "check_run_id", "check_artifact_id"]
@@ -100,7 +101,10 @@ class RunLocked(RuntimeError):
 def _start_time(pid):
     """The process's start time in clock ticks since boot (field 22 of /proc/<pid>/stat),
     or None where it cannot be read - no /proc, or no such process. Together with the pid
-    it names one process: a recycled pid comes back with a different start time."""
+    it names one process: a recycled pid comes back with a different start time. On
+    Windows, the process's creation time instead (procs.process_started)."""
+    if os.name != "posix":
+        return procs.process_started(pid)
     try:
         with open(f"/proc/{int(pid)}/stat", "rb") as handle:
             raw = handle.read()
@@ -118,6 +122,9 @@ def _holder_line():
 
 
 def _pid_alive(pid):
+    if os.name != "posix":
+        # os.kill(pid, 0) there sends a console Ctrl+C rather than probing (procs.pid_alive).
+        return procs.pid_alive(pid)
     try:
         os.kill(pid, 0)
     except ProcessLookupError:

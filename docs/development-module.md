@@ -332,11 +332,28 @@ factory:
         jsonl_key: <key>        # read the cost from the transcript's JSON lines
 ```
 
-Every key is optional; without `budget` there is none, as before. The installation's value
-is snapshotted into the run's params when the run starts (`develop_budget`, recorded in
-`WORKFLOW_STARTED` and corroborated on every resume), so a config change never reaches a
-running run and an edit of `state.json` is refused. A value the Factory cannot act on (not a
-positive number, an unknown key, `max_cost` without `cost_from`) refuses the run at start.
+Every key is optional. The installation's value is snapshotted into the run's params when
+the run starts (`develop_budget`, recorded in `WORKFLOW_STARTED` and corroborated on every
+resume), so a change to it never reaches a running run and an edit of `state.json` is
+refused. A value the Factory cannot act on (not a positive number, an unknown key,
+`max_cost` without `cost_from`) refuses the run at start.
+
+**A command developer never runs without a budget.** A run with none - no `budget` when it
+started, none adopted since - reaches develop (or the greybox) with a `command` developer and
+gets `BLOCKED`, no agent spawned: `no developer-session budget ... Set factory.develop.budget
+... then run: wgf resume <run-id>`. A handoff developer is a person and needs none. The
+shipped config has no budget because its developer is a handoff; the case this closes is a
+run started under it whose project then switched to a paid developer (the autonomous
+profile copied in mid-run), which used to run that developer unbounded.
+
+**Adopting** is how such a run gets one: the first `wgf resume` by a person that finds
+`factory.develop.budget` set in the config, while the run has no budget, records a
+`BUDGET_ADOPTED` operator event (`budget`, `decided_by`, `decided_at`, corroborated by the
+resume like a raise) and from then on that is the run's budget, exactly as if it had been
+snapshotted - the params are not edited. Only the first adoption counts; a run that started
+with a budget adopts nothing, and later config changes reach neither (a person raises
+instead). A resume from inside a step's process tree (`decided_by: automation`) adopts
+nothing, and the step stays blocked.
 
 **Sessions** are counted from the run's event log, never from memory or state, so neither a
 resume nor a crash gives one back. Before it spawns a command developer, develop emits a
@@ -371,8 +388,9 @@ Factory's timeout kills never writes that line: its cost is unknown.
 `--budget-cost X` records a `BUDGET_RAISED` event (`decided_by`, `decided_at`) and resumes.
 The effective limit is the largest of the snapshot and every raise a person recorded. It is
 refused from inside a step's process tree (`decided_by: automation` - an agent does not raise
-its own budget; the same rule as G4/G6/G7), for a run started without that limit, and for a
-value that is not positive; a `BUDGET_RAISED` recorded by automation counts for nothing.
+its own budget; the same rule as G4/G6/G7), for a run without that limit (one with no
+budget at all adopts the configured one first, in the same resume), and for a value that is
+not positive; a `BUDGET_RAISED` recorded by automation counts for nothing.
 
 What is enforced, and what is not:
 - **Corroboration.** A raise counts only when the engine's own resume record corroborates

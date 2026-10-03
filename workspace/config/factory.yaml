@@ -522,8 +522,10 @@ factory:
     # Counted from the run's event log; develop BLOCKS - nothing spawned - once the
     # sessions recorded reach max_sessions, or their recorded cost reaches max_cost.
     # Snapshotted when a run starts; raised only by a person: wgf resume <run>
-    # --budget-sessions N | --budget-cost X. Absent: no budget. A handoff developer is a
-    # person and is never counted. A session whose cost cannot be read is counted as a
+    # --budget-sessions N | --budget-cost X. Absent: no budget, and a command developer is
+    # never started (BLOCKED); a run started without one adopts the one set here at its
+    # next resume by a person (BUDGET_ADOPTED). A handoff developer is a person and is
+    # never counted. A session whose cost cannot be read is counted as a
     # session and reported as unknown: the host's own per-session flag (--max-budget-usd
     # above) stays the bound on any one session.
     # budget:

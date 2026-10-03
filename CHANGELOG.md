@@ -112,6 +112,25 @@ Every earlier artifact remains valid. Adapter binding 1.6.0 (must-read lists onl
 workflow, lifecycle or template-pin change. Not done: production-cost calibration, a
 scoring model v2, and the P2 capabilities `docs/research-v2.md` lists.
 
+**A command developer never runs without a budget** (F26). A run started under the shipped,
+supervised config has no `develop_budget`; when its project then switched to a paid
+`command` developer (the autonomous profile copied in mid-run), the developer ran unbounded -
+a validation run spent 14 sessions against a documented cap of 12. Now develop and the
+greybox return BLOCKED, no agent spawned, for a command developer in a run with no budget,
+naming `factory.develop.budget`; and the first `wgf resume` by a person that finds one
+configured records it for the run as a `BUDGET_ADOPTED` operator event (corroborated like
+`BUDGET_RAISED`, counted once; params are not edited). Handoff developers are unaffected.
+**Upgrading:** an installation that runs a command developer without `factory.develop.budget`
+must set one; a run already in progress adopts it at its next resume.
+
+**Windows: process liveness without signals** (F12). `procs.pid_alive` and the run lock's
+check used `os.kill(pid, 0)`, which on Windows is `GenerateConsoleCtrlEvent(CTRL_C_EVENT)`:
+a live driver started from another terminal read as dead (`wgf status` said `stale`, and a
+second driver could take its lock), and a process group on the same console could be sent
+Ctrl+C. Windows now asks the process itself (`OpenProcess` + wait/exit code, through
+`ctypes`) and records its creation time in the lock, so a recycled pid is told apart as on
+Linux. POSIX is unchanged.
+
 ## [2.6.0] - 2026-10-02
 
 Production-quality games, proven from the running build: workflow 5, real 2D/3D assets and

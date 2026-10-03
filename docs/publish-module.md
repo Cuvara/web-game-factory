@@ -93,8 +93,9 @@ live there. An optional unpackaged target is reported and skipped.
 Both are `human-checkpoint` steps decided on what `gates.yaml` requires. G5 (`release-review`,
 stage `release:rc`) reads `qa-report`, `verification-report`, `release-manifest`; it is
 reversible, so an installation may auto-approve it (`factory.checkpoints`), and a `--mock`
-run does. G6 (`publish-review`, stage `release:approved`) reads `release-manifest` and the
-`platform-publication`; its choices are `publish` - the release machine's own edge
+run does. G6 (`publish-review`, stage `release:approved`) reads `release-manifest`, the
+`platform-publication`, and the `store-listing` and `listing-validation-report` the release
+shipped (gates.yaml decides G6 on all three artifacts); its choices are `publish` - the release machine's own edge
 (`approved -> validating`) - and `reject`; it is irreversible, refused from automation by the
 checkpoint, the record builder, the schema and `wgf-state.py` alike. `reject` at either gate
 ends the run; an approved build may sit indefinitely.

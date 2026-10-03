@@ -47,6 +47,7 @@ Python, not by its children.
 | `WGF_REVIEW_REPO`, `WGF_REVIEW_VERDICT`, `WGF_REVIEW_BRIEF`, `WGF_REVIEW_COMMIT` | `scripts/wgf_review/step.py` | Given to a `command` reviewer: the checkout (read-only), where to write the verdict, the brief, and the sha under review - the same values as the `{repo}`, `{verdict}`, `{brief}`, `{commit}` argv placeholders. |
 | `WGF_E2E_PLATFORM`, `WGF_E2E_ENGINE`, `WGF_E2E_EXPECT`, `WGF_E2E_REPORT` | `scripts/wgf_sdk/e2e.py`; read by `scripts/wgf_sdk/e2e/smoke.spec.ts`, `playwright.config.ts` | One SDK browser e2e case: which portal and engine the build is for, what the smoke must observe, and where Playwright writes its JSON report (`e2e.json` if unset). |
 | `WGF_VISUALQA_FRAMES`, `WGF_VISUALQA_BRIEF`, `WGF_VISUALQA_VERDICT` | `scripts/wgf_visualqa/judge.py` | Given to a `command` visual-qa judge: the directory of staged frame copies, the judge brief, and where to write the verdict - the same values as the `{frames_dir}`, `{brief}`, `{verdict}` argv placeholders. |
+| `WGF_LISTING_BRIEF`, `WGF_LISTING_OUTPUT` | `scripts/wgf_listing/copywriter.py` | Given to a `command` store copy writer: the brief (the facts, the claim vocabulary, the shape to produce) and where to write the JSON answer - the same values as the `{brief}` and `{output}` argv placeholders. |
 | `WGF_PLAY_OUT`, `WGF_PLAY_CONFIG` | `scripts/wgf_playability/step.py`; read by `scripts/wgf_playability/bot.spec.ts` | Where the playability bot writes what it recorded (per viewport: JSON and frames), and its settings file (idle, acknowledgement and play windows, the goal metric). |
 | `WGF_E2E_PORT` | not set; read by `scripts/wgf_sdk/e2e/playwright.config.ts` | The preview server port for the SDK browser e2e; `4461` when unset. |
 | `WGF_Y8_APP_ID`, `WGF_Y8_GAME_ID` | `scripts/wgf_sdk/e2e.py` (placeholder ids) | The Y8 build ids the template's build reads; the e2e sets test values so a Y8 build can be made. |
@@ -60,6 +61,10 @@ config file). The Factory never sets it; the golden harness removes it, with
 run at anything but its own checkout.
 
 ## Tests
+
+| Variable | Read by | Meaning |
+|---|---|---|
+| `WGF_LISTING_BROWSER`, `WGF_LISTING_REPO` | `scripts/tests/test_listing.py` | `WGF_LISTING_BROWSER=1` with `WGF_LISTING_REPO=<game checkout holding dist/ and node_modules/>` runs the real store-listing capture against that build in the game's own Chromium (`RealBuild`). Off: skipped, and a skip is not a pass. |
 
 | Variable | Read by | Meaning | Default |
 |---|---|---|---|

@@ -48,16 +48,16 @@ each correction is a **new profile version**, not an edit — none is made here:
 
 | Profile | Says | Current documentation |
 |---|---|---|
-| `yandex@1.0.0` | `locales_required: [ru]`, blocking `yandex_ru_locale_present` | No language is mandatory; requirement 2.14 is automatic language detection through the SDK |
-| `yandex@1.0.0` | `interstitial_min_interval_s: 60` | Not documented; "frequency is controlled by Yandex Games" |
-| `yandex@1.0.0` | rejection "does not report loading progress through the SDK" | There is no progress API; the check is `LoadingAPI.ready()` (1.19.2) |
-| `yandex@1.0.0` | `max_bundle_mb: 100` | Correct, but uncompressed (1.21) |
-| `poki@1.0.0` | `max_bundle_mb: 150` | "initial download should not exceed 5MB and 8MB in total" |
-| `poki@1.0.0` | `interstitial_min_interval_s: 120` | "Do not implement internal ad timers" |
-| `poki@1.0.0` | `no_external_links` | Links are allowed through `PokiSDK.openExternalLink`; all other external requests are blocked |
-| `crazygames@1.0.0` | `screenshots_min: 4` | Three covers (1920×1080, 800×1200, 800×800) and a 15–20 s video |
-| `crazygames@1.0.0` | — | Missing: ≤ 50 MB initial on desktop, ≤ 20 MB initial on mobile, ≤ 1500 files |
-| `gamevui@1.0.0` | ads, 50 MB, `vi`, 120 s | No public source for any of it (`status: unverified` is right). Without an SDK, a game cannot request portal ads |
+| `yandex@1.1.0` | `locales_required: [ru]`, blocking `yandex_ru_locale_present` | No language is mandatory; requirement 2.14 is automatic language detection through the SDK |
+| `yandex@1.1.0` | `interstitial_min_interval_s: 60` | Not documented; "frequency is controlled by Yandex Games" |
+| `yandex@1.1.0` | rejection "does not report loading progress through the SDK" | There is no progress API; the check is `LoadingAPI.ready()` (1.19.2) |
+| `yandex@1.1.0` | `max_bundle_mb: 100` | Correct, but uncompressed (1.21) |
+| `poki@1.1.0` | `max_bundle_mb: 150` | "initial download should not exceed 5MB and 8MB in total" |
+| `poki@1.1.0` | `interstitial_min_interval_s: 120` | "Do not implement internal ad timers" |
+| `poki@1.1.0` | `no_external_links` | Links are allowed through `PokiSDK.openExternalLink`; all other external requests are blocked |
+| `crazygames@1.1.0` | `screenshots_min: 4` | Three covers (1920×1080, 800×1200, 800×800) and a 15–20 s video |
+| `crazygames@1.1.0` | — | Missing: ≤ 50 MB initial on desktop, ≤ 20 MB initial on mobile, ≤ 1500 files |
+| `gamevui@1.1.0` | ads, 50 MB, `vi`, 120 s | No public source for any of it (`status: unverified` is right). Without an SDK, a game cannot request portal ads |
 
 The design module reads these profiles as binding (interstitial cooldown, required
 locales), so a revised profile changes new designs — which is the point of versioning them.

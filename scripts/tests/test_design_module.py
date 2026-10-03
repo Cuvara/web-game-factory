@@ -34,6 +34,8 @@ from wgflib.workflow.model import ArtifactRef, RunStatus, StepOutcome, StepStatu
 from wgf_design import archetypes, authors, compose, consistency, identity  # noqa: E402
 from wgf_design.platforms import load_platforms  # noqa: E402
 from wgf_design.step import SCHEMA_VERSION, DesignStep  # noqa: E402
+from wgflib import paths  # noqa: E402
+from wgflib.yamllite import load_file  # noqa: E402
 
 STRATEGY_PATH = os.path.join(ROOT, "workspace", "titles", "neon-drift", "title-strategy.json")
 NOW = "2026-09-23T10:00:00Z"
@@ -41,13 +43,28 @@ NOW = "2026-09-23T10:00:00Z"
 
 def load_strategy():
     with open(STRATEGY_PATH, encoding="utf-8") as handle:
-        return json.load(handle)
+        return repinned(json.load(handle))
 
 
 def rehash(artifact):
     artifact["provenance"]["content_hash"] = ""
     artifact["provenance"]["content_hash"] = content_hash(artifact)
     return artifact
+
+
+def repinned(strategy):
+    """The worked example with its platform_set pinned at the profiles' CURRENT versions.
+
+    The instance under workspace/ is immutable and pins the versions in force when it was
+    written; the design and tech-plan modules refuse a pin that is not the current profile
+    ("re-pin in a superseding strategy"), which these tests check separately with 9.9.9.
+    Here the strategy is a live input, so its pins follow the profiles, and the hash follows
+    the content."""
+    for entry in strategy.get("platform_set") or []:
+        path = os.path.join(paths.PLATFORMS, f"{entry.get('id')}.yaml")
+        if os.path.isfile(path):
+            entry["profile_version"] = str((load_file(path) or {}).get("version"))
+    return rehash(strategy)
 
 
 class FakeInputs:
@@ -350,7 +367,7 @@ class ConceptFidelity(unittest.TestCase):
         self.assertEqual(first, identity.choose("neon-drift", ["neon-night", "riso-arcade"])[0])
 
     def test_a_placement_a_required_platform_lacks_is_cut_not_designed(self):
-        strategy = variant(platform_set=[{"id": "gamevui", "profile_version": "1.0.0", "role": "required"}])
+        strategy = variant(platform_set=[{"id": "gamevui", "profile_version": "1.1.0", "role": "required"}])
         result = run_step(strategy)
         design = result.artifacts[0].content
         self.assertEqual(result.outcome, StepOutcome.SUCCESS, result.error)
@@ -448,7 +465,7 @@ class ConsistencyRules(unittest.TestCase):
     def test_a_designed_placement_a_required_platform_lacks_is_a_breach(self):
         self.design["monetization"]["placements"].append({"kind": "iap", "trigger": "Shop"})
         crazygames = load_platforms({"platform_set": [
-            {"id": "crazygames", "profile_version": "1.0.0", "role": "required"}]})
+            {"id": "crazygames", "profile_version": "1.1.0", "role": "required"}]})
         results, blocking = self.results(platforms=crazygames)
         self.assertTrue(results["monetization_supported_by_platform"]["breached"])
         self.assertIn("monetization_supported_by_platform", blocking)
@@ -460,7 +477,7 @@ class ConsistencyRules(unittest.TestCase):
 
     def test_a_platform_without_the_value_makes_a_rule_inapplicable(self):
         generic = load_platforms({"platform_set": [
-            {"id": "generic-web", "profile_version": "1.0.0", "role": "required"}]})
+            {"id": "generic-web", "profile_version": "1.1.0", "role": "required"}]})
         results, _ = self.results(platforms=generic)
         rule = results["interstitial_interval_fits_session"]
         self.assertFalse(rule["breached"])
@@ -516,8 +533,13 @@ class ThroughTheEngine(unittest.TestCase):
         self.addCleanup(shutil.rmtree, self.scratch, ignore_errors=True)
         modules = os.path.join(self.scratch, "modules")
         os.makedirs(modules)
+        # The seed hands the engine the worked example re-pinned at the profiles' current
+        # versions (load_strategy), written beside the module: the instance itself is immutable.
+        seeded = os.path.join(self.scratch, "title-strategy.json")
+        with open(seeded, "w", encoding="utf-8") as handle:
+            json.dump(load_strategy(), handle)
         with open(os.path.join(modules, "wgf_test_seed.py"), "w", encoding="utf-8") as handle:
-            handle.write(SEED_MODULE.format(path=STRATEGY_PATH))
+            handle.write(SEED_MODULE.format(path=seeded))
         sys.path.insert(0, modules)
         self.addCleanup(sys.path.remove, modules)
         self.addCleanup(sys.modules.pop, "wgf_test_seed", None)

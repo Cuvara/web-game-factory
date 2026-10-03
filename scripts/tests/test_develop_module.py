@@ -100,7 +100,7 @@ def context(config, key="run-1:develop:1", visit=1, attempt=1, decision=None):
 
 SCAFFOLD_FILES = {
     "game.config.yaml": "game:\n  id: demo-title\nengine:\n  type: pixijs\nplatforms:\n"
-                        "  - { id: generic-web, profile: generic-web@1.0.0, role: required }\n",
+                        "  - { id: generic-web, profile: generic-web@1.1.0, role: required }\n",
     "package.json": json.dumps({"name": "demo", "scripts": {
         "typecheck": "tsc", "lint": "eslint", "test": "vitest", "build": "vite build",
         "test:e2e": "playwright test", "format": "prettier --check ."},

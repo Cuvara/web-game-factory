@@ -445,6 +445,18 @@ def end_to_end_case(key):
             self.assertGreater(production["visual_qa"]["frames"], 0, production)
             self.assertTrue(production["passed"], production)
 
+        def test_the_store_listing_was_captured_validated_and_shipped(self):
+            listing = self.summary["listing"]
+            self.assertEqual(listing["status"], "complete", listing)
+            self.assertGreaterEqual(len(listing["screenshots"]), 3)
+            self.assertTrue(any(s["state"] == "playing" for s in listing["screenshots"]))
+            self.assertEqual(listing["trailer"]["status"], "recorded")
+            self.assertEqual(listing["branding"]["method"], "browser-composed")
+            self.assertEqual(listing["validation"]["verdict"], "PASS", listing["validation"])
+            self.assertTrue(listing["shipped"])
+            self.assertTrue(listing["store_metadata_platforms"])
+            self.assertTrue(listing["passed"], listing)
+
         def test_the_engine_is_the_games_everywhere(self):
             self.assertTrue(self.summary["engine"]["consistent"], self.summary["engine"])
             self.assertEqual(self.summary["engine"]["expected"], game.engine)

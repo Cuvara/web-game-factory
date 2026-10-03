@@ -746,7 +746,7 @@ class StepOutcomes(AssetsCase):
             "repository": {"owner": "o", "name": "lantern-hop"},
             "template": {"repository": "o/web-game-template"},
             "game_config": {"path": "game.config.yaml", "platforms": [
-                {"id": "gamevui", "profile": "gamevui@1.0.0", "role": "required"}]},
+                {"id": "gamevui", "profile": "gamevui@1.1.0", "role": "required"}]},
             "outcome": "created"}, "scaffold-record", "lantern-hop")
         design = self.design(requirements=[
             {"id": "huge", "kind": "music", "existing": {

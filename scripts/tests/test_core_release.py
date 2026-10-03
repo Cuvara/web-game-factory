@@ -458,6 +458,7 @@ class ContinueIn(ReleaseCase):
                       with:
                         repo_dir: %s
                         required_gates: []
+                        required_listing: false
                       next: $end
                 """ % json.dumps(game.root))
             if g4:

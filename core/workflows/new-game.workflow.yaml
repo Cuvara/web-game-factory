@@ -41,11 +41,14 @@ workflow:
   # 5: production - production-quality and visual-qa judge the production build's art and UI
   # before review, routing back to assets or develop; release refuses a build they did not
   # pass.
-  # 6: publication - the `publish` group: platform-validate (release:validating), G5, G6
+  # 6: store listing - after G4 passes, the verified build's store package (branding,
+  # screenshots, trailer, copy, one rendition per platform) is captured and validated per
+  # platform before release ships it beside the packages.
+  # 7: publication - the `publish` group: platform-validate (release:validating), G5, G6
   # and submit (release:submitting), continued in the drafting run by `wgf publish --run`.
   # A run records the version it started under; one resumed under a newer definition is marked
   # (WORKFLOW_RESUMED `definition_version`).
-  version: 6
+  version: 7
   description: Discover an opportunity, plan a title, build it, verify it and prepare its first release.
   start: research
 
@@ -320,7 +323,7 @@ workflow:
     # verification-report and prototype-report verify just produced - against the terms of
     # the bet (the kill criteria in title-strategy, the game-design they measure); nothing else
     # answers it (it is irreversible; automation's answer is refused). `pass` continues to
-    # release. `iterate` sends the work back to develop: a success routed backwards, so the
+    # the store listing, then release. `iterate` sends the work back to develop: a success routed backwards, so the
     # run's lineage stands and the loop ends here again, at a new visit that needs a new
     # decision. `kill` is gates.yaml's `abandon`: it stops the run for good (BLOCKED,
     # routed to $end), and the gate stays unpassed, so no later step of this run can start.
@@ -339,6 +342,47 @@ workflow:
         iterate: develop
         kill: $end
 
+    # The store listing, made only after a person passed G4 (`with: required_gates`, the
+    # same rule as release): the verified build - the qa-report's commit, HEAD of a clean
+    # checkout, the bundle on disk hashing to the verification-report's - is served and
+    # played through its play probe in a headless browser, and the package is written:
+    # branding from the game's own assets and identity, screenshots and a gameplay recording
+    # of real play, copy grounded in the design and the shipped build (checked against
+    # core/reference/store-listing.yaml `claims`), and one rendition per targeted platform
+    # under its profile's `store_listing` block. Re-entered from listing-validation (route
+    # `listing`) with the failing report, it captures, renders or rewrites again what the
+    # report names. No browser, no build or an unpassed G4 is BLOCKED, never a silent pass;
+    # a package that is not complete is FAILED with the listing kept as evidence.
+    - id: store-listing
+      type: store-listing
+      stage: release:store-listing
+      description: Capture the verified build's store package - branding, screenshots, trailer, grounded copy, one rendition per platform. Re-entered with the failing listing-validation-report.
+      inputs: [qa-report, verification-report, sdk-report, prototype-report, game-design, title-strategy, scaffold-record, asset-manifest, playability-report, listing-validation-report]
+      outputs: [store-listing]
+      with:
+        required_gates: [G4]
+      retry: {max_attempts: 2}
+      # Once per develop visit (G4's iterate comes back through here), plus the validation
+      # loop's own budget.
+      max_visits: 21
+      max_visits_by_route:
+        listing-validation.listing: 2
+
+    # Every required text present and within its limits, every file present with the
+    # dimensions, format and size required, screenshots real frames and distinct, the
+    # trailer within bounds or an honest fallback, the copy free of unbacked claims, and
+    # every platform rendition against its profile's block. FAIL (route `listing`) goes back
+    # to store-listing with the report; a requirement a profile leaves null is UNKNOWN,
+    # listed per platform, never passed. BLOCKED (no listing to judge) stops the run.
+    - id: listing-validation
+      type: listing-validation
+      stage: release:store-listing
+      inputs: [store-listing, game-design, sdk-report, scaffold-record]
+      outputs: [listing-validation-report]
+      max_visits: 21
+      on:
+        listing: store-listing
+
     # Drafts a release only from the newest passing qa-report, whose commit the
     # verification-report, sdk-report, prototype-report and the clean checkout all share.
     # scaffold-record says which repository, and which template revision it came from.
@@ -349,11 +393,15 @@ workflow:
     # `required_gates: []`; omitted, the release step requires G4. And it refuses unless the
     # newest production-quality-report and visual-qa-report both passed the development
     # commit the released sdk commit sits on: a build whose art or UI the gates did not pass
-    # is not released.
+    # is not released. And it refuses unless the run's newest store-listing is of the commit
+    # it ships and the newest listing-validation-report passed exactly that listing: the
+    # package is copied to release/<release-id>/listing/ and store_metadata is filled from
+    # it, which is what G6's store_metadata_complete reads. A workflow without the listing
+    # steps says so with `required_listing: false`.
     - id: release
       type: release
       stage: release:draft
-      inputs: [qa-report, verification-report, sdk-report, prototype-report, scaffold-record, review-report, production-quality-report, visual-qa-report]
+      inputs: [qa-report, verification-report, sdk-report, prototype-report, scaffold-record, review-report, production-quality-report, visual-qa-report, store-listing, listing-validation-report]
       outputs: [release-manifest]
       with:
         required_gates: [G4]
@@ -408,7 +456,7 @@ workflow:
     - id: publish-review
       type: human-checkpoint
       stage: release:approved
-      inputs: [release-manifest, platform-publication]
+      inputs: [release-manifest, platform-publication, store-listing, listing-validation-report]
       outputs: [decision-record]
       with:
         gate: G6

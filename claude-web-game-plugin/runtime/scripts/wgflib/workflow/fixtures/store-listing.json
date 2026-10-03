@@ -1,0 +1,66 @@
+{
+  "title_id": "mock-title",
+  "commit": "0000000000000000000000000000000000000000",
+  "measurement_class": "automation-bot",
+  "status": "complete",
+  "package_dir": "store-listing/1-1/package",
+  "facts": {
+    "title": "Mock Title",
+    "objective": "Tap to switch lanes on the beat (mock).",
+    "core_loop": "Hear the beat, switch lanes, keep the combo (mock).",
+    "mechanics": [{"id": "lane-switch", "name": "Lane switch", "description": "One tap switches lanes on the beat."}],
+    "features": [],
+    "controls": {"primary_input": "touch", "touch": ["Tap anywhere"], "mouse": [], "keyboard": [], "gamepad": [], "summary": "Single tap anywhere switches lanes."},
+    "genre": ["rhythm", "arcade"],
+    "engine": {"type": "pixijs", "dimension": "2d"},
+    "locales": ["en"],
+    "platforms": ["yandex", "crazygames"],
+    "capabilities": [],
+    "monetization": [],
+    "endless": true,
+    "strings": {},
+    "sources": {"title": "mock", "objective": "mock", "core_loop": "mock", "mechanic:lane-switch": "mock"}
+  },
+  "copy": {
+    "locales": {
+      "en": {
+        "title": "Mock Title",
+        "subtitle": "Rhythm",
+        "subtitle_variants": ["Rhythm"],
+        "short_description": "Tap to switch lanes on the beat (mock). A rhythm game in 2D, playable by touch.",
+        "long_description": "Tap to switch lanes on the beat (mock). Hear the beat, switch lanes, keep the combo (mock). How it plays: One tap switches lanes on the beat. Controls. Touch: Tap anywhere. A session takes about 4 minutes. This is the placeholder copy a mock run carries; nothing in it describes a real build.",
+        "features": [
+          {"text": "One tap switches lanes on the beat", "source": "mechanic:lane-switch"},
+          {"text": "Tap to switch lanes on the beat (mock)", "source": "objective"},
+          {"text": "Hear the beat, switch lanes, keep the combo (mock)", "source": "core_loop"}
+        ],
+        "controls": "Touch: Tap anywhere.",
+        "tags": ["rhythm", "arcade", "single-player", "casual", "2d"],
+        "categories": ["Arcade"],
+        "promo": ["Tap to switch lanes on the beat (mock)"],
+        "age_rating": null
+      }
+    },
+    "writer": {"kind": "template"},
+    "grounding": {"checked": true, "claims_version": "1.0.0", "problems": []}
+  },
+  "branding": {
+    "method": "frame-derived",
+    "source_asset": null,
+    "items": [
+      {"id": "icon-1024", "kind": "icon", "path": "store-listing/1-1/package/branding/icon-1024.png", "sha256": "sha256:0000000000000000000000000000000000000000000000000000000000000000", "bytes": 0, "format": "png", "width": 1024, "height": 1024, "source": "mock"}
+    ]
+  },
+  "screenshots": [
+    {"id": "landscape-01-play-mid", "kind": "screenshot", "path": "store-listing/1-1/package/screenshots/landscape-01-play-mid.png", "sha256": "sha256:0000000000000000000000000000000000000000000000000000000000000000", "bytes": 0, "format": "png", "width": 1920, "height": 1080, "scene": "play-mid", "viewport": "landscape", "state": "playing"},
+    {"id": "landscape-02-play-late", "kind": "screenshot", "path": "store-listing/1-1/package/screenshots/landscape-02-play-late.png", "sha256": "sha256:0000000000000000000000000000000000000000000000000000000000000000", "bytes": 0, "format": "png", "width": 1920, "height": 1080, "scene": "play-late", "viewport": "landscape", "state": "playing"},
+    {"id": "landscape-03-title", "kind": "screenshot", "path": "store-listing/1-1/package/screenshots/landscape-03-title.png", "sha256": "sha256:0000000000000000000000000000000000000000000000000000000000000000", "bytes": 0, "format": "png", "width": 1920, "height": 1080, "scene": "title", "viewport": "landscape", "state": "title"}
+  ],
+  "trailer": {"status": "fallback", "reason": "mock run: nothing was recorded", "storyboard": "store-listing/1-1/package/trailer/storyboard.json", "frames": []},
+  "platforms": [
+    {"platform_id": "yandex", "profile_version": "1.1.0", "role": "required", "spec_status": "unverified", "dir": "store-listing/1-1/package/platforms/yandex", "listing": "store-listing/1-1/package/platforms/yandex/listing.json", "files": [], "text": {}, "locales_required": ["ru"], "unmet": [{"code": "locale-missing", "severity": "error", "message": "mock listing: no ru copy", "subject": "ru"}]},
+    {"platform_id": "crazygames", "profile_version": "1.1.0", "role": "optional", "spec_status": "unverified", "dir": "store-listing/1-1/package/platforms/crazygames", "listing": "store-listing/1-1/package/platforms/crazygames/listing.json", "files": [], "text": {}, "locales_required": ["en"], "unmet": []}
+  ],
+  "capture": {"kind": "browser", "attempts": 1, "browser": "mock", "network_guard": "none", "viewports": [{"id": "landscape", "width": 1920, "height": 1080, "mobile": false, "ran": true, "page_errors": []}], "records_dir": null, "blocked_reason": null},
+  "problems": []
+}

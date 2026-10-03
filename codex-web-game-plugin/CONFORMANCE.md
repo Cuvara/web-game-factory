@@ -51,7 +51,7 @@ restates none of it and never answers a gate.
 |---|---|---|---|
 | `/new-game` | `codex-web-game-plugin/commands/new-game.md` | `core/workflows/new-game.workflow.yaml` | covered |
 
-## Skills (27 of 27)
+## Skills (28 of 28)
 
 | Skill | File | Status |
 |---|---|---|
@@ -80,6 +80,7 @@ restates none of it and never answers a gate.
 | `production-wiring` | `codex-web-game-plugin/skills/production-wiring/SKILL.md` | covered |
 | `qa` | `codex-web-game-plugin/skills/qa/SKILL.md` | covered |
 | `release` | `codex-web-game-plugin/skills/release/SKILL.md` | covered |
+| `store-listing` | `codex-web-game-plugin/skills/store-listing/SKILL.md` | covered |
 | `threejs` | `codex-web-game-plugin/skills/threejs/SKILL.md` | covered |
 | `web-performance` | `codex-web-game-plugin/skills/web-performance/SKILL.md` | covered |
 

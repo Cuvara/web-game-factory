@@ -19,6 +19,7 @@ what a module owes the engine, and what the engine promises back.
 | SDK — platform SDK adapters | events and logs |
 | Verification — QA, policy and technical verification | artifact references, versions, checksums |
 | Init — repository scaffolding from the template | the workflow run lifecycle |
+| Listing — the store package captured from the verified build, and its validation per platform | |
 | Publication — the publication guards and the platform adapters that submit a release | gates, and who may decide them |
 
 If a module needs something the engine does not offer, that is a gap in the kernel: raise it
@@ -171,10 +172,12 @@ reading, and `DocumentedIoContract` fails if the two disagree.
 | `sdk-review` | `review` | `sdk-report`, `prototype-report`, `game-design`, `scaffold-record` | `review-report` |
 | `verify` | `verify` | `prototype-report`, `sdk-report`, `game-design`, `scaffold-record`, `asset-manifest` | `verification-report`, `qa-report` |
 | `prototype-review` | `human-checkpoint` | `qa-report`, `verification-report`, `prototype-report`, `title-strategy`, `game-design` | `decision-record` |
-| `release` | `release` | `qa-report`, `verification-report`, `sdk-report`, `prototype-report`, `scaffold-record`, `review-report`, `production-quality-report`, `visual-qa-report` | `release-manifest` |
+| `store-listing` | `store-listing` | `qa-report`, `verification-report`, `sdk-report`, `prototype-report`, `game-design`, `title-strategy`, `scaffold-record`, `asset-manifest`, `playability-report`, `listing-validation-report` | `store-listing` |
+| `listing-validation` | `listing-validation` | `store-listing`, `game-design`, `sdk-report`, `scaffold-record` | `listing-validation-report` |
+| `release` | `release` | `qa-report`, `verification-report`, `sdk-report`, `prototype-report`, `scaffold-record`, `review-report`, `production-quality-report`, `visual-qa-report`, `store-listing`, `listing-validation-report` | `release-manifest` |
 | `platform-validate` | `platform-validate` | `release-manifest`, `verification-report`, `qa-report`, `sdk-report`, `scaffold-record` | `platform-publication` |
 | `release-review` | `human-checkpoint` | `qa-report`, `verification-report`, `release-manifest` | `decision-record` |
-| `publish-review` | `human-checkpoint` | `release-manifest`, `platform-publication` | `decision-record` |
+| `publish-review` | `human-checkpoint` | `release-manifest`, `platform-publication`, `store-listing`, `listing-validation-report` | `decision-record` |
 | `submit` | `publish` | `release-manifest`, `platform-publication`, `decision-record`, `scaffold-record` | `platform-publication` |
 <!-- io-contract:end -->
 

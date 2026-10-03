@@ -110,6 +110,10 @@ def __getattr__(name):
 GOLDEN_AUTHOR = {"name": "wgf-golden", "email": "wgf-golden@users.noreply.invalid"}
 
 AUTO_APPROVE = ["G2", "G3"]  # reversible gates only; the engine refuses G4/G6/G7 anyway
+# The age rating the listing of a golden port carries where a platform requires one: the
+# harness operator's statement about two known games (merge puzzle, neon racer), not a value
+# the Factory knows.
+GOLDEN_AGE_RATING = {"default": "0+"}
 
 # The gate the harness answers as the person running it, and what it answers. At most this
 # many answers per run: a pass does not loop, so a second wait means something is wrong.
@@ -296,6 +300,11 @@ def build_config(game, workdir, template_dir=None, python=None, with_library=Tru
             },
         },
         "sdk": {"commit_author": dict(GOLDEN_AUTHOR)},
+        # The store listing is captured from the verified build in the game's own Playwright
+        # Chromium (factory.listing defaults). A targeted profile that requires an age rating
+        # (yandex) gets the harness operator's statement for a known-good port, the way the
+        # harness passes G4: nothing in the run can state one.
+        "listing": {"age_rating": dict(GOLDEN_AGE_RATING)},
         "checkpoints": {"auto_approve": list(AUTO_APPROVE)},
     }
     return _merge(config, overrides)

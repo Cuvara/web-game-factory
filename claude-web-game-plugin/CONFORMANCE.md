@@ -55,7 +55,7 @@ restates none of it and never answers a gate.
 |---|---|---|---|
 | `/new-game` | `claude-web-game-plugin/commands/new-game.md` | `core/workflows/new-game.workflow.yaml` | covered |
 
-## Skills (27 of 27)
+## Skills (28 of 28)
 
 | Skill | File | Status |
 |---|---|---|
@@ -84,6 +84,7 @@ restates none of it and never answers a gate.
 | `production-wiring` | `claude-web-game-plugin/skills/production-wiring/SKILL.md` | covered |
 | `qa` | `claude-web-game-plugin/skills/qa/SKILL.md` | covered |
 | `release` | `claude-web-game-plugin/skills/release/SKILL.md` | covered |
+| `store-listing` | `claude-web-game-plugin/skills/store-listing/SKILL.md` | covered |
 | `threejs` | `claude-web-game-plugin/skills/threejs/SKILL.md` | covered |
 | `web-performance` | `claude-web-game-plugin/skills/web-performance/SKILL.md` | covered |
 

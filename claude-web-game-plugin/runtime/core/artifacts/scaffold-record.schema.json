@@ -10,7 +10,7 @@
     "format": "json",
     "version": "1.2.0",
     "producer": "title:scaffolding",
-    "consumers": ["title:prototype", "title:production", "release:draft", "release:qa", "release:validating", "release:submitting"],
+    "consumers": ["title:prototype", "title:production", "release:draft", "release:qa", "release:store-listing", "release:validating", "release:submitting"],
     "repo_path": "workspace/titles/<title-id>/scaffold-record.json",
     "run_path": "<storage>/workflows/<run-id>/artifacts/scaffold-record/v<n>.json"
   },

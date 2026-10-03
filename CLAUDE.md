@@ -64,6 +64,11 @@ python3 scripts/wgf-corpus.py validate [CORPUS]             # teardown records v
 python3 scripts/wgf-corpus.py template game-x --name "X"    # a record skeleton to fill in after playing
 python3 scripts/wgf-corpus.py facets [FACET]                # the codes a game is coded on
 
+# The store listing outside a run (docs/store-listing-module.md). Exit 0 PASS, 1 FAIL, 3 BLOCKED.
+python3 scripts/wgf-listing.py validate .factory/workflows/<run>/store-listing/1-1/package
+python3 scripts/wgf-listing.py copy --design game-design.json --dist ../my-game/dist  # the grounded copy
+python3 scripts/wgf-listing.py requirements poki yandex   # what each profile asks; what is UNKNOWN
+
 # 3D models (docs/blender-pipeline.md). Blender 4.5 LTS via WGF_BLENDER or PATH; inspect needs none.
 python3 scripts/wgf-model.py doctor                     # is the pinned Blender usable?
 python3 scripts/wgf-model.py build spec.json --id car -o car.glb --twice   # build, check, reproduce
@@ -193,7 +198,8 @@ only reports eligibility.
 
 In `new-game`, G2, G3, G4, G5 and G6 are `human-checkpoint` steps decided on their gate's
 `required_artifacts`. G4 (`prototype-review`) sits after `verify` passes and before
-`release`: `pass` releases, `iterate` loops back to develop, `kill` ends the run (exit 0,
+`release`: `pass` continues to the store listing and then release, `iterate` loops back to
+develop, `kill` ends the run (exit 0,
 `Ended: kill at G4`). Release cannot run until G4 passes, and a newer verification makes G4
 ask again. A `--mock` run therefore stops at G4, and `wgf new-game` ends with the drafted
 release. G5 and G6 are the `publish` group's, after `release`: `wgf publish --run <run-id>`
@@ -207,7 +213,15 @@ without an automated method stops `submit` WAITING_FOR_HUMAN (`wgf decide <run> 
 See `docs/publish-module.md`. Workflow 5 judges the production build
 before review: `production-quality` and `visual-qa` route `assets` (an asset must be made
 again) to `assets` and `develop` to `develop`, and `release` refuses unless both passed the
-development commit it ships (`docs/production-architecture.md`).
+development commit it ships (`docs/production-architecture.md`). Workflow 7 adds the **store listing** after G4
+(`docs/store-listing-module.md`): `store-listing` captures the verified build's package -
+screenshots and a gameplay recording of real play through the probe, branding from the
+game's own assets and identity, copy grounded in the design, one rendition per targeted
+platform under its profile's `store_listing` block - and `listing-validation` judges it
+against each platform's stated requirements (a `null` limit is UNKNOWN, never passed),
+routing `listing` back for what the step can redo and blocking for what a person must
+configure. `release` ships the validated listing under `release/<id>/listing/` and fills
+`store_metadata` from it; G6 is decided on all three.
 
 Every gate emits a `decision-record` pinning its subject by content hash. Decided by hand,
 the person writes it and `wgf-state.py` refuses the gated edge without it. Decided in a run,
@@ -271,8 +285,9 @@ Real step modules register via `factory.steps.modules` in `workspace/config/fact
 every step type in `new-game` has one: `wgf_discovery` (research), `wgf_strategy`,
 `wgf_design`, `wgf_techplan`, `wgf_init`, `wgf_assets`, `wgf_develop`, `wgf_review`,
 `wgf_sdk`, `wgf_verification`, `wgf_release`, `wgf_playability`, `wgf_production`
-(production-quality), `wgf_visualqa` (visual-qa) and `wgf_publish` (platform-validate and
-publish). `--mock` still replaces all of them with placeholders for a run. Discovery reads evidence snapshots from
+(production-quality), `wgf_visualqa` (visual-qa), `wgf_listing` (store-listing and
+listing-validation) and `wgf_publish` (platform-validate and publish). `--mock` still
+replaces all of them with placeholders for a run. Discovery reads evidence snapshots from
 `workspace/research/snapshots/` and teardown records from `workspace/research/games/`, codes
 every game on `core/reference/research-vocabulary.yaml`, and proposes several opportunities
 (Research V2, `docs/research-v2.md`); strategy and design read the `research` block. A
@@ -393,6 +408,11 @@ seen by the engine — validate what you write there with ajv.
 - `docs/visual-qa-module.md` — the `visual-qa` step: a judge reads runtime frames against
   `core/reference/visual-qa-rubric.yaml`; the `baseline` judge a golden run uses; routes
   `assets` / `develop`
+- `docs/store-listing-module.md` — the `store-listing` and `listing-validation` steps: the
+  store package captured from the verified build (branding, screenshots, trailer, grounded
+  copy, per-platform renditions under `core/reference/store-listing.yaml` and the profiles'
+  `store_listing` blocks), its validation with UNKNOWN requirements named, the release
+  shipping it; `scripts/wgf-listing.py`
 - `docs/platform-sdk-verification.md` — how platform SDK integration is verified, and where the
   platform profiles disagree with current portal documentation
 - `docs/review-module.md` — the `review` step: enforced read-only reviewer, verdict contract

@@ -166,6 +166,11 @@ class TheFactoryContainsNoGameSource(unittest.TestCase):
         # game and run there against its build (scripts/wgf_playability/step.py). It
         # records what a player's device would see; it contains no game.
         "scripts/wgf_playability/bot.spec.ts",
+        # The store-listing step's capture script: run by Node in the game checkout against
+        # its built bundle, resolving the game's own Playwright, writing only under the run
+        # directory (scripts/wgf_listing/capture.py). It records frames, a recording and the
+        # branding composition; it contains no game.
+        "scripts/wgf_listing/capture.mjs",
         # The publish step's console executor: a Playwright spec that drives a portal's
         # developer console through fixed phases from a flow file (scripts/wgf_publish/
         # browser.py), copied into the checkout's release/ scratch directory for one run.

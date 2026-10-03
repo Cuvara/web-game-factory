@@ -751,13 +751,13 @@ class ThroughTheEngine(PublishCase):
                     - id: verify
                       type: test.verify
                       stage: release:qa
-                      outputs: [prototype-report, sdk-report, scaffold-record, verification-report, qa-report, review-report, production-quality-report, visual-qa-report]
+                      outputs: [prototype-report, sdk-report, scaffold-record, verification-report, qa-report, review-report, production-quality-report, visual-qa-report, store-listing, listing-validation-report]
                     - id: release
                       type: release
                       stage: release:draft
                       inputs: [qa-report, verification-report, sdk-report, prototype-report, scaffold-record, review-report, production-quality-report, visual-qa-report]
                       outputs: [release-manifest]
-                      with: {repo_dir: %(repo)s, required_gates: []}
+                      with: {repo_dir: %(repo)s, required_gates: [], required_listing: false}
                     - id: platform-validate
                       type: platform-validate
                       stage: release:validating
@@ -774,7 +774,7 @@ class ThroughTheEngine(PublishCase):
                     - id: publish-review
                       type: human-checkpoint
                       stage: release:approved
-                      inputs: [release-manifest, platform-publication]
+                      inputs: [release-manifest, platform-publication, store-listing, listing-validation-report]
                       outputs: [decision-record]
                       with: {gate: G6, choices: [publish, reject]}
                       on: {reject: $end}
@@ -787,6 +787,24 @@ class ThroughTheEngine(PublishCase):
                       with: {repo_dir: %(repo)s}
                 """ % {"repo": json.dumps(self.game.root)}))
         return path
+
+    @staticmethod
+    def listing_placeholders():
+        from wgflib import provenance
+        from wgflib.workflow.mock import DEFAULT_EPOCH, FIXTURES, FIXTURE_SLUG
+        out = {}
+        for n, artifact_type in enumerate(("store-listing", "listing-validation-report"), 1):
+            with open(os.path.join(FIXTURES, f"{artifact_type}.json"), encoding="utf-8") as handle:
+                body = json.loads(handle.read().replace(FIXTURE_SLUG, "fixture-game"))
+            artifact = {"provenance": provenance.build(
+                artifact_type,
+                artifact_id=provenance.artifact_id(artifact_type, "fixture-game", DEFAULT_EPOCH, n),
+                produced_by=provenance.producer("release"), produced_at=DEFAULT_EPOCH,
+                inputs=[], title_id="fixture-game")}
+            artifact.update(body)
+            provenance.seal(artifact)
+            out[artifact_type] = artifact
+        return out
 
     def api(self, console, publish_config):
         from wgflib.workflow import ArtifactOutput, StepResult, WorkflowStep
@@ -801,6 +819,10 @@ class ThroughTheEngine(PublishCase):
 
             def execute(self, inputs, context):
                 evidence = case.with_assertions(case.game.evidence(run_id=context.run_id))
+                # G6 is decided on the store listing too (gates.yaml): this flow carries the
+                # mock placeholders, the way a --mock run does; release itself is told the
+                # flow has no listing steps (`required_listing: false`).
+                evidence.update(case.listing_placeholders())
                 return StepResult.success([ArtifactOutput(t, a) for t, a in evidence.items()])
 
         module = type(sys)("wgf_publish_test_verify")
@@ -859,7 +881,9 @@ class ThroughTheEngine(PublishCase):
         manifest = api.store.read_artifact(state.run_id, stored.latest_artifact("release-manifest"))
         self.assertEqual(g6["gate_id"], "G6")
         self.assertEqual(g6["decided_by"]["mode"], "human")
-        self.assertEqual(g6["subject"][0]["content_hash"], manifest["provenance"]["content_hash"])
+        pinned = {s["artifact_type"]: s["content_hash"] for s in g6["subject"]}
+        self.assertEqual(pinned["release-manifest"], manifest["provenance"]["content_hash"])
+        self.assertEqual(set(pinned), {"release-manifest", "store-listing", "listing-validation-report"})
         self.assertEqual(record["submission"]["authorized_by"]["release_manifest_hash"],
                          manifest["provenance"]["content_hash"])
         # No credential reached the event log.

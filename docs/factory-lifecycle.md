@@ -208,9 +208,9 @@ input — asking nobody — until the run holds them:
 |---|---|---|---|---|
 | `strategy-review` | G2 | strategy → design | `title-strategy` | approve, reject |
 | `tech-plan-review` | G3 | tech-plan → init | `game-design`, `tech-plan` | approve, reject |
-| `prototype-review` | G4 | verify (PASS) → release | `qa-report`, `verification-report`, `prototype-report` | pass, iterate, kill |
+| `prototype-review` | G4 | verify (PASS) → store-listing → listing-validation → release | `qa-report`, `verification-report`, `prototype-report` | pass, iterate, kill |
 | `release-review` | G5 | platform-validate → publish-review | `qa-report`, `verification-report`, `release-manifest` | approve, reject |
-| `publish-review` | G6 | release-review → submit | `release-manifest` (the record pins it by hash) | publish, reject |
+| `publish-review` | G6 | release-review → submit | `release-manifest` (the record pins it by hash), `store-listing`, `listing-validation-report` | publish, reject |
 
 G5 and G6 are the `publish` group's: `wgf new-game` ends with the drafted release, and
 `wgf publish --run <run-id>` continues that run through `platform-validate`, G5, G6 and
@@ -221,7 +221,9 @@ to `cancelled`, G5's and G6's own); `publish` is G6's approval, named after the 
 one that record pins.
 
 G4 judges the *verified* prototype: it runs only after verification passes, and a
-verification that runs again after a pass makes G4 ask again. `pass` continues to release;
+verification that runs again after a pass makes G4 ask again. `pass` continues to the store
+listing - the verified build's store package, captured and validated per platform
+([store-listing-module.md](store-listing-module.md)) - and then to release, which ships it;
 `iterate` sends the work back to develop and ends at G4 again; `kill` — the machine's
 `abandon` — ends the run: the decision is recorded (`DECISION_RECORDED`, and a
 `decision-record` with `decision: abandon` — see below), the run is

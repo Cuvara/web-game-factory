@@ -5,7 +5,7 @@
 
 id: poki
 name: Poki
-version: 1.0.0
+version: 1.1.0  # 1.1.0: the store_listing block (listing requirements, null = unknown)
 status: unverified
 docs: https://developers.poki.com/
 
@@ -55,6 +55,27 @@ review:
     - Ad breaks at arbitrary points rather than natural boundaries.
     - Quality or polish below the portal's editorial bar.
     - Slow time-to-first-interaction.
+
+# What the portal's listing takes. Nothing here was read from the portal's own submission
+# flow yet: every limit is null - UNKNOWN to validation, never passed - until someone reads
+# it from the developer documentation and records the source. The coarse figures above
+# (metadata_requirements) still apply.
+store_listing:
+  status: unverified
+  source: null
+  notes: >
+    Read the submission form at developers.poki.com and fill in the exact sizes, formats and
+    text limits; then set status: verified and name the source with its date.
+  title: {required: true, max_chars: null}
+  short_description: {required: true, max_chars: null}
+  long_description: {required: false, max_chars: null}
+  tags: {required: false, min: null, max: null, allowed: null}
+  locales: null
+  icon: {id: icon, required: true, sizes: null, aspect: "1:1", formats: null, max_kb: null, source: icon}
+  covers:
+    - {id: thumbnail, label: Game thumbnail, required: true, sizes: null, aspect: null, formats: null, max_kb: null, source: thumbnail}
+  screenshots: {required: true, min: 3, max: null, sizes: null, aspect: null, formats: null, max_kb: null}
+  video: {required: false, formats: null, min_seconds: null, max_seconds: null, max_mb: null}
 
 assertions:
   - id: poki_bundle_size

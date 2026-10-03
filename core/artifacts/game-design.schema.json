@@ -439,8 +439,8 @@
                   },
                   "parameters": {
                     "type": "object",
-                    "description": "The unit's own tuning values, as the data file carries them.",
-                    "additionalProperties": { "type": ["number", "string", "boolean"] }
+                    "description": "The unit's own tuning values, as the data file carries them - a number, a word, a flag, or the unit's layout as data (a board, a wave list, a track's corners): the live puzzle design put each level's grid here, which is exactly where a developer should find it instead of inventing one.",
+                    "additionalProperties": { "type": ["number", "string", "boolean", "array", "object"] }
                   }
                 },
                 "additionalProperties": false

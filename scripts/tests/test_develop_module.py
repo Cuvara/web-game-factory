@@ -2057,6 +2057,37 @@ class PackageAndScope(DevelopCase):
         _, refused = scope.partition(changes)
         self.assertEqual([p for p, _ in refused], ["i18n.ts"])
 
+    def commit_allowed(self):
+        """The step's commit: the in-scope changes, through commit_paths."""
+        repo = GitRepo(self.repo, Runner(), author={"name": "t", "email": "t@t.invalid"})
+        allowed, refused = scope.partition(repo.changes())
+        self.assertEqual(refused, [])
+        sha, created = repo.commit_paths("feat(game): iteration", "body", "run-1:develop:1",
+                                         allowed)
+        self.assertTrue(created)
+        self.assertEqual(self.git("status", "--porcelain"), "")
+        return sha
+
+    def test_a_rename_already_staged_commits(self):
+        # The owner's `git mv`: the old path is in neither the work tree nor the index.
+        os.makedirs(os.path.join(self.repo, "src", "catalog"))
+        self.git("mv", "src/core/i18n.ts", "src/catalog/i18n.ts")
+        sha = self.commit_allowed()
+        self.assertEqual(self.git("show", "--name-status", "--format=", "-M", sha).split(),
+                         ["R100", "src/core/i18n.ts", "src/catalog/i18n.ts"])
+
+    def test_a_deletion_already_staged_commits(self):
+        self.git("rm", "-q", "src/core/i18n.ts")
+        sha = self.commit_allowed()
+        self.assertEqual(self.git("show", "--name-status", "--format=", sha).split(),
+                         ["D", "src/core/i18n.ts"])
+
+    def test_a_deletion_not_staged_commits(self):
+        os.remove(os.path.join(self.repo, "src", "core", "i18n.ts"))
+        sha = self.commit_allowed()
+        self.assertEqual(self.git("show", "--name-status", "--format=", sha).split(),
+                         ["D", "src/core/i18n.ts"])
+
     def test_the_brief_says_what_may_be_written(self):
         step_with(FakeRunner()).execute(inputs_for(), context(self.config()))
         with open(os.path.join(self.repo, briefs.BRIEF_DIR, "brief.md")) as handle:

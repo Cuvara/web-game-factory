@@ -410,25 +410,31 @@ class GenreSeedAuthor(ArchetypeAuthor):
         if not family_id:
             raise AuthorError(
                 f"the genre seed author designs from a genre family and none resolves: {why}")
-        # The seed is one game per family - the slide-and-clear grid, the lane defense - and
-        # it is the whole of what this author can design. When the strategy's concept is the
-        # person's own idea (a catalog entry that names only a family: the entry is the
-        # capability, the brief is the game), designing the seed instead would describe a
-        # different game, which the consistency rules then refuse. Say so here instead.
-        brief_text = strategy.get("brief")
+        return self.synthesize(family_id, models, strategy,
+                               (models.get("families") or {})[family_id])
+
+    @staticmethod
+    def refuse_an_idea(family_id, strategy):
+        """Raise when the strategy's concept is the person's own idea.
+
+        The seed is one game per family - the slide-and-clear grid, the lane defense - and it
+        is the whole of what this author can design. A catalog entry that names only a family
+        is a capability, and the strategy then carries the idea as the concept; designing the
+        seed would describe a different game, which the consistency rules refuse a step
+        later. Say it here, and name the author that can."""
+        brief = strategy.get("brief")
         concept = (strategy.get("concept") or {}).get("core_mechanic") or ""
-        if brief_text and concept.strip() == str(brief_text).strip():
+        if brief and concept.strip() == str(brief).strip():
             raise AuthorError(
                 f"this title's concept is the person's idea, and the {family_id} family's seed "
                 f"is one particular game of that family: designing it would describe a "
                 f"different game. An idea needs the agent author "
                 f"(factory.design.author: agent); the seed designs a title whose concept "
                 f"research took from the catalog.")
-        return self.synthesize(family_id, models, strategy,
-                               (models.get("families") or {})[family_id])
 
     def synthesize(self, family_id, models, strategy, entry):
         """`Resolved` for a game of family `family_id`, built from the family's `seed` block."""
+        self.refuse_an_idea(family_id, strategy)
         seed = entry.get("seed")
         if not isinstance(seed, dict) or not isinstance(seed.get("archetype"), dict):
             raise AuthorError(f"core/reference/genre-models.yaml family {family_id!r} carries no "

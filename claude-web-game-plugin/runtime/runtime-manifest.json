@@ -203,7 +203,7 @@
     "scripts/wgf_design/identity.py": "sha256:1bc33c20096f9c3004a1e8d6f667aa065e045822de57eba19ea8654050e1b7ff",
     "scripts/wgf_design/platforms.py": "sha256:f47cf8b6e71f40d8049e42a34112d681c07e1ceb564b38e0863923a80840d091",
     "scripts/wgf_design/presentation.py": "sha256:6ec7938034807b14561185998d8ca4cdaac951b0f0d9fd2243856e5a0a23c148",
-    "scripts/wgf_design/seed.py": "sha256:15c1bc2d4a8d7f03d61127a97db96a4d3e573f4c52e88186e50772f21800a560",
+    "scripts/wgf_design/seed.py": "sha256:d49a9b924f127316d62ce336428aa07679f3c6bbc8a34a4ff2b783d3de9d63d8",
     "scripts/wgf_design/step.py": "sha256:c1d52ff6a5c5f850e40f950dc6793045586bacbcdd95cbbdda39429c8472d8fa",
     "scripts/wgf_develop/__init__.py": "sha256:b5e56a4c40bdff26633f1f2b613bf314ca6835cd2cb28bdf6e00df697624bd8f",
     "scripts/wgf_develop/brief.py": "sha256:51b1667bd7823682a6cb850039c1e58d31bb070317cc1a09b1800d37cc99f035",

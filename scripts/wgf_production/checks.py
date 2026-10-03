@@ -620,7 +620,12 @@ def ui_text(project, tests, rules, frames):
     min_font = bars.get("min_font_px", 12)
     low, small, undetermined, measured = [], [], 0, 0
     for state, ui in _ui_states(tests):
-        items = [e for e in ui.get("elements") or [] if (e.get("text") or "").strip()]
+        # A control named only by its aria-label (an icon button) draws no text: its CSS
+        # colour paints nothing and the frame behind its box is its own icon (val-3d,
+        # 2026-10-03: a pause icon read as 'Pause' at 1.4:1). Records without the field
+        # (older bots) are measured as before.
+        items = [e for e in ui.get("elements") or []
+                 if (e.get("text") or "").strip() and e.get("text_drawn", True)]
         items += [t for t in ui.get("texts") or [] if (t.get("text") or "").strip()]
         for item in items:
             label = f"{state}: {item.get('text')[:30]!r}"

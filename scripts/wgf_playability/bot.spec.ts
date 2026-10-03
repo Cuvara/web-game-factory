@@ -246,6 +246,9 @@ async function measureUI(page: Page): Promise<unknown> {
       elements.push({
         tag: el.tagName.toLowerCase(), role: el.getAttribute("role"),
         text: ((el as HTMLElement).innerText || (el as HTMLInputElement).value || el.getAttribute("aria-label") || "").trim().slice(0, 60),
+        // Whether that text is drawn: an icon-only control is named by its aria-label, which is
+        // read to the player but never painted, so it has no colour to measure.
+        text_drawn: Boolean(((el as HTMLElement).innerText || (el as HTMLInputElement).value || "").trim()),
         box: box(r), font_px: parseFloat(s.fontSize), font_weight: Number(s.fontWeight) || 400,
         color: ink(el), background: background(el), ua_default: differs.length === 0,
         ua_differs: differs,

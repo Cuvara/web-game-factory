@@ -33,9 +33,10 @@ from . import encoders
 __all__ = ["ModelSpecError", "validate", "buildable", "resolve", "spec_hash", "expectations",
            "expand_parts", "SHAPES", "PATHS", "FIT_TOLERANCE", "MIRROR_SUFFIX"]
 
-SHAPES = ("box", "cylinder", "cone", "sphere", "icosphere", "plane", "capsule")
+SHAPES = ("box", "cylinder", "cone", "sphere", "icosphere", "plane", "capsule", "extrude",
+          "lathe")
 # Shapes with sharp edges to bevel, and shapes smooth-shaded unless the part says otherwise.
-BEVEL_SHAPES = ("box", "cylinder", "cone")
+BEVEL_SHAPES = ("box", "cylinder", "cone", "extrude")
 SMOOTH_SHAPES = ("sphere", "icosphere", "capsule")
 MIRRORS = ("x",)
 MIRROR_SUFFIX = "-mirror"
@@ -48,6 +49,8 @@ PATTERNS = ("checker", "stripes")
 INTERPOLATIONS = ("linear", "step")
 
 MAX_PARTS = 64
+# An extrude's outline and a lathe's profile: at most this many [a, b] points.
+MAX_OUTLINE = 64
 MAX_CLIPS = 16
 MAX_KEYS = 256
 MAX_LODS = 3
@@ -73,6 +76,83 @@ def _vec(value, n=3):
     return isinstance(value, list) and len(value) == n and all(_num(v) for v in value)
 
 
+def _points(value, low=2):
+    return (isinstance(value, list) and low <= len(value) <= MAX_OUTLINE
+            and all(_vec(p, 2) for p in value))
+
+
+def _cross(o, a, b):
+    return (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0])
+
+
+def _segments_meet(a, b, c, d):
+    """True when segment ab touches segment cd (collinear overlaps included)."""
+    def on(p, q, r):
+        return (min(p[0], r[0]) - 1e-12 <= q[0] <= max(p[0], r[0]) + 1e-12
+                and min(p[1], r[1]) - 1e-12 <= q[1] <= max(p[1], r[1]) + 1e-12)
+    d1, d2, d3, d4 = _cross(c, d, a), _cross(c, d, b), _cross(a, b, c), _cross(a, b, d)
+    if ((d1 > 0) != (d2 > 0) and d1 != 0 and d2 != 0
+            and (d3 > 0) != (d4 > 0) and d3 != 0 and d4 != 0):
+        return True
+    return ((d1 == 0 and on(c, a, d)) or (d2 == 0 and on(c, b, d))
+            or (d3 == 0 and on(a, c, b)) or (d4 == 0 and on(a, d, b)))
+
+
+def _crossing(points, closed):
+    """The first pair of non-adjacent edges that meet, as indices, or None."""
+    edges = [(i, (i + 1) % len(points)) for i in range(len(points) if closed
+                                                         else len(points) - 1)]
+    for x, (a, b) in enumerate(edges):
+        for c, d in edges[x + 1:]:
+            if len({a, b, c, d}) < 4:
+                continue  # neighbours share a vertex by construction
+            if _segments_meet(points[a], points[b], points[c], points[d]):
+                return a, c
+    return None
+
+
+def outline_problems(outline):
+    """What is wrong with an extrude's `outline` ([[x, z], ...], a closed polygon), as text."""
+    if not _points(outline, 3):
+        return [f"[[x, z], ...] - 3 to {MAX_OUTLINE} points"]
+    if any(outline[i] == outline[(i + 1) % len(outline)] for i in range(len(outline))):
+        return ["two consecutive points are the same"]
+    area = sum(outline[i][0] * outline[(i + 1) % len(outline)][1]
+               - outline[(i + 1) % len(outline)][0] * outline[i][1]
+               for i in range(len(outline))) / 2
+    span = max(max(p[k] for p in outline) - min(p[k] for p in outline) for k in (0, 1))
+    if span <= 0:
+        return ["the outline encloses no area"]
+    crossing = _crossing(outline, closed=True)
+    if crossing:
+        return [f"the outline crosses itself (edges from points {crossing[0]} and "
+                f"{crossing[1]}); list the points in order around the shape"]
+    if abs(area) <= 1e-6 * span * span:
+        return ["the outline encloses no area"]
+    return []
+
+
+def profile_problems(profile):
+    """What is wrong with a lathe's `profile` ([[radius, y], ...], an open line), as text."""
+    if not _points(profile, 2):
+        return [f"[[radius, y], ...] - 2 to {MAX_OUTLINE} points"]
+    if any(p[0] < 0 for p in profile):
+        return ["a radius is negative"]
+    if any(profile[i] == profile[i + 1] for i in range(len(profile) - 1)):
+        return ["two consecutive points are the same"]
+    if max(p[0] for p in profile) <= 0:
+        return ["every radius is 0: the profile sweeps nothing"]
+    if max(p[1] for p in profile) - min(p[1] for p in profile) <= 0:
+        return ["every point is at one height: use a cylinder or a plane"]
+    if any(p[0] == 0 for p in profile[1:-1]):
+        return ["only the first and last points may sit on the axis (radius 0)"]
+    crossing = _crossing(profile, closed=False)
+    if crossing:
+        return [f"the profile crosses itself (segments from points {crossing[0]} and "
+                f"{crossing[1]})"]
+    return []
+
+
 def mirror_euler(degrees):
     """The rotation of a part mirrored across X = 0, as XYZ Euler degrees.
 
@@ -84,8 +164,10 @@ def mirror_euler(degrees):
 def expand_parts(parts):
     """The parts with every `mirror` written out: each mirrored part is followed by
     `<id>-mirror`, placed and turned across X = 0 of its parent, whose parent is the
-    parent's mirror when the parent is mirrored too. The shapes are symmetric across X,
-    so mirroring the placement mirrors the part. Assumes `validate()` passed."""
+    parent's mirror when the parent is mirrored too. The primitives and a lathe are symmetric
+    across X, so mirroring the placement mirrors them; an extrude's outline is reflected too
+    (x negated, the order reversed so it still runs the same way round). Assumes
+    `validate()` passed."""
     mirrored = {p["id"] for p in parts if isinstance(p, dict) and p.get("mirror")}
     out = []
     for part in parts:
@@ -98,6 +180,8 @@ def expand_parts(parts):
         twin["position"] = [-position[0] + 0.0, position[1], position[2]]
         if "rotation" in part:
             twin["rotation"] = mirror_euler(part["rotation"])
+        if "outline" in part:
+            twin["outline"] = [[-p[0] + 0.0, p[1]] for p in reversed(part["outline"])]
         if part.get("parent") in mirrored:
             twin["parent"] = part["parent"] + MIRROR_SUFFIX
         out.append(twin)
@@ -182,6 +266,15 @@ def validate(spec):
         segments = part.get("segments", 16)
         if not (isinstance(segments, int) and SEGMENTS[0] <= segments <= SEGMENTS[1]):
             add(f"{where}.segments: an integer in {SEGMENTS[0]}..{SEGMENTS[1]}")
+        shape = part.get("shape")
+        for key, owner, check in (("outline", "extrude", outline_problems),
+                                  ("profile", "lathe", profile_problems)):
+            if key in part and shape != owner:
+                add(f"{where}.{key}: only on a {owner}")
+            elif shape == owner and key not in part:
+                add(f"{where}.{key}: a {owner} needs one")
+            elif shape == owner:
+                problems.extend(f"{where}.{key}: {p}" for p in check(part[key]))
         if part.get("material") is not None and part["material"] not in material_ids:
             add(f"{where}.material: no material {part['material']!r}")
         if pid in mirror_ids:
@@ -436,6 +529,10 @@ def resolve(spec, asset_id):
         # Only when set, so a spec without them resolves exactly as before these existed.
         **({"taper": [float(v) for v in p["taper"]]} if "taper" in p else {}),
         **({"bevel": float(p["bevel"])} if "bevel" in p else {}),
+        **({"outline": [[float(a), float(b)] for a, b in p["outline"]]}
+           if "outline" in p else {}),
+        **({"profile": [[float(a), float(b)] for a, b in p["profile"]]}
+           if "profile" in p else {}),
     } for p in ordered]
 
     animations = []

@@ -43,6 +43,7 @@ The developer's boundary is enforced here, not requested in the brief:
 import datetime
 import json
 import os
+import shutil
 
 from wgflib import checkout as checkout_lock
 from wgflib import isolation
@@ -175,7 +176,7 @@ class _Guard:
                 f"developer could not be checked for writes to them: {exc}")
         return None
 
-    def check(self, *, checkout, key, engine, checks_json, logger, write, checks=()):
+    def check(self, *, checkout, key, engine, checks_json, logger, write, checks=(), quarantine=None):
         """None when the guarded paths are as they were; else restore them and return the
         step's result: FAILED not retryable, or BLOCKED when they could not be put back."""
         if self.before is None:
@@ -350,9 +351,14 @@ class DevelopStep(WorkflowStep):
                 f"resume.")
         existing = _read_json(brief_json) or {}
         guard = _Guard(settings.guarded_paths, self.clock)
+        run_dir = getattr(context, "run_dir", None)
         record = dict(checkout=checkout, key=key, engine=engine, checks_json=checks_json,
                       logger=context.logger,
-                      write=not committed)
+                      write=not committed,
+                      quarantine=(os.path.join(
+                          run_dir, "develop-quarantine",
+                          f"{getattr(context, 'visit', 1)}-{getattr(context, 'attempt', 1)}")
+                          if run_dir else None))
         if committed:
             # This visit already committed. Do not develop again: re-check what is there
             # and report it, so a crash after the commit costs a check run, not a rebuild.
@@ -530,11 +536,16 @@ class DevelopStep(WorkflowStep):
         _record_checks(checkout, checks_json, self.clock(), key, engine, checks, green)
 
     def _scope(self, git, settings, *, checkout, key, engine, checks_json, logger, write,
-               checks=()):
-        """FAILED, not retryable, when the tree holds a change the development commit may
-        not contain; None when every change is in scope."""
+               checks=(), quarantine=None):
+        """FAILED when the tree holds a change the development commit may not contain; None
+        when every change is in scope. Not retryable when a refused change touches a tracked
+        file. When every refused path is a new, untracked file - a developer's scratch
+        script, which it has no tool to delete - the files are moved out of the checkout
+        into `quarantine` (kept as evidence) and the failure is retryable: the next attempt
+        starts from a clean tree and is told what was removed and why."""
         try:
-            allowed, refused = scope.partition(git.changes(), settings.writable_paths)
+            changes = git.changes()
+            allowed, refused = scope.partition(changes, settings.writable_paths)
         except GitError as exc:
             return StepResult.failed(f"cannot read what the developer changed: {exc}",
                                      retryable=False)
@@ -551,11 +562,53 @@ class DevelopStep(WorkflowStep):
                    f"lists what a developer may write: {', '.join(settings.writable_paths)}), "
                    "then run develop again.")
         logger.error("develop commit scope violated", paths=[p for p, _ in refused])
+        untracked = {path for xy, path in changes if xy == "??"}
+        if quarantine and all(path in untracked for path, _ in refused):
+            moved = self._quarantine(checkout, quarantine, [p for p, _ in refused], logger)
+            if moved is not None:
+                message = (f"the developer left {len(refused)} new file(s) outside what a "
+                           f"development commit may contain - {listed}{more}. They were "
+                           f"moved out of the checkout to {quarantine}, and nothing else "
+                           "changed. Keep scratch files in /tmp, never in the checkout "
+                           "(you have no tool to delete them); write only "
+                           f"{', '.join(settings.writable_paths)}.")
+                if write:
+                    self._record(checks_json, key, engine, [c.to_dict() for c in checks] + [{
+                        "id": "commit-scope", "status": "failed", "summary": message,
+                        "findings": [f"{path}: {why}" for path, why in refused]}], False,
+                        checkout)
+                return StepResult.failed(message, retryable=True)
         if write:
             self._record(checks_json, key, engine, [c.to_dict() for c in checks] + [{
                 "id": "commit-scope", "status": "failed", "summary": message,
                 "findings": [f"{path}: {why}" for path, why in refused]}], False, checkout)
         return StepResult.failed(message, retryable=False)
+
+    @staticmethod
+    def _quarantine(checkout, target, refused, logger):
+        """Move untracked `refused` paths from `checkout` into `target`. The moved paths, or
+        None when any could not be moved safely (a link, or a path leaving the checkout)."""
+        root = os.path.realpath(checkout)
+        moved = []
+        for path in refused:
+            source = os.path.join(checkout, path)
+            if os.path.islink(source) or not os.path.realpath(source).startswith(root + os.sep):
+                return None
+            destination = os.path.join(target, path)
+            try:
+                os.makedirs(os.path.dirname(destination), exist_ok=True)
+                shutil.move(source, destination)
+            except OSError:
+                return None
+            moved.append(path)
+            # Leave no empty directory behind: git does not see it, but a later tool may.
+            parent = os.path.dirname(source)
+            while parent != checkout and os.path.isdir(parent) and not os.listdir(parent):
+                os.rmdir(parent)
+                parent = os.path.dirname(parent)
+        logger.warning("moved the developer's out-of-scope new files out of the checkout",
+                       paths=moved, to=target)
+        return moved
 
     @staticmethod
     def _pins(inputs):

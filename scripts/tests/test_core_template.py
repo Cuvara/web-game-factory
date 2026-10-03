@@ -143,6 +143,13 @@ class TheFactoryContainsNoGameSource(unittest.TestCase):
         # behaviour (load, frame times, visibility, resize, audio, heap) on the bytes that
         # ship. Drives whatever game is in the checkout through the template's hooks.
         "scripts/mv4/session.spec.ts",
+        "scripts/mv4/session.spec.ts",
+        # The developer's frame capture: serves any built game's dist/ and saves what a
+        # first-time player sees, for the developer to read. It contains no game.
+        "scripts/wgf_develop/tools/look.mjs",
+        # The 2D set author's renderer: draws SVG files the assets step judges into a
+        # contact sheet with the checkout's Playwright. It contains no game.
+        "scripts/wgf_assets/tools/render-svgs.mjs",
     }
     # The sdk step's integration layer (gameplay seam + its SDK-mock suite), written into a
     # game by scripts/wgf_sdk/integrate.py. Game- and renderer-agnostic platform wiring the
@@ -176,6 +183,10 @@ class TheFactoryContainsNoGameSource(unittest.TestCase):
         # browser.py), copied into the checkout's release/ scratch directory for one run.
         # Portal plumbing, no game in it.
         "scripts/wgf_publish/browser/console.spec.ts",
+        # The developer's frame tool: serves a game's built dist/ and screenshots it with
+        # the game's own Playwright (scripts/wgf_develop/brief.py, "See your build").
+        # Tooling that looks at a game; it contains none.
+        "scripts/wgf_develop/tools/",
     )
     # The Claude plugin's bundled runtime (scripts/build-plugin-runtime.py) is a byte-identical
     # copy of the Factory's own files, so each exception above holds for its copy too.

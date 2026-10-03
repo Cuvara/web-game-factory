@@ -605,6 +605,61 @@ class FileOwnershipInTheBrief(DesignAndPlanInTheBrief):
         self.assertNotIn("what the build did when it was played", briefs.render_markdown(data))
 
 
+    def test_the_gates_reasons_and_frames_reach_the_developer(self):
+        # The judge's words for a low score, a state and the look; its major findings; and
+        # the frames a production-quality check measured - none of it is a bare label.
+        play = {"commit": "d" * 40, "frames": [
+            {"id": "state-playing", "project": "mobile",
+             "path": "playability/2-1/out/mobile/frames/state-playing.png"}]}
+        production = {"commit": "d" * 40, "verdict": "FAIL", "checks": [
+            {"id": "scene.contrast", "project": "mobile", "status": "FAIL", "required": True,
+             "route": "develop", "summary": "the player does not stand out",
+             "measured": {"player": 1.4}, "frames": ["state-playing"]}]}
+        frames = [{"id": "mobile/play-2s", "project": "mobile", "state": "gameplay",
+                   "path": "playability/1-1/out/mobile/frames/play-2s.png"}]
+        visual_qa = {"commit": "d" * 40, "verdict": "FAIL", "frames": frames,
+                     "rubric": {"pass_bar": 3},
+                     "scores": {"composition": 2},
+                     "score_reasons": {"composition": "the pause button covers the subtitle"},
+                     "states": [{"state": "gameplay", "viewport": "mobile", "captured": True,
+                                 "frames": ["mobile/play-2s"],
+                                 "comment": "the subtitle runs under the pause button",
+                                 "answers": {"typography_readable": False}}],
+                     "look": {"verdict": "developer-prototype",
+                              "reason": "programmer art on a black void"},
+                     "findings": [{"id": "empty-void", "severity": "major",
+                                   "category": "readability", "route": "develop",
+                                   "frame": "mobile/play-2s",
+                                   "summary": "a flat black void above the horizon"},
+                                  {"id": "nit", "severity": "minor", "category": "ui",
+                                   "route": "develop", "frame": None, "summary": "nit"}],
+                     "failed": ["score:composition",
+                                "state:mobile/gameplay:typography_readable",
+                                "look:developer-prototype"]}
+        data = briefs.build_brief(
+            title_id="t", engine="pixijs", iteration=3, key="k", baseline="d" * 40,
+            design={}, assets={}, scaffold={}, playability=play, production=production,
+            visual_qa=visual_qa, frames_root="/runs/r1")
+        self.assertEqual(data["production_failures"][0]["frames"],
+                         ["/runs/r1/playability/2-1/out/mobile/frames/state-playing.png"])
+        self.assertEqual([f["id"] for f in data["visual_qa_failures"]],
+                         ["score:composition", "state:mobile/gameplay:typography_readable",
+                          "look:developer-prototype", "finding:empty-void"])
+        text = briefs.render_markdown(data)
+        gate = text[text.index("## Fix first: what the production gate measured"):]
+        gate = gate[:gate.index("## Fix first: what visual QA saw")]
+        self.assertIn("/runs/r1/playability/2-1/out/mobile/frames/state-playing.png", gate)
+        self.assertIn("Measured: player: 1.4", gate)
+        seen = text[text.index("## Fix first: what visual QA saw"):]
+        self.assertIn("`composition` scored 2 of 5, below the rubric's bar of 3. The judge: "
+                      "the pause button covers the subtitle", seen)
+        self.assertIn("The judge saw: the subtitle runs under the pause button", seen)
+        self.assertIn("Frames: `/runs/r1/playability/1-1/out/mobile/frames/play-2s.png`", seen)
+        self.assertIn("The judge: programmer art on a black void", seen)
+        self.assertIn("(major, readability; did not fail the build on its own) a flat black "
+                      "void above the horizon", seen)
+        self.assertNotIn("`finding:nit`", seen)
+
     def test_failed_production_gates_lead_the_brief(self):
         production = {"commit": "d" * 40, "verdict": "FAIL", "checks": [
             {"id": "scene.no_primitives", "project": "desktop", "status": "FAIL",
@@ -803,7 +858,8 @@ class Phases(DesignAndPlanInTheBrief):
         # The playbooks distilled from the reference games, for this engine's dimension.
         for path in ("core/craft/production-art-2d.md", "core/craft/game-ui-kit.md",
                      "core/craft/juice.md", "core/craft/production-wiring.md"):
-            self.assertIn(f"`{path}`", text)
+            # Absolute: the developer's working directory is the checkout, not the Factory.
+            self.assertIn(f"`{briefs.factory_path(path)}`", text)
             self.assertTrue(os.path.isfile(os.path.join(ROOT, path)), path)
         self.assertNotIn("production-art-3d.md", text)
         self.assertNotIn("Primitives are expected here", text)
@@ -900,6 +956,64 @@ class GameDesignDocument(DevelopCase):
         self.assertEqual(committed, gdd.render_gdd(inputs.load("game-design"),
                                                    inputs.load("title-strategy"),
                                                    inputs.refs["game-design"].content_hash))
+
+
+class SeeYourBuild(DevelopCase):
+    """The developer is given eyes (look.mjs), the installation's quality bar and every craft
+    guide by an absolute path - none of which it had, which is how a build drew nothing for
+    forty minutes and a finished one looked like a prototype."""
+
+    def brief(self):
+        step_with(FakeRunner()).execute(inputs_for(), context(self.config()))
+        with open(os.path.join(self.repo, briefs.BRIEF_DIR, "brief.json")) as handle:
+            data = json.load(handle)
+        with open(os.path.join(self.repo, briefs.BRIEF_DIR, "brief.md")) as handle:
+            return data, handle.read()
+
+    def test_the_brief_says_draw_first_and_look_with_the_frame_tool(self):
+        data, text = self.brief()
+        self.assertTrue(os.path.isfile(data["look"]["tool"]))
+        self.assertTrue(data["look"]["out"].startswith("/tmp/wgf-look/"))
+        self.assertIn("## See your build", text)
+        self.assertIn("**Make it draw first.**", text)
+        self.assertIn(f"pnpm exec node {data['look']['tool']} --out", text)
+
+    def test_the_quality_bar_is_the_engines_dimension_and_exists(self):
+        data, text = self.brief()
+        bar = data["look"]["quality_bar"]
+        self.assertTrue(bar)
+        for frame in bar:
+            self.assertEqual(frame["dimension"], "2d")  # the fixture is PixiJS
+            self.assertTrue(os.path.isfile(frame["path"]), frame["path"])
+            self.assertIn(frame["path"], text)
+        self.assertIn("### The quality bar", text)
+
+    def test_every_craft_guide_is_absolute_and_exists(self):
+        data, text = self.brief()
+        self.assertIn("## Craft guides", text)
+        for path in data["craft_guides"]:
+            self.assertTrue(os.path.isabs(path) and os.path.isfile(path), path)
+        self.assertNotIn("production-art-3d.md", " ".join(data["craft_guides"]))
+
+
+class GreyboxSystems(unittest.TestCase):
+    """A greybox may defer what serves assets, sound and persistence; production may not."""
+
+    def findings(self, phase, status):
+        from wgf_develop import checks as dev_checks
+        systems = {name: "done" for name, _ in briefs.REQUIRED_SYSTEMS}
+        systems["asset-loading"] = status
+        report = {"engine": "pixijs", "systems": systems, "mvp": [], "placements": []}
+        brief = {"engine": "pixijs", "phase": phase, "mvp": [], "placements": []}
+        return dev_checks._report_findings(report, brief)
+
+    def test_greybox_may_defer_asset_loading(self):
+        self.assertEqual(self.findings("greybox", "deferred"), [])
+        self.assertEqual(self.findings("greybox", "partial"), [])
+
+    def test_production_may_not(self):
+        self.assertTrue(self.findings("production", "partial"))
+        self.assertTrue(self.findings("greybox", "missing"))
 
 
 class HostSkills(DevelopCase):
@@ -1351,6 +1465,24 @@ class Command(DevelopCase):
         self.assertEqual([c for c in runner.calls if c[0] == "pnpm"],
                          [["pnpm", "install", "--frozen-lockfile", "--prefer-offline"]])
 
+    def test_the_smoke_suite_runs_at_the_configured_worker_count(self):
+        # goalkeeper-royale, 2026-10-02: the same tree failed the fully parallel desktop +
+        # mobile suite three sessions running (a production build's first frame missed its
+        # wait under load) and passed it whole at one worker. The count is the machine's.
+        runner = FakeRunner(on_develop=write_game)
+        result = step_with(runner).execute(
+            inputs_for(), context(self.command_config(smoke_workers=2)))
+        self.assertEqual(result.outcome, StepOutcome.SUCCESS, result.error)
+        smoke = [c for c in runner.calls if c[:3] == ["pnpm", "run", "test:e2e"]]
+        self.assertEqual(smoke, [["pnpm", "run", "test:e2e", "--workers=2"]])
+        unit = [c for c in runner.calls if c[:3] == ["pnpm", "run", "test"]]
+        self.assertEqual(unit, [["pnpm", "run", "test"]])  # only the smoke suite
+        for bad in (0, -1, True, "2", 1.5):
+            result = step_with(FakeRunner(on_develop=write_game)).execute(
+                inputs_for(), context(self.command_config(smoke_workers=bad)))
+            self.assertEqual((result.outcome, result.retryable), (StepOutcome.FAILED, False))
+            self.assertIn("smoke_workers", result.error)
+
     def test_no_browser_skips_the_smoke_suite_and_says_so(self):
         runner = FakeRunner(unavailable={"test:e2e"}, on_develop=write_game)
         result = step_with(runner).execute(inputs_for(), context(self.command_config()))
@@ -1753,6 +1885,39 @@ class LinksInTheCheckout(DevelopCase):
         with open(path, "w", encoding="utf-8") as handle:
             handle.write("# rendered\n")
         self.assertIsNone(step._scope(GitRepo(self.repo, Runner()), settings, **record))
+
+    def test_new_out_of_scope_files_are_quarantined_and_the_attempt_retried(self):
+        # A live greybox developer wrote a diagnostic script into the checkout to see its
+        # own frames; it has no tool to delete a file, so failing for good lost the hour.
+        for rel in (".scratch-diag.mjs", ".claude/settings.json"):
+            path = os.path.join(self.repo, *rel.split("/"))
+            os.makedirs(os.path.dirname(path), exist_ok=True)
+            with open(path, "w", encoding="utf-8") as handle:
+                handle.write("scratch\n")
+        quarantine = os.path.join(self.scratch, "quarantine", "1-1")
+        record = dict(checkout=self.repo, key="k", engine="pixijs",
+                      checks_json=os.path.join(self.scratch, "unused.json"), logger=Log(),
+                      write=False, quarantine=quarantine)
+        settings = Settings.resolve(self.config())
+        step = step_with(FakeRunner())
+        refused = step._scope(GitRepo(self.repo, Runner()), settings, **record)
+        self.assertEqual((refused.outcome, refused.retryable), (StepOutcome.FAILED, True))
+        self.assertIn("Keep scratch files in /tmp", refused.error)
+        self.assertTrue(os.path.isfile(os.path.join(quarantine, ".scratch-diag.mjs")))
+        self.assertTrue(os.path.isfile(os.path.join(quarantine, ".claude", "settings.json")))
+        self.assertFalse(os.path.lexists(os.path.join(self.repo, ".claude")))
+        self.assertIsNone(step._scope(GitRepo(self.repo, Runner()), settings, **record))
+
+    def test_a_tracked_out_of_scope_change_still_fails_for_good(self):
+        with open(os.path.join(self.repo, "game.config.yaml"), "a", encoding="utf-8") as handle:
+            handle.write("# edited\n")
+        record = dict(checkout=self.repo, key="k", engine="pixijs",
+                      checks_json=os.path.join(self.scratch, "unused.json"), logger=Log(),
+                      write=False, quarantine=os.path.join(self.scratch, "q"))
+        refused = step_with(FakeRunner())._scope(GitRepo(self.repo, Runner()),
+                                                Settings.resolve(self.config()), **record)
+        self.assertEqual((refused.outcome, refused.retryable), (StepOutcome.FAILED, False))
+        self.assertFalse(os.path.exists(os.path.join(self.scratch, "q")))
 
     def test_the_writer_stays_inside_the_checkout(self):
         with self.assertRaises(safewrite.UnsafeCheckoutPath):

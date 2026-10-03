@@ -76,6 +76,9 @@ UNSCHEMATIZED = {
     # that owns it (wgflib.workflow.config, wgflib.template) and validated there; it is
     # not an artifact and has no artifact schema.
     "config",
+    # The Factory font library's index (wgf_assets/fontlib.py reads and checks it, and
+    # `wgf-assets.py fonts check` verifies it): shipped data, not an artifact.
+    os.path.join("library", "fonts"),
 }
 
 REFERENCE_FILES = (

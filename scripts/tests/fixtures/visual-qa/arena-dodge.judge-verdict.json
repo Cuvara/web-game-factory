@@ -1,0 +1,154 @@
+{
+  "scores": {
+    "art_completeness": 0,
+    "character_readability": 2,
+    "environment": 1,
+    "ui_polish": 2,
+    "typography": 3,
+    "composition": 2,
+    "consistency": 3,
+    "no_debug": 5
+  },
+  "findings": [
+    {
+      "id": "flat-primitive-entities",
+      "severity": "blocker",
+      "category": "assets",
+      "frame": null,
+      "summary": "The player (teal trapezoid) and every threat/wall segment (pink rectangles) are flat, untextured primitive shapes with no finished art applied, visible in every frame.",
+      "route": "assets"
+    },
+    {
+      "id": "mobile-subtitle-behind-pause-button",
+      "severity": "major",
+      "category": "composition",
+      "frame": "mobile/first-session-1s",
+      "summary": "On mobile the onboarding/instruction subtitle wraps under the floating Pause button and is partly hidden behind it; recurs in most mobile frames outside the paused/loss screens.",
+      "route": "develop"
+    },
+    {
+      "id": "empty-void-environment",
+      "severity": "major",
+      "category": "readability",
+      "frame": null,
+      "summary": "The scene above the horizon line is a flat black void with no scenery, props or lighting beyond thin grid lines, leaving most of the frame empty on both viewports.",
+      "route": "develop"
+    },
+    {
+      "id": "crash-debris-style-mismatch",
+      "severity": "minor",
+      "category": "consistency",
+      "frame": "desktop/end-lost",
+      "summary": "The crashed debris chunk is rendered with pseudo-3D isometric shading (angled top face, darker side), inconsistent with the flat 2D rectangles used for player and obstacles everywhere else.",
+      "route": "assets"
+    }
+  ],
+  "states": [
+    {
+      "state": "initial",
+      "viewport": "desktop",
+      "answers": {
+        "entities_recognisable": true,
+        "primitives_or_placeholders": true,
+        "lighting_materials_coherent": null,
+        "typography_readable": true,
+        "buttons_polished": true,
+        "objective_obvious": true
+      },
+      "comment": "Player trapezoid and a threat rectangle sit on an empty void with grid-line horizon; the subtitle clearly states the objective and the Pause button is fully visible."
+    },
+    {
+      "state": "initial",
+      "viewport": "mobile",
+      "answers": {
+        "entities_recognisable": true,
+        "primitives_or_placeholders": true,
+        "lighting_materials_coherent": null,
+        "typography_readable": false,
+        "buttons_polished": true,
+        "objective_obvious": true
+      },
+      "comment": "Same flat shapes and empty void as desktop, but the wrapped subtitle text runs under the Pause button, partially obscuring it."
+    },
+    {
+      "state": "gameplay",
+      "viewport": "desktop",
+      "answers": {
+        "entities_recognisable": true,
+        "primitives_or_placeholders": true,
+        "lighting_materials_coherent": null,
+        "typography_readable": true,
+        "buttons_polished": true,
+        "objective_obvious": true
+      },
+      "comment": "Multiple pink obstacle rectangles and the teal player trapezoid are visible and distinguishable by colour; HUD is unobstructed."
+    },
+    {
+      "state": "gameplay",
+      "viewport": "mobile",
+      "answers": {
+        "entities_recognisable": true,
+        "primitives_or_placeholders": true,
+        "lighting_materials_coherent": null,
+        "typography_readable": false,
+        "buttons_polished": true,
+        "objective_obvious": true
+      },
+      "comment": "Same stacked obstacle rectangles as desktop; the subtitle text is again partly covered by the Pause button."
+    },
+    {
+      "state": "interaction",
+      "viewport": "desktop",
+      "answers": {
+        "entities_recognisable": true,
+        "primitives_or_placeholders": true,
+        "lighting_materials_coherent": null,
+        "typography_readable": true,
+        "buttons_polished": true,
+        "objective_obvious": true
+      },
+      "comment": "Pause overlay with glowing 'Paused' text and a styled Resume button reads clearly; steer before/after frames show the same flat entities moving with no overlap issues."
+    },
+    {
+      "state": "interaction",
+      "viewport": "mobile",
+      "answers": {
+        "entities_recognisable": true,
+        "primitives_or_placeholders": true,
+        "lighting_materials_coherent": null,
+        "typography_readable": false,
+        "buttons_polished": true,
+        "objective_obvious": true
+      },
+      "comment": "The Paused/Resume screen itself is clean and legible, but the steer and pre-pause frames still show the subtitle text obscured by the Pause button."
+    },
+    {
+      "state": "loss",
+      "viewport": "desktop",
+      "answers": {
+        "entities_recognisable": true,
+        "primitives_or_placeholders": true,
+        "lighting_materials_coherent": null,
+        "typography_readable": true,
+        "buttons_polished": true,
+        "outcome_understandable": true
+      },
+      "comment": "'Crashed', final Score/Best and a 'Race again' button are clearly legible against the dark background, though faded obstacle rectangles and an oddly-shaded debris cube linger behind the text."
+    },
+    {
+      "state": "loss",
+      "viewport": "mobile",
+      "answers": {
+        "entities_recognisable": true,
+        "primitives_or_placeholders": true,
+        "lighting_materials_coherent": null,
+        "typography_readable": true,
+        "buttons_polished": true,
+        "outcome_understandable": true
+      },
+      "comment": "Loss state matches desktop: clear 'Crashed' headline, score, and a well-sized touch-friendly 'Race again' button with no overlap."
+    }
+  ],
+  "look": "developer-prototype",
+  "look_reason": "Every entity is an untextured flat rectangle/trapezoid on an empty black void with only grid lines for a horizon, which reads as a programmer-art placeholder build rather than a finished, publishable game."
+}

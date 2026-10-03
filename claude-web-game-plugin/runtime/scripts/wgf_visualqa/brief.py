@@ -4,6 +4,8 @@ else - because the judge runs outside both the Factory and the game checkout."""
 
 import json
 
+from wgflib import quality_bar
+
 from .rubric import CATEGORIES, ROUTES, SEVERITIES, contract, judged_pairs, state_ids
 
 __all__ = ["render_brief", "frame_state", "PROMPT", "PROMPT_STDOUT"]
@@ -122,6 +124,14 @@ def _item_note(item):
     return f" [{', '.join(notes)}]" if notes else ""
 
 
+def _quality_bar(design):
+    """The installation's quality-bar frames for the design's dimension (all when unknown)."""
+    engine = ((design or {}).get("engine") or {})
+    engine = engine.get("type") if isinstance(engine, dict) else engine
+    dimension = {"threejs": "3d", "pixijs": "2d", "phaserjs": "2d"}.get(engine)
+    return quality_bar.frames(dimension) or quality_bar.frames()
+
+
 def render_brief(*, title_id, commit, frames, rubric, design=None, manifest=None,
                  quality=None, verdict_path=None, to_stdout=False, previous_problem=None):
     """`frames`: [{key, project, id, state, description, viewport, file}] - `key` is the
@@ -168,9 +178,24 @@ def render_brief(*, title_id, commit, frames, rubric, design=None, manifest=None
         add("## What the production-quality measurements found\n")
         add("Measured from outside; confirm or dismiss each by what the frames show.\n")
         add("\n".join(f"- `{c.get('id')}`: {c.get('summary')}" for c in failed) + "\n")
+    bar = _quality_bar(design)
+    if bar:
+        add("## The quality bar\n")
+        add("Frames of finished games this installation holds every game to. Open them first. "
+            "Their level of finish - a composed frame with no empty void, one visual language "
+            "across art and UI, designed typography, a modelled or drawn cast rather than "
+            "shapes - is what a 4 looks like on art_completeness, environment, ui_polish, "
+            "typography and consistency, and what `finished-game` means. Their style is not "
+            "the bar: judge this game against its own identity, at their level of finish.\n")
+        for frame in bar:
+            add(f"- `{frame['path']}` ({frame.get('state')}): {frame.get('shows')}")
+        add("")
     add("## The rubric\n")
+    mean_bar = rubric.get("mean_pass_bar")
     add(f"Score every dimension 0-5. The anchors describe 0, 3 and 5; 1, 2 and 4 lie "
-        f"between. Below {rubric['pass_bar']} fails the build.\n")
+        f"between. Below {rubric['pass_bar']} fails the build"
+        + (f", and so does a mean below {mean_bar}" if mean_bar is not None else "")
+        + ". Score what you see, not what would pass.\n")
     for name, dimension in rubric["dimensions"].items():
         anchors = dimension.get("anchors") or {}
         add(f"### `{name}`\n")
@@ -206,7 +231,10 @@ def render_brief(*, title_id, commit, frames, rubric, design=None, manifest=None
     look = rubric.get("look") or {}
     add("## The look\n")
     add(f"{look.get('ask')} Answer one of {', '.join(f'`{v}`' for v in look.get('values') or [])}"
-        f", with the reason. `{look.get('fail_on')}` fails the build.\n")
+        f", with the reason. "
+        + " or ".join(f"`{v}`" for v in (look.get("fail_on") if isinstance(
+            look.get("fail_on"), list) else [look.get("fail_on")]))
+        + " fails the build.\n")
     add("## Blockers\n")
     add("Raise each of these as a finding with `severity: blocker`, whatever your scores. "
         "Use the category and route given.\n")
@@ -229,6 +257,10 @@ def render_brief(*, title_id, commit, frames, rubric, design=None, manifest=None
     add("```json\n" + shape + "\n```\n")
     add("- `scores` has every dimension above and no other, each a JSON number 0-5 (`3`, not "
         "`\"3\"`).")
+    add("- `score_reasons` gives, for every dimension, one or two sentences on why it scored "
+        "what it did: what you saw, on which entity or element, in which frames. A score "
+        "below the bar without a reason cannot be acted on: the artist and the developer "
+        "who fix the build read exactly these sentences, beside the frames.")
     add(f"- `severity` is one of {', '.join(SEVERITIES)}; `category` one of "
         f"{', '.join(CATEGORIES)}; `route` one of {', '.join(ROUTES)}: `assets` when an "
         f"asset itself must change, `develop` when the game's use of it (layout, lighting, "

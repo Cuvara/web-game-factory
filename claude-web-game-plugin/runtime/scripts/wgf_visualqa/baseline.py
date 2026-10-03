@@ -36,6 +36,7 @@ Scores carry no aesthetic judgement: every dimension is at the pass bar when not
 regressed; the asset dimensions are 0 when anything did. The notes say so.
 """
 
+import math
 import json
 import os
 
@@ -223,7 +224,9 @@ def judge(rubric, frames, baseline_dir, min_similarity=None):
                              "route": "develop",
                              "summary": f"the approved {viewport} {state} was not seen at "
                                         f"runtime: no frame of it was captured to compare"})
-    pass_bar = rubric["pass_bar"]
+    # "Matches the approved frames" sits exactly at the bars: the per-dimension one and the
+    # mean one (rounded up to a whole score). Not an aesthetic judgement - see the notes.
+    pass_bar = max(rubric["pass_bar"], math.ceil(rubric.get("mean_pass_bar") or 0))
     scores = {name: (0 if regressed and name in ASSET_DIMENSIONS else pass_bar)
               for name in rubric["dimensions"]}
     states = []
@@ -257,7 +260,7 @@ def judge(rubric, frames, baseline_dir, min_similarity=None):
                         f"frames, lowest {min((c['score'] for c in compared), default=None)})"),
         "notes": ("baseline judge: frames compared with approved frames by palette, detail "
                   f"and layout (bar {bar}); scores are not an aesthetic judgement - every "
-                  "dimension sits at the pass bar unless a frame regressed, when the asset "
+                  "dimension sits at the pass bars unless a frame regressed, when the asset "
                   "dimensions are 0. Not compared: "
                   + (", ".join(ignored) if ignored else "nothing") + "."),
     }

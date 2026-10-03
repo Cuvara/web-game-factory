@@ -157,6 +157,83 @@ def capsule(bm, size, segments):
                           z * 2 * radius + (shift if z > 0 else -shift if z < 0 else 0.0)))
 
 
+def _unit(values):
+    """`values` mapped linearly onto [-0.5, 0.5] (their centre to 0)."""
+    lo, hi = min(values), max(values)
+    span = hi - lo
+    return [(v - lo) / span - 0.5 if span > 1e-12 else 0.0 for v in values]
+
+
+def extrude(bm, outline):
+    """The outline ([x, z] glTF, a top view) as a prism in the unit cube (Blender frame):
+    a bottom and a top n-gon and one quad per edge, built vertex by vertex so the result
+    depends only on the numbers. glTF (x, z) is Blender (x, -y); the prism stands along Z."""
+    xs = _unit([p[0] for p in outline])
+    ys = _unit([-p[1] for p in outline])
+    ring = list(zip(xs, ys))
+    # One winding for every outline: counter-clockwise seen from +Z.
+    area = sum(a[0] * b[1] - b[0] * a[1] for a, b in zip(ring, ring[1:] + ring[:1]))
+    if area < 0:
+        ring.reverse()
+    bottom = [bm.verts.new((x, y, -0.5)) for x, y in ring]
+    top = [bm.verts.new((x, y, 0.5)) for x, y in ring]
+    bm.faces.new(list(reversed(bottom)))
+    bm.faces.new(top)
+    n = len(ring)
+    for i in range(n):
+        j = (i + 1) % n
+        bm.faces.new((bottom[i], bottom[j], top[j], top[i]))
+
+
+def lathe(bm, profile, segments):
+    """The profile ([radius, y]) swept round Blender Z in `segments` steps, in the unit cube:
+    widest radius 0.5, height 1. A point of radius 0 is one vertex (a pole); an end with a
+    radius gets a flat n-gon cap. Built vertex by vertex, so deterministic."""
+    widest = max(p[0] for p in profile)
+    heights = _unit([p[1] for p in profile])
+    rings = []
+    for (radius, _y), z in zip(profile, heights):
+        r = 0.5 * radius / widest
+        if r <= 1e-12:
+            rings.append([bm.verts.new((0.0, 0.0, z))])
+            continue
+        rings.append([bm.verts.new((r * math.cos(2 * math.pi * k / segments),
+                                    r * math.sin(2 * math.pi * k / segments), z))
+                      for k in range(segments)])
+    for lower, upper in zip(rings, rings[1:]):
+        for k in range(segments):
+            n = (k + 1) % segments
+            if len(lower) == 1:
+                bm.faces.new((lower[0], upper[k], upper[n]))
+            elif len(upper) == 1:
+                bm.faces.new((lower[k], lower[n], upper[0]))
+            else:
+                bm.faces.new((lower[k], lower[n], upper[n], upper[k]))
+    if len(rings[0]) > 1:
+        bm.faces.new(list(reversed(rings[0])))
+    if len(rings[-1]) > 1:
+        bm.faces.new(rings[-1])
+
+
+def box_uvs(bm):
+    """UVs for a mesh built here (the operators' primitives make their own): each face
+    projected along its dominant normal axis, the mesh's bounding box onto [0, 1]. Made last,
+    on the finished triangles: the bevel operator's interpolation of a UV layer added by hand
+    is not reproducible from run to run."""
+    uv = bm.loops.layers.uv.new("UVMap")
+    bm.normal_update()
+    lo = [min(v.co[k] for v in bm.verts) for k in range(3)]
+    span = [max(max(v.co[k] for v in bm.verts) - lo[k], 1e-12) for k in range(3)]
+    for face in bm.faces:
+        normal = face.normal
+        axis = max(range(3), key=lambda k: (abs(normal[k]), -k))
+        u_axis, v_axis = [k for k in range(3) if k != axis]
+        for loop in face.loops:
+            co = loop.vert.co
+            loop[uv].uv = ((co[u_axis] - lo[u_axis]) / span[u_axis],
+                           (co[v_axis] - lo[v_axis]) / span[v_axis])
+
+
 def taper(bm, factors):
     """Scale each vertex's x and y (glTF x and z) linearly with its height: 1 at the bottom,
     `factors` at the top. Pure arithmetic on the vertices, so deterministic."""
@@ -189,6 +266,12 @@ def make_mesh(part, repeat):
     bm = bmesh.new()
     if part["shape"] == "capsule":
         capsule(bm, size_to_blender(part["size"]), part["segments"])
+    elif part["shape"] in ("extrude", "lathe"):
+        if part["shape"] == "extrude":
+            extrude(bm, part["outline"])
+        else:
+            lathe(bm, part["profile"], part["segments"])
+        bmesh.ops.scale(bm, vec=size_to_blender(part["size"]), verts=bm.verts)
     else:
         unit_primitive(bm, part["shape"], part["segments"])
         bmesh.ops.scale(bm, vec=size_to_blender(part["size"]), verts=bm.verts)
@@ -202,6 +285,8 @@ def make_mesh(part, repeat):
     # order that varies from run to run, and the GLB with it.
     bmesh.ops.triangulate(bm, faces=bm.faces, quad_method="FIXED", ngon_method="EAR_CLIP")
     canonical(bm)
+    if part["shape"] in ("extrude", "lathe"):
+        box_uvs(bm)
     for face in bm.faces:
         face.smooth = part["smooth"]
     uv = bm.loops.layers.uv.active

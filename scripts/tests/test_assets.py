@@ -178,6 +178,31 @@ class Requirements(AssetsCase):
         self.assertEqual(dims["land"], "3d")  # audio takes the game's dimension
         self.assertEqual(dims["hud"], "2d")  # UI is a 2D overlay whatever the renderer
 
+    def test_a_3d_backdrop_model_is_scenery_and_a_3d_vfx_is_a_flat_drawing(self):
+        # goalkeeper-royale, 2026-10-02: the stadium backdrop (type model, role background)
+        # read as a flat `background` and belonged to no author, and the two VFX the design
+        # declared `dimension: 3d` were kept from the 2D set author - a 3D game's production
+        # gate could never be met.
+        from wgf_assets.pipeline import AssetPipeline
+        body = fixture("design-3d.json")
+        body["build_spec"] = dict(body.get("build_spec") or {}, assets=[
+            {"id": "stadium-backdrop", "type": "model", "role": "background", "dimension": "3d",
+             "tier": "mvp", "spec": "Low-poly GLB built from a model spec: a stand silhouette"},
+            {"id": "save-vfx", "type": "vfx", "role": "vfx", "dimension": "3d", "tier": "mvp",
+             "spec": "Instanced particles plus a zone-flash shader"},
+            {"id": "keeper", "type": "model", "role": "player", "dimension": "3d", "tier": "mvp",
+             "spec": "Low-poly GLB built from a model spec"}])
+        design = with_provenance(body, "game-design", body["title_id"])
+        reqs, dimension = inspect(design, self.policy)
+        self.assertEqual(dimension, "3d")
+        by_id = {r.id: r for r in reqs}
+        self.assertEqual((by_id["stadium-backdrop"].kind, by_id["stadium-backdrop"].dimension),
+                         ("environment", "3d"))
+        self.assertEqual(by_id["keeper"].kind, "model")
+        self.assertEqual(by_id["save-vfx"].kind, "vfx")
+        self.assertTrue(AssetPipeline._authorable(by_id["save-vfx"]))
+        self.assertFalse(AssetPipeline._authorable(by_id["stadium-backdrop"]))
+
     def test_a_design_without_requirements_gets_a_derived_baseline(self):
         design = self.design()
         del design["asset_requirements"]

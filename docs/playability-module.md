@@ -132,7 +132,7 @@ reads these from `records_dir`:
 | `start.playable` | play begins within `first_30s.playable_s` |
 | `start.objective` | ≥ 60 % of the objective statement's content words are on screen in the first 3 s of play |
 | `idle.grace` | no loss during the idle window |
-| `act.acknowledged` | every action changes ≥ `min_changed_fraction` of the frame by ≥ `min_pixel_delta` luminance |
+| `act.acknowledged` | every action changes ≥ `min_changed_fraction` of the frame by ≥ `min_pixel_delta` luminance; each is measured in play (a pause goes last, and the bot resumes through the game's own resume input before the next action) |
 | `win.reachable` | good play reaches `won`; with no win in the contract, the goal metric rises |
 | `lose.reachable` | bad play reaches `lost` |
 | `restart.works` | the retry returns to play within `retry_s` + 1 s, with the goal metric reset |

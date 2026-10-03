@@ -19,6 +19,8 @@ design state it, and `check` makes the design module require it, by reference an
     the locale's subsets; any other family's font asset states, in its spec or description,
     the subsets its files cover. A missing script is a design error, never a system-font
     fallback at runtime (the assets step then reads the delivered files' cmap);
+  * every face is one the Factory font library holds (wgf_assets/fontlib.py), so the assets
+    step's `fonts` producer can bundle it with no one sourcing a file;
   * `visual_identity.ui` exists, names palette tokens for its button and surface, sets the
     button's text on its fill at `ui.min_contrast` or better, keeps every interactive element
     at least `ui.min_target_px` on a phone, and its body and HUD text at least
@@ -40,7 +42,7 @@ from .experience import load_rules
 
 __all__ = ["VISUAL_QUALITY_PATH", "ASSET_QUALITY_PATH", "readable_roles", "implied_roles",
            "contrast", "check", "font_coverage", "load_font_coverage", "family_subsets",
-           "locale_subsets"]
+           "locale_subsets", "font_library"]
 
 VISUAL_QUALITY_PATH = os.path.join(paths.REFERENCE, "visual-quality.yaml")
 ASSET_QUALITY_PATH = os.path.join(paths.REFERENCE, "asset-quality.yaml")
@@ -159,6 +161,26 @@ def implied_roles(design, rules=None, readable=None):
     return implied
 
 
+def font_library(design, library=None):
+    """Problems: a face of the typography the Factory font library (workspace/library/fonts,
+    wgf_assets/fontlib.py) does not hold - no run could bundle it without a person sourcing
+    it. Nothing when the library is absent (an installation without it sources fonts some
+    other way, through factory.assets.libraries)."""
+    from wgf_assets import fontlib
+    from .identity import families
+    library = library if library is not None else fontlib.load()
+    look = (design.get("build_spec") or {}).get("visual_identity") or {}
+    if library is None or not isinstance(look.get("typography"), dict):
+        return []
+    problems = []
+    for family in families(look["typography"]):
+        if library.family(family) is None:
+            problems.append(
+                f"visual_identity.typography: {family} is not in the Factory font library, so "
+                f"no run can bundle it: choose one of {', '.join(library.names())}")
+    return problems
+
+
 def check(design, rules=None, readable=None, coverage=None):
     """Problems (strings) with the design's production art and UI. Empty means it holds.
     `coverage` is asset-quality.yaml's `fonts` (a seam for tests)."""
@@ -194,6 +216,8 @@ def check(design, rules=None, readable=None, coverage=None):
 
     # ...and they can set every locale in scope.
     problems.extend(font_coverage(design, coverage))
+    # ...and an unattended run can ship them: the Factory font library holds them.
+    problems.extend(font_library(design))
 
     # The readable roles the design's own words imply each have an asset that draws them.
     drawn = {a.get("role") for a in mvp if (a.get("readability") or "").strip()}

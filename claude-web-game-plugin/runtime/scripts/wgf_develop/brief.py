@@ -19,7 +19,7 @@ plan's prototype milestones and tasks, each with its acceptance criteria.
 import json
 import os
 
-from wgflib import gameseam, paths
+from wgflib import gameseam, paths, quality_bar
 from wgflib import template_contract as contract
 from wgflib.yamllite import load_file
 
@@ -74,6 +74,12 @@ REQUIRED_SYSTEMS = (
                    "wgf-probe=1 in the URL - the oracle. Read-only."),
 )
 
+# Systems a greybox cannot finish, because what they serve arrives in production: assets and
+# sound do not exist yet, and progression's persistence is not what a greybox proves. In the
+# greybox phase they may be reported `partial` or `deferred`; production finishes them.
+# Requiring `done` of them made an honest greybox fail conformance and a dishonest one pass.
+GREYBOX_DEFERRABLE = ("progression", "asset-loading", "audio-hooks")
+
 # What the playability step reads from the running build (core/artifacts/shared/).
 PLAY_PROBE_SCHEMA = os.path.join(paths.ARTIFACTS, "shared", "play-probe.schema.json")
 # The entity roles a player must be able to read: the visual gate's, and the ones production
@@ -96,6 +102,37 @@ def production_craft(engine):
     """The craft playbook paths a production build of `engine` is pointed at, in order."""
     art = PRODUCTION_ART_CRAFT.get(engine)
     return [PRODUCTION_CRAFT] + ([art] if art else []) + list(PRODUCTION_CRAFT_SHARED)
+
+
+def factory_path(relative):
+    """An absolute path to a Factory file. The developer's working directory is the game
+    checkout: a path relative to the Factory names nothing it can open."""
+    return os.path.join(paths.ROOT, *relative.split("/"))
+
+
+# The developer's eyes: frames of the built game (tools/look.mjs), run with the checkout's
+# own Playwright. Absolute, for the same reason as factory_path.
+LOOK_TOOL = os.path.join(os.path.dirname(os.path.abspath(__file__)), "tools", "look.mjs")
+LOOK_OUT_ROOT = "/tmp/wgf-look"
+
+
+def craft_guides(engine):
+    """Every craft playbook in the Factory a developer of `engine` may read: the production
+    ones first, then the rest of core/craft/, absolute."""
+    first = production_craft(engine) + [AUDIO_CRAFT]
+    rest = []
+    craft_dir = os.path.join(paths.CORE, "craft")
+    if os.path.isdir(craft_dir):
+        for name in sorted(os.listdir(craft_dir)):
+            rel = f"core/craft/{name}"
+            if name.endswith(".md") and rel not in first and not _other_engine_art(rel, engine):
+                rest.append(rel)
+    return [factory_path(p) for p in first + rest]
+
+
+def _other_engine_art(rel, engine):
+    mine = PRODUCTION_ART_CRAFT.get(engine)
+    return rel in PRODUCTION_ART_CRAFT.values() and rel != mine
 
 # Paths a game may not edit. packages/ is the template's (fix the template instead);
 # game.config.yaml is written from the approved tech plan; the pipelines and release tooling
@@ -477,12 +514,18 @@ def build_brief(*, title_id, engine, iteration, key, baseline, design, assets, s
     ]
     # The production gates' failures of the commit this visit starts from: each failed
     # production-quality check (with the route it took: an `assets` failure was rebuilt by
-    # the assets step before this visit, and its integration is this visit's), and visual
-    # QA's failures - blocker findings, low scores, per-state answers, the look.
+    # the assets step before this visit, and its integration is this visit's) and the frames
+    # it measured, resolved through the playability-report it judged; and visual QA's
+    # failures - blocker findings, low scores with the judge's reasons, per-state answers
+    # with its comments and frames, the look with its reason - and its major findings.
     production_failures = [
         {"check": c.get("id"), "project": c.get("project"), "route": c.get("route"),
          "summary": c.get("summary"), "expected": c.get("expected"),
-         "assets": c.get("assets") or None}
+         "measured": c.get("measured"),
+         "assets": c.get("assets") or None,
+         "frames": [os.path.join(frames_root, frame_paths[(c.get("project"), f)])
+                    if frames_root and frame_paths.get((c.get("project"), f)) else f
+                    for f in c.get("frames") or []] or None}
         for c in (production or {}).get("checks") or []
         if c.get("required") and c.get("status") == "FAIL"
     ]
@@ -597,6 +640,16 @@ def build_brief(*, title_id, engine, iteration, key, baseline, design, assets, s
                    if v and not (k in ENGINE_DIRS and k != engine)},
         "report_path": REPORT_PATH,
         "self_playtest": bool(self_playtest),
+        # How the developer sees what it built, and what "finished" looks like: the frame
+        # tool, where its frames go (outside the checkout), and the installation's quality
+        # bar for this engine's dimension (wgflib.quality_bar).
+        "look": {"tool": LOOK_TOOL,
+                 "out": f"{LOOK_OUT_ROOT}/" + "".join(
+                     c if c.isalnum() or c in "._-" else "-" for c in str(key)),
+                 "quality_bar": quality_bar.frames(
+                     "3d" if engine == "threejs" else "2d"),
+                 "qualities": quality_bar.qualities()},
+        "craft_guides": craft_guides(engine),
         # What verification will demand browser evidence for (wgf_verification computes the
         # same set from the same design): the developer is told up front, instead of
         # learning it from a failed verification and a loop back here.
@@ -671,7 +724,7 @@ def _production_art_section(art, engine=None):
         "the page fetched, measured screens, and a visual judge reading the frames. The craft "
         "behind it, distilled from the reference games and read before you draw or wire "
         "anything, is in the Factory: "
-        + ", ".join(f"`{path}`" for path in production_craft(engine)) + ".\n")
+        + ", ".join(f"`{factory_path(path)}`" for path in production_craft(engine)) + ".\n")
     add("### Assets, by what they are to the player\n")
     add("Draw each with the runtime asset of that id (`public/assets/assets.json`), replacing "
         "the greybox primitive that stood for its role. The readability line is what the "
@@ -714,7 +767,7 @@ def _production_art_section(art, engine=None):
             "probe reports `audio`: `music` (the id playing), `playing`, and `level` - the RMS "
             "of the master output read from an AnalyserNode after every gain, so it is about "
             "0 when muted. The production gate hears the game through it (`audio.plays`). "
-            f"The craft is `{AUDIO_CRAFT}` in the Factory.\n")
+            f"The craft is `{factory_path(AUDIO_CRAFT)}` in the Factory.\n")
         for a in sounds:
             where = "" if a.get("delivered") is not False else " - not in the asset manifest yet"
             add(f"- **{a.get('id')}** ({a.get('type')}{', loops' if a.get('loop') else ''}): "
@@ -837,14 +890,24 @@ def _ownership_section(brief):
 
 
 def _visual_qa_failures(report, frames_root=None):
-    """[{id, route, summary, frame}] for each entry of a FAIL visual-qa-report's `failed`:
-    a finding (its summary and frame), a dimension below the bar, a per-state answer, or the
-    look."""
+    """[{id, route, summary, frame, frames}] for each entry of a FAIL visual-qa-report's
+    `failed` - a finding (its summary and frame), a dimension below the bar (with the judge's
+    reason), a per-state answer (with the judge's comment on that state and its frames), the
+    look (with its reason) - then each `major` finding that did not fail the build on its own
+    (a real defect the judge saw: fix it too)."""
     if not report:
         return []
     findings = {f.get("id"): f for f in report.get("findings") or []}
+
+    def where(path):
+        return os.path.join(frames_root, path) if frames_root and path else path
+
     frames = {f.get("id"): f.get("path") for f in report.get("frames") or []}
     scores = report.get("scores") or {}
+    reasons = report.get("score_reasons") or {}
+    bar = (report.get("rubric") or {}).get("pass_bar")
+    states = {(s.get("viewport"), s.get("state")): s for s in report.get("states") or []
+              if isinstance(s, dict)}
     out = []
     for entry in report.get("failed") or []:
         kind, _, name = str(entry).partition(":")
@@ -852,21 +915,103 @@ def _visual_qa_failures(report, frames_root=None):
         if kind == "finding" and name in findings:
             finding = findings[name]
             frame = finding.get("frame")
-            path = frames.get(frame)
             item.update(route=finding.get("route"),
                         summary=f"({finding.get('severity')}, {finding.get('category')}) "
                                 f"{finding.get('summary')}",
-                        frame=(os.path.join(frames_root, path) if frames_root and path
-                               else frame))
+                        frame=where(frames.get(frame)) or frame)
         elif kind == "score":
             item["summary"] = (f"`{name}` scored {scores.get(name)} of 5, below the rubric's "
-                               "bar")
+                               f"bar{' of ' + str(bar) if bar is not None else ''}"
+                               + (f". The judge: {reasons[name]}" if reasons.get(name)
+                                  else ""))
         elif kind == "state":
-            item["summary"] = f"on {name}: the rubric's answer fails the state"
+            pair, _, question = name.rpartition(":")
+            viewport, _, state = pair.partition("/")
+            judged = states.get((viewport, state)) or {}
+            item["summary"] = (f"on {viewport} {state}: the answer to `{question}` fails the "
+                               "state"
+                               + (f". The judge saw: {judged['comment']}"
+                                  if judged.get("comment") else ""))
+            shown = [where(frames.get(k)) or k for k in judged.get("frames") or []]
+            if shown:
+                item["frames"] = shown
         elif kind == "look":
-            item["summary"] = "the build looks like a developer prototype, not a finished game"
+            look = report.get("look") or {}
+            item["summary"] = ("the build looks like a developer prototype, not a finished "
+                               "game"
+                               + (f". The judge: {look['reason']}" if look.get("reason")
+                                  else ""))
         out.append(item)
+    failed = {str(e) for e in report.get("failed") or []}
+    for finding in report.get("findings") or []:
+        if finding.get("severity") != "major" or f"finding:{finding.get('id')}" in failed:
+            continue
+        frame = finding.get("frame")
+        out.append({"id": f"finding:{finding.get('id')}", "route": finding.get("route"),
+                    "summary": f"(major, {finding.get('category')}; did not fail the build "
+                               f"on its own) {finding.get('summary')}",
+                    "frame": where(frames.get(frame)) or frame})
     return out
+
+
+def _see_your_build(brief, look):
+    """The section that gives the developer eyes: build, capture frames, open them, compare
+    them with the quality bar, fix, repeat - from the first playable wiring on."""
+    out = []
+    add = out.append
+    tool, where = look["tool"], look["out"]
+    add("## See your build\n")
+    add("You cannot judge a game you have not looked at, and nobody else will look at it "
+        "before the gates do. The order of work is therefore:\n")
+    add("1. **Make it draw first.** Before writing more than a handful of modules, wire "
+        "`src/main.ts` to your game's scene so the core loop renders and takes input - "
+        "the template's boot scene draws nothing. A build that has drawn nothing after "
+        "your first hour of work is the most expensive failure there is.")
+    add(f"2. **Look.** `pnpm build`, then `pnpm exec node {tool} --out {where}/<n>` "
+        "(a new `<n>` each time: 1, 2, 3 ...). It serves `dist/` itself, plays the first "
+        "seconds on a desktop (1280x720) and a phone (390x844) viewport, and writes "
+        "`desktop-1-title.png`, `desktop-2-play.png`, `desktop-3-play-later.png`, the same "
+        "for `mobile-`, and `look.json` (page errors, failed asset requests, the play "
+        "probe's snapshots). Pass `--actions` to script other input, e.g. "
+        "`--actions click:0.5x0.7,wait:500,key:ArrowLeft`. Feel is motion: "
+        "`--burst <actions>` performs one more input during play and saves six frames 80 ms "
+        "apart (`desktop-burst-0..5.png`) - what a player sees in the half second after "
+        "acting. If those six frames are identical apart from a number, the action has no "
+        "feedback yet (the craft's juice guide says what it needs).")
+    add("3. **Open every frame** with your file-reading tool - they are images - and judge "
+        "them as a player would, against the design's visual identity and the quality bar "
+        "below: is the player obvious within a second? is the objective on screen? does "
+        "anything look like a default (browser button, system font, flat grey, a cube "
+        "standing for a character, an empty dark void)? does the phone frame fit? did the "
+        "play frames change after input?")
+    add("   Need a probe of your own? Write scratch scripts under /tmp, never in the "
+        "checkout. A new file outside the writable paths is moved out of the checkout and "
+        "costs the attempt; one you created inside them and no longer want, delete with "
+        "`git clean -f -- <path>` (src/, tests/ and public/ only).")
+    add("4. **Fix and look again**, after every change a player would see. Look one last "
+        "time before you write the report, and say in `known_issues` what the last frames "
+        "still show that falls short of the bar.\n")
+    bar = look.get("quality_bar") or []
+    if bar:
+        add("### The quality bar\n")
+        add("Frames of finished games this installation holds its games to. Open them before "
+            "you start and again before you finish. They set the **level of finish** - "
+            "composition, hierarchy, density, one visual language - never the style: this "
+            "game's look comes from its own design.\n")
+        for frame in bar:
+            add(f"- `{frame['path']}` ({frame.get('state')}): {frame.get('shows')}")
+        add("")
+    qualities = look.get("qualities") or []
+    if qualities:
+        add("What every frame of a finished game has:\n")
+        for quality in qualities:
+            add(f"- {quality}")
+        add("")
+    if brief.get("phase") == "greybox":
+        add("In this greybox phase the bar applies to composition, framing, hierarchy and "
+            "readability - primitives and flat palette colours are expected, an unframed or "
+            "empty scene is not.\n")
+    return "\n".join(out) + "\n"
 
 
 def render_markdown(brief):
@@ -924,6 +1069,10 @@ def render_markdown(brief):
             "drops the objective from the screen is a regression - because the build is "
             "played again before review.\n")
 
+    look = brief.get("look")
+    if look:
+        add(_see_your_build(brief, look))
+
     add("## Ground rules\n")
     add(f"1. **Engine: `{engine}`**, from `game.config.yaml`. 2D is PixiJS or Phaser, 3D is "
         f"Three.js; the tech plan chose this one. Do not add another engine, a physics engine "
@@ -975,8 +1124,16 @@ def render_markdown(brief):
         add("")
 
     add("## Required systems\n")
-    add("Report each in `systems` as done, partial or missing. Anything but done fails the "
-        "checks.\n")
+    if brief.get("phase") == "greybox":
+        add("Report each in `systems` as done, partial or missing. Anything but done fails the "
+            "checks - except "
+            + ", ".join(f"**{n}**" for n in GREYBOX_DEFERRABLE)
+            + ", which serve assets, sound and persistence that arrive in production: in "
+              "this phase report them `partial` or `deferred` honestly and spend the time on "
+              "the loop, its readability and its feel.\n")
+    else:
+        add("Report each in `systems` as done, partial or missing. Anything but done fails "
+            "the checks.\n")
     for system in brief["required_systems"]:
         add(f"- **{system['id']}** - {system['acceptance']}")
     add("")
@@ -1279,7 +1436,7 @@ def render_markdown(brief):
             "(core/reference/production-quality.yaml). These checks failed. One routed "
             "`assets` named an asset the assets step has now made again: use it as "
             "`public/assets/assets.json` lists it. The rest are the game's own use of its "
-            "assets and its UI.\n")
+            "assets and its UI. Where a frame is named, open it: it is what was measured.\n")
         for failure in brief["production_failures"]:
             line = (f"- `{failure['check']}`"
                     + (f" ({failure['project']})" if failure.get("project") else "")
@@ -1288,6 +1445,11 @@ def render_markdown(brief):
                 line += " Assets: " + ", ".join(f"`{a}`" for a in failure["assets"])
             if failure.get("expected") is not None:
                 line += f" Expected: {_inline(failure['expected'])}."
+            if failure.get("measured") is not None:
+                measured = _inline(failure["measured"])
+                line += f" Measured: {measured[:600] + ' ...' if len(measured) > 600 else measured}."
+            if failure.get("frames"):
+                line += " Frames: " + ", ".join(f"`{f}`" for f in failure["frames"])
             add(line)
         add("")
 
@@ -1296,10 +1458,15 @@ def render_markdown(brief):
         add(f"A judge read the frames of `{(brief.get('gated_commit') or '')[:12]}` against "
             "core/reference/visual-qa-rubric.yaml and the design's visual identity, and the "
             "build failed. The next build is judged the same way, from frames of the running "
-            "game: change what is on screen. Where a frame is named, look at it.\n")
+            "game: change what is on screen. Where a frame is named, open it and find what "
+            "the judge describes; a score's or the look's reason is the judge's own words. "
+            "`major` findings did not fail the build on their own, but they are defects the "
+            "judge saw: fix them in the same pass.\n")
         for failure in brief["visual_qa_failures"]:
             add(f"- `{failure['id']}` [{failure.get('route') or '-'}]: {failure['summary']}"
-                + (" Frame: `" + failure["frame"] + "`" if failure.get("frame") else ""))
+                + (" Frame: `" + failure["frame"] + "`" if failure.get("frame") else "")
+                + (" Frames: " + ", ".join(f"`{f}`" for f in failure["frames"])
+                   if failure.get("frames") else ""))
         add("")
 
     if brief.get("review_blockers"):
@@ -1324,6 +1491,16 @@ def render_markdown(brief):
             add(f"### {failure['check']}\n\n{failure.get('summary') or ''}\n")
             if failure.get("output_tail"):
                 add("```\n" + failure["output_tail"][-2500:] + "\n```\n")
+
+    if brief.get("craft_guides"):
+        add("## Craft guides\n")
+        add("The Factory's craft playbooks - game feel and juice, the core loop, onboarding, "
+            "the UI kit, production art, production wiring, performance, audio. They are "
+            "outside this repository: open them by these absolute paths. Read the first "
+            "four before you build anything a player sees.\n")
+        for path in brief["craft_guides"]:
+            add(f"- `{path}`")
+        add("")
 
     if brief["skills"]:
         add("## Host skills\n")

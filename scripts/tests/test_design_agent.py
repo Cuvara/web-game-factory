@@ -134,6 +134,17 @@ class AnAgentImprovesTheDraft(AgentCase):
         self.assertEqual(design["consistency"]["status"], "pass")
         self.assertTrue(design["build_spec"]["sdk_touchpoints"])
 
+    def test_the_kits_offered_can_set_every_locale_in_scope(self):
+        # A live run chose a kit whose display face (Fraunces) has no Cyrillic for a
+        # Yandex-required title, and the prompt told it to keep the kit's faces.
+        from wgf_design.agent import _kits
+        kits = _kits(["en", "ru"])
+        self.assertEqual(kits["paper-diorama"]["typography"]["display"].split(" (")[0],
+                         "Playfair Display")
+        faces = [kit["typography"].get(k) or "" for kit in kits.values()
+                 for k in ("display", "body", "numeric")]
+        self.assertFalse([f for f in faces if f.startswith("Fraunces")])
+
     def test_the_request_carries_the_strategy_platforms_and_a_starting_draft(self):
         self.run_design(self.config("improve"))
         with open(os.path.join(self.scratch, "run", "design", "1-1.request.json")) as handle:

@@ -10,8 +10,12 @@ game-design ─► build_spec.assets ─► classify ─► for each asset:
   (palette)     (requirements.py)                existing file?   ─ validate, license, origin
                                                  library?         ─ library.json by id/role,
                                                                     then index.json search
-                                                 author? (2D)     ─ an SVG per drawing,
-                                                                    judged, repaired ≤ 2×
+                                                 author? (2D)     ─ an SVG per drawing
+                                                                    (mode asset), or every
+                                                                    drawing in one session
+                                                                    that looks at a rendered
+                                                                    contact sheet (mode set);
+                                                                    judged, repaired
                                                  model author? (3D, when installed)
                                                  placeholder?     ─ backends in order
                                                  else missing
@@ -37,10 +41,11 @@ game repository can be checked against what it wrote with `wgf-assets.py validat
 |---|---|---|
 | `game-design` | required | `build_spec.assets` (and `asset_requirements`), or a derived baseline; `build_spec.visual_identity` (palette, `primitive_style`); `scope.asset_budget` |
 | `scaffold-record` | optional | target platforms, whose `max_bundle_mb` the delivered files are checked against |
-| `production-quality-report` | optional | on re-entry: the failed checks with route `assets` name the items to rebuild ([Re-entry](#re-entry)) |
-| `visual-qa-report` | optional | on re-entry: the findings with route `assets` name the items to rebuild |
+| `production-quality-report` | optional | on re-entry: the failed checks with route `assets` say which items to rebuild and why ([Re-entry](#re-entry)) |
+| `visual-qa-report` | optional | on re-entry: the findings, scores, per-state answers and look routed `assets` say which items to rebuild and why |
+| `playability-report` | optional | on re-entry: the play the gate judged - where its frames are, and the play probe's entity -> asset records |
 
-The two reports are read when present; wiring them into `new-game` (the `production-quality`
+The reports are read when present; wiring them into `new-game` (the `production-quality`
 and `visual-qa` routes back to `assets`) is the workflow's, not this module's.
 
 ### The work list: build_spec.assets
@@ -170,9 +175,10 @@ is passed over (`library-candidate-rejected`). Imported items are `source: libra
 `factory.agents.env_passthrough`), exactly like the design step's agent author. argv
 placeholders: `{request}`, `{output}`, `{prompt}`. The request JSON carries the requirement
 (`id`, `variant`, `count`, `type`, `kind`, `role`, `dimension`, `tier`, `description`,
-`readability`, `spec`, `width`, `height`, `transparency`), the design's `palette` and
-`visual_identity` (concept, shape language, texture, avoid, primitive_style), the
-`quality_bars` it is held to, its repository `destination`, and `craft`: the absolute paths
+`readability`, `spec`, `width`, `height`, `transparency`), the design's `palette`, its
+whole `visual_identity` (concept, typography, shape language, motion, texture, avoid, ui,
+primitive_style) and `art_direction`, the `quality_bars` it is held to, its repository
+`destination`, and `craft`: the absolute paths
 of the playbooks the drawing follows (`core/craft/production-art-2d.md`,
 `production-art-and-ui.md`; not part of the reuse key below). The host writes one SVG at
 `{output}` - or, with `svg_from: stdout`, prints it last and the step writes `{output}`
@@ -193,13 +199,81 @@ hash, author): a re-executed step reuses a file whose request is unchanged - sam
 readability, role, spec, palette, bars and author - instead of asking again. Changing any of
 them asks again.
 
+### The set author
+
+`mode: asset` (the default above) asks once per drawing. That author never sees the other
+drawings - the frame, the backdrop, the icons - nor a render of its own file, and its repair
+feedback is purely technical, so the coherence of a set rests on a paragraph of shared text.
+The reference 2D game got its look the other way: one generator script with shared style
+helpers drew every file, and a lead iterated it while looking at renders
+(`core/craft/production-art-2d.md`). `mode: set` (`set_author.py`) reproduces that process:
+
+1. **One session for the whole set.** Every 2D requirement the author is asked for is
+   deferred until the other sources have run, then handed to ONE host session as a brief
+   (`author-set/request-<round>.json` in the step's work directory): each requirement's role,
+   description, readability, spec, size, count, tier and notes, and the absolute path of each
+   variant's file; the design's FULL `visual_identity` (palette, typography, shape language,
+   motion, texture, avoid, ui), `art_direction` and `design_resolution`; the per-file bars,
+   the set's shared-treatment bar, the avoid lines that are measured; the background and
+   panel colours; and the craft guides by absolute path (`production-art-2d.md`,
+   `art-direction.md`, `game-ui-kit.md`, `production-art-and-ui.md`). The author writes a
+   style sheet (`STYLE.md`) first, then every SVG.
+2. **It writes only into a Factory-owned scratch directory**, `author-set/out/`
+   (`{out}`), and runs only one command, the Factory's preview (`{preview}`:
+   `python3 wgf_assets/preview.py author-set/job.json`). The host enforces both: in Claude
+   Code, `--allowedTools "Read" "Edit(/{out}/**)" "Bash({preview})"` with `--permission-mode
+   dontAsk` - an `Edit` rule covers every file-writing tool, `//` makes the path absolute, and
+   the `Bash` rule matches exactly that command (verified by a real call on CLI 2.1.280:
+   a write outside `{out}`, the script with other arguments, and any other command were each
+   refused). The job file it is run with sits outside `{out}`, so the author cannot point the
+   renderer elsewhere.
+3. **The preview judges and renders.** `preview.py` judges every file exactly as the step
+   does (the per-file checks below, `variants.distinct` within each requirement,
+   `set.consistent` across the set) and renders with Chromium from the game checkout's own
+   Playwright (`tools/render-svgs.mjs`, `createRequire` from the checkout's `package.json`,
+   like `look.mjs`; every process through `wgflib.procs`): `author-set/preview/sheet.png` -
+   every drawing at its in-game size on the design's background, every drawing small on the
+   background and on the panel surface, and each counted family's silhouettes filled black -
+   plus one PNG per drawing. It prints each file's problems and the sheet's path; the author
+   opens the sheet (an image) and revises, as many times as its turn budget allows. No
+   checkout with Playwright (or no node): the drawings are judged, not rendered, and the
+   warning says so.
+4. **The Factory judges again** what is in `{out}` - the preview's checks plus the step's own
+   format and policy validation - and delivers every requirement whose drawings all pass
+   (`source: ai-generated`, `quality.author` `author:set`, each file's `quality` including
+   `set.consistent`). While one fails and `repair_rounds` remain (default 1), a new session is
+   given `repair: {round, problems: {variant: [...]}, contact_sheet, passing}` with its files
+   left in `{out}`. A session that ended early - its turn or budget bound, a timeout - after
+   drawing something gets that round too (`repair.previous_session` says how it ended);
+   one that drew nothing ends the rounds. A requirement still failing after the last round, or not drawn at all,
+   falls back to a placeholder with `author-rejected` naming why. Each round's contact sheet
+   is kept (`author-set/sheet-<round>.png`), and `author-set/rounds.json` records the rounds,
+   what failed and the measurements.
+
+Why the agent writes SVG files rather than a generator script: the reference's consistency
+came from shared helpers, but running agent-written code would make the author a code
+executor, with the sandboxing that needs. In one session the author holds its own style sheet
+in context, the consistency is measured (`set.consistent`), and it sees the rendered result
+- so the drawings stay data, judged and rendered by the Factory. Reuse follows the same
+ledger: when every drawing of the set is unchanged and still passes, no session runs; when
+any must be drawn, the accepted ones are copied into `{out}` first and marked `accepted` in
+the brief, so the author sees them and keeps them.
+
 **Model author** (3D). When `wgf_assets.model_author` is installed, a 3D `model`,
 `environment` or `animation` requirement is passed to its `produce_model(requirement,
 visual_identity, out_dir, settings, context)`, which returns `{files, quality, source,
 license, placeholder, notes}` or raises `ModelAuthorError`. Its files are validated as any
-GLB (`gltf.py`) and its `quality` is recorded as given. Absent, or failing, 3D requirements
-fall back to placeholders. See [blender-pipeline.md](blender-pipeline.md); its request
-carries `craft` too (`core/craft/production-art-3d.md`, `3d-assets-and-animation.md`).
+GLB (`gltf.py`) and its `quality` is recorded as given; the item's notes name the contact
+sheet the author reviewed. With `model_author.mode: set`, every 3D requirement that reaches
+the model author is deferred and `produce_models(requirements, ...)` makes them in one
+session, after the other items; each it could not make falls back like a failure in `each`
+mode. A requirement a gate sent back carries `feedback: {notes, frames}`
+([Re-entry](#re-entry)); the author's request puts them on the asset as `notes` and
+`frames`. The author receives a plain context dict (`run_dir` under the step's work directory,
+`config`, `policy`, `design: {art_direction, camera}`). Absent, or failing, 3D requirements
+fall back to placeholders. See [blender-pipeline.md](blender-pipeline.md) ("Renders and
+self-review", "Set mode"); its request carries `craft` too
+(`core/craft/production-art-3d.md`, `3d-assets-and-animation.md`, `art-direction.md`).
 
 ## Quality
 
@@ -223,6 +297,9 @@ sound file by the `audio` checks below. A `fail` verdict is a
 | `font.format`, `font.tables`, `font.glyphs`, `font.header` | not a TTF/OTF/WOFF/WOFF2; a TTF/OTF without `cmap`, `name` and outlines, or under 60 glyphs; a WOFF/WOFF2 header that does not add up |
 | `font.coverage` | the font's cmap leaves a character of a locale in the design's `scope.locales` without a glyph (`fonts.locales[].chars`: all of А-Я, а-я, Ёё for `ru`). TTF and OTF are read directly, WOFF tables inflated with `zlib`; WOFF2 tables are Brotli-compressed, and Python's standard library has no Brotli, so they are decompressed by the system decoder (`libbrotlidec`, loaded through `ctypes`, nothing spawned). Where it cannot be loaded the check is `skipped` with "coverage unchecked" - never `pass` |
 | `variants.distinct` | two drawings of a counted requirement (`count` > 1: tower levels, enemy kinds) share a silhouette: each is reduced to a `grid` x `grid` mask over its canvas (SVG shapes filled as polygons, transforms applied, curves through their control points; a PNG's opaque pixels), and a pair whose masks differ by less than `min_silhouette_distance` (1 - IoU) fails. A recolour, or the same drawing with another numeral, differs by 0 |
+| `svg.text-font` | a `<text>` is set in no font-family (the browser default) or in one the design's `typography` does not name first (a system or generic family). Only when the file sets text and the design has a typography. An SVG drawn as an image cannot load the game's web fonts at all, so the author is told to outline lettering |
+| `svg.avoid` | the file does what a measurable line of `visual_identity.avoid` forbids (`avoid.rules`): a Gaussian blur or drop-shadow filter (`Neon glow`, `Soft blurred shadows`, `Glow effects`), an emoji in text, a purple-to-blue gradient, a gradient-filled `<text>`, a rounded `<rect>` (`Rounded corners`). Lines nothing can measure are for the author and visual QA |
+| `set.consistent` | drawings judged as one set (the set author) break the shared treatment of their group (`set.groups`: entities - player, threat, goal, target, projectile, collectible, hazard, prop - and icons): outlined among unoutlined (or the reverse), an outline (its widest stroke, in displayed px) outside `max_outline_ratio` of the group's median, an outline colour far from the group's, or a blur filter only some use. Calibrated on the reference library: its towers (2.5-3 px ink) and icons (5 px ink) pass |
 | `variants.count` | a library supplied fewer drawings than the requirement's `count`: the drawings past it are missing (the `variants-short` issue is then an error for mvp and prototype items) |
 
 `parts` is the number of drawing elements, `colors` the distinct colours used. The bars are a
@@ -268,19 +345,140 @@ without decoding first. How a game should use them: `core/craft/game-audio.md`.
 ## Re-entry
 
 When the step runs again with a `production-quality-report` or `visual-qa-report` whose
-`routes` include `assets`, it rebuilds only what those reports name: a production-quality
-check that did not pass with `route: assets` names its `assets` (else the requirement ids its
-summary mentions); a visual-qa finding with `route: assets` names the ids its id or summary
-mentions. A drawing id (`tile-2`) names its requirement. Each named item skips the library
-(it would hand over the same file) and goes to the author with the findings as `notes`; every
-other item is reused - a library file is deterministic, an authored file comes from the
-ledger, a placeholder from the same bytes. Without an author, a named item is rebuilt from
-the same sources and the manifest says so in its `notes`.
+`routes` include `assets`, it remakes only what the failure concerns
+(`scripts/wgf_assets/feedback.py`). Only the report of the gate that routed the run here is
+read (`context.entered_by`, `<step>.<route>`); without one, every report routed `assets`.
+
+What is read:
+
+| Report | Failures read |
+|---|---|
+| production-quality | every check routed `assets` that did not pass: its `assets` ids, else the ids and role words its summary names; its `expected` and `measured`; its frames |
+| visual-qa | every finding routed `assets` (any severity); every failing score, per-state answer and look whose rubric entry routes `assets`, with the judge's reason (`score_reasons`), comment or `look.reason` |
+
+Which requirements a failure concerns (game-design `build_spec.assets`, mvp, not
+`existing`):
+
+- **By id.** The requirement ids, or drawing ids (`tile-2` is `tile`), it names.
+- **By role word.** A word of a role in its id or summary (`core/reference/visual-qa-rubric.yaml`
+  `rebuild.role_words`: "player", "enemy", "obstacle", "sky", "debris", ...) names every
+  requirement of that role. The judge says "the player", not `craft`.
+- **By the play probe.** The playability records' entities name the runtime asset that drew
+  each role, so a role resolves to that asset's requirement too.
+- **By the rubric.** A score, state question, look or blocker carries `rebuild_roles` in the
+  rubric (`environment` -> the scene; `character_readability` -> the readable entities; the
+  look and `art_completeness` -> every drawn role). Groups (`entities`, `scene`, `art`) are
+  `rebuild.groups`.
+
+A visual-qa failure never remakes a sound. A failure no requirement resolves for is added to
+every requirement that is remade, as "about the build as a whole".
+
+**Nothing resolves.** A re-entry from a failed gate never reuses every file: when no failure
+resolves to a requirement, every requirement of `rebuild.fallback` (the readable entities
+and the scene) is remade with every reason, and the step logs a warning.
+
+**What the author is given.** Per remade requirement, the request (author.py; the 3D model
+author's request alike) carries `notes` - the reasons, in the judge's words - `frames` - the
+absolute paths of the frames that show them: the finding's frame, the failing state's
+frames, the measured check's frames, or, for a failure about every frame, the play frames of
+each viewport (at most 12) - and, for an SVG, `current`, the file that was judged. The prompt
+tells the author to open every frame with its read tool and fix what they show. Each remade
+item skips the library (it would hand over the same file); every other item is reused - a
+library file is deterministic, an authored file comes from the ledger, a placeholder from the
+same bytes.
+
+**When nothing can change.** No configured author able to remake any concerned requirement
+(`factory.assets.author` for 2D SVG, `factory.assets.model_author` for 3D models) blocks the
+step: a library or placeholder would hand over the same file and the loop would spend its
+budget on nothing. Authors asked and none delivering an accepted file fails the step,
+retryable, with the manifest as evidence. Some remade and some not is a warning.
 
 In `new-game` (workflow 5) both production gates route `assets` here (budgets
 `production-quality.assets: 2`, `visual-qa.assets: 2`), and the run then continues to
 `develop` as on the first pass: develop integrates what was rebuilt, and its brief carries
 the reports' failures.
+
+## Fonts and audio: the producers
+
+No agent author makes a font, a music loop or a sound effect, so an unattended run had only
+placeholders for them - a system font stack and an 8-second 8-bit loop - and
+`production-quality` (`assets.present`) refuses a placeholder for an `mvp` item: the run
+looped back to `assets` and blocked. Two producers make them instead, with no person, no
+network and no paid service. They are tried after the libraries and the authors and before
+any placeholder (`factory.assets.producers: [fonts, audio]`; off by default, on in the
+autonomous profile), and what they make is final: `placeholder: false`, judged like any
+file, `production_ready` when it passes.
+
+On a [re-entry](#re-entry) the two differ. The composer *varies*: a gate that sends a cue
+back gets a different composition (the song's seed offset by the visit, every cue moving
+together so base and layer stay in lock-step), recorded as a rebuild like an author's, so
+`can_remake` counts a music or sound requirement as remakable. A font is a fixed file
+(`FontProducer.varies = False`): sent back, it blocks the run as before, because the same
+bytes would come back.
+
+**`fonts` - the Factory font library** (`wgf_assets/fontlib.py`,
+`workspace/library/fonts/`). Every face an identity kit can name, and every `ALTERNATES` face
+a kit swaps in for a script (`wgf_design/identity.py`) - 20 families - pre-built from the
+Google Fonts repository at a pinned commit, under the SIL Open Font License 1.1:
+
+- one WOFF2 per family: a variable font cut to the weight range the kits use (other axes
+  pinned: `fontlib.PINNED_AXES`), or the static face of that weight; subset to the family's
+  latin, latin-ext, cyrillic, cyrillic-ext, greek and vietnamese characters, with every
+  OpenType feature kept (tabular figures);
+- its `OFL.txt` beside it, and `fonts.json`: the source URL and file, the source's and the
+  output's sha256, weights, subsets, designer and copyright line.
+
+It ships in the plugin runtime (~0.75 MB). For a `font` requirement the producer delivers one
+file per distinct family of the design's typography, in order (display, body, numeric) -
+`fonts-1`, `fonts-2`, ... - cut further to the subsets `scope.locales` needs when fontTools is
+importable (otherwise the library file as built), with each family's licence written beside
+it as `LICENSE-<family>.txt` (licence texts are not "unused files" to `validate`). The
+runtime manifest names each file's face: `family` is the face's own CSS family and `weight`
+its weight or variable range (`"500 700"`), so a game declares
+`new FontFace(e.family, url, { weight: e.weight })`. The licence is `OFL-1.1` (permitted,
+attribution recorded from the copyright line). The design module refuses a typography face
+the library does not hold (`presentation.font_library`), so a design an agent edits stays
+within what a run can ship. `wgf-assets.py fonts check` verifies the shipped files against
+`fonts.json` and the kits; `fonts build` rebuilds the library (maintainers: fontTools,
+Brotli, network). Why shipped rather than fetched: a run has no network, and the whole
+library is smaller than one music loop.
+
+**`audio` - the composer** (`wgf_assets/sound/`). Music and sound effects composed as code,
+the approach the reference games' audio was made with (a score per game, rendered through a
+small synthesiser studio), reimplemented in standard-library Python:
+
+- `style.py` reads the design's words - identity kit, audio direction, the music cues'
+  descriptions, fantasy, art direction - and decides a style (synthwave, chiptune, toybox
+  pop, lo-fi, adventure, electro), mode, key (seeded by the title id), tempo and swing. The
+  decision and its reasons are recorded on every produced item.
+- `music.py` writes one song per design - two 4-chord progressions, a 2-bar hook fitted to
+  each chord - and arranges each music requirement as a cue of it: `main` (A A' B A'' with a
+  breakdown), `title` (a calmer variant: pads, slow arpeggio, the hook on bells), `layer` (an
+  intensity layer: arpeggio, lead, open hats, claps, risers; the same bars as its base,
+  which is then rendered without those parts), `ambience`. A cue lasts at least what its
+  description states (60 s for a main loop, 30 s otherwise), a whole number of bars and of
+  512-sample blocks; tails, reverb, echo and compression run over the loop's own end, so
+  it loops without a seam. 44.1 kHz stereo, -16 dBFS RMS (-18 for title and layer), peak
+  -1 dBFS.
+- `voices.py`, `dsp.py`: the instruments (drums, basses, mallets, bells, electric piano,
+  plucked strings, leads, pads, brass) and effects (biquads, Freeverb-style reverb,
+  ping-pong delay, compressor, limiter), notes cached so a loop renders in ~20-30 s.
+- `sfx.py`: each `sfx`/`ui` cue's recipe from its id first, then its words (tap, drop, pop,
+  combo, reward, coin, fanfare, game over, hit, whoosh, near miss, jump, power-up, error,
+  tick, engine), played in the song's key on the style's instruments; mono 44.1 kHz 16-bit
+  WAV, -1 dBFS peak; a looping cue (an engine) is built from whole cycles.
+- `vorbis.py`: an Ogg Vorbis I encoder (one 1024-sample block size, floor 1, residue 1,
+  lattice VQ, Huffman codes from the file's own statistics, square-polar stereo coupling),
+  so music ships compressed (~190-270 kbps; 60-70 s is 1.7-2.1 MB, under the 4 MB music
+  budget) without an external tool. Its streams decode in Chromium with the exact input
+  length and ~28 dB SNR. `WGF_AUDIO_ENCODER=wav` ships WAV instead.
+
+The standard library cannot decode Ogg, so the producer measures its own PCM before encoding
+and adds two checks to the item's quality: `audio.rendered-level` (RMS, peak, integrated
+loudness in LUFS against the level floor) and `audio.rendered-seam` (the loop's end-to-start
+step and edge levels against `asset-quality.yaml` `audio.loop_seam`). The licence is the
+Factory's own (`LicenseRef-factory-generated`): nothing is sampled from anyone. Not covered:
+3D sky/spark textures and 3D VFX still have no producer.
 
 ## Placeholders
 
@@ -449,8 +647,9 @@ build still loads); every other error FAILs.
 |---|---|---|
 | `root` | the run's game repository checkout | files go under `<root>/public/assets/`; see below |
 | `libraries` | `[]` | directories with a `library.json` and/or an `index.json` (see `library.py`); relative to the project directory |
-| `model_author` | `{kind: none}` | the 3D model author (`model_author.py`): `{kind: command, argv, spec_from: file\|stdout, max_repair_rounds: 2}`; only a configured one is asked |
-| `author` | `{kind: none}` | `{kind: command, argv, svg_from: file\|stdout, timeout_seconds: 600, idle_timeout_seconds: 300, repair_rounds: 2}`; a misconfigured author fails the step, not retryably. A verified read-only Claude Code example is commented in `factory.yaml` and set in the autonomous profile ([autonomous-runs.md](autonomous-runs.md)) |
+| `model_author` | `{kind: none}` | the 3D model author (`model_author.py`): `{kind: command, mode: each\|set, argv, spec_from: file\|stdout, max_repair_rounds: 2, review_rounds: 1, render: {enabled: true}}`; only a configured one is asked |
+| `author` | `{kind: none}` | `{kind: command, mode: asset\|set, argv, ...}`. `asset` (default): `svg_from: file\|stdout, timeout_seconds: 600, idle_timeout_seconds: 300, repair_rounds: 2`, placeholders `{request} {output} {prompt}`. `set`: `timeout_seconds: 2400, idle_timeout_seconds: null, repair_rounds: 1`, placeholders `{request} {out} {preview} {sheet} {prompt}` ([The set author](#the-set-author)). A misconfigured author - an unknown mode, a placeholder the mode does not provide, `svg_from: stdout` with `set` - fails the step, not retryably. The verified Claude Code set author is commented in `factory.yaml` and set in the autonomous profile ([autonomous-runs.md](autonomous-runs.md)) |
+| `producers` | `[]` | `fonts`, `audio`: final fonts and audio made from the design itself, after libraries and authors, before placeholders (see "Fonts and audio: the producers"). The autonomous profile turns both on |
 | `placeholders` | `{enabled: true, backends: [2d-assets-mcp, procedural]}` | plus a settings block per backend |
 | `optimize` | `true` | lossless, only on files the step writes — never on the design's own |
 | `runtime_manifest` | `true` | write `public/assets/assets.json` |
@@ -480,6 +679,8 @@ root). Without a scaffold-record, or before the checkout exists, the files go to
 | `author.kind` unknown, or `command` without an `argv` | `FAILED`, not retryable |
 | `game-design` of a newer major schema | `FAILED`, not retryable |
 | An issue in `fail_on`, or any error with `strict` | `FAILED`, not retryable, with the manifest as evidence |
+| Re-entry from a failed gate, and no configured author can remake what it concerns | `BLOCKED`: configure an author or replace the files by hand, and resume ([Re-entry](#re-entry)) |
+| Re-entry from a failed gate, and the authors delivered nothing | `FAILED`, retryable, with the manifest as evidence |
 
 Re-execution is idempotent: files are deterministic and written only when their bytes change,
 so a retry, resume or loop reuses everything (`metadata.writes`; `removed` counts pruned
@@ -502,12 +703,24 @@ python3 scripts/wgf-assets.py build --design design.json --root ../my-game \
 # A host that prints the SVG instead of writing it (the read-only Claude Code author).
 python3 scripts/wgf-assets.py build --design design.json --root ../my-game \
     --author-svg-from stdout --author-command claude -p {prompt} --tools Read ...
+# The set author: one session for every 2D drawing, shown the rendered contact sheet.
+python3 scripts/wgf-assets.py build --design design.json --root ../my-game --author-mode set \
+    --author-command claude -p {prompt} --tools Read,Write,Edit,Bash \
+    --allowedTools Read "Edit(/{out}/**)" "Bash({preview})" --permission-mode dontAsk ...
+# Judge and render a set by hand (what the set author runs): problems, then the sheet's path.
+python3 scripts/wgf_assets/preview.py <work>/author-set/job.json
 # Check a checkout against its runtime manifest (what the verify step runs).
 python3 scripts/wgf-assets.py validate ../my-game [--strict] [--no-unused]
 # Pack loose PNGs into one atlas (frame name = file stem), deterministically.
 python3 scripts/wgf-assets.py pack out/hud frames/ [--trim] [--animation run=hero-run-]
 # What a file really is: format, size, alpha, SVG hazards, atlas problems.
 python3 scripts/wgf-assets.py inspect public/assets/ui/*.svg
+# Fonts and audio from the design itself (the producers), the title id seeding the key.
+python3 scripts/wgf-assets.py build --design design.json --root ../my-game \
+    --producers fonts,audio --title-id my-game
+# The Factory font library: list it, check it against fonts.json and the kits, rebuild it
+# (maintainers only: needs fontTools, Brotli and the network).
+python3 scripts/wgf-assets.py fonts list|check|build
 ```
 
 `build` accepts a whole game-design or any JSON with `asset_requirements`. It prints items
@@ -569,8 +782,12 @@ process layer with `fixtures/assets/fake_svg_author.py` (a multi-shape SVG passe
 SVG is repaired on round 2; one that never passes, a script, an off-palette drawing and a
 crashing host fall back to placeholders; the ledger reuses), zero placeholders among the mvp
 items with an author and flagged placeholders without one, library.json by id and by role
-(`fixtures/assets/library-mapped/`), re-entry from both reports, the 3D model author hook,
-and every quality check.
+(`fixtures/assets/library-mapped/`), re-entry from both reports (by id, role word, probe
+and rubric roles; the gate that routed here; the fallback; the reasons, frames and judged
+file in the author's request; BLOCKED without an author, FAILED when authors deliver
+nothing), the regression against a real judge verdict (`fixtures/visual-qa/`: the arena-dodge
+design and the verdict that named "the player", never `craft`), the 3D model author hook
+(given a plain mapping as context), and every quality check.
 
 `scripts/tests/test_models.py` covers the model spec, the GLB inspector, the Blender layer
 (with a fake Blender through the real process layer), the step with models, three.js loading,

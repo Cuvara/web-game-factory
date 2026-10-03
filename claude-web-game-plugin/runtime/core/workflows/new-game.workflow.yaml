@@ -178,13 +178,15 @@ workflow:
     # the delivered files are checked against. Without it the manifest skips that check.
     #
     # Re-entered by production-quality or visual-qa (route `assets`) with the report that
-    # sent it back: only the items the report names are rebuilt, then the run continues to
-    # develop, which integrates them. Two passes per gate before a person looks.
+    # sent it back: only the items the report concerns are rebuilt, by an author handed the
+    # judge's reasons and the failing frames (the playability-report resolves them), then the
+    # run continues to develop, which integrates them. A re-entry that could change no art
+    # blocks rather than succeed. Two passes per gate before a person looks.
     - id: assets
       type: assets
       stage: title:prototype
       description: Inspect, source or generate, validate and license-check every asset. Re-entered with the failing production-quality-report or visual-qa-report when an asset must be made again.
-      inputs: [game-design, scaffold-record, production-quality-report, visual-qa-report]
+      inputs: [game-design, scaffold-record, production-quality-report, visual-qa-report, playability-report]
       outputs: [asset-manifest]
       # 5 = the first visit + 2 + 2.
       max_visits: 5

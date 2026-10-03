@@ -204,29 +204,74 @@ factory:
     # assets and/or a library.json mapping requirement ids and roles to licensed files -
     # how golden fixtures and purchased packs supply real art.
     libraries: []
+    # Producers of final assets from the design itself, tried after libraries and authors
+    # and before placeholders: `fonts` (the typography's faces from the Factory font library,
+    # workspace/library/fonts - OFL, pre-built WOFF2) and `audio` (music composed from the
+    # design's audio direction, encoded Ogg Vorbis; sound effects as WAV - ~1-2 min per
+    # design). Off by default; the autonomous profile turns both on.
+    producers: []
     # Who draws a 2D requirement as SVG: kind none (default: what no library supplies is a
     # placeholder) or command - an agent host run through wgflib.procs with the agent
-    # environment, once per drawing. argv placeholders: {request} (the request JSON: the
-    # requirement, palette, visual identity, quality bars, repair problems, re-entry
-    # findings), {output} (where to write the SVG), {prompt}. svg_from: file (it writes
-    # {output}) or stdout (it prints the SVG last; the Factory writes {output}). A rejected
-    # file is shown its problems and asked again, repair_rounds times; then the requirement
-    # is a placeholder.
+    # environment. mode asset (default): once per drawing; argv placeholders {request} (the
+    # request JSON: the requirement, palette, visual identity, art direction, quality bars,
+    # repair problems, re-entry findings), {output} (where to write the SVG), {prompt};
+    # svg_from: file (it writes {output}) or stdout (it prints the SVG last; the Factory
+    # writes {output}). mode set: ONE session draws every 2D requirement of the design as one
+    # set (wgf_assets/set_author.py); argv placeholders {request} (the set brief), {out} (the
+    # only directory it writes), {preview} (the only command it runs: the Factory's judge and
+    # contact-sheet render, wgf_assets/preview.py), {sheet}, {prompt}. A rejected file (asset)
+    # or set (set) is shown its problems and asked again, repair_rounds times; then the
+    # requirement is a placeholder.
     author:
       kind: none
-    # Read-only 2D author on Claude Code's headless mode: it reads the request and the craft
-    # playbooks it names, and prints the SVG (svg_from: stdout), so it needs no write tool.
-    # Checked against CLI 2.1.280 and run on a real design's requirements through
-    # scripts/wgf-assets.py build: 95-125 s a drawing, each accepted on its first round
-    # (docs/claude-capabilities.md, "The asset authors").
+    # The 2D set author on Claude Code's headless mode (mode: set). Checked against CLI
+    # 2.1.280 - the permission rules by a real call: an Edit rule scopes every file-writing
+    # tool (Write included) to {out}, `//` making it absolute, and the Bash rule allows
+    # exactly the preview command and nothing else - and run on a live design's 2D
+    # requirements (docs/assets-module.md, "The set author").
     #   --safe-mode                 no hooks, plugins, MCP servers or CLAUDE.md
-    #   --tools Read                the one tool in the session: the request, the craft files
-    #   --permission-mode dontAsk   nothing is ever prompted; everything but Read is refused
-    #   --output-format text        svg_from: stdout takes the last <svg> printed. Text prints
-    #                               only at exit, so no idle timeout: rely on timeout_seconds
-    #   --max-budget-usd            the host's own bound on ONE drawing; a design asks once
-    #                               per variant (a count of 10 is 10 calls) plus repairs
+    #   --tools                     Read (the brief, the craft, the contact sheet), Write and
+    #                               Edit (only under {out}), Bash (only {preview})
+    #   --permission-mode dontAsk   nothing is ever prompted; what no rule allows is refused
+    #   --output-format text        prints only at exit, so no idle timeout
+    #   --max-budget-usd            the host's own bound on ONE session (the whole set);
+    #                               repair_rounds adds at most one more session each
     # author:
+    #   kind: command
+    #   mode: set
+    #   argv:
+    #     - claude
+    #     - -p
+    #     - "{prompt}"
+    #     - --model
+    #     - sonnet
+    #     - --safe-mode
+    #     - --strict-mcp-config
+    #     - --tools
+    #     - "Read,Write,Edit,Bash"
+    #     - --allowedTools
+    #     - "Read"
+    #     - "Edit(/{out}/**)"
+    #     - "Bash({preview})"
+    #     - --disallowedTools
+    #     - "NotebookEdit,WebFetch,WebSearch"
+    #     - --permission-mode
+    #     - dontAsk
+    #     - --no-session-persistence
+    #     - --output-format
+    #     - text
+    #     - --max-turns
+    #     - "150"
+    #     - --max-budget-usd
+    #     - "6"
+    #   timeout_seconds: 2700
+    #   idle_timeout_seconds: null
+    #   repair_rounds: 1
+    # The per-asset author (mode: asset) the set mode replaced in the autonomous profile:
+    # read-only, it prints one SVG per drawing (svg_from: stdout). 95-125 s a drawing on a
+    # real design, each accepted on its first round (docs/claude-capabilities.md, "The asset
+    # authors"); it never sees the other drawings or a render of its own.
+    # author:   (mode: asset)
     #   kind: command
     #   svg_from: stdout
     #   argv:
@@ -256,24 +301,33 @@ factory:
     #   idle_timeout_seconds: null
     #   repair_rounds: 2
     # The 3D model author (scripts/wgf_assets/model_author.py, docs/blender-pipeline.md):
-    # kind none, or command - an agent host that writes a MODEL SPEC per 3D requirement,
-    # built by the pinned Blender and judged (parts, normals, palette, primitive_only) with
-    # up to repair_rounds re-asks. Only a configured author is asked; without one, a
-    # design's own model spec is built by Blender, else the requirement is a placeholder.
-    # argv placeholders: {request}, {spec} (where to write the spec JSON), {prompt};
-    # spec_from: file (it writes {spec}) or stdout (it prints the spec JSON last). Blender
-    # 4.5 LTS must be on PATH or in WGF_BLENDER, or the author is refused.
+    # kind none, or command - an agent host that writes MODEL SPECS, built by the pinned
+    # Blender, judged (parts, normals, palette, primitive_only, silhouette) and RENDERED
+    # (contact sheets from the design's camera and at gameplay size): repair rounds show the
+    # problems and the renders, review_rounds ask it to open the renders and revise what does
+    # not read. mode: each (a session per requirement) or set (one session for every 3D
+    # requirement: one palette, material language and detail level, plus a set render).
+    # Only a configured author is asked; without one, a design's own model spec is built by
+    # Blender, else the requirement is a placeholder. argv placeholders: {request}, {spec}
+    # (each mode: where to write the spec), {dir} (the session's directory; set mode writes
+    # {dir}/specs/<id>.model.json), {prompt}; spec_from: file (it writes the specs; on a
+    # repair or review they hold the previous ones, edited in place) or stdout (each: the
+    # spec JSON last; set: {"models": {...}} last). Blender 4.5 LTS must be on PATH or in
+    # WGF_BLENDER, or the author is refused.
     model_author:
       kind: none
-    # Read-only 3D model author on Claude Code's headless mode, the same flags as the 2D
-    # author: it reads the request, the model-spec schema and the craft playbooks, and
-    # prints the spec (spec_from: stdout). Checked against CLI 2.1.280 and run through
-    # model_author.produce_model and the pinned Blender: 186 s for two rounds, the first
-    # refused for three over-large bevels and repaired (docs/claude-capabilities.md, "The
-    # asset authors"). Each repair round is one more call.
+    # The set author on Claude Code's headless mode: it reads the request, the schema, the
+    # craft playbooks and the renders, and writes spec files under its session directory
+    # only - an Edit rule on {dir} (`//` = an absolute path) governs every file-editing tool
+    # (verified with a real claude -p call: a write inside was allowed, one outside refused;
+    # a Write(...) rule is ignored by the host). Run on the space-dodge design with the
+    # pinned Blender (docs/blender-pipeline.md, "Set mode"). Each repair or review round is
+    # one more call. A read-only per-model author is the same argv with mode: each,
+    # spec_from: stdout and --tools/--allowedTools "Read".
     # model_author:
     #   kind: command
-    #   spec_from: stdout
+    #   mode: set
+    #   spec_from: file
     #   argv:
     #     - claude
     #     - -p
@@ -283,23 +337,24 @@ factory:
     #     - --safe-mode
     #     - --strict-mcp-config
     #     - --tools
-    #     - "Read"
+    #     - "Read,Write,Edit"
     #     - --allowedTools
-    #     - "Read"
+    #     - "Read,Edit(/{dir}/**)"
     #     - --disallowedTools
-    #     - "Edit,Write,NotebookEdit,Bash,WebFetch,WebSearch"
+    #     - "NotebookEdit,Bash,WebFetch,WebSearch"
     #     - --permission-mode
     #     - dontAsk
     #     - --no-session-persistence
     #     - --output-format
     #     - text
     #     - --max-turns
-    #     - "20"
+    #     - "80"
     #     - --max-budget-usd
-    #     - "2"
-    #   timeout_seconds: 900
+    #     - "3"
+    #   timeout_seconds: 1800
     #   idle_timeout_seconds: null
     #   max_repair_rounds: 2
+    #   review_rounds: 1
     placeholders:
       enabled: true
       # Tried in order; the procedural backend is always last and always works. An
@@ -368,9 +423,9 @@ factory:
     #     - --tools
     #     - "Read,Edit,Write,Glob,Grep,Bash"
     #     - --allowedTools
-    #     - "Read,Glob,Grep,Edit(./**),Write(./**),Bash(pnpm *),Bash(git status *),Bash(git diff *),Bash(git log *),Bash(git show *)"
+    #     - "Read,Glob,Grep,Edit(./**),Write(./**),Bash(pnpm *),Bash(git status *),Bash(git diff *),Bash(git log *),Bash(git show *),Bash(git clean -f -- src/*),Bash(git clean -f -- tests/*),Bash(git clean -f -- public/*)"
     #     - --disallowedTools
-    #     - "WebFetch,WebSearch,Bash(git commit *),Bash(git push *),Bash(git reset *),Bash(git checkout *),Bash(git switch *),Bash(git rebase *),Bash(git stash *),Bash(git tag *),Bash(git branch *),Bash(git clean *),Bash(git config *),Bash(git remote *),Bash(git * --output*)"
+    #     - "WebFetch,WebSearch,Bash(git commit *),Bash(git push *),Bash(git reset *),Bash(git checkout *),Bash(git switch *),Bash(git rebase *),Bash(git stash *),Bash(git tag *),Bash(git branch *),Bash(git config *),Bash(git remote *),Bash(git * --output*)"
     #     - --permission-mode
     #     - dontAsk
     #     - --no-session-persistence
@@ -421,7 +476,7 @@ factory:
     #     - --allowedTools
     #     - "Read,Glob,Grep,Edit(./**),Write(./**),Bash(pnpm *),Bash(git status *),Bash(git diff *),Bash(git log *),Bash(git show *),Skill,mcp__playwright"
     #     - --disallowedTools
-    #     - "WebFetch,WebSearch,Bash(git commit *),Bash(git push *),Bash(git reset *),Bash(git checkout *),Bash(git switch *),Bash(git rebase *),Bash(git stash *),Bash(git tag *),Bash(git branch *),Bash(git clean *),Bash(git config *),Bash(git remote *),Bash(git * --output*)"
+    #     - "WebFetch,WebSearch,Bash(git commit *),Bash(git push *),Bash(git reset *),Bash(git checkout *),Bash(git switch *),Bash(git rebase *),Bash(git stash *),Bash(git tag *),Bash(git branch *),Bash(git config *),Bash(git remote *),Bash(git * --output*)"
     #     - --permission-mode
     #     - dontAsk
     #     - --no-session-persistence

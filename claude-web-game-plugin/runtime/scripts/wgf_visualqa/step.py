@@ -165,6 +165,7 @@ class VisualQAStep(WorkflowStep):
         status, failed, routes = decide(verdict, rubric,
                                         primitive_style=bool(identity.get("primitive_style")))
         report = self._report(verdict=status, frames=frames, scores=verdict["scores"],
+                              score_reasons=verdict.get("score_reasons"),
                               findings=verdict["findings"], failed=failed, routes=routes,
                               notes=verdict.get("notes"), runs=len(outcome.runs),
                               states=report_states(rubric, frames, verdict["states"]),
@@ -214,7 +215,8 @@ class VisualQAStep(WorkflowStep):
         return StepResult("BLOCKED", artifacts=[report], message=reason)
 
     def _report(self, *, verdict, frames, scores=None, findings=None, failed=(), routes=(),
-                notes=None, runs=0, blocked_reason=None, states=None, look=None):
+                notes=None, runs=0, blocked_reason=None, states=None, look=None,
+                score_reasons=None):
         ctx = self._ctx
         context, settings, rubric = ctx["context"], ctx["settings"], ctx["rubric"]
         now = self.clock()
@@ -247,6 +249,8 @@ class VisualQAStep(WorkflowStep):
             "frames": [{"id": f["key"], "project": f["project"], "state": f["state"],
                         "path": f["path"], "sha256": f["sha256"]} for f in frames],
             "scores": dict(scores or {}),
+            "score_reasons": ({k: v for k, v in score_reasons.items() if isinstance(v, str)}
+                              if isinstance(score_reasons, dict) and score_reasons else None),
             "findings": [dict(f) for f in findings or []],
             "failed": list(failed),
             "routes": list(routes),
@@ -256,6 +260,8 @@ class VisualQAStep(WorkflowStep):
             "notes": notes,
             "verdict": verdict,
         }
+        if report["score_reasons"] is None:
+            del report["score_reasons"]
         return ArtifactOutput("visual-qa-report", provenance.seal(report), metadata={
             "verdict": verdict, "failed": len(failed), "commit": ctx["commit"],
             "route": routes[0] if routes else None, "judge_runs": runs,

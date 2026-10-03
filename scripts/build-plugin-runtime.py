@@ -12,6 +12,7 @@ runtime and the working directory is only ever the project (scripts/wgflib/paths
     scripts/wgf.py, bin/wgf     the workflow engine and its shim
     scripts/wgf-*.py            the state, guard, hash, template-pin, asset and model tools
     scripts/wgflib/, wgf_*/     the engine library and every step module, with their data
+    workspace/library/fonts     the Factory font library (OFL WOFF2s, their licences, fonts.json)
     workspace/config/<shipped>  the configuration defaults, the template pin and the opt-in
                                 profiles (profiles/*.yaml)
     docs/<read by a surface>    the documents a generated surface tells the agent to read
@@ -42,8 +43,12 @@ MANIFEST = "runtime-manifest.json"
 
 # Directories copied whole (minus EXCLUDE), and single files. Relative to the repository root.
 TREES = ["core", "scripts/wgflib",
+         # The Factory font library the assets step's `fonts` producer bundles from.
+         "workspace/library/fonts",
          # Opt-in configuration overlays a project copies to its own factory.yaml.
-         "workspace/config/profiles"]
+         "workspace/config/profiles",
+         # The quality bar every look-making or look-judging agent is shown.
+         "workspace/quality-bar"]
 TREE_GLOBS = ["scripts/wgf_*"]
 FILES = [
     "VERSION",

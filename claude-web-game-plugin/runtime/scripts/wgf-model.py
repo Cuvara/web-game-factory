@@ -23,7 +23,15 @@
         Exit 0 clean, 1 an error-severity finding, or a failed quality verdict when a role
         was given (--role, or --design with --asset).
 
-Standard library only (Blender itself for `build`); run from the repository root.
+    python3 scripts/wgf-model.py render [ID=]FILE.glb ... -o DIR [--design GAME-DESIGN.json]
+                                       [--palette HEX,HEX] [--camera TEXT] [--role ROLE]
+                                       [--engine NAME] [--no-set] [--json]
+        Render each GLB with the pinned Blender to a contact sheet (three-quarter, side, top,
+        the game's camera and the gameplay size), lit by the palette's rig, and all of them
+        side by side at their real size (DIR/set.png). What the model author is shown.
+        Exit 0 rendered, 1 a render failed, 2 Blender not usable.
+
+Standard library only (Blender itself for `build` and `render`); run from the repository root.
 See docs/blender-pipeline.md.
 """
 
@@ -35,6 +43,7 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from wgf_assets import blender, gltf, model_quality, modelspec  # noqa: E402
+from wgf_assets import render as render_mod  # noqa: E402
 from wgf_assets.policy import PolicyError, load_policy  # noqa: E402
 
 
@@ -215,6 +224,57 @@ def _quality_lines(quality, geometry, role):
     return lines
 
 
+def render_command(args):
+    policy = _policy()
+    pin = policy.toolchains.get("blender") or {}
+    info = blender.discover(args.blender)
+    problem = (blender.missing_message(info, pin) if info.version is None
+               else blender.check_pin(info, pin, allow_unpinned=args.allow_unpinned))
+    if problem:
+        print(f"wgf-model: {problem}", file=sys.stderr)
+        return 2
+    look = {}
+    camera = args.camera
+    roles, readability = {}, {}
+    if args.design:
+        with open(args.design, encoding="utf-8") as handle:
+            design = json.load(handle)
+        build_spec = design.get("build_spec") or {}
+        look = dict(build_spec.get("visual_identity") or {})
+        camera = camera or (design.get("engine") or {}).get("camera")
+        for asset in build_spec.get("assets") or []:
+            if isinstance(asset, dict) and asset.get("id"):
+                roles[asset["id"]] = asset.get("role")
+                readability[asset["id"]] = asset.get("readability")
+    if args.palette:
+        look["palette"] = [{"hex": h.strip()} for h in args.palette.split(",") if h.strip()]
+    models = []
+    for path in args.files:
+        model_id, _, file_path = path.rpartition("=") if "=" in path else (None, None, path)
+        model_id = model_id or os.path.splitext(os.path.basename(file_path))[0]
+        models.append({"id": model_id, "glb": file_path, "role": args.role or roles.get(model_id),
+                       "readability": readability.get(model_id)})
+    settings = {}
+    if args.engine:
+        settings["engines"] = [args.engine]
+    try:
+        report = render_mod.render(info, models, out_dir=args.out, identity=look, camera=camera,
+                                   lineup=not args.no_set, settings=settings)
+    except render_mod.RenderError as exc:
+        print(f"wgf-model: {exc}", file=sys.stderr)
+        return 1
+    lines = [f"engine      {report['engine']}"]
+    for model_id, entry in report["models"].items():
+        lines.append(f"{model_id:<12}{entry['sheet']}")
+        for name, view in entry["views"].items():
+            lines.append(f"  {name:<14} {view['pixels']:>4} px  covers {view['coverage']:.0%}"
+                         f"  fill {view['fill'] if view['fill'] is not None else '-'}")
+    if report.get("set"):
+        lines.append(f"set         {report['set']['path']} ({', '.join(report['set']['order'])})")
+    _print(report, args.json, lines)
+    return 0
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     sub = parser.add_subparsers(dest="command", required=True)
@@ -246,6 +306,20 @@ def main(argv=None):
     p.add_argument("--asset", help="with --design: the build_spec.assets id whose role to use")
     p.add_argument("--json", action="store_true")
     p.set_defaults(func=inspect_command)
+    p = sub.add_parser("render", help="render GLBs to contact sheets with the pinned Blender")
+    p.add_argument("files", nargs="+", help="GLB files, each optionally ID=PATH")
+    p.add_argument("-o", "--out", required=True, help="where the PNGs go")
+    p.add_argument("--design", help="a game-design JSON: palette, camera, roles, readability")
+    p.add_argument("--palette", help="comma-separated #rrggbb colours: the light rig's")
+    p.add_argument("--camera", help="the game's camera, as the design states it ('chase "
+                                    "camera, slightly high'): adds the game and gameplay views")
+    p.add_argument("--role", help="the role of every file (else from --design)")
+    p.add_argument("--engine", help="one Blender engine (BLENDER_EEVEE_NEXT, CYCLES, ...)")
+    p.add_argument("--no-set", action="store_true", help="no set lineup")
+    p.add_argument("--blender")
+    p.add_argument("--allow-unpinned", action="store_true")
+    p.add_argument("--json", action="store_true")
+    p.set_defaults(func=render_command)
     args = parser.parse_args(argv)
     return args.func(args)
 

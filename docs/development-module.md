@@ -68,10 +68,13 @@ named items (route `assets`, which continues here), re-enters develop with the f
 reports as inputs. Only a FAIL of the commit this visit starts from is feedback - the assets
 step writes files but commits nothing, so HEAD is still the judged commit - and the brief
 then leads with **Fix first: what the production gate measured** (each failed required
-check, its route, viewport, assets and bar; `brief.json` `production_failures`) and **Fix
-first: what visual QA saw** (each entry of the report's `failed`: blocker findings with
-their frame, dimensions below the bar, failing per-state answers, the look;
-`visual_qa_failures`), with the judged commit as `gated_commit`.
+check, its route, viewport, assets, bar, what was measured and the absolute paths of the
+frames it measured; `brief.json` `production_failures`) and **Fix first: what visual QA
+saw** (each entry of the report's `failed`: blocker findings with their frame, dimensions
+below the bar with the judge's `score_reasons`, failing per-state answers with the judge's
+comment and the state's frames, the look with its reason; then every `major` finding that
+did not fail the build on its own; `visual_qa_failures`), with the judged commit as
+`gated_commit`.
 
 No `phase` (a workflow before 4) is the single develop phase it always was. An unknown phase
 fails the step.
@@ -179,6 +182,31 @@ the game, regenerated on every visit and committed with the code it asked for. I
   `wgf_develop.budget`); develop's `max_visits` loop guard, which a resume resets and which
   read like the session budget, is no longer shown. Absent on a first visit (entered by
   `<step>.success`).
+
+## Eyes and the quality bar
+
+A developer that never looks at what it built builds blind: a live 2D greybox drew nothing
+for forty minutes while fifteen logic modules were written, and no developer had ever been
+shown what a finished game looks like. Every brief therefore carries a **See your build**
+section (`brief.json` `look`):
+
+- **Draw first.** Wire `src/main.ts` to the game's scene before more than a handful of
+  modules exist.
+- **Look.** `pnpm exec node <Factory>/scripts/wgf_develop/tools/look.mjs --out
+  /tmp/wgf-look/<key>/<n>` after `pnpm build`: it serves `dist/` with its own static server,
+  drives the checkout's own Playwright (headless Chromium, software WebGL) and writes
+  title / play / play-later frames for a desktop and a phone viewport, plus `look.json`
+  (page errors, failed `/assets/` requests, the play probe's snapshots). It needs only
+  `Bash(pnpm *)` and `Read`, which every developer already has, and writes outside the
+  checkout, so it never changes the commit.
+- **Compare** the frames with the installation's **quality bar**
+  (`workspace/quality-bar/quality-bar.yaml`, read by `wgflib.quality_bar`; a project's own
+  `workspace/quality-bar/` replaces the shipped one): frames of finished games for the
+  engine's dimension, each with what it shows, and the qualities every finished frame has.
+  The bar sets the level of finish, never the style.
+- **Craft guides** are listed by absolute path (`brief.json` `craft_guides`): the
+  developer's working directory is the checkout, where a Factory-relative path names
+  nothing.
 
 ## Developers
 
@@ -368,6 +396,11 @@ factory:
     developer: {kind: handoff}  # or {kind: command, argv: [...], timeout_seconds: 5400}
     checks: [install, conformance, typecheck, lint, unit, build, smoke]
     check_timeout_seconds: 900
+    smoke_workers: 1          # optional: Playwright workers for the smoke suite (--workers=N);
+                              # unset leaves the repository's own, fully parallel setting. On a
+                              # machine that cannot stand desktop + mobile in parallel against
+                              # one preview server, a production build misses its first-frame
+                              # wait there and the same tree passes whole at one worker
     commit: true
     build_url: null             # "https://{branch}.{name}.pages.dev"; {owner} {sha} {short_sha}
     author: {name: ..., email: ...}   # when the checkout has no git identity

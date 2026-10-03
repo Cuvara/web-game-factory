@@ -296,8 +296,11 @@ def design_kind(entry, dimension):
     for stay in the requirement's notes. A 2D texture is a `background`."""
     kind, role = entry.get("type"), entry.get("role")
     if dimension == "3d":
-        if kind in ("model", "other") and role not in ("ui", "icon", "font", "background"):
-            return "environment" if role == "environment" else "model"
+        # A backdrop MODEL (a stand silhouette, floodlight towers) is scenery Blender builds,
+        # like the environment: read as a flat `background` it belonged to no author and a
+        # 3D game's production gate could never be met (goalkeeper-royale, 2026-10-02).
+        if kind in ("model", "other") and role not in ("ui", "icon", "font"):
+            return "environment" if role in ("environment", "background") else "model"
         if kind in ("animation", "texture"):
             return kind
     if kind == "font" or role == "font":

@@ -118,15 +118,14 @@ def _holder_line():
 
 
 def _pid_alive(pid):
+    """Whether the lock holder's pid is alive. wgflib.procs decides it per platform: on
+    Windows `os.kill(pid, 0)` reports an exited process as alive while any handle is open,
+    and is one argument away from TerminateProcess."""
+    from .. import procs  # late: procs imports nothing from here, but keep the store light
     try:
-        os.kill(pid, 0)
-    except ProcessLookupError:
+        return bool(procs.pid_alive(pid))
+    except (OSError, OverflowError, ValueError, TypeError):
         return False
-    except PermissionError:
-        return True
-    except (OSError, OverflowError, ValueError):
-        return False
-    return True
 
 
 def _temporaries(path):

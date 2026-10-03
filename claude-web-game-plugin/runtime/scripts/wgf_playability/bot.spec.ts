@@ -592,6 +592,8 @@ test("lose and restart: the anti-oracle plays badly, then retries", async ({ pag
   // Every few samples, what the metrics said: a resource the design says bad play drains
   // (genre-models qa.resource_metric) is read from here, never from the game's own account.
   const series: { ms: number; state: string; metrics: Record<string, number>; content: Content | null }[] = [];
+  // Every press the anti-oracle made, in order: what bad play actually did is evidence.
+  const wrongPresses: { ms: number; action: string; picked: number | null; of: number; repeated: boolean }[] = [];
   if (started.playingMs !== null) {
     const first = watch.saw(await snap(page));
     initial = first?.metrics ?? null;
@@ -624,6 +626,12 @@ test("lose and restart: the anti-oracle plays badly, then retries", async ({ pag
     // One success first, as a first-time player would: the grace ends at the first success.
     let succeeded = false;
     let samples = 0;
+    // The anti-oracle rotates through the moves that are not the oracle's: `k` advances on
+    // every press, and again when the press before it moved nothing the probe reports, so a
+    // direction a wall blocks (no move spent, nothing changed) is not pressed for the whole
+    // window.
+    let k = 0;
+    let unchanged: string | null = null;
     while (Date.now() - t0 < CFG.lose_ms) {
       const s = watch.saw(await snap(page));
       if (!s) break;
@@ -641,10 +649,23 @@ test("lose and restart: the anti-oracle plays badly, then retries", async ({ pag
         await act(page, s.oracle, touch);
         succeeded = true;
       } else if (s.oracle) {
-        // The first move that is not the oracle's, never a pause or settings toggle (bad
-        // play, not no play); with no other move, the only one there is.
+        // A move that is not the oracle's, never a pause or settings toggle (bad play, not no
+        // play); with no other move, the only one there is.
         const moves = s.inputs.filter((m) => !UTILITY.test(m.action));
-        const wrong = moves.find((m) => JSON.stringify(m) !== JSON.stringify(s.oracle)) ?? s.oracle;
+        const others = moves.filter((m) => JSON.stringify(m) !== JSON.stringify(s.oracle));
+        // What the last press did, as the probe reports it: the metrics and the unit's own
+        // progress. The same state again means the press changed nothing.
+        const state = JSON.stringify({ m: s.metrics ?? {}, c: s.content ?? null });
+        const repeated = unchanged !== null && state === unchanged;
+        if (repeated) k += 1;
+        unchanged = state;
+        const picked = others.length ? k % others.length : null;
+        const wrong = picked === null ? s.oracle : others[picked];
+        k += 1;
+        if (wrongPresses.length < 60) {
+          wrongPresses.push({ ms: Date.now() - t0, action: wrong.action, picked,
+                              of: others.length, repeated });
+        }
         await act(page, wrong, touch);
       }
       await page.waitForTimeout(150);
@@ -696,7 +717,7 @@ test("lose and restart: the anti-oracle plays badly, then retries", async ({ pag
     }
   }
   write(project, "lose", { ...started, initial, initialContent, reached, endedAtMs, contentAtEnd,
-                           series, resetInUnit, restart, ...watch.record(), frames });
+                           series, wrongPresses, resetInUnit, restart, ...watch.record(), frames });
 });
 
 // The pause screen, when the game offers one: the probe's pause input, else a visible pause

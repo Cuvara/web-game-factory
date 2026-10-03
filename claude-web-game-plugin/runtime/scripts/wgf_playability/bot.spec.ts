@@ -121,7 +121,7 @@ class Watch {
   }
 
   // The first moment of play that draws an entity with a runtime asset no measured screen
-  // has shown yet (a falling pickup, a shot): its frame and the snapshot taken right after
+  // has shown yet (a falling pickup, a shot): its frame and the snapshot taken right before
   // it, kept as screen `glimpse-<asset>`. A transient thing is otherwise never in a state
   // frame, and the production gate could not see it drawn. Only the roles the player must
   // read; at most GLIMPSES per test.
@@ -136,13 +136,15 @@ class Watch {
     if (!fresh?.asset) return;
     this.glimpsed.add(fresh.asset);
     const name = `glimpse-${fresh.asset}`;
+    // The snapshot right before the screenshot: a screenshot can take most of a second,
+    // and a falling pickup has moved past its own box by the time it returns.
+    const at = this.saw(await snap(this.page));
     await frame(this.page, this.project, `state-${name}`, this.frames);
-    const after = this.saw(await snap(this.page));
     const viewport = this.page.viewportSize();
-    this.ui[name] = { probe_state: after?.state ?? null, frame: `state-${name}`,
+    this.ui[name] = { probe_state: at?.state ?? null, frame: `state-${name}`,
                       viewport: viewport ? [viewport.width, viewport.height] : null,
                       elements: [], texts: [], overlaps: [], probe_ui: [], glimpse: true,
-                      entities: after?.entities ?? [] };
+                      entities: at?.entities ?? [] };
   }
 
   record(): Record<string, unknown> {

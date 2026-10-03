@@ -208,7 +208,7 @@
     "scripts/wgf_develop/developers.py": "sha256:ef5638f20d0801d49209699d143f5855b8f1c58b2d8e102aa9827e9ebf952d8d",
     "scripts/wgf_develop/gdd.py": "sha256:81f0fc5f925e7873c044631385801e62c18b1a66d12467ea39447942db86ff8e",
     "scripts/wgf_develop/report.py": "sha256:606fc93884b69a4a1b61f012de50441a600e1f5adc18237134a6c4e990b3857e",
-    "scripts/wgf_develop/repository.py": "sha256:dc7474f886616f83b4e4b8daf6499d10cddef4b2f1b7560eb1495f158c5293b9",
+    "scripts/wgf_develop/repository.py": "sha256:8a5bcc41072a52a5b381303534e0f771619056ef863dc466f49fd5314004a243",
     "scripts/wgf_develop/safewrite.py": "sha256:186c212794fee796bbbd303ffd7be6add12febab0212726a2678433e44597bc6",
     "scripts/wgf_develop/scope.py": "sha256:e7308ab484365f7bfa8ed6a077c09124ed41b5113d17f58a37e8db12b815d201",
     "scripts/wgf_develop/seam.py": "sha256:d96f959f9fb639fa36fac113f26b2e53f465e0171dd77e1bb271f86a7ec1b3b1",

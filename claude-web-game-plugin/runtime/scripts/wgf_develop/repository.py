@@ -288,11 +288,26 @@ class GitRepo:
         if stray:
             raise GitError(f"refusing to commit: {len(stray)} change(s) outside the paths "
                            f"to commit ({', '.join(stray[:8])})")
-        ordered = sorted(wanted)
+        ordered = self._addable(sorted(wanted))
         for start in range(0, len(ordered), _ADD_CHUNK):
             self._git("--literal-pathspecs", "add", "--all", "--",
                       *ordered[start:start + _ADD_CHUNK])
         return self._commit(subject, body, key)
+
+    def _addable(self, paths):
+        """The `paths` that `git add` can match: in the work tree or in the index.
+
+        A path in neither is a deletion already staged (`git rm`, or the old side of a
+        `git mv`): the index already holds what the commit records for it, and naming it
+        to `add` fails the whole call ("pathspec ... did not match any files")."""
+        indexed = set()
+        for start in range(0, len(paths), _ADD_CHUNK):
+            output = self._git("--literal-pathspecs", "ls-files", "-z", "--cached", "--",
+                               *paths[start:start + _ADD_CHUNK]).output
+            indexed.update(entry for entry in output.split("\0") if entry)
+        root = os.path.abspath(self.root)
+        return [path for path in paths
+                if path in indexed or os.path.lexists(os.path.join(root, path))]
 
 
 def read_game_config(root):

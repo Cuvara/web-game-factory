@@ -69,7 +69,7 @@ class FakeOrca:
             self.worktree = str(path).replace("\\", "/")
             result = {
                 "runId": "run_x", "taskId": "task_x", "dispatchId": "ctx_x",
-                "launch": {"effective": {"agent": "claude"}},
+                "launch": {"effective": {"agent": "claude"}}, "turnStart": "observed",
                 "effects": [
                     {"kind": "worktree", "action": "created",
                      "id": f"repo-id::{self.worktree}"},
@@ -260,7 +260,7 @@ class TrustBlocked(FakeOrca):
                 return 1, json.dumps({"ok": False, "error": {"message": "agent not ready"}})
             return 0, json.dumps({"ok": True, "result": {
                 "dispatchId": "ctx_retry", "taskId": "task_x", "runId": "run_x",
-                "launch": {"effective": {"agent": None}},
+                "launch": {"effective": {"agent": None}}, "turnStart": "observed",
                 "effects": [{"kind": "worktree", "action": "reused",
                              "id": f"repo-id::{self.worktree}"},
                             {"kind": "terminal", "action": "reused", "id": "term_x"},
@@ -310,6 +310,31 @@ class Trust(Base):
         self.assertEqual(retry[0][retry[0].index("--task") + 1], "task_x")
         self.assertEqual(entry["dispatch"], "ctx_retry")
         self.assertEqual(entry["worktree"], orca.worktree)
+
+
+class TurnStart(Base):
+    def test_a_task_typed_but_never_started_is_refused_and_not_recorded(self):
+        # Observed live: input accepted, turn unobserved, agent idle at an empty prompt.
+        orca = FakeOrca(self.repo, receipt_overrides={"turnStart": "unobserved"})
+        with self.assertRaisesRegex(DelegationError, "never started a turn"):
+            wgf_delegate.spawn("T30", "t", "do it", "silent-task", self.repo, runner=orca,
+                               ledger=self.ledger, sleep=lambda s: None)
+        self.assertEqual(wgf_delegate.read_ledger(self.ledger), [])
+
+    def test_a_turn_seen_later_on_the_worker_stage_is_accepted(self):
+        orca = FakeOrca(self.repo, receipt_overrides={"turnStart": "unobserved"})
+        real = orca.__call__
+
+        def later(argv):
+            code, out = real(argv)
+            if argv[1:3] == ["orchestration", "worker-show"]:
+                data = json.loads(out)
+                data["result"]["worker"] = {"stage": "turn_started"}
+                return code, json.dumps(data)
+            return code, out
+        entry = wgf_delegate.spawn("T31", "t", "do it", "late-turn", self.repo, runner=later,
+                                   ledger=self.ledger, sleep=lambda s: None)
+        self.assertEqual(entry["dispatch"], "ctx_x")
 
 
 class Audit(Base):

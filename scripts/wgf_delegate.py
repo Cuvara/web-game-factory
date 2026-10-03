@@ -300,6 +300,31 @@ def _recover_trust(result, run, runner, sleep=None):
     return retry
 
 
+def _confirm_turn(result, dispatch, runner=None, sleep=None, wait_s=150, poll_s=10):
+    """The agent must have STARTED working on the task, not merely had it typed at it.
+    Observed live: a receipt with the input 'accepted' but turnStart unobserved, and the
+    agent sitting at an empty prompt two hours later. Orca reports the turn as observed in
+    the receipt, or later on the dispatch's worker stage; wait for either, else refuse."""
+    import time
+    sleep = sleep or time.sleep
+    if result.get("turnStart") == "observed" or "turn_started" in (result.get("stages") or []):
+        return
+    waited = 0
+    while waited <= wait_s:
+        info = _orca(["orchestration", "worker-show", "--dispatch", dispatch, "--json"], runner)
+        worker = info.get("worker") or {}
+        stage = str(worker.get("stage") or "")
+        activity = str(((info.get("projection") or {}).get("stage") or {}).get("activity") or "")
+        if stage not in ("", "turn_start_unobserved", "input_accepted") or activity == "working":
+            return
+        sleep(poll_s)
+        waited += poll_s
+    raise DelegationError(
+        f"dispatch {dispatch}: the task was typed into the agent's terminal but the agent never "
+        f"started a turn in {wait_s} s (the prompt is likely empty). Stop it with "
+        f"`orca orchestration worker-stop --dispatch {dispatch}` and spawn again.")
+
+
 def spawn(task_id, title, spec, name, repo, base="main", agent="claude", run=None,
           model=None, runner=None, ledger=None, verify_git=True, trust_workspace=False,
           sleep=None):
@@ -347,6 +372,7 @@ def spawn(task_id, title, spec, name, repo, base="main", agent="claude", run=Non
             raise DelegationError(f"dispatch {result['dispatchId']} failed at "
                                   f"{result.get('failedStage')}: {result.get('lastError')}")
     placed = parse_receipt(result)
+    _confirm_turn(result, placed["dispatch"], runner, sleep)
     shown = _orca(["orchestration", "worker-show", "--dispatch", placed["dispatch"], "--json"],
                   runner)
     workspace = ((shown.get("projection") or shown).get("workspace") or {}).get("id") or ""

@@ -288,11 +288,15 @@ workflow:
     # An independent reviewer reads the commit develop made; it may not change it. Approve
     # continues to sdk (whose own commit sdk-review reads in turn); request-changes (FAILED,
     # route `request-changes`) goes back to develop with the blockers. Unrouted, a request
-    # for changes would fail the run, never continue.
+    # for changes would fail the run, never continue. Verify runs only after both reviews
+    # approve, so after verify fails the reviewer reads a commit nothing can have verified
+    # yet: the newest qa-report, when it is a fail this run recorded, is shown in the brief -
+    # its failing checks and recorded cause - with the instruction to judge the code, never
+    # to demand verify's result (docs/review-module.md). Otherwise it is not shown.
     - id: review
       type: review
       stage: title:prototype
-      inputs: [prototype-report, game-design, scaffold-record]
+      inputs: [prototype-report, game-design, scaffold-record, qa-report]
       outputs: [review-report]
       max_visits: 21
       on:
@@ -313,11 +317,12 @@ workflow:
     # after sdk), the change is prototype-report's commit..sdk commit. request-changes goes
     # back to develop with the blockers - the developer fixes the game side, sdk integrates
     # again, and both reviews run again; develop's own sdk-review.request-changes budget
-    # bounds the loop. A requested change never continues to verify.
+    # bounds the loop. A requested change never continues to verify. It is shown an open
+    # verify failure the same way review is.
     - id: sdk-review
       type: review
       stage: title:prototype
-      inputs: [sdk-report, prototype-report, game-design, scaffold-record]
+      inputs: [sdk-report, prototype-report, game-design, scaffold-record, qa-report]
       outputs: [review-report]
       max_visits: 21
       with:

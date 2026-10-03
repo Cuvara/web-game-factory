@@ -196,6 +196,14 @@ def _alive(pid):
         return True
 
 
+class VerifyFailsOnce(mock.MockVerificationStep):
+    """Verification that fails its first execution - a failing qa-report, route `fail` - and
+    passes after, the way a harness timeout the Factory then fixed did (2026-10-04)."""
+
+    def _scripted(self, context):
+        return "fail" if context.execution == 1 else "success"
+
+
 class ScriptedSdkStep(mock.MockSDKStep):
     """The sdk step's history effect, for real: one keyed integration commit on top of the
     development commit, reported the way wgf_sdk reports it. So `sdk-review` reviews a
@@ -275,7 +283,7 @@ class AgentLoop(unittest.TestCase):
                               text=True).stdout.strip()
 
     def run_workflow(self, reviewer_mode="approve", dev_mode="good", reviewer=None,
-                     developer=None, develop=None, execution=None):
+                     developer=None, develop=None, execution=None, verify=None):
         os.environ["WGF_TEST_DEV_MODE"] = dev_mode
         review_cfg = {"kind": "command",
                       "argv": [PY, self.reviewer, reviewer_mode, "{repo}", "{verdict}",
@@ -316,6 +324,8 @@ class AgentLoop(unittest.TestCase):
                 mock.register(registry)
                 registry.register("develop", DevelopStep)  # later wins over the mock
                 registry.register("sdk", Sdk)
+                if verify is not None:
+                    registry.register("verify", verify)
                 wgf_review.register(registry)
                 return registry
 
@@ -502,6 +512,50 @@ class AgentLoop(unittest.TestCase):
         # The approval that the run carried on with is of the second sdk commit, HEAD.
         self.assertEqual(self.reports()[-1]["reviewed_commit"], self.git("rev-parse", "HEAD"))
         self.assertEqual(self.reports()[-1]["verdict"], "approve")
+
+    def test_a_review_after_a_failed_verification_is_shown_the_failure(self):
+        # Verify runs only after both reviews approve. Once it fails, the next reviews read a
+        # commit nothing can have verified yet; their briefs carry the failing qa-report and
+        # say verify re-runs after the approval. Reviews before the failure are not told.
+        state = self.run_workflow(verify=VerifyFailsOnce)
+        self.assertEqual(state.status, RunStatus.COMPLETED, state.message)
+        steps = [(s, v, o, r) for s, v, _a, o, r in self.trail()
+                 if s in ("develop", "review", "sdk", "sdk-review", "verify")]
+        self.assertEqual(steps, [
+            ("develop", 1, "SUCCESS", "success"),
+            ("review", 1, "SUCCESS", "success"),
+            ("sdk", 1, "SUCCESS", "success"),
+            ("sdk-review", 1, "SUCCESS", "success"),
+            ("verify", 1, "FAILED", "fail"),
+            ("develop", 2, "SUCCESS", "success"),
+            ("review", 2, "SUCCESS", "success"),
+            ("sdk", 2, "SUCCESS", "success"),
+            ("sdk-review", 2, "SUCCESS", "success"),
+            ("verify", 2, "SUCCESS", "success"),
+        ])
+        review_dir = os.path.join(self.api.store.run_dir(state.run_id), "review")
+
+        def brief(stem):
+            with open(os.path.join(review_dir, f"{stem}.brief.md"), encoding="utf-8") as h:
+                return h.read()
+
+        for stem in ("review-1-1", "sdk-review-1-1"):
+            self.assertNotIn("## Verify failed on an earlier commit", brief(stem))
+        failed = self.reports("qa-report")[0]
+        for stem in ("review-2-1", "sdk-review-2-1"):
+            text = brief(stem)
+            self.assertIn("## Verify failed on an earlier commit", text)
+            self.assertIn(f"Verification failed `{failed['build_ref']['commit_sha'][:12]}`",
+                          text)
+            self.assertIn("Development was re-entered through `verify.fail`.", text)
+            self.assertIn("`mock-defect-5` (blocker) Scripted verification failure (mock).",
+                          text)
+            self.assertIn("never request changes because verify has not passed this commit",
+                          text)
+        # The qa-report it was shown is pinned like every other input it read.
+        second_review = self.reports(step="review")[-1]
+        self.assertIn("qa-report", {p["artifact_type"]
+                                    for p in second_review["provenance"]["inputs"]})
 
     def test_no_reviewer_is_recorded_as_skipped_never_as_approval(self):
         state = self.run_workflow(reviewer={"kind": "none", "argv": []})
@@ -783,8 +837,10 @@ class Registration(unittest.TestCase):
         self.assertEqual(ids[ids.index("sdk-review") + 1], "verify")
         self.assertEqual(review.on, {"request-changes": "develop"})
         self.assertEqual(definition.step("sdk-review").on, {"request-changes": "develop"})
+        # qa-report: an open verify failure is shown to the reviewer (report.verify_failure).
         self.assertEqual(set(review.inputs), {"prototype-report", "game-design",
-                                              "scaffold-record"})
+                                              "scaffold-record", "qa-report"})
+        self.assertIn("qa-report", definition.step("sdk-review").inputs)
         self.assertEqual(list(review.outputs), ["review-report"])
         self.assertIn("review-report", definition.step("develop").inputs)
 

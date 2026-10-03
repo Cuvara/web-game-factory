@@ -236,6 +236,7 @@ factory:
 - the core loop and MVP;
 - what development measured;
 - the previous review's blockers;
+- **verify failed on an earlier commit** - only while a verify failure is open (below);
 - **what the design and plan specified**. This section appears only when the committed
   `docs/development/brief.json` carries F1's `build_spec` / `dev_plan`. It lists:
   - every MVP reward, failure and HUD `feedback` line;
@@ -282,6 +283,42 @@ factory:
   restated rather than pointed at, because the reviewer runs in the game checkout, where the
   Factory's `core/` is not a path it can rely on;
 - the verdict contract, which is unchanged.
+
+### After verify fails
+
+Verify runs only after `review` and `sdk-review` approve. Once it fails, the run goes back to
+develop, and every review until verify runs again reads a commit nothing can have verified
+yet. A reviewer not told so asks for the one thing no commit can carry. On 2026-10-04 (Sky
+Marble, `new-game-20261003-082542-0de9b5`) verify failed on harness timeouts the Factory then
+fixed. The developer changed no game code, and the reviewer twice requested changes because
+the failures were "unproven until verify passes on this commit". The run hit
+`review.request-changes: 2` and blocked, with no code change able to clear it.
+
+So both review steps take `qa-report` as an optional input. When the newest one is a `fail`
+of this run (`report.verify_failure`: its `workflow.run_id` is this run, or it names none),
+the brief carries a section that gives:
+
+- the commit verify failed, its visit, and how development was re-entered (`verify.fail`, or
+  a later `review.request-changes`, from the develop brief's `loop`);
+- the recorded cause. `FAIL`: verify saw the checks fail and records no attribution - game or
+  environment is not recorded, and the developer's `known_issues` is a claim to check, not
+  evidence. `UNVERIFIED` / `BLOCKED_EXTERNAL`: verify could not establish the checks, and
+  the cause is outside the game;
+- each blocking defect with its repro (cut at 600 characters);
+- the rules: verify re-runs after the approval, so never request changes because verify has
+  not passed this commit. A failure with a cause in the source is a blocker, naming the
+  file. A failure with no cause in the code (a timeout, a port, the harness) is not a
+  blocker of this commit; the reviewer says in `notes` what it read. A commit that changes no
+  game code is not a defect by itself.
+
+Nothing else in the brief changes: the code checks, the gameplay lens and the verdict
+contract apply in full, and a defect the reviewer finds is a blocker whether or not verify
+saw it. A pass, another run's qa-report, or none: the section is absent. The qa-report is
+pinned in the review-report's `provenance.inputs` like every other input.
+
+The routing is unchanged. Verify still runs only after both approvals; re-running verify
+before review would need a cause the qa-report does not record, and a build no reviewer had
+approved would reach verify.
 
 The same values are also in the environment as `WGF_REVIEW_REPO`, `WGF_REVIEW_VERDICT`,
 `WGF_REVIEW_BRIEF` and `WGF_REVIEW_COMMIT`. Otherwise the reviewer's environment is an

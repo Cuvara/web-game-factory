@@ -61,7 +61,8 @@ Plus `wgf-status`, read-only.
 
 `commands/new-game.md` is **not a transition prompt**. It starts (or resumes) a run of
 `core/workflows/new-game.workflow.yaml` through the workflow engine, `bin/wgf new-game`, as a
-long-running process, and reports progress from `bin/wgf status`. The workflow file is the
+long-running process, and reports progress from `bin/wgf status`; `publish <run-id>` continues
+a run that drafted a release into the workflow's `publish` group (`bin/wgf publish --run`). The workflow file is the
 only step order; the prompt restates none of it and composes no `wgf-*` prompt. It reports
 the configured autonomy, warns before a real run whose init creates a GitHub repository, and
 never answers a gate: it refuses `--decision` and `decide`, and at a gate or handoff tells the

@@ -791,9 +791,13 @@ step to the YAML adds a command.
 Exit status: `0` completed (or ended by a decision, G4's kill), `1` failed / blocked /
 cancelled (or a slice that left its scope on a failure), `2` usage, `3` waiting or paused.
 
-`wgf release` prepares a release — a `release-manifest` in state `draft` — and stops.
-Building, packaging and publishing are the game repository's CI, behind G5 and G6, and are
-deliberately outside the engine.
+`wgf release` prepares a release — a `release-manifest` in state `draft` — and stops, and so
+does `wgf new-game`. Publication is the workflow's `publish` group, continued in the run that
+drafted the release: `wgf publish --run <run-id>` runs platform validation and stops at G5
+and then G6, each decided by a person; the portal submission follows only a G6 `publish`, and
+is a dry run unless the installation sets `factory.publish.mode: live` and
+`WGF_PUBLISH_LIVE=1` ([publish-module.md](publish-module.md)). The Claude plugin's surface
+for it is `/web-game-factory:new-game publish <run-id>`.
 
 ### `wgf new-game`
 

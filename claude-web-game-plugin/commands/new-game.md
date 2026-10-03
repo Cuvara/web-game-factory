@@ -1,7 +1,20 @@
 ---
 description: Run the Factory's new-game workflow end to end through the wgf engine; stop at every gate for a person.
-argument-hint: "[--mock [--mock-plan JSON] [--hold-gates]] [--project ID] [--from STEP] [--store DIR] [\"<game idea>\"] | resume <run-id> [--from STEP]"
+argument-hint: "[--mock [--mock-plan JSON] [--hold-gates]] [--project ID] [--from STEP] [--store DIR] [\"<game idea>\"] | resume <run-id> [--from STEP] | publish <run-id>"
 disable-model-invocation: true
+allowed-tools:
+  - Bash(python3 "${CLAUDE_PLUGIN_ROOT}/runtime/scripts/wgf.py" where *)
+  - Bash(python3 "${CLAUDE_PLUGIN_ROOT}/runtime/scripts/wgf.py" status *)
+  - Bash(python3 "${CLAUDE_PLUGIN_ROOT}/runtime/scripts/wgf.py" logs *)
+  - Bash(python3 "${CLAUDE_PLUGIN_ROOT}/runtime/scripts/wgf.py" new-game *)
+  - Bash(python3 "${CLAUDE_PLUGIN_ROOT}/runtime/scripts/wgf.py" resume *)
+  - Bash(python3 "${CLAUDE_PLUGIN_ROOT}/runtime/scripts/wgf.py" publish *)
+  - Bash(python "${CLAUDE_PLUGIN_ROOT}/runtime/scripts/wgf.py" where *)
+  - Bash(python "${CLAUDE_PLUGIN_ROOT}/runtime/scripts/wgf.py" status *)
+  - Bash(python "${CLAUDE_PLUGIN_ROOT}/runtime/scripts/wgf.py" logs *)
+  - Bash(python "${CLAUDE_PLUGIN_ROOT}/runtime/scripts/wgf.py" new-game *)
+  - Bash(python "${CLAUDE_PLUGIN_ROOT}/runtime/scripts/wgf.py" resume *)
+  - Bash(python "${CLAUDE_PLUGIN_ROOT}/runtime/scripts/wgf.py" publish *)
 ---
 
 # /new-game
@@ -53,6 +66,9 @@ Accept exactly these (the engine's own flags, `python3 "${CLAUDE_PLUGIN_ROOT}/ru
 - `resume <run-id>`, optionally with `--from <STEP>` and `--store <DIR>`: continues that
   run with the settings it started with - its idea among them, so an idea given with
   `resume` is refused
+- `publish <run-id>`, optionally with `--store <DIR>`: continues a run that
+  drafted a release into the workflow's `publish` group (`python3 "${CLAUDE_PLUGIN_ROOT}/runtime/scripts/wgf.py" publish --run <run-id>`),
+  with the settings that run started with
 
 With `--store <DIR>`, pass the same `--store <DIR>` to every `python3 "${CLAUDE_PLUGIN_ROOT}/runtime/scripts/wgf.py"` command for that
 run (status, logs, resume).
@@ -61,7 +77,7 @@ Refuse, and run nothing, if the arguments contain anything else — in particula
 `--decision`, `--note`, `decide`, `--budget-sessions`, `--budget-cost` or any other
 `--budget-*` (a decision or a budget is a person's, typed by that person), `--config` or
 `--workflow` (this surface runs this workflow under the configuration it reports),
-`--resume`, `--run` or `--force` (use `resume <run-id>`), `--quiet` or `--json`
+`--resume`, `--run` or `--force` (use `resume <run-id>` or `publish <run-id>`), `--quiet` or `--json`
 (the surface sets the output), a second command, or more than one idea (two quoted texts;
 ask the user to give the idea as one quoted string).
 
@@ -71,20 +87,33 @@ ask the user to give the idea as one quoted string).
    names an existing file: the Factory - this workflow, core, the engine and its shipped
    configuration - is the runtime inside this plugin, never the working directory. The
    working directory is the project: report `project_root` and `store`, where this run's
-   state and instance data are kept (`WGF_PROJECT_DIR` names another project). For `resume <run-id>`, read
+   state and instance data are kept (`WGF_PROJECT_DIR` names another project). For `resume <run-id>` and `publish <run-id>`, read
    `python3 "${CLAUDE_PLUGIN_ROOT}/runtime/scripts/wgf.py" status <run-id> --json` first and stop unless `workflow_id` is `new-game`.
    Then act on it without starting anything when there is nothing to continue:
-   `COMPLETED` — report it (step 6); `RUNNING` with liveness `running` — another
+   `COMPLETED` — report it (step 6) - for `publish <run-id>`, a run that drafted a release is
+   continued (step 4) rather than reported: its `publish` group has not run yet; `RUNNING` with liveness `running` — another
    process drives it, only report progress; `WAITING` at a gate whose `pending.timeout`
-   is not `eligible` — report the gate (step 6) and stop. Anything else (a stopped,
-   blocked, stale or failed run, or one waiting for input) is resumed at step 4.
-2. **Report the effective autonomy** from `where`'s `autonomy`, as configured — never change
-   it: `developer`, `reviewer`, `design_author`, `asset_author`, `model_author`,
-   `visualqa_judge`, `auto_approve` (and `timeout_auto_approve`), `init_source`,
-   `develop_budget`. With `--mock` every step is a placeholder, and a mock
-   run approves the reversible gates itself unless `--hold-gates` is given; gates in
-   `auto_approve` are approved either way. An unattended run is the project's own choice
-   (`profiles` lists the shipped overlays, e.g. `autonomous`); never install one.
+   is not `eligible` — report the gate (step 6) and stop. `FAILED` or `BLOCKED` —
+   report it first as step 6 does, with why: `blocked_reason` and the logs of the step at
+   `cursor`, its last agent message among them. Resuming re-runs that step, and a
+   deterministic failure fails again: resume only when the user confirms, after that report,
+   with step 3's warning for any agent session it starts; otherwise stop. Anything else (a
+   stopped, cancelled or stale run, or one waiting for input) is resumed at step 4.
+2. **Report the effective autonomy** — never change it. For a new run, from `where`'s
+   `autonomy`, as configured: `developer`, `reviewer`, `design_author`,
+   `asset_author`, `model_author`, `visualqa_judge`, `auto_approve` (and
+   `timeout_auto_approve`), `init_source`, `develop_budget`. A run that already exists
+   keeps what it started with: `auto_approve`, `timeout_auto_approve` and
+   `develop_budget` are the run's `params` in `python3 "${CLAUDE_PLUGIN_ROOT}/runtime/scripts/wgf.py" status <run-id> --json` (a key
+   that is absent there is none - no gate approves itself, no develop budget), never
+   `where`'s; the agents and `init_source` are read from the configuration when each step
+   runs, so those are `where`'s. When the two differ, say so: a configuration changed after
+   the run started does not change which of its gates approve themselves. With `--mock`
+   every step is a placeholder, and a mock run approves the reversible gates itself unless
+   `--hold-gates` is given; gates in `auto_approve` are approved either way - report the
+   gates that were approved, never the list as if it had happened. An unattended run is the
+   project's own choice (`profiles` lists the shipped overlays, e.g. `autonomous`); never
+   install one.
 3. **Outward effects.** For a new run without `--mock` (a mock run starts no session and
    creates nothing): with `init_source` `github`, warn that once G3 is passed the init
    step creates a GitHub repository (`gh repo create`); with a `command` developer,
@@ -92,6 +121,10 @@ ask the user to give the idea as one quoted string).
    that agent sessions will run unattended and cost money, within `develop_budget` when
    one is set (the budget bounds the developer; each other agent has its own per-call cap). Either way, start that run only after the user
    confirms. A `--mock` run, or a run with neither, starts without asking.
+   For `publish <run-id>`, say before starting that nothing reaches a portal until a person
+   decides G6, and that a portal submission after it is a dry run unless the installation
+   set `factory.publish.mode: live` and `WGF_PUBLISH_LIVE=1` - never set either. It
+   starts without asking.
 4. **Start** in the background, with the Bash tool's `run_in_background`: a run can take hours,
    far longer than a foreground command may. You are notified when it exits.
 
@@ -102,6 +135,7 @@ ask the user to give the idea as one quoted string).
      the idea as the engine recorded it: `params.idea` in `WORKFLOW_STARTED`, whitespace
      runs collapsed and nothing else changed - or that there is none.
    - resume: `python3 "${CLAUDE_PLUGIN_ROOT}/runtime/scripts/wgf.py" resume <run-id> [--from <STEP>] [--store <DIR>] --json`
+   - publish: `python3 "${CLAUDE_PLUGIN_ROOT}/runtime/scripts/wgf.py" publish --run <run-id> [--store <DIR>] --json`
 
    Where `python3` is not on PATH (Windows), use `python` in its place.
    Read `run_id` from the first event, `WORKFLOW_STARTED` (on resume, `WORKFLOW_RESUMED`),
@@ -132,9 +166,11 @@ ask the user to give the idea as one quoted string).
      concept to `workspace/research/concepts.yaml`. Then resume the run (step 4) and
      continue. Evidence is fetched, never written: if nothing relevant can be fetched, report
      that and stop. Never edit `.factory/` or an artifact, and never relax a setting.
-7. **Result.** Run id, final status, artifacts, and what comes next. The workflow ends at a
-   drafted release; G5 and G6 — building, packaging and publishing — are not part of it and
-   belong to the game repository's CI.
+7. **Result.** Run id, final status, artifacts, and what comes next. `python3 "${CLAUDE_PLUGIN_ROOT}/runtime/scripts/wgf.py" new-game` ends
+   at a drafted release (a `--mock` run stops earlier, at G4). Publication is the workflow's `publish` group, in the same run:
+   `/web-game-factory:new-game publish <run-id>` (`python3 "${CLAUDE_PLUGIN_ROOT}/runtime/scripts/wgf.py" publish --run <run-id>`) validates the release per
+   platform and stops at G5 and then G6, each a person's decision; the portal submission
+   follows only a G6 `publish` and is a dry run unless the installation made it live.
 
 ## The gate rule
 
@@ -146,7 +182,16 @@ decision and drives the run on, in the user's own shell, to its next stop — an
 next stop can be hours away. `/web-game-factory:new-game resume <run-id>` afterwards reports where it
 stopped, and continues it if that shell was interrupted.
 
-- at a gate: `! python3 "${CLAUDE_PLUGIN_ROOT}/runtime/scripts/wgf.py" decide <run-id> <choice> --note "..."`, then `/web-game-factory:new-game resume <run-id>`
+- at a gate: one complete line per choice in `pending.choices`, the run id and the choice
+  filled in - never `<run-id>`, `<choice>` or `a|b`, which the shell reads as
+  redirections and pipes - and a note for the user to replace with their own reason, which
+  is the decision record's only reason. At G4 of run `new-game-20261003-085640-5dc4c9`:
+
+  - `! python3 "${CLAUDE_PLUGIN_ROOT}/runtime/scripts/wgf.py" decide new-game-20261003-085640-5dc4c9 pass --note "replace: why it passes"`
+  - `! python3 "${CLAUDE_PLUGIN_ROOT}/runtime/scripts/wgf.py" decide new-game-20261003-085640-5dc4c9 iterate --note "replace: what to change"`
+  - `! python3 "${CLAUDE_PLUGIN_ROOT}/runtime/scripts/wgf.py" decide new-game-20261003-085640-5dc4c9 kill --note "replace: which criterion"`
+
+  Say that the note must be replaced before the line is run, then `/web-game-factory:new-game resume <run-id>`
 - at `develop` with `factory.develop.developer.kind: handoff` (`pending` names no gate):
   report the step, its message and the brief path it gives; the developer finishes the work
   and runs `! python3 "${CLAUDE_PLUGIN_ROOT}/runtime/scripts/wgf.py" resume <run-id> --decision done`, then `/web-game-factory:new-game resume <run-id>`.

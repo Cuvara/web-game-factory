@@ -9,6 +9,8 @@ and `core/` is still the contract.
 
 ## [Unreleased]
 
+**`/new-game` reaches publication and reports a run honestly** (adapter binding 1.8.0). `/web-game-factory:new-game publish <run-id>` continues a drafted release into the workflow's `publish` group (`wgf publish --run`), still answering no gate; the binding's new `continues` field names the group and `check-integrity.py` checks it. A `FAILED` or `BLOCKED` run is shown with its logs and resumed only when the user confirms; a resumed run's approvals and develop budget are reported from its own `params`, not the current config; decision lines are complete, with a note to replace; the Claude surface declares `allowed-tools` for its own engine calls (never `decide`). No artifact changes.
+
 **Publication runs inside the Factory** ([docs/publish-module.md](docs/publish-module.md)).
 The release lifecycle's tail - `release:validating`, G5, G6, `release:submitting` - is now the
 `publish` group of `new-game` (workflow version 6), continued in the run that drafted the

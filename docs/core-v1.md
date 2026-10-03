@@ -208,8 +208,9 @@ Not faked, not bypassed, and not part of the acceptance suite:
   (`pnpm test:sdk:live`, `web-game-template/docs/audits/`) is where live evidence would come
   from.
 - **GitHub repository creation** — `init` in `github` mode creates a real repository; golden
-  runs use `local` mode instead. Pushing, tagging and publishing stay behind G5/G6 in the game
-  repository's CI.
+  runs use `local` mode instead. Publication is the run's `publish` group behind G5 and G6
+  (`wgf publish --run <run-id>`, [publish-module.md](publish-module.md)), dry-run unless an
+  installation makes it live.
 - **A real agent host as developer/reviewer** — covered by opt-in tests
   (`WGF_LIVE_AGENT=1`, see `docs/review-module.md`); not run by the suite because it costs
   money and is not deterministic.

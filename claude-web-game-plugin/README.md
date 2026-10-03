@@ -101,6 +101,7 @@ none of it and composes no `/wgf-*` command.
 ```
 /new-game [--mock [--mock-plan JSON] [--hold-gates]] [--project ID] [--from STEP] [--store DIR]
 /new-game resume <run-id> [--from STEP] [--store DIR]
+/new-game publish <run-id> [--store DIR]
 ```
 
 Claude Code lists plugin commands under the plugin's namespace, so its full name is
@@ -109,11 +110,22 @@ of this plugin, the `/wgf-*` ones included).
 
 - Before a real run it reports the configured autonomy (`factory.yaml`: developer, reviewer,
   auto-approved gates, init source) and, with `init.source: github`, warns that passing G3
-  creates a GitHub repository and asks before starting. It never changes `factory.yaml`.
+  creates a GitHub repository and asks before starting. It never changes `factory.yaml`. For
+  a run that exists it reports the gate approvals and develop budget the run started with
+  (`wgf status <run> --json`, `params`), which a later config change does not alter.
+- A failed or blocked run is reported - its blocked reason and the failing step's logs - and
+  resumed only when you confirm: resuming re-runs the step, and spends again.
+- `publish <run-id>` continues a run that drafted a release into the workflow's `publish`
+  group (`wgf publish --run <run-id>`): platform validation, then G5 and G6, each a person's
+  decision; submission follows only G6 and is a dry run unless the installation made it live.
 - It **never answers a gate** - no `wgf decide`, no `--decision`, and it refuses those
   arguments: a command run from the session is recorded as a person's decision. At a gate or
-  a develop handoff it stops and shows what to type, e.g.
-  `! bin/wgf decide <run-id> approve --note "..."`, then `/new-game resume <run-id>`.
+  a develop handoff it stops and shows what to type: one complete line per choice, e.g.
+  `! bin/wgf decide new-game-20261003-085640-5dc4c9 approve --note "replace: why"`, whose
+  note you replace with your reason before running it, then `/new-game resume <run-id>`.
+- `allowed-tools` pre-approves the engine calls of its procedure (`where`, `status`, `logs`,
+  `new-game`, `resume`, `publish`), so a restrictive permission mode does not stop it reading
+  its own run. `decide` is not among them.
 - `disable-model-invocation: true`: only a person starts a run.
 - With the shipped `factory.yaml` a real run still waits at G2, G3 and the develop handoff,
   and release refuses an unreviewed build; making it unattended up to G4 is installation

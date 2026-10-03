@@ -104,6 +104,15 @@ Then, in Claude Code:
 The command reports the autonomy, says that agent sessions will run unattended and cost
 money within the budget, and starts after you confirm.
 
+Copy the profile **before** starting the run. A run snapshots its gate approvals
+(`auto_approve`, `timeout_auto_approve`) and its develop budget when it starts, in its
+`params`; the agents, the design author and `init.source` are read from the configuration
+each time a step runs. A profile copied into a run that already started is therefore applied
+by half: its authors, developer and init change, but its gates still wait for you and its
+develop step has no budget it did not start with. `/web-game-factory:new-game resume <run>`
+reports the run's own approvals and budget (`wgf status <run> --json`, `params`), not the
+copied file's; start a new run to get the profile's.
+
 ## Research needs evidence, which the research role fetches
 
 Research is autonomous but not evidence-free. It reads evidence snapshots from the project's
@@ -137,7 +146,7 @@ step. Before this, 9 of 11 concepts reached design and failed its consistency ru
 
 | | |
 |---|---|
-| G4 prototype review | pass, iterate or kill - always a person: `! … wgf.py decide <run> pass --note "..."` |
+| G4 prototype review | pass, iterate or kill - always a person: `! … wgf.py decide new-game-20261003-085640-5dc4c9 pass --note "hits the session target; retry reads well"`, the run id and the note your own |
 | release | runs after a G4 pass; drafts only. `wgf new-game` ends there |
 | publication | `wgf publish --run <run>` is a person's act. G5 (reversible; the autonomous profile does not auto-approve it either) and G6 (`publish`/`reject`: irreversible, always a person). The `submit` step is dry-run until an installation sets `factory.publish.mode: live` AND `WGF_PUBLISH_LIVE=1`; a login, CAPTCHA, second factor, unconfirmed portal terms or a missing session stops it for a person. G7 (spend) stays the game repository's, and human |
 | budget | raising it after it is spent |

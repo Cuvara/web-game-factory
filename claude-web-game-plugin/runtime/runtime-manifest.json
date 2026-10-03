@@ -249,7 +249,7 @@
     "scripts/wgf_listing/validation.py": "sha256:ff84e9002f4cbf14801e35f679fd2f451f21fffa3c5cef6337adf961af6e1da7",
     "scripts/wgf_playability/__init__.py": "sha256:14bd2c57782b13824a0ad3ca15d221fed1b05d08e7fd01c8ac1c7badd9d60ba9",
     "scripts/wgf_playability/analysis.py": "sha256:a977e2c2f921860d9c391cd5c4f0b3cfb3f5247898dcee75eb5c63363b202e67",
-    "scripts/wgf_playability/bot.spec.ts": "sha256:b9ebce5e9f0da142a56c8290c2a4f518d4e4578dcab7a6833c60aa02e347b24e",
+    "scripts/wgf_playability/bot.spec.ts": "sha256:8c06457e0bc6774a1352cda866d2d0f94728b4776b4ebbbae359959beec9eff4",
     "scripts/wgf_playability/step.py": "sha256:c1be81091bfe2f630c7956f2c0b0398d9501369bf089328464a66bc84d60cb10",
     "scripts/wgf_production/__init__.py": "sha256:e6cde18f87031030ca08ba5a2f8fec329ec6d6201c812e14e2490a0327400a0e",
     "scripts/wgf_production/checks.py": "sha256:7580e4059b3779e223b2891c75d5c826204faba99454657c5203f4d07aaa153d",

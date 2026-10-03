@@ -12,12 +12,13 @@ from wgflib.isolation import (  # noqa: F401
     diff,
     guarded_paths,
     is_sensitive,
+    outside,
     restore,
     restore_guarded,
     take,
     take_guarded,
 )
 
-__all__ = ["Git", "GitError", "Snapshot", "take", "diff", "restore", "is_sensitive",
+__all__ = ["Git", "GitError", "Snapshot", "take", "diff", "outside", "restore", "is_sensitive",
            "EXPLICIT_PATHS", "GIT_METADATA", "DEFAULT_GUARDED_PATHS", "guarded_paths",
            "take_guarded", "restore_guarded"]

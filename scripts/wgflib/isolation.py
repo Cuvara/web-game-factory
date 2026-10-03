@@ -13,14 +13,19 @@ A reviewer is read-only. Asking it to be is not enough - an agent that "fixes on
 thing while it is in there" has turned a review into an unreviewed commit - so the step
 fingerprints everything a reviewer could change and compares:
 
-  * HEAD, the branch HEAD points at, and every ref (a reviewer that commits, stashes,
-    tags or resets is caught here);
+  * HEAD, the branch HEAD points at, that branch's ref and this checkout's per-worktree
+    refs (refs/bisect, refs/worktree, refs/rewritten) - a reviewer that commits, resets or
+    switches branches is caught here;
   * `git status --porcelain=v1 -z --untracked-files=all --ignored=no` (staged changes);
   * sha256 and executable bit of every tracked file and every untracked, non-ignored file;
   * explicitly, whatever git's view: the package manifest, lockfiles, tests, CI and tool
     configuration - by path, so a reviewer that also edited .gitignore to hide them is
     still caught;
-  * the git metadata that changes what git or the next commit does: .git/config, hooks,
+  * the repository config this checkout runs under (`config` in the common git
+    directory), entry by entry - except other branches' `branch.<name>.*` sections and the
+    two keys `git worktree add` writes (`extensions.relativeWorktrees`,
+    `core.repositoryformatversion`);
+  * the git metadata that changes what git or the next commit does: config.worktree, hooks,
     info/ (exclude, attributes, sparse-checkout), objects/info (alternates, grafts),
     submodules' config, hooks and info, and in-progress operation state (MERGE_HEAD,
     rebase-*, sequencer, ...) - a hook is code that runs on the next commit, an
@@ -38,6 +43,15 @@ fingerprints everything a reviewer could change and compares:
     `fingerprint_ignored: false` turns this off for checkouts where the walk is too slow;
   * the Factory's own guarded paths: its code (scripts/, bin/), core/ (the workflow
     definitions, the gates and the contracts) and the installation config.
+
+What is not guarded: the rest of the repository. A game repository may have several
+worktrees, and delegated agents commit on their own branches in their own worktrees while a
+review runs (docs/orca-delegation.md). Their branch refs, tags, the shared stash,
+.git/worktrees/* and their branches' config are theirs: a change there is listed by
+`outside()` as a note, never a violation, and `restore` never writes, deletes or rewinds
+any of it - a restore that "put back" another worktree's branch would destroy its work. The
+cost: a reviewer that tags, stashes, or commits on another branch and switches back is
+noted, not failed. None of that changes the checkout the review was of.
 
 What it cannot see: anything outside the checkout and the guarded paths, and a process the
 reviewer left behind that writes after the second snapshot (wgflib.procs ends the
@@ -58,9 +72,9 @@ import stat
 
 from . import gitsafe, paths, procs
 
-__all__ = ["Git", "GitError", "Snapshot", "take", "diff", "restore", "is_sensitive",
-           "EXPLICIT_PATHS", "DEFAULT_GUARDED_PATHS", "guarded_paths", "take_guarded",
-           "restore_guarded"]
+__all__ = ["Git", "GitError", "Snapshot", "take", "diff", "outside", "restore",
+           "is_sensitive", "EXPLICIT_PATHS", "DEFAULT_GUARDED_PATHS", "guarded_paths",
+           "take_guarded", "restore_guarded"]
 
 # The Factory's own code (scripts/, bin/), core/ (the workflow definitions, the gates and the
 # contracts) and the installation config: what decides what a review, and every later
@@ -90,15 +104,41 @@ _KEEP_BYTES = 4 * 1024 * 1024
 
 # Inside the git directory: what is fingerprinted (and kept, and written back). Objects
 # are content-addressed and adding one changes nothing; refs are compared through
-# for-each-ref; index, logs and ORIG_HEAD are rewritten by the restore itself.
+# for-each-ref; index, logs and ORIG_HEAD are rewritten by the restore itself; `config` is
+# compared entry by entry (_config), because other worktrees write their branches into it.
 GIT_METADATA = (
-    "config", "config.worktree", "hooks", "info", "objects/info", "modules", "shallow",
+    "config.worktree", "hooks", "info", "objects/info", "modules", "shallow",
     "commondir", "MERGE_HEAD", "MERGE_MSG", "MERGE_MODE", "CHERRY_PICK_HEAD",
     "REVERT_HEAD", "BISECT_START", "rebase-merge", "rebase-apply", "sequencer",
 )
 # Skipped while walking GIT_METADATA (a submodule's git dir under modules/ holds its own).
 _GIT_SKIP = {"objects", "logs", "refs", "index", "ORIG_HEAD", "FETCH_HEAD", "packed-refs",
              "worktrees", "lfs"}
+
+
+# Refs this checkout owns besides its branch: the per-worktree refs (git-worktree(1)).
+_WORKTREE_REFS = ("refs/bisect/", "refs/worktree/", "refs/rewritten/")
+# Repository config keys another worktree's `git worktree add` writes. Neither changes how
+# this checkout behaves (an extension git does not know makes every later git call fail,
+# which the after-snapshot reports as a write).
+_SHARED_CONFIG_KEYS = ("extensions.relativeworktrees", "core.repositoryformatversion")
+
+
+def _owned_ref(name, branches):
+    """A ref the guard owns: the checked-out branch, or a per-worktree ref."""
+    return name in branches or name.startswith(_WORKTREE_REFS)
+
+
+def _owned_config_key(key, branch):
+    """A config key that changes this checkout. `branch.<name>.*` belongs to that branch:
+    another worktree adding a branch with --track writes one."""
+    if key in _SHARED_CONFIG_KEYS:
+        return False
+    section, _, rest = key.partition(".")
+    subsection = rest.rpartition(".")[0]
+    if section != "branch" or not subsection:
+        return True  # branch.autoSetupMerge and the like are repository-wide
+    return branch == "refs/heads/" + subsection
 
 
 def is_sensitive(path):
@@ -151,6 +191,12 @@ class Git:
         if self.pinned_git_dir is None:
             self.pinned_git_dir = self.run("rev-parse", "--absolute-git-dir").strip()
         return self.pinned_git_dir
+
+    def common_dir(self):
+        """The repository's common git directory: the git directory itself, or for a linked
+        worktree the main one, which holds the config every worktree runs under."""
+        found = self.run("rev-parse", "--git-common-dir").strip()
+        return os.path.normpath(os.path.join(self.git_dir(), found))
 
     def status(self):
         return self.run("status", "--porcelain=v1", "-z", "--untracked-files=all",
@@ -257,6 +303,32 @@ def _git_metadata(git_dir, keep):
     return digests
 
 
+def _config(git, path, branch, kept=None):
+    """The config file at `path`, split into the entries the guard owns and the rest:
+    {"owned": ((key, value), ...), "others": {key: [values]}}, or None when there is no file.
+    Read with `git config --file`, which parses one file and runs nothing. A file git cannot
+    parse is owned whole (by digest) and its others are unknown (None)."""
+    digest, content = _digest_file(path)
+    if digest is None:
+        return None
+    if kept is not None and content is not None:
+        kept[("config", "config")] = content
+    result = git.run("config", "--file", path, "--null", "--list", check=False, raw=True)
+    if not result.ok:
+        return {"owned": (("(unreadable)", digest),), "others": None}
+    owned, others = [], {}
+    for entry in result.stdout.split("\0"):
+        if not entry:
+            continue
+        key, newline, value = entry.partition("\n")
+        value = value if newline else None
+        if _owned_config_key(key, branch):
+            owned.append((key, value))
+        else:
+            others.setdefault(key, []).append(value)
+    return {"owned": tuple(owned), "others": others}
+
+
 class Snapshot:
     def __init__(self):
         self.head = None
@@ -268,6 +340,8 @@ class Snapshot:
         self.ignored = set()    # top-level ignored entries, collapsed
         self.ignored_content = None  # relpath -> lstat identity inside them; None: not taken
         self.gitmeta = {}       # GIT_METADATA, relative to the git directory
+        self.config = None      # the repository config, split by _config
+        self.config_path = None
         self.factory = {}       # absolute path -> digest, for guarded Factory paths
         self.kept = {}          # ("explicit"|"gitmeta"|"factory", key) -> (bytes, mode)
         self.git_dir = None
@@ -313,6 +387,8 @@ def take(git, guarded_paths=(), fingerprint_ignored=True):
     keep = {}
     snap.gitmeta = _git_metadata(snap.git_dir, keep)
     snap.kept.update({("gitmeta", k): v for k, v in keep.items()})
+    snap.config_path = os.path.join(git.common_dir(), "config")
+    snap.config = _config(git, snap.config_path, snap.branch, snap.kept)
 
     _fingerprint_guarded(snap, guarded_paths)
     return snap
@@ -353,10 +429,14 @@ def diff(before, after):
     if before.branch != after.branch:
         violations.append({"path": "HEAD", "change": "branch-changed", "scope": "checkout",
                            "sensitive": True})
+    branches = {before.branch, after.branch} - {None}
     for ref in sorted(set(before.refs) | set(after.refs)):
-        if before.refs.get(ref) != after.refs.get(ref):
+        if before.refs.get(ref) != after.refs.get(ref) and _owned_ref(ref, branches):
             violations.append({"path": ref, "change": "ref-changed", "scope": "checkout",
                                "sensitive": True})
+    if (before.config or {}).get("owned") != (after.config or {}).get("owned"):
+        violations.append({"path": ".git/config", "change": "git-metadata",
+                           "scope": "checkout", "sensitive": True})
     seen = set()
     for change in (_compare(before.files, after.files, "checkout", is_sensitive)
                    + _compare(before.explicit, after.explicit, "checkout", lambda _: True)):
@@ -389,6 +469,55 @@ def diff(before, after):
         violations.append(change)
     violations.extend(_compare(before.factory, after.factory, "factory", lambda _: True))
     return violations
+
+
+def outside(before, after):
+    """What changed during the agent's run outside the guarded set: other branches' refs,
+    tags, the stash, other branches' config. Notes for the record, never violations - other
+    worktrees of the repository change these legitimately, and restore never touches them."""
+    notes = []
+    branches = {before.branch, after.branch} - {None}
+    for ref in sorted(set(before.refs) | set(after.refs)):
+        old, new = before.refs.get(ref), after.refs.get(ref)
+        if old != new and not _owned_ref(ref, branches):
+            change = "added" if old is None else "deleted" if new is None else "moved"
+            notes.append({"path": ref, "change": change})
+    old = (before.config or {}).get("others") or {}
+    new = (after.config or {}).get("others") or {}
+    for key in sorted(set(old) | set(new)):
+        if old.get(key) != new.get(key):
+            notes.append({"path": f".git/config:{key}", "change": "config-changed"})
+    return notes
+
+
+def _restore_config(git, before):
+    """Put back the config entries the guard owns, keeping what other worktrees changed in
+    the rest meanwhile: the old bytes are written back, then every entry outside the
+    guarded set that differs is set again as it is now."""
+    path = before.config_path
+    if path is None:
+        return []
+    current = _config(git, path, before.branch)
+    if (current or {}).get("owned") == (before.config or {}).get("owned"):
+        return []
+    if before.config is None:
+        _remove(path)
+    elif ("config", "config") in before.kept:
+        _write_back(path, before.kept[("config", "config")])
+    else:
+        return [f"{path}: too large to have been kept, cannot restore"]
+    if current is None or current.get("others") is None:
+        return []  # nothing readable to carry over
+    was = (before.config or {}).get("others") or {}
+    now = current["others"]
+    for key in sorted(set(was) | set(now)):
+        if was.get(key) == now.get(key):
+            continue
+        git.run("config", "--file", path, "--unset-all", key, check=False)
+        for value in now.get(key, []):
+            git.run("config", "--file", path, "--add", key,
+                    "true" if value is None else value)
+    return []
 
 
 def _write_back(path, kept):
@@ -428,7 +557,9 @@ def restore(git, before, guarded_paths=()):
     """Undo whatever the reviewer did. Returns (restored, problems).
 
     Git's own metadata is put back first, from memory and without running git, so that
-    nothing below runs under configuration the reviewer wrote. Content changed inside a
+    nothing below runs under configuration the reviewer wrote; then the config's guarded
+    entries, through `git config --file`, which runs nothing. Refs and config outside the
+    guarded set are never written (see `outside`). Content changed inside a
     pre-existing ignored entry cannot be put back (its bytes were never kept): files added
     there are removed, anything else is reported and the review BLOCKS."""
     problems = []
@@ -437,15 +568,18 @@ def restore(git, before, guarded_paths=()):
         if before.git_dir:
             problems += _restore_files(before.gitmeta, _git_metadata(before.git_dir, {}),
                                        "gitmeta", before.git_dir, before.kept)
+        problems += _restore_config(git, before)
         after = take(git, guarded_paths, fingerprint_ignored)
         if after.branch != before.branch:
             if before.branch:
                 git.run("symbolic-ref", "HEAD", before.branch)
             else:
                 git.run("update-ref", "--no-deref", "HEAD", before.head)
+        # Only per-worktree refs: the checked-out branch is put back by `reset --hard` below,
+        # and every other ref is someone else's - never deleted, never rewound.
         for ref in sorted(set(before.refs) | set(after.refs)):
             old, new = before.refs.get(ref), after.refs.get(ref)
-            if old == new or ref == before.branch:
+            if old == new or not _owned_ref(ref, ()):
                 continue
             if old is None:
                 git.run("update-ref", "-d", ref)

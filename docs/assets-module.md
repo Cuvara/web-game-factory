@@ -221,8 +221,10 @@ helpers drew every file, and a lead iterated it while looking at renders
 2. **It writes only into a Factory-owned scratch directory**, `author-set/out/`
    (`{out}`), and runs only one command, the Factory's preview (`{preview}`:
    `python3 wgf_assets/preview.py author-set/job.json`). The host enforces both: in Claude
-   Code, `--allowedTools "Read" "Edit(/{out}/**)" "Bash({preview})"` with `--permission-mode
-   dontAsk` - an `Edit` rule covers every file-writing tool, `//` makes the path absolute, and
+   Code, `--allowedTools "Read" "Edit({out_rule}/**)" "Bash({preview})"` with `--permission-mode
+   dontAsk` - an `Edit` rule covers every file-writing tool, `{out_rule}` is `{out}` as a
+   permission rule names it (`//` and the POSIX form, `//c/Users/...` on Windows;
+   `wgflib/permpath.py`; the older `Edit(/{out}/**)` is read as this), and
    the `Bash` rule matches exactly that command (verified by a real call on CLI 2.1.280:
    a write outside `{out}`, the script with other arguments, and any other command were each
    refused). The job file it is run with sits outside `{out}`, so the author cannot point the
@@ -706,7 +708,7 @@ python3 scripts/wgf-assets.py build --design design.json --root ../my-game \
 # The set author: one session for every 2D drawing, shown the rendered contact sheet.
 python3 scripts/wgf-assets.py build --design design.json --root ../my-game --author-mode set \
     --author-command claude -p {prompt} --tools Read,Write,Edit,Bash \
-    --allowedTools Read "Edit(/{out}/**)" "Bash({preview})" --permission-mode dontAsk ...
+    --allowedTools Read "Edit({out_rule}/**)" "Bash({preview})" --permission-mode dontAsk ...
 # Judge and render a set by hand (what the set author runs): problems, then the sheet's path.
 python3 scripts/wgf_assets/preview.py <work>/author-set/job.json
 # Check a checkout against its runtime manifest (what the verify step runs).

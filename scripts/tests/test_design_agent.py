@@ -28,6 +28,10 @@ from wgflib.workflow.model import StepOutcome  # noqa: E402
 HOST = r'''
 import json, os, sys, time
 mode, request_path, draft_path = sys.argv[1:4]
+if sys.argv[4:]:
+    # Anything after the draft: the rendered rest of the argv (a permission rule).
+    with open(os.path.join(os.path.dirname(draft_path), "argv.json"), "w") as handle:
+        json.dump(sys.argv[4:], handle)
 if mode == "env":
     # What the host was given: where the tests look for a leaked secret.
     with open(os.path.join(os.path.dirname(draft_path), "env.json"), "w") as handle:
@@ -160,6 +164,25 @@ class AnAgentImprovesTheDraft(AgentCase):
         result = self.run_design(self.config("stdout", draft_from="stdout"))
         self.assertEqual(result.outcome, StepOutcome.SUCCESS, result.error)
         self.assertTrue(result.artifacts[0].content["fantasy"].startswith("Improved"))
+
+
+    def test_the_write_rule_names_the_draft_absolutely_on_every_host_os(self):
+        # F11: `Edit(/{draft})` rendered `Edit(/C:\...)` on Windows, which the host reads
+        # as project-relative, so every write was denied. Both forms now render the rule.
+        from wgflib import permpath
+        config = self.config("improve")
+        config["design"]["agent"]["argv"] += ["Edit({draft_rule})", "Edit(/{draft})"]
+        result = self.run_design(config)
+        self.assertEqual(result.outcome, StepOutcome.SUCCESS, result.error)
+        drafts = [os.path.join(root, name) for root, _, names in os.walk(self.scratch)
+                  for name in names if name.endswith(".draft.json")]
+        with open(os.path.join(os.path.dirname(drafts[0]), "argv.json"),
+                  encoding="utf-8") as handle:
+            rendered = json.load(handle)
+        rule = "Edit(" + permpath.rule_path(drafts[0]) + ")"
+        self.assertEqual(rendered, [rule, rule])
+        self.assertTrue(rule.startswith("Edit(//"))
+        self.assertNotIn("\\", rule)
 
 
 class TheModuleStillJudges(AgentCase):

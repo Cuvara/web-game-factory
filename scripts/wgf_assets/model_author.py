@@ -58,7 +58,10 @@ show them, which reach the author's request as `notes` and `frames`. `settings`:
                           {request} the request JSON, {spec} where to write the spec JSON
                           (each mode), {dir} the directory the specs are written in (set
                           mode: one <id>.model.json per asset; each mode: {spec}'s), {prompt}
-                          a one-paragraph instruction
+                          a one-paragraph instruction; {request_rule}, {spec_rule},
+                          {dir_rule} the paths as a host permission rule names them
+                          (wgflib.permpath: `Edit({dir_rule}/**)` on every host OS; the
+                          older `Edit(/{dir}/**)` is read as that)
     spec_from             file (default: the author writes the spec files; on a repair or
                           review they hold the previous specs, to edit in place) | stdout
                           (each: the spec JSON last; set: {"models": {id: spec}} last)
@@ -87,7 +90,7 @@ import json
 import os
 import re
 
-from wgflib import agentenv, jsonschema_lite, paths, procs
+from wgflib import agentenv, jsonschema_lite, paths, permpath, procs
 
 from . import blender, gltf, model_quality, modelspec
 from . import render as render_mod
@@ -611,11 +614,12 @@ class _Session:
                   "dir": self.directory, "prompt": ""}
         values["prompt"] = prompt.format(**values)
         try:
-            return [part.format(**values) for part in self.argv]
+            return permpath.format_argv(self.argv, values, ("request", "spec", "dir"))
         except (KeyError, IndexError, ValueError) as exc:
             raise ModelAuthorError(f"the model author's argv has a placeholder this author "
                                    f"does not provide ({exc}); use {{request}}, {{spec}}, "
-                                   f"{{dir}}, {{prompt}}, and double any literal brace") from exc
+                                   f"{{dir}}, {{prompt}}, {{dir_rule}}, and double any "
+                                   f"literal brace") from exc
 
     def _run(self, command, stem):
         log_path = os.path.join(self.directory, f"{stem}.log")

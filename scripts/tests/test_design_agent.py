@@ -7,6 +7,7 @@ through wgflib.procs), so the tests are deterministic and offline.
     python -m unittest discover scripts/tests
 """
 
+import hashlib
 import json
 import os
 import shutil
@@ -24,7 +25,7 @@ from wgf_design import content as content_rules  # noqa: E402
 from wgf_design.agent import BUILD_SPEC_KEYS, REQUIRED_KEYS, check_shape  # noqa: E402
 from wgf_design.platforms import load_platforms  # noqa: E402
 from wgflib import genre_models  # noqa: E402
-from wgflib.workflow.model import StepOutcome  # noqa: E402
+from wgflib.workflow.model import ArtifactRef, StepOutcome  # noqa: E402
 
 # The stand-in host. argv: <mode> <request> <draft>. It reads the request, edits the
 # starting draft as the mode says, and writes it (or prints it, or misbehaves).
@@ -75,6 +76,25 @@ elif mode == "cubes":
             for key in ("role", "dimension", "readability"):
                 asset.pop(key, None)
         del draft["build_spec"]["visual_identity"]["ui"]
+elif mode in ("revise", "revise-repairs"):
+    # What a re-entered design was given: the base, the delta, the prompt, the seeded file.
+    with open(draft_path, encoding="utf-8") as handle:
+        seeded = json.load(handle)
+    stem = os.path.basename(draft_path)[:-len(".draft.json")]
+    with open(os.path.join(os.path.dirname(draft_path), f"seen-{stem}.json"), "w") as handle:
+        json.dump({"starting_draft": request["starting_draft"], "seeded": seeded,
+                   "revision": request.get("revision"),
+                   "identity_kits": "identity_kits" in request,
+                   "repair": request.get("repair"), "rest": sys.argv[4:]}, handle)
+    draft = seeded
+    if mode == "revise-repairs" and "repair" in request:
+        # Fixes exactly the problem, from the revised base the request names.
+        draft["build_spec"]["controls"]["primary_input"] = \
+            request["starting_draft"]["build_spec"]["controls"]["primary_input"]
+    else:
+        draft["fantasy"] = "Revised: " + draft["fantasy"]
+        if mode == "revise-repairs":
+            draft["build_spec"]["controls"]["primary_input"] = "tap"
 elif mode == "garbage":
     open(draft_path, "w").write("this is not json")
     sys.exit(0)
@@ -449,6 +469,219 @@ class HostFailures(AgentCase):
         self.assertEqual(result.artifacts[0].content["provenance"]["produced_by"]["actor"],
                          "automation")
         self.assertEqual(AgentAuthor.actor, "ai")
+
+
+class ARevisionStartsFromTheRunsDesign(AgentCase):
+    """Found live (2026-10-04, a 2D brick-breaker): the operator grew the strategy's content
+    and re-ran the design in the same run, and the agent author started again from the
+    archetype's draft - a new identity kit, the strategy's content lost. A re-entry (a new
+    visit) revises the run's previous game-design, told what changed in the strategy since it.
+    A resumed execution of the same visit is not a re-entry: it continues the repair of its
+    own last draft, still naming the same base."""
+
+    GROWN = "32 hand-built levels in 4 worlds of 8, every move on the beat."
+
+    def setUp(self):
+        super().setUp()
+        self.run_dir = os.path.join(self.scratch, "run")
+
+    def config_with_prompt(self, mode):
+        return self.config(mode, argv=[sys.executable, self.host, mode, "{request}", "{draft}",
+                                       "{prompt}"])
+
+    def store(self, artifact_id, version, content):
+        """`content` written where the engine keeps it; its ArtifactRef."""
+        location = f"artifacts/{artifact_id}/v{version}.json"
+        path = os.path.join(self.run_dir, *location.split("/"))
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        payload = json.dumps(content, indent=2).encode("utf-8")
+        with open(path, "wb") as handle:
+            handle.write(payload)
+        return ArtifactRef(id=artifact_id, type=artifact_id, version=version, location=location,
+                           checksum="sha256:" + hashlib.sha256(payload).hexdigest(),
+                           content_hash=content["provenance"]["content_hash"], seq=version)
+
+    def execute(self, config, strategy, visit, previous_outputs=()):
+        context = design_tests.FakeContext(config, execution=visit)
+        context.run_dir = self.run_dir
+        context.visit, context.attempt = visit, 1
+        context.previous_outputs = list(previous_outputs)
+        step = design_tests.FixedClockStep(design_tests.FakeDefinition())
+        return step.execute(design_tests.FakeInputs(strategy), context)
+
+    def first_design(self):
+        """Visit 1 by the agent author, stored as the run would hold it: the design and the
+        strategy it was made from."""
+        strategy = design_tests.load_strategy()
+        first = self.execute(self.config("improve"), strategy, 1)
+        self.assertEqual(first.outcome, StepOutcome.SUCCESS, first.error)
+        self.store("title-strategy", 1, strategy)
+        design = first.artifacts[0].content
+        return design, self.store("game-design", 1, design)
+
+    def grown_strategy(self):
+        strategy = design_tests.load_strategy()
+        strategy["one_liner"] = self.GROWN
+        return design_tests.rehash(strategy)
+
+    def seen(self, stem):
+        with open(os.path.join(self.run_dir, "design", f"seen-{stem}.json"),
+                  encoding="utf-8") as handle:
+            return json.load(handle)
+
+    def test_a_first_design_starts_from_the_archetype(self):
+        result = self.execute(self.config_with_prompt("revise"), design_tests.load_strategy(), 1)
+        self.assertEqual(result.outcome, StepOutcome.SUCCESS, result.error)
+        seen = self.seen("1-1")
+        self.assertIsNone(seen["revision"])
+        self.assertTrue(seen["identity_kits"])
+        self.assertIn("identity_kits", seen["rest"][0])
+        self.assertNotIn("REVISION", seen["rest"][0])
+        self.assertNotIn("revises", result.artifacts[0].metadata)
+        self.assertNotIn("supersedes", result.artifacts[0].content["provenance"])
+
+    def test_a_re_entry_revises_the_previous_design_with_the_strategy_delta(self):
+        previous, ref = self.first_design()
+        result = self.execute(self.config_with_prompt("revise"), self.grown_strategy(), 2, [ref])
+        self.assertEqual(result.outcome, StepOutcome.SUCCESS, result.error)
+        seen = self.seen("2-1")
+        # A new visit is not the resume of visit 1: no repair of visit 1's last draft.
+        self.assertIsNone(seen["repair"])
+        # The starting draft is the previous design, identity and content and all - not the
+        # archetype's.
+        self.assertTrue(seen["starting_draft"]["fantasy"].startswith("Improved by the agent: "))
+        self.assertEqual(seen["seeded"], seen["starting_draft"])
+        self.assertEqual(seen["starting_draft"]["build_spec"]["visual_identity"],
+                         previous["build_spec"]["visual_identity"])
+        self.assertEqual(seen["starting_draft"]["build_spec"]["content"],
+                         previous["build_spec"]["content"])
+        self.assertNotIn("provenance", seen["starting_draft"])
+        self.assertNotIn("consistency", seen["starting_draft"])
+        self.assertNotIn("tiers", seen["starting_draft"]["scope"])
+        self.assertFalse(seen["identity_kits"])
+        # The delta: exactly what changed in the strategy, before and after.
+        revision = seen["revision"]
+        self.assertEqual(revision["revises_version"], 1)
+        self.assertEqual(revision["revises"], previous["provenance"]["artifact_id"])
+        delta = revision["strategy_delta"]
+        self.assertTrue(delta["found"])
+        fields = {change["field"]: change for change in delta["changes"]}
+        self.assertEqual(list(fields), ["one_liner"])
+        self.assertEqual(fields["one_liner"]["after"], self.GROWN)
+        self.assertEqual(fields["one_liner"]["before"], design_tests.load_strategy()["one_liner"])
+        # The rule: keep everything the change does not require changing.
+        prompt = seen["rest"][0]
+        self.assertIn("REVISION", prompt)
+        self.assertIn("game-design version 1", prompt)
+        self.assertIn("strategy_delta", prompt)
+        self.assertIn("keep everything the", prompt)
+        for kept in ("identity", "palette", "fonts", "assets", "controls", "UI"):
+            self.assertIn(kept, prompt)
+        self.assertNotIn("identity_kits", prompt)
+        # Every other bar is still stated: content, depth and production art.
+        for rule_id, _meaning in content_rules.RULES:
+            self.assertIn(rule_id, prompt)
+        self.assertIn("build_spec.depth", prompt)
+        self.assertIn("quality_bar", prompt)
+        # The revision records what it revises.
+        design = result.artifacts[0].content
+        self.assertTrue(design["fantasy"].startswith("Revised: Improved by the agent: "))
+        self.assertEqual(design["provenance"]["supersedes"],
+                         previous["provenance"]["artifact_id"])
+        self.assertEqual(result.artifacts[0].metadata["revises"], 1)
+        self.assertIn("revises v1", result.message)
+        self.assertEqual(design["build_spec"]["visual_identity"],
+                         previous["build_spec"]["visual_identity"])
+
+    def test_repair_rounds_keep_the_revised_base(self):
+        previous, ref = self.first_design()
+        result = self.execute(self.config_with_prompt("revise-repairs"), self.grown_strategy(),
+                              2, [ref])
+        self.assertEqual(result.outcome, StepOutcome.SUCCESS, result.error)
+        repaired = self.seen("2-1-repair1")
+        self.assertTrue(any("primary_input" in p for p in repaired["repair"]["problems"]))
+        # The repair round works on the revised draft, and still names its base and delta.
+        self.assertTrue(repaired["seeded"]["fantasy"].startswith("Revised: Improved by"))
+        self.assertTrue(repaired["starting_draft"]["fantasy"].startswith("Improved by"))
+        self.assertEqual(repaired["revision"]["revises_version"], 1)
+        self.assertIn("REVISION", repaired["rest"][0])
+        self.assertEqual(result.artifacts[0].content["provenance"]["supersedes"],
+                         previous["provenance"]["artifact_id"])
+
+    def test_a_resumed_revision_continues_its_own_repair_from_the_same_base(self):
+        """#27's resume rule and the revision together: visit 2 fails its repair rounds, and
+        the resumed execution of visit 2 repairs visit 2's last draft - not visit 1's design
+        afresh, not the archetype - and the request still names the base and the delta."""
+        previous, ref = self.first_design()
+        failed = self.execute(self.config("invalid-enum"), self.grown_strategy(), 2, [ref])
+        self.assertEqual((failed.outcome, failed.retryable), (StepOutcome.FAILED, False))
+        self.assertTrue(os.path.isfile(os.path.join(self.run_dir, "design",
+                                                    "2-last-draft.json")))
+        result = self.execute(self.config_with_prompt("revise-repairs"), self.grown_strategy(),
+                              2, [ref])
+        self.assertEqual(result.outcome, StepOutcome.SUCCESS, result.error)
+        resumed = self.seen("2-1-repair0")
+        self.assertTrue(any("primary_input" in p for p in resumed["repair"]["problems"]))
+        self.assertEqual(resumed["seeded"]["build_spec"]["controls"]["primary_input"], "tap")
+        self.assertEqual(resumed["revision"]["revises_version"], 1)
+        self.assertEqual([c["field"] for c in resumed["revision"]["strategy_delta"]["changes"]],
+                         ["one_liner"])
+        self.assertTrue(resumed["starting_draft"]["fantasy"].startswith("Improved by"))
+        self.assertEqual(result.artifacts[0].content["provenance"]["supersedes"],
+                         previous["provenance"]["artifact_id"])
+
+    def test_an_unchanged_strategy_still_revises_and_may_stand(self):
+        previous, ref = self.first_design()
+        result = self.execute(self.config("nothing"), design_tests.load_strategy(), 2, [ref])
+        self.assertEqual(result.outcome, StepOutcome.SUCCESS, result.error)
+        self.assertEqual(result.artifacts[0].content["fantasy"], previous["fantasy"])
+        self.assertEqual(result.artifacts[0].metadata["revises"], 1)
+
+    def test_a_previous_design_changed_on_disk_is_refused(self):
+        _previous, ref = self.first_design()
+        with open(os.path.join(self.run_dir, *ref.location.split("/")), "a") as handle:
+            handle.write(" ")
+        result = self.execute(self.config("revise"), self.grown_strategy(), 2, [ref])
+        self.assertEqual((result.outcome, result.retryable), (StepOutcome.FAILED, False))
+        self.assertIn("changed on disk", result.error)
+
+    def test_the_archetype_author_does_not_revise(self):
+        _previous, ref = self.first_design()
+        result = self.execute({}, self.grown_strategy(), 2, [ref])
+        self.assertEqual(result.outcome, StepOutcome.SUCCESS, result.error)
+        self.assertNotIn("supersedes", result.artifacts[0].content["provenance"])
+
+    def test_design_gaps_keep_their_own_base_and_are_not_a_revision(self):
+        """A design-gap return (#27) starts from the design the gaps were found in and answers
+        them; the revision brief is not added on top of it."""
+        previous = design_tests.run_step(design_tests.load_strategy()).artifacts[0].content
+        gaps = [{"field": "build_spec.content.units[seg-opening].parameters",
+                 "question": "What row gap does the opening segment use?"}]
+        AgentAuthor().draft(self.brief(
+            config=self.config("gaps"), gaps=gaps, previous_design=previous,
+            revision={"version": 1, "artifact_id": "x", "design": previous,
+                      "strategy_delta": {"found": True, "unchanged": True, "changes": [],
+                                         "truncated": False}}))
+        request = self.request_of("1-1-gaps")
+        self.assertNotIn("revision", request)
+        self.assertEqual(request["gaps"], gaps)
+
+
+class TheStrategyDelta(unittest.TestCase):
+    def test_changed_fields_by_path_with_before_and_after(self):
+        from wgf_design.revision import strategy_delta
+        delta = strategy_delta(
+            {"provenance": {"x": 1}, "concept": {"levels": 12, "worlds": 2}, "risks": ["a"],
+             "gone": 1},
+            {"provenance": {"x": 2}, "concept": {"levels": 32, "worlds": 2},
+             "risks": ["a", "b"], "new": 2})
+        self.assertEqual(delta["changes"], [
+            {"field": "concept.levels", "before": 12, "after": 32},
+            {"field": "gone", "before": 1},
+            {"field": "new", "after": 2},
+            {"field": "risks", "before": ["a"], "after": ["a", "b"]}])
+        self.assertFalse(delta["truncated"])
+        self.assertTrue(strategy_delta({}, {str(i): i for i in range(5)}, limit=3)["truncated"])
 
 
 if __name__ == "__main__":

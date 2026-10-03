@@ -14,6 +14,8 @@ Outcomes, per docs/workflow-module-contract.md §7:
     strategy schema major version unknown      FAILED, not retryable
     pinned platform profile missing or moved   BLOCKED - re-pin in a superseding strategy
     author cannot write a design               FAILED, not retryable
+    the run's previous game-design unreadable  FAILED, not retryable (a revising author only:
+                                               it changed on disk after the run recorded it)
     MVP not buildable (dangling references)    FAILED, not retryable, nothing persisted
     experience contract does not hold          FAILED, not retryable, nothing persisted
     production art or UI not stated            FAILED, not retryable, nothing persisted
@@ -31,6 +33,14 @@ Outcomes, per docs/workflow-module-contract.md §7:
                                                draft is shown the breaches and asked again
                                                first (consistency.breach_problems)
     otherwise                                  SUCCESS
+
+Re-entered in a new visit of the same run, an author that revises (the `agent` author) starts
+from the run's previous game-design, not from scratch, and is told what changed in the strategy
+since that design (revision.py). The design it produces records the one it revises in
+`provenance.supersedes` and the artifact metadata's `revises` (that design's version). This is
+not the resume of a visit: a resumed execution of the same visit continues the repair of its
+own last draft (LAST_DRAFT), whose base is the same revision. A design-gap return keeps its own
+base (the design the gaps were found in) and is not a revision.
 """
 
 import copy
@@ -47,6 +57,7 @@ from . import consistency, content, depth, experience, presentation
 from .authors import AUTHORS, AuthorError, resolve_author
 from .compose import buildability, finalize
 from .platforms import PlatformError, load_platforms
+from .revision import RevisionError, previous_design
 
 __all__ = ["DesignStep", "SCHEMA_VERSION", "ROLE"]
 
@@ -139,6 +150,21 @@ class DesignStep(WorkflowStep):
             author = resolve_author(author_name)
         except AuthorError as exc:
             return StepResult.failed(f"design author {author_name!r}: {exc}", retryable=False)
+        revision = None
+        if getattr(author, "revises", False) and not gaps:
+            # A re-entry revises the design the run already holds; a first design has none.
+            try:
+                revision = previous_design(context, strategy)
+            except RevisionError as exc:
+                return StepResult.failed(f"design author {author_name!r}: {exc}",
+                                         retryable=False)
+            if revision:
+                brief["revision"] = revision
+                delta = revision["strategy_delta"]
+                context.logger.info("revising the run's game-design",
+                                    revises_version=revision["version"],
+                                    strategy_changes=len(delta["changes"]),
+                                    strategy_found=delta["found"])
         contracts = ArtifactContracts()
         self._inputs = inputs
         # A resumed execution of this visit continues the repair of the last rejected draft
@@ -163,7 +189,7 @@ class DesignStep(WorkflowStep):
                 return StepResult.failed(f"design author {author_name!r}: {exc}",
                                          retryable=False)
             outcome = self._compose(draft, platforms, title_id, strategy, ref, context, author,
-                                    contracts)
+                                    contracts, revision)
             problems = outcome["problems"]
             if (not problems and outcome["consistency_problems"]
                     and getattr(author, "repairs", False)
@@ -232,7 +258,8 @@ class DesignStep(WorkflowStep):
         engine = design["engine"]["type"]
         mvp = sum(1 for f in design["features"] if f["tier"] == "mvp")
         metadata = {"author": author_name, "engine": engine, "consistency": block["status"],
-                    "mvp_features": mvp, "warnings": warnings or None}
+                    "mvp_features": mvp, "warnings": warnings or None,
+                    "revises": revision["version"] if revision else None}
         metadata = {k: v for k, v in metadata.items() if v is not None}
         output = ArtifactOutput("game-design", artifact, metadata=metadata)
         context.logger.info("design composed", engine=engine, mvp_features=mvp,
@@ -246,9 +273,11 @@ class DesignStep(WorkflowStep):
             self._keep_last_draft(context, outcome["draft"], [])
         return StepResult.success(
             [output], message=f"{engine} design, {mvp} mvp features, consistency {block['status']}"
+                              + (f", revises v{revision['version']}" if revision else "")
                               + (f", {len(warnings)} warning(s) for G3" if warnings else ""))
 
-    def _compose(self, draft, platforms, title_id, strategy, ref, context, author, contracts):
+    def _compose(self, draft, platforms, title_id, strategy, ref, context, author, contracts,
+                 revision=None):
         """The draft finalized into the game-design artifact, and what makes it invalid: the
         buildability check, then - only when that passes - the artifact's own schema."""
         design = finalize(draft, platforms, title_id)
@@ -344,7 +373,8 @@ class DesignStep(WorkflowStep):
         design["consistency"] = block
         artifact = self._with_provenance(design, strategy, ref, title_id, now, context,
                                          getattr(author, "actor", "automation"),
-                                         inputs=self._inputs)
+                                         inputs=self._inputs,
+                                         supersedes=(revision or {}).get("artifact_id"))
         outcome.update(artifact=artifact, block=block, blocking=blocking, warnings=warnings,
                        problems=list(contracts("game-design", artifact)))
         return outcome
@@ -408,7 +438,7 @@ class DesignStep(WorkflowStep):
         return None
 
     def _with_provenance(self, design, strategy, ref, title_id, now, context, actor,
-                         inputs=None):
+                         inputs=None, supersedes=None):
         # Every input this execution consumed is pinned - the strategy, and the
         # prototype-report a design-gap return carries - or the engine refuses the lineage.
         pins = provenance.pin_inputs(inputs) if inputs is not None else []
@@ -424,7 +454,8 @@ class DesignStep(WorkflowStep):
             inputs=pins,
             schema_version=SCHEMA_VERSION,
             opportunity_id=strategy.get("opportunity_id") or None,
-            title_id=title_id)
+            title_id=title_id,
+            supersedes=supersedes)
         artifact = {"provenance": record}
         artifact.update(design)
         return provenance.seal(artifact)

@@ -671,10 +671,10 @@ class ResumeAndDecide(CliCase):
             handle.write("workflow:\n  id: kill\n  version: 1\n  steps:\n"
                          "    - id: verify\n      type: verify\n"
                          "      outputs: [prototype-report, verification-report, qa-report,"
-                         " title-strategy, game-design]\n"
+                         " title-strategy, game-design, playability-report, review-report]\n"
                          "    - id: kill-review\n      type: human-checkpoint\n"
                          "      inputs: [qa-report, verification-report, prototype-report,"
-                         " title-strategy, game-design]\n"
+                         " title-strategy, game-design, playability-report, review-report]\n"
                          "      with: {gate: G4}\n")
         self.wgf("kill", "--workflow", workflow, "--mock", "--quiet", expect=3)
         run_id = self.state()["run_id"]

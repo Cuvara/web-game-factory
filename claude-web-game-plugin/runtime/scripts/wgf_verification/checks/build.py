@@ -3,6 +3,7 @@
 import os
 import re
 import shlex
+from urllib.parse import unquote
 
 from wgflib.template_contract import SCRIPT_BUILD
 
@@ -16,6 +17,44 @@ _CSS_URL = re.compile(r"""url\(\s*["']?([^"')]+)["']?\s*\)""", re.I)
 _JS_ASSET = re.compile(
     r"""["'`]((?:\.{0,2}/)?(?:assets|locales|metadata|audio|images|fonts)/[^"'`\s?#]+\.[A-Za-z0-9]{2,5})["'`]""")
 _EXTERNAL = re.compile(r"^(?:[a-z][a-z0-9+.-]*:|//|#)", re.I)
+# Where a data: URL starts: after a quote, an `=` or the paren of url(.
+_DATA_URL = re.compile(r"""(["'(=])\s*data:""", re.I)
+_UNQUOTED_END = re.compile(r"[\s>]")
+
+
+def _without_data_urls(text):
+    """`text` with the body of every data: URL removed.
+
+    A data: URL carries its content inline: an SVG in one may say `fill="url(%23g)"`, which
+    names an element of that SVG, not a file. Found by the 3D run, whose built CSS failed
+    asset resolution on `%23n`. A quoted URL ends at its quote; an unquoted url( one at the
+    paren that closes it.
+    """
+    out, at = [], 0
+    for match in _DATA_URL.finditer(text):
+        if match.start() < at:
+            continue  # inside the data: URL just removed
+        opener, start = match.group(1), match.end()
+        if opener in "\"'":
+            end = text.find(opener, start)
+        elif opener == "(":
+            depth, end = 1, -1
+            for index in range(start, len(text)):
+                if text[index] == "(":
+                    depth += 1
+                elif text[index] == ")":
+                    depth -= 1
+                    if depth == 0:
+                        end = index
+                        break
+        else:  # an unquoted attribute value ends at whitespace or the tag
+            found = _UNQUOTED_END.search(text, start)
+            end = found.start() if found else -1
+        end = len(text) if end < 0 else end
+        out.append(text[at:start])
+        at = end
+    out.append(text[at:])
+    return "".join(out)
 
 
 def check_source(session):
@@ -188,6 +227,8 @@ def _asset_resolution(session):
             text = handle.read()
         here = os.path.dirname(session.path(rel))
         found = []
+        if ext in ("html", "css"):
+            text = _without_data_urls(text)
         if ext == "html":
             found += [(u, here) for u in _URL_ATTR.findall(text)]
         if ext in ("html", "css"):
@@ -196,7 +237,10 @@ def _asset_resolution(session):
             # String literals in a bundle are resolved against the page, not the script.
             found += [(u, root) for u in _JS_ASSET.findall(text)]
         for url, base in found:
-            url = url.split("?", 1)[0].split("#", 1)[0].strip()
+            # Judged decoded: `%23n` is the fragment `#n`, `%64ata:` a data: URL.
+            if _EXTERNAL.match(unquote(url.strip())):
+                continue
+            url = unquote(url.split("?", 1)[0].split("#", 1)[0].strip())
             if not url or _EXTERNAL.match(url) or "${" in url:
                 continue
             references += 1

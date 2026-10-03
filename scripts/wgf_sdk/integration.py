@@ -12,7 +12,8 @@ them, for exactly what its game-design asks for. For every platform the game tar
        wiring in main.ts (integrate.py)
     8. with a fallback for every feature that can be missing or fail at runtime
 
-then run the integration's own SDK-mock suite and the typecheck (runner.py). The result is
+then run the integration's own SDK-mock suite, the typecheck and the game's own unit suite
+(runner.py). The result is
 laid over the conformance result feature by feature (step.py). It implements no SDK and
 calls no portal; it does not clone, commit or push.
 """

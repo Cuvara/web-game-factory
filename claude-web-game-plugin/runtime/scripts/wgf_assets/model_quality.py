@@ -57,7 +57,7 @@ DEFAULT_BARS = {
     "max_dominance": 0.6,
     "round_body": {"words": ["ball", "marble", "sphere", "orb", "bubble", "globe", "planet"],
                    "min_fill": 0.62, "max_fill": 0.86, "max_aspect": 1.18, "min_parts": 2,
-                   "visible_reach": 0.9},
+                   "visible_reach": 0.9, "min_shown": 0.1, "min_shown_views": 2},
     "min_contrast_share": {"player": 0.5, "collectible": 0.4, "threat": 0.25, "hazard": 0.25},
 }
 _COMPONENT = {5120: ("b", 1), 5121: ("B", 1), 5122: ("h", 2), 5123: ("H", 2),
@@ -116,8 +116,9 @@ def _triangles(prim, count, indices):
 
 
 def _pieces(positions, triangles):
-    """Connected pieces: lists of distinct positions, joined through shared triangles.
-    Positions are welded by value, so a UV or normal seam does not split a piece."""
+    """Connected pieces: (distinct positions, triangle count, the triangles), joined through
+    shared triangles. Positions are welded by value, so a UV or normal seam does not split a
+    piece."""
     key_of = [tuple(round(c, 5) for c in p) for p in positions]
     parent = {}
 
@@ -137,15 +138,15 @@ def _pieces(positions, triangles):
             b = find(key_of[i])
             if a != b:
                 parent[b] = a
-    groups, counts = {}, {}
+    groups, faces = {}, {}
     for tri in triangles:
         if any(i >= len(key_of) for i in tri):
             continue
         root = find(key_of[tri[0]])
-        counts[root] = counts.get(root, 0) + 1
+        faces.setdefault(root, []).append(tri)
         for i in tri:
             groups.setdefault(root, set()).add(key_of[i])
-    return [(sorted(groups[r]), counts[r]) for r in sorted(groups)]
+    return [(sorted(groups[r]), len(faces[r]), faces[r]) for r in sorted(groups)]
 
 
 def _near(value, target, tol):
@@ -259,6 +260,7 @@ def analyse(data, *, tolerance=0.02, name="model"):
              for r in reversed(scenes[scene].get("nodes") or [])]
     seen = set()
     world = []  # the visual model's triangles in model space, for the silhouette
+    faces = []  # the same triangles by piece, for what each piece shows (round_body)
     surface = {}  # material index (-1: none) -> visible surface area, for the contrast
     while stack:
         index, inherited, parent_matrix = stack.pop()
@@ -297,9 +299,10 @@ def analyse(data, *, tolerance=0.02, name="model"):
                 if all(i < len(placed) for i in tri))
             world.extend((index, tuple(placed[i] for i in tri)) for tri in prim_triangles
                          if all(i < len(placed) for i in tri))
-            for points, triangles in _pieces(positions, prim_triangles):
+            for points, triangles, own in _pieces(positions, prim_triangles):
                 lo = [min(p[k] for p in points) for k in range(3)]
                 hi = [max(p[k] for p in points) for k in range(3)]
+                faces.extend((len(pieces), tuple(placed[i] for i in tri)) for tri in own)
                 pieces.append({"node": node.get("name") or f"nodes[{index}]",
                                "shape": classify(points, tolerance),
                                "vertices": len(points), "triangles": triangles,
@@ -321,6 +324,8 @@ def analyse(data, *, tolerance=0.02, name="model"):
                         "area": round(surface.get(i, 0.0), 6),
                         "textured": isinstance(pbr.get("baseColorTexture"), dict)})
     _reach(pieces)
+    if decoded:
+        _shown(pieces, faces)
     return {"pieces": pieces, "mesh_nodes": mesh_nodes, "normals": normals and mesh_nodes > 0,
             "decoded": decoded, "materials": colours,
             "silhouette": silhouette(world) if decoded and world else None}
@@ -337,6 +342,67 @@ def _reach(pieces):
     centre = [(min(q[k] for q in points) + max(q[k] for q in points)) / 2.0 for k in range(3)]
     for piece, group in zip(pieces, placed):
         piece["reach"] = round(max(math.dist(q, centre) for q in group), 4) if group else 0.0
+
+
+def _shown(pieces, faces, grid=None):
+    """Each piece's `shown`: per silhouette view, the share of the outline where that piece
+    is the nearest surface to the camera - from the view's front or its back, the larger -
+    or None for an edge-on view. A depth buffer on the outline grid, sampled at cell centres:
+    a band sunk inside a shell is behind it in every cell, a speck on the surface covers a
+    few (round_body)."""
+    grid = grid or SILHOUETTE_GRID
+    for piece in pieces:
+        piece["shown"] = {name: None for name, _u, _v in SILHOUETTE_VIEWS}
+    if not faces:
+        return
+    for name, u_axis, v_axis in SILHOUETTE_VIEWS:
+        d_axis = 3 - u_axis - v_axis
+        us = [p[u_axis] for _i, tri in faces for p in tri]
+        vs = [p[v_axis] for _i, tri in faces for p in tri]
+        lo_u, lo_v = min(us), min(vs)
+        extent_u, extent_v = max(us) - lo_u, max(vs) - lo_v
+        longest = max(extent_u, extent_v)
+        if longest <= 1e-9 or min(extent_u, extent_v) < longest * _FLAT_VIEW:
+            continue
+        cell = longest / grid
+        width = max(1, min(grid, int(math.ceil(extent_u / cell - 1e-9))))
+        height = max(1, min(grid, int(math.ceil(extent_v / cell - 1e-9))))
+        near, far = {}, {}
+        for index, tri in faces:
+            flat = [((p[u_axis] - lo_u) / cell, (p[v_axis] - lo_v) / cell, p[d_axis])
+                    for p in tri]
+            (ax, ay, ad), (bx, by, bd), (cx, cy, cd) = flat
+            det = (by - cy) * (ax - cx) + (cx - bx) * (ay - cy)
+            if abs(det) <= 1e-12:
+                continue        # edge-on in this view: its neighbours cover what it would
+            first = max(0, int(math.floor(min(ax, bx, cx) - 0.5)))
+            last = min(width - 1, int(math.ceil(max(ax, bx, cx) - 0.5)))
+            low = max(0, int(math.floor(min(ay, by, cy) - 0.5)))
+            high = min(height - 1, int(math.ceil(max(ay, by, cy) - 0.5)))
+            for row in range(low, high + 1):
+                y = row + 0.5
+                for col in range(first, last + 1):
+                    x = col + 0.5
+                    w0 = ((by - cy) * (x - cx) + (cx - bx) * (y - cy)) / det
+                    w1 = ((cy - ay) * (x - cx) + (ax - cx) * (y - cy)) / det
+                    w2 = 1.0 - w0 - w1
+                    if w0 < -1e-9 or w1 < -1e-9 or w2 < -1e-9:
+                        continue
+                    depth = w0 * ad + w1 * bd + w2 * cd
+                    key = row * width + col
+                    if key not in near or depth < near[key][0]:
+                        near[key] = (depth, index)
+                    if key not in far or depth > far[key][0]:
+                        far[key] = (depth, index)
+        if not near:
+            continue
+        counts = [{}, {}]
+        for side, buffer in enumerate((near, far)):
+            for _depth, index in buffer.values():
+                counts[side][index] = counts[side].get(index, 0) + 1
+        for index, piece in enumerate(pieces):
+            piece["shown"][name] = round(max(c.get(index, 0) for c in counts)
+                                         / float(len(near)), 3)
 
 
 def _area(a, b, c):
@@ -611,10 +677,40 @@ def round_body(requirement, pieces, outline, bars=None):
                       + f"a lone shell (or copies of one piece) is what shows: compose it of at "
                         f"least {need} different pieces on its surface - a shell and a swirl "
                         f"band, a core showing through a rim")
+    # Reaching the surface is not showing on it: two specks on a plain shell reach it too.
+    # A second piece must be the nearest surface over a real share of the outline.
+    least = float(rule.get("min_shown", 0.1))
+    views_needed = int(rule.get("min_shown_views", 2))
+    shows = ""
+    if any(isinstance(p.get("shown"), dict) for p in pieces):
+        def share_in(p, name):
+            return float((p.get("shown") or {}).get(name) or 0.0)
+
+        def signature(p):
+            return p["shape"], tuple(sorted(round(d / largest, 2) for d in p["dimensions"]))
+
+        names = sorted(views)
+        shell = max(visible, key=lambda p: sum(share_in(p, n) for n in names))
+        others = [p for p in visible if p is not shell and signature(p) != signature(shell)]
+        best = max(others, default=None, key=lambda p: (
+            sum(share_in(p, n) >= least for n in names), sum(share_in(p, n) for n in names)))
+        showing = [n for n in names if best is not None and share_in(best, n) >= least]
+        if len(showing) < views_needed:
+            lacking = [f"{n} ({share_in(best, n) if best is not None else 0.0:.0%})"
+                       for n in names if n not in showing]
+            return None, (f"{named} only its shell shows: no second piece covers {least:.0%} "
+                          f"of the outline in {views_needed} of the three views - the "
+                          f"{', '.join(lacking)} view(s) show no second piece (its share of "
+                          f"the outline in brackets). Put the band or swirl ON the surface, "
+                          f"raised above the shell and in a contrasting colour - not sunk "
+                          f"inside it, not shrunk to specks")
+        shows = (f", the {best['node']} piece covering "
+                 + ", ".join(f"{share_in(best, n):.0%} of the {n}" for n in showing)
+                 + " outline")
     fills = [float(v["fill"]) for v in measured]
     return word, (f"a round body: the requirement names a {word}, its outline is a disk in "
                   f"every view (fill {min(fills):.2f}-{max(fills):.2f}) and {len(visible)} "
-                  f"different pieces show on its surface (asset-quality.yaml "
+                  f"different pieces show on its surface{shows} (asset-quality.yaml "
                   f"models.round_body)")
 
 

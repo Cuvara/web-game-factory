@@ -224,6 +224,60 @@ class RoundBody(unittest.TestCase):
         reaches = sorted(p["reach"] for p in model_quality.analyse(data)["pieces"])
         self.assertLess(reaches[1], 0.9 * reaches[-1])
 
+    def test_a_band_hugging_the_surface_shows(self):
+        hugging = [part("sphere", (1, 1, 1), (0, 0, 0)),
+                   part("cylinder", (1.03, 0.2, 1.03), (0, 0, 0), "dark")]
+        quality = self.judged(hugging, self.MARBLE_REQ)
+        found = check(quality, "model.silhouette")
+        self.assertEqual(found["status"], "pass", found)
+        self.assertIn("of the front", found["summary"])
+        band = next(p for p in model_quality.analyse(glb_synth.build(hugging, MATS))["pieces"]
+                    if p["shape"] == "cylinder")
+        self.assertGreaterEqual(band["shown"]["front"], 0.2)
+        self.assertGreaterEqual(band["shown"]["side"], 0.2)
+
+    def test_a_band_inside_the_shell_with_specks_on_it_fails(self):
+        # A live run, 2026-10-04: the band at half the radius, two specks on the surface
+        # reaching it - the reach rule counted a speck as the second piece, and visual QA saw
+        # a plain sphere.
+        inside = [part("sphere", (1, 1, 1), (0, 0, 0)),
+                  part("cylinder", (0.514, 0.2, 0.514), (0, 0, 0), "dark"),
+                  part("sphere", (0.08, 0.08, 0.08), (0.48, 0, 0.1), "dark"),
+                  part("sphere", (0.06, 0.06, 0.06), (0, 0.48, 0.1), "dark")]
+        quality = self.judged(inside, self.MARBLE_REQ)
+        self.assertEqual(check(quality, "model.silhouette")["status"], "fail")
+        self.assertNotIn("a round body:", check(quality, "model.primitive")["summary"])
+        self.assertEqual(quality["verdict"], "fail")
+        summary = check(quality, "model.silhouette")["summary"]
+        self.assertIn("only its shell shows", summary)
+        for view in ("front", "side", "top"):
+            self.assertIn(view, summary)
+        self.assertIn("ON the surface, raised above the shell and in a contrasting colour",
+                      summary)
+
+    def test_a_band_just_under_the_surface_fails_though_it_reaches(self):
+        # It reaches 0.98 of the radius, so the reach rule passes it; the shell covers it in
+        # every view.
+        under = [part("sphere", (1, 1, 1), (0, 0, 0)),
+                 part("cylinder", (0.94, 0.16, 0.94), (0, 0, 0), "dark")]
+        geometry = model_quality.analyse(glb_synth.build(under, MATS))
+        band = next(p for p in geometry["pieces"] if p["shape"] == "cylinder")
+        self.assertGreaterEqual(band["reach"], 0.9 * 0.5)
+        self.assertEqual(set(band["shown"].values()), {0.0})
+        found, why = model_quality.round_body(self.MARBLE_REQ, geometry["pieces"],
+                                              geometry["silhouette"])
+        self.assertIsNone(found)
+        self.assertIn("only its shell shows", why)
+
+    def test_a_shell_with_two_specks_fails(self):
+        specks = [part("sphere", (1, 1, 1), (0, 0, 0)),
+                  part("sphere", (0.08, 0.08, 0.08), (0.48, 0, 0.1), "dark"),
+                  part("sphere", (0.06, 0.06, 0.06), (0, 0.48, 0.1), "dark")]
+        quality = self.judged(specks, self.MARBLE_REQ)
+        self.assertEqual(check(quality, "model.silhouette")["status"], "fail")
+        self.assertIn("only its shell shows", check(quality, "model.silhouette")["summary"])
+        self.assertEqual(quality["verdict"], "fail")
+
     def test_a_plural_names_it_too(self):
         req = dict(self.MARBLE_REQ, description="one of the marbles", readability="",
                    spec="")
@@ -235,7 +289,8 @@ class RoundBody(unittest.TestCase):
         self.assertEqual(rule["words"],
                          ["ball", "marble", "sphere", "orb", "bubble", "globe", "planet"])
         self.assertEqual((rule["min_fill"], rule["max_fill"], rule["max_aspect"],
-                          rule["min_parts"], rule["visible_reach"]), (0.62, 0.86, 1.18, 2, 0.9))
+                          rule["min_parts"], rule["visible_reach"], rule["min_shown"],
+                          rule["min_shown_views"]), (0.62, 0.86, 1.18, 2, 0.9, 0.1, 2))
         self.assertEqual(model_quality.DEFAULT_BARS["round_body"], rule)
 
 

@@ -338,8 +338,13 @@ sphere, orb, bubble, globe, planet - a whole word or its plural); the outline is
 every one of the three views (fill 0.62-0.86 of its rectangle - a disk is 0.785, a faceted
 low-poly shell down to 0.65, a box or a drum's side 1.0 - and the rectangle at most 1.18
 to 1); and at least two different pieces show on its surface (a shell and a swirl band),
-each reaching at least 0.9 of its radius from its centre. A lone sphere is still a
-placeholder, so is one with bands sunk inside it, and a goalkeeper drawn as a blob is not a round body. The passing check's
+each reaching at least 0.9 of its radius from its centre, and one of them other than the
+shell the nearest surface over at least 10% of the outline in at least two of the three
+views (`min_shown`, `min_shown_views`: a depth buffer on the 64-cell outline grid, from
+the view's front or back). A lone sphere is still a placeholder, so is one with bands sunk
+inside it or just under its surface, and so is a plain shell with a few specks on it (a
+live run, 2026-10-04: a band sunk at half the radius and two specks passed, and visual QA
+saw a plain red sphere); a goalkeeper drawn as a blob is not a round body. The passing check's
 summary says "a round body: ..." so the asset report shows the exemption, and
 `primitive_only` is false for it. The author is told to compose a round body, never to
 reshape it (`model_author.RULES`). `wgf-model.py inspect --design --asset` reads the

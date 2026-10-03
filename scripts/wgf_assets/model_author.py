@@ -225,7 +225,10 @@ RULES = [
     "Compose it instead: a sphere or icosphere shell plus what the player recognises it by "
     "(a swirl band or ring, a core, a seam, stripes as separate parts). A lone sphere is a "
     "placeholder; a composed ball whose outline is a disk in every view passes "
-    "(`quality_bars.round_body`).",
+    "(`quality_bars.round_body`) only when its second piece shows: ON the surface, raised "
+    "above the shell and in a contrasting colour, covering at least `min_shown` of the "
+    "outline in `min_shown_views` views - a band sunk inside the shell or a few specks on it "
+    "leave a plain sphere.",
     "Shape each part: `taper` [x, z] narrows or widens its top (a torso wider at the "
     "shoulders), `bevel` (metres) rounds a box's, cylinder's, cone's or extrude's edges, "
     "`capsule` makes limbs, `mirror: \"x\"` writes the other arm, leg, wing or wheel for you "

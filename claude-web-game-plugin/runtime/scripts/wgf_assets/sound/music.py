@@ -257,13 +257,25 @@ def compose(song, kind, bars, tempo):
         else:
             for p in (0, 2):
                 score.kicks.append(at(i, p))
-        if inside == 0 and want("crash") and i > 0:
+        # Bar 0's downbeat included: the loop is circular, and the turnaround riser over the
+        # last two beats leads into exactly this crash. Without it a cue whose parts hold the
+        # riser but no kick (the layer) ends loud and starts near-silent, and its seam fails
+        # the rendered-seam edge bar (goalkeeper-royale's music-tension-layer, 6.46 dB).
+        if inside == 0 and want("crash"):
             score.add(at(i, 0), "drums", "crash", _q(0.7 if not breakdown else 0.5))
         if inside == 7 and want("riser"):
-            score.add(t_bar, "drums", "riser", round(bar_s, 3), 0.7)
+            # The last bar's riser is the loop's turnaround: at full velocity, so the pickup
+            # before the downbeat - where the file's seam falls (LEAD_IN) - is not a dip.
+            score.add(t_bar, "drums", "riser", round(bar_s, 3), 1.0 if i == last else 0.7)
         if i == last and want("fill"):
             for k, p in enumerate((2, 2.5, 3, 3.5)):
                 score.add(at(i, p), "drums", "tom", 0.8, 190 - k * 30)
+            # An open hat on the last thirty-second - the pickup itself, LEAD_IN before the
+            # downbeat, where the file's seam falls - rings into the downbeat. A fill that
+            # stopped at the toms left that pickup a gap, the rendered seam's edges 6 dB
+            # apart on every seed (goalkeeper-royale's layer); a tom there decays before
+            # the pickup, and a hat a sixteenth earlier lands before the seam, not in it.
+            score.add(at(i, 4 - LEAD_IN), "drums", "hat", 0.6, open_=True)
         # -- bass
         if want("bass"):
             _bass(song, score, style["bass"], i, degree, at, beat, breakdown, peak,

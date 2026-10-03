@@ -411,6 +411,10 @@ def run_checks(root, brief, settings, runner, git, logger=None):
                 results.append(CheckResult(check_id, "skipped",
                                            f"package.json has no {script!r} script"))
                 continue
+            workers = getattr(settings, "smoke_workers", None)
+            if check_id == "smoke" and workers:
+                # pnpm hands what follows the script name to the script itself.
+                argv = [*argv, f"--workers={workers}"]
             # Code the developer wrote: an allowlisted environment, never the Factory's.
             env = agentenv.scrubbed(getattr(settings, "game_env_passthrough", ()))
             guard = RefusingProxy().start() if check_id in NETWORK_GUARDED else None

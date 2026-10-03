@@ -249,6 +249,7 @@ class FontProducer:
 
     id = "font-library"
     source = "library"
+    varies = False  # a face is a fixed file: a gate sending it back gets the same bytes
 
     def __init__(self, library, typography, locales=(), *, subset=True):
         self.library = library

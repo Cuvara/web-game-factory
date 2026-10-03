@@ -143,7 +143,7 @@ def rebuild_list(reports, requirements, **kwargs):
 PRODUCERS = ("fonts", "audio")
 
 
-def build_producers(names, design, title_id, *, logger=None):
+def build_producers(names, design, title_id, *, logger=None, variation=0):
     """The producers `factory.assets.producers` names, in order: `fonts` (the Factory font
     library, fontlib.py) and `audio` (the composer, sound/producer.py). Unknown names are
     refused by resolve_settings; an unavailable one (no font library) is skipped."""
@@ -162,7 +162,7 @@ def build_producers(names, design, title_id, *, logger=None):
                                             (design.get("scope") or {}).get("locales") or ()))
         elif name == "audio":
             from .sound.producer import AudioProducer
-            out.append(AudioProducer(design, title_id, logger=logger))
+            out.append(AudioProducer(design, title_id, logger=logger, variation=variation))
     return out
 
 
@@ -294,8 +294,12 @@ class AssetsStep(WorkflowStep):
         model_set = (getattr(_model_author, "produce_models", None)
                      if model_author is not None and model_settings.get("mode") == "set"
                      else None)
+        # On a re-entry the composer varies the song (its seed offset by the visit), so a
+        # gate that sent a cue back gets different art; a first pass composes as always.
         producers = build_producers(settings.get("producers"), design, title_id,
-                                    logger=context.logger)
+                                    logger=context.logger,
+                                    variation=(int(getattr(context, "visit", 1) or 1)
+                                               if rebuild else 0))
         pipeline = AssetPipeline(policy, store, backends, libraries, logger=context.logger,
                                  placeholders=bool(placeholders.get("enabled")),
                                  optimize=bool(settings.get("optimize")),

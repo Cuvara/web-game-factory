@@ -485,6 +485,25 @@ class Content(Judge):
         self.assertEqual(cfg["window_ms"], qa["difficulty"]["endless_window_s"] * 1000)
         self.assertIn("next", cfg["advance_actions"])
 
+    def test_a_session_is_never_played_past_the_bar_it_is_judged_on(self):
+        # depth.session_length passes at min_share x target, so playing to max_multiplier x
+        # target measures nothing more and costs every later measurement on the same machine
+        # (the 2D golden's mobile start.playable went 141 ms over its bar behind a long one).
+        from wgflib import genre_models
+        from wgf_playability.step import SESSION_MARGIN_S
+
+        qa = genre_models.qa_of(CONTENT_DESIGN)
+        bars = qa["session_length"]
+        target = (CONTENT_DESIGN["build_spec"]["depth"]["first_session"]["target_s"])
+        roomy = dict(qa, time_budget=dict(qa["time_budget"], bot_total_s=100000))
+        cfg, truncated, _ = PlayabilityStep._content_settings(
+            CONTENT_DESIGN, roomy,
+            {"idle_ms": 0, "win_ms": 0, "lose_ms": 0, "start_timeout_ms": 0})
+        self.assertFalse(truncated["session"])
+        self.assertEqual(cfg["session_max_ms"],
+                         int((target * bars["min_share"] + SESSION_MARGIN_S) * 1000))
+        self.assertLess(cfg["session_max_ms"], target * bars["max_multiplier"] * 1000)
+
     def test_a_design_with_no_content_or_depth_asks_for_none_of_it(self):
         from wgflib import genre_models
 

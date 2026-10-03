@@ -47,6 +47,10 @@ BOT_SPEC = os.path.join(HERE, "bot.spec.ts")
 RULES_PATH = os.path.join(paths.REFERENCE, "visual-quality.yaml")
 FAIL_ROUTE = "fail"
 REQUIRED_INPUTS = ("prototype-report", "game-design", "scaffold-record")
+# Seconds a session run plays past the bar it is judged on, so a session that ends on its own
+# beat (a new best, a unit cleared) is seen rather than cut off at the bar.
+SESSION_MARGIN_S = 45
+
 PROJECTS = (("desktop", 1280, 720), ("mobile", 393, 851))
 # The bot's records per viewport (bot.spec.ts): <out>/<project>/<name>.json.
 RECORDS = ("first-session", "act", "win", "lose", "pause", "traverse", "persist", "session")
@@ -222,8 +226,13 @@ class PlayabilityStep(WorkflowStep):
         asked = {
             "traverse": (budget.get("traverse_s") or 0) * 1000 if content_applies else 0,
             "persist": (budget.get("persist_s") or 0) * 1000 if depth_applies else 0,
-            "session": (target_s * (session_bars.get("max_multiplier") or 0) * 1000
-                        if depth_applies else 0),
+            # Never play longer than the bar needs: the check passes at
+            # `min_share` x target, so a window of that plus a margin measures everything a
+            # `max_multiplier` window would, and the run (and every measurement after it on
+            # the same machine) is minutes shorter.
+            "session": (min(target_s * (session_bars.get("max_multiplier") or 0),
+                            target_s * (session_bars.get("min_share") or 0) + SESSION_MARGIN_S)
+                        * 1000 if depth_applies else 0),
         }
         total_s = budget.get("bot_total_s") or 0
         spent = (settings["idle_ms"] + settings["win_ms"] + settings["lose_ms"]

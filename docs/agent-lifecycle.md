@@ -42,7 +42,10 @@ Both calls:
 1. **Start the child in a new session.** That is a new process group on POSIX, and
    `CREATE_NEW_PROCESS_GROUP` on Windows. The child and every descendant that does not
    detach can then be signalled as one group. It also means a signal sent to the Factory's
-   own terminal group never reaches them (see [Cancellation](#cancellation)).
+   own terminal group never reaches them (see [Cancellation](#cancellation)). On Windows
+   the child is also put in a job object of its own, with `KILL_ON_JOB_CLOSE`: every
+   process it starts joins the job, so the job still holds a descendant whose parent has
+   exited, which nothing else on Windows can find.
 2. **Tag the child's environment.** `WGF_PROC_TAG=<random>` identifies this tree, and
    `WGF_PROC_LINEAGE=<outer>,…,<tag>` lists the tags of every owner above it. Environment
    survives fork, exec, `setsid()` and reparenting. On Linux, `procs.tagged_pids(tag)` reads
@@ -221,8 +224,13 @@ Not covered: what a developer agent runs by itself inside its session (the brief
 run `pnpm test:e2e`, and to serve the build on 4173 for the browser tool). The step that
 runs the agent holds no lock - that would serialize whole development sessions - so an
 agent's own suite can still meet another run's. It fails the agent's own command, not the
-step; the step's checks run afterwards, under the lock. `procs.spawn` (long-lived servers)
-takes no lock either; nothing the Factory spawns binds a fixed port.
+step; the step's checks run afterwards, under the lock. The reverse also holds: a
+`pnpm preview` the agent left serving 4173 is not under the lock, and another run's check
+that takes the lock meanwhile still finds the port in use. What the agent left running ends
+with its session - the agent CLI is an owned tree, and on Windows its job object reaches
+servers whose shell already exited ([Known limits](#known-limits)) - so that window closes
+when the session does. `procs.spawn` (long-lived servers) takes no lock either; nothing the
+Factory spawns binds a fixed port.
 
 **Template follow-up (proposal only).** The lock removes the failure, not the queue: two
 runs still take turns on 4173. A future template release could read the preview port from
@@ -278,7 +286,16 @@ any orphan keeps running. A descendant that cleared its environment is not found
 
 - **No `/proc` (macOS, Windows): only the group.** `tagged_pids` returns `[]`, so a
   descendant that detaches itself (`setsid`, Playwright's `webServer`) is not found. On
-  macOS the group is still signalled. On Windows `taskkill /T` ends the tree by parentage.
+  macOS the group is still signalled. On Windows `taskkill /T` ends the tree by parentage
+  while the leader runs, and the tree's job object ends every member - including an orphan
+  whose parent already exited, which Windows does not reparent and `taskkill /T` therefore
+  cannot reach. Before the job object (2026-10-03) such an orphan outlived its tree: a
+  `vite preview` left behind by a finished command or agent session kept port 4173 until
+  someone killed it. The job is assigned right after the child starts, so a grandchild the
+  child starts within that instant escapes it; a process that asks to break away from its
+  job (`CREATE_BREAKAWAY_FROM_JOB`), or a host that refuses nested jobs, is not covered.
+  Because the job closes with the Factory process, a Factory killed outright takes its
+  trees with it on Windows - there is no SIGKILL recovery to do there.
   The zombie hold (`waitid(WNOWAIT)`) is Linux-only too. Elsewhere the child is reaped
   first and its group is signalled only while it still has live members.
 - **A descendant that clears its environment *and* detaches** cannot be found by tag or by

@@ -346,7 +346,7 @@
     "scripts/wgflib/netguard.py": "sha256:6c16c1ec420c1b2997ec146df2f6c468c8c303dfeefc2d163909c97761825e06",
     "scripts/wgflib/paths.py": "sha256:0388c5bb4f00e346fa26dc967d04ca7f094b69f3bf9c80e5ddb26b6bb2dcd293",
     "scripts/wgflib/portlock.py": "sha256:6d4fa33688f18b342f69792beababe1671d358c885e3a21475ef64a13bd084be",
-    "scripts/wgflib/procs.py": "sha256:b7ca9581a64fffe84d10d01b2b5fd94aad357c79dc7537f47735ad2b1ceba4d6",
+    "scripts/wgflib/procs.py": "sha256:09816c204aceeeafc0e126a7d1a1ab4b845db7c044b3894555d3aa49858bb3cc",
     "scripts/wgflib/provenance.py": "sha256:3e4beae24f6821d8602111ca5919596ae9e1a27a1cc6b91369ba87fbce4dcd81",
     "scripts/wgflib/publication.py": "sha256:d157b3187706b0850ff96ee72247abdd9fa86748a429b698ce38cd4d339f9898",
     "scripts/wgflib/quality_bar.py": "sha256:feb0f48b03016448784df6958fc2ac3c719789bee9985b73e100a9b4d7e9734d",

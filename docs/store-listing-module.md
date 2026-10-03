@@ -96,7 +96,11 @@ checkout: the bundle is served read-only, Playwright is resolved from the checko
 5. **Copy** (`copywriter.py`). The `template` writer assembles English from the facts - the
    first sentence is the objective in the player's words, then the loop, the mechanics,
    what ends a run, the controls per device, the session length, the look - and, in every
-   locale the bundle ships strings for, the game's own title and rules text. It never
+   locale the bundle ships strings for, the game's own title and objective or rules text.
+   The keys are the game's own: the template's (`title.heading`, `hud.objective`,
+   `title.rules`) or another name (`game.title`, `play.objective`), else the key whose
+   English string is the design's objective, else a key named `*.objective`, `*.goal`,
+   `*.rules`, `*.howto`; a string with a placeholder is a label, never copy. It never
    translates: a locale a platform requires with no strings and no agent is a missing
    deliverable (`locale-missing`). A `command` writer (an agent host, read-only, once per
    locale) may write instead; its texts go through the same grounding check and a refused
@@ -119,7 +123,12 @@ checkout: the bundle is served read-only, Playwright is resolved from the checko
    is accepted. Everything the package cannot make is an `unmet` problem on the rendition -
    a size larger than any master, a format no encoder here writes (`jpg`/`webp` come from
    the browser's encoder during the capture; PNG from the Factory), a locale no writer
-   produces, an age rating nobody stated (`factory.listing.age_rating`).
+   produces, an age rating nobody stated (`factory.listing.age_rating`). The age rating
+   is the platform's, not a locale's: the rendition carries it (`age_rating`) even when no
+   copy could be written in a required locale. A required locale with no copy leaves that
+   platform's texts and categories empty; validation names the locale as the cause and
+   marks those checks `fix: configure`, so the run blocks for a person instead of routing
+   back to `listing` until the loop limit.
 8. **Validation** (`validation.py`). The judge, shared with `scripts/wgf-listing.py`: every
    canonical rendition present at its size and unchanged; the copy within bounds, the first
    sentence not an article; the screenshots present, in an allowed state, readable, distinct;

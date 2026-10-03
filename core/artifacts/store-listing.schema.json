@@ -8,7 +8,7 @@
     "id": "store-listing",
     "kind": "artifact",
     "format": "json",
-    "version": "1.0.0",
+    "version": "1.1.0",
     "producer": "release:store-listing",
     "consumers": ["release:store-listing", "release:draft", "release:approved", "release:validating", "release:submitting"],
     "repo_path": "<game-repo>/release/<release-id>/listing/listing.json",
@@ -182,6 +182,10 @@
             "additionalProperties": { "$ref": "#/$defs/localeCopy" }
           },
           "locales_required": { "type": "array", "items": { "type": "string" } },
+          "age_rating": {
+            "type": ["string", "null"],
+            "description": "The age rating this platform's listing states (factory.listing.age_rating), whether or not copy could be written in its locales; null when the platform asks for none or nothing states one."
+          },
           "unmet": {
             "type": "array",
             "description": "Requirements of the block this rendition could not meet (a size larger than any master, a format no encoder writes), each a problem.",

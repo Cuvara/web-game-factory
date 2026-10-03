@@ -235,16 +235,18 @@ class GameBuild:
     """A committed game repository with a built bundle under dist/ (index.html, locale
     strings), as verification leaves it."""
 
-    def __init__(self, scratch):
+    def __init__(self, scratch, strings=None):
         self.root = os.path.join(scratch, "fixture-game")
         os.makedirs(os.path.join(self.root, "dist", "locales"))
         with open(os.path.join(self.root, "dist", "index.html"), "w", encoding="utf-8") as handle:
             handle.write("<!doctype html><title>Fixture Game</title>\n")
-        with open(os.path.join(self.root, "dist", "locales", "en.json"), "w", encoding="utf-8") as handle:
-            json.dump({"title.heading": "Fixture Game", "hud.objective": "Tap on the beat to switch lanes."}, handle)
-        with open(os.path.join(self.root, "dist", "locales", "ru.json"), "w", encoding="utf-8") as handle:
-            json.dump({"title.heading": "Fixture Game",
-                       "title.rules": "Нажимайте в такт, чтобы менять полосу и держать комбо."}, handle)
+        if strings is None:
+            strings = {"en": {"title.heading": "Fixture Game", "hud.objective": "Tap on the beat to switch lanes."},
+                       "ru": {"title.heading": "Fixture Game",
+                              "title.rules": "Нажимайте в такт, чтобы менять полосу и держать комбо."}}
+        for locale, values in strings.items():
+            with open(os.path.join(self.root, "dist", "locales", f"{locale}.json"), "w", encoding="utf-8") as handle:
+                json.dump(values, handle, ensure_ascii=False)
         with open(os.path.join(self.root, "game.config.yaml"), "w", encoding="utf-8") as handle:
             handle.write("game:\n  id: fixture-game\n  name: Fixture Game\n  version: 0.1.0\n"
                          "build:\n  output: dist\n"
@@ -517,6 +519,40 @@ class Copy(unittest.TestCase):
                         if p["severity"] == "error"]
             self.assertEqual(problems, [], locale)
 
+    def test_a_locale_is_written_from_the_games_own_keys_not_only_the_template_ones(self):
+        # Sky Marble (2026-10-04): the game names its strings `game.title` and
+        # `play.objective`; ru was read from the build and then not written, so yandex
+        # (which requires ru) got no copy at all.
+        facts = facts_mod.extract(DESIGN, strings={
+            "en": {"game.title": "Fixture Game", "play.objective": "Tap on the beat to switch lanes and keep the combo alive.",
+                   "title.course": "Course {n}"},
+            "ru": {"game.title": "Фикстура", "play.objective": "Нажимайте в такт, чтобы менять полосу.",
+                   "title.course": "Трасса {n}"}})
+        copies, _ = copywriter.write_copy(facts, ["en", "ru"], self.reference)
+        ru = copies["ru"]
+        self.assertEqual(ru["title"], "Фикстура")
+        self.assertEqual(ru["short_description"], "Нажимайте в такт, чтобы менять полосу.")
+        self.assertEqual([b["source"] for b in ru["features"]], ["string:ru:play.objective"])
+        self.assertEqual(ru["categories"], ["Arcade"])
+        problems = [p for p in grounding.check(ru, facts, self.reference["claims"], locale="ru")
+                    if p["severity"] == "error"]
+        self.assertEqual(problems, [])
+
+    def test_the_objective_key_is_the_one_whose_english_is_the_design_objective(self):
+        objective = DESIGN["build_spec"]["experience"]["goal"]["statement"]
+        facts = facts_mod.extract(DESIGN, strings={
+            "en": {"intro.line": objective, "menu.play": "Play"},
+            "ru": {"intro.line": "Нажимайте в такт, чтобы менять полосу.", "menu.play": "Играть"}})
+        copies, _ = copywriter.write_copy(facts, ["ru"], self.reference)
+        self.assertEqual(copies["ru"]["features"][0]["source"], "string:ru:intro.line")
+
+    def test_a_locale_whose_strings_hold_no_title_or_objective_is_never_invented(self):
+        facts = facts_mod.extract(DESIGN, strings={
+            "en": {"menu.play": "Play"}, "ru": {"menu.play": "Играть", "clear.time": "Время {t} с"}})
+        copies, _ = copywriter.write_copy(facts, ["en", "ru", "tr"], self.reference)
+        self.assertIsNone(copies["ru"])
+        self.assertIsNone(copies["tr"])
+
     def test_fit_text_cuts_at_a_sentence_then_a_word_never_inside_one(self):
         text = "Drop the piece. Merge equal neighbours into one. Keep the columns clear."
         self.assertEqual(copywriter.fit_text(text, 40), "Drop the piece.")
@@ -691,7 +727,8 @@ class Rendition(unittest.TestCase):
                                      "age_rating": {"required": True}}}
         entry, derive = self.render(profile)
         codes = sorted(u["code"] for u in entry["unmet"])
-        self.assertEqual(codes, ["format-unavailable", "locale-missing", "video-format-unavailable"])
+        self.assertEqual(codes, ["age-rating-missing", "format-unavailable", "locale-missing",
+                                 "video-format-unavailable"])
         self.assertEqual(entry["text"], {})
         # With the browser's encoders, a jpg is a derive job for the browser, not an unmet.
         entry, derive = self.render(profile, browser_formats=("jpg", "webp"), age_rating={"default": "3+"})
@@ -704,7 +741,17 @@ class Rendition(unittest.TestCase):
         self.assertIn("age-rating-missing", [u["code"] for u in entry["unmet"]])
         entry, _ = self.render(profile, age_rating={"test": "12+"})
         self.assertEqual(entry["text"]["en"]["age_rating"], "12+")
+        self.assertEqual(entry["age_rating"], "12+")
         self.assertNotIn("age-rating-missing", [u["code"] for u in entry["unmet"]])
+
+    def test_the_configured_age_rating_reaches_the_rendition_without_copy(self):
+        # Sky Marble: `factory.listing.age_rating: {default: 12+}` was set, and yandex still
+        # reported it missing because it was only written into copy that did not exist.
+        profile = {"store_listing": {"status": "unverified", "locales": ["ru"], "age_rating": {"required": True}}}
+        entry, _ = self.render(profile, platform_id="yandex", age_rating={"default": "12+"})
+        self.assertEqual(entry["text"], {})
+        self.assertEqual(entry["age_rating"], "12+")
+        self.assertEqual([u["code"] for u in entry["unmet"]], ["locale-missing"])
 
 
 # -- the step --------------------------------------------------------------------------------
@@ -899,6 +946,49 @@ class Validation(ListingCase):
         self.assertEqual(report["verdict"], "FAIL")
         self.assertEqual(report["sections"]["grounding"], "FAIL")
         self.assertIn("grounding.en", report["failed"])
+
+    def test_a_game_with_its_own_ru_keys_gets_a_grounded_yandex_rendition_and_passes(self):
+        self.game = GameBuild(os.path.join(self.scratch, "own-keys"), strings={
+            "en": {"game.title": "Fixture Game", "play.objective": "Tap on the beat to switch lanes and keep the combo alive."},
+            "ru": {"game.title": "Fixture Game", "play.objective": "Нажимайте в такт, чтобы менять полосу."}})
+        platforms_ = [{"id": "yandex", "profile": "yandex@1.1.0", "role": "optional"}]
+        result, _ = self.capture(artifacts=self.game.evidence(platforms=platforms_),
+                                 context=self.context(config={"listing": {"age_rating": {"default": "12+"}}}))
+        listing = self.listing_of(result)
+        self.assertEqual(listing["status"], "complete", listing["problems"])
+        self.assertEqual(sorted(listing["copy"]["locales"]), ["en", "ru"])
+        yandex = listing["platforms"][0]
+        self.assertEqual(sorted(yandex["text"]), ["ru"])
+        self.assertEqual(yandex["text"]["ru"]["short_description"], "Нажимайте в такт, чтобы менять полосу.")
+        self.assertEqual(yandex["text"]["ru"]["categories"], ["Arcade"])
+        self.assertEqual(yandex["text"]["ru"]["age_rating"], "12+")
+        self.assertEqual(yandex["age_rating"], "12+")
+        outcome, report = self.validate(listing)
+        self.assertEqual(report["failed"], [], [c for c in report["checks"] if c["status"] == "FAIL"])
+        self.assertEqual(report["verdict"], "PASS")
+        self.assertEqual(report["platform_requirements"][0]["status"], "PASS")
+
+    def test_a_required_locale_the_game_lacks_blocks_once_for_a_person_never_loops(self):
+        # Without ru strings the texts and categories of yandex are empty; that is the
+        # locale's gap, which rewriting cannot close: BLOCKED naming it, not FAIL back to the
+        # listing until the loop limit.
+        self.game = GameBuild(os.path.join(self.scratch, "en-only"), strings={
+            "en": {"title.heading": "Fixture Game", "hud.objective": "Tap on the beat to switch lanes."}})
+        platforms_ = [{"id": "yandex", "profile": "yandex@1.1.0", "role": "required"}]
+        result, _ = self.capture(artifacts=self.game.evidence(platforms=platforms_),
+                                 context=self.context(config={"listing": {"age_rating": {"default": "12+"}}}))
+        listing = self.listing_of(result)
+        self.assertEqual(listing["platforms"][0]["age_rating"], "12+")
+        outcome, report = self.validate(listing)
+        self.assertEqual(outcome.outcome, StepOutcome.BLOCKED)
+        self.assertEqual(report["verdict"], "BLOCKED")
+        self.assertNotIn("platforms.yandex.age_rating", report["failed"])
+        self.assertIn("platforms.yandex.locale:ru", report["failed"])
+        self.assertIn("platforms.yandex.list:categories", report["failed"])
+        failed = [c for c in report["checks"] if c["status"] == "FAIL"]
+        self.assertTrue(all(c["fix"] == "configure" for c in failed), failed)
+        categories = next(c for c in failed if c["id"] == "platforms.yandex.list:categories")
+        self.assertIn("no copy in required locale ru", categories["summary"])
 
     def test_only_a_person_can_fix_it_blocks(self):
         platforms_ = [{"id": "yandex", "profile": "yandex@1.1.0", "role": "required"}]

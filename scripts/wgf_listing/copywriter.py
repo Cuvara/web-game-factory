@@ -46,6 +46,15 @@ PROMPT_STDOUT = (
     "with the JSON object, exactly in the shape the brief gives."
 )
 _SENTENCE_END = re.compile(r"(?<=[.!?])\s+")
+# The game's own strings carry no fixed key names: the template ships `title.heading` and
+# `hud.objective`, a game may name them `game.title` and `play.objective`. Known keys first,
+# then the key whose English text is the design's own objective, then a key named for what
+# it holds. A string with a placeholder (`Course {n}`) is a label, never copy.
+_TITLE_KEYS = ("title.heading", "boot.title", "title", "game.title", "game.name")
+_OBJECTIVE_KEYS = ("hud.objective", "play.objective", "objective")
+_RULES_KEYS = ("title.rules", "title.howto", "rules", "howto")
+_OBJECTIVE_NAME = re.compile(r"(?:^|[._-])(objective|goal)$", re.I)
+_RULES_NAME = re.compile(r"(?:^|[._-])(rules|howto|how_to|instructions)$", re.I)
 
 
 # -- fitting --------------------------------------------------------------------------------
@@ -182,6 +191,33 @@ def _tags(facts, vocabulary, reference):
         if rules.get(tag):
             tags.append(tag)
     return tags
+
+
+def _plain(text):
+    return re.sub(r"[\s.!?]+$", "", str(text or "").strip()).lower()
+
+
+def _string_key(strings, known, named=None, *, english=None, same_as=None):
+    """The key of the game's own string for one purpose in `strings` (one locale), or None:
+    a known key, else the key whose English string says `same_as` (the design's own
+    objective), else the first key, sorted, named for the purpose. Empty strings and
+    strings with a placeholder are labels, not copy."""
+    def usable(key):
+        value = strings.get(key)
+        return isinstance(value, str) and value.strip() and "{" not in value
+
+    for key in known:
+        if usable(key):
+            return key
+    if english and same_as:
+        for key in sorted(english):
+            if _plain(english[key]) == _plain(same_as) and usable(key):
+                return key
+    if named is not None:
+        for key in sorted(strings):
+            if named.search(key) and usable(key):
+                return key
+    return None
 
 
 class TemplateWriter:
@@ -334,11 +370,13 @@ class TemplateWriter:
     def _from_strings(self, facts, strings, locale, bounds):
         """Copy in a locale from the game's own strings: its title, its rules or objective
         text, its button labels. Grounded by construction; shorter than the English."""
-        title = next((strings[k] for k in ("title.heading", "boot.title", "title") if strings.get(k)),
-                     facts["title"])
-        rules = next((strings[k] for k in ("title.rules", "hud.objective", "title.howto", "rules")
-                      if strings.get(k)), None)
-        objective = strings.get("hud.objective")
+        title_key = _string_key(strings, _TITLE_KEYS)
+        title = strings[title_key] if title_key else facts["title"]
+        objective_key = _string_key(strings, _OBJECTIVE_KEYS, _OBJECTIVE_NAME,
+                                    english=(facts.get("strings") or {}).get("en"), same_as=facts.get("objective"))
+        rules_key = _string_key(strings, _RULES_KEYS, _RULES_NAME)
+        objective = strings[objective_key] if objective_key else None
+        rules = strings[rules_key] if rules_key else None
         if not rules and not objective:
             return None
         verb = _sentence(objective or rules)
@@ -346,14 +384,10 @@ class TemplateWriter:
         long_text = " ".join(_sentence(t) for t in dict.fromkeys([objective, rules]) if t)
         long = fit_text(long_text, (bounds.get("long_description") or {}).get("max_chars"))
         bullets = []
-        keys = {strings.get(k): k for k in ("hud.objective", "title.rules", "title.howto", "rules")
-                if strings.get(k)}
-        for text in (objective, rules):
-            source = f"string:{locale}:{keys.get(text)}" if text in keys else "objective"
-            if text:
-                bullets.append({"text": fit_text(_sentence(text).rstrip("."),
-                                                 (bounds.get("features") or {}).get("max_chars")),
-                                "source": source})
+        for key in dict.fromkeys(k for k in (objective_key, rules_key) if k):
+            bullets.append({"text": fit_text(_sentence(strings[key]).rstrip("."),
+                                             (bounds.get("features") or {}).get("max_chars")),
+                            "source": f"string:{locale}:{key}"})
         english = self._english(facts, bounds)
         return {
             "title": fit_text(title, (bounds.get("title") or {}).get("max_chars")),

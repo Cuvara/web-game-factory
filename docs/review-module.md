@@ -117,8 +117,9 @@ checkout. The checkout is **fingerprinted** before and after the reviewer runs
 guarded paths around its developer, see [development-module.md](development-module.md);
 `scripts/wgf_review/isolation.py` only re-exports it). The fingerprint covers:
 
-- `HEAD`, the branch it points at, and every ref. This catches a reviewer that commits,
-  resets, stashes, tags or switches branches.
+- `HEAD`, the branch it points at, that branch's ref, and the checkout's per-worktree refs
+  (`refs/bisect/`, `refs/worktree/`, `refs/rewritten/`). This catches a reviewer that
+  commits, resets or switches branches.
 - `git status --porcelain=v1 -z --untracked-files=all --ignored=no`. This catches staged
   changes.
 - The sha256 and exec bit of every tracked file and every untracked, non-ignored file.
@@ -126,7 +127,11 @@ guarded paths around its developer, see [development-module.md](development-modu
   `package.json`, the lockfiles, `.npmrc`, `.gitignore`, `game.config.yaml`, the
   tsconfig/vite/vitest/playwright/eslint/prettier configs, `tests/`, `.github/` and
   `.husky/`. A reviewer that also edited `.gitignore` to hide its change is still caught.
-- The git metadata that changes what git or the next commit does: `.git/config`, `hooks/`,
+- The repository config the checkout runs under (`config` in the common git directory),
+  entry by entry. Other branches' `branch.<name>.*` sections are not guarded, and neither
+  are the two keys `git worktree add` writes (`extensions.relativeWorktrees`,
+  `core.repositoryformatversion`).
+- The git metadata that changes what git or the next commit does: `config.worktree`, `hooks/`,
   `info/` (exclude, attributes), `objects/info/` (alternates, grafts), submodules' config
   and hooks, and in-progress operation state (`MERGE_HEAD`, `rebase-*`, `sequencer/`). A
   hook is code that runs on the next commit; an `info/exclude` line hides a file.
@@ -148,14 +153,28 @@ developer before it - that writes `core.fsmonitor` or a `filter.*.process` into
 `.git/config` gets the Factory to run a command outside any sandbox the agent was in, and a
 `core.worktree` pointing elsewhere turns the restore's `clean -fd` on another directory.
 
-**Any difference** fails the review. Each change is listed in
+**What is not guarded: the rest of the repository.** A game repository can have several
+worktrees. Delegated agents commit on their own branches, in their own worktrees, while a
+review runs ([orca-delegation.md](orca-delegation.md)). Their branch refs, tags, the shared
+stash, `.git/worktrees/*` and their branches' config belong to them. A change there is not
+a violation. The step logs it (`repository changed outside the guarded set`), and the
+restore never writes, deletes or rewinds it: restoring another worktree's branch would
+destroy its work. Found live: a review failed on `refs/heads/expansion`,
+`refs/heads/bbw-ui-polish` and `.git/config`, and its restore deleted `expansion`, which
+left that worktree at `HEAD 0000000`. The cost of this rule: a reviewer that tags, stashes,
+or commits on another branch and switches back is logged, not failed. None of those change
+the checkout the review was of.
+
+**Any difference** in the guarded set fails the review. Each change is listed in
 `review-report.isolation.violations` with `path`, `change`, `scope` (`checkout` or
 `factory`) and `sensitive`. The checkout is then put back:
 
-0. Write back the git metadata from memory, before git reads it again.
+0. Write back the git metadata from memory, before git reads it again. The config is put
+   back through `git config --file`, which runs nothing: the guarded entries as they were,
+   other branches' entries as they are now.
 1. Restore the symbolic ref.
-2. Restore every ref.
-3. `reset --hard` to the recorded `HEAD`.
+2. Restore the per-worktree refs. No other ref is touched.
+3. `reset --hard` to the recorded `HEAD`. This also puts back the checked-out branch.
 4. `clean -fd`. Never `-x`, so `node_modules` survives.
 5. Remove any new ignored entries, and files added inside existing ones.
 6. Write back the bytes of the fixed-list, git-metadata and guarded files, which were kept in

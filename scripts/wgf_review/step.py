@@ -24,6 +24,13 @@ Outcomes, per docs/workflow-module-contract.md section 7:
     BLOCKED             no checkout; the checkout is dirty; or a violation that could not
                         be undone - each needs a person before a review means anything
 
+What the reviewer may not change is the checkout it reviews - its working tree, index, HEAD,
+the checked-out branch, its per-worktree refs and the repository config it runs under - and
+the Factory's guarded paths. Other worktrees of the same game repository (delegated agents
+on their own branches) keep committing while a review runs: their refs, .git/worktrees/*
+and their branches' config are logged as changed outside the guarded set, never a failure,
+and the restore never touches them (wgflib/isolation.py, docs/review-module.md).
+
 Why request-changes is FAILED and not SUCCESS with a route: an unrouted SUCCESS goes to the
 next step. A workflow that forgot to route `request-changes` would then carry a build its
 reviewer rejected into the SDK step and on towards release. FAILED fails closed; it is the
@@ -225,6 +232,13 @@ class ReviewStep(WorkflowStep):
         try:
             after = isolation.take(git, settings.guarded_paths, settings.fingerprint_ignored)
             violations = isolation.diff(before, after)
+            noted = isolation.outside(before, after)
+            if noted:
+                # Other worktrees of the repository commit on their own branches while a
+                # review runs; that is theirs, not the reviewer's (wgflib/isolation.py).
+                context.logger.info("review: repository changed outside the guarded set",
+                                    count=len(noted),
+                                    paths=[n["path"] for n in noted[:20]])
         except (isolation.GitError, OSError) as exc:
             # The reviewer left the checkout in a state git cannot even read (a broken
             # config, a removed .git). That is a write; never a pass.

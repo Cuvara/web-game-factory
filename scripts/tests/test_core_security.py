@@ -606,7 +606,9 @@ class ReviewerIsolation(unittest.TestCase):
     def write(self, relative, text):
         path = os.path.join(self.root, *relative.split("/"))
         os.makedirs(os.path.dirname(path), exist_ok=True)
-        with open(path, "w", encoding="utf-8") as handle:
+        # LF on every platform: the fixture is compared byte for byte with what
+        # `reset --hard` checks out.
+        with open(path, "w", encoding="utf-8", newline="\n") as handle:
             handle.write(text)
         return path
 
@@ -764,6 +766,97 @@ class ReviewerIsolation(unittest.TestCase):
         self.assertTrue(os.path.exists(os.path.join(victim, "precious.txt")))
         self.assertEqual(os.listdir(victim), ["precious.txt"])
         self.assertNotIn("worktree", _git(self.root, "config", "--list", "--local"))
+
+    # Other worktrees of the same repository. Found live: delegated agents committed on
+    # their own branches while a review ran; the guard failed the review and its restore
+    # deleted one of their branch refs.
+
+    def add_worktree(self, name, branch, track=False):
+        path = os.path.join(self.scratch, name)
+        args = ["worktree", "add", "-q"] + (["--track"] if track else []) + ["-b", branch,
+                                                                             path]
+        _git(self.root, *args, *(["HEAD"] if not track else [self.current_branch()]))
+        return path
+
+    def current_branch(self):
+        return _git(self.root, "symbolic-ref", "--short", "HEAD").strip()
+
+    def test_another_worktree_committing_on_its_branch_is_not_a_violation(self):
+        other = self.add_worktree("other", "expansion", track=True)
+        self.before = isolation.take(self.git, [self.factory])
+        with open(os.path.join(other, "src", "main.ts"), "w") as handle:
+            handle.write("export const x = 2;\n")
+        _git(other, "commit", "-qam", "expansion work")
+        _git(self.root, "branch", "bbw-ui-polish")  # a branch made elsewhere meanwhile
+        _git(self.root, "config", "branch.bbw-ui-polish.remote", "origin")
+        moved = _git(self.root, "rev-parse", "refs/heads/expansion").strip()
+        self.assertEqual(self.violations(), [])
+        after = isolation.take(isolation.Git(self.root), [self.factory])
+        noted = {n["path"] for n in isolation.outside(self.before, after)}
+        self.assertIn("refs/heads/expansion", noted)
+        self.assertIn("refs/heads/bbw-ui-polish", noted)
+        self.assertIn(".git/config:branch.bbw-ui-polish.remote", noted)
+        # A restore for some other reason leaves their refs and config alone.
+        restored, problems = isolation.restore(isolation.Git(self.root), self.before,
+                                               [self.factory])
+        self.assertTrue(restored, problems)
+        self.assertEqual(_git(self.root, "rev-parse", "refs/heads/expansion").strip(), moved)
+        self.assertEqual(_git(other, "rev-parse", "HEAD").strip(), moved)
+        self.assertEqual(_git(self.root, "config", "branch.bbw-ui-polish.remote").strip(),
+                         "origin")
+
+    def test_a_worktree_added_during_the_review_is_not_a_violation(self):
+        self.add_worktree("added", "new-work", track=True)
+        self.assertEqual(self.violations(), [])
+        restored, problems = isolation.restore(isolation.Git(self.root), self.before,
+                                               [self.factory])
+        self.assertTrue(restored, problems)
+        self.assertTrue(os.path.isdir(os.path.join(self.scratch, "added", "src")))
+        self.assertTrue(_git(self.root, "rev-parse", "--verify", "-q",
+                             "refs/heads/new-work").strip())
+        self.assertIn("branch.new-work.merge", _git(self.root, "config", "--list"))
+        self.assertIn("added", _git(self.root, "worktree", "list"))
+
+    def test_the_reviewer_editing_a_file_is_still_caught_beside_another_worktree(self):
+        other = self.add_worktree("other", "expansion")
+        self.before = isolation.take(self.git, [self.factory])
+        _git(other, "commit", "-q", "--allow-empty", "-m", "theirs")
+        theirs = _git(other, "rev-parse", "HEAD").strip()
+        self.write("src/main.ts", "fixed while in there\n")
+        self.assert_caught("src/main.ts")
+        self.assertEqual(_git(other, "rev-parse", "HEAD").strip(), theirs)
+
+    def test_the_reviewer_committing_on_the_checked_out_branch_is_caught(self):
+        self.add_worktree("other", "expansion")
+        self.before = isolation.take(self.git, [self.factory])
+        branch = "refs/heads/" + self.current_branch()
+        self.write("src/main.ts", "committed by the reviewer\n")
+        _git(self.root, "commit", "-qam", "unreviewed")
+        found = self.violations()
+        self.assertTrue(any(v["change"] == "head-moved" for v in found), found)
+        self.assertTrue(any(v["path"] == branch for v in found), found)
+        self.assert_caught(branch)
+        self.assertEqual(_git(self.root, "rev-parse", "HEAD").strip(), self.before.head)
+
+    def test_the_reviewer_moving_head_to_another_branch_is_caught(self):
+        self.add_worktree("other", "expansion")
+        _git(self.root, "branch", "side")
+        self.before = isolation.take(self.git, [self.factory])
+        _git(self.root, "checkout", "-q", "side")
+        found = self.violations()
+        self.assertTrue(any(v["change"] == "branch-changed" for v in found), found)
+        self.assert_caught("HEAD")
+        self.assertEqual(_git(self.root, "symbolic-ref", "HEAD").strip(), self.before.branch)
+
+    def test_the_reviewer_changing_config_beside_other_worktrees_config_is_undone(self):
+        self.add_worktree("other", "expansion")
+        self.before = isolation.take(self.git, [self.factory])
+        _git(self.root, "config", "core.hooksPath", "evil-hooks")
+        _git(self.root, "config", "branch.expansion.remote", "origin")  # theirs, meanwhile
+        self.assert_caught(".git/config")
+        listed = _git(self.root, "config", "--list", "--local")
+        self.assertNotIn("hookspath", listed.lower())
+        self.assertIn("branch.expansion.remote=origin", listed)
 
     def test_hardened_git_ignores_redirecting_environment(self):
         env = gitsafe.safe_env({"GIT_DIR": "/elsewhere", "GIT_WORK_TREE": "/x",

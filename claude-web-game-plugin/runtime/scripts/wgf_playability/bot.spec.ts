@@ -648,11 +648,20 @@ test("lose and restart: the anti-oracle plays badly, then retries", async ({ pag
       if (!succeeded && s.oracle) {
         await act(page, s.oracle, touch);
         succeeded = true;
-      } else if (s.oracle) {
+      } else {
         // A move that is not the oracle's, never a pause or settings toggle (bad play, not no
-        // play); with no other move, the only one there is.
+        // play); with no other move, the only one there is. With no oracle at all - the
+        // player has slid into a dead end the game cannot solve from - bad play goes on all
+        // the same: a puzzle still loses by running out of moves, and a game that never
+        // ends from there is what this test exists to show.
         const moves = s.inputs.filter((m) => !UTILITY.test(m.action));
-        const others = moves.filter((m) => JSON.stringify(m) !== JSON.stringify(s.oracle));
+        const others = s.oracle
+          ? moves.filter((m) => JSON.stringify(m) !== JSON.stringify(s.oracle))
+          : moves;
+        if (!others.length && !s.oracle) {
+          await page.waitForTimeout(150);
+          continue;
+        }
         // What the last press did, as the probe reports it: the metrics and the unit's own
         // progress. The same state again means the press changed nothing.
         const state = JSON.stringify({ m: s.metrics ?? {}, c: s.content ?? null });
@@ -660,7 +669,7 @@ test("lose and restart: the anti-oracle plays badly, then retries", async ({ pag
         if (repeated) k += 1;
         unchanged = state;
         const picked = others.length ? k % others.length : null;
-        const wrong = picked === null ? s.oracle : others[picked];
+        const wrong = picked === null ? (s.oracle as Move) : others[picked];
         k += 1;
         if (wrongPresses.length < 60) {
           wrongPresses.push({ ms: Date.now() - t0, action: wrong.action, picked,

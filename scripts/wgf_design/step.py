@@ -24,7 +24,9 @@ Outcomes, per docs/workflow-module-contract.md §7:
     hooks; an MVP entry the MVP does not build)  checked only when no blocking rule breached)
     a blocking consistency rule breached       FAILED, route `descope`, not retryable, with the
                                                game-design persisted as evidence - cut scope;
-                                               never relax the rule
+                                               never relax the rule. An author that repairs its
+                                               draft is shown the breaches and asked again
+                                               first (consistency.breach_problems)
     otherwise                                  SUCCESS
 """
 
@@ -47,8 +49,9 @@ ROLE = "game-designer"
 READS_STRATEGY_MAJOR = "1"
 DEFAULT_AUTHOR = "archetype"
 # How often an author that can repair its draft (the `agent` author) is shown what made the
-# composed design invalid - the game-design schema and the buildability check - and asked
-# again, before the step fails. Each round is one more author session.
+# composed design invalid - the game-design schema, the buildability check, and the blocking
+# consistency breaches - and asked again, before the step fails. Each round is one more
+# author session.
 MAX_REPAIR_ROUNDS = 2
 
 
@@ -124,6 +127,9 @@ class DesignStep(WorkflowStep):
                 break
             if not getattr(author, "repairs", False) or repair_round == MAX_REPAIR_ROUNDS:
                 after = f" after {repair_round} repair round(s)" if repair_round else ""
+                if outcome["consistency"]:
+                    # The design is valid and persisted; it is the scope that is wrong.
+                    break
                 if outcome["unbuildable"]:
                     context.logger.error("design is not buildable", problems=problems,
                                          repair_rounds=repair_round)
@@ -199,7 +205,8 @@ class DesignStep(WorkflowStep):
                     f"a design change: an agent author, or a new concept, not this draft.")
         outcome = {"design": design, "artifact": None, "block": None, "blocking": None,
                    "warnings": None, "problems": [], "unbuildable": False,
-                   "experience": False, "presentation": False, "depth": False}
+                   "experience": False, "presentation": False, "depth": False,
+                   "consistency": False}
         problems = buildability(design)
         if problems:
             outcome.update(problems=problems, unbuildable=True)
@@ -226,8 +233,14 @@ class DesignStep(WorkflowStep):
         design["consistency"] = block
         artifact = self._with_provenance(design, strategy, ref, title_id, now, context,
                                          getattr(author, "actor", "automation"))
+        problems = list(contracts("game-design", artifact))
         outcome.update(artifact=artifact, block=block, blocking=blocking, warnings=warnings,
-                       problems=list(contracts("game-design", artifact)))
+                       problems=problems)
+        if blocking and not problems:
+            # A schema-valid design that breaches a blocking rule: show the author what it
+            # breached and ask again. Only when the rounds run out does the step descope.
+            outcome.update(problems=consistency.breach_problems(block, blocking, self.rules),
+                           consistency=True)
         return outcome
 
     def _with_provenance(self, design, strategy, ref, title_id, now, context, actor):

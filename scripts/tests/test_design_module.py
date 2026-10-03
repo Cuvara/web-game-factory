@@ -344,6 +344,15 @@ class ConceptFidelity(unittest.TestCase):
         found = consistency._terms_in("a gateway to a seven-column track", self.TERMS)
         self.assertEqual(found, {"column"})
 
+    def test_the_english_verb_to_match_is_not_the_match_mechanic(self):
+        # A goalkeeper design: "the telegraphed zone always matches the zone the ball is
+        # struck toward" read as match-3 and descoped the run (2026-10-02).
+        self.assertEqual(consistency._terms_in(
+            "the telegraphed zone always matches the zone the ball is struck toward, on a "
+            "night match day", self.TERMS), set())
+        self.assertEqual(consistency._terms_in("swap to match three gems", self.TERMS),
+                         {"swap", "match"})
+
 
     def test_identity_is_stable_per_title(self):
         first = identity.choose("neon-drift", ["neon-night", "riso-arcade"])[0]
@@ -410,6 +419,51 @@ class FailurePaths(unittest.TestCase):
         breached = [r["criterion_id"] for r in design["consistency"]["rule_results"] if r["breached"]]
         self.assertIn("interstitial_interval_fits_session", breached)
         self.assertEqual(ArtifactContracts()("game-design", design), [])
+
+    def test_an_author_that_repairs_is_shown_the_breaches_and_asked_again(self):
+        # The breach is the design's, not the strategy's: the first draft prices its assets
+        # over the budget, and the author cuts them when it is shown the rule it broke.
+        seen = []
+
+        class Overpriced(authors.ArchetypeAuthor):
+            repairs = True
+
+            def draft(self, brief):
+                draft = super().draft(brief)
+                seen.append(brief.get("repair"))
+                if brief.get("repair"):
+                    return draft
+                budget = draft["scope"]["asset_budget"]
+                draft["build_spec"]["assets"][0]["est_cost"] = budget * 2
+                return draft
+
+        authors.register_author("overpriced", Overpriced)
+        self.addCleanup(authors.AUTHORS.pop, "overpriced", None)
+        result = run_step(load_strategy(), params={"author": "overpriced"})
+        self.assertEqual(result.outcome, StepOutcome.SUCCESS, result.error)
+        self.assertEqual(len(seen), 2)
+        self.assertIsNone(seen[0])
+        problems = seen[1]["problems"]
+        self.assertTrue(any("asset_cost_within_scope" in p for p in problems), problems)
+        self.assertTrue(any("Cut scope" in p for p in problems), problems)
+        self.assertEqual(result.artifacts[0].content["consistency"]["status"], "pass")
+
+    def test_a_breach_the_author_never_fixes_still_descopes(self):
+        class Stubborn(authors.ArchetypeAuthor):
+            repairs = True
+
+            def draft(self, brief):
+                draft = super().draft(brief)
+                draft["build_spec"]["assets"][0]["est_cost"] = draft["scope"]["asset_budget"] * 2
+                return draft
+
+        authors.register_author("stubborn", Stubborn)
+        self.addCleanup(authors.AUTHORS.pop, "stubborn", None)
+        result = run_step(load_strategy(), params={"author": "stubborn"})
+        self.assertEqual((result.outcome, result.route, result.retryable),
+                         (StepOutcome.FAILED, "descope", False))
+        self.assertIn("asset_cost_within_scope", result.error)
+        self.assertEqual(result.artifacts[0].content["consistency"]["status"], "fail")
 
     def test_an_author_exception_is_left_to_the_runtime_as_retryable(self):
         class Flaky(authors.DesignAuthor):

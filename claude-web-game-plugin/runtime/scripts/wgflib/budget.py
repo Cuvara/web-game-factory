@@ -11,10 +11,17 @@ bounds what a whole run may spend on unattended developer sessions, and nothing 
           cost_from:
             jsonl_key: <key>        # the number to read from the last JSON line holding it
 
-Every key is optional, and no `budget` at all is no budget - the behaviour before it
-existed. The installation's value is snapshotted into the run's params when the run starts
-(`develop_budget`, recorded in WORKFLOW_STARTED like every param, so an edit of state.json
-is refused on resume); a later config change does not reach a running run.
+Every key is optional. The installation's value is snapshotted into the run's params when
+the run starts (`develop_budget`, recorded in WORKFLOW_STARTED like every param, so an edit
+of state.json is refused on resume); a later change to a budget the run has does not reach
+it.
+
+A run started with no budget at all - the shipped, supervised config, whose developer is a
+person - is not left without one when its project later configures a paid one (the
+autonomous profile copied in mid-run): the first resume by a person that finds
+`factory.develop.budget` set records it as a BUDGET_ADOPTED operator event, corroborated
+like a raise, and from then on it is the run's budget exactly as a snapshot would be. The
+develop step never starts a command developer while the run has no budget (wgf_develop).
 
 Raising a budget is a person's act, recorded as a BUDGET_RAISED event (`wgf resume <run>
 --budget-sessions N | --budget-cost X`), never an edit. The effective limit is the largest of
@@ -39,12 +46,15 @@ names no provider: which key holds a session's cost is installation config.
 
 import re
 
-__all__ = ["PARAM", "RAISED_EVENT", "RESUMED_EVENT", "LIMITS", "BudgetError", "parse",
-           "shape_problems", "effective", "check_raise"]
+__all__ = ["PARAM", "RAISED_EVENT", "ADOPTED_EVENT", "RESUMED_EVENT", "LIMITS",
+           "BudgetError", "parse", "shape_problems", "base", "adopted", "effective",
+           "check_raise"]
 
-# The run param the snapshot is recorded under, and the event a person's raise is.
+# The run param the snapshot is recorded under, the event a person's raise is, and the event
+# a resume records when a run started without a budget takes the one now configured.
 PARAM = "develop_budget"
 RAISED_EVENT = "BUDGET_RAISED"
+ADOPTED_EVENT = "BUDGET_ADOPTED"
 RESUMED_EVENT = "WORKFLOW_RESUMED"
 LIMITS = ("max_sessions", "max_cost")
 _KEYS = LIMITS + ("cost_from",)
@@ -115,31 +125,69 @@ def check_raise(snapshot, max_sessions=None, max_cost=None):
         if not valid(value):
             raise BudgetError(f"{name} {value!r} is not a positive "
                               f"{'whole number' if name == 'max_sessions' else 'number'}")
-        if not isinstance(snapshot, dict) or name not in snapshot:
+        if not isinstance(snapshot, dict):
+            raise BudgetError("this run has no budget (factory.develop.budget); set one in "
+                              "the project's config and resume - the resume adopts it")
+        if name not in snapshot:
             raise BudgetError(f"this run was started without a {name} budget "
                               f"(factory.develop.budget.{name}); there is nothing to raise")
         data[name] = value
     return data
 
 
-def effective(params, events):
-    """{"max_sessions", "max_cost", "cost_from", "raises"} in force for a run: the snapshot
-    in its params, raised by every BUDGET_RAISED event a person recorded. A limit only ever
-    goes up: a raise below the snapshot changes nothing. None when the run has no budget."""
-    snapshot = (params or {}).get(PARAM) if isinstance(params, dict) else None
-    if not isinstance(snapshot, dict) or shape_problems(snapshot):
+def _by_a_person(events, index):
+    """The data of `events[index]` when a person's resume recorded it, else None: an agent
+    does not set its own budget, and a lone line appended to the log is no one's act."""
+    data = events[index].get("data") or {}
+    if not isinstance(data, dict) or data.get("decided_by") in (None, "automation"):
         return None
+    if not _corroborated(events, index, data.get("resume_nonce")):
+        return None
+    return data
+
+
+def adopted(events):
+    """The budget the first BUDGET_ADOPTED event a person's resume recorded carries, or
+    None. Only the first counts: a run takes a budget once, and a person changes it after
+    that only by a raise."""
+    events = [e for e in events or () if isinstance(e, dict)]
+    for index, event in enumerate(events):
+        if event.get("event") != ADOPTED_EVENT:
+            continue
+        data = _by_a_person(events, index)
+        value = (data or {}).get("budget")
+        if isinstance(value, dict) and value and not shape_problems(value):
+            return value
+    return None
+
+
+def base(params, events):
+    """The budget a run holds before any raise: the snapshot in its params, else the one a
+    person's resume adopted for it, else None."""
+    snapshot = (params or {}).get(PARAM) if isinstance(params, dict) else None
+    if snapshot is not None:
+        return snapshot if isinstance(snapshot, dict) and not shape_problems(snapshot) else None
+    return adopted(events)
+
+
+def effective(params, events):
+    """{"max_sessions", "max_cost", "cost_from", "raises", "source"} in force for a run: the
+    snapshot in its params (or the budget a resume adopted, `source` "adopted"), raised by
+    every BUDGET_RAISED event a person recorded. A limit only ever goes up: a raise below
+    the snapshot changes nothing. None when the run has no budget."""
+    events = [e for e in events or () if isinstance(e, dict)]
+    snapshot = base(params, events)
+    if snapshot is None:
+        return None
+    has_snapshot = isinstance(params, dict) and params.get(PARAM) is not None
     limits = {name: snapshot.get(name) for name in LIMITS}
     raises = []
-    events = [e for e in events or () if isinstance(e, dict)]
     for index, event in enumerate(events):
         if event.get("event") != RAISED_EVENT:
             continue
-        data = event.get("data") or {}
-        if not isinstance(data, dict) or data.get("decided_by") in (None, "automation"):
-            continue  # an agent does not raise its own budget
-        if not _corroborated(events, index, data.get("resume_nonce")):
-            continue  # not written by a person's resume
+        data = _by_a_person(events, index)
+        if data is None:
+            continue  # an agent's, or not written by a person's resume
         applied = {}
         for name, valid in (("max_sessions", _is_count), ("max_cost", _is_amount)):
             value = data.get(name)
@@ -149,7 +197,8 @@ def effective(params, events):
         if applied:
             raises.append(dict(applied, decided_by=data.get("decided_by"),
                                decided_at=data.get("decided_at")))
-    return dict(limits, cost_from=snapshot.get("cost_from"), raises=raises)
+    return dict(limits, cost_from=snapshot.get("cost_from"), raises=raises,
+                source="snapshot" if has_snapshot else "adopted")
 
 
 def _corroborated(events, index, nonce):

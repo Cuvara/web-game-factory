@@ -332,12 +332,16 @@ constructor raises.
   lock it does not own. `wgf pause` / `wgf cancel` of a run nobody drives change its state
   while holding the lock; of a driven run, they leave a request file for the driver.
 - **A lock names one process, not just a pid.** The lock (and the takeover guard) hold
-  `<pid> <start time>`, the start time being field 22 of `/proc/<pid>/stat`. The owner is
+  `<pid> <start time>`, the start time being field 22 of `/proc/<pid>/stat` (on Windows,
+  the process's creation time from `GetProcessTimes`). The owner is
   live only if the pid is alive and, when both start times are known, they match — so a
   dead driver whose pid the system has since given to an unrelated process is recognised
   as dead, and its run can be resumed. A lock holding only a pid (written by an earlier
-  version) or a start time that cannot be read (no `/proc`) is judged by the pid alone,
-  exactly as before.
+  version) or a start time that cannot be read (macOS: no `/proc`) is judged by the pid
+  alone, exactly as before. Whether a pid is alive is never asked by signalling it on
+  Windows: `os.kill(pid, 0)` there is `GenerateConsoleCtrlEvent(CTRL_C_EVENT)`, which called
+  a live driver on another console dead and could send Ctrl+C to a process group on this
+  one; `procs.pid_alive` opens the process and asks whether it has exited.
 - **An empty lock's grace does not trust a skewed mtime.** An empty lock (or guard) is
   mid-creation while its mtime is younger than 5 s and stale once it is more than 7 s old.
   In between — where a coarse or skewed mtime (WSL drvfs, network mounts) can make a
@@ -408,8 +412,12 @@ resume too.
 developer-session budget: it records a `BUDGET_RAISED` operator event, with `decided_by`
 derived exactly as for a decision, before the run continues. It is refused - exit 2,
 nothing recorded - from inside a step's process tree (`decided_by` automation: an agent does
-not raise its own budget), for a run started without that budget, and for a value that is
-not positive. A budget is never raised by editing `state.json`: its snapshot is a param,
+not raise its own budget), for a run without that budget, and for a value that is
+not positive. A run that has no budget at all, resumed by a person while
+`factory.develop.budget` is configured, first records a `BUDGET_ADOPTED` operator event
+carrying it - corroborated the same way, counted once - and that is its budget from then on;
+develop never starts a command developer for a run without one
+(development-module.md#budget). A budget is never raised by editing `state.json`: its snapshot is a param,
 corroborated against `WORKFLOW_STARTED` like every other. Nor by appending to
 `events.jsonl`: the engine writes the raise and the `WORKFLOW_RESUMED` after it with one
 `resume_nonce`, and a raise counts only when that resume record corroborates it; a whole
@@ -695,7 +703,7 @@ which is the structured log:
 | `EVENT_LOG_RESTORED` | `step_id`; `change`: what another process did to `events.jsonl` while that step ran (lines appended, or recorded lines changed or removed). The engine put the log back as it wrote it, and the step failed, not retried |
 | `ARTIFACT_CREATED` | the `ArtifactRef` |
 | `ARTIFACT_UPDATED` | the `ArtifactRef` (version ≥ 2) |
-| operator events | Not the engine's: a person's act recorded with `wgf resume` (`engine.resume(operator_events=...)`), `data` + `decided_by`, `decided_at`, and the `resume_nonce` of the `WORKFLOW_RESUMED` that follows. Refused for automation and for any of the names above. Today one: `BUDGET_RAISED` (`max_sessions`, `max_cost`; `wgf resume --budget-sessions/--budget-cost`, wgflib/budget.py) |
+| operator events | Not the engine's: a person's act recorded with `wgf resume` (`engine.resume(operator_events=...)`), `data` + `decided_by`, `decided_at`, and the `resume_nonce` of the `WORKFLOW_RESUMED` that follows. Refused for automation and for any of the names above. Today two, both wgflib/budget.py: `BUDGET_RAISED` (`max_sessions`, `max_cost`; `wgf resume --budget-sessions/--budget-cost`) and `BUDGET_ADOPTED` (`budget`; recorded by a person's resume of a run with no budget while `factory.develop.budget` is configured) |
 
 Consumers must ignore fields and events they do not know. `EventContract` fails if an event
 is added without being documented here. The CLI's progress output is just another
@@ -1063,7 +1071,7 @@ The engine executes no code it was not given by the installation:
   One residual window remains in the takeover: a process killed *inside* the guarded
   re-check (microseconds) leaves a `lock.takeover` naming a dead pid, which the next taker
   clears unguarded. A pid reused by an unrelated process is told apart by its start time
-  where `/proc` exists; without `/proc`, or for a lock written by an earlier version that
+  where `/proc` exists and on Windows; on macOS, or for a lock written by an earlier version that
   holds only a pid, it still makes a dead driver's lock look live — `wgf status` then says
   `running` or `hung`, and removing the lock file by hand is the way out.
 - **Orphaned grandchildren of a killed driver.** `wgflib.procs` takes a step's process tree

@@ -548,8 +548,8 @@ class AgentLoop(unittest.TestCase):
             self.assertIn(f"Verification failed `{failed['build_ref']['commit_sha'][:12]}`",
                           text)
             self.assertIn("Development was re-entered through `verify.fail`.", text)
-            self.assertIn("`mock-defect-5` (blocker) Scripted verification failure (mock).",
-                          text)
+            defect = failed["blocking_defects"][0]
+            self.assertIn(f"`{defect['id']}` (blocker) {defect['summary']}", text)
             self.assertIn("never request changes because verify has not passed this commit",
                           text)
         # The qa-report it was shown is pinned like every other input it read.

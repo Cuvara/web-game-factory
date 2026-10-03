@@ -561,24 +561,31 @@ def round_body(requirement, pieces, outline, bars=None):
                               text)), None)
     if word is None:
         return None, "the requirement names no round body"
+    named = f"the requirement names a {word}, but"
     views = (outline or {}).get("views") or {}
     lo, hi = float(rule.get("min_fill", 0.7)), float(rule.get("max_fill", 0.86))
     longest = float(rule.get("max_aspect", 1.18))
     measured = [v for v in views.values() if v is not None]
     if len(measured) < 3 or len(views) < 3:
-        return None, "the outline is not measured in all three views"
-    off = [name for name, v in sorted(views.items())
+        return None, f"{named} the outline is not measured in all three views"
+    off = [f"{name} (fill {float(v.get('fill', 0)):.2f}, aspect {float(v.get('aspect', 99)):.2f})"
+           for name, v in sorted(views.items())
            if not (lo <= float(v.get("fill", 0)) <= hi and float(v.get("aspect", 99)) <= longest)]
     if off:
-        return None, f"the outline is not a disk in the {', '.join(off)} view(s)"
+        return None, (f"{named} its outline is not a disk in the {', '.join(off)} view(s); a "
+                      f"round body's outline fills {lo:g}-{hi:g} of its rectangle and is at "
+                      f"most {longest:g} to 1 in every view: keep it round - every part inside "
+                      f"the ball's disk, nothing widening or stretching it")
     if not pieces:
-        return None, "no pieces"
+        return None, f"{named} it has no pieces"
     modelled = any(p["shape"] is None for p in pieces)
     largest = max(max(p["dimensions"]) for p in pieces) or 1.0
     signatures = {(p["shape"], tuple(sorted(round(d / largest, 2) for d in p["dimensions"])))
                   for p in pieces}
     if not modelled and (len(pieces) < int(rule.get("min_parts", 2)) or len(signatures) < 2):
-        return None, "a lone primitive (or copies of one) standing for it"
+        return None, (f"{named} a lone primitive (or copies of one) stands for it: compose it "
+                      f"of at least {int(rule.get('min_parts', 2))} different pieces - a shell "
+                      f"and a swirl band, a core and a rim")
     fills = [float(v["fill"]) for v in measured]
     return word, (f"a round body: the requirement names a {word}, its outline is a disk in "
                   f"every view (fill {min(fills):.2f}-{max(fills):.2f}) and it is "
@@ -730,6 +737,9 @@ def assess(data, *, role=None, visual_identity=None, spec=None, kind="model", na
                                               f"primitive_style")
         elif share > float(limit) and ball:
             check("model.silhouette", "pass", f"{text}; {ball_reason}")
+        elif share > float(limit) and ball_reason.startswith("the requirement names a"):
+            check("model.silhouette", "fail",
+                  f"{text}, over {float(limit):.0%}; not passed as a round body: {ball_reason}")
         elif share > float(limit):
             check("model.silhouette", "fail",
                   f"{text}, over {float(limit):.0%}: a box with bumps - the parts a player "

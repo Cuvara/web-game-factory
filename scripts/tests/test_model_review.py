@@ -204,6 +204,11 @@ class RoundBody(unittest.TestCase):
             model_quality.analyse(glb_synth.build(drum, MATS))["silhouette"])
         self.assertIsNone(found)
         self.assertIn("not a disk", why)
+        # The author is told what a round body needs, not to grow wings on a marble.
+        summary = check(quality, "model.silhouette")["summary"]
+        self.assertIn("not passed as a round body: the requirement names a marble", summary)
+        self.assertIn("keep it round", summary)
+        self.assertNotIn("wings", summary)
 
     def test_a_plural_names_it_too(self):
         req = dict(self.MARBLE_REQ, description="one of the marbles", readability="",

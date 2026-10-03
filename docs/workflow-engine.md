@@ -332,12 +332,16 @@ constructor raises.
   lock it does not own. `wgf pause` / `wgf cancel` of a run nobody drives change its state
   while holding the lock; of a driven run, they leave a request file for the driver.
 - **A lock names one process, not just a pid.** The lock (and the takeover guard) hold
-  `<pid> <start time>`, the start time being field 22 of `/proc/<pid>/stat`. The owner is
+  `<pid> <start time>`, the start time being field 22 of `/proc/<pid>/stat` (on Windows,
+  the process's creation time from `GetProcessTimes`). The owner is
   live only if the pid is alive and, when both start times are known, they match — so a
   dead driver whose pid the system has since given to an unrelated process is recognised
   as dead, and its run can be resumed. A lock holding only a pid (written by an earlier
-  version) or a start time that cannot be read (no `/proc`) is judged by the pid alone,
-  exactly as before.
+  version) or a start time that cannot be read (macOS: no `/proc`) is judged by the pid
+  alone, exactly as before. Whether a pid is alive is never asked by signalling it on
+  Windows: `os.kill(pid, 0)` there is `GenerateConsoleCtrlEvent(CTRL_C_EVENT)`, which called
+  a live driver on another console dead and could send Ctrl+C to a process group on this
+  one; `procs.pid_alive` opens the process and asks whether it has exited.
 - **An empty lock's grace does not trust a skewed mtime.** An empty lock (or guard) is
   mid-creation while its mtime is younger than 5 s and stale once it is more than 7 s old.
   In between — where a coarse or skewed mtime (WSL drvfs, network mounts) can make a
@@ -1063,7 +1067,7 @@ The engine executes no code it was not given by the installation:
   One residual window remains in the takeover: a process killed *inside* the guarded
   re-check (microseconds) leaves a `lock.takeover` naming a dead pid, which the next taker
   clears unguarded. A pid reused by an unrelated process is told apart by its start time
-  where `/proc` exists; without `/proc`, or for a lock written by an earlier version that
+  where `/proc` exists and on Windows; on macOS, or for a lock written by an earlier version that
   holds only a pid, it still makes a dead driver's lock look live — `wgf status` then says
   `running` or `hung`, and removing the lock file by hand is the way out.
 - **Orphaned grandchildren of a killed driver.** `wgflib.procs` takes a step's process tree

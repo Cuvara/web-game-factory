@@ -18,6 +18,7 @@ Run from the web-game-factory repository root:
     python -m unittest scripts.tests.test_core_process   (or discover scripts/tests)
 """
 
+import contextlib
 import os
 import shutil
 import signal
@@ -1077,6 +1078,70 @@ class ResolvingTheProgram(unittest.TestCase):
         result = procs.run(["git", "--version"], timeout=60)
         self.assertTrue(result.ok, result.tail(5))
         self.assertIn("git version", result.stdout or "")
+
+
+class PidAlive(unittest.TestCase):
+    """`procs.pid_alive` answers whether a process exists, on every platform, and never by
+    signalling it. On Windows `os.kill(pid, 0)` is GenerateConsoleCtrlEvent(CTRL_C_EVENT):
+    a live process outside this console read as dead there - `wgf status` called a live run
+    stale and a second driver could take its lock - and a process group on this console was
+    sent Ctrl+C."""
+
+    def child(self):
+        flags = 0 if POSIX else subprocess.CREATE_NEW_PROCESS_GROUP  # as procs.spawn starts one
+        process = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(30)"],
+                                   creationflags=flags)
+        self.addCleanup(process.wait)
+        self.addCleanup(process.kill)
+        return process
+
+    def no_signal(self):
+        """os.kill must not be what answers: on Windows it is the Ctrl+C."""
+        if POSIX:
+            return contextlib.nullcontext()
+        return mock.patch.object(procs.os, "kill",
+                                 side_effect=AssertionError("os.kill used as a probe"))
+
+    def test_a_live_child_is_alive(self):
+        process = self.child()
+        with self.no_signal():
+            self.assertTrue(procs.pid_alive(process.pid))
+            self.assertTrue(procs.pid_alive(os.getpid()))
+
+    def test_an_exited_child_is_not_alive_even_while_its_handle_is_held(self):
+        process = self.child()
+        process.kill()
+        process.wait()  # Popen still holds the handle on Windows: the pid is not reused yet
+        with self.no_signal():
+            self.assertFalse(procs.pid_alive(process.pid))
+
+    def test_pids_that_name_no_process(self):
+        with self.no_signal():
+            for pid in (None, 0, -1, 999999999):
+                self.assertFalse(procs.pid_alive(pid), pid)
+
+    @unittest.skipIf(POSIX, "Windows: a process outside this console")
+    def test_a_live_process_on_another_console_is_alive(self):
+        # The F12 case: the driver of a run started from another terminal. explorer.exe is
+        # outside every console; os.kill(pid, 0) raised WinError 87 for it.
+        listing = subprocess.run(["tasklist", "/FI", "IMAGENAME eq explorer.exe", "/FO", "CSV",
+                                  "/NH"], capture_output=True, text=True).stdout
+        fields = listing.strip().split(",")
+        if len(fields) < 2 or not fields[1].strip('"').isdigit():
+            self.skipTest("no interactive explorer.exe to ask about")
+        with self.no_signal():
+            self.assertTrue(procs.pid_alive(int(fields[1].strip('"'))))
+
+    @unittest.skipIf(POSIX, "Windows: the creation time names one process")
+    def test_the_creation_time_is_stable_for_one_process(self):
+        # A lock records it beside the pid (workflow.store); a recycled pid has a later one.
+        first = self.child()
+        started = procs.process_started(first.pid)
+        self.assertIsInstance(started, int)
+        self.assertEqual(procs.process_started(first.pid), started)
+        first.kill()
+        first.wait()
+        self.assertFalse(procs.pid_alive(first.pid))
 
 
 if __name__ == "__main__":

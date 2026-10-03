@@ -210,7 +210,9 @@ any orphan keeps running. A descendant that cleared its environment is not found
 
 - **No `/proc` (macOS, Windows): only the group.** `tagged_pids` returns `[]`, so a
   descendant that detaches itself (`setsid`, Playwright's `webServer`) is not found. On
-  macOS the group is still signalled. On Windows `taskkill /T` ends the tree by parentage.
+  macOS the group is still signalled. On Windows `taskkill /T` ends the tree by parentage,
+  and `pid_alive` asks the process (`OpenProcess`, then whether it has exited) - never
+  `os.kill(pid, 0)`, which there sends a console Ctrl+C instead of probing.
   The zombie hold (`waitid(WNOWAIT)`) is Linux-only too. Elsewhere the child is reaped
   first and its group is signalled only while it still has live members.
 - **A descendant that clears its environment *and* detaches** cannot be found by tag or by

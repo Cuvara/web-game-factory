@@ -59,8 +59,8 @@ import time
 __all__ = ["run", "spawn", "OwnedProcess", "ProcessResult", "TAG_ENV", "LINEAGE_ENV",
            "RUN_ENV", "HEARTBEAT_ENV", "tagged_pids", "terminate_tree", "live_groups",
            "terminate_all", "install_subreaper", "bound", "install_signal_cleanup",
-           "default_heartbeat_seconds", "pid_alive", "run_token", "run_pids", "sweep_run",
-           "can_sweep"]
+           "default_heartbeat_seconds", "pid_alive", "process_started", "run_token",
+           "run_pids", "sweep_run", "can_sweep"]
 
 TAG_ENV = "WGF_PROC_TAG"
 LINEAGE_ENV = "WGF_PROC_LINEAGE"
@@ -221,10 +221,12 @@ def _is_zombie(pid):
 
 
 def pid_alive(pid):
-    """True while `pid` exists and is not a zombie."""
+    """True while `pid` exists and is not a zombie (on Windows: has not exited)."""
     if pid is None:
         return False
-    if POSIX and os.path.isdir(_PROC):
+    if not POSIX:
+        return _windows_alive(pid)
+    if os.path.isdir(_PROC):
         fields = _stat_fields(pid)
         return fields is not None and fields[0] not in ("Z", "X")
     try:
@@ -237,6 +239,96 @@ def pid_alive(pid):
 
 
 _alive = pid_alive
+
+
+# Windows. `os.kill(pid, 0)` is no existence probe there: CPython treats signal 0 as
+# CTRL_C_EVENT and calls GenerateConsoleCtrlEvent(CTRL_C_EVENT, pid). That fails
+# (WinError 87) for a live process that is not a process group on the caller's console - a
+# driver started from another terminal reads as dead, so `wgf status` called a live run
+# stale and a second driver could take its lock - succeeds for an exited process whose
+# handle is still held, and where the pid is a process group on this console (every child
+# spawn() starts is one) it delivers Ctrl+C to it. The process itself is asked instead:
+# OpenProcess, then whether its handle is signalled (it has exited). A pid that cannot be
+# opened for lack of rights exists; one that cannot be opened at all does not.
+_WIN_QUERY_LIMITED = 0x1000      # PROCESS_QUERY_LIMITED_INFORMATION
+_WIN_SYNCHRONIZE = 0x00100000
+_WIN_WAIT_TIMEOUT = 0x102
+_WIN_STILL_ACTIVE = 259
+_WIN_ACCESS_DENIED = 5
+_KERNEL32 = []
+
+
+def _kernel32():
+    if not _KERNEL32:
+        import ctypes
+        from ctypes import wintypes
+        kernel = ctypes.WinDLL("kernel32", use_last_error=True)
+        kernel.OpenProcess.restype = wintypes.HANDLE
+        kernel.OpenProcess.argtypes = (wintypes.DWORD, wintypes.BOOL, wintypes.DWORD)
+        kernel.CloseHandle.argtypes = (wintypes.HANDLE,)
+        kernel.WaitForSingleObject.restype = wintypes.DWORD
+        kernel.WaitForSingleObject.argtypes = (wintypes.HANDLE, wintypes.DWORD)
+        kernel.GetExitCodeProcess.argtypes = (wintypes.HANDLE, ctypes.POINTER(wintypes.DWORD))
+        kernel.GetProcessTimes.argtypes = (wintypes.HANDLE,) + (
+            ctypes.POINTER(wintypes.FILETIME),) * 4
+        _KERNEL32.append((ctypes, wintypes, kernel))
+    return _KERNEL32[0]
+
+
+def _windows_open(pid, access):
+    """(handle or None, exists): `exists` is True when the pid names a process, whether or
+    not this one may open it."""
+    if isinstance(pid, bool) or not isinstance(pid, int) or not 0 < pid <= 0xFFFFFFFF:
+        return None, False
+    ctypes, _wintypes, kernel = _kernel32()
+    handle = kernel.OpenProcess(access, False, pid)
+    if handle:
+        return handle, True
+    return None, ctypes.get_last_error() == _WIN_ACCESS_DENIED
+
+
+def _windows_alive(pid):
+    ctypes, wintypes, kernel = _kernel32()
+    handle, exists = _windows_open(pid, _WIN_QUERY_LIMITED | _WIN_SYNCHRONIZE)
+    if handle:
+        try:
+            return kernel.WaitForSingleObject(handle, 0) == _WIN_WAIT_TIMEOUT
+        finally:
+            kernel.CloseHandle(handle)
+    if not exists:
+        return False
+    # Allowed to query but not to wait on: the exit code says whether it is still running.
+    handle, exists = _windows_open(pid, _WIN_QUERY_LIMITED)
+    if not handle:
+        return exists  # a process this user may not even query, e.g. a system one
+    try:
+        code = wintypes.DWORD()
+        if not kernel.GetExitCodeProcess(handle, ctypes.byref(code)):
+            return True
+        return code.value == _WIN_STILL_ACTIVE
+    finally:
+        kernel.CloseHandle(handle)
+
+
+def process_started(pid):
+    """On Windows, the process's creation time (100 ns units since 1601), or None when it
+    cannot be read. Together with the pid it names one process: a recycled pid comes back
+    with a different creation time. None elsewhere: there /proc answers this
+    (workflow.store._start_time)."""
+    if POSIX:
+        return None
+    ctypes, wintypes, kernel = _kernel32()
+    handle, _exists = _windows_open(pid, _WIN_QUERY_LIMITED)
+    if not handle:
+        return None
+    try:
+        times = [wintypes.FILETIME() for _ in range(4)]
+        if not kernel.GetProcessTimes(handle, *(ctypes.byref(t) for t in times)):
+            return None
+        created = (times[0].dwHighDateTime << 32) | times[0].dwLowDateTime
+        return created or None
+    finally:
+        kernel.CloseHandle(handle)
 
 
 def _group_alive(pgid):

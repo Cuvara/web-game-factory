@@ -1465,6 +1465,24 @@ class Command(DevelopCase):
         self.assertEqual([c for c in runner.calls if c[0] == "pnpm"],
                          [["pnpm", "install", "--frozen-lockfile", "--prefer-offline"]])
 
+    def test_the_smoke_suite_runs_at_the_configured_worker_count(self):
+        # goalkeeper-royale, 2026-10-02: the same tree failed the fully parallel desktop +
+        # mobile suite three sessions running (a production build's first frame missed its
+        # wait under load) and passed it whole at one worker. The count is the machine's.
+        runner = FakeRunner(on_develop=write_game)
+        result = step_with(runner).execute(
+            inputs_for(), context(self.command_config(smoke_workers=2)))
+        self.assertEqual(result.outcome, StepOutcome.SUCCESS, result.error)
+        smoke = [c for c in runner.calls if c[:3] == ["pnpm", "run", "test:e2e"]]
+        self.assertEqual(smoke, [["pnpm", "run", "test:e2e", "--workers=2"]])
+        unit = [c for c in runner.calls if c[:3] == ["pnpm", "run", "test"]]
+        self.assertEqual(unit, [["pnpm", "run", "test"]])  # only the smoke suite
+        for bad in (0, -1, True, "2", 1.5):
+            result = step_with(FakeRunner(on_develop=write_game)).execute(
+                inputs_for(), context(self.command_config(smoke_workers=bad)))
+            self.assertEqual((result.outcome, result.retryable), (StepOutcome.FAILED, False))
+            self.assertIn("smoke_workers", result.error)
+
     def test_no_browser_skips_the_smoke_suite_and_says_so(self):
         runner = FakeRunner(unavailable={"test:e2e"}, on_develop=write_game)
         result = step_with(runner).execute(inputs_for(), context(self.command_config()))

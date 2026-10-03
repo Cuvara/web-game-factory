@@ -396,6 +396,11 @@ factory:
     developer: {kind: handoff}  # or {kind: command, argv: [...], timeout_seconds: 5400}
     checks: [install, conformance, typecheck, lint, unit, build, smoke]
     check_timeout_seconds: 900
+    smoke_workers: 1          # optional: Playwright workers for the smoke suite (--workers=N);
+                              # unset leaves the repository's own, fully parallel setting. On a
+                              # machine that cannot stand desktop + mobile in parallel against
+                              # one preview server, a production build misses its first-frame
+                              # wait there and the same tree passes whole at one worker
     commit: true
     build_url: null             # "https://{branch}.{name}.pages.dev"; {owner} {sha} {short_sha}
     author: {name: ..., email: ...}   # when the checkout has no git identity

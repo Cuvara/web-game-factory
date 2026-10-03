@@ -23,6 +23,9 @@ default question asks which shape carries it, candidates are ranked by their mat
 first (analysis.idea_match, opportunities.rank), and the opportunity carries it verbatim as `brief`, for
 strategy and design to build from. The screen and its vetoes are unchanged, and nothing is
 invented: a selection that holds none of the brief's words records an `idea-unmatched` gap.
+"Holds the brief's words" means analysis.brief_terms: generic gameplay vocabulary never
+counts, a word of the shape's genre or names counts alone, and its mechanic sentence or
+facet labels count only two words or more - one incidental word is not a match.
 
 When no eligible candidate holds any of the brief's words, `idea_fallback` decides. `wait`
 (the default) selects nothing: the report keeps every candidate, records the

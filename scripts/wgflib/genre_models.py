@@ -12,6 +12,8 @@ module is the reading the *judging* steps need:
     qa_of(d)          the playability bars: design-depth.yaml's `playability` block with the
                       family's `qa` overrides applied, and the family's own qa keys under
                       `genre`
+    implementation()  the file's `implementation` block - what the developer builds the units
+                      to, and what a judging step holds the build to (`difficulty_tolerance`)
 
 No consumer branches on a family id, and no bar is ever written here: every number comes from
 core/reference/design-depth.yaml or from the family's entry. A family that says nothing about
@@ -24,7 +26,7 @@ from wgflib import paths
 from wgflib.yamllite import load_file
 
 __all__ = ["PATH", "DEPTH_PATH", "load", "load_depth", "for_design", "family_of", "axes_of",
-           "qa_of", "units_of", "FAMILY_OVERRIDES"]
+           "qa_of", "units_of", "implementation", "FAMILY_OVERRIDES"]
 
 PATH = os.path.join(paths.REFERENCE, "genre-models.yaml")
 DEPTH_PATH = os.path.join(paths.REFERENCE, "design-depth.yaml")
@@ -58,6 +60,19 @@ def load(path=None):
 def load_depth(path=None):
     """core/reference/design-depth.yaml."""
     return _cached(path or DEPTH_PATH)
+
+
+def implementation(models=None):
+    """The file's `implementation` block: what the developer writes the units to, and what a
+    judging step holds the build to.
+
+    `difficulty_tolerance` is the one the playability step reads: how far a unit's reported
+    `metrics.difficulty.<axis>` may sit from the design's value for that unit. A key this file
+    does not state is absent here, never defaulted - a comparison nobody has a bar for is
+    reported as unmeasured, not quietly passed.
+    """
+    block = (models or load()).get("implementation")
+    return dict(block) if isinstance(block, dict) else {}
 
 
 def family_of(design):

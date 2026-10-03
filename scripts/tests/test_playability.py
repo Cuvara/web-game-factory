@@ -496,6 +496,305 @@ class Content(Judge):
         self.assertEqual(truncated, {"traverse": False, "persist": False, "session": False})
 
 
+# -- an authored puzzle, mirroring the first live greybox run ---------------------------------
+# A six-level level-authored puzzle of the `puzzle` family (Ice Slide, greybox 2-1). The family
+# asks for 4 units traversed, so the bot is given 5 and the fifth is still in play when it
+# stops at `max units`; variety there is the layout, which entity kinds cannot show
+# (qa.min_new_kinds_per_unit 0); and the family states no `endless_window_s`, so one level has
+# no time ramp inside it. The difficulty values are the ones that run's design authored and its
+# build reported.
+LEVELS = [
+    ("l-01", {"depth": 0.08, "move-limit": 0.06, "board-complexity": 0.1, "piece-variety": 0.15},
+     ("goal-tile", "penguin")),
+    ("l-02", {"depth": 0.08, "move-limit": 0.14, "board-complexity": 0.1, "piece-variety": 0.15},
+     ("goal-tile", "penguin")),
+    ("l-03", {"depth": 0.08, "move-limit": 0.14, "board-complexity": 0.1, "piece-variety": 0.27},
+     ("door", "goal-tile", "key", "penguin")),
+    ("l-04", {"depth": 0.08, "move-limit": 0.14, "board-complexity": 0.17, "piece-variety": 0.27},
+     ("door", "goal-tile", "key", "penguin")),
+    ("l-05", {"depth": 0.08, "move-limit": 0.14, "board-complexity": 0.11, "piece-variety": 0.27},
+     ("door", "goal-tile", "key", "penguin")),
+    ("l-06", {"depth": 0.16, "move-limit": 0.14, "board-complexity": 0.11, "piece-variety": 0.41},
+     ("door", "goal-tile", "key", "penguin")),
+]
+PUZZLE_AXES = ["depth", "move-limit", "board-complexity", "piece-variety"]
+
+
+def level(index, uid, difficulty):
+    entry = unit(index, uid, f"Reach the goal tile of {uid} inside its move cap.", difficulty,
+                 duration=40, mechanics=("slide-move", "obstacle-wall", "goal-tile"))
+    entry["success"] = "The penguin reaches the goal tile inside the move cap."
+    entry["failure"] = "The move cap passes with the goal unreached, and the layout resets."
+    return entry
+
+
+PUZZLE_DESIGN = copy.deepcopy(DESIGN)
+PUZZLE_DESIGN["genre"] = {"family": "puzzle", "node": "logic-puzzle", "ending": "finite",
+                          "session_profile": "casual"}
+PUZZLE_DESIGN["session"] = {"target_seconds": 90, "first_session_seconds": 180,
+                            "time_to_first_play_s": 5, "time_to_first_reward_s": 10,
+                            "structure": "levels"}
+PUZZLE_DESIGN["build_spec"].update({
+    "content": {"unit_kind": "level", "generation": {"mode": "authored"},
+                "units": [level(i + 1, uid, dict(difficulty))
+                          for i, (uid, difficulty, _kinds) in enumerate(LEVELS)]},
+    "progression": {"model": "linear-levels"},
+    "difficulty": {"model": "level-authored",
+                   "curve": [{"at": "levels 1-3", "description": "forgiving"}],
+                   "axes": [{"id": a, "range": [0, 1], "relief_allowed": True}
+                            for a in PUZZLE_AXES]},
+    "depth": {
+        "meta_loop": {"statement": "Clear a level, earn its stars, open the next.", "tier": "mvp",
+                      "persists": [{"kind": "collection", "what": "stars per level",
+                                    "tier": "post-mvp"}]},
+        "goal_ladder": [{"id": "g-1", "horizon": "short", "goal": "Find the next slide.",
+                         "tier": "mvp"}],
+        "first_session": {"target_s": 180, "ends_on": "a cleared level with its stars stamped",
+                          "tier": "mvp"},
+        "return_hooks": [{"id": "next-level", "kind": "stage-map",
+                          "statement": "There is a next level.", "tier": "mvp"}]},
+})
+
+
+def puzzle_traverse(count=5, stopped="max units", reported=None, finished=None):
+    """A traverse of the first `count` levels, the last of them still in play.
+
+    `reported` overrides what the build said the difficulty of a level was (uid -> axis ->
+    value); `finished` is the number of levels the bot saw to their end (every one but the last
+    by default - the bot stops while the next level is still being played).
+    """
+    per_unit, transitions, snapshots = [], [], []
+    at = 0
+    done = count - 1 if finished is None else finished
+    for index, (uid, difficulty, kinds) in enumerate(LEVELS[:count], start=1):
+        values = dict(difficulty)
+        values.update((reported or {}).get(uid) or {})
+        won = index <= done
+        per_unit.append({"unit_id": uid, "index": index,
+                         "objective_texts": [f"Reach the goal tile of {uid} inside its move cap."],
+                         "kinds": list(kinds), "difficulty": values,
+                         "metrics": {"saves": index, "lives": 3,
+                                     **{f"difficulty.{a}": v for a, v in values.items()}},
+                         "won": won, "lost": False, "entered_ms": at,
+                         "duration_ms": 800 if won else 0})
+        snapshots.append({"ms": at, "unit_id": uid, "unit_index": index, "state": "playing",
+                          "progress": {"metric": "moves-left", "value": 12, "target": 0},
+                          "difficulty": values, "kinds": list(kinds)})
+        if index > 1:
+            transitions.append({"from": index - 1, "to": index, "at_ms": at, "how": "won",
+                                "since_end_ms": 265})
+        at += 900
+    return {"applies": True, "snapshots": snapshots, "transitions": transitions,
+            "per_unit": per_unit, "losses": 0, "stopped": stopped, "errors": []}
+
+
+class AuthoredPuzzle(Judge):
+    """The rules the first live greybox run of an authored puzzle made necessary: the build is
+    held to the design's own difficulty values, and nothing is failed on evidence the bot's
+    budget or the family's vocabulary cannot carry."""
+
+    IN_UNIT = {"unit_id": "l-01", "unit_index": 1, "unit_count": 6, "unit_kind": "level",
+               "objective": "Reach the goal tile of l-01 inside its move cap.",
+               "progress": {"metric": "moves-left", "value": 11, "target": 0}}
+
+    def setUp(self):
+        super().setUp()
+        for sample in self.records["first-session"]["samples"]:
+            if sample["state"] == "playing":
+                sample["content"] = dict(self.IN_UNIT)
+        for entry in self.records["act"]["acted"]:
+            for side in ("before", "after"):
+                entry[side]["content"] = dict(self.IN_UNIT)
+        self.records["traverse"] = puzzle_traverse()
+        self.records["lose"].update({
+            "endedAtMs": 9000, "initialContent": dict(self.IN_UNIT),
+            "contentAtEnd": dict(self.IN_UNIT),
+            "resetInUnit": {"clicked": "input:retry", "playingMs": 400,
+                            "before": {**self.IN_UNIT,
+                                       "progress": {"metric": "moves-left", "value": 8,
+                                                    "target": 0}},
+                            "after": {**self.IN_UNIT,
+                                      "progress": {"metric": "moves-left", "value": 0,
+                                                   "target": 0}}},
+            "series": [{"ms": 0, "state": "playing", "metrics": {"lives": 3}, "content": None}]})
+        self.records["session"] = {
+            "applies": True, "length_ms": 150000, "beat_at_ms": 60000, "ended_on": "beat reached",
+            "target_ms": 220000, "window_ms": 30000,
+            # A level puzzle asks the same of the player throughout one level: the rate across a
+            # run's thirds falls as the level is solved.
+            "runs": [{"duration_ms": 800, "inputs": 6, "oracle_inputs_per_third": [3, 2, 1]}],
+            "windows": []}
+
+    def judge(self, design=None):
+        return super().judge(design if design is not None else PUZZLE_DESIGN)
+
+    def test_the_live_greybox_shape_fails_nothing_it_could_not_measure(self):
+        checks = self.judge()
+        self.assertEqual(self.failed(), [], {k: v["summary"] for k, v in checks.items()
+                                            if v["status"] == "FAIL"})
+        self.assertEqual(checks["content.variety"]["status"], "WARNING")
+        self.assertEqual(checks["depth.ramp"]["status"], "PASS")
+        self.assertEqual(checks["difficulty.axes_progress"]["status"], "PASS")
+
+    # 2. A unit the traverse never left
+    def test_a_unit_still_in_play_when_the_traverse_stopped_is_not_never_completed(self):
+        check = self.judge()["content.win_lose_per_unit"]
+        self.assertEqual(check["status"], "PASS", check["summary"])
+        self.assertEqual(check["measured"]["in_progress"], ["l-05"])
+        self.assertEqual(check["measured"]["not_completed"], [])
+        self.assertIn("still in play when the traverse stopped (max units)", check["summary"])
+
+    def test_a_unit_the_traverse_left_unwon_is_still_a_failure(self):
+        # The traverse ended because play was lost twice - not because the bot ran out of
+        # units - so the level it was in was played to its end, and never completed.
+        self.records["traverse"] = puzzle_traverse(stopped="lost twice")
+        check = self.judge()["content.win_lose_per_unit"]
+        self.assertEqual(check["status"], "FAIL")
+        self.assertEqual(check["measured"]["not_completed"], ["l-05"])
+        self.assertIn("played but never completed: l-05", check["summary"])
+
+    def test_the_failure_side_still_holds(self):
+        # The design states a failure for every level; bad play must reach one.
+        self.records["lose"]["reached"] = None
+        self.assertIn("content.win_lose_per_unit", self.failed())
+
+    # 3. The build against the design
+    def test_a_build_whose_unit_difficulty_is_not_the_designs_fails(self):
+        from wgflib import genre_models
+
+        tolerance = genre_models.implementation()["difficulty_tolerance"]
+        self.records["traverse"] = puzzle_traverse(
+            reported={"l-03": {"depth": 0.08 + tolerance + 0.01}})
+        check = self.judge()["difficulty.axes_progress"]
+        self.assertEqual(check["status"], "FAIL")
+        self.assertIn("l-03 depth", check["summary"])
+        self.assertIn("the design states 0.08", check["summary"])
+        self.assertEqual(check["measured"]["difficulty_tolerance"], tolerance)
+
+    def test_a_value_inside_the_tolerance_is_the_designs(self):
+        from wgflib import genre_models
+
+        tolerance = genre_models.implementation()["difficulty_tolerance"]
+        self.records["traverse"] = puzzle_traverse(reported={"l-03": {"depth": 0.08 + tolerance}})
+        self.assertEqual(self.judge()["difficulty.axes_progress"]["status"], "PASS")
+
+    def test_a_capped_traversal_is_not_held_to_a_rise_it_never_saw(self):
+        # depth is 0.08 across levels 1-5 and rises on level 6, which the bot never reached.
+        check = self.judge()["difficulty.axes_progress"]
+        self.assertEqual(check["status"], "PASS", check["summary"])
+        self.assertEqual(check["measured"]["depth"], [0.08] * 5)
+        self.assertTrue(check["measured"]["partial"])
+        self.assertIn("stopped short of the design's units", check["summary"])
+
+    def test_a_whole_traversal_is_held_to_the_rise(self):
+        self.records["traverse"] = puzzle_traverse(count=6, finished=6)
+        check = self.judge()["difficulty.axes_progress"]
+        self.assertEqual(check["status"], "PASS", check["summary"])
+        self.assertNotIn("partial", check["measured"])
+        # Flat to the end, design and build agreeing on it: a curve that never rises.
+        flat = {uid: {"depth": 0.08} for uid, _d, _k in LEVELS}
+        design = copy.deepcopy(PUZZLE_DESIGN)
+        for entry in design["build_spec"]["content"]["units"]:
+            entry["difficulty"]["depth"] = 0.08
+        self.records["traverse"] = puzzle_traverse(count=6, finished=6, reported=flat)
+        check = self.judge(design)["difficulty.axes_progress"]
+        self.assertEqual(check["status"], "FAIL")
+        self.assertIn("depth: ended at 0.08, started at 0.08", check["summary"])
+
+    # 4. Variety a family does not promise in entity kinds
+    def test_variety_is_reported_not_failed_when_kinds_cannot_show_it(self):
+        check = self.judge()["content.variety"]
+        self.assertEqual(check["status"], "WARNING")
+        self.assertFalse(check["required"])
+        self.assertEqual(check["measured"]["changed_pairs_share"], 0.25)
+        self.assertEqual(check["measured"]["reason"],
+                         "variety is not visible in entity kinds for this family (layout, "
+                         "rules, objectives)")
+
+    def test_a_family_that_asks_for_a_new_kind_per_unit_still_fails(self):
+        # The same records under a family whose qa states min_new_kinds_per_unit >= 1.
+        design = copy.deepcopy(PUZZLE_DESIGN)
+        design["genre"]["family"] = "shooter"
+        check = self.judge(design)["content.variety"]
+        self.assertEqual(check["status"], "FAIL")
+        self.assertTrue(check["required"])
+        self.assertNotIn("reason", check["measured"])
+
+    # 5. A ramp a unit-authored family has no window for
+    def test_the_input_rate_ramp_is_reported_not_failed_without_a_time_ramp(self):
+        check = self.judge()["depth.ramp"]
+        self.assertEqual(check["status"], "PASS", check["summary"])
+        self.assertFalse(check["required"])
+        self.assertEqual(check["measured"]["oracle_inputs_per_third"], [3, 2, 1])
+        self.assertIn("no time ramp", check["measured"]["reason"])
+
+    def test_a_time_ramp_family_is_still_held_to_its_rate(self):
+        design = copy.deepcopy(PUZZLE_DESIGN)
+        design["genre"]["family"] = "arcade"   # qa.endless_window_s: 30
+        check = self.judge(design)["depth.ramp"]
+        self.assertEqual(check["status"], "FAIL")
+        self.assertTrue(check["required"])
+        self.assertIn("asks for less as it goes", check["summary"])
+        self.assertNotIn("reason", check["measured"])
+
+    def test_bad_play_that_never_ends_is_still_measured(self):
+        self.records["lose"]["endedAtMs"] = None
+        check = self.judge()["depth.ramp"]
+        self.assertEqual(check["status"], "WARNING")
+        self.assertIn("bad play ended after None ms", check["summary"])
+
+    # 6. A retry with no loss to retry from
+    def test_restart_waits_on_a_loss(self):
+        self.records["lose"].update({"reached": None, "restart": None})
+        check = self.judge()["restart.works"]
+        self.assertEqual(check["status"], "BLOCKED")
+        self.assertEqual(check["measured"]["reason"], "no loss to retry from")
+        self.assertIn("lose.reachable", check["summary"])
+
+    # 7. The objective compared is the design's own, per unit
+    def test_the_objective_measured_is_the_units_own(self):
+        traverse = puzzle_traverse()
+        for entry in traverse["per_unit"]:
+            # Every level showing the same generic line: only the level whose objective it is
+            # has its objective on screen.
+            entry["objective_texts"] = ["Reach the goal tile before your moves run out."]
+        self.records["traverse"] = traverse
+        check = self.judge()["content.objective_shown"]
+        self.assertEqual(check["status"], "FAIL")
+        self.assertIn("l-02", check["summary"])
+        self.assertLess(check["measured"]["l-02"], 0.6)
+
+
+class TheAntiOracle(unittest.TestCase):
+    """The bot's bad play (bot.spec.ts). The first live greybox run pressed one blocked
+    direction for 85 s: it cost no move, nothing changed, and the game could not be lost."""
+
+    @classmethod
+    def setUpClass(cls):
+        path = os.path.join(SCRIPTS, "wgf_playability", "bot.spec.ts")
+        with open(path, encoding="utf-8") as handle:
+            source = handle.read()
+        start = source.index('test("lose and restart')
+        cls.source = source[start:source.index('write(project, "lose"', start)]
+
+    def has(self, fragment):
+        self.assertIn(fragment, self.source, f"the anti-oracle no longer contains {fragment!r}")
+
+    def test_the_wrong_move_rotates(self):
+        # The k-th move that is not the oracle's, not the first one every time.
+        self.has("const picked = others.length ? k % others.length : null;")
+        self.has("others[picked]")
+        # k advances on every press.
+        self.has("k += 1;")
+
+    def test_a_press_that_changed_nothing_advances_the_rotation(self):
+        self.has("const repeated = unchanged !== null && state === unchanged;")
+        self.has("if (repeated) k += 1;")
+
+    def test_bad_play_is_never_a_pause_or_a_settings_toggle(self):
+        self.has("filter((m) => !UTILITY.test(m.action))")
+
+
 class TheStep(unittest.TestCase):
     def setUp(self):
         self.base = tempfile.mkdtemp(prefix="wgf-play-step-")

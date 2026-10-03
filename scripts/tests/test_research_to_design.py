@@ -156,10 +156,22 @@ class ResearchToDesign(unittest.TestCase):
                     self.assertIn("build_spec.content", applied)
                     self.assertIn("genre.family", applied)
                 else:
-                    self.assertEqual(design, "FAILED",
-                                     f"design now builds {archetype_id} with {chosen}: "
-                                     "declare design_archetype or genre_model in the catalog")
-                    self.assertTrue(breached)
+                    # Research declares the shape unbuildable, so in production it is never
+                    # selected (a capability gap). Stripped of the declaration, design falls
+                    # back to the nearest hand-coded archetype: either the consistency rules
+                    # refuse it as a different game, or the artifact itself records that the
+                    # archetype was a fallback research did not name - never the concept's
+                    # own game passed off as designed.
+                    if design == "FAILED":
+                        self.assertTrue(breached)
+                    else:
+                        applied = {e["field"]: e for e in body["research"]["applied"]}
+                        self.assertEqual(applied["archetype"]["source"], "default",
+                                         f"design built {archetype_id} with {chosen} as if "
+                                         "research had chosen it: declare design_archetype "
+                                         "or genre_model in the catalog")
+                        self.assertIn("research named no buildable design archetype",
+                                      applied["archetype"]["detail"])
 
 
 if __name__ == "__main__":

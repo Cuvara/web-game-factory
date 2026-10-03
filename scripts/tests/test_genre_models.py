@@ -38,7 +38,7 @@ QA_KEYS = {"min_units_traversed", "reset_in_unit", "checkpoint", "min_new_kinds_
 VARIETY_BARS = {"min_dimensions_changed_between_units", "max_consecutive_scaling_only_units",
                 "mechanic_reuse_min_units", "max_identical_objectives_ratio",
                 "acceptance_min_items", "acceptance_max_similarity", "relief_dip_max",
-                "relief_recovery_units"}
+                "relief_recovery_units", "min_axis_rise"}
 # Genre nodes no family claims: capability gaps research keeps as such, not shapes to force
 # into a family that does not fit them (the file's own header says so).
 CAPABILITY_GAPS = {"io", "card", "solitaire", "board", "word", "word-search", "word-build",

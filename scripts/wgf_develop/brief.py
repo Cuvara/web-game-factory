@@ -769,6 +769,11 @@ def build_brief(*, title_id, engine, iteration, key, baseline, design, assets, s
         "skills": {k: list(v) for k, v in host_skills.items()
                    if v and not (k in ENGINE_DIRS and k != engine)},
         "report_path": REPORT_PATH,
+        # A handoff visit's report must name this visit (its `visit` field), or conformance
+        # fails it: nothing else rewrites report.json between handoff visits, and review read
+        # an earlier visit's report as this one's (the Sky Marble run, 2026-10-04). None for
+        # a command developer, whose report is checked as it always was.
+        "report_visit": key if (developer or {}).get("kind") == "handoff" else None,
         "self_playtest": bool(self_playtest),
         # The unattended developer's shell: the Bash rules its argv allows and denies
         # (shell_contract); None for a handoff developer.
@@ -1939,6 +1944,11 @@ def render_markdown(brief):
         "against the build, and turns it into the prototype report. Be honest: a partial "
         "system reported as done fails review later, at a higher price.\n")
     add("```json\n" + json.dumps(REPORT_CONTRACT, indent=2) + "\n```")
+    if brief.get("report_visit"):
+        add(f"\n**This visit's report.** Rewrite the whole report for what the checkout holds "
+            f"now, and set `\"visit\": \"{brief['report_visit']}\"` in it. A report left from "
+            f"an earlier visit is what review would read as this one's; a report without this "
+            f"visit's key fails the conformance check.")
     add("\n`mvp` has one entry per MVP item above, verbatim. `placements` covers every "
         "placement above.")
     content = brief.get("content") or {}

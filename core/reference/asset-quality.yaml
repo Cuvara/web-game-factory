@@ -108,7 +108,7 @@ models:
   max_dominance: 0.6
   # A round body: a ball, a marble, an orb. Its outline IS the disk - it has no wings, limbs
   # or fins to stand out of it - and a faceted sphere is what the design asks for, so the
-  # silhouette and primitive checks above would refuse every correct model of it (val-3d,
+  # silhouette and primitive checks above would refuse every correct model of it (a live run,
   # 2026-10-03: a marble game's player was refused three rounds running, the author bent it
   # into a drum, and the run fell back to a placeholder). A model is a round body only when
   # all three hold, and the check that passes it says so:

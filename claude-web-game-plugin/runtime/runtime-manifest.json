@@ -97,7 +97,7 @@
     "core/lifecycle/stages/tech-plan.md": "sha256:351a94d5e73216c09d8fc552ba2b59c2023fb7e9a9cf383bd08fb0eca7a5e960",
     "core/lifecycle/title.machine.yaml": "sha256:c79a05d36b45a2e2e62a98bc864c956559e0cdcdd7e8388262fba865cb4a3655",
     "core/reference/asset-policy.yaml": "sha256:04a02e9dd181092294aa0b1bce5c39e9864c7f67cbca7ed06cb5bea9ef9b92bc",
-    "core/reference/asset-quality.yaml": "sha256:4c305d8ea4d8ff6ed7b83795600495c1b277739b7e54725ad71eb0915632aaad",
+    "core/reference/asset-quality.yaml": "sha256:f8fc324fbd982fa6f04f752fb16c5741e07c2455c72e40c448da272a74ca65fe",
     "core/reference/design-consistency-rules.yaml": "sha256:894d0422cb5fb9ffc830e39f968af75bc0498b0a0f03ef59bc555c3263fa1324",
     "core/reference/design-depth.yaml": "sha256:85435fedd591fafc568f9ae07e9549f9cad9af316ecafc5a19a5e76352703cac",
     "core/reference/dimensions.yaml": "sha256:18028010b65e169b17078495fd6d6d9967f64d41dfb07468dd27c7aaa6145c3a",

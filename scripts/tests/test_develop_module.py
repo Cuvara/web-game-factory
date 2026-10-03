@@ -89,11 +89,22 @@ class Log:
         return lambda message, **fields: self.lines.append((level, message, fields))
 
 
-def context(config, key="run-1:develop:1", visit=1, attempt=1, decision=None):
-    return SimpleNamespace(config=config, params={}, idempotency_key=key, visit=visit,
-                           attempt=attempt, execution=visit, decision=decision,
-                           logger=Log(), previous_outputs=[], run_id=key.split(":")[0],
-                           mock=False, environment={})
+# A command developer is never started without a run budget (budget.py, F26): the unit
+# context carries one, and its event log is what its logger recorded.
+TEST_BUDGET = {"develop_budget": {"max_sessions": 100}}
+
+
+def context(config, key="run-1:develop:1", visit=1, attempt=1, decision=None,
+            environment=None):
+    ctx = SimpleNamespace(config=config, params={}, idempotency_key=key, visit=visit,
+                          attempt=attempt, execution=visit, decision=decision,
+                          logger=Log(), previous_outputs=[], run_id=key.split(":")[0],
+                          mock=False,
+                          environment=dict(TEST_BUDGET if environment is None
+                                           else environment))
+    ctx.read_events = lambda: [{"event": "STEP_LOG", "data": fields}
+                               for _level, _message, fields in ctx.logger.lines]
+    return ctx
 
 
 # -- a conformant game, as a developer would leave it -----------------------------------------
@@ -1325,7 +1336,10 @@ class Command(DevelopCase):
             self.assertEqual(result.outcome, StepOutcome.BLOCKED)
             self.assertIn("could not be recorded in the run's event log", result.message)
         else:
-            self.assertEqual(result.outcome, StepOutcome.SUCCESS, result.error)
+            # Without a budget the brief is still written, and no command developer is
+            # started for it (Budget.missing).
+            self.assertEqual(result.outcome, StepOutcome.BLOCKED)
+            self.assertIn("no developer-session budget", result.message)
         with open(os.path.join(self.repo, briefs.BRIEF_DIR, "brief.json")) as handle:
             data = json.load(handle)
         with open(os.path.join(self.repo, briefs.BRIEF_DIR, "brief.md")) as handle:
@@ -2097,7 +2111,8 @@ class ThroughTheEngine(unittest.TestCase):
             "storage": {"fsync": False}, "checkpoints": {"auto_approve": ["G2", "G3"]},
             "develop": {"checkouts": os.path.join(self.scratch, "checkouts"),
                         "author": AUTHOR,
-                        "developer": {"kind": "command", "argv": ["agent", "{brief}"]}},
+                        "developer": {"kind": "command", "argv": ["agent", "{brief}"]},
+                        "budget": {"max_sessions": 100}},
             "review": {"guarded_paths": [os.path.join(self.scratch, "factory")]},
         })
         return API(config=config, store_dir=os.path.join(self.scratch, "store")), runner
@@ -2216,14 +2231,76 @@ class DevelopBudget(unittest.TestCase):
         return [e["data"] for e in api.store.read_events(run_id)
                 if e["event"] == "STEP_LOG" and (e.get("data") or {}).get("budget") == kind]
 
-    def test_no_budget_changes_nothing(self):
+    def test_a_command_developer_is_never_started_without_a_budget(self):
+        # F26: a run with no budget at all ran an unattended paid developer unbounded.
         api, runner = self.api()
         state = api.run(RunRequest(project_id=TITLE))
-        self.assertEqual(state.cursor, "prototype-review", state.message)
+        self.assertEqual((state.status, state.cursor), (RunStatus.BLOCKED, "greybox"))
         self.assertNotIn("develop_budget", state.params)
-        # Sessions are still recorded, for the record - the greybox's and develop's; nothing
-        # is enforced.
-        self.assertEqual(len(self.budget_events(api, state.run_id, "developer-session")), 2)
+        message = state.steps["greybox"].message
+        self.assertIn("no developer-session budget", message)
+        self.assertIn("factory.develop.budget", message)
+        self.assertIn(f"wgf resume {state.run_id}", message)
+        self.assertEqual(runner.developer_calls(), [])
+        self.assertEqual(self.budget_events(api, state.run_id, "developer-session"), [])
+
+    def adopted(self, api, run_id):
+        return [e for e in api.store.read_events(run_id) if e["event"] == "BUDGET_ADOPTED"]
+
+    def test_a_run_started_without_a_budget_adopts_the_one_configured_by_its_resume(self):
+        # The F26 path: started under the shipped config (no budget), the project then
+        # configures one (the autonomous profile copied in), and a person resumes.
+        api, runner = self.api(runner=FakeRunner(develop_exit=1))
+        state = api.run(RunRequest(project_id=TITLE))
+        self.assertEqual(state.status, RunStatus.BLOCKED)
+        api, _ = self.api({"max_sessions": 2}, runner)
+        state = api.run(RunRequest(resume=state.run_id, decided_by="human"))
+        self.assertEqual((state.status, state.cursor), (RunStatus.BLOCKED, "greybox"))
+        self.assertIn("budget exhausted: 2 developer sessions used of 2",
+                      state.steps["greybox"].message)
+        self.assertEqual(len(runner.developer_calls()), 2)
+        adopted = self.adopted(api, state.run_id)
+        self.assertEqual([(e["data"]["budget"], e["data"]["decided_by"]) for e in adopted],
+                         [({"max_sessions": 2}, "human")])
+        # Recorded as the person's act, never as an edit of the run's params.
+        self.assertNotIn("develop_budget", state.params)
+        # Adopted once: a later config does not replace it - a person raises it instead.
+        api, _ = self.api({"max_sessions": 40}, runner)
+        state = api.run(RunRequest(resume=state.run_id, decided_by="human"))
+        self.assertIn("used of 2", state.steps["greybox"].message)
+        self.assertEqual(len(self.adopted(api, state.run_id)), 1)
+        self.assertEqual(len(runner.developer_calls()), 2)
+        state = api.run(RunRequest(resume=state.run_id, decided_by="human", budget_sessions=3))
+        self.assertEqual(len(runner.developer_calls()), 3)
+        self.assertIn("used of 3", state.steps["greybox"].message)
+
+    def test_a_budget_is_adopted_and_raised_in_one_resume(self):
+        api, runner = self.api(runner=FakeRunner(develop_exit=1))
+        state = api.run(RunRequest(project_id=TITLE))
+        api, _ = self.api({"max_sessions": 1}, runner)
+        state = api.run(RunRequest(resume=state.run_id, decided_by="human", budget_sessions=2))
+        self.assertEqual(len(runner.developer_calls()), 2)
+        self.assertIn("used of 2", state.steps["greybox"].message)
+
+    def test_a_run_with_its_own_budget_adopts_nothing(self):
+        api, runner = self.api({"max_sessions": 1}, FakeRunner(develop_exit=1))
+        state = api.run(RunRequest(project_id=TITLE))
+        api, _ = self.api({"max_sessions": 30}, runner)
+        state = api.run(RunRequest(resume=state.run_id, decided_by="human"))
+        self.assertEqual(self.adopted(api, state.run_id), [])
+        self.assertIn("used of 1", state.steps["greybox"].message)
+        self.assertEqual(len(runner.developer_calls()), 1)
+
+    def test_a_resume_from_inside_a_step_adopts_no_budget(self):
+        api, runner = self.api()
+        state = api.run(RunRequest(project_id=TITLE))
+        api, _ = self.api({"max_sessions": 5}, runner)
+        with mock_env.patch.dict(os.environ, {"WGF_PROC_TAG": "a-step-child"}):
+            state = api.run(RunRequest(resume=state.run_id))
+        self.assertEqual(self.adopted(api, state.run_id), [])
+        self.assertIn("no developer-session budget", state.steps["greybox"].message)
+        self.assertEqual(runner.developer_calls(), [])
+
 
     def test_blocked_at_the_limit_without_spawning_and_counted_across_a_resume(self):
         # The run's first developer sessions are the greybox's: two failures spend it.
@@ -2357,8 +2434,12 @@ class DevelopBudget(unittest.TestCase):
     def test_a_raise_needs_a_budget_to_raise(self):
         api, _ = self.api(None, FakeRunner(develop_exit=1))
         state = api.run(RunRequest(project_id=TITLE))
-        with self.assertRaisesRegex(Exception, "nothing to raise"):
+        with self.assertRaisesRegex(Exception, "has no budget .factory.develop.budget."):
             api.run(RunRequest(resume=state.run_id, decided_by="human", budget_sessions=5))
+        api, _ = self.api({"max_sessions": 3}, FakeRunner(develop_exit=1))
+        state = api.run(RunRequest(project_id=TITLE))
+        with self.assertRaisesRegex(Exception, "nothing to raise"):
+            api.run(RunRequest(resume=state.run_id, decided_by="human", budget_cost=5))
 
     def test_cost_is_summed_from_the_transcripts_and_blocks_at_the_limit(self):
         runner = CostRunner(costs=[6, 6, 6], develop_exit=1)

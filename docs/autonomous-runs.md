@@ -89,6 +89,13 @@ a mapping merges, a list or a value replaces. Edit the copy to change anything -
 repository (`init: {source: github}`), another budget, `design: {author: agent}` - and
 remove a key to fall back to the shipped value. `wgf where` shows `config_layers`.
 
+Copying the profile into a project whose run already started under the shipped config
+changes that run's developer to a paid `command` one at once (the config is read live), but
+not its budget, which a run takes when it starts. Such a run takes the profile's budget at
+the next `wgf resume` by a person, recorded as a `BUDGET_ADOPTED` event; until then develop
+refuses to start the developer (BLOCKED, naming `factory.develop.budget`). A command
+developer never runs without a budget (development-module.md#budget).
+
 The game checkout goes to `factory.checkouts` + the repository name, and the shipped
 `checkouts` is `..`: beside the project. A project directory named like the game
 (`my-game` for `--project my-game`) would then be the checkout itself, which init refuses

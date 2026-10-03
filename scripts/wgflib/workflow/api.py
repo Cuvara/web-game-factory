@@ -362,6 +362,17 @@ class WorkflowAPI:
             if request.resume:
                 decided_by = request.decided_by or default_decider()
                 operator_events = []
+                events = self.store.read_events(run_id)
+                held = budget.base(existing.params, events)
+                configured = self.config.develop_budget
+                if held is None and configured is not None and decided_by != "automation":
+                    # A run started without a budget takes the one its project configures
+                    # now (the autonomous profile copied in mid-run): its developer may be a
+                    # paid, unattended agent by now, and a run with no budget is one the
+                    # develop step refuses to start such an agent for. A person's act,
+                    # recorded like a raise - never an edit of the run's params.
+                    operator_events.append((budget.ADOPTED_EVENT, {"budget": configured}))
+                    held = configured
                 if raising:
                     # A person's act, recorded as an event the develop step reads; never
                     # an edit of the snapshot (which params corroboration refuses).
@@ -371,8 +382,7 @@ class WorkflowAPI:
                             "process tree (decided_by automation), and an agent does not "
                             "raise its own budget. A person raises it, from outside the run.")
                     try:
-                        raised = budget.check_raise(existing.params.get(budget.PARAM),
-                                                    request.budget_sessions,
+                        raised = budget.check_raise(held, request.budget_sessions,
                                                     request.budget_cost)
                     except budget.BudgetError as exc:
                         raise EngineError(f"budget raise refused: {exc}")
@@ -419,7 +429,8 @@ class WorkflowAPI:
             self._attach_lifecycle(engine, params)
         # The developer-session budget (factory.develop.budget), snapshotted the same way:
         # a resume keeps the budget the run started with - raised only by a person's
-        # BUDGET_RAISED event - and no budget records nothing.
+        # BUDGET_RAISED event - and no budget records nothing (a later resume adopts one
+        # configured by then: BUDGET_ADOPTED, above).
         develop_budget = self.config.develop_budget
         if develop_budget is not None:
             params[budget.PARAM] = develop_budget

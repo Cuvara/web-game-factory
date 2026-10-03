@@ -412,8 +412,12 @@ resume too.
 developer-session budget: it records a `BUDGET_RAISED` operator event, with `decided_by`
 derived exactly as for a decision, before the run continues. It is refused - exit 2,
 nothing recorded - from inside a step's process tree (`decided_by` automation: an agent does
-not raise its own budget), for a run started without that budget, and for a value that is
-not positive. A budget is never raised by editing `state.json`: its snapshot is a param,
+not raise its own budget), for a run without that budget, and for a value that is
+not positive. A run that has no budget at all, resumed by a person while
+`factory.develop.budget` is configured, first records a `BUDGET_ADOPTED` operator event
+carrying it - corroborated the same way, counted once - and that is its budget from then on;
+develop never starts a command developer for a run without one
+(development-module.md#budget). A budget is never raised by editing `state.json`: its snapshot is a param,
 corroborated against `WORKFLOW_STARTED` like every other. Nor by appending to
 `events.jsonl`: the engine writes the raise and the `WORKFLOW_RESUMED` after it with one
 `resume_nonce`, and a raise counts only when that resume record corroborates it; a whole
@@ -699,7 +703,7 @@ which is the structured log:
 | `EVENT_LOG_RESTORED` | `step_id`; `change`: what another process did to `events.jsonl` while that step ran (lines appended, or recorded lines changed or removed). The engine put the log back as it wrote it, and the step failed, not retried |
 | `ARTIFACT_CREATED` | the `ArtifactRef` |
 | `ARTIFACT_UPDATED` | the `ArtifactRef` (version ≥ 2) |
-| operator events | Not the engine's: a person's act recorded with `wgf resume` (`engine.resume(operator_events=...)`), `data` + `decided_by`, `decided_at`, and the `resume_nonce` of the `WORKFLOW_RESUMED` that follows. Refused for automation and for any of the names above. Today one: `BUDGET_RAISED` (`max_sessions`, `max_cost`; `wgf resume --budget-sessions/--budget-cost`, wgflib/budget.py) |
+| operator events | Not the engine's: a person's act recorded with `wgf resume` (`engine.resume(operator_events=...)`), `data` + `decided_by`, `decided_at`, and the `resume_nonce` of the `WORKFLOW_RESUMED` that follows. Refused for automation and for any of the names above. Today two, both wgflib/budget.py: `BUDGET_RAISED` (`max_sessions`, `max_cost`; `wgf resume --budget-sessions/--budget-cost`) and `BUDGET_ADOPTED` (`budget`; recorded by a person's resume of a run with no budget while `factory.develop.budget` is configured) |
 
 Consumers must ignore fields and events they do not know. `EventContract` fails if an event
 is added without being documented here. The CLI's progress output is just another

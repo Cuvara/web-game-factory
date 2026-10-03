@@ -286,7 +286,8 @@ class AgentLoop(unittest.TestCase):
                          "timeout_seconds": 30}
         developer_cfg.update(developer or {})
         develop_cfg = {"checkouts": os.path.join(self.scratch, "checkouts"), "author": AUTHOR,
-                       "checks": [], "developer": developer_cfg}
+                       "checks": [], "developer": developer_cfg,
+                       "budget": {"max_sessions": 100}}
         develop_cfg.update(develop or {})
         config = FactoryConfig({
             "storage": {"fsync": False}, "checkpoints": {"auto_approve": ["G2", "G3"]},

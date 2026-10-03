@@ -615,6 +615,32 @@ class Gameplay(VerificationCase):
         self.assertEqual(len(seen.aspects["restart"]), 1)
         self.assertEqual(seen.aspects["boot"], [])
 
+    def test_the_e2e_suite_runs_at_the_machines_worker_count(self):
+        # val-3d, 2026-10-03: develop's smoke passed at --workers=1 (factory.develop.
+        # smoke_workers), then verify ran the same suite fully parallel and timed out on
+        # boot, start, input and pause on this machine. The count is the machine's.
+        from wgflib.workflow.config import FactoryConfig
+        seen = {}
+
+        def browser(command, cwd, env):
+            seen["command"] = list(command)
+            return ok()
+
+        runner = FakeRunner({"run test:e2e": browser})
+        config = FactoryConfig({"develop": {"smoke_workers": 1}})
+        session = VerificationSession(self.repo, runner, config=config)
+        self.assertEqual(session.e2e_workers, 1)
+        session.run(session.script_command("test:e2e", "--reporter=json",
+                                           f"--workers={session.e2e_workers}"), "browser")
+        self.assertIn("--workers=1", seen["command"])
+        # The step's own setting wins; nothing set leaves the suite's own.
+        self.assertEqual(VerificationSession(self.repo, runner, config=config,
+                                             params={"e2e_workers": 2}).e2e_workers, 2)
+        self.assertIsNone(VerificationSession(self.repo, runner).e2e_workers)
+        for bad in (0, -1, True, "2", 1.5):
+            self.assertIsNone(VerificationSession(
+                self.repo, runner, params={"e2e_workers": bad}).e2e_workers, bad)
+
     def test_browser_commands_cannot_reach_a_portal(self):
         # The acceptance run's lesson: a portal build's real SDK, loaded from its CDN during
         # a browser suite, makes the game's own "no insecure requests" and the runtime facts

@@ -20,7 +20,9 @@ The judge writes:
 The judge does not write a verdict: the step decides it (`decide`) from the rubric - FAIL
 when any finding is a blocker, any dimension is below the pass bar, any per-state answer
 equals its question's `fail_when`, or the look is a developer prototype. A judge cannot pass
-a build its own answers fail, and a malformed verdict is never read charitably.
+a build its own answers fail, and a malformed verdict is never read charitably: `coerce`
+fixes only shapes that cannot change meaning (and says which), `problems` lists every
+remaining error for the judge's repair round (judge.py), and nothing missing is invented.
 
 `score_reasons` is optional - a verdict without it is well formed - but the brief asks for
 it for every dimension: it is what a failing score sends back to the asset authors and the
@@ -35,7 +37,8 @@ import re
 from wgflib import paths
 from wgflib.yamllite import load_file
 
-__all__ = ["RUBRIC_PATH", "load_rubric", "parse", "decide", "contract", "RubricError",
+__all__ = ["RUBRIC_PATH", "load_rubric", "load_verdict", "parse", "problems",
+           "coerce", "decide", "contract", "RubricError",
            "state_ids", "questions_for", "judged_pairs", "expand_roles",
            "SEVERITIES", "CATEGORIES", "ROUTES"]
 
@@ -208,135 +211,284 @@ def contract(rubric, frames):
     }
 
 
+def load_verdict(source):
+    """(data, None) or (None, problem): the verdict file read as JSON, nothing checked."""
+    if not os.path.isfile(source):
+        return None, f"no verdict file was written at {source}"
+    try:
+        if os.path.getsize(source) > _MAX_BYTES:
+            return None, "verdict file is larger than 1 MiB"
+        with open(source, encoding="utf-8") as handle:
+            return json.load(handle), None
+    except (OSError, UnicodeDecodeError) as exc:
+        return None, f"verdict file cannot be read: {exc}"
+    except ValueError as exc:
+        return None, f"verdict file is not JSON: {exc}"
+
+
 def parse(source, rubric, frames):
     """(verdict dict, None) or (None, problem). `source` is a path or already-loaded data;
-    `frames` the staged frames ({key, state, project}). Never raises."""
-    frame_ids = [f["key"] for f in frames]
+    `frames` the staged frames ({key, state, project}). `problem` names every error found,
+    joined by "; " (`problems` has them as a list). Never raises."""
     if isinstance(source, str):
-        if not os.path.isfile(source):
-            return None, f"no verdict file was written at {source}"
-        try:
-            if os.path.getsize(source) > _MAX_BYTES:
-                return None, "verdict file is larger than 1 MiB"
-            with open(source, encoding="utf-8") as handle:
-                data = json.load(handle)
-        except (OSError, UnicodeDecodeError) as exc:
-            return None, f"verdict file cannot be read: {exc}"
-        except ValueError as exc:
-            return None, f"verdict file is not JSON: {exc}"
+        data, problem = load_verdict(source)
+        if problem:
+            return None, problem
     else:
         data = source
+    found = problems(data, rubric, frames)
+    if found:
+        return None, "; ".join(found)
+    return data, None
+
+
+def problems(data, rubric, frames):
+    """Every way `data` is not the verdict the contract asks for, as a list (empty when it
+    is). Each part of the verdict is checked independently, so a judge asked to repair its
+    verdict sees all of its errors at once, not the first only."""
     if not isinstance(data, dict):
-        return None, "verdict must be a JSON object"
+        return ["verdict must be a JSON object"]
+    out = []
     extra = sorted(set(data) - _TOP)
     if extra:
-        return None, f"verdict has keys the contract does not: {', '.join(extra)}"
+        out.append(f"verdict has keys the contract does not: {', '.join(extra)}")
     for key in ("scores", "findings", "states", "look"):
         if key not in data:
-            return None, f"verdict is missing {key!r}"
+            out.append(f"verdict is missing {key!r}")
     if "notes" in data and data["notes"] is not None and not isinstance(data["notes"], str):
-        return None, "notes must be a string"
-    scores = data["scores"]
-    if not isinstance(scores, dict):
-        return None, "scores must be an object of dimension -> 0..5"
+        out.append("notes must be a string")
     dimensions = list(rubric["dimensions"])
-    unknown = sorted(set(scores) - set(dimensions))
-    if unknown:
-        return None, f"scores has dimensions the rubric does not: {', '.join(unknown)}"
-    missing = [d for d in dimensions if d not in scores]
-    if missing:
-        return None, f"scores is missing {', '.join(missing)}"
-    for name, value in scores.items():
-        if (not isinstance(value, (int, float)) or isinstance(value, bool)
-                or not 0 <= value <= 5):
-            return None, f"scores.{name} must be a number 0..5, not {value!r}"
+    if "scores" in data:
+        out += _check_scores(data["scores"], dimensions)
     reasons = data.get("score_reasons")
     if reasons is not None:
         if not isinstance(reasons, dict):
-            return None, "score_reasons must be an object of dimension -> a sentence"
-        unknown = sorted(set(reasons) - set(dimensions))
-        if unknown:
-            return None, f"score_reasons has dimensions the rubric does not: {', '.join(unknown)}"
-        for name, value in reasons.items():
-            if not isinstance(value, str):
-                return None, f"score_reasons.{name} must be a string"
-    findings = data["findings"]
-    if not isinstance(findings, list):
-        return None, "findings must be a list"
-    ids = set()
-    known = set(frame_ids)
-    for index, finding in enumerate(findings):
-        where = f"findings[{index}]"
-        if not isinstance(finding, dict):
-            return None, f"{where} must be an object"
-        extra = sorted(set(finding) - _FINDING)
-        if extra:
-            return None, f"{where} has keys the contract does not: {', '.join(extra)}"
-        absent = [k for k in sorted(_FINDING) if k not in finding]
-        if absent:
-            return None, f"{where} is missing {', '.join(absent)}"
-        if not isinstance(finding["id"], str) or not _ID.match(finding["id"]):
-            return None, f"{where}.id must be a short kebab-case id"
-        if finding["id"] in ids:
-            return None, f"{where}.id {finding['id']!r} is not unique"
-        ids.add(finding["id"])
-        if finding["severity"] not in SEVERITIES:
-            return None, f"{where}.severity must be one of {', '.join(SEVERITIES)}"
-        if finding["category"] not in CATEGORIES:
-            return None, f"{where}.category must be one of {', '.join(CATEGORIES)}"
-        if finding["route"] not in ROUTES:
-            return None, f"{where}.route must be one of {', '.join(ROUTES)}"
-        if finding["frame"] is not None and finding["frame"] not in known:
-            return None, (f"{where}.frame {finding['frame']!r} is not a frame you were given "
-                          f"(<viewport>/<frame-id>, or null)")
-        if not isinstance(finding["summary"], str) or not finding["summary"].strip():
-            return None, f"{where}.summary must be a non-empty string"
-    problem = _check_states(data["states"], rubric, frames)
-    if problem:
-        return None, problem
+            out.append("score_reasons must be an object of dimension -> a sentence")
+        else:
+            unknown = sorted(set(reasons) - set(dimensions))
+            if unknown:
+                out.append(f"score_reasons has dimensions the rubric does not: "
+                           f"{', '.join(unknown)}")
+            for name, value in reasons.items():
+                if not isinstance(value, str):
+                    out.append(f"score_reasons.{name} must be a string")
+    if "findings" in data:
+        out += _check_findings(data["findings"], [f["key"] for f in frames])
+    if "states" in data:
+        out += _check_states(data["states"], rubric, frames)
     look = rubric.get("look") or {}
-    if data["look"] not in (look.get("values") or []):
-        return None, f"look must be one of {', '.join(look.get('values') or [])}"
+    if "look" in data and data["look"] not in (look.get("values") or []):
+        out.append(f"look must be one of {', '.join(look.get('values') or [])}")
     if "look_reason" in data and not isinstance(data["look_reason"], str):
-        return None, "look_reason must be a string"
-    return data, None
+        out.append("look_reason must be a string")
+    return out
+
+
+def _check_scores(scores, dimensions):
+    if not isinstance(scores, dict):
+        return ["scores must be an object of dimension -> 0..5"]
+    out = []
+    unknown = sorted(set(scores) - set(dimensions))
+    if unknown:
+        out.append(f"scores has dimensions the rubric does not: {', '.join(unknown)}")
+    missing = [d for d in dimensions if d not in scores]
+    if missing:
+        out.append(f"scores is missing {', '.join(missing)}")
+    for name, value in scores.items():
+        if (not isinstance(value, (int, float)) or isinstance(value, bool)
+                or not 0 <= value <= 5):
+            out.append(f"scores.{name} must be a number 0..5, not {value!r}")
+    return out
+
+
+def _check_findings(findings, frame_ids):
+    if not isinstance(findings, list):
+        return ["findings must be a list"]
+    out = []
+    ids = set()
+    for index, finding in enumerate(findings):
+        problem = _check_finding(f"findings[{index}]", finding, ids, set(frame_ids))
+        if problem:
+            out.append(problem)
+    return out
+
+
+def _check_finding(where, finding, ids, known):
+    if not isinstance(finding, dict):
+        return f"{where} must be an object"
+    extra = sorted(set(finding) - _FINDING)
+    if extra:
+        return f"{where} has keys the contract does not: {', '.join(extra)}"
+    absent = [k for k in sorted(_FINDING) if k not in finding]
+    if absent:
+        return f"{where} is missing {', '.join(absent)}"
+    if not isinstance(finding["id"], str) or not _ID.match(finding["id"]):
+        return f"{where}.id must be a short kebab-case id"
+    if finding["id"] in ids:
+        return f"{where}.id {finding['id']!r} is not unique"
+    ids.add(finding["id"])
+    if finding["severity"] not in SEVERITIES:
+        return f"{where}.severity must be one of {', '.join(SEVERITIES)}"
+    if finding["category"] not in CATEGORIES:
+        return f"{where}.category must be one of {', '.join(CATEGORIES)}"
+    if finding["route"] not in ROUTES:
+        return f"{where}.route must be one of {', '.join(ROUTES)}"
+    if finding["frame"] is not None and finding["frame"] not in known:
+        return (f"{where}.frame {finding['frame']!r} is not a frame you were given "
+                f"(<viewport>/<frame-id>, or null)")
+    if not isinstance(finding["summary"], str) or not finding["summary"].strip():
+        return f"{where}.summary must be a non-empty string"
+    return None
 
 
 def _check_states(states, rubric, frames):
     if not isinstance(states, list):
-        return "states must be a list"
+        return ["states must be a list"]
     wanted = judged_pairs(rubric, frames)
     seen = set()
+    out = []
     for index, entry in enumerate(states):
-        where = f"states[{index}]"
-        if not isinstance(entry, dict):
-            return f"{where} must be an object"
-        extra = sorted(set(entry) - _STATE)
-        if extra:
-            return f"{where} has keys the contract does not: {', '.join(extra)}"
-        pair = (entry.get("state"), entry.get("viewport"))
-        if pair not in wanted:
-            return (f"{where} is for {pair[1]!r} {pair[0]!r}, which no frame shows; answer "
-                    f"exactly these: {', '.join(f'{v}/{s}' for s, v in wanted)}")
-        if pair in seen:
-            return f"{where} repeats {pair[1]}/{pair[0]}"
-        seen.add(pair)
-        answers = entry.get("answers")
-        if not isinstance(answers, dict):
-            return f"{where}.answers must be an object"
-        asked = [q["id"] for q in questions_for(rubric, pair[0])]
-        if sorted(answers) != sorted(asked):
-            return (f"{where}.answers must answer exactly {', '.join(asked)} for state "
-                    f"{pair[0]}")
-        for qid, value in answers.items():
-            if value not in (True, False, None):
-                return f"{where}.answers.{qid} must be true, false or null, not {value!r}"
-        if "comment" in entry and not isinstance(entry["comment"], str):
-            return f"{where}.comment must be a string"
+        problem = _check_state(f"states[{index}]", entry, rubric, wanted, seen)
+        if problem:
+            out.append(problem)
     missing = [f"{v}/{s}" for s, v in wanted if (s, v) not in seen]
     if missing:
-        return f"states is missing {', '.join(missing)}"
+        out.append(f"states is missing {', '.join(missing)}")
+    return out
+
+
+def _check_state(where, entry, rubric, wanted, seen):
+    if not isinstance(entry, dict):
+        return f"{where} must be an object"
+    extra = sorted(set(entry) - _STATE)
+    if extra:
+        return f"{where} has keys the contract does not: {', '.join(extra)}"
+    pair = (entry.get("state"), entry.get("viewport"))
+    if pair not in wanted:
+        return (f"{where} is for {pair[1]!r} {pair[0]!r}, which no frame shows; answer "
+                f"exactly these: {', '.join(f'{v}/{s}' for s, v in wanted)}")
+    if pair in seen:
+        return f"{where} repeats {pair[1]}/{pair[0]}"
+    seen.add(pair)
+    answers = entry.get("answers")
+    if not isinstance(answers, dict):
+        return f"{where}.answers must be an object"
+    asked = [q["id"] for q in questions_for(rubric, pair[0])]
+    if sorted(answers) != sorted(asked):
+        absent = [q for q in asked if q not in answers]
+        unasked = sorted(set(answers) - set(asked))
+        return (f"{where}.answers must answer exactly {', '.join(asked)} for state "
+                f"{pair[0]}" + (f" (missing {', '.join(absent)})" if absent else "")
+                + (f" (not asked: {', '.join(unasked)})" if unasked else ""))
+    for qid, value in answers.items():
+        if value not in (True, False, None):
+            return f"{where}.answers.{qid} must be true, false or null, not {value!r}"
+    if "comment" in entry and not isinstance(entry["comment"], str):
+        return f"{where}.comment must be a string"
     return None
+
+
+# -- coercion -------------------------------------------------------------------------------
+#
+# Only shapes that cannot change what the judge said are coerced, each recorded: surrounding
+# whitespace on an id or enum value, the case of an enum value or of a key the rubric names,
+# and a one-item list of a string where a string is asked for. A missing key, a missing
+# answer, a score written as a string, a boolean written as "yes" - anything that would need
+# the Factory to guess - is never coerced; it goes back to the judge as an error.
+
+def _fold(value):
+    return value.strip().lower() if isinstance(value, str) else value
+
+
+def _enum(value, allowed, path, out):
+    """`value` as one of `allowed` when it differs only by surrounding whitespace or case."""
+    if not isinstance(value, str) or value in allowed:
+        return value
+    matches = [a for a in allowed if a.lower() == _fold(value)]
+    if len(matches) != 1:
+        return value
+    rule = "strip-whitespace" if value.strip() == matches[0] else "enum-case"
+    out.append({"path": path, "rule": rule, "from": value, "to": matches[0]})
+    return matches[0]
+
+
+def _keys(mapping, allowed, path, out):
+    """`mapping` with keys renamed to one of `allowed` when they differ only by whitespace
+    or case and the renamed key is not also present."""
+    if not isinstance(mapping, dict):
+        return mapping
+    renamed = {}
+    for key, value in mapping.items():
+        target = key
+        if key not in allowed:
+            matches = [a for a in allowed if a.lower() == _fold(key)]
+            if len(matches) == 1 and matches[0] not in mapping and matches[0] not in renamed:
+                target = matches[0]
+                out.append({"path": f"{path}.{key}" if path else key, "rule": "key-case",
+                            "from": key, "to": target})
+        renamed[target] = value
+    return renamed
+
+
+def coerce(data, rubric, frames):
+    """(data, coercions): a copy of a loaded verdict with only trivially fixable shapes
+    coerced, and one {path, rule, from, to} per coercion. `data` that is not an object is
+    returned as it is. parse() still judges the result strictly."""
+    out = []
+    if not isinstance(data, dict):
+        return data, out
+    data = _keys(json.loads(json.dumps(data)), _TOP, "", out)
+    dimensions = list(rubric["dimensions"])
+    if "scores" in data:
+        data["scores"] = _keys(data["scores"], dimensions, "scores", out)
+    reasons = data.get("score_reasons")
+    if isinstance(reasons, dict):
+        reasons = _keys(reasons, dimensions, "score_reasons", out)
+        for name, value in list(reasons.items()):
+            if isinstance(value, list) and len(value) == 1 and isinstance(value[0], str):
+                reasons[name] = value[0]
+                out.append({"path": f"score_reasons.{name}", "rule": "unwrap-one-item-list",
+                            "from": value, "to": value[0]})
+        data["score_reasons"] = reasons
+    look = rubric.get("look") or {}
+    if "look" in data:
+        data["look"] = _enum(data["look"], list(look.get("values") or []), "look", out)
+    frame_ids = [f["key"] for f in frames]
+    if isinstance(data.get("findings"), list):
+        for index, finding in enumerate(data["findings"]):
+            if not isinstance(finding, dict):
+                continue
+            where = f"findings[{index}]"
+            for key, allowed in (("severity", SEVERITIES), ("category", CATEGORIES),
+                                 ("route", ROUTES)):
+                if key in finding:
+                    finding[key] = _enum(finding[key], list(allowed), f"{where}.{key}", out)
+            if isinstance(finding.get("frame"), str) and finding["frame"] not in frame_ids:
+                stripped = finding["frame"].strip()
+                if stripped in frame_ids:
+                    out.append({"path": f"{where}.frame", "rule": "strip-whitespace",
+                                "from": finding["frame"], "to": stripped})
+                    finding["frame"] = stripped
+            if isinstance(finding.get("id"), str) and finding["id"] != finding["id"].strip():
+                out.append({"path": f"{where}.id", "rule": "strip-whitespace",
+                            "from": finding["id"], "to": finding["id"].strip()})
+                finding["id"] = finding["id"].strip()
+    if isinstance(data.get("states"), list):
+        viewports = sorted({f["project"] for f in frames})
+        for index, entry in enumerate(data["states"]):
+            if not isinstance(entry, dict):
+                continue
+            where = f"states[{index}]"
+            if "state" in entry:
+                entry["state"] = _enum(entry["state"], state_ids(rubric), f"{where}.state", out)
+            if "viewport" in entry:
+                entry["viewport"] = _enum(entry["viewport"], viewports, f"{where}.viewport",
+                                          out)
+            if isinstance(entry.get("answers"), dict) and entry.get("state") in state_ids(
+                    rubric):
+                asked = [q["id"] for q in questions_for(rubric, entry["state"])]
+                entry["answers"] = _keys(entry["answers"], asked, f"{where}.answers", out)
+    return data, out
 
 
 def decide(verdict, rubric, primitive_style=False):

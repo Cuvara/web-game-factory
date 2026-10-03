@@ -7,7 +7,7 @@
     "id": "visual-qa-report",
     "kind": "artifact",
     "format": "json",
-    "version": "1.2.0",
+    "version": "1.3.0",
     "producer": "title:prototype",
     "consumers": [
       "title:prototype",
@@ -89,7 +89,30 @@
     "judge_runs": {
       "type": "integer",
       "minimum": 0,
-      "description": "How many times the judge was run: a malformed verdict is asked for once more."
+      "description": "How many times the judge was run in all: fresh attempts and repair rounds."
+    },
+    "judge_repairs": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "How many of judge_runs were repair rounds: a malformed verdict sent back to the judge with its own reply and every validation error, asking for the corrected full verdict."
+    },
+    "coercions": {
+      "type": "array",
+      "description": "Every shape the step coerced in the accepted verdict before checking it - only changes that cannot alter meaning: surrounding whitespace on an id or enum value, the case of an enum value or of a key the rubric names, a one-item list of a string where a string is asked for. Never a missing key or answer.",
+      "items": {
+        "type": "object",
+        "required": ["path", "rule", "from", "to"],
+        "properties": {
+          "path": { "type": "string" },
+          "rule": {
+            "type": "string",
+            "enum": ["strip-whitespace", "enum-case", "key-case", "unwrap-one-item-list"]
+          },
+          "from": {},
+          "to": {}
+        },
+        "additionalProperties": false
+      }
     },
     "frames": {
       "type": "array",

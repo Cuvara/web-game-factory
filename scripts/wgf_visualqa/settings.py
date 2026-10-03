@@ -9,6 +9,9 @@
           idle_timeout_seconds: null # no output for this long ends the judge
           verdict_from: file         # file: the judge writes {verdict}
                                      # stdout: it prints the JSON last; the step saves it
+          repair_rounds: 2           # a malformed verdict goes back to the judge with its
+                                     # own reply and every error, this many times in all;
+                                     # 0 = only fresh attempts (judge.MAX_JUDGE_RUNS)
           baseline_dir: null         # baseline only: <viewport>/<name>.png approved frames
           min_similarity: null       # baseline only: default baseline.MIN_SIMILARITY
         rubric: null                 # default core/reference/visual-qa-rubric.yaml
@@ -43,7 +46,7 @@ KINDS = ("none", "command", "baseline")
 
 DEFAULTS = {
     "judge": {"kind": "none", "argv": [], "timeout_seconds": 900,
-              "idle_timeout_seconds": None, "verdict_from": "file"},
+              "idle_timeout_seconds": None, "verdict_from": "file", "repair_rounds": 2},
     "rubric": None,
 }
 
@@ -94,6 +97,11 @@ class Settings:
         self.timeout = _seconds(judge.get("timeout_seconds", 900), "timeout_seconds", False)
         self.idle_timeout = _seconds(judge.get("idle_timeout_seconds"),
                                      "idle_timeout_seconds", True)
+        rounds = judge.get("repair_rounds", 2)
+        if isinstance(rounds, bool) or not isinstance(rounds, int) or not 0 <= rounds <= 10:
+            raise SettingsError("factory.visualqa.judge.repair_rounds must be a whole number "
+                                f"0-10, not {rounds!r}")
+        self.repair_rounds = rounds
         self.rubric_path = data.get("rubric")
         self.baseline_dir = judge.get("baseline_dir")
         self.min_similarity = judge.get("min_similarity")

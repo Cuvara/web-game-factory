@@ -91,7 +91,7 @@ factory:
         - --tools
         - "Read,Edit,Write,Glob,Grep,Bash"
         - --allowedTools
-        - "Read,Glob,Grep,Edit(./**),Write(./**),Bash(pnpm *),Bash(git status *),Bash(git diff *),Bash(git log *),Bash(git show *),Bash(git clean -f -- src/*),Bash(git clean -f -- tests/*),Bash(git clean -f -- public/*)"
+        - "Read,Glob,Grep,Edit(./**),Write(./**),Bash(pnpm *),Bash(git status *),Bash(git diff *),Bash(git log *),Bash(git show *),Bash(ls *),Bash(head *),Bash(tail *),Bash(grep *),Bash(wc *),Bash(node *),Bash(git clean -f -- src/*),Bash(git clean -f -- tests/*),Bash(git clean -f -- public/*)"
         - --disallowedTools
         - "WebFetch,WebSearch,Bash(git commit *),Bash(git push *),Bash(git reset *),Bash(git checkout *),Bash(git switch *),Bash(git rebase *),Bash(git stash *),Bash(git tag *),Bash(git branch *),Bash(git config *),Bash(git remote *),Bash(git * --output*)"
         - --permission-mode

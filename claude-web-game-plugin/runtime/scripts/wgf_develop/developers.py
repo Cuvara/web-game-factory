@@ -25,6 +25,7 @@ The command runs with wgflib.agentenv's allowlisted environment plus
 """
 
 import inspect
+import json
 import os
 
 from wgflib import paths
@@ -34,7 +35,7 @@ from .budget import transcript_path
 from .repository import ExactEnv
 
 __all__ = ["Outcome", "HandoffDeveloper", "CommandDeveloper", "create_developer",
-           "DECLINE_DECISIONS", "PROMPT"]
+           "DECLINE_DECISIONS", "PROMPT", "permission_stall"]
 
 DECLINE_DECISIONS = ("reject", "abandon", "cancel", "decline")
 
@@ -44,7 +45,9 @@ PROMPT = (
     "integration seam and the tests it names, following the repository's docs/ and the "
     "rules in the brief. Do not edit template-owned paths, do not add an engine, do not "
     "touch platform SDKs, do not commit and do not push. Run the checks the brief lists "
-    "until they pass, then write the development report it describes."
+    "until they pass, then write the development report it describes. A refused command "
+    "is never a reason to stop: use an allowed alternative, as the brief's 'Your shell' "
+    "section says."
 )
 
 
@@ -103,9 +106,11 @@ class CommandDeveloper:
         # The developer's whole transcript is evidence, not only its failure tail: keep it
         # in the run directory, outside the checkout, one file per visit and attempt.
         log_path = transcript_path(context)
+        offset = 0
         if log_path and _accepts(self.runner.run, "log_path"):
             os.makedirs(os.path.dirname(log_path), exist_ok=True)
             kwargs["log_path"] = log_path
+            offset = os.path.getsize(log_path) if os.path.exists(log_path) else 0
             context.logger.info("develop transcript", log=kwargs["log_path"])
         # An allowlist, not the Factory's environment (wgflib.agentenv): the developer runs
         # arbitrary code in the checkout and gets no token it was not configured to need.
@@ -122,7 +127,70 @@ class CommandDeveloper:
         if not result.ok:
             return Outcome(Outcome.FAILED, f"developer command exited {result.returncode}",
                            result.tail())
+        # A session that was refused a command and then changed nothing gave up on its
+        # shell (the live runs of 2026-10-03): say so, rather than letting the checks of
+        # an unchanged tree be blamed.
+        denied, wrote = permission_stall(kwargs.get("log_path"), offset)
+        if denied and not wrote:
+            first = " ".join(denied[0].split())
+            first = first if len(first) <= 120 else first[:117] + "..."
+            return Outcome(Outcome.FAILED, (
+                f"developer session stopped after {len(denied)} refused tool call(s) "
+                f"without changing a file (first refused: `{first}`). A refused command is "
+                f"never a reason to stop: use an allowed alternative (the brief's *Your "
+                f"shell*)"), result.tail())
         return Outcome(Outcome.DONE, "developer command completed", result.tail())
+
+
+FILE_TOOLS = ("Edit", "Write", "MultiEdit", "NotebookEdit")
+
+
+def permission_stall(path, offset=0):
+    """(refused, wrote) from a stream-json transcript past `offset`: what each tool call the
+    host refused asked for (a command, else a file path, else the tool's name), and whether
+    any file tool call succeeded. Lines may carry the transcript's `[stdout] ` prefix; a
+    transcript that is missing or not stream-json yields ([], False)."""
+    if not path:
+        return [], False
+    try:
+        with open(path, "rb") as handle:
+            handle.seek(offset)
+            text = handle.read().decode("utf-8", errors="replace")
+    except OSError:
+        return [], False
+    calls, refused, wrote = {}, [], False
+    for line in text.splitlines():
+        line = line.strip()
+        for prefix in ("[stdout] ", "[stderr] "):
+            if line.startswith(prefix):
+                line = line[len(prefix):].strip()
+                break
+        if not line.startswith("{"):
+            continue
+        try:
+            event = json.loads(line)
+        except ValueError:
+            continue
+        message = event.get("message") if isinstance(event, dict) else None
+        content = message.get("content") if isinstance(message, dict) else None
+        if not isinstance(content, list):
+            continue
+        for block in content:
+            if not isinstance(block, dict):
+                continue
+            if block.get("type") == "tool_use":
+                calls[block.get("id")] = (block.get("name"), block.get("input") or {})
+            elif block.get("type") == "tool_result":
+                name, args = calls.get(block.get("tool_use_id"), (None, {}))
+                body = block.get("content")
+                if isinstance(body, list):
+                    body = " ".join(str(b.get("text", "")) for b in body if isinstance(b, dict))
+                if block.get("is_error") and "has been denied" in str(body):
+                    refused.append(str(args.get("command") or args.get("file_path")
+                                       or name or "?"))
+                elif not block.get("is_error") and name in FILE_TOOLS:
+                    wrote = True
+    return refused, wrote
 
 
 def _accepts(function, name):

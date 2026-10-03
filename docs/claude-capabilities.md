@@ -98,7 +98,7 @@ against `claude --help` for 2.1.281, and every flag appears in a live run below.
 | `--safe-mode` | | ✓ | no hooks, plugins, MCP or CLAUDE.md, so nothing the developer committed runs in or instructs the reviewer |
 | `--strict-mcp-config` | ✓ | ✓ | no MCP servers (the opt-in self-playtest block below: only its listed file) |
 | `--tools` | `Read,Edit,Write,Glob,Grep,Bash` | `Read,Glob,Grep,Bash` | tools outside the set do not exist |
-| `--allowedTools` | reads, `Edit(./**)`, `Write(./**)`, `Bash(pnpm *)`, read-only git | reads, `Bash(git diff/log/show *)` | pre-approved without a prompt |
+| `--allowedTools` | reads, `Edit(./**)`, `Write(./**)`, `Bash(pnpm *)`, `Bash(node *)`, read-only git, the read-only filters `ls`/`head`/`tail`/`grep`/`wc`, `git clean -f` under `src/`, `tests/`, `public/` | reads, `Bash(git diff/log/show *)` | pre-approved without a prompt |
 | `--disallowedTools` | network tools; git that moves history, refs or config; `git * --output*` | `Edit,Write,NotebookEdit`, network tools, `git * --output*` | deny beats allow |
 | `--permission-mode dontAsk` | ✓ | ✓ | anything not pre-approved is refused, never prompted |
 | `--output-format` | `stream-json --verbose` | `text` | the developer's output keeps the idle timer honest. The reviewer's stdout must end with the bare or fenced verdict, and `json`/`stream-json` would wrap it and fail as `malformed-verdict` |
@@ -115,6 +115,28 @@ Configuration consequences:
   an allowlist, the Factory's guarded paths are fingerprinted and restored, the Factory's
   git runs nothing the checkout's config names, and only `writable_paths` are committed.
   `$HOME` and the network stay unwatched: wrap the argv in an OS sandbox for those.
+- **The developer's shell contract** (added after the live runs of 2026-10-03). Under
+  `dontAsk`, a Bash line runs only when every program on it matches an allow rule. Sessions
+  sent compound lines (`git status && netstat ...`, `pnpm lint 2>&1 | tail -10`), `sed -i`,
+  `python3` heredocs, `cd`, `curl` and `netstat`. Each line was refused. Six sessions then
+  stopped without changing a file, and asked for a shell nobody could grant. Two changes
+  answer this:
+  - The brief has a *Your shell* section (`wgf_develop/brief.py` `shell_contract`). It reads
+    the `Bash(...)` rules from this argv, so the brief and the host cannot differ. It says
+    a refusal is never a reason to stop, one command per call, what to use instead, that
+    scratch files go in `tests/scratch-*`, and that the Factory runs the checks and commits.
+    A session that was refused a tool call and then changed no file fails the attempt with
+    that cause (`developers.permission_stall`), not with the checks of an unchanged tree.
+  - The allowlist gained only commands that add no capability the developer does not
+    already have:
+    - `Bash(node *)` is `pnpm exec node`, which `Bash(pnpm *)` already admits.
+    - `Bash(ls *)`, `Bash(head *)`, `Bash(tail *)`, `Bash(grep *)` and `Bash(wc *)` read.
+      They are what a session pipes `pnpm` output through. The `Read` rule already reads
+      any file.
+    - Not added: `cat` (the `cat > file <<EOF` write habit), `sed`, `python`, `find`
+      (`-delete`, `-exec`), `sort` (`-o`), `rm`/`mv`, `curl`/`netstat`/`kill`, and `git -C`.
+      The deny rules match `git commit *`, not `git -C <dir> commit`.
+    - Nothing added commits, pushes, resets or fetches. Every deny rule is unchanged.
 - The agent host's credential must be named in `factory.agents.env_passthrough` if the
   host authenticates by an environment variable (`ANTHROPIC_API_KEY`,
   `CLAUDE_CODE_OAUTH_TOKEN`); a CLI logged in with `claude login` reads its credentials

@@ -390,6 +390,7 @@ class DevelopStep(WorkflowStep):
                 package_changes=settings.package_changes,
                 loop=_loop(context),
                 sessions=_sessions(context),
+                developer=settings.developer,
             )
             _write(checkout, brief_json, json.dumps(brief, indent=2, ensure_ascii=False) + "\n")
             _write(checkout, brief_md, briefs.render_markdown(brief))

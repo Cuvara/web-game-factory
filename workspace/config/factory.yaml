@@ -390,8 +390,11 @@ factory:
     #                               rules would widen what is below
     #   --tools                     the only tools that exist in the session
     #   --allowedTools              what runs without a prompt: Edit/Write only inside the
-    #                               checkout (the cwd), Bash only for pnpm and read-only git
-    #   --disallowedTools           git that moves history, refs or config, and the network
+    #                               checkout (the cwd), Bash only for pnpm, node, read-only git
+    #                               and the read-only ls/head/tail/grep/wc a session pipes
+    #                               output through (docs/claude-capabilities.md: each is
+    #                               justified there; nothing commits, pushes or resets)
+    #   --disallowedTools          git that moves history, refs or config, and the network
     #                               tools; deny wins over allow. The Factory commits, not the agent
     #   --permission-mode dontAsk   anything not pre-approved is refused, never prompted
     #   stream-json --verbose       output while it works, so idle_timeout_seconds catches a
@@ -423,7 +426,7 @@ factory:
     #     - --tools
     #     - "Read,Edit,Write,Glob,Grep,Bash"
     #     - --allowedTools
-    #     - "Read,Glob,Grep,Edit(./**),Write(./**),Bash(pnpm *),Bash(git status *),Bash(git diff *),Bash(git log *),Bash(git show *),Bash(git clean -f -- src/*),Bash(git clean -f -- tests/*),Bash(git clean -f -- public/*)"
+    #     - "Read,Glob,Grep,Edit(./**),Write(./**),Bash(pnpm *),Bash(git status *),Bash(git diff *),Bash(git log *),Bash(git show *),Bash(ls *),Bash(head *),Bash(tail *),Bash(grep *),Bash(wc *),Bash(node *),Bash(git clean -f -- src/*),Bash(git clean -f -- tests/*),Bash(git clean -f -- public/*)"
     #     - --disallowedTools
     #     - "WebFetch,WebSearch,Bash(git commit *),Bash(git push *),Bash(git reset *),Bash(git checkout *),Bash(git switch *),Bash(git rebase *),Bash(git stash *),Bash(git tag *),Bash(git branch *),Bash(git config *),Bash(git remote *),Bash(git * --output*)"
     #     - --permission-mode
@@ -474,7 +477,7 @@ factory:
     #     - --tools
     #     - "Read,Edit,Write,Glob,Grep,Bash,Skill"
     #     - --allowedTools
-    #     - "Read,Glob,Grep,Edit(./**),Write(./**),Bash(pnpm *),Bash(git status *),Bash(git diff *),Bash(git log *),Bash(git show *),Skill,mcp__playwright"
+    #     - "Read,Glob,Grep,Edit(./**),Write(./**),Bash(pnpm *),Bash(git status *),Bash(git diff *),Bash(git log *),Bash(git show *),Bash(ls *),Bash(head *),Bash(tail *),Bash(grep *),Bash(wc *),Bash(node *),Skill,mcp__playwright"
     #     - --disallowedTools
     #     - "WebFetch,WebSearch,Bash(git commit *),Bash(git push *),Bash(git reset *),Bash(git checkout *),Bash(git switch *),Bash(git rebase *),Bash(git stash *),Bash(git tag *),Bash(git branch *),Bash(git config *),Bash(git remote *),Bash(git * --output*)"
     #     - --permission-mode

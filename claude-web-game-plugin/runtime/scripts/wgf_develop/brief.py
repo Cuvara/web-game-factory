@@ -30,7 +30,7 @@ from .scope import DEFAULT_WRITABLE
 __all__ = ["REQUIRED_SYSTEMS", "INTEGRATION_CONTRACT", "REPORT_PATH", "BRIEF_DIR",
            "build_brief", "render_markdown", "PROTECTED_PATHS", "STRUCTURAL_PATHS",
            "TEMPLATE_SOURCE", "ENGINE_DIRS", "select_build_spec", "select_dev_plan",
-           "select_production_art"]
+           "select_production_art", "shell_contract"]
 
 BRIEF_DIR = "docs/development"
 REPORT_PATH = f"{BRIEF_DIR}/report.json"
@@ -114,6 +114,67 @@ def factory_path(relative):
 # own Playwright. Absolute, for the same reason as factory_path.
 LOOK_TOOL = os.path.join(os.path.dirname(os.path.abspath(__file__)), "tools", "look.mjs")
 LOOK_OUT_ROOT = "/tmp/wgf-look"
+
+# Where an unattended developer's throwaway files go: inside a writable path, since its file
+# tools write nowhere else, and removable by the `git clean -f -- tests/*` its argv allows.
+SCRATCH = "tests/scratch-*"
+
+# What a developer reaches for and the host refuses, by what it was for (live runs,
+# 2026-10-03). Each is named in the brief only while the argv does not admit it.
+SHELL_HABITS = ("cd", "sed", "python3", "netstat", "curl", "rm", "mv")
+
+
+def _rules(value):
+    """Permission rules from one --allowedTools / --disallowedTools value: comma- or
+    space-separated, a comma or space inside `Tool(...)` belonging to the rule."""
+    rules, current, depth = [], "", 0
+    for char in str(value):
+        if char in ", " and depth == 0:
+            if current:
+                rules.append(current)
+            current = ""
+            continue
+        depth += {"(": 1, ")": -1}.get(char, 0)
+        current += char
+    if current:
+        rules.append(current)
+    return rules
+
+
+def shell_contract(developer):
+    """What an unattended developer's shell admits, read from its own argv: the `Bash(...)`
+    rules after --allowedTools and --disallowedTools. None for a developer that is not a
+    configured command (a person is not refused by a permission rule).
+
+    The live runs of 2026-10-03: sessions under `--permission-mode dontAsk` sent compound
+    commands (`git status && netstat ...`, `pnpm lint | tail`), `sed -i`, `python3` and
+    `cd`, were refused, and four of them stopped and asked for a shell nobody could grant.
+    The brief states the contract from the argv that enforces it, so the two cannot differ.
+    """
+    developer = developer or {}
+    if developer.get("kind") != "command":
+        return None
+    argv = [str(part) for part in developer.get("argv") or []]
+    found = {"--allowedTools": [], "--disallowedTools": []}
+    flag = None
+    for part in argv:
+        name, _, inline = part.partition("=")
+        if name in found:
+            flag = name
+            if inline:
+                found[flag].extend(_rules(inline))
+                flag = None
+            continue
+        if flag and not part.startswith("-"):  # the flag is variadic, as the host's is
+            found[flag].extend(_rules(part))
+            continue
+        flag = None
+    return {"allowed": _bash(found["--allowedTools"]),
+            "denied": _bash(found["--disallowedTools"])}
+
+
+def _bash(rules):
+    return [r[len("Bash("):-1] for r in rules if r.startswith("Bash(") and r.endswith(")")]
 
 
 def craft_guides(engine):
@@ -461,7 +522,7 @@ def build_brief(*, title_id, engine, iteration, key, baseline, design, assets, s
                 writable_paths=None, package_changes=None, loop=None, sessions=None,
                 playability=None, frames_root=None, phase=None, greybox_commit=None,
                 production=None, visual_qa=None,
-                review_baseline=None):
+                review_baseline=None, developer=None):
     """The brief as data. `render_markdown` turns it into the document a developer reads."""
     refs = refs or {}
     writable_paths = list(DEFAULT_WRITABLE if writable_paths is None else writable_paths)
@@ -640,6 +701,9 @@ def build_brief(*, title_id, engine, iteration, key, baseline, design, assets, s
                    if v and not (k in ENGINE_DIRS and k != engine)},
         "report_path": REPORT_PATH,
         "self_playtest": bool(self_playtest),
+        # The unattended developer's shell: the Bash rules its argv allows and denies
+        # (shell_contract); None for a handoff developer.
+        "shell": shell_contract(developer),
         # How the developer sees what it built, and what "finished" looks like: the frame
         # tool, where its frames go (outside the checkout), and the installation's quality
         # bar for this engine's dimension (wgflib.quality_bar).
@@ -879,10 +943,20 @@ def _ownership_section(brief):
                  "section below).")
     lines.append("- **Template-owned project files** (ground rule 3) are never yours; the "
                  "checks fail the step on any change to them.")
-    lines.append("- **Scratch files never go in the checkout.** A throwaway script, probe or "
-                 "experiment goes under `$TMPDIR` (or `/tmp`), never in the repository root "
-                 "or any path above: one file left outside the paths that are yours, even an "
-                 "untracked one, makes the develop step refuse the whole commit.")
+    if brief.get("shell") is not None:
+        # An unattended session's file tools write only inside the checkout: $TMPDIR is
+        # refused (live runs, 2026-10-03), so scratch has one place, and is removed.
+        lines.append(f"- **Scratch files are `{SCRATCH}` only.** A throwaway script, probe "
+                     "or experiment goes there (your file tools cannot write outside the "
+                     "checkout), and you delete it before you write the report (*Your shell*, "
+                     "above). Never in the repository root or any path above: one file left "
+                     "outside the paths that are yours, even an untracked one, makes the "
+                     "develop step refuse the whole commit.")
+    else:
+        lines.append("- **Scratch files never go in the checkout.** A throwaway script, probe "
+                     "or experiment goes under `$TMPDIR` (or `/tmp`), never in the repository "
+                     "root or any path above: one file left outside the paths that are yours, "
+                     "even an untracked one, makes the develop step refuse the whole commit.")
     lines.append("- If something you need is missing from, or wrong in, a file that is not "
                  "yours, do not create or patch it: build what you can, and say what is "
                  "missing in the report's `known_issues`.\n")
@@ -954,6 +1028,66 @@ def _visual_qa_failures(report, frames_root=None):
     return out
 
 
+def _admits(allowed, program):
+    """Whether a Bash rule in `allowed` admits some invocation of `program`."""
+    return any(rule == program or rule.startswith(program + " ") for rule in allowed)
+
+
+def _shell_section(shell):
+    """The unattended developer's shell contract. A refused command is the host doing its
+    job, not the end of the session: say so, say what is allowed, and say what to use
+    instead - the Factory, not the developer, runs the checks of record and commits."""
+    allowed, denied = shell.get("allowed") or [], shell.get("denied") or []
+    out = []
+    add = out.append
+    add("## Your shell\n")
+    add("Nobody watches this session and nobody can answer a question. The agent host "
+        "refuses, without asking, every command its rules do not allow (\"denied ... don't "
+        "ask mode\"). **A refused command is never a reason to stop.** It means: do the same "
+        "thing another way, from the list below, and carry on. Ending the session to ask for "
+        "a shell, a permission or a free port loses the whole attempt, because nobody reads "
+        "the question.\n")
+    if allowed:
+        add("- **Allowed commands:** " + ", ".join(f"`{r}`" for r in allowed) + ". "
+            + ("`pnpm <script>` runs the repository's scripts; `pnpm exec <tool>` runs a "
+               "tool the checkout installed (`vitest`, `playwright`, `prettier`, `tsc`, and "
+               "`node <file>`). " if _admits(allowed, "pnpm") else "")
+            + "Nothing else runs.")
+    else:
+        add("- **Allowed commands:** none. Use the Read, Glob, Grep, Edit and Write tools.")
+    if denied:
+        add("- **Refused even when they look allowed:** "
+            + ", ".join(f"`{r}`" for r in denied) + ".")
+    habits = [p for p in SHELL_HABITS if not _admits(allowed, p)]
+    add("- **One command per Bash call.** Every program on a command line must be allowed: "
+        "`&&`, `;`, `||`, `&`, a subshell, a heredoc, or a pipe into a program that is not "
+        "allowed refuses the whole line, even when its first command alone would run."
+        + (" Not allowed here: " + ", ".join(f"`{p}`" for p in habits) + "." if habits
+           else "")
+        + " You are already in the checkout: use paths relative to it, never `cd`.")
+    add("- **Read, list and search files** with the Read, Glob and Grep tools rather than "
+        "the shell. **Change files** only with the Edit and Write tools, which write inside "
+        "the checkout - never with the shell (`sed -i`, `python`, `node -e`, `cat >`, a "
+        "redirect, `mv`, `cp`).")
+    if _admits(allowed, "git clean"):
+        add("- **Delete a file you created** with `git clean -f -- <path>`, one path per "
+            "call, under the paths its rule names. To rename one, Write the new file and "
+            "`git clean` the old one.")
+    add(f"- **Scratch scripts** go in `{SCRATCH}` and nowhere else; run one with "
+        "`pnpm exec node <path>`, and delete it before you write the report.")
+    add("- **Processes and ports** (`netstat`, `kill`, `curl`) are out of reach. If a server "
+        "will not start or a port is held, record it in the report's `known_issues` and "
+        "finish everything else.")
+    add("- **A refused file edit** inside the checkout: read the file again and retry with "
+        "the path relative to the checkout.")
+    add("- **The Factory runs the checks after you, and commits.** When your session ends it "
+        "runs every check itself, fails the step on any that fails, and commits what passes. "
+        "Run the checks you can; if one cannot run here, finish the work, say why in "
+        "`known_issues`, and still write the report. A report with an honest gap is "
+        "worth an attempt; a session that stopped early is not.\n")
+    return "\n".join(out)
+
+
 def _see_your_build(brief, look):
     """The section that gives the developer eyes: build, capture frames, open them, compare
     them with the quality bar, fix, repeat - from the first playable wiring on."""
@@ -984,10 +1118,16 @@ def _see_your_build(brief, look):
         "anything look like a default (browser button, system font, flat grey, a cube "
         "standing for a character, an empty dark void)? does the phone frame fit? did the "
         "play frames change after input?")
-    add("   Need a probe of your own? Write scratch scripts under /tmp, never in the "
-        "checkout. A new file outside the writable paths is moved out of the checkout and "
-        "costs the attempt; one you created inside them and no longer want, delete with "
-        "`git clean -f -- <path>` (src/, tests/ and public/ only).")
+    if brief.get("shell") is not None:
+        add(f"   Need a probe of your own? Write it as `{SCRATCH}`, run it with "
+            "`pnpm exec node <path>` (or `pnpm exec vitest run <path>` for a test), and "
+            "delete it with `git clean -f -- <path>` before the report. A new file outside "
+            "the writable paths is moved out of the checkout and costs the attempt.")
+    else:
+        add("   Need a probe of your own? Write scratch scripts under /tmp, never in the "
+            "checkout. A new file outside the writable paths is moved out of the checkout "
+            "and costs the attempt; one you created inside them and no longer want, delete "
+            "with `git clean -f -- <path>` (src/, tests/ and public/ only).")
     add("4. **Fix and look again**, after every change a player would see. Look one last "
         "time before you write the report, and say in `known_issues` what the last frames "
         "still show that falls short of the bar.\n")
@@ -1068,6 +1208,9 @@ def render_markdown(brief):
             "playability check passing - an asset that hides the player, darkens the scene or "
             "drops the objective from the screen is a regression - because the build is "
             "played again before review.\n")
+
+    if brief.get("shell") is not None:
+        add(_shell_section(brief["shell"]))
 
     look = brief.get("look")
     if look:

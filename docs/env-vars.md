@@ -41,6 +41,7 @@ Python, not by its children.
 
 | Variable | Set by | Meaning |
 |---|---|---|
+| `WGF_BROWSER_PROXY` | `scripts/wgflib/netguard.py` (`sandbox_env`); read by the playability bot's generated Playwright config, `scripts/wgf_listing/capture.mjs` and the wrapper `guarded_playwright_config` writes | The refusing proxy's URL, for a browser command. Passed to Chromium as Playwright's `proxy` (bypassing loopback), because Chromium ignores the `http(s)_proxy` variables everywhere but Linux. |
 | `WGF_PROC_TAG` | `scripts/wgflib/procs.py` (also named in `wgflib/workflow/api.py`) | A unique tag in each owned child's environment. Environment survives `setsid()` and double-forks, so the whole tree - including a detached daemon - can be found and terminated. |
 | `WGF_PROC_LINEAGE` | `scripts/wgflib/procs.py` | The chain of tags of the owned processes above this one, so a nested owned tree is also found from its ancestor's tag. |
 | `WGF_PROC_RUN` | `scripts/wgflib/procs.py` (bound by `wgflib/workflow/engine.py`) | The workflow runs whose steps own this tree, outermost first, each `<run-id>@<12 hex digits of the run store's directory>`. Set only on children started while a step executes; a caller-supplied value is replaced. Resuming or cancelling a run whose driver died (SIGKILL) ends every process still naming it (Linux; docs/agent-lifecycle.md#sigkill-recovery). |

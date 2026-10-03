@@ -32,7 +32,7 @@ import shutil
 import socket
 
 from wgflib import agentenv, checkout, paths, procs, provenance
-from wgflib.netguard import RefusingProxy, sandbox_env
+from wgflib.netguard import BROWSER_BYPASS, BROWSER_PROXY_VAR, RefusingProxy, sandbox_env
 from wgflib.workflow import ArtifactOutput, StepResult, WorkflowStep
 from wgflib.yamllite import load_file
 
@@ -58,6 +58,10 @@ CONFIG = """\
 import {{ defineConfig, devices }} from "@playwright/test";
 
 const gl = ["--use-gl=angle", "--use-angle=swiftshader", "--enable-unsafe-swiftshader", "--ignore-gpu-blocklist"];
+// The Factory's refusing proxy, handed to the browser itself: Chromium ignores the proxy
+// environment variables everywhere but Linux (wgflib.netguard).
+const server = process.env["{proxy_var}"];
+const proxy = server ? {{ proxy: {{ server, bypass: "{bypass}" }} }} : {{}};
 
 export default defineConfig({{
   testDir: "tests/wgf-play",
@@ -66,7 +70,7 @@ export default defineConfig({{
   retries: 0,
   timeout: 420_000,
   reporter: [["line"]],
-  use: {{ baseURL: "http://localhost:{port}", launchOptions: {{ args: gl }} }},
+  use: {{ baseURL: "http://localhost:{port}", launchOptions: {{ args: gl }}, ...proxy }},
   projects: [
     {{ name: "desktop", use: {{ ...devices["Desktop Chrome"], viewport: {{ width: 1280, height: 720 }} }} }},
     {{ name: "mobile", use: {{ ...devices["Pixel 5"] }} }},
@@ -217,7 +221,7 @@ class PlayabilityStep(WorkflowStep):
         os.makedirs(os.path.join(repo, "tests", "wgf-play"), exist_ok=True)
         shutil.copy(BOT_SPEC, os.path.join(repo, "tests", "wgf-play", "bot.spec.ts"))
         with open(os.path.join(repo, "playwright.wgf-play.config.ts"), "w", encoding="utf-8") as h:
-            h.write(CONFIG.format(port=port))
+            h.write(CONFIG.format(port=port, proxy_var=BROWSER_PROXY_VAR, bypass=BROWSER_BYPASS))
         config_path = os.path.join(out, "settings.json")
         os.makedirs(out, exist_ok=True)
         with open(config_path, "w", encoding="utf-8") as handle:

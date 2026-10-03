@@ -6,8 +6,9 @@
                      Factory's own, so no package manager and no preview server is involved
     run_capture()    the Node capture script (capture.mjs) in the game checkout's directory,
                      through wgflib.procs with the allowlisted game environment and the
-                     refusing network proxy (wgflib.netguard; enforced on Linux only, and the
-                     listing records which), given one job file; returns capture.json
+                     refusing network proxy (wgflib.netguard), which capture.mjs also hands
+                     the browser itself, so it holds on every platform (the listing records
+                     whether it did), given one job file; returns capture.json
 
 The checkout is never written to: the script resolves Playwright from the checkout's
 node_modules, and every output lands under the run directory.
@@ -190,7 +191,10 @@ def run_capture(job, *, checkout, node="node", timeout=900, config=None, hooks=N
     if report is None:
         raise CaptureFailure("failed", f"the capture wrote no capture.json (exit "
                                        f"{result.returncode}): {result.tail(8)}")
-    report["network_guard"] = "enforced" if enforced() else "set-not-enforced"
-    report["refused_requests"] = guard.summary() if hasattr(guard, "summary") else None
+    # capture.mjs hands the browser the proxy itself when it was given one (`proxied`).
+    explicit = report.get("proxied") is True
+    report["network_guard"] = "enforced" if enforced(explicit) else "set-not-enforced"
+    report["refused_requests"] = (guard.summary(explicit=explicit) if hasattr(guard, "summary")
+                                  else None)
     report["exit_code"] = result.returncode
     return report

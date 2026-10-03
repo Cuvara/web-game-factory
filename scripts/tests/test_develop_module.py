@@ -1470,8 +1470,9 @@ class Command(DevelopCase):
         # mobile suite three sessions running (a production build's first frame missed its
         # wait under load) and passed it whole at one worker. The count is the machine's.
         runner = FakeRunner(on_develop=write_game)
-        result = step_with(runner).execute(
-            inputs_for(), context(self.command_config(smoke_workers=2)))
+        with mock_env.patch("wgf_develop.checks.wraps_game_config", return_value=False):
+            result = step_with(runner).execute(
+                inputs_for(), context(self.command_config(smoke_workers=2)))
         self.assertEqual(result.outcome, StepOutcome.SUCCESS, result.error)
         smoke = [c for c in runner.calls if c[:3] == ["pnpm", "run", "test:e2e"]]
         self.assertEqual(smoke, [["pnpm", "run", "test:e2e", "--workers=2"]])
@@ -1482,6 +1483,42 @@ class Command(DevelopCase):
                 inputs_for(), context(self.command_config(smoke_workers=bad)))
             self.assertEqual((result.outcome, result.retryable), (StepOutcome.FAILED, False))
             self.assertIn("smoke_workers", result.error)
+
+    def test_where_chromium_ignores_the_proxy_variables_the_suite_runs_on_a_wrapped_config(self):
+        # val-3d, 2026-10-03: on Windows the smoke check's refusing proxy was set as
+        # environment variables Chromium never reads, and a Poki build's real SDK pulled
+        # http://imasdk.googleapis.com/... into the template's "no insecure requests" test.
+        # There the suite runs with -c on a wrapper outside the checkout that hands the
+        # browser the proxy itself; the game's own config is not touched.
+        seen = {}
+
+        class Wrapped(FakeRunner):
+            def run(self, argv, cwd, timeout=None, env=None):
+                if argv[:3] == ["pnpm", "run", "test:e2e"]:
+                    seen["argv"] = list(argv)
+                    seen["env"] = dict(env or {})
+                    wrapper = argv[argv.index("-c") + 1]
+                    seen["existed"] = os.path.isfile(wrapper)
+                    with open(wrapper, encoding="utf-8") as handle:
+                        seen["text"] = handle.read()
+                return super().run(argv, cwd, timeout, env)
+
+        runner = Wrapped(on_develop=write_game)
+        with mock_env.patch("wgf_develop.checks.wraps_game_config", return_value=True):
+            result = step_with(runner).execute(
+                inputs_for(), context(self.command_config(smoke_workers=1)))
+        self.assertEqual(result.outcome, StepOutcome.SUCCESS, result.error)
+        argv = seen["argv"]
+        self.assertEqual(argv[:5], ["pnpm", "run", "test:e2e", "--workers=1", "-c"])
+        wrapper = argv[5]
+        self.assertTrue(seen["existed"])
+        self.assertFalse(os.path.exists(wrapper))          # removed after the run
+        self.assertFalse(os.path.abspath(wrapper).startswith(os.path.abspath(self.repo)))
+        self.assertIn("playwright.config.ts", seen["text"])
+        self.assertTrue(seen["env"]["WGF_BROWSER_PROXY"].startswith("http://127.0.0.1:"))
+        with open(os.path.join(self.repo, briefs.BRIEF_DIR, "checks.json")) as handle:
+            smoke = next(c for c in json.load(handle)["checks"] if c["id"] == "smoke")
+        self.assertEqual(smoke["summary"], "pnpm run test:e2e --workers=1")  # no scratch path
 
     def test_no_browser_skips_the_smoke_suite_and_says_so(self):
         runner = FakeRunner(unavailable={"test:e2e"}, on_develop=write_game)

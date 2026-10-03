@@ -56,7 +56,9 @@ checkout itself.
 1. Clones the checkout at the reported commit, detached.
 2. Runs `pnpm install --frozen-lockfile --prefer-offline` and `pnpm build`. Every process
    goes through `wgflib.procs`. The game's environment is scrubbed (`wgflib.agentenv`) and
-   network access is refused outside localhost.
+   network access is refused outside localhost: the refusing proxy (`wgflib.netguard`) is
+   set in the environment and handed to the browser as Playwright's `proxy` by the bot's
+   generated config, since Chromium ignores the environment off Linux.
 3. Runs `bot.spec.ts` with the repository's own Playwright against `pnpm preview`. Two
    projects: desktop (1280×720) and mobile (Pixel 5, touch). Each test is a fresh browser
    context, so each one starts as a first session.

@@ -117,9 +117,11 @@ models:
   #   * its outline is a disk in every one of the three views: the outline's share of its
   #     bounding rectangle (pi/4 = 0.785 for a disk; 1.0 for a box or a drum's side) within
   #     [`min_fill`, `max_fill`], and that rectangle no longer than `max_aspect` to 1;
-  #   * it is composed - at least `min_parts` pieces of at least two different shapes or
-  #     proportions (a shell and a swirl band, a core and a rim), or modelled. A lone sphere
-  #     standing for the ball is still a placeholder.
+  #   * it is composed of what shows: at least `min_parts` pieces of at least two different
+  #     shapes or proportions (a shell and a swirl band, a core and a rim), each reaching at
+  #     least `visible_reach` of the ball's radius from its centre. A lone sphere standing
+  #     for the ball is still a placeholder, and so is a sphere with bands sunk inside it (the
+  #     same run's author tried exactly that: two rings at half the radius, invisible).
   # Bounds measured on the 64-cell outline grid: a composed icosphere marble fills 0.77-0.80
   # of its rectangle in every view, a faceted low-poly marble (a 14-16 segment shell and
   # lathe bands, the run that found this) 0.65-0.79 - a regular hexagon is 0.65, an octagon
@@ -131,6 +133,7 @@ models:
     max_fill: 0.86
     max_aspect: 1.18
     min_parts: 2
+    visible_reach: 0.9
   # model.contrast: the share of a model's visible surface (by area, untextured materials)
   # whose colour - base or emissive, the brighter - stands off the design's background (the
   # palette's background/ground token, else its darkest colour) by WCAG 3:1 or more. A dark

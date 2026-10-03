@@ -165,6 +165,7 @@ class RoundBody(unittest.TestCase):
             found = check(quality, check_id)
             self.assertEqual(found["status"], "pass", found)
             self.assertIn("a round body: the requirement names a marble", found["summary"])
+            self.assertIn("2 different pieces show on its surface", found["summary"])
             self.assertIn("models.round_body", found["summary"])
         self.assertFalse(quality["primitive_only"])
         self.assertEqual(quality["verdict"], "pass", quality["checks"])
@@ -210,6 +211,19 @@ class RoundBody(unittest.TestCase):
         self.assertIn("keep it round", summary)
         self.assertNotIn("wings", summary)
 
+    def test_bands_sunk_inside_the_shell_compose_nothing(self):
+        # The run's author tried this: two rings at half the radius, invisible in every
+        # render, under a shell that alone would be a placeholder.
+        sunk = [part("sphere", (1, 1, 1), (0, 0, 0)),
+                part("cylinder", (0.5, 0.2, 0.5), (0, 0, 0), "dark"),
+                part("cylinder", (0.5, 0.05, 0.5), (0, 0.1, 0), "dark")]
+        quality = self.judged(sunk, self.MARBLE_REQ)
+        self.assertEqual(check(quality, "model.silhouette")["status"], "fail")
+        self.assertIn("hidden inside", check(quality, "model.silhouette")["summary"])
+        data = glb_synth.build(sunk, MATS)
+        reaches = sorted(p["reach"] for p in model_quality.analyse(data)["pieces"])
+        self.assertLess(reaches[1], 0.9 * reaches[-1])
+
     def test_a_plural_names_it_too(self):
         req = dict(self.MARBLE_REQ, description="one of the marbles", readability="",
                    spec="")
@@ -221,7 +235,7 @@ class RoundBody(unittest.TestCase):
         self.assertEqual(rule["words"],
                          ["ball", "marble", "sphere", "orb", "bubble", "globe", "planet"])
         self.assertEqual((rule["min_fill"], rule["max_fill"], rule["max_aspect"],
-                          rule["min_parts"]), (0.62, 0.86, 1.18, 2))
+                          rule["min_parts"], rule["visible_reach"]), (0.62, 0.86, 1.18, 2, 0.9))
         self.assertEqual(model_quality.DEFAULT_BARS["round_body"], rule)
 
 

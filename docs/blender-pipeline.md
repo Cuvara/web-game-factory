@@ -337,9 +337,9 @@ requirement's own description, readability or spec names one of its `words` (bal
 sphere, orb, bubble, globe, planet - a whole word or its plural); the outline is a disk in
 every one of the three views (fill 0.62-0.86 of its rectangle - a disk is 0.785, a faceted
 low-poly shell down to 0.65, a box or a drum's side 1.0 - and the rectangle at most 1.18
-to 1); and it is composed of at least two
-different pieces (a shell and a swirl band) or modelled. A lone sphere is still a
-placeholder, and a goalkeeper drawn as a blob is not a round body. The passing check's
+to 1); and at least two different pieces show on its surface (a shell and a swirl band),
+each reaching at least 0.9 of its radius from its centre. A lone sphere is still a
+placeholder, so is one with bands sunk inside it, and a goalkeeper drawn as a blob is not a round body. The passing check's
 summary says "a round body: ..." so the asset report shows the exemption, and
 `primitive_only` is false for it. The author is told to compose a round body, never to
 reshape it (`model_author.RULES`). `wgf-model.py inspect --design --asset` reads the

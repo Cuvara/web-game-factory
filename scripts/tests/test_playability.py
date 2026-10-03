@@ -792,7 +792,7 @@ class TheAntiOracle(unittest.TestCase):
         self.has("if (repeated) k += 1;")
 
     def test_bad_play_is_never_a_pause_or_a_settings_toggle(self):
-        self.has("filter((m) => !UTILITY.test(m.action))")
+        self.has("filter((m) => !UTILITY.test(m.action) && !UNDO.test(m.action))")
 
 
 class TheStep(unittest.TestCase):

@@ -34,6 +34,14 @@ Everything a Factory step spawns goes through `run()` (to completion) or `spawn(
     killed with SIGKILL runs no cleanup at all; a later resume of the run finds and ends the
     trees it orphaned through that name (`sweep_run`, Linux only).
 
+A command that binds one of the template's fixed host ports (`wgflib.portlock.ports_for`:
+`pnpm run test:e2e`, `test:verify`, `test:sdk:browser`, a bare `playwright test`) runs inside
+that port's machine-wide lock, so two runs on one host take turns on port 4173 instead of
+the second failing "already used". Waiting is reported as a `port-wait` event every
+`heartbeat_seconds` (a lifecycle event: liveness reads it as activity, and the hung-child
+watchdog never fires on it), `should_stop` ends the wait (`cancelled`), and a wait longer
+than `$WGF_PORT_LOCK_TIMEOUT` returns `error` naming the holder. `ports=()` opts out.
+
 Nothing global is installed on import except an `atexit` hook that takes down trees this
 process still owns. A CLI entry point that wants SIGTERM/SIGHUP to clean up too calls
 `install_signal_cleanup()` once, from the main thread.
@@ -55,6 +63,8 @@ import subprocess
 import sys
 import threading
 import time
+
+from . import portlock
 
 __all__ = ["run", "spawn", "OwnedProcess", "ProcessResult", "TAG_ENV", "LINEAGE_ENV",
            "RUN_ENV", "HEARTBEAT_ENV", "tagged_pids", "terminate_tree", "live_groups",
@@ -78,6 +88,8 @@ _HAVE_WAITID = POSIX and hasattr(os, "waitid") and hasattr(os, "WNOWAIT")
 # SystemExit by install_signal_cleanup() - takes these down with it.
 _LIVE = {}
 _LIVE_LOCK = threading.Lock()
+# Windows only: tag -> the job object holding that tree (_WindowsJob).
+_JOBS = {}
 # Held from Popen until the new child is registered, so the subreaper sweep never sees a
 # child of ours that no tree has claimed yet.
 _SPAWN_LOCK = threading.Lock()
@@ -300,7 +312,7 @@ def _terminate_tree(pid, pgid, tag, grace_seconds=5.0):
     kernel will not hand that number out again.
     """
     if not POSIX:
-        return _terminate_windows(pid)
+        return _terminate_windows(pid, tag)
     targets = set(tagged_pids(tag))
     if pid is not None and pid_alive(pid):
         targets.add(pid)
@@ -410,15 +422,137 @@ def _sweep_adopted(exclude=(), grace_seconds=1.0):
     return ended
 
 
-def _terminate_windows(pid):  # pragma: no cover - exercised on Windows only
-    if pid is None:
-        return []
-    try:
-        subprocess.run(["taskkill", "/T", "/F", "/PID", str(pid)], capture_output=True,
-                       timeout=30)
-    except (OSError, subprocess.SubprocessError):
-        return []
-    return [pid]
+def _terminate_windows(pid, tag=None):  # pragma: no cover - exercised on Windows only
+    """`taskkill /T` while the leader runs (the tree by parentage), then the tree's job
+    object: every process started inside the tree is in it, including one whose parent
+    already exited - which `taskkill /T` cannot reach, because Windows does not reparent
+    it and the walk starts from a pid that is gone."""
+    ended = []
+    if pid is not None:
+        try:
+            subprocess.run(["taskkill", "/T", "/F", "/PID", str(pid)], capture_output=True,
+                           timeout=30)
+            ended.append(pid)
+        except (OSError, subprocess.SubprocessError):
+            pass
+    with _LIVE_LOCK:
+        job = _JOBS.get(tag)
+    if job is not None:
+        ended.extend(p for p in job.terminate() if p not in ended)
+    return ended
+
+
+class _WindowsJob:  # pragma: no cover - exercised on Windows only
+    """A Windows job object holding one owned tree.
+
+    A process started by a member of the job is a member too (node, pnpm and Playwright do
+    not ask to break away), so the job is the one handle on the whole tree that outlives its
+    leader. KILL_ON_JOB_CLOSE makes the kernel end every member when the last handle closes:
+    when cleanup unregisters the tree, and when the Factory process dies without running any
+    cleanup at all.
+
+    The child is assigned right after it starts, so a grandchild it starts within that
+    instant escapes; the leader is always an interpreter or a package manager, which takes
+    far longer than that to start anything."""
+
+    _EXTENDED_LIMITS = 9
+    _BASIC_PROCESS_IDS = 3
+    _KILL_ON_JOB_CLOSE = 0x2000
+
+    def __init__(self, handle):
+        self.handle = handle
+
+    @staticmethod
+    def _kernel32():
+        import ctypes
+        from ctypes import wintypes
+        kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+        kernel32.CreateJobObjectW.restype = wintypes.HANDLE
+        kernel32.CreateJobObjectW.argtypes = (ctypes.c_void_p, wintypes.LPCWSTR)
+        kernel32.SetInformationJobObject.argtypes = (wintypes.HANDLE, ctypes.c_int,
+                                                     ctypes.c_void_p, wintypes.DWORD)
+        kernel32.QueryInformationJobObject.argtypes = (
+            wintypes.HANDLE, ctypes.c_int, ctypes.c_void_p, wintypes.DWORD, ctypes.c_void_p)
+        kernel32.AssignProcessToJobObject.argtypes = (wintypes.HANDLE, wintypes.HANDLE)
+        kernel32.TerminateJobObject.argtypes = (wintypes.HANDLE, wintypes.UINT)
+        kernel32.CloseHandle.argtypes = (wintypes.HANDLE,)
+        return kernel32
+
+    @classmethod
+    def create(cls, process):
+        """A job holding `process` (a Popen), or None when one cannot be made."""
+        try:
+            import ctypes
+            from ctypes import wintypes
+            kernel32 = cls._kernel32()
+        except (ImportError, OSError, AttributeError):
+            return None
+
+        class Basic(ctypes.Structure):
+            _fields_ = [("PerProcessUserTimeLimit", ctypes.c_int64),
+                        ("PerJobUserTimeLimit", ctypes.c_int64),
+                        ("LimitFlags", wintypes.DWORD),
+                        ("MinimumWorkingSetSize", ctypes.c_size_t),
+                        ("MaximumWorkingSetSize", ctypes.c_size_t),
+                        ("ActiveProcessLimit", wintypes.DWORD),
+                        ("Affinity", ctypes.c_size_t),
+                        ("PriorityClass", wintypes.DWORD),
+                        ("SchedulingClass", wintypes.DWORD)]
+
+        class Extended(ctypes.Structure):
+            _fields_ = [("BasicLimitInformation", Basic),
+                        ("IoInfo", ctypes.c_uint64 * 6),
+                        ("ProcessMemoryLimit", ctypes.c_size_t),
+                        ("JobMemoryLimit", ctypes.c_size_t),
+                        ("PeakProcessMemoryUsed", ctypes.c_size_t),
+                        ("PeakJobMemoryUsed", ctypes.c_size_t)]
+
+        handle = kernel32.CreateJobObjectW(None, None)
+        if not handle:
+            return None
+        info = Extended()
+        info.BasicLimitInformation.LimitFlags = cls._KILL_ON_JOB_CLOSE
+        process_handle = getattr(process, "_handle", None)
+        if (process_handle is None
+                or not kernel32.SetInformationJobObject(handle, cls._EXTENDED_LIMITS,
+                                                        ctypes.byref(info), ctypes.sizeof(info))
+                or not kernel32.AssignProcessToJobObject(handle, int(process_handle))):
+            kernel32.CloseHandle(handle)
+            return None
+        return cls(handle)
+
+    def pids(self):
+        import ctypes
+        from ctypes import wintypes
+        if self.handle is None:
+            return []
+
+        class Ids(ctypes.Structure):
+            _fields_ = [("NumberOfAssignedProcesses", wintypes.DWORD),
+                        ("NumberOfProcessIdsInList", wintypes.DWORD),
+                        ("ProcessIdList", ctypes.c_size_t * 1024)]
+
+        ids = Ids()
+        if not self._kernel32().QueryInformationJobObject(
+                self.handle, self._BASIC_PROCESS_IDS, ctypes.byref(ids), ctypes.sizeof(ids),
+                None):
+            return []
+        return [int(ids.ProcessIdList[i]) for i in range(ids.NumberOfProcessIdsInList)]
+
+    def terminate(self):
+        """End every member. Returns the pids that were still members."""
+        members = self.pids()
+        if members:
+            self._kernel32().TerminateJobObject(self.handle, 1)
+            deadline = time.monotonic() + 5.0
+            while self.pids() and time.monotonic() < deadline:
+                time.sleep(0.05)
+        return members
+
+    def close(self):
+        if self.handle is not None:
+            self._kernel32().CloseHandle(self.handle)
+            self.handle = None
 
 
 def live_groups():
@@ -426,14 +560,20 @@ def live_groups():
         return dict(_LIVE)
 
 
-def _register(tag, pid, pgid):
+def _register(tag, pid, pgid, process=None):
+    job = _WindowsJob.create(process) if (process is not None and not POSIX) else None
     with _LIVE_LOCK:
         _LIVE[tag] = (pid, pgid)
+        if job is not None:
+            _JOBS[tag] = job
 
 
 def _unregister(tag):
     with _LIVE_LOCK:
         _LIVE.pop(tag, None)
+        job = _JOBS.pop(tag, None)
+    if job is not None:
+        job.close()
 
 
 def terminate_all(grace_seconds=2.0):
@@ -633,6 +773,12 @@ def _child_env(env, tag):
         base[RUN_ENV] = ",".join(runs)
     else:
         base.pop(RUN_ENV, None)
+    # The ports held for this tree: a descendant Factory process never waits on them.
+    held = portlock.held_ports()
+    if held:
+        base[portlock.HELD_ENV] = held
+    else:
+        base.pop(portlock.HELD_ENV, None)
     return base
 
 
@@ -770,7 +916,7 @@ def spawn(argv, cwd=None, env=None, **popen_kwargs):
     with _SPAWN_LOCK:
         process = subprocess.Popen(_resolved(argv, child_env), cwd=cwd, env=child_env,
                                    **popen_kwargs)
-        _register(tag, process.pid, process.pid if POSIX else None)
+        _register(tag, process.pid, process.pid if POSIX else None, process)
     return OwnedProcess(process, tag, argv)
 
 
@@ -864,7 +1010,7 @@ class _Stream:
 
 def run(argv, cwd=None, timeout=None, env=None, input=None, on_event=None, on_output=None,
         should_stop=None, heartbeat_seconds=None, idle_timeout=None, log_path=None,
-        grace_seconds=5.0, poll_seconds=0.1, stderr_to_stdout=False):
+        grace_seconds=5.0, poll_seconds=0.1, stderr_to_stdout=False, ports=None):
     """Run `argv` to completion as an owned process tree. Never raises for the child's own
     failure: a missing executable is `error`, a non-zero exit is `returncode`.
 
@@ -880,6 +1026,8 @@ def run(argv, cwd=None, timeout=None, env=None, input=None, on_event=None, on_ou
                     is then always "".
     `input`         str or bytes written to stdin, which is then closed; otherwise stdin is
                     /dev/null, so a child can never wait on a prompt.
+    `ports`         the fixed host ports the command binds, held machine-wide while it
+                    runs (wgflib.portlock); None = `portlock.ports_for(argv)`, () = none.
 
     stdout/stderr keep the last 4 MiB of each stream (`truncated` counts what was dropped).
     """
@@ -887,6 +1035,46 @@ def run(argv, cwd=None, timeout=None, env=None, input=None, on_event=None, on_ou
     on_event, should_stop = _with_bound(on_event, should_stop)
     if heartbeat_seconds is None:
         heartbeat_seconds = default_heartbeat_seconds()
+    ports = portlock.ports_for(argv) if ports is None else tuple(sorted(set(ports)))
+    if not ports:
+        return _run(argv, cwd, timeout, env, input, on_event, on_output, should_stop,
+                    heartbeat_seconds, idle_timeout, log_path, grace_seconds, poll_seconds,
+                    stderr_to_stdout)
+
+    def emit(kind, **data):
+        if on_event is not None:
+            try:
+                on_event(kind, **data)
+            except Exception:
+                pass
+
+    began = time.monotonic()
+    command = " ".join(argv)
+    with contextlib.ExitStack() as held:
+        for port in ports:
+            def waiting(waited_s, holder, port=port):
+                emit("port-wait", port=port, waited_s=round(waited_s, 3),
+                     holder=portlock.describe(holder))
+            try:
+                waited = held.enter_context(portlock.hold(
+                    port, command=command, run=_RUN.get(), on_wait=waiting,
+                    should_stop=should_stop, report_seconds=heartbeat_seconds or 15.0))
+            except portlock.PortWaitCancelled:
+                emit("cancelled", pid=None, port=port)
+                return ProcessResult(argv, cancelled=True, duration_s=time.monotonic() - began)
+            except portlock.PortBusy as exc:
+                emit("exited", status="not-started", error=str(exc))
+                return ProcessResult(argv, error=str(exc), exception=exc,
+                                     duration_s=time.monotonic() - began)
+            if waited:
+                emit("port-acquired", port=port, waited_s=round(waited, 3))
+        return _run(argv, cwd, timeout, env, input, on_event, on_output, should_stop,
+                    heartbeat_seconds, idle_timeout, log_path, grace_seconds, poll_seconds,
+                    stderr_to_stdout)
+
+
+def _run(argv, cwd, timeout, env, input, on_event, on_output, should_stop, heartbeat_seconds,
+         idle_timeout, log_path, grace_seconds, poll_seconds, stderr_to_stdout):
     tag = secrets.token_hex(8)
     child_env = _child_env(env, tag)
 
@@ -939,7 +1127,7 @@ def run(argv, cwd=None, timeout=None, env=None, input=None, on_event=None, on_ou
                 stdout=subprocess.PIPE,
                 stderr=subprocess.STDOUT if stderr_to_stdout else subprocess.PIPE,
                 **_session_kwargs())
-            _register(tag, process.pid, process.pid if POSIX else None)
+            _register(tag, process.pid, process.pid if POSIX else None, process)
     except (OSError, ValueError) as exc:
         close_log()
         error = f"{type(exc).__name__}: {exc}"

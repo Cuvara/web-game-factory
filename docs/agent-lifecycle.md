@@ -42,7 +42,10 @@ Both calls:
 1. **Start the child in a new session.** That is a new process group on POSIX, and
    `CREATE_NEW_PROCESS_GROUP` on Windows. The child and every descendant that does not
    detach can then be signalled as one group. It also means a signal sent to the Factory's
-   own terminal group never reaches them (see [Cancellation](#cancellation)).
+   own terminal group never reaches them (see [Cancellation](#cancellation)). On Windows
+   the child is also put in a job object of its own, with `KILL_ON_JOB_CLOSE`: every
+   process it starts joins the job, so the job still holds a descendant whose parent has
+   exited, which nothing else on Windows can find.
 2. **Tag the child's environment.** `WGF_PROC_TAG=<random>` identifies this tree, and
    `WGF_PROC_LINEAGE=<outer>,…,<tag>` lists the tags of every owner above it. Environment
    survives fork, exec, `setsid()` and reparenting. On Linux, `procs.tagged_pids(tag)` reads
@@ -101,6 +104,8 @@ runner knows nothing about workflows.
 | `timeout` / `idle-timeout` / `cancelled` | The wait ended for that reason | `pid`, `after_s` / `idle_s` |
 | `cleanup` | Descendants had to be killed | `pid`, `killed` |
 | `exited` | Always last | `pid`, `status`, `returncode`, `duration_s` |
+| `port-wait` | Before `spawned`, while another process holds a fixed port the command needs ([Fixed preview ports](#fixed-preview-ports)); at once and every `heartbeat_seconds` | `port`, `waited_s`, `holder` |
+| `port-acquired` | The port came free after a wait | `port`, `waited_s` |
 
 On every event the engine updates the step state: `pid` is the child being waited on (or
 `null`), `last_event` is the kind, and three clocks move separately, because a heartbeat
@@ -164,6 +169,89 @@ unknown `on_hung` value is a `ConfigError`: no run starts under it. Set
 pre-empts the module's own, better-worded, ending. It needs heartbeats (`idle_s`); with
 `heartbeat_seconds` 0 it never fires.
 
+## Fixed preview ports
+
+The pinned template's `playwright.config.ts` serves the build with `pnpm preview --port 4173
+--strictPort` and `reuseExistingServer: false` (`playwright.sdk.config.ts`: 4176). One
+checkout per machine, that is right: a stray server is never taken for this build. Two
+Factory runs on one machine are not: whichever reaches 4173 second fails with
+"http://localhost:4173 is already used" - three times in a minute each, on 2026-10-03, a
+greybox smoke check while another run's smoke suite held the port, and the step failed
+with its retries spent. The config is template-owned and conformance-checked, so a game
+cannot move its port. The Factory serializes the commands instead.
+
+`procs.run` holds a machine-wide, cross-process lock (`scripts/wgflib/portlock.py`) on each
+fixed port its command binds, for exactly as long as the command runs. Which commands bind
+one is `portlock.ports_for(argv)`, from the template's scripts and configs
+(`portlock.SCRIPT_CONFIGS`, `portlock.CONFIG_PORTS`; `test_portlock` checks them against the
+pinned template):
+
+| Command | Port | Run by |
+|---|---|---|
+| `pnpm run test:e2e` | 4173 | the develop `smoke` check (greybox and production), verify's gameplay check |
+| `pnpm run test:verify` | 4173 | verify's runtime-facts check |
+| `pnpm run test:sdk:browser` | 4176 | the sdk step's optional browser smoke |
+| `playwright test` with no `-c`, or `-c playwright.config.ts` | 4173 | the golden runs' repository suites |
+
+Every other browser run the Factory starts - playability's bot, the store-listing capture,
+the sdk e2e, the golden probe, MV-4 - uses a config of its own on a port it picks free, and
+takes no lock. A step needs nothing to opt in; a caller passes `ports=()` to opt out, or
+`ports=(...)` to name them itself.
+
+The lock is `port-<port>.lock` in `$WGF_LOCK_DIR` (default `~/.cache/wgf/locks`), taken with
+the operating system's own file lock: `fcntl.flock` on POSIX, `msvcrt.locking` on Windows.
+The kernel releases it when the holder's handle closes, so a holder that exited, crashed or
+was killed holds nothing - there is no stale lock to detect or break. Beside it,
+`port-<port>.holder.json` records the holder's pid, run, command and start time for the
+messages below; it is never the lock, and the next holder overwrites a stale one.
+
+- **Waiting is progress.** `procs.run` emits `port-wait` at once and every
+  `heartbeat_seconds`. It is a lifecycle event, so it moves `last_activity_at` and
+  `last_output_at`, and with no child yet there is no `pid`: `wgf status` reads the step as
+  running, never `hung`, and the hung-child watchdog has nothing to act on.
+- **Waiting is cancellable.** The step's `should_stop` is polled: `wgf cancel` (or the
+  watchdog) ends the wait, and the result is `cancelled`, as for a running child.
+- **Waiting is bounded.** After `$WGF_PORT_LOCK_TIMEOUT` seconds (default 3600) `procs.run`
+  returns `error` (`not-started`) naming the holder - for example `port 4173 is still held
+  after 3600s by pid 4242, run new-game-...@..., running `pnpm run test:e2e --workers=1`,
+  since 2026-10-03T08:31:02Z` - which each module reports as its own "could not be
+  started" outcome. Nothing is retried on the module's behalf.
+- **The port must be free, not just the lock.** The lock orders Factory commands only. A
+  process outside it - most often a developer agent's own `pnpm test:e2e` or `pnpm preview`
+  in another run, the commonest collision seen live - can be listening on the port, and
+  `--strictPort` would fail at once. So after taking the lock `hold` also waits until
+  nothing accepts a connection on 127.0.0.1 or ::1 and a probe socket can bind the port
+  (`portlock.port_free`: `SO_EXCLUSIVEADDRUSE` on Windows; `SO_REUSEADDR` on POSIX, as Node's
+  own server sets, so a closed server's TIME_WAIT connections are not taken for a listener).
+  That wait is reported (`port-wait`, holder `a process listening on port 4173 outside the
+  Factory's port lock`), cancelled and bounded like the lock's, under the same
+  `$WGF_PORT_LOCK_TIMEOUT` for both; at the bound the error (`PortInUse`) names the
+  listener's pid and image or command line where `netstat`/`tasklist` (Windows) or
+  `lsof`/`ss` (POSIX) can tell, and releases the lock.
+- **Re-entrant.** A thread already holding the port takes it again at once, and every child
+  started while a port is held carries `WGF_PROC_PORTS`, so a nested Factory process never
+  waits on the lock its own ancestor holds for it.
+
+Not covered: what a developer agent runs by itself inside its session (the brief tells it to
+run `pnpm test:e2e`, and to serve the build on 4173 for the browser tool). The step that
+runs the agent holds no lock - that would serialize whole development sessions - so an
+agent's own suite can still meet a Factory check of another run that already holds the
+port. It fails the agent's own command, not the step; the step's checks run afterwards,
+under the lock. The reverse no longer fails a check: a `pnpm preview` an agent is serving on
+4173 makes another run's check wait until the port is free (above), not fail. What the agent
+left running ends with its session - the agent CLI is an owned tree, and on Windows its job object reaches
+servers whose shell already exited ([Known limits](#known-limits)) - so that window closes
+when the session does. `procs.spawn` (long-lived servers) takes no lock either; nothing the
+Factory spawns binds a fixed port.
+
+**Template follow-up (proposal only).** The lock removes the failure, not the queue: two
+runs still take turns on 4173. A future template release could read the preview port from
+the environment in `playwright.config.ts`, as its other configs already do
+(`CG_DEMO_PORT`, `SDK_MATRIX_PORT`, ...): `const PORT = Number(process.env["WGF_PREVIEW_PORT"]
+?? 4173)`. The Factory would then hand each command a free port and drop the entry from
+`portlock.CONFIG_PORTS` once the pin moves to that release. Until then the lock is the only
+mechanism; nothing in a game repository changes.
+
 ## Cancellation
 
 | Trigger | What happens to the tree |
@@ -210,7 +298,16 @@ any orphan keeps running. A descendant that cleared its environment is not found
 
 - **No `/proc` (macOS, Windows): only the group.** `tagged_pids` returns `[]`, so a
   descendant that detaches itself (`setsid`, Playwright's `webServer`) is not found. On
-  macOS the group is still signalled. On Windows `taskkill /T` ends the tree by parentage.
+  macOS the group is still signalled. On Windows `taskkill /T` ends the tree by parentage
+  while the leader runs, and the tree's job object ends every member - including an orphan
+  whose parent already exited, which Windows does not reparent and `taskkill /T` therefore
+  cannot reach. Before the job object (2026-10-03) such an orphan outlived its tree: a
+  `vite preview` left behind by a finished command or agent session kept port 4173 until
+  someone killed it. The job is assigned right after the child starts, so a grandchild the
+  child starts within that instant escapes it; a process that asks to break away from its
+  job (`CREATE_BREAKAWAY_FROM_JOB`), or a host that refuses nested jobs, is not covered.
+  Because the job closes with the Factory process, a Factory killed outright takes its
+  trees with it on Windows - there is no SIGKILL recovery to do there.
   The zombie hold (`waitid(WNOWAIT)`) is Linux-only too. Elsewhere the child is reaped
   first and its group is signalled only while it still has live members.
 - **A descendant that clears its environment *and* detaches** cannot be found by tag or by

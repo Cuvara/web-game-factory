@@ -1079,5 +1079,52 @@ class ResolvingTheProgram(unittest.TestCase):
         self.assertIn("git version", result.stdout or "")
 
 
+
+def _windows_pid_alive(pid):
+    out = subprocess.run(["tasklist", "/FI", f"PID eq {pid}", "/FO", "CSV", "/NH"],
+                         capture_output=True, text=True).stdout
+    return f'"{pid}"' in out
+
+
+# A leader that starts a grandchild and exits at once, leaving it running: what a test runner
+# whose preview server outlived it, or an agent session whose shell left `pnpm preview`
+# behind, looks like.
+ORPHANING_LEADER = ("import subprocess, sys\n"
+                    "p = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(120)'])\n"
+                    "print(p.pid, flush=True)\n")
+
+
+@unittest.skipUnless(os.name == "nt", "Windows job objects")
+class WindowsOrphans(unittest.TestCase):
+    """Windows does not reparent an orphan, so `taskkill /T` from a leader that already
+    exited finds nothing: before job objects, a grandchild outlived every tree whose leader
+    exited first (found live, 2026-10-03: a leftover `vite preview` held port 4173). The
+    tree's job object ends it."""
+
+    def grandchild(self, text):
+        pid = int(text.split()[0])
+        self.addCleanup(subprocess.run, ["taskkill", "/F", "/PID", str(pid)],
+                        capture_output=True)
+        return pid
+
+    def test_run_ends_a_grandchild_whose_parent_already_exited(self):
+        done = procs.run([sys.executable, "-c", ORPHANING_LEADER], timeout=60)
+        pid = self.grandchild(done.stdout)
+        self.assertTrue(done.ok, done.tail())
+        self.assertIn(pid, done.killed)
+        self.assertTrue(wait_for(lambda: not _windows_pid_alive(pid), timeout=10))
+
+    def test_spawn_close_ends_a_grandchild_whose_parent_already_exited(self):
+        owned = procs.spawn([sys.executable, "-c", ORPHANING_LEADER],
+                            stdout=subprocess.PIPE, text=True)
+        pid = self.grandchild(owned.process.stdout.readline())
+        owned.process.wait(timeout=30)
+        self.assertTrue(_windows_pid_alive(pid))
+        owned.close(grace_seconds=1.0)
+        self.assertIn(pid, owned.killed)
+        self.assertTrue(wait_for(lambda: not _windows_pid_alive(pid), timeout=10))
+        self.assertEqual(procs._JOBS, {})
+
+
 if __name__ == "__main__":
     unittest.main()

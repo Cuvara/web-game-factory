@@ -315,6 +315,21 @@ class Judge(unittest.TestCase):
         self.assertEqual(text["status"], "FAIL")
         self.assertTrue(text["measured"]["low_contrast"] and text["measured"]["too_small"])
 
+    def test_an_icon_control_named_only_by_its_aria_label_is_not_text(self):
+        # The pause button: an SVG icon, aria-label "Pause", no drawn text. The bot records
+        # its name for the reports, and says the text is not drawn.
+        icon = button("Pause", [1212, 10, 52, 52], font_px=16, font_weight=400,
+                      color=[38, 33, 28, 1], background=[60, 52, 44], text_drawn=False)
+        ui = {name: screen(name, [icon]) for name in ("playing", "won", "lost", "retry")}
+        text = next(c for c in self.judge({"desktop": records(ui=ui)}) if c["id"] == "ui.text")
+        self.assertNotIn("Pause", " ".join(text["measured"].get("low_contrast") or []))
+        # The same control with drawn text is measured, and fails.
+        drawn = dict(icon, text_drawn=True)
+        ui = {name: screen(name, [drawn]) for name in ("playing", "won", "lost", "retry")}
+        text = next(c for c in self.judge({"desktop": records(ui=ui)}) if c["id"] == "ui.text")
+        self.assertEqual(text["status"], "FAIL")
+        self.assertIn("'Pause'", " ".join(text["measured"]["low_contrast"]))
+
     def test_large_text_needs_only_three_to_one(self):
         self.assertEqual(judging.contrast_ratio([255, 255, 255], [0, 0, 0]), 21.0)
         mid = [{"text": "GOAL", "box": [10, 10, 200, 40], "font_px": 32, "font_weight": 700,

@@ -34,7 +34,7 @@ sys.path.insert(0, SCRIPTS)
 sys.path.insert(0, HERE)
 
 from wgf_discovery import analysis  # noqa: E402
-from wgf_discovery.step import ResearchStep  # noqa: E402
+from wgf_discovery.step import CATALOG, ResearchStep  # noqa: E402
 from wgflib.workflow import integrity  # noqa: E402
 from wgflib.workflow.api import (  # noqa: E402
     IDEA_MAX_LENGTH, RunRequest, WorkflowAPI, canonical_idea)
@@ -45,6 +45,12 @@ from wgflib.workflow.model import RunStatus, StepOutcome  # noqa: E402
 from wgflib.yamllite import load_file  # noqa: E402
 
 GOALKEEPER = "3D goalkeeper game where the player blocks penalty shots"
+# The live brief that once selected the endless runner on one incidental verb ("collect").
+MARBLE = ("A 3D low-poly marble-roll game (Three.js): tilt/steer a marble across floating "
+          "sky-island courses, ramps, moving platforms, gaps and bumpers; collect gems, beat "
+          "the par time for stars; 3 themed worlds of hand-designed courses, unlocks and saved "
+          "progress, a time-trial mode with personal bests. Chase camera, desktop keys and "
+          "mobile touch.")
 DISCOVERY = os.path.join(HERE, "fixtures", "discovery")
 CONCEPTS = os.path.join(DISCOVERY, "concepts", "concepts.yaml")
 AS_OF = "2026-09-23T00:00:00Z"
@@ -463,6 +469,17 @@ class IdeaFallback(unittest.TestCase):
         self.assertIn("endless-runner", gaps[0]["description"])
         self.assertNotIn("concepts", {c["id"] for c in report["method"]["collectors"]})
 
+    def test_a_brief_sharing_one_incidental_word_waits(self):
+        # The live defect: the marble brief selected endless-runner on "collect" alone.
+        result = research(idea=MARBLE)
+        self.assertEqual(result.outcome, StepOutcome.WAITING_FOR_INPUT, result.message)
+        out = outputs(result)
+        self.assertEqual(list(out), ["research-report"])
+        report = out["research-report"]
+        self.assertEqual(report["selection"]["candidate_id"], "none")
+        self.assertEqual([c["id"] for c in report["candidates"] if c["idea_match"]["terms"]],
+                         [])
+
     def test_missing_external_evidence_still_waits_first(self):
         empty = tempfile.mkdtemp(prefix="wgf-idea-corpus-")
         self.addCleanup(shutil.rmtree, empty, ignore_errors=True)
@@ -617,11 +634,33 @@ class IdeaMatching(unittest.TestCase):
     def test_whole_words_only(self):
         block = {"genre": "puzzle", "subgenre": "block-puzzle", "title": "Block Puzzle",
                  "core_mechanic": "place blocks", "market_tags": ["puzzle"]}
-        self.assertEqual(analysis.idea_match(block, "the keeper blocks shots")["terms"],
-                         ["blocks"])
+        self.assertEqual(analysis.idea_match(block, "a puzzle where the keeper blocks shots")
+                         ["terms"], ["puzzle", "blocks"])
         self.assertEqual(analysis.idea_match(block, "a block game")["terms"], ["block"])
         self.assertEqual(analysis.idea_match(block, "3D keeper"),
                          {"terms": [], "dimension": False})
+
+    def test_one_incidental_word_is_not_a_match(self):
+        # The defect: the marble brief shares only "collect" with the endless runner's
+        # mechanic sentence, and "three" (Three.js) with match-3's. Neither is the brief.
+        catalog = {a["id"]: a for a in load_file(CATALOG)["archetypes"]}
+        for archetype_id in ("endless-runner", "match-3", "one-touch-arcade", "io-arena",
+                             "car-parking"):
+            with self.subTest(archetype=archetype_id):
+                self.assertEqual(analysis.idea_match(catalog[archetype_id], MARBLE)["terms"],
+                                 [])
+        # Generic gameplay and engine vocabulary is no word of any brief.
+        for word in ("collect", "stars", "levels", "time", "touch", "three", "js"):
+            self.assertNotIn(word, analysis.idea_terms(MARBLE + " levels"))
+
+    def test_a_brief_naming_the_genre_still_matches(self):
+        runner = {a["id"]: a for a in load_file(CATALOG)["archetypes"]}["endless-runner"]
+        self.assertEqual(analysis.idea_match(runner, "an endless runner where you collect "
+                                                     "coins")["terms"], ["endless", "runner"])
+        # Its mechanic sentence alone matches on two of its words, never on one.
+        self.assertEqual(analysis.idea_match(runner, "dodge obstacles across lanes")["terms"],
+                         ["dodge", "obstacles", "lanes"])
+        self.assertEqual(analysis.idea_match(runner, "dodge the goalkeeper")["terms"], [])
 
     def test_dimension(self):
         self.assertEqual(analysis.idea_dimension("3D goalkeeper"), "3d")

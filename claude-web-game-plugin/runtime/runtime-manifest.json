@@ -320,7 +320,7 @@
     "scripts/wgf_verification/model.py": "sha256:63cf34e42b7a6622cef2449c24cb52d173a66375d38e33a34e8707a488292b4f",
     "scripts/wgf_verification/report.py": "sha256:7d1d6e92945d27ed48de9a39a0b6777a53fa8af01d01619b25d2f0d238ed1635",
     "scripts/wgf_verification/runner.py": "sha256:533a42694c23a30f932c626e3d747f74d0e120ddf5a9f3dbcf6269d0b726391d",
-    "scripts/wgf_verification/session.py": "sha256:21b5fc057b724ba1d815496c195017cc3f17651c0039ca76215483809672ab82",
+    "scripts/wgf_verification/session.py": "sha256:708c1a43f33c60a95c02c38e396cb84d4c81d8aee14f92501097594783603089",
     "scripts/wgf_verification/step.py": "sha256:ec036d0e77b58a61c20bc1cdadc3526d340c30f12da773138de93e81a643f182",
     "scripts/wgf_visualqa/__init__.py": "sha256:eba406609a49d862b908a8d9ded18b6f9a6c31b3c10c21ef7c46c993a3a364e5",
     "scripts/wgf_visualqa/baseline.py": "sha256:b154237f910e505d35ce900bc85757dfa01a8b0d6b0e52086d56a44635a8b6f3",

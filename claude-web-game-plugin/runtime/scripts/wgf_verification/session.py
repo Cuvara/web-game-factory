@@ -245,8 +245,13 @@ class VerificationSession:
         which cannot stand desktop + mobile in parallel when that is set. None: the suite's
         own setting."""
         value = self.params.get("e2e_workers")
-        if value is None and hasattr(self.config, "section"):
-            value = self.config.section("develop").get("smoke_workers")
+        if value is None:
+            # A step's context carries the configuration as a plain dict (FactoryConfig.data);
+            # a FactoryConfig is accepted too.
+            config = self.config
+            develop = (config.section("develop") if hasattr(config, "section")
+                       else config.get("develop") if isinstance(config, dict) else None) or {}
+            value = develop.get("smoke_workers") if isinstance(develop, dict) else None
         if isinstance(value, bool) or not isinstance(value, int) or value < 1:
             return None
         return value

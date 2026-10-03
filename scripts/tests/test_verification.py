@@ -666,6 +666,10 @@ class Gameplay(VerificationCase):
         self.assertEqual(VerificationSession(self.repo, runner, config=config,
                                              params={"e2e_workers": 2}).e2e_workers, 2)
         self.assertIsNone(VerificationSession(self.repo, runner).e2e_workers)
+        # What a step actually receives: the configuration as a plain dict (the engine passes
+        # FactoryConfig.data). The setting must apply on that path too.
+        as_run = VerificationSession(self.repo, runner, config={"develop": {"smoke_workers": 1}})
+        self.assertEqual(as_run.e2e_workers, 1)
         for bad in (0, -1, True, "2", 1.5):
             self.assertIsNone(VerificationSession(
                 self.repo, runner, params={"e2e_workers": bad}).e2e_workers, bad)

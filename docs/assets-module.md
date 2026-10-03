@@ -56,7 +56,7 @@ the work list (`requirements.bridge`). Each entry carries onto its requirement:
 | build_spec field | Requirement | |
 |---|---|---|
 | `id` | `id` | the manifest item id and the runtime asset id |
-| `type` + `role` + dimension | `kind` | 2D: `sprite`; `texture` or role `background`/`environment` → `background`; `ui`, `icon`, `vfx`, `font` as named; a `spritesheet` or `animation` → `sprite` (one vector drawing, animated in code; the frames stay in the notes). 3D: `model` (role `environment` → `environment`), `texture`, `animation` |
+| `type` + `role` + dimension | `kind` | 2D: `sprite`; `texture` or role `background`/`environment` → `background`; `ui`, `icon`, `vfx`, `font` as named; a `spritesheet` or `animation` → `sprite` (one vector drawing, animated in code; the frames stay in the notes). 3D: `model` (role `environment` → `environment`), `texture`, `animation`; a `texture` with role `background`/`environment` (a sky, a backdrop) → `background`, a flat 2D drawing the author makes |
 | `dimension` | `dimension` | as stated, else `model` → 3d, else the engine's (`engine.dimension`, `threejs` → 3d); a flat kind (sprite, ui, icon, background) is 2D in any game |
 | `tier` | `scope_tier` | `mvp` → mvp, produced now; `post-mvp` → production and `optional` → future, recorded, not produced |
 | `role`, `description`, `readability`, `spec` | the same | what the author is asked for and the production gate judges |
@@ -478,7 +478,7 @@ and adds two checks to the item's quality: `audio.rendered-level` (RMS, peak, in
 loudness in LUFS against the level floor) and `audio.rendered-seam` (the loop's end-to-start
 step and edge levels against `asset-quality.yaml` `audio.loop_seam`). The licence is the
 Factory's own (`LicenseRef-factory-generated`): nothing is sampled from anyone. Not covered:
-3D sky/spark textures and 3D VFX still have no producer.
+3D spark and surface textures and 3D VFX still have no producer (a 3D sky or backdrop texture is a `background` the 2D author draws). A looping sound effect is always one of the loop recipes (`engine`, or `rumble` for a rolling or rumbling cue), never a one-shot its other words name.
 
 ## Placeholders
 

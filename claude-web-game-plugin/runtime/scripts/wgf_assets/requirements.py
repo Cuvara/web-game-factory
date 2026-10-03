@@ -301,6 +301,11 @@ def design_kind(entry, dimension):
         # 3D game's production gate could never be met (goalkeeper-royale, 2026-10-02).
         if kind in ("model", "other") and role not in ("ui", "icon", "font"):
             return "environment" if role in ("environment", "background") else "model"
+        # A sky or backdrop TEXTURE is a flat image whatever the scene: kept a 3D `texture`
+        # it had no producer and the production gate could never be met (sky-marble,
+        # 2026-10-03); as a `background` the 2D author draws it, like a 3D game's vfx.
+        if kind == "texture" and role in ("background", "environment"):
+            return "background"
         if kind in ("animation", "texture"):
             return kind
     if kind == "font" or role == "font":
@@ -363,8 +368,10 @@ def bridge(design, game_dim):
             continue
         dimension = entry_dimension(entry, design) or game_dim
         kind = design_kind(entry, dimension)
-        if kind in FLAT_KINDS and entry.get("dimension") not in ("2d", "3d"):
-            # A HUD icon in a 3D game is still a 2D image.
+        if kind in FLAT_KINDS and (entry.get("dimension") not in ("2d", "3d")
+                                   or entry.get("type") == "texture"):
+            # A HUD icon in a 3D game is still a 2D image, and so is a sky texture: a design
+            # that says `dimension: 3d` for it is naming the scene, not the file.
             dimension = "2d"
         notes = [entry.get("spec")] if entry.get("spec") else []
         if entry.get("type") in ("spritesheet", "animation") and kind == "sprite":

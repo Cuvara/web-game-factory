@@ -27,6 +27,7 @@ sys.path.insert(0, HERE)
 
 import test_design_module as design_tests  # noqa: E402
 from wgf_design import archetypes, depth  # noqa: E402
+from wgflib import genre_models  # noqa: E402
 from wgflib.workflow.contracts import ArtifactContracts  # noqa: E402
 from wgflib.workflow.model import StepOutcome  # noqa: E402
 
@@ -76,17 +77,34 @@ class EveryArchetypeStatesItsDepth(unittest.TestCase):
                 self.assertEqual({g["horizon"] for g in d["goal_ladder"]}, {"short", "mid", "long"})
                 self.assertGreaterEqual(len(d["return_hooks"]), 3)
 
-    def test_the_prototype_is_not_claimed_to_build_the_meta(self):
-        """The golden ports persist a best score and ramp within a run: that is the MVP depth.
-        Stages, specials, coins, the garage and missions are post-mvp - stated, not claimed."""
+    def test_the_prototype_builds_its_mvp_units_not_the_meta(self):
+        """What the golden ports actually build: the run, its content units and a best score.
+
+        The ramp within a run is MVP depth and the units of that ramp are MVP content - at
+        least the genre family's `units.min_mvp` of them, each with its own difficulty
+        reading. Stages, specials, coins, the garage and missions stay post-mvp: stated, not
+        claimed (game-design 1.9.0 build_spec.content, core/reference/genre-models.yaml).
+        """
+        families = genre_models.load()["families"]
         for archetype_id in ("drop-merge", "arena-dodge"):
-            d = design_of(archetype_id)["build_spec"]["depth"]
-            mvp_persists = [p["kind"] for p in d["meta_loop"]["persists"] if p["tier"] == "mvp"]
-            self.assertEqual(mvp_persists, ["best-score"])
-            self.assertNotEqual(d["meta_loop"]["tier"], "mvp")
-            for item in d["content_schedule"]:
-                if item["kind"] in ("special-piece", "power-up", "pickup", "hazard", "obstacle"):
-                    self.assertNotEqual(item["tier"], "mvp", item["id"])
+            with self.subTest(archetype=archetype_id):
+                design = design_of(archetype_id)
+                d = design["build_spec"]["depth"]
+                mvp_persists = [p["kind"] for p in d["meta_loop"]["persists"]
+                                if p["tier"] == "mvp"]
+                self.assertEqual(mvp_persists, ["best-score"])
+                self.assertNotEqual(d["meta_loop"]["tier"], "mvp")
+                for item in d["content_schedule"]:
+                    if item["kind"] in ("special-piece", "power-up", "pickup", "hazard",
+                                        "obstacle"):
+                        self.assertNotEqual(item["tier"], "mvp", item["id"])
+                family = families[design["genre"]["family"]]
+                units = [u for u in design["build_spec"]["content"]["units"]
+                         if u["tier"] == "mvp"]
+                self.assertGreaterEqual(len(units), family["units"]["min_mvp"])
+                self.assertEqual(len({u["id"] for u in units}), len(units))
+                for unit in units:
+                    self.assertTrue(unit["difficulty"], unit["id"])
 
     def test_first_session_is_the_session_number(self):
         design = design_of("drop-merge")

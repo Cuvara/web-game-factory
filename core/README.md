@@ -31,6 +31,7 @@ entry you are one hop from everything else:
 | What a gate requires | `lifecycle/gates.yaml` |
 | What a platform demands | `reference/platforms/<platform-id>.yaml` |
 | What an asset may be, and which licenses ship | `reference/asset-policy.yaml` |
+| What a game of a genre is made of — unit kinds, difficulty axes, win and loss, how many units, variety, mastery | `reference/genre-models.yaml`, with `craft/content-and-level-design.md` |
 
 Two files — this one and `lifecycle/title.machine.yaml` — are enough to hold the whole
 system in your head.

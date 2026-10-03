@@ -29,6 +29,7 @@ from wgflib.netguard import (RefusingProxy, guarded_playwright_config, sandbox_e
 from .brief import (ENGINE_DIRS, GREYBOX_DEFERRABLE, PROTECTED_PATHS, REPORT_PATH,
                     REQUIRED_SYSTEMS,
                     STRUCTURAL_PATHS, framework_package)
+from .content import content_findings
 from .repository import ExactEnv
 from .seam import sdk_owned_findings, seam_findings
 from .settings import DEFAULTS, PACKAGE_FIELDS
@@ -212,7 +213,67 @@ def read_report(root):
     return data, None
 
 
-def _report_findings(report, brief):
+# Systems whose "done" is a claim about the content data the conformance check reads: a
+# developer may not report them done while that data disagrees with the design.
+CONTENT_SYSTEMS = ("content", "difficulty-curve")
+_GAP_SEVERITIES = ("blocking", "minor")
+
+
+def _gap_names(report, unit_id):
+    """Whether any reported design gap names `unit_id` - by its `unit`, or in its `field`."""
+    for gap in report.get("design_gaps") or []:
+        if not isinstance(gap, dict):
+            continue
+        if gap.get("unit") == unit_id or unit_id in str(gap.get("field") or ""):
+            return True
+    return False
+
+
+def _content_report_findings(report, brief, content_issues):
+    """The development report against the content the brief asked for.
+
+    Only when the content contract applies: a parametric or procedural design owes no unit
+    list to report against, which is the same reason it owes no data file."""
+    content = brief.get("content") or {}
+    findings = []
+    for gap in report.get("design_gaps") or []:
+        if not isinstance(gap, dict):
+            findings.append("design_gaps holds an entry that is not an object")
+        elif gap.get("severity") not in _GAP_SEVERITIES:
+            findings.append(f"design_gaps entry {gap.get('field')!r} has severity "
+                            f"{gap.get('severity')!r}; it is one of "
+                            f"{', '.join(_GAP_SEVERITIES)}")
+    if not content.get("applies"):
+        return findings
+    reported = {entry.get("id"): entry for entry in report.get("content_units") or []
+                if isinstance(entry, dict)}
+    for unit in content.get("units") or []:
+        unit_id = unit.get("id")
+        entry = reported.get(unit_id)
+        if entry is None:
+            findings.append(f"content unit {unit_id!r} is not reported in content_units")
+            continue
+        status = entry.get("status")
+        if status not in ("built", "partial", "cut"):
+            findings.append(f"content unit {unit_id!r} has status {status!r}; it is built, "
+                            f"partial or cut")
+        elif status == "partial" and not str(entry.get("notes") or "").strip():
+            findings.append(f"content unit {unit_id!r} is partial with no notes saying what "
+                            f"is missing")
+        elif status == "cut" and not _gap_names(report, unit_id):
+            findings.append(f"content unit {unit_id!r} is cut and no design_gaps entry names "
+                            f"it; a unit dropped without a design gap is scope lost silently")
+    systems = report.get("systems") or {}
+    if content_issues:
+        for name in CONTENT_SYSTEMS:
+            if systems.get(name) == "done":
+                findings.append(f"required system {name!r} is reported done while the content "
+                                f"data disagrees with the design "
+                                f"({len(content_issues)} finding(s) above)")
+    return findings
+
+
+def _report_findings(report, brief, content_issues=()):
     findings = []
     if report.get("engine") != brief["engine"]:
         findings.append(f"report engine is {report.get('engine')!r}, game.config.yaml says "
@@ -237,6 +298,7 @@ def _report_findings(report, brief):
         if placement["kind"] not in kinds:
             findings.append(f"no {placement['kind']} placement reported for "
                             f"{placement['trigger']!r}")
+    findings.extend(_content_report_findings(report, brief, content_issues))
     return findings
 
 
@@ -344,6 +406,10 @@ def conformance(root, brief, git):
     findings.extend(_template_scene_findings(root))
     findings.extend(seam_findings(root, git, brief.get("baseline_commit")))
     findings.extend(sdk_owned_findings(root, git, brief.get("baseline_commit")))
+    # The content the design states, against the content the build carries. Empty unless the
+    # content contract applies (content.py).
+    content_issues = content_findings(root, brief)
+    findings.extend(content_issues)
 
     package = os.path.join(root, contract.PACKAGE_JSON)
     if os.path.exists(package):
@@ -376,7 +442,7 @@ def conformance(root, brief, git):
     if problem:
         findings.append(problem)
     else:
-        findings.extend(_report_findings(report, brief))
+        findings.extend(_report_findings(report, brief, content_issues))
 
     if findings:
         return CheckResult("conformance", "failed",

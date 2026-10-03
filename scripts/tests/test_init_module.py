@@ -278,6 +278,24 @@ class InitCase(unittest.TestCase):
 # -- unit ----------------------------------------------------------------------------------
 
 
+class TemplateOriginTest(unittest.TestCase):
+    """A project made by one Factory checkout is recognised by another: the recorded template
+    path is relative to the root that displayed it (the live genre-depth run was created from
+    the main checkout and resumed from a worktree three directories down)."""
+
+    def test_the_same_cached_checkout_shown_from_another_root(self):
+        from wgf_init.step import _same_template
+        sha = "b1062619457f427bac91b45f6a96762f256a945a"
+        recorded = f"../../../../.cache/wgf/templates/{sha}"
+        shown = f"../../../.cache/wgf/templates/{sha}"
+        template = os.path.join(r"C:\Users\x\.cache\wgf\templates", sha)
+        self.assertTrue(_same_template(recorded, shown, template))
+        self.assertFalse(_same_template(recorded.replace("b106", "c106"), shown, template))
+        self.assertFalse(_same_template(None, shown, template))
+        # A sibling working copy is a different template path, never the pinned checkout.
+        self.assertFalse(_same_template("../" + "web-game-" + "template", shown, template))
+
+
 class ProjectMetadataTest(unittest.TestCase):
     def test_metadata_from_the_worked_example(self):
         project = ProjectMetadata.from_design(load_design(), project_id="neon-drift")

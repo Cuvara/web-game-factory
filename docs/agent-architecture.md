@@ -38,6 +38,16 @@ Exactly one owner per state.
 `asset` contributing during design is deliberate: asset cost is an input to the scope
 decision, and an input cannot be produced downstream of the decision it feeds.
 
+**Content and level design belongs to `game-designer`.** The units a game is made of — the
+levels, waves, tracks, encounters, scenarios or run-segments, with their purpose, objective,
+difficulty and acceptance — are part of the `game-design` artifact, not something `gameplay`
+decides while building (`core/craft/content-and-level-design.md`, held to
+`core/reference/genre-models.yaml`). The `level-design` skill serves `game-designer`,
+`gameplay` and `qa` for exactly that reason: the designer authors the units, the implementer
+builds them as data without inventing any, and QA plays them. A developer that finds the design
+silent reports a design gap and the design is repaired; it does not decide in the designer's
+place.
+
 ## Human
 
 `portfolio-owner` — approves all seven gates, and is the only party that may kill a concept,

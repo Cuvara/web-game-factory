@@ -47,7 +47,12 @@ PROMPT = (
     "touch platform SDKs, do not commit and do not push. Run the checks the brief lists "
     "until they pass, then write the development report it describes. A refused command "
     "is never a reason to stop: use an allowed alternative, as the brief's 'Your shell' "
-    "section says."
+    "section says. "
+    "Build the content table in the brief exactly, in order, as data in "
+    "public/content/units.json; never invent a unit, a mechanic or a difficulty value the "
+    "brief does not give. Where the design is silent or contradictory, make the smallest "
+    "assumption, record it in report.json design_gaps with the field it concerns, and mark "
+    "the unit partial."
 )
 
 

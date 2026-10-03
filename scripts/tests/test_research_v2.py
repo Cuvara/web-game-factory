@@ -533,16 +533,79 @@ class Opportunities(FixtureScan):
             self.assertEqual(o["cell"][axis["facet"]]["value"], axis["to"])
 
     def test_an_unbuildable_opportunity_is_a_capability_gap_not_discarded(self):
-        block = next(o for o in self.report["opportunities"]
-                     if o["origin"] == "supply-gap"
-                     and o["cell"]["genre"]["value"] == "block-puzzle")
-        self.assertEqual(block["status"], "capability-gap")
-        self.assertFalse(block["capability"]["buildable"])
-        self.assertTrue(block["capability"]["missing"])
-        self.assertTrue(block["basis"]["evidence_backed"])
+        """Two ways a shape is not buildable, and both are kept with the reason.
+
+        The word genre: no family lists the node at all. A block puzzle: the family that does
+        list it carries a seed for a different game - the puzzle seed is a slide-and-clear
+        colour grid - and the catalog entry says exactly that. What the puzzle model does
+        build is eligible through the same family, so one family is not one genre.
+        """
+        word = next(o for o in self.report["opportunities"]
+                    if o["status"] == "capability-gap"
+                    and o["cell"]["genre"]["value"] == "word")
+        self.assertFalse(word["capability"]["buildable"])
+        self.assertTrue(word["capability"]["missing"])
+        self.assertIsNone(word["capability"]["genre_model"])
+        self.assertNotIn("design_constraints", word)
         gaps = {g["opportunity_id"]: g for g in self.report["capability_gaps"]}
+        self.assertIn(word["opportunity_id"], gaps)
+        self.assertEqual(gaps[word["opportunity_id"]]["catalog_entry"], "word-puzzle")
+
+        # Real demand, no shape: the cell is kept, with the seed it is not, and no content
+        # shape is invented for it.
+        block = next(o for o in self.report["opportunities"]
+                     if o["status"] == "capability-gap"
+                     and o["cell"]["genre"]["value"] == "block-puzzle")
+        self.assertTrue(block["basis"]["evidence_backed"])
+        self.assertFalse(block["capability"]["buildable"])
+        self.assertIsNone(block["capability"]["genre_model"])
+        self.assertIn("slide-and-clear", " ".join(block["capability"]["missing"]))
+        self.assertNotIn("design_constraints", block)
         self.assertIn(block["opportunity_id"], gaps)
-        self.assertEqual(gaps[block["opportunity_id"]]["catalog_entry"], "block-puzzle")
+
+        built = next(o for o in self.report["opportunities"]
+                     if o["status"] == "eligible"
+                     and o["cell"]["genre"]["value"] == "logic-puzzle")
+        self.assertEqual(built["capability"]["genre_model"], "puzzle")
+        self.assertTrue(built["basis"]["evidence_backed"])
+        self.assertEqual(built["design_constraints"]["family"]["value"], "puzzle")
+
+    def test_design_constraints_in_handoff(self):
+        """What research says the content must be reaches design in the genre model's own
+        vocabulary, every value keeping the claims it rests on."""
+        research = self.opportunity["research"]
+        constraints = research["design_constraints"]
+        self.assertEqual(constraints["family"]["value"], "puzzle")
+        self.assertEqual(constraints["family"]["tier"], "derived")
+        self.assertTrue(constraints["family"]["claim_refs"])
+        self.assertEqual(constraints["unit_kind"]["value"], "level")
+        # The cell's own coded facets, carried whole - not re-interpreted.
+        for facet in ("progression", "difficulty_shape", "retention_hooks", "session_band"):
+            self.assertEqual(constraints[facet], research["cell"][facet], facet)
+            self.assertEqual(constraints[facet]["tier"], "derived", facet)
+        # No teardown codes what the ramp raises: the family's axes, as a hypothesis that says so.
+        axes = constraints["difficulty_axes"]
+        self.assertEqual((axes["tier"], axes["source"]), ("hypothesis", "catalog"))
+        self.assertEqual(axes["value"],
+                         ["depth", "move-limit", "board-complexity", "piece-variety"])
+        self.assertIn("genre model", axes["reason"])
+        # Conventions are counted, never asserted.
+        for convention in constraints["conventions"]:
+            self.assertEqual(convention["tier"], "derived")
+            self.assertTrue(convention["claim_refs"])
+        refs = {ref for value in constraints.values()
+                for item in (value if isinstance(value, list) else [value])
+                for ref in (item.get("claim_refs") or [])}
+        self.assertTrue(refs)
+        self.assertTrue(refs <= set(self.claims), "every claim resolves in the report")
+        self.assertTrue(refs <= set(research["claim_refs"]), "and the opportunity carries them")
+        # Strategy carries the block whole, and commits to the content shape it names.
+        body = plan_strategy(self.opportunity, load_profiles(), "fx-title", None,
+                             load_vocabulary())
+        self.assertEqual(body["research"]["design_constraints"], constraints)
+        content = body["concept"]["content_model"]
+        self.assertEqual((content["family"], content["unit_kind"], content["source"]),
+                         ("puzzle", "level", "research"))
 
     def test_nothing_unbuildable_or_excluded_is_ever_selected(self):
         selected = next(o for o in self.report["opportunities"] if o["status"] == "selected")
@@ -690,12 +753,23 @@ class Selection(unittest.TestCase):
         self.assertTrue(any(g["kind"] == "idea-unmatched" for g in gaps))
 
     def test_the_shipped_corpus_still_selects_the_same_shape(self):
+        # Still a puzzle shape on the shipped evidence, and still built from the puzzle genre
+        # model - but the shape selected is the one that model actually designs.
         report = outputs(scan(corpus=SHIPPED, platforms=None))["research-report"]
-        self.assertEqual(report["selection"]["candidate_id"], "match-3")
+        self.assertEqual(report["selection"]["candidate_id"], "logic-puzzle-levels")
+        selected = next(o for o in report["opportunities"] if o["status"] == "selected")
+        self.assertEqual(selected["capability"]["genre_model"], "puzzle")
+        self.assertEqual(selected["design_constraints"]["family"]["value"], "puzzle")
         origins = {o["origin"] for o in report["opportunities"]}
         self.assertIn("portal-difference", origins)
+        # The portal difference points at a block puzzle, which the puzzle seed does not
+        # build: kept as a capability gap with the reason, never selected and never designed
+        # as something else.
         portal = next(o for o in report["opportunities"] if o["origin"] == "portal-difference")
         self.assertEqual(portal["status"], "capability-gap")
+        self.assertIsNone(portal["capability"]["genre_model"])
+        self.assertIn("slide-and-clear", " ".join(portal["capability"]["missing"]))
+        self.assertNotIn("design_constraints", portal)
 
 
 def _with_idea(idea):

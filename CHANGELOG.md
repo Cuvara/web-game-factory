@@ -7,7 +7,12 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). The Fac
 released as a whole (`v1.0.0` is Core v1, frozen); schemas still carry their own versions,
 and `core/` is still the contract.
 
-## [Unreleased]
+## [2.7.0] - 2026-10-03
+
+Research that proposes several opportunities from a coded game corpus, and designs that say
+what the game is actually made of: a genre model per family, a content unit list the build is
+held to, and a return route when the design did not say enough.
+Record: [docs/v2.7-release.md](docs/v2.7-release.md).
 
 **`/new-game` reaches publication and reports a run honestly** (adapter binding 1.8.0). `/web-game-factory:new-game publish <run-id>` continues a drafted release into the workflow's `publish` group (`wgf publish --run`), still answering no gate; the binding's new `continues` field names the group and `check-integrity.py` checks it. A `FAILED` or `BLOCKED` run is shown with its logs and resumed only when the user confirms; a resumed run's approvals and develop budget are reported from its own `params`, not the current config; decision lines are complete, with a note to replace; the Claude surface declares `allowed-tools` for its own engine calls (never `decide`). No artifact changes.
 
@@ -109,8 +114,104 @@ Schema changes are additive: `research-report` 1.2.0 (V2 sections required when
 `research_version: 2`), `opportunity` 1.2.0, `title-strategy` 1.3.0, `game-design` 1.8.0;
 claims gain facet subjects, capture evidence and a `support` block a pattern must carry.
 Every earlier artifact remains valid. Adapter binding 1.6.0 (must-read lists only). No gate,
-workflow, lifecycle or template-pin change. Not done: production-cost calibration, a
-scoring model v2, and the P2 capabilities `docs/research-v2.md` lists.
+workflow, lifecycle or template-pin change in this part. Not done: production-cost calibration,
+a scoring model v2, and the P2 capabilities `docs/research-v2.md` lists.
+
+**Genre depth** ([docs/production-architecture.md](docs/production-architecture.md),
+`core/craft/content-and-level-design.md`). A 2.6.0 design could pass every check and still
+describe one level and a ramp: nothing said what a game of its genre is made of, so the design
+stated a loop and the developer invented the content, difficulty and win condition around it —
+and then reported the result as a prototype of the design. Three root causes, each fixed where
+it was: no genre knowledge in `core/` (the design had no shape to be held to), no content in
+the design artifact (the only list of what the player meets was the difficulty curve), and no
+way for a developer to say "the design does not decide this" (so it decided, silently).
+
+`core/reference/genre-models.yaml` (new, 1.0.0) is the genre knowledge as data: eight families
+— puzzle, platformer, arcade, shooter, racing, strategy, survival, simulation — each with the
+research-vocabulary genre nodes it covers, the unit kinds, progression and difficulty models and
+endings that fit it, the difficulty axes (which escalate, which the build must probe), the
+shape of win and loss, how many units an MVP and a release carry, the variety dimensions, how
+mastery shows, the QA parameters the playability checks read, and a `seed` block the offline
+genre seed author designs a whole game from. `casual` and `standard` are session profiles, not
+families. No consumer branches on a family id: a new family is a new entry, never a new code
+path. `core/craft/content-and-level-design.md` (new) is the craft behind the bars, and
+`level-design` is a new skill on both adapters (adapter binding 1.7.0).
+
+The design now states its content. **`game-design` 1.9.0** adds `genre` (the family, its node,
+the session profile, `finite` or `endless`), `build_spec.content` (the unit kind, whether units
+are `authored`, `parametric` or `procedural`, and every unit with its purpose, objective,
+mechanics, per-axis difficulty, duration, success, failure, acceptance and what it varies from
+the unit before), `build_spec.difficulty.axes` (the axes, declared once; the numbers live only
+on the units), `build_spec.mastery`, `mechanics[].progression_role` / `interactions`,
+`progression.unit_sequence` and `consistency.content_model`; a `finite` ending now requires
+`build_spec.experience.win`. The design step checks it against the family's entry
+(`scripts/wgf_design/content.py`, 22 `content.*` rules, after the depth check) and records the
+model it checked against. **`title-strategy` 1.4.0** adds `concept.content_model`, resolved at
+strategy from research or the family's default. **`opportunity` 1.3.0** carries
+`capability.genre_model` and `research.design_constraints` (the content shape research coded
+for the cell, with the genre conventions it counted). **`prototype-report` 1.1.0** adds
+`content_coverage` (designed units against built ones) and `design_gaps`.
+**`playability-report` 1.2.0** adds the status `SKIPPED` and `skipped_checks`. **`qa-report`
+1.2.0** adds the suite `gameplay-quality`. **`review-report` 1.1.0** is a version bump for the
+reviewer's new `## Design fidelity` brief section. `play-probe` gains `content`,
+`entities[].kind` and `metrics.difficulty.<axis>`; `design-consistency-rules.yaml` 1.3.0
+(`scope_fits_session_count` applies only to a design with no family, which the content model
+bounds instead); `design-depth.yaml` 1.1.0 (the playability bars). Every change is additive and
+**every earlier artifact remains valid**.
+
+**Workflow 8** adds one route and one input set. `design-gap`, from `greybox` and `develop` back
+to `design`, is taken when a developer reports a blocking design gap — the design does not say
+enough to build what was asked — and is bounded on design, one pass from each source
+(`greybox.design-gap: 1`, `develop.design-gap: 1`); the build commit and its report are kept,
+and tech-plan and G3 run again on the repaired design. `design` therefore also takes the
+`prototype-report`, `verify` and G4 take the `playability-report`, and G4 takes the
+`review-report` as well (`gates.yaml` 1.2.0 lists both among G4's required artifacts, so the
+decision record pins them). Visit budgets move with it: develop 21 (1 + 2 × 7 + 4 + 2),
+greybox 5.
+
+What the first live run of this found, and what it changed, before any gate was relaxed. A
+sliding-ice puzzle idea reached the design step as the catalog's own colour-grid concept: on
+a catalog entry that names only a genre model, the entry is a capability and **the idea is the
+concept** (`concept.core_mechanic` is the brief, `core_loop` is the family's `loop`,
+`research.applied` source `brief`); an entry that names a design archetype keeps the catalog
+concept, as before. The design step met the experience problems in round one, the
+presentation problems in round two and never reached the content check: every check now runs
+on every draft and **one repair request carries every problem**, and a blocking consistency
+breach is put to a repairing author by rule name before it descopes. The agent's penguin
+design named a wall and a locked door and was descoped as a foreign mechanic:
+`design-consistency-rules.yaml` 1.4.0 lists `wall`, `crash` and `lock` as `detail_terms`,
+counted when the concept names them and the design drops them, never as a different game.
+
+The build is now held to the content it claims. The developer brief carries the genre, the
+content table, the difficulty axes, mastery and depth, and an authored design owes
+`public/content/units.json` plus `tests/unit/content.spec.ts`, compared with the design by
+`conformance` (`content.*` findings); the tech plan makes one `CONTENT-nnn` task per batch of
+three MVP units; the playability bot plays them (`content.units_reachable`,
+`content.objective_shown`, `content.win_lose_per_unit`, `content.variety`,
+`difficulty.axes_progress`, `progression.persists`, `depth.session_length`, `depth.ramp`, with
+three new bot tests — traverse, persist, session — and every bar in
+`design-depth.yaml playability:` merged with the family's `qa:`); verify carries that evidence
+into `quality.*` checks and the `gameplay-quality` suite instead of re-measuring it, and
+`gameplay.progression` no longer passes on a test whose title merely says "score" or "level";
+review reads a `## Design fidelity` section; and G3 and G4 are shown the content rules, the
+coverage, the gaps and the played checks. **A `SKIPPED` check is never a pass** — it is listed
+with its reason and subtracted by anything counting passes.
+
+Research and strategy feed it: the capability catalog (1.3.0) makes an entry buildable through a
+`design_archetype` **or** a `genre_model`, which makes eight more shapes buildable (three
+existing entries plus `logic-puzzle-levels`, `precision-platformer`, `flip-arcade`,
+`wave-shooter`, `lap-racer`, `tower-defense`, `arena-survivor`, `stand-tycoon`) with no rule
+relaxed; an idea is matched against a family's label and nodes as well as the entry's own words;
+and strategy replaces "one data-driven ramp, not hand-built levels" with
+`concept.content_model`.
+
+Also found: the template's "Windows unit test failures" were never Windows. They were CRLF
+checkouts (`git config core.autocrlf true`); with `core.autocrlf input` the pinned template
+passes 656/656 on Windows. The golden runs still need Linux CI for `pnpm`.
+
+To bring an artifact forward: re-run the design step. A 1.8.0 design with no `genre` is
+validated as legacy — one warning, no bar applied, and no content check in the build — so
+nothing already produced fails; it simply gets none of this.
 
 **A command developer never runs without a budget** (F26). A run started under the shipped,
 supervised config has no `develop_budget`; when its project then switched to a paid

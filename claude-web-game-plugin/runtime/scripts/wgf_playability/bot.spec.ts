@@ -27,10 +27,24 @@ interface Move {
   action: string;
   input: { type: "pointer"; x: number; y: number; hold_ms?: number } | { type: "key"; key: string; hold_ms?: number };
 }
+interface Progress {
+  metric: string;
+  value: number;
+  target: number;
+}
+interface Content {
+  unit_id: string | null;
+  unit_index: number;
+  unit_count: number;
+  unit_kind: string;
+  objective?: string;
+  progress?: Progress;
+}
 interface Snapshot {
   state: string;
   metrics: Record<string, number>;
-  entities: { id: string; role: string; x: number; y: number; w: number; h: number; visible: boolean; asset?: string | null; render?: string }[];
+  content?: Content;
+  entities: { id: string; kind?: string; role: string; x: number; y: number; w: number; h: number; visible: boolean; asset?: string | null; render?: string }[];
   inputs: Move[];
   assets_loaded?: string[];
   audio?: { music: string | null; playing: boolean; level: number; muted?: boolean };
@@ -46,6 +60,22 @@ const CFG = JSON.parse(fs.readFileSync(process.env.WGF_PLAY_CONFIG as string, "u
   start_timeout_ms: number;
   goal_metric: string;
   has_win: boolean;
+  // The content contract (game-design 1.9.0 build_spec.content), when the design states one:
+  // what the traverse test plays through, and the axes a difficulty value is read from.
+  content_applies: boolean;
+  // The depth contract (build_spec.depth): what the persist and session tests measure.
+  depth_applies: boolean;
+  unit_count: number;
+  max_units: number;
+  traverse_ms: number;
+  persist_ms: number;
+  session_target_ms: number;
+  session_max_ms: number;
+  window_ms: number;
+  axes: string[];
+  advance_actions: string[];
+  // The family says a unit can be restarted from inside it (genre-models qa.reset_in_unit).
+  reset_in_unit: boolean;
 };
 const URL = "/?wgf-probe=1";
 
@@ -375,6 +405,72 @@ async function act(page: Page, move: Move, touch: boolean): Promise<void> {
 const BEGIN = /^(play|start|begin|tap-to-start|continue)$/i;
 // Inputs that are not moves in the game.
 const UTILITY = /pause|resume|menu|settings|sound|mute|music|fullscreen/i;
+// The input that goes back into play after an attempt ended.
+const RETRY = /retry|restart|again|replay/i;
+// Inputs that undo play rather than play it: never "bad play" (the live puzzle offered a
+// restart during play, and an anti-oracle that pressed it reset its own moves every third
+// press and never lost).
+const UNDO = /retry|restart|again|replay|reset|undo|rewind/i;
+
+// The difficulty in force now, on the axes the design declared: the probe reports each as
+// `metrics.difficulty.<axis>` (play-probe.schema.json). An axis the build does not report is
+// absent here, not zero - a zero would read as "measured, and flat".
+function difficultyOf(s: Snapshot | null): Record<string, number> {
+  const out: Record<string, number> = {};
+  for (const axis of CFG.axes ?? []) {
+    const value = s?.metrics?.[`difficulty.${axis}`];
+    if (typeof value === "number") out[axis] = value;
+  }
+  return out;
+}
+
+// The distinct entity kinds drawn now, in the game's own vocabulary (entities[].kind).
+function kindsOf(s: Snapshot | null): string[] {
+  const kinds = new Set<string>();
+  for (const entity of s?.entities ?? []) if (entity.kind) kinds.add(entity.kind);
+  return [...kinds].sort();
+}
+
+// The input the oracle names to leave a finished unit for the next one ("next", "continue",
+// "play"), as the design's advance actions list them.
+function advanceOf(s: Snapshot | null): Move | null {
+  const names: string[] = CFG.advance_actions ?? [];
+  const matches = (action: string): boolean =>
+    names.some((name) => action.toLowerCase() === name.toLowerCase());
+  const oracle = s?.oracle;
+  if (oracle && matches(oracle.action)) return oracle;
+  return s?.inputs?.find((m) => matches(m.action) || RETRY.test(m.action)) ?? null;
+}
+
+/** The unit in play has reached its own target: its progress says so. */
+// A unit is done on its own measure when progress has RISEN to its target: value rises
+// toward target (gems 2 of 3), so a target of 0, or a value that already met the target when
+// the unit began (a count that falls - moves left 12 of 0 - is a lose metric, not progress),
+// never counts as done. Only `won` is trusted without that.
+const progressAtEntry = new Map<string, number>();
+function progressDone(s: Snapshot | null): boolean {
+  const progress = s?.content?.progress;
+  if (!progress || !(progress.target > 0)) return false;
+  const key = `${s?.content?.unit_id ?? ""}#${s?.content?.unit_index ?? 0}`;
+  if (!progressAtEntry.has(key)) progressAtEntry.set(key, progress.value);
+  const entry = progressAtEntry.get(key) ?? progress.value;
+  return progress.value >= progress.target && entry < progress.target;
+}
+
+/** Back into play after an attempt ended: the retry the probe lists, else the visible button. */
+async function retry(page: Page, s: Snapshot | null, touch: boolean): Promise<string | null> {
+  const move = s?.inputs?.find((m) => RETRY.test(m.action)) ?? advanceOf(s);
+  if (move) {
+    await act(page, move, touch);
+    return `input:${move.action}`;
+  }
+  const button = page.getByRole("button", { name: /retry|restart|play again|try again|replay|next|continue/i }).first();
+  if (await button.count()) {
+    await button.click();
+    return "button";
+  }
+  return null;
+}
 
 // Opens the game as a first session and waits for play, pressing the title screen's own
 // begin input (as the probe lists it) as a player would. Returns the timings it measured.
@@ -566,27 +662,97 @@ test("lose and restart: the anti-oracle plays badly, then retries", async ({ pag
   const started = await start(page, touch, watch);
   let reached: string | null = null;
   let initial: Record<string, number> | null = null;
+  let initialContent: Content | null = null;
+  let contentAtEnd: Content | null = null;
+  let endedAtMs: number | null = null;
+  let resetInUnit: unknown = null;
   let restart: unknown = null;
+  // Every few samples, what the metrics said: a resource the design says bad play drains
+  // (genre-models qa.resource_metric) is read from here, never from the game's own account.
+  const series: { ms: number; state: string; metrics: Record<string, number>; content: Content | null }[] = [];
+  // Every press the anti-oracle made, in order: what bad play actually did is evidence.
+  const wrongPresses: { ms: number; action: string; picked: number | null; of: number; repeated: boolean }[] = [];
   if (started.playingMs !== null) {
-    initial = watch.saw(await snap(page))?.metrics ?? null;
+    const first = watch.saw(await snap(page));
+    initial = first?.metrics ?? null;
+    initialContent = first?.content ?? null;
+    // A family whose unit can be restarted from inside it: the restart is pressed while the
+    // unit is still in play, and the unit's own progress must go back to the start.
+    if (CFG.reset_in_unit) {
+      const before = watch.saw(await snap(page));
+      if (before?.oracle) await act(page, before.oracle, touch);
+      await page.waitForTimeout(300);
+      const mid = watch.saw(await snap(page));
+      const t = Date.now();
+      const clicked = mid?.state === "playing" ? await retry(page, mid, touch) : null;
+      let back: Snapshot | null = null;
+      let playingMs: number | null = null;
+      while (clicked && Date.now() - t < 10000) {
+        back = watch.saw(await snap(page));
+        if (back?.state === "playing" && Date.now() - t > 200) {
+          playingMs = Date.now() - t;
+          break;
+        }
+        const begin = back && back.state !== "lost" ? back.inputs?.find((m) => BEGIN.test(m.action)) : undefined;
+        if (begin) await act(page, begin, touch);
+        await page.waitForTimeout(50);
+      }
+      resetInUnit = { clicked, playingMs, before: mid?.content ?? null, after: back?.content ?? null,
+                      metrics_before: mid?.metrics ?? null, metrics_after: back?.metrics ?? null };
+    }
     const t0 = Date.now();
     // One success first, as a first-time player would: the grace ends at the first success.
     let succeeded = false;
+    let samples = 0;
+    // The anti-oracle rotates through the moves that are not the oracle's: `k` advances on
+    // every press, and again when the press before it moved nothing the probe reports, so a
+    // direction a wall blocks (no move spent, nothing changed) is not pressed for the whole
+    // window.
+    let k = 0;
+    let unchanged: string | null = null;
     while (Date.now() - t0 < CFG.lose_ms) {
       const s = watch.saw(await snap(page));
       if (!s) break;
+      if (samples++ % 3 === 0 && series.length < 400) {
+        series.push({ ms: Date.now() - t0, state: s.state, metrics: s.metrics ?? {},
+                      content: s.content ?? null });
+      }
       if (s.state === "lost" || s.state === "won") {
         reached = s.state;
+        endedAtMs = Date.now() - t0;
+        contentAtEnd = s.content ?? null;
         break;
       }
       if (!succeeded && s.oracle) {
         await act(page, s.oracle, touch);
         succeeded = true;
-      } else if (s.oracle) {
-        // The first move that is not the oracle's, never a pause or settings toggle (bad
-        // play, not no play); with no other move, the only one there is.
-        const moves = s.inputs.filter((m) => !UTILITY.test(m.action));
-        const wrong = moves.find((m) => JSON.stringify(m) !== JSON.stringify(s.oracle)) ?? s.oracle;
+      } else {
+        // A move that is not the oracle's, never a pause or settings toggle (bad play, not no
+        // play); with no other move, the only one there is. With no oracle at all - the
+        // player has slid into a dead end the game cannot solve from - bad play goes on all
+        // the same: a puzzle still loses by running out of moves, and a game that never
+        // ends from there is what this test exists to show.
+        const moves = s.inputs.filter((m) => !UTILITY.test(m.action) && !UNDO.test(m.action));
+        const others = s.oracle
+          ? moves.filter((m) => JSON.stringify(m) !== JSON.stringify(s.oracle))
+          : moves;
+        if (!others.length && !s.oracle) {
+          await page.waitForTimeout(150);
+          continue;
+        }
+        // What the last press did, as the probe reports it: the metrics and the unit's own
+        // progress. The same state again means the press changed nothing.
+        const state = JSON.stringify({ m: s.metrics ?? {}, c: s.content ?? null });
+        const repeated = unchanged !== null && state === unchanged;
+        if (repeated) k += 1;
+        unchanged = state;
+        const picked = others.length ? k % others.length : null;
+        const wrong = picked === null ? (s.oracle as Move) : others[picked];
+        k += 1;
+        if (wrongPresses.length < 60) {
+          wrongPresses.push({ ms: Date.now() - t0, action: wrong.action, picked,
+                              of: others.length, repeated });
+        }
         await act(page, wrong, touch);
       }
       await page.waitForTimeout(150);
@@ -628,7 +794,8 @@ test("lose and restart: the anti-oracle plays badly, then retries", async ({ pag
         }
         await page.waitForTimeout(50);
       }
-      restart = { clicked, playingMs, metrics: after?.metrics ?? null, endMetrics: at?.metrics ?? null };
+      restart = { clicked, playingMs, metrics: after?.metrics ?? null, endMetrics: at?.metrics ?? null,
+                  content: after?.content ?? null, endContent: at?.content ?? null };
       // The screen after the retry, once play is back: measured after the restart's timing.
       if (playingMs !== null) {
         await page.waitForTimeout(500);
@@ -636,7 +803,8 @@ test("lose and restart: the anti-oracle plays badly, then retries", async ({ pag
       }
     }
   }
-  write(project, "lose", { ...started, initial, reached, restart, ...watch.record(), frames });
+  write(project, "lose", { ...started, initial, initialContent, reached, endedAtMs, contentAtEnd,
+                           series, wrongPresses, resetInUnit, restart, ...watch.record(), frames });
 });
 
 // The pause screen, when the game offers one: the probe's pause input, else a visible pause
@@ -676,4 +844,291 @@ test("pause: the pause screen, if there is one", async ({ page }, info) => {
     }
   }
   write(project, "pause", { ...started, how, paused, resumed, ...watch.record(), frames });
+});
+
+// -- the content contract -------------------------------------------------------------------
+
+interface UnitRecord {
+  unit_id: string | null;
+  index: number;
+  objective_texts: string[];
+  kinds: string[];
+  difficulty: Record<string, number>;
+  metrics: Record<string, number>;
+  won: boolean;
+  lost: boolean;
+  entered_ms: number;
+  duration_ms: number;
+}
+
+// The units the design claims, played one after another with real input. The oracle names the
+// move that succeeds and, at the end of a unit, the move that advances; the bot presses it as
+// a player would, and never jumps to a unit it has not finished. Only recorded: which unit was
+// in play, what it asked for, what was drawn in it, and the difficulty in force.
+test("traverse: the oracle plays unit after unit", async ({ page }, info) => {
+  const project = info.project.name;
+  const frames: string[] = [];
+  const watch = new Watch(page, project, frames);
+  if (!CFG.content_applies) {
+    write(project, "traverse", { applies: false, reason: "the design states no content units" });
+    return;
+  }
+  const touch = Boolean(info.project.use.hasTouch);
+  const started = await start(page, touch, watch);
+  const snapshots: { ms: number; unit_id: string | null; unit_index: number; state: string;
+                     progress: Progress | null; difficulty: Record<string, number>;
+                     kinds: string[] }[] = [];
+  const transitions: { from: number; to: number; at_ms: number; how: string; since_end_ms: number | null }[] = [];
+  const units: UnitRecord[] = [];
+  let stopped = "window";
+  let losses = 0;
+  if (started.playingMs !== null) {
+    const t0 = Date.now();
+    let current: number | null = null;
+    let ended: { ms: number; how: string } | null = null;
+    const shot = new Set<number>();
+    while (Date.now() - t0 < CFG.traverse_ms) {
+      const s = watch.saw(await snap(page));
+      if (!s) break;
+      const ms = Date.now() - t0;
+      const index = s.content?.unit_index ?? 0;
+      const difficulty = difficultyOf(s);
+      const kinds = kindsOf(s);
+      if (snapshots.length < 1500) {
+        snapshots.push({ ms, unit_id: s.content?.unit_id ?? null, unit_index: index,
+                         state: s.state, progress: s.content?.progress ?? null, difficulty, kinds });
+      }
+      if (index !== current) {
+        if (current !== null && index > 0) {
+          transitions.push({ from: current, to: index, at_ms: ms, how: ended?.how ?? "unknown",
+                             since_end_ms: ended ? ms - ended.ms : null });
+        }
+        current = index;
+        ended = null;
+      }
+      let unit = units.find((u) => u.index === index);
+      if (index > 0 && !unit) {
+        unit = { unit_id: s.content?.unit_id ?? null, index, objective_texts: [], kinds: [],
+                 difficulty: {}, metrics: {}, won: false, lost: false, entered_ms: ms,
+                 duration_ms: 0 };
+        units.push(unit);
+      }
+      if (unit) {
+        unit.duration_ms = ms - unit.entered_ms;
+        unit.metrics = s.metrics ?? {};
+        for (const kind of kinds) if (!unit.kinds.includes(kind)) unit.kinds.push(kind);
+        Object.assign(unit.difficulty, difficulty);
+        // The objective, as the player is shown it: the unit's own text, and the page's.
+        if (unit.objective_texts.length < 4) {
+          if (s.content?.objective) unit.objective_texts.push(s.content.objective);
+          unit.objective_texts.push(await page.evaluate(() => document.body.innerText));
+        }
+        if (!shot.has(index) && ms - unit.entered_ms > 1000) {
+          await frame(page, project, `unit-${index}-1s`, frames);
+          shot.add(index);
+        }
+      }
+      if (s.state === "won" || progressDone(s)) {
+        if (unit) unit.won = true;
+        ended = { ms, how: s.state === "won" ? "won" : "progress" };
+        const advance = advanceOf(s);
+        if (advance) await act(page, advance, touch);
+        else if (s.state === "won") await retry(page, s, touch);
+        await page.waitForTimeout(250);
+        continue;
+      }
+      if (s.state === "lost") {
+        if (unit) unit.lost = true;
+        losses += 1;
+        ended = { ms, how: "lost" };
+        if (losses >= 2) {
+          stopped = "lost twice";
+          break;
+        }
+        await retry(page, s, touch);
+        await page.waitForTimeout(250);
+        continue;
+      }
+      if (units.length >= CFG.max_units) {
+        stopped = "max units";
+        break;
+      }
+      if (s.oracle) {
+        await act(page, s.oracle, touch);
+        await page.waitForTimeout(120);
+      } else {
+        await page.waitForTimeout(40);
+      }
+    }
+  } else {
+    stopped = "play never began";
+  }
+  write(project, "traverse", { ...started, applies: true, snapshots, transitions,
+                               per_unit: units, losses, stopped, ...watch.record(), frames });
+});
+
+// What the game remembers. The oracle plays until something the design says persists has
+// moved - the best, or the unit reached - the page is reloaded, and the probe is read BEFORE
+// any input: whatever is gone was not persisted.
+test("persist: what survives a reload", async ({ page }, info) => {
+  const project = info.project.name;
+  const frames: string[] = [];
+  const watch = new Watch(page, project, frames);
+  if (!CFG.depth_applies) {
+    write(project, "persist", { applies: false, reason: "the design states no depth contract" });
+    return;
+  }
+  const touch = Boolean(info.project.use.hasTouch);
+  const started = await start(page, touch, watch);
+  let before: Snapshot | null = null;
+  let after: Snapshot | null = null;
+  let afterResumed: Snapshot | null = null;
+  let changed: string | null = null;
+  if (started.playingMs !== null) {
+    const opening = watch.saw(await snap(page));
+    const bestAt = opening?.metrics?.best ?? null;
+    const indexAt = opening?.content?.unit_index ?? null;
+    const t0 = Date.now();
+    while (Date.now() - t0 < CFG.persist_ms) {
+      const s = watch.saw(await snap(page));
+      if (!s) break;
+      const best = s.metrics?.best ?? null;
+      const index = s.content?.unit_index ?? null;
+      if (best !== null && bestAt !== null && best > bestAt) changed = "best";
+      else if (index !== null && indexAt !== null && index > indexAt) changed = "unit_index";
+      if (changed) break;
+      if (s.state === "lost" || s.state === "won") {
+        // A best is written at the end of an attempt: go back in and read it.
+        await retry(page, s, touch);
+        await page.waitForTimeout(400);
+        continue;
+      }
+      if (s.oracle) {
+        await act(page, s.oracle, touch);
+        await page.waitForTimeout(120);
+      } else {
+        await page.waitForTimeout(60);
+      }
+    }
+    before = watch.saw(await snap(page));
+    await page.reload({ waitUntil: "domcontentloaded" });
+    const t1 = Date.now();
+    while (Date.now() - t1 < CFG.start_timeout_ms) {
+      const s = await snap(page);
+      if (s && s.state !== "loading") {
+        after = watch.saw(s);
+        break;
+      }
+      await page.waitForTimeout(50);
+    }
+    await frame(page, project, "persist-after-reload", frames);
+    // Back into play without replaying anything, so the unit reached can be compared too.
+    const begin = after?.inputs?.find((m) => BEGIN.test(m.action) || RETRY.test(m.action));
+    if (begin) {
+      await act(page, begin, touch);
+      const t2 = Date.now();
+      while (Date.now() - t2 < 10000) {
+        const s = watch.saw(await snap(page));
+        if (s?.state === "playing") {
+          afterResumed = s;
+          break;
+        }
+        await page.waitForTimeout(50);
+      }
+    }
+  }
+  write(project, "persist", { ...started, applies: true, changed, before, after,
+                              after_resumed: afterResumed, ...watch.record(), frames });
+});
+
+// One first session, as the design designed it: the oracle plays and retries at once, and the
+// session is held open to the design's own first-session length. Recorded: how long play
+// lasted, each attempt with the oracle's input rate per third of it (does the game ask more of
+// the player as it goes?), when the designed closing beat first arrived, and the difficulty in
+// force in each window.
+test("session: a first session's length and ramp", async ({ page }, info) => {
+  const project = info.project.name;
+  const frames: string[] = [];
+  const watch = new Watch(page, project, frames);
+  if (!CFG.depth_applies) {
+    write(project, "session", { applies: false, reason: "the design states no depth contract" });
+    return;
+  }
+  const touch = Boolean(info.project.use.hasTouch);
+  const started = await start(page, touch, watch);
+  const runs: { duration_ms: number; inputs: number; oracle_inputs_per_third: number[] }[] = [];
+  const windows: { at_ms: number; difficulty: Record<string, number> }[] = [];
+  let lengthMs = 0;
+  let beatAtMs: number | null = null;
+  let endedOn = "window";
+  if (started.playingMs !== null) {
+    const t0 = Date.now();
+    const opening = watch.saw(await snap(page));
+    let best = opening?.metrics?.best ?? null;
+    let index = opening?.content?.unit_index ?? null;
+    let runStart = Date.now();
+    let inputs: number[] = [];
+    let window = 0;
+    const close = (): void => {
+      const duration = Date.now() - runStart;
+      const third = Math.max(1, duration / 3);
+      const thirds = [0, 0, 0];
+      for (const at of inputs) {
+        const slot = Math.min(2, Math.floor(at / third));
+        thirds[slot] = (thirds[slot] ?? 0) + 1;
+      }
+      runs.push({ duration_ms: duration, inputs: inputs.length, oracle_inputs_per_third: thirds });
+      inputs = [];
+      runStart = Date.now();
+    };
+    while (Date.now() - t0 < CFG.session_max_ms) {
+      const s = watch.saw(await snap(page));
+      if (!s) break;
+      const ms = Date.now() - t0;
+      if (ms >= (window + 1) * CFG.window_ms) {
+        window = Math.floor(ms / CFG.window_ms);
+        windows.push({ at_ms: ms, difficulty: difficultyOf(s) });
+      }
+      const nowBest = s.metrics?.best ?? null;
+      const nowIndex = s.content?.unit_index ?? null;
+      if (beatAtMs === null && ((nowBest !== null && best !== null && nowBest > best)
+                               || (nowIndex !== null && index !== null && nowIndex > index))) {
+        beatAtMs = ms;
+      }
+      if (nowBest !== null) best = Math.max(best ?? nowBest, nowBest);
+      if (nowIndex !== null) index = Math.max(index ?? nowIndex, nowIndex);
+      if (s.state === "lost" || s.state === "won") {
+        close();
+        // Instant retry: a first session is only as long as the game lets the player stay in.
+        const clicked = await retry(page, s, touch);
+        if (!clicked) {
+          endedOn = "no retry was offered";
+          break;
+        }
+        await page.waitForTimeout(300);
+        const back = watch.saw(await snap(page));
+        const begin = back?.inputs?.find((m) => BEGIN.test(m.action));
+        if (begin) await act(page, begin, touch);
+        runStart = Date.now();
+        continue;
+      }
+      if (s.oracle) {
+        await act(page, s.oracle, touch);
+        inputs.push(Date.now() - runStart);
+        await page.waitForTimeout(120);
+      } else {
+        await page.waitForTimeout(40);
+      }
+    }
+    if (Date.now() - runStart > 500) close();
+    lengthMs = Date.now() - t0;
+    if (beatAtMs !== null && endedOn === "window") endedOn = "beat reached";
+    await frame(page, project, "session-end", frames);
+  } else {
+    endedOn = "play never began";
+  }
+  write(project, "session", { ...started, applies: true, length_ms: lengthMs,
+                              beat_at_ms: beatAtMs, ended_on: endedOn, runs, windows,
+                              target_ms: CFG.session_target_ms, window_ms: CFG.window_ms,
+                              ...watch.record(), frames });
 });

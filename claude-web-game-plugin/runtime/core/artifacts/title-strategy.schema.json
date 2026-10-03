@@ -8,7 +8,7 @@
     "id": "title-strategy",
     "kind": "artifact",
     "format": "json",
-    "version": "1.3.0",
+    "version": "1.4.0",
     "producer": "title:strategy",
     "consumers": ["title:strategy", "title:design", "title:tech-plan", "title:prototype", "title:prototype-review", "title:production", "title:live", "release:store-listing"],
     "repo_path": "workspace/titles/<title-id>/title-strategy.json",
@@ -177,6 +177,20 @@
         "replayability": {
           "type": "string",
           "description": "Why a player starts another session. Replay should come from a system, not from more content."
+        },
+        "content_model": {
+          "type": "object",
+          "description": "The content shape the title commits to, resolved at strategy from the opportunity's research (research.design_constraints) or from the genre family's default: which family of core/reference/genre-models.yaml the design will be held to, what one unit of content is, how progression and difficulty are shaped, the axes difficulty moves on, and the fewest units the MVP carries. Design starts from this instead of inventing a shape, and `source` says whether research decided it or a default did. Added in 1.4.0.",
+          "properties": {
+            "family": { "type": "string", "description": "A `families` key of core/reference/genre-models.yaml." },
+            "unit_kind": { "type": "string", "description": "What one unit of content is: level, wave, track, lap, encounter, scenario, shift, round, map, run-segment." },
+            "progression": { "type": "string" },
+            "difficulty_shape": { "type": "string" },
+            "difficulty_axes": { "type": "array", "items": { "type": "string" } },
+            "min_units": { "type": "integer", "description": "The fewest content units the MVP carries, from the family's `units.min_mvp`." },
+            "source": { "enum": ["research", "default"] }
+          },
+          "additionalProperties": false
         }
       },
       "additionalProperties": false

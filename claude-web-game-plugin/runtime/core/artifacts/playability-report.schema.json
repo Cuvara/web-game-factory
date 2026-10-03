@@ -2,18 +2,18 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://webgamefactory.dev/schemas/artifacts/playability-report.schema.json",
   "title": "Playability report",
-  "description": "Whether a built game can be played and read by a first-time player, measured from outside: a bot drives the production build with real pointer and key input on desktop and mobile viewports, reads its play probe (shared/play-probe.schema.json) before and after each input, and inspects rendered frames. Every check names what was measured and the bar from the design's experience contract (core/reference/experience-rules.yaml) or core/reference/visual-quality.yaml. This is automation evidence: it proves the game is playable and visible, and it never stands in for what first-time players understand (a kill criterion measured from people).",
+  "description": "Whether a built game can be played and read by a first-time player, measured from outside: a bot drives the production build with real pointer and key input on desktop and mobile viewports, reads its play probe (shared/play-probe.schema.json) before and after each input, and inspects rendered frames. Every check names what was measured and the bar from the design's experience contract (core/reference/experience-rules.yaml) or core/reference/visual-quality.yaml. This is automation evidence: it proves the game is playable and visible, and it never stands in for what first-time players understand (a kill criterion measured from people).\n\nSince 1.2.0 a check may be `SKIPPED`: the design does not claim the thing the check measures, so there was nothing to measure - a game with no win has no win.reachable to prove. A SKIPPED check is listed in `skipped_checks` with the reason and is never counted as a pass; a check that the design does claim and the build does not do is a FAIL, not a skip.",
 
   "x-wgf": {
     "id": "playability-report",
     "kind": "artifact",
     "format": "json",
-    "version": "1.1.0",
+    "version": "1.2.0",
     "producer": "title:prototype",
     "consumers": ["title:prototype", "title:prototype-review", "release:qa", "release:store-listing"],
     "repo_path": "<game-repo>/qa/playability/<commit>.json",
     "run_path": "<storage>/workflows/<run-id>/artifacts/playability-report/v<n>.json",
-    "required_for_gates": []
+    "required_for_gates": ["G4"]
   },
 
   "type": "object",
@@ -49,7 +49,7 @@
         "properties": {
           "id": { "type": "string", "description": "e.g. probe.present, start.objective, idle.grace, act.acknowledged, win.reachable, lose.reachable, restart.works, entities.visible, frames.luminance." },
           "project": { "type": "string" },
-          "status": { "enum": ["PASS", "FAIL", "BLOCKED", "WARNING"] },
+          "status": { "enum": ["PASS", "FAIL", "BLOCKED", "WARNING", "SKIPPED"], "description": "SKIPPED since 1.2.0: the design does not claim what the check measures, so nothing was measured. Never a pass." },
           "required": { "type": "boolean" },
           "summary": { "type": "string", "description": "What was measured, and against which bar." },
           "measured": {},
@@ -80,6 +80,19 @@
     "records_dir": {
       "type": ["string", "null"],
       "description": "Since 1.1.0. The bot's raw records, relative to the run's directory: <records_dir>/<project>/<test>.json and <project>/frames/*.png - snapshots, entity samples (with each entity's asset and render), the requests for files under /assets/, and the DOM UI measured on each screen state. Later steps (production-quality) read them instead of playing the game again. Null when the bot never ran."
+    },
+    "skipped_checks": {
+      "type": "array",
+      "description": "Since 1.2.0. The checks that did not run because the design does not claim the thing they measure, each with the reason. A reader counting passes must subtract these, not add them.",
+      "items": {
+        "type": "object",
+        "required": ["id", "reason"],
+        "properties": {
+          "id": { "type": "string" },
+          "reason": { "type": "string", "description": "What the design does not claim, named: 'the design states no win condition'." }
+        },
+        "additionalProperties": false
+      }
     },
     "failed_checks": { "type": "array", "items": { "type": "string" } },
     "blocked_reason": { "type": ["string", "null"] },

@@ -71,9 +71,12 @@ beat six done thinly.
   stage reuses the same core loop with one changed constraint: a target ("build a level-6
   tower"), a limit ("in 40 drops"), a starting layout or a banned column. Grade with one to
   three stars on a margin the player can see, such as moves left or time left. Show stages
-  on a map, so the next one is always one tap away. Size: 20–40 stages for a first release.
-  Generate them from a parameter table, never author them one by one
-  (`core-loop-and-difficulty.md` § Difficulty).
+  on a map, so the next one is always one tap away. Size: a first release carries at least
+  the genre family's `units.min_total` units of its kind (`core/reference/genre-models.yaml`
+  — 20 puzzle levels, 12 platformer levels, 10 shooter waves), and 20–40 stages is a healthy
+  target where authoring is cheap. Generating them from a parameter table is fine; every
+  unit is still listed in `build_spec.content.units` with its purpose, its objective and what
+  makes it different from the one before (`content-and-level-design.md`).
 - **Unlock track.** New pieces, zones, ships or arenas open at milestones the player can see
   coming: "1000 m unlocks Zone 3". Place the first unlock **inside the first session**, by
   minute 3–5. The second should be visible before the first session ends.

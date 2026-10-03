@@ -14,6 +14,7 @@ Suite.
 | [Heartbeat & liveness](#heartbeat--liveness) | How `wgf status` tells a working step from a hung one |
 | [Cancellation](#cancellation) | What a cancel, a timeout, Ctrl-C or `kill` does to the tree |
 | [SIGKILL recovery](#sigkill-recovery) | How a resume ends what a driver killed with SIGKILL left running |
+| [Windows](#windows) | The job object: what holds a tree where there is no process group and no `/proc` |
 | [Known limits](#known-limits) | What the guarantees do not cover |
 
 ---
@@ -42,10 +43,10 @@ Both calls:
 1. **Start the child in a new session.** That is a new process group on POSIX, and
    `CREATE_NEW_PROCESS_GROUP` on Windows. The child and every descendant that does not
    detach can then be signalled as one group. It also means a signal sent to the Factory's
-   own terminal group never reaches them (see [Cancellation](#cancellation)). On Windows
-   the child is also put in a job object of its own, with `KILL_ON_JOB_CLOSE`: every
-   process it starts joins the job, so the job still holds a descendant whose parent has
-   exited, which nothing else on Windows can find.
+   own terminal group never reaches them (see [Cancellation](#cancellation)). On Windows the
+   tree also goes into a kill-on-close **job object**, which is what actually holds it
+   there: every process the child starts joins the job, so the job still holds a descendant
+   whose parent has exited, which nothing else on Windows can find ([Windows](#windows)).
 2. **Tag the child's environment.** `WGF_PROC_TAG=<random>` identifies this tree, and
    `WGF_PROC_LINEAGE=<outer>,…,<tag>` lists the tags of every owner above it. Environment
    survives fork, exec, `setsid()` and reparenting. On Linux, `procs.tagged_pids(tag)` reads
@@ -99,7 +100,7 @@ runner knows nothing about workflows.
 
 | Kind | When | Data |
 |---|---|---|
-| `spawned` | The child started | `pid`, `pgid`, `argv0`, `cwd` |
+| `spawned` | The child started | `pid`, `pgid`, `argv0`, `cwd`; on Windows also `job` (false = this installation refused the job object, so the tree has only `taskkill /T`) |
 | `heartbeat` | Every `heartbeat_seconds` while it runs | `pid`, `elapsed_s`, `idle_s` (seconds since the child last wrote anything) |
 | `timeout` / `idle-timeout` / `cancelled` | The wait ended for that reason | `pid`, `after_s` / `idle_s` |
 | `cleanup` | Descendants had to be killed | `pid`, `killed` |
@@ -291,25 +292,92 @@ one of its ancestors (an agent that runs `wgf resume` on its own run), a tree th
 owns, or any process that does not carry the token - an untagged process, or one of
 another run, is never touched (`test_core_process.DriverKilledBySigkill`).
 
-Linux only. Without `/proc` the engine logs a `STEP_LOG` warning that it cannot sweep, and
-any orphan keeps running. A descendant that cleared its environment is not found either.
+Linux only, and only needed there. On Windows there is nothing to sweep: the job object took
+the trees with the driver ([Windows](#windows)), so `procs.can_sweep()` is true and
+`procs.sweep_run()` returns `[]`. Elsewhere (macOS) `can_sweep()` is false, the engine logs a
+`STEP_LOG` warning that it cannot sweep, and any orphan keeps running. A descendant that
+cleared its environment is not found on Linux either.
+
+## Windows
+
+Windows has neither of the two things the cleanup above is built on. There is no process group
+to signal, and no `/proc`, so `procs.tagged_pids()` is empty and the tag can find nothing.
+What was left was `taskkill /T /F /PID <leader>`, and `/T` walks only the parent-child chain
+that is **alive at the moment it runs**. A grandchild whose intermediate parent has already
+exited - a `.cmd` shim, a shell, a launcher, which is how nearly every Node tool starts on
+Windows - is not on that chain. Observed: `wgf cancel` ended a develop step's run CANCELLED
+while the agent host (whose parent was already gone) and a `vite preview --port 4173` under it
+kept running for an hour; `taskkill` had answered *"the process NNNN not found"*.
+
+Every tree `procs.run()` and `procs.spawn()` start on Windows is therefore put in a **Job
+Object** (ctypes, `kernel32`), created with `JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE` and
+**without** `JOB_OBJECT_LIMIT_BREAKAWAY_OK`:
+
+- **Every descendant joins the job and cannot leave it**, however it was created - detached
+  (`DETACHED_PROCESS`), in a new console, in a new process group, or by a shim that has since
+  exited. Without the breakaway limit, `CREATE_BREAKAWAY_FROM_JOB` fails.
+- **Cleanup is one call.** `TerminateJobObject` ends every member at once.
+  `QueryInformationJobObject` names them first, so `ProcessResult.killed` and the `cleanup`
+  event report the pids on Windows too - including the ones nothing else could have found.
+  `taskkill /T /F` on the leader still runs after it, as a belt-and-braces for a tree that has
+  no job.
+- **`KILL_ON_JOB_CLOSE` is what makes the SIGKILL case moot.** The driver holds the only
+  handle to the job; the kernel closes it when the driver dies, *however* it dies - including
+  `TerminateProcess`, the Windows SIGKILL, which runs no `atexit` hook and no handler. The job
+  dies with the handle, and the tree with the job. There are no orphans to recover, which is
+  why the Windows sweep is empty rather than a weaker search
+  ([SIGKILL recovery](#sigkill-recovery)).
+- **The handle is owned by the registry.** `procs.live_groups()` is `tag -> (pid, pgid, job)`;
+  `job` is the handle on Windows and `None` on POSIX, `pgid` the other way round. Exactly one
+  place closes it - the unregister that ends a tree - so it is never closed twice and never
+  leaked.
+- **`procs.pid_alive()` asks the kernel** (`OpenProcess` + `WaitForSingleObject(0)`) instead of
+  `os.kill(pid, 0)`, which on Windows is satisfied by any open handle to an already *exited*
+  process - `Popen` keeps one - so a dead child read as a permanent survivor and cleanup spun
+  over it. `os.kill` there is also `TerminateProcess` for every signal value but the two
+  console events and the `0` current CPython special-cases: a liveness probe one argument away
+  from killing what it asked about. (`workflow/store.py`'s lock-holder probe delegates here,
+  and reads a holder's start time through `procs.process_started()` for the same reason.)
+
+What this does **not** cover:
+
+- **The spawn-to-assign window.** The child is created and then assigned to the job, in that
+  order, because `Popen` does not expose the suspended thread handle needed to do it the other
+  way round (`CREATE_SUSPENDED` + `ResumeThread`). A grandchild started in that window - a few
+  hundred microseconds, before the child has run a line of its own code - is outside the job
+  and only `taskkill /T` can reach it. Accepted.
+- **A Windows whose own job forbids nesting** (before Windows 8, or an outer job that already
+  set a conflicting limit): `AssignProcessToJobObject` is refused and the tree falls back to
+  the previous behaviour. That is reported in the `spawned` event as `job: false`, and it turns
+  `procs.can_sweep()` false, so the engine says honestly that it cannot account for what a
+  dead driver left.
+- **A pid-based sweep by command line** is deliberately *not* implemented as a second signal.
+  Matching a run id or a checkout path in `Get-CimInstance Win32_Process` output kills by guess
+  - a `vite preview` command line names neither, an editor or another session in the same
+  checkout matches, and two runs in one checkout cannot be told apart - and it would cost a
+  PowerShell process on the path that has to be quick and safe. The job object is the answer,
+  not a weaker signal beside it.
+- **Trees started by a driver from before this change** are not in any job, and nothing on
+  Windows can find them. Kill them by hand once.
+
+`test_core_process.WindowsJobObject` is the executable version of this section, including the
+two decisive cases: a detached grandchild whose parent has exited is in `result.killed` and
+gone, and a driver killed with `TerminateProcess` takes its whole spawned tree with it. One
+test that is not about Windows at all,
+`test_core_agents.AgentLoop.test_a_reviewer_timeout_is_retried_and_its_tree_is_killed`, failed
+here with `killed_pids` empty before this and passes after it.
 
 ## Known limits
 
 - **No `/proc` (macOS, Windows): only the group.** `tagged_pids` returns `[]`, so a
-  descendant that detaches itself (`setsid`, Playwright's `webServer`) is not found. On
-  macOS the group is still signalled. On Windows `taskkill /T` ends the tree by parentage
-  while the leader runs, and the tree's job object ends every member - including an orphan
-  whose parent already exited, which Windows does not reparent and `taskkill /T` therefore
-  cannot reach. Before the job object (2026-10-03) such an orphan outlived its tree: a
-  `vite preview` left behind by a finished command or agent session kept port 4173 until
-  someone killed it. The job is assigned right after the child starts, so a grandchild the
-  child starts within that instant escapes it; a process that asks to break away from its
-  job (`CREATE_BREAKAWAY_FROM_JOB`), or a host that refuses nested jobs, is not covered.
-  Because the job closes with the Factory process, a Factory killed outright takes its
-  trees with it on Windows - there is no SIGKILL recovery to do there.
-  On Windows `pid_alive` asks the process (`OpenProcess`, then whether it has exited) - never
-  `os.kill(pid, 0)`, which there sends a console Ctrl+C instead of probing.
+  descendant that detaches itself (`setsid`, Playwright's `webServer`) is not found by its
+  tag. On macOS the group is still signalled, and that is all there is. On Windows
+  `taskkill /T` ends the tree by parentage while the leader runs, and the tree's job object
+  holds the whole tree instead, including detached descendants and an orphan whose parent
+  already exited, which Windows does not reparent and `taskkill /T` therefore cannot reach
+  ([Windows](#windows)). Before the job object (2026-10-03) such an orphan outlived its
+  tree: a `vite preview` left behind by a finished command or agent session kept port 4173
+  until someone killed it.
   The zombie hold (`waitid(WNOWAIT)`) is Linux-only too. Elsewhere the child is reaped
   first and its group is signalled only while it still has live members.
 - **A descendant that clears its environment *and* detaches** cannot be found by tag or by
@@ -330,7 +398,9 @@ any orphan keeps running. A descendant that cleared its environment is not found
   still carry their tag and their run (`WGF_PROC_RUN`), and on Linux the next resume or
   cancel of the run ends them ([SIGKILL recovery](#sigkill-recovery)). Until then they run
   on; by hand, `grep -l WGF_PROC_RUN= /proc/*/environ` finds them. A driver of a run that
-  is never resumed or cancelled leaves them running.
+  is never resumed or cancelled leaves them running. On Windows there is nothing to
+  recover: the job object ends the tree as the dying driver's handle closes
+  ([Windows](#windows)). A machine that loses power leaves nothing running anywhere.
 - **`atexit` does not run** after `os._exit` or a fatal signal that has no Python handler.
 - **Output is truncated to the last 4 MiB per stream.** A caller that needs a large
   artifact from a child has it write a file (as vitest's `--outputFile` does) instead of

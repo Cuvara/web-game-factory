@@ -41,9 +41,15 @@ Fill `build_spec.player_goals` at all three and check that each feeds the next:
 
 ## Difficulty
 
-Keep difficulty **data**: one ramp in `build_spec.difficulty.curve`, driven by named
-`parameters` on the mechanics. It is never hand-authored level by level. That is what lets
-the prototype be tuned without code changes, and what lets a reviewer check it.
+Keep difficulty **data**, and keep it **per content unit**: a value on each of the genre
+family's named axes for every level, wave, track, encounter or segment the player meets
+(`build_spec.content.units[].difficulty`, on the axes declared in
+`build_spec.difficulty.axes`; the families and their axes are
+`core/reference/genre-models.yaml`). An endless game is no exception — its ramp is a
+parametric sequence of content units, each with its own axis values, not a curve with
+nothing behind it. Data per unit is what lets the prototype be tuned without code changes,
+what lets a reviewer check the ramp against the design, and what lets the build report it.
+How to author the sequence is `content-and-level-design.md`.
 
 Defaults:
 
@@ -51,8 +57,10 @@ Defaults:
   player learns the verb before they are tested on it.
 - **Sawtooth, not a line.** Pressure rises, then relaxes after a milestone. A monotonic ramp
   is exhausting. A flat one is boring.
-- **One axis at a time.** Raise speed *or* density *or* variety at each step, never all three
-  at once. Stacked increases feel unfair even when each one is small.
+- **One axis at a time.** Raise speed *or* density *or* variety from one unit to the next,
+  never all three at once — at most `max_axes_raised_per_unit` axes, which is 1 on the
+  `casual` session profile and 2 on `standard`. Stacked increases feel unfair even when each
+  one is small.
 - **Assist without announcing it** (`difficulty.assist`). After repeated early failures, ease
   a parameter quietly: slightly wider gaps, a slower first wave. Never assist past the
   onboarding plateau without saying so, and never in a score-competitive mode.
@@ -81,8 +89,12 @@ Write `build_spec.session_flow` as timed beats, then check them:
 
 ## Failure modes
 
-- **Content instead of system.** More levels in place of a deeper ramp. The timebox pays for
-  the levels and the player sees them once.
+- **Content without a system.** Units that only bump a number: the same objective, the same
+  mechanics, 12 HP instead of 10. The timebox pays for a list and the player plays one unit
+  several times (`content-and-level-design.md` § Variety, not scaling).
+- **System without content.** One ramp and nothing the player recognises as a place, a level
+  or a wave. Everything is tunable and there is nothing to remember, describe or come back
+  to.
 - **Tuning in code.** Constants buried in logic cannot be tuned at a playtest and cannot be
   reviewed.
 - **The loop only the designer understands.** If playtesters describe the loop differently

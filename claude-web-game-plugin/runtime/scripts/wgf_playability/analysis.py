@@ -1,12 +1,20 @@
 """Judging what the playability bot recorded: the checks, against the design and the bars.
 
-`judge(records, frames_dir, design, rules, experience_rules)` turns one viewport's bot records
-(bot.spec.ts: first-session, act, win, lose) and its frames into checks. Every check states
-what was measured and against which bar: the design's experience contract
-(`build_spec.experience`), core/reference/experience-rules.yaml and
-core/reference/visual-quality.yaml. Nothing here trusts the game's own account of what it
-showed: acknowledgement is a frame difference, visibility is drawn bounds sampled every frame,
-readability is the frame's own pixels.
+`judge(records, frames_dir, design, rules, experience_rules, project, qa)` turns one viewport's
+bot records (bot.spec.ts: first-session, act, win, lose, pause, traverse, persist, session) and
+its frames into checks. Every check states what was measured and against which bar: the design's
+experience contract (`build_spec.experience`), core/reference/experience-rules.yaml,
+core/reference/visual-quality.yaml, and - for the content, difficulty and depth checks -
+core/reference/design-depth.yaml's `playability` block merged with the genre family's `qa`
+block (core/reference/genre-models.yaml, through wgflib.genre_models). No bar is ever written
+here. Nothing here trusts the game's own account of what it showed: acknowledgement is a frame
+difference, visibility is drawn bounds sampled every frame, readability is the frame's own
+pixels, and a unit was reached only if the probe said so while the bot played into it.
+
+A check is SKIPPED only when the design does not claim what it measures - no content contract,
+generated content where a unit sequence would be traversed, no declared difficulty axes, nothing
+persisted at the mvp tier. A skip is never a pass: the step lists it in `skipped_checks` and
+names it in its summary. A thing the design does claim and the probe cannot show is a FAIL.
 """
 
 import json
@@ -14,17 +22,23 @@ import os
 import re
 import statistics
 
-from wgflib import jsonschema_lite, paths
+from wgflib import genre_models, jsonschema_lite, paths
 
 from wgf_assets.raster import RasterError, decode_png
 
-__all__ = ["judge", "frame_stats", "changed_fraction", "objective_seen", "PROBE_SCHEMA"]
+__all__ = ["judge", "frame_stats", "changed_fraction", "objective_seen", "PROBE_SCHEMA",
+           "content_units", "persisted_metrics"]
 
 PROBE_SCHEMA = os.path.join(paths.ARTIFACTS, "shared", "play-probe.schema.json")
 _WORD = re.compile(r"[a-z0-9]+")
 _STOP = {"the", "a", "an", "and", "or", "to", "of", "in", "on", "you", "your", "as", "is",
          "it", "for", "every", "can", "how", "with", "before", "out", "at", "by", "be"}
 _STEP = 4  # sample every 4th pixel in each direction: the bars are about the whole frame
+# The traverse stop reasons that cut the traversal short rather than let it end: the bot ran
+# out of units it was asked for, or out of window. The unit in play when it stopped was not
+# played to its end, so nothing about that unit's completion was decided. (bot.spec.ts also
+# stops on `lost twice` and `play never began`, which are ends, not cuts.)
+_CUT_SHORT = ("max units", "window")
 
 
 def _luma(r, g, b):
@@ -69,9 +83,18 @@ def objective_seen(statement, texts):
 
 
 def _check(cid, project, ok, summary, required=True, measured=None, expected=None, frames=None,
-           blocked=False):
+           blocked=False, skipped=False, truncated=False):
+    """One check. `skipped` says the design does not claim what the check measures, so there
+    was nothing to measure: never a pass, and listed in the report's `skipped_checks`.
+    `truncated` says the bot's window for it was cut to fit the time budget."""
+    status = ("SKIPPED" if skipped else "BLOCKED" if blocked else
+              "PASS" if ok else ("FAIL" if required else "WARNING"))
     entry = {"id": cid, "project": project, "required": required, "summary": summary,
-             "status": "BLOCKED" if blocked else ("PASS" if ok else ("FAIL" if required else "WARNING"))}
+             "status": status}
+    if truncated:
+        measured = (dict(measured) if isinstance(measured, dict)
+                    else ({} if measured is None else {"value": measured}))
+        measured["truncated"] = True
     if measured is not None:
         entry["measured"] = measured
     if expected is not None:
@@ -81,13 +104,550 @@ def _check(cid, project, ok, summary, required=True, measured=None, expected=Non
     return entry
 
 
-def judge(records, frames_dir, design, rules, experience_rules, project):
-    """Checks (dicts per playability-report.schema.json) for one viewport."""
-    ex = ((design or {}).get("build_spec") or {}).get("experience") or {}
+# -- the content contract: what the design says the player meets, and in what order ---------
+
+# The design's content units, read the one way every step reads them (wgflib.genre_models).
+content_units = genre_models.units_of
+
+
+def _designed(units, played):
+    """The designed unit a traversed one is, by id, else by index."""
+    return next((u for u in units if u.get("id") == played.get("unit_id")
+                 or u.get("index") == played.get("index")), None)
+
+
+def _share(part, whole):
+    return round(part / whole, 3) if whole else 0.0
+
+
+def _kinds_reported(traverse):
+    """Every entity kind the probe reported during the traversal. Empty: the build reports
+    none - `entities[].kind` is optional in the probe, so that is unmeasured, not a defect."""
+    seen = set()
+    for row in traverse.get("snapshots") or []:
+        seen.update(row.get("kinds") or [])
+    for unit in traverse.get("per_unit") or []:
+        seen.update(unit.get("kinds") or [])
+    return seen
+
+
+def _skips(project, ids, reason):
+    return [_check(cid, project, False, reason, skipped=True) for cid in ids]
+
+
+def _content_checks(ctx):
+    """content.units_reachable, content.objective_shown, content.win_lose_per_unit."""
+    project, units, mode = ctx["project"], ctx["units"], ctx["mode"]
+    bars = ctx["qa"].get("content") or {}
+    ids = ("content.units_reachable", "content.objective_shown", "content.win_lose_per_unit")
+    if ctx["content"] is None:
+        return _skips(project, ids,
+                      "the design states no content units (build_spec.content), so there is "
+                      "no unit sequence to play through")
+    if mode != "authored":
+        return _skips(project, ids,
+                      f"content is generated ({mode or 'no mode stated'}): the units listed are "
+                      "representative, not a sequence the build traverses in order")
+    traverse = ctx["records"].get("traverse") or {}
+    played = [u for u in traverse.get("per_unit") or [] if isinstance(u, dict)]
+    transitions = [t for t in traverse.get("transitions") or [] if isinstance(t, dict)]
+    reached = [u.get("index") for u in played if u.get("index")]
+    want = min(len(units), int(bars.get("min_units_traversed") or 1))
+    order = list(range(1, want + 1))
+    grace = bars.get("transition_grace_ms")
+    in_order = reached[:want] == order
+    unearned = [f"{t.get('from')}->{t.get('to')} ({t.get('how')}, "
+                f"{t.get('since_end_ms')} ms after it ended)" for t in transitions
+                if (t.get("to") or 0) <= want
+                and (t.get("how") not in ("won", "progress")
+                     or t.get("since_end_ms") is None or t["since_end_ms"] > grace)]
+    out = [_check("content.units_reachable", project, in_order and not unearned,
+                  (f"units {order} were played in the design's order, each entered within "
+                   f"{grace} ms of the previous one ending" if in_order and not unearned else
+                   f"units reached: {reached or 'none'}; the design's first {want} are {order}"
+                   if not in_order else
+                   "a unit was entered without the previous one being completed: "
+                   + "; ".join(unearned[:3])),
+                  measured={"units_reached": reached, "transitions": transitions[:12],
+                            "stopped": traverse.get("stopped")},
+                  expected=f"units {order} in order, each within {grace} ms of the previous "
+                           f"one reaching `won` or its progress target",
+                  frames=[f"unit-{i}-1s" for i in order], truncated=ctx["truncated"].get("traverse"))]
+
+    bar = bars.get("objective_min_share")
+    shares = {}
+    for unit in played:
+        designed = _designed(units, unit)
+        if designed:
+            shares[designed.get("id")] = objective_seen(designed.get("objective"),
+                                                        unit.get("objective_texts"))
+    unseen = sorted(uid for uid, value in shares.items() if value < bar)
+    out.append(_check("content.objective_shown", project, bool(shares) and not unseen,
+                      ("no unit was played, so no objective could be read" if not shares else
+                       f"the objective was not on screen in: {', '.join(unseen)}" if unseen else
+                       f"every played unit showed its objective: {shares}"),
+                      measured=shares,
+                      expected=f">= {bar} of the words of each unit's `objective`"))
+
+    lose = ctx["records"].get("lose") or {}
+    # A family whose success is a time target (qa.time_target_axis): a unit is only completed
+    # when the time the probe reports is inside the target the unit's own parameters state.
+    timed = (ctx["qa"].get("genre") or {}).get("time_target_axis")
+    # A unit is judged on completion only once the traverse LEFT it: a later unit was entered,
+    # it was won, or it failed. The bot is asked for a bounded number of units inside a bounded
+    # window, so the unit in play when it stopped is normally mid-attempt - counting that as
+    # "never completed" judges the bot's budget, not the build.
+    cut = traverse.get("stopped") in _CUT_SHORT or bool(ctx["truncated"].get("traverse"))
+    unwon, in_progress = [], []
+    for unit in played:
+        designed = _designed(units, unit)
+        if not designed or not designed.get("success"):
+            continue
+        advanced = any(t.get("from") == unit.get("index") for t in transitions)
+        if not (unit.get("won") or advanced):
+            if cut and not unit.get("lost"):
+                in_progress.append(designed.get("id"))
+                continue
+            unwon.append(designed.get("id"))
+            continue
+        target = (designed.get("parameters") or {}).get("time_target") if timed else None
+        if isinstance(target, (int, float)):
+            took = (unit.get("metrics") or {}).get("time")
+            if not isinstance(took, (int, float)) or took > target:
+                unwon.append(f"{designed.get('id')} (time {took}, target {target})")
+    failing = {u.get("id") for u in units if u.get("failure")}
+    lost_in = ((lose.get("contentAtEnd") or lose.get("initialContent") or {}) or {}).get("unit_id")
+    lost_ok = lose.get("reached") == "lost" and (lost_in in failing if failing else True)
+    still = (f"; still in play when the traverse stopped ({traverse.get('stopped')}), so its "
+             f"completion was not judged: {', '.join(in_progress)}" if in_progress else "")
+    out.append(_check("content.win_lose_per_unit", project, not unwon and lost_ok,
+                      ("; ".join(
+                          ([f"played but never completed: {', '.join(unwon)}"] if unwon else [])
+                          + ([] if lost_ok else
+                             [f"bad play ended {lose.get('reached') or 'without a loss'}"
+                              f" in unit {lost_in or 'the probe did not say which'}; the design "
+                              f"states a failure for {', '.join(sorted(failing)) or 'no unit'}"]))
+                       or "every unit the traverse left was completed, and bad play failed a "
+                          "unit that states a failure") + still,
+                      measured={"not_completed": unwon, "in_progress": in_progress,
+                                "stopped": traverse.get("stopped"), "lost_in_unit": lost_in,
+                                "lose_reached": lose.get("reached")}))
+    return out
+
+
+def _difficulty_checks(ctx):
+    """difficulty.axes_progress: the build carries the design's difficulty, and it moves.
+
+    Authored content is judged twice. First the build against the design: every traversed
+    unit's `metrics.difficulty.<axis>` is the value the design authored for that unit, within
+    `genre-models.yaml implementation.difficulty_tolerance` - the number the developer was told
+    to write the unit data to. Then the series across the units actually traversed: it holds or
+    dips for relief, never falls away. The rise across the whole set (the last unit above the
+    first) is the design's curve, so it is asked only when every MVP unit was traversed; a
+    capped or cut traversal reports `partial` and is not held to a curve it never saw. The
+    design's own curve is the design step's business, not the bot's.
+    """
+    project, axes, units = ctx["project"], ctx["axes"], ctx["units"]
+    bars = ctx["qa"].get("difficulty") or {}
+    if not axes:
+        return _skips(project, ("difficulty.axes_progress",),
+                      "the design declares no difficulty axes of a genre family "
+                      "(genre.family + build_spec.difficulty.axes), so no axis can be judged")
+    escalating = [a for a in axes if a.get("escalates")]
+    if not escalating:
+        return _skips(project, ("difficulty.axes_progress",),
+                      "no axis of this genre family escalates, so nothing is designed to rise")
+    traverse = ctx["records"].get("traverse") or {}
+    played = [u for u in traverse.get("per_unit") or [] if isinstance(u, dict)]
+    windows = [w for w in (ctx["records"].get("session") or {}).get("windows") or []
+               if isinstance(w, dict)]
+    reported = set()
+    for unit in played:
+        reported.update((unit.get("difficulty") or {}).keys())
+    for window in windows:
+        reported.update((window.get("difficulty") or {}).keys())
+    absent_required = sorted(a["id"] for a in escalating
+                             if a.get("probe") == "required" and a["id"] not in reported)
+    if absent_required:
+        return [_check("difficulty.axes_progress", project, False,
+                       "the genre model requires the build to report "
+                       + ", ".join(f"metrics.difficulty.{a}" for a in absent_required)
+                       + ": the probe reports none of them, so the ramp cannot be measured",
+                       measured={"reported": sorted(reported), "absent": absent_required},
+                       expected="metrics.difficulty.<axis> for every axis marked "
+                                "`probe: required`")]
+    present = [a for a in escalating if a["id"] in reported]
+    if not present:
+        return [_check("difficulty.axes_progress", project, False,
+                       "no escalating axis of this family is reported by the probe, and each of "
+                       "them is optional (" + ", ".join(a["id"] for a in escalating) + ")",
+                       required=False, measured={"reported": sorted(reported)})]
+    authored = ctx["mode"] == "authored" and len(played) > 1
+    problems, measured = [], {}
+    if authored:
+        rise = bars.get("min_rise_share")
+        dip = bars.get("relief_dip_max")
+        ordered = sorted(played, key=lambda u: u.get("index") or 0)
+        traversed = {u.get("unit_id") for u in ordered} | {u.get("index") for u in ordered}
+        partial = any(u.get("id") not in traversed and u.get("index") not in traversed
+                      for u in units)
+        if partial:
+            measured["partial"] = True
+        # The build against the design, unit by unit and axis by axis.
+        tolerance = genre_models.implementation().get("difficulty_tolerance")
+        measured["difficulty_tolerance"] = tolerance
+        off = []
+        if isinstance(tolerance, (int, float)):
+            for unit in ordered:
+                designed = _designed(units, unit) or {}
+                for axis in axes:
+                    want = (designed.get("difficulty") or {}).get(axis["id"])
+                    got = (unit.get("difficulty") or {}).get(axis["id"])
+                    if not (isinstance(want, (int, float)) and isinstance(got, (int, float))):
+                        continue
+                    if abs(got - want) > tolerance:
+                        off.append(f"{designed.get('id') or unit.get('unit_id')} "
+                                   f"{axis['id']}: the build reports {got}, the design states "
+                                   f"{want}")
+        if off:
+            measured["off_design"] = off
+            problems += off[:6]
+        for axis in present:
+            values = [(u.get("difficulty") or {}).get(axis["id"]) for u in ordered]
+            values = [v for v in values if isinstance(v, (int, float))]
+            measured[axis["id"]] = values
+            if len(values) < 2:
+                problems.append(f"{axis['id']}: only one unit reported it")
+                continue
+            pairs = list(zip(values, values[1:]))
+            held = sum(1 for a, b in pairs if b >= a or (a - b) <= dip * abs(a or 1))
+            share = _share(held, len(pairs))
+            if share < rise:
+                problems.append(f"{axis['id']}: only {share} of its steps held or dipped for "
+                                f"relief")
+            if values[-1] <= values[0] and not partial:
+                problems.append(f"{axis['id']}: ended at {values[-1]}, started at {values[0]}")
+        expected = ((f"each traversed unit within {tolerance} of the design's value for it on "
+                     f"every declared axis" if isinstance(tolerance, (int, float)) else
+                     "genre-models states no implementation.difficulty_tolerance, so the build "
+                     "was not compared to the design's unit values")
+                    + f"; >= {bars.get('min_rise_share')} of consecutive units non-decreasing or "
+                      f"dipping at most {bars.get('relief_dip_max')}"
+                    + ("; the traversal stopped short of the design's units, so no rise across "
+                       "the set is asked of it" if partial else ", and the last above the first"))
+    else:
+        for axis in present:
+            series = [(w.get("difficulty") or {}).get(axis["id"]) for w in windows]
+            series = [v for v in series if isinstance(v, (int, float))]
+            measured[axis["id"]] = series
+            if len(series) < 2:
+                problems.append(f"{axis['id']}: fewer than two {bars.get('endless_window_s')} s "
+                                f"windows reported it")
+            elif series[-1] <= series[0]:
+                problems.append(f"{axis['id']}: the last window is {series[-1]}, the first "
+                                f"{series[0]}")
+        expected = (f"the last {bars.get('endless_window_s')} s window above the first, on every "
+                    "escalating axis")
+    optional_absent = sorted(a["id"] for a in escalating if a["id"] not in reported)
+    if optional_absent:
+        measured["absent_optional"] = optional_absent
+    return [_check("difficulty.axes_progress", project, not problems,
+                   ((("the build carries the design's difficulty, and it holds or rises on "
+                      if authored else "difficulty rose on ")
+                     + ", ".join(a["id"] for a in present)
+                     + (f"; not reported: {', '.join(optional_absent)}" if optional_absent else "")
+                     + ("; the traversal stopped short of the design's units, so the rise across "
+                        "the set was not judged" if measured.get("partial") else ""))
+                    if not problems else "; ".join(problems[:4])),
+                   measured=measured, expected=expected,
+                   truncated=ctx["truncated"].get("traverse" if authored else "session"))]
+
+
+def _variety_check(ctx):
+    """content.variety: consecutive units differ, or a new kind arrives on the schedule.
+
+    Required of a family whose `qa.min_new_kinds_per_unit` is at least 1 - there, variety is a
+    new thing on screen, which the probe can show. A family that asks for none varies in what
+    entity kinds cannot carry, so the share is measured and reported as a warning with its
+    reason, never as a failure read from a vocabulary that cannot express it.
+    """
+    project, units, mode = ctx["project"], ctx["units"], ctx["mode"]
+    bars = ctx["qa"].get("variety") or {}
+    genre = ctx["qa"].get("genre") or {}
+    traverse = ctx["records"].get("traverse") or {}
+    kinds_reported = _kinds_reported(traverse)
+    schedule = [e for e in (ctx["depth"].get("content_schedule") or [])
+                if isinstance(e, dict) and e.get("tier") == "mvp"
+                and isinstance(e.get("at_s"), (int, float))]
+    if ctx["content"] is None and not schedule:
+        return _skips(project, ("content.variety",),
+                      "the design claims no content units and no in-run content schedule, so "
+                      "no variety is promised")
+    if mode == "authored":
+        played = sorted([u for u in traverse.get("per_unit") or [] if isinstance(u, dict)],
+                        key=lambda u: u.get("index") or 0)
+        if len(played) < 2:
+            return [_check("content.variety", project, False,
+                           f"only {len(played)} unit(s) were played, so no two consecutive units "
+                           "could be compared", measured={"units_played": len(played)})]
+        changed, pairs = 0, 0
+        for first, second in zip(played, played[1:]):
+            pairs += 1
+            a, b = _designed(units, first) or {}, _designed(units, second) or {}
+            if (set(first.get("kinds") or []) != set(second.get("kinds") or [])
+                    or set(a.get("mechanics") or []) != set(b.get("mechanics") or [])):
+                changed += 1
+        share = _share(changed, pairs)
+        bar = bars.get("min_changed_pairs_share")
+        want_new = int(genre.get("min_new_kinds_per_unit") or 0)
+        new_short, seen = [], set(played[0].get("kinds") or [])
+        for unit in played[1:]:
+            fresh = set(unit.get("kinds") or []) - seen
+            if len(fresh) < want_new:
+                new_short.append(f"unit {unit.get('index')}: {len(fresh)} new kind(s)")
+            seen |= set(unit.get("kinds") or [])
+        measurable = bool(kinds_reported) or want_new == 0
+        problems = ([f"only {share} of consecutive units change their kinds or mechanics"]
+                    if share < bar else [])
+        if want_new and measurable:
+            problems += new_short
+        # What a probe can show of variety is entity kinds. A family that asks for a new kind
+        # in each unit (qa.min_new_kinds_per_unit >= 1) is held to that; one that does not
+        # varies in what kinds cannot carry - the layout, the rules, the objective - and its
+        # share is reported, not enforced. Unmeasurable is not a pass either: the probe reports
+        # no kinds, so the bar was not met or missed - it was not read.
+        required = want_new >= 1 and measurable
+        reason = (None if required else
+                  "the probe reports no `entities[].kind`, so the new kind(s) each unit of this "
+                  "family must introduce could not be measured" if not measurable else
+                  "variety is not visible in entity kinds for this family (layout, rules, "
+                  "objectives)")
+        return [_check("content.variety", project, not problems and measurable,
+                       ("the probe reports no `entities[].kind`, so the "
+                        f"{want_new} new kind(s) each unit must introduce could not be measured"
+                        if not measurable and not problems else
+                        "; ".join(problems[:4]) + (f"; {reason}" if reason else "") if problems else
+                        f"{share} of consecutive units change their kinds or mechanics, and each "
+                        f"introduces at least {want_new} new kind(s)"),
+                       required=required,
+                       measured={"changed_pairs_share": share,
+                                 "kinds_reported": sorted(kinds_reported),
+                                 "new_kinds_short": new_short,
+                                 **({"reason": reason} if reason else {})},
+                       expected=f">= {bar} of consecutive unit pairs changed, and >= {want_new} "
+                                "new entity kind(s) per unit",
+                       truncated=ctx["truncated"].get("traverse"))]
+    # Generated content: the first new thing arrives when the content schedule says it does.
+    arrives = min(e["at_s"] for e in schedule)
+    slack = bars.get("first_new_kind_slack_s")
+    bar_ms = (arrives + slack) * 1000
+    rows = [r for r in traverse.get("snapshots") or [] if isinstance(r, dict)]
+    if not kinds_reported:
+        return [_check("content.variety", project, False,
+                       "the probe reports no `entities[].kind`, so the arrival of a new kind of "
+                       f"content (the schedule's first is at {arrives} s) could not be measured",
+                       required=False,
+                       measured={"snapshots": len(rows), "kinds_reported": []},
+                       expected=f"a kind not on screen at the start, by {bar_ms / 1000} s")]
+    opening = set(rows[0].get("kinds") or []) if rows else set()
+    first_new = next((r.get("ms") for r in rows if set(r.get("kinds") or []) - opening), None)
+    return [_check("content.variety", project, first_new is not None and first_new <= bar_ms,
+                   (f"the first new kind of content arrived {first_new} ms into play"
+                    if first_new is not None else
+                    "no kind of content arrived that was not on screen at the start"),
+                   measured={"first_new_kind_ms": first_new, "opening_kinds": sorted(opening),
+                             "kinds_reported": sorted(kinds_reported)},
+                   expected=f"<= {bar_ms} ms (the schedule's first in-run arrival at {arrives} s "
+                            f"plus {slack} s)",
+                   truncated=ctx["truncated"].get("traverse"))]
+
+
+def persisted_metrics(design):
+    """The metric names the probe would report for what the design says persists at MVP.
+
+    By reference, never by matching words: a persisted entry's `delivered_by` names a HUD
+    element, and that element names the metric. A persisted best is the probe schema's own
+    recommended `best`.
+    """
+    spec = (design or {}).get("build_spec") or {}
+    hud = {h.get("id"): h.get("metric") for h in spec.get("hud") or []
+           if isinstance(h, dict) and h.get("id")}
+    names = set()
+    depth = spec.get("depth") or {}
+    for entry in ((depth.get("meta_loop") or {}).get("persists") or []):
+        if not isinstance(entry, dict) or entry.get("tier") != "mvp":
+            continue
+        metric = hud.get(entry.get("delivered_by"))
+        if metric:
+            names.add(metric)
+        elif entry.get("kind") == "best-score":
+            names.add("best")
+    return names
+
+
+def _depth_checks(ctx):
+    """progression.persists, depth.session_length, depth.ramp."""
+    project, qa, depth = ctx["project"], ctx["qa"], ctx["depth"]
+    genre = qa.get("genre") or {}
+    records = ctx["records"]
+    out = []
+
+    # What survives a reload.
+    persist = records.get("persist") or {}
+    names = persisted_metrics(ctx["design"])
+    if not names:
+        out += _skips(project, ("progression.persists",),
+                      "the design's meta loop persists nothing at the mvp tier "
+                      "(build_spec.depth.meta_loop.persists)")
+    else:
+        before, after = persist.get("before") or {}, persist.get("after") or {}
+        resumed = persist.get("after_resumed") or {}
+        measured, lost = {}, []
+        for name in sorted(names):
+            was = (before.get("metrics") or {}).get(name)
+            if was is None:
+                continue
+            now = (after.get("metrics") or {}).get(name)
+            if now is None:
+                now = (resumed.get("metrics") or {}).get(name)
+            measured[name] = {"before": was, "after": now}
+            if now != was:
+                lost.append(name)
+        was_index = ((before.get("content") or {}) or {}).get("unit_index")
+        if was_index is not None:
+            now_index = ((resumed.get("content") or after.get("content") or {}) or {}) \
+                .get("unit_index")
+            measured["content.unit_index"] = {"before": was_index, "after": now_index}
+            if now_index != was_index:
+                lost.append("content.unit_index")
+        if genre.get("checkpoint"):
+            lose = records.get("lose") or {}
+            at_loss = ((lose.get("contentAtEnd") or {}) or {}).get("progress") or {}
+            back = (((lose.get("restart") or {}).get("content") or {}) or {}).get("progress") or {}
+            measured["checkpoint"] = {"at_loss": at_loss.get("value"),
+                                      "after_retry": back.get("value")}
+            if not at_loss or back.get("value") != at_loss.get("value"):
+                lost.append("checkpoint")
+        required = ctx["mode"] in (qa.get("persists") or {}).get("required_generations", [])
+        out.append(_check("progression.persists", project, bool(measured) and not lost,
+                          ("the probe reports none of what the design says persists "
+                           f"({', '.join(sorted(names))})" if not measured else
+                           f"lost across a reload: {', '.join(lost)}" if lost else
+                           f"survived a reload: {', '.join(sorted(measured))}"),
+                          required=required, measured=measured,
+                          expected="equal before and after `location.reload()`, read before any "
+                                   "input",
+                          frames=["persist-after-reload"]))
+
+    # The first session's length.
+    session = records.get("session") or {}
+    bars = qa.get("session_length") or {}
+    first = depth.get("first_session") or {}
+    target = first.get("target_s")
+    if not isinstance(target, (int, float)) or target <= 0:
+        out += _skips(project, ("depth.session_length",),
+                      "the design states no first-session length "
+                      "(build_spec.depth.first_session.target_s)")
+    else:
+        want = bars.get("min_share") * target * 1000
+        length = session.get("length_ms")
+        truncated = bool(ctx["truncated"].get("session"))
+        short = length is None or length < want
+        required = ctx["mode"] == "authored" and not (truncated and short)
+        out.append(_check("depth.session_length", project, not short,
+                          (f"one oracle session with instant retries lasted {length} ms"
+                           if length is not None else "no session was played")
+                          + (f"; the bot's window was cut to {session.get('target_ms')} ms to fit "
+                             "the time budget" if truncated else "")
+                          + (f"; the designed closing beat ({first.get('ends_on')}) arrived at "
+                             f"{session.get('beat_at_ms')} ms"
+                             if session.get("beat_at_ms") is not None else ""),
+                          required=required,
+                          measured={"length_ms": length, "beat_at_ms": session.get("beat_at_ms"),
+                                    "ended_on": session.get("ended_on"),
+                                    "runs": len(session.get("runs") or [])},
+                          expected=f">= {want} ms ({bars.get('min_share')} of the designed "
+                                   f"{target} s first session)",
+                          truncated=truncated))
+
+    # The ramp: bad play ends quickly, and good play is asked for more as it goes.
+    bars = qa.get("ramp") or {}
+    if not depth:
+        out += _skips(project, ("depth.ramp",),
+                      "the design states no depth contract (build_spec.depth), so no run length "
+                      "or session shape is claimed")
+        return out
+    played = [u for u in (records.get("traverse") or {}).get("per_unit") or []
+              if isinstance(u, dict)]
+    durations = [(_designed(ctx["units"], u) or {}).get("expected_duration_s") for u in played]
+    durations = [d for d in durations if isinstance(d, (int, float))]
+    run_s = max(durations) if durations else ((ctx["design"].get("session") or {})
+                                             .get("target_seconds"))
+    lose = records.get("lose") or {}
+    ended = lose.get("endedAtMs")
+    problems, measured = [], {"bad_play_ended_ms": ended, "run_length_s": run_s}
+    if not isinstance(run_s, (int, float)) or run_s <= 0:
+        out += _skips(project, ("depth.ramp",),
+                      "the design states neither a unit duration nor a session length to hold a "
+                      "run to")
+        return out
+    cap = bars.get("bad_play_max_multiplier") * run_s * 1000
+    if ended is None or ended > cap:
+        problems.append(f"bad play ended after {ended} ms, over {cap} ms "
+                        f"({bars.get('bad_play_max_multiplier')} x a {run_s} s run)")
+    # The input rate across a run's thirds is a time-ramp family's promise: the longer one run
+    # lasts, the more it asks. A family whose difficulty is authored per unit (its `qa` states
+    # no `endless_window_s`) ramps between units - which difficulty.axes_progress judges - and
+    # a run of one unit has no time ramp to read, so the rate is recorded, not held.
+    timed = isinstance((qa.get("genre") or {}).get("endless_window_s"), (int, float))
+    if not timed:
+        measured["reason"] = ("no time ramp for a unit-authored family (the genre family's `qa` "
+                              "states no endless_window_s)")
+    runs = [r for r in (records.get("session") or {}).get("runs") or [] if isinstance(r, dict)]
+    longest = max(runs, key=lambda r: r.get("duration_ms") or 0) if runs else None
+    thirds = (longest or {}).get("oracle_inputs_per_third") or []
+    if len(thirds) == 3:
+        measured["oracle_inputs_per_third"] = thirds
+        if thirds[2] < thirds[0] and timed:
+            problems.append(f"the oracle acted {thirds[2]} times in the last third of its "
+                            f"longest run and {thirds[0]} in the first: the game asks for less "
+                            "as it goes")
+    out.append(_check("depth.ramp", project, not problems,
+                      "; ".join(problems[:3]) or
+                      (f"bad play ended in {ended} ms"
+                       + (", and the oracle's input rate held or rose across its longest run"
+                          f"{f' {thirds}' if thirds else ''}" if timed else
+                          f"; the oracle's input rate per third of its longest run was {thirds}"
+                          if thirds else "")),
+                      required=timed, measured=measured,
+                      expected=f"a bad run inside {cap} ms"
+                               + (", and the last third's input rate at least the first "
+                                  f"third's (one relief dip of {bars.get('relief_dip_s')} s "
+                                  "allowed)" if timed else ""),
+                      truncated=ctx["truncated"].get("session")))
+    return out
+
+
+def judge(records, frames_dir, design, rules, experience_rules, project, qa=None):
+    """Checks (dicts per playability-report.schema.json) for one viewport.
+
+    `qa` is the merged bars (wgflib.genre_models.qa_of): core/reference/design-depth.yaml's
+    `playability` block with the genre family's `qa` overrides. Loaded from the reference files
+    when not given.
+    """
+    spec = ((design or {}).get("build_spec") or {})
+    ex = spec.get("experience") or {}
     first = records.get("first-session") or {}
     act = records.get("act") or {}
     win = records.get("win") or {}
     lose = records.get("lose") or {}
+    content, mode, units = content_units(design)
+    ctx = {"project": project, "records": records, "design": design or {}, "content": content,
+           "mode": mode, "units": units, "depth": spec.get("depth") or {},
+           "qa": qa if qa is not None else genre_models.qa_of(design),
+           "axes": genre_models.axes_of(design),
+           "family": genre_models.for_design(design) or {},
+           "truncated": rules.get("_truncated") or {}}
     checks = []
     add = checks.append
 
@@ -111,11 +671,31 @@ def judge(records, frames_dir, design, rules, experience_rules, project):
     names = [n for n in ((ex.get("goal") or {}).get("metric"), (ex.get("win") or {}).get("metric"),
                          (ex.get("lose") or {}).get("metric")) if n]
     missing = sorted({n for n in names if n not in (samples[-1].get("metrics") or {})})
-    add(_check("probe.valid", project, not problems and not missing,
+    # A design that authors its content units is played unit by unit, so the probe must say
+    # which unit the player is in, by the design's own id. Generated content has no such
+    # sequence, and the probe is not asked for one.
+    content_gaps = []
+    if mode == "authored":
+        playing = [s for s in snapshots if s.get("state") == "playing"]
+        if not playing or any(not isinstance(s.get("content"), dict) for s in playing):
+            content_gaps.append(
+                "the design authors content units but the probe reports no `content` while "
+                "playing, so no unit can be located")
+        reported = {(s.get("content") or {}).get("unit_id") for s in playing
+                    if isinstance(s.get("content"), dict)}
+        reported |= {r.get("unit_id") for r in
+                     (records.get("traverse") or {}).get("snapshots") or []}
+        unknown = sorted(uid for uid in reported if uid and uid not in {u.get("id") for u in units})
+        if unknown:
+            content_gaps.append("content.unit_id is not a design unit: " + ", ".join(unknown[:3]))
+    add(_check("probe.valid", project, not problems and not missing and not content_gaps,
                ("snapshots match the play-probe schema and carry the contract's metrics"
-                if not problems and not missing else
-                "; ".join(problems[:3] + ([f"metrics missing: {', '.join(missing)}"] if missing else []))),
-               measured={"schema_problems": problems[:5], "missing_metrics": missing}))
+                if not problems and not missing and not content_gaps else
+                "; ".join(problems[:3]
+                          + ([f"metrics missing: {', '.join(missing)}"] if missing else [])
+                          + content_gaps)),
+               measured={"schema_problems": problems[:5], "missing_metrics": missing,
+                         "content_problems": content_gaps}))
 
     # Starting: playable within the budget, and the objective on screen.
     budget = ex.get("first_30s") or {}
@@ -167,21 +747,48 @@ def judge(records, frames_dir, design, rules, experience_rules, project):
 
     # A win (or, with none, the objective's metric rising) under good play.
     series = [p for p in win.get("series") or [] if p.get("value") is not None]
+    shape = ((ctx["family"].get("win") or {}).get("shape"))
     if "win" in ex:
+        # Never degraded to "the metric rose": a design that states a win is held to it.
         ok = win.get("reached") == "won"
         summary = (f"good play reached `won` after {win.get('inputs')} inputs" if ok else
                    f"good play did not reach `won` (ended {win.get('reached') or 'still playing'})")
+    elif shape and shape != "best-score":
+        ok = False
+        summary = (f"the genre family wins by `{shape}`, not by a best score, and the design "
+                   "states no build_spec.experience.win: there is nothing for good play to reach")
     else:
         rising = len(series) > 1 and series[-1]["value"] > series[0]["value"]
         ok = rising
         summary = (f"good play raised {ex.get('goal', {}).get('metric')} from "
                    f"{series[0]['value'] if series else None} to {series[-1]['value'] if series else None}")
     add(_check("win.reachable", project, ok, summary,
-               measured={"reached": win.get("reached"), "inputs": win.get("inputs")}))
+               measured={"reached": win.get("reached"), "inputs": win.get("inputs"),
+                         "genre_win_shape": shape}))
 
-    add(_check("lose.reachable", project, lose.get("reached") == "lost",
-               f"bad play ended {lose.get('reached') or 'without reaching lost'}",
-               measured=lose.get("reached"), frames=[f for f in lose.get("frames") or []]))
+    # A family that names the resource bad play drains: the loss is seen in that number, not
+    # taken on the game's word.
+    resource = (ctx["qa"].get("genre") or {}).get("resource_metric")  # noqa: E501
+    drain, drained = None, True
+    if resource:
+        values = [(s.get("metrics") or {}).get(resource)
+                  for s in lose.get("series") or [] if isinstance(s, dict)]
+        values = [v for v in values if isinstance(v, (int, float))]
+        drain = {"metric": resource, "first": values[0] if values else None,
+                 "lowest": min(values) if values else None, "samples": len(values)}
+        drained = bool(values) and min(values) < values[0]
+    lost_ok = lose.get("reached") == "lost" and drained
+    genre_qa = ctx["qa"].get("genre") or {}
+    add(_check("lose.reachable", project, lost_ok,
+               "this genre family has no failure state (qa.failure_state), so play cannot be lost"
+               if genre_qa.get("failure_state") is False else
+               f"bad play ended {lose.get('reached') or 'without reaching lost'}"
+               + ("" if drained else
+                  f", but {resource} never fell under the anti-oracle: a loss the player cannot "
+                  "see coming in the number the design names"),
+               measured={"reached": lose.get("reached"), **({"resource": drain} if resource else {})},
+               frames=[f for f in lose.get("frames") or []],
+               skipped=genre_qa.get("failure_state") is False))
 
     restart = lose.get("restart") or {}
     retry_bar = ((budget.get("retry_s") or (experience_rules.get("first_30s") or {})
@@ -190,12 +797,41 @@ def judge(records, frames_dir, design, rules, experience_rules, project):
     reset = (restart.get("metrics") or {}).get(goal_metric) == ((lose.get("initial") or {}).get(goal_metric))
     ok = bool(restart.get("clicked")) and restart.get("playingMs") is not None \
         and restart["playingMs"] <= retry_bar and reset
+    # A family whose unit can be restarted from inside it (qa.reset_in_unit): the restart
+    # pressed mid-unit returns to play with the unit's own progress back at the start.
+    mid_note = ""
+    mid = lose.get("resetInUnit") if genre_qa.get("reset_in_unit") else None
+    if mid is not None:
+        was = ((mid.get("before") or {}).get("progress") or {}).get("value")
+        now = ((mid.get("after") or {}).get("progress") or {}).get("value")
+        mid_ok = (bool(mid.get("clicked")) and mid.get("playingMs") is not None
+                  and now is not None and (now == 0 or (was is not None and now < was)))
+        ok = ok and mid_ok
+        if mid_ok:
+            mid_note = ("; a restart inside the unit returned to play with its progress at "
+                        f"{now}")
+        elif not mid.get("clicked"):
+            mid_note = ("; no reset was offered DURING play: this family resets inside a "
+                        "unit, so the probe must list an input named reset, retry or restart "
+                        "while playing, and it must return the unit to its start state")
+        else:
+            mid_note = ("; a restart inside the unit did not return to a clean unit "
+                        f"(progress {was} -> {now}, retry {mid.get('clicked')}): progress "
+                        "rises from 0 to its target, so a reset reads 0 again")
+    # Nothing offered a retry because play never ended: this check waits on lose.reachable, and
+    # says so rather than reporting a build defect it could not reach.
+    no_loss = lose.get("reached") != "lost" and not restart
     add(_check("restart.works", project, ok,
-               (f"retry ({restart.get('clicked')}) returned to play in {restart.get('playingMs')} ms"
-                + ("" if reset else f"; {goal_metric} did not reset")) if restart.get("clicked") else
-               "no retry was offered after play ended",
-               measured=restart.get("playingMs"), expected=f"<= {retry_bar} ms, {goal_metric} reset",
-               blocked=lose.get("reached") != "lost" and not restart))
+               ("no loss to retry from: bad play never reached `lost` (see lose.reachable), so "
+                "no result screen offered a retry" if no_loss else
+                (f"retry ({restart.get('clicked')}) returned to play in {restart.get('playingMs')} ms"
+                 + ("" if reset else f"; {goal_metric} did not reset")) if restart.get("clicked") else
+                "no retry was offered after play ended") + mid_note,
+               measured={"playingMs": restart.get("playingMs"), "reset": reset,
+                         **({"reason": "no loss to retry from"} if no_loss else {}),
+                         **({"reset_in_unit": mid} if mid is not None else {})},
+               expected=f"<= {retry_bar} ms, {goal_metric} reset",
+               blocked=no_loss))
 
     # What the player must see is drawn, on screen, and large enough.
     ent = rules.get("entities") or {}
@@ -287,7 +923,15 @@ def judge(records, frames_dir, design, rules, experience_rules, project):
                          "contrast": f">= {bars.get('min_contrast')}"},
                frames=list(stats_by_frame)))
 
-    errors = sorted({e for r in (first, act, win, lose) for e in r.get("errors") or []})
+    # The content contract: the units the design claims, the ramp on its axes, the variety
+    # between them, what persists, and the session the design designed.
+    checks += _content_checks(ctx)
+    checks += _difficulty_checks(ctx)
+    checks += _variety_check(ctx)
+    checks += _depth_checks(ctx)
+
+    errors = sorted({e for r in records.values() if isinstance(r, dict)
+                     for e in r.get("errors") or []})
     add(_check("page.errors", project, not errors,
                "no page errors" if not errors else f"{len(errors)} page error(s): {errors[0]}",
                measured=errors[:5]))

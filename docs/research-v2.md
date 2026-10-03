@@ -37,7 +37,8 @@ platform profiles ─┘        │
 | Teardown records | `<corpus>/games/<game-id>.json` (`core/artifacts/shared/game-record.schema.json`) | how a game plays, looks, retains and monetizes, coded per session |
 | Vocabulary | `core/reference/research-vocabulary.yaml` | the codes: genre tree, descriptors, facets, values |
 | Analysis configuration | `core/reference/research-analysis.yaml` | the facet pairs analysed, the support thresholds, list kinds, generators |
-| Capability catalog | `scripts/wgf_discovery/archetypes.yaml` | what the Factory can build (`genre_node`, `mechanics`, `requires`, `design_archetype`), and why not (`unavailable`) |
+| Capability catalog | `scripts/wgf_discovery/archetypes.yaml` (1.3.0) | what the Factory can build (`genre_node`, `mechanics`, `requires`, `design_archetype`, `genre_model`), and why not (`unavailable`) |
+| Genre models | `core/reference/genre-models.yaml` | the content shape a game of each of the eight families must state: unit kinds, progression and difficulty models, difficulty axes, unit counts, variety and mastery |
 | Platform profiles | `core/reference/platforms/*.yaml` | unchanged: what each portal allows and demands |
 
 `corpus` defaults to `workspace/research`. Write teardowns by the procedure in
@@ -142,12 +143,42 @@ to test, not something observed of its genre: it is a `hypothesis` (citing where
 elsewhere), it does not count toward evidence coverage, and the handoff names it in
 `changed_axis` so design can realise it as the title's intent - and say so.
 
-**Buildability is checked last.** The capability catalog entry whose `genre_node` covers the
-opportunity's node builds it unless it declares `design_archetype: null` (an installation's
-catalog that does not declare the field makes no claim, as before), and as long as it
-renders in the opportunity's dimension. Otherwise the opportunity is a `capability-gap`, with what is
-missing. It stays in the report and in `capability_gaps`; it is never selected and never
-discarded.
+**Buildability is checked last, and there are two roads.** The capability catalog entry whose
+`genre_node` covers the opportunity's node builds it when it names **either** a
+`design_archetype` (a hand-written design the design module carries) **or** a `genre_model` -
+the `core/reference/genre-models.yaml` family whose model the offline genre seed author
+designs a game from (`scripts/wgf_design/seed.py`). An entry that declares both fields null is
+what the Factory cannot design yet; an installation's catalog that declares neither field
+makes no claim, as before. The rendering must still match the opportunity's dimension.
+Otherwise the opportunity is a `capability-gap`, with what is missing. It stays in the report
+and in `capability_gaps`; it is never selected and never discarded.
+
+`capability.genre_model` records the family the cell's genre node resolves to - the family
+whose `nodes` list that node or its nearest listed ancestor - or `null` when no family lists
+it, which is itself a capability gap and is said so in the reason ("No genre family lists this
+genre node either"). Catalog 1.3.0 therefore makes eight shapes buildable that were
+`unavailable` before - `logic-puzzle-levels`, `precision-platformer`, `flip-arcade`,
+`wave-shooter`, `lap-racer`, `tower-defense`, `arena-survivor` and `stand-tycoon`, one per
+family - without one relaxed rule. The selection rationale names which road a shape travels
+("design archetype `drop-merge`" or "genre model `strategy`").
+
+**One family is not one genre: a family carries one seed, and that seed is one game.** A
+family's `seed` block is a complete starting design, so the entry a family builds is the entry
+whose concept that seed describes - and the design consistency rules are what hold it to that
+(`concept_mechanics_carried`, `design_adds_no_foreign_mechanic`: the design may name no
+mechanic the strategy does not, and must name every mechanic its concept does). `block-puzzle`,
+`sort-puzzle` and `idle-merge` therefore stay capability gaps even though a family lists their
+genre nodes: the puzzle seed is a slide-and-clear colour grid, not a board the player drops
+given shapes onto, and the simulation seed is a served-shift tycoon, not a merge idler. Each
+says so in its `unavailable` line. A second shape in a family is a second seed, never a second
+entry pointed at the first one's design.
+
+**An idea matches a family, not only a catalog shape.** A brief's words are matched against
+the entry's genre, subgenre, title, core mechanic and market tags as before, plus its
+`genre_node` and - for an entry that names one - its family's label and every genre node that
+family covers. "tower defense", "tycoon" and "platformer" therefore find the entry that builds
+them. A node id matches whole and is never split into its parts, so a block puzzle is not a
+bubble-shooter.
 
 **Identity.** An opportunity's id is a hash of what makes it that proposal - the generator,
 the genre node and, per generator, the changed axis and value, the platform, or the
@@ -203,12 +234,23 @@ considered.
 
 ## The handoff
 
-`opportunity.research` (1.2.0) is the contract. Strategy copies it into
-`title-strategy.research` (1.3.0) as the handoff - theme and setting, player and emotional
+`opportunity.research` (1.3.0) is the contract. Strategy copies it into
+`title-strategy.research` (1.4.0) as the handoff - theme and setting, player and emotional
 fantasy, art (dimension, rendering, tone, palette, camera), gameplay (genre, mechanics,
-loop, controls, progression, difficulty, retention hooks), audience, competitors,
-benchmarks, patterns, monetization, production, capability, market, risks, confidence and
-every claim id - and decides from it what it has evidence for:
+loop, controls, progression, difficulty, retention hooks), **design constraints**, audience,
+competitors, benchmarks, patterns, monetization, production, capability, market, risks,
+confidence and every claim id - and decides from it what it has evidence for:
+
+`design_constraints` is the content shape, in the vocabulary the design is actually held to
+(`core/reference/genre-models.yaml`): the `family`, what one `unit_kind` is, how `progression`
+and the `difficulty_shape` run, the `difficulty_axes`, the `session_band`, the
+`retention_hooks`, and the `conventions[]` a player of the genre expects without being told (a
+retry that keeps the board, a next button after a level, a best score kept between sessions).
+Every value keeps its own tier and claims, and a facet nobody observed stays `unknown` - the
+design then falls back to the family's default and says so in `applied`. A convention is
+counted, never asserted: a UX, retention, session or progression pattern has to be prevalent
+in the cell's coded games before it is one. An opportunity nothing can design, or whose genre
+node no family lists, carries no `design_constraints` at all.
 
 | Strategy field | From research | Otherwise |
 |---|---|---|
@@ -216,12 +258,14 @@ every claim id - and decides from it what it has evidence for:
 | `session.target_seconds` | the median measured run length | the catalog estimate or the policy default |
 | `audience.type` | the evidence-backed player type | casual, as a recorded assumption |
 | `prototype_must_prove` | a first-reward bar from measured games | - |
+| `concept.content_model` | `research.design_constraints`: the family, unit kind, progression, difficulty shape and axes research coded for this cell (`source: research`) | the family's own defaults, from `core/reference/genre-models.yaml` (`source: default`) |
 
 Design reads `title-strategy.research` and records its own `applied`:
 
 | Design decision | From research | Otherwise |
 |---|---|---|
-| archetype | the `design_archetype` research's capability check named; `agent` is refused by the archetype author (research already waits for it) | keyword selection on the strategy, among the archetypes of the dimension research states (`art.dimension`); none of that dimension is refused |
+| archetype | the `design_archetype` research's capability check named; `agent` is refused by the archetype author (research already waits for it); with no design archetype but a `genre_model`, the genre seed author synthesizes the design from the family's own `seed` block | keyword selection on the strategy, among the archetypes of the dimension research states (`art.dimension`); none of that dimension is refused |
+| `genre` and `build_spec.content` | the strategy's `concept.content_model` (itself from `research.design_constraints`): the family the design is held to, the unit kind, the progression and difficulty models and the axes | the family the design's own genre node resolves to; with no family at all, nothing is applied and no content check runs |
 | visual identity kit | the kit matching most of the supported tone, palette and rendering (`wgf_design/identity.py` `TRAITS`); the title digest only breaks ties | the title digest within the archetype's affinity |
 | fantasy | the research fantasy, in its theme and setting | the archetype's fantasy |
 | art direction | prefixed with the theme and the matched art direction | the kit alone |
@@ -236,8 +280,8 @@ listings, captured 2026-09-23 - and **no teardown records**. On it, V2 builds 16
 listing-depth games, genre-and-platform patterns, demand shares for the puzzle subgenres on
 Poki and CrazyGames, one portal-difference opportunity (block puzzle, a capability gap) and
 the catalog screen; theme, fantasy, art and gameplay are `unknown` and are reported as such
-(`uncoded-facet`), trend is `insufficient-history`, and the selection is the same buildable
-shape as before. The machinery is real; the corpus is thin. Teardowns and repeated listing
+(`uncoded-facet`), trend is `insufficient-history`, and the selection is a puzzle shape the
+Factory can build - `logic-puzzle-levels`, from the puzzle genre model. The machinery is real; the corpus is thin. Teardowns and repeated listing
 captures are what make it rich, and they are a research activity, not code: no gameplay
 observation has been invented to fill it.
 
@@ -250,6 +294,8 @@ observation has been invented to fill it.
 | Demand / supply / saturation / competition / trend, kept apart | Implemented (trend needs repeated captures; none shipped) |
 | Five opportunity generators, capability gaps, selection pin, backlog persistence | Implemented |
 | Strategy and design consuming the research, `applied` | Implemented |
+| Genre families: `capability.genre_model`, `research.design_constraints`, buildability from a family, idea matching on a family's nodes | Implemented (`core/reference/genre-models.yaml` 1.0.0, catalog 1.3.0) |
+| Conventions counted from the corpus | Implemented; the shipped corpus has no teardowns, so no convention reaches the prevalence bar yet |
 | Audience model (evidence-backed or unknown) | Implemented |
 | Ad-placement patterns (genre/mechanics × triggers) | Implemented |
 | Teardown collection procedure (`competitive-teardown.md`, `wgf-corpus.py`) | Implemented; automated browser play is not - a person or an agent plays and writes the record |

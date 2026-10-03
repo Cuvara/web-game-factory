@@ -12,7 +12,7 @@
 # artifact plus the resolved platform profiles. Keep them few and obvious — a rule nobody
 # understands gets waived, and a waived rule is worse than no rule.
 
-version: 1.2.1
+version: 1.4.0  # 1.2.1: match never the bare verb; 1.3.0: scope_fits_session_count applies only without a genre family; 1.4.0: detail_terms
 
 rules:
   - id: rewarded_ads_need_reward_moments
@@ -49,10 +49,15 @@ rules:
   - id: scope_fits_session_count
     label: Content volume must match session length and expected retention
     severity: blocking
+    # A design that names its genre family (game-design 1.9.0 `genre`) is bounded by the
+    # family's content model instead: core/reference/genre-models.yaml and the design step's
+    # content check (`content.units_fit_session`) size its units to the session, and a
+    # level puzzle legitimately carries 20 levels for a five-minute session.
     when:
       all_of:
         - { left: session.target_seconds, op: lte, right: 300 }
         - { left: scope.content_units, op: gt, right: 12 }
+        - { left: genre.family, op: absent }
     rationale: >
       More content than the retention curve will ever surface is cost with no return. Cut
       content or design a reason to come back; do not build for a player who leaves.
@@ -160,6 +165,20 @@ concept_terms:
   shoot: [shoot, shoots, shooting]
   timed-tap: [timed tap, sweep, sweeps]
   lock: [lock, locks, locked]
+  # Mechanics that define the genre families' games (core/reference/genre-models.yaml).
+  # Only words that change what the game IS: `wave` is a unit kind, and `place`, `price`,
+  # `slide`, `survive` or `upgrade` name verbs many games share - deliberately not here.
+  tower: [tower, towers, turret, turrets]
+  race: [race, races, racing, rival, rivals]
+  exit: [exit, exits, goal flag, exit door]
+  aim: [aim, aims, aiming]
+
+# Terms that count for `concept.uncarried` (the strategy names them, so the design must carry
+# them) but never for `concept.foreign`: walls, crashes and locks are details most games
+# have - an ice puzzle's penguin stops at a wall, its door has a lock, its goal is an exit - and a design that
+# names one has not changed what the game is. A term absent from this list is defining both
+# ways.
+detail_terms: [wall, crash, lock, exit]
 
 evaluation:
   pass_condition: No rule with severity=blocking is breached.

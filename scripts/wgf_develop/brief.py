@@ -25,12 +25,14 @@ from wgflib.yamllite import load_file
 
 from wgf_verification.checks.gameplay import ASPECTS, required_aspects_for
 
+from . import content as content_contract
+from .content import CONTENT_PATH, TEST_PATH
 from .scope import DEFAULT_WRITABLE
 
 __all__ = ["REQUIRED_SYSTEMS", "INTEGRATION_CONTRACT", "REPORT_PATH", "BRIEF_DIR",
            "build_brief", "render_markdown", "PROTECTED_PATHS", "STRUCTURAL_PATHS",
            "TEMPLATE_SOURCE", "ENGINE_DIRS", "select_build_spec", "select_dev_plan",
-           "select_production_art", "shell_contract"]
+           "select_production_art", "select_content", "shell_contract"]
 
 BRIEF_DIR = "docs/development"
 REPORT_PATH = f"{BRIEF_DIR}/report.json"
@@ -50,8 +52,23 @@ REQUIRED_SYSTEMS = (
     ("core-loop", "The design's core loop, advanced by the fixed-timestep update(), never by "
                   "requestAnimationFrame or setTimeout."),
     ("mechanics", "Every mechanic the MVP tier names, as pure rules code with unit tests."),
+    ("content", "Every MVP unit of the content table exists in public/content/units.json "
+                "under its design id with the design's objective, mechanics and difficulty "
+                "values, is loaded at boot, and is reachable in play in design order (the "
+                "probe's content.unit_id). A unit you could not build is `cut` or `partial` "
+                "in report.json content_units, with a design_gaps entry when the design does "
+                "not say enough to build it."),
+    ("win-lose", "The experience contract's win (unless the genre is endless) and lose are "
+                 "reachable from play; each unit's own success and failure end it in "
+                 "won/lost or advance it (content.progress: a value that RISES to its target - gems 2 of 3, goal reached 0 of 1 - never a count that falls; moves or time left are metrics)."),
+    ("difficulty-curve", "Each axis in the design's difficulty.axes is a data value per unit "
+                         "read from units.json (authored) or a function of time (parametric), "
+                         "exposed in the probe as metrics.difficulty.<axis>."),
+    ("mastery", "The mastery block's signals are shown on the result screen and persisted "
+                "through the seam."),
     ("progression", "The design's progression and difficulty ramp, persisted through the "
-                    "integration seam's save/load."),
+                    "integration seam's save/load: after a page reload the probe reports the "
+                    "same content.unit_index and metrics.best before any input."),
     ("ui", "Menus and screens the design lists (ux.screens), readable on a phone held in "
            "one hand."),
     ("hud", "In-run HUD: score and whatever else the loop needs the player to see."),
@@ -270,6 +287,13 @@ REPORT_CONTRACT = {
     "integration_status": {"platform_sdk": "working | partial | not-started",
                            "monetization": "...", "analytics": "...", "persistence": "..."},
     "assets": [{"id": "<asset-manifest item id>", "status": "integrated | placeholder | cut"}],
+    "content_units": [{"id": "<a content unit id from the brief's table>",
+                       "status": "built | partial | cut", "notes": "..."}],
+    "design_gaps": [{"field": "<path into the game-design, e.g. "
+                              "build_spec.content.units[l-03].success>",
+                     "question": "<what you needed to know, as the designer can answer it>",
+                     "assumed": "<what you built instead, or null>",
+                     "severity": "blocking | minor"}],
     "scope_deltas": [{"item": "...", "direction": "added | cut | deferred", "reason": "..."}],
     "known_issues": ["..."],
     "how_to_play": "One or two sentences a reviewer reads before opening the build.",
@@ -280,16 +304,25 @@ REPORT_CONTRACT = {
 # `assets` are delivered through the asset manifest, which the brief lists on its own.
 BUILD_SPEC_SECTIONS = (
     # First: what a first-time player must be able to tell, and how fast. The rest of the
-    # spec is how; this is what the build is measured against from outside.
+    # spec is how; this is what the build is measured against from outside. Then the content
+    # the player meets, because that is what the rest of the spec exists to serve.
     ("experience", "Player experience contract"),
+    ("content", "Content units"),
     ("mechanics", "Mechanics"), ("controls", "Controls"), ("player_goals", "Player goals"),
     ("game_states", "Game states"), ("screens", "Screens"), ("hud", "HUD"),
     ("menus", "Menus"), ("tutorial", "Tutorial"), ("rewards", "Rewards"),
     ("failure", "Failure and retry"), ("progression", "Progression"),
-    ("difficulty", "Difficulty"), ("session_flow", "Session flow"),
+    ("difficulty", "Difficulty"), ("mastery", "Mastery"), ("session_flow", "Session flow"),
     ("monetization_touchpoints", "Monetization touchpoints"), ("audio", "Audio"),
     ("responsive", "Responsive"), ("visual_identity", "Visual identity"),
+    # Last, and no longer dropped: what brings a player back. The design has carried it
+    # since 1.7.0 and no brief did.
+    ("depth", "Depth (reason to return)"),
 )
+# Sections the brief gives a section of their own, with the table, the axes and the data-file
+# contract the generic renderer cannot express. The build-spec listing points at them instead
+# of repeating every unit twice in one document.
+SPEC_SECTIONS_RENDERED_ABOVE = {"content": "Content units", "mastery": "Mastery"}
 BUILD_TIERS = (None, "mvp")
 DEV_PLAN_PHASES = (None, "prototype")
 
@@ -424,6 +457,32 @@ def select_build_spec(design):
                 for key, _ in BUILD_SPEC_SECTIONS if key in spec}
     return {"sections": sections, "not_now": dropped,
             "omitted": [k for k in ("sdk_touchpoints", "assets") if k in spec]}
+
+
+def select_content(design):
+    """The content the MVP build owes, as the developer builds it (see content.py).
+
+    `applies` is the content contract: an authored design with at least one MVP unit owes
+    `public/content/units.json` holding exactly those units. A parametric or procedural
+    design states the same table - the units it commits to - but generates the rest from
+    `generation.parameters`, so there is no list to compare a file against and no file is
+    owed."""
+    spec = (design or {}).get("build_spec") or {}
+    content = spec.get("content") if isinstance(spec.get("content"), dict) else {}
+    axes = [a for a in (spec.get("difficulty") or {}).get("axes") or [] if isinstance(a, dict)]
+    return {
+        "applies": content_contract.applies(design),
+        "unit_kind": content.get("unit_kind"),
+        "generation": content.get("generation") or None,
+        "units": content_contract.expected_units(design),
+        # Units of a later tier: named so the developer knows they exist and does not build
+        # them, the way the build spec's `not_now` works.
+        "later": [u.get("id") for u in content.get("units") or []
+                  if isinstance(u, dict) and u.get("tier") not in BUILD_TIERS],
+        "axes": axes,
+        "file": CONTENT_PATH,
+        "test": TEST_PATH,
+    }
 
 
 def select_production_art(design, assets=None):
@@ -601,6 +660,7 @@ def build_brief(*, title_id, engine, iteration, key, baseline, design, assets, s
 
     session = design.get("session") or {}
     ux = design.get("ux") or {}
+    scope_block = design.get("scope") or {}
     return {
         "format": 1,
         "title_id": title_id,
@@ -644,8 +704,17 @@ def build_brief(*, title_id, engine, iteration, key, baseline, design, assets, s
             "accessibility": ux.get("accessibility"),
             "art_direction": design.get("art_direction"),
             "audio_direction": design.get("audio_direction"),
-            "locales": (design.get("scope") or {}).get("locales") or [],
+            "locales": scope_block.get("locales") or [],
+            # What the design says the game is made of, in its own words: the count and the
+            # name. The content table is the same thing, unit by unit.
+            "scope_content_units": scope_block.get("content_units"),
+            "content_unit_kind": scope_block.get("content_unit_kind"),
         },
+        # The family of core/reference/genre-models.yaml the design is held to: the unit
+        # kinds, axes and win/loss shapes that fit it. None before game-design 1.9.0.
+        "genre": design.get("genre") if isinstance(design.get("genre"), dict) else None,
+        # Every unit of content the MVP build owes, and whether a data file is owed with it.
+        "content": select_content(design),
         "mvp": list(tiers.get("mvp") or []),
         "prototype_tier": list(tiers.get("prototype") or []),
         "not_now": list(tiers.get("production") or []) + list(tiers.get("future") or []),
@@ -901,6 +970,182 @@ def _production_art_section(art, engine=None):
     return "\n".join(out)
 
 
+def _md_cell(value):
+    if value in (None, "", [], {}):
+        return "-"
+    return _inline(value).replace("|", "\\|").replace("\n", " ")
+
+
+def _md_table(header, rows):
+    out = ["| " + " | ".join(str(head) for head in header) + " |",
+           "|" + "---|" * len(header)]
+    out += ["| " + " | ".join(_md_cell(cell) for cell in row) + " |" for row in rows]
+    return "\n".join(out)
+
+
+# What a family's `qa` parameters oblige the BUILD to do (the rest parametrise the judge).
+_QA_OBLIGATIONS = {
+    "reset_in_unit": "A reset or retry input is offered DURING play (the probe lists it as an "
+                     "input named reset, retry or restart) and returns the current unit to its "
+                     "start state - progress, moves and board - without leaving the unit.",
+    "checkpoint": "A loss inside a unit returns the player to the unit's last checkpoint with "
+                  "the unit's progress kept (content.progress), not to the unit's start.",
+    "resource_metric": "The probe reports metrics.{value}, the resource whose fall ends play; "
+                       "bad play must drive it down.",
+    "time_target_axis": "Each unit's parameters carry its time target, and a unit succeeds "
+                        "only inside it (metrics.time <= the target).",
+    "failure_state": "A loss is reachable in every unit that states a failure: bad play ends "
+                     "in `lost`, with a retry.",
+}
+
+
+def _qa_obligations(family):
+    """The obligations a family's `qa` block puts on the build, in the brief's words."""
+    if not family:
+        return []
+    try:
+        models = load_file(os.path.join(paths.REFERENCE, "genre-models.yaml"))
+    except (OSError, ValueError):
+        return []
+    qa = ((models.get("families") or {}).get(family) or {}).get("qa") or {}
+    lines = []
+    for key, text in _QA_OBLIGATIONS.items():
+        value = qa.get(key)
+        if value is True or (value and not isinstance(value, bool)):
+            lines.append(text.replace("{value}", str(value)))
+    return lines
+
+
+def _content_section(brief):
+    """The content the build owes: the genre it is held to, every MVP unit in order with its
+    acceptance, the axes difficulty is stated on, what mastery means, and - when the content
+    contract applies - the data file the units live in.
+
+    This is what stops a build of the first level being reported as the game. The units are
+    the design's, by its ids and in its order; none of it is the developer's to invent."""
+    content = brief.get("content") or {}
+    genre = brief.get("genre") or {}
+    units = content.get("units") or []
+    generation = content.get("generation") or {}
+    mode = generation.get("mode")
+    kind = content.get("unit_kind") or "unit"
+    spec_sections = (brief.get("build_spec") or {}).get("sections") or {}
+    out = []
+    add = out.append
+
+    if genre:
+        add("## Genre\n")
+        add(f"**{genre.get('family') or '?'}**"
+            + (f" (node: {genre['node']})" if genre.get("node") else "")
+            + (f" - session profile `{genre['session_profile']}`"
+               if genre.get("session_profile") else "")
+            + (f", {genre['ending']}" if genre.get("ending") else "")
+            + ". The unit kinds, difficulty axes, win and loss shapes and variety bars this "
+              "family is held to are `core/reference/genre-models.yaml` in the Factory.\n")
+        obligations = _qa_obligations(genre.get("family"))
+        if obligations:
+            add("The playability bot holds a build of this family to these, from the family's "
+                "`qa` block - build them, they are checked from outside:\n")
+            for line in obligations:
+                add(f"- {line}\n")
+            add("\n")
+
+    if not units and not generation:
+        return "\n".join(out)
+
+    add("## Content units (build exactly these, in this order)\n")
+    add(f"What the player meets, unit by unit; one unit is one **{kind}**. Build every row "
+        "below, in this order, with the objective, mechanics and difficulty values the design "
+        "gives. A build that carries the first unit and calls the rest more of the same is a "
+        "build of a smaller game than the one reviewed. Where the design does not say enough "
+        "to build a unit, make the smallest assumption, record it in the report's "
+        "`design_gaps` with the field it concerns, and mark the unit `partial` - never invent "
+        "a unit, a mechanic or a difficulty value.\n")
+    if mode:
+        add(f"Generation: **{mode}**"
+            + (" - " + _inline(generation.get("parameters"))
+               if generation.get("parameters") else "")
+            + (f" (about {generation['expected_units']} units a session)"
+               if generation.get("expected_units") else "") + ".\n")
+    header, rows = content_contract.table_rows(units, content.get("axes"))
+    add(_md_table(header, rows) + "\n")
+    for unit in units:
+        acceptance = unit.get("acceptance") or []
+        variation = unit.get("variation_from_previous") or []
+        if not (acceptance or variation or unit.get("start_state") or unit.get("end_state")):
+            continue
+        add(f"**{unit.get('id')}** ({kind} {unit.get('index')})"
+            + (f" - starts from: {unit['start_state']}" if unit.get("start_state") else "")
+            + (f"; ends: {unit['end_state']}" if unit.get("end_state") else "") + "\n")
+        for line in acceptance:
+            add(f"- {line}")
+        if variation:
+            add("- Differs from the previous unit in: " + ", ".join(variation)
+                + " - a unit that changes only a number is not another unit.")
+        add("")
+    if content.get("later"):
+        add("Not now: " + ", ".join(f"`{uid}`" for uid in content["later"] if uid)
+            + " belong to a later tier. Do not build them.\n")
+
+    axes = content.get("axes") or []
+    if axes:
+        add("## Difficulty axes\n")
+        add("Every unit's difficulty is a value on each of these, and on nothing else. Expose "
+            "the value in force now through the play probe as `metrics[\"difficulty.<id>\"]`, "
+            "so the bot can see difficulty move.\n")
+        for axis in axes:
+            bounds = list(axis.get("range") or []) + [None, None]
+            add(f"- **{axis.get('id')}** ({bounds[0]}..{bounds[1]}): "
+                + (axis.get("description") or "the design states no description.")
+                + (" Relief is allowed on it." if axis.get("relief_allowed") else ""))
+        add("")
+
+    mastery = spec_sections.get("mastery") or {}
+    if mastery:
+        add("## Mastery\n")
+        add(f"What getting better means here (`{mastery.get('model')}`): "
+            f"{mastery.get('statement')}\n")
+        signals = [signal for signal in mastery.get("signals") or []]
+        if signals:
+            add("Show it: " + ", ".join(f"`{signal}`" for signal in signals)
+                + " are HUD metrics, shown again on the result screen and persisted through "
+                  "the integration seam so the next session starts from them.\n")
+
+    add("### The units are data, not code\n")
+    if content.get("applies"):
+        add(f"Write every unit above into `{content.get('file')}` and load it at boot: the "
+            f"game reads its content from that file, and nothing in `src/` hard-codes a unit. "
+            f"`{content.get('test')}` is the unit test over it. The develop checks compare the "
+            f"file with the design unit by unit and field by field - a missing unit, a changed "
+            f"objective, a difficulty value further from the design than the genre's "
+            f"tolerance, or a mechanic parameter missing from `tuning` each fails the step.\n")
+    else:
+        add(f"`{content.get('file')}` and `{content.get('test')}` are optional for a "
+            f"{mode or 'generated'} design: the units are generated from the parameters, so "
+            f"there is no list to compare a file with. Keep every tuning value - the "
+            f"generation parameters, and each mechanic's `parameters` - as data in one module "
+            f"all the same, so a playtest changes a number and not the code.\n")
+    design_pin = next((pin for pin in brief.get("inputs") or []
+                       if pin.get("artifact_type") == "game-design"), {})
+    add("```json\n" + json.dumps({
+        "schema": content_contract.SCHEMA,
+        "design": {"artifact_id": design_pin.get("id")
+                   or "<the game-design artifact id pinned above>",
+                   "content_hash": design_pin.get("content_hash")
+                   or "<the game-design's full content hash>"},
+        "genre": genre or {"family": "<the design's genre.family>"},
+        "unit_kind": kind,
+        "generation": generation or {"mode": "authored"},
+        "units": [{"id": "<unit id>", "index": 1, "tier": "mvp",
+                   "objective": "<as the table says>", "mechanics": ["<mechanic id>"],
+                   "introduces": ["<mechanic id>"], "difficulty": {"<axis id>": 0.1},
+                   "expected_duration_s": 45, "success": "<as the table says>",
+                   "failure": "<as the table says>"}],
+        "tuning": {"<mechanic id>": {"<parameter>": 0}},
+    }, indent=2) + "\n```\n")
+    return "\n".join(out)
+
+
 def _bullets(items, empty="- (none)"):
     lines = [f"- {item}" for item in items if item]
     return "\n".join(lines) if lines else empty
@@ -938,6 +1183,19 @@ def _ownership_section(brief):
                      "`tests/unit/`, for example), even when a review blocker points at one "
                      "of these files. The checks compare them with the commit this visit "
                      "started from.")
+    content = brief.get("content") or {}
+    if content.get("units") or content.get("generation"):
+        if content.get("applies"):
+            lines.append(f"- **The content contract's files, yours to write:** "
+                         f"`{content['file']}` (every MVP content unit as data) and "
+                         f"`{content['test']}` (the unit test over it). The develop checks "
+                         f"read both: the data file is compared with the design unit by unit, "
+                         f"and a build that hard-codes its units instead fails the step.")
+        else:
+            lines.append(f"- **The content contract's files:** `{content['file']}` and "
+                         f"`{content['test']}` are yours, and optional for a parametric "
+                         f"design - the units are generated, so there is no list to compare. "
+                         f"Tuning still lives in data either way.")
     lines.append("- **`src/main.ts`** is yours to wire the game into, but it is the template's "
                  "boot sequence: keep its order (the `boot` system, and the integration seam "
                  "section below).")
@@ -1195,6 +1453,9 @@ def render_markdown(brief):
             "`[]`. Give each entity the role the design's asset requirements name (the "
             "*Production art and UI* the next phase draws), so the production build replaces "
             "the primitive standing for each role without renaming anything.\n")
+        add("Structure is not art: the greybox builds every MVP content unit above, all of "
+            "them, with primitives, so the bot can traverse them. A greybox that builds only "
+            "the first unit fails `content.units_reachable`.\n")
         add("When you finish, the build is played from outside on a desktop and a mobile "
             "viewport and held to the experience contract; a build that fails comes back "
             "here with what was seen. Assets and polish come in the next phase, on top of "
@@ -1208,6 +1469,9 @@ def render_markdown(brief):
             "playability check passing - an asset that hides the player, darkens the scene or "
             "drops the objective from the screen is a regression - because the build is "
             "played again before review.\n")
+        add("Every content unit stays reachable and in the design's order: integrate the "
+            "assets per unit, and do not quietly drop a unit to make an asset fit. The "
+            "content data file is not re-authored here - the units are the same units.\n")
 
     if brief.get("shell") is not None:
         add(_shell_section(brief["shell"]))
@@ -1294,6 +1558,11 @@ def render_markdown(brief):
         "through the camera). `oracle` is computed only when the page URL carries "
         "`wgf-probe=1`; without it the field is absent, and nothing else changes. The probe "
         "never changes the game, and the game never reads it.\n")
+    add("A build with content units reports `content` - `{unit_id, unit_index, unit_count, "
+        "unit_kind, objective, progress}`, the unit's own id from the table below - and one "
+        "`metrics[\"difficulty.<axis>\"]` per axis the design declares. That is how the bot "
+        "tells one unit from the next and sees difficulty actually move; a build that reports "
+        "one unit forever is a build of one unit.\n")
     with open(PLAY_PROBE_SCHEMA, encoding="utf-8") as handle:
         add("```json\n" + handle.read().rstrip() + "\n```\n")
 
@@ -1336,6 +1605,10 @@ def render_markdown(brief):
             add(f"- **{label}:** {session[key]}")
     add("")
 
+    content_section = _content_section(brief)
+    if content_section:
+        add(content_section)
+
     spec = brief.get("build_spec")
     if spec and spec.get("sections"):
         add("## Build spec (MVP tier)\n")
@@ -1347,10 +1620,16 @@ def render_markdown(brief):
             "the player cannot read cannot be judged. The same data is in `brief.json` under "
             "`build_spec`.\n")
         for key, label in BUILD_SPEC_SECTIONS:
-            if key in spec["sections"]:
-                add(f"### {label}\n")
-                add("\n".join(_spec_lines(spec["sections"][key])) or "- (none)")
-                add("")
+            if key not in spec["sections"]:
+                continue
+            add(f"### {label}\n")
+            if key in SPEC_SECTIONS_RENDERED_ABOVE:
+                add(f"See *{SPEC_SECTIONS_RENDERED_ABOVE[key]}* above - the same data, with "
+                    f"the table and the contract that go with it. It is in `brief.json` under "
+                    f"`build_spec.sections.{key}` and `content`.\n")
+                continue
+            add("\n".join(_spec_lines(spec["sections"][key])) or "- (none)")
+            add("")
         if spec.get("not_now"):
             add("Left out on purpose (a later tier - do not build):\n")
             add(_bullets(spec["not_now"]))
@@ -1662,4 +1941,17 @@ def render_markdown(brief):
     add("```json\n" + json.dumps(REPORT_CONTRACT, indent=2) + "\n```")
     add("\n`mvp` has one entry per MVP item above, verbatim. `placements` covers every "
         "placement above.")
+    content = brief.get("content") or {}
+    if content.get("units"):
+        add(f"\n`content_units` has one entry per unit of the content table above, by its "
+            f"design id: `built` means it meets every acceptance line, `partial` means it is "
+            f"there and does not (say what is missing in `notes`), `cut` means it is not "
+            f"there. A `cut` unit needs a `design_gaps` entry naming it, or the step fails.")
+    add("\n`design_gaps` is where the design was silent, contradictory or impossible to "
+        "build from: the `field` it concerns, the `question` a designer can answer, what you "
+        "`assumed` instead (or null when the gap stopped the work), and whether it is "
+        "`blocking` or `minor`. A gap you report costs one design visit - the run goes back "
+        "to design, the design is repaired, and the build continues from it. A gap you paper "
+        "over fails review, later and at a higher price. Reporting none when there were none "
+        "is the right answer; inventing a value and saying nothing is not.")
     return "\n".join(out) + "\n"

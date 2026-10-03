@@ -1,0 +1,951 @@
+{
+  "provenance": {
+    "artifact_id": "wgf:title-strategy:ice-slide:20261002-01",
+    "artifact_type": "title-strategy",
+    "schema_version": "1.4.0",
+    "opportunity_id": "opp-b40899dc",
+    "title_id": "ice-slide",
+    "produced_by": {
+      "role": "game-designer",
+      "actor": "automation"
+    },
+    "produced_at": "2026-10-02T20:25:07Z",
+    "inputs": [
+      {
+        "artifact_id": "wgf:opportunity:opp-b40899dc:20261002-01",
+        "artifact_type": "opportunity",
+        "content_hash": "sha256:9e208e4c56abb622100209dabccf9c6c41b727f84b04f5ac82e0b2514f0c7bdf"
+      }
+    ],
+    "content_hash": "sha256:f9f6e1479ea590ae721d7cefaab185849d247f4fe226fac0bcd08a29ae87adcc",
+    "status": "draft"
+  },
+  "title_id": "ice-slide",
+  "opportunity_id": "opp-b40899dc",
+  "one_liner": "A sliding-ice puzzle: a penguin slides until it hits something; 24 hand-designed levels with keys, doors, crumbling tiles and a 3-star move target.",
+  "why_this_opportunity": "Logic Puzzle Levels offers feeling clever - the moment the slide you had missed becomes obvious. Research (capability-screen): Logic Puzzle Levels: a shape in the capability catalog, screened against crazygames, gamedistribution, gamemonetize, gamevui, poki, y8, yandex at 0.77, with observed market presence on poki. The opportunity rests on claim-fd23eeef70 and cites claim-12e9f11a8d, claim-55ff2909f5, claim-73f7084dbe, claim-8124a91873, claim-b5277fb850, claim-cdf943b10d, claim-d179e1fc07. Poki is primary (audience regions br, de, fr, gb, id, us; supports rewarded placements).",
+  "platform_set": [
+    {
+      "id": "crazygames",
+      "profile_version": "1.0.0",
+      "role": "optional",
+      "rationale": "Secondary: CrazyGames is compatible from the same build; not required to ship."
+    },
+    {
+      "id": "yandex",
+      "profile_version": "1.0.0",
+      "role": "optional",
+      "rationale": "Secondary: Yandex Games is compatible from the same build; not required to ship."
+    },
+    {
+      "id": "poki",
+      "profile_version": "1.0.0",
+      "role": "required",
+      "rationale": "Primary: best audience fit among compatible candidates (audience regions br, de, fr, gb, id, us; supports rewarded placements); the title is not shippable without it."
+    }
+  ],
+  "audience": {
+    "type": "casual",
+    "device": "both",
+    "regions": [
+      "br",
+      "by",
+      "de",
+      "fr",
+      "gb",
+      "id",
+      "kz",
+      "ru",
+      "tr",
+      "us"
+    ],
+    "player_description": "A casual player on phone or desktop who wants to be playing within seconds, in sessions of about 5 minutes."
+  },
+  "monetization": {
+    "class": "rewarded-led",
+    "placements": [
+      "rewarded",
+      "interstitial"
+    ],
+    "rationale": "Being stuck is the rewarded moment (a hint or one revealed cell); interstitials between levels."
+  },
+  "session": {
+    "first_session_seconds": 220,
+    "target_seconds": 300,
+    "sessions_per_day_target": 3
+  },
+  "timebox_days": 9,
+  "mvp": [
+    "Core loop: read the level, plan the moves, solve it, advance to a harder level that adds a rule or tightens the budget",
+    "The brief, built in full: A sliding-ice puzzle: a penguin slides until it hits something; 24 hand-designed levels with keys, doors, crumbling tiles and a 3-star move target",
+    "6 designed levels with authored difficulty on depth, move-limit, board-complexity, piece-variety",
+    "Score and personal best, persisted locally",
+    "A rewarded placement at a natural moment in the loop (continue or bonus), never forced",
+    "Interstitials between sessions only, never inside one",
+    "Poki SDK: init, loading-progress, gameplay-start-stop, rewarded, interstitial, pause-audio-during-ads",
+    "Localization: en, ru"
+  ],
+  "out_of_scope": [
+    "Multiplayer and any online play — networking multiplies the test surface and needs a server nobody has budgeted",
+    "Metagame layers: daily quests, battle pass, login rewards — retention systems are validated after the core loop is, not before",
+    "Character or skin customization and a cosmetics shop",
+    "Level editor or user-generated content",
+    "Story, cutscenes and dialogue — text multiplies localization cost",
+    "Leaderboards beyond a personal best",
+    "A second mode or content set — one proves the loop; more is content, not validation",
+    "An IAP economy or premium currency",
+    "Platforms beyond the set: y8, gamedistribution — platform sprawl multiplies compliance work"
+  ],
+  "prototype_must_prove": [
+    "A first-time player understands the tap control without instruction",
+    "The core loop produces an unforced desire to retry within one 300-second session",
+    "This risk is contained: Poki requires web exclusivity, so the candidate platforms cannot all be used for the same build; choosing is a strategy decision",
+    "The rewarded placement reads as a favour rather than an interruption",
+    "It holds 30 fps on a mid-range mobile browser inside a 100 MB bundle"
+  ],
+  "success_criteria": [
+    {
+      "id": "d1_retention",
+      "label": "D1 retention",
+      "when": {
+        "left": "d1_retention",
+        "op": "gte",
+        "right": 0.25
+      },
+      "rationale": "Below this a short-session title without a metagame has no path to sustained portal traffic.",
+      "severity": "blocking"
+    },
+    {
+      "id": "session_length",
+      "label": "Median session near target",
+      "when": {
+        "left": "median_session_seconds",
+        "op": "gte",
+        "right": 220
+      },
+      "rationale": "Shorter than this and the placements the monetization model counts on never get a chance to show.",
+      "severity": "warning"
+    }
+  ],
+  "kill_criteria": [
+    {
+      "id": "control_not_understood",
+      "label": "First-time players do not understand the control",
+      "when": {
+        "left": "first_time_understood_share",
+        "op": "lt",
+        "right": 0.6
+      },
+      "rationale": "The title is scoped around one control scheme and no tutorial. If that scheme needs teaching, the scope assumption is wrong.",
+      "severity": "blocking"
+    },
+    {
+      "id": "no_retry_pull",
+      "label": "Players do not retry unprompted",
+      "when": {
+        "left": "unprompted_retry_share",
+        "op": "lt",
+        "right": 0.5
+      },
+      "rationale": "Replay is the retention system here, in place of content. Without immediate retry there is neither retention nor an ad moment.",
+      "severity": "blocking"
+    },
+    {
+      "id": "prototype_overran",
+      "label": "The prototype consumed most of the timebox",
+      "when": {
+        "left": "prototype_elapsed_days",
+        "op": "gt",
+        "right": 6
+      },
+      "rationale": "A prototype that needs more than 60% of the timebox is evidence the scope does not fit it, and production would overrun by more.",
+      "severity": "blocking"
+    },
+    {
+      "id": "mobile_performance_floor",
+      "label": "Unplayable on mid-range mobile",
+      "when": {
+        "left": "midrange_mobile_fps",
+        "op": "lt",
+        "right": 30
+      },
+      "rationale": "Most portal traffic for this audience is mobile; below 30 fps a reaction-driven loop reads as the game's fault, not the player's.",
+      "severity": "blocking"
+    }
+  ],
+  "sunset_floor": {
+    "metric": "d1_retention",
+    "value": 0.125,
+    "consecutive_reviews": 2
+  },
+  "max_prototype_iterations": 2,
+  "rollback_threshold": "critical",
+  "concept": {
+    "genre": "puzzle",
+    "core_mechanic": "A sliding-ice puzzle: a penguin slides until it hits something; 24 hand-designed levels with keys, doors, crumbling tiles and a 3-star move target",
+    "core_loop": "read the level, plan the moves, solve it, advance to a harder level that adds a rule or tightens the budget",
+    "gameplay_direction": "Logic built on A sliding-ice puzzle: a penguin slides until it hits something; 24 hand-designed levels with keys, doors, crumbling tiles and a 3-star move target. A session is a short run: read the level, plan the moves, solve it, advance to a harder level that adds a rule or tightens the budget. Content: 6 specified levels in the prototype, 20 in the release, difficulty authored per unit on depth, move-limit, board-complexity, piece-variety; progression linear-levels; level-authored ramp.",
+    "control_scheme": "tap",
+    "replayability": "Mastery ramp: short levels on one difficulty curve, each with a best result to improve on",
+    "subgenre": "logic",
+    "content_model": {
+      "family": "puzzle",
+      "unit_kind": "level",
+      "progression": "linear-levels",
+      "difficulty_shape": "level-authored",
+      "difficulty_axes": [
+        "depth",
+        "move-limit",
+        "board-complexity",
+        "piece-variety"
+      ],
+      "min_units": 6,
+      "source": "research"
+    }
+  },
+  "production_scope": {
+    "scope_complexity": "xs",
+    "technical_complexity": "low",
+    "asset_complexity": "low",
+    "estimate_days": 9,
+    "asset_budget": {
+      "max_unique_assets": 30,
+      "estimated_cost_usd": 200
+    },
+    "reusable_systems": [
+      "Template boot flow: loading, menu, play, result",
+      "Template platform SDK adapter: one interface, one implementation per platform",
+      "Input handler for the tap scheme only",
+      "Score and personal-best persistence",
+      "Data-driven difficulty ramp",
+      "Ad-break service honouring the strictest interstitial interval, pausing audio and input",
+      "Localization string table"
+    ],
+    "scope_decisions": [
+      "One control scheme (tap); no alternative or desktop-specific input",
+      "One required platform (poki); every other platform is optional",
+      "Replay comes from a system (mastery ramp), not from more content",
+      "Asset budget capped at 30 unique assets (low asset complexity)"
+    ]
+  },
+  "platform_compatibility": [
+    {
+      "id": "y8",
+      "profile_version": "1.0.0",
+      "compatible": true,
+      "issues": [
+        "profile figures are unverified",
+        "left out: at most 3 platforms per title"
+      ],
+      "sdk": {
+        "id": "y8",
+        "features": [
+          "init",
+          "gameplay-start-stop",
+          "rewarded",
+          "interstitial",
+          "pause-audio-during-ads",
+          "cloud-save"
+        ]
+      },
+      "constraints": [
+        "Interstitials at least 180s apart"
+      ]
+    },
+    {
+      "id": "crazygames",
+      "profile_version": "1.0.0",
+      "compatible": true,
+      "issues": [
+        "profile figures are unverified"
+      ],
+      "sdk": {
+        "id": "crazygames",
+        "features": [
+          "init",
+          "loading-progress",
+          "gameplay-start-stop",
+          "rewarded",
+          "interstitial",
+          "pause-audio-during-ads",
+          "cloud-save"
+        ]
+      },
+      "constraints": [
+        "Locales required: en",
+        "Bundle at most 250 MB",
+        "Interstitials at least 180s apart",
+        "Loading progress reported through the SDK",
+        "HTTPS only"
+      ]
+    },
+    {
+      "id": "gamedistribution",
+      "profile_version": "1.0.0",
+      "compatible": true,
+      "issues": [
+        "profile figures are unverified",
+        "left out: at most 3 platforms per title"
+      ],
+      "sdk": {
+        "id": "gamedistribution",
+        "features": [
+          "init",
+          "gameplay-start-stop",
+          "rewarded",
+          "interstitial",
+          "pause-audio-during-ads"
+        ]
+      },
+      "constraints": [
+        "Locales required: en",
+        "HTTPS only",
+        "No external links"
+      ]
+    },
+    {
+      "id": "yandex",
+      "profile_version": "1.0.0",
+      "compatible": true,
+      "issues": [
+        "profile figures are unverified"
+      ],
+      "sdk": {
+        "id": "yandex",
+        "features": [
+          "init",
+          "loading-progress",
+          "gameplay-start-stop",
+          "rewarded",
+          "interstitial",
+          "pause-audio-during-ads",
+          "cloud-save"
+        ]
+      },
+      "constraints": [
+        "Locales required: ru",
+        "Bundle at most 100 MB",
+        "Interstitials at least 60s apart",
+        "Loading progress reported through the SDK",
+        "HTTPS only",
+        "External requests only to declared domains"
+      ]
+    },
+    {
+      "id": "poki",
+      "profile_version": "1.0.0",
+      "compatible": true,
+      "issues": [
+        "profile figures are unverified"
+      ],
+      "sdk": {
+        "id": "poki",
+        "features": [
+          "init",
+          "loading-progress",
+          "gameplay-start-stop",
+          "rewarded",
+          "interstitial",
+          "pause-audio-during-ads"
+        ]
+      },
+      "constraints": [
+        "Locales required: en",
+        "Bundle at most 150 MB",
+        "Interstitials at least 120s apart",
+        "Loading progress reported through the SDK",
+        "HTTPS only",
+        "No external links"
+      ]
+    }
+  ],
+  "risks": [
+    {
+      "description": "Required locales en, ru must be localized by a person, not machine-translated",
+      "severity": "medium",
+      "origin": "strategy",
+      "mitigation": "Keep in-game text to a short string table"
+    },
+    {
+      "description": "Level content is the product; every level needs authoring and a solvability check.",
+      "severity": "medium",
+      "origin": "opportunity",
+      "mitigation": "Tracked into design",
+      "claim_refs": [
+        "claim-b5277fb850"
+      ]
+    },
+    {
+      "description": "gamedistribution: progress relies on local storage; no portal cloud save",
+      "severity": "low",
+      "origin": "opportunity",
+      "mitigation": "Tracked into design",
+      "claim_refs": [
+        "claim-12e9f11a8d",
+        "claim-35da3a7cb8",
+        "claim-3e4aace7dc",
+        "claim-feab9737bb"
+      ]
+    },
+    {
+      "description": "yandex: requires ru localization",
+      "severity": "medium",
+      "origin": "opportunity",
+      "mitigation": "Tracked into design",
+      "claim_refs": [
+        "claim-12e9f11a8d",
+        "claim-1d5899ec66",
+        "claim-21b503dbca",
+        "claim-36ec781b4f",
+        "claim-4d0b6d7039",
+        "claim-77c478048e",
+        "claim-aedf4467f6",
+        "claim-ebe0dbaaf5"
+      ]
+    },
+    {
+      "description": "poki: progress relies on local storage; no portal cloud save",
+      "severity": "low",
+      "origin": "opportunity",
+      "mitigation": "Tracked into design",
+      "claim_refs": [
+        "claim-0015946f54",
+        "claim-12e9f11a8d",
+        "claim-19fe15410c",
+        "claim-2122fcd4f3",
+        "claim-45bee43ffd",
+        "claim-55c84ee534",
+        "claim-6251d40daf",
+        "claim-6299fc4460",
+        "claim-8910129266",
+        "claim-a9dd28949d",
+        "claim-daa69cd5b6",
+        "claim-dd3290f5c6"
+      ]
+    },
+    {
+      "description": "poki requires web exclusivity, so the candidate platforms cannot all be used for the same build; choosing is a strategy decision",
+      "severity": "high",
+      "origin": "opportunity",
+      "mitigation": "Named in prototype_must_prove; answered before production",
+      "claim_refs": [
+        "claim-0015946f54",
+        "claim-12e9f11a8d",
+        "claim-19fe15410c",
+        "claim-2122fcd4f3",
+        "claim-45bee43ffd",
+        "claim-55c84ee534",
+        "claim-6251d40daf",
+        "claim-6299fc4460",
+        "claim-8910129266",
+        "claim-a9dd28949d",
+        "claim-daa69cd5b6",
+        "claim-dd3290f5c6"
+      ]
+    }
+  ],
+  "assumptions": [
+    {
+      "statement": "The research estimate of 9 development days holds for the MVP as scoped here",
+      "tier": "hypothesis",
+      "invalidated_by": "tech-plan milestones summing past the timebox (guard plan_fits_timebox)"
+    },
+    {
+      "statement": "Players sustain a 300-second session",
+      "tier": "hypothesis",
+      "invalidated_by": "median_session_seconds in the prototype playtest or first performance review"
+    },
+    {
+      "statement": "Rewarded placements monetize this loop the way research expects",
+      "tier": "hypothesis",
+      "invalidated_by": "rewarded opt-in or fill rate in the first performance review"
+    },
+    {
+      "statement": "The CrazyGames profile (v1.0.0) matches the portal's current rules",
+      "tier": "hypothesis",
+      "invalidated_by": "a validation failure or rejection citing a rule the profile does not state"
+    },
+    {
+      "statement": "The Yandex Games profile (v1.0.0) matches the portal's current rules",
+      "tier": "hypothesis",
+      "invalidated_by": "a validation failure or rejection citing a rule the profile does not state"
+    },
+    {
+      "statement": "The Poki profile (v1.0.0) matches the portal's current rules",
+      "tier": "hypothesis",
+      "invalidated_by": "a validation failure or rejection citing a rule the profile does not state"
+    },
+    {
+      "statement": "The audience type is casual: research found no evidence for it, and casual retention targets are the least demanding",
+      "tier": "hypothesis",
+      "invalidated_by": "platform analytics after launch"
+    },
+    {
+      "statement": "The audience research describes (casual, both) is the audience Poki delivers",
+      "tier": "derived",
+      "invalidated_by": "platform analytics device and region split after launch"
+    },
+    {
+      "statement": "The brief (\"A sliding-ice puzzle: a penguin slides until it hits something; 24 hand-designed levels with keys, doors, crumbling tiles and a 3-star move target\") is the concept: the logic shape research selected names no design archetype, so the family's content model bounds the design and the design states the idea's mechanics in full",
+      "tier": "hypothesis",
+      "invalidated_by": "the design cannot state the idea's mechanics within the family's model and the timebox; then the shape is a capability gap, not this title"
+    }
+  ],
+  "brief": "A sliding-ice puzzle: a penguin slides until it hits something; 24 hand-designed levels with keys, doors, crumbling tiles and a 3-star move target",
+  "research": {
+    "research_version": 2,
+    "report_id": "rr-b92faf192b",
+    "opportunity_id": "opp-b40899dc",
+    "origin": "capability-screen",
+    "summary": "Logic Puzzle Levels: a shape in the capability catalog, screened against crazygames, gamedistribution, gamemonetize, gamevui, poki, y8, yandex at 0.77, with observed market presence on poki.",
+    "theme": {
+      "theme": {
+        "value": null,
+        "tier": "unknown",
+        "source": "unknown",
+        "reason": "no teardown in the corpus codes theme for Logic puzzle (it has no teardown games)"
+      },
+      "setting": {
+        "value": null,
+        "tier": "unknown",
+        "source": "unknown",
+        "reason": "no teardown in the corpus codes setting for Logic puzzle (it has no teardown games)"
+      }
+    },
+    "fantasy": {
+      "player": {
+        "value": null,
+        "tier": "unknown",
+        "source": "unknown",
+        "reason": "no teardown in the corpus codes player_fantasy for Logic puzzle (it has no teardown games)"
+      },
+      "emotional": {
+        "value": null,
+        "tier": "unknown",
+        "source": "unknown",
+        "reason": "no teardown in the corpus codes emotional_fantasy for Logic puzzle (it has no teardown games)"
+      }
+    },
+    "art": {
+      "dimension": {
+        "value": "2d",
+        "tier": "hypothesis",
+        "source": "catalog",
+        "claim_refs": [
+          "claim-b5277fb850"
+        ]
+      },
+      "rendering": {
+        "value": null,
+        "tier": "unknown",
+        "source": "unknown",
+        "reason": "no teardown in the corpus codes art_rendering for Logic puzzle (it has no teardown games)"
+      },
+      "tone": {
+        "value": null,
+        "tier": "unknown",
+        "source": "unknown",
+        "reason": "no teardown in the corpus codes art_tone for Logic puzzle (it has no teardown games)"
+      },
+      "palette": {
+        "value": null,
+        "tier": "unknown",
+        "source": "unknown",
+        "reason": "no teardown in the corpus codes art_palette for Logic puzzle (it has no teardown games)"
+      },
+      "camera": {
+        "value": null,
+        "tier": "unknown",
+        "source": "unknown",
+        "reason": "no teardown in the corpus codes camera for Logic puzzle (it has no teardown games)"
+      }
+    },
+    "gameplay": {
+      "genre": {
+        "value": "logic-puzzle",
+        "label": "Logic puzzle",
+        "tier": "hypothesis",
+        "source": "catalog",
+        "claim_refs": [
+          "claim-b5277fb850"
+        ]
+      },
+      "mechanics": {
+        "value": [
+          "line-clear"
+        ],
+        "label": "slide one row or column of a colour grid so lines of three clear",
+        "tier": "hypothesis",
+        "source": "catalog",
+        "claim_refs": [
+          "claim-b5277fb850"
+        ]
+      },
+      "gameplay_steps": {
+        "value": null,
+        "tier": "unknown",
+        "source": "unknown",
+        "reason": "no teardown in the corpus codes gameplay_steps for Logic puzzle (it has no teardown games)"
+      },
+      "controls": {
+        "value": null,
+        "tier": "unknown",
+        "source": "unknown",
+        "reason": "no teardown in the corpus codes controls for Logic puzzle (it has no teardown games)"
+      },
+      "core_loop": {
+        "value": "read the board, work out the slide that clears the most, lines of three clear and the board opens up, advance to a level that adds a colour or tightens the budget",
+        "label": "read the board, work out the slide that clears the most, lines of three clear and the board opens up, advance to a level that adds a colour or tightens the budget",
+        "tier": "hypothesis",
+        "source": "catalog",
+        "claim_refs": [
+          "claim-b5277fb850"
+        ]
+      },
+      "progression": {
+        "value": null,
+        "tier": "unknown",
+        "source": "unknown",
+        "reason": "no teardown in the corpus codes progression for Logic puzzle (it has no teardown games)"
+      },
+      "difficulty_shape": {
+        "value": null,
+        "tier": "unknown",
+        "source": "unknown",
+        "reason": "no teardown in the corpus codes difficulty_shape for Logic puzzle (it has no teardown games)"
+      },
+      "retention_hooks": {
+        "value": null,
+        "tier": "unknown",
+        "source": "unknown",
+        "reason": "no teardown in the corpus codes retention_hooks for Logic puzzle (it has no teardown games)"
+      }
+    },
+    "audience": {
+      "player_type": {
+        "value": null,
+        "tier": "unknown",
+        "source": "unknown",
+        "reason": "no game in this cell is coded on player type; the audience type is not assumed (a market descriptor such as casual describes the market, not the player)"
+      },
+      "intent": {
+        "value": null,
+        "tier": "unknown",
+        "source": "unknown",
+        "reason": "no game in this cell is coded on intent"
+      },
+      "skill": {
+        "value": null,
+        "tier": "unknown",
+        "source": "unknown",
+        "reason": "no game in this cell is coded on skill"
+      },
+      "device": {
+        "value": "both",
+        "label": "platform mobile share 60%",
+        "tier": "hypothesis",
+        "source": "platform",
+        "claim_refs": [
+          "claim-237052bc62",
+          "claim-4d0b6d7039",
+          "claim-8910129266"
+        ]
+      },
+      "age_band": {
+        "value": null,
+        "tier": "unknown",
+        "source": "unknown",
+        "reason": "no portal in the corpus states an age band for these games; none is inferred"
+      },
+      "session_behavior": {
+        "value": "short",
+        "label": "300 s, the catalog's estimate",
+        "tier": "hypothesis",
+        "source": "catalog",
+        "claim_refs": [
+          "claim-b5277fb850"
+        ]
+      },
+      "regions": [
+        "br",
+        "by",
+        "de",
+        "fr",
+        "gb",
+        "id",
+        "kz",
+        "ru",
+        "tr",
+        "us"
+      ]
+    },
+    "competitors": [],
+    "benchmarks": [],
+    "patterns": {
+      "adopt": []
+    },
+    "monetization": {
+      "placements": [],
+      "platform_support": [
+        {
+          "platform": "y8",
+          "formats": [
+            "rewarded",
+            "interstitial"
+          ],
+          "claim_refs": [
+            "claim-10e7b25b44"
+          ]
+        },
+        {
+          "platform": "crazygames",
+          "formats": [
+            "rewarded",
+            "interstitial",
+            "banner",
+            "iap"
+          ],
+          "claim_refs": [
+            "claim-831592f95c",
+            "claim-8691d0680d",
+            "claim-d183a072ae"
+          ]
+        },
+        {
+          "platform": "gamedistribution",
+          "formats": [
+            "rewarded",
+            "interstitial"
+          ],
+          "claim_refs": [
+            "claim-35da3a7cb8"
+          ]
+        },
+        {
+          "platform": "yandex",
+          "formats": [
+            "rewarded",
+            "interstitial",
+            "banner",
+            "iap"
+          ],
+          "claim_refs": [
+            "claim-36ec781b4f",
+            "claim-aedf4467f6",
+            "claim-ebe0dbaaf5"
+          ]
+        },
+        {
+          "platform": "poki",
+          "formats": [
+            "rewarded",
+            "interstitial"
+          ],
+          "claim_refs": [
+            "claim-0015946f54",
+            "claim-19fe15410c",
+            "claim-2122fcd4f3",
+            "claim-45bee43ffd",
+            "claim-6299fc4460",
+            "claim-8910129266",
+            "claim-a9dd28949d",
+            "claim-dd3290f5c6"
+          ]
+        }
+      ],
+      "primary": "rewarded"
+    },
+    "production": {
+      "dimension": "2d",
+      "complexity": "xs",
+      "tier": "hypothesis",
+      "drivers": [
+        "catalog estimate: xs technical, xs asset complexity (unmeasured)"
+      ],
+      "estimate_days": 9,
+      "asset_cost_usd": 200,
+      "claim_refs": [
+        "claim-b5277fb850"
+      ]
+    },
+    "capability": {
+      "catalog_entry": "logic-puzzle-levels",
+      "design_archetype": null,
+      "genre_model": "puzzle",
+      "requires": [
+        "2d board",
+        "drag input",
+        "authored level set with a recorded solution"
+      ],
+      "buildable": true,
+      "missing": [],
+      "reason": "Built by catalog entry logic-puzzle-levels: genre model puzzle, no design archetype."
+    },
+    "market": [],
+    "risks": [
+      {
+        "description": "Level content is the product; every level needs authoring and a solvability check.",
+        "severity": "medium",
+        "claim_refs": [
+          "claim-b5277fb850"
+        ]
+      }
+    ],
+    "confidence": {
+      "evidence_coverage": 0.0,
+      "weakest_tier": "unknown",
+      "unknown_facets": [
+        "gameplay_steps",
+        "controls",
+        "theme",
+        "setting",
+        "player_fantasy",
+        "emotional_fantasy",
+        "art_rendering",
+        "art_tone",
+        "art_palette",
+        "camera",
+        "progression",
+        "difficulty_shape",
+        "retention_hooks"
+      ],
+      "fixture_evidence": false
+    },
+    "claim_refs": [
+      "claim-0015946f54",
+      "claim-10e7b25b44",
+      "claim-12e9f11a8d",
+      "claim-19fe15410c",
+      "claim-2122fcd4f3",
+      "claim-237052bc62",
+      "claim-35da3a7cb8",
+      "claim-36ec781b4f",
+      "claim-45bee43ffd",
+      "claim-4d0b6d7039",
+      "claim-55ff2909f5",
+      "claim-6299fc4460",
+      "claim-73f7084dbe",
+      "claim-8124a91873",
+      "claim-831592f95c",
+      "claim-8691d0680d",
+      "claim-8910129266",
+      "claim-a9dd28949d",
+      "claim-aedf4467f6",
+      "claim-b5277fb850",
+      "claim-cdf943b10d",
+      "claim-d179e1fc07",
+      "claim-d183a072ae",
+      "claim-dd3290f5c6",
+      "claim-ebe0dbaaf5",
+      "claim-fd23eeef70"
+    ],
+    "applied": [
+      {
+        "field": "concept.control_scheme",
+        "source": "default",
+        "detail": "tap: read from the concept's wording; research coded no control scheme for this cell"
+      },
+      {
+        "field": "session.target_seconds",
+        "source": "default",
+        "detail": "no comparable game's run length was measured; the catalog estimate or the policy default is used"
+      },
+      {
+        "field": "concept",
+        "source": "brief",
+        "detail": "the idea is the concept: research named no design archetype, so the puzzle family's model bounds the content and the brief says what the game is"
+      },
+      {
+        "field": "concept.content_model",
+        "source": "research",
+        "detail": "puzzle (Level puzzle): 6 levels in the MVP, progression linear-levels, level-authored difficulty on depth, move-limit, board-complexity, piece-variety - the shape research coded for this cell",
+        "claim_refs": [
+          "claim-b5277fb850"
+        ]
+      },
+      {
+        "field": "monetization.rationale",
+        "source": "default",
+        "detail": "no comparable game's placements were coded; the shape's own hypothesis stands"
+      },
+      {
+        "field": "audience.type",
+        "source": "default",
+        "detail": "casual: research coded no player type for this cell; it was not assumed there, only here, as the planning default"
+      },
+      {
+        "field": "audience.device",
+        "source": "research",
+        "detail": "both: platform mobile share 60% (hypothesis)",
+        "claim_refs": [
+          "claim-237052bc62",
+          "claim-4d0b6d7039",
+          "claim-8910129266"
+        ]
+      }
+    ],
+    "design_constraints": {
+      "family": {
+        "value": "puzzle",
+        "label": "Level puzzle",
+        "tier": "hypothesis",
+        "source": "catalog",
+        "claim_refs": [
+          "claim-b5277fb850"
+        ]
+      },
+      "unit_kind": {
+        "value": "level",
+        "tier": "hypothesis",
+        "source": "catalog",
+        "label": "one level of Level puzzle",
+        "claim_refs": [
+          "claim-b5277fb850"
+        ],
+        "reason": "the puzzle genre model's first unit kind; no teardown codes it"
+      },
+      "progression": {
+        "value": null,
+        "tier": "unknown",
+        "source": "unknown",
+        "reason": "no teardown in the corpus codes progression for Logic puzzle (it has no teardown games)"
+      },
+      "difficulty_shape": {
+        "value": null,
+        "tier": "unknown",
+        "source": "unknown",
+        "reason": "no teardown in the corpus codes difficulty_shape for Logic puzzle (it has no teardown games)"
+      },
+      "retention_hooks": {
+        "value": null,
+        "tier": "unknown",
+        "source": "unknown",
+        "reason": "no teardown in the corpus codes retention_hooks for Logic puzzle (it has no teardown games)"
+      },
+      "session_band": {
+        "value": "short",
+        "label": "300 s estimated",
+        "tier": "hypothesis",
+        "source": "catalog",
+        "claim_refs": [
+          "claim-b5277fb850"
+        ]
+      },
+      "difficulty_axes": {
+        "value": [
+          "depth",
+          "move-limit",
+          "board-complexity",
+          "piece-variety"
+        ],
+        "label": "depth, move-limit, board-complexity, piece-variety",
+        "tier": "hypothesis",
+        "source": "catalog",
+        "claim_refs": [
+          "claim-b5277fb850"
+        ],
+        "reason": "no teardown codes what the ramp raises; the puzzle genre model's axes are the fallback"
+      }
+    }
+  }
+}

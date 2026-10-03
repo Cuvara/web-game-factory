@@ -280,7 +280,10 @@ class Outcomes(VerificationCase):
         self.assertIsNone(result.route)
         self.assertEqual(report["verdict"], "PASS")
         self.assertEqual(report["failed_checks"], [])
-        self.assertEqual(report["blocked_checks"], [])
+        # A verification the run never gave a playability-report says so and does not claim the
+        # game's content was verified; it does not block a run that never asked for one.
+        self.assertEqual(report["blocked_checks"], ["quality.report"])
+        self.assertFalse(self.check(report, "quality.report")["required"])
         self.assertEqual(report["commit"]["sha"], COMMIT)
         self.assertEqual(report["build_artifact"]["status"], "built")
         self.assertTrue(report["build_artifact"]["content_hash"].startswith("sha256:"))
@@ -687,6 +690,193 @@ class Gameplay(VerificationCase):
                           "game-over", "restart", "progression", "pause-resume"})
         session.params = {"gameplay": {"required": ["boot"]}}
         self.assertEqual(required_aspects(session), {"boot"})
+
+
+# -- quality: what the playability bot measured, carried into the verification ---------------
+
+def playability_check(check_id, project, status, required=True, summary="measured"):
+    return {"id": check_id, "project": project, "status": status, "required": required,
+            "summary": summary}
+
+
+def playability_report(commit=COMMIT, checks=None, skipped=None, verdict="PASS"):
+    return {"title_id": "fixture-game", "commit": commit, "measurement_class": "automation-bot",
+            "projects": [{"id": "desktop", "viewport": {"width": 1280, "height": 720},
+                          "ran": True},
+                         {"id": "mobile", "viewport": {"width": 393, "height": 851},
+                          "ran": True}],
+            "checks": checks if checks is not None else [],
+            "frames": [], "records_dir": "playability/1-1/out",
+            "failed_checks": [c["id"] for c in (checks or []) if c["status"] == "FAIL"],
+            "skipped_checks": skipped or [], "blocked_reason": None, "verdict": verdict}
+
+
+CONTENT_UNITS = [
+    {"id": "w-01", "index": 1, "tier": "mvp", "purpose": "teach",
+     "objective": "Clear every rusher.", "mechanics": ["shoot"], "difficulty": {"enemy-count": 0.2},
+     "expected_duration_s": 40, "success": "Every enemy is down.", "failure": "Health reaches zero.",
+     "acceptance": ["The wave is entered by playing.", "Its objective is shown before it starts."]},
+    {"id": "w-02", "index": 2, "tier": "mvp", "purpose": "test",
+     "objective": "Hold the breach.", "mechanics": ["shoot"], "difficulty": {"enemy-count": 0.5},
+     "expected_duration_s": 50, "success": "Every enemy is down.", "failure": "Health reaches zero.",
+     "acceptance": ["The wave follows the first one.", "Two enemy kinds are in play at once."]},
+]
+
+
+class Quality(VerificationCase):
+    """The playability bot's content, difficulty and depth findings, carried not re-measured."""
+
+    def record_session(self, **changes):
+        session = fixture("gameplay-session.json")
+        session.update(changes)
+        self.write("build/verification/gameplay-session.json", json.dumps(session))
+        return session
+
+    def authored_design(self):
+        design = fixture("inputs/game-design.json")
+        design["genre"] = {"family": "shooter", "ending": "finite"}
+        design.setdefault("build_spec", {})["content"] = {
+            "unit_kind": "wave", "generation": {"mode": "authored"},
+            "units": copy.deepcopy(CONTENT_UNITS)}
+        return design
+
+    def test_the_quality_suite_mirrors_the_playability_report(self):
+        report = playability_report(checks=[
+            playability_check("content.units_reachable", "desktop", "PASS"),
+            playability_check("content.units_reachable", "mobile", "PASS"),
+            playability_check("content.variety", "desktop", "SKIPPED",
+                              summary="content is generated (parametric)"),
+            playability_check("content.variety", "mobile", "SKIPPED",
+                              summary="content is generated (parametric)"),
+            playability_check("depth.session_length", "desktop", "PASS"),
+            playability_check("depth.session_length", "mobile", "FAIL",
+                              summary="one oracle session lasted 30000 ms"),
+            playability_check("idle.grace", "desktop", "PASS"),
+        ], skipped=[{"id": "content.variety",
+                     "reason": "content is generated (parametric)"}], verdict="FAIL")
+        _result, verification, qa = self.verify(
+            inputs=self.inputs(**{"playability-report": report}))
+
+        self.assertEqual(self.check(verification, "quality.report-commit")["status"], "PASS")
+        self.assertEqual(self.check(verification, "quality.content:units-reachable")["status"],
+                         "PASS")
+        session_length = self.check(verification, "quality.depth:session-length")
+        self.assertEqual((session_length["status"], session_length["required"]), ("FAIL", True))
+        self.assertIn("30000 ms", session_length["message"])
+        # A skip is never a pass: it is carried as a warning that names what was not measured.
+        variety = self.check(verification, "quality.content:variety")
+        self.assertEqual((variety["status"], variety["required"]), ("WARNING", False))
+        self.assertIn("parametric", variety["message"])
+        # Only the content, difficulty, progression and depth checks are carried.
+        with self.assertRaises(AssertionError):
+            self.check(verification, "quality.idle:grace")
+        suite = next(s for s in qa["suites"] if s["name"] == "gameplay-quality")
+        self.assertEqual((suite["passed"], suite["failed"]), (3, 1))
+        self.assertEqual(verification["verdict"], "FAIL")
+
+    def test_quality_fails_when_the_playability_commit_differs(self):
+        report = playability_report(commit="c" * 40, checks=[
+            playability_check("content.units_reachable", "desktop", "PASS")])
+        _result, verification, _qa = self.verify(
+            inputs=self.inputs(**{"playability-report": report}))
+        commit_check = self.check(verification, "quality.report-commit")
+        self.assertEqual(commit_check["status"], "FAIL")
+        self.assertIn("not the commit under test", commit_check["message"])
+        # A stale report's answers are not carried at all: they are about another build.
+        with self.assertRaises(AssertionError):
+            self.check(verification, "quality.content:units-reachable")
+
+    def test_quality_is_blocked_without_a_playability_report(self):
+        result, verification, _qa = self.verify(
+            inputs=self.inputs(**{"playability-report": None}))
+        blocked = self.check(verification, "quality.report")
+        self.assertEqual((blocked["status"], blocked["required"]), ("BLOCKED", False))
+        self.assertIn("no playability-report", blocked["message"])
+
+        # The run that declares the input and does not have it is blocked on it.
+        inputs = self.inputs()
+        inputs.missing = ["playability-report"]
+        result, verification, _qa = self.verify(inputs=inputs)
+        blocked = self.check(verification, "quality.report")
+        self.assertEqual((blocked["status"], blocked["required"]), ("BLOCKED", True))
+        self.assertEqual(verification["verdict"], "BLOCKED")
+        self.assertEqual(result.outcome, StepOutcome.BLOCKED)
+
+    def test_progression_needs_persists_or_a_tagged_test_with_the_data_file(self):
+        design = self.authored_design()
+        self.record_session()
+        # A tagged scenario, an authored design, and nothing saying its units were built.
+        _result, verification, _qa = self.verify(
+            inputs=self.inputs(**{"game-design": design}))
+        check = self.check(verification, "gameplay.progression")
+        self.assertEqual(check["status"], "FAIL")
+        self.assertIn("nothing says the designed content units were built", check["message"])
+
+        # The data file the build reads its units out of, with every mvp unit id in it.
+        self.write("public/content/units.json",
+                   json.dumps({"units": [{"id": u["id"], "difficulty": u["difficulty"]}
+                                         for u in CONTENT_UNITS]}))
+        _result, verification, _qa = self.verify(
+            inputs=self.inputs(**{"game-design": design}))
+        self.assertEqual(self.check(verification, "gameplay.progression")["status"], "PASS")
+
+        # A unit the build does not carry is not progression either.
+        self.write("public/content/units.json", json.dumps({"units": [{"id": "w-01"}]}))
+        _result, verification, _qa = self.verify(
+            inputs=self.inputs(**{"game-design": design}))
+        check = self.check(verification, "gameplay.progression")
+        self.assertEqual(check["status"], "FAIL")
+        self.assertIn("w-02", json.dumps(check["evidence"]))
+
+    def test_progression_passes_on_what_the_bot_played(self):
+        design = self.authored_design()
+        self.record_session()
+        report = playability_report(checks=[
+            playability_check("progression.persists", "desktop", "PASS",
+                              summary="survived a reload: best, content.unit_index"),
+            playability_check("progression.persists", "mobile", "PASS",
+                              summary="survived a reload: best, content.unit_index")])
+        _result, verification, _qa = self.verify(inputs=self.inputs(
+            **{"game-design": design, "playability-report": report}))
+        check = self.check(verification, "gameplay.progression")
+        self.assertEqual(check["status"], "PASS")
+        self.assertIn("quality.progression:persists",
+                      [e.get("check_ref") for e in check["evidence"]])
+
+    def test_a_test_that_only_mentions_a_score_is_not_progression_evidence(self):
+        report = playwright_titles("tracks the score across a run")
+        self.runner.handlers["run test:e2e"] = lambda c, cwd, env: (
+            _write_report(env["PLAYWRIGHT_JSON_OUTPUT_NAME"], report))
+        _result, verification, _qa = self.verify(
+            inputs=self.inputs(**{"game-design": self.authored_design()}))
+        check = self.check(verification, "gameplay.progression")
+        self.assertEqual(check["status"], "FAIL")
+        self.assertIn("no test or scenario covers progression", json.dumps(check["evidence"]))
+
+    def test_the_contract_digest_is_unchanged(self):
+        """The @aspect vocabulary and the template contract are not what changed here."""
+        from wgflib import template_contract as contract
+        from wgf_verification.checks import gameplay as gameplay_checks
+
+        self.assertIs(gameplay_checks.ASPECTS, contract.ASPECTS)
+        self.assertEqual(contract.contract_digest(), contract.CONTRACT_DIGEST)
+        self.assertIn("progression", contract.ASPECTS)
+        self.assertNotIn("progression", gameplay_checks.KEYWORDS)
+
+
+def playwright_titles(*titles):
+    """A Playwright JSON report of one spec file with these test titles, all passing."""
+    return {"suites": [{"title": "play.spec.ts", "specs": [
+        {"title": title, "tags": [], "tests": [{"projectName": "chromium", "status": "expected",
+                                                "results": []}]}
+        for title in titles]}]}
+
+
+def _write_report(path, report):
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, "w", encoding="utf-8") as handle:
+        json.dump(report, handle)
+    return ok()
 
 
 # -- platform and policy --------------------------------------------------------------------

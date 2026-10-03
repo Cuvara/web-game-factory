@@ -1,0 +1,785 @@
+{
+  "provenance": {
+    "artifact_id": "wgf:tech-plan:ice-slide:20261003-02",
+    "artifact_type": "tech-plan",
+    "schema_version": "1.0.0",
+    "opportunity_id": "opp-b40899dc",
+    "title_id": "ice-slide",
+    "produced_by": {
+      "role": "architect",
+      "actor": "automation"
+    },
+    "produced_at": "2026-10-03T05:37:27Z",
+    "inputs": [
+      {
+        "artifact_id": "wgf:game-design:ice-slide:20261003-06",
+        "artifact_type": "game-design",
+        "content_hash": "sha256:54887df7763a4d5d445d0bf2bc17ded2a3eaa84f37542077ecd3486ee41798d8"
+      },
+      {
+        "artifact_id": "wgf:title-strategy:ice-slide:20261002-01",
+        "artifact_type": "title-strategy",
+        "content_hash": "sha256:f9f6e1479ea590ae721d7cefaab185849d247f4fe226fac0bcd08a29ae87adcc"
+      }
+    ],
+    "content_hash": "sha256:ce74dcbe58328dfec6c66f26322abf98b30e5b68b1a8b11288b52213a863ce0d",
+    "status": "draft"
+  },
+  "title_id": "ice-slide",
+  "engine": {
+    "type": "pixijs",
+    "rationale": "The design is drawn for 2D and declares pixijs. The play happens on a flat ice-grid plane: a sliding puzzle needs no depth to read, and 2D with vector art keeps the first load small on portal traffic, where time to first play decides whether the player stays."
+  },
+  "architecture": {
+    "rendering": "pixijs (2d) through the template's renderer seam (createRenderer, @wgf/pixi-framework); no other engine is loaded.",
+    "physics": "Custom collision and overlap tests in src/game/, engine-free and unit testable; no physics dependency. A simulation library is a superseding tech-plan decision at G3, never development's.",
+    "game_core": "Template packages/game-core: loop, scenes, events, pause. Game states and mechanics from the design's build_spec live in src/.",
+    "state": "Game state machine from build_spec.game_states, in src/; persistence through the platform storage abstraction.",
+    "input": "build_spec.controls mapped onto the template's input handling.",
+    "ui": "Screens, HUD and menus from build_spec, rendered with the selected engine.",
+    "audio": "Template audio slot; content per the design's audio direction.",
+    "assets": "The asset-manifest under public/assets/; the bundle stays within 150 MB.",
+    "platform_sdk": "@wgf/platform-sdk only; the adapter is chosen from game.config.yaml platforms, never by game code.",
+    "analytics": "@wgf/analytics-sdk event vocabulary.",
+    "persistence": "platform storage (cloud where the profile allows, local otherwise).",
+    "networking": null
+  },
+  "ownership": {
+    "generic": [
+      "packages/* (game-core, platform-sdk, analytics-sdk, renderers)",
+      "build, test and release tooling",
+      "CI pipelines"
+    ],
+    "game_specific": [
+      "src/: mechanics, states, screens, content"
+    ],
+    "platform_specific": [
+      "poki@1.0.0 via its adapter and config/platforms/",
+      "crazygames@1.0.0 via its adapter and config/platforms/",
+      "yandex@1.0.0 via its adapter and config/platforms/"
+    ],
+    "agent_responsibility": [
+      "dev_plan tasks, against their acceptance criteria"
+    ],
+    "ci_responsibility": [
+      "ci_green (ci.yml)",
+      "verify_suite_green (verify.yml)"
+    ]
+  },
+  "perf_budgets": {
+    "device_classes": [
+      {
+        "id": "mobile-mid",
+        "description": "Mid-range phone, portal webview",
+        "target_fps": 60,
+        "max_time_to_interactive_s": 5
+      },
+      {
+        "id": "desktop",
+        "description": "Desktop browser",
+        "target_fps": 60,
+        "max_time_to_interactive_s": 5
+      }
+    ],
+    "max_bundle_mb": 150
+  },
+  "repo_params": {
+    "repo_name": "ice-slide",
+    "template_ref": "Cuvara/web-game-template@b1062619457f427bac91b45f6a96762f256a945a",
+    "visibility": "private",
+    "game_config": {
+      "game": {
+        "id": "ice-slide",
+        "name": "Ice Slide",
+        "version": "0.1.0"
+      },
+      "engine": {
+        "type": "pixijs"
+      },
+      "platforms": [
+        {
+          "id": "poki",
+          "profile": "poki@1.0.0",
+          "role": "required"
+        },
+        {
+          "id": "crazygames",
+          "profile": "crazygames@1.0.0",
+          "role": "optional"
+        },
+        {
+          "id": "yandex",
+          "profile": "yandex@1.0.0",
+          "role": "optional"
+        }
+      ],
+      "build": {
+        "command": "pnpm build",
+        "output": "dist"
+      },
+      "monetization": {
+        "ad_kinds": [
+          "interstitial",
+          "rewarded"
+        ],
+        "iap": false
+      },
+      "verification": {
+        "smoke_test": true,
+        "performance_test": true,
+        "mobile_test": true
+      },
+      "publishing": {
+        "enabled": false
+      }
+    }
+  },
+  "dev_plan": {
+    "est_days": 4.5,
+    "milestones": [
+      {
+        "id": "M1",
+        "label": "Playable core loop",
+        "phase": "prototype",
+        "est_days": 3.5,
+        "exit_criteria": [
+          "Every mvp feature meets its acceptance criteria",
+          "Every MVP content unit is in public/content/units.json and reachable in play",
+          "The prototype answers the strategy's prototype_must_prove questions"
+        ]
+      },
+      {
+        "id": "M2",
+        "label": "Production scope",
+        "phase": "production",
+        "est_days": 0.5,
+        "exit_criteria": [
+          "Every post-mvp feature meets its acceptance criteria"
+        ]
+      },
+      {
+        "id": "M3",
+        "label": "Platform integration and hardening",
+        "phase": "hardening",
+        "est_days": 0.5,
+        "exit_criteria": [
+          "Every target platform's blocking assertions pass",
+          "The verify suite is green"
+        ]
+      }
+    ],
+    "tasks": [
+      {
+        "id": "CORE-001",
+        "title": "Boot the game on the template with engine pixijs",
+        "milestone": "M1",
+        "phase": "prototype",
+        "description": "game.config.yaml as written at scaffolding: the engine the plan selected and the pinned platforms. Game code goes in src/; packages/ are the template's and are not edited.",
+        "acceptance_criteria": [
+          "The game boots with engine.type pixijs and the first required platform's adapter",
+          "The template's ci pipeline is green before any game code lands"
+        ],
+        "tests": [
+          "tests/e2e (template smoke)"
+        ],
+        "est_hours": 0.3,
+        "status": "todo"
+      },
+      {
+        "id": "GAME-001",
+        "title": "Implement Ice board",
+        "milestone": "M1",
+        "phase": "prototype",
+        "description": "A grid of ice tiles bounded by walls and rocks that a slide stops against.",
+        "dependencies": [
+          "CORE-001"
+        ],
+        "acceptance_criteria": [
+          "The board is between 6x6 and 9x9 depending on the level, and every cell is ice, wall, rock, or the goal.",
+          "Every authored board is solvable inside its move cap, and the level data stores that solution's length.",
+          "Strategy MVP: 6 designed levels with authored difficulty on depth, move-limit, board-complexity, piece-variety."
+        ],
+        "tests": [
+          "tests/unit/ice-board.spec.ts"
+        ],
+        "est_hours": 0.6499999999999999,
+        "status": "todo"
+      },
+      {
+        "id": "GAME-002",
+        "title": "Implement Directional slide",
+        "milestone": "M1",
+        "phase": "prototype",
+        "description": "A tapped or swiped direction sends the penguin sliding cell by cell until it hits a wall, a rock, a closed door, or the board's edge.",
+        "dependencies": [
+          "CORE-001"
+        ],
+        "acceptance_criteria": [
+          "The penguin moves every open cell in the chosen direction and stops in the last cell before whatever blocks it.",
+          "A slide costs one move whether it travels one cell or the whole board.",
+          "Choosing a direction the penguin cannot move in (blocked on the very first cell) costs no move."
+        ],
+        "tests": [
+          "tests/unit/slide.spec.ts"
+        ],
+        "est_hours": 0.6499999999999999,
+        "status": "todo"
+      },
+      {
+        "id": "GAME-003",
+        "title": "Implement Goal tile",
+        "milestone": "M1",
+        "phase": "prototype",
+        "description": "A marked exit tile; the penguin stopping on it clears the level.",
+        "dependencies": [
+          "CORE-001"
+        ],
+        "acceptance_criteria": [
+          "The penguin's slide ending exactly on the goal tile clears the level immediately.",
+          "The goal tile is visually distinct from ice, wall, rock, key, door and crumbling tiles at a glance."
+        ],
+        "tests": [
+          "tests/unit/goal-tile.spec.ts"
+        ],
+        "est_hours": 0.5,
+        "status": "todo"
+      },
+      {
+        "id": "GAME-004",
+        "title": "Implement Move budget and stars",
+        "milestone": "M1",
+        "phase": "prototype",
+        "description": "Each level carries a par move count and a hard move cap; reaching the goal inside the cap wins, and how close to par decides one to three stars.",
+        "dependencies": [
+          "CORE-001"
+        ],
+        "acceptance_criteria": [
+          "Every slide decrements the level's moves-left counter by one.",
+          "Reaching the goal with moves-left at or above the level's 3-star threshold awards three stars; lower thresholds award two or one.",
+          "Moves-left reaching zero before the goal is reached fails the level and offers an immediate retry on the same board.",
+          "Strategy MVP: Core loop: read the level, plan the moves, solve it, advance to a harder level that adds a rule or tightens the budget.",
+          "Strategy MVP: The brief, built in full: A sliding-ice puzzle: a penguin slides until it hits something; 24 hand-designed levels with keys, doors, crumbling tiles and a 3-star move target."
+        ],
+        "tests": [
+          "tests/unit/move-budget.spec.ts"
+        ],
+        "est_hours": 0.95,
+        "status": "todo"
+      },
+      {
+        "id": "GAME-005",
+        "title": "Implement Keys and doors",
+        "milestone": "M1",
+        "phase": "prototype",
+        "description": "A key tile is collected the instant the penguin's slide crosses or stops on it; a door of the matching colour then opens and no longer blocks a slide.",
+        "dependencies": [
+          "CORE-001"
+        ],
+        "acceptance_criteria": [
+          "The penguin crossing or stopping on a key tile removes that key from the board and marks it collected in the HUD.",
+          "A door blocks a slide like a wall until its matching key is collected, after which it is open for the rest of the attempt.",
+          "A door with no matching key yet collected cannot be crossed or stopped on."
+        ],
+        "tests": [
+          "tests/unit/key-door.spec.ts"
+        ],
+        "est_hours": 0.6499999999999999,
+        "status": "todo"
+      },
+      {
+        "id": "GAME-006",
+        "title": "Implement Crumbling tile",
+        "milestone": "M1",
+        "phase": "prototype",
+        "description": "An ice tile that crumbles into a hole the instant the penguin's slide crosses it; a hole ends the attempt if the penguin crosses or stops on it again.",
+        "dependencies": [
+          "CORE-001"
+        ],
+        "acceptance_criteria": [
+          "The first time a slide passes over or stops on a crumbling tile, it turns into a hole for the rest of the attempt.",
+          "A slide that would cross or stop on a hole fails the level immediately, with an immediate retry offered.",
+          "A crumbling tile's crumbled (hole) state is visually unmistakable from its intact state."
+        ],
+        "tests": [
+          "tests/unit/crumbling-tile.spec.ts"
+        ],
+        "est_hours": 0.6499999999999999,
+        "status": "todo"
+      },
+      {
+        "id": "GAME-007",
+        "title": "Implement Game flow",
+        "milestone": "M1",
+        "phase": "prototype",
+        "description": "Boot, loading, title, play, pause and the result card, wired as build_spec.game_states.",
+        "dependencies": [
+          "CORE-001"
+        ],
+        "acceptance_criteria": [
+          "First session reaches play within 5s of load on a mid-range phone.",
+          "Retry from the result card starts a new level within 2s.",
+          "Pause on tab hidden; resume only on player input."
+        ],
+        "tests": [
+          "tests/unit/game-flow.spec.ts"
+        ],
+        "est_hours": 0.6499999999999999,
+        "status": "todo"
+      },
+      {
+        "id": "GAME-008",
+        "title": "Implement Kill and success criteria telemetry",
+        "milestone": "M1",
+        "phase": "prototype",
+        "description": "Emit the measurements the strategy's criteria read, so G4 is decided on data.",
+        "dependencies": [
+          "CORE-001"
+        ],
+        "acceptance_criteria": [
+          "Records `first_time_understood_share` for criterion control_not_understood.",
+          "Records `unprompted_retry_share` for criterion no_retry_pull.",
+          "Records `prototype_elapsed_days` for criterion prototype_overran, counted from 2026-10-02 (this design's pin date) as the prototype's start, not from any later build's own run date.",
+          "Records `midrange_mobile_fps` for criterion mobile_performance_floor.",
+          "Records `d1_retention` for criterion d1_retention.",
+          "Records `median_session_seconds` for criterion session_length."
+        ],
+        "tests": [
+          "tests/unit/telemetry.spec.ts"
+        ],
+        "est_hours": 1.0999999999999999,
+        "status": "todo"
+      },
+      {
+        "id": "GAME-009",
+        "title": "Implement Platform integration",
+        "milestone": "M1",
+        "phase": "prototype",
+        "description": "Platform SDK init, loading progress, ads, cloud save and the other build_spec.sdk_touchpoints, through the template's platform abstraction.",
+        "dependencies": [
+          "CORE-001"
+        ],
+        "acceptance_criteria": [
+          "Each required touchpoint fires at its stated moment in a local platform-SDK mock.",
+          "No portal SDK is called directly from game code.",
+          "Strategy MVP: Poki SDK: init, loading-progress, gameplay-start-stop, rewarded, interstitial, pause-audio-during-ads."
+        ],
+        "tests": [
+          "tests/unit/platform-integration.spec.ts"
+        ],
+        "est_hours": 0.6499999999999999,
+        "status": "todo"
+      },
+      {
+        "id": "GAME-010",
+        "title": "Implement Localization",
+        "milestone": "M1",
+        "phase": "prototype",
+        "description": "UI strings in en, ru, kept under 40 strings to make human translation cheap.",
+        "dependencies": [
+          "CORE-001"
+        ],
+        "acceptance_criteria": [
+          "Every UI string resolves in en, ru; no hard-coded text.",
+          "Strategy MVP: Localization: en, ru."
+        ],
+        "tests": [
+          "tests/unit/localization.spec.ts"
+        ],
+        "est_hours": 0.5,
+        "status": "todo"
+      },
+      {
+        "id": "GAME-011",
+        "title": "Implement Rewarded placement",
+        "milestone": "M1",
+        "phase": "prototype",
+        "description": "On failing a level, offer five extra moves once per attempt",
+        "dependencies": [
+          "CORE-001"
+        ],
+        "acceptance_criteria": [
+          "Offered only in state level-fail.",
+          "The continue button is not shown; retry is the primary action. Never a disabled button.",
+          "Strategy MVP: A rewarded placement at a natural moment in the loop (continue or bonus), never forced."
+        ],
+        "tests": [
+          "tests/unit/monetization-rewarded-continue.spec.ts"
+        ],
+        "est_hours": 0.6499999999999999,
+        "status": "todo"
+      },
+      {
+        "id": "GAME-012",
+        "title": "Implement Interstitial placement",
+        "milestone": "M1",
+        "phase": "prototype",
+        "description": "When the player leaves the result card (Retry or Menu), at most once every 180s, never in the first level of a session and never inside play",
+        "dependencies": [
+          "CORE-001"
+        ],
+        "acceptance_criteria": [
+          "Offered only in state level-fail.",
+          "Proceed immediately; no placeholder, no countdown.",
+          "Strategy MVP: Interstitials between sessions only, never inside one."
+        ],
+        "tests": [
+          "tests/unit/monetization-interstitial-between.spec.ts"
+        ],
+        "est_hours": 0.6499999999999999,
+        "status": "todo"
+      },
+      {
+        "id": "GAME-013",
+        "title": "Implement Score and personal best, persisted locally",
+        "milestone": "M1",
+        "phase": "prototype",
+        "description": "Committed in the title strategy MVP: Score and personal best, persisted locally.",
+        "dependencies": [
+          "CORE-001"
+        ],
+        "acceptance_criteria": [
+          "Demonstrable in the prototype build: Score and personal best, persisted locally.",
+          "Covered by at least one smoke-test step."
+        ],
+        "tests": [
+          "tests/unit/strategy-score-and-personal-best.spec.ts"
+        ],
+        "est_hours": 0.5,
+        "status": "todo"
+      },
+      {
+        "id": "GAME-014",
+        "title": "Implement Double-key door",
+        "milestone": "M2",
+        "phase": "production",
+        "description": "A door that needs two different coloured keys collected before it opens, reusing key-door at higher piece-variety.",
+        "dependencies": [
+          "CORE-001"
+        ],
+        "acceptance_criteria": [
+          "A double-key door stays closed until both of its matching keys are collected in the same attempt.",
+          "Collecting one of its two keys is reflected in the HUD so the player knows which is still missing."
+        ],
+        "tests": [
+          "tests/unit/double-key-door.spec.ts"
+        ],
+        "est_hours": 0.5,
+        "status": "todo"
+      },
+      {
+        "id": "GAME-015",
+        "title": "Implement Level select map",
+        "milestone": "M2",
+        "phase": "production",
+        "description": "A map of all 24 levels, each showing its stars earned; any cleared level can be replayed, keeping the best star result.",
+        "dependencies": [
+          "CORE-001"
+        ],
+        "acceptance_criteria": [
+          "Replaying a level and scoring fewer stars never lowers the stars already recorded for it.",
+          "The map shows the running star total out of 72."
+        ],
+        "tests": [
+          "tests/unit/level-select-map.spec.ts"
+        ],
+        "est_hours": 0.5,
+        "status": "todo"
+      },
+      {
+        "id": "GAME-016",
+        "title": "Implement Star totals",
+        "milestone": "M2",
+        "phase": "production",
+        "description": "A running count of stars earned out of 72, shown on the level map and the title screen.",
+        "dependencies": [
+          "CORE-001"
+        ],
+        "acceptance_criteria": [
+          "'Star totals' behaves as the game-design scope states; the design gives no finer acceptance criteria"
+        ],
+        "tests": [
+          "tests/unit/star-totals.spec.ts"
+        ],
+        "est_hours": 0.35,
+        "status": "todo"
+      },
+      {
+        "id": "CONTENT-001",
+        "title": "Build levels l-01, l-02, l-03",
+        "milestone": "M1",
+        "phase": "prototype",
+        "description": "The design's content units l-01, l-02, l-03 as data in public/content/units.json, loaded at boot and reachable in play in the design's order. Difficulty values are the design's; nothing here is invented.",
+        "dependencies": [
+          "CORE-001",
+          "GAME-001",
+          "GAME-002",
+          "GAME-003",
+          "GAME-004",
+          "GAME-005"
+        ],
+        "acceptance_criteria": [
+          "A recorded solution reaches the goal tile of l-01 in at most 6 moves, and the level data stores that solution's length (unit 1 of 24, difficulty 8%, 40 s, 40 s in)",
+          "A bot sliding in random directions fails l-01 (moves-left reaches zero before the goal) in at least 9 of 10 attempts (unit 1 of 24, difficulty 8%, 40 s, 40 s in)",
+          "Unit l-01 is in public/content/units.json with the design's difficulty values",
+          "Unit l-01 is where play starts",
+          "A recorded solution reaches the goal tile of l-02 in at most 7 moves, and the level data stores that solution's length (unit 2 of 24, difficulty 11%, 45 s, 85 s in)",
+          "l-02's wall layout differs from l-01's, so the two boards are not the same puzzle with a smaller cap (unit 2 of 24, difficulty 11%, 45 s, 85 s in)",
+          "Unit l-02 is in public/content/units.json with the design's difficulty values",
+          "Reachable from unit 1 in play",
+          "The door on l-03 blocks every slide that would cross or stop on it until its matching key is collected (unit 3 of 24, difficulty 14%, 55 s, 140 s in)",
+          "A recorded solution collects l-03's key, opens its door and reaches the goal in at most 8 moves (unit 3 of 24, difficulty 14%, 55 s, 140 s in)",
+          "Unit l-03 is in public/content/units.json with the design's difficulty values",
+          "Reachable from unit 2 in play"
+        ],
+        "tests": [
+          "tests/unit/content.test.ts"
+        ],
+        "est_hours": 4.5,
+        "status": "todo"
+      },
+      {
+        "id": "CONTENT-002",
+        "title": "Build levels l-04, l-05, l-06",
+        "milestone": "M1",
+        "phase": "prototype",
+        "description": "The design's content units l-04, l-05, l-06 as data in public/content/units.json, loaded at boot and reachable in play in the design's order. Difficulty values are the design's; nothing here is invented.",
+        "dependencies": [
+          "CORE-001",
+          "GAME-001",
+          "GAME-002",
+          "GAME-003",
+          "GAME-004",
+          "GAME-005",
+          "GAME-006"
+        ],
+        "acceptance_criteria": [
+          "l-04's board carries at least 4 more wall or rock cells than l-03's, while reusing the same key-door rule (unit 4 of 24, difficulty 16%, 65 s, 205 s in)",
+          "A recorded solution collects l-04's key, opens its door and reaches the goal in at most 9 moves (unit 4 of 24, difficulty 16%, 65 s, 205 s in)",
+          "Unit l-04 is in public/content/units.json with the design's difficulty values",
+          "Reachable from unit 3 in play",
+          "l-05's board is smaller than l-04's and its move cap gives at least 6 moves of slack over the clean solution (unit 5 of 24, difficulty 14%, 40 s, 245 s in)",
+          "A bot sliding in random directions fails l-05 in at least 9 of 10 attempts despite the easier board (unit 5 of 24, difficulty 14%, 40 s, 245 s in)",
+          "Unit l-05 is in public/content/units.json with the design's difficulty values",
+          "Reachable from unit 4 in play",
+          "The first slide across l-06's crumbling tile turns it into a hole for the rest of the attempt, and a later slide onto that hole fails the level (unit 6 of 24, difficulty 21%, 70 s, 315 s in)",
+          "A recorded solution collects l-06's key, opens its door, crosses its crumbling tile exactly once and reaches the goal in at most 10 moves (unit 6 of 24, difficulty 21%, 70 s, 315 s in)",
+          "Unit l-06 is in public/content/units.json with the design's difficulty values",
+          "Reachable from unit 5 in play"
+        ],
+        "tests": [
+          "tests/unit/content.test.ts"
+        ],
+        "est_hours": 4.5,
+        "status": "todo"
+      },
+      {
+        "id": "SDK-001",
+        "title": "Integrate poki (required) through the platform abstraction",
+        "milestone": "M3",
+        "phase": "hardening",
+        "description": "Profile poki@1.0.0. Game code calls the template's platform abstraction, never a portal SDK directly.",
+        "dependencies": [
+          "CORE-001",
+          "GAME-001",
+          "GAME-002",
+          "GAME-003",
+          "GAME-004",
+          "GAME-005",
+          "GAME-006",
+          "GAME-007",
+          "GAME-008",
+          "GAME-009",
+          "GAME-010",
+          "GAME-011",
+          "GAME-012",
+          "GAME-013",
+          "CONTENT-001",
+          "CONTENT-002"
+        ],
+        "acceptance_criteria": [
+          "Assertion poki_bundle_size passes against the built package",
+          "Assertion poki_sdk_present passes against the built package",
+          "Assertion poki_no_external_links passes against the built package",
+          "Assertion poki_no_banner_ads passes against the built package"
+        ],
+        "tests": [
+          "tests/sdk (conformance)",
+          "tests/verify"
+        ],
+        "est_hours": 0.5,
+        "status": "todo"
+      },
+      {
+        "id": "SDK-002",
+        "title": "Integrate crazygames (optional) through the platform abstraction",
+        "milestone": "M3",
+        "phase": "hardening",
+        "description": "Profile crazygames@1.0.0. Game code calls the template's platform abstraction, never a portal SDK directly.",
+        "dependencies": [
+          "CORE-001",
+          "GAME-001",
+          "GAME-002",
+          "GAME-003",
+          "GAME-004",
+          "GAME-005",
+          "GAME-006",
+          "GAME-007",
+          "GAME-008",
+          "GAME-009",
+          "GAME-010",
+          "GAME-011",
+          "GAME-012",
+          "GAME-013",
+          "CONTENT-001",
+          "CONTENT-002"
+        ],
+        "acceptance_criteria": [
+          "Assertion crazygames_bundle_size passes against the built package",
+          "Assertion crazygames_sdk_present passes against the built package",
+          "Assertion crazygames_en_locale_present passes against the built package"
+        ],
+        "tests": [
+          "tests/sdk (conformance)",
+          "tests/verify"
+        ],
+        "est_hours": 0.45,
+        "status": "todo"
+      },
+      {
+        "id": "SDK-003",
+        "title": "Integrate yandex (optional) through the platform abstraction",
+        "milestone": "M3",
+        "phase": "hardening",
+        "description": "Profile yandex@1.0.0. Game code calls the template's platform abstraction, never a portal SDK directly.",
+        "dependencies": [
+          "CORE-001",
+          "GAME-001",
+          "GAME-002",
+          "GAME-003",
+          "GAME-004",
+          "GAME-005",
+          "GAME-006",
+          "GAME-007",
+          "GAME-008",
+          "GAME-009",
+          "GAME-010",
+          "GAME-011",
+          "GAME-012",
+          "GAME-013",
+          "CONTENT-001",
+          "CONTENT-002"
+        ],
+        "acceptance_criteria": [
+          "Assertion yandex_bundle_size passes against the built package",
+          "Assertion yandex_ru_locale_present passes against the built package",
+          "Assertion yandex_sdk_present passes against the built package",
+          "Assertion yandex_loading_api_called passes against the built package",
+          "Assertion yandex_https_only passes against the built package"
+        ],
+        "tests": [
+          "tests/sdk (conformance)",
+          "tests/verify"
+        ],
+        "est_hours": 0.55,
+        "status": "todo"
+      },
+      {
+        "id": "QA-001",
+        "title": "Verify suite green on every target platform",
+        "milestone": "M3",
+        "phase": "hardening",
+        "dependencies": [
+          "GAME-001",
+          "GAME-002",
+          "GAME-003",
+          "GAME-004",
+          "GAME-005",
+          "GAME-006",
+          "GAME-007",
+          "GAME-008",
+          "GAME-009",
+          "GAME-010",
+          "GAME-011",
+          "GAME-012",
+          "GAME-013",
+          "GAME-014",
+          "GAME-015",
+          "GAME-016",
+          "CONTENT-001",
+          "CONTENT-002",
+          "SDK-001",
+          "SDK-002",
+          "SDK-003"
+        ],
+        "acceptance_criteria": [
+          "pnpm test:verify passes",
+          "pnpm facts && pnpm assert pass for every pinned profile"
+        ],
+        "tests": [
+          "tests/verify"
+        ],
+        "est_hours": 0.4,
+        "status": "todo"
+      }
+    ]
+  },
+  "technical_risks": [
+    {
+      "description": "The tightest required bundle limit is 150 MB.",
+      "severity": "low",
+      "mitigation": "Assets are budgeted against max_bundle_mb and the verify suite measures the package."
+    },
+    {
+      "description": "Open question: The brief names no design archetype, so this design states the sliding-ice mechanic (slide until you hit a wall, key, door or crumbling tile) in full from the Level puzzle genre model's content rules. Confirm at G3 that this is the loop the brief meant.",
+      "severity": "low",
+      "mitigation": "Answered, or carried, by the prototype-report."
+    },
+    {
+      "description": "Open question: A first-time player understands the tap control without instruction",
+      "severity": "low",
+      "mitigation": "Answered, or carried, by the prototype-report."
+    },
+    {
+      "description": "Open question: The core loop produces an unforced desire to retry within one 300-second session",
+      "severity": "low",
+      "mitigation": "Answered, or carried, by the prototype-report."
+    },
+    {
+      "description": "Open question: This risk is contained: Poki requires web exclusivity, so the candidate platforms cannot all be used for the same build; choosing is a strategy decision",
+      "severity": "low",
+      "mitigation": "Answered, or carried, by the prototype-report."
+    },
+    {
+      "description": "Open question: The rewarded placement reads as a favour rather than an interruption",
+      "severity": "low",
+      "mitigation": "Answered, or carried, by the prototype-report."
+    },
+    {
+      "description": "Open question: It holds 30 fps on a mid-range mobile browser inside a 100 MB bundle",
+      "severity": "low",
+      "mitigation": "Answered, or carried, by the prototype-report."
+    }
+  ],
+  "sdk_integration": {
+    "platform_sdks": [
+      "poki",
+      "crazygames",
+      "yandex"
+    ],
+    "note": "Game code calls the template's platform abstraction, never a portal SDK directly."
+  },
+  "release_requirements": [
+    "poki@1.0.0: poki_bundle_size",
+    "poki@1.0.0: poki_sdk_present",
+    "poki@1.0.0: poki_no_external_links",
+    "poki@1.0.0: poki_no_banner_ads",
+    "crazygames@1.0.0: crazygames_bundle_size",
+    "crazygames@1.0.0: crazygames_sdk_present",
+    "crazygames@1.0.0: crazygames_en_locale_present",
+    "yandex@1.0.0: yandex_bundle_size",
+    "yandex@1.0.0: yandex_ru_locale_present",
+    "yandex@1.0.0: yandex_sdk_present",
+    "yandex@1.0.0: yandex_loading_api_called",
+    "yandex@1.0.0: yandex_https_only"
+  ]
+}

@@ -84,6 +84,9 @@ agents:
       - core/craft/game-ui-kit.md
       - core/craft/juice.md
       - core/craft/retention-and-progression.md
+      - core/craft/content-and-level-design.md
+      - core/reference/genre-models.yaml
+      - core/reference/design-depth.yaml
       - core/artifacts/shared/research-opportunity.schema.json
     produces: [title-strategy, game-design]
     consumes: [opportunity, evaluation, claim]
@@ -182,6 +185,9 @@ agents:
       - core/craft/juice.md
       - core/craft/production-wiring.md
       - core/craft/retention-and-progression.md
+      - core/craft/content-and-level-design.md
+      - core/reference/genre-models.yaml
+      - core/reference/design-depth.yaml
       - core/craft/game-audio.md
     produces: [prototype-report]
     consumes: [tech-plan, game-design, review-report, qa-report]
@@ -376,6 +382,9 @@ skills:
       - core/craft/production-art-and-ui.md
       - core/craft/game-ui-kit.md
       - core/craft/retention-and-progression.md
+      - core/craft/content-and-level-design.md
+      - core/reference/genre-models.yaml
+      - core/reference/design-depth.yaml
   - id: core-loop
     supports: [game-designer, gameplay]
     covers: >
@@ -386,6 +395,19 @@ skills:
       - core/artifacts/game-design.schema.json
       - core/lifecycle/stages/strategy.md
       - core/craft/retention-and-progression.md
+      - core/craft/content-and-level-design.md
+      - core/reference/genre-models.yaml
+      - core/reference/design-depth.yaml
+  - id: level-design
+    supports: [game-designer, gameplay, qa]
+    covers: >
+      Content and level design per genre family: units, purpose arc, difficulty axes,
+      variety, win/lose, acceptance.
+    reads:
+      - core/reference/genre-models.yaml
+      - core/craft/content-and-level-design.md
+      - core/artifacts/game-design.schema.json
+      - core/reference/design-depth.yaml
   - id: game-feel
     supports: [gameplay, ui]
     covers: >

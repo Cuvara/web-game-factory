@@ -20,7 +20,10 @@ Invoked from `AGENTS.md` or by the matching `/wgf-*` prompt.
 12. `core/craft/juice.md`
 13. `core/craft/production-wiring.md`
 14. `core/craft/retention-and-progression.md`
-15. `core/craft/game-audio.md`
+15. `core/craft/content-and-level-design.md`
+16. `core/reference/genre-models.yaml`
+17. `core/reference/design-depth.yaml`
+18. `core/craft/game-audio.md`
 
 Core is authoritative. Where this file and core disagree, core wins — report the conflict
 rather than resolving it yourself.

@@ -382,6 +382,78 @@ class Brief(unittest.TestCase):
         self.assertNotIn("## The game", text)
         self.assertNotIn("Blockers the previous review raised", text)
 
+    CONTENT = {
+        "unit_kind": "wave", "generation": {"mode": "authored"},
+        "units": [
+            {"id": "w-01", "index": 1, "tier": "mvp", "purpose": "teach",
+             "objective": "Clear every rusher.", "mechanics": ["shoot"],
+             "difficulty": {"enemy-count": 0.2}, "expected_duration_s": 40,
+             "success": "Every enemy is down.", "failure": "Health reaches zero.",
+             "acceptance": ["The wave is entered by playing.", "Its objective is shown first."]},
+            {"id": "w-02", "index": 2, "tier": "mvp", "purpose": "twist",
+             "objective": "Hold the breach against shields.", "mechanics": ["shoot", "flank"],
+             "difficulty": {"enemy-count": 0.5}, "expected_duration_s": 50,
+             "success": "The shielded pair falls.", "failure": "Health reaches zero.",
+             "acceptance": ["Shields must be broken before damage lands."],
+             "variation_from_previous": ["enemy_mix", "objective"]}]}
+
+    def content_brief(self, **overrides):
+        kwargs = {"develop_brief": {
+            "build_spec": {"sections": {
+                "content": self.CONTENT,
+                "difficulty": {"axes": [{"id": "enemy-count", "range": [0, 1],
+                                         "description": "Enemies alive at once",
+                                         "relief_allowed": True}]},
+                "mastery": {"model": "routing", "statement": "A better player clears from the "
+                                                             "flank first.", "signals": ["accuracy"]},
+                "experience": {"win": {"condition": "The last wave falls.", "metric": "waves"},
+                               "lose": {"condition": "Health reaches zero.", "metric": "health"}}}}},
+            "develop_report": {
+                "content_units": [{"id": "w-01", "status": "built"},
+                                  {"id": "w-02", "status": "partial"}],
+                "design_gaps": [{"field": "build_spec.content.units[w-02].success",
+                                 "question": "How many shields does the pair carry?",
+                                 "assumed": "two", "severity": "minor"}]},
+            "prototype": {"content_coverage": {"designed": 2, "built": 1, "partial": 1, "cut": 0,
+                                               "units": [{"id": "w-01", "status": "built"}]}}}
+        kwargs.update(overrides)
+        return self.brief(**kwargs)
+
+    def test_the_brief_shows_the_content_table_and_gaps(self):
+        text = self.content_brief()
+        self.assertIn("## Design fidelity", text)
+        self.assertIn("2 mvp wave(s), generation `authored`", text)
+        self.assertIn("| `w-01` | teach | Clear every rusher. | shoot | enemy-count 0.2 | built |",
+                      text)
+        self.assertIn("| `w-02` |", text)
+        self.assertIn("partial", text)
+        self.assertIn("- `w-01`: The wave is entered by playing.; Its objective is shown first.",
+                      text)
+        self.assertIn("differs from the previous unit in: enemy_mix, objective", text)
+        self.assertIn("`enemy-count` [0, 1]: Enemies alive at once; relief dips allowed", text)
+        self.assertIn("win: The last wave falls. (metric `waves`)", text)
+        self.assertIn("Mastery (routing): A better player clears from the flank first.", text)
+        self.assertIn("1 built, 1 partial, 0 cut of 2 designed", text)
+        self.assertIn("`build_spec.content.units[w-02].success`", text)
+        self.assertIn("assumed: two", text)
+
+    def test_a_build_with_no_reported_gaps_says_so(self):
+        text = self.content_brief(develop_report={"content_units": []})
+        self.assertIn("The development report lists no design gaps", text)
+
+    def test_a_brief_without_a_content_contract_has_no_fidelity_section(self):
+        self.assertNotIn("## Design fidelity", self.brief())
+
+    def test_the_lens_names_design_fidelity(self):
+        lens = "\n".join(report.GAMEPLAY_LENS)
+        self.assertIn("public/content/units.json", lens)
+        self.assertIn("reaches it from the previous unit by playing", lens)
+        self.assertIn("implemented as a rule with a unit test", lens)
+        self.assertIn("read from the data file rather than re-typed", lens)
+        self.assertIn("design_gaps", lens)
+        self.assertIn("design-fidelity blocker", lens)
+        self.assertIn("\n".join(f"- {item}" for item in report.GAMEPLAY_LENS), self.brief())
+
     def test_prompts_carry_their_placeholders(self):
         for placeholder in ("{brief}", "{commit}", "{repo}", "{verdict}"):
             self.assertIn(placeholder, report.PROMPT)

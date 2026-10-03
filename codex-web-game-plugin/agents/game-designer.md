@@ -22,7 +22,10 @@ Invoked from `AGENTS.md` or by the matching `/wgf-*` prompt.
 14. `core/craft/game-ui-kit.md`
 15. `core/craft/juice.md`
 16. `core/craft/retention-and-progression.md`
-17. `core/artifacts/shared/research-opportunity.schema.json`
+17. `core/craft/content-and-level-design.md`
+18. `core/reference/genre-models.yaml`
+19. `core/reference/design-depth.yaml`
+20. `core/artifacts/shared/research-opportunity.schema.json`
 
 Core is authoritative. Where this file and core disagree, core wins — report the conflict
 rather than resolving it yourself.

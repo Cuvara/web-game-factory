@@ -41,6 +41,16 @@ checklist adds a gameplay lens to it. Every item below is a **blocker** when it 
 
 - [ ] **The tuning in `build_spec.mechanics[].parameters` and `difficulty.curve` lives in
       data or config**, not as literals scattered through logic.
+- [ ] **Every mvp content unit of the brief's content table exists.** Each unit id appears in
+      `public/content/units.json`, and the code reaches it from the previous unit by playing —
+      no unit that only a debug jump or a URL parameter can enter.
+- [ ] **Every mechanic rule in the brief is implemented as a rule with a unit test**, and the
+      per-unit difficulty values are read from the data file rather than re-typed or
+      recomputed in logic (`content-and-level-design.md`).
+- [ ] **Gaps are reported, not filled in silently.** A unit, mechanic or rule the brief asks
+      for and the commit does not deliver belongs in `design_gaps` in the development report
+      (`report.json`). A unit, mechanic or rule the commit invented instead of the designed one
+      is a design-fidelity blocker.
 - [ ] Every mvp reward and failure has its feedback hook: the visual and the audio cue named
       in `build_spec.rewards[].feedback` / `.failure.feedback` / `.audio`. A missing one is a
       design-fidelity blocker (`game-feel.md`, minimum feedback bar).

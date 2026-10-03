@@ -47,6 +47,15 @@ from wgflib.workflow.model import ArtifactRef, RunStatus, StepOutcome, StepStatu
 from wgflib.workflow.step import StepInputs  # noqa: E402
 
 OPPORTUNITY = os.path.join(paths.OPPORTUNITIES, "opp-001", "opportunity.json")
+
+
+def schema_version(artifact_type):
+    """The contract's own version: a step writes it, so the test reads it rather than pinning
+    a number every minor bump has to come back and edit."""
+    with open(os.path.join(paths.ARTIFACTS, f"{artifact_type}.schema.json"),
+              encoding="utf-8") as handle:
+        return str(json.load(handle)["x-wgf"]["version"])
+
 FIXED = datetime.datetime(2026, 9, 1, 10, 0, 0, tzinfo=datetime.timezone.utc)
 PROFILES = load_profiles()
 
@@ -77,6 +86,39 @@ def opportunity(**changes):
 def plan(opp=None, policy=None, profiles=None):
     return plan_strategy(opp or opportunity(), PROFILES if profiles is None else profiles,
                          "neon-drift", policy)
+
+
+def fv(value, tier="derived", refs=("claim-fixture",), source="corpus"):
+    """A research facet value, as the opportunity's cell carries one."""
+    out = {"value": value, "tier": tier, "source": source}
+    if tier in ("observed", "derived"):
+        out["claim_refs"] = list(refs)
+    return out
+
+
+def research_block(constraints=None, genre="match-3", family="puzzle", genre_model=None):
+    """The smallest Research V2 block the planner reads: the cell's genre and family, the
+    buildability, and - when the scan coded one - the content shape design is held to."""
+    block = {
+        "research_version": 2, "report_id": "rr-fixture", "opportunity_id": "opp-001",
+        "origin": "supply-gap", "status": "selected", "summary": "FIXTURE opportunity.",
+        "cell": {"genre": fv(genre), "family": fv(family)},
+        "basis": {"claim_refs": [], "evidence_backed": True, "thesis": "claim-thesis",
+                  "statement": "FIXTURE"},
+        "market": [], "competitors": [], "benchmarks": [], "patterns": {"adopt": []},
+        "monetization": {"placements": [], "platform_support": []},
+        "production": {"dimension": "2d", "complexity": "s", "tier": "hypothesis",
+                       "drivers": ["FIXTURE"]},
+        "capability": {"buildable": True, "missing": [], "reason": "FIXTURE",
+                       "genre_model": genre_model},
+        "audience": {}, "risks": [],
+        "confidence": {"evidence_coverage": 0.5, "weakest_tier": "hypothesis",
+                       "unknown_facets": [], "fixture_evidence": True},
+        "claim_refs": [],
+    }
+    if constraints is not None:
+        block["design_constraints"] = constraints
+    return block
 
 
 # -- the planner -------------------------------------------------------------------------
@@ -243,6 +285,117 @@ class Planner(unittest.TestCase):
         self.assertEqual(json.dumps(plan(), sort_keys=True), json.dumps(plan(), sort_keys=True))
 
 
+class ContentModel(unittest.TestCase):
+    """`concept.content_model`: the content shape the title commits to, from research when it
+    coded one and from the genre family's model when it did not. An opportunity that resolves
+    to no family commits to nothing, and the concept reads as it did before genre models."""
+
+    def applied(self, body, field="concept.content_model"):
+        return {a["field"]: a for a in body["research"]["applied"]}[field]
+
+    def test_content_model_from_research_constraints_with_claim_refs(self):
+        constraints = {
+            "family": fv("puzzle", refs=["claim-family"]),
+            "unit_kind": {"value": "level", "tier": "hypothesis", "source": "catalog"},
+            "progression": fv(["unlock-track"], refs=["claim-progression"]),
+            "difficulty_shape": fv("sawtooth", refs=["claim-shape"]),
+            "difficulty_axes": fv(["depth", "move-limit"], refs=["claim-axes"]),
+            "session_band": fv("short", refs=["claim-session"]),
+        }
+        body = plan(opportunity(research=research_block(constraints=constraints)))
+        self.assertEqual(body["concept"]["content_model"], {
+            "family": "puzzle", "unit_kind": "level", "progression": "unlock-track",
+            "difficulty_shape": "sawtooth", "difficulty_axes": ["depth", "move-limit"],
+            "min_units": 6, "source": "research"})
+        applied = self.applied(body)
+        self.assertEqual(applied["source"], "research")
+        for claim in ("claim-family", "claim-progression", "claim-shape", "claim-axes"):
+            self.assertIn(claim, applied["claim_refs"])
+        direction = body["concept"]["gameplay_direction"]
+        self.assertIn("Content: 6 specified levels in the prototype, 20 in the release", direction)
+        self.assertIn("difficulty authored per unit on depth, move-limit", direction)
+        self.assertIn("progression unlock-track; sawtooth ramp.", direction)
+        # The constraints reach design whole, claims included.
+        self.assertEqual(body["research"]["design_constraints"], constraints)
+
+    def test_content_model_default_names_the_family(self):
+        body = plan(opportunity(research=research_block(genre="platformer",
+                                                        family="platformer")))
+        self.assertEqual(body["concept"]["content_model"], {
+            "family": "platformer", "unit_kind": "level", "progression": "linear-levels",
+            "difficulty_shape": "level-authored",
+            "difficulty_axes": ["precision", "timing", "hazard-density",
+                                "spatial-complexity"],
+            "min_units": 5, "source": "default"})
+        applied = self.applied(body)
+        self.assertEqual(applied["source"], "default")
+        self.assertIn("Platformer", applied["detail"])
+        self.assertIn("research coded no content shape", applied["detail"])
+        self.assertNotIn("claim_refs", applied)
+
+    def test_an_idea_on_a_genre_model_entry_is_the_concept(self):
+        # Research named no hand-coded archetype, only the family the Factory can build: the
+        # catalog entry is a capability and the person's idea is the game. The concept is read
+        # from the brief, the family's loop says what a session is, and the content model
+        # bounds the design; the catalog's seed wording never replaces the idea.
+        idea = "A lane tower defense on a kitchen counter: four tower types and twelve waves"
+        body = plan(opportunity(brief=idea,
+                                research=research_block(genre="tower-defense",
+                                                        family="strategy",
+                                                        genre_model="strategy")))
+        self.assertEqual(body["one_liner"], idea + ".")
+        self.assertEqual(body["concept"]["core_mechanic"], idea)
+        self.assertIn("hold the wave", body["concept"]["core_loop"])
+        self.assertIn(f"The brief, built in full: {idea}", body["mvp"])
+        self.assertEqual(body["brief"], idea)
+        applied = next(a for a in body["research"]["applied"] if a["field"] == "concept")
+        self.assertEqual(applied["source"], "brief")
+        self.assertTrue(any("is the concept" in a["statement"] for a in body["assumptions"]))
+
+    def test_an_idea_on_a_design_archetype_entry_keeps_the_catalog_concept(self):
+        # A hand-coded archetype is the game research selected; the brief is recorded, never
+        # folded into the concept, so its words cannot re-pick the archetype.
+        research = research_block(genre="match-3", family="puzzle")
+        research["capability"]["design_archetype"] = "merge-puzzle"
+        body = plan(opportunity(brief="a penguin ice puzzle", research=research))
+        self.assertNotIn("penguin", body["one_liner"])
+        self.assertNotIn("penguin", body["concept"]["core_mechanic"])
+        self.assertEqual(body["brief"], "a penguin ice puzzle")
+
+    def test_mvp_no_longer_promises_one_ramp(self):
+        # A genre-model entry: the catalog builds it from the family's model, so the MVP is a
+        # number of designed units, not "one content set with a ramp".
+        body = plan(opportunity(research=research_block(genre="tower-defense",
+                                                        family="strategy",
+                                                        genre_model="strategy")))
+        content = body["concept"]["content_model"]
+        self.assertEqual((content["family"], content["unit_kind"], content["min_units"]),
+                         ("strategy", "wave", 4))
+        self.assertNotIn("One content set with a data-driven difficulty ramp", body["mvp"])
+        self.assertIn("4 designed waves with authored difficulty on decision-density, "
+                      "economy-pressure, opponent-escalation, composition", body["mvp"])
+        direction = body["concept"]["gameplay_direction"]
+        self.assertNotIn("Difficulty comes from one data-driven ramp", direction)
+        self.assertIn("4 specified waves in the prototype, 10 in the release", direction)
+
+    def test_legacy_strategy_text_unchanged_without_family(self):
+        body = plan()
+        self.assertNotIn("content_model", body["concept"])
+        self.assertIn("Difficulty comes from one data-driven ramp, not hand-built levels.",
+                      body["concept"]["gameplay_direction"])
+        self.assertIn("One content set with a data-driven difficulty ramp", body["mvp"])
+        self.assertNotIn("research", body)
+        # Research V2, but a genre no family lists: nothing is assumed, and the text holds.
+        card = plan(opportunity(research=research_block(genre="solitaire", family="card")))
+        self.assertNotIn("content_model", card["concept"])
+        self.assertIn("Difficulty comes from one data-driven ramp, not hand-built levels.",
+                      card["concept"]["gameplay_direction"])
+        self.assertIn("One content set with a data-driven difficulty ramp", card["mvp"])
+        applied = self.applied(card)
+        self.assertEqual(applied["source"], "default")
+        self.assertTrue(applied["detail"].startswith("none: no genre family covers"))
+
+
 # -- the step ----------------------------------------------------------------------------
 
 
@@ -393,7 +546,7 @@ class ThroughEngine(unittest.TestCase):
         artifact = api.store.read_artifact(state.run_id, ref)
         self.assertEqual(ArtifactContracts()("title-strategy", artifact), [])
         self.assertEqual(artifact["provenance"]["status"], "draft")
-        self.assertEqual(ref.schema_version, "1.3.0")
+        self.assertEqual(ref.schema_version, schema_version("title-strategy"))
         self.assertEqual(state.steps["strategy"].consumed, ["opportunity@v1"])
 
         final = api.run(RunRequest(resume=state.run_id, decision="approve"))

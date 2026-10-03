@@ -4,7 +4,7 @@
 version: 1
 archetypes:
   - id: shot-stopper
-    brief: 3D goalkeeper game where the player blocks penalty shots
+    brief: 3D goalkeeper game where the player saves penalty kicks
     title: Shot Stopper
     genre: sports
     subgenre: goalkeeper

@@ -1,0 +1,634 @@
+{
+  "provenance": {
+    "artifact_id": "wgf:opportunity:opp-b40899dc:20261002-01",
+    "artifact_type": "opportunity",
+    "schema_version": "1.3.0",
+    "opportunity_id": "opp-b40899dc",
+    "title_id": "ice-slide",
+    "produced_by": {
+      "role": "research",
+      "actor": "automation"
+    },
+    "produced_at": "2026-10-02T20:25:07Z",
+    "inputs": [
+      {
+        "artifact_id": "wgf:research-report:rr-b92faf192b:20261002-01",
+        "artifact_type": "research-report",
+        "content_hash": "sha256:f318e41b2f3defb11a1bdbe312658e9b4dbd18d22ae2eeda18cc8d234263244c"
+      }
+    ],
+    "content_hash": "sha256:9e208e4c56abb622100209dabccf9c6c41b727f84b04f5ac82e0b2514f0c7bdf",
+    "status": "draft"
+  },
+  "id": "opp-b40899dc",
+  "title": "Logic Puzzle Levels",
+  "state": "discovered",
+  "concept": {
+    "genre": "puzzle",
+    "subgenre": "logic",
+    "core_mechanic": "slide one row or column of a colour grid so lines of three clear",
+    "fantasy": "feeling clever - the moment the slide you had missed becomes obvious",
+    "core_loop": "read the board, work out the slide that clears the most, lines of three clear and the board opens up, advance to a level that adds a colour or tightens the budget",
+    "reference_titles": []
+  },
+  "hypothesis": "claim-fd23eeef70",
+  "audience": {
+    "device": "both",
+    "regions": [
+      "br",
+      "by",
+      "de",
+      "fr",
+      "gb",
+      "id",
+      "kz",
+      "ru",
+      "tr",
+      "us"
+    ]
+  },
+  "candidate_platforms": [
+    "y8",
+    "crazygames",
+    "gamedistribution",
+    "yandex",
+    "poki"
+  ],
+  "monetization_hypothesis": {
+    "primary": "rewarded",
+    "secondary": [
+      "interstitial"
+    ],
+    "rationale": "Being stuck is the rewarded moment (a hint or one revealed cell); interstitials between levels."
+  },
+  "estimates": {
+    "dev_speed_days": 9,
+    "scope_complexity": "xs",
+    "asset_cost_usd": 200,
+    "session_seconds": 300
+  },
+  "claim_refs": [
+    "claim-0015946f54",
+    "claim-10e7b25b44",
+    "claim-12e9f11a8d",
+    "claim-19fe15410c",
+    "claim-1d5899ec66",
+    "claim-2122fcd4f3",
+    "claim-21b503dbca",
+    "claim-237052bc62",
+    "claim-35da3a7cb8",
+    "claim-36ec781b4f",
+    "claim-3e4aace7dc",
+    "claim-45bee43ffd",
+    "claim-4d0b6d7039",
+    "claim-55c84ee534",
+    "claim-55ff2909f5",
+    "claim-6251d40daf",
+    "claim-6299fc4460",
+    "claim-73f7084dbe",
+    "claim-77c478048e",
+    "claim-8124a91873",
+    "claim-831592f95c",
+    "claim-8691d0680d",
+    "claim-8910129266",
+    "claim-a9dd28949d",
+    "claim-aedf4467f6",
+    "claim-b5277fb850",
+    "claim-cdf943b10d",
+    "claim-d179e1fc07",
+    "claim-d183a072ae",
+    "claim-daa69cd5b6",
+    "claim-dd3290f5c6",
+    "claim-ebe0dbaaf5",
+    "claim-fd23eeef70",
+    "claim-feab9737bb"
+  ],
+  "risks": [
+    {
+      "description": "Level content is the product; every level needs authoring and a solvability check.",
+      "severity": "medium",
+      "claim_refs": [
+        "claim-b5277fb850"
+      ]
+    },
+    {
+      "description": "gamedistribution: progress relies on local storage; no portal cloud save",
+      "severity": "low",
+      "claim_refs": [
+        "claim-12e9f11a8d",
+        "claim-35da3a7cb8",
+        "claim-3e4aace7dc",
+        "claim-feab9737bb"
+      ]
+    },
+    {
+      "description": "yandex: requires ru localization",
+      "severity": "medium",
+      "claim_refs": [
+        "claim-12e9f11a8d",
+        "claim-1d5899ec66",
+        "claim-21b503dbca",
+        "claim-36ec781b4f",
+        "claim-4d0b6d7039",
+        "claim-77c478048e",
+        "claim-aedf4467f6",
+        "claim-ebe0dbaaf5"
+      ]
+    },
+    {
+      "description": "poki: progress relies on local storage; no portal cloud save",
+      "severity": "low",
+      "claim_refs": [
+        "claim-0015946f54",
+        "claim-12e9f11a8d",
+        "claim-19fe15410c",
+        "claim-2122fcd4f3",
+        "claim-45bee43ffd",
+        "claim-55c84ee534",
+        "claim-6251d40daf",
+        "claim-6299fc4460",
+        "claim-8910129266",
+        "claim-a9dd28949d",
+        "claim-daa69cd5b6",
+        "claim-dd3290f5c6"
+      ]
+    },
+    {
+      "description": "poki requires web exclusivity, so the candidate platforms cannot all be used for the same build; choosing is a strategy decision",
+      "severity": "high",
+      "claim_refs": [
+        "claim-0015946f54",
+        "claim-12e9f11a8d",
+        "claim-19fe15410c",
+        "claim-2122fcd4f3",
+        "claim-45bee43ffd",
+        "claim-55c84ee534",
+        "claim-6251d40daf",
+        "claim-6299fc4460",
+        "claim-8910129266",
+        "claim-a9dd28949d",
+        "claim-daa69cd5b6",
+        "claim-dd3290f5c6"
+      ]
+    }
+  ],
+  "research": {
+    "research_version": 2,
+    "report_id": "rr-b92faf192b",
+    "opportunity_id": "opp-b40899dc",
+    "origin": "capability-screen",
+    "status": "selected",
+    "summary": "Logic Puzzle Levels: a shape in the capability catalog, screened against crazygames, gamedistribution, gamemonetize, gamevui, poki, y8, yandex at 0.77, with observed market presence on poki.",
+    "cell": {
+      "genre": {
+        "value": "logic-puzzle",
+        "label": "Logic puzzle",
+        "tier": "hypothesis",
+        "source": "catalog",
+        "claim_refs": [
+          "claim-b5277fb850"
+        ]
+      },
+      "family": {
+        "value": "puzzle",
+        "label": "Puzzle",
+        "tier": "hypothesis",
+        "source": "catalog",
+        "claim_refs": [
+          "claim-b5277fb850"
+        ]
+      },
+      "mechanics": {
+        "value": [
+          "line-clear"
+        ],
+        "label": "slide one row or column of a colour grid so lines of three clear",
+        "tier": "hypothesis",
+        "source": "catalog",
+        "claim_refs": [
+          "claim-b5277fb850"
+        ]
+      },
+      "gameplay_steps": {
+        "value": null,
+        "tier": "unknown",
+        "source": "unknown",
+        "reason": "no teardown in the corpus codes gameplay_steps for Logic puzzle (it has no teardown games)"
+      },
+      "core_loop": {
+        "value": "read the board, work out the slide that clears the most, lines of three clear and the board opens up, advance to a level that adds a colour or tightens the budget",
+        "label": "read the board, work out the slide that clears the most, lines of three clear and the board opens up, advance to a level that adds a colour or tightens the budget",
+        "tier": "hypothesis",
+        "source": "catalog",
+        "claim_refs": [
+          "claim-b5277fb850"
+        ]
+      },
+      "controls": {
+        "value": null,
+        "tier": "unknown",
+        "source": "unknown",
+        "reason": "no teardown in the corpus codes controls for Logic puzzle (it has no teardown games)"
+      },
+      "theme": {
+        "value": null,
+        "tier": "unknown",
+        "source": "unknown",
+        "reason": "no teardown in the corpus codes theme for Logic puzzle (it has no teardown games)"
+      },
+      "setting": {
+        "value": null,
+        "tier": "unknown",
+        "source": "unknown",
+        "reason": "no teardown in the corpus codes setting for Logic puzzle (it has no teardown games)"
+      },
+      "player_fantasy": {
+        "value": null,
+        "tier": "unknown",
+        "source": "unknown",
+        "reason": "no teardown in the corpus codes player_fantasy for Logic puzzle (it has no teardown games)"
+      },
+      "emotional_fantasy": {
+        "value": null,
+        "tier": "unknown",
+        "source": "unknown",
+        "reason": "no teardown in the corpus codes emotional_fantasy for Logic puzzle (it has no teardown games)"
+      },
+      "art_dimension": {
+        "value": "2d",
+        "tier": "hypothesis",
+        "source": "catalog",
+        "claim_refs": [
+          "claim-b5277fb850"
+        ]
+      },
+      "art_rendering": {
+        "value": null,
+        "tier": "unknown",
+        "source": "unknown",
+        "reason": "no teardown in the corpus codes art_rendering for Logic puzzle (it has no teardown games)"
+      },
+      "art_tone": {
+        "value": null,
+        "tier": "unknown",
+        "source": "unknown",
+        "reason": "no teardown in the corpus codes art_tone for Logic puzzle (it has no teardown games)"
+      },
+      "art_palette": {
+        "value": null,
+        "tier": "unknown",
+        "source": "unknown",
+        "reason": "no teardown in the corpus codes art_palette for Logic puzzle (it has no teardown games)"
+      },
+      "camera": {
+        "value": null,
+        "tier": "unknown",
+        "source": "unknown",
+        "reason": "no teardown in the corpus codes camera for Logic puzzle (it has no teardown games)"
+      },
+      "session_band": {
+        "value": "short",
+        "label": "300 s estimated",
+        "tier": "hypothesis",
+        "source": "catalog",
+        "claim_refs": [
+          "claim-b5277fb850"
+        ]
+      },
+      "progression": {
+        "value": null,
+        "tier": "unknown",
+        "source": "unknown",
+        "reason": "no teardown in the corpus codes progression for Logic puzzle (it has no teardown games)"
+      },
+      "difficulty_shape": {
+        "value": null,
+        "tier": "unknown",
+        "source": "unknown",
+        "reason": "no teardown in the corpus codes difficulty_shape for Logic puzzle (it has no teardown games)"
+      },
+      "retention_hooks": {
+        "value": null,
+        "tier": "unknown",
+        "source": "unknown",
+        "reason": "no teardown in the corpus codes retention_hooks for Logic puzzle (it has no teardown games)"
+      },
+      "platforms": [
+        "y8",
+        "crazygames",
+        "gamedistribution",
+        "yandex",
+        "poki"
+      ]
+    },
+    "basis": {
+      "claim_refs": [
+        "claim-12e9f11a8d",
+        "claim-55ff2909f5",
+        "claim-73f7084dbe",
+        "claim-8124a91873",
+        "claim-b5277fb850",
+        "claim-cdf943b10d",
+        "claim-d179e1fc07"
+      ],
+      "evidence_backed": true,
+      "thesis": "claim-fd23eeef70",
+      "statement": "Logic Puzzle Levels: a shape in the capability catalog, screened against crazygames, gamedistribution, gamemonetize, gamevui, poki, y8, yandex at 0.77, with observed market presence on poki."
+    },
+    "market": [],
+    "competitors": [],
+    "patterns": {
+      "adopt": []
+    },
+    "benchmarks": [],
+    "monetization": {
+      "placements": [],
+      "platform_support": [
+        {
+          "platform": "y8",
+          "formats": [
+            "rewarded",
+            "interstitial"
+          ],
+          "claim_refs": [
+            "claim-10e7b25b44"
+          ]
+        },
+        {
+          "platform": "crazygames",
+          "formats": [
+            "rewarded",
+            "interstitial",
+            "banner",
+            "iap"
+          ],
+          "claim_refs": [
+            "claim-831592f95c",
+            "claim-8691d0680d",
+            "claim-d183a072ae"
+          ]
+        },
+        {
+          "platform": "gamedistribution",
+          "formats": [
+            "rewarded",
+            "interstitial"
+          ],
+          "claim_refs": [
+            "claim-35da3a7cb8"
+          ]
+        },
+        {
+          "platform": "yandex",
+          "formats": [
+            "rewarded",
+            "interstitial",
+            "banner",
+            "iap"
+          ],
+          "claim_refs": [
+            "claim-36ec781b4f",
+            "claim-aedf4467f6",
+            "claim-ebe0dbaaf5"
+          ]
+        },
+        {
+          "platform": "poki",
+          "formats": [
+            "rewarded",
+            "interstitial"
+          ],
+          "claim_refs": [
+            "claim-0015946f54",
+            "claim-19fe15410c",
+            "claim-2122fcd4f3",
+            "claim-45bee43ffd",
+            "claim-6299fc4460",
+            "claim-8910129266",
+            "claim-a9dd28949d",
+            "claim-dd3290f5c6"
+          ]
+        }
+      ],
+      "primary": "rewarded"
+    },
+    "production": {
+      "dimension": "2d",
+      "complexity": "xs",
+      "tier": "hypothesis",
+      "drivers": [
+        "catalog estimate: xs technical, xs asset complexity (unmeasured)"
+      ],
+      "estimate_days": 9,
+      "asset_cost_usd": 200,
+      "claim_refs": [
+        "claim-b5277fb850"
+      ]
+    },
+    "capability": {
+      "catalog_entry": "logic-puzzle-levels",
+      "design_archetype": null,
+      "genre_model": "puzzle",
+      "requires": [
+        "2d board",
+        "drag input",
+        "authored level set with a recorded solution"
+      ],
+      "buildable": true,
+      "missing": [],
+      "reason": "Built by catalog entry logic-puzzle-levels: genre model puzzle, no design archetype."
+    },
+    "audience": {
+      "player_type": {
+        "value": null,
+        "tier": "unknown",
+        "source": "unknown",
+        "reason": "no game in this cell is coded on player type; the audience type is not assumed (a market descriptor such as casual describes the market, not the player)"
+      },
+      "intent": {
+        "value": null,
+        "tier": "unknown",
+        "source": "unknown",
+        "reason": "no game in this cell is coded on intent"
+      },
+      "skill": {
+        "value": null,
+        "tier": "unknown",
+        "source": "unknown",
+        "reason": "no game in this cell is coded on skill"
+      },
+      "device": {
+        "value": "both",
+        "label": "platform mobile share 60%",
+        "tier": "hypothesis",
+        "source": "platform",
+        "claim_refs": [
+          "claim-237052bc62",
+          "claim-4d0b6d7039",
+          "claim-8910129266"
+        ]
+      },
+      "age_band": {
+        "value": null,
+        "tier": "unknown",
+        "source": "unknown",
+        "reason": "no portal in the corpus states an age band for these games; none is inferred"
+      },
+      "session_behavior": {
+        "value": "short",
+        "label": "300 s, the catalog's estimate",
+        "tier": "hypothesis",
+        "source": "catalog",
+        "claim_refs": [
+          "claim-b5277fb850"
+        ]
+      },
+      "regions": [
+        "br",
+        "by",
+        "de",
+        "fr",
+        "gb",
+        "id",
+        "kz",
+        "ru",
+        "tr",
+        "us"
+      ]
+    },
+    "risks": [
+      {
+        "description": "Level content is the product; every level needs authoring and a solvability check.",
+        "severity": "medium",
+        "claim_refs": [
+          "claim-b5277fb850"
+        ]
+      }
+    ],
+    "confidence": {
+      "evidence_coverage": 0.0,
+      "weakest_tier": "unknown",
+      "unknown_facets": [
+        "gameplay_steps",
+        "controls",
+        "theme",
+        "setting",
+        "player_fantasy",
+        "emotional_fantasy",
+        "art_rendering",
+        "art_tone",
+        "art_palette",
+        "camera",
+        "progression",
+        "difficulty_shape",
+        "retention_hooks"
+      ],
+      "fixture_evidence": false
+    },
+    "claim_refs": [
+      "claim-0015946f54",
+      "claim-10e7b25b44",
+      "claim-12e9f11a8d",
+      "claim-19fe15410c",
+      "claim-2122fcd4f3",
+      "claim-237052bc62",
+      "claim-35da3a7cb8",
+      "claim-36ec781b4f",
+      "claim-45bee43ffd",
+      "claim-4d0b6d7039",
+      "claim-55ff2909f5",
+      "claim-6299fc4460",
+      "claim-73f7084dbe",
+      "claim-8124a91873",
+      "claim-831592f95c",
+      "claim-8691d0680d",
+      "claim-8910129266",
+      "claim-a9dd28949d",
+      "claim-aedf4467f6",
+      "claim-b5277fb850",
+      "claim-cdf943b10d",
+      "claim-d179e1fc07",
+      "claim-d183a072ae",
+      "claim-dd3290f5c6",
+      "claim-ebe0dbaaf5",
+      "claim-fd23eeef70"
+    ],
+    "design_constraints": {
+      "family": {
+        "value": "puzzle",
+        "label": "Level puzzle",
+        "tier": "hypothesis",
+        "source": "catalog",
+        "claim_refs": [
+          "claim-b5277fb850"
+        ]
+      },
+      "unit_kind": {
+        "value": "level",
+        "tier": "hypothesis",
+        "source": "catalog",
+        "label": "one level of Level puzzle",
+        "claim_refs": [
+          "claim-b5277fb850"
+        ],
+        "reason": "the puzzle genre model's first unit kind; no teardown codes it"
+      },
+      "progression": {
+        "value": null,
+        "tier": "unknown",
+        "source": "unknown",
+        "reason": "no teardown in the corpus codes progression for Logic puzzle (it has no teardown games)"
+      },
+      "difficulty_shape": {
+        "value": null,
+        "tier": "unknown",
+        "source": "unknown",
+        "reason": "no teardown in the corpus codes difficulty_shape for Logic puzzle (it has no teardown games)"
+      },
+      "retention_hooks": {
+        "value": null,
+        "tier": "unknown",
+        "source": "unknown",
+        "reason": "no teardown in the corpus codes retention_hooks for Logic puzzle (it has no teardown games)"
+      },
+      "session_band": {
+        "value": "short",
+        "label": "300 s estimated",
+        "tier": "hypothesis",
+        "source": "catalog",
+        "claim_refs": [
+          "claim-b5277fb850"
+        ]
+      },
+      "difficulty_axes": {
+        "value": [
+          "depth",
+          "move-limit",
+          "board-complexity",
+          "piece-variety"
+        ],
+        "label": "depth, move-limit, board-complexity, piece-variety",
+        "tier": "hypothesis",
+        "source": "catalog",
+        "claim_refs": [
+          "claim-b5277fb850"
+        ],
+        "reason": "no teardown codes what the ramp raises; the puzzle genre model's axes are the fallback"
+      }
+    },
+    "screen": {
+      "candidate": "logic-puzzle-levels",
+      "score": 0.77
+    },
+    "brief_match": {
+      "terms": [
+        "puzzle",
+        "levels"
+      ],
+      "dimension": false
+    }
+  },
+  "latest_evaluation_id": null,
+  "title_id": null,
+  "brief": "A sliding-ice puzzle: a penguin slides until it hits something; 24 hand-designed levels with keys, doors, crumbling tiles and a 3-star move target"
+}

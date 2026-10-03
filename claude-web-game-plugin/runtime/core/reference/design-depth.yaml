@@ -15,7 +15,7 @@
 # Change a value only with a reason a person could defend from playtest or live data; a
 # looser bar here lets a single-loop prototype through as a game.
 
-version: 1.0.0
+version: 1.1.0  # 1.1.0: playability bars for the content and depth checks
 
 meta_loop:
   # Persisting only these is a scoreboard, not a meta loop: at least one persisted entry
@@ -55,3 +55,55 @@ return_hooks:
   min_items: 2
   # Of which at least this many are MVP: the prototype already gives one.
   min_mvp_items: 1
+
+# The playability step's bars for the checks that hold a build to its design's content and
+# depth (scripts/wgf_playability/analysis.py; docs/playability-module.md). Numbers live here,
+# never in code. A check is SKIPPED only when the design does not claim the thing it measures
+# (a parametric or procedural content model has no listed units to traverse); a claimed thing
+# the probe cannot show is a FAIL.
+playability:
+  time_budget:
+    # Hard cap for one viewport's bot run; the step scales the traverse and session windows
+    # down to fit and records `truncated: true` on the checks it shortened.
+    bot_total_s: 600
+    traverse_s: 240
+    persist_s: 60
+  content:
+    # Units the oracle traverses in design order, or every MVP unit when there are fewer;
+    # the genre model's `qa.min_units_traversed` overrides it.
+    min_units_traversed: 3
+    # A unit transition is observed when content.unit_index increments within this many ms
+    # of the previous unit ending in `won` or its progress reaching its target.
+    transition_grace_ms: 1500
+    # Share of a unit's objective words shown on screen while it is played (the same bar as
+    # start.objective).
+    objective_min_share: 0.6
+  difficulty:
+    # Authored: share of consecutive traversed-unit pairs on which an escalating axis is
+    # non-decreasing or dips no deeper than relief_dip_max.
+    min_rise_share: 0.6
+    relief_dip_max: 0.35
+    # Parametric and endless: metrics.difficulty.<axis> in the last window of a session run
+    # must exceed the first window's for every escalating axis.
+    endless_window_s: 30
+  variety:
+    # Share of consecutive traversed-unit pairs whose entity kinds or mechanics set differs.
+    min_changed_pairs_share: 0.5
+    # Parametric: the first new entity kind arrives by the earliest MVP content_schedule
+    # at_s plus this many seconds.
+    first_new_kind_slack_s: 15
+  session_length:
+    # One oracle session with instant retries, ended on first_session.ends_on or at
+    # max_multiplier x target: it must reach min_share x depth.first_session.target_s.
+    min_share: 0.5
+    max_multiplier: 1.5
+    sessions: 1
+  ramp:
+    # Bad play ends a run within this many times the design's run length; oracle input rate
+    # in the last third of the longest run is at least the first third's; one relief dip of
+    # at least relief_dip_s is allowed.
+    bad_play_max_multiplier: 3
+    relief_dip_s: 2
+  persists:
+    # Generation modes for which progression.persists is required; others get WARNING.
+    required_generations: [authored]

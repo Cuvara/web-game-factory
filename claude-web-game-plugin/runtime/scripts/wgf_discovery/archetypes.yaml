@@ -31,16 +31,33 @@
 #   requires            the technical and asset capabilities the shape needs
 #   unavailable         why the Factory cannot build it yet (entries with design_archetype null)
 #   design_archetype    the design module's archetype (scripts/wgf_design/archetypes.py) that
-#                       designs this concept so it passes design consistency, or null: the
-#                       Factory cannot design it yet, and research never selects it - it is
-#                       kept in the report as excluded, "not buildable". Tied to the design
-#                       module by scripts/tests/test_research_to_design.py; a new design
-#                       archetype is how a null becomes buildable, never a relaxed rule.
+#                       designs this concept so it passes design consistency, or null. Tied to
+#                       the design module by scripts/tests/test_research_to_design.py.
+#   genre_model         the core/reference/genre-models.yaml family whose model the concept is
+#                       designed from (optional). A genre-model entry is designed by the
+#                       built-in genre seed author or the agent author from the family's model
+#                       - its unit kinds, progression and difficulty models, axes and unit
+#                       counts - never from a hand-coded design archetype.
+#                       ONE ENTRY PER FAMILY. A family carries one `seed` block, and that seed
+#                       is one game: the design it produces must be the game this entry's
+#                       concept describes, which the design consistency rules enforce
+#                       (concept_mechanics_carried, design_adds_no_foreign_mechanic). Pointing
+#                       a second concept at the same family makes a design of the first
+#                       concept's game and fails at G2's exit guard - so a second shape in a
+#                       family is a new seed in genre-models.yaml, never a second entry here.
+#                       scripts/tests/test_research_to_design.py measures this per entry.
+#
+# AN ENTRY IS BUILDABLE WHEN `design_archetype` IS SET OR `genre_model` IS SET. An entry with
+# neither is what the Factory cannot design yet: research never selects it, keeps it in the
+# report as excluded ("not buildable"), and an opportunity that needs it is kept as a
+# capability gap with `unavailable` as the reason. A new design archetype or a new genre family
+# is how a null becomes buildable, never a relaxed rule.
 #
 # No revenue figure appears here, deliberately: revenue_potential needs at least a derived
 # claim (core/reference/dimensions.yaml), and a catalog guess would anchor everyone.
 
-version: 1.2.0  # 1.1.0: design_archetype; 1.2.0: capability fields (genre_node, mechanics, requires, unavailable)
+version: 1.3.0  # 1.1.0: design_archetype; 1.2.0: capability fields
+                # (genre_node, mechanics, requires, unavailable); 1.3.0: genre_model
 
 archetypes:
   - id: block-puzzle
@@ -51,7 +68,10 @@ archetypes:
     genre_node: block-puzzle
     mechanics: [drag-place, line-clear]
     requires: [2d grid board, drag input, line-clear rules]
-    unavailable: no design archetype places given block shapes on a grid and clears lines; merge-puzzle (grid) and drop-merge are the nearest
+    unavailable: >-
+      the puzzle genre model's seed is a slide-and-clear colour grid, not a board the player
+      drops given shapes onto; a block-placing seed (its fit test, its piece bag and its
+      game-over rule) does not exist yet
     market_tags: [puzzle, block-puzzle, casual]
     core_mechanic: drag given block shapes onto a grid; full rows and columns clear
     fantasy: turning a cluttered board into a clean one, one satisfying clear at a time
@@ -85,7 +105,10 @@ archetypes:
     genre_node: sort-puzzle
     mechanics: [sort-move]
     requires: [2d containers, tap-to-move input, hand-authored or generated levels]
-    unavailable: no design archetype moves units between containers; level authoring is not part of the design module
+    unavailable: >-
+      the puzzle genre model's seed is a slide-and-clear colour grid; sorting is a different
+      game - containers rather than a board, and a solver that proves a level sortable - and
+      no seed designs it yet
     market_tags: [puzzle, sorting, casual]
     core_mechanic: move coloured units between containers until each container holds one colour
     fantasy: bringing order to a mess with a few clever moves
@@ -119,7 +142,10 @@ archetypes:
     genre_node: idle-merge
     mechanics: [merge-combine, upgrade-tap]
     requires: [2d board, offline progress economy, cloud or local save]
-    unavailable: no design archetype runs an idle economy; offline progress and economy balancing are outside the design module
+    unavailable: >-
+      the simulation genre model's seed is a served-shift tycoon; a merge idler is a different
+      game - a board of items, a merge rule and income that accrues while away - and no seed
+      designs it, nor does the Factory model offline progress
     market_tags: [idle, merge, clicker]
     core_mechanic: merge identical items into higher tiers that produce currency, including while away
     fantasy: building an empire that keeps growing when you are not looking
@@ -415,3 +441,277 @@ archetypes:
     priors: {monetization_fit: 0.65, retention_potential: 0.5, session_quality: 0.6, technical_risk: 0.45, performance_risk: 0.6, iterability: 0.5}
     risks:
       - {description: 3D vehicle and environment assets dominate cost and bundle size., severity: high}
+
+  - id: logic-puzzle-levels
+    title: Logic Puzzle Levels
+    genre: puzzle
+    subgenre: logic
+    design_archetype: null
+    genre_model: puzzle
+    genre_node: logic-puzzle
+    mechanics: [line-clear]
+    requires: [2d board, drag input, authored level set with a recorded solution]
+    market_tags: [puzzle, logic, brain, casual]
+    core_mechanic: slide one row or column of a colour grid so lines of three clear
+    fantasy: feeling clever - the moment the slide you had missed becomes obvious
+    core_loop: read the board, work out the slide that clears the most, lines of three clear and the board opens up, advance to a level that adds a colour or tightens the budget
+    session_seconds: 300
+    replayability: medium
+    retention_design: a visible level map, stars per level and a daily puzzle
+    technical_complexity: xs
+    asset_complexity: xs
+    dev_speed_days: 9
+    asset_cost_usd: 200
+    bundle_mb: 8
+    rendering: 2d
+    text_heavy: false
+    multiplayer: false
+    needs_cloud_save: true
+    mobile_ready: true
+    monetization:
+      primary: rewarded
+      secondary: [interstitial]
+      rationale: Being stuck is the rewarded moment (a hint or one revealed cell); interstitials between levels.
+    priors: {monetization_fit: 0.7, retention_potential: 0.6, session_quality: 0.8, technical_risk: 0.1, performance_risk: 0.05, iterability: 0.75}
+    risks:
+      - {description: Level content is the product; every level needs authoring and a solvability check., severity: medium}
+
+  - id: precision-platformer
+    title: Precision Platformer
+    genre: platformer
+    subgenre: precision
+    design_archetype: null
+    genre_model: platformer
+    genre_node: platformer
+    mechanics: [jump, dodge]
+    requires: [2d tile levels, jump physics with forgiving input windows, checkpoints, a hazard set]
+    market_tags: [platformer, arcade, action]
+    core_mechanic: run and jump through authored levels where every gap has one clean line
+    fantasy: mastery you can feel yourself acquiring, jump by jump
+    core_loop: read the screen, jump the sequence, die, restart at the checkpoint within a second, reach the exit
+    session_seconds: 270
+    replayability: medium
+    retention_design: level progression, par times and hidden collectibles
+    technical_complexity: s
+    asset_complexity: m
+    dev_speed_days: 12
+    asset_cost_usd: 600
+    bundle_mb: 14
+    rendering: 2d
+    text_heavy: false
+    multiplayer: false
+    needs_cloud_save: true
+    mobile_ready: true
+    monetization:
+      primary: rewarded
+      secondary: [interstitial]
+      rationale: An extra checkpoint or a level skip after repeated deaths is the rewarded moment; interstitials between levels.
+    priors: {monetization_fit: 0.55, retention_potential: 0.6, session_quality: 0.8, technical_risk: 0.25, performance_risk: 0.15, iterability: 0.6}
+    risks:
+      - {description: Jump feel decides the game and only playtesting settles it., severity: medium}
+      - {description: Authored levels are the content cost; a thin set reads as a demo rather than a game., severity: medium}
+
+  - id: flip-arcade
+    title: Flip Arcade
+    genre: arcade
+    subgenre: one-touch
+    design_archetype: null
+    genre_model: arcade
+    genre_node: one-touch
+    mechanics: [tap-timing, dodge]
+    requires: [2d, a single-input timing loop, authored obstacle patterns]
+    market_tags: [arcade, one-touch, casual]
+    core_mechanic: one tap flips the direction of travel; the gap you aimed for closes if you are late
+    fantasy: reading a pattern a beat ahead of it
+    core_loop: tap to flip, thread the next gap, extend a multiplier, crash, retry within a second
+    session_seconds: 160
+    replayability: high
+    retention_design: personal best, a daily seed and unlockable skins
+    technical_complexity: xs
+    asset_complexity: s
+    dev_speed_days: 7
+    asset_cost_usd: 250
+    bundle_mb: 9
+    rendering: 2d
+    text_heavy: false
+    multiplayer: false
+    needs_cloud_save: false
+    mobile_ready: true
+    monetization:
+      primary: rewarded
+      secondary: [interstitial]
+      rationale: Continue-after-crash is the rewarded moment; runs are short, so interstitial cadence needs care.
+    priors: {monetization_fit: 0.6, retention_potential: 0.5, session_quality: 0.65, technical_risk: 0.1, performance_risk: 0.1, iterability: 0.85}
+    risks:
+      - {description: A thin content ceiling; without designed pattern sets it is one obstacle rescaled., severity: medium}
+
+  - id: wave-shooter
+    title: Wave Shooter
+    genre: shooter
+    subgenre: wave
+    design_archetype: null
+    genre_model: shooter
+    genre_node: shooter
+    mechanics: [aim-shoot, dodge]
+    requires: [2d arena, aim input, wave composition data, projectile pooling]
+    market_tags: [shooter, action, arcade]
+    core_mechanic: aim and shoot at waves that mix enemy behaviours while moving to stay alive
+    fantasy: holding a line against odds that keep rising
+    core_loop: clear a wave, take one upgrade, meet a wave that answers it, fall, start again knowing more
+    session_seconds: 300
+    replayability: high
+    retention_design: wave records and weapons unlocked between runs
+    technical_complexity: s
+    asset_complexity: m
+    dev_speed_days: 12
+    asset_cost_usd: 650
+    bundle_mb: 16
+    rendering: 2d
+    text_heavy: false
+    multiplayer: false
+    needs_cloud_save: true
+    mobile_ready: true
+    monetization:
+      primary: rewarded
+      secondary: [interstitial]
+      rationale: A revive mid-wave and a doubled upgrade pick are the rewarded moments; interstitials between runs.
+    priors: {monetization_fit: 0.7, retention_potential: 0.6, session_quality: 0.75, technical_risk: 0.25, performance_risk: 0.3, iterability: 0.7}
+    risks:
+      - {description: Enemy variety is the content; too few kinds and every wave reads the same., severity: medium}
+
+  - id: lap-racer
+    title: Lap Racer
+    genre: racing
+    subgenre: lap
+    design_archetype: null
+    genre_model: racing
+    genre_node: racing
+    mechanics: [steer, collect]
+    requires: [3d track meshes, a vehicle handling model, lap and checkpoint timing, a chase camera]
+    market_tags: [racing, driving, arcade]
+    core_mechanic: steer a car through authored tracks against a medal time and a rival pace
+    fantasy: the clean lap - the line you finally get right
+    core_loop: learn the track, race the medal time, shave one corner, unlock the next track
+    session_seconds: 240
+    replayability: medium
+    retention_design: medals, best laps and unlocked cars
+    technical_complexity: m
+    asset_complexity: l
+    dev_speed_days: 15
+    asset_cost_usd: 1200
+    bundle_mb: 45
+    rendering: 3d
+    text_heavy: false
+    multiplayer: false
+    needs_cloud_save: true
+    mobile_ready: true
+    monetization:
+      primary: rewarded
+      secondary: [interstitial]
+      rationale: A car unlock or a restart from the last checkpoint is the rewarded moment; interstitials between races.
+    priors: {monetization_fit: 0.6, retention_potential: 0.5, session_quality: 0.7, technical_risk: 0.45, performance_risk: 0.55, iterability: 0.5}
+    risks:
+      - {description: 3D tracks and vehicles dominate asset cost and bundle size., severity: high}
+      - {description: Handling feel on a keyboard and on a touchscreen are two different problems., severity: medium}
+
+  - id: tower-defense
+    title: Tower Defense
+    genre: strategy
+    subgenre: tower-defense
+    design_archetype: null
+    genre_model: strategy
+    genre_node: tower-defense
+    mechanics: [tower-place, upgrade-tap]
+    requires: [2d path maps, placement and targeting rules, wave composition data, an income economy]
+    market_tags: [strategy, tower-defense, defense]
+    core_mechanic: place and upgrade towers along a path so each wave mix is answered
+    fantasy: the plan that holds - a layout you designed shredding a wave
+    core_loop: read the wave preview, spend income on a placement, hold the wave, bank what is left, face a mix that punishes one tower type
+    session_seconds: 420
+    replayability: high
+    retention_design: map progression and a record of waves held clean
+    technical_complexity: s
+    asset_complexity: m
+    dev_speed_days: 13
+    asset_cost_usd: 700
+    bundle_mb: 18
+    rendering: 2d
+    text_heavy: false
+    multiplayer: false
+    needs_cloud_save: true
+    mobile_ready: true
+    monetization:
+      primary: rewarded
+      secondary: [interstitial]
+      rationale: An extra life for the base and a doubled wave reward are the rewarded moments; interstitials between maps.
+    priors: {monetization_fit: 0.75, retention_potential: 0.7, session_quality: 0.8, technical_risk: 0.3, performance_risk: 0.2, iterability: 0.65}
+    risks:
+      - {description: Economy and wave balance need iteration a 7-14 day cycle barely allows., severity: high}
+
+  - id: arena-survivor
+    title: Arena Survivor
+    genre: action
+    subgenre: arena-survivor
+    design_archetype: null
+    genre_model: survival
+    genre_node: arena-survivor
+    mechanics: [auto-attack, dodge]
+    requires: [2d arena, auto-attacking weapons, a spawn director, an upgrade pool]
+    market_tags: [action, survivor, arcade]
+    core_mechanic: move to survive while weapons fire themselves and every level offers one upgrade
+    fantasy: going from fragile to unstoppable inside ten minutes
+    core_loop: survive the next spawn wave, pick an upgrade, watch the build compound, die, start again on another build
+    session_seconds: 360
+    replayability: high
+    retention_design: survived-time records and meta unlocks between runs
+    technical_complexity: m
+    asset_complexity: m
+    dev_speed_days: 13
+    asset_cost_usd: 700
+    bundle_mb: 18
+    rendering: 2d
+    text_heavy: false
+    multiplayer: false
+    needs_cloud_save: true
+    mobile_ready: true
+    monetization:
+      primary: rewarded
+      secondary: [interstitial]
+      rationale: A revive and a re-roll of the upgrade choice are the rewarded moments; interstitials between runs.
+    priors: {monetization_fit: 0.7, retention_potential: 0.65, session_quality: 0.75, technical_risk: 0.35, performance_risk: 0.45, iterability: 0.7}
+    risks:
+      - {description: Hundreds of enemies on screen is the performance ceiling on low-end mobile browsers., severity: high}
+
+  - id: stand-tycoon
+    title: Stand Tycoon
+    genre: simulation
+    subgenre: tycoon
+    design_archetype: null
+    genre_model: simulation
+    genre_node: tycoon
+    mechanics: [upgrade-tap, collect]
+    requires: [2d stand layout, a customer queue simulation, economy and unlock data]
+    market_tags: [simulation, tycoon, management]
+    core_mechanic: serve a queue of customers and spend the takings on the upgrade the next shift needs
+    fantasy: turning a cart into a business you built one decision at a time
+    core_loop: open the shift, serve the queue, bank the profit, buy one upgrade, meet a shift that demands it
+    session_seconds: 330
+    replayability: medium
+    retention_design: shift targets, unlocks and a daily bonus
+    technical_complexity: s
+    asset_complexity: m
+    dev_speed_days: 12
+    asset_cost_usd: 650
+    bundle_mb: 16
+    rendering: 2d
+    text_heavy: false
+    multiplayer: false
+    needs_cloud_save: true
+    mobile_ready: true
+    monetization:
+      primary: rewarded
+      secondary: [interstitial]
+      rationale: Doubling a shift of takings and skipping a restock timer are the rewarded moments; interstitials between shifts.
+    priors: {monetization_fit: 0.8, retention_potential: 0.65, session_quality: 0.7, technical_risk: 0.2, performance_risk: 0.15, iterability: 0.7}
+    risks:
+      - {description: Economy balance decides whether a shift feels tight or trivial and only playtesting settles it., severity: medium}

@@ -41,10 +41,10 @@ import json
 import math
 import re
 
-from wgflib import criteria
+from wgflib import criteria, genre_models
 
 __all__ = ["ClaimBook", "analyse", "archetype_vocabulary", "brief_terms", "claim_id",
-           "idea_match", "idea_terms", "idea_dimension", "words_of"]
+           "genre_families", "idea_match", "idea_terms", "idea_dimension", "words_of"]
 
 CONFIDENCE_OBSERVED = 0.85
 CONFIDENCE_STALE = 0.6
@@ -68,12 +68,17 @@ PLATFORM_FACTS = ("ads.rewarded", "ads.interstitial", "ads.banner", "iap", "max_
 
 _IDEA_WORD = re.compile(r"[a-z0-9][a-z0-9-]*")
 # Words that describe any game, or no game: they match nothing, whatever the catalog says.
-# The second block is generic gameplay vocabulary - progression, scoring, presentation, input
-# and the engine - which a brief of any genre may use and no genre is defined by.
+# The second block is counts, here on purpose: "three weapons" and "three in a row" share only
+# a number, and a tycoon idea once selected a match-3 shape because both said "three". The
+# third is generic gameplay vocabulary - progression, scoring, presentation, input and the
+# engine - which a brief of any genre may use and no genre is defined by.
 _IDEA_STOP = frozenset("""
-    a an and are as at be by for from game games has have in into is it its of on one or
+    a an and are as at be by for from game games has have in into is it its of on or
     player players play plays playing the their them then there they this to where which
     while who with without you your web browser mobile simple casual fun new
+
+    one two three four five six seven eight nine ten eleven twelve twenty thirty fifty
+    hundred first second third several many few more most each every per
 
     collect collects collecting beat beats time times timer star stars score scores points
     best bests personal level levels stage stages world worlds mode modes unlock unlocks
@@ -88,13 +93,21 @@ IDEA_MIN_DESCRIPTIVE = 2
 _DIMENSION_WORDS = {"3d": "3d", "three-dimensional": "3d", "2d": "2d", "two-dimensional": "2d"}
 
 
+def genre_families():
+    """`families` of core/reference/genre-models.yaml: for an entry that names a family rather
+    than a design archetype, the family's label and the genre nodes it covers are words for the
+    same game."""
+    return genre_models.load().get("families") or {}
+
+
 def idea_terms(idea):
     """The brief's content words, lowercased, in order, without repeats or dimension words.
     Whole words only: a brief's "blocks" is not the catalog's "block"."""
     seen = []
     for word in _IDEA_WORD.findall((idea or "").lower()):
-        if word in _IDEA_STOP or word in _DIMENSION_WORDS or len(word) < 3 or word in seen:
-            continue
+        if (word in _IDEA_STOP or word in _DIMENSION_WORDS or len(word) < 3 or word in seen
+                or word[0].isdigit()):
+            continue  # a bare number ("24", "15-day") names no game
         seen.append(word)
     return seen
 
@@ -120,10 +133,20 @@ def archetype_vocabulary(archetype):
     """(defining, descriptive) words of a catalog archetype or concept: what names the game,
     and the mechanic sentence that describes it."""
     # `brief` only exists on a concept authored for one: it matches the brief it was written for.
-    defining = words_of([archetype.get("genre"), archetype.get("subgenre"),
-                         archetype.get("title"), archetype.get("brief")]
-                        + list(archetype.get("market_tags") or []))
-    return defining, words_of([archetype.get("core_mechanic")])
+    # A genre-model entry is also the shape of its whole family: the family label and the genre
+    # nodes the family covers name the same game ("tower defense", "tycoon", "platformer"), so a
+    # brief that uses those words finds the entry that builds them - all of it defining. A node
+    # id matches whole and is never split into parts - a block puzzle is not a bubble-shooter
+    # and not a physics-puzzle.
+    values = [archetype.get("genre"), archetype.get("subgenre"), archetype.get("title"),
+              archetype.get("brief"), archetype.get("genre_node")]
+    values += list(archetype.get("market_tags") or [])
+    nodes = set()
+    family = genre_families().get(archetype.get("genre_model"))
+    if family:
+        values.append(family.get("label"))
+        nodes = {str(node).lower() for node in family.get("nodes") or []}
+    return words_of(values) | nodes, words_of([archetype.get("core_mechanic")])
 
 
 def brief_terms(idea, defining, descriptive):
@@ -927,8 +950,13 @@ def _candidate(book, archetype, views, platform_info, model, backlog, report_key
 
 def buildable(archetype):
     """False only when the catalog says so: `design_archetype: null`. A catalog that does not
-    declare the field (an installation's own) makes no claim, and nothing is excluded."""
-    return "design_archetype" not in archetype or bool(archetype["design_archetype"])
+    declare the field (an installation's own) makes no claim, and nothing is excluded.
+
+    Either road builds it: a design archetype that designs the concept, or a genre family whose
+    model (core/reference/genre-models.yaml) the genre seed author designs it from."""
+    if "design_archetype" not in archetype and "genre_model" not in archetype:
+        return True
+    return bool(archetype.get("design_archetype")) or bool(archetype.get("genre_model"))
 
 
 def analyse(*, sources, profiles, archetypes, model, backlog, as_of_text, report_key,
@@ -979,8 +1007,8 @@ def analyse(*, sources, profiles, archetypes, model, backlog, as_of_text, report
             # relax the rules) whatever a person approved at G2. Kept, like every exclusion.
             candidate["status"] = "excluded"
             candidate["exclusion_reason"] = (
-                "not buildable: no design archetype carries this concept's mechanics "
-                "(catalog design_archetype is null)")
+                "not buildable: no design archetype carries this concept's mechanics and no "
+                "genre model covers it (catalog design_archetype and genre_model are null)")
 
     # Evidence of demand outranks imagined demand: when the scan observed any listings at all,
     # a candidate nobody was seen playing ranks after every candidate somebody was.

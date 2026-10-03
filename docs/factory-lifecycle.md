@@ -220,6 +220,16 @@ to `cancelled`, G5's and G6's own); `publish` is G6's approval, named after the 
 `approved -> validating` edge, and the `submit` step refuses to submit any manifest but the
 one that record pins.
 
+The gate's `required_artifacts` (`core/lifecycle/gates.yaml`) are what the decision is
+*required* to rest on; a checkpoint may be given more to show. Since workflow 8, G4's step also
+takes the `playability-report` and the `review-report`, and G3's design carries the content
+rules in its `consistency` block — so what each gate prints while it waits
+(`wgflib.gate_evidence`) includes the design's `content.*` rules and the genre model they were
+checked against (G3), and the prototype's `content_coverage` and `design_gaps`, every content,
+difficulty, progression and depth check the playability bot ran with each skip named as a skip,
+and the review's verdict with any design-fidelity blocker (G4). None of it decides anything; a
+gate still reads a skip as "not measured", never as a pass.
+
 G4 judges the *verified* prototype: it runs only after verification passes, and a
 verification that runs again after a pass makes G4 ask again. `pass` continues to the store
 listing - the verified build's store package, captured and validated per platform

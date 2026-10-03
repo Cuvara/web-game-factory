@@ -45,42 +45,51 @@ import copy
 import json
 import os
 
-from wgflib import agentenv, paths, permpath, procs, quality_bar
+from wgflib import agentenv, genre_models, paths, permpath, procs, quality_bar
 
+from . import content as content_rules
 from . import identity
 from .authors import ArchetypeAuthor, AuthorError, DesignAuthor, register_author
 from .depth import load_rules as load_depth_rules
 from .experience import load_rules
 
-__all__ = ["AgentAuthor", "AgentRunFailed", "REQUIRED_KEYS", "BUILD_SPEC_KEYS"]
+__all__ = ["AgentAuthor", "AgentRunFailed", "REQUIRED_KEYS", "BUILD_SPEC_KEYS",
+           "check_shape"]
 
 # Exactly what the built-in author returns, so `finalize` and `buildability` never meet a
 # shape they index into blindly.
-REQUIRED_KEYS = ("fantasy", "core_loop", "pillars", "engine", "features", "scope", "session",
-                 "retention", "monetization", "progression", "difficulty", "controls", "ux",
-                 "art_direction", "audio_direction", "build_spec", "open_questions")
-BUILD_SPEC_KEYS = ("mechanics", "controls", "player_goals", "progression", "difficulty",
-                   "game_states", "screens", "hud", "menus", "tutorial", "rewards", "failure",
-                   "session_flow", "monetization_touchpoints", "assets", "audio", "responsive",
+REQUIRED_KEYS = ("fantasy", "core_loop", "genre", "pillars", "engine", "features", "scope",
+                 "session", "retention", "monetization", "progression", "difficulty",
+                 "controls", "ux", "art_direction", "audio_direction", "build_spec",
+                 "open_questions")
+BUILD_SPEC_KEYS = ("mechanics", "content", "controls", "player_goals", "progression",
+                   "difficulty", "mastery", "game_states", "screens", "hud", "menus",
+                   "tutorial", "rewards", "failure", "session_flow",
+                   "monetization_touchpoints", "assets", "audio", "responsive",
                    "visual_identity", "experience")
 
-PROMPT = (
+# What the agent is asked to do. The content is the design: a game is the units a player
+# plays, not a loop and the word "harder".
+_DESIGN = (
     "You are the game designer for this title. Read the request at {request}: the approved "
-    "strategy, the platform profiles, and a starting draft in exactly the shape required. "
-    "Improve the design - the core loop, feel, onboarding, difficulty, rewards and failure "
-    "feedback, audio and visual identity - within the strategy's scope: never add a feature, "
-    "a monetization placement or a platform the strategy did not approve, and keep every key "
-    "and id reference valid. {draft} already holds the starting draft (when you are asked "
-    "again, your previous draft): edit that file in place, a section at a time, so it stays "
-    "one valid JSON object of the required shape. Do not print the draft."
+    "strategy, the platform profiles, the genre model the content is held to, and a starting "
+    "draft in exactly the shape required. Design the game. State its genre family and ending, "
+    "and the full build_spec.content list: every unit with purpose, objective, the mechanics "
+    "it uses and introduces, difficulty values on the family's axes, duration, success and "
+    "failure in the player's words, and acceptance a bot can check; the progression model, "
+    "the difficulty axes and the mastery statement. Improve the core loop, feel, onboarding, "
+    "rewards, failure feedback, audio and visual identity. Never add a monetization placement "
+    "or a platform the strategy did not approve; mechanics and content the strategy's "
+    "concept, content_model and MVP name are yours to specify in full."
+)
+PROMPT = (
+    _DESIGN
+    + " {draft} already holds the starting draft (when you are asked again, your previous "
+      "draft): edit that file in place, a section at a time, so it stays one valid JSON "
+      "object of the required shape. Do not print the draft."
 )
 PROMPT_STDOUT = (
-    "You are the game designer for this title. Read the request at {request}: the approved "
-    "strategy, the platform profiles, and a starting draft in exactly the shape required. "
-    "Improve the design - the core loop, feel, onboarding, difficulty, rewards and failure "
-    "feedback, audio and visual identity - within the strategy's scope: never add a feature, "
-    "a monetization placement or a platform the strategy did not approve, and keep every key "
-    "and id reference valid. End your answer with the complete draft as one JSON object."
+    _DESIGN + " End your answer with the complete draft as one JSON object."
 )
 
 # Appended when the strategy carries a brief - the person's own game idea. The brief is
@@ -95,7 +104,32 @@ PROMPT_BRIEF = (
 PROMPT_CONCEPT = (
     " The module then holds the draft to the strategy's `concept`: every mechanic its "
     "core_mechanic and core_loop state must appear in your core_loop, MVP features or MVP "
-    "controls, and you may add no mechanic the strategy does not state."
+    "controls, and you may add no mechanic the strategy's concept, content_model or MVP does "
+    "not state."
+)
+# Appended always: the content bars, by rule id, so the units are written against the same
+# measure the check applies. The genre family, its axes and its variety bars are in the
+# request's `genre_model` and `content_rules`; the craft guide is `content_craft`.
+PROMPT_CONTENT = (
+    " build_spec.content is checked against the genre model by these rules, each of which "
+    "names the field to change: " + ", ".join(rule_id for rule_id, _ in content_rules.RULES)
+    + ". The unit kind, the generation mode, the progression and difficulty models and the "
+      "ending must be ones the family allows; the MVP carries at least its units.min_mvp "
+      "units and the design its units.min_total at any tier; no unit outruns the session "
+      "profile and the first one is half a unit at most; every mechanic a unit asks for is "
+      "introduced by that unit or an earlier one and used again after it; consecutive units "
+      "change the family's variety dimensions rather than only a number; difficulty escalates "
+      "on the axes the family says escalate, dips only for a breather and recovers; every "
+      "unit says how it is won and lost in its own terms; and no two units accept nearly the "
+      "same thing. scope.content_units and scope.content_unit_kind say what "
+      "build_spec.content says. The craft guide is the request's `content_craft`."
+)
+# Appended when a prototype report named gaps in the design: answer each one where it belongs.
+PROMPT_GAPS = (
+    " The build found gaps in this design (the request's `gaps`): questions the developer "
+    "could not answer from it. {draft} holds the design they were found in (the request's "
+    "`previous_design`). Answer each gap at the field it names - a number, a rule, a unit, a "
+    "state - and change nothing else: this is the same game, specified further."
 )
 
 # Appended always: the finished design is a game-design artifact, validated against its schema.
@@ -237,6 +271,7 @@ class AgentAuthor(DesignAuthor):
         directory = os.path.join(run_dir, "design")
         repair = brief.get("repair") or {}
         stem = f"{brief.get('visit', 1)}-{brief.get('attempt', 1)}" + (
+            "-gaps" if brief.get("gaps") else "") + (
             f"-repair{repair['round']}" if repair else "")
         request_path = os.path.join(directory, f"{stem}.request.json")
         draft_path = os.path.join(directory, f"{stem}.draft.json")
@@ -246,11 +281,26 @@ class AgentAuthor(DesignAuthor):
             if os.path.exists(stale):
                 os.remove(stale)
 
-        # The built-in author's draft is the starting point: the exact shape the module
-        # requires, already inside the strategy's scope. The agent improves it.
-        starting = ArchetypeAuthor(starting_point=True).draft(brief)
+        gaps = list(brief.get("gaps") or [])
+        previous = brief.get("previous_design")
+        if gaps and not isinstance(previous, dict):
+            raise AuthorError("the design step passed design gaps without the design they were "
+                              "found in (brief['previous_design']): there is nothing to repair")
+        if gaps:
+            # Repairing a design that was built: start from it, not from a fresh draft, so
+            # answering a gap cannot quietly redesign the game around it.
+            starting = {key: value for key, value in copy.deepcopy(previous).items()
+                        if key not in ("provenance", "consistency")}
+        else:
+            # The built-in author's draft is the starting point: the exact shape the module
+            # requires, already inside the strategy's scope. The agent improves it.
+            starting = ArchetypeAuthor(starting_point=True).draft(brief)
         idea = (brief.get("strategy") or {}).get("brief")
         rules = load_rules()
+        models = genre_models.load()
+        genre = starting.get("genre") if isinstance(starting.get("genre"), dict) else {}
+        family = (models.get("families") or {}).get(genre.get("family")) or {}
+        profile_name = genre.get("session_profile") or "standard"
         request = {"title_id": brief.get("title_id"), "strategy": brief.get("strategy"),
                    "platforms": [{"id": p.id, "role": p.role, "version": p.version,
                                   "profile": p.profile} for p in brief.get("platforms") or []],
@@ -271,12 +321,39 @@ class AgentAuthor(DesignAuthor):
                    # The committed looks to choose from, and frames of finished games.
                    "identity_kits": _kits((starting.get("scope") or {}).get("locales")),
                    "quality_bar": quality_bar.frames(),
-                   "quality_bar_qualities": quality_bar.qualities()}
+                   "quality_bar_qualities": quality_bar.qualities(),
+                   # The genre family the content is held to, exactly as content.py reads it -
+                   # its unit kinds, models, ending, axes, win and lose shape, unit counts,
+                   # variety dimensions and mastery model. `seed` is the built-in author's own
+                   # starting design and is left out: the agent designs, it does not copy.
+                   "genre_model": {key: value for key, value in family.items()
+                                   if key != "seed"},
+                   # What the content check measures, and the bars it measures against.
+                   "content_rules": {
+                       "rules": [{"id": rule_id, "meaning": meaning}
+                                 for rule_id, meaning in content_rules.RULES],
+                       "variety": dict(models.get("variety") or {},
+                                       **(family.get("variety") or {})),
+                       "session_profile": dict(
+                           (models.get("session_profiles") or {}).get(profile_name) or {},
+                           name=profile_name),
+                   },
+                   "content_craft": os.path.join(paths.CORE, "craft",
+                                                 "content-and-level-design.md")}
         if idea:
             request["brief"] = idea
         if repair:
             request["repair"] = {"problems": repair.get("problems") or [],
                                  "previous_draft": repair.get("previous_draft")}
+        constraints = ((brief.get("strategy") or {}).get("research") or {}).get(
+            "design_constraints")
+        if isinstance(constraints, dict) and constraints:
+            # The content shape research coded for this cell, with its tiers and claims: the
+            # family, what one unit is, the progression, the difficulty shape and the axes.
+            request["design_constraints"] = constraints
+        if gaps:
+            request["gaps"] = gaps
+            request["previous_design"] = previous
         with open(request_path, "w", encoding="utf-8", newline="\n") as handle:
             json.dump(request, handle, indent=2, ensure_ascii=False, default=str)
 
@@ -297,7 +374,10 @@ class AgentAuthor(DesignAuthor):
         values["prompt"] = (PROMPT_STDOUT if stdout_mode else PROMPT).format(**values)
         if idea:
             values["prompt"] += PROMPT_BRIEF
-        values["prompt"] += PROMPT_CONCEPT + PROMPT_SCHEMA + PROMPT_ART + PROMPT_DEPTH
+        values["prompt"] += (PROMPT_CONCEPT + PROMPT_SCHEMA + PROMPT_ART + PROMPT_DEPTH
+                             + PROMPT_CONTENT)
+        if gaps:
+            values["prompt"] += PROMPT_GAPS.format(draft=draft_path)
         if repair:
             values["prompt"] += PROMPT_REPAIR
         try:

@@ -12,8 +12,32 @@
     },
     "metrics": {
       "type": "object",
-      "description": "Every metric the design's experience contract relies on (the goal's, win's, lose's, and every metric an action updates), by the same name, at its current value.",
+      "description": "Every metric the design's experience contract relies on (the goal's, win's, lose's, and every metric an action updates), by the same name, at its current value. Recommended keys beyond those, so a run can be judged against the design's content contract: `unit` - the current unit's index, 1-based; `best` - the best the player has reached, when the design persists one; `difficulty.<axis>` - the value in force now on each axis the design declares in build_spec.difficulty.axes, one key per axis, so a bot can see difficulty actually move; and every metric the design says persists between sessions, at the value just loaded.",
       "additionalProperties": { "type": "number" }
+    },
+    "content": {
+      "type": "object",
+      "description": "Where in the game's content the player is now: which unit (level, wave, track, encounter, scenario, round) of how many, what it asks for, and how far through it they are. A game with units reports it so a bot can play several of them and a check can tell that the units differ; `unit_id` is null before play starts or between units. Units are the design's (build_spec.content.units), by id and in its order.",
+      "required": ["unit_id", "unit_index", "unit_count", "unit_kind"],
+      "properties": {
+        "unit_id": { "type": ["string", "null"], "description": "The build_spec.content.units id of the unit in play, or null when none is." },
+        "unit_index": { "type": "integer", "minimum": 0, "description": "Its place in the sequence, 1-based; 0 when no unit is in play." },
+        "unit_count": { "type": "integer", "minimum": 0, "description": "How many units the build carries. For procedural content, how many a session is designed to meet." },
+        "unit_kind": { "type": "string", "description": "What a unit is called here - level, wave, track, lap, encounter, scenario, shift, round, map, run-segment." },
+        "objective": { "type": "string", "description": "The unit's objective, in the words the player is shown." },
+        "progress": {
+          "type": "object",
+          "description": "How far through the unit the player is, on the unit's own measure. `value` rises toward `target` and the unit's objective is met when value >= target (gems 2 of 3, waves cleared 4 of 5, goal reached 0 of 1): never a count that falls (moves left, time left) - that is a lose metric, reported in metrics.",
+          "required": ["metric", "value", "target"],
+          "properties": {
+            "metric": { "type": "string", "description": "The metric progress is counted in, named as `metrics` names it." },
+            "value": { "type": "number" },
+            "target": { "type": "number", "description": "The value that completes the unit." }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
     },
     "entities": {
       "type": "array",
@@ -43,7 +67,7 @@
       "additionalProperties": false
     },
     "oracle": {
-      "description": "Only with `wgf-probe=1` in the URL: the input that succeeds now (a save, a match, a dodge), or null when no input matters now. Lets the playability step reach `won` and play badly on purpose to reach `lost`.",
+      "description": "Only with `wgf-probe=1` in the URL: the input that succeeds now (a save, a match, a dodge), or null when no input matters now. Lets the playability step reach `won` and play badly on purpose to reach `lost`. Across units: when a unit has ended in success, the oracle names the input that advances to the next one (the `next` or `continue` control action), so a bot can play unit after unit with real input. It never names an input that skips a unit the player has not finished, and the probe offers no way to jump to one: the bot plays every unit it reports.",
       "oneOf": [{ "$ref": "#/$defs/move" }, { "type": "null" }]
     }
   },
@@ -54,6 +78,7 @@
       "required": ["id", "role", "x", "y", "w", "h", "visible"],
       "properties": {
         "id": { "type": "string" },
+        "kind": { "type": "string", "description": "What the game itself calls this thing - `swarmer`, `turret`, `ice-tile`, `boost-pad`. Free text, and the game's own vocabulary; `role` stays the fixed one the checks read. A check counting distinct kinds in a unit (a wave with one enemy kind is not a composition) counts these." },
         "role": {
           "enum": ["player", "threat", "goal", "target", "projectile", "collectible", "hazard", "ui"],
           "description": "What the entity is to the player. The visual gate requires every player, threat, goal, target and projectile entity to be on screen and large enough to read."

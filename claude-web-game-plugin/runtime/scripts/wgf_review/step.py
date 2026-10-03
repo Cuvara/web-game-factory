@@ -52,6 +52,7 @@ SUBJECTS = ("prototype-report", "sdk-report")
 SUPPORTED_MAJOR = "1"
 REQUEST_CHANGES = "request-changes"
 DEVELOP_BRIEF = "docs/development/brief.json"
+DEVELOP_REPORT = "docs/development/report.json"
 
 
 def _utc_now():
@@ -171,6 +172,14 @@ class ReviewStep(WorkflowStep):
                 develop_brief = json.load(handle)
         except (OSError, ValueError):
             pass
+        # What the developer said it built: its content units and the design gaps it hit. The
+        # prototype-report carries the same fields and stands in when the file is unreadable.
+        develop_report = None
+        try:
+            with open(os.path.join(checkout, DEVELOP_REPORT), encoding="utf-8") as handle:
+                develop_report = json.load(handle)
+        except (OSError, ValueError):
+            pass
         if subject_type == "sdk-report":
             # The change under review is what sdk committed on top of development's commit.
             baseline = developed
@@ -185,6 +194,7 @@ class ReviewStep(WorkflowStep):
                 title_id=title_id, commit=head, baseline=baseline, design=design,
                 prototype=prototype, develop_brief=develop_brief, verdict_path=verdict_path,
                 repo=checkout, to_stdout=settings.verdict_from == "stdout",
+                develop_report=develop_report,
                 sdk=subject_artifact if subject_type == "sdk-report" else None))
 
         values = {"repo": checkout, "verdict": verdict_path, "brief": brief_path,

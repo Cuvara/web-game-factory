@@ -29,7 +29,7 @@ pipeline configuration.
 | prototype-review → G4 | a person (irreversible; never automated) | the kill criteria, judged on the verified prototype |
 | release | `wgf_release` | Store presentation, per `onboarding-and-portal-ux.md` |
 
-The plugin surfaces (`/wgf-*`, 11 agents, 21 skills) are how an interactive session
+The plugin surfaces (`/wgf-*`, 11 agents, 28 skills) are how an interactive session
 works the same stages. With binding 1.2.0 every production agent reads the craft playbook
 for its job.
 
@@ -38,12 +38,12 @@ for its job.
 | Phase | Skills (plugin) | Playbooks |
 |---|---|---|
 | research | `market-intelligence` | `competitive-teardown.md` |
-| strategy, design | `game-design`, `core-loop`, `onboarding-ux`, `art-direction`, `monetization` | loop, onboarding, UI, audio, art, accessibility |
+| strategy, design | `game-design`, `core-loop`, `level-design`, `onboarding-ux`, `art-direction`, `monetization` | loop, content and level design, onboarding, UI, audio, art, accessibility |
 | tech-plan | `architecture`, `development-planning`, `web-performance` | `web-performance.md` |
 | assets | `assets`, `art-direction`, `audio` | `art-direction.md`, `game-audio.md` |
-| develop | `game-feel`, `core-loop`, `pixijs` / `phaser` / `threejs`, `web-performance`, `onboarding-ux` | feel, loop, UI, performance |
+| develop | `game-feel`, `core-loop`, `level-design`, `pixijs` / `phaser` / `threejs`, `web-performance`, `onboarding-ux` | feel, loop, content units, UI, performance |
 | review | `gameplay-review` | `gameplay-review.md` |
-| verify / QA | `qa`, `playtesting`, `web-performance` | `playtesting.md`, `accessibility.md` |
+| verify / QA | `qa`, `playtesting`, `level-design`, `web-performance` | `playtesting.md`, `accessibility.md`, `content-and-level-design.md` |
 | release | `release`, `localization` | `onboarding-and-portal-ux.md` (store presentation) |
 
 ## 3. MCP tools by phase

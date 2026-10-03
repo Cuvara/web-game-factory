@@ -49,6 +49,8 @@ _DEFAULT_EVIDENCE = {PASS: PASS, FAIL: FAIL, BLOCKED: UNVERIFIED, WARNING: UNVER
 _ALLOWED_EVIDENCE = {PASS: (PASS, PASS_MOCK), FAIL: (FAIL,),
                      BLOCKED: (UNVERIFIED, BLOCKED_EXTERNAL),
                      WARNING: (UNVERIFIED, BLOCKED_EXTERNAL, PASS_MOCK)}
+# The verification-report schema fixes these; checks/quality.py carries the playability bot's
+# content, difficulty and depth findings under `gameplay`, because that is what they are about.
 CATEGORIES = ("source", "build", "code", "gameplay", "platform", "assets", "policy")
 
 # How much command output a piece of evidence keeps. Enough to see the failure, not the log.

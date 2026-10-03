@@ -174,6 +174,75 @@ hud id that builds it; an MVP entry may rest only on an MVP one. Optional in the
 `core/reference/design-depth.yaml` (`scripts/wgf_design/depth.py`). Craft:
 `core/craft/retention-and-progression.md`.
 
+**`game-design` 1.9.0** adds the content contract: what the player actually plays, stated
+unit by unit. `genre` names the family of `core/reference/genre-models.yaml` the design is
+held to (`puzzle`, `platformer`, `arcade`, `shooter`, `racing`, `strategy`, `survival`,
+`simulation`), optionally the research vocabulary's `node` it resolves from, a
+`session_profile` (`casual` or `standard`) and whether play is `finite` or `endless`.
+`build_spec.content` carries `unit_kind` (one of `level`, `wave`, `track`, `lap`,
+`encounter`, `scenario`, `shift`, `round`, `map`, `run-segment`), `generation`
+(`authored`, `parametric` or `procedural`, with the parameters units are generated from and
+`expected_units`) and `units[]` — each with `id`, `index`, `tier`, `purpose` (`teach`,
+`test`, `twist`, `breather`, `climax`, `bonus`), `objective`, the `mechanics` it asks for and
+which it `introduces`, a `difficulty` value per axis, `expected_duration_s`, `success`,
+`failure`, `acceptance[]` and `variation_from_previous[]`. `build_spec.difficulty.axes`
+declares those axes only (id, meaning, range, whether relief may dip on them), so every
+difficulty number lives in exactly one place: the units. `build_spec.mastery` states what
+getting better means (`execution`, `planning`, `reading`, `optimisation`, `routing`), in one
+sentence, with the HUD metric ids it shows up in. Smaller additions: `mechanics[]` gain
+`progression_role` and `interactions`, `progression.unit_sequence` may override index order,
+and `consistency.content_model` records the genre model by id and version, so a later
+re-check can say whether the bars moved or the design did. Every block is optional, so 1.8.0
+artifacts remain valid — with one conditional: a design whose `genre.ending` is `finite` must
+state `build_spec.experience.win`, because a game that can be finished has to say how. The
+design step holds the content to the family's entry (`scripts/wgf_design/content.py`, 22
+`content.*` rules). Craft: `core/craft/content-and-level-design.md`.
+
+**`title-strategy` 1.4.0** adds `concept.content_model`: the content shape the title commits
+to before design starts — the genre family, `unit_kind`, `progression`, `difficulty_shape`,
+`difficulty_axes[]`, `min_units` (the family's `units.min_mvp`) and `source`, which says
+whether research decided it (`research`) or the family's default did (`default`). Design
+starts from this rather than inventing a shape. Optional; 1.3.0 artifacts remain valid.
+
+**`opportunity` 1.3.0** carries it one step earlier, in the research block
+(`shared/research-opportunity.schema.json`): `capability.genre_model` is the genre family the
+cell's genre node resolves to, or `null` when no family lists it — which is itself a
+capability gap — and `research.design_constraints` is what research says a game of this cell
+must contain, in the genre model's own vocabulary (`family`, `unit_kind`, `progression`,
+`difficulty_shape`, `difficulty_axes`, `session_band`, `retention_hooks`, and `conventions[]`
+a player of the genre expects, each with its own tier and claims). It is also part of the
+handoff strategy and design read. Additive; 1.2.0 artifacts remain valid. See
+[research-v2.md](research-v2.md).
+
+**`prototype-report` 1.1.0** adds the two things G4 needs to read a build against its design
+rather than against itself. `design_gaps[]` is every place the design did not say enough to
+build from — `field` (the path into the game-design), `question`, what was `assumed` instead
+or `null`, `severity` (`blocking` or `minor`) and the content `unit` it is in; a `blocking`
+gap routes the run back to design. `content_coverage` is the designed content against the
+built content: `designed`, `built`, `partial`, `cut` and a per-unit list, so the count can be
+checked rather than believed — a prototype that built two of six levels is not a prototype of
+the design. `title:design` joins the consumers. Additive; 1.0.0 artifacts remain valid.
+
+**`playability-report` 1.2.0** adds the status `SKIPPED` and `skipped_checks[]`
+(`{id, reason}`). A check is skipped only when the design does not claim the thing it
+measures — a game with no win has no `win.reachable` to prove — and a skip is **never** a
+pass: anything counting passes subtracts it. A thing the design does claim and the build does
+not do is a `FAIL`, not a skip. 1.1.0 artifacts remain valid.
+`shared/play-probe.schema.json` grows with it, additively: `content` (the unit in play, its
+index, the unit count, the unit kind, the objective and progress toward its target),
+`entities[].kind` (the game's own word for a thing, beside the fixed `role` the checks read),
+the recommended `metrics` keys `unit`, `best` and `difficulty.<axis>`, and an `oracle` that
+names the input advancing a finished unit to the next — never one that skips a unit the
+player has not finished. See [playability-module.md](playability-module.md).
+
+**`qa-report` 1.2.0** adds one suite name, `gameplay-quality`. It carries what the bot
+measured about the design's content, difficulty, progression and depth into the release QA
+report, so G5 reads it beside lint, typecheck, unit and e2e
+(`scripts/wgf_verification/checks/quality.py`, ids `quality.*`). Additive; 1.1.0 artifacts
+remain valid. `review-report` 1.1.0 is a version bump only: the reviewer's brief gained a
+`## Design fidelity` section, and the schema it writes is unchanged
+([review-module.md](review-module.md)).
+
 ---
 
 ## Shared primitives

@@ -10,6 +10,12 @@ Everything a Factory step spawns goes through `run()` (to completion) or `spawn(
 
   * starts the child in a new session (POSIX) or process group (Windows), so the child and
     everything that does not detach itself shares one group that can be signalled at once;
+  * on Windows, puts the child in a Job Object limited with
+    `JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE` and no breakaway: every descendant joins the job and
+    cannot leave it, so one `TerminateJobObject` ends a tree `taskkill /T` cannot even find
+    (a grandchild whose intermediate parent - a .cmd shim, a shell - has exited), and the
+    kernel ends whatever is left by itself when the last handle to the job closes, which it
+    does when this process dies for any reason, including being killed outright;
   * tags the child's environment with `WGF_PROC_TAG=<unique>` and appends the tag to
     `WGF_PROC_LINEAGE`. Environment is inherited through fork/exec and survives `setsid()`
     and reparenting, so on Linux a descendant that left the group (Playwright starts its
@@ -32,7 +38,8 @@ Everything a Factory step spawns goes through `run()` (to completion) or `spawn(
   * names the workflow run whose step owns the tree in `WGF_PROC_RUN` (a comma-separated list,
     outermost run first, like the lineage), when the caller is `bound()` to one. A driver
     killed with SIGKILL runs no cleanup at all; a later resume of the run finds and ends the
-    trees it orphaned through that name (`sweep_run`, Linux only).
+    trees it orphaned through that name (`sweep_run`, Linux only - on Windows the job object
+    already ended them when the driver's handle closed, so there is nothing left to find).
 
 A command that binds one of the template's fixed host ports (`wgflib.portlock.ports_for`:
 `pnpm run test:e2e`, `test:verify`, `test:sdk:browser`, a bare `playwright test`) runs inside
@@ -83,13 +90,11 @@ _CHUNK = 64 * 1024
 _LINE_LIMIT = 64 * 1024        # a "line" with no newline is flushed at this size
 _HAVE_WAITID = POSIX and hasattr(os, "waitid") and hasattr(os, "WNOWAIT")
 
-# Every tree this process is currently responsible for: tag -> (pid, pgid). An interpreter
+# Every tree this process is currently responsible for: tag -> (pid, pgid, job). An interpreter
 # that is exiting - normally, on an unhandled exception, or on a signal turned into
 # SystemExit by install_signal_cleanup() - takes these down with it.
 _LIVE = {}
 _LIVE_LOCK = threading.Lock()
-# Windows only: tag -> the job object holding that tree (_WindowsJob).
-_JOBS = {}
 # Held from Popen until the new child is registered, so the subreaper sweep never sees a
 # child of ours that no tree has claimed yet.
 _SPAWN_LOCK = threading.Lock()
@@ -233,14 +238,14 @@ def _is_zombie(pid):
 
 
 def pid_alive(pid):
-    """True while `pid` exists and is not a zombie (on Windows: has not exited)."""
+    """True while `pid` exists and is not a zombie (POSIX) / has not exited (Windows)."""
     if pid is None:
         return False
-    if not POSIX:
-        return _windows_alive(pid)
-    if os.path.isdir(_PROC):
+    if POSIX and os.path.isdir(_PROC):
         fields = _stat_fields(pid)
         return fields is not None and fields[0] not in ("Z", "X")
+    if not POSIX:
+        return _windows_alive(pid)
     try:
         os.kill(pid, 0)
     except PermissionError:
@@ -251,96 +256,6 @@ def pid_alive(pid):
 
 
 _alive = pid_alive
-
-
-# Windows. `os.kill(pid, 0)` is no existence probe there: CPython treats signal 0 as
-# CTRL_C_EVENT and calls GenerateConsoleCtrlEvent(CTRL_C_EVENT, pid). That fails
-# (WinError 87) for a live process that is not a process group on the caller's console - a
-# driver started from another terminal reads as dead, so `wgf status` called a live run
-# stale and a second driver could take its lock - succeeds for an exited process whose
-# handle is still held, and where the pid is a process group on this console (every child
-# spawn() starts is one) it delivers Ctrl+C to it. The process itself is asked instead:
-# OpenProcess, then whether its handle is signalled (it has exited). A pid that cannot be
-# opened for lack of rights exists; one that cannot be opened at all does not.
-_WIN_QUERY_LIMITED = 0x1000      # PROCESS_QUERY_LIMITED_INFORMATION
-_WIN_SYNCHRONIZE = 0x00100000
-_WIN_WAIT_TIMEOUT = 0x102
-_WIN_STILL_ACTIVE = 259
-_WIN_ACCESS_DENIED = 5
-_KERNEL32 = []
-
-
-def _kernel32():
-    if not _KERNEL32:
-        import ctypes
-        from ctypes import wintypes
-        kernel = ctypes.WinDLL("kernel32", use_last_error=True)
-        kernel.OpenProcess.restype = wintypes.HANDLE
-        kernel.OpenProcess.argtypes = (wintypes.DWORD, wintypes.BOOL, wintypes.DWORD)
-        kernel.CloseHandle.argtypes = (wintypes.HANDLE,)
-        kernel.WaitForSingleObject.restype = wintypes.DWORD
-        kernel.WaitForSingleObject.argtypes = (wintypes.HANDLE, wintypes.DWORD)
-        kernel.GetExitCodeProcess.argtypes = (wintypes.HANDLE, ctypes.POINTER(wintypes.DWORD))
-        kernel.GetProcessTimes.argtypes = (wintypes.HANDLE,) + (
-            ctypes.POINTER(wintypes.FILETIME),) * 4
-        _KERNEL32.append((ctypes, wintypes, kernel))
-    return _KERNEL32[0]
-
-
-def _windows_open(pid, access):
-    """(handle or None, exists): `exists` is True when the pid names a process, whether or
-    not this one may open it."""
-    if isinstance(pid, bool) or not isinstance(pid, int) or not 0 < pid <= 0xFFFFFFFF:
-        return None, False
-    ctypes, _wintypes, kernel = _kernel32()
-    handle = kernel.OpenProcess(access, False, pid)
-    if handle:
-        return handle, True
-    return None, ctypes.get_last_error() == _WIN_ACCESS_DENIED
-
-
-def _windows_alive(pid):
-    ctypes, wintypes, kernel = _kernel32()
-    handle, exists = _windows_open(pid, _WIN_QUERY_LIMITED | _WIN_SYNCHRONIZE)
-    if handle:
-        try:
-            return kernel.WaitForSingleObject(handle, 0) == _WIN_WAIT_TIMEOUT
-        finally:
-            kernel.CloseHandle(handle)
-    if not exists:
-        return False
-    # Allowed to query but not to wait on: the exit code says whether it is still running.
-    handle, exists = _windows_open(pid, _WIN_QUERY_LIMITED)
-    if not handle:
-        return exists  # a process this user may not even query, e.g. a system one
-    try:
-        code = wintypes.DWORD()
-        if not kernel.GetExitCodeProcess(handle, ctypes.byref(code)):
-            return True
-        return code.value == _WIN_STILL_ACTIVE
-    finally:
-        kernel.CloseHandle(handle)
-
-
-def process_started(pid):
-    """On Windows, the process's creation time (100 ns units since 1601), or None when it
-    cannot be read. Together with the pid it names one process: a recycled pid comes back
-    with a different creation time. None elsewhere: there /proc answers this
-    (workflow.store._start_time)."""
-    if POSIX:
-        return None
-    ctypes, wintypes, kernel = _kernel32()
-    handle, _exists = _windows_open(pid, _WIN_QUERY_LIMITED)
-    if not handle:
-        return None
-    try:
-        times = [wintypes.FILETIME() for _ in range(4)]
-        if not kernel.GetProcessTimes(handle, *(ctypes.byref(t) for t in times)):
-            return None
-        created = (times[0].dwHighDateTime << 32) | times[0].dwLowDateTime
-        return created or None
-    finally:
-        kernel.CloseHandle(handle)
 
 
 def _group_alive(pgid):
@@ -382,16 +297,19 @@ def _signal(pids, pgid, sig):
             pass
 
 
-def terminate_tree(pid, pgid, tag, grace_seconds=5.0):
-    """End the child's whole tree, then (with the subreaper on) every orphan it left."""
-    ended = _terminate_tree(pid, pgid, tag, grace_seconds)
+def terminate_tree(pid, pgid, tag, grace_seconds=5.0, job=None):
+    """End the child's whole tree, then (with the subreaper on) every orphan it left.
+
+    `job` is the Windows Job Object the tree was put in, as `live_groups()` reports it; the
+    caller still owns the handle (`_unregister` closes it)."""
+    ended = _terminate_tree(pid, pgid, tag, grace_seconds, job)
     if POSIX:
         ended = sorted(set(ended) | set(
             _sweep_adopted(exclude={pid}, grace_seconds=min(grace_seconds, 1.0))))
     return ended
 
 
-def _terminate_tree(pid, pgid, tag, grace_seconds=5.0):
+def _terminate_tree(pid, pgid, tag, grace_seconds=5.0, job=None):
     """End the child's whole tree. Returns the pids that were still alive and signalled.
 
     The group is signalled as a whole; tagged processes are signalled individually because
@@ -404,7 +322,7 @@ def _terminate_tree(pid, pgid, tag, grace_seconds=5.0):
     kernel will not hand that number out again.
     """
     if not POSIX:
-        return _terminate_windows(pid, tag)
+        return _terminate_windows(pid, job, grace_seconds)
     targets = set(tagged_pids(tag))
     if pid is not None and pid_alive(pid):
         targets.add(pid)
@@ -473,7 +391,7 @@ def _adopted_children(exclude):
         own_session = str(os.getsid(0))
     except OSError:
         return []
-    claimed = {pid for pid, _ in live_groups().values()} | {p for p in exclude if p}
+    claimed = {entry[0] for entry in live_groups().values()} | {p for p in exclude if p}
     live_tags = set(live_groups())
     found = []
     for name in os.listdir(_PROC):
@@ -514,165 +432,319 @@ def _sweep_adopted(exclude=(), grace_seconds=1.0):
     return ended
 
 
-def _terminate_windows(pid, tag=None):  # pragma: no cover - exercised on Windows only
-    """`taskkill /T` while the leader runs (the tree by parentage), then the tree's job
-    object: every process started inside the tree is in it, including one whose parent
-    already exited - which `taskkill /T` cannot reach, because Windows does not reparent
-    it and the walk starts from a pid that is gone."""
-    ended = []
-    if pid is not None:
-        try:
-            subprocess.run(["taskkill", "/T", "/F", "/PID", str(pid)], capture_output=True,
-                           timeout=30)
-            ended.append(pid)
-        except (OSError, subprocess.SubprocessError):
-            pass
-    with _LIVE_LOCK:
-        job = _JOBS.get(tag)
-    if job is not None:
-        ended.extend(p for p in job.terminate() if p not in ended)
-    return ended
+# -- Windows: the job object ------------------------------------------------------------------
+
+# Windows has no process group to signal and no /proc to read, and `taskkill /T` walks only the
+# parent-child chain that is alive at the moment it runs: a grandchild whose intermediate parent
+# (a .cmd shim, a shell, a launcher) has already exited is not reachable from the leader, and
+# the tag sweep that catches exactly that on Linux needs /proc/<pid>/environ. Observed: a
+# `wgf cancel` ended the run while the agent host it had started, whose parent was already gone,
+# and a `vite preview` under it kept running for an hour.
+#
+# A Job Object closes both holes. Every process a member starts joins the job, and a member
+# cannot leave it - JOB_OBJECT_LIMIT_BREAKAWAY_OK is deliberately not set, so
+# CREATE_BREAKAWAY_FROM_JOB fails - however it was created: detached, in a new console, or by a
+# shim that has since exited. TerminateJobObject ends every member at once, and names them
+# first (QueryInformationJobObject), so cleanup can report the pids it killed here too. And
+# JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE makes the kernel do the same when the last handle to the
+# job closes, which it does when this process dies for any reason, including TerminateProcess:
+# that is the "the driver died, its trees were orphaned" case, ended with nobody having to find
+# the pids afterwards. See docs/agent-lifecycle.md, "Windows".
+
+_JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE = 0x00002000
+_JOB_EXTENDED_LIMIT_INFORMATION = 9        # JobObjectExtendedLimitInformation
+_JOB_BASIC_PROCESS_ID_LIST = 3             # JobObjectBasicProcessIdList
+_PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
+_SYNCHRONIZE = 0x00100000
+_ERROR_ACCESS_DENIED = 5
+_ERROR_MORE_DATA = 234
+_WAIT_OBJECT_0 = 0
+_STILL_ACTIVE = 259
+# kernel32 (False once it could not be loaded), the limit structure, whether a job can be made
+# here at all, and how many times assigning a live child to one was refused.
+_WIN = {"k32": None, "struct": None, "jobs": None, "refused": 0}
 
 
-class _WindowsJob:  # pragma: no cover - exercised on Windows only
-    """A Windows job object holding one owned tree.
+def _kernel32():
+    """kernel32 with the entry points used here, typed, or None where it cannot be loaded.
 
-    A process started by a member of the job is a member too (node, pnpm and Playwright do
-    not ask to break away), so the job is the one handle on the whole tree that outlives its
-    leader. KILL_ON_JOB_CLOSE makes the kernel end every member when the last handle closes:
-    when cleanup unregisters the tree, and when the Factory process dies without running any
-    cleanup at all.
-
-    The child is assigned right after it starts, so a grandchild it starts within that
-    instant escapes; the leader is always an interpreter or a package manager, which takes
-    far longer than that to start anything."""
-
-    _EXTENDED_LIMITS = 9
-    _BASIC_PROCESS_IDS = 3
-    _KILL_ON_JOB_CLOSE = 0x2000
-
-    def __init__(self, handle):
-        self.handle = handle
-
-    @staticmethod
-    def _kernel32():
-        import ctypes
-        from ctypes import wintypes
-        kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
-        kernel32.CreateJobObjectW.restype = wintypes.HANDLE
-        kernel32.CreateJobObjectW.argtypes = (ctypes.c_void_p, wintypes.LPCWSTR)
-        kernel32.SetInformationJobObject.argtypes = (wintypes.HANDLE, ctypes.c_int,
-                                                     ctypes.c_void_p, wintypes.DWORD)
-        kernel32.QueryInformationJobObject.argtypes = (
-            wintypes.HANDLE, ctypes.c_int, ctypes.c_void_p, wintypes.DWORD, ctypes.c_void_p)
-        kernel32.AssignProcessToJobObject.argtypes = (wintypes.HANDLE, wintypes.HANDLE)
-        kernel32.TerminateJobObject.argtypes = (wintypes.HANDLE, wintypes.UINT)
-        kernel32.CloseHandle.argtypes = (wintypes.HANDLE,)
-        return kernel32
-
-    @classmethod
-    def create(cls, process):
-        """A job holding `process` (a Popen), or None when one cannot be made."""
+    The return types matter: a HANDLE is a pointer and the default `c_int` restype truncates
+    it on 64-bit Windows."""
+    if _WIN["k32"] is None:
         try:
             import ctypes
             from ctypes import wintypes
-            kernel32 = cls._kernel32()
-        except (ImportError, OSError, AttributeError):
-            return None
+            lib = ctypes.WinDLL("kernel32", use_last_error=True)
+            handle, dword, flag = ctypes.c_void_p, wintypes.DWORD, wintypes.BOOL
+            lib.CreateJobObjectW.restype = handle
+            lib.CreateJobObjectW.argtypes = [ctypes.c_void_p, ctypes.c_wchar_p]
+            lib.SetInformationJobObject.restype = flag
+            lib.SetInformationJobObject.argtypes = [handle, ctypes.c_int, ctypes.c_void_p, dword]
+            lib.QueryInformationJobObject.restype = flag
+            lib.QueryInformationJobObject.argtypes = [handle, ctypes.c_int, ctypes.c_void_p,
+                                                      dword, ctypes.POINTER(dword)]
+            lib.AssignProcessToJobObject.restype = flag
+            lib.AssignProcessToJobObject.argtypes = [handle, handle]
+            lib.TerminateJobObject.restype = flag
+            lib.TerminateJobObject.argtypes = [handle, wintypes.UINT]
+            lib.OpenProcess.restype = handle
+            lib.OpenProcess.argtypes = [dword, flag, dword]
+            lib.WaitForSingleObject.restype = dword
+            lib.WaitForSingleObject.argtypes = [handle, dword]
+            lib.GetExitCodeProcess.restype = flag
+            lib.GetExitCodeProcess.argtypes = [handle, ctypes.POINTER(dword)]
+            lib.GetProcessTimes.restype = flag
+            lib.GetProcessTimes.argtypes = [handle] + [ctypes.POINTER(wintypes.FILETIME)] * 4
+            lib.CloseHandle.restype = flag
+            lib.CloseHandle.argtypes = [handle]
+            _WIN["k32"] = lib
+        except (ImportError, OSError, AttributeError):  # pragma: no cover - not Windows
+            _WIN["k32"] = False
+    return _WIN["k32"] or None
 
-        class Basic(ctypes.Structure):
-            _fields_ = [("PerProcessUserTimeLimit", ctypes.c_int64),
-                        ("PerJobUserTimeLimit", ctypes.c_int64),
-                        ("LimitFlags", wintypes.DWORD),
+
+def _limit_struct():
+    """JOBOBJECT_EXTENDED_LIMIT_INFORMATION as ctypes sees it (cached)."""
+    if _WIN["struct"] is None:
+        import ctypes
+
+        class _IoCounters(ctypes.Structure):
+            _fields_ = [("ReadOperationCount", ctypes.c_ulonglong),
+                        ("WriteOperationCount", ctypes.c_ulonglong),
+                        ("OtherOperationCount", ctypes.c_ulonglong),
+                        ("ReadTransferCount", ctypes.c_ulonglong),
+                        ("WriteTransferCount", ctypes.c_ulonglong),
+                        ("OtherTransferCount", ctypes.c_ulonglong)]
+
+        class _BasicLimits(ctypes.Structure):
+            _fields_ = [("PerProcessUserTimeLimit", ctypes.c_longlong),
+                        ("PerJobUserTimeLimit", ctypes.c_longlong),
+                        ("LimitFlags", ctypes.c_ulong),
                         ("MinimumWorkingSetSize", ctypes.c_size_t),
                         ("MaximumWorkingSetSize", ctypes.c_size_t),
-                        ("ActiveProcessLimit", wintypes.DWORD),
+                        ("ActiveProcessLimit", ctypes.c_ulong),
                         ("Affinity", ctypes.c_size_t),
-                        ("PriorityClass", wintypes.DWORD),
-                        ("SchedulingClass", wintypes.DWORD)]
+                        ("PriorityClass", ctypes.c_ulong),
+                        ("SchedulingClass", ctypes.c_ulong)]
 
-        class Extended(ctypes.Structure):
-            _fields_ = [("BasicLimitInformation", Basic),
-                        ("IoInfo", ctypes.c_uint64 * 6),
+        class _ExtendedLimits(ctypes.Structure):
+            _fields_ = [("BasicLimitInformation", _BasicLimits),
+                        ("IoInfo", _IoCounters),
                         ("ProcessMemoryLimit", ctypes.c_size_t),
                         ("JobMemoryLimit", ctypes.c_size_t),
                         ("PeakProcessMemoryUsed", ctypes.c_size_t),
                         ("PeakJobMemoryUsed", ctypes.c_size_t)]
 
-        handle = kernel32.CreateJobObjectW(None, None)
-        if not handle:
-            return None
-        info = Extended()
-        info.BasicLimitInformation.LimitFlags = cls._KILL_ON_JOB_CLOSE
-        process_handle = getattr(process, "_handle", None)
-        if (process_handle is None
-                or not kernel32.SetInformationJobObject(handle, cls._EXTENDED_LIMITS,
-                                                        ctypes.byref(info), ctypes.sizeof(info))
-                or not kernel32.AssignProcessToJobObject(handle, int(process_handle))):
-            kernel32.CloseHandle(handle)
-            return None
-        return cls(handle)
+        _WIN["struct"] = _ExtendedLimits
+    return _WIN["struct"]
 
-    def pids(self):
-        import ctypes
+
+def _create_job():
+    """A kill-on-close Job Object, or None where one cannot be made."""
+    lib = _kernel32()
+    if lib is None:
+        return None
+    import ctypes
+    handle = lib.CreateJobObjectW(None, None)
+    if not handle:
+        return None
+    limits = _limit_struct()()
+    limits.BasicLimitInformation.LimitFlags = _JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE
+    if not lib.SetInformationJobObject(handle, _JOB_EXTENDED_LIMIT_INFORMATION,
+                                       ctypes.byref(limits), ctypes.sizeof(limits)):
+        _close_job(handle)
+        return None
+    return int(handle)
+
+
+def _close_job(job):
+    """Close the handle. With KILL_ON_JOB_CLOSE this also ends anything still in the job."""
+    lib = _kernel32()
+    if lib is not None and job:
+        lib.CloseHandle(job)
+
+
+def _assign_job(job, process):
+    """Put `process`, and so everything it starts, in `job`. True when it took.
+
+    A refusal while the child is still alive means jobs do not hold on this installation (an
+    older Windows whose own job forbids nesting); that is remembered, because it is the only
+    thing that makes the Windows guarantees untrue (see `_jobs_hold`)."""
+    lib = _kernel32()
+    handle = getattr(process, "_handle", None)
+    if lib is None or not job or handle is None:
+        return False
+    import ctypes
+    if lib.AssignProcessToJobObject(job, ctypes.c_void_p(int(handle))):
+        return True
+    # A child that exited in the window between Popen and here cannot be assigned, and that
+    # says nothing about job support.
+    if _windows_alive(process.pid):
+        _WIN["refused"] += 1
+    return False
+
+
+def _job_pids(job, capacity=256):
+    """The pids currently in `job`, this process never among them."""
+    lib = _kernel32()
+    if lib is None or not job:
+        return []
+    import ctypes
+    from ctypes import wintypes
+    me = os.getpid()
+    for _ in range(3):
+        class _IdList(ctypes.Structure):
+            _fields_ = [("NumberOfAssignedProcesses", ctypes.c_ulong),
+                        ("NumberOfProcessIdsInList", ctypes.c_ulong),
+                        ("ProcessIdList", ctypes.c_size_t * capacity)]
+
+        listing = _IdList()
+        returned = wintypes.DWORD(0)
+        ok = lib.QueryInformationJobObject(job, _JOB_BASIC_PROCESS_ID_LIST,
+                                           ctypes.byref(listing), ctypes.sizeof(listing),
+                                           ctypes.byref(returned))
+        if ok:
+            found = (int(listing.ProcessIdList[i])
+                     for i in range(min(listing.NumberOfProcessIdsInList, capacity)))
+            return sorted(p for p in found if p and p != me)
+        if ctypes.get_last_error() != _ERROR_MORE_DATA:
+            return []
+        capacity = max(capacity * 4, int(listing.NumberOfAssignedProcesses) + 8)
+    return []  # pragma: no cover - more than 16k processes in one tree
+
+
+def _windows_alive(pid):
+    """True while `pid` has not exited.
+
+    `os.kill(pid, 0)` is the wrong question on Windows. It is satisfied by any open handle to
+    an already exited process - Popen keeps one, and so do we - so a dead child reads as alive
+    and cleanup spins over it to no effect; and `os.kill` there is TerminateProcess for every
+    signal value but the two console events and the 0 current CPython special-cases, which
+    makes a liveness probe one argument away from killing what it asked about. Ask the kernel
+    instead: the process object is signalled exactly once the process has exited."""
+    lib = _kernel32()
+    if lib is None or not pid:  # pragma: no cover - not Windows
+        return False
+    import ctypes
+    handle = lib.OpenProcess(_PROCESS_QUERY_LIMITED_INFORMATION | _SYNCHRONIZE, False, int(pid))
+    if handle:
+        try:
+            # WAIT_OBJECT_0 = the process object is signalled = it has exited. Anything else
+            # (WAIT_TIMEOUT, and WAIT_FAILED, which should not happen) counts as still running:
+            # cleanup may then signal a corpse, never skip a survivor.
+            return lib.WaitForSingleObject(handle, 0) != _WAIT_OBJECT_0
+        finally:
+            lib.CloseHandle(handle)
+    if ctypes.get_last_error() != _ERROR_ACCESS_DENIED:
+        return False                      # the pid names no process
+    # Allowed to query but not to wait on (a process of another user, a system one): its exit
+    # code says whether it is still running, and a pid we may not even query exists.
+    handle = lib.OpenProcess(_PROCESS_QUERY_LIMITED_INFORMATION, False, int(pid))
+    if not handle:
+        return True
+    try:
         from ctypes import wintypes
-        if self.handle is None:
-            return []
+        code = wintypes.DWORD()
+        if not lib.GetExitCodeProcess(handle, ctypes.byref(code)):
+            return True
+        return code.value == _STILL_ACTIVE
+    finally:
+        lib.CloseHandle(handle)
 
-        class Ids(ctypes.Structure):
-            _fields_ = [("NumberOfAssignedProcesses", wintypes.DWORD),
-                        ("NumberOfProcessIdsInList", wintypes.DWORD),
-                        ("ProcessIdList", ctypes.c_size_t * 1024)]
 
-        ids = Ids()
-        if not self._kernel32().QueryInformationJobObject(
-                self.handle, self._BASIC_PROCESS_IDS, ctypes.byref(ids), ctypes.sizeof(ids),
-                None):
-            return []
-        return [int(ids.ProcessIdList[i]) for i in range(ids.NumberOfProcessIdsInList)]
+def process_started(pid):
+    """On Windows, the process's creation time (100 ns units since 1601), or None when it
+    cannot be read. Together with the pid it names one process: a recycled pid comes back with
+    a different creation time. None elsewhere: there /proc answers this
+    (workflow.store._start_time)."""
+    if POSIX:
+        return None
+    lib = _kernel32()
+    if lib is None or not pid:  # pragma: no cover - not Windows
+        return None
+    import ctypes
+    from ctypes import wintypes
+    handle = lib.OpenProcess(_PROCESS_QUERY_LIMITED_INFORMATION, False, int(pid))
+    if not handle:
+        return None
+    try:
+        times = [wintypes.FILETIME() for _ in range(4)]
+        if not lib.GetProcessTimes(handle, *(ctypes.byref(each) for each in times)):
+            return None
+        created = (times[0].dwHighDateTime << 32) | times[0].dwLowDateTime
+        return created or None
+    finally:
+        lib.CloseHandle(handle)
 
-    def terminate(self):
-        """End every member. Returns the pids that were still members."""
-        members = self.pids()
-        if members:
-            self._kernel32().TerminateJobObject(self.handle, 1)
-            deadline = time.monotonic() + 5.0
-            while self.pids() and time.monotonic() < deadline:
-                time.sleep(0.05)
-        return members
 
-    def close(self):
-        if self.handle is not None:
-            self._kernel32().CloseHandle(self.handle)
-            self.handle = None
+def _jobs_hold():
+    """True when a tree started here is held by a kill-on-close job: a job can be made, and
+    no assignment of a live child to one has been refused in this process."""
+    if POSIX:
+        return False
+    if _WIN["jobs"] is None:
+        job = _create_job()
+        _WIN["jobs"] = job is not None
+        _close_job(job)
+    return bool(_WIN["jobs"]) and not _WIN["refused"]
+
+
+def _terminate_windows(pid, job=None, grace_seconds=5.0):
+    """End the tree on Windows: the job object, which holds every descendant however it was
+    started, then `taskkill /T /F` on the leader as a belt-and-braces for a tree that has no
+    job (assignment refused) and for anything a job never held. Returns the pids it ended."""
+    lib = _kernel32()
+    ended = []
+    if job and lib is not None:
+        ended = _job_pids(job)
+        lib.TerminateJobObject(job, 1)
+        # TerminateProcess is asynchronous; give the members a moment to actually go.
+        deadline = time.monotonic() + max(0.0, min(grace_seconds, 5.0))
+        while time.monotonic() < deadline and any(_windows_alive(p) for p in ended):
+            time.sleep(0.05)
+    if pid is not None:
+        try:
+            subprocess.run(["taskkill", "/T", "/F", "/PID", str(pid)], capture_output=True,
+                           timeout=30)
+        except (OSError, subprocess.SubprocessError):
+            pass
+        ended.append(pid)
+    return sorted(set(ended))
 
 
 def live_groups():
+    """Every tree this process is responsible for: tag -> (pid, pgid, job). `pgid` is POSIX
+    only, `job` the Windows Job Object handle; both are None on the other platform."""
     with _LIVE_LOCK:
         return dict(_LIVE)
 
 
-def _register(tag, pid, pgid, process=None):
-    job = _WindowsJob.create(process) if (process is not None and not POSIX) else None
+def _register(tag, pid, pgid, job=None):
     with _LIVE_LOCK:
-        _LIVE[tag] = (pid, pgid)
-        if job is not None:
-            _JOBS[tag] = job
+        _LIVE[tag] = (pid, pgid, job)
 
 
 def _unregister(tag):
+    """Forget the tree, and close its job handle - the one place that does, so the handle is
+    never closed twice and never leaks. Closing it kills whatever is still in the job."""
     with _LIVE_LOCK:
-        _LIVE.pop(tag, None)
-        job = _JOBS.pop(tag, None)
-    if job is not None:
-        job.close()
+        entry = _LIVE.pop(tag, None)
+    if entry is not None and entry[2]:
+        _close_job(entry[2])
+
+
+def _owned_job(tag, job):
+    """`job`, while the registry still holds this tree. None once something else has ended it
+    (`terminate_all` from another thread, as golden/run.py does): the handle is closed then,
+    and a closed handle value may already name an unrelated object."""
+    return job if job and tag in live_groups() else None
 
 
 def terminate_all(grace_seconds=2.0):
     """Take down every tree this process still owns. Registered with atexit."""
-    for tag, (pid, pgid) in live_groups().items():
+    for tag, (pid, pgid, job) in live_groups().items():
         try:
-            terminate_tree(pid, pgid, tag, grace_seconds)
+            terminate_tree(pid, pgid, tag, grace_seconds, job=job)
         except Exception:
             pass
         finally:
@@ -700,9 +772,26 @@ def run_token(run_id, scope=None):
     return f"{run_id}@{digest}"
 
 
-def can_sweep():
-    """True where a run's orphans can be found by their environment (Linux /proc)."""
+def _can_read_environs():
+    """True where another process's environment can be read (Linux /proc)."""
     return POSIX and os.path.isdir(_PROC)
+
+
+def can_sweep():
+    """True where a resume can account for every tree a dead driver of the run left.
+
+    Two different reasons, and `sweep_run` does the right thing for each:
+
+      * Linux: the orphans are still there and can be found by their environment (/proc).
+      * Windows: there are no orphans to find. Every tree was in a Job Object limited with
+        KILL_ON_JOB_CLOSE, and the kernel closed the dead driver's handle - the only handle -
+        when it died, however it died, which ended the job. `_jobs_hold()` is what makes this
+        true; where a job cannot be made, or an assignment was refused, this is False and the
+        caller reports honestly that it cannot look.
+
+    False on macOS (no /proc, no jobs): an orphan of a dead driver is not found there.
+    """
+    return _can_read_environs() if POSIX else _jobs_hold()
 
 
 def _ancestors():
@@ -722,9 +811,9 @@ def run_pids(token):
     """Live pids naming run `token` in WGF_PROC_RUN, never this process, one of its
     ancestors, or a process of a tree this process owns right now. Linux only; []
     elsewhere."""
-    if not token or not can_sweep():
+    if not token or not _can_read_environs():
         return []
-    protected = _ancestors() | {pid for pid, _ in live_groups().values()}
+    protected = _ancestors() | {entry[0] for entry in live_groups().values()}
     live_tags = list(live_groups())
 
     def matches(environ):
@@ -737,10 +826,20 @@ def run_pids(token):
 def sweep_run(token, grace_seconds=5.0):
     """End every process still carrying run `token`: SIGTERM, `grace_seconds`, SIGKILL,
     repeated for descendants that fork meanwhile. Returns the pids it found alive and
-    signalled, or None where it cannot look (no /proc). Processes that do not carry the
-    token - untagged ones, and those of any other run - are never signalled."""
+    signalled, [] when there is nothing to end, or None where it cannot look. Processes that
+    do not carry the token - untagged ones, and those of any other run - are never signalled.
+
+    On Windows there is nothing to end and nothing to look at: the dead driver's job objects
+    took its trees with them (`can_sweep`). A command-line scan is deliberately not done
+    instead - matching a run id or a checkout path in `Get-CimInstance Win32_Process` output
+    would kill by guess (a `vite preview` command line names neither; an editor or another
+    session in the same checkout matches), it cannot tell two runs in one checkout apart, and
+    it would cost a PowerShell process on the path that must be quick and safe. The job object
+    is the answer, not a weaker signal next to it."""
     if not can_sweep():
         return None
+    if not POSIX:
+        return []
     targets = set(run_pids(token))
     if not targets:
         return []
@@ -929,12 +1028,13 @@ class OwnedProcess:
     leave on its own, then terminates the tree and reaps the child. Safe to call twice.
     """
 
-    def __init__(self, process, tag, argv):
+    def __init__(self, process, tag, argv, job=None):
         self.process = process
         self.tag = tag
         self.argv = list(argv)
         self.pid = process.pid
         self.pgid = process.pid if POSIX else None
+        self.job = job   # Windows: the Job Object holding the tree; `_unregister` closes it
         self.killed = []
         self._closed = False
         self._lock = threading.Lock()
@@ -977,13 +1077,15 @@ class OwnedProcess:
                 time.sleep(0.02)
             alive = not _exited(self.process)
             self.killed = terminate_tree(self.pid if alive or _HAVE_WAITID else None,
-                                         self.pgid, self.tag, grace_seconds)
+                                         self.pgid, self.tag, grace_seconds,
+                                         job=_owned_job(self.tag, self.job))
         finally:
             try:
                 self.process.wait(timeout=grace_seconds + 5)
             except subprocess.TimeoutExpired:  # pragma: no cover - SIGKILL did not take
                 pass
-            _unregister(self.tag)
+            _unregister(self.tag)       # closes the job handle; do not reuse it
+            self.job = None
             for stream in (self.process.stdout, self.process.stderr) if close_streams else ():
                 if stream is not None:
                     try:
@@ -1006,10 +1108,14 @@ def spawn(argv, cwd=None, env=None, **popen_kwargs):
     popen_kwargs.update(_session_kwargs())
     child_env = _child_env(env, tag)
     with _SPAWN_LOCK:
+        job = None if POSIX else _create_job()
         process = subprocess.Popen(_resolved(argv, child_env), cwd=cwd, env=child_env,
                                    **popen_kwargs)
-        _register(tag, process.pid, process.pid if POSIX else None, process)
-    return OwnedProcess(process, tag, argv)
+        if job is not None and not _assign_job(job, process):
+            _close_job(job)   # nothing is in it yet; closing kills nothing
+            job = None
+        _register(tag, process.pid, process.pid if POSIX else None, job)
+    return OwnedProcess(process, tag, argv, job)
 
 
 # -- running --------------------------------------------------------------------------------
@@ -1211,16 +1317,22 @@ def _run(argv, cwd, timeout, env, input, on_event, on_output, should_stop, heart
         last["activity"] = time.monotonic()
 
     began = time.monotonic()
+    job = None
     try:
         with _SPAWN_LOCK:
+            job = None if POSIX else _create_job()
             process = subprocess.Popen(
                 _resolved(argv, child_env), cwd=cwd, env=child_env,
                 stdin=subprocess.PIPE if input is not None else subprocess.DEVNULL,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.STDOUT if stderr_to_stdout else subprocess.PIPE,
                 **_session_kwargs())
-            _register(tag, process.pid, process.pid if POSIX else None, process)
+            if job is not None and not _assign_job(job, process):
+                _close_job(job)   # nothing is in it yet; closing kills nothing
+                job = None
+            _register(tag, process.pid, process.pid if POSIX else None, job)
     except (OSError, ValueError) as exc:
+        _close_job(job)
         close_log()
         error = f"{type(exc).__name__}: {exc}"
         emit("exited", status="not-started", error=error)
@@ -1235,7 +1347,8 @@ def _run(argv, cwd, timeout, env, input, on_event, on_output, should_stop, heart
         # The leader is running, or an unreaped zombie (waitid WNOWAIT): its pid is ours.
         leader = process.pid if (process.returncode is None) else None
         try:
-            return terminate_tree(leader, pgid, tag, grace_seconds)
+            return terminate_tree(leader, pgid, tag, grace_seconds,
+                                  job=_owned_job(tag, job))
         finally:
             try:
                 process.wait(timeout=grace_seconds + 5)
@@ -1245,8 +1358,11 @@ def _run(argv, cwd, timeout, env, input, on_event, on_output, should_stop, heart
 
     out = err = None
     try:
+        # On Windows `job` says whether the tree is actually held (see `_jobs_hold`); a step
+        # that reports False has the pre-job-object limits, and is worth reading in a log.
         emit("spawned", pid=process.pid, pgid=pgid, argv0=os.path.basename(argv[0]),
-             cwd=os.path.abspath(cwd) if cwd else os.getcwd())
+             cwd=os.path.abspath(cwd) if cwd else os.getcwd(),
+             **({} if POSIX else {"job": job is not None}))
 
         out = _Stream("stdout", process.stdout, sink if log else None, on_output, activity)
         err = None if stderr_to_stdout else _Stream("stderr", process.stderr,

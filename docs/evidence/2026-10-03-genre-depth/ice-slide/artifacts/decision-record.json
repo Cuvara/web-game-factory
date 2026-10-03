@@ -1,0 +1,50 @@
+{
+  "provenance": {
+    "artifact_id": "wgf:decision-record:ice-slide-g3:20261003-02",
+    "artifact_type": "decision-record",
+    "schema_version": "1.0.0",
+    "title_id": "ice-slide",
+    "produced_by": {
+      "role": "portfolio-owner",
+      "actor": "automation"
+    },
+    "produced_at": "2026-10-03T05:37:27.725Z",
+    "inputs": [
+      {
+        "artifact_id": "wgf:game-design:ice-slide:20261003-06",
+        "artifact_type": "game-design",
+        "content_hash": "sha256:54887df7763a4d5d445d0bf2bc17ded2a3eaa84f37542077ecd3486ee41798d8"
+      },
+      {
+        "artifact_id": "wgf:tech-plan:ice-slide:20261003-02",
+        "artifact_type": "tech-plan",
+        "content_hash": "sha256:ce74dcbe58328dfec6c66f26322abf98b30e5b68b1a8b11288b52213a863ce0d"
+      }
+    ],
+    "content_hash": "sha256:059b16951aead2f6984198eed610220232f74ab2947f7d55affb1af3ed13d5bb",
+    "status": "final"
+  },
+  "gate_id": "G3",
+  "machine": "title",
+  "transition": "tech-plan -> scaffolding",
+  "subject": [
+    {
+      "artifact_id": "wgf:game-design:ice-slide:20261003-06",
+      "artifact_type": "game-design",
+      "content_hash": "sha256:54887df7763a4d5d445d0bf2bc17ded2a3eaa84f37542077ecd3486ee41798d8"
+    },
+    {
+      "artifact_id": "wgf:tech-plan:ice-slide:20261003-02",
+      "artifact_type": "tech-plan",
+      "content_hash": "sha256:ce74dcbe58328dfec6c66f26322abf98b30e5b68b1a8b11288b52213a863ce0d"
+    }
+  ],
+  "decision": "approved",
+  "decided_by": {
+    "role": "portfolio-owner",
+    "mode": "auto-approved",
+    "identifier": "automation"
+  },
+  "decided_at": "2026-10-03T05:37:27.725Z",
+  "rationale": "G3 auto-approved: the run was started with G3 in its auto_approve list (factory.checkpoints.auto_approve, or a mock run's own reversible gates)"
+}

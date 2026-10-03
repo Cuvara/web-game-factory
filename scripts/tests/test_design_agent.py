@@ -20,7 +20,10 @@ sys.path.insert(0, HERE)
 
 import test_design_module as design_tests  # noqa: E402
 from wgf_design import AgentAuthor, AgentRunFailed  # noqa: E402
+from wgf_design import content as content_rules  # noqa: E402
 from wgf_design.agent import BUILD_SPEC_KEYS, REQUIRED_KEYS, check_shape  # noqa: E402
+from wgf_design.platforms import load_platforms  # noqa: E402
+from wgflib import genre_models  # noqa: E402
 from wgflib.workflow.model import StepOutcome  # noqa: E402
 
 # The stand-in host. argv: <mode> <request> <draft>. It reads the request, edits the
@@ -85,6 +88,17 @@ elif mode == "nothing":
 elif mode == "deleted":
     os.remove(draft_path)
     sys.exit(0)
+elif mode == "gaps":
+    # Repairing a design that was built: the seeded draft is the previous design itself.
+    with open(draft_path, encoding="utf-8") as handle:
+        seeded = json.load(handle)
+    with open(os.path.join(os.path.dirname(draft_path), "gaps.json"), "w") as handle:
+        json.dump({"gaps": request.get("gaps"),
+                   "previous_fantasy": (request.get("previous_design") or {}).get("fantasy"),
+                   "seeded_fantasy": seeded.get("fantasy"),
+                   "seeded_keys": sorted(seeded)}, handle)
+    draft = seeded
+    draft["build_spec"]["content"]["units"][0]["parameters"]["answered"] = 1
 elif mode == "edit-in-place":
     # Edits the seeded file rather than reproducing the request's starting draft.
     with open(draft_path, encoding="utf-8") as handle:
@@ -115,6 +129,21 @@ class AgentCase(unittest.TestCase):
                     "timeout_seconds": 60, "idle_timeout_seconds": None}
         settings.update(agent)
         return {"design": {"author": "agent", "agent": settings}}
+
+    def brief(self, **extra):
+        """The brief the design step hands an author, with this attempt's run directory."""
+        strategy = design_tests.load_strategy()
+        brief = {"title_id": strategy["title_id"], "strategy": strategy,
+                 "platforms": load_platforms(strategy, None), "params": {},
+                 "config": {}, "run_dir": os.path.join(self.scratch, "run"),
+                 "visit": 1, "attempt": 1}
+        brief.update(extra)
+        return brief
+
+    def request_of(self, stem="1-1"):
+        path = os.path.join(self.scratch, "run", "design", f"{stem}.request.json")
+        with open(path, encoding="utf-8") as handle:
+            return json.load(handle)
 
     def run_design(self, config):
         context = design_tests.FakeContext(config)
@@ -218,6 +247,109 @@ class TheModuleStillJudges(AgentCase):
         self.assertIn("state its role and dimension", text)
         self.assertEqual(repair["production_art"]["ui"]["min_target_px"], 44)
         self.assertTrue(os.path.isfile(repair["craft"]), repair["craft"])
+
+    def test_request_carries_genre_model_constraints_and_rules(self):
+        """The agent designs the content, so it gets what the content is held to: the genre
+        family itself, the rule ids, the variety bars, the session profile and the craft
+        guide - and the content shape research coded, when the strategy carries one."""
+        constraints = {"family": {"value": "arcade", "label": "Arcade / action",
+                                  "tier": "derived", "source": "corpus",
+                                  "claim_refs": ["claim-x"]}}
+        strategy = design_tests.variant(research={
+            "research_version": 2, "design_constraints": constraints,
+            "capability": {"buildable": True, "design_archetype": "lane-runner",
+                           "catalog_entry": "endless-runner", "reason": "FIXTURE",
+                           "missing": []},
+            "art": {}, "theme": {"theme": {}, "setting": {}},
+            "fantasy": {"player": {}, "emotional": {}}, "patterns": {"adopt": []}})
+        AgentAuthor().draft(self.brief(strategy=strategy,
+                                      config=self.config("improve")))
+        request = self.request_of()
+        family = genre_models.load()["families"]["arcade"]
+
+        self.assertEqual(request["genre_model"]["unit_kinds"], family["unit_kinds"])
+        self.assertEqual([a["id"] for a in request["genre_model"]["axes"]],
+                         [a["id"] for a in family["axes"]])
+        self.assertEqual(request["genre_model"]["units"], family["units"])
+        self.assertNotIn("seed", request["genre_model"])
+
+        self.assertEqual([r["id"] for r in request["content_rules"]["rules"]],
+                         [rule_id for rule_id, _ in content_rules.RULES])
+        self.assertTrue(all(r["meaning"] for r in request["content_rules"]["rules"]))
+        self.assertEqual(request["content_rules"]["variety"]["acceptance_min_items"],
+                         family.get("variety", {}).get(
+                             "acceptance_min_items",
+                             genre_models.load()["variety"]["acceptance_min_items"]))
+        self.assertEqual(request["content_rules"]["session_profile"]["name"], "casual")
+        self.assertEqual(request["content_rules"]["session_profile"]["max_unit_s"],
+                         genre_models.load()["session_profiles"]["casual"]["max_unit_s"])
+        self.assertEqual(request["design_constraints"], constraints)
+        self.assertTrue(os.path.isfile(request["content_craft"]), request["content_craft"])
+        # The starting draft already states the content: the agent improves a design, not a
+        # loop and the word "harder".
+        self.assertTrue(request["starting_draft"]["build_spec"]["content"]["units"])
+
+    def test_the_prompt_names_the_content_rules(self):
+        from wgf_design.agent import PROMPT_CONTENT
+        for rule_id, _meaning in content_rules.RULES:
+            self.assertIn(rule_id, PROMPT_CONTENT)
+        self.assertIn("content_craft", PROMPT_CONTENT)
+
+    def test_shape_check_requires_genre_and_content(self):
+        self.assertIn("genre", REQUIRED_KEYS)
+        for key in ("content", "mastery"):
+            self.assertIn(key, BUILD_SPEC_KEYS)
+        problems = check_shape({"build_spec": {}})
+        self.assertIn("missing 'genre'", problems)
+        self.assertIn("build_spec is missing 'content'", problems)
+        self.assertIn("build_spec is missing 'mastery'", problems)
+        whole = design_tests.run_step(design_tests.load_strategy()).artifacts[0].content
+        draft = {key: whole[key] for key in REQUIRED_KEYS}
+        self.assertEqual(check_shape(draft), [])
+        del draft["build_spec"]["content"]
+        self.assertEqual(check_shape(draft), ["build_spec is missing 'content'"])
+
+    def test_gaps_seed_from_the_previous_design(self):
+        """A prototype report named gaps in the design. The agent starts from the design they
+        were found in - not from a fresh draft - and answers each at its own field."""
+        previous = design_tests.run_step(design_tests.load_strategy()).artifacts[0].content
+        gaps = [{"field": "build_spec.content.units[seg-opening].parameters",
+                 "question": "What row gap does the opening segment use?"}]
+        draft = AgentAuthor().draft(self.brief(config=self.config("gaps"), gaps=gaps,
+                                               previous_design=previous))
+        with open(os.path.join(self.scratch, "run", "design", "gaps.json"),
+                  encoding="utf-8") as handle:
+            seen = json.load(handle)
+        self.assertEqual(seen["gaps"], gaps)
+        self.assertEqual(seen["previous_fantasy"], previous["fantasy"])
+        # The file the agent edits is the previous design, without what the module owns.
+        self.assertEqual(seen["seeded_fantasy"], previous["fantasy"])
+        self.assertNotIn("provenance", seen["seeded_keys"])
+        self.assertNotIn("consistency", seen["seeded_keys"])
+        self.assertEqual(check_shape(draft), [])
+        self.assertEqual(
+            draft["build_spec"]["content"]["units"][0]["parameters"]["answered"], 1)
+        request = self.request_of("1-1-gaps")
+        self.assertEqual(request["gaps"], gaps)
+        self.assertEqual(request["previous_design"]["fantasy"], previous["fantasy"])
+        from wgf_design.agent import PROMPT_GAPS
+        self.assertIn("`gaps`", PROMPT_GAPS)
+
+    def test_gaps_without_the_previous_design_are_refused(self):
+        from wgf_design import AuthorError
+        with self.assertRaises(AuthorError) as caught:
+            AgentAuthor().draft(self.brief(config=self.config("gaps"),
+                                           gaps=[{"field": "x", "question": "y"}]))
+        self.assertIn("previous_design", str(caught.exception))
+
+    def test_a_deterministic_author_refuses_design_gaps(self):
+        from wgf_design import AuthorError
+        from wgf_design.authors import ArchetypeAuthor
+        from wgf_design.seed import GenreSeedAuthor
+        for author in (ArchetypeAuthor(), GenreSeedAuthor()):
+            with self.assertRaises(AuthorError) as caught:
+                author.draft(self.brief(gaps=[{"field": "x", "question": "y"}]))
+            self.assertIn("design gaps need the agent author", str(caught.exception))
 
     def test_the_prompt_names_the_production_art_fields(self):
         from wgf_design.agent import PROMPT_ART

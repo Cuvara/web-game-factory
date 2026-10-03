@@ -1080,6 +1080,188 @@ class ResolvingTheProgram(unittest.TestCase):
         self.assertIn("git version", result.stdout or "")
 
 
+# A child that starts a grandchild the way a Windows toolchain does - detached, in a process
+# group and console of its own - reports its pid, and then (without `sleep`) exits at once. By
+# the time cleanup runs, the grandchild's parent is gone, so nothing reaches it by parentage.
+WINDOWS_GRANDCHILD = """\
+import subprocess, sys, time
+DETACHED_PROCESS = 0x00000008
+CREATE_NEW_PROCESS_GROUP = 0x00000200
+CREATE_NO_WINDOW = 0x08000000
+grand = subprocess.Popen(
+    [sys.executable, "-c", "import time; time.sleep(240)"],
+    creationflags=DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP | CREATE_NO_WINDOW,
+    stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+sys.stdout.write("g %d\\n" % grand.pid)
+sys.stdout.flush()
+if "sleep" in sys.argv:
+    time.sleep(240)
+"""
+
+# A driver that owns such a tree through procs.spawn and then does nothing. Killed with
+# TerminateProcess it runs no atexit hook and no handler - the Windows SIGKILL.
+WINDOWS_DRIVER = """\
+import subprocess, sys, time
+sys.path.insert(0, sys.argv[1])
+from wgflib import procs
+owned = procs.spawn([sys.executable, sys.argv[2]], stdout=subprocess.PIPE, text=True)
+line = owned.process.stdout.readline()
+with open(sys.argv[3], "w") as handle:
+    handle.write(line)
+    handle.flush()
+time.sleep(240)
+"""
+
+
+def tasklist_lists(pid):
+    """Does Windows itself still list `pid`? Independent of procs' own liveness probe."""
+    listed = subprocess.run(["tasklist", "/FI", f"PID eq {int(pid)}", "/NH"],
+                            capture_output=True, text=True)
+    return str(pid) in (listed.stdout or "")
+
+
+@unittest.skipUnless(os.name == "nt", "job objects and taskkill are Windows")
+class WindowsJobObject(unittest.TestCase):
+    """What `taskkill /T` cannot reach, and the job object can.
+
+    `taskkill /T /F /PID <leader>` walks the parent-child chain that is alive at the moment it
+    runs. A grandchild whose intermediate parent (a .cmd shim, a shell, a launcher) has already
+    exited is not on that chain, and on Windows there is no /proc to find it by its tag
+    instead: observed as an agent host and a `vite preview` that outlived a `wgf cancel` by an
+    hour. Every tree procs starts here is in a Job Object limited with KILL_ON_JOB_CLOSE, so
+    cleanup ends it in one call - and the kernel ends it again if this process is killed
+    outright, which is the case no later sweep could have recovered on this platform.
+    """
+
+    def setUp(self):
+        if not procs._jobs_hold():
+            self.skipTest("this Windows will not hold a tree in a job object")
+        self.scratch = tempfile.mkdtemp(prefix="wgf-win-procs-")
+        self.addCleanup(shutil.rmtree, self.scratch, ignore_errors=True)
+        self.leftovers = []
+        self.addCleanup(self.kill_leftovers)
+
+    def kill_leftovers(self):
+        for pid in self.leftovers:
+            subprocess.run(["taskkill", "/F", "/T", "/PID", str(pid)], capture_output=True)
+
+    def script(self, name, body):
+        path = os.path.join(self.scratch, name)
+        with open(path, "w", encoding="utf-8") as handle:
+            handle.write(body)
+        return path
+
+    def grandchild_of(self, text):
+        self.assertTrue(text.split(), f"the child reported nothing: {text!r}")
+        pid = int(text.split()[1])
+        self.leftovers.append(pid)
+        return pid
+
+    def assertGone(self, pid):
+        self.assertTrue(wait_for(lambda: not procs.pid_alive(pid), timeout=15.0),
+                        f"pid {pid} survived cleanup")
+        self.assertFalse(tasklist_lists(pid), f"Windows still lists pid {pid}")
+
+    def test_a_detached_grandchild_whose_parent_exited_is_still_ended(self):
+        result = procs.run([sys.executable, self.script("gc.py", WINDOWS_GRANDCHILD)],
+                           timeout=60)
+        self.assertTrue(result.ok, result.tail(10))
+        grandchild = self.grandchild_of(result.stdout)
+        # Only the job object knows this pid: the leader taskkill would have walked had
+        # already exited, so `taskkill /T /F /PID <leader>` answers "process not found".
+        self.assertIn(grandchild, result.killed)
+        self.assertGone(grandchild)
+
+    def test_a_timed_out_tree_takes_its_detached_grandchild_with_it(self):
+        result = procs.run([sys.executable, self.script("gc.py", WINDOWS_GRANDCHILD), "sleep"],
+                           timeout=3, grace_seconds=GRACE)
+        self.assertTrue(result.timed_out)
+        grandchild = self.grandchild_of(result.stdout)
+        self.assertIn(grandchild, result.killed)
+        self.assertGone(result.pid)
+        self.assertGone(grandchild)
+
+    def test_the_tree_of_a_driver_killed_outright_dies_with_it(self):
+        """KILL_ON_JOB_CLOSE: the guarantee no sweep could give on a platform without /proc."""
+        pidfile = os.path.join(self.scratch, "pids")
+        driver = subprocess.Popen([sys.executable, self.script("driver.py", WINDOWS_DRIVER),
+                                   SCRIPTS, self.script("gc.py", WINDOWS_GRANDCHILD), pidfile])
+        self.leftovers.append(driver.pid)
+        def reported_pid():
+            try:
+                with open(pidfile, encoding="utf-8") as handle:
+                    return handle.read().strip()
+            except OSError:
+                return ""
+
+        reported = wait_for(reported_pid, timeout=60.0)
+        grandchild = self.grandchild_of(reported or "")
+        self.assertTrue(tasklist_lists(grandchild), "the tree was never up")
+        driver.kill()                 # TerminateProcess: no atexit, no handler, no cleanup
+        driver.wait(timeout=60)
+        self.assertTrue(wait_for(lambda: not tasklist_lists(grandchild), timeout=20.0),
+                        "the job object did not end the tree when the driver's handle closed")
+
+    def test_the_registry_carries_the_job_handle_and_close_spends_it(self):
+        owned = procs.spawn([sys.executable, "-c", "import time; time.sleep(240)"],
+                            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        self.leftovers.append(owned.pid)
+        self.assertIn(owned.tag, procs.live_groups())
+        pid, pgid, job = procs.live_groups()[owned.tag]
+        self.assertEqual((pid, pgid), (owned.pid, None))
+        self.assertTrue(job, "the tree was not put in a job object")
+        owned.close(grace_seconds=GRACE)
+        self.assertNotIn(owned.tag, procs.live_groups())
+        self.assertIsNone(owned.job, "a closed handle must never be used again")
+        self.assertGone(pid)
+
+    def test_pid_alive_does_not_touch_the_process_it_asks_about(self):
+        """`os.kill` on Windows is TerminateProcess for every signal value but the two console
+        events and the 0 current CPython special-cases: the liveness probe must ask the kernel,
+        not come within one argument of killing what it was asked about."""
+        other = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(60)"])
+        self.leftovers.append(other.pid)
+        self.addCleanup(other.wait)   # cleanups run last-added first: kill, then reap
+        self.addCleanup(other.kill)
+        self.assertTrue(procs.pid_alive(other.pid))
+        time.sleep(0.5)
+        self.assertIsNone(other.poll(), "pid_alive ended the process it was asked about")
+        self.assertTrue(procs.pid_alive(other.pid))
+
+    def test_an_exited_process_reads_as_gone_while_a_handle_is_still_open(self):
+        """What made the old probe wrong in the other direction: OpenProcess succeeds for any
+        pid someone still holds a handle to, so a dead child read as a survivor forever."""
+        done = subprocess.Popen([sys.executable, "-c", ""])
+        done.wait(timeout=60)
+        self.assertFalse(procs.pid_alive(done.pid))   # Popen still holds its handle
+        self.assertIsNotNone(done._handle)
+
+    def test_a_dead_drivers_run_has_nothing_left_to_sweep(self):
+        """The Windows answer to SIGKILL recovery: `can_sweep` is true because there is
+        nothing to find, not because environments can be read. The engine therefore neither
+        warns that orphans are still running nor reports pids it ended."""
+        token = procs.run_token("run-1", self.scratch)
+        self.assertTrue(procs.can_sweep())
+        self.assertEqual(procs.sweep_run(token), [])
+        self.assertEqual(procs.run_pids(token), [])
+        self.assertEqual(procs.tagged_pids("deadbeef"), [])
+
+    def test_without_a_job_object_the_sweep_admits_it_cannot_look(self):
+        """The fallback, where a job cannot be made or an assignment is refused: the tree has
+        only `taskkill /T`, and the engine must keep saying it cannot account for what a dead
+        driver left - never claim there is nothing."""
+        self.addCleanup(self.forget_job_probe)
+        with mock.patch.object(procs, "_create_job", return_value=None):
+            self.forget_job_probe()
+            result = procs.run([sys.executable, "-c", "print(7)"], timeout=60)
+            self.assertTrue(result.ok, result.tail(5))
+            self.assertFalse(procs.can_sweep())
+            self.assertIsNone(procs.sweep_run(procs.run_token("run-1", self.scratch)))
+
+    @staticmethod
+    def forget_job_probe():
+        procs._WIN["jobs"] = None   # re-probed on the next call
+
 
 def _windows_pid_alive(pid):
     out = subprocess.run(["tasklist", "/FI", f"PID eq {pid}", "/FO", "CSV", "/NH"],
@@ -1124,7 +1306,9 @@ class WindowsOrphans(unittest.TestCase):
         owned.close(grace_seconds=1.0)
         self.assertIn(pid, owned.killed)
         self.assertTrue(wait_for(lambda: not _windows_pid_alive(pid), timeout=10))
-        self.assertEqual(procs._JOBS, {})
+        # The registry is the only owner of the job handle, and close() spends it.
+        self.assertNotIn(owned.tag, procs.live_groups())
+        self.assertIsNone(owned.job)
 
 
 class PidAlive(unittest.TestCase):

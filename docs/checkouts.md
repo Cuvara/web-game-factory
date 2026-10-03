@@ -79,6 +79,11 @@ two runs of one title at once.
 `assets` takes the lock only when it writes into the checkout. A step run outside a run
 store (a unit test's bare context) takes none.
 
+Two runs in two *different* checkouts share one thing this lock does not cover: the host
+port the template's Playwright config hardcodes (4173). That is a separate, machine-wide
+lock held per command, not per step - it serializes `test:e2e` and `test:verify` across
+every run on the machine and fails nothing ([agent-lifecycle.md](agent-lifecycle.md#fixed-preview-ports)).
+
 ## Assets reach the game
 
 With a scaffold-record in the run and the checkout on disk, the `assets` step writes into

@@ -34,6 +34,14 @@ Everything a Factory step spawns goes through `run()` (to completion) or `spawn(
     killed with SIGKILL runs no cleanup at all; a later resume of the run finds and ends the
     trees it orphaned through that name (`sweep_run`, Linux only).
 
+A command that binds one of the template's fixed host ports (`wgflib.portlock.ports_for`:
+`pnpm run test:e2e`, `test:verify`, `test:sdk:browser`, a bare `playwright test`) runs inside
+that port's machine-wide lock, so two runs on one host take turns on port 4173 instead of
+the second failing "already used". Waiting is reported as a `port-wait` event every
+`heartbeat_seconds` (a lifecycle event: liveness reads it as activity, and the hung-child
+watchdog never fires on it), `should_stop` ends the wait (`cancelled`), and a wait longer
+than `$WGF_PORT_LOCK_TIMEOUT` returns `error` naming the holder. `ports=()` opts out.
+
 Nothing global is installed on import except an `atexit` hook that takes down trees this
 process still owns. A CLI entry point that wants SIGTERM/SIGHUP to clean up too calls
 `install_signal_cleanup()` once, from the main thread.
@@ -55,6 +63,8 @@ import subprocess
 import sys
 import threading
 import time
+
+from . import portlock
 
 __all__ = ["run", "spawn", "OwnedProcess", "ProcessResult", "TAG_ENV", "LINEAGE_ENV",
            "RUN_ENV", "HEARTBEAT_ENV", "tagged_pids", "terminate_tree", "live_groups",
@@ -633,6 +643,12 @@ def _child_env(env, tag):
         base[RUN_ENV] = ",".join(runs)
     else:
         base.pop(RUN_ENV, None)
+    # The ports held for this tree: a descendant Factory process never waits on them.
+    held = portlock.held_ports()
+    if held:
+        base[portlock.HELD_ENV] = held
+    else:
+        base.pop(portlock.HELD_ENV, None)
     return base
 
 
@@ -864,7 +880,7 @@ class _Stream:
 
 def run(argv, cwd=None, timeout=None, env=None, input=None, on_event=None, on_output=None,
         should_stop=None, heartbeat_seconds=None, idle_timeout=None, log_path=None,
-        grace_seconds=5.0, poll_seconds=0.1, stderr_to_stdout=False):
+        grace_seconds=5.0, poll_seconds=0.1, stderr_to_stdout=False, ports=None):
     """Run `argv` to completion as an owned process tree. Never raises for the child's own
     failure: a missing executable is `error`, a non-zero exit is `returncode`.
 
@@ -880,6 +896,8 @@ def run(argv, cwd=None, timeout=None, env=None, input=None, on_event=None, on_ou
                     is then always "".
     `input`         str or bytes written to stdin, which is then closed; otherwise stdin is
                     /dev/null, so a child can never wait on a prompt.
+    `ports`         the fixed host ports the command binds, held machine-wide while it
+                    runs (wgflib.portlock); None = `portlock.ports_for(argv)`, () = none.
 
     stdout/stderr keep the last 4 MiB of each stream (`truncated` counts what was dropped).
     """
@@ -887,6 +905,46 @@ def run(argv, cwd=None, timeout=None, env=None, input=None, on_event=None, on_ou
     on_event, should_stop = _with_bound(on_event, should_stop)
     if heartbeat_seconds is None:
         heartbeat_seconds = default_heartbeat_seconds()
+    ports = portlock.ports_for(argv) if ports is None else tuple(sorted(set(ports)))
+    if not ports:
+        return _run(argv, cwd, timeout, env, input, on_event, on_output, should_stop,
+                    heartbeat_seconds, idle_timeout, log_path, grace_seconds, poll_seconds,
+                    stderr_to_stdout)
+
+    def emit(kind, **data):
+        if on_event is not None:
+            try:
+                on_event(kind, **data)
+            except Exception:
+                pass
+
+    began = time.monotonic()
+    command = " ".join(argv)
+    with contextlib.ExitStack() as held:
+        for port in ports:
+            def waiting(waited_s, holder, port=port):
+                emit("port-wait", port=port, waited_s=round(waited_s, 3),
+                     holder=portlock.describe(holder))
+            try:
+                waited = held.enter_context(portlock.hold(
+                    port, command=command, run=_RUN.get(), on_wait=waiting,
+                    should_stop=should_stop, report_seconds=heartbeat_seconds or 15.0))
+            except portlock.PortWaitCancelled:
+                emit("cancelled", pid=None, port=port)
+                return ProcessResult(argv, cancelled=True, duration_s=time.monotonic() - began)
+            except portlock.PortBusy as exc:
+                emit("exited", status="not-started", error=str(exc))
+                return ProcessResult(argv, error=str(exc), exception=exc,
+                                     duration_s=time.monotonic() - began)
+            if waited:
+                emit("port-acquired", port=port, waited_s=round(waited, 3))
+        return _run(argv, cwd, timeout, env, input, on_event, on_output, should_stop,
+                    heartbeat_seconds, idle_timeout, log_path, grace_seconds, poll_seconds,
+                    stderr_to_stdout)
+
+
+def _run(argv, cwd, timeout, env, input, on_event, on_output, should_stop, heartbeat_seconds,
+         idle_timeout, log_path, grace_seconds, poll_seconds, stderr_to_stdout):
     tag = secrets.token_hex(8)
     child_env = _child_env(env, tag)
 

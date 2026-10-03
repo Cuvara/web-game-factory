@@ -101,6 +101,8 @@ runner knows nothing about workflows.
 | `timeout` / `idle-timeout` / `cancelled` | The wait ended for that reason | `pid`, `after_s` / `idle_s` |
 | `cleanup` | Descendants had to be killed | `pid`, `killed` |
 | `exited` | Always last | `pid`, `status`, `returncode`, `duration_s` |
+| `port-wait` | Before `spawned`, while another process holds a fixed port the command needs ([Fixed preview ports](#fixed-preview-ports)); at once and every `heartbeat_seconds` | `port`, `waited_s`, `holder` |
+| `port-acquired` | The port came free after a wait | `port`, `waited_s` |
 
 On every event the engine updates the step state: `pid` is the child being waited on (or
 `null`), `last_event` is the kind, and three clocks move separately, because a heartbeat
@@ -163,6 +165,72 @@ unknown `on_hung` value is a `ConfigError`: no run starts under it. Set
 `hung_output_seconds` above every module idle timeout you configure, or the watchdog
 pre-empts the module's own, better-worded, ending. It needs heartbeats (`idle_s`); with
 `heartbeat_seconds` 0 it never fires.
+
+## Fixed preview ports
+
+The pinned template's `playwright.config.ts` serves the build with `pnpm preview --port 4173
+--strictPort` and `reuseExistingServer: false` (`playwright.sdk.config.ts`: 4176). One
+checkout per machine, that is right: a stray server is never taken for this build. Two
+Factory runs on one machine are not: whichever reaches 4173 second fails with
+"http://localhost:4173 is already used" - three times in a minute each, on 2026-10-03, a
+greybox smoke check while another run's smoke suite held the port, and the step failed
+with its retries spent. The config is template-owned and conformance-checked, so a game
+cannot move its port. The Factory serializes the commands instead.
+
+`procs.run` holds a machine-wide, cross-process lock (`scripts/wgflib/portlock.py`) on each
+fixed port its command binds, for exactly as long as the command runs. Which commands bind
+one is `portlock.ports_for(argv)`, from the template's scripts and configs
+(`portlock.SCRIPT_CONFIGS`, `portlock.CONFIG_PORTS`; `test_portlock` checks them against the
+pinned template):
+
+| Command | Port | Run by |
+|---|---|---|
+| `pnpm run test:e2e` | 4173 | the develop `smoke` check (greybox and production), verify's gameplay check |
+| `pnpm run test:verify` | 4173 | verify's runtime-facts check |
+| `pnpm run test:sdk:browser` | 4176 | the sdk step's optional browser smoke |
+| `playwright test` with no `-c`, or `-c playwright.config.ts` | 4173 | the golden runs' repository suites |
+
+Every other browser run the Factory starts - playability's bot, the store-listing capture,
+the sdk e2e, the golden probe, MV-4 - uses a config of its own on a port it picks free, and
+takes no lock. A step needs nothing to opt in; a caller passes `ports=()` to opt out, or
+`ports=(...)` to name them itself.
+
+The lock is `port-<port>.lock` in `$WGF_LOCK_DIR` (default `~/.cache/wgf/locks`), taken with
+the operating system's own file lock: `fcntl.flock` on POSIX, `msvcrt.locking` on Windows.
+The kernel releases it when the holder's handle closes, so a holder that exited, crashed or
+was killed holds nothing - there is no stale lock to detect or break. Beside it,
+`port-<port>.holder.json` records the holder's pid, run, command and start time for the
+messages below; it is never the lock, and the next holder overwrites a stale one.
+
+- **Waiting is progress.** `procs.run` emits `port-wait` at once and every
+  `heartbeat_seconds`. It is a lifecycle event, so it moves `last_activity_at` and
+  `last_output_at`, and with no child yet there is no `pid`: `wgf status` reads the step as
+  running, never `hung`, and the hung-child watchdog has nothing to act on.
+- **Waiting is cancellable.** The step's `should_stop` is polled: `wgf cancel` (or the
+  watchdog) ends the wait, and the result is `cancelled`, as for a running child.
+- **Waiting is bounded.** After `$WGF_PORT_LOCK_TIMEOUT` seconds (default 3600) `procs.run`
+  returns `error` (`not-started`) naming the holder - for example `port 4173 is still held
+  after 3600s by pid 4242, run new-game-...@..., running `pnpm run test:e2e --workers=1`,
+  since 2026-10-03T08:31:02Z` - which each module reports as its own "could not be
+  started" outcome. Nothing is retried on the module's behalf.
+- **Re-entrant.** A thread already holding the port takes it again at once, and every child
+  started while a port is held carries `WGF_PROC_PORTS`, so a nested Factory process never
+  waits on the lock its own ancestor holds for it.
+
+Not covered: what a developer agent runs by itself inside its session (the brief tells it to
+run `pnpm test:e2e`, and to serve the build on 4173 for the browser tool). The step that
+runs the agent holds no lock - that would serialize whole development sessions - so an
+agent's own suite can still meet another run's. It fails the agent's own command, not the
+step; the step's checks run afterwards, under the lock. `procs.spawn` (long-lived servers)
+takes no lock either; nothing the Factory spawns binds a fixed port.
+
+**Template follow-up (proposal only).** The lock removes the failure, not the queue: two
+runs still take turns on 4173. A future template release could read the preview port from
+the environment in `playwright.config.ts`, as its other configs already do
+(`CG_DEMO_PORT`, `SDK_MATRIX_PORT`, ...): `const PORT = Number(process.env["WGF_PREVIEW_PORT"]
+?? 4173)`. The Factory would then hand each command a free port and drop the entry from
+`portlock.CONFIG_PORTS` once the pin moves to that release. Until then the lock is the only
+mechanism; nothing in a game repository changes.
 
 ## Cancellation
 

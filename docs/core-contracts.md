@@ -246,14 +246,14 @@ wrong.
    check compares with `x-wgf`.
 8. **`develop` treats a declared input as optional.** Without `title-strategy` its report's
    kill criteria are silently empty.
-9. **The `design-gap` return is routed but not yet fed.** develop and greybox emit
-   `design_gaps` and the workflow routes `design-gap` back to `design` with the
-   `prototype-report` as an input, and the agent design author accepts a `gaps` +
-   `previous_design` brief to answer each gap at its own field. The design step does not yet
-   build that brief from the report, so a returned design is authored again rather than
-   repaired from the named gaps, and an installation with a deterministic author gets the
-   same design back. Until it is wired, treat the route as "the run stops looping forward and
-   a person sees the gaps" rather than as an automatic repair.
+9. **The `design-gap` return needs the agent author.** develop and greybox emit `design_gaps`,
+   the workflow routes `design-gap` back to `design` with the `prototype-report`, and the
+   design step builds the author's brief from it: `gaps` (the report's blocking and minor
+   entries) and `previous_design` (this step's own previous output, read from the run
+   directory), so the agent author answers each gap at its field and the design is repaired
+   rather than replaced - exercised live on 2026-10-03. A deterministic author refuses the
+   brief by name, so an installation without an agent author sees the gaps and stops, which
+   is the honest outcome rather than the same design returned.
 
 ---
 

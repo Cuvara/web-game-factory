@@ -1,0 +1,1231 @@
+{
+  "provenance": {
+    "artifact_id": "wgf:playability-report:ice-slide:20261003-06",
+    "artifact_type": "playability-report",
+    "schema_version": "1.2.0",
+    "title_id": "ice-slide",
+    "produced_by": {
+      "role": "qa",
+      "actor": "automation"
+    },
+    "produced_at": "2026-10-03T10:28:10Z",
+    "inputs": [
+      {
+        "artifact_id": "wgf:game-design:ice-slide:20261003-06",
+        "artifact_type": "game-design",
+        "content_hash": "sha256:54887df7763a4d5d445d0bf2bc17ded2a3eaa84f37542077ecd3486ee41798d8"
+      },
+      {
+        "artifact_id": "wgf:prototype-report:ice-slide:20261003-08",
+        "artifact_type": "prototype-report",
+        "content_hash": "sha256:413cf9aa6fb744c84eda38825777c181de54d502d0a96b40d0f5dfd65c73e118"
+      },
+      {
+        "artifact_id": "wgf:scaffold-record:ice-slide:20261003-03",
+        "artifact_type": "scaffold-record",
+        "content_hash": "sha256:afb8e376cf2c4caa033cf29a39d26d40fa881bf65c68d7e2006a79f8bc853adf"
+      }
+    ],
+    "content_hash": "sha256:30266ab5243a13923cea2b2a22ef0939f06b03ed4ff1ecff9b9ddaac3cd0cd78",
+    "status": "draft"
+  },
+  "title_id": "ice-slide",
+  "commit": "c0b0e7e6d4a6477aa9757d03afc22241e852d980",
+  "measurement_class": "automation-bot",
+  "projects": [
+    {
+      "id": "desktop",
+      "viewport": {
+        "width": 1280,
+        "height": 720
+      },
+      "ran": true,
+      "page_errors": []
+    },
+    {
+      "id": "mobile",
+      "viewport": {
+        "width": 393,
+        "height": 851
+      },
+      "ran": true,
+      "page_errors": []
+    }
+  ],
+  "checks": [
+    {
+      "id": "probe.present",
+      "project": "desktop",
+      "required": true,
+      "summary": "window.__wgf__.play.snapshot() answered while the game started",
+      "status": "PASS"
+    },
+    {
+      "id": "probe.valid",
+      "project": "desktop",
+      "required": true,
+      "summary": "snapshots match the play-probe schema and carry the contract's metrics",
+      "status": "PASS",
+      "measured": {
+        "schema_problems": [],
+        "missing_metrics": [],
+        "content_problems": []
+      }
+    },
+    {
+      "id": "start.playable",
+      "project": "desktop",
+      "required": true,
+      "summary": "play began 1530 ms after navigation",
+      "status": "PASS",
+      "measured": 1530,
+      "expected": "<= 5000 ms"
+    },
+    {
+      "id": "start.objective",
+      "project": "desktop",
+      "required": true,
+      "summary": "80% of the objective's words were on screen in the first 3 s of play",
+      "status": "PASS",
+      "measured": 0.8,
+      "expected": ">= 0.6 of the words of build_spec.experience.goal.statement",
+      "frames": [
+        "first-session-1s"
+      ]
+    },
+    {
+      "id": "idle.grace",
+      "project": "desktop",
+      "required": true,
+      "summary": "with no input for 10000 ms, play was not lost",
+      "status": "PASS",
+      "expected": "not lost within 10000 ms without input"
+    },
+    {
+      "id": "act.acknowledged",
+      "project": "desktop",
+      "required": true,
+      "summary": "every action changed the frame: {'slide-up': 0.015, 'slide-down': 0.0148, 'slide-left': 0.1928, 'slide-right': 0.0155}",
+      "status": "PASS",
+      "measured": {
+        "slide-up": 0.015,
+        "slide-down": 0.0148,
+        "slide-left": 0.1928,
+        "slide-right": 0.0155
+      },
+      "expected": ">= 0.002 of pixels"
+    },
+    {
+      "id": "win.reachable",
+      "project": "desktop",
+      "required": true,
+      "summary": "good play reached `won` after 6 inputs",
+      "status": "PASS",
+      "measured": {
+        "reached": "won",
+        "inputs": 6,
+        "genre_win_shape": "goal-state-reached"
+      }
+    },
+    {
+      "id": "lose.reachable",
+      "project": "desktop",
+      "required": true,
+      "summary": "bad play ended lost",
+      "status": "PASS",
+      "measured": {
+        "reached": "lost"
+      },
+      "frames": [
+        "end-lost",
+        "state-lost",
+        "state-retry"
+      ]
+    },
+    {
+      "id": "restart.works",
+      "project": "desktop",
+      "required": true,
+      "summary": "retry (input:retry) returned to play in 19 ms; a restart inside the unit returned to play with its progress at 0",
+      "status": "PASS",
+      "measured": {
+        "playingMs": 19,
+        "reset": true,
+        "reset_in_unit": {
+          "clicked": "input:restart",
+          "playingMs": 202,
+          "before": {
+            "unit_id": "l-01",
+            "unit_index": 1,
+            "unit_count": 6,
+            "unit_kind": "level",
+            "objective": "Reach the goal tile of l-01 in at most 12 moves.",
+            "progress": {
+              "metric": "goal-reached",
+              "value": 0,
+              "target": 1
+            }
+          },
+          "after": {
+            "unit_id": "l-01",
+            "unit_index": 1,
+            "unit_count": 6,
+            "unit_kind": "level",
+            "objective": "Reach the goal tile of l-01 in at most 12 moves.",
+            "progress": {
+              "metric": "goal-reached",
+              "value": 0,
+              "target": 1
+            }
+          },
+          "metrics_before": {
+            "best": 0,
+            "moves-left": 11,
+            "solve-time": 0,
+            "keys-doors": 0,
+            "stars": 0,
+            "unit": 1,
+            "goal-reached": 0,
+            "difficulty.depth": 0.05,
+            "difficulty.move-limit": 0.03,
+            "difficulty.board-complexity": 0.1,
+            "difficulty.piece-variety": 0.15
+          },
+          "metrics_after": {
+            "best": 0,
+            "moves-left": 12,
+            "solve-time": 0,
+            "keys-doors": 0,
+            "stars": 0,
+            "unit": 1,
+            "goal-reached": 0,
+            "difficulty.depth": 0.05,
+            "difficulty.move-limit": 0.03,
+            "difficulty.board-complexity": 0.1,
+            "difficulty.piece-variety": 0.15
+          }
+        }
+      },
+      "expected": "<= 3000 ms, moves-left reset"
+    },
+    {
+      "id": "entities.visible",
+      "project": "desktop",
+      "required": true,
+      "summary": "player, threats and goals are drawn on screen and large enough",
+      "status": "PASS",
+      "measured": {
+        "player": {
+          "samples": 430,
+          "visible": 430,
+          "visible_share": 1.0,
+          "median_area": 0.0026
+        },
+        "threat": {
+          "samples": 10320,
+          "visible": 10320,
+          "visible_share": 1.0,
+          "median_area": 0.0026
+        },
+        "goal": {
+          "samples": 430,
+          "visible": 430,
+          "visible_share": 1.0,
+          "median_area": 0.0026
+        }
+      },
+      "expected": {
+        "min_area_fraction": 0.002,
+        "min_visible_share": 0.5
+      }
+    },
+    {
+      "id": "frames.readable",
+      "project": "desktop",
+      "required": true,
+      "summary": "frames during play are lit and have contrast",
+      "status": "PASS",
+      "measured": {
+        "first-session-1s": {
+          "mean_luminance": 44.54,
+          "contrast": 86.53,
+          "lit_share": 0.2053
+        }
+      },
+      "expected": {
+        "lit_share": ">= 0.01 at luminance >= 64",
+        "mean_luminance": "<= 225",
+        "contrast": ">= 18"
+      },
+      "frames": [
+        "first-session-1s"
+      ]
+    },
+    {
+      "id": "content.units_reachable",
+      "project": "desktop",
+      "required": true,
+      "summary": "units [1, 2, 3, 4] were played in the design's order, each entered within 1500 ms of the previous one ending",
+      "status": "PASS",
+      "measured": {
+        "units_reached": [
+          1,
+          2,
+          3,
+          4,
+          5
+        ],
+        "transitions": [
+          {
+            "from": 1,
+            "to": 2,
+            "at_ms": 2100,
+            "how": "won",
+            "since_end_ms": 977
+          },
+          {
+            "from": 2,
+            "to": 3,
+            "at_ms": 4471,
+            "how": "won",
+            "since_end_ms": 353
+          },
+          {
+            "from": 3,
+            "to": 4,
+            "at_ms": 7210,
+            "how": "won",
+            "since_end_ms": 378
+          },
+          {
+            "from": 4,
+            "to": 5,
+            "at_ms": 10150,
+            "how": "won",
+            "since_end_ms": 309
+          }
+        ],
+        "stopped": "max units",
+        "truncated": true
+      },
+      "expected": "units [1, 2, 3, 4] in order, each within 1500 ms of the previous one reaching `won` or its progress target",
+      "frames": [
+        "unit-1-1s",
+        "unit-2-1s",
+        "unit-3-1s",
+        "unit-4-1s"
+      ]
+    },
+    {
+      "id": "content.objective_shown",
+      "project": "desktop",
+      "required": true,
+      "summary": "every played unit showed its objective: {'l-01': 1.0, 'l-02': 1.0, 'l-03': 1.0, 'l-04': 1.0, 'l-05': 1.0}",
+      "status": "PASS",
+      "measured": {
+        "l-01": 1.0,
+        "l-02": 1.0,
+        "l-03": 1.0,
+        "l-04": 1.0,
+        "l-05": 1.0
+      },
+      "expected": ">= 0.6 of the words of each unit's `objective`"
+    },
+    {
+      "id": "content.win_lose_per_unit",
+      "project": "desktop",
+      "required": true,
+      "summary": "every unit the traverse left was completed, and bad play failed a unit that states a failure; still in play when the traverse stopped (max units), so its completion was not judged: l-05",
+      "status": "PASS",
+      "measured": {
+        "not_completed": [],
+        "in_progress": [
+          "l-05"
+        ],
+        "stopped": "max units",
+        "lost_in_unit": "l-01",
+        "lose_reached": "lost"
+      }
+    },
+    {
+      "id": "difficulty.axes_progress",
+      "project": "desktop",
+      "required": true,
+      "summary": "the build carries the design's difficulty, and it holds or rises on depth, move-limit, piece-variety; the traversal stopped short of the design's units, so the rise across the set was not judged",
+      "status": "PASS",
+      "measured": {
+        "partial": true,
+        "difficulty_tolerance": 0.05,
+        "depth": [
+          0.05,
+          0.05,
+          0.05,
+          0.05,
+          0.05
+        ],
+        "move-limit": [
+          0.03,
+          0.14,
+          0.14,
+          0.14,
+          0.14
+        ],
+        "piece-variety": [
+          0.15,
+          0.15,
+          0.27,
+          0.27,
+          0.27
+        ],
+        "truncated": true
+      },
+      "expected": "each traversed unit within 0.05 of the design's value for it on every declared axis; >= 0.6 of consecutive units non-decreasing or dipping at most 0.35; the traversal stopped short of the design's units, so no rise across the set is asked of it"
+    },
+    {
+      "id": "content.variety",
+      "project": "desktop",
+      "required": false,
+      "summary": "only 0.25 of consecutive units change their kinds or mechanics; variety is not visible in entity kinds for this family (layout, rules, objectives)",
+      "status": "WARNING",
+      "measured": {
+        "changed_pairs_share": 0.25,
+        "kinds_reported": [
+          "door",
+          "goal-tile",
+          "key",
+          "penguin",
+          "wall-rock"
+        ],
+        "new_kinds_short": [],
+        "reason": "variety is not visible in entity kinds for this family (layout, rules, objectives)",
+        "truncated": true
+      },
+      "expected": ">= 0.5 of consecutive unit pairs changed, and >= 0 new entity kind(s) per unit"
+    },
+    {
+      "id": "progression.persists",
+      "project": "desktop",
+      "required": true,
+      "summary": "the design's meta loop persists nothing at the mvp tier (build_spec.depth.meta_loop.persists)",
+      "status": "SKIPPED"
+    },
+    {
+      "id": "depth.session_length",
+      "project": "desktop",
+      "required": true,
+      "summary": "one oracle session with instant retries lasted 136320 ms; the bot's window was cut to 220000 ms to fit the time budget; the designed closing beat (A cleared level with its stars stamped, and the next level's key-and-door count shown on the card.) arrived at 1447 ms",
+      "status": "PASS",
+      "measured": {
+        "length_ms": 136320,
+        "beat_at_ms": 1447,
+        "ended_on": "beat reached",
+        "runs": 94,
+        "truncated": true
+      },
+      "expected": ">= 110000.0 ms (0.5 of the designed 220 s first session)"
+    },
+    {
+      "id": "depth.ramp",
+      "project": "desktop",
+      "required": false,
+      "summary": "bad play ended in 3286 ms; the oracle's input rate per third of its longest run was [3, 3, 3]",
+      "status": "PASS",
+      "measured": {
+        "bad_play_ended_ms": 3286,
+        "run_length_s": 65,
+        "reason": "no time ramp for a unit-authored family (the genre family's `qa` states no endless_window_s)",
+        "oracle_inputs_per_third": [
+          3,
+          3,
+          3
+        ],
+        "truncated": true
+      },
+      "expected": "a bad run inside 195000 ms"
+    },
+    {
+      "id": "page.errors",
+      "project": "desktop",
+      "required": true,
+      "summary": "no page errors",
+      "status": "PASS",
+      "measured": []
+    },
+    {
+      "id": "probe.present",
+      "project": "mobile",
+      "required": true,
+      "summary": "window.__wgf__.play.snapshot() answered while the game started",
+      "status": "PASS"
+    },
+    {
+      "id": "probe.valid",
+      "project": "mobile",
+      "required": true,
+      "summary": "snapshots match the play-probe schema and carry the contract's metrics",
+      "status": "PASS",
+      "measured": {
+        "schema_problems": [],
+        "missing_metrics": [],
+        "content_problems": []
+      }
+    },
+    {
+      "id": "start.playable",
+      "project": "mobile",
+      "required": true,
+      "summary": "play began 955 ms after navigation",
+      "status": "PASS",
+      "measured": 955,
+      "expected": "<= 5000 ms"
+    },
+    {
+      "id": "start.objective",
+      "project": "mobile",
+      "required": true,
+      "summary": "80% of the objective's words were on screen in the first 3 s of play",
+      "status": "PASS",
+      "measured": 0.8,
+      "expected": ">= 0.6 of the words of build_spec.experience.goal.statement",
+      "frames": [
+        "first-session-1s"
+      ]
+    },
+    {
+      "id": "idle.grace",
+      "project": "mobile",
+      "required": true,
+      "summary": "with no input for 10000 ms, play was not lost",
+      "status": "PASS",
+      "expected": "not lost within 10000 ms without input"
+    },
+    {
+      "id": "act.acknowledged",
+      "project": "mobile",
+      "required": true,
+      "summary": "every action changed the frame: {'slide-up': 0.0291, 'slide-down': 0.0292, 'slide-left': 0.4422, 'slide-right': 0.0413}",
+      "status": "PASS",
+      "measured": {
+        "slide-up": 0.0291,
+        "slide-down": 0.0292,
+        "slide-left": 0.4422,
+        "slide-right": 0.0413
+      },
+      "expected": ">= 0.002 of pixels"
+    },
+    {
+      "id": "win.reachable",
+      "project": "mobile",
+      "required": true,
+      "summary": "good play reached `won` after 6 inputs",
+      "status": "PASS",
+      "measured": {
+        "reached": "won",
+        "inputs": 6,
+        "genre_win_shape": "goal-state-reached"
+      }
+    },
+    {
+      "id": "lose.reachable",
+      "project": "mobile",
+      "required": true,
+      "summary": "bad play ended lost",
+      "status": "PASS",
+      "measured": {
+        "reached": "lost"
+      },
+      "frames": [
+        "end-lost",
+        "state-lost",
+        "state-retry"
+      ]
+    },
+    {
+      "id": "restart.works",
+      "project": "mobile",
+      "required": true,
+      "summary": "retry (input:retry) returned to play in 37 ms; a restart inside the unit returned to play with its progress at 0",
+      "status": "PASS",
+      "measured": {
+        "playingMs": 37,
+        "reset": true,
+        "reset_in_unit": {
+          "clicked": "input:restart",
+          "playingMs": 212,
+          "before": {
+            "unit_id": "l-01",
+            "unit_index": 1,
+            "unit_count": 6,
+            "unit_kind": "level",
+            "objective": "Reach the goal tile of l-01 in at most 12 moves.",
+            "progress": {
+              "metric": "goal-reached",
+              "value": 0,
+              "target": 1
+            }
+          },
+          "after": {
+            "unit_id": "l-01",
+            "unit_index": 1,
+            "unit_count": 6,
+            "unit_kind": "level",
+            "objective": "Reach the goal tile of l-01 in at most 12 moves.",
+            "progress": {
+              "metric": "goal-reached",
+              "value": 0,
+              "target": 1
+            }
+          },
+          "metrics_before": {
+            "best": 0,
+            "moves-left": 11,
+            "solve-time": 0,
+            "keys-doors": 0,
+            "stars": 0,
+            "unit": 1,
+            "goal-reached": 0,
+            "difficulty.depth": 0.05,
+            "difficulty.move-limit": 0.03,
+            "difficulty.board-complexity": 0.1,
+            "difficulty.piece-variety": 0.15
+          },
+          "metrics_after": {
+            "best": 0,
+            "moves-left": 12,
+            "solve-time": 0,
+            "keys-doors": 0,
+            "stars": 0,
+            "unit": 1,
+            "goal-reached": 0,
+            "difficulty.depth": 0.05,
+            "difficulty.move-limit": 0.03,
+            "difficulty.board-complexity": 0.1,
+            "difficulty.piece-variety": 0.15
+          }
+        }
+      },
+      "expected": "<= 3000 ms, moves-left reset"
+    },
+    {
+      "id": "entities.visible",
+      "project": "mobile",
+      "required": true,
+      "summary": "player, threats and goals are drawn on screen and large enough",
+      "status": "PASS",
+      "measured": {
+        "player": {
+          "samples": 446,
+          "visible": 446,
+          "visible_share": 1.0,
+          "median_area": 0.0056
+        },
+        "threat": {
+          "samples": 10704,
+          "visible": 10704,
+          "visible_share": 1.0,
+          "median_area": 0.0056
+        },
+        "goal": {
+          "samples": 446,
+          "visible": 446,
+          "visible_share": 1.0,
+          "median_area": 0.0056
+        }
+      },
+      "expected": {
+        "min_area_fraction": 0.002,
+        "min_visible_share": 0.5
+      }
+    },
+    {
+      "id": "frames.readable",
+      "project": "mobile",
+      "required": true,
+      "summary": "frames during play are lit and have contrast",
+      "status": "PASS",
+      "measured": {
+        "first-session-1s": {
+          "mean_luminance": 103.35,
+          "contrast": 105.24,
+          "lit_share": 0.4674
+        }
+      },
+      "expected": {
+        "lit_share": ">= 0.01 at luminance >= 64",
+        "mean_luminance": "<= 225",
+        "contrast": ">= 18"
+      },
+      "frames": [
+        "first-session-1s"
+      ]
+    },
+    {
+      "id": "content.units_reachable",
+      "project": "mobile",
+      "required": true,
+      "summary": "units [1, 2, 3, 4] were played in the design's order, each entered within 1500 ms of the previous one ending",
+      "status": "PASS",
+      "measured": {
+        "units_reached": [
+          1,
+          2,
+          3,
+          4,
+          5
+        ],
+        "transitions": [
+          {
+            "from": 1,
+            "to": 2,
+            "at_ms": 2320,
+            "how": "won",
+            "since_end_ms": 281
+          },
+          {
+            "from": 2,
+            "to": 3,
+            "at_ms": 4888,
+            "how": "won",
+            "since_end_ms": 296
+          },
+          {
+            "from": 3,
+            "to": 4,
+            "at_ms": 7821,
+            "how": "won",
+            "since_end_ms": 312
+          },
+          {
+            "from": 4,
+            "to": 5,
+            "at_ms": 10841,
+            "how": "won",
+            "since_end_ms": 339
+          }
+        ],
+        "stopped": "max units",
+        "truncated": true
+      },
+      "expected": "units [1, 2, 3, 4] in order, each within 1500 ms of the previous one reaching `won` or its progress target",
+      "frames": [
+        "unit-1-1s",
+        "unit-2-1s",
+        "unit-3-1s",
+        "unit-4-1s"
+      ]
+    },
+    {
+      "id": "content.objective_shown",
+      "project": "mobile",
+      "required": true,
+      "summary": "every played unit showed its objective: {'l-01': 1.0, 'l-02': 1.0, 'l-03': 1.0, 'l-04': 1.0, 'l-05': 1.0}",
+      "status": "PASS",
+      "measured": {
+        "l-01": 1.0,
+        "l-02": 1.0,
+        "l-03": 1.0,
+        "l-04": 1.0,
+        "l-05": 1.0
+      },
+      "expected": ">= 0.6 of the words of each unit's `objective`"
+    },
+    {
+      "id": "content.win_lose_per_unit",
+      "project": "mobile",
+      "required": true,
+      "summary": "every unit the traverse left was completed, and bad play failed a unit that states a failure; still in play when the traverse stopped (max units), so its completion was not judged: l-05",
+      "status": "PASS",
+      "measured": {
+        "not_completed": [],
+        "in_progress": [
+          "l-05"
+        ],
+        "stopped": "max units",
+        "lost_in_unit": "l-01",
+        "lose_reached": "lost"
+      }
+    },
+    {
+      "id": "difficulty.axes_progress",
+      "project": "mobile",
+      "required": true,
+      "summary": "the build carries the design's difficulty, and it holds or rises on depth, move-limit, piece-variety; the traversal stopped short of the design's units, so the rise across the set was not judged",
+      "status": "PASS",
+      "measured": {
+        "partial": true,
+        "difficulty_tolerance": 0.05,
+        "depth": [
+          0.05,
+          0.05,
+          0.05,
+          0.05,
+          0.05
+        ],
+        "move-limit": [
+          0.03,
+          0.14,
+          0.14,
+          0.14,
+          0.14
+        ],
+        "piece-variety": [
+          0.15,
+          0.15,
+          0.27,
+          0.27,
+          0.27
+        ],
+        "truncated": true
+      },
+      "expected": "each traversed unit within 0.05 of the design's value for it on every declared axis; >= 0.6 of consecutive units non-decreasing or dipping at most 0.35; the traversal stopped short of the design's units, so no rise across the set is asked of it"
+    },
+    {
+      "id": "content.variety",
+      "project": "mobile",
+      "required": false,
+      "summary": "only 0.25 of consecutive units change their kinds or mechanics; variety is not visible in entity kinds for this family (layout, rules, objectives)",
+      "status": "WARNING",
+      "measured": {
+        "changed_pairs_share": 0.25,
+        "kinds_reported": [
+          "door",
+          "goal-tile",
+          "key",
+          "penguin",
+          "wall-rock"
+        ],
+        "new_kinds_short": [],
+        "reason": "variety is not visible in entity kinds for this family (layout, rules, objectives)",
+        "truncated": true
+      },
+      "expected": ">= 0.5 of consecutive unit pairs changed, and >= 0 new entity kind(s) per unit"
+    },
+    {
+      "id": "progression.persists",
+      "project": "mobile",
+      "required": true,
+      "summary": "the design's meta loop persists nothing at the mvp tier (build_spec.depth.meta_loop.persists)",
+      "status": "SKIPPED"
+    },
+    {
+      "id": "depth.session_length",
+      "project": "mobile",
+      "required": true,
+      "summary": "one oracle session with instant retries lasted 136260 ms; the bot's window was cut to 220000 ms to fit the time budget; the designed closing beat (A cleared level with its stars stamped, and the next level's key-and-door count shown on the card.) arrived at 1157 ms",
+      "status": "PASS",
+      "measured": {
+        "length_ms": 136260,
+        "beat_at_ms": 1157,
+        "ended_on": "beat reached",
+        "runs": 56,
+        "truncated": true
+      },
+      "expected": ">= 110000.0 ms (0.5 of the designed 220 s first session)"
+    },
+    {
+      "id": "depth.ramp",
+      "project": "mobile",
+      "required": false,
+      "summary": "bad play ended in 3880 ms; the oracle's input rate per third of its longest run was [2, 3, 3]",
+      "status": "PASS",
+      "measured": {
+        "bad_play_ended_ms": 3880,
+        "run_length_s": 65,
+        "reason": "no time ramp for a unit-authored family (the genre family's `qa` states no endless_window_s)",
+        "oracle_inputs_per_third": [
+          2,
+          3,
+          3
+        ],
+        "truncated": true
+      },
+      "expected": "a bad run inside 195000 ms"
+    },
+    {
+      "id": "page.errors",
+      "project": "mobile",
+      "required": true,
+      "summary": "no page errors",
+      "status": "PASS",
+      "measured": []
+    }
+  ],
+  "frames": [
+    {
+      "id": "act-slide-down-after",
+      "project": "desktop",
+      "path": "playability/6-1/out/desktop/frames/act-slide-down-after.png",
+      "sha256": "sha256:f31654fb31f9fc73455f3f4c7f0708134ad6e031c493e43e1e49186f1f561599"
+    },
+    {
+      "id": "act-slide-down-before",
+      "project": "desktop",
+      "path": "playability/6-1/out/desktop/frames/act-slide-down-before.png",
+      "sha256": "sha256:e17d02ff662e59e991b3fc02c40b4dcab2aa2ae36ef50a06d1e63b20710875b2"
+    },
+    {
+      "id": "act-slide-left-after",
+      "project": "desktop",
+      "path": "playability/6-1/out/desktop/frames/act-slide-left-after.png",
+      "sha256": "sha256:0fe668f34ed8b68f67848059c1f8af6921c15e9627bd7dc3adff33e6de71220f"
+    },
+    {
+      "id": "act-slide-left-before",
+      "project": "desktop",
+      "path": "playability/6-1/out/desktop/frames/act-slide-left-before.png",
+      "sha256": "sha256:4e34443b8708f833547001038120fa23805f6aa8538bcc7062a9ec8e29281bcd"
+    },
+    {
+      "id": "act-slide-right-after",
+      "project": "desktop",
+      "path": "playability/6-1/out/desktop/frames/act-slide-right-after.png",
+      "sha256": "sha256:f39e461987ab4bcf9c202639814c6184454fba604cdaa033dc060d3eb4205f2b"
+    },
+    {
+      "id": "act-slide-right-before",
+      "project": "desktop",
+      "path": "playability/6-1/out/desktop/frames/act-slide-right-before.png",
+      "sha256": "sha256:4f1971ca2337e99c87c561d5adf1ebb633d996677ec4b1160aa8eb569e80853c"
+    },
+    {
+      "id": "act-slide-up-after",
+      "project": "desktop",
+      "path": "playability/6-1/out/desktop/frames/act-slide-up-after.png",
+      "sha256": "sha256:66d25a0b182dd805568c0d4b92a527176dee2299274f1a1ab6513ccb7432d634"
+    },
+    {
+      "id": "act-slide-up-before",
+      "project": "desktop",
+      "path": "playability/6-1/out/desktop/frames/act-slide-up-before.png",
+      "sha256": "sha256:4adc7fe1f5ef54a16d19f48900b2096883d8a5cb9495f80cf1e9a224884c3fb9"
+    },
+    {
+      "id": "end-lost",
+      "project": "desktop",
+      "path": "playability/6-1/out/desktop/frames/end-lost.png",
+      "sha256": "sha256:ce86ef72eaee275385b2139e31eb135d2d63370f6425a641696362fc14d8f3ed",
+      "mean_luminance": 23.22,
+      "contrast": 43.86,
+      "lit_share": 0.0372
+    },
+    {
+      "id": "end-won",
+      "project": "desktop",
+      "path": "playability/6-1/out/desktop/frames/end-won.png",
+      "sha256": "sha256:d60ed062b691cb4a0ad4d8a5b75b802cbdb730d491aa2321b79500bd06a44ee2",
+      "mean_luminance": 22.66,
+      "contrast": 42.02,
+      "lit_share": 0.0347
+    },
+    {
+      "id": "first-session-1s",
+      "project": "desktop",
+      "path": "playability/6-1/out/desktop/frames/first-session-1s.png",
+      "sha256": "sha256:0f2af19059e0d58e8971dea9abbe18f79ae8bb51516cf9e081ac28d64bef4af0",
+      "mean_luminance": 44.54,
+      "contrast": 86.53,
+      "lit_share": 0.2053
+    },
+    {
+      "id": "first-session-idle-end",
+      "project": "desktop",
+      "path": "playability/6-1/out/desktop/frames/first-session-idle-end.png",
+      "sha256": "sha256:2f3c5eafeebf43f0acc9d651ef65b7cad0c94a177a87eb620220a6a563d8a9c4",
+      "mean_luminance": 44.53,
+      "contrast": 86.53,
+      "lit_share": 0.2048
+    },
+    {
+      "id": "persist-after-reload",
+      "project": "desktop",
+      "path": "playability/6-1/out/desktop/frames/persist-after-reload.png",
+      "sha256": "sha256:31b8fa38442c3e929a2d85aef47361168d801fddbb4857ffae1bb8b147f8e68d",
+      "mean_luminance": 20.96,
+      "contrast": 37.12,
+      "lit_share": 0.0245
+    },
+    {
+      "id": "session-end",
+      "project": "desktop",
+      "path": "playability/6-1/out/desktop/frames/session-end.png",
+      "sha256": "sha256:9702a6261efe13a2e39649b87f592ec87e2dfc8bc6b0af55ee2bbd2f0f1dffa1",
+      "mean_luminance": 37.27,
+      "contrast": 76.38,
+      "lit_share": 0.1855
+    },
+    {
+      "id": "state-lost",
+      "project": "desktop",
+      "path": "playability/6-1/out/desktop/frames/state-lost.png",
+      "sha256": "sha256:ce86ef72eaee275385b2139e31eb135d2d63370f6425a641696362fc14d8f3ed",
+      "mean_luminance": 23.22,
+      "contrast": 43.86,
+      "lit_share": 0.0372
+    },
+    {
+      "id": "state-paused",
+      "project": "desktop",
+      "path": "playability/6-1/out/desktop/frames/state-paused.png",
+      "sha256": "sha256:f648372886c151b06062c13bb4c502d482eb7f5d98afbcf8a1f875de610370c0",
+      "mean_luminance": 26.69,
+      "contrast": 50.81,
+      "lit_share": 0.0698
+    },
+    {
+      "id": "state-playing",
+      "project": "desktop",
+      "path": "playability/6-1/out/desktop/frames/state-playing.png",
+      "sha256": "sha256:1a2a5ce6f00b419c37f3c5f94c5de3429f263d8e179868fe6ba8f3b433673dd1",
+      "mean_luminance": 44.54,
+      "contrast": 86.53,
+      "lit_share": 0.2053
+    },
+    {
+      "id": "state-retry",
+      "project": "desktop",
+      "path": "playability/6-1/out/desktop/frames/state-retry.png",
+      "sha256": "sha256:dcc0cd02004c5ec89c5651b8c0dbe696fef1a35ecf4d6b087eb93f4de17c0a63",
+      "mean_luminance": 44.54,
+      "contrast": 86.53,
+      "lit_share": 0.2053
+    },
+    {
+      "id": "state-won",
+      "project": "desktop",
+      "path": "playability/6-1/out/desktop/frames/state-won.png",
+      "sha256": "sha256:d60ed062b691cb4a0ad4d8a5b75b802cbdb730d491aa2321b79500bd06a44ee2",
+      "mean_luminance": 22.66,
+      "contrast": 42.02,
+      "lit_share": 0.0347
+    },
+    {
+      "id": "unit-1-1s",
+      "project": "desktop",
+      "path": "playability/6-1/out/desktop/frames/unit-1-1s.png",
+      "sha256": "sha256:d60ed062b691cb4a0ad4d8a5b75b802cbdb730d491aa2321b79500bd06a44ee2",
+      "mean_luminance": 22.66,
+      "contrast": 42.02,
+      "lit_share": 0.0347
+    },
+    {
+      "id": "unit-2-1s",
+      "project": "desktop",
+      "path": "playability/6-1/out/desktop/frames/unit-2-1s.png",
+      "sha256": "sha256:217d231c6b112b7717d3a28085ad759824e80ede6cbf1c62a00c293e922ec431",
+      "mean_luminance": 38.01,
+      "contrast": 77.97,
+      "lit_share": 0.1837
+    },
+    {
+      "id": "unit-3-1s",
+      "project": "desktop",
+      "path": "playability/6-1/out/desktop/frames/unit-3-1s.png",
+      "sha256": "sha256:afab6679c917e75688902e59c3e12f78cdc1b11cf22361f891f9500c85c3f076",
+      "mean_luminance": 33.61,
+      "contrast": 73.18,
+      "lit_share": 0.168
+    },
+    {
+      "id": "unit-4-1s",
+      "project": "desktop",
+      "path": "playability/6-1/out/desktop/frames/unit-4-1s.png",
+      "sha256": "sha256:94b80010508e6788f873f6eefdf81285c0c15c7fa4d96f9b5f1a5c905805cf89",
+      "mean_luminance": 36.85,
+      "contrast": 75.76,
+      "lit_share": 0.1835
+    },
+    {
+      "id": "act-slide-down-after",
+      "project": "mobile",
+      "path": "playability/6-1/out/mobile/frames/act-slide-down-after.png",
+      "sha256": "sha256:92df40ba34035ceed454918b4c38dc3d7f21f375908343c65ee83b565e178ccf"
+    },
+    {
+      "id": "act-slide-down-before",
+      "project": "mobile",
+      "path": "playability/6-1/out/mobile/frames/act-slide-down-before.png",
+      "sha256": "sha256:4168b42322c0d9e7d60aaa3fd9701068812928a61af3c9b02486b682923208ff"
+    },
+    {
+      "id": "act-slide-left-after",
+      "project": "mobile",
+      "path": "playability/6-1/out/mobile/frames/act-slide-left-after.png",
+      "sha256": "sha256:de58001dd94e96c4de69bf13594cbfc56062b6c87355423a935ac67f383c5382"
+    },
+    {
+      "id": "act-slide-left-before",
+      "project": "mobile",
+      "path": "playability/6-1/out/mobile/frames/act-slide-left-before.png",
+      "sha256": "sha256:7f9d09bd38dd8bd6d47e98bddcf2fe5af8414adff061c3bd04a999bb7d715c73"
+    },
+    {
+      "id": "act-slide-right-after",
+      "project": "mobile",
+      "path": "playability/6-1/out/mobile/frames/act-slide-right-after.png",
+      "sha256": "sha256:4a10476e11d334bbddaea72a6c2e44e40b34037800185a7e4b8573ca7838ef89"
+    },
+    {
+      "id": "act-slide-right-before",
+      "project": "mobile",
+      "path": "playability/6-1/out/mobile/frames/act-slide-right-before.png",
+      "sha256": "sha256:c6e34500035ea75462daadc3ff6fe9591d0e096bff6cacfad6e09c6a556f81bf"
+    },
+    {
+      "id": "act-slide-up-after",
+      "project": "mobile",
+      "path": "playability/6-1/out/mobile/frames/act-slide-up-after.png",
+      "sha256": "sha256:62e36af3d1bdbfb7cb20a4de1260f155d57df13e82ea3294856ea280833aaad9"
+    },
+    {
+      "id": "act-slide-up-before",
+      "project": "mobile",
+      "path": "playability/6-1/out/mobile/frames/act-slide-up-before.png",
+      "sha256": "sha256:4377a4b467b8e2c3898973b07023dd4d8d7b2e4346e16e700733614800b898f0"
+    },
+    {
+      "id": "end-lost",
+      "project": "mobile",
+      "path": "playability/6-1/out/mobile/frames/end-lost.png",
+      "sha256": "sha256:1b0082c1434c981730b30fd3198216e324ebbced381ce7653c073aa7d749cf85",
+      "mean_luminance": 67.4,
+      "contrast": 60.45,
+      "lit_share": 0.1267
+    },
+    {
+      "id": "end-won",
+      "project": "mobile",
+      "path": "playability/6-1/out/mobile/frames/end-won.png",
+      "sha256": "sha256:f02e06815dfbd942b2e35fbdb08b9cc8f6f655d4dafb98760d50c380ff8af2f6",
+      "mean_luminance": 65.1,
+      "contrast": 57.18,
+      "lit_share": 0.1164
+    },
+    {
+      "id": "first-session-1s",
+      "project": "mobile",
+      "path": "playability/6-1/out/mobile/frames/first-session-1s.png",
+      "sha256": "sha256:1142d8dca52f1ff78702458920d6eb5c489fbb82e6e57201d8a6cdf6cd415540",
+      "mean_luminance": 103.35,
+      "contrast": 105.24,
+      "lit_share": 0.4674
+    },
+    {
+      "id": "first-session-idle-end",
+      "project": "mobile",
+      "path": "playability/6-1/out/mobile/frames/first-session-idle-end.png",
+      "sha256": "sha256:056c81a6bdc45299bb413e73132bc3fb92c50e8210bd930397825913988b86b2",
+      "mean_luminance": 103.36,
+      "contrast": 105.27,
+      "lit_share": 0.467
+    },
+    {
+      "id": "persist-after-reload",
+      "project": "mobile",
+      "path": "playability/6-1/out/mobile/frames/persist-after-reload.png",
+      "sha256": "sha256:af0592ba144d06812828e9f263f9fe2e41d77af7d821323ca6998a4eed3b8082",
+      "mean_luminance": 58.89,
+      "contrast": 48.29,
+      "lit_share": 0.0792
+    },
+    {
+      "id": "session-end",
+      "project": "mobile",
+      "path": "playability/6-1/out/mobile/frames/session-end.png",
+      "sha256": "sha256:6ef297ab3fe440c2f77edcf440b044aecb613450494aa65cedf2715fdb3eb3b7",
+      "mean_luminance": 87.14,
+      "contrast": 95.61,
+      "lit_share": 0.4255
+    },
+    {
+      "id": "state-lost",
+      "project": "mobile",
+      "path": "playability/6-1/out/mobile/frames/state-lost.png",
+      "sha256": "sha256:1b0082c1434c981730b30fd3198216e324ebbced381ce7653c073aa7d749cf85",
+      "mean_luminance": 67.4,
+      "contrast": 60.45,
+      "lit_share": 0.1267
+    },
+    {
+      "id": "state-paused",
+      "project": "mobile",
+      "path": "playability/6-1/out/mobile/frames/state-paused.png",
+      "sha256": "sha256:337390949b3aed4b6c1120a17274c53d5132fcfecf7cdfae433233e6d31c2a7f",
+      "mean_luminance": 76.16,
+      "contrast": 66.95,
+      "lit_share": 0.2166
+    },
+    {
+      "id": "state-playing",
+      "project": "mobile",
+      "path": "playability/6-1/out/mobile/frames/state-playing.png",
+      "sha256": "sha256:49fbacd2539d4489cb5b3b23a692d51c9c705a3d458d0c5072daca509439fc12",
+      "mean_luminance": 103.36,
+      "contrast": 105.25,
+      "lit_share": 0.4674
+    },
+    {
+      "id": "state-retry",
+      "project": "mobile",
+      "path": "playability/6-1/out/mobile/frames/state-retry.png",
+      "sha256": "sha256:0197080cdbe5507b519e922d8a5f0b943e19e592231e1307b2cdc691108d1c4b",
+      "mean_luminance": 103.36,
+      "contrast": 105.25,
+      "lit_share": 0.4675
+    },
+    {
+      "id": "state-won",
+      "project": "mobile",
+      "path": "playability/6-1/out/mobile/frames/state-won.png",
+      "sha256": "sha256:f02e06815dfbd942b2e35fbdb08b9cc8f6f655d4dafb98760d50c380ff8af2f6",
+      "mean_luminance": 65.1,
+      "contrast": 57.18,
+      "lit_share": 0.1164
+    },
+    {
+      "id": "unit-1-1s",
+      "project": "mobile",
+      "path": "playability/6-1/out/mobile/frames/unit-1-1s.png",
+      "sha256": "sha256:dbbadd3f1f23317ab1c1be241376fcbe0af332f526c322a501d2d8cf4910e600",
+      "mean_luminance": 103.13,
+      "contrast": 104.96,
+      "lit_share": 0.4683
+    },
+    {
+      "id": "unit-2-1s",
+      "project": "mobile",
+      "path": "playability/6-1/out/mobile/frames/unit-2-1s.png",
+      "sha256": "sha256:f40c76899f7f5682babf5186988a4a6c4a899587f736203a5f5d22b2ae8978e5",
+      "mean_luminance": 89.13,
+      "contrast": 97.75,
+      "lit_share": 0.4221
+    },
+    {
+      "id": "unit-3-1s",
+      "project": "mobile",
+      "path": "playability/6-1/out/mobile/frames/unit-3-1s.png",
+      "sha256": "sha256:bee2cecd88651c729abd5e61e333ff826f637d7f0eae74b30a4bab93d3993adb",
+      "mean_luminance": 94.63,
+      "contrast": 95.66,
+      "lit_share": 0.4673
+    },
+    {
+      "id": "unit-4-1s",
+      "project": "mobile",
+      "path": "playability/6-1/out/mobile/frames/unit-4-1s.png",
+      "sha256": "sha256:facc0a5add4a4a78ecc4900ac66f120b074acfb06cd39c6725511abcd5339bb8",
+      "mean_luminance": 86.11,
+      "contrast": 94.8,
+      "lit_share": 0.4232
+    }
+  ],
+  "records_dir": "playability/6-1/out",
+  "failed_checks": [],
+  "skipped_checks": [
+    {
+      "id": "progression.persists",
+      "reason": "the design's meta loop persists nothing at the mvp tier (build_spec.depth.meta_loop.persists)"
+    }
+  ],
+  "blocked_reason": null,
+  "verdict": "PASS"
+}

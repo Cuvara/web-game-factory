@@ -1,6 +1,6 @@
 {
   "provenance": {
-    "artifact_id": "wgf:tech-plan:ice-slide:20261002-01",
+    "artifact_id": "wgf:tech-plan:ice-slide:20261003-02",
     "artifact_type": "tech-plan",
     "schema_version": "1.0.0",
     "opportunity_id": "opp-b40899dc",
@@ -9,12 +9,12 @@
       "role": "architect",
       "actor": "automation"
     },
-    "produced_at": "2026-10-02T22:10:41Z",
+    "produced_at": "2026-10-03T05:37:27Z",
     "inputs": [
       {
-        "artifact_id": "wgf:game-design:ice-slide:20261002-04",
+        "artifact_id": "wgf:game-design:ice-slide:20261003-06",
         "artifact_type": "game-design",
-        "content_hash": "sha256:60c70854915e39fe358ff535a5c7abf215c54ef3aa6ecaa2aacfad36ee8ca8c9"
+        "content_hash": "sha256:54887df7763a4d5d445d0bf2bc17ded2a3eaa84f37542077ecd3486ee41798d8"
       },
       {
         "artifact_id": "wgf:title-strategy:ice-slide:20261002-01",
@@ -22,7 +22,7 @@
         "content_hash": "sha256:f9f6e1479ea590ae721d7cefaab185849d247f4fe226fac0bcd08a29ae87adcc"
       }
     ],
-    "content_hash": "sha256:a3de589852d6c004115e2cb1eda7b526b23ae95f684702d5696bce48963440a0",
+    "content_hash": "sha256:ce74dcbe58328dfec6c66f26322abf98b30e5b68b1a8b11288b52213a863ce0d",
     "status": "draft"
   },
   "title_id": "ice-slide",
@@ -338,7 +338,7 @@
         "acceptance_criteria": [
           "Records `first_time_understood_share` for criterion control_not_understood.",
           "Records `unprompted_retry_share` for criterion no_retry_pull.",
-          "Records `prototype_elapsed_days` for criterion prototype_overran.",
+          "Records `prototype_elapsed_days` for criterion prototype_overran, counted from 2026-10-02 (this design's pin date) as the prototype's start, not from any later build's own run date.",
           "Records `midrange_mobile_fps` for criterion mobile_performance_floor.",
           "Records `d1_retention` for criterion d1_retention.",
           "Records `median_session_seconds` for criterion session_length."
@@ -518,21 +518,21 @@
           "GAME-005"
         ],
         "acceptance_criteria": [
-          "A recorded solution reaches the goal tile of l-01 in at most 6 moves, and the level data stores that solution's length (unit 1 of 24, difficulty 10%, 40 s, 40 s in)",
-          "A bot sliding in random directions fails l-01 (moves-left reaches zero before the goal) in at least 9 of 10 attempts (unit 1 of 24, difficulty 10%, 40 s, 40 s in)",
+          "A recorded solution reaches the goal tile of l-01 in at most 6 moves, and the level data stores that solution's length (unit 1 of 24, difficulty 8%, 40 s, 40 s in)",
+          "A bot sliding in random directions fails l-01 (moves-left reaches zero before the goal) in at least 9 of 10 attempts (unit 1 of 24, difficulty 8%, 40 s, 40 s in)",
           "Unit l-01 is in public/content/units.json with the design's difficulty values",
           "Unit l-01 is where play starts",
-          "A recorded solution reaches the goal tile of l-02 in at most 7 moves, and the level data stores that solution's length (unit 2 of 24, difficulty 12%, 45 s, 85 s in)",
-          "l-02's wall layout differs from l-01's, so the two boards are not the same puzzle with a smaller cap (unit 2 of 24, difficulty 12%, 45 s, 85 s in)",
+          "A recorded solution reaches the goal tile of l-02 in at most 7 moves, and the level data stores that solution's length (unit 2 of 24, difficulty 11%, 45 s, 85 s in)",
+          "l-02's wall layout differs from l-01's, so the two boards are not the same puzzle with a smaller cap (unit 2 of 24, difficulty 11%, 45 s, 85 s in)",
           "Unit l-02 is in public/content/units.json with the design's difficulty values",
           "Reachable from unit 1 in play",
-          "The door on l-03 blocks every slide that would cross or stop on it until its matching key is collected (unit 3 of 24, difficulty 15%, 55 s, 140 s in)",
-          "A recorded solution collects l-03's key, opens its door and reaches the goal in at most 8 moves (unit 3 of 24, difficulty 15%, 55 s, 140 s in)",
+          "The door on l-03 blocks every slide that would cross or stop on it until its matching key is collected (unit 3 of 24, difficulty 14%, 55 s, 140 s in)",
+          "A recorded solution collects l-03's key, opens its door and reaches the goal in at most 8 moves (unit 3 of 24, difficulty 14%, 55 s, 140 s in)",
           "Unit l-03 is in public/content/units.json with the design's difficulty values",
           "Reachable from unit 2 in play"
         ],
         "tests": [
-          "tests/unit/content.spec.ts"
+          "tests/unit/content.test.ts"
         ],
         "est_hours": 4.5,
         "status": "todo"
@@ -553,12 +553,12 @@
           "GAME-006"
         ],
         "acceptance_criteria": [
-          "l-04's board carries at least 4 more wall or rock cells than l-03's, while reusing the same key-door rule (unit 4 of 24, difficulty 17%, 65 s, 205 s in)",
-          "A recorded solution collects l-04's key, opens its door and reaches the goal in at most 9 moves (unit 4 of 24, difficulty 17%, 65 s, 205 s in)",
+          "l-04's board carries at least 4 more wall or rock cells than l-03's, while reusing the same key-door rule (unit 4 of 24, difficulty 16%, 65 s, 205 s in)",
+          "A recorded solution collects l-04's key, opens its door and reaches the goal in at most 9 moves (unit 4 of 24, difficulty 16%, 65 s, 205 s in)",
           "Unit l-04 is in public/content/units.json with the design's difficulty values",
           "Reachable from unit 3 in play",
-          "l-05's board is smaller than l-04's and its move cap gives at least 6 moves of slack over the clean solution (unit 5 of 24, difficulty 15%, 40 s, 245 s in)",
-          "A bot sliding in random directions fails l-05 in at least 9 of 10 attempts despite the easier board (unit 5 of 24, difficulty 15%, 40 s, 245 s in)",
+          "l-05's board is smaller than l-04's and its move cap gives at least 6 moves of slack over the clean solution (unit 5 of 24, difficulty 14%, 40 s, 245 s in)",
+          "A bot sliding in random directions fails l-05 in at least 9 of 10 attempts despite the easier board (unit 5 of 24, difficulty 14%, 40 s, 245 s in)",
           "Unit l-05 is in public/content/units.json with the design's difficulty values",
           "Reachable from unit 4 in play",
           "The first slide across l-06's crumbling tile turns it into a hole for the rest of the attempt, and a later slide onto that hole fails the level (unit 6 of 24, difficulty 21%, 70 s, 315 s in)",
@@ -567,7 +567,7 @@
           "Reachable from unit 5 in play"
         ],
         "tests": [
-          "tests/unit/content.spec.ts"
+          "tests/unit/content.test.ts"
         ],
         "est_hours": 4.5,
         "status": "todo"

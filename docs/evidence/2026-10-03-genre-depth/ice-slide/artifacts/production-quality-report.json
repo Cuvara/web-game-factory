@@ -1,0 +1,696 @@
+{
+  "provenance": {
+    "artifact_id": "wgf:production-quality-report:ice-slide:20261003-01",
+    "artifact_type": "production-quality-report",
+    "schema_version": "1.0.0",
+    "title_id": "ice-slide",
+    "produced_by": {
+      "role": "qa",
+      "actor": "automation"
+    },
+    "produced_at": "2026-10-03T10:38:27Z",
+    "inputs": [
+      {
+        "artifact_id": "wgf:asset-manifest:ice-slide:20261003-01",
+        "artifact_type": "asset-manifest",
+        "content_hash": "sha256:a4c2a47615392ebe03b21b42c89d7e77157b61ff485786760db41f1b8c99c62f"
+      },
+      {
+        "artifact_id": "wgf:game-design:ice-slide:20261003-06",
+        "artifact_type": "game-design",
+        "content_hash": "sha256:54887df7763a4d5d445d0bf2bc17ded2a3eaa84f37542077ecd3486ee41798d8"
+      },
+      {
+        "artifact_id": "wgf:playability-report:ice-slide:20261003-06",
+        "artifact_type": "playability-report",
+        "content_hash": "sha256:30266ab5243a13923cea2b2a22ef0939f06b03ed4ff1ecff9b9ddaac3cd0cd78"
+      },
+      {
+        "artifact_id": "wgf:scaffold-record:ice-slide:20261003-03",
+        "artifact_type": "scaffold-record",
+        "content_hash": "sha256:afb8e376cf2c4caa033cf29a39d26d40fa881bf65c68d7e2006a79f8bc853adf"
+      }
+    ],
+    "content_hash": "sha256:5ada10cc8d00d76ac79cd66295c06ed5d6bdb93b1302147dc508faffd38ff54f",
+    "status": "draft"
+  },
+  "title_id": "ice-slide",
+  "commit": "c0b0e7e6d4a6477aa9757d03afc22241e852d980",
+  "measurement_class": "automation-bot",
+  "checks": [
+    {
+      "id": "assets.present",
+      "status": "FAIL",
+      "required": true,
+      "summary": "placeholders: fonts, music-think, sfx-crumble, sfx-key, sfx-slide, sfx-stars, ui-fanfare, ui-tap",
+      "route": "assets",
+      "measured": {
+        "missing": [],
+        "placeholder": [
+          "fonts",
+          "music-think",
+          "sfx-crumble",
+          "sfx-key",
+          "sfx-slide",
+          "sfx-stars",
+          "ui-fanfare",
+          "ui-tap"
+        ],
+        "quality_not_pass": [],
+        "ok": 12
+      },
+      "expected": "every required-tier asset: a manifest item, placeholder false, quality.verdict pass",
+      "assets": [
+        "fonts",
+        "music-think",
+        "sfx-crumble",
+        "sfx-key",
+        "sfx-slide",
+        "sfx-stars",
+        "ui-fanfare",
+        "ui-tap"
+      ]
+    },
+    {
+      "id": "assets.loaded",
+      "status": "FAIL",
+      "required": true,
+      "summary": "never fetched during play: sfx-crumble, sfx-key, ui-tap",
+      "route": "develop",
+      "measured": {
+        "fetched": [
+          "/assets/BufferResource-BSI7kHC-.js",
+          "/assets/CanvasPool-j6sm1w7V.js",
+          "/assets/RenderTargetSystem-DRah5JN0.js",
+          "/assets/WebGLRenderer-Bru_49mR.js",
+          "/assets/assets.json",
+          "/assets/audio/music-think.placeholder.wav",
+          "/assets/audio/sfx-slide.placeholder.wav",
+          "/assets/audio/sfx-stars.placeholder.wav",
+          "/assets/audio/ui-fanfare.placeholder.wav",
+          "/assets/backgrounds/backdrop.svg",
+          "/assets/browserAll-CzK6D-cf.js",
+          "/assets/canvasUtils-CQjOonmw.js",
+          "/assets/icons/icons-1.svg",
+          "/assets/icons/icons-2.svg",
+          "/assets/icons/icons-3.svg",
+          "/assets/icons/icons-4.svg",
+          "/assets/icons/icons-5.svg",
+          "/assets/icons/icons-6.svg",
+          "/assets/index-ChHcmIxu.js",
+          "/assets/sprites/crumbling-tile-sprite.svg",
+          "/assets/sprites/goal-tile-sprite.svg",
+          "/assets/sprites/ice-tile.svg",
+          "/assets/sprites/key-door-1.svg",
+          "/assets/sprites/key-door-2.svg",
+          "/assets/sprites/penguin.svg",
+          "/assets/sprites/wall-rock-1.svg",
+          "/assets/sprites/wall-rock-2.svg",
+          "/assets/ui/counter-bar.svg",
+          "/assets/ui/ui-kit.svg",
+          "/assets/ui/wordmark.svg",
+          "/assets/vfx/slide-vfx-1.svg",
+          "/assets/vfx/slide-vfx-2.svg",
+          "/assets/vfx/slide-vfx-3.svg",
+          "/assets/webworkerAll--ul_hGDT.js"
+        ],
+        "unfetched": [
+          "sfx-crumble",
+          "sfx-key",
+          "ui-tap"
+        ],
+        "failed_requests": [],
+        "no_file": [
+          "fonts"
+        ],
+        "runtime_manifest_fetched": true
+      },
+      "expected": "every required asset's file (runtime manifest url/atlas) fetched with a 2xx/3xx",
+      "assets": [
+        "sfx-crumble",
+        "sfx-key",
+        "ui-tap"
+      ]
+    },
+    {
+      "id": "assets.runtime",
+      "status": "FAIL",
+      "required": true,
+      "summary": "crumbling-tile-sprite: fails at rendered; fonts: fails at exists; ice-tile: fails at rendered; key-door: fails at rendered; music-think: fails at exists; sfx-crumble: fails at exists; sfx-key: fails at exists; sfx-slide: fails at exists; sfx-stars: fails at exists; ui-fanfare: fails at exists; ui-tap: fails at exists",
+      "route": "assets",
+      "measured": {
+        "backdrop": {
+          "exists": true,
+          "referenced": true,
+          "loaded": true,
+          "role": "background",
+          "failed_at": null
+        },
+        "counter-bar": {
+          "exists": true,
+          "referenced": true,
+          "loaded": true,
+          "role": "ui",
+          "failed_at": null
+        },
+        "crumbling-tile-sprite": {
+          "exists": true,
+          "referenced": true,
+          "loaded": true,
+          "rendered": false,
+          "visible": false,
+          "visible_measured": {
+            "largest_area_fraction": 0.0,
+            "box_not_background": null
+          },
+          "role": "hazard",
+          "failed_at": "rendered"
+        },
+        "fonts": {
+          "exists": false,
+          "referenced": true,
+          "loaded": false,
+          "role": "font",
+          "failed_at": "exists"
+        },
+        "goal-tile-sprite": {
+          "exists": true,
+          "referenced": true,
+          "loaded": true,
+          "rendered": true,
+          "visible": true,
+          "visible_measured": {
+            "largest_area_fraction": 0.0056,
+            "box_not_background": 1.0
+          },
+          "role": "goal",
+          "failed_at": null
+        },
+        "ice-tile": {
+          "exists": true,
+          "referenced": true,
+          "loaded": true,
+          "rendered": false,
+          "visible": false,
+          "visible_measured": {
+            "largest_area_fraction": 0.0,
+            "box_not_background": null
+          },
+          "role": "target",
+          "failed_at": "rendered"
+        },
+        "icons": {
+          "exists": true,
+          "role": "icon",
+          "failed_at": null
+        },
+        "key-door": {
+          "exists": true,
+          "referenced": true,
+          "loaded": true,
+          "rendered": false,
+          "visible": false,
+          "visible_measured": {
+            "largest_area_fraction": 0.0,
+            "box_not_background": null
+          },
+          "role": "collectible",
+          "failed_at": "rendered"
+        },
+        "music-think": {
+          "exists": false,
+          "referenced": true,
+          "loaded": true,
+          "role": null,
+          "failed_at": "exists"
+        },
+        "penguin": {
+          "exists": true,
+          "referenced": true,
+          "loaded": true,
+          "rendered": true,
+          "visible": true,
+          "visible_measured": {
+            "largest_area_fraction": 0.0056,
+            "box_not_background": 1.0
+          },
+          "role": "player",
+          "failed_at": null
+        },
+        "sfx-crumble": {
+          "exists": false,
+          "referenced": true,
+          "loaded": false,
+          "role": null,
+          "failed_at": "exists"
+        },
+        "sfx-key": {
+          "exists": false,
+          "referenced": true,
+          "loaded": false,
+          "role": null,
+          "failed_at": "exists"
+        },
+        "sfx-slide": {
+          "exists": false,
+          "referenced": true,
+          "loaded": true,
+          "role": null,
+          "failed_at": "exists"
+        },
+        "sfx-stars": {
+          "exists": false,
+          "referenced": true,
+          "loaded": true,
+          "role": null,
+          "failed_at": "exists"
+        },
+        "slide-vfx": {
+          "exists": true,
+          "referenced": true,
+          "loaded": true,
+          "role": "vfx",
+          "failed_at": null
+        },
+        "ui-fanfare": {
+          "exists": false,
+          "referenced": true,
+          "loaded": true,
+          "role": "ui",
+          "failed_at": "exists"
+        },
+        "ui-kit": {
+          "exists": true,
+          "referenced": true,
+          "loaded": true,
+          "role": "ui",
+          "failed_at": null
+        },
+        "ui-tap": {
+          "exists": false,
+          "referenced": true,
+          "loaded": false,
+          "role": "ui",
+          "failed_at": "exists"
+        },
+        "wall-rock": {
+          "exists": true,
+          "referenced": true,
+          "loaded": true,
+          "rendered": true,
+          "visible": true,
+          "visible_measured": {
+            "largest_area_fraction": 0.0056,
+            "box_not_background": 1.0
+          },
+          "role": "threat",
+          "failed_at": null
+        },
+        "wordmark": {
+          "exists": true,
+          "referenced": true,
+          "loaded": true,
+          "role": "ui",
+          "failed_at": null
+        }
+      },
+      "expected": "exists -> referenced -> loaded -> rendered -> visible for every required asset (rendered and visible for roles collectible, goal, hazard, player, projectile, target, threat)",
+      "assets": [
+        "crumbling-tile-sprite",
+        "fonts",
+        "ice-tile",
+        "key-door",
+        "music-think",
+        "sfx-crumble",
+        "sfx-key",
+        "sfx-slide",
+        "sfx-stars",
+        "ui-fanfare",
+        "ui-tap"
+      ]
+    },
+    {
+      "id": "audio.plays",
+      "status": "FAIL",
+      "required": true,
+      "summary": "no delivered music for music-think: the asset must be made",
+      "route": "assets",
+      "measured": {
+        "music_required": [
+          "music-think"
+        ],
+        "samples": 189
+      },
+      "assets": [
+        "music-think"
+      ]
+    },
+    {
+      "id": "assets.used",
+      "status": "PASS",
+      "required": true,
+      "summary": "all 26 readable entities are drawn from runtime assets",
+      "route": "develop",
+      "project": "desktop",
+      "measured": {
+        "entities": 26,
+        "unreported": [],
+        "not_from_asset": [],
+        "unknown_asset": []
+      },
+      "expected": "every goal, player, projectile, target, threat entity: asset set, render in ['asset', 'composite']",
+      "assets": [
+        "goal-tile-sprite",
+        "penguin",
+        "wall-rock"
+      ]
+    },
+    {
+      "id": "scene.no_primitives",
+      "status": "PASS",
+      "required": true,
+      "summary": "none of 26 readable entities is drawn as a primitive",
+      "route": "develop",
+      "project": "desktop",
+      "measured": {
+        "primitive": [],
+        "unreported": []
+      },
+      "expected": "no readable-role entity with render `primitive`",
+      "assets": [
+        "goal-tile-sprite",
+        "penguin",
+        "wall-rock"
+      ]
+    },
+    {
+      "id": "scene.contrast",
+      "status": "PASS",
+      "required": true,
+      "summary": "goal 12.40:1, player 19.82:1, threat 14.32:1",
+      "route": "develop",
+      "project": "desktop",
+      "measured": {
+        "player": {
+          "ratio": 19.82,
+          "surround_luminance": 0.0,
+          "frame": "state-playing",
+          "state": "playing",
+          "entity": "player",
+          "asset": "penguin",
+          "box": [
+            420,
+            491.1,
+            48.9,
+            48.9
+          ]
+        },
+        "threat": {
+          "ratio": 14.32,
+          "surround_luminance": 0.8966,
+          "frame": "state-won",
+          "state": "won",
+          "entity": "wall-3,4",
+          "asset": "wall-rock-2",
+          "box": [
+            566.7,
+            295.6,
+            48.9,
+            48.9
+          ]
+        },
+        "goal": {
+          "ratio": 12.4,
+          "surround_luminance": 0.0305,
+          "frame": "state-won",
+          "state": "won",
+          "entity": "goal",
+          "asset": "goal-tile-sprite",
+          "box": [
+            517.8,
+            295.6,
+            48.9,
+            48.9
+          ]
+        }
+      },
+      "expected": ">= 3:1 for each readable role (best box)",
+      "frames": [
+        "state-playing",
+        "state-won"
+      ]
+    },
+    {
+      "id": "ui.overlap",
+      "status": "PASS",
+      "required": true,
+      "summary": "no interactive element overlaps another or the HUD text",
+      "route": "develop",
+      "project": "desktop",
+      "measured": [],
+      "expected": "< 16 px shared area"
+    },
+    {
+      "id": "ui.text",
+      "status": "FAIL",
+      "required": true,
+      "summary": "1 text problem(s): lost: 'Level failed' 1.17:1 < 3.0:1",
+      "route": "develop",
+      "project": "desktop",
+      "measured": {
+        "low_contrast": [
+          "lost: 'Level failed' 1.17:1 < 3.0:1"
+        ],
+        "too_small": [],
+        "measured": 55,
+        "undetermined": 0
+      },
+      "expected": {
+        "contrast": ">= 4.5:1 (large text >= 3.0:1)",
+        "font_px": ">= 12"
+      }
+    },
+    {
+      "id": "ui.styled",
+      "status": "PASS",
+      "required": true,
+      "summary": "no control is drawn in the browser's default style",
+      "route": "develop",
+      "project": "desktop",
+      "measured": [],
+      "expected": "every control's computed style differs from the user-agent default"
+    },
+    {
+      "id": "ui.states",
+      "status": "PASS",
+      "required": true,
+      "summary": "seen: lost, retry, won",
+      "route": "develop",
+      "project": "desktop",
+      "measured": [
+        "lost",
+        "paused",
+        "playing",
+        "retry",
+        "won"
+      ],
+      "expected": [
+        "lost",
+        "retry",
+        "won"
+      ],
+      "frames": [
+        "state-lost",
+        "state-retry",
+        "state-won"
+      ]
+    },
+    {
+      "id": "assets.used",
+      "status": "PASS",
+      "required": true,
+      "summary": "all 26 readable entities are drawn from runtime assets",
+      "route": "develop",
+      "project": "mobile",
+      "measured": {
+        "entities": 26,
+        "unreported": [],
+        "not_from_asset": [],
+        "unknown_asset": []
+      },
+      "expected": "every goal, player, projectile, target, threat entity: asset set, render in ['asset', 'composite']",
+      "assets": [
+        "goal-tile-sprite",
+        "penguin",
+        "wall-rock"
+      ]
+    },
+    {
+      "id": "scene.no_primitives",
+      "status": "PASS",
+      "required": true,
+      "summary": "none of 26 readable entities is drawn as a primitive",
+      "route": "develop",
+      "project": "mobile",
+      "measured": {
+        "primitive": [],
+        "unreported": []
+      },
+      "expected": "no readable-role entity with render `primitive`",
+      "assets": [
+        "goal-tile-sprite",
+        "penguin",
+        "wall-rock"
+      ]
+    },
+    {
+      "id": "scene.contrast",
+      "status": "PASS",
+      "required": true,
+      "summary": "goal 12.40:1, player 19.64:1, threat 15.44:1",
+      "route": "develop",
+      "project": "mobile",
+      "measured": {
+        "player": {
+          "ratio": 19.64,
+          "surround_luminance": 0.0,
+          "frame": "state-playing",
+          "state": "playing",
+          "entity": "player",
+          "asset": "penguin",
+          "box": [
+            16,
+            463.9,
+            40.1,
+            40.1
+          ]
+        },
+        "threat": {
+          "ratio": 15.44,
+          "surround_luminance": 0.9134,
+          "frame": "state-won",
+          "state": "won",
+          "entity": "wall-3,4",
+          "asset": "wall-rock-2",
+          "box": [
+            136.3,
+            303.4,
+            40.1,
+            40.1
+          ]
+        },
+        "goal": {
+          "ratio": 12.4,
+          "surround_luminance": 0.0305,
+          "frame": "state-won",
+          "state": "won",
+          "entity": "goal",
+          "asset": "goal-tile-sprite",
+          "box": [
+            96.2,
+            303.4,
+            40.1,
+            40.1
+          ]
+        }
+      },
+      "expected": ">= 3:1 for each readable role (best box)",
+      "frames": [
+        "state-playing",
+        "state-won"
+      ]
+    },
+    {
+      "id": "ui.targets",
+      "status": "PASS",
+      "required": true,
+      "summary": "all 27 measured targets are at least 48 px",
+      "route": "develop",
+      "project": "mobile",
+      "measured": {
+        "small": [],
+        "measured": 27
+      },
+      "expected": ">= 48 x 48 CSS px"
+    },
+    {
+      "id": "ui.overlap",
+      "status": "PASS",
+      "required": true,
+      "summary": "no interactive element overlaps another or the HUD text",
+      "route": "develop",
+      "project": "mobile",
+      "measured": [],
+      "expected": "< 16 px shared area"
+    },
+    {
+      "id": "ui.text",
+      "status": "FAIL",
+      "required": true,
+      "summary": "1 text problem(s): lost: 'Level failed' 1.17:1 < 3.0:1",
+      "route": "develop",
+      "project": "mobile",
+      "measured": {
+        "low_contrast": [
+          "lost: 'Level failed' 1.17:1 < 3.0:1"
+        ],
+        "too_small": [],
+        "measured": 55,
+        "undetermined": 0
+      },
+      "expected": {
+        "contrast": ">= 4.5:1 (large text >= 3.0:1)",
+        "font_px": ">= 12"
+      }
+    },
+    {
+      "id": "ui.styled",
+      "status": "PASS",
+      "required": true,
+      "summary": "no control is drawn in the browser's default style",
+      "route": "develop",
+      "project": "mobile",
+      "measured": [],
+      "expected": "every control's computed style differs from the user-agent default"
+    },
+    {
+      "id": "ui.states",
+      "status": "PASS",
+      "required": true,
+      "summary": "seen: lost, retry, won",
+      "route": "develop",
+      "project": "mobile",
+      "measured": [
+        "lost",
+        "paused",
+        "playing",
+        "retry",
+        "won"
+      ],
+      "expected": [
+        "lost",
+        "retry",
+        "won"
+      ],
+      "frames": [
+        "state-lost",
+        "state-retry",
+        "state-won"
+      ]
+    }
+  ],
+  "failed": [
+    "assets.loaded",
+    "assets.present",
+    "assets.runtime",
+    "audio.plays",
+    "desktop:ui.text",
+    "mobile:ui.text"
+  ],
+  "routes": [
+    "assets",
+    "develop"
+  ],
+  "blocked_reason": null,
+  "verdict": "FAIL"
+}

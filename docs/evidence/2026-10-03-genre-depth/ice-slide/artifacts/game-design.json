@@ -1,6 +1,6 @@
 {
   "provenance": {
-    "artifact_id": "wgf:game-design:ice-slide:20261002-04",
+    "artifact_id": "wgf:game-design:ice-slide:20261003-06",
     "artifact_type": "game-design",
     "schema_version": "1.9.0",
     "opportunity_id": "opp-b40899dc",
@@ -9,15 +9,20 @@
       "role": "game-designer",
       "actor": "ai"
     },
-    "produced_at": "2026-10-02T22:10:41Z",
+    "produced_at": "2026-10-03T05:37:27Z",
     "inputs": [
+      {
+        "artifact_id": "wgf:prototype-report:ice-slide:20261003-14",
+        "artifact_type": "prototype-report",
+        "content_hash": "sha256:93c1879c11dd356de6e296ab60abd5456117277879d4c062fb9938027bec7633"
+      },
       {
         "artifact_id": "wgf:title-strategy:ice-slide:20261002-01",
         "artifact_type": "title-strategy",
         "content_hash": "sha256:f9f6e1479ea590ae721d7cefaab185849d247f4fe226fac0bcd08a29ae87adcc"
       }
     ],
-    "content_hash": "sha256:60c70854915e39fe358ff535a5c7abf215c54ef3aa6ecaa2aacfad36ee8ca8c9",
+    "content_hash": "sha256:54887df7763a4d5d445d0bf2bc17ded2a3eaa84f37542077ecd3486ee41798d8",
     "status": "draft"
   },
   "fantasy": "Reading the ice three slides ahead: once a penguin pushes off, nothing stops it but the world, so every choice is a commitment made in advance.",
@@ -130,7 +135,7 @@
       "acceptance": [
         "Records `first_time_understood_share` for criterion control_not_understood.",
         "Records `unprompted_retry_share` for criterion no_retry_pull.",
-        "Records `prototype_elapsed_days` for criterion prototype_overran.",
+        "Records `prototype_elapsed_days` for criterion prototype_overran, counted from 2026-10-02 (this design's pin date) as the prototype's start, not from any later build's own run date.",
         "Records `midrange_mobile_fps` for criterion mobile_performance_floor.",
         "Records `d1_retention` for criterion d1_retention.",
         "Records `median_session_seconds` for criterion session_length."
@@ -350,7 +355,7 @@
   },
   "progression": "Linear levels: Available from the start -> Levels 1-6 teach directional sliding, the goal tile, the move budget and stars, then keys, doors and crumbling tiles; Clear level 6 -> Levels 7-12 combine keys, doors and crumbling tiles on bigger boards; Clear level 12 -> Levels 13-18 add double-key doors and three-key levels; Clear level 18 -> Levels 19-24 are four-key finales with every rule combined and the tightest budgets.",
   "difficulty": "Levels 1-2: An empty board and the goal tile only, six or more moves of slack; the level cannot realistically be failed. Levels 3-6: One key and door, then a crumbling tile, slack falling to four moves. Levels 7-10: Two keys, two doors and two crumbling tiles on a larger board, slack at three to four moves. Levels 11-18: A double-key door and up to three keys, slack falling to two moves. Levels 19-24: Four keys, two double-key doors and four crumbling tiles, slack falling to one move at the tightest; every fourth or fifth level is a breather with slack restored. Assist: After two failed attempts on one level, the next attempt starts with two extra moves and highlights one correct direction once.",
-  "controls": "Slide up: Tap the up arrow docked above the board or swipe up (touch), W or Up arrow (keyboard). Slide down: Tap the down arrow or swipe down (touch), S or Down arrow (keyboard). Slide left: Tap the left arrow or swipe left (touch), A or Left arrow (keyboard). Slide right: Tap the right arrow or swipe right (touch), D or Right arrow (keyboard). Pause: Pause button (touch), Esc or P (keyboard).",
+  "controls": "Slide up: Tap the up arrow docked above the board or swipe up (touch), W or Up arrow (keyboard). Slide down: Tap the down arrow or swipe down (touch), S or Down arrow (keyboard). Slide left: Tap the left arrow or swipe left (touch), A or Left arrow (keyboard). Slide right: Tap the right arrow or swipe right (touch), D or Right arrow (keyboard). Pause: Pause button (touch), Esc or P (keyboard). Restart: Restart button docked in the HUD during play (touch), R (keyboard); resets moves-left and the board to the unit's start without leaving play.",
   "ux": {
     "onboarding": "Diegetic. The first board has exactly one open direction that reaches the goal, and its shape teaches the rule without a sentence.",
     "screens": [
@@ -424,11 +429,12 @@
         "description": "Each level carries a par move count and a hard move cap; reaching the goal inside the cap wins, and how close to par decides one to three stars.",
         "rules": [
           "Every slide decrements the level's moves-left counter by one.",
-          "Reaching the goal at or under the level's par awards three stars; under the second threshold awards two; any clear at or under the cap awards at least one.",
+          "Reaching the goal at or under the level's par awards three stars; reaching it with moves-left at or above the two-star threshold awards two stars, where the two-star threshold is ceil((move_cap - par) / 2) moves-left; any clear at or under the cap awards at least one.",
           "Moves-left reaching zero before the goal is reached fails the level and offers an immediate retry on the same board."
         ],
         "parameters": {
-          "unspent_move_bonus_points": 25
+          "unspent_move_bonus_points": 25,
+          "two_star_moves_left_formula": "ceil((move_cap - par) / 2)"
         },
         "progression_role": "introduced"
       },
@@ -528,10 +534,20 @@
           "mouse": "Pause button",
           "keyboard": "Esc or P",
           "gamepad": "Start"
+        },
+        {
+          "id": "restart",
+          "action": "Restart",
+          "tier": "mvp",
+          "mechanic": "move-budget",
+          "touch": "Restart button docked in the HUD during play",
+          "mouse": "Click the restart button",
+          "keyboard": "R",
+          "gamepad": "Y / Triangle"
         }
       ],
       "pause": "Pause button, Esc or P; automatic on tab hidden and before any ad. Resume needs player input.",
-      "notes": "Keyboard bindings are MVP on every platform: portal traffic includes desktop even for a mobile-first title. Tap is the primary scheme, matching the strategy's control_scheme."
+      "notes": "Keyboard bindings are MVP on every platform: portal traffic includes desktop even for a mobile-first title. Tap is the primary scheme, matching the strategy's control_scheme. Restart is a meta action, not a slide: it resets moves-left and the board to the unit's start without leaving play, and is offered unconditionally during play. Any acceptance check that samples random or adversarial play chooses only among the four slide directions each turn, never restart or pause, so a unit's lose-condition checks are unaffected by the restart control."
     },
     "player_goals": {
       "moment": "Read the next slide: which direction gets the penguin a cell closer without wasting a move.",
@@ -566,7 +582,7 @@
           "grants": "Four-key finales with every rule combined and the tightest move budgets"
         }
       ],
-      "persistence": "Personal best and unlocks; cloud save where the platform offers it, local storage otherwise."
+      "persistence": "Personal best and unlocks, saved as the cleared unit's index plus one; cloud save where the platform offers it, local storage otherwise. A saved index past the last unit this tier ships (currently l-06) is clamped to that last unit rather than read literally, so a returning player replays l-06 until a later tier adds l-07 onward."
     },
     "difficulty": {
       "model": "level-authored",
@@ -700,6 +716,10 @@
             "on": "Pause pressed, Esc, or tab hidden"
           },
           {
+            "to": "play",
+            "on": "Restart pressed: moves-left and the board reset to the unit's start"
+          },
+          {
             "to": "level-fail",
             "on": "Moves-left reaches zero before the goal is reached, or the penguin slides onto a tile that already crumbled."
           },
@@ -746,11 +766,11 @@
         "exits": [
           {
             "to": "play",
-            "on": "Next pressed"
+            "on": "Next pressed, and a further unit exists to play"
           },
           {
             "to": "title",
-            "on": "Menu pressed"
+            "on": "Next pressed after the last unit this tier ships (l-06), or Menu pressed"
           }
         ]
       },
@@ -808,12 +828,17 @@
           "Elapsed time this attempt",
           "Keys collected and doors still locked",
           "Level number and the stars already earned on it",
-          "Pause button"
+          "Pause button",
+          "Restart button"
         ],
         "actions": [
           {
             "label": "Pause",
             "goes_to": "pause"
+          },
+          {
+            "label": "Restart",
+            "goes_to": "play"
           }
         ],
         "layout": "HUD inside the safe area; nothing interactive in the play area except the game itself."
@@ -953,6 +978,14 @@
         "anchor": "bottom-right",
         "updates_on": "Static",
         "feedback": "Press state within one frame"
+      },
+      {
+        "id": "restart-button",
+        "tier": "mvp",
+        "shows": "Restart button",
+        "anchor": "bottom-right",
+        "updates_on": "Static",
+        "feedback": "Press state within one frame; resets moves-left and the board to the unit's start without leaving play"
       }
     ],
     "menus": [
@@ -1022,21 +1055,21 @@
     ],
     "tutorial": {
       "approach": "diegetic",
-      "rationale": "The first board has exactly one direction that is open at a time, and its shape teaches the rule without a sentence.",
+      "rationale": "The first board has exactly one direction that is open at a time, and its shape teaches the rule without a sentence. The glowing arrow is a diegetic control cue - which direction maps to which input - not a text solution, so it holds alongside experience.onboarding.reveals_answer: false; it reuses the same live-recomputed-direction highlight as build_spec.difficulty.assist, shown only on the player's first-ever attempt and never re-armed.",
       "steps": [
         {
           "id": "first-slide",
           "tier": "mvp",
-          "trigger": "Level 1 start, first time",
+          "trigger": "The player's first-ever attempt at l-01 only (persisted via shown_once so it never re-arms)",
           "prompt": "The penguin sits with ice open in only one direction, and that direction's arrow glows under a drifting hand",
-          "completes_on": "The player slides that direction and the penguin stops against the far wall"
+          "completes_on": "The player slides that direction and the penguin stops against whatever blocks it"
         },
         {
           "id": "second-slide",
           "tier": "mvp",
-          "trigger": "Level 1, after the first slide",
-          "prompt": "The goal tile is now reachable in exactly one more direction, and that arrow glows",
-          "completes_on": "The player slides that direction and reaches the goal tile"
+          "trigger": "The player's first-ever attempt at l-01 only, immediately after the first slide",
+          "prompt": "From the penguin's new position exactly one direction is still open, and that arrow glows",
+          "completes_on": "The player slides that direction, completing the diegetic control tutorial; l-01's clear condition is unchanged - reach the goal tile within its 12-move cap by its recorded 6-move solution, not a guarantee that the level ends here"
         }
       ],
       "skippable": false,
@@ -1706,6 +1739,17 @@
           "max_ack_ms": 100,
           "visual": "Play freezes and the pause menu appears over it.",
           "audio": "UI tap"
+        },
+        {
+          "action": "restart",
+          "max_ack_ms": 100,
+          "visual": "The board snaps back to the unit's start: moves-left and the timer reset to their starting values, every collected key and opened door re-locks, every crumbled tile re-freezes, and the penguin reappears at its start cell.",
+          "audio": "UI tap",
+          "updates": [
+            "moves-left",
+            "solve-time",
+            "keys-doors"
+          ]
         }
       ],
       "onboarding": {
@@ -1713,7 +1757,8 @@
           "slide-up",
           "slide-down",
           "slide-left",
-          "slide-right"
+          "slide-right",
+          "restart"
         ],
         "grace": {
           "until": "first-success"
@@ -1750,8 +1795,8 @@
             "move-budget"
           ],
           "difficulty": {
-            "depth": 0.08,
-            "move-limit": 0.06,
+            "depth": 0.05,
+            "move-limit": 0.03,
             "piece-variety": 0.15,
             "board-complexity": 0.1
           },
@@ -1759,13 +1804,21 @@
           "success": "The penguin stops exactly on the goal tile with at least one move left.",
           "failure": "Moves-left reaches zero before the penguin reaches the goal tile.",
           "acceptance": [
-            "A recorded solution reaches the goal tile of l-01 in at most 6 moves, and the level data stores that solution's length (unit 1 of 24, difficulty 10%, 40 s, 40 s in)",
-            "A bot sliding in random directions fails l-01 (moves-left reaches zero before the goal) in at least 9 of 10 attempts (unit 1 of 24, difficulty 10%, 40 s, 40 s in)"
+            "A recorded solution reaches the goal tile of l-01 in at most 6 moves, and the level data stores that solution's length (unit 1 of 24, difficulty 8%, 40 s, 40 s in)",
+            "A bot sliding in random directions fails l-01 (moves-left reaches zero before the goal) in at least 9 of 10 attempts (unit 1 of 24, difficulty 8%, 40 s, 40 s in)"
           ],
           "variation_from_previous": [],
           "parameters": {
             "index": 1,
-            "duration_s": 40
+            "duration_s": 40,
+            "board_cols": 9,
+            "board_rows": 9,
+            "board_start": "0,8",
+            "board_goal": "2,2",
+            "board_solution": "right,up,left,down,left,up",
+            "board_solution_length": 6,
+            "board_random_play_fail_rate_min": 0.9,
+            "board_authoring_note": "A single corridor to the goal with one short dead-end trap branch near (4,0)-(4,2) for a player who ignores the glowing hint; every cell off the solution path is fenced tightly enough that a bad-play bot avoiding the correct move each turn still reaches lost within about 1.6x the 12-move cap in real taps, while random-direction play fails at least 9 of 10 attempts."
           },
           "introduces": [
             "ice-board",
@@ -1787,7 +1840,7 @@
             "move-budget"
           ],
           "difficulty": {
-            "depth": 0.08,
+            "depth": 0.05,
             "move-limit": 0.14,
             "piece-variety": 0.15,
             "board-complexity": 0.1
@@ -1796,8 +1849,8 @@
           "success": "The penguin stops exactly on the goal tile with at least one move left.",
           "failure": "Moves-left reaches zero before the penguin reaches the goal tile.",
           "acceptance": [
-            "A recorded solution reaches the goal tile of l-02 in at most 7 moves, and the level data stores that solution's length (unit 2 of 24, difficulty 12%, 45 s, 85 s in)",
-            "l-02's wall layout differs from l-01's, so the two boards are not the same puzzle with a smaller cap (unit 2 of 24, difficulty 12%, 45 s, 85 s in)"
+            "A recorded solution reaches the goal tile of l-02 in at most 7 moves, and the level data stores that solution's length (unit 2 of 24, difficulty 11%, 45 s, 85 s in)",
+            "l-02's wall layout differs from l-01's, so the two boards are not the same puzzle with a smaller cap (unit 2 of 24, difficulty 11%, 45 s, 85 s in)"
           ],
           "variation_from_previous": [
             "board_shape",
@@ -1805,7 +1858,14 @@
           ],
           "parameters": {
             "index": 2,
-            "duration_s": 45
+            "duration_s": 45,
+            "board_cols": 9,
+            "board_rows": 9,
+            "board_start": "8,0",
+            "board_goal": "4,6",
+            "board_solution_length": 7,
+            "board_random_play_fail_rate_min": 0.9,
+            "board_authoring_note": "A reshaped wall layout from l-01's, not merely a smaller cap: the recorded solution is exactly 7 moves (the unit's stated upper bound), with dead-end branching dense enough that random-direction play fails at least 9 of 10 attempts and adversarial play (avoiding the correct move every turn) reaches lost within the 12-move cap."
           }
         },
         {
@@ -1822,7 +1882,7 @@
             "key-door"
           ],
           "difficulty": {
-            "depth": 0.08,
+            "depth": 0.05,
             "move-limit": 0.14,
             "piece-variety": 0.27,
             "board-complexity": 0.1
@@ -1831,8 +1891,8 @@
           "success": "The penguin collects the key, opens its door, and stops exactly on the goal tile with at least one move left.",
           "failure": "Moves-left reaches zero before the penguin reaches the goal tile.",
           "acceptance": [
-            "The door on l-03 blocks every slide that would cross or stop on it until its matching key is collected (unit 3 of 24, difficulty 15%, 55 s, 140 s in)",
-            "A recorded solution collects l-03's key, opens its door and reaches the goal in at most 8 moves (unit 3 of 24, difficulty 15%, 55 s, 140 s in)"
+            "The door on l-03 blocks every slide that would cross or stop on it until its matching key is collected (unit 3 of 24, difficulty 14%, 55 s, 140 s in)",
+            "A recorded solution collects l-03's key, opens its door and reaches the goal in at most 8 moves (unit 3 of 24, difficulty 14%, 55 s, 140 s in)"
           ],
           "variation_from_previous": [
             "introduces",
@@ -1840,7 +1900,16 @@
           ],
           "parameters": {
             "index": 3,
-            "duration_s": 55
+            "duration_s": 55,
+            "board_cols": 9,
+            "board_rows": 9,
+            "board_start": "8,8",
+            "board_goal": "0,2",
+            "board_key_position": "6,5",
+            "board_door_position": "3,5",
+            "board_solution_length": 8,
+            "board_random_play_fail_rate_min": 0.9,
+            "board_authoring_note": "The recorded solution collects the key, opens the door and reaches the goal in exactly 8 moves (the unit's stated upper bound); dead-end branching keeps random-direction play failing at least 9 of 10 attempts and adversarial play losing within the 13-move cap."
           },
           "introduces": [
             "key-door"
@@ -1860,7 +1929,7 @@
             "key-door"
           ],
           "difficulty": {
-            "depth": 0.08,
+            "depth": 0.05,
             "move-limit": 0.14,
             "piece-variety": 0.27,
             "board-complexity": 0.17
@@ -1869,8 +1938,8 @@
           "success": "The penguin collects the key, opens its door, and stops exactly on the goal tile with at least one move left.",
           "failure": "Moves-left reaches zero before the penguin reaches the goal tile.",
           "acceptance": [
-            "l-04's board carries at least 4 more wall or rock cells than l-03's, while reusing the same key-door rule (unit 4 of 24, difficulty 17%, 65 s, 205 s in)",
-            "A recorded solution collects l-04's key, opens its door and reaches the goal in at most 9 moves (unit 4 of 24, difficulty 17%, 65 s, 205 s in)"
+            "l-04's board carries at least 4 more wall or rock cells than l-03's, while reusing the same key-door rule (unit 4 of 24, difficulty 16%, 65 s, 205 s in)",
+            "A recorded solution collects l-04's key, opens its door and reaches the goal in at most 9 moves (unit 4 of 24, difficulty 16%, 65 s, 205 s in)"
           ],
           "variation_from_previous": [
             "board_shape",
@@ -1878,7 +1947,17 @@
           ],
           "parameters": {
             "index": 4,
-            "duration_s": 65
+            "duration_s": 65,
+            "board_cols": 9,
+            "board_rows": 9,
+            "board_start": "8,8",
+            "board_goal": "0,1",
+            "board_key_position": "6,6",
+            "board_door_position": "2,6",
+            "board_wall_count_delta_from_l03": 4,
+            "board_solution_length": 9,
+            "board_random_play_fail_rate_min": 0.9,
+            "board_authoring_note": "At least 4 more wall or rock cells than l-03's, reusing the same key-door rule; the recorded solution reaches the goal in exactly 9 moves (the unit's stated upper bound), and adversarial play loses within the 14-move cap."
           }
         },
         {
@@ -1895,7 +1974,7 @@
             "key-door"
           ],
           "difficulty": {
-            "depth": 0.08,
+            "depth": 0.05,
             "move-limit": 0.14,
             "piece-variety": 0.27,
             "board-complexity": 0.11
@@ -1904,15 +1983,24 @@
           "success": "The penguin collects the key, opens its door, and stops exactly on the goal tile with at least one move left.",
           "failure": "Moves-left reaches zero before the penguin reaches the goal tile.",
           "acceptance": [
-            "l-05's board is smaller than l-04's and its move cap gives at least 6 moves of slack over the clean solution (unit 5 of 24, difficulty 15%, 40 s, 245 s in)",
-            "A bot sliding in random directions fails l-05 in at least 9 of 10 attempts despite the easier board (unit 5 of 24, difficulty 15%, 40 s, 245 s in)"
+            "l-05's board is smaller than l-04's and its move cap gives at least 6 moves of slack over the clean solution (unit 5 of 24, difficulty 14%, 40 s, 245 s in)",
+            "A bot sliding in random directions fails l-05 in at least 9 of 10 attempts despite the easier board (unit 5 of 24, difficulty 14%, 40 s, 245 s in)"
           ],
           "variation_from_previous": [
             "pacing"
           ],
           "parameters": {
             "index": 5,
-            "duration_s": 40
+            "duration_s": 40,
+            "board_cols": 7,
+            "board_rows": 7,
+            "board_start": "6,6",
+            "board_goal": "0,1",
+            "board_key_position": "4,4",
+            "board_door_position": "1,4",
+            "board_solution_length": 6,
+            "board_random_play_fail_rate_min": 0.9,
+            "board_authoring_note": "Smaller than l-04's board, with at least 6 moves of slack over the clean 6-move solution against the 12-move cap; random-direction play still fails at least 9 of 10 attempts despite the easier board."
           }
         },
         {
@@ -1948,7 +2036,17 @@
           ],
           "parameters": {
             "index": 6,
-            "duration_s": 70
+            "duration_s": 70,
+            "board_cols": 9,
+            "board_rows": 9,
+            "board_start": "8,8",
+            "board_goal": "0,0",
+            "board_key_position": "6,7",
+            "board_door_position": "3,7",
+            "board_crumbling_tile_position": "4,3",
+            "board_solution_length": 10,
+            "board_random_play_fail_rate_min": 0.9,
+            "board_authoring_note": "The recorded solution collects the key, opens the door, crosses the crumbling tile exactly once and reaches the goal in exactly 10 moves (the unit's stated upper bound); adversarial play loses within the 15-move cap."
           },
           "introduces": [
             "crumbling-tile"
@@ -3335,7 +3433,7 @@
   "brief": "A sliding-ice puzzle: a penguin slides until it hits something; 24 hand-designed levels with keys, doors, crumbling tiles and a 3-star move target",
   "consistency": {
     "status": "pass",
-    "evaluated_at": "2026-10-02T22:10:41Z",
+    "evaluated_at": "2026-10-03T05:37:27Z",
     "ruleset_version": "1.4.0",
     "rule_results": [
       {
@@ -3594,7 +3692,7 @@
           "solve-time"
         ],
         "breached": false,
-        "note": "5 mvp hud id(s) and metric(s) to read mastery from"
+        "note": "6 mvp hud id(s) and metric(s) to read mastery from"
       }
     ],
     "warnings_acknowledged": false,

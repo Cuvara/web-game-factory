@@ -1,0 +1,1573 @@
+{
+  "provenance": {
+    "artifact_id": "wgf:asset-manifest:ice-slide:20261003-02",
+    "artifact_type": "asset-manifest",
+    "schema_version": "1.4.0",
+    "opportunity_id": "opp-b40899dc",
+    "title_id": "ice-slide",
+    "produced_by": {
+      "role": "asset",
+      "actor": "automation"
+    },
+    "produced_at": "2026-10-03T10:51:10Z",
+    "inputs": [
+      {
+        "artifact_id": "wgf:game-design:ice-slide:20261003-06",
+        "artifact_type": "game-design",
+        "content_hash": "sha256:54887df7763a4d5d445d0bf2bc17ded2a3eaa84f37542077ecd3486ee41798d8"
+      },
+      {
+        "artifact_id": "wgf:playability-report:ice-slide:20261003-06",
+        "artifact_type": "playability-report",
+        "content_hash": "sha256:30266ab5243a13923cea2b2a22ef0939f06b03ed4ff1ecff9b9ddaac3cd0cd78"
+      },
+      {
+        "artifact_id": "wgf:production-quality-report:ice-slide:20261003-01",
+        "artifact_type": "production-quality-report",
+        "content_hash": "sha256:5ada10cc8d00d76ac79cd66295c06ed5d6bdb93b1302147dc508faffd38ff54f"
+      },
+      {
+        "artifact_id": "wgf:scaffold-record:ice-slide:20261003-03",
+        "artifact_type": "scaffold-record",
+        "content_hash": "sha256:afb8e376cf2c4caa033cf29a39d26d40fa881bf65c68d7e2006a79f8bc853adf"
+      }
+    ],
+    "content_hash": "sha256:78a4edb24651e74a8d4c64e112145f45495aa5323018b367ce7953803a42c614",
+    "status": "draft"
+  },
+  "title_id": "ice-slide",
+  "items": [
+    {
+      "id": "penguin",
+      "label": "The player's penguin, with idle, sliding and goal-reached states",
+      "type": "sprite",
+      "role": "player",
+      "dimension": "2d",
+      "source": "ai-generated",
+      "est_cost": 0,
+      "est_hours": 0.5,
+      "status": "delivered",
+      "license": "LicenseRef-factory-generated",
+      "license_status": "generated",
+      "origin": {
+        "kind": "generated",
+        "generator": "author:command"
+      },
+      "placeholder": false,
+      "production_ready": true,
+      "quality": {
+        "verdict": "pass",
+        "checks": [
+          {
+            "id": "svg.well-formed",
+            "status": "pass",
+            "summary": "well-formed <svg> with a viewBox"
+          },
+          {
+            "id": "svg.safe",
+            "status": "pass",
+            "summary": "no script, handler, embedded raster or external reference"
+          },
+          {
+            "id": "svg.not-primitive",
+            "status": "pass",
+            "summary": "16 drawing element(s); the bar for player is 3"
+          },
+          {
+            "id": "svg.palette",
+            "status": "pass",
+            "summary": "4 colour(s), 0 off the palette"
+          },
+          {
+            "id": "svg.dimensions",
+            "status": "pass",
+            "summary": "96x96, aspect 1.00; the spec's 96x96 is 1.00"
+          },
+          {
+            "id": "svg.avoid",
+            "status": "pass",
+            "summary": "none of the measurable avoid lines ('Neon glow', 'Purple-to-blue gradients on white', 'Emoji as iconography')"
+          }
+        ],
+        "primitive_only": false,
+        "parts": 16,
+        "colors": 4,
+        "author": "author:command"
+      },
+      "files": [
+        {
+          "path": "public/assets/sprites/penguin.svg",
+          "format": "svg",
+          "bytes": 1285,
+          "content_hash": "sha256:57f137950b5277a798841f42bb5b704f4b4152b955dbc152fe69b4900f14fc07",
+          "width": 96,
+          "height": 96
+        }
+      ],
+      "optimization": {
+        "applied": [
+          "svg-strip"
+        ],
+        "deferred": [
+          "texture-atlas"
+        ],
+        "bytes_saved": 234
+      },
+      "scope_tier": "mvp",
+      "notes": "Vector character, 96px tall, idle/slide/celebrate states, 4 facing directions"
+    },
+    {
+      "id": "ice-tile",
+      "label": "The plain ice floor tile that makes up the board - the surface a slide crosses and the cell it stops on",
+      "type": "sprite",
+      "role": "target",
+      "dimension": "2d",
+      "source": "ai-generated",
+      "est_cost": 0,
+      "est_hours": 0.5,
+      "status": "delivered",
+      "license": "LicenseRef-factory-generated",
+      "license_status": "generated",
+      "origin": {
+        "kind": "generated",
+        "generator": "author:command"
+      },
+      "placeholder": false,
+      "production_ready": true,
+      "quality": {
+        "verdict": "pass",
+        "checks": [
+          {
+            "id": "svg.well-formed",
+            "status": "pass",
+            "summary": "well-formed <svg> with a viewBox"
+          },
+          {
+            "id": "svg.safe",
+            "status": "pass",
+            "summary": "no script, handler, embedded raster or external reference"
+          },
+          {
+            "id": "svg.not-primitive",
+            "status": "pass",
+            "summary": "9 drawing element(s); the bar for target is 3"
+          },
+          {
+            "id": "svg.palette",
+            "status": "pass",
+            "summary": "4 colour(s), 0 off the palette"
+          },
+          {
+            "id": "svg.dimensions",
+            "status": "pass",
+            "summary": "96x96, aspect 1.00; the spec's 96x96 is 1.00"
+          },
+          {
+            "id": "svg.avoid",
+            "status": "pass",
+            "summary": "none of the measurable avoid lines ('Neon glow', 'Purple-to-blue gradients on white', 'Emoji as iconography')"
+          }
+        ],
+        "primitive_only": false,
+        "parts": 9,
+        "colors": 4,
+        "author": "author:command"
+      },
+      "files": [
+        {
+          "path": "public/assets/sprites/ice-tile.svg",
+          "format": "svg",
+          "bytes": 1077,
+          "content_hash": "sha256:0ab4300740abef249927f19051ff18ed9499ef24cbdd6b7967c0d21ac3ea24aa",
+          "width": 96,
+          "height": 96
+        }
+      ],
+      "optimization": {
+        "applied": [
+          "svg-strip"
+        ],
+        "deferred": [
+          "texture-atlas"
+        ],
+        "bytes_saved": 10
+      },
+      "scope_tier": "mvp",
+      "notes": "Vector, 96px, tileable edges Rebuilt for 1 finding(s)."
+    },
+    {
+      "id": "wall-rock",
+      "label": "Wall and rock blockers that a slide stops against",
+      "type": "sprite",
+      "role": "threat",
+      "dimension": "2d",
+      "source": "ai-generated",
+      "est_cost": 0,
+      "est_hours": 0.5,
+      "status": "delivered",
+      "license": "LicenseRef-factory-generated",
+      "license_status": "generated",
+      "origin": {
+        "kind": "generated",
+        "generator": "author:command"
+      },
+      "placeholder": false,
+      "production_ready": true,
+      "quality": {
+        "verdict": "pass",
+        "checks": [
+          {
+            "id": "svg.well-formed",
+            "status": "pass",
+            "summary": "wall-rock-1: well-formed <svg> with a viewBox"
+          },
+          {
+            "id": "svg.safe",
+            "status": "pass",
+            "summary": "wall-rock-1: no script, handler, embedded raster or external reference"
+          },
+          {
+            "id": "svg.not-primitive",
+            "status": "pass",
+            "summary": "wall-rock-1: 12 drawing element(s); the bar for threat is 3"
+          },
+          {
+            "id": "svg.palette",
+            "status": "pass",
+            "summary": "wall-rock-1: 6 colour(s), 2 off the palette"
+          },
+          {
+            "id": "svg.dimensions",
+            "status": "pass",
+            "summary": "wall-rock-1: 96x96, aspect 1.00; the spec's 96x96 is 1.00"
+          },
+          {
+            "id": "svg.avoid",
+            "status": "pass",
+            "summary": "wall-rock-1: none of the measurable avoid lines ('Neon glow', 'Purple-to-blue gradients on white', 'Emoji as iconography')"
+          },
+          {
+            "id": "svg.well-formed",
+            "status": "pass",
+            "summary": "wall-rock-2: well-formed <svg> with a viewBox"
+          },
+          {
+            "id": "svg.safe",
+            "status": "pass",
+            "summary": "wall-rock-2: no script, handler, embedded raster or external reference"
+          },
+          {
+            "id": "svg.not-primitive",
+            "status": "pass",
+            "summary": "wall-rock-2: 10 drawing element(s); the bar for threat is 3"
+          },
+          {
+            "id": "svg.palette",
+            "status": "pass",
+            "summary": "wall-rock-2: 3 colour(s), 0 off the palette"
+          },
+          {
+            "id": "svg.dimensions",
+            "status": "pass",
+            "summary": "wall-rock-2: 96x96, aspect 1.00; the spec's 96x96 is 1.00"
+          },
+          {
+            "id": "svg.avoid",
+            "status": "pass",
+            "summary": "wall-rock-2: none of the measurable avoid lines ('Neon glow', 'Purple-to-blue gradients on white', 'Emoji as iconography')"
+          },
+          {
+            "id": "variants.distinct",
+            "status": "pass",
+            "summary": "2 drawings, every pair differs; the closest, wall-rock-1 and wall-rock-2, by 0.29 (bar 0.08)"
+          }
+        ],
+        "primitive_only": false,
+        "parts": 10,
+        "colors": 6,
+        "author": "author:command"
+      },
+      "files": [
+        {
+          "path": "public/assets/sprites/wall-rock-1.svg",
+          "format": "svg",
+          "bytes": 1491,
+          "content_hash": "sha256:512f9394c62a8da52b331f1d7ccd65c0d82bc5a66cd6f9426cb8274f8f8159bb",
+          "width": 96,
+          "height": 96
+        },
+        {
+          "path": "public/assets/sprites/wall-rock-2.svg",
+          "format": "svg",
+          "bytes": 1016,
+          "content_hash": "sha256:e2865890cb1778cf3963d8ab0f14571c958936624959b1b7f6c3f164fcd83c97",
+          "width": 96,
+          "height": 96
+        }
+      ],
+      "optimization": {
+        "applied": [
+          "svg-strip"
+        ],
+        "deferred": [
+          "texture-atlas"
+        ],
+        "bytes_saved": 336
+      },
+      "scope_tier": "mvp",
+      "notes": "Vector, 96px, tileable edges"
+    },
+    {
+      "id": "goal-tile-sprite",
+      "label": "The goal tile the penguin must stop on to clear the level",
+      "type": "sprite",
+      "role": "goal",
+      "dimension": "2d",
+      "source": "ai-generated",
+      "est_cost": 0,
+      "est_hours": 0.5,
+      "status": "delivered",
+      "license": "LicenseRef-factory-generated",
+      "license_status": "generated",
+      "origin": {
+        "kind": "generated",
+        "generator": "author:command"
+      },
+      "placeholder": false,
+      "production_ready": true,
+      "quality": {
+        "verdict": "pass",
+        "checks": [
+          {
+            "id": "svg.well-formed",
+            "status": "pass",
+            "summary": "well-formed <svg> with a viewBox"
+          },
+          {
+            "id": "svg.safe",
+            "status": "pass",
+            "summary": "no script, handler, embedded raster or external reference"
+          },
+          {
+            "id": "svg.not-primitive",
+            "status": "pass",
+            "summary": "12 drawing element(s); the bar for goal is 3"
+          },
+          {
+            "id": "svg.palette",
+            "status": "pass",
+            "summary": "5 colour(s), 0 off the palette"
+          },
+          {
+            "id": "svg.dimensions",
+            "status": "pass",
+            "summary": "96x96, aspect 1.00; the spec's 96x96 is 1.00"
+          },
+          {
+            "id": "svg.avoid",
+            "status": "pass",
+            "summary": "none of the measurable avoid lines ('Neon glow', 'Purple-to-blue gradients on white', 'Emoji as iconography')"
+          }
+        ],
+        "primitive_only": false,
+        "parts": 12,
+        "colors": 5,
+        "author": "author:command"
+      },
+      "files": [
+        {
+          "path": "public/assets/sprites/goal-tile-sprite.svg",
+          "format": "svg",
+          "bytes": 1345,
+          "content_hash": "sha256:64fa3935b73fccd40c0457769d312062152f544903b2e0525e6e00737973fa68",
+          "width": 96,
+          "height": 96
+        }
+      ],
+      "optimization": {
+        "applied": [
+          "svg-strip"
+        ],
+        "deferred": [
+          "texture-atlas"
+        ],
+        "bytes_saved": 45
+      },
+      "scope_tier": "mvp",
+      "notes": "Vector, 96px, idle and reached states"
+    },
+    {
+      "id": "key-door",
+      "label": "Key pickups and their matching doors, in up to four colours, each door with locked and open states",
+      "type": "sprite",
+      "role": "collectible",
+      "dimension": "2d",
+      "source": "procedural",
+      "est_cost": 0,
+      "est_hours": 2.0,
+      "status": "in-progress",
+      "license": "LicenseRef-factory-generated",
+      "license_status": "generated",
+      "origin": {
+        "kind": "generated",
+        "generator": "procedural"
+      },
+      "placeholder": true,
+      "production_ready": false,
+      "quality": {
+        "verdict": "skipped",
+        "checks": [
+          {
+            "id": "quality",
+            "status": "skipped",
+            "summary": "a placeholder is not judged; the final asset is still owed"
+          }
+        ],
+        "primitive_only": null,
+        "parts": null,
+        "colors": null,
+        "author": "placeholder"
+      },
+      "files": [
+        {
+          "path": "public/assets/sprites/key-door.placeholder.png",
+          "format": "png",
+          "bytes": 230,
+          "content_hash": "sha256:d02b81a93de83bc2c1a733803fefbef807497dc85944de57f3a3451bac71b5a8",
+          "width": 96,
+          "height": 96
+        }
+      ],
+      "optimization": {
+        "applied": [],
+        "deferred": [
+          "texture-atlas"
+        ]
+      },
+      "scope_tier": "mvp",
+      "notes": "Vector, 96px, 4 key colours x locked/open door states",
+      "issues": [
+        "author-rejected",
+        "placeholder"
+      ]
+    },
+    {
+      "id": "crumbling-tile-sprite",
+      "label": "Crumbling ice tile with intact and crumbled (hole) states",
+      "type": "sprite",
+      "role": "hazard",
+      "dimension": "2d",
+      "source": "ai-generated",
+      "est_cost": 0,
+      "est_hours": 0.5,
+      "status": "delivered",
+      "license": "LicenseRef-factory-generated",
+      "license_status": "generated",
+      "origin": {
+        "kind": "generated",
+        "generator": "author:command"
+      },
+      "placeholder": false,
+      "production_ready": true,
+      "quality": {
+        "verdict": "pass",
+        "checks": [
+          {
+            "id": "svg.well-formed",
+            "status": "pass",
+            "summary": "well-formed <svg> with a viewBox"
+          },
+          {
+            "id": "svg.safe",
+            "status": "pass",
+            "summary": "no script, handler, embedded raster or external reference"
+          },
+          {
+            "id": "svg.not-primitive",
+            "status": "pass",
+            "summary": "12 drawing element(s); the bar for hazard is 3"
+          },
+          {
+            "id": "svg.palette",
+            "status": "pass",
+            "summary": "5 colour(s), 0 off the palette"
+          },
+          {
+            "id": "svg.dimensions",
+            "status": "pass",
+            "summary": "96x96, aspect 1.00; the spec's 96x96 is 1.00"
+          },
+          {
+            "id": "svg.avoid",
+            "status": "pass",
+            "summary": "none of the measurable avoid lines ('Neon glow', 'Purple-to-blue gradients on white', 'Emoji as iconography')"
+          }
+        ],
+        "primitive_only": false,
+        "parts": 12,
+        "colors": 5,
+        "author": "author:command"
+      },
+      "files": [
+        {
+          "path": "public/assets/sprites/crumbling-tile-sprite.svg",
+          "format": "svg",
+          "bytes": 1559,
+          "content_hash": "sha256:61b19cd4e8815c0a25ebb2c3ddfafab54ec064704e6e04f0ea3eb876f274c4e5",
+          "width": 96,
+          "height": 96
+        }
+      ],
+      "optimization": {
+        "applied": [],
+        "deferred": [
+          "texture-atlas"
+        ]
+      },
+      "scope_tier": "mvp",
+      "notes": "Vector, 96px, two states: cracked ice and open hole Rebuilt for 1 finding(s)."
+    },
+    {
+      "id": "slide-vfx",
+      "label": "Snow spray trailing the penguin's slide, crumble burst, and the goal-reached sparkle",
+      "type": "vfx",
+      "role": "vfx",
+      "dimension": "2d",
+      "source": "ai-generated",
+      "est_cost": 0,
+      "est_hours": 0.5,
+      "status": "delivered",
+      "license": "LicenseRef-factory-generated",
+      "license_status": "generated",
+      "origin": {
+        "kind": "generated",
+        "generator": "author:command"
+      },
+      "placeholder": false,
+      "production_ready": true,
+      "quality": {
+        "verdict": "pass",
+        "checks": [
+          {
+            "id": "svg.well-formed",
+            "status": "pass",
+            "summary": "slide-vfx-1: well-formed <svg> with a viewBox"
+          },
+          {
+            "id": "svg.safe",
+            "status": "pass",
+            "summary": "slide-vfx-1: no script, handler, embedded raster or external reference"
+          },
+          {
+            "id": "svg.not-primitive",
+            "status": "pass",
+            "summary": "slide-vfx-1: 34 drawing element(s); the bar for vfx is 2"
+          },
+          {
+            "id": "svg.palette",
+            "status": "pass",
+            "summary": "slide-vfx-1: 6 colour(s), 0 off the palette"
+          },
+          {
+            "id": "svg.dimensions",
+            "status": "pass",
+            "summary": "slide-vfx-1: 480x160"
+          },
+          {
+            "id": "svg.avoid",
+            "status": "pass",
+            "summary": "slide-vfx-1: none of the measurable avoid lines ('Neon glow', 'Purple-to-blue gradients on white', 'Emoji as iconography')"
+          },
+          {
+            "id": "svg.well-formed",
+            "status": "pass",
+            "summary": "slide-vfx-2: well-formed <svg> with a viewBox"
+          },
+          {
+            "id": "svg.safe",
+            "status": "pass",
+            "summary": "slide-vfx-2: no script, handler, embedded raster or external reference"
+          },
+          {
+            "id": "svg.not-primitive",
+            "status": "pass",
+            "summary": "slide-vfx-2: 45 drawing element(s); the bar for vfx is 2"
+          },
+          {
+            "id": "svg.palette",
+            "status": "pass",
+            "summary": "slide-vfx-2: 5 colour(s), 0 off the palette"
+          },
+          {
+            "id": "svg.dimensions",
+            "status": "pass",
+            "summary": "slide-vfx-2: 480x160"
+          },
+          {
+            "id": "svg.avoid",
+            "status": "pass",
+            "summary": "slide-vfx-2: none of the measurable avoid lines ('Neon glow', 'Purple-to-blue gradients on white', 'Emoji as iconography')"
+          },
+          {
+            "id": "svg.well-formed",
+            "status": "pass",
+            "summary": "slide-vfx-3: well-formed <svg> with a viewBox"
+          },
+          {
+            "id": "svg.safe",
+            "status": "pass",
+            "summary": "slide-vfx-3: no script, handler, embedded raster or external reference"
+          },
+          {
+            "id": "svg.not-primitive",
+            "status": "pass",
+            "summary": "slide-vfx-3: 38 drawing element(s); the bar for vfx is 2"
+          },
+          {
+            "id": "svg.palette",
+            "status": "pass",
+            "summary": "slide-vfx-3: 5 colour(s), 0 off the palette"
+          },
+          {
+            "id": "svg.dimensions",
+            "status": "pass",
+            "summary": "slide-vfx-3: 360x120"
+          },
+          {
+            "id": "svg.avoid",
+            "status": "pass",
+            "summary": "slide-vfx-3: none of the measurable avoid lines ('Neon glow', 'Purple-to-blue gradients on white', 'Emoji as iconography')"
+          },
+          {
+            "id": "variants.distinct",
+            "status": "pass",
+            "summary": "3 drawings, every pair differs; the closest, slide-vfx-1 and slide-vfx-2, by 0.88 (bar 0.08)"
+          }
+        ],
+        "primitive_only": false,
+        "parts": 34,
+        "colors": 6,
+        "author": "author:command"
+      },
+      "files": [
+        {
+          "path": "public/assets/vfx/slide-vfx-1.svg",
+          "format": "svg",
+          "bytes": 3666,
+          "content_hash": "sha256:d49c4d836e99220a0b154c138535d8c47ca87e0d396a4a19f5052d3bb4d86bee",
+          "width": 480,
+          "height": 160
+        },
+        {
+          "path": "public/assets/vfx/slide-vfx-2.svg",
+          "format": "svg",
+          "bytes": 3741,
+          "content_hash": "sha256:36d887d62af29928ebc9c92ad5301b061effca1a3efa3d99a759ccb59bc121ba",
+          "width": 480,
+          "height": 160
+        },
+        {
+          "path": "public/assets/vfx/slide-vfx-3.svg",
+          "format": "svg",
+          "bytes": 3335,
+          "content_hash": "sha256:a5e31be0bf0be238acca94a2b8715353b9b3889fe44529a83e70e87aede96246",
+          "width": 360,
+          "height": 120
+        }
+      ],
+      "optimization": {
+        "applied": [
+          "svg-strip"
+        ],
+        "deferred": [
+          "texture-atlas"
+        ],
+        "bytes_saved": 1644
+      },
+      "scope_tier": "mvp",
+      "notes": "Particle presets, 150-300 ms"
+    },
+    {
+      "id": "backdrop",
+      "label": "Arctic ground and sky behind the board",
+      "type": "background",
+      "role": "background",
+      "dimension": "2d",
+      "source": "ai-generated",
+      "est_cost": 0,
+      "est_hours": 0.5,
+      "status": "delivered",
+      "license": "LicenseRef-factory-generated",
+      "license_status": "generated",
+      "origin": {
+        "kind": "generated",
+        "generator": "author:command"
+      },
+      "placeholder": false,
+      "production_ready": true,
+      "quality": {
+        "verdict": "pass",
+        "checks": [
+          {
+            "id": "svg.well-formed",
+            "status": "pass",
+            "summary": "well-formed <svg> with a viewBox"
+          },
+          {
+            "id": "svg.safe",
+            "status": "pass",
+            "summary": "no script, handler, embedded raster or external reference"
+          },
+          {
+            "id": "svg.not-primitive",
+            "status": "pass",
+            "summary": "41 drawing element(s); the bar for background is 4"
+          },
+          {
+            "id": "svg.palette",
+            "status": "pass",
+            "summary": "5 of 13 colour(s) off the palette, marked: tints of the backdrop and paper tokens for quiet depth layers"
+          },
+          {
+            "id": "svg.dimensions",
+            "status": "pass",
+            "summary": "1080x1920"
+          },
+          {
+            "id": "svg.avoid",
+            "status": "pass",
+            "summary": "none of the measurable avoid lines ('Neon glow', 'Purple-to-blue gradients on white', 'Emoji as iconography')"
+          }
+        ],
+        "primitive_only": false,
+        "parts": 41,
+        "colors": 13,
+        "author": "author:command"
+      },
+      "files": [
+        {
+          "path": "public/assets/backgrounds/backdrop.svg",
+          "format": "svg",
+          "bytes": 3620,
+          "content_hash": "sha256:cbedb242ae9615b67296136f715962a075f624f75a069bce178490eab2bb95b8",
+          "width": 1080,
+          "height": 1920
+        }
+      ],
+      "optimization": {
+        "applied": [
+          "svg-strip"
+        ],
+        "deferred": [
+          "lossy-webp"
+        ],
+        "bytes_saved": 190
+      },
+      "scope_tier": "mvp",
+      "notes": "Gradient plus a paper texture overlay"
+    },
+    {
+      "id": "counter-bar",
+      "label": "Move counter, elapsed-time readout, key pips and the star row, drawn in the identity kit",
+      "type": "ui",
+      "role": "ui",
+      "dimension": "2d",
+      "source": "ai-generated",
+      "est_cost": 0,
+      "est_hours": 0.5,
+      "status": "delivered",
+      "license": "LicenseRef-factory-generated",
+      "license_status": "generated",
+      "origin": {
+        "kind": "generated",
+        "generator": "author:command"
+      },
+      "placeholder": false,
+      "production_ready": true,
+      "quality": {
+        "verdict": "pass",
+        "checks": [
+          {
+            "id": "svg.well-formed",
+            "status": "pass",
+            "summary": "well-formed <svg> with a viewBox"
+          },
+          {
+            "id": "svg.safe",
+            "status": "pass",
+            "summary": "no script, handler, embedded raster or external reference"
+          },
+          {
+            "id": "svg.not-primitive",
+            "status": "pass",
+            "summary": "33 drawing element(s); the bar for ui is 2"
+          },
+          {
+            "id": "svg.palette",
+            "status": "pass",
+            "summary": "4 colour(s), 0 off the palette"
+          },
+          {
+            "id": "svg.dimensions",
+            "status": "pass",
+            "summary": "362x60"
+          },
+          {
+            "id": "svg.text-font",
+            "status": "pass",
+            "summary": "2 text element(s), set in the design's faces (playfair display, commissioner); an SVG drawn as an image cannot load web fonts, so outlines are safer"
+          },
+          {
+            "id": "svg.avoid",
+            "status": "pass",
+            "summary": "none of the measurable avoid lines ('Neon glow', 'Purple-to-blue gradients on white', 'Emoji as iconography')"
+          }
+        ],
+        "primitive_only": false,
+        "parts": 33,
+        "colors": 4,
+        "author": "author:command"
+      },
+      "files": [
+        {
+          "path": "public/assets/ui/counter-bar.svg",
+          "format": "svg",
+          "bytes": 3551,
+          "content_hash": "sha256:a31011b0841a1f4b354d73c39ff46163d1b6c88eb179a2c2982f23c7e9704cae",
+          "width": 362,
+          "height": 60
+        }
+      ],
+      "optimization": {
+        "applied": [
+          "svg-strip"
+        ],
+        "deferred": [
+          "texture-atlas"
+        ],
+        "bytes_saved": 479
+      },
+      "scope_tier": "mvp",
+      "notes": "One bar, moves-left numeral, timer numeral, up to 4 key pips, star states empty and filled"
+    },
+    {
+      "id": "ui-kit",
+      "label": "Buttons, panels and the result card, drawn in the identity kit",
+      "type": "ui",
+      "role": "ui",
+      "dimension": "2d",
+      "source": "ai-generated",
+      "est_cost": 0,
+      "est_hours": 0.5,
+      "status": "delivered",
+      "license": "LicenseRef-factory-generated",
+      "license_status": "generated",
+      "origin": {
+        "kind": "generated",
+        "generator": "author:command"
+      },
+      "placeholder": false,
+      "production_ready": true,
+      "quality": {
+        "verdict": "pass",
+        "checks": [
+          {
+            "id": "svg.well-formed",
+            "status": "pass",
+            "summary": "well-formed <svg> with a viewBox"
+          },
+          {
+            "id": "svg.safe",
+            "status": "pass",
+            "summary": "no script, handler, embedded raster or external reference"
+          },
+          {
+            "id": "svg.not-primitive",
+            "status": "pass",
+            "summary": "45 drawing element(s); the bar for ui is 2"
+          },
+          {
+            "id": "svg.palette",
+            "status": "pass",
+            "summary": "10 colour(s), 2 off the palette"
+          },
+          {
+            "id": "svg.dimensions",
+            "status": "pass",
+            "summary": "800x600"
+          },
+          {
+            "id": "svg.avoid",
+            "status": "pass",
+            "summary": "none of the measurable avoid lines ('Neon glow', 'Purple-to-blue gradients on white', 'Emoji as iconography')"
+          }
+        ],
+        "primitive_only": false,
+        "parts": 45,
+        "colors": 10,
+        "author": "author:command"
+      },
+      "files": [
+        {
+          "path": "public/assets/ui/ui-kit.svg",
+          "format": "svg",
+          "bytes": 4789,
+          "content_hash": "sha256:4603815a5f19e17c6a42b6546864fcd3081078571652a8bfc3e7388767067acb",
+          "width": 800,
+          "height": 600
+        }
+      ],
+      "optimization": {
+        "applied": [
+          "svg-strip"
+        ],
+        "deferred": [
+          "texture-atlas"
+        ],
+        "bytes_saved": 712
+      },
+      "scope_tier": "mvp",
+      "notes": "9-slice panels, button states: idle, pressed, disabled"
+    },
+    {
+      "id": "icons",
+      "label": "Play, pause, retry, menu, sound, ad glyph",
+      "type": "icon",
+      "role": "icon",
+      "dimension": "2d",
+      "source": "procedural",
+      "est_cost": 0,
+      "est_hours": 1.0,
+      "status": "in-progress",
+      "license": "LicenseRef-factory-generated",
+      "license_status": "generated",
+      "origin": {
+        "kind": "generated",
+        "generator": "procedural"
+      },
+      "placeholder": true,
+      "production_ready": false,
+      "quality": {
+        "verdict": "skipped",
+        "checks": [
+          {
+            "id": "quality",
+            "status": "skipped",
+            "summary": "a placeholder is not judged; the final asset is still owed"
+          }
+        ],
+        "primitive_only": null,
+        "parts": null,
+        "colors": null,
+        "author": "placeholder"
+      },
+      "files": [
+        {
+          "path": "public/assets/icons/icons.placeholder.png",
+          "format": "png",
+          "bytes": 138,
+          "content_hash": "sha256:19e2d4f741f4c37b70922c2e99f3f8f45222dd3bafbe40a51b595e250be50e04",
+          "width": 48,
+          "height": 48
+        }
+      ],
+      "optimization": {
+        "applied": [],
+        "deferred": []
+      },
+      "scope_tier": "mvp",
+      "notes": "Single-colour SVG, 48px grid",
+      "issues": [
+        "author-rejected",
+        "placeholder"
+      ]
+    },
+    {
+      "id": "fonts",
+      "label": "Playfair Display (800) and Commissioner (500), numerals in Commissioner (700), tabular",
+      "type": "font",
+      "role": "font",
+      "dimension": "2d",
+      "source": "procedural",
+      "est_cost": 0,
+      "est_hours": 0.5,
+      "status": "in-progress",
+      "license": "LicenseRef-factory-generated",
+      "license_status": "generated",
+      "origin": {
+        "kind": "generated",
+        "generator": "procedural"
+      },
+      "placeholder": true,
+      "production_ready": false,
+      "quality": {
+        "verdict": "skipped",
+        "checks": [
+          {
+            "id": "quality",
+            "status": "skipped",
+            "summary": "a placeholder is not judged; the final asset is still owed"
+          }
+        ],
+        "primitive_only": null,
+        "parts": null,
+        "colors": null,
+        "author": "placeholder"
+      },
+      "reference": "system-ui, -apple-system, 'Segoe UI', Roboto, 'Noto Sans', sans-serif",
+      "scope_tier": "mvp",
+      "notes": "Files: Playfair Display (https://github.com/google/fonts/tree/main/ofl/playfairdisplay); Commissioner (https://github.com/google/fonts/tree/main/ofl/commissioner). SIL Open Font License 1.1, its OFL.txt shipped beside the files. WOFF2 (TTF accepted), subset to the locales in scope (subsets: latin, cyrillic - en, ru), bundled under public/assets and loaded through the runtime asset manifest with @font-face; awaited (document.fonts.load) before the first UI frame. System font stack until a font is chosen.",
+      "issues": [
+        "placeholder"
+      ]
+    },
+    {
+      "id": "wordmark",
+      "label": "Title wordmark in the display face",
+      "type": "ui",
+      "role": "ui",
+      "dimension": "2d",
+      "source": "ai-generated",
+      "est_cost": 0,
+      "est_hours": 0.5,
+      "status": "delivered",
+      "license": "LicenseRef-factory-generated",
+      "license_status": "generated",
+      "origin": {
+        "kind": "generated",
+        "generator": "author:command"
+      },
+      "placeholder": false,
+      "production_ready": true,
+      "quality": {
+        "verdict": "pass",
+        "checks": [
+          {
+            "id": "svg.well-formed",
+            "status": "pass",
+            "summary": "well-formed <svg> with a viewBox"
+          },
+          {
+            "id": "svg.safe",
+            "status": "pass",
+            "summary": "no script, handler, embedded raster or external reference"
+          },
+          {
+            "id": "svg.not-primitive",
+            "status": "pass",
+            "summary": "17 drawing element(s); the bar for ui is 2"
+          },
+          {
+            "id": "svg.palette",
+            "status": "pass",
+            "summary": "5 colour(s), 0 off the palette"
+          },
+          {
+            "id": "svg.dimensions",
+            "status": "pass",
+            "summary": "720x400"
+          },
+          {
+            "id": "svg.avoid",
+            "status": "pass",
+            "summary": "none of the measurable avoid lines ('Neon glow', 'Purple-to-blue gradients on white', 'Emoji as iconography')"
+          }
+        ],
+        "primitive_only": false,
+        "parts": 17,
+        "colors": 5,
+        "author": "author:command"
+      },
+      "files": [
+        {
+          "path": "public/assets/ui/wordmark.svg",
+          "format": "svg",
+          "bytes": 2639,
+          "content_hash": "sha256:7c78aeb01c9ffc08cce198e81d3769c201f2082f7f7dd691a689d1035945d9d0",
+          "width": 720,
+          "height": 400
+        }
+      ],
+      "optimization": {
+        "applied": [
+          "svg-strip"
+        ],
+        "deferred": [
+          "texture-atlas"
+        ],
+        "bytes_saved": 328
+      },
+      "scope_tier": "mvp",
+      "notes": "SVG"
+    },
+    {
+      "id": "music-think",
+      "label": "Unhurried loop under play",
+      "type": "music",
+      "dimension": "2d",
+      "source": "procedural",
+      "est_cost": 0,
+      "est_hours": 4.0,
+      "status": "in-progress",
+      "license": "LicenseRef-factory-generated",
+      "license_status": "generated",
+      "origin": {
+        "kind": "generated",
+        "generator": "procedural"
+      },
+      "placeholder": true,
+      "production_ready": false,
+      "quality": {
+        "verdict": "skipped",
+        "checks": [
+          {
+            "id": "quality",
+            "status": "skipped",
+            "summary": "a placeholder is not judged; the final asset is still owed"
+          }
+        ],
+        "primitive_only": null,
+        "parts": null,
+        "colors": null,
+        "author": "placeholder"
+      },
+      "files": [
+        {
+          "path": "public/assets/audio/music-think.placeholder.wav",
+          "format": "wav",
+          "bytes": 176444,
+          "content_hash": "sha256:f2bd007c5480f112bbffb3b7c8fb59f2f4d4c3c45c2ec9654773a2951718f0e6"
+        }
+      ],
+      "optimization": {
+        "applied": [],
+        "deferred": [
+          "audio-transcode"
+        ]
+      },
+      "scope_tier": "mvp",
+      "notes": "Plays on: Level start. Loops seamlessly. Procedural loop placeholder.",
+      "issues": [
+        "placeholder"
+      ]
+    },
+    {
+      "id": "sfx-slide",
+      "label": "Ice-slide whoosh, sustained for the slide's travel and ending in a soft thump against whatever stops it",
+      "type": "sfx",
+      "dimension": "2d",
+      "source": "procedural",
+      "est_cost": 0,
+      "est_hours": 0.5,
+      "status": "in-progress",
+      "license": "LicenseRef-factory-generated",
+      "license_status": "generated",
+      "origin": {
+        "kind": "generated",
+        "generator": "procedural"
+      },
+      "placeholder": true,
+      "production_ready": false,
+      "quality": {
+        "verdict": "skipped",
+        "checks": [
+          {
+            "id": "quality",
+            "status": "skipped",
+            "summary": "a placeholder is not judged; the final asset is still owed"
+          }
+        ],
+        "primitive_only": null,
+        "parts": null,
+        "colors": null,
+        "author": "placeholder"
+      },
+      "files": [
+        {
+          "path": "public/assets/audio/sfx-slide.placeholder.wav",
+          "format": "wav",
+          "bytes": 7100,
+          "content_hash": "sha256:9afa1d004f191e275fc56813c3aceae147c1397da44ac5a3281c77caba915434"
+        }
+      ],
+      "optimization": {
+        "applied": [],
+        "deferred": [
+          "audio-transcode"
+        ]
+      },
+      "scope_tier": "mvp",
+      "notes": "Plays on: Slide. Procedural 'whoosh' sfx.",
+      "issues": [
+        "placeholder"
+      ]
+    },
+    {
+      "id": "sfx-key",
+      "label": "Key-collected chime and door-opening clack",
+      "type": "sfx",
+      "dimension": "2d",
+      "source": "procedural",
+      "est_cost": 0,
+      "est_hours": 0.5,
+      "status": "in-progress",
+      "license": "LicenseRef-factory-generated",
+      "license_status": "generated",
+      "origin": {
+        "kind": "generated",
+        "generator": "procedural"
+      },
+      "placeholder": true,
+      "production_ready": false,
+      "quality": {
+        "verdict": "skipped",
+        "checks": [
+          {
+            "id": "quality",
+            "status": "skipped",
+            "summary": "a placeholder is not judged; the final asset is still owed"
+          }
+        ],
+        "primitive_only": null,
+        "parts": null,
+        "colors": null,
+        "author": "placeholder"
+      },
+      "files": [
+        {
+          "path": "public/assets/audio/sfx-key.placeholder.wav",
+          "format": "wav",
+          "bytes": 2028,
+          "content_hash": "sha256:cd514107548d4ae12a4b2488dad7a39079e718a8e4cc76f96a75e6699371bd83"
+        }
+      ],
+      "optimization": {
+        "applied": [],
+        "deferred": [
+          "audio-transcode"
+        ]
+      },
+      "scope_tier": "mvp",
+      "notes": "Plays on: Key collected or door opened. Procedural 'blip' sfx.",
+      "issues": [
+        "placeholder"
+      ]
+    },
+    {
+      "id": "sfx-crumble",
+      "label": "Ice crack and crumble",
+      "type": "sfx",
+      "dimension": "2d",
+      "source": "procedural",
+      "est_cost": 0,
+      "est_hours": 0.5,
+      "status": "in-progress",
+      "license": "LicenseRef-factory-generated",
+      "license_status": "generated",
+      "origin": {
+        "kind": "generated",
+        "generator": "procedural"
+      },
+      "placeholder": true,
+      "production_ready": false,
+      "quality": {
+        "verdict": "skipped",
+        "checks": [
+          {
+            "id": "quality",
+            "status": "skipped",
+            "summary": "a placeholder is not judged; the final asset is still owed"
+          }
+        ],
+        "primitive_only": null,
+        "parts": null,
+        "colors": null,
+        "author": "placeholder"
+      },
+      "files": [
+        {
+          "path": "public/assets/audio/sfx-crumble.placeholder.wav",
+          "format": "wav",
+          "bytes": 2028,
+          "content_hash": "sha256:41e7e2179ed55d68e56536e4efef7788fc257a7f6a92246319d3bf435cfffa17"
+        }
+      ],
+      "optimization": {
+        "applied": [],
+        "deferred": [
+          "audio-transcode"
+        ]
+      },
+      "scope_tier": "mvp",
+      "notes": "Plays on: A crumbling tile crumbles, or the penguin falls through a hole. Procedural 'blip' sfx.",
+      "issues": [
+        "placeholder"
+      ]
+    },
+    {
+      "id": "sfx-stars",
+      "label": "Star stamp chord",
+      "type": "sfx",
+      "dimension": "2d",
+      "source": "procedural",
+      "est_cost": 0,
+      "est_hours": 0.5,
+      "status": "in-progress",
+      "license": "LicenseRef-factory-generated",
+      "license_status": "generated",
+      "origin": {
+        "kind": "generated",
+        "generator": "procedural"
+      },
+      "placeholder": true,
+      "production_ready": false,
+      "quality": {
+        "verdict": "skipped",
+        "checks": [
+          {
+            "id": "quality",
+            "status": "skipped",
+            "summary": "a placeholder is not judged; the final asset is still owed"
+          }
+        ],
+        "primitive_only": null,
+        "parts": null,
+        "colors": null,
+        "author": "placeholder"
+      },
+      "files": [
+        {
+          "path": "public/assets/audio/sfx-stars.placeholder.wav",
+          "format": "wav",
+          "bytes": 4896,
+          "content_hash": "sha256:6713830fb5e6bfb6cd57930c7f15604fa0ecc5f061ae0e6180b9a1dee59f9f55"
+        }
+      ],
+      "optimization": {
+        "applied": [],
+        "deferred": [
+          "audio-transcode"
+        ]
+      },
+      "scope_tier": "mvp",
+      "notes": "Plays on: Level clear. Procedural 'coin' sfx.",
+      "issues": [
+        "placeholder"
+      ]
+    },
+    {
+      "id": "ui-tap",
+      "label": "Button press",
+      "type": "sfx",
+      "role": "ui",
+      "dimension": "2d",
+      "source": "procedural",
+      "est_cost": 0,
+      "est_hours": 0.5,
+      "status": "in-progress",
+      "license": "LicenseRef-factory-generated",
+      "license_status": "generated",
+      "origin": {
+        "kind": "generated",
+        "generator": "procedural"
+      },
+      "placeholder": true,
+      "production_ready": false,
+      "quality": {
+        "verdict": "skipped",
+        "checks": [
+          {
+            "id": "quality",
+            "status": "skipped",
+            "summary": "a placeholder is not judged; the final asset is still owed"
+          }
+        ],
+        "primitive_only": null,
+        "parts": null,
+        "colors": null,
+        "author": "placeholder"
+      },
+      "files": [
+        {
+          "path": "public/assets/audio/ui-tap.placeholder.wav",
+          "format": "wav",
+          "bytes": 1368,
+          "content_hash": "sha256:383078d62b967d4aced8a03c1bccbfa0aaaf9ac9a338a40c80c95859e85118ba"
+        }
+      ],
+      "optimization": {
+        "applied": [],
+        "deferred": [
+          "audio-transcode"
+        ]
+      },
+      "scope_tier": "mvp",
+      "notes": "Plays on: Any button. Procedural 'ui' sfx.",
+      "issues": [
+        "placeholder"
+      ]
+    },
+    {
+      "id": "ui-fanfare",
+      "label": "New best / level clear sting",
+      "type": "sfx",
+      "role": "ui",
+      "dimension": "2d",
+      "source": "procedural",
+      "est_cost": 0,
+      "est_hours": 0.5,
+      "status": "in-progress",
+      "license": "LicenseRef-factory-generated",
+      "license_status": "generated",
+      "origin": {
+        "kind": "generated",
+        "generator": "procedural"
+      },
+      "placeholder": true,
+      "production_ready": false,
+      "quality": {
+        "verdict": "skipped",
+        "checks": [
+          {
+            "id": "quality",
+            "status": "skipped",
+            "summary": "a placeholder is not judged; the final asset is still owed"
+          }
+        ],
+        "primitive_only": null,
+        "parts": null,
+        "colors": null,
+        "author": "placeholder"
+      },
+      "files": [
+        {
+          "path": "public/assets/audio/ui-fanfare.placeholder.wav",
+          "format": "wav",
+          "bytes": 11070,
+          "content_hash": "sha256:2b3a178ded1d1bcc04257d766d9cd1750c913bac5fdabddea0101a465ce91748"
+        }
+      ],
+      "optimization": {
+        "applied": [],
+        "deferred": [
+          "audio-transcode"
+        ]
+      },
+      "scope_tier": "mvp",
+      "notes": "Plays on: New best or level clear. Procedural 'powerup' sfx.",
+      "issues": [
+        "placeholder"
+      ]
+    }
+  ],
+  "pipeline": {
+    "2d": "Images packed into texture atlases per scene (the assets step packs named atlas groups); every file listed in public/assets/assets.json for the runtime to load; audio transcoded per the tech plan.",
+    "audio_format": [
+      "ogg",
+      "m4a"
+    ]
+  },
+  "total_est_cost": 0,
+  "total_est_hours": 15.5,
+  "budget": 400,
+  "complete": false,
+  "policy": {
+    "id": "asset-policy",
+    "version": "1.3.0",
+    "content_hash": "sha256:04a02e9dd181092294aa0b1bce5c39e9864c7f67cbca7ed06cb5bea9ef9b92bc"
+  },
+  "runtime_manifest": {
+    "path": "public/assets/assets.json",
+    "bytes": 8762,
+    "content_hash": "sha256:f1ad2eb56cdc396e6a7236d5f6d05ecd76e9eb155e0ef5d5de7a1fa1351fbacf"
+  },
+  "issues": [
+    {
+      "item_id": "key-door",
+      "code": "author-rejected",
+      "severity": "warning",
+      "message": "key-door-4: the author's file was not accepted after 2 repair round(s): the asset author printed no SVG; log: C:\\Users\\duycu\\wgf-runs\\genre-depth\\project\\.factory\\workflows\\new-game-20261002-202507-8c157a\\assets\\2-1\\author\\key-door-4-0.log"
+    },
+    {
+      "item_id": "key-door",
+      "code": "placeholder",
+      "severity": "info",
+      "message": "key-door: placeholder from procedural; the final asset is still owed"
+    },
+    {
+      "item_id": "icons",
+      "code": "author-rejected",
+      "severity": "warning",
+      "message": "icons-2: the author's file was not accepted after 2 repair round(s): svg.dimensions: 144x96, aspect 1.50; the spec's 48x48 is 1.00; variants.distinct: icons-2 has the silhouette of icons-1 (they differ by 0.00; the bar is 0.08) - draw this variant as its own shape and size, never a recolour of icons-1 or the same drawing with another numeral"
+    },
+    {
+      "item_id": "icons",
+      "code": "placeholder",
+      "severity": "info",
+      "message": "icons: placeholder from procedural; the final asset is still owed"
+    },
+    {
+      "item_id": "fonts",
+      "code": "placeholder",
+      "severity": "info",
+      "message": "fonts: placeholder from procedural; the final asset is still owed"
+    },
+    {
+      "item_id": "music-think",
+      "code": "placeholder",
+      "severity": "info",
+      "message": "music-think: placeholder from procedural; the final asset is still owed"
+    },
+    {
+      "item_id": "sfx-slide",
+      "code": "placeholder",
+      "severity": "info",
+      "message": "sfx-slide: placeholder from procedural; the final asset is still owed"
+    },
+    {
+      "item_id": "sfx-key",
+      "code": "placeholder",
+      "severity": "info",
+      "message": "sfx-key: placeholder from procedural; the final asset is still owed"
+    },
+    {
+      "item_id": "sfx-crumble",
+      "code": "placeholder",
+      "severity": "info",
+      "message": "sfx-crumble: placeholder from procedural; the final asset is still owed"
+    },
+    {
+      "item_id": "sfx-stars",
+      "code": "placeholder",
+      "severity": "info",
+      "message": "sfx-stars: placeholder from procedural; the final asset is still owed"
+    },
+    {
+      "item_id": "ui-tap",
+      "code": "placeholder",
+      "severity": "info",
+      "message": "ui-tap: placeholder from procedural; the final asset is still owed"
+    },
+    {
+      "item_id": "ui-fanfare",
+      "code": "placeholder",
+      "severity": "info",
+      "message": "ui-fanfare: placeholder from procedural; the final asset is still owed"
+    }
+  ],
+  "generation": {
+    "backends": [
+      {
+        "id": "2d-assets-mcp",
+        "available": false,
+        "note": "not configured (factory.assets.placeholders.2d-assets-mcp.command)",
+        "used": 0
+      },
+      {
+        "id": "procedural",
+        "available": true,
+        "used": 10
+      }
+    ]
+  }
+}

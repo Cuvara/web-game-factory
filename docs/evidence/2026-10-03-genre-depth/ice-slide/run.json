@@ -1,6 +1,6 @@
 {
   "run_id": "new-game-20261002-202507-8c157a",
-  "status": "RUNNING",
+  "status": "BLOCKED",
   "steps": {
     "research": "SUCCESS",
     "strategy": "SUCCESS",
@@ -9,7 +9,12 @@
     "tech-plan": "SUCCESS",
     "tech-plan-review": "SUCCESS",
     "init": "SUCCESS",
-    "greybox": "RUNNING"
+    "greybox": "SUCCESS",
+    "greybox-playability": "SUCCESS",
+    "assets": "SUCCESS",
+    "develop": "BLOCKED",
+    "playability": "SUCCESS",
+    "production-quality": "FAILED"
   },
   "blocked_reason": null
 }

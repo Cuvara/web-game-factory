@@ -2,7 +2,7 @@
 
 **Machine** release · **State** `submitting` · **Kind** automatic + human · **Role** release
 **Gate** G6 (on entry to `validating`)
-**Inputs** `release-manifest`, `platform-publication` · **Outputs** `platform-publication`
+**Inputs** `release-manifest`, `platform-publication`, `portal-registry` · **Outputs** `platform-publication`, `portal-registry`
 
 Submit the validated packages to each targeted portal.
 
@@ -43,6 +43,16 @@ required. It is a policy change, so it is recorded.
 **Secrets never live in source.** A portal session is captured once by a person, kept where
 the installation keeps secrets, named to the Factory by an environment variable, and redacted
 from every artifact, event and log.
+
+## One portal game per title and platform
+
+A title has at most one game on each portal; a later release is a new version of that game,
+never a new game. The `portal-registry` (`workspace/titles/<title-id>/portals.json`, one
+entry per platform) records the portal game id read back after creation, or linked by a
+person who created the game by hand, and is the first id tried before anything is created.
+A status only the portal can establish (pending review, verified, published, rejected) is
+recorded only with the portal's own status text as evidence. Changing a recorded game id is
+a person's act. Each platform's entry is independent of the others.
 
 ## Rejections are the valuable path
 

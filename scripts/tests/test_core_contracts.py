@@ -128,6 +128,8 @@ def workspace_instances():
             schema_id = "claim"
         elif relative == os.path.join("research", "games"):
             schema_id = "game-record"        # teardown records: the corpus's own format
+        elif os.path.basename(path) == "portals.json":
+            schema_id = "portal-registry"    # a title's portal games: a cursor, like state
         else:
             schema_id = os.path.basename(path)[:-len(".json")]
         found.append((path, schema_id))

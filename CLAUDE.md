@@ -496,6 +496,10 @@ seen by the engine — validate what you write there with ajv.
   market cells (demand, supply, saturation, competition, trend), counted patterns, the five
   opportunity generators, capability gaps, the research handoff strategy and design read,
   what the shipped corpus supports, and what is not implemented
+- `docs/new-game-quality-inheritance.md` — WS-12: every entry point and resume path of
+  `new-game` (CLI, plugin, `--run`, `--from`, `--force`, `decide`, autonomous profile, config
+  overlays, auto-approve), what each could skip, and how `core/reference/quality-policy.yaml`
+  closes it: the run's quality snapshot, the floor at G4 and release, the development class
 - `docs/env-vars.md` — every `WGF_*` environment variable: runtime and test, who reads it, default
 
 Documentation that contradicts a machine file is worse than none, because people believe it.

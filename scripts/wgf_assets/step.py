@@ -66,6 +66,7 @@ import re
 
 from wgflib import checkout, paths, provenance
 from wgflib.workflow import ArtifactOutput, StepResult, WorkflowStep
+from wgflib.workflow.quality import run_tier
 from wgflib.yamllite import YamlError, load_file
 
 from . import climax as climax_mod
@@ -302,9 +303,13 @@ class AssetsStep(WorkflowStep):
                                     variation=(int(getattr(context, "visit", 1) or 1)
                                                if rebuild else 0))
         # distinct_climax_art (core/reference/quality-benchmark.yaml) at the run's quality
-        # tier: `factory.strategy.quality_tier`, `release` when unset.
-        tier = settings.get("quality_tier") or _config_section(
-            context.config, "strategy").get("quality_tier") or "release"
+        # tier: the step's `with: quality_tier`, else the tier the run was started with (its
+        # quality snapshot), else `factory.strategy.quality_tier`, `release` when unset.
+        tier = ((self.params or {}).get("quality_tier")
+                or run_tier(getattr(context, "environment", None))
+                or settings.get("quality_tier")
+                or _config_section(context.config, "strategy").get("quality_tier")
+                or "release")
         climax_units = (climax_mod.climax_units(design)
                         if climax_mod.load_bar(tier) else None)
         pipeline = AssetPipeline(policy, store, backends, libraries, logger=context.logger,

@@ -58,7 +58,7 @@ from .step import WorkflowStep
 
 __all__ = ["HumanCheckpointStep", "irreversible_gates", "known_gates", "is_irreversible",
            "may_auto_approve", "required_artifacts", "timeout_window", "timeout_due",
-           "STOP_CHOICES", "TIMEOUT_MODE"]
+           "STOP_CHOICES", "TIMEOUT_MODE", "hold_for_person"]
 
 # Used only if gates.yaml cannot be read; the file is authoritative.
 _IRREVERSIBLE_FALLBACK = ("G4", "G6", "G7")
@@ -121,6 +121,37 @@ def required_artifacts(gate):
         if _canonical(gate_id) == wanted:
             return [t for t in (spec.get("required_artifacts") or []) if isinstance(t, str)]
     return []
+
+
+def hold_for_person(gate, inputs):
+    """Why `gate` must be decided by a person this time, from its evidence: the `why` of each
+    gates.yaml `hold_for_person_when` entry whose field is set in the run's newest artifact
+    of that type. [] when none holds, or when gates.yaml cannot be read (required_artifacts
+    already fails closed then)."""
+    try:
+        gates = load_gates()
+    except Exception:
+        return []
+    spec = next((s for g, s in gates.items() if _canonical(g) == _canonical(gate)), None)
+    reasons = []
+    for entry in (spec or {}).get("hold_for_person_when") or ():
+        if not isinstance(entry, dict) or not isinstance(entry.get("field"), str):
+            continue
+        artifact_type = entry.get("artifact")
+        if artifact_type not in ((getattr(inputs, "refs", None) or {})):
+            continue
+        try:
+            node = inputs.load(artifact_type)
+        except Exception:
+            # Evidence that cannot be read is not evidence of nothing: a person looks.
+            reasons.append(f"{artifact_type} cannot be read to check "
+                           f"{entry['field']}")
+            continue
+        for part in entry["field"].split("."):
+            node = node.get(part) if isinstance(node, dict) else None
+        if node not in (None, False, "", [], {}):
+            reasons.append(entry.get("why") or f"{artifact_type} {entry['field']} is set")
+    return reasons
 
 
 def timeout_window(gate, environment):
@@ -191,6 +222,11 @@ class HumanCheckpointStep(WorkflowStep):
                     f"{gate} is irreversible and needs a human decision. {prompt}",
                     choices=choices, gate=gate,
                 )
+            held = hold_for_person(gate, inputs) if decision.get("decided_by") != "human"                 else []
+            if held:
+                return StepResult.waiting_for_human(
+                    f"{gate} needs a person's decision this time: {'; '.join(held)}. "
+                    f"{prompt}", choices=choices, gate=gate, held=held)
             data = {"gate": gate, "decided_by": decision.get("decided_by")}
             if decision.get("mode"):
                 data["mode"] = decision["mode"]
@@ -211,6 +247,15 @@ class HumanCheckpointStep(WorkflowStep):
                 )
             return StepResult.success(record, route=choice, message=f"{choice} at {self.id}",
                                       **data)
+
+        held = hold_for_person(gate, inputs)
+        if held:
+            # Evidence a person must read (gates.yaml hold_for_person_when): no automatic
+            # approval and no timeout approval for this decision, whatever the run allows.
+            context.logger.warning("held for a person", gate=gate, reasons=held)
+            return StepResult.waiting_for_human(
+                f"{gate} needs a person's decision this time, not an automatic one: "
+                f"{'; '.join(held)}. {prompt}", choices=choices, gate=gate, held=held)
 
         auto = context.environment.get("auto_approve") or []
         if not isinstance(auto, (list, tuple)):

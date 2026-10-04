@@ -52,6 +52,7 @@ any. Nothing here names a step type, a gate or a route.
 
 from .. import budget
 from .config import ON_HUNG
+from . import quality
 from .events import Events
 from .model import RunStatus, StepOutcome, StepStatus, parse_timestamp
 
@@ -65,8 +66,10 @@ __all__ = ["state_problems", "params_problems", "decision_on_record", "GUARDED_P
 # `lifecycle_sync` is here for the other direction: it lets a run write into workspace/, so
 # it is never taken on the word of an edited state.json either. So is `idea`: the brief
 # decides what the run builds, and one added to state.json after the start was nobody's.
+# `quality` (the quality policy's snapshot, wgflib.workflow.quality) says whether the run may
+# be reported as a release: a class claimed in state.json alone is nobody's.
 GUARDED_PARAMS = ("mock", "mock_plan", "auto_approve", "timeout_auto_approve",
-                  "lifecycle_sync", "develop_budget", "idea")
+                  "lifecycle_sync", "develop_budget", "idea", "quality")
 
 _COUNTERS = ("attempts", "executions", "visits", "loop_base")
 _DECISION_KEYS = ("decision", "decided_by", "decided_at", "visit", "note", "mode")
@@ -116,6 +119,12 @@ def state_problems(state, definition):
         if budget.PARAM in state.params:
             problems += budget.shape_problems(state.params[budget.PARAM],
                                               f"params.{budget.PARAM}")
+        if "quality" in state.params:
+            taken = state.params["quality"]
+            if (not isinstance(taken, dict) or taken.get("class") not in quality.CLASSES
+                    or not isinstance(taken.get("tier"), str)):
+                problems.append("params.quality is not a quality snapshot (a mapping with a "
+                                "tier and a class of release or development)")
         if "idea" in state.params:
             idea = state.params["idea"]
             if not (isinstance(idea, str) and idea and idea == " ".join(idea.split())):

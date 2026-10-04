@@ -551,8 +551,11 @@ class BehindG4(ContinueIn):
         api = self.api(["pass"], g4=True)
         state = api.run(RunRequest(scope="release", project_id="fixture-game"))
         self.assertEqual(state.status, RunStatus.BLOCKED, state.message)
-        self.assertIn("no-qa-report", state.steps["release"].message or "")
-        # The step ran - a fresh run has no gate before it in its own scope - and refused.
+        # A fresh run has no gate before it in its own scope, but the quality floor holds it
+        # (core/reference/quality-policy.yaml): verify has not passed in this run, so the
+        # release step never runs. Were it to run, it would refuse: no-qa-report.
+        self.assertEqual(state.blocked_reason["kind"], "quality-floor")
+        self.assertIn("verify has not passed", state.steps["release"].message or "")
         self.assertIsNone(api.store.load(state.run_id).latest_artifact("release-manifest"))
         self.assertEqual(self.game.pnpm_calls(), [])
 

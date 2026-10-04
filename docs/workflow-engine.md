@@ -433,8 +433,11 @@ requested of a driver that then died is cleared by the resume, which is its answ
 cancel is still honoured.
 
 `--run <run-id>` is the other way to continue: it runs a command's slice *inside* an existing
-run, reusing its artifacts, and skips any step in that slice that already succeeded (`--force`
-to redo). `wgf init --run <id>` twice executes `init` once. It refuses a `RUNNING` run (resume
+run, reusing its artifacts, and skips any step in that slice that already succeeded and is
+still current - no step before it has succeeded since (`--force` to redo). `wgf init --run
+<id>` twice executes `init` once; `wgf new-game --run <id>` after a re-plan runs init and
+everything after it again, not only the gates (WS-12,
+[new-game-quality-inheritance.md](new-game-quality-inheritance.md)). It refuses a `RUNNING` run (resume
 it) and a cancelled one. Like `--from`, it is an explicit fresh start of that slice: every
 step gets a fresh `max_visits` budget and every route limit a fresh budget too (a plain
 resume refills only the route that stopped the run). The developer-session budget is never
@@ -688,6 +691,16 @@ An installation that wants approvals to happen unattended runs `wgf resume` on a
 for the runs `wgf runs --waiting --json` lists as eligible; the scheduler is not part of the
 engine.
 
+### Evidence that holds a gate for a person
+
+A reversible gate auto-approves, or approves on a timeout, only when its evidence lets it:
+gates.yaml `hold_for_person_when` (1.5.0) names fields of the gate's required artifacts that,
+when set, make this decision a person's - G3 with a tech plan whose develop budget leaves a
+planned shortfall. The checkpoint then waits for a person whatever `auto_approve` or
+`timeout_auto_approve` say, refuses an `automation` decision, and says why;
+`pending.held_for_person` lists the reasons and the timeout eligibility is dropped
+(`checkpoint.hold_for_person`).
+
 ## 10. Events and logs
 
 Every change is an event on one bus. Each is a flat JSON object appended to `events.jsonl`,
@@ -708,7 +721,7 @@ which is the structured log:
 | `WORKFLOW_STARTED` | `scope`, `start`, `params` (the run's params, corroborated on resume) |
 | `WORKFLOW_RESUMED` | `from_status`; `from_step`, `scope`, `force`, `definition_version` when relevant; `loop_limit` (the `blocked_reason` it gave one more pass); `resume_nonce` when it carries operator events |
 | `WORKFLOW_PAUSED` | `reason` (`requested`, `waiting_for_human`, `waiting_for_input`), `next_step` or `message` |
-| `WORKFLOW_BLOCKED` | `message` (a blocked step, a rejection, or the loop limit); `blocked` (the structured `blocked_reason`) at a loop limit |
+| `WORKFLOW_BLOCKED` | `message` (a blocked step, a rejection, the loop limit or the quality floor); `blocked` (the structured `blocked_reason`) at a loop limit or the quality floor |
 | `WORKFLOW_COMPLETED` | `exit`: `{step, route, outcome, next}`; `message` when a stopping result was routed to `$end` (G4's kill) |
 | `WORKFLOW_FAILED` | `message` |
 | `WORKFLOW_CANCELLED` | — (`step_id` is the cursor when the cancel was honoured) |
@@ -724,6 +737,7 @@ which is the structured log:
 | `TRANSITION` | `route`, `outcome`, `kind` (`goto end abort block wait`), `to` |
 | `DECISION_RECORDED` | `decision`, `decided_by`, `decided_at`, `visit`, `note`; `mode` (`timeout`) for a timeout approval |
 | `EVENT_LOG_RESTORED` | `step_id`; `change`: what another process did to `events.jsonl` while that step ran (lines appended, or recorded lines changed or removed). The engine put the log back as it wrote it, and the step failed, not retried |
+| `QUALITY_DOWNGRADED` | `reasons` (the `development_when` conditions of core/reference/quality-policy.yaml the configuration of this drive meets, not recorded before), `policy`; emitted when a drive begins. A run's class only goes down |
 | `ARTIFACT_CREATED` | the `ArtifactRef` |
 | `ARTIFACT_UPDATED` | the `ArtifactRef` (version ≥ 2) |
 | operator events | Not the engine's: a person's act recorded with `wgf resume` (`engine.resume(operator_events=...)`), `data` + `decided_by`, `decided_at`, and the `resume_nonce` of the `WORKFLOW_RESUMED` that follows. Refused for automation and for any of the names above. Today two, both wgflib/budget.py: `BUDGET_RAISED` (`max_sessions`, `max_cost`; `wgf resume --budget-sessions/--budget-cost`) and `BUDGET_ADOPTED` (`budget`; recorded by a person's resume of a run with no budget while `factory.develop.budget` is configured) |
@@ -1140,6 +1154,22 @@ The engine executes no code it was not given by the installation:
   errors when `../web-game-template` has no `node_modules` (`Cannot find package 'yaml'`).
   It predates the engine; `pnpm install` in the template resolves it.
 
+## The quality floor
+
+Every run but a `--mock` one is held to [core/reference/quality-policy.yaml](../core/reference/quality-policy.yaml)
+(`wgflib/workflow/quality.py`; the entry points it closes are in
+[new-game-quality-inheritance.md](new-game-quality-inheritance.md)). The engine applies it
+without naming a step: before a step at a stage under `floor.enforce_at` executes, every
+step under `floor.required_steps` before it in the definition must be current - its latest
+visit succeeded, nothing before it has succeeded since - or the run stops BLOCKED with
+`blocked_reason: {kind: quality-floor, step, problems}`. A step at a `production_only`
+stage does not execute in a `development` run while `production_only_when` holds (a live
+`factory.publish.mode`). The run records its tier and class at start
+(`params.quality`, corroborated like every param); a configuration that weakens a check
+lowers the class when a drive begins (`QUALITY_DOWNGRADED`), never raises it; every
+`ArtifactRef` carries the class it was written under (`quality`); and `wgf status` reports
+the class and whether the run is release-ready (`Quality:`; `quality` in `--json`).
+
 ## Upstream steps cannot be stepped over
 
 `continue_in` (`wgf <step> --run <id>`) and `resume --from <step>` start a step inside an
@@ -1151,7 +1181,8 @@ last success comes after the last success of every step before it: an approval c
 work that existed when it was given, not a strategy or tech plan regenerated afterwards. The same
 test applies when a whole run is continued (`wgf new-game --run <id>`): a gate whose approval
 predates redone upstream work is not skipped as "already completed" but entered again, and
-waits for a new decision. That is what keeps `wgf init --run <id>` from
+waits for a new decision - and since WS-12 so is every other step: one whose upstream was
+redone executes again instead of handing a gate the old work's evidence. That is what keeps `wgf init --run <id>` from
 scaffolding a repository after G3 was rejected, or while G4 is unanswered.
 
 A fresh run has passed no gate, so a fresh run started with an explicit `--from` is refused

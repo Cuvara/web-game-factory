@@ -111,8 +111,16 @@ def triage_gaps(triage):
         gaps.append({"field": field,
                      "question": (f"{finding.get('summary')} - {task.get('change')}"
                                   + (f" (accepted when: {acceptance})" if acceptance else "")),
-                     "assumed": None, "severity": "blocking", "finding": fid})
+                     "assumed": None, "severity": "blocking", "finding": fid,
+                     **_measured(finding.get("measured"), finding.get("bar"))})
     return gaps
+
+
+def _measured(observed, bar):
+    """What a finding observed against which bar, for the gap it stands for: the agent
+    repairing it reads both (wgf_design/agent.py). Only what the finding stated."""
+    return {key: value for key, value in (("observed", observed), ("bar", bar))
+            if value is not None}
 
 
 def _brief_dimension(brief):
@@ -511,7 +519,9 @@ class DesignStep(WorkflowStep):
                       None)
         if not current or judged != current:
             return []
-        return [dict(f["design_gap"]) for f in report.get("findings") or []
+        return [dict(f["design_gap"], finding=f.get("id"),
+                     **_measured(f.get("observed"), f.get("bar")))
+                for f in report.get("findings") or []
                 if isinstance(f, dict) and f.get("route") == "design-gap"
                 and isinstance(f.get("design_gap"), dict)]
 

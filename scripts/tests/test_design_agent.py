@@ -43,7 +43,8 @@ if mode == "env":
     mode = "improve"
 with open(request_path, encoding="utf-8") as handle:
     request = json.load(handle)
-draft = request["starting_draft"]
+# A gap repair has no starting draft in the request: the draft file holds it.
+draft = request.get("starting_draft")
 if mode == "improve" or mode == "stdout":
     draft["fantasy"] = "Improved by the agent: " + draft["fantasy"]
     draft["build_spec"]["failure"]["feedback"] = "Agent-tuned hit-stop, shake and a low thud."
@@ -112,9 +113,15 @@ elif mode == "gaps":
     # Repairing a design that was built: the seeded draft is the previous design itself.
     with open(draft_path, encoding="utf-8") as handle:
         seeded = json.load(handle)
+    # The request names the previous design by path (the draft file), not a second copy.
+    with open(request["previous_design"], encoding="utf-8") as handle:
+        previous = json.load(handle)
+    with open(request["gaps_file"], encoding="utf-8") as handle:
+        gaps_file = json.load(handle)
     with open(os.path.join(os.path.dirname(draft_path), "gaps.json"), "w") as handle:
-        json.dump({"gaps": request.get("gaps"),
-                   "previous_fantasy": (request.get("previous_design") or {}).get("fantasy"),
+        json.dump({"gaps": request.get("gaps"), "gaps_file": gaps_file,
+                   "first_keys": list(request)[:2],
+                   "previous_fantasy": previous.get("fantasy"),
                    "seeded_fantasy": seeded.get("fantasy"),
                    "seeded_keys": sorted(seeded)}, handle)
     draft = seeded
@@ -357,7 +364,10 @@ class TheModuleStillJudges(AgentCase):
         with open(os.path.join(self.scratch, "run", "design", "gaps.json"),
                   encoding="utf-8") as handle:
             seen = json.load(handle)
-        self.assertEqual(seen["gaps"], gaps)
+        self.assertEqual([(g["id"], g["field"], g["question"]) for g in seen["gaps"]],
+                         [("gap-1", gaps[0]["field"], gaps[0]["question"])])
+        self.assertEqual(seen["gaps_file"]["gaps"], seen["gaps"])
+        self.assertEqual(seen["first_keys"], ["gaps", "gaps_file"])
         self.assertEqual(seen["previous_fantasy"], previous["fantasy"])
         # The file the agent edits is the previous design, without what the module owns.
         self.assertEqual(seen["seeded_fantasy"], previous["fantasy"])
@@ -367,10 +377,98 @@ class TheModuleStillJudges(AgentCase):
         self.assertEqual(
             draft["build_spec"]["content"]["units"][0]["parameters"]["answered"], 1)
         request = self.request_of("1-1-gaps")
-        self.assertEqual(request["gaps"], gaps)
-        self.assertEqual(request["previous_design"]["fantasy"], previous["fantasy"])
+        self.assertEqual(request["gaps"], seen["gaps"])
+        self.assertEqual(request["previous_design"], request["draft"])
+        # A gap repair keeps the identity it has: no kits are offered, and the strategy is a
+        # file of its own.
+        self.assertNotIn("identity_kits", request)
+        self.assertNotIn("starting_draft", request)
+        with open(request["strategy"], encoding="utf-8") as handle:
+            self.assertEqual(json.load(handle), design_tests.load_strategy())
         from wgf_design.agent import PROMPT_GAPS
         self.assertIn("`gaps`", PROMPT_GAPS)
+
+    def large_strategy_gaps(self):
+        """The 2D validation run's design visit 5 (2026-10-04): a strategy and previous design
+        large enough that the request ran to 12,778 lines, with the gaps after both."""
+        previous = design_tests.run_step(design_tests.load_strategy()).artifacts[0].content
+        strategy = design_tests.load_strategy()
+        strategy["notes"] = ["market note %d: %s" % (n, "x" * 200) for n in range(400)]
+        gaps = [{"field": "build_spec.content.units[w1-l2].success",
+                 "question": "How does a tracking bot clear level 2 in under 40 s?",
+                 "severity": "minor", "assumed": "The rebound rule is kept exactly."},
+                {"field": "build_spec.content.units", "question": "Three worlds, not one",
+                 "severity": "blocking", "observed": 12, "bar": 32,
+                 "finding": "content-sufficiency:units"}]
+        return strategy, previous, gaps
+
+    def test_a_large_request_puts_the_gaps_first(self):
+        strategy, previous, gaps = self.large_strategy_gaps()
+        AgentAuthor().draft(self.brief(config=self.config("gaps"), gaps=gaps,
+                                       previous_design=previous, strategy=strategy))
+        path = os.path.join(self.scratch, "run", "design", "1-1-gaps.request.json")
+        with open(path, encoding="utf-8") as handle:
+            text = handle.read()
+        request = json.loads(text)
+        self.assertEqual(list(request)[:5],
+                         ["gaps", "gaps_file", "instructions", "draft", "previous_design"])
+        # The first bytes an agent pages are the gaps: ids, fields, observed against bar.
+        head = text[:4096]
+        for gap_id, gap in zip(("gap-1", "gap-2"), gaps):
+            self.assertIn(f'"id": "{gap_id}"', head)
+            self.assertIn(json.dumps(gap["field"]), head)
+            self.assertIn(json.dumps(gap["question"]), head)
+        self.assertIn('"observed": 12', head)
+        self.assertIn('"bar": 32', head)
+        self.assertEqual(list(request["gaps"][1])[:6],
+                         ["id", "field", "question", "severity", "observed", "bar"])
+        # The bulk is referenced, not inlined: neither the strategy nor the previous design
+        # is in the request, so it is smaller than the strategy alone.
+        self.assertLess(len(text), len(json.dumps(strategy)) + len(json.dumps(previous)))
+        self.assertNotIn("market note 399", text)
+        self.assertEqual(request["strategy"],
+                         os.path.join(os.path.dirname(path), "1-1-gaps.strategy.json"))
+
+    def test_the_prompt_names_the_gap_file_first(self):
+        strategy, previous, gaps = self.large_strategy_gaps()
+        config = self.config("gaps")
+        config["design"]["agent"]["argv"].append("{prompt}")
+        AgentAuthor().draft(self.brief(config=config, gaps=gaps, previous_design=previous,
+                                       strategy=strategy))
+        directory = os.path.join(self.scratch, "run", "design")
+        with open(os.path.join(directory, "argv.json"), encoding="utf-8") as handle:
+            prompt = json.load(handle)[0]
+        gaps_file = os.path.join(directory, "1-1-gaps.gaps.json")
+        self.assertTrue(prompt.startswith("This visit repairs 2 design gap(s)"), prompt[:200])
+        self.assertIn(gaps_file, prompt[:600])
+        self.assertTrue(os.path.isfile(gaps_file))
+        # A gap repair is not asked to choose a new look.
+        from wgf_design.agent import PROMPT_ART_KIT
+        self.assertNotIn(PROMPT_ART_KIT, prompt)
+
+    def test_gaps_left_unanswered_fail_naming_each_gap(self):
+        from wgf_design import AuthorError
+        strategy, previous, gaps = self.large_strategy_gaps()
+        with self.assertRaises(AuthorError) as caught:
+            AgentAuthor().draft(self.brief(config=self.config("nothing"), gaps=gaps,
+                                           previous_design=previous, strategy=strategy))
+        message = str(caught.exception)
+        self.assertIn("unchanged", message)
+        self.assertIn("none of the 2 design gap(s) it was given is answered", message)
+        self.assertIn("gap-1 at build_spec.content.units[w1-l2].success", message)
+        self.assertIn("gap-2 at build_spec.content.units", message)
+        self.assertIn("1-1-gaps.gaps.json", message)
+
+    def test_a_triage_gap_carries_what_was_observed_against_the_bar(self):
+        from wgf_design.step import triage_gaps
+        gaps = triage_gaps({
+            "selected": {"route": "design", "findings": ["quality-gate:content-units"]},
+            "findings": [{"id": "quality-gate:content-units", "dimension": "content",
+                          "summary": "12 units", "measured": 12, "bar": 32,
+                          "source": {"producer": "quality-report"},
+                          "task": {"change": "more units", "acceptance": ["32 units"]}}]})
+        self.assertEqual((gaps[0]["observed"], gaps[0]["bar"], gaps[0]["finding"]),
+                         (12, 32, "quality-gate:content-units"))
 
     def test_gaps_without_the_previous_design_are_refused(self):
         from wgf_design import AuthorError
@@ -681,7 +779,7 @@ class ARevisionStartsFromTheRunsDesign(AgentCase):
                                          "truncated": False}}))
         request = self.request_of("1-1-gaps")
         self.assertNotIn("revision", request)
-        self.assertEqual(request["gaps"], gaps)
+        self.assertEqual([g["field"] for g in request["gaps"]], [gaps[0]["field"]])
 
 
 class TheStrategyDelta(unittest.TestCase):

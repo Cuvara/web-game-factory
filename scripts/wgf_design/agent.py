@@ -17,7 +17,9 @@ Opt-in. An installation selects it in workspace/config/factory.yaml:
 JSON: strategy, resolved platforms, title id, and the starting draft - the built-in
 archetype's draft as a schema-shaped starting point for a first design, or, when the run
 already holds a game-design, that design to revise, with the strategy's change since it in
-`revision`: revision.py), {draft} (where to write the draft JSON), {prompt} (a
+`revision`: revision.py; on a design-gap repair, the gaps first, then the instructions, with the
+previous design named as the draft file and the strategy as a file of its own), {draft}
+(where to write the draft JSON), {prompt} (a
 one-paragraph instruction), and {request_rule} / {draft_rule}: the same paths as a host
 permission rule names them, `//` and the POSIX form (`//c/Users/...` on Windows;
 wgflib.permpath) - `Edit({draft_rule})` restricts the agent's writes to the draft on every
@@ -159,12 +161,19 @@ PROMPT_CONTENT = (
       " build_spec.content.secondary_goals. A design short of its tier fails; it is never"
       " passed at a lower tier than the strategy committed to."
 )
-# Appended when a prototype report named gaps in the design: answer each one where it belongs.
+# Put FIRST when a report named gaps in the design: what this visit must act on. The gaps are
+# also in their own small file and are the request's first key, so an agent that pages a large
+# request meets them before anything else.
 PROMPT_GAPS = (
-    " The build found gaps in this design (the request's `gaps`): questions the developer "
-    "could not answer from it. {draft} holds the design they were found in (the request's "
-    "`previous_design`). Answer each gap at the field it names - a number, a rule, a unit, a "
-    "state - and change nothing else: this is the same game, specified further."
+    "This visit repairs {count} design gap(s) the build found in this game's design. They are"
+    " listed, each with its id and the field it names, in {gaps} (also the request's first"
+    " key, `gaps`): questions the developer could not answer from the design, or bars it fell"
+    " short of (observed vs bar). {draft} holds the design they were found in (the request's"
+    " `previous_design` names that file). Answer each gap at the field it names - a number, a"
+    " rule, a unit, a state - and change nothing else: this is the same game, specified"
+    " further. The rest of the request at {request} is reference (the strategy is in its own"
+    " file, named by the request's `strategy`); it is large, so search it rather than page"
+    " through it. What follows is how the design is judged."
 )
 
 # Appended always: the finished design is a game-design artifact, validated against its schema.
@@ -243,6 +252,9 @@ KEEP = ("identity", "palette", "fonts", "assets", "controls", "ui")
 
 DEFAULTS = {"argv": [], "timeout_seconds": 1800, "idle_timeout_seconds": 600,
             "draft_from": "file"}
+# The order a gap's keys are written in: what to find and change first.
+_GAP_KEYS = ("id", "field", "question", "severity", "observed", "bar", "assumed", "unit",
+             "finding")
 _MAX_BYTES = 4 * 1024 * 1024
 
 
@@ -272,6 +284,19 @@ def _feature_candidates(strategy, family, platforms):
                         platform_support=feature_check.platform_support(entry, platforms),
                         estimate={key: entry.get(key) for key in (
                             "player_value", "cost_h", "monetization_impact", "qa_cost")}))
+    return out
+
+
+def gap_entries(gaps):
+    """The gaps as the agent is given them: each with an id (its own, else `gap-<n>`) and its
+    field first, then what was observed against which bar, then everything else it carried."""
+    out = []
+    for number, gap in enumerate(gaps, 1):
+        gap = dict(gap) if isinstance(gap, dict) else {"question": str(gap)}
+        gap.setdefault("id", f"gap-{number}")
+        entry = {key: gap[key] for key in _GAP_KEYS if gap.get(key) is not None}
+        entry.update({key: value for key, value in gap.items() if key not in entry})
+        out.append(entry)
     return out
 
 
@@ -369,7 +394,7 @@ class AgentAuthor(DesignAuthor):
             if os.path.exists(stale):
                 os.remove(stale)
 
-        gaps = list(brief.get("gaps") or [])
+        gaps = gap_entries(brief.get("gaps") or [])
         previous = brief.get("previous_design")
         if gaps and not isinstance(previous, dict):
             raise AuthorError("the design step passed design gaps without the design they were "
@@ -403,61 +428,85 @@ class AgentAuthor(DesignAuthor):
         genre = starting.get("genre") if isinstance(starting.get("genre"), dict) else {}
         family = (models.get("families") or {}).get(genre.get("family")) or {}
         profile_name = genre.get("session_profile") or "standard"
-        request = {"title_id": brief.get("title_id"), "strategy": brief.get("strategy"),
-                   "platforms": [{"id": p.id, "role": p.role, "version": p.version,
-                                  "profile": p.profile} for p in brief.get("platforms") or []],
-                   "starting_draft": starting,
-                   "required_keys": list(REQUIRED_KEYS),
-                   "required_build_spec_keys": list(BUILD_SPEC_KEYS),
-                   # What the finished design is validated against: every enum value and
-                   # required key. Shared definitions are beside it, under shared/.
-                   "schema": os.path.join(paths.ARTIFACTS, "game-design.schema.json"),
-                   # The bars the production art and UI are held to (presentation.py), and
-                   # the craft guide they come from.
-                   "production_art": {key: rules.get(key) for key in ("production_art", "ui")},
-                   "craft": os.path.join(paths.CORE, "craft", "production-art-and-ui.md"),
-                   # The bars depth is held to (depth.py), and the craft guide behind them.
-                   "depth": load_depth_rules(),
-                   "depth_craft": os.path.join(paths.CORE, "craft",
-                                               "retention-and-progression.md"),
-                   # Frames of finished games.
-                   "quality_bar": quality_bar.frames(),
-                   "quality_bar_qualities": quality_bar.qualities(),
-                   # The genre family the content is held to, exactly as content.py reads it -
-                   # its unit kinds, models, ending, axes, win and lose shape, unit counts,
-                   # variety dimensions and mastery model. `seed` is the built-in author's own
-                   # starting design and is left out: the agent designs, it does not copy.
-                   "genre_model": {key: value for key, value in family.items()
-                                   if key != "seed"},
-                   # What the content check measures, and the bars it measures against.
-                   "content_rules": {
-                       "rules": [{"id": rule_id, "meaning": meaning}
-                                 for rule_id, meaning in content_rules.RULES],
-                       "variety": dict(models.get("variety") or {},
-                                       **(family.get("variety") or {})),
-                       "session_profile": dict(
-                           (models.get("session_profiles") or {}).get(profile_name) or {},
-                           name=profile_name),
-                       # The quality tier and what it asks for (content.tier_*): the
-                       # strategy's budget and the benchmark's bars at the tier.
-                       "tier": _tier_request(starting, brief.get("strategy")),
-                   },
-                   "content_craft": os.path.join(paths.CORE, "craft",
-                                                 "content-and-level-design.md"),
-                   # The features the design must evaluate (features.py), with what the
-                   # catalogue and the required platforms say of each.
-                   "feature_catalogue": feature_check.CATALOGUE_PATH,
-                   "feature_candidates": _feature_candidates(
-                       brief.get("strategy") or {}, genre.get("family"),
-                       brief.get("platforms") or [])}
+        request = {}
+        gaps_path = os.path.join(directory, f"{stem}.gaps.json")
+        strategy_path = os.path.join(directory, f"{stem}.strategy.json")
+        if gaps:
+            # What this visit must act on comes first and small; the bulk is reference. The
+            # draft file holds the previous design, so it is named, not copied in twice, and
+            # the strategy is a file of its own.
+            request.update({
+                "gaps": gaps,
+                "gaps_file": gaps_path,
+                "instructions": PROMPT_GAPS.format(count=len(gaps), gaps=gaps_path,
+                                                   draft=draft_path, request=request_path),
+                "draft": draft_path,
+                "previous_design": draft_path})
+            with open(strategy_path, "w", encoding="utf-8", newline="\n") as handle:
+                json.dump(brief.get("strategy"), handle, indent=2, ensure_ascii=False,
+                          default=str)
+            with open(gaps_path, "w", encoding="utf-8", newline="\n") as handle:
+                json.dump({"gaps": gaps, "draft": draft_path, "request": request_path,
+                           "instructions": request["instructions"]},
+                          handle, indent=2, ensure_ascii=False, default=str)
+        request.update({"title_id": brief.get("title_id"),
+                       "strategy": strategy_path if gaps else brief.get("strategy"),
+                       "platforms": [{"id": p.id, "role": p.role, "version": p.version,
+                                      "profile": p.profile} for p in brief.get("platforms") or []],
+                       "required_keys": list(REQUIRED_KEYS),
+                       "required_build_spec_keys": list(BUILD_SPEC_KEYS),
+                       # What the finished design is validated against: every enum value and
+                       # required key. Shared definitions are beside it, under shared/.
+                       "schema": os.path.join(paths.ARTIFACTS, "game-design.schema.json"),
+                       # The bars the production art and UI are held to (presentation.py), and
+                       # the craft guide they come from.
+                       "production_art": {key: rules.get(key) for key in ("production_art", "ui")},
+                       "craft": os.path.join(paths.CORE, "craft", "production-art-and-ui.md"),
+                       # The bars depth is held to (depth.py), and the craft guide behind them.
+                       "depth": load_depth_rules(),
+                       "depth_craft": os.path.join(paths.CORE, "craft",
+                                                   "retention-and-progression.md"),
+                       # Frames of finished games.
+                       "quality_bar": quality_bar.frames(),
+                       "quality_bar_qualities": quality_bar.qualities(),
+                       # The genre family the content is held to, exactly as content.py reads it -
+                       # its unit kinds, models, ending, axes, win and lose shape, unit counts,
+                       # variety dimensions and mastery model. `seed` is the built-in author's own
+                       # starting design and is left out: the agent designs, it does not copy.
+                       "genre_model": {key: value for key, value in family.items()
+                                       if key != "seed"},
+                       # What the content check measures, and the bars it measures against.
+                       "content_rules": {
+                           "rules": [{"id": rule_id, "meaning": meaning}
+                                     for rule_id, meaning in content_rules.RULES],
+                           "variety": dict(models.get("variety") or {},
+                                           **(family.get("variety") or {})),
+                           "session_profile": dict(
+                               (models.get("session_profiles") or {}).get(profile_name) or {},
+                               name=profile_name),
+                           # The quality tier and what it asks for (content.tier_*): the
+                           # strategy's budget and the benchmark's bars at the tier.
+                           "tier": _tier_request(starting, brief.get("strategy")),
+                       },
+                       "content_craft": os.path.join(paths.CORE, "craft",
+                                                     "content-and-level-design.md"),
+                       # The features the design must evaluate (features.py), with what the
+                       # catalogue and the required platforms say of each.
+                       "feature_catalogue": feature_check.CATALOGUE_PATH,
+                       "feature_candidates": _feature_candidates(
+                           brief.get("strategy") or {}, genre.get("family"),
+                           brief.get("platforms") or [])})
+        if not gaps:
+            # On a gap repair the starting draft is the draft file itself.
+            request["starting_draft"] = starting
         if revision:
             # The identity is kept, so no other look is offered.
             request["revision"] = {"revises_version": revision.get("version"),
                                    "revises": revision.get("artifact_id"),
                                    "strategy_delta": revision.get("strategy_delta"),
                                    "keep": list(KEEP)}
-        else:
-            # The committed looks to choose from.
+        elif not gaps:
+            # The committed looks to choose from. A gap repair keeps the identity it has.
             request["identity_kits"] = _kits((starting.get("scope") or {}).get("locales"))
         if idea:
             request["brief"] = idea
@@ -470,9 +519,6 @@ class AgentAuthor(DesignAuthor):
             # The content shape research coded for this cell, with its tiers and claims: the
             # family, what one unit is, the progression, the difficulty shape and the axes.
             request["design_constraints"] = constraints
-        if gaps:
-            request["gaps"] = gaps
-            request["previous_design"] = previous
         with open(request_path, "w", encoding="utf-8", newline="\n") as handle:
             json.dump(request, handle, indent=2, ensure_ascii=False, default=str)
 
@@ -490,17 +536,16 @@ class AgentAuthor(DesignAuthor):
                               indent=2, ensure_ascii=False, default=str) + "\n"
             with open(draft_path, "w", encoding="utf-8", newline="\n") as handle:
                 handle.write(seed)
-        values["prompt"] = (PROMPT_STDOUT if stdout_mode else PROMPT).format(**values)
+        values["prompt"] = (request["instructions"] + " " if gaps else "") + (
+            PROMPT_STDOUT if stdout_mode else PROMPT).format(**values)
         if idea:
             values["prompt"] += PROMPT_BRIEF_REVISION if revision else PROMPT_BRIEF
         if revision:
             values["prompt"] += PROMPT_REVISION.format(version=revision.get("version"))
         values["prompt"] += PROMPT_CONCEPT + PROMPT_SCHEMA + PROMPT_ART
-        if not revision:
+        if not revision and not gaps:
             values["prompt"] += PROMPT_ART_KIT
         values["prompt"] += PROMPT_DEPTH + PROMPT_CONTENT + PROMPT_FEATURES
-        if gaps:
-            values["prompt"] += PROMPT_GAPS.format(draft=draft_path)
         if repair:
             values["prompt"] += PROMPT_REPAIR
         try:
@@ -537,6 +582,13 @@ class AgentAuthor(DesignAuthor):
             unchanged_ok = (bool(revision) and not repair and
                             (revision.get("strategy_delta") or {}).get("unchanged") is True)
             if text == seed and not unchanged_ok:
+                if gaps:
+                    raise AuthorError(
+                        f"the design agent left the draft at {draft_path} unchanged, so none "
+                        f"of the {len(gaps)} design gap(s) it was given is answered: "
+                        + "; ".join(f"{g['id']} at {g.get('field')}" for g in gaps[:12])
+                        + (f"; and {len(gaps) - 12} more" if len(gaps) > 12 else "")
+                        + f" (gaps: {gaps_path}; log: {log_path})")
                 raise AuthorError(f"the design agent left the draft at {draft_path} "
                                   f"unchanged")
         problems = check_shape(draft)

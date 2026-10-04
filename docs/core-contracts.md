@@ -253,7 +253,14 @@ wrong.
    directory), so the agent author answers each gap at its field and the design is repaired
    rather than replaced - exercised live on 2026-10-03. A deterministic author refuses the
    brief by name, so an installation without an agent author sees the gaps and stops, which
-   is the honest outcome rather than the same design returned.
+   is the honest outcome rather than the same design returned. The agent's request puts the
+   gaps first (each with an id, the field it names, and observed against bar where a finding
+   measured one), then the instructions; the previous design is the draft file itself and the
+   strategy a file of its own, both named by path, and the gaps are also written alone to
+   `<visit>-<attempt>-gaps.gaps.json`, which the prompt names first. A gap visit whose draft
+   comes back unchanged fails naming every gap it was given - on 2026-10-04 a 12,778-line
+   request with the gaps after the previous design left an agent with only Read and Edit
+   unable to find them.
 
 ---
 

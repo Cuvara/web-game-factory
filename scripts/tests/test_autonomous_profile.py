@@ -182,6 +182,23 @@ class TheDesignAgent(unittest.TestCase):
         self.assertEqual(design["agent"], self.commented_design_agent())
         self.assertEqual(load_config(SHIPPED).section("design")["author"], "archetype")
 
+    def test_the_design_agent_can_search_but_edits_only_the_draft(self):
+        """Design visit 5 of the 2D validation run (2026-10-04): an agent with Read and Edit
+        only paged a 12,778-line request and never found the gaps. Glob and Grep are
+        read-only; Edit stays limited to the draft file."""
+        argv = self.commented_design_agent()["argv"]
+        tools = argv[argv.index("--tools") + 1].split(",")
+        allowed = argv[argv.index("--allowedTools") + 1].split(",")
+        denied = argv[argv.index("--disallowedTools") + 1].split(",")
+        for tool in ("Grep", "Glob", "Read"):
+            self.assertIn(tool, tools)
+            self.assertIn(tool, allowed)
+        self.assertIn("Edit({draft_rule})", allowed)
+        self.assertNotIn("Edit", allowed)
+        for tool in ("Write", "Bash", "NotebookEdit"):
+            self.assertNotIn(tool, tools)
+            self.assertIn(tool, denied)
+
     def test_the_agent_is_told_what_the_module_checks(self):
         from wgf_design import agent
         self.assertIn("concept", agent.PROMPT_CONCEPT)

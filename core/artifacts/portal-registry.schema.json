@@ -9,7 +9,7 @@
     "kind": "state",
     "producer": "release:submitting",
     "updated_by": ["release:submitting"],
-    "consumers": ["release:submitting"],
+    "consumers": ["release:submitting", "release:validating", "title:prototype"],
     "format": "json",
     "version": "1.0.0",
     "repo_path": "workspace/titles/{title}/portals.json",

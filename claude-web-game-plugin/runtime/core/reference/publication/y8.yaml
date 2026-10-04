@@ -62,6 +62,11 @@ submission:
   identity:
     portal_id_from: [registry, config:game_id, config:app_id, title]
     title_match: exact-casefold
+    # Created before built: the Studio issues the Game ID and the App ID on create, and the
+    # build carries both. The first visit creates (or finds) the game and stops IDS_ISSUED;
+    # the sdk step writes the ids into game.config.yaml and the build is made again.
+    issued_on_create: [game_id, app_id]
+    build_config: {game_id: "platforms[].game_id", app_id: "platforms[].app_id"}
     basis: hypothesis
 
   flow:

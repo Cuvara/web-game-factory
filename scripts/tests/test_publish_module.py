@@ -107,6 +107,10 @@ SCENARIOS = {
 }
 
 
+SUBMIT_DECISION = {"decision": "submit", "decided_by": "human", "note": "looked at the draft",
+                   "decided_at": "2026-10-04T10:00:00Z"}
+
+
 class FakeConsole:
     """Stands in for `pnpm exec playwright test`: records the flow, writes the scenario's
     result. `crash` writes nothing and exits 1; `no_browser` prints Playwright's missing
@@ -145,6 +149,53 @@ class FakeConsole:
         return ProcessResult(argv, returncode=0, stdout="1 passed")
 
 
+class PublishInputs(Inputs):
+    """Inputs with one platform-publication per platform (StepInputs.every)."""
+
+    def __init__(self, artifacts, publications=None):
+        super().__init__(artifacts)
+        from wgflib.workflow.model import ArtifactRef
+        records = list(publications or [artifacts["platform-publication"]])
+        self.records = {}
+        self._every = []
+        for n, record in enumerate(records):
+            ref = ArtifactRef(id=f"platform-publication-{record['platform_id']}",
+                              type="platform-publication", version=1,
+                              location=f"artifacts/p{n}.json", checksum="sha256:" + "0" * 64,
+                              content_hash=record["provenance"]["content_hash"], seq=n)
+            self.records[ref.id] = record
+            self._every.append(ref)
+
+    def every(self, artifact_type):
+        if artifact_type == "platform-publication":
+            return list(self._every)
+        return [self.refs[artifact_type]] if artifact_type in self.refs else []
+
+    def load_ref(self, ref):
+        if ref.type == "platform-publication":
+            return self.records[ref.id]
+        return self.contents.get(ref.type)
+
+
+def listing_placeholders():
+    """The store-listing and listing-validation-report a --mock run carries."""
+    from wgflib import provenance
+    from wgflib.workflow.mock import DEFAULT_EPOCH, FIXTURES, FIXTURE_SLUG
+    out = {}
+    for n, artifact_type in enumerate(("store-listing", "listing-validation-report"), 1):
+        with open(os.path.join(FIXTURES, f"{artifact_type}.json"), encoding="utf-8") as handle:
+            body = json.loads(handle.read().replace(FIXTURE_SLUG, "fixture-game"))
+        artifact = {"provenance": provenance.build(
+            artifact_type,
+            artifact_id=provenance.artifact_id(artifact_type, "fixture-game", DEFAULT_EPOCH, n),
+            produced_by=provenance.producer("release"), produced_at=DEFAULT_EPOCH,
+            inputs=[], title_id="fixture-game")}
+        artifact.update(body)
+        provenance.seal(artifact)
+        out[artifact_type] = artifact
+    return out
+
+
 class PublishCase(unittest.TestCase):
     """A drafted release in a fixture game repository, and the inputs the publish steps read."""
 
@@ -164,6 +215,12 @@ class PublishCase(unittest.TestCase):
         self.run_dir = os.path.join(self.scratch, "run")
         os.makedirs(self.run_dir)
         self.environ = {k: v for k, v in self.game.environ(()).items()}
+        # The portal registry is written under the scratch directory, never the project's.
+        self.titles = os.path.join(self.scratch, "titles")
+        for cls in (PublishStep, PlatformValidateStep):
+            self.addCleanup(setattr, cls, "titles_dir", cls.__dict__.get("titles_dir"))
+            cls.titles_dir = self.titles
+        self.listing = listing_placeholders()
 
     # -- fixtures ---------------------------------------------------------------------------
 
@@ -248,34 +305,45 @@ class PublishCase(unittest.TestCase):
             self.assertEqual(CONTRACTS.problems("platform-publication", artifact.content), [])
         return result
 
-    def g6(self, manifest=None, mode="human", decision="approved", gate="G6"):
+    def g6(self, manifest=None, mode="human", decision="approved", gate="G6", listing=None,
+           validation=None):
         manifest = manifest or self.manifest
+        subject = [manifest, listing or self.listing["store-listing"],
+                   validation or self.listing["listing-validation-report"]]
         return seal("decision-record", {
             "gate_id": gate, "machine": "release", "transition": "approved -> validating",
-            "subject": [{"artifact_id": manifest["provenance"]["artifact_id"],
-                         "artifact_type": "release-manifest",
-                         "content_hash": manifest["provenance"]["content_hash"]}],
+            "subject": [{"artifact_id": a["provenance"]["artifact_id"],
+                         "artifact_type": a["provenance"]["artifact_type"],
+                         "content_hash": a["provenance"]["content_hash"]} for a in subject],
             "decision": decision,
             "decided_by": {"role": "portfolio-owner", "mode": mode, "identifier": "human"},
             "decided_at": NOW, "rationale": "fixture"}, schema_version="1.0.0")
 
     def publish(self, publication, *, console=None, config=None, params=None, g6=None,
-                decision=None, gates=("G4", "G5", "G6"), environ=None, manifest=None):
+                decision=None, gates=("G4", "G5", "G6"), environ=None, manifest=None,
+                publications=None, adapter=None, verification=None, listing=None,
+                visit=1):
         params = dict(params or {})
         params.setdefault("repo_dir", self.game.root)
         instance = PublishStep(StepDefinition(
             {"id": "submit", "type": "publish",
              "inputs": ["release-manifest", "platform-publication", "decision-record",
-                        "scaffold-record"], "outputs": ["platform-publication"],
+                        "scaffold-record", "verification-report", "store-listing",
+                        "listing-validation-report"], "outputs": ["platform-publication"],
              "with": params}, retry=None, max_visits=None))
         instance.environ = dict(self.environ, **(environ or {}))
         instance.run_process = console or FakeConsole()
+        if adapter is not None:
+            instance.adapter_factory = adapter
         artifacts = {"release-manifest": manifest or self.manifest,
                      "platform-publication": publication,
                      "decision-record": g6 or self.g6(),
-                     "scaffold-record": self.evidence["scaffold-record"]}
-        result = instance.execute(Inputs(artifacts),
-                                  self.context("submit", config, decision, gates))
+                     "scaffold-record": self.evidence["scaffold-record"],
+                     "verification-report": verification or self.evidence["verification-report"]}
+        artifacts.update(listing or self.listing)
+        context = self.context("submit", config, decision, gates)
+        context.visit = context.execution = visit
+        result = instance.execute(PublishInputs(artifacts, publications), context)
         for artifact in result.artifacts:
             self.assertEqual(CONTRACTS.problems("platform-publication", artifact.content), [],
                              json.dumps(artifact.content, indent=1)[:2000])
@@ -612,7 +680,7 @@ class Publish(PublishCase):
         other["changelog"] = ["another release"]
         other["provenance"]["content_hash"] = "sha256:" + "f" * 64
         result = self.go(g6=self.g6(manifest=other))
-        self.assertEqual(result.data["code"], "g6-manifest-mismatch")
+        self.assertEqual(result.data["code"], "g6-stale")
         result = self.go(g6=self.g6(gate="G5"))
         self.assertEqual(result.data["code"], "g6-record-missing")
 
@@ -639,18 +707,41 @@ class Publish(PublishCase):
         result = self.go(console=console, config=config)
         self.assertEqual(result.route, "dry-run")  # WGF_PUBLISH_LIVE is not 1
         self.assertFalse(console.flows[0]["submit"])
+        # Live: the first visit uploads and saves, and never requests review by itself.
         console = FakeConsole("fresh")
-        result = self.go(console=console, config=config, environ=dict(self.env, WGF_PUBLISH_LIVE="1"))
+        env = dict(self.env, WGF_PUBLISH_LIVE="1")
+        result = self.go(console=console, config=config, environ=env)
+        self.assertEqual(result.outcome, StepOutcome.WAITING_FOR_HUMAN, result.message)
+        self.assertFalse(console.flows[0]["submit"])
+        self.assertEqual(result.data["waiting_state"], "WAITING_FOR_HUMAN_SUBMIT_CONFIRMATION")
+        self.assertEqual(result.data["choices"], ["submit", "hold", "abandon", "done"])
+        uploaded = result.artifacts[0].content
+        self.assertEqual(uploaded["outcome"], "UPLOAD_COMPLETE")
+        self.assertEqual(uploaded["waiting"]["state"], "WAITING_FOR_HUMAN_SUBMIT_CONFIRMATION")
+        self.assertEqual(uploaded["human_required"]["reason"], "submit-confirmation")
+        # A person answers submit: the review is requested once and read back.
+        console = FakeConsole("existing")
+        result = self.publish(uploaded, console=console, config=config, environ=env,
+                              decision=SUBMIT_DECISION)
         self.assertEqual((result.outcome, result.route), (StepOutcome.SUCCESS, "submitted"),
                          result.error or result.message)
         self.assertTrue(console.flows[0]["submit"])
         record = result.artifacts[0].content
         self.assertEqual((record["outcome"], record["state"]), ("VERIFIED", "submitted"))
         self.assertEqual(record["verified_state"]["observed"], "Waiting for moderation")
-        self.assertEqual(record["submission"]["portal_draft_id"], "d0001")
+        self.assertEqual(record["submission"]["portal_draft_id"], "d0007")
         self.assertEqual(record["measurement_class"], "automation-console")
         self.assertIn("submitted_at", record["submission"])
-        self.live_config, self.live_env = config, dict(self.env, WGF_PUBLISH_LIVE="1")
+
+    def submitted(self, scenario="existing", first="fresh"):
+        """Live: upload (visit 1), then a person's submit (visit 2). (result, console)."""
+        config, env = self.live()
+        uploaded = self.go(console=FakeConsole(first), config=config, environ=env)
+        self.assertEqual(uploaded.artifacts[0].content["outcome"], "UPLOAD_COMPLETE",
+                         uploaded.message)
+        console = FakeConsole(scenario)
+        return self.publish(uploaded.artifacts[0].content, console=console, config=config,
+                            environ=env, decision=SUBMIT_DECISION), console
 
     def live(self):
         config = dict(self.config)
@@ -658,15 +749,15 @@ class Publish(PublishCase):
         return config, dict(self.env, WGF_PUBLISH_LIVE="1")
 
     def test_an_existing_draft_with_the_key_is_reused_never_uploaded_again(self):
-        config, env = self.live()
-        console = FakeConsole("existing")
-        result = self.go(console=console, config=config, environ=env)
+        result, console = self.submitted("existing", first="existing")
         self.assertEqual(result.route, "submitted", result.error or result.message)
         self.assertEqual(result.artifacts[0].content["submission"]["portal_draft_id"], "d0007")
+        self.assertEqual(console.flows[0]["key"], result.artifacts[0].content["submission"]
+                         ["idempotency_key"])
 
     def test_a_submitted_record_is_returned_as_it_is_without_contacting_the_portal(self):
         config, env = self.live()
-        first = self.go(console=FakeConsole("fresh"), config=config, environ=env)
+        first, _ = self.submitted()
         submitted = first.artifacts[0].content
         console = FakeConsole("fresh")
         again = self.publish(submitted, console=console, config=config, environ=env)
@@ -687,8 +778,7 @@ class Publish(PublishCase):
                 self.assertEqual(record["state"], "validated")
 
     def test_an_ambiguous_portal_state_after_a_submit_is_never_a_success(self):
-        config, env = self.live()
-        result = self.go(console=FakeConsole("ambiguous"), config=config, environ=env)
+        result, _ = self.submitted("ambiguous")
         self.assertEqual(result.outcome, StepOutcome.WAITING_FOR_HUMAN)
         record = result.artifacts[0].content
         self.assertEqual(record["outcome"], "UNKNOWN")
@@ -697,8 +787,7 @@ class Publish(PublishCase):
         self.assertEqual(record["state"], "validated")
 
     def test_a_rejection_read_back_is_a_failure_a_person_records(self):
-        config, env = self.live()
-        result = self.go(console=FakeConsole("rejected"), config=config, environ=env)
+        result, _ = self.submitted("rejected")
         self.assertEqual((result.outcome, result.retryable), (StepOutcome.FAILED, False))
         self.assertEqual(result.artifacts[0].content["outcome"], "REJECTED")
 
@@ -931,30 +1020,14 @@ class ThroughTheEngine(PublishCase):
                     - id: submit
                       type: publish
                       stage: release:submitting
-                      inputs: [release-manifest, platform-publication, decision-record, scaffold-record]
+                      inputs: [release-manifest, platform-publication, decision-record, scaffold-record, verification-report, store-listing, listing-validation-report]
                       outputs: [platform-publication]
                       retry: {max_attempts: 1}
                       with: {repo_dir: %(repo)s}
                 """ % {"repo": json.dumps(self.game.root)}))
         return path
 
-    @staticmethod
-    def listing_placeholders():
-        from wgflib import provenance
-        from wgflib.workflow.mock import DEFAULT_EPOCH, FIXTURES, FIXTURE_SLUG
-        out = {}
-        for n, artifact_type in enumerate(("store-listing", "listing-validation-report"), 1):
-            with open(os.path.join(FIXTURES, f"{artifact_type}.json"), encoding="utf-8") as handle:
-                body = json.loads(handle.read().replace(FIXTURE_SLUG, "fixture-game"))
-            artifact = {"provenance": provenance.build(
-                artifact_type,
-                artifact_id=provenance.artifact_id(artifact_type, "fixture-game", DEFAULT_EPOCH, n),
-                produced_by=provenance.producer("release"), produced_at=DEFAULT_EPOCH,
-                inputs=[], title_id="fixture-game")}
-            artifact.update(body)
-            provenance.seal(artifact)
-            out[artifact_type] = artifact
-        return out
+    listing_placeholders = staticmethod(listing_placeholders)
 
     def api(self, console, publish_config):
         from wgflib.workflow import ArtifactOutput, StepResult, WorkflowStep

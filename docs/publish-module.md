@@ -47,8 +47,8 @@ bin/wgf status <run-id>               # submitted | dry-run | WAITING at submit 
 ```
 
 The run's artifacts carry over: the manifest the release step wrote, the verification it was
-cleared by, the decisions. The G6 record pins the release-manifest by content hash, and the
-`submit` step refuses to submit a manifest with any other hash.
+cleared by, the decisions. The G6 record pins the release-manifest, the store listing and its
+validation by content hash, and the `submit` step uploads nothing under any other hash.
 
 ## `platform-validate` (release:validating)
 
@@ -67,6 +67,7 @@ cursor, so the two never disagree:
 | `package_shaped_to_profile` | the package file in the checkout | the file exists, its sha256 equals the manifest's checksum, its size is within the profile's `max_bundle_mb`. Since 2.8.0 each target's package is made from that platform's own bundle (`packages[].bundle_hash`, [release-module.md](release-module.md#one-package-per-target-platform)), so the SDK wiring it carries is its own |
 | `assertions_pass` | the verification-report's `policy.assertions:<platform>` evidence for this commit | no blocking assertion breached |
 | `metadata_and_locales_present` | as `store_metadata_complete`, for this platform | as above |
+| `platform_ids_present` | the publication profile's `identity.issued_on_create`, the portal registry, the build's config (`build/platforms/<id>/game.config.json`, checked against its recorded hash) | the portal issues no ids on create, none is issued yet (the submit visit only creates the game), or the build carries every id the registry holds with its value |
 
 Store metadata is what the release role prepares (`core/roles/release.md`): a JSON file
 `release/<release-id>/store-metadata.json` in the checkout keyed by platform
@@ -109,54 +110,147 @@ ends the run; an approved build may sit indefinitely.
 
 ## `submit` (release:submitting)
 
-Inputs: `release-manifest`, `platform-publication`, `decision-record`, `scaffold-record`.
-Output: the `platform-publication`, a new version of the same artifact.
+Inputs: `release-manifest`, `platform-publication` (every platform's newest, through the
+engine's `StepInputs.every`), `decision-record`, `scaffold-record`, `verification-report`,
+`store-listing`, `listing-validation-report`. Output: one `platform-publication` per platform
+it acted on, each a new version of that platform's own artifact
+(`platform-publication-<platform>`).
 
-In order, before anything is contacted:
+**Every packaged platform, each on its own.** The step goes through the manifest's packages
+in order, one adapter run - one browser - at a time, and each platform's state is read only
+from its own newest record. A wait, a failure or a pending review on one platform never
+writes another platform's record; Y8 failing leaves Yandex's draft as it was, and a
+CrazyGames game under review does not stop a Yandex upload in the same visit.
 
-1. **G6**: passed and current in this run (`context.gates_passed`); the newest
-   decision-record is G6's, `approved`, `decided_by.mode: human`, and its `subject` pins the
-   release-manifest the step holds, by content hash. Anything else is BLOCKED
-   (`g6-not-passed`, `g6-not-human`, `g6-manifest-mismatch`, ...) with no record written.
-2. **Idempotent re-entry**: a record that already says `SUBMITTED` or `VERIFIED` is returned
-   as it is. Nothing runs.
-3. **A person's answer** (`context.decision`): `done --note <portal reference>` records a
-   submission made by hand (state `submitted`, `measurement_class: human`); `abandon` ends
-   the attempt. Only a person's `done` is accepted.
-4. **Readiness**: `HUMAN_REQUIRED` stops WAITING_FOR_HUMAN with the reason; anything but
-   `READY` is BLOCKED.
-5. **The package** is re-read from the checkout and its sha256 compared with the manifest:
-   a mismatch is `INVALID_BUILD`, FAILED, not retryable.
-6. **The credential and the terms** are checked again against the installation's
-   configuration (below). A missing credential, unconfirmed terms, or a method only a person
-   performs is HUMAN_REQUIRED.
+```bash
+bin/wgf publish --run <run-id> --platform yandex   # the group, acting on yandex only
+bin/wgf publish --run <run-id> --track             # only submit, read-only: every status
+```
 
-Then the adapter runs, and the record is written from what it observed:
+`--platform <id>` (repeatable) acts on those packaged platforms only; every other record is
+left as it is, and one never attempted is named (BLOCKED, `not yet attempted`), never passed
+over. `--track` re-runs only the slice's publish step, even when it completed: each platform
+whose game is known (the registry, or a draft id) is read - its status text, nothing else; no
+upload, no click, no G6 needed - and the registry and the record are updated from the text
+(`live` with its `live_url`; a rejection stays a person's to transcribe with its compliance
+finding). Both are this command's only: the CLI passes them to the step as
+`WGF_PUBLISH_PLATFORMS` and `WGF_PUBLISH_TRACK=1` for its own process, so a later `wgf
+decide` or `resume` carries neither.
 
-| Outcome | The step returns | `state` |
-|---|---|---|
-| `VERIFIED` / `SUBMITTED` | SUCCESS, route `submitted` | `submitted` (or `live`), from the portal's status text |
-| `DRY_RUN` | SUCCESS, route `dry-run` | unchanged (`validated`) |
-| `AUTH_REQUIRED`, `CAPTCHA_REQUIRED`, `HUMAN_REQUIRED` | WAITING_FOR_HUMAN; choices `done`, `abandon` | unchanged |
-| `UNKNOWN` (a submit was clicked and the state read back is one the profile does not map, or could not be read) | WAITING_FOR_HUMAN, reason `ambiguous-portal-state` | unchanged |
-| `REJECTED`, `PLATFORM_ERROR`, `INVALID_BUILD`, `RETRYABLE_FAILURE`, `BLOCKED` | FAILED, not retryable | unchanged |
+### Before any upload
 
-**Nothing retries the submit.** The step's `retry` is `max_attempts: 1` in the workflow,
-every failure it returns is `retryable=False`, and `max_visits: 3` bounds how often a person
+1. **G6** (once, for the whole visit): passed and current in this run
+   (`context.gates_passed`); the newest decision-record is G6's, `approved`,
+   `decided_by.mode: human`; and its `subject` pins, by content hash, exactly the
+   `release-manifest`, the `store-listing` (the campaign) and the `listing-validation-report`
+   the step holds. A hash that changed after G6 - or an artifact G6 never covered - is
+   BLOCKED `g6-stale`: G6 must be decided again. G6 is never reused silently, and a passing
+   QA is never permission to publish. The other refusals: `g6-not-passed`,
+   `g6-record-missing`, `g6-not-approved`, `g6-not-human`. Nothing is recorded or contacted.
+2. **Per platform, its record**: newest for the current manifest (a record pinning another
+   manifest is BLOCKED `stale-validation`: run platform-validate again); already `SUBMITTED`
+   or `VERIFIED` is returned as it is (idempotent: nothing runs); `UPLOAD_COMPLETE` waits for
+   a person's answer and is not contacted; `IDS_ISSUED` waits for the rebuild.
+3. **Readiness**: `HUMAN_REQUIRED` stops WAITING_FOR_HUMAN with the reason; anything else
+   but `READY` is BLOCKED (an optional platform is skipped and said).
+4. **The build**: the package is re-read from the checkout and its sha256 compared with the
+   manifest; its `bundle_hash` must be the bundle verify built and verified for THIS
+   platform (`verification-report` `build_artifact.platforms[]`); its platform must be the
+   one requested. Anything else is `INVALID_BUILD` (`package-missing`, `build-mismatch`,
+   `wrong-platform` naming the platform whose build it is), FAILED, not retryable, nothing
+   contacted.
+5. **A create-before-build portal's ids** (below): ids the registry holds that the build
+   lacks are `INVALID_BUILD` `platform-ids-missing`; ids not issued yet make the visit a
+   create-only one.
+6. **The credential and the terms**, against the installation's configuration (below). A
+   missing credential, unconfirmed terms, or a method only a person performs is
+   HUMAN_REQUIRED.
+
+### The portal registry around the adapter
+
+Before the adapter runs, `registry.lookup_candidates` gives the job the ids `find_game` tries
+first (`job.known_ids`) and the registry's status (`job.registry_status`). After it, what the
+visit observed is recorded: `DRAFT` when the build reached a draft (with the build and
+listing hashes, through `invalidate_if_changed`), `DRAFT_CREATED` with the ids the portal
+issued, `PENDING_REVIEW`, `PUBLISHED` or `REJECTED` only with the portal's status text as
+evidence. A `duplicate-candidate` or `review-pending` leaves the status as it was, and says
+why. A person links a duplicate candidate in the run - `wgf decide <run> done --note
+portal-id=<id>` associates it (`association: associated-by-person`) and the visit continues
+with it.
+
+### The upload, then a person's submit
+
+```
+visit 1 (live)  upload the build, fill and save the draft      UPLOAD_COMPLETE
+                -> WAITING_FOR_HUMAN_SUBMIT_CONFIRMATION, choices submit | hold | abandon | done
+a person        wgf decide <run> submit [--note platform=<id>]
+visit 2         request review ONCE, read the status back      SUBMITTED / VERIFIED from the
+                                                               portal's own status text
+```
+
+The visit that uploads never requests review: `job.live` allows the upload, `job.submit`
+(the irreversible request) is true only on a visit a person confirmed
+(`job.submit_confirmed`). `submit` re-checks before anything is requested that the upload
+was authorized for the manifest the run holds and that the registry's build and listing
+hashes are still the ones G6 covers - otherwise BLOCKED `g6-stale`, upload again; it needs
+live mode too. `hold` leaves the draft and requests nothing (the record keeps
+`UPLOAD_COMPLETE`, `waiting.reason: held`; a new visit - `wgf resume <run> --from submit` -
+asks again). `abandon` ends the platform's attempt (`BLOCKED`, `measurement_class: human`).
+`done` records a submission the person made by hand. An answer acts on the first waiting
+platform in package order, or on the one `--note platform=<id>` names, and on nothing else; a
+re-execution of the same visit never applies one answer twice.
+
+### Create-before-build portals
+
+A publication profile may say the portal issues ids on create that the build must carry
+(`submission.identity.issued_on_create`, e.g. Y8's `[game_id, app_id]`) and where they reach
+the build (`identity.build_config`: `platforms[].<key>` in game.config.yaml). Reusable, not
+Y8-specific (`scripts/wgf_publish/identity.py`):
+
+1. The first visit finds the registry without the ids: the job carries `required_ids`; the
+   adapter creates (or finds) the game and returns `IDS_ISSUED` with `created_ids` - never
+   uploading. The registry records `DRAFT_CREATED` with the ids.
+2. The step routes `platform-ids` (after every waiting platform is answered) to `sdk`, which
+   writes the registry's ids into the platform's entry in game.config.yaml, committed with
+   its integration (a keyed sdk commit). sdk-review, verify, G4, the store listing and
+   release make the build again; `wgf publish --run <id> --force` validates the new release
+   and asks G5 and G6 again (the manifest changed, so the old G6 is stale by rule 1).
+3. `platform-validate`'s guard `platform_ids_present` is RED for a build that lacks an id
+   the registry holds, or carries another value; GREEN before the game exists (the submit
+   visit uploads nothing then) and for every portal without issued ids.
+
+### Outcomes
+
+From every platform's state after the visit:
+
+| Platforms | The step returns |
+|---|---|
+| any waiting for a person (`UPLOAD_COMPLETE`, `AUTH_REQUIRED`, `CAPTCHA_REQUIRED`, `HUMAN_REQUIRED`, `UNKNOWN`) | WAITING_FOR_HUMAN: `waiting_state` and the choices of the first waiting platform (the union over all of them), `waiting` lists them |
+| any failed (`INVALID_BUILD`, `PLATFORM_ERROR`, `REJECTED`, `RETRYABLE_FAILURE`, `BLOCKED`) | FAILED, not retryable |
+| any refused, held, stale or not yet attempted | BLOCKED |
+| any `IDS_ISSUED` | SUCCESS, route `platform-ids` |
+| every one `SUBMITTED`/`VERIFIED` or `DRY_RUN` | SUCCESS, route `submitted` (any submitted) or `dry-run` |
+
+A record's `state` advances only from what was observed: `submitted` (or `live`) from the
+portal's status text; unchanged otherwise. Every waiting record carries a `waiting` block
+(state, portal, step, reason, action, resume).
+
+**Nothing retries the request.** The step's `retry` is `max_attempts: 1` in the workflow,
+every failure it returns is `retryable=False`, and `max_visits` bounds how often a person
 may re-enter it. A re-entry after a crash finds the draft it already made: the idempotency
 key (`wgf-<platform>-<16 hex>`, from the run id, the manifest hash and the platform) is
 written into the draft's name and looked up before any upload, and the draft id is recorded
 in the artifact. Browser interaction never makes the step pass: `SUBMITTED` and `VERIFIED`
 require the portal's own status text, read back after the action and mapped through the
-profile's `verification` lists.
+profile's `status` lists.
 
 ### Modes
 
-`factory.publish.mode` is `dry-run` by default: the session is checked, the draft found or
-made, the listing filled, the portal state read back, and the submit is **not** made; the
-record says `DRY_RUN`. `live` makes the submit, once - and only when the Factory's
-environment also has `WGF_PUBLISH_LIVE=1`. Production submission is opted into twice, never
-by one edit.
+`factory.publish.mode` is `dry-run` by default: nothing is uploaded to a real portal and
+nothing is requested (`job.live` false); the record says `DRY_RUN`. `live` uploads and saves
+the draft and then waits for a person's `submit` - and only when the Factory's environment
+also has `WGF_PUBLISH_LIVE=1`. Production submission is opted into twice, never by one edit,
+and the irreversible request is a person's answer on top of both.
 
 ## Adapters: where everything platform-specific lives
 
@@ -385,8 +479,9 @@ python3 scripts/wgf-publish.py registry associate <title> <platform> <portal-gam
 python3 scripts/wgf-publish.py registry show <title> [--json]
 ```
 
-The `submit` step does not read the registry yet; wiring find-game and the read-back into
-it is the next step (`docs/portal-publishing-architecture.md`, 2.5).
+The `submit` step reads it before every adapter run and records what each visit observed
+(above, "The portal registry around the adapter"); `platform-validate` and `sdk` read the
+ids a create-before-build portal issued.
 
 ## Configuration
 
@@ -416,7 +511,18 @@ reaching a record or the event log); the whole group through the real engine; an
 (dry run uploads and never submits, live finds the draft by key and submits once, a second
 live run submits nothing again, expired session / CAPTCHA / ambiguous state stop for a
 person, a refused upload is a platform error). `scripts/tests/test_publish_registry.py`
-(RELEASE) covers the portal registry. `scripts/tests/test_publish_observe.py`
+(RELEASE) covers the portal registry. `scripts/tests/test_publish_step.py` covers the submit
+step across y8, yandex and crazygames with a scripted adapter: G6 for another manifest, not
+a person's, a store listing or listing validation changed after G6, a package from another
+bundle or another platform's build, changed bytes; an upload waiting for a person, then
+`submit` (once, only the platform answered), `hold`, `abandon`, a `submit` after the
+manifest or the build on the portal changed; a duplicate candidate associated by a person,
+a pending review uploading nothing and blocking no other platform; `IDS_ISSUED` recorded and
+routed, the ids written into game.config.yaml and the rebuilt package accepted, a build
+without them refused here and by `platform_ids_present`; independent per-platform state,
+`--platform`, `--track`, idempotent re-entry; the group through the real engine (per-platform
+records, `platform-ids` back to sdk, G5 and G6 asked again) and the CLI's `--platform` and
+`--track`. `scripts/tests/test_publish_observe.py`
 (RELEASE): the observer's scrubbing, summary and exit codes around a stand-in browser, its
 spec's source (no action call, no session kept), and - with `WGF_PUBLISH_BROWSER_TEST=1` -
 headless Chromium against the fixture portal with the test playing the person: waiting,

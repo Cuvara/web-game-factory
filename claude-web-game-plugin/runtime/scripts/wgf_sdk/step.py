@@ -70,6 +70,7 @@ from wgf_verification.lineage import same_commit
 from . import commit as sdk_commit
 from . import evidence as ev
 from . import targets
+from wgf_publish import identity as publish_identity
 from .integration import IntegrationPhase, PhaseBlocked, SeamMissing
 from .plan import FEATURES, PlanError, integration_plan, load_game_config
 from .runner import CommandRunner
@@ -205,6 +206,28 @@ class SdkStep(WorkflowStep):
     runner_factory = ev.PnpmRunner
     integration_runner_factory = CommandRunner
     profiles_dir = None
+    titles_dir = None  # the portal registry's titles directory; None: the project's
+
+    def _publication_profiles(self, context, config):
+        """{platform id: publication profile} for the checkout's platforms (factory.publish's
+        profiles_extra included); a platform without one is left out."""
+        from wgf_publish import common as publish_common
+        config_data = getattr(context.config, "data", context.config)
+        try:
+            settings = publish_common.Settings(
+                config_data if isinstance(config_data, dict) else {}, {})
+        except ValueError:
+            return {}
+        found = {}
+        for entry in (config or {}).get("platforms") or []:
+            pid = str((entry or {}).get("id"))
+            try:
+                profile = publish_common.publication_profile_for(pid, settings)
+            except ValueError:
+                profile = None
+            if profile is not None:
+                found[pid] = profile
+        return found
 
     def _setting(self, context, key, default=None):
         if key in self.params:
@@ -309,6 +332,22 @@ class SdkStep(WorkflowStep):
                     plans = integration_plan(config, self.profiles_dir, game_repo=game_repo)
                 except PlanError as exc:
                     return StepResult.blocked(str(exc))
+            # A create-before-build portal's ids (wgf_publish.identity): what the portal
+            # issued when the submit step created the game, written where the build reads
+            # them, committed with the integration. Nothing is written for other portals.
+            try:
+                ids_written = publish_identity.sync(
+                    game_repo, title_id, self._publication_profiles(context, config),
+                    self.titles_dir)
+            except publish_identity.IdentityError as exc:
+                return StepResult.blocked(f"cannot write the portal's ids into the "
+                                          f"checkout: {exc}")
+            if ids_written:
+                context.logger.info("sdk writes the portal-issued ids into the checkout",
+                                    ids=ids_written[0].get("ids"))
+                retargeted = retargeted + [{k: v for k, v in item.items() if k != "ids"}
+                                           for item in ids_written
+                                           if item["path"] not in {r["path"] for r in retargeted}]
             try:
                 integrated = phase.run(game_repo, design, scaffold, title_id)
             except PhaseBlocked as exc:

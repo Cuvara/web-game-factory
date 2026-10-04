@@ -182,6 +182,19 @@
               },
               "additionalProperties": false
             },
+            "issued_on_create": {
+              "type": "array",
+              "description": "Additive, since profile schema 2.0.0. The ids the portal issues only when the game is created (a create-before-build portal: Y8 issues the Game ID and the App ID on create), which the build must carry before any upload. Named as the portal names them: `game_id` is the registry's external_game_id, `app_id` its app_id, anything else other_ids.<name>. The submit visit that finds no ids creates (or finds) the game, records them in the portal registry and returns IDS_ISSUED - never uploading - and the workflow rebuilds with them.",
+              "minItems": 1,
+              "uniqueItems": true,
+              "items": { "type": "string", "pattern": "^[a-z][a-z0-9_]*$" }
+            },
+            "build_config": {
+              "type": "object",
+              "description": "Additive, since profile schema 2.0.0. Where each id in `issued_on_create` reaches the build: `platforms[].<key>` is that key of this platform's entry in the game's game.config.yaml. The sdk step writes the registry's ids there (a keyed sdk commit), and platform-validate's platform_ids_present refuses a build that lacks them once they are issued.",
+              "propertyNames": { "pattern": "^[a-z][a-z0-9_]*$" },
+              "additionalProperties": { "type": "string", "pattern": "^platforms\\[\\]\\.[a-z][a-z0-9_]*$" }
+            },
             "title_match": { "enum": ["exact-casefold"], "description": "Title comparison is exact after case folding; never fuzzy." },
             "basis": { "$ref": "#/$defs/basis" }
           },

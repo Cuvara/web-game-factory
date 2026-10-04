@@ -19,6 +19,10 @@ Every command that does work is a slice of one workflow definition, executed by 
     wgf <cmd> --resume <run-id> [...]    the same as `wgf resume`, whatever <cmd> is
     wgf <cmd> --run <run-id>             run that slice inside an existing run, reusing its
                                          artifacts; steps it already completed are skipped
+    wgf publish --run <run-id> [--platform ID ...] [--track]
+                                         the publish group for those platforms only; --track
+                                         re-runs only its publish step, read-only: each
+                                         platform's status read from its portal
     wgf new-game --from develop          start a run at a later step
 
     wgf status [run-id]                  where a run stands (default: the latest run)
@@ -421,6 +425,13 @@ def build_parser(commands):
                          help="with --resume, answer a waiting checkpoint")
         run.add_argument("--note", metavar="TEXT", help="rationale recorded with --decision")
         run.add_argument("--project", metavar="ID", help="project/title id for the run")
+        run.add_argument("--platform", metavar="ID", action="append",
+                         help="with --run or --resume, the publish step acts on this packaged "
+                              "platform only (repeatable); every other platform's record is "
+                              "left as it is")
+        run.add_argument("--track", action="store_true",
+                         help="with --run, run only the slice's publish step, read-only: read "
+                              "each platform's status on its portal, upload and click nothing")
         run.add_argument("--json", action="store_true", help="print events as JSON lines")
         run.add_argument("--quiet", action="store_true", help="print only the final status")
         run.add_argument("idea", nargs="?", metavar="IDEA",
@@ -534,6 +545,14 @@ def _refuse_ignored_flags(args):
         raise UsageError("--resume and --run are exclusive")
     if args.force and not args.run_id:
         raise UsageError("--force only applies with --run")
+    if args.platform and not (args.run_id or args.resume):
+        raise UsageError("--platform acts on a release a run drafted: give --run <run-id> "
+                         "(or --resume <run-id>)")
+    if args.track and not args.run_id:
+        raise UsageError("--track reads the portals of a run's release: give --run <run-id>")
+    if args.track and args.force:
+        raise UsageError("--track re-runs only the publish step, read-only; --force would "
+                         "re-run every step of the slice, the gates included")
     if args.run_id and args.from_step:
         raise UsageError(f"--from does not apply with --run, which runs this command's own "
                          f"steps; to restart at a step: wgf resume {args.run_id} --from STEP")
@@ -589,13 +608,39 @@ def _missing_input_hint(api, args, state):
             f"wgf {args.scope} --run {holder.run_id}")
 
 
+# What `--platform` and `--track` tell the publish step, for this command's process only
+# (wgf_publish.step reads them; a later `wgf decide` or `resume` carries neither).
+PUBLISH_PLATFORMS_ENV, PUBLISH_TRACK_ENV = "WGF_PUBLISH_PLATFORMS", "WGF_PUBLISH_TRACK"
+PUBLISH_STEP_TYPE = "publish"
+
+
+def _publish_selection(api, args):
+    """Apply --platform and --track: the environment the publish step reads, and for
+    --track the slice narrowed to its publish step, re-run even when it completed. Returns
+    (scope, force)."""
+    scope, force = args.scope, args.force
+    if args.platform:
+        os.environ[PUBLISH_PLATFORMS_ENV] = ",".join(args.platform)
+    if args.track:
+        definition = api.definition_for(api.store.load(args.run_id))
+        ids = definition.resolve_scope(None if args.scope == definition.id else args.scope)
+        publish = [s.id for s in definition.steps if s.id in ids and s.type == PUBLISH_STEP_TYPE]
+        if not publish:
+            raise UsageError(f"--track: `{args.scope}` has no publish step to read the portals "
+                             f"with")
+        os.environ[PUBLISH_TRACK_ENV] = "1"
+        scope, force = publish[0], True
+    return scope, force
+
+
 def cmd_run(args):
     _refuse_ignored_flags(args)
     progress = Progress(sys.stdout, as_json=args.json)
     api = _api(args, subscribers=() if args.quiet else (progress,))
+    scope, force = _publish_selection(api, args)
     request = RunRequest(
-        scope=args.scope, mock=args.mock, mock_plan=_mock_plan(args.mock_plan),
-        resume=args.resume, from_step=args.from_step, run_id=args.run_id, force=args.force,
+        scope=scope, mock=args.mock, mock_plan=_mock_plan(args.mock_plan),
+        resume=args.resume, from_step=args.from_step, run_id=args.run_id, force=force,
         decision=args.decision, note=args.note, project_id=args.project,
         hold_gates=args.hold_gates, idea=args.idea,
     )

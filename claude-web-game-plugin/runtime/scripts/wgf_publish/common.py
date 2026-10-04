@@ -18,7 +18,7 @@ from .evidence import Evidence, file_sha256
 
 __all__ = ["ARTIFACT", "ROLE", "MODES", "Settings", "utc_now", "profile_for",
            "publication_profile_for", "release_dir", "package_on_disk", "store_metadata",
-           "listing_text",
+           "listing_text", "pinned_hash",
            "assertion_results", "record", "output_name", "read_json", "same_commit",
            "locate_checkout", "evidence_dicts"]
 
@@ -184,6 +184,14 @@ def assertion_results(verification, manifest, platform_id):
 
 def output_name(platform_id):
     return f"{ARTIFACT}-{platform_id}"
+
+
+def pinned_hash(artifact, artifact_type):
+    """The content hash `artifact` pins for its input of `artifact_type`, or None."""
+    for entry in ((artifact or {}).get("provenance") or {}).get("inputs") or []:
+        if entry.get("artifact_type") == artifact_type:
+            return entry.get("content_hash")
+    return None
 
 
 def record(body, *, inputs, context, title_id, sequence):

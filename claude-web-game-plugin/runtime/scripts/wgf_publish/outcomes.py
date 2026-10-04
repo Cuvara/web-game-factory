@@ -26,7 +26,7 @@ own failure modes are mapped into it by its adapter, never surfaced raw to the p
 from wgflib.workflow import StepOutcome, StepResult
 
 __all__ = ["OUTCOMES", "SUCCESSFUL", "HUMAN", "FAILURES", "human_reason_for", "to_result",
-           "waiting_state_for", "WAITING_FOR_HUMAN_LOGIN", "WAITING_FOR_HUMAN_SUBMIT_CONFIRMATION",
+           "waiting_state_for", "choices_for", "WAITING_FOR_HUMAN_LOGIN", "WAITING_FOR_HUMAN_SUBMIT_CONFIRMATION",
            "WAITING_FOR_HUMAN"]
 
 UNKNOWN, READY, BLOCKED, HUMAN_REQUIRED = "UNKNOWN", "READY", "BLOCKED", "HUMAN_REQUIRED"
@@ -62,7 +62,12 @@ _REASONS = {AUTH_REQUIRED: "login", CAPTCHA_REQUIRED: "captcha",
 # choices a person answers it with (`wgf decide <run> <choice>`).
 _WAITING = {AUTH_REQUIRED: WAITING_FOR_HUMAN_LOGIN, CAPTCHA_REQUIRED: WAITING_FOR_HUMAN_LOGIN,
             UPLOAD_COMPLETE: WAITING_FOR_HUMAN_SUBMIT_CONFIRMATION}
-_CHOICES = {UPLOAD_COMPLETE: ["submit", "hold", "abandon"]}
+# `done` answers an upload a person then submitted by hand.
+_CHOICES = {UPLOAD_COMPLETE: ["submit", "hold", "abandon", "done"]}
+
+
+def choices_for(outcome):
+    return list(_CHOICES.get(outcome, ["done", "abandon"]))
 
 
 def waiting_state_for(outcome):
@@ -86,6 +91,6 @@ def to_result(outcome, artifacts, message, *, platform_id, data=None):
     if outcome in HUMAN:
         return StepResult(StepOutcome.WAITING_FOR_HUMAN, artifacts=artifacts, message=message,
                           data=dict(data, waiting_state=waiting_state_for(outcome),
-                                    choices=_CHOICES.get(outcome, ["done", "abandon"])))
+                                    choices=choices_for(outcome)))
     return StepResult(StepOutcome.FAILED, artifacts=artifacts, error=message,
                       retryable=False, data=data)

@@ -16,12 +16,35 @@ def utc_now():
 
 class Job:
     """Everything one publication attempt needs, assembled by the step. Nothing here is a
-    credential except `storage_state`, the path of a private, short-lived copy."""
+    credential except `storage_state`, the path of a private, short-lived copy.
+
+    What the visit may do (the step decides; an adapter never widens it):
+
+        live              factory.publish.mode live AND WGF_PUBLISH_LIVE=1: the build may be
+                          uploaded to the portal and the draft saved. False (dry run): nothing
+                          is uploaded to a real portal.
+        submit            the irreversible request (review, publish) may be made in this
+                          visit: live, and a person answered `submit` to the upload. Never
+                          true on the visit that uploads.
+        submit_confirmed  a person answered `submit` (WAITING_FOR_HUMAN_SUBMIT_CONFIRMATION);
+                          the visit requests review once and reads the status back.
+        track             read-only: read the game's status and nothing else - no upload,
+                          no click (`wgf publish --run <id> --track`).
+        known_ids         the portal registry's lookup_candidates: the ids find_game tries
+                          first ([{"source", "field", "id"}]).
+        registry_status   the registry's status for the game here (NOT_CREATED when none).
+        required_ids      the ids the portal issues on create that the build must carry and
+                          the registry does not hold yet (identity.issued_on_create): the
+                          visit creates (or finds) the game, returns IDS_ISSUED with
+                          created_ids, and uploads nothing.
+    """
 
     def __init__(self, *, platform_id, release_id, idempotency_key, package_path, package,
                  metadata, checkout, release_dir, run_dir, scratch_dir, submit, env, hooks,
                  storage_state=None, logger=None, timeouts=None, console_url=None,
-                 run_process=None, listing=None, platform_profile=None):
+                 run_process=None, listing=None, platform_profile=None, live=None,
+                 submit_confirmed=False, track=False, known_ids=None, registry_status=None,
+                 required_ids=None):
         self.platform_id = platform_id
         self.release_id = release_id
         self.idempotency_key = idempotency_key
@@ -45,6 +68,12 @@ class Job:
         self.timeouts = timeouts or {}
         self.console_url = console_url
         self.run_process = run_process
+        self.live = bool(submit) if live is None else bool(live)
+        self.submit_confirmed = bool(submit_confirmed)
+        self.track = bool(track)
+        self.known_ids = list(known_ids or [])
+        self.registry_status = registry_status or "NOT_CREATED"
+        self.required_ids = list(required_ids or [])
 
 
 class Publication:

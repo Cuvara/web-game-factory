@@ -1137,6 +1137,15 @@ class Assets(VerificationCase):
         self.assertIn("background.psd", text)
         self.assertIn("player-ship is a sprite", text)
 
+    def test_source_code_under_src_assets_is_not_an_asset(self):
+        # The craft guides point at a reference port whose loader is src/assets/*.ts.
+        self.write("src/assets/runtime-assets.ts", "export const loadFonts = () => {};\n")
+        self.write("public/assets/stray.ts", "export {};\n")
+        _, report, _ = self.verify()
+        text = json.dumps(self.check(report, "assets.formats"))
+        self.assertNotIn("runtime-assets.ts", text)
+        self.assertIn("stray.ts", text)
+
     def test_a_source_path_to_nothing_is_invalid(self):
         self.write("src/level.ts", 'export const BG = "/assets/backgrounds/night.webp";\n'
                                    'export const NAME = "night.webp";\n')

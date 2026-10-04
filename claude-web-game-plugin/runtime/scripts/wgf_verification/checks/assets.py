@@ -53,9 +53,12 @@ _SOURCE_EXT = (".ts", ".tsx", ".js", ".mjs", ".jsx", ".css", ".html", ".vue")
 
 
 def _asset_files(session):
+    """Files under the asset roots. Source code under src/ is the bundler's input, not an
+    asset: the template's own reference ports keep their asset loader in src/assets."""
     files = []
     for root in ASSET_ROOTS:
-        files += [f for f in session.walk(root) if f.rsplit("/", 1)[-1] not in IGNORED]
+        files += [f for f in session.walk(root) if f.rsplit("/", 1)[-1] not in IGNORED
+                  and not (root.startswith("src/") and f.lower().endswith(_SOURCE_EXT))]
     return files
 
 

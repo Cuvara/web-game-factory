@@ -19,6 +19,8 @@ import re
 from wgflib import paths
 from wgflib.yamllite import YamlError, load_file
 
+from .buildfacts import feature_decisions
+
 __all__ = ["extract", "humanize", "genre_chain", "load_vocabulary", "VOCABULARY_PATH",
            "unit_kind_forms", "built_units"]
 
@@ -266,6 +268,9 @@ def extract(design, *, sdk_report=None, scaffold=None, strings=None, runtime_ass
         features.append(entry)
         note(f"feature:{entry['id']}", f"game-design#features[{index}]")
     facts["features"] = features
+    # What the design's feature evaluation deferred or cut: the copy never names it.
+    _included, excluded = feature_decisions(design)
+    put("features_excluded", excluded, "game-design#features[].evaluation (later, cut)")
 
     per_device = {"touch": [], "mouse": [], "keyboard": [], "gamepad": []}
     for index, action in enumerate(controls.get("actions") or []):

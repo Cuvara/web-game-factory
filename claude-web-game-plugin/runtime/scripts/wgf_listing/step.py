@@ -2,7 +2,8 @@
 
     inputs    qa-report, verification-report, game-design, scaffold-record (required);
               sdk-report, prototype-report, title-strategy, asset-manifest,
-              playability-report, listing-validation-report (read when present)
+              playability-report, content-sufficiency-report, listing-validation-report,
+              triage-report (read when present)
     output    store-listing, on every outcome that could write one
     effect    none in the checkout: the bundle is served read-only; everything lands under
               <run>/store-listing/<visit>-<attempt>/
@@ -21,6 +22,14 @@
 
 Every file the listing names is written at a deterministic path and recorded with its
 sha256 (store-listing.schema.json). See docs/store-listing-module.md.
+
+The copy is held to the build (buildfacts.py): the content-sufficiency report of the listed
+build (its commit, or the development commit the sdk commit sits on) gives the counts the
+copy may state (`facts.measured`), the probe's inputs while the listing was captured give
+the devices its controls text names (`facts.probe_inputs`), and the run's quality tier
+(`facts.quality`) the writer - the copywriter agent at the release tier - and the bars.
+Re-entered through triage (route `listing`), the copywriter's brief carries the store-copy
+findings listing-validation raised.
 """
 
 import datetime
@@ -33,11 +42,12 @@ from wgflib import procs, provenance
 from wgflib.yamllite import YamlError, load_file
 from wgflib.workflow import ArtifactOutput, StepResult, WorkflowStep
 
+from wgf_release.lineage import developed_commit
 from wgf_release.step import bundle_digest
 from wgf_verification.lineage import same_commit
 from wgf_verification.session import locate_checkout
 
-from . import brand, capture, grounding, media, package as pkg, platforms
+from . import brand, buildfacts, capture, grounding, media, package as pkg, platforms
 from .copywriter import write_copy
 from .facts import extract, font_assets, hero_asset, read_runtime_assets, read_strings
 from .settings import Settings, SettingsError
@@ -46,7 +56,10 @@ __all__ = ["StoreListingStep", "REQUIRED_INPUTS", "OPTIONAL_INPUTS", "DEFAULT_RE
 
 REQUIRED_INPUTS = ("qa-report", "verification-report", "game-design", "scaffold-record")
 OPTIONAL_INPUTS = ("sdk-report", "prototype-report", "title-strategy", "asset-manifest",
-                   "playability-report", "listing-validation-report")
+                   "playability-report", "content-sufficiency-report", "listing-validation-report",
+                   "triage-report")
+# The quality dimension store copy is: the findings of it are the copywriter's.
+COPY_DIMENSION = "store-copy"
 DEFAULT_REQUIRED_GATES = ("G4",)
 ROLE = "release"
 DEFAULT_OUTPUT_DIR = "dist"
@@ -174,6 +187,7 @@ class StoreListingStep(WorkflowStep):
                         runtime_assets=runtime_assets, game_config=game_config,
                         prototype_report=self._report_of_this_build(loaded.get("prototype-report"), root,
                                                                     head_sha, context))
+        self._ground_in_build(facts, design, loaded, reference, commit, context)
         self._ctx["facts"] = facts
 
         targets = platforms.targets(scaffold, self.settings.platforms)
@@ -193,6 +207,10 @@ class StoreListingStep(WorkflowStep):
             with capture.BundleServer(dist, os.path.join(scratch, "brand")) as server:
                 self._ctx["server"] = server
                 screenshots, capture_record = self._capture_screens(context, reference, package_dir)
+                facts["probe_inputs"] = buildfacts.probe_devices(
+                    (self._ctx.get("capture_report") or {}).get("viewports"))
+                if facts["probe_inputs"]:
+                    facts["sources"]["probe_inputs"] = "capture: play probe inputs[] while captured"
                 trailer = self._trailer(capture_record, screenshots, package_dir)
                 branding = self._branding(context, reference, facts, design, runtime_assets, screenshots,
                                           package_dir)
@@ -474,6 +492,52 @@ class StoreListingStep(WorkflowStep):
                               severity="error" if not rid.startswith("logo") else "warning", subject=rid)
         return {"method": method, "source_asset": hero_id, "items": items}
 
+    def _ground_in_build(self, facts, design, loaded, reference, commit, context):
+        """The run's tier and its store bars, and the counts the build measured: the
+        content-sufficiency report of this build only (the listed commit, or the development
+        commit it sits on)."""
+        tier, where = buildfacts.resolve_tier(self.params, getattr(context, "environment", None),
+                                              design, loaded.get("title-strategy"))
+        facts["quality"] = {"tier": tier, "where": where, "bars": buildfacts.store_bars(tier)}
+        facts["sources"]["quality"] = where
+        report = loaded.get("content-sufficiency-report")
+        measured = buildfacts.measured_counts(report, design, reference,
+                                              commits=[commit, developed_commit(loaded)])
+        if measured is not None:
+            facts["measured"] = measured
+            facts["sources"]["measured"] = (f"content-sufficiency-report "
+                                            f"{measured['source'].get('artifact_id')} "
+                                            f"({measured['source']['commit'][:12]})")
+        elif report is not None:
+            context.logger.info("content-sufficiency-report not of this build",
+                                report_commit=str(report.get("commit") or "")[:12],
+                                listed=commit[:12])
+
+    def _copy_findings(self, inputs, context):
+        """The store-copy findings the triage that routed this visit selected (route
+        `listing`), for the copywriter's brief; [] on a first pass."""
+        if "triage-report" not in inputs or not str(getattr(context, "entered_by", "") or "").endswith(
+                ".listing"):
+            return []
+        report = inputs.load("triage-report") or {}
+        selected = report.get("selected") or {}
+        if selected.get("route") != "listing":
+            return []
+        wanted = set(selected.get("findings") or [])
+        return [f for f in report.get("findings") or []
+                if isinstance(f, dict) and f.get("id") in wanted and f.get("dimension") == COPY_DIMENSION]
+
+    @staticmethod
+    def _copywriter():
+        """The copywriter's role data (core/roles/roles.yaml through the routing data), or
+        None when the routing data cannot be read."""
+        try:
+            from wgf_triage.routing import Routing
+            routing = Routing.load()
+            return routing.specialist(routing.owner(COPY_DIMENSION))
+        except Exception:  # noqa: BLE001 - the brief is written without the role's words
+            return None
+
     def _report_of_this_build(self, report, root, head_sha, context):
         """The prototype-report when its commit is the listed one or an ancestor of it (the
         sdk step commits after develop), else None: scope deltas of another line of work
@@ -518,9 +582,13 @@ class StoreListingStep(WorkflowStep):
     def _copy(self, context, facts, locales, reference, scratch):
         supplied, where = self._supplied(locales)
         self._ctx["supplied"] = where
+        findings = self._copy_findings(self._ctx["inputs"], context)
+        if findings:
+            context.logger.info("copywriter briefed with findings", findings=[f["id"] for f in findings][:10])
         copies, writer = write_copy(facts, [l for l in locales if l not in supplied], reference,
                                     writer_settings=self.settings.writer, workdir=scratch,
-                                    logger=context.logger)
+                                    logger=context.logger, findings=findings, role=self._copywriter(),
+                                    tier=(facts.get("quality") or {}).get("tier"))
         copies = {locale: supplied[locale] if locale in supplied else copies.get(locale) for locale in locales}
         if supplied:
             context.logger.info("store copy supplied by a person", locales=sorted(supplied))
@@ -531,7 +599,8 @@ class StoreListingStep(WorkflowStep):
                                                 "an agent writer (factory.listing.writer) or ship the "
                                                 "game's strings in that locale", subject=locale)
                 continue
-            for problem in grounding.check(text, facts, reference.get("claims") or [], locale=locale):
+            for problem in grounding.check(text, facts, reference.get("claims") or [], locale=locale,
+                                           counts=reference.get("counts")):
                 grounded_problems.append(problem)
                 if problem["severity"] == "error":
                     self._problem(problem["code"], problem["message"], subject=problem.get("subject"))
@@ -641,7 +710,8 @@ class StoreListingStep(WorkflowStep):
             "status": status,
             "package_dir": pkg.relative_to(package_dir, context.run_dir) if package_dir else "",
             "facts": facts or ctx.get("facts") or {"title": ctx["title_id"], "sources": {}},
-            "copy": {"locales": locales, "writer": writer or {"kind": self.settings.writer_kind},
+            "copy": {"locales": locales, "writer": writer or {"kind": "command" if self.settings.writer_kind == "command"
+                                                  else "template"},
                      "grounding": ctx.get("grounding") or {"checked": False, "problems": []},
                      **({"supplied": {loc: os.path.abspath(p).replace(os.sep, "/")
                                       for loc, p in ctx["supplied"].items() if loc in locales}}

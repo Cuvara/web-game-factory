@@ -62,11 +62,16 @@ class ParsesValidDefinitions(unittest.TestCase):
              "tech-plan-review", "init", "greybox", "greybox-playability", "assets", "triage", "develop",
              "playability", "production-quality", "visual-qa", "content-sufficiency", "review", "sdk",
              "sdk-review", "verify", "quality-gate", "prototype-review", "store-listing",
-             "listing-validation", "release", "platform-validate", "release-review", "publish-review", "submit"],
+             "listing-validation", "release", "listing-triage", "platform-validate", "release-review",
+             "publish-review", "submit"],
         )
         # The store listing is made after G4 passes and before release ships it; a failed
-        # validation goes back to the listing step, and release reads both.
-        self.assertEqual(definition.step("listing-validation").on, {"listing": "store-listing"})
+        # validation goes back to the listing step through listing-triage (its findings, the
+        # copywriter's among them), and release reads both.
+        self.assertEqual(definition.step("listing-validation").on, {"listing": "listing-triage"})
+        self.assertEqual(definition.step("listing-triage").on, {"listing": "store-listing"})
+        self.assertEqual(definition.success_target(definition.step("listing-validation")), "release")
+        self.assertEqual(definition.success_target(definition.step("listing-triage")), "store-listing")
         self.assertEqual(definition.step("store-listing").params.get("required_gates"), ["G4"])
         self.assertTrue({"store-listing", "listing-validation-report"}
                         <= set(definition.step("release").inputs))

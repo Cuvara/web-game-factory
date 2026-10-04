@@ -16,7 +16,9 @@
           trailer: true              # record the gameplay trailer
           viewports: null            # default: the reference's landscape and portrait
         writer:
-          kind: template             # template | command
+          kind: auto                 # auto | template | command. auto: the run tier's writer
+                                     # (store-listing.yaml writer.by_tier) - the copywriter
+                                     # agent (command) at release, the template for development
           argv: []                   # command only; {brief} {output} {prompt} placeholders
           timeout_seconds: 600
           idle_timeout_seconds: null
@@ -35,7 +37,7 @@ __all__ = ["Settings", "SettingsError", "DEFAULTS", "REFERENCE_PATH"]
 
 REFERENCE_PATH = os.path.join(paths.REFERENCE, "store-listing.yaml")
 CAPTURE_KINDS = ("browser", "none")
-WRITER_KINDS = ("template", "command")
+WRITER_KINDS = ("auto", "template", "command")
 
 DEFAULTS = {
     "reference": None,
@@ -44,7 +46,7 @@ DEFAULTS = {
     "copy_dir": "workspace/titles/{title_id}/listing-copy",
     "capture": {"kind": "browser", "node": "node", "timeout_seconds": 900, "trailer": True,
                 "viewports": None},
-    "writer": {"kind": "template", "argv": [], "timeout_seconds": 600,
+    "writer": {"kind": "auto", "argv": [], "timeout_seconds": 600,
                "idle_timeout_seconds": None, "text_from": "file"},
 }
 

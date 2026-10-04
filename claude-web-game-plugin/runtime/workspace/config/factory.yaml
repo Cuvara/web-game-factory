@@ -651,14 +651,20 @@ factory:
       timeout_seconds: 900       # one capture attempt, wall clock
       trailer: true              # record the gameplay trailer
       # viewports: [{id: landscape, width: 1920, height: 1080}, {id: portrait, width: 1080, height: 1920, mobile: true}]
-    # Who writes the store copy. template (default): the Factory's own deterministic writer,
-    # from the design's facts and the game's own strings - English, plus any locale whose
-    # strings the bundle ships; it never translates. command: an agent host run read-only
-    # once per locale with {brief} {output} {prompt} placeholders; its texts go through the
-    # same grounding check (unbacked claims are refused and asked again once, then the
-    # template writer's text stands in and the listing says so).
+    # Who writes the store copy. auto (default): the run tier's writer
+    # (core/reference/store-listing.yaml `writer`) - the copywriter agent (command) at the
+    # release tier, the template for development runs. template: the Factory's own
+    # deterministic writer, from the design's facts and the game's own strings - English,
+    # plus any locale whose strings the bundle ships; it never translates. command: an agent
+    # host run read-only once per locale with {brief} {output} {prompt} placeholders,
+    # briefed as the copywriter with the build's measured counts, every input it accepts and,
+    # re-entered through triage, the store-copy findings; its texts go through the same
+    # grounding check (refused and asked again once, then the template writer's text stands
+    # in and the listing says so). At the release tier with no argv here the template writes
+    # and listing-validation blocks for a person (metadata.writer): configure the agent below
+    # (the autonomous profile does) or supply the copy (copy_dir).
     writer:
-      kind: template             # template | command
+      kind: auto                 # auto | template | command
       argv: []
       timeout_seconds: 600
       idle_timeout_seconds: null

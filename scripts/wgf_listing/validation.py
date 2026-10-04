@@ -15,6 +15,22 @@
               The report says exactly what, per platform
     A requirement a profile leaves null is UNKNOWN: listed, never passed.
 
+The copy is judged against the build (buildfacts.py) at the run's tier (the listing's
+`facts.quality`, core/reference/quality-benchmark.yaml `store_listing`):
+
+    grounding.counts.<locale>         every count is the build's measured one
+                                      (copy_counts_match_build: an unmeasured count fails)
+    metadata.<locale>.controls        the controls text names every input the build accepts
+                                      (controls_cover_all_inputs; a locale with no device
+                                      words in store-listing.yaml is UNKNOWN)
+    metadata.<locale>.full_description  every required locale is a full description
+                                      (full_description_per_required_locale)
+    metadata.<locale>.subtitle        the subtitle names the game, not only its genre
+    metadata.writer                   at the release tier the copywriter agent wrote it
+                                      (store-listing.yaml `writer`)
+A bar the tier does not state makes its check a warning. Failures are store copy: triage
+routes them to the copywriter (core/reference/specialist-routing.yaml).
+
 `validate(listing, run_dir, reference, profiles, facts)` is the pure judge, shared with
 scripts/wgf-listing.py.
 """
@@ -28,7 +44,7 @@ from wgflib import provenance
 from wgflib.workflow import ArtifactOutput, StepResult, WorkflowStep
 from wgflib.yamllite import YamlError, load_file
 
-from . import grounding, imaging, media, platforms
+from . import buildfacts, grounding, imaging, media, platforms
 from .settings import Settings, SettingsError
 
 __all__ = ["ListingValidationStep", "validate", "FAIL_ROUTE", "REQUIRED_INPUTS", "OPTIONAL_INPUTS"]
@@ -297,20 +313,37 @@ def validate(listing, run_dir, reference, profiles, facts=None):
         checks.add("video.trailer", "video", False, "no trailer", required=bool(video_required_by),
                    fix="recapture", expected={"required_by": video_required_by})
 
+    # -- the copy against the build ---------------------------------------------------------
+    _build_checks(checks, listing, reference, profiles, facts, locales, supplied)
+
     # -- grounding: every text that reaches a platform --------------------------------------
     claims = reference.get("claims") or []
+    counts = reference.get("counts")
     problems_total = 0
     for locale, text in sorted(locales.items()):
-        problems = [p for p in grounding.check(text, facts, claims, locale=locale) if p["severity"] == "error"]
+        found = grounding.check(text, facts, claims, locale=locale, counts=counts)
+        problems = [p for p in found if p["severity"] == "error" and not p["code"].endswith("-count")
+                    and p["code"] != "count-mismatch"]
         problems_total += len(problems)
         checks.add(f"grounding.{locale}", "grounding", not problems,
                    ("no unbacked claim" if not problems else "; ".join(p["message"][:120] for p in problems[:4]))
                    + (f" (supplied: {supplied[locale]})" if locale in supplied and problems else ""),
                    locale=locale, measured=len(problems), fix="configure" if locale in supplied else "rewrite")
+        counted = [p for p in found if p["code"] in ("count-mismatch", "unmeasured-count")]
+        if counted or ((facts.get("measured") or {}).get("counts")):
+            failing = [p for p in counted if p["severity"] == "error"]
+            checks.add(f"grounding.counts.{locale}", "grounding", not counted,
+                       ("every count the copy states is the build's"
+                        if not counted else "; ".join(p["message"][:160] for p in counted[:4])),
+                       locale=locale, measured=[p["message"][:160] for p in counted[:8]] or None,
+                       expected={f: c.get("value") for f, c in
+                                 ((facts.get("measured") or {}).get("counts") or {}).items()},
+                       warning=not failing,
+                       fix="configure" if locale in supplied else "rewrite")
     for rendition in listing.get("platforms") or []:
         for locale, text in sorted((rendition.get("text") or {}).items()):
             problems = [p for p in grounding.check(text, facts, claims, locale=locale,
-                                                   where=f"{rendition['platform_id']} copy")
+                                                   where=f"{rendition['platform_id']} copy", counts=counts)
                         if p["severity"] == "error"]
             if problems:
                 checks.add(f"grounding.{rendition['platform_id']}.{locale}", "grounding", False,
@@ -498,6 +531,71 @@ def validate(listing, run_dir, reference, profiles, facts=None):
     if not listing.get("platforms"):
         checks.add("platforms.none", "platforms", False, "the listing has no platform rendition", fix="rerender")
     return checks.items, platform_results
+
+
+def required_locales(listing, reference, profiles):
+    """en, and every locale a targeted platform's profile requires."""
+    out = ["en"]
+    for rendition in listing.get("platforms") or []:
+        for req in platforms.requirements(profiles.get(rendition.get("platform_id")), reference):
+            if req["kind"] == "locale" and req["locale"] not in out:
+                out.append(req["locale"])
+    return out
+
+
+def _build_checks(checks, listing, reference, profiles, facts, locales, supplied):
+    """The copy against the build at the run's tier: the writer, every required locale's
+    full description, its controls, its subtitle."""
+    bars = ((facts.get("quality") or {}).get("bars") or {})
+    tier = (facts.get("quality") or {}).get("tier")
+    writer = (listing.get("copy") or {}).get("writer") or {}
+    written = [loc for loc in locales if loc not in supplied]
+    if writer.get("required") and written:
+        wanted, kind = writer["required"], writer.get("kind")
+        ok = kind == wanted and not (kind == "command" and writer.get("fallback"))
+        why = ("" if ok else
+               f": the tier ({tier}) asks for the copywriter agent and no agent writer is configured "
+               "(factory.listing.writer: kind command with argv), nor the copy supplied "
+               "(factory.listing.copy_dir)" if kind != wanted else
+               ": the copywriter's text was refused twice and the template's stands in")
+        checks.add("metadata.writer", "metadata", ok,
+                   f"the copy in {', '.join(sorted(written))} was written by the {kind} writer"
+                   + ("" if kind == wanted else f", the tier asks for {wanted}") + why,
+                   measured={"kind": kind, "fallback": bool(writer.get("fallback"))},
+                   expected={"kind": wanted, "tier": tier},
+                   fix="configure" if kind != wanted else "rewrite")
+    required = required_locales(listing, reference, profiles)
+    full_bar = bool(bars.get("full_description_per_required_locale"))
+    controls_bar = bool(bars.get("controls_cover_all_inputs"))
+    devices = buildfacts.required_devices(facts)
+    for locale, text in sorted(locales.items()):
+        fix = "configure" if locale in supplied else "rewrite"
+        if locale in required:
+            problems = buildfacts.full_description_problems(text, reference, locale)
+            checks.add(f"metadata.{locale}.full_description", "metadata", not problems,
+                       f"{locale}: a full description" if not problems else
+                       f"{locale} is not a full description: " + "; ".join(problems[:4]),
+                       locale=locale, measured=problems or None,
+                       expected=(reference.get("copy") or {}).get("full_description"),
+                       required=full_bar, fix=fix)
+        if devices:
+            missing, checkable = buildfacts.controls_problems(text, facts, reference.get("controls"), locale)
+            if not checkable:
+                checks.add(f"metadata.{locale}.controls", "metadata", False,
+                           f"{locale}: no device words for this language in store-listing.yaml "
+                           f"`controls`: whether its controls name {', '.join(devices)} is UNKNOWN",
+                           locale=locale, unknown=True, fix="configure")
+            else:
+                checks.add(f"metadata.{locale}.controls", "metadata", not missing,
+                           f"{locale}: the controls name {', '.join(devices)}" if not missing else
+                           f"{locale}: the controls text does not name {', '.join(missing)}, which "
+                           f"the build accepts ({', '.join(devices)})",
+                           locale=locale, measured={"missing": missing},
+                           expected={"devices": devices}, required=controls_bar, fix=fix)
+        if buildfacts.generic_subtitle(text, facts, reference, locale):
+            checks.add(f"metadata.{locale}.subtitle", "metadata", False,
+                       f"{locale}: the subtitle {text.get('subtitle')!r} names only the genre",
+                       locale=locale, fix=fix)
 
 
 def _sections(checks):

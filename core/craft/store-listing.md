@@ -21,7 +21,16 @@ that says only what the game does is never wrong.
 **The first sentence is the verb.** "Drop towers and merge equal levels before the track
 fills" beats "An addictive puzzle experience". The verb comes from the design's
 `core_loop` and the experience contract's `goal.statement`; the fantasy comes second, if at
-all. Controls get one line per device, read from `build_spec.controls.actions`.
+all. Controls get one line per device the build accepts - every device
+`build_spec.controls.actions` binds and every one the play probe reported while the listing
+was captured: a desktop player with a mouse and keys reads a touch-only line as "not for
+me".
+
+**Counts are the build's.** "Six courses" is a promise; it is true only if the build ships
+six. A number the copy states before a level, world, boss or mode word is the one the
+content-sufficiency report measured on the listed build - never the design's plan, which
+the build may have outgrown or fallen short of. Without a measured count, state none.
+A feature the design's evaluation cut or deferred is never named.
 
 **Screenshots are play, not menus.** The capture plan takes the title screen once and play
 three times - early, after the player has acted, late - plus the result screen. Play frames
@@ -55,7 +64,13 @@ category list maps these through `store_listing.categories.allowed`.
 
 **Locales are deliverables.** A listing for a platform that requires `ru` carries its texts
 in `ru`, or validation fails the platform. The texts a writer cannot produce in a locale are
-a missing deliverable, not an English fallback.
+a missing deliverable, not an English fallback. At a release, every required locale gets a
+full description - title, short and long description, controls - written in it: the game's
+one-line objective is not a description, and English words carried into a translation to
+look grounded are not grounding (a translation is held to its source's numbers and ids).
+
+**The subtitle names the game.** "Puzzle" or "A casual arcade game" says only the genre,
+which the category already says: the subtitle says what this game is.
 
 ## Failure modes
 

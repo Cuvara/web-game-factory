@@ -25,6 +25,8 @@ __all__ = ["Routing", "RoutingError", "ROUTING_PATH", "ROLES_PATH", "DEVELOP"]
 ROUTING_PATH = os.path.join(paths.REFERENCE, "specialist-routing.yaml")
 ROLES_PATH = os.path.join(paths.CORE, "roles", "roles.yaml")
 DEVELOP = "develop"
+# Routes whose step does one pass over every finding routed to it, whoever owns each.
+WHOLE_PASS = ("design", "assets", "listing")
 _SEVERITY_ORDER = {"blocker": 0, "major": 1, "minor": 2}
 
 
@@ -134,13 +136,15 @@ class Routing:
 
     def groups(self, findings):
         """The findings grouped by (route, owner), in visit order: by route_order, then by
-        the specialists' order. Within a group, most severe first. A design or assets
-        group is one group whatever its owners: one design revision, one assets pass."""
+        the specialists' order. Within a group, most severe first. A design, assets or
+        listing group is one group whatever its owners: one design revision, one assets
+        pass, one store-listing pass (which captures, renders and rewrites what its findings
+        name, and briefs its copywriter with the store-copy ones)."""
         buckets = {}
         for finding in findings:
             route = finding.get("route") or DEVELOP
             owner = finding.get("owner") or self.owner(finding.get("dimension"))
-            key = (route, None if route in ("design", "assets") else owner)
+            key = (route, None if route in WHOLE_PASS else owner)
             buckets.setdefault(key, []).append(finding)
 
         def rank(key):
@@ -156,7 +160,7 @@ class Routing:
             members = sorted(buckets[key], key=lambda f: (
                 _SEVERITY_ORDER.get(f.get("severity"), 3), f.get("id")))
             if owner is None:
-                # design / assets: named for the owner of its most severe finding.
+                # design / assets / listing: named for the owner of its most severe finding.
                 owner = members[0].get("owner") or self.owner(members[0].get("dimension"))
             spec = self.specialist(owner)
             group = {"owner": owner, "route": route, "label": self.label(owner, route),

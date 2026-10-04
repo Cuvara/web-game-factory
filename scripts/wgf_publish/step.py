@@ -493,7 +493,7 @@ class PublishStep(WorkflowStep):
                       config_app_id=ident["config_app_id"]) if reg else [],
                   registry_status=reg.status(pid) if reg else None,
                   required_ids=required, identity=ident,
-                  login_timeout_s=settings.get("login_timeout_s"),
+                  login_timeout_s=settings.get("login_timeout_s"), registry_entry=entry,
                   campaign=self._campaign(visit, pid),
                   # A game the registry knows is never created again: the visit finds it.
                   allow_create=(reg.status(pid) if reg else "NOT_CREATED") == "NOT_CREATED")
@@ -664,6 +664,16 @@ class PublishStep(WorkflowStep):
         elif result.uploaded or result.saved or outcome == outcomes.UPLOAD_COMPLETE or (
                 outcome == outcomes.DRY_RUN and result.draft_id):
             status = "DRAFT"
+        # A portal adapter's reading of its own status words (Yandex's Verified: VERIFIED),
+        # and ids it keeps beside the game's (a resubmission cooldown), merged in.
+        asked = getattr(result, "registry", None) or {}
+        if asked.get("status"):
+            status = asked["status"]
+        if asked.get("other_ids"):
+            fields["other_ids"] = dict((entry or {}).get("other_ids") or {},
+                                       **{str(k): str(v) for k, v in asked["other_ids"].items()})
+        if asked.get("note") and not note:
+            note = str(asked["note"])[:300]
         if created and outcome != outcomes.IDS_ISSUED and not (entry or {}).get("external_game_id"):
             fields.update(created)
             fields.setdefault("association", "created-by-factory")
@@ -824,7 +834,8 @@ class PublishStep(WorkflowStep):
                   known_ids=reg.lookup_candidates(pid) if reg else [],
                   registry_status=reg.status(pid) if reg else None,
                   identity=self._identity(visit, pid, entry),
-                  login_timeout_s=visit.settings.get("login_timeout_s"), allow_create=False)
+                  login_timeout_s=visit.settings.get("login_timeout_s"), allow_create=False,
+                  registry_entry=entry)
         result = adapter.publish(job)
         if result.uploaded or result.submitted:
             context.logger.error("a track visit reported an action", platform=pid)

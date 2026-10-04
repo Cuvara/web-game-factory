@@ -15,7 +15,8 @@
 # (factory.publish.platforms.crazygames.terms_confirmed) and bumps this file.
 
 id: crazygames
-version: 2.1.0
+version: 2.2.0  # 2.2.0: the CrazyGames adapter's flow - the submission form, both upload
+                #        shapes, Basic/Full Launch words, all as hypotheses
 status: unverified
 docs: https://docs.crazygames.com/
 
@@ -29,7 +30,7 @@ sources:
 unknowns:
   - The submission form's exact fields, labels and limits (title, description, controls, instructions).
   - Whether categories and tags are chosen by the developer or assigned by CrazyGames.
-  - The cover, trailer video and build upload widgets, and whether the build is a zip or a folder.
+  - "The cover, trailer video and build upload widgets, and whether the build is a zip or a folder (both are modeled: upload.zip and upload.files, each optional; the adapter takes whichever the console shows)."
   - The upload size limit (250 MB is carried over from profile 1.0.0 and is not sourced).
   - The orientation, mobile and Progress Save toggles.
   - The status labels the console shows, and which of them mean under review.
@@ -38,7 +39,10 @@ unknowns:
   - Whether a CAPTCHA, a second factor or an anti-bot check protects the console.
   - The session markers (logged in, login form, challenges) on the console page.
   - Where the console shows a game's id, and how the game list is laid out.
-  - The button that requests review, and its exact label.
+  - The button that requests review, and its exact label (review.request "Submit for QA" is a hypothesis).
+  - The submission form's name field and its confirm button (create.name, create.confirm are hypotheses).
+  - Whether the status words include Basic Launch and Full Launch as the console shows them (the launch stages are documented; their labels on the console are not).
+  - The markers by which a person's terms, exclusivity, warranties, payout and launch options show as done.
 
 submission:
   method: console
@@ -81,6 +85,76 @@ submission:
         The entry point a public page names. It opens the submission form; it is not the
         review request. No `names`: "submit" is deny vocabulary, so an adaptive resolution of
         this intent would be refused anyway - drift here stops for a person.
+    - id: create.name
+      phase: create_game
+      class: reversible
+      action: fill
+      value: identity.title
+      target: [{label: "Game name"}]
+      names: [Game name, Title, Name]
+      expect: {value_equals: identity.title}
+      basis: hypothesis
+    - id: create.confirm
+      phase: create_game
+      class: reversible
+      action: click
+      target: [{role: button, name: "Create"}]
+      names: [Create, Continue]
+      basis: hypothesis
+    - id: upload.zip
+      phase: upload_build
+      class: reversible
+      action: upload
+      value: package.file
+      optional: true
+      target: [{label: "Game zip"}]
+      basis: hypothesis
+      note: The build as one zip - one of the two upload shapes (unknowns).
+    - id: upload.files
+      phase: upload_build
+      class: reversible
+      action: upload
+      value: package.file
+      optional: true
+      multiple: true
+      target: [{label: "Game files"}]
+      basis: hypothesis
+      note: >
+        The build as its files - the other upload shape. The adapter hands this intent the
+        package's files, unpacked; a visit that finds neither widget is UNKNOWN.
+    - id: field.description
+      phase: fill_metadata
+      class: reversible
+      action: fill
+      value: listing.text.en.description
+      target: [{label: "Description"}]
+      names: [Description]
+      expect: {value_equals: listing.text.en.description}
+      basis: hypothesis
+    - id: field.controls
+      phase: fill_metadata
+      class: reversible
+      action: fill
+      value: listing.text.en.how_to_play
+      target: [{label: "Controls"}]
+      names: [Controls, Instructions]
+      expect: {value_equals: listing.text.en.how_to_play}
+      basis: hypothesis
+    - id: media.cover
+      phase: upload_media
+      class: reversible
+      action: upload
+      value: listing.media.cover
+      target: [{label: "Cover"}]
+      names: [Cover]
+      basis: hypothesis
+    - id: draft.save
+      phase: save_draft
+      class: reversible
+      action: click
+      target: [{role: button, name: "Save draft"}]
+      names: [Save draft, Save]
+      basis: hypothesis
     - id: declare.terms
       phase: human_fields
       class: human
@@ -104,11 +178,22 @@ submission:
       note: >
         Basic Launch vs Full Launch, the Progress Save toggle and orientation - console
         switches a person sets. Full Launch is CrazyGames' decision, never a click.
+    - id: review.request
+      phase: request_review
+      class: irreversible
+      action: click
+      target: [{role: button, name: "Submit for QA"}]
+      expect: {status_in: submitted_states}
+      basis: hypothesis
+      note: >
+        The request for the initial QA, once, on a person's confirmed submit. The label is a
+        hypothesis (unknowns); Full Launch is never requested or clicked.
 
   status:
-    states: [Draft, In review, Published, Rejected]
+    # Hypotheses (unknowns): the launch stages are documented, the labels are not.
+    states: [Draft, In review, Basic Launch, Full Launch, Rejected]
     submitted_states: [In review]
-    live_states: [Published]
+    live_states: [Basic Launch, Full Launch]
     rejected_states: [Rejected]
     pending_states: [In review]
 

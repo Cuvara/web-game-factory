@@ -482,3 +482,24 @@ dearer: it re-runs develop and every gate after it.
 | GameDistribution | Tech plan blocks without a registered Game ID; with one, packageable alongside the others (its own bundle) | Account (no domain needed; Company required), Game ID from the panel before the build, rewarded flag, pre-roll viewed once from the upload view, publication request button; self-hosting only for real multiplayer with written consent and one's own HTTPS host |
 | GamePix | Profile added; no adapter at the pinned template (template#23 on main), so strategy and tech-plan refuse it: HUMAN_ACTION_REQUIRED, a template release carrying the adapter, then the pin | Account (18+, no domain); exclusivity default ("Allow Distribution"); child-directed and AI declarations on every upload |
 | Poki | Deferred: the current r1 package stays as it is | - |
+
+### Publication adapter status per portal
+
+What `scripts/wgf_publish/adapters/<id>.py` is today (docs/publish-module.md, "One adapter per
+portal"), in four words only: IMPLEMENTED (the adapter exists, with its own status mapping,
+review handling and handoffs), FIXTURE_VALIDATED (run through the real executor in headless
+Chromium against the portal's flavor of the fixture portal - never the portal), UNVERIFIED
+(not exercised against the live console by a person; every console label is documented or a
+hypothesis), HUMAN_ACTION_REQUIRED (something a person must do before it can run at all).
+
+| Portal | Adapter status |
+|---|---|
+| Yandex | IMPLEMENTED, FIXTURE_VALIDATED, UNVERIFIED |
+| CrazyGames | IMPLEMENTED, FIXTURE_VALIDATED, UNVERIFIED (zip vs files upload: both modeled) |
+| Y8 | IMPLEMENTED, FIXTURE_VALIDATED, UNVERIFIED; HUMAN_ACTION_REQUIRED: the Studio |
+| GameDistribution | IMPLEMENTED, FIXTURE_VALIDATED, UNVERIFIED; HUMAN_ACTION_REQUIRED: the account, the terms, the Game ID entered in game.config.yaml |
+| GamePix | IMPLEMENTED, FIXTURE_VALIDATED, UNVERIFIED; HUMAN_ACTION_REQUIRED: a template release carrying the GamePix SDK adapter, and the pin moved to it (the adapter refuses BLOCKED until a build carries the SDK) |
+
+For every portal: `automation_terms: unverified` in its publication profile, so the publish
+step stops HUMAN_REQUIRED before the adapter runs until a person records the terms finding
+(`factory.publish.platforms.<id>.terms_confirmed`) - HUMAN_ACTION_REQUIRED as well.

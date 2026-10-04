@@ -17,7 +17,7 @@ SUITE = {
     "VERIFY": ["test_core_verify"],
     "RELEASE": ["test_core_release", "test_publish_module", "test_publish_registry",
                 "test_publish_observe", "test_publish_executor", "test_publish_step",
-                "test_publish_adaptive", "test_publish_campaign"],
+                "test_publish_adaptive", "test_publish_campaign", "test_publish_portals"],
     "2D GOLDEN": ["test_golden_2d"],
     "3D GOLDEN": ["test_golden_3d"],
     "PROCESS CLEANUP": ["test_core_process"],

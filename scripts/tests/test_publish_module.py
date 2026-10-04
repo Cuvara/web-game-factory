@@ -552,9 +552,16 @@ class Adapters(unittest.TestCase):
         crazy = resolve("crazygames", pub.load_publication_profile("crazygames"))
         self.assertEqual(crazy.__class__.__name__, "CrazyGamesAdapter")
         y8 = resolve("y8", pub.load_publication_profile("y8"))
-        self.assertIs(type(y8), ConsoleAdapter)  # no adapter of its own: the profile's flow
+        self.assertEqual(y8.__class__.__name__, "Y8Adapter")  # each target has its own
         self.assertEqual(y8.method, "console")
-        self.assertIsInstance(resolve("y8", {"submission": {"method": "console"}}), ManualAdapter)
+        # A console platform with no adapter of its own runs on the profile's flow; without a
+        # flow it is a person's.
+        flow = {"submission": {"method": "console", "flow": [
+            {"id": "x.open", "phase": "create_game", "class": "reversible", "action": "navigate",
+             "url": "/new"}]}}
+        self.assertIs(type(resolve("other-console", flow)), ConsoleAdapter)
+        self.assertIsInstance(resolve("other-console", {"submission": {"method": "console"}}),
+                              ManualAdapter)
         fixture = resolve("generic-web", {"submission": {"method": "console"}},
                           {"adapter": "fixture-portal", "console_url": "http://127.0.0.1:1/"})
         self.assertIsInstance(fixture, FixturePortalAdapter)

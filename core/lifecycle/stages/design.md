@@ -103,6 +103,21 @@ consistency result is atomic.
    An mvp feature carries acceptance criteria. Every item of the strategy's `mvp` is carried
    into an mvp feature; every item of its `out_of_scope` stays out.
 
+   **Evaluate the candidate features; never drop one silently.** Every feature of
+   `core/reference/feature-catalogue.yaml` the brief names, every one the strategy names, and
+   every one the catalogue marks `expected` for the genre family is a feature with its
+   `catalogue` id, its `source` (`brief`, `strategy`, `design` or `catalogue`) and an
+   `evaluation`: player value, cost in hours, platform support across the required
+   platforms, monetization impact, QA cost, and a decision with its reason. `include` is
+   tiered mvp or post-mvp; `later` and `cut` are optional, and a cut is listed in
+   `scope.tiers.out_of_scope` with its reason. A feature only the family expects is evaluated,
+   not added: deferring or cutting it with a reason is an honest answer. An included feature
+   that needs a platform service a required platform lacks, with no on-device fallback, is
+   refused. The design step checks all of it (`features.*` rules, `scripts/wgf_design/features.py`),
+   and G3 and G4 are shown what was cut and deferred. A daily challenge is the retention hook
+   `daily_challenge`: one unit a day fits a short session where a daily quest does not.
+   Craft: `core/craft/feature-evaluation.md`.
+
 10. **Run the consistency check.** Evaluate `core/reference/design-consistency-rules.yaml`
     and write the result into `game_design.consistency`. This is the exit guard. The concept
     rules compare mechanics, not words: the brief and the strategy are read as the mechanic
@@ -131,7 +146,8 @@ What *good* looks like inside `build_spec`: `core/craft/content-and-level-design
 `core/craft/core-loop-and-difficulty.md`,
 `core/craft/game-feel.md`, `core/craft/onboarding-and-portal-ux.md`,
 `core/craft/ui-hud-mobile.md`, `core/craft/game-audio.md`, `core/craft/art-direction.md`,
-`core/craft/accessibility.md`, `core/craft/retention-and-progression.md`.
+`core/craft/accessibility.md`, `core/craft/retention-and-progression.md`,
+`core/craft/feature-evaluation.md`.
 
 ## Exit
 

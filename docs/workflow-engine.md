@@ -609,7 +609,9 @@ to: the design's `content.*` consistency rules and the genre model they were che
 the prototype's `content_coverage` (built against designed units) and `design_gaps`, each
 `content.` / `difficulty.` / `progression.` / `depth.` check the playability bot ran - with
 every skip named as a skip, because a skip is not a pass - and the review's verdict with any
-design-fidelity blocker. It decides nothing.
+design-fidelity blocker. Since game-design 1.10.0 it also prints the features the design cut
+and deferred (`features[].evaluation`), each with its source and reason, and a warning naming
+any feature the brief asked for that the build does not have. It decides nothing.
 
 `pass` continues to `release`. `iterate` goes back to `develop` (a new visit of each step of
 the loop; every artifact is a new version and the old ones stay, so the run's lineage is

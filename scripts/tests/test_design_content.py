@@ -29,6 +29,7 @@ sys.path.insert(0, HERE)
 
 from wgflib import criteria, jsonschema_lite  # noqa: E402
 from wgf_design import consistency, content  # noqa: E402
+from wgf_design import features as feature_check  # noqa: E402
 
 MODELS = content.load_models()
 VOCABULARY = content.load_vocabulary()
@@ -930,8 +931,11 @@ class TheStep(unittest.TestCase):
     def test_the_artifact_carries_the_content_results_after_consistencys_own(self):
         results = self.result.artifacts[0].content["consistency"]["rule_results"]
         self.assertEqual(results[0]["criterion_id"], "rewarded_ads_need_reward_moments")
-        self.assertEqual([r["criterion_id"] for r in results[1:]],
+        self.assertEqual([r["criterion_id"] for r in results[1:1 + len(content.RULES)]],
                          [rule_id for rule_id, _ in content.RULES])
+        # Then the feature evaluation's (features.py, game-design 1.10.0).
+        self.assertEqual([r["criterion_id"] for r in results[1 + len(content.RULES):]],
+                         [rule_id for rule_id, _ in feature_check.RULES])
         self.assertFalse([r for r in results if r["breached"]])
 
     def test_the_content_results_have_consistencys_own_shape(self):

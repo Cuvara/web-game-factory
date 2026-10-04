@@ -50,7 +50,9 @@ an asset requirement (`requirements.Requirement`, or its dict: `kind`, `label`, 
 whose declared clips, collision, fit and budget the authored spec must meet). A
 requirement sent back by a failed gate carries `feedback` {notes, frames} (wgf_assets.
 feedback): the judge's reasons and the absolute paths of the frames of the running game that
-show them, which reach the author's request as `notes` and `frames`. `settings`:
+show them, which reach the author's request as `notes` and `frames`, and `current`
+{path, nodes, spec}: the model the game ships now, whose node names the author is told to
+keep (a game may compose the model's parts by node name). `settings`:
 
     kind                  "command" (the only kind)
     mode                  each (default) | set
@@ -140,6 +142,10 @@ PROMPT_NOTES = (
     "asset's `notes` say why, in the judge's words. Open every PNG in its `frames` - "
     "screenshots of the running game - find this asset in them, and fix what "
     "they show and the notes say. Model it anew - the same spec fails the game again."
+    " Its `current` is the model the game ships now: `current.nodes` are the node names "
+    "the game's code may look its parts up by, and `current.spec`, when present, the spec "
+    "it was built from. Keep every part id that makes one of those names - reshape, move "
+    "or recolour the part, never rename it - unless the notes ask for that part to go."
 )
 PROMPT_REPAIR_RENDERS = (
     " What Blender built from it is rendered in `renders` (PNG images: open them with your "
@@ -180,7 +186,10 @@ PROMPT_SET_NOTES = (
     " The running game was judged and sent some of these models back: each such asset in "
     "`assets` carries `notes` (why, in the judge's words) and `frames` (screenshots of the "
     "running game). Open those frames, find the model in them, and make it anew so what they "
-    "show is fixed - the same spec fails the game again."
+    "show is fixed - the same spec fails the game again. Such an asset's `current` is the "
+    "model the game ships now: keep every part id that makes one of its `current.nodes` "
+    "(the names the game's code may look its parts up by) - reshape, move or recolour the "
+    "part, never rename it - unless the notes ask for that part to go."
 )
 PROMPT_SET_FILE = "each as JSON (and nothing else) to its path in the request's `spec_paths`."
 PROMPT_SET_STDOUT = ("and end your answer with one JSON object: {{\"models\": {{\"<asset "
@@ -332,6 +341,9 @@ def _requirement(requirement):
         "feedback": data.get("feedback") if isinstance(data.get("feedback"), dict) else None,
         # What a re-entry report found wrong with the last delivered file.
         "findings": data.get("notes") if isinstance(data.get("notes"), list) else None,
+        # The model the game ships now, for one sent back: {path, nodes, spec} - the node
+        # names game code may look its parts up by, and the spec it was built from.
+        "current": data.get("current") if isinstance(data.get("current"), dict) else None,
     }
 
 
@@ -593,6 +605,8 @@ class _Session:
             # game that show the problem (PROMPT_NOTES).
             asset["notes"] = list(feedback["notes"])
             asset["frames"] = [str(f) for f in feedback.get("frames") or []]
+            if req.get("current"):
+                asset["current"] = req["current"]
         return asset
 
     def _base_request(self):

@@ -7,7 +7,7 @@
 # docs/new-game-quality-inheritance.md lists every entry point and what it can and cannot
 # skip.
 #
-# Three rules, all read from here:
+# The rules, all read from here:
 #
 #   1. The floor. Before a step whose `stage` is under `floor.enforce_at` executes, every
 #      step under `floor.required_steps` that the run's workflow contains and that comes
@@ -40,6 +40,15 @@
 #      holds of the configuration. `wgf where --json` reports them (`quality.refused`) before
 #      anyone starts a run.
 #
+#   5. A check never reports stronger than it measured. A check that could not run here - a
+#      script the game's package.json lacks, no browser for the smoke suite, a play probe that
+#      omits what the check reads - is SKIPPED (or unmeasured), never passed. At a tier whose
+#      class is under `skipped_checks.not_passed_at`, the step that owns the check treats it
+#      as not passed and routes the build back with a finding naming what was missing, unless
+#      `skipped_checks.optional` declares that check optional for the step, the tier and the
+#      platforms. At any other tier it is reported as SKIPPED and does not hold the build up.
+#      A real failure is never turned into a skip.
+#
 # `pending` names the required steps that no workflow contains yet. They are enforced by
 # rule 1 from the first definition that adds them, with nothing else to change, and until
 # then `wgf status` lists them as not yet enforced.
@@ -47,7 +56,7 @@
 # Changing this file is a change to what every future run is held to: bump `version`, and
 # never remove a required step or a condition to let one run through.
 
-version: 1.0.0
+version: 1.1.0
 
 # The quality bars a release-tier run is judged against. A run records the version it
 # started under, so a later recalibration does not silently re-judge it.
@@ -124,6 +133,16 @@ development_when:
   - config: sdk.report
     set: true
     why: the SDK conformance is read from a file instead of run on the commit (factory.sdk.report)
+
+# Rule 5. `not_passed_at` lists tier classes (tier.classes values). `optional` entries are
+# {step, check, tiers, platforms, why}: `step` is the step module's id or the workflow step's
+# id, `check` the check's id, `tiers` the quality tiers it holds at (omitted: every tier), and
+# `platforms` - when given - the platform ids every targeted platform must be among. An entry
+# is a decision a person makes and states in `why`; none is shipped. Read by
+# scripts/wgflib/check_strength.py for develop's toolchain checks and playability's checks.
+skipped_checks:
+  not_passed_at: [release]
+  optional: []
 
 # A new run these hold for is refused before it starts. The built-in design authors write
 # MVP-sized content, which the design step fails at the release tier (content.tier_*): a

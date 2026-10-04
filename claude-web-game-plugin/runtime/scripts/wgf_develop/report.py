@@ -146,7 +146,7 @@ def _summary(checks):
 
 def build_report(*, title_id, brief, checks, dev_report, commit_sha, built_at, build_url,
                  iteration, strategy, pinned_inputs, artifact_seq, produced_at):
-    green = all(not c.failed for c in checks)
+    green = all(not c.blocking for c in checks)
     smoke = next((c for c in checks if c.id == "smoke"), None)
     evidence = (f"Built at {commit_sha[:12]}; automated checks: {_summary(checks)}. "
                 "No first-time playtest has been run on this build yet.")
@@ -176,7 +176,7 @@ def build_report(*, title_id, brief, checks, dev_report, commit_sha, built_at, b
              "evaluated_at": produced_at,
              "note": "Measured by the development module: every configured check passed."
              if green else "Measured by the development module: " + ", ".join(
-                 c.id for c in checks if c.failed) + " failed."}]
+                 f"{c.id} {c.status}" for c in checks if c.blocking) + " - not passed."}]
     for criterion in (strategy or {}).get("kill_criteria") or []:
         kill.append({
             "criterion_id": criterion.get("id") or "unnamed",
@@ -187,6 +187,11 @@ def build_report(*, title_id, brief, checks, dev_report, commit_sha, built_at, b
         })
 
     notes = [f"Automated session by the development module. Checks: {_summary(checks)}."]
+    # A skip measured nothing: said so in its own words, whether or not it held the build up.
+    skipped = [c for c in checks if c.skipped]
+    if skipped:
+        notes.append("Skipped, not measured: " + "; ".join(
+            f"{c.id} ({c.summary}{', not passed' if c.required else ''})" for c in skipped))
     if dev_report and dev_report.get("how_to_play"):
         notes.append(f"How to play: {dev_report['how_to_play']}")
     # A design gap is a design fix, read back by title:design from `design_gaps`. It is not
@@ -215,7 +220,7 @@ def build_report(*, title_id, brief, checks, dev_report, commit_sha, built_at, b
             "rationale": "The build does not pass its checks, so it is not yet a playable "
                          "build and cannot be reviewed.",
             "if_iterate_what_changes": "Fix: " + "; ".join(
-                f"{c.id} ({c.summary})" for c in checks if c.failed),
+                f"{c.id} ({c.summary})" for c in checks if c.blocking),
         }
 
     artifact = {

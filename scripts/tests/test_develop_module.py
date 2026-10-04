@@ -1661,6 +1661,73 @@ class Command(DevelopCase):
         self.assertEqual(report["proved"][-1]["verdict"], "inconclusive")
         self.assertIn("smoke skipped", report["playtest_sessions"][0]["notes"])
 
+    # core/reference/quality-policy.yaml rule 5: a check never reports stronger than it measured.
+
+    def _at_tier(self, tier):
+        return dict(TEST_BUDGET, quality={"tier": tier})
+
+    def _smoke_record(self):
+        with open(os.path.join(self.repo, briefs.BRIEF_DIR, "checks.json")) as handle:
+            record = json.load(handle)
+        return record, next(c for c in record["checks"] if c["id"] == "smoke")
+
+    def test_at_the_release_tier_a_skipped_smoke_is_not_passed(self):
+        # The residual WS-12 named: no browser counted green, and the build was committed.
+        before = self.commits()
+        runner = FakeRunner(unavailable={"test:e2e"}, on_develop=write_game)
+        result = step_with(runner).execute(
+            inputs_for(), context(self.command_config(), environment=self._at_tier("release")))
+        self.assertEqual(result.outcome, StepOutcome.FAILED)
+        self.assertTrue(result.retryable)
+        self.assertIn("smoke", result.error)
+        self.assertIn("did not run measured nothing", result.error)
+        self.assertEqual(self.commits(), before)          # nothing committed as green
+        record, smoke = self._smoke_record()
+        self.assertFalse(record["green"])
+        self.assertEqual(smoke["status"], "skipped")      # still a skip, never a failure
+        self.assertTrue(smoke["required"])
+        self.assertTrue(smoke["blocking"])
+        self.assertIn("playwright install", smoke["findings"][0])
+        self.assertIn("quality tier release", smoke["findings"][0])
+        report = result.artifacts[0].content
+        self.assertTrue(report["kill_criteria_eval"][0]["breached"])
+        self.assertIn("not passed", report["playtest_sessions"][0]["notes"])
+
+    def test_the_next_visit_is_told_what_the_required_skip_was_missing(self):
+        runner = FakeRunner(unavailable={"test:e2e"}, on_develop=write_game)
+        step_with(runner).execute(
+            inputs_for(), context(self.command_config(), environment=self._at_tier("release")))
+        brief = briefs.build_brief(
+            title_id=TITLE, engine="pixijs", iteration=1, key="run-1:develop:1",
+            baseline=self.baseline, design=fixture("game-design"),
+            assets=fixture("asset-manifest"), scaffold=fixture("scaffold-record"),
+            previous_checks=self._smoke_record()[0])
+        failures = brief["previous_failures"]
+        self.assertEqual([f["check"] for f in failures], ["smoke"])
+        self.assertIn("playwright install", failures[0]["output_tail"])
+
+    def test_at_the_mvp_tier_a_skipped_smoke_is_reported_not_held(self):
+        runner = FakeRunner(unavailable={"test:e2e"}, on_develop=write_game)
+        result = step_with(runner).execute(
+            inputs_for(), context(self.command_config(), environment=self._at_tier("mvp")))
+        self.assertEqual(result.outcome, StepOutcome.SUCCESS, result.error)
+        self.assertIn("SKIPPED, not measured: smoke", result.message)
+        self.assertIn("quality tier mvp (development)", result.message)
+        record, smoke = self._smoke_record()
+        self.assertTrue(record["green"])
+        self.assertEqual(smoke["status"], "skipped")
+        self.assertFalse(smoke["required"])
+        self.assertNotIn("blocking", smoke)
+
+    def test_a_real_failure_at_the_release_tier_stays_a_failure(self):
+        runner = FakeRunner(fail={"test:e2e"}, on_develop=write_game)
+        result = step_with(runner).execute(
+            inputs_for(), context(self.command_config(), environment=self._at_tier("release")))
+        self.assertEqual(result.outcome, StepOutcome.FAILED)
+        _record, smoke = self._smoke_record()
+        self.assertEqual(smoke["status"], "failed")
+        self.assertNotIn("required", smoke)
+
 
 class Idempotency(DevelopCase):
     def test_the_same_visit_commits_once_and_develops_once(self):

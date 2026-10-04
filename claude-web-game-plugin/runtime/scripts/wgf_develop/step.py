@@ -53,8 +53,9 @@ import os
 import shutil
 
 from wgflib import checkout as checkout_lock
-from wgflib import isolation
+from wgflib import check_strength, isolation
 from wgflib.workflow import ArtifactOutput, StepResult, WorkflowStep
+from wgflib.workflow.quality import run_tier
 
 from . import brief as briefs
 from . import safewrite, scope
@@ -89,6 +90,15 @@ def _write(checkout, path, text):
     """A Factory file into the checkout: never through a link the developer left there
     (safewrite). Raises UnsafeCheckoutPath, which fails the step."""
     safewrite.write_text(checkout, path, text)
+
+
+def skip_policy(context, brief):
+    """Whether a skipped check is held against this build (core/reference/quality-policy.yaml
+    rule 5): the run's quality tier, else the tier the brief was built for (the tech plan's),
+    else unknown - reported, not held."""
+    tier = (run_tier(getattr(context, "environment", None))
+            or (brief.get("build_scope") or {}).get("quality_tier"))
+    return check_strength.for_tier(tier)
 
 
 def _record_checks(checkout, path, checked_at, key, engine, checks, green):
@@ -466,7 +476,8 @@ class DevelopStep(WorkflowStep):
                 # the real acceptance run's retry after a developer that hit its turn limit
                 # did 16 turns and stopped. Earlier failed checks of this visit carry over.
                 carried = [c for c in (previous_checks or {}).get("checks") or []
-                           if c.get("status") == "failed" and c.get("id") != "developer"]
+                           if (c.get("status") == "failed" or c.get("blocking"))
+                           and c.get("id") != "developer"]
                 self._record(checks_json, key, engine, [{
                     "id": "developer",
                     "status": "failed",
@@ -487,8 +498,18 @@ class DevelopStep(WorkflowStep):
         refused = guard.take()  # a re-executed, committed visit: around its checks alone
         if refused is not None:
             return refused
-        checks = run_checks(checkout, brief, settings, runner, git, logger=context.logger)
-        green = all(not c.failed for c in checks)
+        try:
+            strength = skip_policy(context, brief)
+        except ValueError as exc:
+            return StepResult.blocked(f"what a skipped check counts as cannot be read ({exc}); "
+                                      "no build is called green on a defaulted rule")
+        platforms = [p.get("id") for p in game_config.get("platforms") or []
+                     if isinstance(p, dict) and p.get("id")]
+        checks = run_checks(checkout, brief, settings, runner, git, logger=context.logger,
+                            strength=strength,
+                            steps=("develop", getattr(context, "current_step", None)),
+                            platforms=platforms)
+        green = all(not c.blocking for c in checks)
         # The checks run code the developer wrote (its tests, its build): the same boundary.
         refused = guard.check(checks=checks, **record)
         if refused is not None:
@@ -557,10 +578,17 @@ class DevelopStep(WorkflowStep):
         if green:
             return StepResult.success([artifact], message=(
                 f"{title_id} built at {commit_sha[:12]} ({engine}); "
-                + ", ".join(f"{c.id} {c.status}" for c in checks)))
+                + ", ".join(f"{c.id} {c.status}" for c in checks)
+                + ("; SKIPPED, not measured: "
+                   + "; ".join(f"{c.id} ({c.summary})" for c in checks if c.skipped)
+                   + f" - {strength.describe()}"
+                   if any(c.skipped for c in checks) else "")))
 
-        failed = [c for c in checks if c.failed]
+        failed = [c for c in checks if c.blocking]
         summary = "; ".join(f"{c.id}: {c.summary}" for c in failed)
+        if any(c.skipped for c in failed):
+            summary += (" (a check that did not run measured nothing: "
+                        f"{strength.describe()})")
         developer = create_developer(settings, runner)
         if developer.retry_on_check_failure:
             return StepResult("FAILED", artifacts=[artifact], retryable=True,

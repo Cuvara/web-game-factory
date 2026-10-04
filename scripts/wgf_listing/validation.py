@@ -89,6 +89,39 @@ def _aspect_ok(width, height, aspect):
     return abs(width / height - a / b) < 0.02
 
 
+def _video_problems(made, req, run_dir, trailer):
+    """What keeps an included video from meeting the platform's own stated bounds - its
+    length, file size, resolution and aspect. A bound the profile leaves null is not checked.
+    The recording is the run's canonical trailer, so a miss is a capture setting a person
+    configures, never something re-rendering would fix."""
+    problems = []
+    for f in made:
+        exists, intact, info = _file_ok(f, run_dir)
+        if not exists or not intact:
+            problems.append(f"{f['id']} missing or changed")
+            continue
+        duration = info.get("duration_s") if info.get("duration_s") is not None else trailer.get("duration_s")
+        if req.get("max_seconds") is not None and duration is not None and duration > req["max_seconds"]:
+            problems.append(f"{f['id']} runs {duration} s > {req['max_seconds']} s")
+        if req.get("min_seconds") is not None and duration is not None and duration < req["min_seconds"]:
+            problems.append(f"{f['id']} runs {duration} s < {req['min_seconds']} s")
+        if (req.get("max_seconds") is not None or req.get("min_seconds") is not None) and duration is None:
+            problems.append(f"{f['id']} has no measurable length")
+        if req.get("max_mb") is not None and info["bytes"] > req["max_mb"] * 1024 * 1024:
+            problems.append(f"{f['id']} is {round(info['bytes'] / 1024 / 1024, 2)} MB > {req['max_mb']} MB")
+        width, height = info.get("width"), info.get("height")
+        if (req.get("min_width") or req.get("min_height") or req.get("aspect")) and not (width and height):
+            problems.append(f"{f['id']} has no measurable resolution")
+            continue
+        if req.get("min_width") is not None and width < req["min_width"]:
+            problems.append(f"{f['id']} is {width} px wide < {req['min_width']}")
+        if req.get("min_height") is not None and height < req["min_height"]:
+            problems.append(f"{f['id']} is {height} px high < {req['min_height']}")
+        if req.get("aspect") and not _aspect_ok(width, height, req["aspect"]):
+            problems.append(f"{f['id']} is not {req['aspect']}")
+    return problems
+
+
 def validate(listing, run_dir, reference, profiles, facts=None):
     """The checks over one store-listing. Returns (checks, platform_requirements)."""
     checks = _Checks()
@@ -427,10 +460,15 @@ def validate(listing, run_dir, reference, profiles, facts=None):
                 if not req.get("required") and not made:
                     continue
                 unmet_here = [u for u in rendition.get("unmet") or [] if u.get("subject") == "video"]
-                entry = checks.add(cid, "platforms", bool(made) and not unmet_here,
+                problems = _video_problems(made, req, run_dir, trailer)
+                detail = (unmet_here[0]["message"] if unmet_here else "; ".join(problems))
+                entry = checks.add(cid, "platforms", bool(made) and not unmet_here and not problems,
                                    f"{pid}: video {'included' if made else 'missing'}"
-                                   + (": " + unmet_here[0]["message"] if unmet_here else ""),
-                                   platform_id=pid, required=bool(req.get("required")), fix="configure")
+                                   + (": " + detail if detail else ""),
+                                   platform_id=pid, required=bool(req.get("required")), fix="configure",
+                                   expected={k: req.get(k) for k in ("min_seconds", "max_seconds", "max_mb",
+                                                                     "min_width", "min_height", "aspect")
+                                             if req.get(k) is not None} or None)
             elif req["kind"] == "age_rating":
                 if not req.get("required"):
                     continue

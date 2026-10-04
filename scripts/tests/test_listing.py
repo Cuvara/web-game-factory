@@ -1196,6 +1196,39 @@ class Validation(ListingCase):
         self.assertEqual((video["status"], video["fix"]), ("FAIL", "configure"))
 
 
+class PlatformVideoBounds(unittest.TestCase):
+    """A platform's stated video bounds are checked against the included trailer, not only
+    its format: a profile saying 20 s maximum must not pass a 30 s recording."""
+
+    def setUp(self):
+        self.run_dir = tempfile.mkdtemp(prefix="wgf-video-")
+        self.addCleanup(shutil.rmtree, self.run_dir, ignore_errors=True)
+        path = make_webm(os.path.join(self.run_dir, "p", "trailer.webm"), duration_s=30.0,
+                         width=1280, height=720)
+        self.made = [{"id": "trailer", "path": "p/trailer.webm", "sha256": media.sha256_of(path)}]
+
+    def problems(self, **bounds):
+        from wgf_listing.validation import _video_problems
+        return _video_problems(self.made, bounds, self.run_dir, {})
+
+    def test_bounds_the_recording_meets_pass(self):
+        self.assertEqual(self.problems(max_seconds=30, max_mb=50, min_width=1280, aspect="16:9"), [])
+
+    def test_each_bound_the_recording_misses_is_named(self):
+        problems = self.problems(max_seconds=20, min_height=1080, aspect="2:3")
+        self.assertEqual(len(problems), 3)
+        self.assertIn("30.0 s > 20 s", problems[0])
+        self.assertIn("720 px high < 1080", problems[1])
+        self.assertIn("is not 2:3", problems[2])
+
+    def test_null_bounds_are_not_checked(self):
+        self.assertEqual(self.problems(max_seconds=None, min_height=None, aspect=None), [])
+
+    def test_a_changed_file_is_a_problem(self):
+        self.made[0]["sha256"] = "sha256:" + "0" * 64
+        self.assertEqual(self.problems(), ["trailer missing or changed"])
+
+
 # -- the mock, the engine and the release ----------------------------------------------------
 
 class TheMock(unittest.TestCase):

@@ -107,7 +107,8 @@ class ContractShapeTest(unittest.TestCase):
 
     def test_infrastructure_is_the_list_init_always_checked(self):
         """The list init required before the contract existed, entry for entry and in order:
-        deriving the renderer packages from the engines changed nothing."""
+        deriving the renderer packages from the engines changed nothing. Contract 2.1.0
+        dropped scripts/publish/ and .github/workflows/publish.yml: CI never publishes."""
         self.assertEqual(contract.ENGINES, ("pixijs", "phaserjs", "threejs"))
         self.assertEqual([p for p, _ in contract.INFRASTRUCTURE], [
             "package.json", "pnpm-workspace.yaml", "pnpm-lock.yaml", "tsconfig.base.json",
@@ -115,11 +116,11 @@ class ContractShapeTest(unittest.TestCase):
             "packages/game-core/", "packages/platform-sdk/", "packages/analytics-sdk/",
             "packages/pixi-framework/", "packages/phaser-framework/",
             "packages/three-framework/", "config/platforms/",
-            "scripts/_shared.mjs", "scripts/verify/", "scripts/release/", "scripts/publish/",
+            "scripts/_shared.mjs", "scripts/verify/", "scripts/release/",
             "tests/unit/", "tests/integration/", "tests/e2e/", "tests/verify/",
             ".github/workflows/ci.yml", ".github/workflows/build.yml",
             ".github/workflows/verify.yml", ".github/workflows/release.yml",
-            ".github/workflows/publish.yml", ".github/workflows/campaign.yml"])
+            ".github/workflows/campaign.yml"])
 
     def test_modules_keep_their_public_names(self):
         """Behaviour-preserving: the names modules exported before the contract existed

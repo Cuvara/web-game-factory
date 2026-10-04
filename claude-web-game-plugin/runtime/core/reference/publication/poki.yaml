@@ -1,9 +1,12 @@
 # Publication profile - Poki (docs/publish-module.md)
 #
-# Poki publishes a CLI whose login is a browser flow (scripts/wgf-org-setup.sh:
-# WGF_POKI_AUTH_JSON is its captured auth file). The CLI is the supported way in and is
-# preferred over the console; no adapter drives it yet, so the publish step stops
-# HUMAN_REQUIRED (no-automated-method) and a person runs the CLI with the packaged release.
+# Poki publishes a CLI whose login is a browser flow. WGF_POKI_AUTH_JSON names its captured
+# auth file in the environment of the person's own machine that runs submit - it is not a CI
+# or organization secret: CI never publishes, and no portal credential belongs there
+# (docs/env-vars.md). The profile is kept as data while Poki is deferred. The CLI is the
+# supported way in and is preferred over the console; no adapter drives it yet, so the
+# publish step stops HUMAN_REQUIRED (no-automated-method) and a person runs the CLI with
+# the packaged release.
 
 id: poki
 version: 1.0.0

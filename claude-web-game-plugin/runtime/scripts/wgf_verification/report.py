@@ -151,6 +151,13 @@ def build_verification_report(*, title_id, checks, session, pinned, produced_at,
         "verdict": verdict_of(checks),
         "evidence_status": overall_evidence_status(checks),
     }
+    builds = getattr(session, "platform_builds", None) if session else None
+    if builds:
+        # One bundle per target platform (platform_builds), in platforms[] order: what each
+        # platform's package is made from.
+        order = [p["id"] for p in session.platforms]
+        report["build_artifact"]["platforms"] = [
+            builds[pid].to_dict() for pid in order if pid in builds]
     if release_id:
         report["release_id"] = release_id
     workflow = workflow_ref(context)

@@ -42,6 +42,10 @@ __all__ = [
     "PACKAGE_JSON", "PNPM_LOCK", "GAME_CONFIG", "PLAYWRIGHT_CONFIG", "VITEST_WORKSPACE",
     "PLATFORM_PROFILES_DIR", "SHARED_MJS", "CHANGELOG", "INFRASTRUCTURE", "SOURCE_PATHS",
     "platform_profile_path", "renderer_package", "rendering_dir", "build_target",
+    # per-platform builds
+    "GAME_CONFIG_ENV", "PLATFORM_BUILDS_DIR", "PLATFORM_BUILDS_INDEX", "SCRIPT_BUILD_PLATFORMS",
+    "CONTRACT_MARKER", "template_contract_of", "builds_per_platform", "platform_build_dir",
+    "platform_dist_dir", "platform_build_config", "platform_build_record",
     # package manager, npm scripts, executables
     "PACKAGE_MANAGER", "SCRIPT_BUILD", "SCRIPT_TYPECHECK", "SCRIPT_LINT", "SCRIPT_FORMAT",
     "SCRIPT_FORMAT_WRITE", "SCRIPT_TEST", "SCRIPT_TEST_UNIT", "SCRIPT_TEST_INTEGRATION",
@@ -79,11 +83,17 @@ CONTRACT_LOG = (
                        "directory that follow from it are required entries the Factory did "
                        "not require before, so a repository generated from a template "
                        "without them is now refused"),
+    ("2.0.0", "2.8.0", "per-platform builds: the pinned contract's own WGF_GAME_CONFIG override "
+                       "(vite.config.ts, scripts/_shared.mjs readGameConfig) and "
+                       "release:package --platform, now encoded so the Factory builds and "
+                       "packages one bundle per platforms[] entry under build/platforms/<id>/; "
+                       "build:platforms and the package.json wgf.template.contract marker are "
+                       "recognized when present (contract 2) and required nowhere"),
 )
 # contract_digest() of the entries CONTRACT_LOG's last line describes. A change to any entry
 # fails test_template_contract until it is recorded: bump CONTRACT_VERSION if acceptance
 # changed (above), add a CONTRACT_LOG line either way, then update this.
-CONTRACT_DIGEST = "sha256:aedf128c63a59ed48651192f403704f496341384e1eae0922035d89692c9f7ae"
+CONTRACT_DIGEST = "sha256:bdc618c90d657bef5a2acc7c8b38728ca22908b5a23255880e62bf09f385fc7d"
 
 # -- engines ----------------------------------------------------------------------------------
 
@@ -185,6 +195,63 @@ def build_target(platforms):
     return next((p["id"] for p in entries if p.get("role") == "required"), entries[0]["id"])
 
 
+# -- per-platform builds ------------------------------------------------------------------------
+#
+# Contract 1 (the pinned release) builds one bundle per `pnpm build`, booting build_target().
+# It already honours WGF_GAME_CONFIG: vite.config.ts builds against the config it names, and
+# scripts/_shared.mjs readGameConfig() - read by collect-facts, release:package and
+# release:manifest - measures and packages against that same config. The Factory builds each
+# platform with a config whose only platforms[] entry is that platform (role required) and
+# whose build.output is that platform's own directory, and keeps the bundle there: the layout
+# contract 2's `build:platforms` writes itself (build/platforms/<id>/dist/, build.json).
+# Contract 2 (template main, unreleased) marks itself in package.json `wgf.template.contract`
+# and ships `build:platforms`; when both are present the Factory runs that instead.
+
+GAME_CONFIG_ENV = "WGF_GAME_CONFIG"
+PLATFORM_BUILDS_DIR = "build/platforms"
+PLATFORM_BUILDS_INDEX = PLATFORM_BUILDS_DIR + "/index.json"
+SCRIPT_BUILD_PLATFORMS = "build:platforms"
+# package.json keys leading to the template's contract number.
+CONTRACT_MARKER = ("wgf", "template", "contract")
+
+
+def template_contract_of(package):
+    """The template contract a game's package.json declares (an int), else 1: the pinned
+    release declares none."""
+    node = package if isinstance(package, dict) else {}
+    for key in CONTRACT_MARKER:
+        node = node.get(key) if isinstance(node, dict) else None
+    return node if isinstance(node, int) and not isinstance(node, bool) and node > 0 else 1
+
+
+def builds_per_platform(package):
+    """True when the repository builds its platforms itself (`build:platforms`, contract 2+);
+    False when the Factory makes each platform's build (contract 1)."""
+    scripts = (package or {}).get("scripts") if isinstance(package, dict) else None
+    return template_contract_of(package) >= 2 and SCRIPT_BUILD_PLATFORMS in (scripts or {})
+
+
+def platform_build_dir(platform_id):
+    """build/platforms/<id>: one platform's build."""
+    return f"{PLATFORM_BUILDS_DIR}/{platform_id}"
+
+
+def platform_dist_dir(platform_id):
+    """build/platforms/<id>/dist: the bundle a platform's package is made from."""
+    return f"{platform_build_dir(platform_id)}/dist"
+
+
+def platform_build_config(platform_id):
+    """build/platforms/<id>/game.config.json: the config a contract-1 platform build was made
+    against (WGF_GAME_CONFIG). JSON, which the template's YAML parser reads."""
+    return f"{platform_build_dir(platform_id)}/game.config.json"
+
+
+def platform_build_record(platform_id):
+    """build/platforms/<id>/build.json: what was built (contract 2's own record shape)."""
+    return f"{platform_build_dir(platform_id)}/build.json"
+
+
 def platform_profile_path(platform_id):
     """The vendored profile a game pins: config/platforms/<id>.yaml."""
     return f"{PLATFORM_PROFILES_DIR}/{platform_id}.yaml"
@@ -229,7 +296,7 @@ NPM_SCRIPTS = {
 
 # Flags the Factory passes through a script to the CLI behind it.
 SCRIPT_FLAGS = {
-    SCRIPT_RELEASE_PACKAGE: ("--release",),
+    SCRIPT_RELEASE_PACKAGE: ("--release", "--platform"),
     SCRIPT_RELEASE_MANIFEST: ("--release", "--version", "--kind", "--state"),
 }
 
@@ -275,6 +342,12 @@ OUTPUTS = {
     RELEASE_ROOT + "/<release-id>/" + RELEASE_CHECKSUMS: (SCRIPT_RELEASE_PACKAGE, "template"),
     RELEASE_ROOT + "/<release-id>/" + RELEASE_MANIFEST: (SCRIPT_RELEASE_MANIFEST, "template"),
     GAMEPLAY_SESSION: ("a browser-driving agent", "factory"),
+    # Contract 1: the Factory's per-platform build (wgf_verification.platform_builds).
+    PLATFORM_BUILDS_DIR + "/<platform>/dist": ("the verify step, per platform", "factory"),
+    PLATFORM_BUILDS_DIR + "/<platform>/game.config.json": ("the verify step, per platform",
+                                                          "factory"),
+    PLATFORM_BUILDS_DIR + "/<platform>/build.json": ("the verify step, per platform", "factory"),
+    PLATFORM_BUILDS_INDEX: ("the verify step", "factory"),
     PLAYWRIGHT_E2E_REPORT: (SCRIPT_TEST_E2E, "factory"),
 }
 

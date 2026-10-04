@@ -4,7 +4,11 @@
     + sdk-report + prototype-report       one passing verification, the newest, one commit
     checkout                           ──► HEAD is that commit, the tree is clean, and the
                                            bundle on disk is the one that was verified
-    game repo `release:package`        ──► release/<release-id>/<platform>.zip + packages.json
+    game repo `release:package`        ──► release/<release-id>/<platform>.zip + packages.json:
+                                           one package per target platform, each from that
+                                           platform's own verified bundle when verify built
+                                           one per platform (build/platforms/<id>/dist), else
+                                           the one bundle, packaged for the platform it boots
     game repo `release:manifest`       ──► release/<release-id>/manifest.json (state draft)
     every package                      ──► checksum recorded and matching; audited (package.py)
                                        ──► release-manifest: the game's manifest, extended with
@@ -220,8 +224,11 @@ class ReleaseStep(WorkflowStep):
             game_config = self._game_config(root)
             release_id = self._release_id(root, head, settings)
             version = self._version(root, game_config, settings)
-            self._package(runner, root, release_id, version, settings, timeouts, game_config)
-            manifest, packages = self._collect(root, release_id, head, loaded, game_config)
+            builds = self._platform_builds(loaded, game_config)
+            self._package(runner, root, release_id, version, settings, timeouts, game_config,
+                          builds)
+            manifest, packages = self._collect(root, release_id, head, loaded, game_config,
+                                               builds)
             listing = self._ship_listing(root, release_id, loaded, inputs, context)
             artifact = self._manifest(manifest, packages, release_id, head, root, loaded,
                                       inputs, context, game_config, listing)
@@ -319,6 +326,28 @@ class ReleaseStep(WorkflowStep):
                 f"{out_dir}/ in the checkout ({on_disk or 'missing'}) is not the bundle that "
                 f"was verified ({verified.get('content_hash')}). Re-run verify, which builds "
                 "it, then release."))
+        # Each platform's own bundle, and the config a Factory build was made against: what
+        # is about to be packaged must be what was verified, byte for byte.
+        for build in verified.get("platforms") or []:
+            if not isinstance(build, dict) or build.get("status") != "built":
+                continue
+            pid, path = build.get("platform_id"), str(build.get("path") or "")
+            on_disk = bundle_digest(root, path) if path else None
+            if on_disk != build.get("content_hash"):
+                refusals.append(Refusal(
+                    BLOCKED, "bundle-not-verified",
+                    f"{pid}: {path or 'its bundle'}/ in the checkout ({on_disk or 'missing'}) "
+                    f"is not the bundle that was verified ({build.get('content_hash')}). "
+                    "Re-run verify, which builds it, then release."))
+            config = build.get("config")
+            if config:
+                full = os.path.join(root, *str(config).split("/"))
+                actual = file_sha256(full) if os.path.isfile(full) else None
+                if actual != build.get("config_hash"):
+                    refusals.append(Refusal(
+                        BLOCKED, "bundle-not-verified",
+                        f"{pid}: {config} ({actual or 'missing'}) is not the config its bundle "
+                        f"was verified with ({build.get('config_hash')}). Re-run verify."))
         if refusals:
             raise _Refused(refusals)
         return head
@@ -388,26 +417,85 @@ class ReleaseStep(WorkflowStep):
             manager = "yarn"
         return [manager, "run", name] + (["--"] if manager == "npm" else []) + list(args)
 
-    def _package(self, runner, root, release_id, version, settings, timeouts, game_config=None):
+    @staticmethod
+    def _platform_builds(loaded, game_config):
+        """{platform id: verified build} when verify built one bundle per platform
+        (verification-report build_artifact.platforms), else None: the one bundle.
+
+        Every platform game.config.yaml targets must have a verified bundle of its own: a
+        release never ships a platform whose build failed or was not judged."""
+        verified = (loaded["verification-report"].get("build_artifact") or {}).get("platforms")
+        if not verified:
+            return None
+        builds = {str(b.get("platform_id")): b for b in verified if isinstance(b, dict)}
+        targets = [str(p.get("id")) for p in game_config.get("platforms") or []
+                   if isinstance(p, dict) and p.get("id")]
+        refusals = []
+        for pid in targets:
+            build = builds.get(pid)
+            if build is None or build.get("status") != "built" or not build.get("content_hash"):
+                refusals.append(Refusal(
+                    FAILED, "platform-not-verified",
+                    f"{pid} is a target platform, but the verification holds no verified "
+                    f"bundle for it ({(build or {}).get('status') or 'none'}): every targeted "
+                    "platform ships from its own verified build, or the release is not made"))
+        foreign = sorted(set(builds) - set(targets))
+        if foreign:
+            refusals.append(Refusal(
+                FAILED, "platform-not-verified",
+                f"the verification built {', '.join(foreign)}, which game.config.yaml at HEAD "
+                "does not target: it verified another configuration. Re-run verify."))
+        if refusals:
+            raise _Refused(refusals)
+        return {pid: builds[pid] for pid in targets}
+
+    def _run(self, runner, root, key, argv, timeout, env=None):
+        result = (runner.run(argv, root, timeout, env=env) if env else
+                  runner.run(argv, root, timeout))
+        if not result.ok:
+            kind_ = BLOCKED if result.error else FAILED
+            raise _Refused([Refusal(kind_, f"{key}-failed",
+                                    describe(result) + ": "
+                                    + (result.tail(15) if hasattr(result, "tail") else ""))])
+        return result
+
+    def _package(self, runner, root, release_id, version, settings, timeouts, game_config=None,
+                 builds=None):
         kind = settings.get("kind") or ("initial" if release_id == "r1" else "content")
-        steps = (
-            ("package", self._script(root, contract.SCRIPT_RELEASE_PACKAGE,
-                                     "--release", release_id)),
-            ("manifest", self._script(root, contract.SCRIPT_RELEASE_MANIFEST,
-                                      "--release", release_id, "--version", version,
-                                      "--kind", kind, "--state", "draft")),
-        )
-        for key, argv in steps:
-            result = runner.run(argv, root, timeouts[key])
-            if not result.ok:
-                kind_ = BLOCKED if result.error else FAILED
-                raise _Refused([Refusal(kind_, f"{key}-failed",
-                                        describe(result) + ": "
-                                        + (result.tail(15) if hasattr(result, "tail") else ""))])
-            if key == "package":
-                # Before the game's manifest is made from packages.json, so it lists only
-                # what is shipped.
-                self._prune(root, release_id, game_config or {})
+        package = self._script(root, contract.SCRIPT_RELEASE_PACKAGE, "--release", release_id)
+        manifest = self._script(root, contract.SCRIPT_RELEASE_MANIFEST,
+                                "--release", release_id, "--version", version,
+                                "--kind", kind, "--state", "draft")
+        self.pruned = []
+        if builds is None:
+            self._run(runner, root, "package", package, timeouts["package"])
+            # Before the game's manifest is made from packages.json, so it lists only what
+            # is shipped.
+            self._prune(root, release_id, game_config or {})
+        elif any(b.get("config") for b in builds.values()):
+            # Factory builds (template contract 1): one `release:package --platform <id>` per
+            # platform, through the config its bundle was built against, so the template
+            # zips that platform's bundle under the profile's archive rules. Each call
+            # rewrites packages.json and checksums.txt for its one package; they are merged
+            # here, in the template's own formats.
+            entries = []
+            base = os.path.join(root, *contract.release_path(release_id))
+            for pid, build in builds.items():
+                self._run(runner, root, "package", package + ["--platform", pid],
+                          timeouts["package"], env={contract.GAME_CONFIG_ENV: build["config"]})
+                listed = _read_json(os.path.join(base, contract.RELEASE_PACKAGES))
+                entries += [e for e in listed or [] if isinstance(e, dict)
+                            and e.get("platform_id") == pid]
+            _replace(os.path.join(base, contract.RELEASE_PACKAGES),
+                     json.dumps(entries, indent=2) + "\n")
+            _replace(os.path.join(base, contract.RELEASE_CHECKSUMS),
+                     "".join(f"{str(e.get('checksum', '')).split(':', 1)[-1]}  "
+                             f"{e.get('filename')}\n" for e in entries))
+        else:
+            # The repository builds its platforms itself (contract 2): its release:package
+            # packages each from build/platforms/<id>/dist.
+            self._run(runner, root, "package", package, timeouts["package"])
+        self._run(runner, root, "manifest", manifest, timeouts["manifest"])
 
     def _prune(self, root, release_id, game_config):
         """Remove the packages of every platform the bundle does not target.
@@ -443,7 +531,7 @@ class ReleaseStep(WorkflowStep):
                          for e in keep))
         return self.pruned
 
-    def _collect(self, root, release_id, head, loaded, game_config):
+    def _collect(self, root, release_id, head, loaded, game_config, builds=None):
         """The game's manifest and packages, checked. Refuses anything that may not ship."""
         base = os.path.join(root, *contract.release_path(release_id))
         refusals = []
@@ -474,7 +562,9 @@ class ReleaseStep(WorkflowStep):
                 refusals.append(Refusal(FAILED, "checksum-mismatch",
                                         f"{filename}: recorded {entry.get('checksum')}, the file "
                                         f"is {actual}"))
-            audit = audit_package(path, os.path.join(root, verified_dir))
+            build = (builds or {}).get(entry.get("platform_id"))
+            source = (build or {}).get("path") or verified_dir
+            audit = audit_package(path, os.path.join(root, *str(source).split("/")))
             for rule, name, detail in audit["findings"]:
                 refusals.append(Refusal(FAILED, "package-content",
                                         f"{filename}: {rule}: {name}"
@@ -483,21 +573,40 @@ class ReleaseStep(WorkflowStep):
             packages.append({
                 "platform_id": entry.get("platform_id"), "filename": filename,
                 "size_mb": round(os.path.getsize(path) / 1024 / 1024, 3), "checksum": actual,
-                "content_digest": audit["content_digest"], "files": audit["files"]})
+                "content_digest": audit["content_digest"], "files": audit["files"],
+                **({"bundle_hash": build["content_hash"]} if build else {})})
         zips = sorted(n for n in os.listdir(base) if n.endswith(".zip"))
         unlisted = [n for n in zips if n not in {p["filename"] for p in packages}]
         if unlisted:
             refusals.append(Refusal(FAILED, "package-unlisted",
                                     f"release/{release_id}/ holds archives packages.json does "
                                     f"not list: {', '.join(unlisted)}"))
-        # The one platform the bundle targets must be packaged; the others were removed on
-        # purpose (_prune) and are reported not-ready by verification.
-        target = contract.build_target(game_config.get("platforms"))
         shipped = {p["platform_id"] for p in packages}
-        if target is not None and target not in shipped:
-            refusals.append(Refusal(FAILED, "package-missing",
-                                    f"no package for the platform the build targets: {target}"))
-        foreign = sorted(pid for pid in shipped if pid != target)
+        if builds is not None:
+            # A bundle per platform: every target packaged from its own, exactly once, and no
+            # two packages with the same content - that would be one bundle under two names.
+            for pid in builds:
+                if pid not in shipped:
+                    refusals.append(Refusal(FAILED, "package-missing",
+                                            f"no package for the target platform {pid}"))
+            foreign = sorted(pid for pid in shipped if pid not in builds)
+            seen = {}
+            for package in packages:
+                twin = seen.setdefault(package["content_digest"], package["platform_id"])
+                if twin != package["platform_id"]:
+                    refusals.append(Refusal(
+                        FAILED, "package-not-built",
+                        f"{package['filename']} holds the same files as {twin}'s package: one "
+                        "bundle under two platforms' names"))
+        else:
+            # The one platform the bundle targets must be packaged; the others were removed
+            # on purpose (_prune) and are reported not-ready by verification.
+            target = contract.build_target(game_config.get("platforms"))
+            if target is not None and target not in shipped:
+                refusals.append(Refusal(FAILED, "package-missing",
+                                        f"no package for the platform the build targets: "
+                                        f"{target}"))
+            foreign = sorted(pid for pid in shipped if pid != target)
         if foreign:
             refusals.append(Refusal(FAILED, "package-not-built",
                                     "packages for platforms the build does not target: "

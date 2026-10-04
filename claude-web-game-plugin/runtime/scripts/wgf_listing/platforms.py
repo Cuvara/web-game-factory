@@ -59,12 +59,21 @@ def spec_status(profile):
     return "verified" if block.get("status") == "verified" else "unverified"
 
 
-def targets(scaffold, settings_platforms=None):
+def targets(scaffold, settings_platforms=None, verified=None):
     """[(platform id, role, profile version)] the listing is rendered for: the step's own
-    list when configured, else the scaffold-record's game.config platforms."""
+    list when configured, else the platforms the verified build targets (the
+    verification-report's platform_readiness: what the release will package), else the
+    scaffold-record's game.config platforms. The verified ones come first because a title
+    retargeted after scaffolding (docs/platform-targets-2026-10.md) has a scaffold-record
+    that still names its first targets."""
     out = []
-    entries = ((scaffold or {}).get("game_config") or {}).get("platforms") or []
     by_id = {}
+    for entry in verified or ():
+        if not isinstance(entry, dict) or not entry.get("platform_id"):
+            continue
+        version = str(entry.get("profile") or "").partition("@")[2] or None
+        by_id[entry["platform_id"]] = (entry.get("role") or "required", version)
+    entries = [] if by_id else ((scaffold or {}).get("game_config") or {}).get("platforms") or []
     for entry in entries:
         if not isinstance(entry, dict) or not entry.get("id"):
             continue

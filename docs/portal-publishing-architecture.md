@@ -798,7 +798,7 @@ any test. "Fixture" is `scripts/tests/fixtures/publish/portal.py`, extended.
    vocabulary name, deny-vocabulary name, fill-turned-click, value supplied, foreign
    origin, budget exhausted, drift on the irreversible intent -> `drift-irreversible`);
    Chromium against a drifted fixture. Depends on 3; independent of 4 and 5.
-7. **Per-platform builds.** Pin a template release carrying contract 2; `wgf_verification`
+7. **Per-platform builds.** *Superseded by a human decision (2026-10-04): the Factory builds one bundle per `platforms[]` entry on the current contract-1 games, with no template release (the per-platform release workstream). The text below is the original proposal.* Pin a template release carrying contract 2; `wgf_verification`
    judges each bundle; `wgf_release` packages each, copies `build.json` into the manifest
    and the zip, drops `_prune`; guard `package_targets_platform` in `wgflib/publication.py`.
    Golden runs on the new pin. Template-side first (a release), then Factory. Independent of

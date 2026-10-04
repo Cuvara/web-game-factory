@@ -16,6 +16,15 @@
     python3 scripts/wgf-publish.py registry associate <title> <platform> <external-id> --note TEXT
                                                                  a person links a portal game
                                                                  they created by hand
+    python3 scripts/wgf-publish.py observe <platform> --checkout DIR [--out DIR]
+            [--login-timeout-s 900] [--max-minutes 30] [--authenticated-url REGEX]
+                                                                 a person logs in to the real
+                                                                 console in a fresh browser; what
+                                                                 the console shows is recorded,
+                                                                 read-only, nothing of the session
+                                                                 kept (wgf_publish/observe.py)
+    python3 scripts/wgf-publish.py observe-summary DIR          an observation's summary and its
+                                                                 field inventory as JSON
 
 `capture` is how a console platform's credential comes to exist: the publication profile
 names the variable (`submission.credential.env`) that must hold PATH, and the installation
@@ -32,6 +41,7 @@ Standard library only; run from the repository root. See docs/publish-module.md.
 import argparse
 import json
 import os
+import re
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -187,6 +197,57 @@ def cmd_registry_associate(args):
         return 2
     print(f"{args.title} {args.platform}: {entry['external_game_id']} associated "
           f"({entry['status']}); {reg.path}")
+def cmd_observe(args):
+    from wgf_publish import observe
+    try:
+        profile = publication.load_publication_profile(args.platform, args.extra or ())
+    except ValueError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return observe.EXIT_USAGE
+    if args.url or args.allow_origin:
+        # Discovery of a console the profile does not describe yet (or describes wrongly): the
+        # person names the console and the origins to record; the profile is untouched.
+        profile = dict(profile or {}, id=args.platform)
+        submission = dict(profile.get("submission") or {})
+        console = dict(submission.get("console") or {})
+        if args.url:
+            console["url"] = args.url
+        if args.allow_origin:
+            console["allowed_origins"] = list(args.allow_origin)
+        submission["console"] = console
+        profile["submission"] = submission
+    if profile is None:
+        print(f"error: no publication profile for {args.platform!r} "
+              f"(core/reference/publication/); give --url and --allow-origin", file=sys.stderr)
+        return observe.EXIT_USAGE
+    checkout = os.path.abspath(os.path.expanduser(args.checkout))
+    out = os.path.abspath(os.path.expanduser(args.out)) if args.out else         observe.default_out(args.platform)
+    try:
+        code, state = observe.observe(args.platform, profile, checkout, out,
+                                      authenticated_url=args.authenticated_url,
+                                      login_timeout_s=args.login_timeout_s,
+                                      max_minutes=args.max_minutes)
+    except (observe.ObserveError, re.error) as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return observe.EXIT_USAGE
+    print(f"{state.get('status', 'NO STATE')}: {len(observe.load_pages(out))} page(s) recorded "
+          f"in {out} (index.json, summary.md)")
+    return code
+
+
+def cmd_observe_summary(args):
+    from wgf_publish import observe
+    out = os.path.abspath(os.path.expanduser(args.dir))
+    if not os.path.isfile(os.path.join(out, "index.json")):
+        print(f"error: {out} holds no observation (no index.json)", file=sys.stderr)
+        return observe.EXIT_USAGE
+    state = {}
+    if os.path.isfile(os.path.join(out, "state.json")):
+        with open(os.path.join(out, "state.json"), encoding="utf-8") as handle:
+            state = json.load(handle)
+    pages = [observe.sanitize_page(page) for page in observe.load_pages(out)]
+    print(observe.summary_markdown(observe.sanitize_page(state), pages))
+    print(json.dumps(observe.field_inventory(pages), indent=2, ensure_ascii=False))
     return 0
 
 
@@ -221,6 +282,25 @@ def main(argv=None):
     associate.add_argument("external_id")
     associate.add_argument("--note", required=True)
     associate.set_defaults(run=cmd_registry_associate)
+    observing = sub.add_parser("observe", help="record a real console while a person uses it")
+    observing.add_argument("platform")
+    observing.add_argument("--checkout", required=True,
+                           help="the game checkout whose Playwright and Chromium are used")
+    observing.add_argument("--out", help="default <project>/.factory/observations/<platform>/"
+                                         "<UTC timestamp>/")
+    observing.add_argument("--login-timeout-s", type=int, default=900)
+    observing.add_argument("--max-minutes", type=float, default=30)
+    observing.add_argument("--url", help="the console url to open (default the profile's)")
+    observing.add_argument("--allow-origin", action="append", default=[],
+                           help="an origin whose pages are recorded (repeatable; default the "
+                                "profile's allowed_origins)")
+    observing.add_argument("--authenticated-url",
+                           help="a regex the console's url (origin + path) matches once logged "
+                                "in; default the profile's session.authenticated_url")
+    observing.set_defaults(run=cmd_observe)
+    summary = sub.add_parser("observe-summary")
+    summary.add_argument("dir")
+    summary.set_defaults(run=cmd_observe_summary)
     args = parser.parse_args(argv)
     return args.run(args)
 

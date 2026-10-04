@@ -55,6 +55,7 @@ Python, not by its children.
 | `WGF_VISUALQA_FRAMES`, `WGF_VISUALQA_BRIEF`, `WGF_VISUALQA_VERDICT` | `scripts/wgf_visualqa/judge.py` | Given to a `command` visual-qa judge: the directory of staged frame copies, the judge brief, and where to write the verdict - the same values as the `{frames_dir}`, `{brief}`, `{verdict}` argv placeholders. |
 | `WGF_LISTING_BRIEF`, `WGF_LISTING_OUTPUT` | `scripts/wgf_listing/copywriter.py` | Given to a `command` store copy writer: the brief (the facts, the claim vocabulary, the shape to produce) and where to write the JSON answer - the same values as the `{brief}` and `{output}` argv placeholders. |
 | `WGF_PLAY_OUT`, `WGF_PLAY_CONFIG` | `scripts/wgf_playability/step.py`; read by `scripts/wgf_playability/bot.spec.ts` | Where the playability bot writes what it recorded (per viewport: JSON and frames), and its settings file (idle, acknowledgement and play windows, the goal metric). |
+| `WGF_OBSERVE_CONFIG` | `scripts/wgf_publish/observe.py`; read by `scripts/wgf_publish/browser/observe.spec.ts` | The console observer's settings file: the console url, allowed origins, the authenticated-url regex, the login and observation windows, and where the state file and page records go (`wgf-publish.py observe`). |
 | `WGF_E2E_PORT` | not set; read by `scripts/wgf_sdk/e2e/playwright.config.ts` | The preview server port for the SDK browser e2e; `4461` when unset. |
 | `WGF_Y8_APP_ID`, `WGF_Y8_GAME_ID` | `scripts/wgf_sdk/e2e.py` (placeholder ids) | The Y8 build ids the template's build reads; the e2e sets test values so a Y8 build can be made. |
 | `WGF_SCRIPTS` | `scripts/tests/test_release_module.py`; read by `scripts/tests/fixtures/release/fake-pnpm.py` | Where the Factory's `scripts/` is, for the release tests' fake `pnpm`. |
@@ -74,7 +75,7 @@ run at anything but its own checkout.
 
 | Variable | Read by | Meaning | Default |
 |---|---|---|---|
-| `WGF_PUBLISH_BROWSER_TEST` | `test_publish_module` | `1` drives the fixture portal (`scripts/tests/fixtures/publish/portal.py`) with real Chromium through the publish module's console executor, in the pinned template's checkout. Contacts nothing but 127.0.0.1. | off |
+| `WGF_PUBLISH_BROWSER_TEST` | `test_publish_module`, `test_publish_observe` | `1` drives the fixture portal (`scripts/tests/fixtures/publish/portal.py`) with real Chromium through the publish module's console executor, and runs the read-only console observer headless against it with the test playing the person, in the pinned template's checkout. Contacts nothing but 127.0.0.1. | off |
 | `WGF_GOLDEN` | `scripts/golden/testing.py` (via `test_golden_2d`, `test_golden_3d`) | `1` runs the 2D and 3D golden pipelines (minutes each). Otherwise the `2D GOLDEN` / `3D GOLDEN` categories are `SKIP`. | off |
 | `WGF_GOLDEN_KEEP` | `scripts/golden/testing.py` | `1` keeps a golden run's work directory after the test. | off: removed |
 | `WGF_GOLDEN_DIR` | `scripts/golden/harness.py` | Parent of a golden run's fresh work directory. | `/tmp` |

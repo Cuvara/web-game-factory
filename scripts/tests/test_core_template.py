@@ -183,6 +183,11 @@ class TheFactoryContainsNoGameSource(unittest.TestCase):
         # browser.py), copied into the checkout's release/ scratch directory for one run.
         # Portal plumbing, no game in it.
         "scripts/wgf_publish/browser/console.spec.ts",
+        # The read-only console observer: a Playwright spec that opens a portal console in a
+        # fresh context for a person to log in, then records what it shows without acting
+        # (scripts/wgf_publish/observe.py), run from a temporary directory. Portal plumbing,
+        # no game in it.
+        "scripts/wgf_publish/browser/observe.spec.ts",
         # The developer's frame tool: serves a game's built dist/ and screenshots it with
         # the game's own Playwright (scripts/wgf_develop/brief.py, "See your build").
         # Tooling that looks at a game; it contains none.

@@ -20,6 +20,15 @@ Pages (the fixture adapter's selector map, scripts/wgf_publish/adapters/fixture.
                                    a submitted draft is refused (409) and counted
     GET  /state.json               the whole state, for a test's assertions
 
+Pages for the read-only console observer (scripts/wgf_publish/observe.py), added beside the
+ones above:
+
+    GET  /console/observe          a listing form of every field kind (prefilled values, a
+                                   file input, a select, limits, a pattern), a status table
+                                   and badge, and the signed-in account's email
+    POST /console/observe/save     counted; the observer must never cause one
+    GET  /observe/state.json       {"saves": n, "views": n}
+
 Behaviour is set per run with PORTAL_MODE (comma-separated), so a test can make the portal
 misbehave the way a real one does:
 
@@ -51,6 +60,28 @@ MODES = set(filter(None, os.environ.get("PORTAL_MODE", "").split(",")))
 DELAY = float(os.environ.get("PORTAL_DELAY", "3"))
 
 STATE = {"drafts": [], "next_id": 1, "double_submits": 0, "uploads": 0, "logins": 0}
+OBSERVE = {"saves": 0, "views": 0}
+OBSERVE_PAGE = (
+    "<div id='dashboard'><header>Signed in as <span class='account'>dev.person@example.com"
+    "</span></header><h1>Game settings</h1><h2>Listing</h2>"
+    "<form method='post' action='/console/observe/save' aria-label='Listing'>"
+    "<label for='title'>Game title</label><input id='title' name='title' required "
+    "maxlength='60' value='Prefilled Title Value' data-testid='game-title'>"
+    "<label for='desc'>Description</label><textarea id='desc' name='description' "
+    "minlength='20'>Prefilled description text</textarea>"
+    "<label for='cat'>Category</label><select id='cat' name='category'>"
+    "<option>Arcade</option><option selected>Puzzle</option><option>Racing</option></select>"
+    "<h2>Build</h2><label for='zip'>Game archive</label><input id='zip' type='file' "
+    "name='archive' accept='.zip,application/zip'>"
+    "<label for='shots'>Screenshots</label><input id='shots' type='file' name='shots' "
+    "accept='image/png,image/jpeg' multiple>"
+    "<input name='slug' placeholder='my-game' pattern='[a-z0-9-]+' value='prefilled-slug-value'>"
+    "<label for='contact'>Support email</label><input id='contact' type='email' "
+    "name='contact' value='support.person@example.com'>"
+    "<button type='submit' data-testid='save-draft'>Save draft</button></form>"
+    "<a href='/console?tab=games&amp;token=abcdef0123456789'>My games</a>"
+    "<table><tr><th>Build</th><th>Status</th></tr><tr><td>1.0.0</td><td>In review</td></tr>"
+    "</table><span class='status-badge'>Draft</span></div>")
 LOCK = threading.Lock()
 
 
@@ -127,6 +158,10 @@ class Handler(BaseHTTPRequestHandler):
             with LOCK:
                 body = json.dumps(STATE).encode("utf-8")
             return self._send(200, body, "application/json")
+        if path == "/observe/state.json":
+            with LOCK:
+                body = json.dumps(OBSERVE).encode("utf-8")
+            return self._send(200, body, "application/json")
         if path in ("/", "/login"):
             return self._send(200, page("Login", "<h1>Developer portal</h1><form id='login' "
                                                  "method='post' action='/login'><input name='user'>"
@@ -174,6 +209,10 @@ class Handler(BaseHTTPRequestHandler):
                 f"<button id='save' type='submit'>Save</button></form>{saved}"
                 f"<form method='post' action='/console/draft/{html.escape(draft['id'])}/submit'>"
                 f"<button id='submit' type='submit'>Submit for moderation</button></form></div>")))
+        if path == "/console/observe":
+            with LOCK:
+                OBSERVE["views"] += 1
+            return self._send(200, page("Game settings", OBSERVE_PAGE))
         return self._send(404, page("Not found", "<p>no such page</p>"))
 
     def do_POST(self):
@@ -224,6 +263,11 @@ class Handler(BaseHTTPRequestHandler):
                 draft["submitted"] = True
                 draft["status"] = "Waiting for moderation"
             return self._redirect(f"/console/draft/{draft_id}")
+        if path == "/console/observe/save":
+            self._form()
+            with LOCK:
+                OBSERVE["saves"] += 1
+            return self._redirect("/console/observe")
         return self._send(404, page("Not found", "<p>no such page</p>"))
 
 

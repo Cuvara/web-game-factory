@@ -32,11 +32,14 @@ from wgf_assets.raster import Image, encode_png  # noqa: E402
 from wgf_visualqa import rubric as rubric_mod  # noqa: E402
 from wgf_visualqa.brief import frame_state  # noqa: E402
 from wgf_visualqa.step import VisualQAStep  # noqa: E402
+from unittest import mock as patching  # noqa: E402
 from wgflib.workflow import mock  # noqa: E402
+from wgflib.workflow import references  # noqa: E402
 from wgflib.workflow.contracts import ArtifactContracts  # noqa: E402
 from wgflib.workflow.model import StepOutcome  # noqa: E402
 
 RUBRIC = rubric_mod.load_rubric()
+PINNED = "core/reference/visual-qa-rubric.yaml"
 DIMENSIONS = list(RUBRIC["dimensions"])
 
 # The fixture judge: argv [python, judge.py, scenario.json, counter, {verdict}, {frames_dir}].
@@ -177,7 +180,7 @@ class Base(unittest.TestCase):
         with open(self.counter) as handle:
             return int(handle.read())
 
-    def run_step(self, config, docs=None):
+    def run_step(self, config, docs=None, environment=None):
         if docs is None:
             docs = {"playability-report": self.play, "game-design": DESIGN,
                     "asset-manifest": MANIFEST}
@@ -196,7 +199,8 @@ class Base(unittest.TestCase):
                 return lambda *a, **k: None
 
         context = types.SimpleNamespace(config=config, run_dir=self.run_dir, logger=Log(),
-                                        visit=1, attempt=1, execution=1)
+                                        visit=1, attempt=1, execution=1,
+                                        environment=environment or {})
         return VisualQAStep(types.SimpleNamespace(params={}, id="visual-qa")).execute(
             Inputs(), context)
 
@@ -307,6 +311,64 @@ class TheVerdicts(Base):
     def test_a_verdict_on_stdout(self):
         good = json.dumps(complete({"scores": scores(5), "findings": []}))
         result = self.run_step(self.config(["stdout:" + good], verdict_from="stdout"))
+        self.assertEqual(result.outcome, StepOutcome.SUCCESS, result.error)
+
+
+class ThePinnedRubric(Base):
+    """WS-13 gap: visual-qa read the live rubric, not the copy new-game pins when the run
+    starts, so a bar lowered mid-run reached the running build. It reads the pinned copy."""
+
+    def pin(self, text=None):
+        """Pin the shipped rubric in the run directory, as the engine does at the start;
+        the environment that records it."""
+        with open(rubric_mod.RUBRIC_PATH, "rb") as handle:
+            shipped = handle.read()
+        target = os.path.join(self.run_dir, references.DIRECTORY, *PINNED.split("/"))
+        os.makedirs(os.path.dirname(target), exist_ok=True)
+        with open(target, "wb") as handle:
+            handle.write(shipped if text is None else text.encode("utf-8"))
+        return {references.PARAM: {PINNED: references.digest(shipped)}}, target
+
+    def lowered_live(self):
+        """The live rubric with its pass bar lowered after the run started."""
+        with open(rubric_mod.RUBRIC_PATH, encoding="utf-8") as handle:
+            text = handle.read()
+        edited = text.replace("\npass_bar: 3\n", "\npass_bar: 1\n")
+        self.assertNotEqual(edited, text)
+        path = os.path.join(self.base, "live-rubric.yaml")
+        with open(path, "w", encoding="utf-8") as handle:
+            handle.write(edited)
+        return path
+
+    def test_a_bar_lowered_mid_run_does_not_reach_the_running_build(self):
+        environment, _target = self.pin()
+        config = self.config([{"scores": scores(4, typography=2), "findings": []}])
+        with patching.patch.object(rubric_mod, "RUBRIC_PATH", self.lowered_live()):
+            held = self.run_step(config, environment=environment)
+            unpinned = self.run_step(self.config([{"scores": scores(4, typography=2),
+                                                   "findings": []}]))
+        self.assertEqual(held.outcome, StepOutcome.FAILED)
+        report = self.report(held)
+        self.assertIn("score:typography", report["failed"])
+        self.assertEqual((report["rubric"]["pass_bar"], report["rubric"]["sha256"]),
+                         (3, RUBRIC["sha256"]))
+        # A run that pinned nothing reads the live file - and is held to the edit.
+        self.assertEqual(self.report(unpinned)["rubric"]["pass_bar"], 1)
+
+    def test_a_pinned_rubric_edited_in_the_run_blocks(self):
+        environment, target = self.pin()
+        with open(target, "a", encoding="utf-8") as handle:
+            handle.write("\n# lowered in the run\n")
+        result = self.run_step(self.config([{"scores": scores(4), "findings": []}]),
+                               environment=environment)
+        self.assertEqual(result.outcome, StepOutcome.BLOCKED)
+        self.assertIn("edited after the start", result.message)
+
+    def test_a_configured_rubric_is_read_as_configured(self):
+        environment, _target = self.pin()
+        config = self.config([{"scores": scores(4, typography=2), "findings": []}])
+        config["visualqa"]["rubric"] = self.lowered_live()
+        result = self.run_step(config, environment=environment)
         self.assertEqual(result.outcome, StepOutcome.SUCCESS, result.error)
 
 

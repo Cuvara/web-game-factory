@@ -13,7 +13,13 @@
               `assets` when any failure routes there, else `develop`; not retryable - the
               workflow routes it back to the step that must change something
     BLOCKED   no judge configured (kind `none`: visual QA needs a judge - never a silent
-              pass), no frames in the playability-report, or a frame no longer on disk
+              pass), no frames in the playability-report, or a frame no longer on disk;
+              or the run pinned the rubric and its copy is gone or was edited after the start
+
+The rubric is the copy the run pinned when it started (new-game `pinned_references`), so an
+edit made while it runs applies to the next run, never to this one's build - the quality gate
+holds the visual scores to the same pinned file. A rubric configured by path
+(factory.visualqa.rubric) is read as configured; a run that pinned none reads the live file.
 
 The judge is a command (an agent able to read images) or, for a game whose look was
 approved once, `baseline`: each frame against the approved frame of its state (baseline.py),
@@ -37,6 +43,7 @@ import shutil
 
 from wgflib import isolation, paths, provenance
 from wgflib.workflow import ArtifactOutput, StepResult, WorkflowStep
+from wgflib.workflow import references as pinned_references
 
 from . import baseline
 from .judge import MAX_JUDGE_RUNS, FrameError, Outcome, run_judge, stage_frames
@@ -52,6 +59,24 @@ ROLE = "qa"
 
 def _utc_now():
     return datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+# The rubric as new-game pins it (`pinned_references`, paths relative to the Factory root).
+RUBRIC = "core/reference/visual-qa-rubric.yaml"
+
+
+def run_rubric(settings, context):
+    """The rubric this run is judged against: the configured file when one is configured,
+    else the copy the run pinned at its start (the live file for a run that pinned none).
+    Raises PinError when the run's copy is gone or was edited, RubricError when unusable."""
+    if settings.rubric_path:
+        return load_rubric(settings.rubric_path)
+    run_dir = getattr(context, "run_dir", None)
+    _text, _digest, pinned = pinned_references.read(
+        RUBRIC, getattr(context, "environment", None), run_dir)
+    if not pinned:
+        return load_rubric()
+    return load_rubric(os.path.join(run_dir, pinned_references.DIRECTORY, *RUBRIC.split("/")))
 
 
 def _model_of(argv):
@@ -98,7 +123,12 @@ class VisualQAStep(WorkflowStep):
                 f"visual-qa needs {', '.join(missing)} in the run: there are no frames to judge "
                 f"against a design")
         try:
-            rubric = load_rubric(settings.rubric_path)
+            rubric = run_rubric(settings, context)
+        except pinned_references.PinError as exc:
+            reason = (f"the visual-qa rubric this run started under cannot be read ({exc}): "
+                      "no build is judged against a rubric edited after the start")
+            context.logger.warning("visual-qa blocked", reason=reason)
+            return StepResult("BLOCKED", message=reason)
         except RubricError as exc:
             return StepResult.failed(str(exc), retryable=False)
 

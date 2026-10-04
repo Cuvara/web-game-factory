@@ -744,6 +744,32 @@ class AntiGaming(_Case):
                 with self.assertRaisesRegex(EngineError, "unmet upstream"):
                     api.run(RunRequest(run_id=state.run_id, scope="release"))
 
+    def test_a_rubric_edited_mid_run_does_not_apply_to_it(self):
+        """visual-qa reads the rubric the run pinned: a pass bar lowered in the live file after
+        the start leaves the running build held to the pinned one, and a pinned copy edited in
+        the run blocks visual-qa, which starts nothing downstream."""
+        with open(os.path.join(paths.REFERENCE, "visual-qa-rubric.yaml"),
+                  encoding="utf-8") as handle:
+            text = handle.read()
+        live = os.path.join(self.scratch, "live-rubric.yaml")
+        with open(live, "w", encoding="utf-8") as handle:
+            handle.write(text.replace("\npass_bar: 3\n", "\npass_bar: 1\n"))
+        api = self.api(self.world("arcade-2d"))
+        with mock.patch("wgf_visualqa.rubric.RUBRIC_PATH", live):
+            state = self.to_g4(api)
+        report = self.newest(api, state, "visual-qa-report")
+        self.assertEqual(report["rubric"]["pass_bar"], 3)
+        self.assertIn(references.DIRECTORY, report["rubric"]["path"].replace("\\", "/"))
+        pinned = os.path.join(api.store.run_dir(state.run_id), references.DIRECTORY, "core",
+                              "reference", "visual-qa-rubric.yaml")
+        with open(pinned, "a", encoding="utf-8") as handle:
+            handle.write("\n# lowered in the run\n")
+        state = api.run(RunRequest(run_id=state.run_id, scope="visual-qa", force=True))
+        self.assertEqual(state.status, RunStatus.BLOCKED, self.story(api, state))
+        self.assertIn("edited after the start", state.message)
+        with self.assertRaisesRegex(EngineError, "unmet upstream"):
+            api.run(RunRequest(run_id=state.run_id, scope="release"))
+
     def test_tier_mvp_is_development_never_release(self):
         world = self.world("arcade-2d")
         api = self.api(world, {"strategy": {"quality_tier": "mvp"}})

@@ -365,7 +365,7 @@
     "scripts/wgf_visualqa/judge.py": "sha256:55d7439e45b3ed90a523a3b362c610be748a659fdf184dd3eea6bb1e866ba098",
     "scripts/wgf_visualqa/rubric.py": "sha256:d429ff8698099d205c6416737e324b1d0e5be780420326e829e7ca379aa5c79d",
     "scripts/wgf_visualqa/settings.py": "sha256:970dc91569c559291ee130062920b3ec9300535e69528e8540df6e3dc7bc2649",
-    "scripts/wgf_visualqa/step.py": "sha256:a4f277ca8aace165fc43f531b9e9b7f76df11e2a7a3fe430d42e768429fc6e23",
+    "scripts/wgf_visualqa/step.py": "sha256:7cecc914a1e322a4c1ddf191abd8a8f91285ab8ec9aee1355fcf14d545be434a",
     "scripts/wgflib/__init__.py": "sha256:da1e8fedb5110e078348b4e891e5885629660cc0f882bd6d628b748f430f715a",
     "scripts/wgflib/agentenv.py": "sha256:6bab94a5813c98e71e76f3017332fc9d8cbfbc6584e5f2ee10f72c1033ea8010",
     "scripts/wgflib/budget.py": "sha256:c8670a22e755e99e7651bd813f1b4340b2c52d93569f83559f56fa0cf61f662c",

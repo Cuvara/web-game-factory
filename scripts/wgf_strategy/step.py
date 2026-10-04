@@ -62,9 +62,16 @@ class StrategyStep(WorkflowStep):
             return StepResult.failed("no usable title id: pass --project or give the "
                                      "opportunity a title", retryable=False)
         try:
-            policy = Policy.from_params(self.params)
+            # factory.strategy in the project's configuration, under the step's `with:`:
+            # `platforms` is a person's platform choice, every other key policy
+            # (max_platforms for a fourth target).
+            config = getattr(context, "config", None) or {}
+            params = dict(config.get("strategy") or {})
+            params.update(self.params or {})
+            platforms = params.pop("platforms", None)
+            policy = Policy.from_params(params)
             body = plan_strategy(opportunity, load_profiles(self.profiles_dir), title_id,
-                                 policy, load_vocabulary())
+                                 policy, load_vocabulary(), platforms=platforms)
         except StrategyRefused as exc:
             context.logger.warning("strategy refused", reason=str(exc))
             return StepResult.failed(f"strategy refused: {exc}", retryable=False)

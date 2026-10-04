@@ -88,11 +88,14 @@ class PlatformValidateStep(WorkflowStep):
         for pid, target in targets.items():
             package = packages.get(pid)
             if package is None:
-                # No build for this target (template contract build_target). A required
-                # target without a package can never make the release live.
+                # No package for this target: a release drafted from one bundle (before
+                # verify built one per platform) packaged only the platform it boots. A
+                # required target without a package can never make the release live; a
+                # release with a bundle per platform packages every target or is not drafted.
                 if target.get("role") == "required":
-                    blocked_required.append(f"{pid}: no package - the one build targets another "
-                                            f"platform; {pid} needs a build of its own")
+                    blocked_required.append(f"{pid}: no package - the release's one bundle "
+                                            f"boots another platform; re-run verify and release, "
+                                            f"which build and package {pid} from its own bundle")
                 else:
                     summary.append(f"{pid}: not packaged (optional)")
                 continue

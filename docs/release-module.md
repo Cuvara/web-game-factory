@@ -23,18 +23,49 @@ What happens next is the `publish` group ([publish-module.md](publish-module.md)
 
 | Where | What |
 |---|---|
-| the game repository, `release/<release-id>/` | `<platform>.zip` for the one platform the build targets, `packages.json`, `checksums.txt` — written by the game's own `release:package` — and `manifest.json` |
+| the game repository, `release/<release-id>/` | `<platform>.zip` for every target platform, each from that platform's own verified bundle (a single-platform title: its one bundle), `packages.json`, `checksums.txt` — written by the game's own `release:package` — and `manifest.json` |
 | the game repository, `release/<release-id>/listing/` | the validated store listing's package, copied from the run (branding, screenshots, trailer, copy, per-platform renditions, `listing.json`, `validation.json`); `store_metadata` names its files ([store-listing-module.md](store-listing-module.md)) |
 | the run | `release-manifest` (state `draft`), the same document as `release/<release-id>/manifest.json` |
 
-On the pinned template contract one bundle boots one adapter (`template_contract.build_target`:
-game.config.yaml's first `required` platform, else its first), yet `release:package` zips it
-under every `platforms[]` name. The step therefore removes, between `release:package` and
-`release:manifest`, every archive for a platform the build does not target, and rewrites
-`packages.json` and `checksums.txt` in the template's formats without it - a mislabelled
-archive is never left beside the manifest to be uploaded. The step's message and metadata
-(`not_packaged`) name those platforms; verification reports them `not-ready`
-(`platform.build-target:<id>`).
+### One package per target platform
+
+On the pinned template contract (1) one build boots one adapter
+(`template_contract.build_target`: game.config.yaml's first `required` platform, else its
+first). So for a title with more than one target, `verify` builds **one bundle per
+platform** - `build/platforms/<id>/dist/`, made against `build/platforms/<id>/game.config.json`
+(that platform alone, `role: required`, `build.output` its own directory) through the
+template's own `WGF_GAME_CONFIG` override - and pins each in the verification-report
+(`build_artifact.platforms[]`: path, digest, config and its hash;
+[verification-module.md](verification-module.md#one-bundle-per-platform)). The release then:
+
+1. refuses (`platform-not-verified`, FAILED) when a platform game.config.yaml targets has no
+   verified bundle (`status: built` and a digest), or the verification built a platform
+   HEAD's game.config.yaml does not target;
+2. recomputes every platform bundle's digest, and the sha256 of the config it was built
+   with, from the checkout (`bundle-not-verified`, BLOCKED, when either moved);
+3. runs `release:package --release <id> --platform <pid>` once per platform with
+   `WGF_GAME_CONFIG=build/platforms/<pid>/game.config.json` - the template's packager then
+   zips that platform's bundle by its own archive rules (dist contents at the archive root:
+   Yandex's `index.html` at the root; a self-hosted GameDistribution wrapper page) - and
+   merges the per-call `packages.json` and `checksums.txt` in the template's formats, in
+   `platforms[]` order; then `release:manifest` once, against the real game.config.yaml;
+4. audits each zip against its own bundle, records `packages[].bundle_hash` (the platform's
+   verified bundle digest; release-manifest 1.4.0), and refuses `package-not-built` for two
+   packages with the same contents - one bundle under two names.
+
+A repository on template contract 2 (`package.json` `wgf.template.contract: 2` and a
+`build:platforms` script) builds its platforms itself into the same layout; its
+`release:package` packages each from `build/platforms/<id>/dist` in one call, and the step
+checks the result the same way.
+
+A **single-platform** title on contract 1 is drafted exactly as before: one bundle (`dist/`),
+one `release:package`, one zip. The pre-2.8.0 path is kept for a verification-report that
+records no per-platform builds (one bundle, several targets): `release:package` zips that
+bundle under every `platforms[]` name, and the step removes, between `release:package` and
+`release:manifest`, every archive for a platform the bundle does not boot, rewriting
+`packages.json` and `checksums.txt` without it - a mislabelled archive is never left beside
+the manifest to be uploaded. The step's message and metadata (`not_packaged`) name those
+platforms. Re-running verify on the same commit replaces that with one package per platform.
 
 Release artifacts belong in the game repository (CLAUDE.md); the run holds the manifest so a
 gate can pin it by hash. The manifest is the one the game's `release:manifest` wrote, checked
@@ -54,6 +85,7 @@ all optional fields):
 | `evidence.package_audit` | the rules every package passed |
 | `evidence.reproducibility` | whether the archive bytes are reproducible, and why not |
 | `packages[].checksum` / `content_digest` / `files` | sha256 of the archive; sha256 over its entry names and contents; entry count |
+| `packages[].bundle_hash` | since 1.4.0, with one bundle per platform: the digest of the platform's own verified bundle the package was made from |
 | `template` | template repository and commit (scaffold-record) and version, with where the version was read |
 | `workflow` | run id, workflow, step, visit, execution, idempotency key |
 
@@ -89,11 +121,12 @@ when its preconditions held is what makes a draft mean something. The refusals a
 | `listing-package-missing` | BLOCKED | the listing's package directory is gone from the run directory |
 | `verified-dirty-tree` | BLOCKED | verification ran on uncommitted changes, which no commit reproduces |
 | `dirty-checkout` | BLOCKED | the checkout has uncommitted or untracked changes |
-| `bundle-not-verified` | BLOCKED | the build output on disk is not the bundle verification digested |
+| `bundle-not-verified` | BLOCKED | the build output on disk is not the bundle verification digested - or a platform's own bundle, or the config it was built with, moved since |
+| `platform-not-verified` | FAILED | with one bundle per platform: a target platform has no verified bundle of its own, or the verification built a platform HEAD does not target |
 | `no-checkout`, `no-commit` | BLOCKED | no game repository found, or not a git repository |
 | `package-failed`, `manifest-failed` | FAILED (BLOCKED if the tool is missing) | the game's release script failed |
-| `no-packages`, `package-missing`, `package-unlisted` | FAILED | no package for the platform the build targets, or an archive `packages.json` does not list |
-| `package-not-built` | FAILED | a package for a platform the build does not target (defence in depth: such packages are removed before the manifest is made) |
+| `no-packages`, `package-missing`, `package-unlisted` | FAILED | no package for a target platform (one bundle: for the platform it boots), or an archive `packages.json` does not list |
+| `package-not-built` | FAILED | a package for a platform no verified bundle boots (defence in depth: one bundle's other packages are removed before the manifest is made), or two packages with the same contents |
 | `checksum-mismatch` | FAILED | a recorded sha256 is not its file's |
 | `package-content` | FAILED | an archive breaks an audit rule, below |
 | `invalid-manifest` | FAILED | the game's manifest, or the drafted one, does not validate |
@@ -224,7 +257,11 @@ a portal's own QA stays `BLOCKED_EXTERNAL` until someone has evidence from the p
 
 ## Tests
 
-- `scripts/tests/test_release_module.py` — the step on its own, the audit, the engine.
+- `scripts/tests/test_release_module.py` — the step on its own, the audit, the engine;
+  `PerPlatform`: N distinct zips with distinct digests from N bundles, the
+  `release:package --platform` calls and their `WGF_GAME_CONFIG`, a platform without a
+  verified bundle, a failed verification, a bundle or config changed after verification,
+  one bundle under two names.
 - `scripts/tests/test_core_release.py` — the RELEASE category: valid and invalid releases,
   schema validity, hashes, lineage, before/after verify, stale evidence, dirty checkouts,
   forbidden content, reproducibility, `release --run` after a failure, and

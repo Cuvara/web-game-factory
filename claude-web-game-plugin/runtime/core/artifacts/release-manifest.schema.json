@@ -8,7 +8,7 @@
     "id": "release-manifest",
     "kind": "artifact",
     "format": "json",
-    "version": "1.3.0",
+    "version": "1.4.0",
     "template": "templates/release-report.md",
     "producer": "release:draft",
     "frozen_at": "release:rc",
@@ -63,6 +63,10 @@
           "filename": { "type": "string" },
           "size_mb": { "type": "number" },
           "checksum": { "$ref": "./shared/provenance.schema.json#/$defs/hash" },
+          "bundle_hash": {
+            "$ref": "./shared/provenance.schema.json#/$defs/hash",
+            "description": "Since 1.4.0. The digest of the bundle this package was made from: the platform's own build (the verification-report's build_artifact.platforms[].content_hash), recomputed from the checkout before packaging. Packages of different platforms carry different bundle hashes. Omitted when the release's one bundle (evidence.bundle_hash) is the only one."
+          },
           "content_digest": {
             "$ref": "./shared/provenance.schema.json#/$defs/hash",
             "description": "Since 1.1.0. sha256 over the archive's entry names and the sha256 of each entry's bytes, in name order. Unlike `checksum` it does not change with file timestamps or compression, so it identifies what ships even when the archive bytes are not reproducible."

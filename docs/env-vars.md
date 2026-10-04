@@ -57,12 +57,14 @@ Python, not by its children.
 | `WGF_PLAY_OUT`, `WGF_PLAY_CONFIG` | `scripts/wgf_playability/step.py`; read by `scripts/wgf_playability/bot.spec.ts` | Where the playability bot writes what it recorded (per viewport: JSON and frames), and its settings file (idle, acknowledgement and play windows, the goal metric). |
 | `WGF_OBSERVE_CONFIG` | `scripts/wgf_publish/observe.py`; read by `scripts/wgf_publish/browser/observe.spec.ts` | The console observer's settings file: the console url, allowed origins, the authenticated-url regex, the login and observation windows, and where the state file and page records go (`wgf-publish.py observe`). |
 | `WGF_E2E_PORT` | not set; read by `scripts/wgf_sdk/e2e/playwright.config.ts` | The preview server port for the SDK browser e2e; `4461` when unset. |
+| `WGF_GAME_CONFIG` | `scripts/wgf_verification/platform_builds.py` (each platform's build and its `collect-facts` / `evaluate-assertions`), `scripts/wgf_release/step.py` (each platform's `release:package --platform`); read by the template's `vite.config.ts` and `scripts/_shared.mjs` `readGameConfig` | The config one platform's bundle is built, measured and packaged against: `build/platforms/<id>/game.config.json` (relative to the checkout), naming that platform alone. Set only for a title with more than one target on template contract 1; unset, the template reads `game.config.yaml`. |
 | `WGF_Y8_APP_ID`, `WGF_Y8_GAME_ID` | `scripts/wgf_sdk/e2e.py` (placeholder ids) | The Y8 build ids the template's build reads; the e2e sets test values so a Y8 build can be made. |
 | `WGF_SCRIPTS` | `scripts/tests/test_release_module.py`; read by `scripts/tests/fixtures/release/fake-pnpm.py` | Where the Factory's `scripts/` is, for the release tests' fake `pnpm`. |
 | `WGF_TEST_TESTS_DIR`, `WGF_TEST_DEV_LOG`, `WGF_TEST_DEV_MODE`, `WGF_TEST_CHILD_PID` | `scripts/tests/test_core_agents.py` | Plumbing between the AGENTS tests and the scripted developer they start (its behaviour, its log, its child-pid file). |
 
 `WGF_GAME_CONFIG` is read by the *template's* `vite.config.ts` (build against another
-config file). The Factory never sets it; the golden harness removes it, with
+config file). The Factory sets it only on the one command that builds, measures or packages
+a platform's own bundle (above), never in its own environment; the golden harness removes it, with
 `WGF_GAME_REPO` and `WGF_RESEARCH_LIVE`, from a golden run's environment
 (`scripts/golden/harness.py`, `FOREIGN_ENV`), so a developer's shell cannot point a golden
 run at anything but its own checkout.

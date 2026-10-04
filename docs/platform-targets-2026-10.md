@@ -232,73 +232,106 @@ store_listing all null), then integrity. The exclusivity default (gamepix.com on
    `wgf_techplan/step.py:183`). Its only `with:` is `physics`.
 3. **Init writes the checkout:** `game.config.yaml` platforms, `config/platforms/<id>.yaml`
    and `pinned.json` (`wgf_init/profiles.py:84-135`), one local commit.
-4. Downstream reads: `sdk` and `verify` read the checkout's `game.config.yaml`; `store-listing`
-   reads the **scaffold-record** (`wgf_listing/platforms.py:62`) unless
-   `factory.listing.platforms` names them; `listing-validation` the listing; `release` the
-   checkout; `platform-validate` the release-manifest.
+4. **The sdk step writes them on a retarget** (since 2.8.0): when the run's newest tech plan
+   names other platforms than the checkout's `game.config.yaml`, `sdk` rewrites only
+   `platforms` there and vendors the pinned profiles (`wgf_sdk/targets.py`, reusing init's
+   `apply_platforms` and `vendor_profiles`), every pin checked against the Factory's profile
+   before anything is written, and commits them with its integration - one keyed sdk commit.
+5. Downstream reads: `sdk` and `verify` read the checkout's `game.config.yaml`;
+   `store-listing` reads the verified build's platforms (the verification-report's
+   `platform_readiness`; before 2.8.0 the scaffold-record, which a retarget leaves stale)
+   unless `factory.listing.platforms` names them; `listing-validation` the listing;
+   `release` the checkout and the verification's per-platform bundles; `platform-validate`
+   the release-manifest.
 
-So a retarget is a superseding strategy, G2, design (it binds locales, cadence and placements
-to the platforms), tech plan, G3, init - and everything after init, because init's commit
-moves HEAD: `sdk` refuses a HEAD that is not the prototype-report's commit, and `release`
-refuses production-quality, visual-qa, review and listing results of another commit, or a G4
-older than upstream work (`wgf_release/lineage.py`).
+### Why a retarget no longer re-runs develop
+
+Every gate after develop pins the **developed commit**: review and sdk-review the commits
+they read, production-quality and visual-qa the commit `release` checks against the
+sdk-report's `base_commit_sha` (`wgf_release/lineage.py` `developed_commit`), the
+prototype-report the commit sdk must build on. Init's commit sits *below* develop's, so a
+retarget through init moves HEAD to a commit no gate judged and forces the whole develop round
+again - an agent session for a change that touches no game code. The lineage rule
+(`wgf_verification/lineage.py`) already admits exactly one kind of commit between develop's
+and the shipped one: this run's keyed sdk commits, recorded in the run's ledger. The sdk step
+is also the step that wires each platform's SDK. So the retarget's write moved there: the
+sdk commit carries the new `platforms` and profiles, sdk-review reads it (the diff is
+prototype commit..sdk commit, so the reviewer sees the retarget), verify builds and judges
+every new target's own bundle, and G4 is decided again on that verification. Nothing in the
+lineage rule changed; `wgf_sdk.commit.owns` admits `game.config.yaml` and
+`config/platforms/*` as paths the sdk step may write.
+
+What still re-runs: strategy and G2 (the new `platform_set`), design (it binds locales, ad
+cadence and placements to the platforms), tech-plan and G3 (the platforms the sdk step
+writes), sdk, sdk-review, verify and G4, store-listing, listing-validation, release, and the
+publish group. What does not: init, greybox, greybox-playability, assets, develop,
+playability, production-quality, visual-qa, review - their reports stay valid because the
+developed commit did not move. A retarget that also changes the locales the game must ship
+(a Yandex target on a game without `ru`) fails verify's `platform.requirements:yandex`, and
+then develop does run: that is a game change.
 
 ### What the Factory cannot do today (gaps, smallest proper fix)
 
-1. **One package per target - not possible on template contract 1.** `pnpm build` makes one
-   bundle that boots the first required platform's adapter; `release` deletes every other
-   platform's zip (`wgf_release/step.py:412` `_prune`), verify fails
-   `platform.build-target:<pid>` for each non-target (`wgf_verification/checks/platform.py:156`),
-   and `platform-validate` reports them "not packaged (optional)" (`wgf_publish/validate.py:87-98`).
-   A [yandex, crazygames, y8] retarget therefore ships **yandex.zip only**. The template has
-   already solved its half: template **main** (contract 2, 997795e, not yet a release) has
-   `pnpm build:platforms` (`scripts/build/build-platforms.mjs`) - one `vite build` per
-   `platforms[]` entry with `WGF_TARGET_PLATFORM=<id>`, each bundle carrying only its own
-   adapter, `build/platforms/<id>/build.json` with the Factory's `bundle_digest`, and a
-   refusal of a portal entry missing its ID (y8 app_id, gamedistribution / gamemonetize
-   game_id). Fix (not small, so proposed, not made): pin a template release carrying
-   contract 2, then make `verify` judge each per-platform bundle, record one digest per
-   platform in the manifest, package each, and drop `_prune` - `wgf_verification` +
-   `wgf_release` + `wgflib/template_contract.py`.
-2. **No person could choose the platforms** - fixed here: `factory.strategy.platforms` (or the
+1. **One package per target - done in 2.8.0, on template contract 1.** For a title with
+   more than one target, verify builds each platform against
+   `build/platforms/<id>/game.config.json` (that platform alone) through the pinned
+   template's own `WGF_GAME_CONFIG` override, keeps each bundle in `build/platforms/<id>/dist/`,
+   judges each (`build.platform:<id>`, `platform.build-target:<id>`, requirements and
+   profile assertions on its own bundle), requires every target, and pins each digest in the
+   verification-report; release packages each with `release:package --platform <id>` from its
+   own bundle and refuses a target without a verified one
+   ([verification-module.md](verification-module.md#one-bundle-per-platform),
+   [release-module.md](release-module.md#one-package-per-target-platform)). A [yandex,
+   crazygames, y8] title ships three zips with three different bundles. When the Factory pins
+   a template release carrying contract 2, its `build:platforms` is used instead - the
+   Factory already recognizes it (`wgf.template.contract: 2` in package.json).
+2. **No person could choose the platforms** - fixed: `factory.strategy.platforms` (or the
    step's `with:`) replaces the candidate list and the fit ranking (first = required); the
    compatibility checks and `max_platforms` still apply, and G2 still approves.
-3. **No command re-runs "from init to release" inside an existing run.** `wgf resume --from`
+3. **No command re-runs "from sdk to release" inside an existing run.** `wgf resume --from`
    needs a resumable run, and a run whose last command was a group (`wgf plan --run`,
-   `wgf publish --run`) ends `COMPLETED` "left scope" (`wgflib/workflow/engine.py:1316`);
-   `--from` with `--run` is refused by design (`docs/workflow-engine.md`). `wgf new-game --run`
-   skips every completed non-gate step, so after a re-plan it would **skip init** and re-ask
-   G4 about the old build - a trap, not a path (`engine.py:704-720`: only gates are re-checked).
-   Today's path is one `--run <id> --force` command per step (below). Fix (a core engine
-   change, so proposed): let `wgf resume <run> --from STEP` continue a run that ended by
-   leaving its scope, widening the scope to the workflow from STEP.
+   `wgf publish --run`) ends `COMPLETED` "left scope" (`wgflib/workflow/engine.py`); `--from`
+   with `--run` is refused by design (`docs/workflow-engine.md`). `wgf new-game --run` skips
+   every completed non-gate step, so after a re-plan it would **skip sdk** and re-ask G4
+   about the old build - a trap, not a path (only gates are re-checked). The path is one
+   `--run <id> --force` command per step (below). Fix (a core engine change, so proposed):
+   let `wgf resume <run> --from STEP` continue a run that ended by leaving its scope.
 4. **A Y8 build without its IDs is silently SDK-less.** The template warns; the Factory passes
    no `WGF_*` to game builds unless `factory.agents.game_env_passthrough` lists them
-   (`wgflib/agentenv.py:34-40`). Fix (small, proposed): verify or tech-plan refuses a y8 target
-   whose App ID is not in the build environment, instead of shipping a package with no SDK.
-5. **Init never removes a dropped platform's vendored profile** (`wgf_init/profiles.py:95,124`
-   start from the existing `pinned.json`): after a retarget `config/platforms/poki.yaml` and
-   its pin stay. Harmless to validation (targets come from `game.config.yaml`); untidy.
+   (`wgflib/agentenv.py`). With per-platform builds the y8 bundle is now its own, so the gap
+   is visible in it alone - but verify still cannot see it: the profiles name no head script,
+   and `y8_sdk_present` reads an echoed fact. Fix (small, proposed): a profile field naming
+   the build environment a target needs (`WGF_Y8_APP_ID`), which verify or tech-plan refuses
+   without.
+5. **Neither init nor the sdk retarget removes a dropped platform's vendored profile**
+   (`vendor_profiles` starts from the existing `pinned.json`): after a retarget
+   `config/platforms/poki.yaml` and its pin stay. Harmless to validation (targets come from
+   `game.config.yaml`); untidy.
 6. **The Y8 listing renders and validates UNKNOWN** (all-null `store_listing`): a rendition is
    made at the canonical sizes, every image and text limit is reported UNKNOWN, never passed;
    UNKNOWN never fails listing validation and `release` does not refuse it. A person reads the
    Y8 submission form.
+7. **Runtime facts are measured once,** against the build target's bundle (`test:verify`
+   serves `dist/`); each other platform's assertions read its own bundle's static facts
+   (size, locales, screenshots) and those shared runtime facts. Every bundle is the same game
+   code with another adapter, and no portal SDK loads in the local browser either way.
 
 ### What each step does on a retarget
 
-| Step | Re-run? | Why |
-|---|---|---|
-| strategy, G2 | yes | new `platform_set` (and profile 1.2.0 pins) |
-| design | yes | binds locales, ad cadence, placements per platform |
-| tech-plan, G3 | yes | `repo_params.game_config.platforms` |
-| init | yes | rewrites `game.config.yaml`, vendors the 1.2.0 profiles, commits |
-| greybox, greybox-playability, assets | re-run for a clean lineage; whether develop accepts their old outputs after a re-plan is unverified | |
-| develop (+ playability, production-quality, visual-qa, review) | yes | HEAD moved; every later gate pins the developed commit. An agent session: the costly step |
-| sdk, sdk-review | yes | wires the new primary's SDK hooks |
-| verify, G4 | yes | new bundle; G4 must be decided again by a person |
-| store-listing, listing-validation | yes | renditions for the new targets under the 1.2.0 blocks |
-| release | yes | one package: the required platform's |
-| platform-validate, G5, G6, submit | yes (`wgf publish --run`) | one publication record per packaged target |
+| Step | Re-run? | Agent session? | Why |
+|---|---|---|---|
+| strategy, G2 | yes | no (a person decides G2) | new `platform_set` (and profile 1.2.0 pins) |
+| design | yes | yes when `factory.design.author: agent` (both validation projects) | binds locales, ad cadence, placements per platform |
+| tech-plan, G3 | yes | no (a person decides G3) | `repo_params.game_config.platforms` |
+| init | **no** | - | the sdk step writes the platforms after develop's commit |
+| greybox, greybox-playability, assets | **no** | - | the developed commit does not move |
+| develop, playability, production-quality, visual-qa, review | **no** | - | their reports pin the developed commit, which does not move |
+| sdk | yes | no (deterministic) | writes the new platforms and profiles, wires each SDK, one keyed commit |
+| sdk-review | yes | yes (the reviewer) | the sdk commit now carries the retarget |
+| verify, G4 | yes | no; G4 is a person | one bundle per target, each judged; G4 must be decided again |
+| store-listing, listing-validation | yes | store-listing: yes when a copy writer is configured (the 3D project), else no | renditions for the new targets under the 1.2.0 blocks |
+| release | yes | no | one package per target, from its own bundle |
+| platform-validate, G5, G6, submit | yes (`wgf publish --run`) | no; G5/G6 are a person's | one publication record per packaged target |
 
 ### Exact commands
 
@@ -322,9 +355,9 @@ RUN=new-game-20261003-081154-4e5e0a
    ```yaml
    factory:
      strategy:
-       platforms: [yandex, crazygames, y8]   # first = required: the one packaged today
+       platforms: [yandex, crazygames, y8]   # first = required (the build target, built last)
      # agents:
-     #   game_env_passthrough: [WGF_Y8_APP_ID, WGF_Y8_GAME_ID]   # once the IDs exist
+     #   game_env_passthrough: [WGF_Y8_APP_ID, WGF_Y8_GAME_ID]   # once the IDs exist (gap 4)
    ```
 
    Yandex first: both games already ship `ru`, and Yandex is the platform whose code
@@ -340,12 +373,11 @@ RUN=new-game-20261003-081154-4e5e0a
    bin/wgf decide $RUN approve               # run ends COMPLETED ("left scope" before init)
    ```
 
-3. Rebuild from init, one step per command (each stops if its step fails; read
-   `bin/wgf status $RUN` before the next):
+3. From sdk, one step per command (each stops if its step fails; read
+   `bin/wgf status $RUN` before the next) - **not** init or develop:
 
    ```bash
-   for s in init greybox greybox-playability assets develop playability production-quality \
-            visual-qa review sdk sdk-review verify; do
+   for s in sdk sdk-review verify; do
      bin/wgf $s --run $RUN --force || break
    done
    bin/wgf prototype-review --run $RUN --force   # G4 -> WAITING
@@ -356,24 +388,26 @@ RUN=new-game-20261003-081154-4e5e0a
    bin/wgf publish --run $RUN --force             # platform-validate, G5, G6 (a person), submit (dry-run)
    ```
 
-   A step that routes elsewhere (verify -> develop, visual-qa -> assets) ends the one-step
-   command "left scope"; run the named step and continue the list from there. The develop
-   session budget is not refilled by `--run`; a develop step BLOCKED on it is resumed with
+   `sdk` logs "sdk retargets the checkout to the tech plan's platforms" and its commit holds
+   `game.config.yaml` and `config/platforms/{yandex,crazygames,y8}.yaml` + `pinned.json`.
+   `verify` then runs three builds (`build/platforms/{crazygames,y8,yandex}/`, yandex last)
+   and `release` writes `yandex.zip`, `crazygames.zip`, `y8.zip`. A step that routes
+   elsewhere (verify -> develop, sdk-review -> develop) ends the one-step command "left
+   scope": that is a real game change, and the sequence from Part 2's first version (init
+   onwards) no longer applies either - run develop and continue from it. The develop session
+   budget is not refilled by `--run`; a develop step BLOCKED on it is resumed with
    `bin/wgf resume $RUN --budget-sessions N`.
 
-This sequence was driven end to end on a `--mock` run on 2026-10-04 (new-game to G6, then
-`plan --run --force`, every step above, G4 `pass`, `publish --run --force` back to WAITING at
-G6): every command exited 0 and each step executed. The same mock run also showed the trap of
-gap 3: after `plan --run --force`, `bin/wgf new-game --run` emitted `STEP_SKIPPED` for init,
-greybox, assets, develop, sdk and verify, then asked G4 again - about the old build.
+The previous sequence (`init` through `verify`, every step re-run) is still correct, only
+dearer: it re-runs develop and every gate after it.
 
 ### Verdict per platform
 
 | Platform | Brick Breaker Worlds / Sky Marble: blocked in code | External (account, partnership, portal) |
 |---|---|---|
 | Yandex | Packageable after the retarget above (required). Known risks: PNG screenshots with alpha (24-bit asked); the 70%-gameplay media rule is a person's check | Developer profile, contract (licensing model or YAN), moderation 3-5 days, cloud-saves switch in the draft, age rating, how-to-play and SEO texts |
-| CrazyGames | **Not packageable alongside Yandex** (gap 1); as the required platform it would be. The listing now needs a 1080p trailer under 20 s (store-listing 1.1.0) and a portrait video (manual) | Developer Portal account, Progress Save toggle, Basic Launch (ads disabled, expected) and CrazyGames' Full Launch decision |
-| Y8 | **Not packageable alongside Yandex** (gap 1); even as required, the build needs `WGF_Y8_APP_ID` / `WGF_Y8_GAME_ID` passed through, or it ships SDK-less (gap 4) | Developer account and approved Studio, the App ID and Game ID from the portal, review, the listing fields (undocumented) |
-| GameDistribution | Tech plan blocks without a registered Game ID; not packageable alongside another required platform | Account, Game ID, rewarded flag, preroll viewed once from the upload view |
+| CrazyGames | Packageable alongside Yandex since 2.8.0 (its own bundle, with the CrazyGames head script, gap 1). The listing now needs a 1080p trailer under 20 s (store-listing 1.1.0) and a portrait video (manual) | Developer Portal account, Progress Save toggle, Basic Launch (ads disabled, expected) and CrazyGames' Full Launch decision |
+| Y8 | Packageable alongside Yandex since 2.8.0 (its own bundle, gap 1); the build needs `WGF_Y8_APP_ID` / `WGF_Y8_GAME_ID` passed through, or it ships SDK-less, and verify cannot tell (gap 4) | Developer account and approved Studio, the App ID and Game ID from the portal, review, the listing fields (undocumented) |
+| GameDistribution | Tech plan blocks without a registered Game ID; with one, packageable alongside the others (its own bundle) | Account, Game ID, rewarded flag, preroll viewed once from the upload view |
 | GamePix | No adapter at the pinned template (template#23 adds it to main): not a target until a template release carrying it is pinned and the profile is added | Account; exclusivity default |
 | Poki | Deferred: the current r1 package stays as it is | - |

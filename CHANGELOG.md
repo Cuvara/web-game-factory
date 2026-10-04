@@ -49,6 +49,25 @@ reasons `legal`, `declaration`, `ai-text-policy`, `duplicate-candidate`, `review
 `drift-irreversible`, `anti-bot`, and `measurement_class: automation-console-adaptive`. The
 console adapter reads `status` and `constraints.upload_max_mb`; nothing else changes
 behaviour yet - the executor runs profile intents from workstream 3.
+**One build, one package and one publication per target platform** on the pinned template
+(contract 1, v1.2.0), with no template release and no game migration. For a title with more
+than one target, `verify` builds each platform against `build/platforms/<id>/game.config.json`
+(that platform alone) through the template's own `WGF_GAME_CONFIG` override, judges each
+bundle (`build.platform:<id>`, `platform.build-target:<id>`, requirements and profile
+assertions on its own bundle) and requires every target - an `optional` platform that is not
+ready now fails the verdict. `release` packages each with `release:package --platform <id>`
+from its own verified bundle (`packages[].bundle_hash`) and refuses a target without one
+(`platform-not-verified`); `store-listing` renders for the verified build's platforms;
+`platform-validate` writes one publication per package. A repository on template contract 2
+(`build:platforms`) is recognized and builds its platforms itself. A single-platform title is
+built and released exactly as before. **Retargeting a finished title** no longer re-runs
+develop: the `sdk` step (new input: `tech-plan`) writes the G3-approved platforms and their
+profiles into its keyed commit when they differ from the checkout. Schemas:
+verification-report 1.2.0 (`build_artifact.platforms`), release-manifest 1.4.0
+(`packages[].bundle_hash`), both additive; template contract 2.0.0 (entries recorded, version
+unchanged). Docs: [platform-targets-2026-10.md](docs/platform-targets-2026-10.md) Part 2,
+[verification-module.md](docs/verification-module.md#one-bundle-per-platform),
+[release-module.md](docs/release-module.md#one-package-per-target-platform).
 
 ## [2.7.0] - 2026-10-03
 

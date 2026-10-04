@@ -334,9 +334,10 @@ def package_shaped_to_profile(platform_id, profile, package, on_disk):
     `package` is the manifest's entry for this platform; `on_disk` says whether the file was
     found and its sha256 equals the checksum (True/False), or None when nobody looked."""
     if package is None:
-        return red(f"the release-manifest has no package for {platform_id}: the one build "
-                   f"targets another platform (template contract build_target); {platform_id} "
-                   f"needs a build of its own")
+        return red(f"the release-manifest has no package for {platform_id}: the release's "
+                   f"one bundle boots another platform (template contract build_target); "
+                   f"{platform_id} ships only from a build of its own (verify and release, "
+                   f"one bundle per platform)")
     if on_disk is False:
         return red(f"{package.get('filename')} is not in the checkout, or its bytes do not "
                    f"match the manifest's checksum")

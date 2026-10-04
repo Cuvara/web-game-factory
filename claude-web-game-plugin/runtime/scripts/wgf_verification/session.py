@@ -78,6 +78,7 @@ class VerificationSession:
         self.commit = None
         self.dirty = None
         self.build_artifact = None
+        self.platform_builds = {}           # platform id -> platform_builds.PlatformBuild
         self.runtime_facts = None
         self.assertions = {}                # platform id -> [criterionResult]
         self.gameplay_driver = None
@@ -157,6 +158,22 @@ class VerificationSession:
             listed = ((self.inputs.get("scaffold-record") or {}).get("game_config") or {}) \
                 .get("platforms")
         return [p for p in (listed or []) if isinstance(p, dict) and p.get("id")]
+
+    @property
+    def platform_build_mode(self):
+        """platform_builds.FACTORY, REPOSITORY or None (one ordinary build): how each target
+        platform gets a bundle of its own."""
+        from .platform_builds import mode
+        return mode(self.package, self.platforms)
+
+    def platform_bundle(self, platform_id):
+        """(directory, env): where a platform's bundle is, and the environment the
+        template's scripts need to read it - its own build when there is one, else the
+        ordinary output directory and no environment."""
+        build = self.platform_builds.get(platform_id)
+        if build is not None and build.built:
+            return build.path, build.env
+        return self.output_dir, {}
 
     def verification_flag(self, name, default=True):
         return bool((self.game_config.get("verification") or {}).get(name, default))

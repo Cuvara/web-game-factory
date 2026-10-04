@@ -47,7 +47,11 @@ COLLECT_FACTS = contract.COLLECT_FACTS
 EVALUATE = contract.EVALUATE_ASSERTIONS
 
 
-def _required(platform):
+def _required(platform, session=None):
+    """A platform's own checks are required when its role is - or, with a bundle per
+    platform, always: every platform that gets a package must be shippable."""
+    if session is not None and session.platform_build_mode is not None:
+        return True
     return platform.get("role", "required") == "required"
 
 
@@ -89,7 +93,7 @@ def check_platform(session):
 
 def _per_platform(session, platform):
     pid = platform["id"]
-    required = _required(platform)
+    required = _required(platform, session)
     common = {"category": "platform", "required": required, "platform_id": pid}
 
     yield _build_target(session, pid, common)
@@ -154,12 +158,27 @@ def _per_platform(session, platform):
 
 
 def _build_target(session, pid, common):
-    """Whether the bundle under test is this platform's build. On the pinned contract one
-    bundle boots one adapter (template_contract.build_target); the other platforms[] entries
-    get the same bytes, which load the target's SDK on their portal - never theirs. Their
-    profile assertions cannot see it (the template's `platform_sdk` fact echoes the platform
-    it was asked about), so this check says it, and their readiness is not-ready."""
+    """Whether the bundle this platform would ship is its own build. On the pinned contract
+    one build boots one adapter (template_contract.build_target). With one target that
+    build is the platform's; with several, each platform gets a build of its own
+    (platform_builds, build.platform:<id>), made against a config naming it alone - which is
+    what makes the template boot its adapter and inject only its head script. The profile
+    assertions cannot see which adapter boots (the template's `platform_sdk` fact echoes the
+    platform it was asked about), so this check says it."""
     title = "The build targets this platform"
+    if session.platform_build_mode is not None:
+        build = session.platform_builds.get(pid)
+        cid = f"platform.build-target:{pid}"
+        if build is None or not build.built:
+            return session.blocked_by(f"build.platform:{pid}", id=cid, title=title, **common)
+        how = (f"built against {build.config}, whose only platform is {pid}"
+               if build.config else f"built by the repository's {contract.SCRIPT_BUILD_PLATFORMS}")
+        return Check(cid, title=title, status=PASS,
+                     message=f"{build.path}/ boots the {pid} adapter: {how}",
+                     evidence=[Evidence("artifact", f"{pid} bundle {build.content_hash}",
+                                        path=build.path, content_hash=build.content_hash),
+                               Evidence("reference", f"see build.platform:{pid}",
+                                        check_ref=f"build.platform:{pid}")], **common)
     target = contract.build_target(session.platforms)
     evidence = [Evidence("file", f"game.config.yaml platforms[]: the build boots {target}",
                          path=contract.GAME_CONFIG)]
@@ -239,7 +258,8 @@ def _local_requirements(session, pid, profile, source, common):
     if profile is None:
         return session.blocked_by(f"platform.profile:{pid}", id=cid, title=title, **common)
     requirements = profile.get("requirements") or {}
-    locales_dir = os.path.join(session.output_dir, "locales")
+    bundle, _env = session.platform_bundle(pid)
+    locales_dir = f"{bundle}/locales"
     shipped = sorted(p.rsplit("/", 1)[-1][:-5] for p in session.walk(locales_dir)
                      if p.endswith(".json"))
     evidence = [Evidence("file", f"shipped locales: {', '.join(shipped) or 'none'}",
@@ -354,9 +374,15 @@ def _device_performance(session):
 def _assertions(session, platform):
     pid = platform["id"]
     cid, title = f"policy.assertions:{pid}", "Platform profile assertions"
-    common = {"category": "policy", "required": _required(platform), "platform_id": pid}
+    common = {"category": "policy", "required": _required(platform, session),
+              "platform_id": pid}
     if not session.passed("build.bundle"):
         return session.blocked_by("build.bundle", id=cid, title=title, **common)
+    if session.platform_build_mode is not None and not session.passed(f"build.platform:{pid}"):
+        return session.blocked_by(f"build.platform:{pid}", id=cid, title=title, **common)
+    # The facts are measured on this platform's own bundle: with a Factory build, the
+    # template's scripts read it through the config it was built against.
+    _bundle, env = session.platform_bundle(pid)
     if not (session.exists(COLLECT_FACTS) and session.exists(EVALUATE)):
         return Check(cid, title=title, status=BLOCKED,
                      message=f"the repository has no {COLLECT_FACTS} / {EVALUATE}",
@@ -368,7 +394,8 @@ def _assertions(session, platform):
     # wrote nothing must not be read as the previous run's clean results.
     session.remove(facts_out)
     session.remove(results_out)
-    collect = session.run(["node", COLLECT_FACTS, "--platform", pid, "--out", facts_out])
+    collect = session.run(["node", COLLECT_FACTS, "--platform", pid, "--out", facts_out],
+                          env=env or None)
     evidence = [Evidence.of_command(collect)]
     if not collect.ok:
         status = BLOCKED if collect.unavailable else FAIL
@@ -376,7 +403,7 @@ def _assertions(session, platform):
                      message="facts could not be collected: " + collect.describe(),
                      evidence=evidence, **common)
     evaluate = session.run(["node", EVALUATE, "--platform", pid, "--facts", facts_out,
-                            "--out", results_out])
+                            "--out", results_out], env=env or None)
     evidence.append(Evidence.of_command(evaluate))
     results = session.read_json(results_out)
     if not isinstance(results, list):

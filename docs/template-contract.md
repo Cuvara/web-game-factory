@@ -24,6 +24,12 @@ in 2.0.0 (M10); 2.1.1 added `src/game/boot-scene.ts` (recognized, never required
 encodes `build_target`, the build-target rule contract 1.0.0 always had. **Contract 2.0.0**
 (Factory 2.3.0): `phaserjs` joined the `engine.type` enum, so `packages/phaser-framework/`
 and `src/rendering/phaserjs/` became required entries — a repository generated from a
+template that predates them is now refused, which is exactly what a major means. Factory
+2.8.0 encodes, unversioned, what the pinned contract already offered for per-platform builds:
+the `WGF_GAME_CONFIG` override (`vite.config.ts`, `scripts/_shared.mjs` `readGameConfig`) and
+`release:package --platform`, the `build/platforms/<id>/` layout, and - recognized only when
+present - contract 2's `build:platforms` and its `package.json` `wgf.template.contract`
+marker.
 template that predates them is now refused, which is exactly what a major means.
 **Contract 2.1.0** (Factory 2.8.0): CI never publishes a game to a portal - publication is the
 Factory's `publish` group, behind a person's G6 (`docs/publish-module.md`) - so
@@ -45,10 +51,12 @@ by the template's naming convention: `packages/<engine without "js">-framework/`
 | Template source (`SOURCE_PATHS`) | `src/main.ts`, `src/rendering/*`, `src/game/boot-scene.ts`, `src/platform/`, `tests/e2e/smoke.spec.ts`, platform-sdk `types.ts`/`registry.ts` | develop brief and checks, SDK inspector |
 | Package manager | `pnpm`, `pnpm-lock.yaml` | verify, sdk, release |
 | npm scripts (`NPM_SCRIPTS`) | `build`, `typecheck`, `lint`, `format`, `format:write`, `test`, `test:unit`, `test:integration`, `test:e2e`, `test:verify`, `sdk:conformance`, `test:sdk:browser`, `release:package`, `release:manifest` | verify, develop, sdk, release |
-| Forwarded flags (`SCRIPT_FLAGS`) | `release:package --release`; `release:manifest --release --version --kind --state` | release |
+| Forwarded flags (`SCRIPT_FLAGS`) | `release:package --release --platform`; `release:manifest --release --version --kind --state` | release |
 | `pnpm exec` tools (`EXEC_TOOLS`) | `vitest`, `tsc` | sdk |
 | Node CLIs (`NODE_CLIS`) | `scripts/verify/collect-facts.mjs --platform --out`; `scripts/verify/evaluate-assertions.mjs --platform --facts --out` | verify (policy) |
-| Build target (`build_target`) | one bundle per build; it boots game.config.yaml's first `required` platform, else its first (`src/core/config.ts` `primaryPlatform`, `scripts/build/game-config-plugin.ts`); no `build:platforms` | verify (`platform.build-target:<id>`), release (packages only the target) |
+| Build target (`build_target`) | one bundle per build; it boots game.config.yaml's first `required` platform, else its first (`src/core/config.ts` `primaryPlatform`, `scripts/build/game-config-plugin.ts`); no `build:platforms` | verify (`platform.build-target:<id>`, and which platform is built last), release (one bundle: packages only the target) |
+| Per-platform builds (`GAME_CONFIG_ENV`, `PLATFORM_BUILDS_DIR`, `platform_dist_dir`, `platform_build_config`, `platform_build_record`, `PLATFORM_BUILDS_INDEX`) | `WGF_GAME_CONFIG=<path>` makes `vite build`, `collect-facts`, `release:package` and `release:manifest` read that config instead of game.config.yaml; the Factory writes `build/platforms/<id>/{game.config.json,dist/,build.json}` and `build/platforms/index.json` under the git-ignored `/build/` | verify (one build per platform, facts per bundle), release (`release:package --platform <id>` per bundle) |
+| Contract 2 (`CONTRACT_MARKER`, `template_contract_of`, `SCRIPT_BUILD_PLATFORMS`, `builds_per_platform`) | `package.json` `wgf.template.contract` (absent: 1) and a `build:platforms` script: the repository builds its platforms itself into the same layout. Recognized when present, required nowhere | verify, release |
 | Outputs (`OUTPUTS`) | template-named: `build/runtime-facts.json`, `build/sdk-conformance.json`, `build/facts/<platform>.json`, `release/<id>/{packages.json,checksums.txt,manifest.json}`. Factory-named: `build/assertions/<platform>.json`, `build/verification/gameplay-session.json`, `build/verification/playwright-e2e.json` | verify, sdk, release |
 | `game.config.yaml` | `game.id`, `game.version`, `engine.type` ∈ `ENGINES`, `platforms[]` `{id, profile, role}`, `monetization.ad_kinds`, `build.command`, `build.output` (default `dist`), `verification.mobile_test` | init, verify, release, develop |
 | Test projects | Playwright `desktop`, `mobile`, `verify`; Vitest `unit`, `integration`, `sdk` | verify (gameplay, runtime facts), sdk |
@@ -94,6 +102,9 @@ commit (`wgflib.template.checkout()`, never the sibling working copy). It checks
 - the CLIs behind the forwarded scripts mention their flags;
 - every template-written output is named by the code that writes it;
 - the `game.config.yaml` keys are present;
+- `WGF_GAME_CONFIG` is honoured where the per-platform builds rely on it (`vite.config.ts`,
+  `readGameConfig` in `scripts/_shared.mjs`), and `release:package` and `collect-facts` read
+  their config through `readGameConfig`;
 - the Playwright and Vitest projects are declared.
 
 The test skips, with the reason, only when the pinned checkout cannot be obtained. It also

@@ -8,7 +8,7 @@
     "id": "verification-report",
     "kind": "artifact",
     "format": "json",
-    "version": "1.1.0",
+    "version": "1.2.0",
     "producer": "release:qa",
     "consumers": ["release:rc", "title:production", "title:prototype-review", "release:draft", "release:store-listing", "release:validating"],
     "repo_path": "<game-repo>/qa/<release-id>/verification.json",
@@ -37,14 +37,35 @@
 
     "build_artifact": {
       "type": "object",
-      "description": "The bundle the checks ran against, pinned by a digest over its paths and contents.",
+      "description": "The bundle the checks ran against, pinned by a digest over its paths and contents. Since 1.2.0, `platforms` pins each target platform's own bundle when there is more than one target (or the template builds its platforms itself): the bundle that platform's package is made from.",
       "required": ["status"],
       "properties": {
         "status": { "enum": ["built", "not-built"] },
         "path": { "type": "string" },
         "content_hash": { "$ref": "./shared/provenance.schema.json#/$defs/hash" },
         "files": { "type": "integer", "minimum": 0 },
-        "bytes": { "type": "integer", "minimum": 0 }
+        "bytes": { "type": "integer", "minimum": 0 },
+        "platforms": {
+          "type": "array",
+          "description": "Since 1.2.0. One build per target platform, each booting only that platform's adapter. Absent for a single-platform build on template contract 1, whose one bundle (`path`) is that platform's.",
+          "items": {
+            "type": "object",
+            "required": ["platform_id", "status", "path"],
+            "properties": {
+              "platform_id": { "type": "string", "pattern": "^[a-z][a-z0-9-]*$" },
+              "profile": { "type": "string", "description": "<profile-id>@<version>, as pinned." },
+              "status": { "enum": ["built", "not-built"] },
+              "built_by": { "enum": ["factory", "repository"], "description": "factory: the verify step built it with the repository's build command against a config naming only this platform (template contract 1, WGF_GAME_CONFIG). repository: the repository's own `build:platforms` (contract 2)." },
+              "path": { "type": "string", "description": "The bundle, relative to the repository root: build/platforms/<id>/dist." },
+              "config": { "type": "string", "description": "factory builds: the config the bundle was built against, relative to the repository root. The release packages with it." },
+              "config_hash": { "$ref": "./shared/provenance.schema.json#/$defs/hash" },
+              "content_hash": { "$ref": "./shared/provenance.schema.json#/$defs/hash" },
+              "files": { "type": "integer", "minimum": 0 },
+              "bytes": { "type": "integer", "minimum": 0 }
+            },
+            "additionalProperties": false
+          }
+        }
       },
       "additionalProperties": false
     },

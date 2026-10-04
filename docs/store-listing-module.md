@@ -63,7 +63,7 @@ checkout: the bundle is served read-only, Playwright is resolved from the checko
 1. **Facts** (`facts.py`). From `game-design` (`build_spec`: mechanics, controls, the
    experience contract's objective, win and lose conditions, visual identity, features,
    engine, orientation, locales; `research.gameplay.genre`), `sdk-report` (capabilities
-   observed `working`), `scaffold-record` (the targeted platforms), the checkout's
+   observed `working`), the targeted platforms (below), the checkout's
    `game.config.yaml` (the game's name), the bundle's own `locales/<locale>.json` strings and
    its runtime asset manifest (`assets/assets.json`: the asset that draws the player, the
    fonts), and the `prototype-report`'s `scope_deltas` when that report is of the listed
@@ -142,7 +142,10 @@ checkout: the bundle is served read-only, Playwright is resolved from the checko
    check that fails on it is `fix: configure`: the person fixes their file; another pass
    would not.
 7. **Platform renditions** (`platforms.py`, `package.render_platform`). For each targeted
-   platform (the scaffold-record's `game_config.platforms`, or `listing.platforms`), the
+   platform (`listing.platforms` when set, else the verified build's - the
+   verification-report's `platform_readiness`, which is what the release packages - else
+   the scaffold-record's `game_config.platforms`: a title retargeted after init has a
+   scaffold-record naming its first targets), the
    profile's `store_listing` block becomes an explicit requirement list - texts and their
    limits, tags and categories, icon and covers with sizes, aspects and formats, screenshots,
    video, locales, age rating, file naming. Images are cover-cropped and downscaled from the

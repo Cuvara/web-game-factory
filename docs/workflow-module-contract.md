@@ -168,7 +168,7 @@ reading, and `DocumentedIoContract` fails if the two disagree.
 | `production-quality` | `production-quality` | `playability-report`, `asset-manifest`, `game-design`, `scaffold-record` | `production-quality-report` |
 | `visual-qa` | `visual-qa` | `playability-report`, `game-design`, `asset-manifest`, `production-quality-report` | `visual-qa-report` |
 | `review` | `review` | `prototype-report`, `game-design`, `scaffold-record`, `qa-report` | `review-report` |
-| `sdk` | `sdk` | `game-design`, `scaffold-record`, `prototype-report` | `sdk-report` |
+| `sdk` | `sdk` | `game-design`, `scaffold-record`, `prototype-report`, `tech-plan` | `sdk-report` |
 | `sdk-review` | `review` | `sdk-report`, `prototype-report`, `game-design`, `scaffold-record`, `qa-report` | `review-report` |
 | `verify` | `verify` | `prototype-report`, `sdk-report`, `game-design`, `scaffold-record`, `asset-manifest`, `playability-report` | `verification-report`, `qa-report` |
 | `prototype-review` | `human-checkpoint` | `qa-report`, `verification-report`, `prototype-report`, `title-strategy`, `game-design`, `playability-report`, `review-report` | `decision-record` |

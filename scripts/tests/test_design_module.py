@@ -33,6 +33,7 @@ from wgflib.workflow.config import FactoryConfig  # noqa: E402
 from wgflib.workflow.contracts import ArtifactContracts  # noqa: E402
 from wgflib.workflow.model import ArtifactRef, RunStatus, StepOutcome, StepStatus  # noqa: E402
 from wgf_design import archetypes, authors, compose, consistency, content, identity  # noqa: E402
+from wgf_design import features as feature_check  # noqa: E402
 from wgf_design.platforms import load_platforms  # noqa: E402
 from wgf_design.step import SCHEMA_VERSION, DesignStep  # noqa: E402
 from wgflib import paths  # noqa: E402
@@ -180,7 +181,12 @@ class DesignFromWorkedExample(unittest.TestCase):
         self.assertEqual(tiers["mvp"], by_tier["mvp"])
         self.assertEqual(tiers["prototype"], by_tier["mvp"])
         self.assertEqual(tiers["production"], by_tier["post-mvp"])
-        self.assertEqual(tiers["future"], by_tier["optional"])
+        # A feature evaluated and cut is out of scope, not a future candidate (1.10.0).
+        cut = [f["name"] for f in self.design["features"]
+               if (f.get("evaluation") or {}).get("decision") == "cut"]
+        self.assertEqual(tiers["future"], [n for n in by_tier["optional"] if n not in cut])
+        out = [o["item"] for o in tiers["out_of_scope"]]
+        self.assertEqual([n for n in cut if n not in out], [])
         self.assertTrue(by_tier["mvp"] and by_tier["post-mvp"] and by_tier["optional"])
 
     def test_every_mvp_feature_has_acceptance_criteria(self):
@@ -196,8 +202,14 @@ class DesignFromWorkedExample(unittest.TestCase):
     def test_strategy_exclusions_are_honoured(self):
         out = [o["item"] for o in self.design["scope"]["tiers"]["out_of_scope"]]
         self.assertIn("Level editor", out)
-        names = " ".join(f["name"].lower() for f in self.design["features"])
+        # Honoured: never built. An excluded feature the strategy names is on record as cut,
+        # with the exclusion as its reason (features.py), and nothing else.
+        names = " ".join(f["name"].lower() for f in self.design["features"]
+                         if (f.get("evaluation") or {}).get("decision") != "cut")
         self.assertNotIn("skin", names)       # "Character or skin customization"
+        (skins,) = [f for f in self.design["features"] if f.get("catalogue") == "skins"]
+        self.assertEqual((skins["tier"], skins["evaluation"]["decision"]), ("optional", "cut"))
+        self.assertIn("Character or skin customization", skins["evaluation"]["reason"])
         self.assertNotIn("daily", names)      # "Any metagame or daily-quest layer"
         self.assertNotIn("daily_quest", self.design["retention"]["hooks"])
         actions = self.design["build_spec"]["controls"]["actions"]
@@ -238,8 +250,11 @@ class DesignFromWorkedExample(unittest.TestCase):
         self.assertEqual(block["ruleset_version"], consistency.load_rules()["version"])
         # One result per consistency rule, and - the design names a genre family - one per
         # content rule beside them (content.py, core/reference/genre-models.yaml).
+        # And one per feature-evaluation rule (features.py, core/reference/feature-catalogue.yaml).
         self.assertEqual(len(block["rule_results"]),
-                         len(consistency.load_rules()["rules"]) + len(content.RULES))
+                         len(consistency.load_rules()["rules"]) + len(content.RULES)
+                         + len(feature_check.RULES))
+        self.assertEqual(block["feature_catalogue"]["id"], "feature-catalogue")
         self.assertEqual(block["content_model"],
                          {"id": self.design["genre"]["family"],
                           "version": str(content.load_models()["version"])})

@@ -21,6 +21,10 @@ Outcomes, per docs/workflow-module-contract.md §7:
     production art or UI not stated            FAILED, not retryable, nothing persisted
                                                (presentation.py: a role, readability or
                                                UI token missing)
+    a feature the brief, strategy or genre     FAILED, not retryable, nothing persisted
+    family names is not evaluated, or an       (features.py, core/reference/
+    evaluation contradicts its tier or the     feature-catalogue.yaml: include, later or
+    platforms                                  cut, each with a reason)
     no depth stated (no meta loop, goal ladder,  FAILED, not retryable, nothing persisted
     content schedule, first session or return    (depth.py, core/reference/design-depth.yaml;
     hooks; an MVP entry the MVP does not build)  checked only when no blocking rule breached)
@@ -54,6 +58,7 @@ from wgflib.workflow import ArtifactOutput, StepResult, WorkflowStep
 from wgflib.workflow.contracts import ArtifactContracts
 
 from . import consistency, content, depth, experience, presentation
+from . import features as feature_check
 from .authors import AUTHORS, AuthorError, resolve_author
 from .compose import buildability, finalize
 from .platforms import PlatformError, load_platforms
@@ -98,6 +103,7 @@ class DesignStep(WorkflowStep):
     experience_rules = None
     depth_rules = None
     content_models = None
+    feature_catalogue = None
 
     def execute(self, inputs, context):
         if "title-strategy" in inputs.missing:
@@ -228,6 +234,13 @@ class DesignStep(WorkflowStep):
                         f"the design does not state its production art and UI{after} "
                         f"({len(problems)} problem(s)): " + "; ".join(problems[:6]),
                         retryable=False)
+                if outcome["features"]:
+                    context.logger.error("the design does not account for its features",
+                                         problems=problems, repair_rounds=repair_round)
+                    return StepResult.failed(
+                        f"the design does not account for the features the brief, strategy "
+                        f"or genre family names{after} ({len(problems)} problem(s)): "
+                        + "; ".join(problems[:6]), retryable=False)
                 if outcome["depth"]:
                     context.logger.error("the design does not state its depth",
                                          problems=problems, repair_rounds=repair_round)
@@ -304,7 +317,7 @@ class DesignStep(WorkflowStep):
                    "block": None, "blocking": None,
                    "warnings": None, "problems": [], "unbuildable": False,
                    "experience": False, "presentation": False, "depth": False,
-                   "content": False, "consistency_problems": []}
+                   "content": False, "features": False, "consistency_problems": []}
         problems = buildability(design)
         if problems:
             outcome.update(problems=problems, unbuildable=True)
@@ -320,6 +333,13 @@ class DesignStep(WorkflowStep):
         found = presentation.check(design, self.experience_rules)
         if found:
             outcome.update(presentation=True)
+            problems += found
+        # What the brief, the strategy and the genre name beyond the core game: each feature
+        # included, deferred or cut with a reason - none dropped silently, none added blindly.
+        catalogue = self.feature_catalogue or feature_check.load_catalogue()
+        found, feature_results = feature_check.check(design, strategy, platforms, catalogue)
+        if found:
+            outcome.update(features=True)
             problems += found
         now = self.clock()
         block, blocking, warnings = consistency.evaluate(design, strategy, platforms, now,
@@ -370,6 +390,9 @@ class DesignStep(WorkflowStep):
         if problems:
             outcome.update(problems=problems)
             return outcome
+        # After consistency's own results and the content results: the feature evaluation.
+        block["rule_results"] = list(block["rule_results"]) + feature_results
+        block["feature_catalogue"] = feature_check.catalogue_record(catalogue)
         design["consistency"] = block
         artifact = self._with_provenance(design, strategy, ref, title_id, now, context,
                                          getattr(author, "actor", "automation"),

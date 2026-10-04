@@ -198,6 +198,20 @@ state `build_spec.experience.win`, because a game that can be finished has to sa
 design step holds the content to the family's entry (`scripts/wgf_design/content.py`, 22
 `content.*` rules). Craft: `core/craft/content-and-level-design.md`.
 
+**`game-design` 1.10.0** adds feature evaluation. `features[]` gain `source` (`brief`,
+`strategy`, `design`, `catalogue`), `catalogue` (the `core/reference/feature-catalogue.yaml`
+feature the entry evaluates) and `evaluation` (`player_value`, `cost_h`, `platform_support`
+— `all`, `some`, `local`, `none` across the required platforms — `monetization_impact`,
+`qa_cost`, and the required `decision` — `include`, `later`, `cut` — and `reason`).
+`retention.hooks` gains `daily_challenge`, and `consistency.feature_catalogue` records the
+catalogue by id and version. All optional, so 1.9.0 artifacts remain valid. The design step
+requires every catalogue feature the brief or the strategy names, and every one the genre
+family expects, to be evaluated; `include` to be mvp or post-mvp and `later`/`cut` optional;
+and an included feature to run on every required platform (`scripts/wgf_design/features.py`,
+five `features.*` rules). `compose.finalize` lists each cut feature in
+`scope.tiers.out_of_scope` with its reason, and `wgflib.gate_evidence` shows G3 and G4 the cut
+and deferred features. Craft: `core/craft/feature-evaluation.md`.
+
 **`title-strategy` 1.4.0** adds `concept.content_model`: the content shape the title commits
 to before design starts — the genre family, `unit_kind`, `progression`, `difficulty_shape`,
 `difficulty_axes[]`, `min_units` (the family's `units.min_mvp`) and `source`, which says

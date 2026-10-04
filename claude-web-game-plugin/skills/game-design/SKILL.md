@@ -1,13 +1,13 @@
 ---
 name: game-design
-description: Core loop, session structure, retention hooks, scope tiers, the build spec, and the design consistency rules. Supports the game-designer role(s). Use when working on that part of the Factory lifecycle.
+description: Core loop, session structure, retention hooks, scope tiers, feature evaluation, the build spec, and the design consistency rules. Supports the game-designer role(s). Use when working on that part of the Factory lifecycle.
 ---
 
 # game-design
 
 Supports: **game-designer**
 
-Core loop, session structure, retention hooks, scope tiers, the build spec, and the design consistency rules.
+Core loop, session structure, retention hooks, scope tiers, feature evaluation, the build spec, and the design consistency rules.
 
 ## Authoritative sources
 
@@ -23,6 +23,8 @@ Core loop, session structure, retention hooks, scope tiers, the build spec, and 
 - `${CLAUDE_PLUGIN_ROOT}/runtime/core/craft/content-and-level-design.md`
 - `${CLAUDE_PLUGIN_ROOT}/runtime/core/reference/genre-models.yaml`
 - `${CLAUDE_PLUGIN_ROOT}/runtime/core/reference/design-depth.yaml`
+- `${CLAUDE_PLUGIN_ROOT}/runtime/core/craft/feature-evaluation.md`
+- `${CLAUDE_PLUGIN_ROOT}/runtime/core/reference/feature-catalogue.yaml`
 
 This skill is a pointer, not a copy. Read the paths above rather than relying on anything
 restated here; core is authoritative and this file is not a substitute for it.

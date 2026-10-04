@@ -17,6 +17,10 @@ by step or artifact type, so any checkpoint whose inputs carry the same fields s
                                                    it could not, which is never a pass
     verdict + blockers   (review-report)           the reviewer's verdict, fidelity blockers
                                                    named as such
+    features[].evaluation (game-design)            every feature the design cut or deferred,
+                                                   with its source and reason - a feature the
+                                                   brief asked for and this build does not
+                                                   have is said so (G3, G4)
 
 Read-only and presentation only: it decides nothing, and a guard or a gate never reads it.
 """
@@ -81,16 +85,29 @@ def _played(content):
             "skipped": [{"id": s.get("id"), "reason": s.get("reason")} for s in skipped]}
 
 
+def _left_out(content):
+    """{"cut", "later"} from an artifact whose `features` carry evaluations (game-design
+    1.10.0): what was evaluated and not built, each with its source and reason."""
+    out = {"cut": [], "later": []}
+    for feature in content.get("features") or []:
+        evaluation = feature.get("evaluation") if isinstance(feature, dict) else None
+        if isinstance(evaluation, dict) and evaluation.get("decision") in out:
+            out[evaluation["decision"]].append({
+                "name": feature.get("name") or feature.get("id"),
+                "source": feature.get("source"), "reason": evaluation.get("reason")})
+    return out if out["cut"] or out["later"] else None
+
+
 def _fidelity(blocker):
     text = " ".join(str(blocker.get(k) or "") for k in ("summary", "file", "id")).lower()
     return any(word in text for word in FIDELITY)
 
 
 def summarize(artifacts):
-    """{"criteria", "playtests", "reports", "content", "coverage", "gaps", "played", "reviews"}
-    from {artifact_type: content}, or None when no input carries any of the fields above."""
+    """{"criteria", "playtests", "reports", "content", "coverage", "gaps", "played", "reviews",
+    "features"} from {artifact_type: content}, or None when no input carries any of the fields above."""
     criteria, playtests, reports = [], [], []
-    content_rules, coverage, gaps, played, reviews = [], [], [], [], []
+    content_rules, coverage, gaps, played, reviews, left_out = [], [], [], [], [], []
     for artifact_type, content in sorted(artifacts.items()):
         if not isinstance(content, dict):
             continue
@@ -104,6 +121,9 @@ def summarize(artifacts):
                 gaps.append({"artifact": artifact_type, "field": gap.get("field"),
                              "severity": gap.get("severity"), "question": gap.get("question"),
                              "assumed": gap.get("assumed")})
+        omitted = _left_out(content)
+        if omitted:
+            left_out.append({"artifact": artifact_type, **omitted})
         seen = _played(content)
         if seen:
             played.append({"artifact": artifact_type, **seen})
@@ -132,11 +152,11 @@ def summarize(artifacts):
             reports.append({"artifact": artifact_type, "verdict": content.get("verdict"),
                             "evidence_status": content.get("evidence_status")})
     if not (criteria or playtests or reports or content_rules or coverage or gaps or played
-            or reviews):
+            or reviews or left_out):
         return None
     return {"criteria": criteria, "playtests": playtests, "reports": reports,
             "content": content_rules, "coverage": coverage, "gaps": gaps, "played": played,
-            "reviews": reviews,
+            "reviews": reviews, "features": left_out,
             "unmeasured": [c["criterion_id"] for c in criteria if c["status"] == UNMEASURED]}
 
 
@@ -199,6 +219,17 @@ def render(evidence):
         if entry["skipped"]:
             lines.append(f"  ! {len(entry['skipped'])} content check(s) measured nothing: a skip "
                          "is not a pass.")
+    for entry in evidence.get("features") or []:
+        for decision, label in (("cut", "cut from the design"), ("later", "deferred, not built")):
+            if entry.get(decision):
+                lines.append(f"  features {label} ({entry['artifact']}): {len(entry[decision])}")
+            for feature in entry.get(decision) or []:
+                lines.append(f"    - {feature['name']} ({feature.get('source') or 'design'}): "
+                             f"{(feature.get('reason') or '')[:110]}")
+        asked = [f["name"] for d in ("cut", "later") for f in entry.get(d) or []
+                 if f.get("source") == "brief"]
+        if asked:
+            lines.append(f"  ! the brief asked for {', '.join(asked)}: not in this build.")
     for entry in evidence.get("reviews") or []:
         lines.append(f"  {entry['artifact']}: verdict {entry['verdict']}, "
                      f"{entry['blockers']} blocker(s)"

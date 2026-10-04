@@ -2,7 +2,7 @@
 
 Supports: **game-designer**
 
-Core loop, session structure, retention hooks, scope tiers, the build spec, and the design consistency rules.
+Core loop, session structure, retention hooks, scope tiers, feature evaluation, the build spec, and the design consistency rules.
 
 ## Authoritative sources
 
@@ -18,6 +18,8 @@ Core loop, session structure, retention hooks, scope tiers, the build spec, and 
 - `core/craft/content-and-level-design.md`
 - `core/reference/genre-models.yaml`
 - `core/reference/design-depth.yaml`
+- `core/craft/feature-evaluation.md`
+- `core/reference/feature-catalogue.yaml`
 
 This skill is a pointer, not a copy. Read the paths above rather than relying on anything
 restated here; core is authoritative and this file is not a substitute for it.

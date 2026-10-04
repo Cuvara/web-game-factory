@@ -7,6 +7,19 @@ before a person looks, and a person resuming refills them. This bounds the run:
 a person's BUDGET_RAISED event. A run with no budget never starts a command developer
 (`missing`): an unattended paid agent with no bound is what this exists to prevent.
 
+The budget is derived from the plan, and the installation caps it. The approved tech plan
+records what its own tasks need (tech-plan 1.1.0 `dev_plan.develop_budget`: sessions and cost
+from the hours of every task the run's quality tier builds before G4, wgf_techplan.budget);
+the limit in force is the lower of that and the run's `factory.develop.budget`, raised by a
+person's BUDGET_RAISED above either. A cap below the plan's need was reported at G3 as a
+planned shortfall. A run whose tech plan records no budget (tech-plan 1.0.0, or no tech plan)
+is held to the configured budget alone, as before. A run with no configured budget still never
+starts a command developer: the plan says what the build needs, the installation's budget is
+its consent to spend.
+
+Running out is never success: develop returns BLOCKED naming what the plan needed, and that
+the run's quality tier is not achieved within the budget.
+
 Everything is counted from the run's event log, never from memory or state.json, so neither
 a resume nor a crash gives a session back:
 
@@ -36,7 +49,7 @@ import secrets
 
 from wgflib import budget as run_budget
 
-__all__ = ["Budget", "SESSION", "COST", "read_cost", "transcript_path"]
+__all__ = ["Budget", "SESSION", "COST", "read_cost", "transcript_path", "with_plan"]
 
 SESSION = "developer-session"
 COST = "developer-cost"
@@ -95,11 +108,56 @@ def read_cost(path, key, offset=0):
     return found
 
 
+def _planned(tech_plan):
+    """The tech plan's derived develop budget, or None (tech-plan 1.0.0, or no tech plan)."""
+    plan = ((tech_plan or {}).get("dev_plan") or {})
+    planned = plan.get("develop_budget")
+    if not isinstance(planned, dict):
+        return None
+    scope = plan.get("build_scope") if isinstance(plan.get("build_scope"), dict) else {}
+    return dict(planned, quality_tier=scope.get("quality_tier"))
+
+
+def _count(value):
+    return isinstance(value, int) and not isinstance(value, bool) and value > 0
+
+
+def _amount(value):
+    return (isinstance(value, (int, float)) and not isinstance(value, bool) and value > 0
+            and value == value and value != float("inf"))
+
+
+def with_plan(limits, snapshot, planned):
+    """`limits` (wgflib.budget.effective) with the plan's need applied: each limit is the lower
+    of the installation's snapshot and the plan's, then raised by every raise a person
+    recorded. A limit the installation does not set is the plan's - except max_cost, which
+    is only applied when the installation says where a session's cost is read."""
+    if not limits or not planned:
+        return limits
+    limits = dict(limits)
+    snapshot = snapshot or {}
+    for name, key, valid in (("max_sessions", "sessions", _count),
+                             ("max_cost", "cost", _amount)):
+        need = planned.get(key)
+        if not valid(need):
+            continue
+        if name == "max_cost" and not limits.get("cost_from"):
+            continue
+        configured = snapshot.get(name)
+        capped = need if configured is None else min(configured, need)
+        raised = [r[name] for r in limits.get("raises") or [] if r.get(name) is not None]
+        limits[name] = max([capped] + raised)
+    limits["planned"] = {"sessions": planned.get("sessions"), "cost": planned.get("cost"),
+                         "quality_tier": planned.get("quality_tier"),
+                         "shortfall": planned.get("shortfall")}
+    return limits
+
+
 class Budget:
     """The budget in force for this execution, and what the run has spent of it."""
 
     def __init__(self, limits, events):
-        self.limits = limits  # wgflib.budget.effective(), or None: no budget
+        self.limits = limits  # wgflib.budget.effective() with the plan's need, or None
         self.sessions = 0
         self.cost = 0.0
         self.unknown = 0
@@ -120,12 +178,15 @@ class Budget:
                     self.unknown += 1
 
     @classmethod
-    def load(cls, context):
-        """From the run's params (the snapshot) and its events (sessions, costs, raises)."""
+    def load(cls, context, tech_plan=None):
+        """From the run's params (the snapshot), its events (sessions, costs, raises) and the
+        approved tech plan's derived need."""
         params = getattr(context, "environment", None) or {}
+        params = params if isinstance(params, dict) else {}
         reader = getattr(context, "read_events", None)
         events = list(reader()) if callable(reader) else []
-        return cls(run_budget.effective(params if isinstance(params, dict) else {}, events),
+        limits = run_budget.effective(params, events)
+        return cls(with_plan(limits, run_budget.base(params, events), _planned(tech_plan)),
                    events)
 
     @property
@@ -157,9 +218,20 @@ class Budget:
         max_sessions = self.limits.get("max_sessions")
         how = (f" A person raises it with: wgf resume {run_id} --budget-sessions N"
                f" (or --budget-cost X); an agent cannot.")
+        planned = self.limits.get("planned") or {}
+        if planned:
+            how = (f" The tech plan derived {planned.get('sessions')} sessions"
+                   + (f" (cost {planned['cost']:g})" if _amount(planned.get("cost")) else "")
+                   + f" for the {planned.get('quality_tier') or 'mvp'} tier"
+                   + (f", above the installation's cap - a planned shortfall reported at G3"
+                      if planned.get("shortfall") else "")
+                   + ": the build is not finished and its quality tier is not achieved within "
+                     "this budget." + how)
         if max_sessions is not None and self.sessions >= max_sessions:
+            source = ("the lower of factory.develop.budget.max_sessions and the tech plan's "
+                      "develop_budget" if planned else "factory.develop.budget.max_sessions")
             return (f"budget exhausted: {self.sessions} developer sessions used of "
-                    f"{max_sessions} (factory.develop.budget.max_sessions"
+                    f"{max_sessions} ({source}"
                     f"{', raised' if self.limits.get('raises') else ''}). No agent was "
                     f"started.{how}")
         max_cost = self.limits.get("max_cost")
@@ -167,15 +239,24 @@ class Budget:
             unknown = (f"; {self.unknown} session(s) reported no readable cost and are not "
                        f"in that sum" if self.unknown else "")
             return (f"budget exhausted: developer cost {self.cost:g} recorded of {max_cost:g} "
-                    f"(factory.develop.budget.max_cost) over {self.sessions} session(s)"
+                    f"({'the lower of factory.develop.budget.max_cost and the tech plan cost' if planned else 'factory.develop.budget.max_cost'})"
+                    f" over {self.sessions} session(s)"
                     f"{unknown}. No agent was started.{how}")
         return None
 
     def summary(self):
         limits = self.limits or {}
-        return {"sessions": self.sessions, "max_sessions": limits.get("max_sessions"),
-                "cost": round(self.cost, 6), "max_cost": limits.get("max_cost"),
-                "unknown_cost_sessions": self.unknown}
+        summary = {"sessions": self.sessions, "max_sessions": limits.get("max_sessions"),
+                   "cost": round(self.cost, 6), "max_cost": limits.get("max_cost"),
+                   "unknown_cost_sessions": self.unknown}
+        planned = limits.get("planned")
+        if planned:
+            summary["planned_sessions"] = planned.get("sessions")
+            summary["planned_cost"] = planned.get("cost")
+            summary["quality_tier"] = planned.get("quality_tier")
+            if planned.get("shortfall"):
+                summary["planned_shortfall"] = planned["shortfall"]
+        return summary
 
     def begin(self, context):
         """Record the session about to start, durably, before it is spawned.

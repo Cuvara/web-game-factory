@@ -230,6 +230,15 @@ difficulty over every unit of the release. A generated design is held on element
 kinds, objective kinds, groups and designed play. A design short of its tier fails, with a
 finding that names what is short. 1.11.0 artifacts remain valid.
 
+**`tech-plan` 1.1.0** adds `dev_plan.build_scope` (`quality_tier`, `design_tiers`,
+`plan_phases`, `where`: what the run's quality tier builds before G4, from
+`core/reference/quality-benchmark.yaml` `tiers[].builds` - at `release` every post-mvp feature
+and content unit, planned in M2 and built before G4) and `dev_plan.develop_budget`
+(`sessions`, `cost`, `basis`, `cap`, `shortfall`: the developer-session budget derived from
+those tasks, the installation's cap, and the planned shortfall G3 sees when the cap is lower).
+The develop step enforces the lower of plan and cap. Optional; 1.0.0 artifacts remain valid
+and plan the MVP, as before.
+
 **`title-strategy` 1.4.0** adds `concept.content_model`: the content shape the title commits
 to before design starts — the genre family, `unit_kind`, `progression`, `difficulty_shape`,
 `difficulty_axes[]`, `min_units` (the family's `units.min_mvp`) and `source`, which says

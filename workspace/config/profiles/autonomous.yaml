@@ -28,7 +28,10 @@
 #              scores; the step decides. Without a judge visual-qa BLOCKS
 #   G2, G3     approved by the run (reversible gates)
 #   init       a LOCAL project from the pinned template: no GitHub repository, no remote
-#   budget     at most 12 developer sessions / US$60 per run; a person raises it
+#   budget     caps the developer sessions at 12 / US$60 per run; the tech plan derives what
+#              the run's tasks need, the lower is in force, and a plan that needs more
+#              records a planned shortfall at G3 (G3 is auto-approved here: read the tech
+#              plan's technical_risks); a person raises it
 #   G4         still a person's decision (irreversible: the engine refuses to automate it),
 #              and so is everything after it - release, G5, G6, G7
 #   research   still needs evidence: snapshots in workspace/research/snapshots/, or a
@@ -107,6 +110,8 @@ factory:
         - "40"
       timeout_seconds: 5400
       idle_timeout_seconds: 900
+    # A cap over the tech plan's derived develop budget (dev_plan.develop_budget), not the
+    # budget itself: the lower of the two is in force (docs/development-module.md#budget).
     budget:
       max_sessions: 12
       max_cost: 60

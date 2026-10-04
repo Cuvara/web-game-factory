@@ -16,8 +16,11 @@
 # and the strategy's budget, the larger of the two, on what it declares - units, elements,
 # introductions, combinations, structure kinds, layouts, objective kinds, groups and their
 # milestones, designed play and difficulty (scripts/wgf_design/content.py, rules
-# content.tier_*; blocking). No check reads the built content yet. Wiring another check is a
-# change to the consumers named under `consumers`, each with its own tests.
+# content.tier_*; blocking). The tech plan and develop read `tiers[].builds` and `develop`
+# (1.4.0): a run plans and builds every unit and feature its tier ships before G4, and its
+# developer budget is derived from those tasks (scripts/wgf_techplan/budget.py,
+# scripts/wgf_develop/budget.py). No check reads the built content yet. Wiring another check is
+# a change to the consumers named under `consumers`, each with its own tests.
 #
 # Calibration. Every bar records its `basis`:
 #   measured-2   both calibration releases meet it (the audit says which bars the unattended
@@ -36,17 +39,43 @@
 # game presents together (world, tier, chapter). Every count is over the units the release
 # ships at the tier being judged.
 
-version: 1.3.0
+version: 1.4.0
 
 tiers:
   # `mvp` is the genre model's prototype bar and is not restated here. `release` is what a
   # title that is to be published carries; `premium` is reserved and has no bars.
+  # `builds` is what a run at the tier builds before G4 (1.4.0): the design tiers whose
+  # features and content units the tech plan plans and the developer builds (game-design
+  # $defs.tier; an untiered entry counts as mvp), and the tech-plan phases the developer's brief
+  # carries. In `new-game` the step after G4 is the store listing and then release, so what a
+  # release ships has to be built before G4 or it is never built.
   - id: mvp
     bars_from: core/reference/genre-models.yaml families.<family>.units.min_mvp
+    builds: {design_tiers: [mvp], plan_phases: [prototype]}
   - id: release
     bars_from: this file
+    builds: {design_tiers: [mvp, post-mvp], plan_phases: [prototype, production]}
   - id: premium
     bars_from: none yet
+    builds: {design_tiers: [mvp, post-mvp], plan_phases: [prototype, production]}
+
+develop:
+  # The developer-session budget the tech plan derives from its own tasks (1.4.0), recorded in
+  # tech-plan dev_plan.develop_budget with this basis. Installation config
+  # (factory.develop.budget) may cap it lower; a cap below the plan's need is reported at G3 as
+  # a planned shortfall, never discovered mid-run.
+  #   build hours  the est_hours of every task the tier builds before G4 (CORE, GAME, CONTENT;
+  #                a CONTENT task is genre-models implementation.content_unit_hours per unit)
+  #   sessions     ceil(build hours / session_task_hours) + rework_sessions
+  #   cost         sessions x session_cost, in the unit the installation's cost_from reads
+  # Evidence (docs/quality-gap-audit-2026-10.md): the 2D run needed 18 sessions for a plan of
+  # about 86 build hours and was raised from 14 by hand; the 3D run used 9 for about 70.
+  session_task_hours: {value: 8, basis: proposed}
+  # Sessions beyond the build itself: the greybox's first pass and the routed returns
+  # (playability, production gates, review, verify) a run makes before G4.
+  rework_sessions: {value: 6, basis: proposed}
+  # 2D: 18 sessions, US$62.86 (3.49 each); 3D: 9 sessions, US$29.25 (3.25 each).
+  session_cost: {value: 3.5, basis: measured-2}
 
 content:
   units:

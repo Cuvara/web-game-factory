@@ -1,7 +1,133 @@
 # Portal publishing architecture: an agent-owned, Playwright-driven publisher
 
-Status: **design, not implemented.** Written 2026-10-04. Nothing in this document changes
-behaviour; the rules it supersedes stay in force until the workstreams in Part 4 land.
+Status (2026-10-05): **implemented and fixture-validated; no real portal console has been
+observed, dry-run, uploaded to or submitted to yet.** Part 0 is the current state and how a
+person runs it. Parts 1-4 are the audit and the design of 2026-10-04 that the implementation
+followed; where they say "capture", a saved session or "proposed", Part 0 wins.
+
+## Part 0 - as built
+
+### The human handoff model
+
+```
+HUMAN LOGIN               the submit step opens the portal's console in a headed browser
+                          (fresh, ephemeral context). Not logged in -> WAITING_FOR_HUMAN_LOGIN
+                          {portal, step, url (origin+path), reason, action, resume}; the person
+                          logs in and handles any CAPTCHA / 2FA / anti-bot check in that
+                          window; the step detects the authenticated console and continues.
+                          Nothing asks for, types, stores or keeps a password, OTP, cookie or
+                          session; the session ends with the window. A timeout or a closed
+                          window is AUTH_REQUIRED, a wait - never a failure.
+AUTOMATED CONSOLE WORK    find the game (registry id -> game.config id -> idempotency key ->
+                          exact title; an unrecorded match is duplicate-candidate, a person
+                          links it), read its status (a pending review stops: review-pending,
+                          nothing uploads over it, nothing cancels it), create it only when
+                          nothing matched, fill listing text and media from the shipped
+                          campaign, save. Human fields (terms, declarations, age rating, tax,
+                          payout, exclusivity, prerequisites) stop for the person.
+HUMAN UPLOAD AUTHORIZATION G6: a person's publish decision pinning the release-manifest, the
+                          store listing and its validation by hash; the package must match its
+                          checksum and this platform's verified bundle; any hash changed after
+                          G6 is g6-stale and G6 is asked again. Plus live mode
+                          (factory.publish.mode: live AND WGF_PUBLISH_LIVE=1). Dry run never
+                          uploads to a real portal.
+AUTOMATED UPLOAD          the package of exactly this platform is uploaded to the draft, the
+                          draft saved and read back -> UPLOAD_COMPLETE.
+HUMAN SUBMIT/PUBLISH      WAITING_FOR_HUMAN_SUBMIT_CONFIRMATION: `wgf decide <run> submit`
+DECISION                  (one review request, profile locator only, status read back),
+                          `hold`, `abandon`, or `done` (the person requested it by hand).
+                          Publication after moderation (Yandex "Verified" -> Publish,
+                          CrazyGames Full Launch) is the person's or the portal's act.
+```
+
+The adaptive mode (2.6, off by default) may only re-locate a drifted **reversible** intent
+under the executor's checks; irreversible and human intents never adapt.
+
+### The Y8 create-before-build workflow (reusable: `identity.issued_on_create`)
+
+```
+1 submit visit (live, G6)  Studio missing -> HUMAN_REQUIRED (a person creates it; name permanent)
+2                          login handoff as above; legal steps are the person's
+3                          create the game (name only) on the console
+4                          read the issued Game ID and App ID (profile identity.issued_on_create)
+5                          registry: DRAFT_CREATED with both ids; outcome IDS_ISSUED, nothing uploaded
+6                          route platform-ids -> sdk writes them into game.config.yaml
+                           (identity.build_config) -> verify -> release: the Y8 package is
+                           rebuilt with its ids
+7                          platform-validate again: guard platform_ids_present
+8                          G5, G6 asked again (the manifest changed); upload -> UPLOAD_COMPLETE
+9                          stop before the irreversible request
+10                         a person decides submit | hold | abandon | done
+```
+
+Any portal whose profile declares `identity.issued_on_create` and `identity.build_config`
+takes the same path; GameDistribution's Game ID is entered by a person in game.config today
+(its issuance on create is derived, not documented).
+
+### What exists (code)
+
+| Piece | Where |
+|---|---|
+| Profile-driven intent runner, live login handoff, `actions.jsonl` | `scripts/wgf_publish/browser/console.spec.ts`, `browser.py`, `adapters/console.py` |
+| Five first-class portal adapters (own status map, handoffs, refusals) | `scripts/wgf_publish/adapters/{yandex,crazygames,y8,gamedistribution,gamepix}.py`, `portal.py` |
+| Publication profiles 2.x (flows as data; documented vs hypothesis; unknowns) | `core/reference/publication/*.yaml`, schema `core/artifacts/shared/publication-profile.schema.json` |
+| Submit step: G6/build/campaign integrity, per-platform state, confirmation, create-before-build route, `--platform`, `--track` | `scripts/wgf_publish/step.py`, `identity.py`, `core/workflows/new-game.workflow.yaml` (v10) |
+| Portal registry (per title) | `scripts/wgf_publish/registry.py`, `core/artifacts/portal-registry.schema.json`, `workspace/titles/<id>/portals.json` |
+| Campaign and media mapping and validation | `scripts/wgf_publish/campaign.py`, `scripts/wgf_listing/validation.py` |
+| Bounded adaptive mode, `drift.json`, `drift-review` | `scripts/wgf_publish/adaptive.py` |
+| Real-console observer (read-only, human logs in) | `scripts/wgf_publish/observe.py`, `browser/observe.spec.ts`, `wgf-publish.py observe` |
+| One build per target platform | `scripts/wgf_verification`, `scripts/wgf_release` (template contract 1, `WGF_GAME_CONFIG`) |
+| Fixture portal + one flavor per portal | `scripts/tests/fixtures/publish/portal.py`, `flavors.py` |
+| CI never publishes | template `publish.yml` and `make-publication` removed (web-game-template#25); `wgf-org-setup.sh` holds no portal credential |
+
+### Readiness matrix
+
+Vocabulary: IMPLEMENTED (code exists), FIXTURE_VALIDATED (passes against the fixture portal
+in real headless Chromium), DRY_RUN_VALIDATED (a dry run against the REAL console reached
+its last read-only phase with the profile's locators), REAL_CONSOLE_VERIFIED (a person
+logged in and the observed console matches the profile), REAL_UPLOAD_VALIDATED, SUBMITTED, PUBLISHED, UNVERIFIED, HUMAN_ACTION_REQUIRED.
+Nothing below is "supported": every real-portal column is UNVERIFIED until a person logs in.
+
+| | Yandex | CrazyGames | Y8 | GameDistribution | GamePix |
+|---|---|---|---|---|---|
+| build (own bundle) | IMPLEMENTED | IMPLEMENTED | IMPLEMENTED (SDK-less without its ids) | IMPLEMENTED; Game ID: HUMAN_ACTION_REQUIRED | HUMAN_ACTION_REQUIRED (no SDK adapter in the pinned template: template release + pin) |
+| adapter | FIXTURE_VALIDATED | FIXTURE_VALIDATED | FIXTURE_VALIDATED | FIXTURE_VALIDATED | FIXTURE_VALIDATED (its BLOCKED path) |
+| campaign / media mapping | FIXTURE_VALIDATED (field names UNVERIFIED) | FIXTURE_VALIDATED (field names UNVERIFIED) | FIXTURE_VALIDATED (field names UNVERIFIED) | FIXTURE_VALIDATED (field names UNVERIFIED) | FIXTURE_VALIDATED (field names UNVERIFIED) |
+| create-game / Game ID + App ID / rebuild | - | - | FIXTURE_VALIDATED (end to end through the engine; verify and the sdk write are test doubles) | UNVERIFIED | - |
+| prerequisites / domain | contract + payout: HUMAN_ACTION_REQUIRED | payout: HUMAN_ACTION_REQUIRED | Studio: HUMAN_ACTION_REQUIRED | no domain needed for an account (documented); self-hosting needs consent + HTTPS host: HUMAN_ACTION_REQUIRED | agreement: HUMAN_ACTION_REQUIRED |
+| real console | UNVERIFIED (observer opened 2026-10-04, nobody logged in: LOGIN_TIMEOUT) | UNVERIFIED | UNVERIFIED | UNVERIFIED | UNVERIFIED |
+| dry run on the real console | UNVERIFIED | UNVERIFIED | UNVERIFIED | UNVERIFIED | UNVERIFIED |
+| upload | UNVERIFIED | UNVERIFIED | UNVERIFIED | UNVERIFIED | UNVERIFIED |
+| submit | UNVERIFIED | UNVERIFIED | UNVERIFIED | UNVERIFIED | UNVERIFIED |
+| publish | UNVERIFIED | UNVERIFIED | UNVERIFIED | UNVERIFIED | UNVERIFIED |
+| automation terms | UNVERIFIED (`terms_confirmed` is a person's finding) | UNVERIFIED | UNVERIFIED | UNVERIFIED | UNVERIFIED |
+
+### How a person runs it, per portal (in this order: Yandex, CrazyGames, Y8, GameDistribution, GamePix)
+
+```bash
+# A. observe the real console - you log in; the observer only records (masked, nothing kept)
+python scripts/wgf-publish.py observe yandex --checkout ../my-game
+python scripts/wgf-publish.py observe-summary <the printed directory>
+# B. correct core/reference/publication/yandex.yaml from what was observed (a reviewed commit;
+#    only observed or documented facts; unknowns stay listed), bump its version
+# C. record the terms finding after reading them: factory.publish.platforms.yandex.terms_confirmed
+# D. dry run (default mode): the step opens the console, you log in, it finds the game and
+#    reads its status, reports what it would create, fill and upload - and changes nothing
+#    on a real portal (actions.jsonl lists every step it took)
+bin/wgf publish --run <run-id> --platform yandex
+bin/wgf decide <run-id> approve        # G5
+bin/wgf decide <run-id> publish        # G6, a person only
+# E. upload, only with your explicit authorization: factory.publish.mode: live and
+WGF_PUBLISH_LIVE=1 bin/wgf publish --run <run-id> --platform yandex      # -> UPLOAD_COMPLETE
+# F. you decide
+bin/wgf decide <run-id> submit         # or hold | abandon | done
+bin/wgf publish --run <run-id> --track # later: read the portal's status, click nothing
+```
+
+---
+
+### Implementation notes recorded while it landed
+
 Landed: workstream 2 (publication profile 2.0.0, `platform-publication` 1.2.0, the flow
 rules in `check-integrity.py`; `docs/publish-module.md`, "Publication profiles"). Beyond
 the sketch in 2.4: the budget is `adaptive_bounds` beside the `adaptive` switch, the deny
@@ -24,6 +150,8 @@ page check; session, find_game, status_gate and request_review never adapt; an i
 intent's drift asks the resolver only for a suggestion, recorded and never acted on; and
 `wgf-publish.py drift-review` prints `drift.json` and, with `--apply`, writes a new profile
 file for a person to commit - never the shipped one.
+
+---
 
 ## The decision this document implements
 

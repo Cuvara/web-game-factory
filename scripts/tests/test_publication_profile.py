@@ -375,6 +375,52 @@ class FlowRulesTest(unittest.TestCase):
         profile["submission"]["flow"].append(copy.deepcopy(intent(profile, "draft.save")))
         self.assertProblem(profile, "appears twice")
 
+    def test_a_prerequisite_is_a_persons_act_that_readiness_waits_for(self):
+        profile = pub.load_publication_profile("gamedistribution")
+        prerequisite = next(p for p in profile["prerequisites"] if p["id"] == "self-hosting")
+        self.assertEqual((prerequisite["reason"], prerequisite["when"]),
+                         ("legal", {"hosting": "self-hosted"}))
+        terms = {"terms_confirmed": True}
+        self_hosted = {"id": "gamedistribution", "hosting": "self-hosted",
+                       "game_url": "https://games.example.com/x/"}
+        hosted = {"id": "gamedistribution"}  # the default hosting is never written
+        reason = pub.human_reason(profile, terms, True, self_hosted)
+        self.assertEqual(reason[0], "legal")
+        self.assertIn("prerequisite self-hosting", reason[1])
+        # Unknown entry: every prerequisite applies; an unknown is never read as satisfied.
+        self.assertEqual(pub.human_reason(profile, terms, True)[0], "legal")
+        self.assertEqual(pub.unmet_prerequisites(profile, terms, hosted), [])
+        self.assertEqual(pub.unmet_prerequisites(
+            profile, {"prerequisites_confirmed": ["self-hosting"]}, self_hosted), [])
+        self.assertIsNone(pub.human_reason(
+            profile, {"terms_confirmed": True, "prerequisites_confirmed": ["self-hosting"]},
+            True, self_hosted))
+        self.assertEqual(pub.readiness({}, pub.human_reason(profile, terms, True, self_hosted)),
+                         pub.HUMAN_REQUIRED)
+
+    def test_a_prerequisite_is_validated(self):
+        profile = pub.load_publication_profile("gamedistribution")
+        self.assertEqual(errors(profile), [])
+        for broken in ({"id": "x", "reason": "terms-unconfirmed", "note": "n", "source": "s"},
+                       {"id": "x", "reason": "legal", "note": "n"},
+                       {"id": "x", "reason": "legal", "note": "n", "source": "s",
+                        "when": {"engine": "pixijs"}}):
+            candidate = copy.deepcopy(profile)
+            candidate["prerequisites"] = [broken]
+            with self.subTest(broken=broken):
+                self.assertNotEqual(errors(candidate), [])
+
+    def test_gamepix_is_described_and_discloses_generated_content(self):
+        profile = pub.load_publication_profile("gamepix")
+        self.assertEqual(errors(profile), [])
+        self.assertEqual(profile["status"], "unverified")
+        self.assertEqual(profile["submission"]["automation_terms"], "unverified")
+        policy = profile["submission"]["content_policy"]
+        self.assertEqual((policy["ai_generated_text"], policy["ai_generated_assets"]),
+                         ("disclose", "disclose"))
+        self.assertTrue(all(i["class"] == "human" for i in profile["submission"]["flow"]))
+        self.assertTrue(profile["unknowns"])
+
     def test_a_flow_of_human_intents_only_needs_no_pending_states(self):
         profile = pub.load_publication_profile("gamedistribution")
         profile["submission"]["status"]["pending_states"] = []

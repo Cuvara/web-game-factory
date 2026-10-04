@@ -56,6 +56,24 @@ deprecated and refused by `check-integrity.py`), `session.authenticated_url`,
 `multiple`. To bring a profile forward: set `credential: {kind: human-login}`, drop `env`
 and `capture`, and bump its version. Delete any `WGF_PUBLISH_*_STORAGE_STATE` variables and
 the session files they named.
+**GameDistribution and GamePix as modeled targets** (facts read 2026-10-04 from public pages
+only; [docs/platform-targets-2026-10.md](docs/platform-targets-2026-10.md)).
+GameDistribution's publication profile 2.1.0 records the documented flow (account, Game ID
+from the panel before the build, upload, pre-roll viewed from the upload view, a publication
+request button, review), the listing fields of guidelines section 5, the developer terms'
+restrictions and its review timelines, which disagree across four pages. A domain is not
+required for a developer account; self-hosting needs written consent (real multiplayer only)
+and one's own HTTPS host, modelled as the profile's first `prerequisites` entry. Publication
+profiles gain an optional top-level `prerequisites` (no schema version bump: additive):
+readiness reports an applicable one HUMAN_REQUIRED (`legal` | `declaration`) until a person
+records it in `factory.publish.platforms.<id>.prerequisites_confirmed`. GamePix gains
+`core/reference/platforms/gamepix.yaml` 1.0.0 and `core/reference/publication/gamepix.yaml`
+2.0.0 (content policy `disclose` from its developer agreement 4.10). The template lock records
+`platform_adapters`, the pinned registry's adapter ids, held equal to the pin by
+`check-integrity.py`; strategy and tech-plan refuse a platform outside it ("GamePix needs a
+template release carrying its SDK adapter (HUMAN_ACTION_REQUIRED: release and pin)").
+Existing artifacts are unaffected; a lock without `platform_adapters` stops strategy and
+tech-plan.
 
 **The console fills every listing field, per locale** (portal publishing workstream 1,
 [docs/portal-publishing-architecture.md](docs/portal-publishing-architecture.md) Part 4).

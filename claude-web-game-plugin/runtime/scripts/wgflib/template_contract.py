@@ -40,7 +40,8 @@ __all__ = [
     "contract_digest",
     # paths
     "PACKAGE_JSON", "PNPM_LOCK", "GAME_CONFIG", "PLAYWRIGHT_CONFIG", "VITEST_WORKSPACE",
-    "PLATFORM_PROFILES_DIR", "SHARED_MJS", "CHANGELOG", "INFRASTRUCTURE", "SOURCE_PATHS",
+    "PLATFORM_PROFILES_DIR", "PLATFORM_REGISTRY", "SHARED_MJS", "CHANGELOG", "INFRASTRUCTURE",
+    "SOURCE_PATHS",
     "platform_profile_path", "renderer_package", "rendering_dir", "build_target",
     # per-platform builds
     "GAME_CONFIG_ENV", "PLATFORM_BUILDS_DIR", "PLATFORM_BUILDS_INDEX", "SCRIPT_BUILD_PLATFORMS",
@@ -93,11 +94,15 @@ CONTRACT_LOG = (
                        "CI never publishes a game to a portal (publication is the Factory's "
                        "publish group, behind a person's G6), so a repository without either "
                        "is accepted; the pinned template still ships both"),
+    ("2.1.0", "2.8.0", "PLATFORM_REGISTRY names the adapter registry SOURCE_PATHS already "
+                       "required, because its KNOWN_PLATFORM_IDS is now read (the template "
+                       "lock's platform_adapters, held equal to it): no entry changed what a "
+                       "repository must contain"),
 )
 # contract_digest() of the entries CONTRACT_LOG's last line describes. A change to any entry
 # fails test_template_contract until it is recorded: bump CONTRACT_VERSION if acceptance
 # changed (above), add a CONTRACT_LOG line either way, then update this.
-CONTRACT_DIGEST = "sha256:23bff21b633e1bcb43fcb756f19db1449877f7308401ebdca3c8c928172e98db"
+CONTRACT_DIGEST = "sha256:328b112aa6ccb166cd17d6e364b3e9e507978e424dbc5804ecb9bc629259fba6"
 
 # -- engines ----------------------------------------------------------------------------------
 
@@ -132,6 +137,9 @@ GAME_CONFIG = "game.config.yaml"
 PLAYWRIGHT_CONFIG = "playwright.config.ts"
 VITEST_WORKSPACE = "vitest.workspace.ts"
 PLATFORM_PROFILES_DIR = "config/platforms"
+# The adapter registry: its KNOWN_PLATFORM_IDS are the platforms a build of the template can
+# boot (wgflib.template.registry_adapter_ids, the lock's platform_adapters).
+PLATFORM_REGISTRY = "packages/platform-sdk/src/registry.ts"
 SHARED_MJS = "scripts/_shared.mjs"
 # Read when present, never required: the release step's fallback for the template version.
 CHANGELOG = "CHANGELOG.md"
@@ -178,7 +186,7 @@ SOURCE_PATHS = (
     ("tests/e2e/smoke.spec.ts", "the smoke suite the developer extends"),
     ("eslint.config.js", "lint configuration"),
     ("packages/platform-sdk/src/types.ts", "the Platform interface"),
-    ("packages/platform-sdk/src/registry.ts", "the adapter registry"),
+    (PLATFORM_REGISTRY, "the adapter registry"),
 )
 
 

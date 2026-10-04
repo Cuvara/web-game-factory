@@ -38,7 +38,8 @@ __all__ = ["PUBLICATION_DIR", "GUARDS", "RELEASE_GUARDS", "PLATFORM_GUARDS", "QU
            "load_publication_profile", "publication_profiles", "candidate_frozen",
            "store_metadata_complete", "metadata_and_locales_present",
            "package_shaped_to_profile", "assertions_pass", "all_targeted_validated",
-           "required_all_live", "none_permanently_rejected", "human_reason", "readiness",
+           "required_all_live", "none_permanently_rejected", "human_reason",
+           "unmet_prerequisites", "readiness",
            "idempotency_key", "GuardResult", "DENY_VOCABULARY", "FORBIDDEN_INTENT_WORDS",
            "INTENT_CLASSES", "deny_vocabulary", "flow_problems"]
 
@@ -456,10 +457,31 @@ def none_permanently_rejected(manifest, publications):
 
 # -- readiness -------------------------------------------------------------------------------
 
-def human_reason(profile, settings=None, credential_present=None):
+def unmet_prerequisites(profile, settings=None, entry=None):
+    """The profile's `prerequisites` that apply and that no person has recorded in
+    factory.publish.platforms.<id>.prerequisites_confirmed. `entry` is the release's
+    game.config.yaml platform entry, or None when unknown: then every prerequisite applies,
+    so an unknown is never read as satisfied."""
+    confirmed = set((settings or {}).get("prerequisites_confirmed") or ())
+    unmet = []
+    for item in (profile or {}).get("prerequisites") or ():
+        if not isinstance(item, dict) or item.get("id") in confirmed:
+            continue
+        when = item.get("when") or {}
+        # An entry without a key is at the profile's default, which the tech plan never
+        # writes (hosting): a `when` naming a value matches only an entry that states it.
+        if entry is not None and any(entry.get(key) != value for key, value in when.items()):
+            continue
+        unmet.append(item)
+    return unmet
+
+
+def human_reason(profile, settings=None, credential_present=None, entry=None):
     """Why publishing on this platform is a person's act, or None when an adapter may act.
-    `settings` is factory.publish.platforms.<id> (terms_confirmed); `credential_present`
-    whether the named credential variable is set (None: not checked)."""
+    `settings` is factory.publish.platforms.<id> (terms_confirmed, prerequisites_confirmed);
+    `credential_present` whether the named credential variable is set (None: not checked);
+    `entry` the release's game.config.yaml platform entry, for prerequisites limited by
+    `when` (None: unknown, so every prerequisite applies)."""
     submission = (profile or {}).get("submission") or {}
     method = submission.get("method")
     if profile is None:
@@ -480,6 +502,14 @@ def human_reason(profile, settings=None, credential_present=None):
                                          "its console is not established; a person records the "
                                          "finding in factory.publish.platforms.<id>."
                                          "terms_confirmed, or submits by hand")
+    unmet = unmet_prerequisites(profile, settings, entry)
+    if unmet:
+        first = unmet[0]
+        what = "; ".join(f"prerequisite {item.get('id')}: {str(item.get('note') or '').strip()}"
+                         for item in unmet)
+        return (first.get("reason") or "legal",
+                f"{what} - a person does it and records it in factory.publish.platforms.<id>."
+                f"prerequisites_confirmed")
     if method in ("api", "cli") and not (settings or {}).get("adapter"):
         # The portal's own tool exists; no adapter drives it in this Factory yet.
         return ("no-automated-method", f"the portal's {method} ({(submission.get('api') or {}).get('tool') or 'tool'}) "

@@ -415,6 +415,19 @@ from a public document. Until a person records that finding
 before contacting the portal. The selector maps of `crazygames` and `yandex` are hypotheses
 to be corrected from the console in dry-run before the profile is bumped to `verified`.
 
+A profile may also name `prerequisites` (top level, since GameDistribution 2.1.0): what a
+person must have done or obtained before the portal takes the release - GameDistribution's
+written consent and an HTTPS host of one's own for a self-hosted game. Each has a `reason`
+(`legal` | `declaration`), an optional `when` (`{hosting: self-hosted}`, matched against the
+release's `game.config.yaml` platform entry) and its `source`. Readiness
+(`wgflib.publication.human_reason`) reports an applicable one HUMAN_REQUIRED with its reason
+until a person records it in `factory.publish.platforms.<id>.prerequisites_confirmed: [id]`;
+when readiness is not given the platform entry, every prerequisite applies - an unknown is
+never read as satisfied. It is checked after the terms finding, so an unconfirmed portal
+still reports `terms-unconfirmed` first. The publish step does not pass the entry yet, so a
+GameDistribution release whose terms a person confirmed reports the self-hosting
+prerequisite whatever its hosting, until `wgf_publish` hands readiness the entry.
+
 **Profile 2.0.0** (`x-wgf.version`; every shipped profile is at `version: 2.0.0`) makes the
 console flow data, as `docs/portal-publishing-architecture.md` Part 2.4 designs it:
 
@@ -573,6 +586,7 @@ factory:
     login_timeout_s: 900              # how long a visit waits for a person to log in
     env_passthrough: []               # a tool's token only; no console session exists
     platforms: {}                     # crazygames: {terms_confirmed: true}
+                                      # gamedistribution: {prerequisites_confirmed: [self-hosting]}
     # profiles_extra: []              # more publication profiles (tests)
     # timeouts: {}                    # action / navigation / upload, ms
     # login_timeout_s: 900            # how long a person has to log in on a portal's page

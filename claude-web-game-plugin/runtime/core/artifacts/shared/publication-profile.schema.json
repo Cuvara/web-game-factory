@@ -41,6 +41,27 @@
         "additionalProperties": false
       }
     },
+    "prerequisites": {
+      "type": "array",
+      "description": "What a person must have done or obtained before the portal will take this release, beyond the account and session `submission` describes: a written consent, a host or domain of their own, a declaration. Each is a person's act, never performed or assumed by the Factory. Readiness reads them (wgflib.publication.human_reason): an applicable prerequisite a person has not recorded in factory.publish.platforms.<id>.prerequisites_confirmed makes the platform HUMAN_REQUIRED with the prerequisite's reason. `when` limits one to a release whose game.config.yaml platform entry states those values (an omitted key is the profile default, which never matches); when readiness is not given the entry, every prerequisite applies.",
+      "items": {
+        "type": "object",
+        "required": ["id", "reason", "note", "source"],
+        "properties": {
+          "id": { "type": "string", "pattern": "^[a-z][a-z0-9-]*$" },
+          "reason": { "enum": ["legal", "declaration"], "description": "The human_required reason it stops with: legal (a contract, consent, account or commercial term), declaration (a statement a person makes)." },
+          "when": {
+            "type": "object",
+            "description": "Applies only when the platform entry has these values (game.config.yaml platforms[]).",
+            "properties": { "hosting": { "type": "string" } },
+            "additionalProperties": false
+          },
+          "note": { "type": "string", "minLength": 1, "description": "What the person does or obtains." },
+          "source": { "type": "string", "description": "The public page that states it." }
+        },
+        "additionalProperties": false
+      }
+    },
     "unknowns": {
       "type": "array",
       "description": "Since 2.0.0. What a person must log in to learn before this profile can go verified: every console fact the file does not state, named. A fact absent from the file and absent from this list is a defect of the profile.",

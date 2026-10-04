@@ -287,7 +287,8 @@ every step type in `new-game` has one: `wgf_discovery` (research), `wgf_strategy
 `wgf_design`, `wgf_techplan`, `wgf_init`, `wgf_assets`, `wgf_develop`, `wgf_review`,
 `wgf_sdk`, `wgf_verification`, `wgf_release`, `wgf_playability`, `wgf_production`
 (production-quality), `wgf_visualqa` (visual-qa), `wgf_listing` (store-listing and
-listing-validation) and `wgf_publish` (platform-validate and publish). `--mock` still
+listing-validation), `wgf_publish` (platform-validate and publish) and `wgf_triage`
+(triage: failures as quality findings, routed to the specialist that owns them). `--mock` still
 replaces all of them with placeholders for a run. Discovery reads evidence snapshots from
 `workspace/research/snapshots/` and teardown records from `workspace/research/games/`, codes
 every game on `core/reference/research-vocabulary.yaml`, and proposes several opportunities
@@ -385,6 +386,10 @@ seen by the engine — validate what you write there with ajv.
 - `docs/template-contract.md` — every path, script, CLI, output and config key the Factory
   assumes of a game repository (`wgflib/template_contract.py`), and the drift test against the pin
 - `docs/workflow-engine.md` — the `wgf` engine: definitions, steps, retry, resume, routing
+- `docs/specialist-routing.md` — quality findings (`shared/quality-finding.schema.json`)
+  routed to the specialist that owns each dimension (`core/reference/specialist-routing.yaml`,
+  `core/roles/specialists.md`): the `triage` step, specialist develop visits, their loop
+  budgets and ledger, and G4's `iterate --findings`
 - `docs/plugin-runtime.md` — the installed plugin is the Factory runtime and the working
   directory the project: what the plugin ships, how `ROOT` and `PROJECT` resolve, `wgf where`
 - `docs/autonomous-runs.md` — why the shipped config is supervised, the opt-in autonomous

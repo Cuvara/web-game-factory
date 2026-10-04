@@ -26,6 +26,7 @@ inputs ──► brief ──► developer ──► checks ──► commit ─
 | `tech-plan` | `dev_plan`: the prototype milestones and their tasks, with acceptance criteria and tests — optional (absent, the brief has no plan section) |
 | `qa-report` | on a verify → develop loop, the blocking defects the brief says to fix first |
 | `review-report` | on a review → develop loop, the reviewer's blockers the brief says to fix first — used only when it requests changes to the commit this visit starts from ([review-module.md](review-module.md)) |
+| `triage-report` | entered as `triage.<role>` (workflow 9): the visit is that specialist's - its findings, playbooks and writable scope replace the raw gate reports above ([specialist-routing.md](specialist-routing.md)) |
 
 The engine comes from the checkout's `game.config.yaml`: `pixijs` or `phaserjs` for 2D,
 `threejs` for 3D.
@@ -230,7 +231,43 @@ the game, regenerated on every visit and committed with the code it asked for. I
   sessions used before this visit and those left (`brief.json` `sessions`, from
   `wgf_develop.budget`); develop's `max_visits` loop guard, which a resume resets and which
   read like the session budget, is no longer shown. Absent on a first visit (entered by
-  `<step>.success`).
+  `<step>.success`). On a specialist visit `loop.entered_by` is the gate entry the findings
+  came from (the triage-report's `source`, e.g. `visual-qa.develop`), `loop.specialist_entry`
+  the `triage.<role>` entry, and the route budget the specialist's.
+
+## Specialist visits
+
+Since workflow 9 every failure that sends the build back reaches develop through the
+`triage` step, which routes the build's quality findings to the specialist that owns them
+([specialist-routing.md](specialist-routing.md)). Entered as `triage.<role>` with a
+specialist's label (`wgf_develop/specialist.py`):
+
+- **The brief is the specialist's.** It opens with *This visit: <label>*: the role's `focus`
+  (core/roles/roles.yaml), **only the findings the triage-report selected** - each with what
+  was measured against which bar, its evidence (frames made absolute under the run
+  directory), the change asked for and how the gate that raised it accepts it - and who
+  comes next, so their findings are left to them. *Craft guides* lists the role's `reads`
+  instead of every playbook. The raw gate reports (qa-report, review-report,
+  playability-report, production-quality-report, visual-qa-report) are not shown: the
+  findings are their failures, normalized. It also carries, once each, the game brief, the
+  design contract, the quality budget and floor, the acceptance rule, the run's other open
+  findings (not to be touched or made worse) and the regression constraints (the verified
+  and closed findings that must stay fixed) - *What every specialist works within*, from
+  the triage-report's `lifecycle`.
+- **The writable scope is the specialist's.** `factory.develop.writable_paths` is cut to the
+  role's `writes` (`specialist.narrow`: never wider; a scope with nothing in common fails the
+  visit), and the commit-scope check holds the visit to it like any other.
+- **The visit is recorded.** The prototype-report's `specialist` block (prototype-report
+  1.2.0): the role, the finding ids, who is still pending, the triage-report, the scope, and
+  the visit's developer sessions and their cost from the run's budget events (null when
+  unknown). The next triage records what the gates measured of them (its `ledger`).
+- **It hands on.** A green visit whose triage-report has groups pending returns SUCCESS with
+  route `next-specialist`, which the workflow maps back to triage: the next specialist works
+  on the same build before the gates measure it. Its review baseline is carried, so review
+  reads every specialist's commit of the chain.
+
+A visit entered any other way - the first build, `triage.success` after an assets pass that
+left nothing for a specialist, `greybox` - is unchanged.
 
 ## Eyes and the quality bar
 

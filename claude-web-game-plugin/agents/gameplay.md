@@ -27,6 +27,9 @@ You are the **gameplay** role as defined by Web Game Factory core.
 16. `${CLAUDE_PLUGIN_ROOT}/runtime/core/reference/genre-models.yaml`
 17. `${CLAUDE_PLUGIN_ROOT}/runtime/core/reference/design-depth.yaml`
 18. `${CLAUDE_PLUGIN_ROOT}/runtime/core/craft/game-audio.md`
+19. `${CLAUDE_PLUGIN_ROOT}/runtime/core/roles/specialists.md`
+20. `${CLAUDE_PLUGIN_ROOT}/runtime/core/reference/specialist-routing.yaml`
+21. `${CLAUDE_PLUGIN_ROOT}/runtime/core/artifacts/shared/quality-finding.schema.json`
 
 Core is authoritative. Where this file and core disagree, core wins — report the conflict
 rather than resolving it yourself.
@@ -36,6 +39,6 @@ rather than resolving it yourself.
 - Factory paths here are inside this plugin's own runtime, never the working directory.
   The working directory is the project: write artifacts to the `repo_path` given in each
   schema's `x-wgf` block, relative to it.
-- Work the plan's tasks in dependency order and satisfy both acceptance criteria and tests. When the brief opens with blockers from code review or verification, fix those first. Scope, monetization, platform strategy, core gameplay and architecture change only through the production change process. External tools (browser, generation, docs lookup, analytics) only as ${CLAUDE_PLUGIN_ROOT}/runtime/core/craft/tool-capabilities.md allows: localhost-only browsing of builds, provenance and licence on anything generated, human approval before any paid job.
+- Work the plan's tasks in dependency order and satisfy both acceptance criteria and tests. When the brief opens with blockers from code review or verification, fix those first. When it opens with *This visit* as a specialist, you are that discipline: fix only the findings it lists, read its playbooks, and write only its writable scope. Scope, monetization, platform strategy, core gameplay and architecture change only through the production change process. External tools (browser, generation, docs lookup, analytics) only as ${CLAUDE_PLUGIN_ROOT}/runtime/core/craft/tool-capabilities.md allows: localhost-only browsing of builds, provenance and licence on anything generated, human approval before any paid job.
 - Do not advance the lifecycle. Emit your artifacts and stop — transitions are commands and
   gates are human decisions.

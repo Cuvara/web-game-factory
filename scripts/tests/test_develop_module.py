@@ -2323,7 +2323,8 @@ class ThroughTheEngine(unittest.TestCase):
         # the greybox's playability report: the loop the production build must keep.
         self.assertEqual(sorted(state.steps["develop"].consumed),
                          ["asset-manifest@v1", "game-design@v1", "playability-report@v1",
-                          "scaffold-record@v1", "tech-plan@v1", "title-strategy@v1"])
+                          "scaffold-record@v1", "tech-plan@v1", "title-strategy@v1",
+                          "triage-report@v1"])
         # The greybox ran first, before any asset existed: no asset manifest, and no
         # playability report yet to read.
         self.assertEqual(sorted(state.steps["greybox"].consumed),
@@ -2352,7 +2353,8 @@ class ThroughTheEngine(unittest.TestCase):
         self.assertEqual(set(step.inputs), {"game-design", "asset-manifest", "scaffold-record",
                                             "title-strategy", "tech-plan", "qa-report",
                                             "review-report", "playability-report",
-                                            "production-quality-report", "visual-qa-report"})
+                                            "production-quality-report", "visual-qa-report",
+                                        "triage-report"})
         self.assertEqual(list(step.outputs), ["prototype-report"])
 
 

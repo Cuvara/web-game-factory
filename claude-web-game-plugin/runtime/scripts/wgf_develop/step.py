@@ -58,6 +58,7 @@ from wgflib.workflow import ArtifactOutput, StepResult, WorkflowStep
 
 from . import brief as briefs
 from . import safewrite, scope
+from . import specialist as specialists
 from .budget import Budget
 from .checks import read_report, run_checks
 from .gdd import GDD_PATH, render_gdd
@@ -121,14 +122,29 @@ def _read_json(path):
         return None
 
 
-def _loop(context):
+def _loop(context, spec=None, via=None):
     """How the run came back into develop, from the engine's context: the entry
     (`context.entered_by`, `<source>.<route>` such as `verify.fail`) and what the loop, and
     develop itself, have left of their visit limits (`context.visit_budget`). None on a
     first visit - entered by ordinary progression (`<step>.success`, or a bare `success` in
-    a run recorded before entries named their source) - or a context that says nothing."""
+    a run recorded before entries named their source) - or a context that says nothing.
+    A specialist visit (`spec`) was entered through triage; the entry it reports is the
+    gate's that sent the build back (the triage-report's `source`), and the budget is the
+    specialist's own. `via` is the triage-report's `source` when triage routed nothing to a
+    specialist (`triage.success`): the gate entry that sent the build back, if one did."""
     route = getattr(context, "entered_by", None)
     budget = getattr(context, "visit_budget", None) or {}
+    if spec is None and via and route and route.rpartition(".")[0] == specialists.TRIAGE_SOURCE:
+        route = via
+    if spec is not None:
+        source = spec.get("source") or route
+        loop = {"entered_by": source, "specialist_entry": route,
+                "route_budget": budget.get("route"), "step_budget": budget.get("step")}
+        decision = (_decision_behind(context, source)
+                    if source and source.rpartition(".")[2] != "success" else None)
+        if decision:
+            loop["decision"] = decision
+        return loop
     if not route or route.rpartition(".")[2] == "success":
         return None
     loop = {"entered_by": route, "route_budget": budget.get("route"),
@@ -263,7 +279,7 @@ class DevelopStep(WorkflowStep):
         for artifact_type in REQUIRED_INPUTS + ("title-strategy", "tech-plan", "qa-report",
                                                 "review-report", "playability-report",
                                                 "production-quality-report",
-                                                "visual-qa-report"):
+                                                "visual-qa-report", "triage-report"):
             ref = inputs.refs.get(artifact_type)
             version = getattr(ref, "schema_version", None) or ""
             if ref is not None and version and version.split(".")[0] != SUPPORTED_MAJOR:
@@ -342,6 +358,26 @@ class DevelopStep(WorkflowStep):
                 context.visit > 1 and visual_qa.get("verdict") == "FAIL"
                 and visual_qa.get("commit") == git.head()):
             visual_qa = None
+        # Routed by triage as a specialist (`triage.<role>`): the visit is that discipline's.
+        # Its brief carries the findings it owns - each with its measurement, bar, evidence
+        # and acceptance - in place of the gates' raw reports, its own craft playbooks, and
+        # a writable scope cut to the specialist's (never wider than the installation's).
+        spec, problem = specialists.resolve(context, inputs, phase)
+        if problem:
+            return StepResult.failed(problem, retryable=False)
+        if spec is not None:
+            narrowed = specialists.narrow(settings.writable_paths, spec["writes"])
+            if not narrowed:
+                return StepResult.failed(
+                    f"the {spec['role']} specialist may write none of the paths this "
+                    f"installation lets a developer write ({', '.join(settings.writable_paths)}"
+                    f"; its scope: {', '.join(spec['writes']) or 'none'}): it cannot be "
+                    f"briefed as a develop visit", retryable=False)
+            settings.writable_paths = narrowed
+            qa = review = playability = production = visual_qa = None
+            context.logger.info("develop briefed as a specialist", specialist=spec["role"],
+                                findings=[f.get("id") for f in spec["findings"]],
+                                writable_paths=narrowed, pending=spec["pending"] or None)
 
         key = context.idempotency_key
         brief_dir = os.path.join(checkout, briefs.BRIEF_DIR)
@@ -384,6 +420,12 @@ class DevelopStep(WorkflowStep):
             baseline = (existing.get("baseline_commit")
                         if existing.get("idempotency_key") == key else None) or git.head()
             review_baseline = _review_baseline(existing, key, phase, baseline)
+            if (spec is not None and spec.get("mode") == "continued"
+                    and existing.get("idempotency_key") != key
+                    and existing.get("review_baseline")):
+                # The next specialist on the same build: review, after the chain, reads
+                # every specialist's commit, from where the first one started.
+                review_baseline = existing["review_baseline"]
             previous_checks = _read_json(checks_json)
             if (previous_checks or {}).get("idempotency_key") != key:
                 previous_checks = None  # another visit's failures are not this one's
@@ -400,9 +442,12 @@ class DevelopStep(WorkflowStep):
                                                                             True)),
                 writable_paths=settings.writable_paths,
                 package_changes=settings.package_changes,
-                loop=_loop(context),
+                loop=_loop(context, spec, via=(
+                    (inputs.load("triage-report") or {}).get("source")
+                    if "triage-report" in inputs else None)),
                 sessions=_sessions(context),
                 developer=settings.developer,
+                specialist=spec,
             )
             _write(checkout, brief_json, json.dumps(brief, indent=2, ensure_ascii=False) + "\n")
             _write(checkout, brief_md, briefs.render_markdown(brief))
@@ -519,13 +564,24 @@ class DevelopStep(WorkflowStep):
                 f"resume.")
 
         produced_at = self.clock()
+        visit_record = None
+        if spec is not None:
+            sessions, cost = specialists.visit_cost(context)
+            visit_record = {
+                "role": spec["role"],
+                "findings": [f.get("id") for f in spec["findings"]],
+                "pending": list(spec["pending"]),
+                "triage_report": spec.get("triage_report"),
+                "source": spec.get("source"),
+                "writable_paths": list(settings.writable_paths),
+                "sessions": sessions, "cost_usd": cost}
         report = build_report(
             title_id=title_id, brief=brief, checks=checks, dev_report=dev_report,
             commit_sha=commit_sha, built_at=produced_at,
             build_url=self._build_url(settings, repository, checkout, commit_sha, git),
             iteration=context.visit, strategy=strategy,
             pinned_inputs=self._pins(inputs), artifact_seq=context.execution,
-            produced_at=produced_at,
+            produced_at=produced_at, specialist=visit_record,
         )
         artifact = ArtifactOutput("prototype-report", report, metadata={
             "commit": commit_sha, "engine": engine, "green": green,
@@ -548,9 +604,14 @@ class DevelopStep(WorkflowStep):
                                      + ". The design does not say enough to build it; it is "
                                        "repaired at design, not guessed at here."))
         if green:
-            return StepResult.success([artifact], message=(
-                f"{title_id} built at {commit_sha[:12]} ({engine}); "
-                + ", ".join(f"{c.id} {c.status}" for c in checks)))
+            message = (f"{title_id} built at {commit_sha[:12]} ({engine}); "
+                       + ", ".join(f"{c.id} {c.status}" for c in checks))
+            if spec is not None and spec["pending"]:
+                # More specialists own findings of this build: the next one works on it
+                # before the gates measure it again (the workflow maps the route to triage).
+                return StepResult.success([artifact], route=specialists.NEXT_SPECIALIST,
+                                          message=message + f"; next: {spec['pending'][0]}")
+            return StepResult.success([artifact], message=message)
 
         failed = [c for c in checks if c.failed]
         summary = "; ".join(f"{c.id}: {c.summary}" for c in failed)

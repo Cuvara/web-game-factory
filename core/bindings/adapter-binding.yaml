@@ -18,7 +18,8 @@
 # Each adapter carries a CONFORMANCE.md mapping every surface id below to its file, so
 # reviewing adapter completeness is a two-file diff rather than a directory crawl.
 
-version: 1.9.0  # 1.9.0: feature evaluation (playbook and catalogue) in the game-designer surfaces
+version: 1.10.0  # 1.10.0: specialist routing (specialists charter, routing data, quality finding) in the gameplay agent
+# 1.9.0: feature evaluation (playbook and catalogue) in the game-designer surfaces
 
 surface_kinds:
   agent: A persistent role the runtime can delegate to.
@@ -191,8 +192,11 @@ agents:
       - core/reference/genre-models.yaml
       - core/reference/design-depth.yaml
       - core/craft/game-audio.md
+      - core/roles/specialists.md
+      - core/reference/specialist-routing.yaml
+      - core/artifacts/shared/quality-finding.schema.json
     produces: [prototype-report]
-    consumes: [tech-plan, game-design, review-report, qa-report]
+    consumes: [tech-plan, game-design, review-report, qa-report, triage-report]
 
   - id: ui
     role: ui

@@ -1,0 +1,178 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://webgamefactory.dev/schemas/artifacts/shared/quality-finding.schema.json",
+  "title": "Quality finding",
+  "description": "One thing about a build that falls short of a bar, stated as work a specialist can do.\n\nEvery producer that judges a build - playability, production-quality, visual-qa, review, verification, listing-validation, a person at G4, and later the quality scorecard - reports its failures in its own shape. A quality finding is the one shape they are all normalized into, so that a finding can be routed to the discipline that owns it without a person translating it: the quality dimension it concerns, how severe it is, what was measured against which bar, the evidence, the owner discipline (a role in core/roles/roles.yaml), the concrete task (what to change, and how a re-measurement accepts it) and the route that takes it there (core/reference/specialist-routing.yaml).\n\nA finding's `id` is stable across measurements of the same check by the same producer, which is what lets the gate that raised it say on the next build whether it was resolved.\n\n`request` is what a person types at G4 (`wgf decide <run> iterate --findings FILE`): the dimension, severity, summary and task. The owner and the route are filled from the routing data, never guessed by the person.",
+
+  "$defs": {
+    "dimension": {
+      "enum": ["content", "level-design", "difficulty", "progression", "gameplay", "art-2d", "environment-3d", "lighting-material", "ui", "audio", "feel", "store-copy", "platform"],
+      "description": "The quality dimension a finding concerns. Each is owned by exactly one specialist (core/reference/specialist-routing.yaml `specialists`)."
+    },
+
+    "severity": {
+      "enum": ["blocker", "major", "minor"],
+      "description": "blocker: the producer failed the build on it. major: a defect the producer saw that did not fail the build on its own. minor: polish."
+    },
+
+    "route": {
+      "enum": ["develop", "assets", "design", "listing"],
+      "description": "Where the work is done: the game's code and content (develop, as the owning specialist), an asset made again (assets), the design revised - a scope or content increase the design must state first (design), or the store listing (listing)."
+    },
+
+    "task": {
+      "type": "object",
+      "required": ["change", "acceptance"],
+      "properties": {
+        "change": { "type": "string", "minLength": 1, "description": "What to change, in the build's terms." },
+        "acceptance": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "type": "string", "minLength": 1 },
+          "description": "How the change is accepted: what the producer that raised the finding re-measures on the next build, or what the person who raised it checks at G4."
+        },
+        "design_field": { "type": "string", "description": "The game-design field a design-route finding concerns (e.g. build_spec.content)." }
+      },
+      "additionalProperties": false
+    },
+
+    "source": {
+      "type": "object",
+      "required": ["producer"],
+      "properties": {
+        "producer": { "type": "string", "description": "The artifact type the finding was read from (playability-report, production-quality-report, visual-qa-report, review-report, qa-report, listing-validation-report, decision-record), or `quality-scorecard`." },
+        "step": { "type": ["string", "null"], "description": "The workflow step that produced it." },
+        "check": { "type": "string", "description": "The producer's own id for what failed: a check id, a VQA failed id (score:environment), a blocker id, a defect id." },
+        "project": { "type": ["string", "null"], "description": "The viewport (desktop, mobile) it was measured on, when the producer says." },
+        "artifact_id": { "type": ["string", "null"] },
+        "content_hash": { "type": ["string", "null"] }
+      },
+      "additionalProperties": false
+    },
+
+    "request": {
+      "type": "object",
+      "description": "A finding as a person states it at G4.",
+      "required": ["dimension", "severity", "summary", "task"],
+      "properties": {
+        "id": { "type": "string", "pattern": "^[a-z0-9][a-z0-9._:/@-]*$" },
+        "dimension": { "$ref": "#/$defs/dimension" },
+        "severity": { "$ref": "#/$defs/severity" },
+        "summary": { "type": "string", "minLength": 1 },
+        "measured": {},
+        "bar": {},
+        "evidence_refs": { "type": "array", "items": { "type": "string", "minLength": 1 } },
+        "task": { "$ref": "#/$defs/task" },
+        "route": { "$ref": "#/$defs/route", "description": "A person may ask for `design` (a scope or content increase the design must state first) or `assets` (an asset made again); otherwise the routing data decides." },
+        "assets": { "type": "array", "items": { "type": "string" } }
+      },
+      "additionalProperties": false
+    },
+
+    "finding": {
+      "type": "object",
+      "required": ["id", "dimension", "severity", "source", "summary", "evidence_refs", "owner", "task", "route"],
+      "properties": {
+        "id": { "type": "string", "pattern": "^[a-z0-9][a-z0-9._:/@-]*$", "description": "<producer>:<check>[@<project>] - stable across measurements." },
+        "dimension": { "$ref": "#/$defs/dimension" },
+        "severity": { "$ref": "#/$defs/severity" },
+        "source": { "$ref": "#/$defs/source" },
+        "summary": { "type": "string", "minLength": 1 },
+        "measured": { "description": "What the producer measured, as it reported it." },
+        "bar": { "description": "The bar it was measured against, as the producer stated it." },
+        "evidence_refs": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 },
+          "description": "Frames, files and artifacts that show it: run-relative or absolute frame paths, repository paths, artifact ids."
+        },
+        "owner": { "type": "string", "pattern": "^[a-z][a-z0-9-]*$", "description": "The specialist role (core/roles/roles.yaml) that owns the finding's dimension." },
+        "task": { "$ref": "#/$defs/task" },
+        "route": { "$ref": "#/$defs/route" },
+        "assets": { "type": "array", "items": { "type": "string" }, "description": "Asset ids it concerns, when the producer names them." },
+        "build": { "$ref": "#/$defs/build" }
+      },
+      "additionalProperties": false
+    },
+
+    "build": {
+      "type": "object",
+      "description": "The build a finding was measured on: its commit, and the digest of its bundle when verification built it (verification-report build_artifact.content_hash), else null.",
+      "required": ["commit"],
+      "properties": {
+        "commit": { "type": ["string", "null"] },
+        "digest": { "type": ["string", "null"] }
+      },
+      "additionalProperties": false
+    },
+
+    "status": {
+      "enum": ["detected", "classified", "assigned", "implemented", "verified", "closed"],
+      "description": "A finding's lifecycle. detected: a producer reported it. classified: its dimension, owner and route were decided from the routing data. assigned: a triage routed it to its owner. implemented: the owner's visit built a change for it. verified: the producer that raised it re-measured a newer build and it no longer fails, and nothing that was passing failed on that build (a fix that regresses another gate is not verified). closed: verified, and every gate the run holds a report of has measured the build carrying the fix. Never closed on the specialist's word: only on the raising gate's re-measurement. A verified or closed finding the gate raises again is classified again (reopened)."
+    },
+
+    "record": {
+      "type": "object",
+      "description": "A finding in the run's lifecycle ledger (triage-report `lifecycle`): the finding as last measured, its status, every transition, and the verification evidence.",
+      "required": ["id", "dimension", "severity", "owner", "route", "status", "summary", "source", "build", "evidence_refs", "history", "verification"],
+      "properties": {
+        "id": { "type": "string" },
+        "dimension": { "$ref": "#/$defs/dimension", "description": "The finding's category." },
+        "severity": { "$ref": "#/$defs/severity" },
+        "owner": { "type": "string" },
+        "route": { "$ref": "#/$defs/route" },
+        "status": { "$ref": "#/$defs/status" },
+        "summary": { "type": "string" },
+        "source": { "$ref": "#/$defs/source" },
+        "build": { "$ref": "#/$defs/build", "description": "The build it was last observed failing on (the affected build)." },
+        "expected": { "description": "The threshold it is held to (the finding's bar)." },
+        "observed": { "description": "The value last measured (the finding's measured)." },
+        "evidence_refs": { "type": "array", "items": { "type": "string" } },
+        "task": { "$ref": "#/$defs/task" },
+        "fix": {
+          "type": ["object", "null"],
+          "description": "The specialist visit that implemented it.",
+          "properties": {
+            "specialist": { "type": "string" },
+            "commit": { "type": ["string", "null"] },
+            "prototype_report": { "type": ["string", "null"] },
+            "seq": { "type": ["integer", "null"] }
+          },
+          "additionalProperties": false
+        },
+        "verification": {
+          "type": ["object", "null"],
+          "description": "The raising producer's re-measurement of a newer build than the fix: its report, the build, what it measured, and any regressions that keep the finding from being verified.",
+          "properties": {
+            "verdict": { "enum": ["passed", "still-failing", "regressed"] },
+            "producer": { "type": "string" },
+            "artifact_id": { "type": ["string", "null"] },
+            "content_hash": { "type": ["string", "null"] },
+            "build": { "$ref": "#/$defs/build" },
+            "observed": {},
+            "regressions": { "type": "array", "items": { "type": "string" }, "description": "Findings first detected on a build at or after the fix: something that was passing fails now." },
+            "gates_measured": { "type": "array", "items": { "type": "string" }, "description": "The producers whose reports measured a build at or after the fix." }
+          },
+          "required": ["verdict", "producer"],
+          "additionalProperties": false
+        },
+        "detected_seq": { "type": ["integer", "null"], "description": "Run-local order of the report it was first detected in." },
+        "history": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["status", "at"],
+            "properties": {
+              "status": { "$ref": "#/$defs/status" },
+              "at": { "type": "string" },
+              "by": { "type": ["string", "null"], "description": "The artifact or step the transition came from." },
+              "build": { "type": ["string", "null"] },
+              "note": { "type": ["string", "null"] }
+            },
+            "additionalProperties": false
+          }
+        }
+      },
+      "additionalProperties": false
+    }
+  }
+}

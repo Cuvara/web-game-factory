@@ -1,0 +1,483 @@
+"""The `triage` step: what sent the build back, as specialist work, routed by owner.
+
+    inputs   game-design (its engine.dimension resolves 2D/3D words), prototype-report (the
+             build), the gate reports (playability-report, production-quality-report,
+             visual-qa-report, review-report, qa-report, listing-validation-report), the
+             decision-record (G4's iterate, with any typed findings), and this step's own
+             previous triage-report
+    output   triage-report
+
+    1. Which build: the newest prototype-report. A gate report produced after it (run-local
+       `seq`) measured it; an older one measured an earlier build and says nothing now.
+    2. Fresh or continued. When the previous triage-report still has `pending` groups and no
+       gate has measured anything since it (no gate report is newer), the run is inside a
+       chain of specialist visits on one build (develop's `next-specialist`, or the assets
+       pass a triage routed): the next pending group is routed. Otherwise the current
+       build's failing reports, and the G4 decision that sent it back, are normalized afresh
+       (findings.py). Findings routed `assets` by a report the assets step has run after are
+       dropped: that work is done, and develop integrates it.
+    3. Grouped by owner, in visit order (routing.py, core/reference/specialist-routing.yaml).
+       A group whose label this step's `on:` does not route is held, with why (store copy
+       before the listing exists). A `design` group goes first and alone: the others are
+       deferred, and the gates measure the rebuilt game again.
+    4. The ledger: one entry per specialist develop visit (from the prototype-report's
+       `specialist` block), each finding resolved, unresolved or unmeasured by the newest
+       report of the producer that raised it.
+    5. The run's finding ledger (`lifecycle`, lifecycle.py): every finding detected,
+       classified, assigned, implemented, verified, closed - verified and closed only on the
+       raising producer's re-measurement of a newer build, and never past a regression.
+
+Outcomes:
+
+    SUCCESS, route <label>   a group is routed: `design`, `assets`, or a specialist's role id,
+                             which the workflow maps to develop
+    SUCCESS (no route)       nothing failed: the run's first build continues to develop
+    BLOCKED                  findings exist and no route of this step can take any of them;
+                             or a typed-findings file a G4 decision names is missing, altered
+                             or not quality findings
+    FAILED (not retryable)   the routing data is inconsistent
+
+It changes nothing outside the run: it reads artifacts and writes one.
+"""
+
+import datetime
+import hashlib
+import json
+import os
+import re
+
+from wgflib import paths, provenance
+from wgflib.jsonschema_lite import Validator
+from wgflib.workflow import ArtifactOutput, StepResult, WorkflowStep
+from wgflib.workflow.contracts import load_registry
+from wgflib.yamllite import load_file
+
+from . import findings as normalizer
+from . import lifecycle as lifecycles
+from .routing import Routing, RoutingError
+
+__all__ = ["TriageStep", "GATE_REPORTS", "NEXT_SPECIALIST", "FINDINGS_MARKER",
+           "read_typed_findings"]
+
+# The reports a build is judged by, in the order they are read.
+GATE_REPORTS = ("playability-report", "production-quality-report", "visual-qa-report",
+                "review-report", "qa-report", "listing-validation-report")
+# The route develop returns after a specialist visit while this triage has pending groups.
+NEXT_SPECIALIST = "next-specialist"
+# How a G4 decision names its typed findings (`wgf decide <run> iterate --findings FILE`):
+# a line of the decision's note, the file stored in the run directory, pinned by hash.
+FINDINGS_MARKER = re.compile(r"^findings: (\S+) (sha256:[0-9a-f]{64})\s*$", re.M)
+REQUEST_REF = ("https://webgamefactory.dev/schemas/artifacts/shared/"
+               "quality-finding.schema.json#/$defs/request")
+RUBRIC_PATH = os.path.join(paths.REFERENCE, "visual-qa-rubric.yaml")
+_FAILING = {"playability-report": ("FAIL",), "production-quality-report": ("FAIL",),
+            "visual-qa-report": ("FAIL",), "review-report": ("request-changes",),
+            "qa-report": ("fail",), "listing-validation-report": ("FAIL",)}
+
+
+def _utc_now():
+    return datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def _seq(inputs, artifact_type):
+    ref = inputs.refs.get(artifact_type)
+    return (getattr(ref, "seq", None) or 0) if ref is not None else -1
+
+
+def _load(inputs, artifact_type):
+    if artifact_type not in inputs:
+        return None
+    content = inputs.load(artifact_type)
+    return content if isinstance(content, dict) else None
+
+
+def _build(report, commit, verification):
+    """The build a report measured: its own commit (the sdk commit for review of sdk and
+    for verification), else the build's; and the bundle digest verification recorded for
+    that commit, when it built it."""
+    report = report or {}
+    measured = (report.get("commit") or report.get("reviewed_commit")
+                or (report.get("build_ref") or {}).get("commit_sha") or commit)
+    digest = None
+    if isinstance(verification, dict) and measured and \
+            (verification.get("commit") or {}).get("sha") == measured:
+        digest = (verification.get("build_artifact") or {}).get("content_hash")
+    return {"commit": measured, "digest": digest}
+
+
+def _failing(kind, report):
+    return isinstance(report, dict) and report.get("verdict") in _FAILING.get(kind, ())
+
+
+def read_typed_findings(note, run_dir):
+    """The typed findings a decision's note names, as a list of quality-finding requests,
+    or [] when it names none. Raises ValueError when the file is missing, does not hash to
+    what the note pinned, or does not hold quality-finding requests."""
+    match = FINDINGS_MARKER.search(note or "")
+    if not match:
+        return []
+    relative, digest = match.group(1), match.group(2)
+    if os.path.isabs(relative) or ".." in relative.replace("\\", "/").split("/"):
+        raise ValueError(f"the decision names findings at {relative!r}, outside the run")
+    path = os.path.join(run_dir or "", *relative.split("/"))
+    try:
+        with open(path, "rb") as handle:
+            raw = handle.read()
+    except OSError as exc:
+        raise ValueError(f"the decision's findings file {relative} cannot be read: {exc}")
+    actual = "sha256:" + hashlib.sha256(raw).hexdigest()
+    if actual != digest:
+        raise ValueError(f"the decision's findings file {relative} is {actual}, not the "
+                         f"{digest} the decision pinned: it was changed after the decision")
+    try:
+        requests = json.loads(raw.decode("utf-8"))
+    except ValueError as exc:
+        raise ValueError(f"the decision's findings file {relative} is not JSON: {exc}")
+    if isinstance(requests, dict):
+        requests = requests.get("findings")
+    problems = validate_requests(requests)
+    if problems:
+        raise ValueError(f"the decision's findings file {relative}: " + "; ".join(problems[:5]))
+    return requests
+
+
+def validate_requests(requests):
+    """[] when `requests` is a non-empty list of quality-finding requests."""
+    if not isinstance(requests, list) or not requests:
+        return ["expected a non-empty list of findings (or {\"findings\": [...]})"]
+    validator = Validator({"$ref": REQUEST_REF}, load_registry())
+    problems = []
+    for index, request in enumerate(requests):
+        for error in validator.iter_errors(request):
+            problems.append(f"findings[{index}]{getattr(error, 'pointer', '')}: "
+                            f"{getattr(error, 'message', error)}")
+    return problems
+
+
+class TriageStep(WorkflowStep):
+    type = "triage"
+    clock = staticmethod(_utc_now)
+    routing_path = None   # seams for tests
+    roles_path = None
+
+    def execute(self, inputs, context):
+        try:
+            routing = Routing.load(self.routing_path, self.roles_path)
+        except RoutingError as exc:
+            return StepResult.failed(f"specialist routing data is inconsistent: {exc}",
+                                     retryable=False)
+        design = _load(inputs, "game-design") or {}
+        dimension_3d = ((design.get("engine") or {}).get("dimension") == "3d")
+        proto = _load(inputs, "prototype-report")
+        proto_seq = _seq(inputs, "prototype-report")
+        previous = _load(inputs, "triage-report")
+        previous_seq = _seq(inputs, "triage-report")
+        entered = getattr(context, "entered_by", None)
+        run_dir = getattr(context, "run_dir", None)
+        title_id = ((proto or {}).get("title_id") or design.get("title_id")
+                    or getattr(context, "project_id", None) or "untitled")
+        commit = ((proto or {}).get("build_ref") or {}).get("commit_sha")
+
+        reports = {kind: _load(inputs, kind) for kind in GATE_REPORTS}
+        verification = _load(inputs, "verification-report")
+
+        def build_of(kind):
+            return _build(reports.get(kind), commit, verification)
+
+        normalized = {}   # every newest report's findings, for the ledger and for fresh triage
+        rubric = load_file(RUBRIC_PATH) if os.path.isfile(RUBRIC_PATH) else {}
+        for kind, report in reports.items():
+            if report is None:
+                continue
+            normalized[kind] = (normalizer.normalize(
+                kind, report, routing, ref=inputs.refs.get(kind), dimension_3d=dimension_3d,
+                playability=reports.get("playability-report"), rubric=rubric)
+                if _failing(kind, report) else [])
+            for finding in normalized[kind]:
+                finding["build"] = build_of(kind)
+
+        decision = _load(inputs, "decision-record")
+        decision_seq = _seq(inputs, "decision-record")
+        human, problem = [], None
+        sent_back = (decision is not None and decision.get("decision") == "iterate"
+                     and decision_seq > proto_seq)
+        if sent_back:
+            try:
+                requests = read_typed_findings(decision.get("rationale"), run_dir)
+                human = normalizer.from_requests(
+                    requests, routing, decision=decision.get("provenance"),
+                    source_ref=getattr(inputs.refs.get("decision-record"), "content_hash",
+                                       None), dimension_3d=dimension_3d)
+            except (ValueError, normalizer.NormalizeError) as exc:
+                problem = str(exc)
+        for finding in human:
+            finding["build"] = _build(None, commit, verification)
+        if problem:
+            return StepResult.blocked(
+                f"G4's decision to iterate names typed findings the triage cannot use: "
+                f"{problem}. Decide again with a valid findings file (wgf decide <run> "
+                f"iterate --findings FILE), or without one.")
+
+        ledger = self._ledger(previous, proto, proto_seq, inputs, normalized, decision,
+                              decision_seq, human)
+        # The run's finding ledger moves on in _report, once this triage's group is chosen.
+        self._now = self.clock()
+        self._life = dict(
+            previous=(previous or {}).get("lifecycle") or [],
+            failing={kind: {f["id"] for f in items} for kind, items in normalized.items()},
+            seqs={kind: _seq(inputs, kind) for kind in normalized},
+            reports={kind: report for kind, report in reports.items() if report is not None},
+            proto=proto, proto_seq=proto_seq, decision=decision, decision_seq=decision_seq,
+            human_ids={f["id"] for f in human}, routing_version=routing.version,
+            build_of=build_of)
+        gate_seqs = [_seq(inputs, kind) for kind in GATE_REPORTS if reports.get(kind)]
+        measured_since = any(seq > previous_seq for seq in gate_seqs)
+        if decision_seq > previous_seq and sent_back:
+            measured_since = True  # a person judged the build since the previous triage
+
+        if previous and previous.get("pending") and not measured_since:
+            return self._continue(context, inputs, routing, previous, entered, title_id,
+                                  commit, ledger)
+
+        found = []
+        for kind in GATE_REPORTS:
+            if _seq(inputs, kind) <= proto_seq:
+                continue  # it measured an earlier build
+            found.extend(normalized.get(kind) or [])
+        if sent_back:
+            if human:
+                found.extend(human)
+            else:
+                found.append(self._note_finding(routing, decision, inputs))
+        # Findings an assets pass that ran after their report (or decision) already handled.
+        manifest_seq = _seq(inputs, "asset-manifest")
+        found = [f for f in found if not (
+            f.get("route") == "assets"
+            and manifest_seq > _seq(inputs, f["source"]["producer"]))]
+        if not found and entered and entered.rpartition(".")[2] not in ("success", ""):
+            found.append(self._unnamed(routing, entered))
+        found = self._unique(found)
+        return self._fresh(context, inputs, routing, found, entered, title_id, commit, ledger,
+                           first_pass=not found)
+
+    # -- the two kinds of triage ---------------------------------------------------------
+
+    def _fresh(self, context, inputs, routing, found, entered, title_id, commit, ledger,
+               first_pass):
+        if first_pass:
+            report = self._report(context, inputs, routing, title_id, commit, entered,
+                                  source=entered, mode="first-pass", findings=[], groups=[],
+                                  selected=None, pending=[], deferred=[], held=[],
+                                  ledger=ledger, verdict="clear",
+                                  message="nothing on the current build is left to route",
+                                  current=[])
+            return StepResult.success([report], message="triage: nothing to route")
+        groups = routing.groups(found)
+        takeable, held = self._split(groups, found)
+        deferred = []
+        if takeable and takeable[0]["route"] == "design":
+            selected, pending, deferred = takeable[0], [], takeable[1:]
+        elif takeable:
+            selected, pending = takeable[0], takeable[1:]
+        else:
+            selected, pending = None, []
+        return self._finish(context, inputs, routing, title_id, commit, entered,
+                            source=entered, mode="fresh", findings=found, groups=groups,
+                            selected=selected, pending=pending, deferred=deferred, held=held,
+                            ledger=ledger, current=found)
+
+    def _continue(self, context, inputs, routing, previous, entered, title_id, commit,
+                  ledger):
+        pending = list(previous.get("pending") or [])
+        selected, rest = pending[0], pending[1:]
+        wanted = {fid for group in pending for fid in group.get("findings") or []}
+        found = [f for f in previous.get("findings") or [] if f.get("id") in wanted]
+        return self._finish(context, inputs, routing, title_id, commit, entered,
+                            source=previous.get("source"), mode="continued", findings=found,
+                            groups=pending, selected=selected, pending=rest, deferred=[],
+                            held=list(previous.get("held") or []), ledger=ledger, current=[])
+
+    def _finish(self, context, inputs, routing, title_id, commit, entered, *, source, mode,
+                findings, groups, selected, pending, deferred, held, ledger, current):
+        verdict = "routed" if selected else "held"
+        if selected:
+            owner = routing.specialist(selected["owner"])
+            message = (f"{len(selected['findings'])} finding(s) to {owner['label']} "
+                       f"(route `{selected['label']}`)"
+                       + (f"; {len(pending)} more group(s) pending" if pending else "")
+                       + (f"; {len(deferred)} deferred behind the design change"
+                          if deferred else "")
+                       + (f"; {len(held)} held" if held else ""))
+        else:
+            message = ("no route of this step can take the findings: "
+                       + "; ".join(f"{h['finding']}: {h['reason']}" for h in held[:5]))
+        report = self._report(context, inputs, routing, title_id, commit, entered,
+                              source=source, mode=mode, findings=findings, groups=groups,
+                              selected=selected, pending=pending, deferred=deferred,
+                              held=held, ledger=ledger, verdict=verdict, message=message,
+                              current=current)
+        if not selected:
+            context.logger.warning("triage held every finding", held=len(held))
+            return StepResult("BLOCKED", artifacts=[report], message=message)
+        context.logger.info("triage routed", route=selected["label"], owner=selected["owner"],
+                            findings=len(selected["findings"]), pending=len(pending))
+        return StepResult.success([report], route=selected["label"], message=message)
+
+    # -- helpers -------------------------------------------------------------------------
+
+    def _routed_labels(self):
+        on = getattr(self.definition, "on", None)
+        return set(on) if isinstance(on, dict) and on else None
+
+    def _split(self, groups, found):
+        """(groups this step routes, [held entries]): a group whose label the step's `on:`
+        does not route is held - nothing in this loop can do its work."""
+        labels = self._routed_labels()
+        if labels is None:
+            return groups, []
+        takeable, held = [], []
+        for group in groups:
+            if group["label"] in labels:
+                takeable.append(group)
+                continue
+            why = (f"route `{group['label']}` ({group['owner']}) is not taken from this step: "
+                   + ("store copy is written by store-listing after G4, and "
+                      "listing-validation routes it there" if group["route"] == "listing"
+                      else "the workflow maps no step to it"))
+            held.extend({"finding": fid, "reason": why} for fid in group["findings"])
+        return takeable, held
+
+    @staticmethod
+    def _unique(found):
+        seen, out = set(), []
+        for finding in found:
+            if finding["id"] in seen:
+                continue
+            seen.add(finding["id"])
+            out.append(finding)
+        return out
+
+    @staticmethod
+    def _note_finding(routing, decision, inputs):
+        """G4 iterate without typed findings: the note is the only statement of what to
+        change, so it is the generalist's finding, accepted by the next G4."""
+        note = (decision.get("rationale") or "").strip()
+        owner = routing.owner(routing.default_dimension)
+        return {
+            "id": normalizer.finding_id("decision-record", "iterate"),
+            "dimension": routing.default_dimension,
+            "severity": "major",
+            "source": {"producer": "decision-record",
+                       "step": routing.producer("decision-record").get("step"),
+                       "check": "iterate", "project": None,
+                       "artifact_id": (decision.get("provenance") or {}).get("artifact_id"),
+                       "content_hash": getattr(inputs.refs.get("decision-record"),
+                                               "content_hash", None)},
+            "summary": f"G4 iterate: {note}" if note else
+                       "G4 iterate, with no reason recorded and no typed findings",
+            "evidence_refs": [],
+            "owner": owner,
+            "task": {"change": note or ("Nothing says what to change: re-check the build "
+                                        "against its brief and report what you find."),
+                     "acceptance": [routing.producer("decision-record").get("acceptance")
+                                    or "the person deciding G4 checks it"]},
+            "route": routing.route_of(owner),
+        }
+
+    @staticmethod
+    def _unnamed(routing, entered):
+        owner = routing.owner(routing.default_dimension)
+        return {
+            "id": normalizer.finding_id("triage", entered.replace(".", "-")),
+            "dimension": routing.default_dimension, "severity": "major",
+            "source": {"producer": "triage", "step": None, "check": entered, "project": None,
+                       "artifact_id": None, "content_hash": None},
+            "summary": f"`{entered}` sent the build back and no report names a failure of "
+                       f"the current build",
+            "evidence_refs": [], "owner": owner,
+            "task": {"change": "Re-check the build against its brief; report what you find "
+                               "in known_issues.",
+                     "acceptance": [f"the step behind `{entered}` passes the next build"]},
+            "route": routing.route_of(owner),
+        }
+
+    def _ledger(self, previous, proto, proto_seq, inputs, normalized, decision,
+                decision_seq, human):
+        ledger = [dict(entry) for entry in (previous or {}).get("ledger") or []]
+        block = (proto or {}).get("specialist")
+        proto_id = ((proto or {}).get("provenance") or {}).get("artifact_id")
+        if isinstance(block, dict) and proto_id and not any(
+                e.get("prototype_report") == proto_id for e in ledger):
+            ledger.append({
+                "develop_visit": (proto or {}).get("iteration"),
+                "prototype_report": proto_id, "prototype_seq": proto_seq,
+                "commit": ((proto or {}).get("build_ref") or {}).get("commit_sha"),
+                "specialist": block.get("role") or "gameplay",
+                "findings_in": list(block.get("findings") or []),
+                "resolved": [], "unresolved": [],
+                "unmeasured": list(block.get("findings") or []),
+                "sessions": block.get("sessions"), "cost_usd": block.get("cost_usd")})
+        failing = {kind: {f["id"] for f in items} for kind, items in normalized.items()}
+        human_ids = {f["id"] for f in human}
+        for entry in ledger:
+            after = entry.get("prototype_seq") or 0
+            still = []
+            for fid in entry.get("unmeasured") or []:
+                producer = fid.split(":", 1)[0]
+                if producer == "decision-record":
+                    if decision is not None and decision_seq > after:
+                        reraised = decision.get("decision") == "iterate" and fid in human_ids
+                        entry["unresolved" if reraised else "resolved"].append(fid)
+                    else:
+                        still.append(fid)
+                elif producer in failing and _seq(inputs, producer) > after:
+                    entry["unresolved" if fid in failing[producer] else "resolved"].append(fid)
+                else:
+                    still.append(fid)
+            entry["unmeasured"] = still
+        return ledger
+
+    def _report(self, context, inputs, routing, title_id, commit, entered, *, source, mode,
+                findings, groups, selected, pending, deferred, held, ledger, verdict,
+                message, current):
+        now = getattr(self, "_now", None) or self.clock()
+        artifact_id = provenance.artifact_id("triage-report", title_id, now,
+                                             getattr(context, "execution", 1))
+        life = getattr(self, "_life", None) or {}
+        lifecycle = lifecycles.advance(
+            life.get("previous") or [], at=now, current=current,
+            failing=life.get("failing") or {}, seqs=life.get("seqs") or {},
+            reports=life.get("reports") or {}, proto=life.get("proto"),
+            proto_seq=life.get("proto_seq", -1), decision=life.get("decision"),
+            decision_seq=life.get("decision_seq", -1), human_ids=life.get("human_ids") or set(),
+            selected=selected, triage_id=artifact_id,
+            routing_version=life.get("routing_version") or routing.version,
+            build_of=life.get("build_of") or (lambda kind: {"commit": commit, "digest": None}))
+        body = {
+            "provenance": provenance.build(
+                "triage-report",
+                artifact_id=artifact_id,
+                produced_by=provenance.producer("architect"), produced_at=now,
+                inputs=provenance.pin_inputs(inputs), title_id=title_id),
+            "title_id": title_id,
+            "entered_by": entered,
+            "source": source,
+            "mode": mode,
+            "commit": commit,
+            "findings": findings,
+            "groups": groups,
+            "selected": selected,
+            "pending": pending,
+            "deferred": deferred,
+            "held": held,
+            "ledger": ledger,
+            "lifecycle": lifecycle,
+            "routing": {"reference": "core/reference/specialist-routing.yaml",
+                        "version": routing.version, "content_hash": routing.content_hash},
+            "verdict": verdict,
+            "message": message,
+        }
+        return ArtifactOutput("triage-report", provenance.seal(body), metadata={
+            "verdict": verdict, "route": (selected or {}).get("label"),
+            "owner": (selected or {}).get("owner"), "findings": len(findings),
+            "pending": len(pending)})

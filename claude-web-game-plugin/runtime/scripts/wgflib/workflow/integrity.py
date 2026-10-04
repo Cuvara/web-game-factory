@@ -40,7 +40,8 @@ found the file - before the engine acts on it:
     run's developer-session budget: raised only by a person's BUDGET_RAISED event, never by
     editing the snapshot. `idea` is the game idea a person started the run with
     (`wgf new-game "..."`), the brief every step downstream reads: it is neither added,
-    changed nor dropped by an edit.
+    changed nor dropped by an edit. `pinned_references` (references.py) are the digests of
+    the reference files the run copied at its start and is judged against.
 
   * route-scoped visits: `route_visits` / `route_base` are counts per route, a base never
     above its count, and together never more entries than `visits`; `blocked_reason` is
@@ -68,8 +69,10 @@ __all__ = ["state_problems", "params_problems", "decision_on_record", "GUARDED_P
 # decides what the run builds, and one added to state.json after the start was nobody's.
 # `quality` (the quality policy's snapshot, wgflib.workflow.quality) says whether the run may
 # be reported as a release: a class claimed in state.json alone is nobody's.
+# `pinned_references` holds the digests of the reference files the run is judged against
+# (references.py): an edit of them in state.json would let a run be held to other bars.
 GUARDED_PARAMS = ("mock", "mock_plan", "auto_approve", "timeout_auto_approve",
-                  "lifecycle_sync", "develop_budget", "idea", "quality")
+                  "lifecycle_sync", "develop_budget", "idea", "quality", "pinned_references")
 
 _COUNTERS = ("attempts", "executions", "visits", "loop_base")
 _DECISION_KEYS = ("decision", "decided_by", "decided_at", "visit", "note", "mode")

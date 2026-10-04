@@ -2,13 +2,13 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://webgamefactory.dev/schemas/artifacts/release-manifest.schema.json",
   "title": "Release Manifest",
-  "description": "An immutable, versioned description of one shipment.\n\nImmutability is the point. Once frozen at RC, a release manifest never changes — any correction produces a new release. That is what makes rollback possible as an operation rather than a rebuild: rolling back means re-publishing a previous manifest, which only works if manifests are retained and trustworthy.\n\nTarget platforms carry their role (required/optional) HERE rather than in the strategy, because which platforms must succeed is a per-release policy: r1 may ship Yandex-only and r2 may add CrazyGames.\n\nSince 1.4.0 `evidence.quality` says whether the run that drafted it was held to the release tier (core/reference/quality-policy.yaml): a `development` manifest is never a release. Since 1.3.0 `store_metadata` is filled from the validated store-listing the release ships beside its packages (`evidence.store_listing`, release/<release-id>/listing/). Since 1.1.0 a manifest the Factory drafts also says what it rests on: the qa-report and verification-report it was cleared by, the commit every upstream report named, the evidence status per platform (PASS_MOCK and BLOCKED_EXTERNAL are carried as such, never upgraded), the audit of every package, the template revision, and the workflow run that produced it. All of it is optional, so a 1.0.0 manifest written by a game repository's own tooling still validates.",
+  "description": "An immutable, versioned description of one shipment.\n\nImmutability is the point. Once frozen at RC, a release manifest never changes — any correction produces a new release. That is what makes rollback possible as an operation rather than a rebuild: rolling back means re-publishing a previous manifest, which only works if manifests are retained and trustworthy.\n\nTarget platforms carry their role (required/optional) HERE rather than in the strategy, because which platforms must succeed is a per-release policy: r1 may ship Yandex-only and r2 may add CrazyGames.\n\nSince 1.5.0 `evidence.quality_report` names the quality-report that passed the build it ships. Since 1.4.0 `evidence.quality` says whether the run that drafted it was held to the release tier (core/reference/quality-policy.yaml): a `development` manifest is never a release. Since 1.3.0 `store_metadata` is filled from the validated store-listing the release ships beside its packages (`evidence.store_listing`, release/<release-id>/listing/). Since 1.1.0 a manifest the Factory drafts also says what it rests on: the qa-report and verification-report it was cleared by, the commit every upstream report named, the evidence status per platform (PASS_MOCK and BLOCKED_EXTERNAL are carried as such, never upgraded), the audit of every package, the template revision, and the workflow run that produced it. All of it is optional, so a 1.0.0 manifest written by a game repository's own tooling still validates.",
 
   "x-wgf": {
     "id": "release-manifest",
     "kind": "artifact",
     "format": "json",
-    "version": "1.4.0",
+    "version": "1.5.0",
     "template": "templates/release-report.md",
     "producer": "release:draft",
     "frozen_at": "release:rc",
@@ -211,6 +211,21 @@
         "source_manifest_hash": {
           "$ref": "./shared/provenance.schema.json#/$defs/hash",
           "description": "content_hash of the manifest the game repository's own tooling wrote, which this one extends."
+        },
+        "quality_report": {
+          "type": "object",
+          "description": "Since 1.5.0. The quality-report that cleared this build (scripts/wgf_quality, docs/quality-gate-module.md): its verdict, its release decision (`release`, or `development` for a run at quality tier mvp - carried as such, never upgraded), the tier and the versions of the quality floor and benchmark it was scored against.",
+          "required": ["artifact_id", "content_hash", "verdict", "decision"],
+          "properties": {
+            "artifact_id": { "$ref": "./shared/provenance.schema.json#/$defs/artifactId" },
+            "content_hash": { "$ref": "./shared/provenance.schema.json#/$defs/hash" },
+            "verdict": { "enum": ["PASS"] },
+            "decision": { "enum": ["release", "development"] },
+            "quality_tier": { "enum": ["mvp", "release", null] },
+            "floor_version": { "type": ["string", "null"] },
+            "benchmark_version": { "type": ["string", "null"] }
+          },
+          "additionalProperties": false
         },
         "store_listing": {
           "type": "object",

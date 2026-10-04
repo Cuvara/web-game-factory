@@ -56,7 +56,8 @@
 # Changing this file is a change to what every future run is held to: bump `version`, and
 # never remove a required step or a condition to let one run through.
 
-version: 1.1.0
+# 1.1.0: skipped_checks (check strength); 1.2.0: quality-gate is in new-game (workflow 11), no longer pending.
+version: 1.2.0
 
 # The quality bars a release-tier run is judged against. A run records the version it
 # started under, so a later recalibration does not silently re-judge it.
@@ -87,7 +88,8 @@ floor:
     - listing-validation
     - content-sufficiency
     - quality-gate
-  pending: [quality-gate]
+  # 1.2.0: quality-gate is in new-game (workflow 11): no longer pending.
+  pending: []
 
 production_only: [release:submitting]
 # Only while the submission would be real: a dry-run submit (the shipped

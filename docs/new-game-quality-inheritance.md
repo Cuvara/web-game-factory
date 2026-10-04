@@ -52,10 +52,12 @@ The rules are data: [core/reference/quality-policy.yaml](../core/reference/quali
    timeout, and not answered by automation: it waits for a person, as G4 does, and `wgf
    status` says why (`Held:`; `pending.held_for_person`, with no timeout eligibility).
 
-`content-sufficiency` (WS-4) is in the workflow and enforced like every required step.
-`quality-gate` (WS-7) is listed as required and `pending`: the floor enforces it from the
-first definition that adds a step with that id, with nothing else to change. Until then
-`wgf status` lists it as not yet enforced.
+`content-sufficiency` (WS-4) and `quality-gate` (WS-7, workflow 10,
+[quality-gate-module.md](quality-gate-module.md)) are in the workflow and enforced like every
+required step (quality-policy 1.2.0: nothing is `pending`). A required step a later
+workstream declares before its workflow has it is listed `pending`: the floor enforces it
+from the first definition that adds a step with that id, and until then `wgf status` lists
+it as not yet enforced.
 
 ## Entry points
 
@@ -99,7 +101,7 @@ release without it. Every BYPASS below is closed; the test that proves it is nam
 | review, sdk-review | `review` steps | required; `reviewer.kind: none` passes the step as `skipped`, and release refuses it unless `release.allow_unreviewed`, which makes the run development |
 | regression checks | `verify` | required, current at G4 and release |
 | WS-8 specialist iteration (coming) | `develop` with `with: specialist` | routes into `develop`; every check after `develop` becomes stale and runs again |
-| WS-7 final quality gate (coming) | `quality-gate` | declared required and pending |
+| WS-7 final quality gate | `quality-gate` | required, current at G4 and release; `release` also checks its quality-report passed the build it ships and pins the newest reports of it (`wgf_release/lineage.py`) |
 
 ## Residual risks (not closed here)
 

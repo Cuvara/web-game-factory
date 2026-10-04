@@ -15,7 +15,9 @@ report of the same producer either fails the same id again or does not, which is
 specialist visit's findings are said to be resolved (triage's ledger).
 
 The quality scorecard (WS-7) emits findings in this shape directly; `normalize` accepts its
-`findings` list as the `quality-scorecard` producer.
+`findings` list as the `quality-scorecard` producer. The quality gate's quality-report
+(scripts/wgf_quality) is read as the `quality-report` producer: its open findings in a
+dimension below the floor, each mapped onto a routing dimension by the producer table.
 """
 
 import json
@@ -26,7 +28,7 @@ __all__ = ["normalize", "from_requests", "NormalizeError", "PRODUCERS", "finding
 # The artifact types a finding can be read from, in the order a build's reports are read.
 PRODUCERS = ("playability-report", "production-quality-report", "visual-qa-report",
              "content-sufficiency-report", "review-report", "qa-report",
-             "listing-validation-report", "quality-scorecard")
+             "listing-validation-report", "quality-scorecard", "quality-report")
 
 _ID_SAFE = re.compile(r"[^a-z0-9._:/@-]+")
 
@@ -360,6 +362,38 @@ def _scorecard(ctx):
     return out
 
 
+def _quality_report(ctx):
+    """A quality-report's open findings in the dimensions it held below their floor: the
+    quality dimension mapped onto a routing dimension (the producer table's `dimensions`),
+    observed against the expected threshold, the asset ids it names; `design-gap` routes
+    `design` with its gap, `assets` routes `assets`, anything else its owner's route."""
+    below = set(ctx.report.get("failed") or [])
+    dims = ctx.table.get("dimensions") or {}
+    out = []
+    for item in ctx.report.get("findings") or []:
+        if not isinstance(item, dict) or item.get("status") != "open" \
+                or item.get("dimension") not in below:
+            continue
+        check = item.get("criterion") or item.get("id") or "quality"
+        dimension = ctx.dimension(dims.get(item.get("dimension")))
+        route = {"design-gap": "design", "assets": "assets"}.get(item.get("route"))
+        gap = item.get("design_gap") if isinstance(item.get("design_gap"), dict) else None
+        finding = ctx.make(
+            check=check, dimension=dimension,
+            severity=item.get("severity") if item.get("severity") in (
+                "blocker", "major", "minor") else "major",
+            summary=item.get("summary"), route=route,
+            measured=item.get("observed"), bar=item.get("expected"),
+            evidence=[f"artifact:{e['artifact_id']}" for e in item.get("evidence") or []
+                      if isinstance(e, dict) and e.get("artifact_id")],
+            change=(gap or {}).get("question") if route == "design" else None,
+            assets=item.get("assets") or None)
+        if route == "design" and gap and gap.get("field"):
+            finding["task"]["design_field"] = gap["field"]
+        out.append(finding)
+    return out
+
+
 _READERS = {
     "playability-report": _playability,
     "visual-qa-report": _visual_qa,
@@ -368,6 +402,7 @@ _READERS = {
     "qa-report": _qa,
     "listing-validation-report": _listing,
     "quality-scorecard": _scorecard,
+    "quality-report": _quality_report,
 }
 
 

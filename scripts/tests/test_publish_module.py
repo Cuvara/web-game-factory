@@ -757,7 +757,7 @@ class ThroughTheEngine(PublishCase):
                       stage: release:draft
                       inputs: [qa-report, verification-report, sdk-report, prototype-report, scaffold-record, review-report, production-quality-report, visual-qa-report]
                       outputs: [release-manifest]
-                      with: {repo_dir: %(repo)s, required_gates: [], required_listing: false}
+                      with: {repo_dir: %(repo)s, required_gates: [], required_listing: false, required_quality: false}
                     - id: platform-validate
                       type: platform-validate
                       stage: release:validating

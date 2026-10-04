@@ -170,7 +170,10 @@ class Cli(Scratch):
         self.wgf("new-game", "--mock", "--hold-gates", "--quiet", idea=GOALKEEPER, expect=3)
         state = self.only_run()
         self.assertEqual((state.status, state.cursor), (RunStatus.WAITING, "strategy-review"))
-        self.assertEqual({k: v for k, v in state.params.items() if k != "quality"},
+        # ...and the quality policy's snapshot and the reference files the workflow pins at
+        # its start (pinned_references).
+        self.assertEqual({k: v for k, v in state.params.items()
+                          if k not in ("quality", "pinned_references")},
                          {"mock": True, "idea": GOALKEEPER})
         for artifact_type in ("research-report", "opportunity", "title-strategy"):
             self.assertEqual(brief_of(artifact_type, self.artifact(state, artifact_type)),
@@ -223,10 +226,12 @@ class Cli(Scratch):
         self.wgf("new-game", "--mock", "--quiet", expect=3)
         state = self.only_run()
         # A mock run without --hold-gates records exactly these, and nothing about an idea.
-        # `quality` is every run's (WS-12, core/reference/quality-policy.yaml).
-        self.assertEqual(sorted(state.params), ["auto_approve", "mock", "quality"])
+        # `quality` is every run's (WS-12, core/reference/quality-policy.yaml);
+        # `pinned_references` the reference files the workflow pins at its start.
+        self.assertEqual(sorted(state.params),
+                         ["auto_approve", "mock", "pinned_references", "quality"])
         self.assertEqual(sorted(self.started_params(state.run_id)),
-                         ["auto_approve", "mock", "quality"])
+                         ["auto_approve", "mock", "pinned_references", "quality"])
         report = self.artifact(state, "research-report")
         self.assertNotIn("brief", report["scope"])
         for artifact_type in ("opportunity", "title-strategy", "game-design"):

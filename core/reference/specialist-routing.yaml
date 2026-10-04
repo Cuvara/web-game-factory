@@ -20,7 +20,7 @@
 # is a change to the quality-finding schema first (its `dimension` enum), then here.
 
 # 1.1.0: content-sufficiency-report (workflow 10).
-version: 1.1.0
+version: 1.2.0
 
 # The quality dimensions, as the quality-finding schema enumerates them.
 dimensions: [content, level-design, difficulty, progression, gameplay, art-2d, environment-3d, lighting-material, ui, audio, feel, store-copy, platform]
@@ -186,6 +186,27 @@ producers:
       assets: art-2d
     default: store-copy
     acceptance: listing-validation judges the next listing and `{check}` PASSes{bar_clause}.
+
+  quality-report:
+    step: quality-gate
+    # The quality gate's dimensions (core/reference/quality-floor.yaml) mapped onto the
+    # routing dimensions; its findings name the quality dimension, a `design-gap` finding
+    # routes `design` and an `assets` one `assets` (1.2.0).
+    dimensions:
+      gameplay: gameplay
+      content: content
+      variety: level-design
+      progression: progression
+      visual: art
+      ui: ui
+      audio: audio
+      consistency: art
+      polish: feel
+      technical: gameplay
+      platform: platform
+      store: store-copy
+    default: gameplay
+    acceptance: the quality gate scores the next build and `{check}` meets its minimum{bar_clause}.
 
   decision-record:
     step: prototype-review

@@ -56,6 +56,7 @@ all optional fields):
 | `packages[].checksum` / `content_digest` / `files` | sha256 of the archive; sha256 over its entry names and contents; entry count |
 | `template` | template repository and commit (scaffold-record) and version, with where the version was read |
 | `workflow` | run id, workflow, step, visit, execution, idempotency key |
+| `evidence.quality_report` | since 1.5.0: the quality-report that passed the build - its artifact id and hash, verdict, decision (`release`, or `development` at tier mvp, carried as such), tier, floor and benchmark versions ([quality-gate-module.md](quality-gate-module.md)) |
 | `evidence.quality` | since 1.4.0: the drafting run's quality class (`release` or `development`), tier, policy and benchmark versions, and why it is development (core/reference/quality-policy.yaml, [new-game-quality-inheritance.md](new-game-quality-inheritance.md)). A `development` manifest is never a release: its run cannot reach `release:submitting` |
 
 ## When it refuses
@@ -88,6 +89,11 @@ when its preconditions held is what makes a draft mean something. The refusals a
 | `listing-not-validated` | BLOCKED | no listing-validation-report in the run, or the newest judged another listing (by content hash) |
 | `listing-not-passed` | FAILED | the newest listing-validation-report's verdict is not PASS |
 | `listing-package-missing` | BLOCKED | the listing's package directory is gone from the run directory |
+| `no-quality-report` | BLOCKED | the step's `required_quality` (default true) and the run holds no quality-report: run `quality-gate` first ([quality-gate-module.md](quality-gate-module.md)) |
+| `quality-not-passed` | FAILED | the newest quality-report's verdict is not PASS: a dimension is below its floor, or its evidence was stale |
+| `quality-commit-mismatch` | FAILED | the newest quality-report scored another commit, or another development commit, than the build shipped |
+| `stale-quality-report` | FAILED | the newest quality-report did not pin the run's newest qa, verification, prototype, sdk, review, playability, production-quality, visual-qa or content-sufficiency report: work came after it |
+| `quality-not-release` | FAILED | the newest quality-report decided `not-release` |
 | `verified-dirty-tree` | BLOCKED | verification ran on uncommitted changes, which no commit reproduces |
 | `dirty-checkout` | BLOCKED | the checkout has uncommitted or untracked changes |
 | `bundle-not-verified` | BLOCKED | the build output on disk is not the bundle verification digested |
@@ -194,6 +200,7 @@ test seam, when set, is used as given.
 | `timeouts` | git 30, package 900, manifest 300 | seconds |
 | `required_reports` | `[production-quality-report, visual-qa-report]` | Production gate reports that must be `PASS` for the shipped build's development commit. **`with:` only**, like `required_gates`. A workflow without the production gates says so: `required_reports: []` |
 | `required_listing` | `true` | Whether the release ships only with the run's validated store listing (`listing_refusals`). **`with:` only**. A workflow without the listing steps says so: `required_listing: false` |
+| `required_quality` | `true` | Whether the release ships only a build its quality-report passed (`quality_refusals`). **`with:` only**. A workflow without the quality gate says so: `required_quality: false` |
 | `required_gates` | `[G4]` | Gates the run must have passed, current (`context.gates_passed`). **`with:` only** - never read from `factory.release`, so an installation cannot loosen what the workflow requires. A workflow with no G4 checkpoint (a test workflow) says so: `required_gates: []` |
 
 And one key read **only** from `factory.release`, never from `with:` - an installation's

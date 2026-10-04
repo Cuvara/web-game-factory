@@ -21,6 +21,10 @@ A draft release is only prepared from:
   * the production gates: the newest production-quality-report and visual-qa-report (the
     step's `required_reports`, default both) are PASS for the development commit the
     released sdk commit sits on - a build whose art or UI they did not pass is not released;
+  * the quality gate: the newest quality-report PASSED exactly the build released - its
+    commit and development commit - and pins the run's newest reports of it; a `development`
+    decision (a run at quality tier mvp) is drafted and recorded as such
+    (evidence.quality_report), never as a release;
   * a verification of a clean tree: a verified working tree with uncommitted changes is not
     reproducible from any commit.
 
@@ -38,7 +42,8 @@ __all__ = ["Refusal", "FAILED", "BLOCKED", "evidence_refusals", "commit_lineage"
            "verified_commits", "checkout_lineage", "review_status", "gate_refusals",
            "shipped_commit", "ACCEPTED_EVIDENCE", "DEFAULT_REQUIRED_GATES", "UNREVIEWED",
            "REVIEW_MISMATCH", "DEFAULT_REQUIRED_REPORTS", "production_refusals",
-           "developed_commit", "listing_refusals", "DEFAULT_REQUIRED_LISTING"]
+           "developed_commit", "listing_refusals", "DEFAULT_REQUIRED_LISTING",
+           "quality_refusals", "quality_evidence", "DEFAULT_REQUIRED_QUALITY"]
 
 FAILED, BLOCKED = "failed", "blocked"
 ACCEPTED_EVIDENCE = ("PASS", "PASS_MOCK")
@@ -54,6 +59,14 @@ DEFAULT_REQUIRED_REPORTS = ("production-quality-report", "visual-qa-report")
 # workflow without the listing steps says so on its release step (`with: required_listing:
 # false`).
 DEFAULT_REQUIRED_LISTING = True
+# The quality gate: a release ships only a build whose quality-report passed. A workflow
+# without the quality-gate step says so on its release step (`with: required_quality: false`).
+DEFAULT_REQUIRED_QUALITY = True
+# The reports a quality-report must have scored for its verdict to be about the run's
+# newest evidence (it pins them by content hash).
+QUALITY_PINS = ("qa-report", "verification-report", "prototype-report", "sdk-report",
+                "review-report", "playability-report", "production-quality-report",
+                "visual-qa-report", "content-sufficiency-report")
 
 
 def _short(sha):
@@ -310,6 +323,72 @@ def listing_refusals(refs, loaded, required=DEFAULT_REQUIRED_LISTING):
     return out
 
 
+def quality_refusals(refs, loaded, required=DEFAULT_REQUIRED_QUALITY):
+    """[Refusal] for the quality gate: no quality-report (BLOCKED when required: run
+    quality-gate), one that did not PASS, one about another build than the released one or
+    that predates the run's newest reports of it, or a `not-release` decision. A
+    `development` decision (tier mvp) is no refusal: the manifest carries it as such."""
+    out = []
+    report = loaded.get("quality-report")
+    if report is None:
+        if required:
+            out.append(Refusal(BLOCKED, "no-quality-report",
+                               "no quality-report in this run: the build has not been held to "
+                               "the Factory's quality floor, and a release ships only a build "
+                               "that holds it. Run quality-gate first."))
+        return out
+    if report.get("verdict") != "PASS":
+        failed = [str(f) for f in report.get("failed") or []]
+        out.append(Refusal(FAILED, "quality-not-passed",
+                           f"the newest quality-report's verdict is {report.get('verdict')!r}"
+                           + (f" (below the floor: {', '.join(failed[:8])})" if failed else "")
+                           + (f": {report.get('blocked_reason')}"
+                              if report.get("blocked_reason") else "")
+                           + ". A release ships only a build that holds the quality floor."))
+    build = report.get("build") or {}
+    shipped, developed = shipped_commit(loaded), developed_commit(loaded)
+    for label, judged, wanted in (("commit", build.get("commit"), shipped),
+                                  ("development commit", build.get("development_commit"),
+                                   developed)):
+        if is_placeholder(judged) or is_placeholder(wanted) or not same_commit(judged, wanted):
+            out.append(Refusal(FAILED, "quality-commit-mismatch",
+                               f"the newest quality-report scored {_short(judged)} as the "
+                               f"build's {label}, but the release ships {_short(wanted)}: its "
+                               "scores are about another build. Run quality-gate on this one."))
+            break
+    pins = _pins(report)
+    stale = [t for t in QUALITY_PINS
+             if refs.get(t) is not None and pins.get(t) != refs[t].content_hash]
+    if stale:
+        out.append(Refusal(FAILED, "stale-quality-report",
+                           "the newest quality-report did not score the run's newest "
+                           f"{', '.join(stale)}: work came after it. Run quality-gate again."))
+    decision = (report.get("release_decision") or {}).get("decision")
+    if decision == "not-release":
+        out.append(Refusal(FAILED, "quality-not-release",
+                           "the newest quality-report decided not-release: "
+                           + "; ".join((report.get("release_decision") or {}).get("reasons")
+                                       or [])[:400]))
+    return out
+
+
+def quality_evidence(refs, loaded):
+    """The manifest's evidence.quality_report: the quality-report that cleared the build, or
+    None."""
+    report = loaded.get("quality-report")
+    ref = refs.get("quality-report")
+    if report is None or ref is None:
+        return None
+    benchmark = report.get("benchmark") or {}
+    return {"artifact_id": (report.get("provenance") or {}).get("artifact_id"),
+            "content_hash": ref.content_hash,
+            "verdict": report.get("verdict"),
+            "decision": (report.get("release_decision") or {}).get("decision"),
+            "quality_tier": report.get("quality_tier"),
+            "floor_version": (benchmark.get("floor") or {}).get("version"),
+            "benchmark_version": (benchmark.get("quality_benchmark") or {}).get("version")}
+
+
 def gate_refusals(gates_passed, required_gates):
     """[Refusal] for each gate in `required_gates` that this run has not passed, or whose
     approval later work superseded (the engine's `context.gates_passed`)."""
@@ -324,7 +403,8 @@ def gate_refusals(gates_passed, required_gates):
 def evidence_refusals(refs, loaded, run_id, *, gates_passed,
                       required_gates=DEFAULT_REQUIRED_GATES, allow_unreviewed=False,
                       required_reports=DEFAULT_REQUIRED_REPORTS,
-                      required_listing=DEFAULT_REQUIRED_LISTING):
+                      required_listing=DEFAULT_REQUIRED_LISTING,
+                      required_quality=False):
     """Every precondition on the run's evidence that does not hold. `refs` are the newest
     ArtifactRefs per type, `loaded` their contents.
 
@@ -417,6 +497,7 @@ def evidence_refusals(refs, loaded, run_id, *, gates_passed,
     out.extend(gate_refusals(gates_passed, required_gates))
     out.extend(production_refusals(loaded, required_reports))
     out.extend(listing_refusals(refs, loaded, required_listing))
+    out.extend(quality_refusals(refs, loaded, required_quality))
     if (vr.get("commit") or {}).get("dirty") is None:
         out.append(Refusal(BLOCKED, "verified-tree-unknown",
                            "the verification could not establish whether its working tree "

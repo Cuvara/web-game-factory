@@ -21,6 +21,10 @@ by step or artifact type, so any checkpoint whose inputs carry the same fields s
                                                    with its source and reason - a feature the
                                                    brief asked for and this build does not
                                                    have is said so (G3, G4)
+    dimensions + release_decision (quality-report) every quality dimension's score against its
+                                                   floor, the open findings and the release
+                                                   decision (G4) - `development` for a tier-mvp
+                                                   run, never a release
 
 Read-only and presentation only: it decides nothing, and a guard or a gate never reads it.
 """
@@ -98,6 +102,27 @@ def _left_out(content):
     return out if out["cut"] or out["later"] else None
 
 
+def _quality(content):
+    """The scorecard of an artifact carrying `dimensions` and a `release_decision`
+    (quality-report), or None."""
+    decision = content.get("release_decision")
+    dimensions = content.get("dimensions")
+    if not isinstance(decision, dict) or not isinstance(dimensions, list):
+        return None
+    floor = ((content.get("benchmark") or {}).get("floor") or {}).get("version")
+    open_findings = [f for f in content.get("findings") or []
+                     if isinstance(f, dict) and f.get("status") == "open"]
+    return {"verdict": content.get("verdict"), "decision": decision.get("decision"),
+            "reasons": list(decision.get("reasons") or []),
+            "tier": content.get("quality_tier"), "floor": floor,
+            "overall": content.get("overall_score"),
+            "dimensions": [{"id": d.get("id"), "score": d.get("score"),
+                            "min_score": d.get("min_score"), "status": d.get("status")}
+                           for d in dimensions if isinstance(d, dict)],
+            "findings": len(open_findings),
+            "blockers": [f.get("id") for f in open_findings if f.get("severity") == "blocker"]}
+
+
 def _fidelity(blocker):
     text = " ".join(str(blocker.get(k) or "") for k in ("summary", "file", "id")).lower()
     return any(word in text for word in FIDELITY)
@@ -108,6 +133,7 @@ def summarize(artifacts):
     "features"} from {artifact_type: content}, or None when no input carries any of the fields above."""
     criteria, playtests, reports = [], [], []
     content_rules, coverage, gaps, played, reviews, left_out = [], [], [], [], [], []
+    quality = []
     for artifact_type, content in sorted(artifacts.items()):
         if not isinstance(content, dict):
             continue
@@ -121,6 +147,9 @@ def summarize(artifacts):
                 gaps.append({"artifact": artifact_type, "field": gap.get("field"),
                              "severity": gap.get("severity"), "question": gap.get("question"),
                              "assumed": gap.get("assumed")})
+        scorecard = _quality(content)
+        if scorecard:
+            quality.append({"artifact": artifact_type, **scorecard})
         omitted = _left_out(content)
         if omitted:
             left_out.append({"artifact": artifact_type, **omitted})
@@ -152,11 +181,11 @@ def summarize(artifacts):
             reports.append({"artifact": artifact_type, "verdict": content.get("verdict"),
                             "evidence_status": content.get("evidence_status")})
     if not (criteria or playtests or reports or content_rules or coverage or gaps or played
-            or reviews or left_out):
+            or reviews or left_out or quality):
         return None
     return {"criteria": criteria, "playtests": playtests, "reports": reports,
             "content": content_rules, "coverage": coverage, "gaps": gaps, "played": played,
-            "reviews": reviews, "features": left_out,
+            "reviews": reviews, "features": left_out, "quality": quality,
             "unmeasured": [c["criterion_id"] for c in criteria if c["status"] == UNMEASURED]}
 
 
@@ -235,6 +264,23 @@ def render(evidence):
                      f"{entry['blockers']} blocker(s)"
                      + (f"; design fidelity: {', '.join(entry['fidelity'])}"
                         if entry["fidelity"] else ""))
+    for entry in evidence.get("quality") or []:
+        lines.append(f"  quality ({entry['artifact']}): verdict {entry['verdict']}, decision "
+                     f"{entry['decision']} at tier {entry.get('tier') or 'none'}"
+                     + (f", floor {entry['floor']}" if entry.get("floor") else "")
+                     + (f", overall {entry['overall']:g} (decides nothing)"
+                        if isinstance(entry.get("overall"), (int, float)) else ""))
+        for dim in entry["dimensions"]:
+            score = dim["score"] if dim["score"] is not None else "-"
+            floor = dim["min_score"] if dim["min_score"] is not None else "-"
+            lines.append(f"    {str(dim['id']):<12} {str(score):>6} / floor {str(floor):<5} "
+                         f"{dim['status']}")
+        if entry["findings"]:
+            lines.append(f"    {entry['findings']} open finding(s)"
+                         + (f"; blocking: {', '.join(entry['blockers'][:6])}"
+                            if entry["blockers"] else ""))
+        for reason in entry["reasons"][:4]:
+            lines.append(f"    - {reason[:110]}")
     for report in evidence.get("reports") or []:
         lines.append(f"  {report['artifact']}: verdict {report['verdict']}, evidence "
                      f"{report['evidence_status']}")

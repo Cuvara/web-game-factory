@@ -100,9 +100,9 @@ class Snapshot(_Case):
         self.assertTrue(taken["benchmark"].startswith("quality-benchmark@"))
         for step_id in ("content-sufficiency", "quality-gate"):
             self.assertIn(step_id, taken["required_steps"])
-        # content-sufficiency (WS-4) is in the workflow and enforced; quality-gate (WS-7) is
-        # declared, and enforced from the first definition that adds it.
-        self.assertEqual(taken["pending"], ["quality-gate"])
+        # content-sufficiency (WS-4) and quality-gate (WS-7) are in the workflow and
+        # enforced: nothing is pending.
+        self.assertEqual(taken["pending"], [])
         started = self.events(api, state.run_id, Events.WORKFLOW_STARTED)[0]
         self.assertEqual(started["data"]["params"]["quality"], taken)
 
@@ -134,12 +134,12 @@ class ReleaseReady(_Case):
         report = api.quality(state)
         self.assertEqual(report["class"], "release")
         self.assertTrue(report["release_ready"])
-        self.assertEqual(report["not_yet_enforced"], ["quality-gate"])
+        self.assertEqual(report["not_yet_enforced"], [])
         self.assertEqual({r.quality for refs in state.artifacts.values() for r in refs},
                          {"release"})
         text = wgf.render_quality(report)
         self.assertIn("Quality: release-ready (tier release", text)
-        self.assertIn("not enforced: quality-gate", text)
+        self.assertNotIn("not enforced", text)  # quality-gate is in the workflow (WS-7)
 
     def test_a_run_waiting_at_g4_is_not_release_ready(self):
         api, state = self.to_g4()
@@ -215,9 +215,11 @@ class FloorAtTheGate(_Case):
         self.assertEqual(state.status, RunStatus.BLOCKED)
         problems = " ".join(state.blocked_reason["problems"])
         for step_id in ("playability", "production-quality", "visual-qa",
-                        "content-sufficiency", "review", "sdk-review"):
+                        "content-sufficiency", "review", "sdk-review", "quality-gate"):
             self.assertIn(step_id, problems)
-        self.assertNotIn("verify ", problems)
+        # verify ran on the new build: it is not a problem (the quality gate after it is).
+        self.assertFalse([p for p in state.blocked_reason["problems"]
+                          if p.startswith("verify ")])
         self.assertNotIn("release", self.executed(state))
 
     def test_a_failed_latest_check_is_not_current(self):

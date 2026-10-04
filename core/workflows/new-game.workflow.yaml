@@ -66,9 +66,25 @@ workflow:
   # an asset made again, or the specialist's own label, mapped to develop, whose brief is
   # then that specialist's (docs/specialist-routing.md). The loop budgets move with it: per
   # source on triage, per specialist on develop.
-  version: 10
+  # 11: the quality gate - after verify and before G4, one build is scored on every quality
+  # dimension from the reports the producing steps wrote about it, against the Factory's
+  # quality floor (core/reference/quality-floor.yaml: the universal floor, the genre family's
+  # contract, the 3D contract) and the benchmark's release bars at the run's tier, pinned when
+  # the run started (`pinned_references`). A dimension below its floor goes through triage
+  # like every gate's failure: its findings go to the specialist that owns them, `design` for
+  # a design-gap, `assets` for an asset made again. G4 is decided on the quality-report, and
+  # release ships only a build whose quality-report passed.
+  version: 11
   description: Discover an opportunity, plan a title, build it, verify it and prepare its first release.
   start: research
+
+  # Reference files the run copies and pins when it starts (scripts/wgflib/workflow/
+  # references.py): the quality gate scores every build of the run against the contract it
+  # started under, and an edit made while it runs applies to the next run.
+  pinned_references:
+    - core/reference/quality-floor.yaml
+    - core/reference/quality-benchmark.yaml
+    - core/reference/visual-qa-rubric.yaml
 
   # Every artifact a step names has a schema in core/artifacts/. A workflow MAY list types
   # without one under `untyped_artifacts`, as a visible, temporary gap: check-integrity.py
@@ -260,18 +276,21 @@ workflow:
       type: triage
       stage: title:prototype
       description: Normalize the current build's failures into quality findings and route them to the specialist that owns them.
-      inputs: [game-design, prototype-report, asset-manifest, playability-report, production-quality-report, visual-qa-report, content-sufficiency-report, review-report, qa-report, verification-report, decision-record, triage-report]
+      inputs: [game-design, prototype-report, asset-manifest, playability-report, production-quality-report, visual-qa-report, content-sufficiency-report, review-report, qa-report, verification-report, quality-report, decision-record, triage-report]
       outputs: [triage-report]
       # 1 + 6 assets passes + the sending routes' budgets, each followed by at most one visit
       # per specialist through next-specialist; the specialists' own budgets on develop are
-      # the bound a chain meets.
-      max_visits: 100
+      # the bound a chain meets. The quality gate's three routes (workflow 11) add 10.
+      max_visits: 110
       max_visits_by_route:
         playability.fail: 2
         production-quality.develop: 2
         visual-qa.develop: 2
         content-sufficiency.develop: 2
         content-sufficiency.design-gap: 1
+        quality-gate.develop: 2
+        quality-gate.assets: 2
+        quality-gate.design-gap: 1
         review.request-changes: 2
         sdk-review.request-changes: 2
         verify.fail: 2
@@ -465,6 +484,29 @@ workflow:
       on:
         fail: triage
 
+    # The quality gate: one build, every quality dimension. From the reports the producing
+    # steps wrote about this build - playability, production-quality, visual-qa,
+    # content-sufficiency, review, sdk, verify - each dimension (gameplay, content, variety,
+    # progression, visual, UI, audio, consistency, polish, technical, platform, store) is
+    # scored against core/reference/quality-floor.yaml and the benchmark's bars at the run's
+    # quality tier, as pinned when the run started. A dimension below its floor - whatever the
+    # others score - is FAILED and goes through triage like every gate's failure: `develop`
+    # to the specialist that owns each finding, `assets` to assets, `design-gap` to design
+    # (triage's `design`). Evidence about another build, or a pinned reference edited after
+    # the start, is BLOCKED. The store is measured after the listing exists (deferred; release
+    # requires its validation). A run at tier mvp is a development build: its release
+    # decision is `development`, never release (docs/quality-gate-module.md).
+    - id: quality-gate
+      type: quality-gate
+      stage: title:prototype
+      inputs: [playability-report, production-quality-report, visual-qa-report, content-sufficiency-report, qa-report, verification-report, prototype-report, game-design, sdk-report, review-report, asset-manifest, title-strategy]
+      outputs: [quality-report]
+      max_visits: 59
+      on:
+        develop: triage
+        assets: triage
+        design-gap: triage
+
     # G4, the kill gate: a person judges the verified prototype - the qa-report,
     # verification-report and prototype-report verify just produced - against the terms of
     # the bet (the kill criteria in title-strategy, the game-design they measure); nothing else
@@ -474,11 +516,13 @@ workflow:
     # run's lineage stands and the loop ends here again, at a new visit that needs a new
     # decision. `kill` is gates.yaml's `abandon`: it stops the run for good (BLOCKED,
     # routed to $end), and the gate stays unpassed, so no later step of this run can start.
-    # Verification that runs again after a pass supersedes it: G4 is asked again.
+    # Verification that runs again after a pass supersedes it: G4 is asked again. The
+    # quality-report is shown with it: every dimension's score against its floor, the open
+    # findings and the release decision.
     - id: prototype-review
       type: human-checkpoint
       stage: title:prototype-review
-      inputs: [qa-report, verification-report, prototype-report, title-strategy, game-design, playability-report, review-report]
+      inputs: [qa-report, verification-report, prototype-report, title-strategy, game-design, playability-report, review-report, quality-report]
       outputs: [decision-record]
       with:
         gate: G4
@@ -544,11 +588,16 @@ workflow:
     # it ships and the newest listing-validation-report passed exactly that listing: the
     # package is copied to release/<release-id>/listing/ and store_metadata is filled from
     # it, which is what G6's store_metadata_complete reads. A workflow without the listing
-    # steps says so with `required_listing: false`.
+    # steps says so with `required_listing: false`. And it refuses unless the newest
+    # quality-report passed exactly the build it ships (its commit and development commit);
+    # a `development` decision (tier mvp) is drafted and recorded as such, never as a
+    # release. A workflow without the quality gate says so with `required_quality: false`.
+    # playability-report and content-sufficiency-report are read only to tell whether the
+    # quality-report scored the run's newest of them.
     - id: release
       type: release
       stage: release:draft
-      inputs: [qa-report, verification-report, sdk-report, prototype-report, scaffold-record, review-report, production-quality-report, visual-qa-report, store-listing, listing-validation-report]
+      inputs: [qa-report, verification-report, sdk-report, prototype-report, scaffold-record, review-report, production-quality-report, visual-qa-report, store-listing, listing-validation-report, quality-report, playability-report, content-sufficiency-report]
       outputs: [release-manifest]
       with:
         required_gates: [G4]

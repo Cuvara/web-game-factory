@@ -62,7 +62,7 @@ __all__ = ["TriageStep", "GATE_REPORTS", "NEXT_SPECIALIST", "FINDINGS_MARKER",
 # The reports a build is judged by, in the order they are read.
 GATE_REPORTS = ("playability-report", "production-quality-report", "visual-qa-report",
                 "content-sufficiency-report", "review-report", "qa-report",
-                "listing-validation-report")
+                "listing-validation-report", "quality-report")
 # The route develop returns after a specialist visit while this triage has pending groups.
 NEXT_SPECIALIST = "next-specialist"
 # How a G4 decision names its typed findings (`wgf decide <run> iterate --findings FILE`):
@@ -74,7 +74,8 @@ RUBRIC_PATH = os.path.join(paths.REFERENCE, "visual-qa-rubric.yaml")
 _FAILING = {"playability-report": ("FAIL",), "production-quality-report": ("FAIL",),
             "visual-qa-report": ("FAIL",), "content-sufficiency-report": ("FAIL",),
             "review-report": ("request-changes",),
-            "qa-report": ("fail",), "listing-validation-report": ("FAIL",)}
+            "qa-report": ("fail",), "listing-validation-report": ("FAIL",),
+            "quality-report": ("FAIL",)}
 
 
 def _utc_now():
@@ -99,7 +100,8 @@ def _build(report, commit, verification):
     that commit, when it built it."""
     report = report or {}
     measured = (report.get("commit") or report.get("reviewed_commit")
-                or (report.get("build_ref") or {}).get("commit_sha") or commit)
+                or (report.get("build_ref") or {}).get("commit_sha")
+                or (report.get("build") or {}).get("commit") or commit)
     digest = None
     if isinstance(verification, dict) and measured and \
             (verification.get("commit") or {}).get("sha") == measured:

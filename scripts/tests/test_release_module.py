@@ -28,7 +28,9 @@ sys.path.insert(0, HERE)
 
 from wgf_release import ReleaseStep, register  # noqa: E402
 from wgf_release.package import audit_package  # noqa: E402
+from wgf_release.package import file_sha256  # noqa: E402
 from wgf_release.step import bundle_digest  # noqa: E402
+from wgflib.yamllite import load_file  # noqa: E402
 from wgflib import checkout  # noqa: E402
 from wgflib.hashing import content_hash  # noqa: E402
 from wgflib.workflow import StepOutcome, StepRegistry  # noqa: E402
@@ -230,6 +232,32 @@ class GameRepository:
         env.pop("WGF_GAME_REPO", None)
         return env
 
+    def build_platforms(self, pids=("generic-web", "example-portal")):
+        """What verify leaves for a title with several targets (wgf_verification.
+        platform_builds): build/platforms/<id>/dist booting only <id>, the config it was
+        built against, and the verification-report's record of each."""
+        from wgf_verification.platform_builds import variant_config, canonical
+        config = load_file(self.path("game.config.yaml"))
+        builds = []
+        for entry in config["platforms"]:
+            if entry["id"] not in pids:
+                continue
+            pid = entry["id"]
+            base = f"build/platforms/{pid}"
+            self.write(f"{base}/dist/index.html",
+                       f"<!doctype html><script src='assets/app.js'></script><!-- {pid} -->\n")
+            self.write(f"{base}/dist/assets/app.js", f"console.log('booting {pid}');\n")
+            self.write(f"{base}/dist/assets/app.js.map", '{"version":3}\n')
+            self.write(f"{base}/game.config.json", canonical(variant_config(config, entry)))
+            builds.append({"platform_id": pid, "profile": entry["profile"], "status": "built",
+                           "built_by": "factory", "path": f"{base}/dist",
+                           "config": f"{base}/game.config.json",
+                           "config_hash": file_sha256(self.path(*f"{base}/game.config.json"
+                                                                 .split("/"))),
+                           "content_hash": bundle_digest(self.root, f"{base}/dist"),
+                           "files": 3, "bytes": 100})
+        return builds
+
     def pnpm_calls(self):
         if not os.path.exists(self.log):
             return []
@@ -242,7 +270,7 @@ class GameRepository:
                  evidence_status="PASS_MOCK", dirty=False, bundle_hash=None, run_id="run-1",
                  sdk_commit=None, prototype_commit=None, platforms=None, schema_version="1.1.0",
                  drop=(), sdk_base=None, sdk_commits=None, review=APPROVE,
-                 gates=GATES_PASS, gates_commit=None):
+                 gates=GATES_PASS, gates_commit=None, platform_builds=None):
         """The artifacts a run holds after a verification of this repository.
 
         `sdk_base` (+ `sdk_commits`) makes a 1.2.0 sdk-report that integrated on that commit;
@@ -297,7 +325,8 @@ class GameRepository:
             "commit": {"sha": commit, "dirty": dirty, "repository": self.root},
             "build_artifact": {"status": "built", "path": "dist",
                                "content_hash": bundle_hash or bundle_digest(self.root, "dist"),
-                               "files": 3, "bytes": 100},
+                               "files": 3, "bytes": 100,
+                               **({"platforms": platform_builds} if platform_builds else {})},
             "gameplay_driver": {"id": "repository-playwright"},
             "checks": [{"id": "code.lint", "category": "code", "title": "Lint",
                         "status": "PASS" if verdict == "PASS" else "FAIL", "required": True,
@@ -551,6 +580,91 @@ class Drafting(ReleaseCase):
         result = instance.execute(Inputs(self.game.evidence()), Context())
         # git itself is gone too: the checkout cannot be read.
         self.assertEqual(result.outcome, StepOutcome.BLOCKED)
+
+
+class PerPlatform(ReleaseCase):
+    """A bundle per target platform: one package each, from its own verified bundle."""
+
+    def test_each_platform_is_packaged_from_its_own_bundle(self):
+        builds = self.game.build_platforms()
+        result = self.release(self.game.evidence(platform_builds=builds))
+        self.assertEqual(result.outcome, StepOutcome.SUCCESS, result.error or result.message)
+        manifest = result.artifacts[0].content
+        packages = {p["platform_id"]: p for p in manifest["packages"]}
+        self.assertEqual(list(packages), ["generic-web", "example-portal"])
+        # N distinct zips with distinct digests, each tied to the bundle it was made from.
+        self.assertEqual(len({p["checksum"] for p in packages.values()}), 2)
+        self.assertEqual(len({p["content_digest"] for p in packages.values()}), 2)
+        for build in builds:
+            self.assertEqual(packages[build["platform_id"]]["bundle_hash"],
+                             build["content_hash"])
+        self.assertNotIn("not_packaged", result.artifacts[0].metadata)
+        self.assertNotIn("not packaged", result.message)
+        # One release:package per platform, through the config its bundle was built with.
+        calls = self.game.pnpm_calls()
+        self.assertEqual(calls[0], ["run", "release:package", "--release", "r1", "--platform",
+                                    "generic-web",
+                                    "WGF_GAME_CONFIG=build/platforms/generic-web/game.config.json"])
+        self.assertEqual(calls[1][5], "example-portal")
+        self.assertEqual(calls[2][:2], ["run", "release:manifest"])
+        base = self.game.path("release", "r1")
+        with zipfile.ZipFile(os.path.join(base, "example-portal.zip")) as archive:
+            self.assertIn("booting example-portal", archive.read("assets/app.js").decode())
+            self.assertNotIn("assets/app.js.map", archive.namelist())
+        with open(os.path.join(base, "checksums.txt")) as handle:
+            lines = handle.read().splitlines()
+        self.assertEqual([line.split("  ")[1] for line in lines],
+                         ["generic-web.zip", "example-portal.zip"])
+        with open(os.path.join(base, "packages.json")) as handle:
+            self.assertEqual([p["platform_id"] for p in json.load(handle)],
+                             ["generic-web", "example-portal"])
+
+    def test_a_platform_whose_build_was_not_verified_is_refused(self):
+        builds = self.game.build_platforms()
+        builds[1] = {"platform_id": "example-portal", "status": "not-built",
+                     "path": "build/platforms/example-portal/dist"}
+        result = self.release(self.game.evidence(platform_builds=builds))
+        self.assertEqual(result.outcome, StepOutcome.FAILED)
+        self.assertIn("platform-not-verified", self.refusal_codes(result))
+        self.assertFalse(os.path.exists(self.game.path("release", "r1", "manifest.json")))
+
+    def test_a_failed_verification_of_one_platform_is_refused(self):
+        # verify fails the verdict when any targeted platform is not ready.
+        builds = self.game.build_platforms()
+        result = self.release(self.game.evidence(platform_builds=builds, verdict="FAIL",
+                                                 qa_verdict="fail"))
+        self.assertEqual(result.outcome, StepOutcome.FAILED)
+        self.assertIn("verification-not-passed", self.refusal_codes(result))
+
+    def test_a_bundle_changed_after_verification_is_refused(self):
+        builds = self.game.build_platforms()
+        artifacts = self.game.evidence(platform_builds=builds)
+        self.game.write("build/platforms/example-portal/dist/assets/app.js", "tampered\n")
+        result = self.release(artifacts)
+        self.assertEqual(result.outcome, StepOutcome.BLOCKED)
+        self.assertIn("bundle-not-verified", self.refusal_codes(result))
+        self.assertIn("example-portal", result.message)
+        self.assertEqual(self.game.pnpm_calls(), [])
+
+    def test_a_changed_build_config_is_refused(self):
+        builds = self.game.build_platforms()
+        artifacts = self.game.evidence(platform_builds=builds)
+        self.game.write("build/platforms/generic-web/game.config.json", "{}\n")
+        result = self.release(artifacts)
+        self.assertEqual(result.outcome, StepOutcome.BLOCKED)
+        self.assertIn("bundle-not-verified", self.refusal_codes(result))
+
+    def test_one_bundle_under_two_names_is_refused(self):
+        builds = self.game.build_platforms()
+        source = self.game.path("build", "platforms", "generic-web", "dist")
+        target = self.game.path("build", "platforms", "example-portal", "dist")
+        shutil.rmtree(target)
+        shutil.copytree(source, target)
+        builds[1]["content_hash"] = bundle_digest(self.game.root,
+                                                  "build/platforms/example-portal/dist")
+        result = self.release(self.game.evidence(platform_builds=builds))
+        self.assertEqual(result.outcome, StepOutcome.FAILED)
+        self.assertIn("package-not-built", self.refusal_codes(result))
 
 
 class ProductionGates(ReleaseCase):

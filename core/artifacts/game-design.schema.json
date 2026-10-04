@@ -1282,7 +1282,7 @@
   "$defs": {
     "tier": {
       "enum": ["mvp", "post-mvp", "optional"],
-      "description": "mvp: built before prototype review, and what the prototype is judged on. post-mvp: production, after G4 passes. optional: a candidate for later, committed to nothing."
+      "description": "mvp: built before prototype review, and what the prototype is judged on. post-mvp: production - built before G4 when the run's quality tier is release (tech-plan dev_plan.build_scope), after G4 otherwise. optional: a candidate for later, committed to nothing."
     },
     "localId": {
       "type": "string",

@@ -7,7 +7,7 @@
     "core/artifacts/asset-manifest.schema.json": "sha256:39db34962762404725c5587af2df74447729e8595577de3d77136011fe75fcb9",
     "core/artifacts/decision-record.schema.json": "sha256:ef46cbb0f4570def467ea6e725768fc9c9160bf726a74fb12e0f163faba3d7da",
     "core/artifacts/evaluation.schema.json": "sha256:e239035c4e373596ae07cd721d46d0d37851e8ea7690ba1ca4236ab35eab3a06",
-    "core/artifacts/game-design.schema.json": "sha256:f456bdbaa2945ebddc5ea3518ad5e78782a3a8d6c2b90b2f210a43a89925b304",
+    "core/artifacts/game-design.schema.json": "sha256:e217b62a9b1a470a3bf7bc59b14740145b365f53cdbd3c3d8b651c93fc5c94e8",
     "core/artifacts/listing-validation-report.schema.json": "sha256:4af47c7f428d41368d4e19ff680fb02b20eeaa83b389d802fe22905fb33420fc",
     "core/artifacts/opportunity.schema.json": "sha256:4a31f36ef19aab64ecb362150dc00ca4d73a10360a821bb5632677fc518b8160",
     "core/artifacts/performance-review.schema.json": "sha256:7f3c1fd169e093580276895a3f22e4fa12bd37c4219f9c21f60a1bd7cc13f1ff",

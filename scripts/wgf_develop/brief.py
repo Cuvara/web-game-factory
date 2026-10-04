@@ -580,7 +580,7 @@ def build_brief(*, title_id, engine, iteration, key, baseline, design, assets, s
                 review=None, mobile_test=True, tech_plan=None, self_playtest=False,
                 writable_paths=None, package_changes=None, loop=None, sessions=None,
                 playability=None, frames_root=None, phase=None, greybox_commit=None,
-                production=None, visual_qa=None,
+                production=None, visual_qa=None, sufficiency=None,
                 review_baseline=None, developer=None):
     """The brief as data. `render_markdown` turns it into the document a developer reads."""
     refs = refs or {}
@@ -650,6 +650,14 @@ def build_brief(*, title_id, engine, iteration, key, baseline, design, assets, s
         if c.get("required") and c.get("status") == "FAIL"
     ]
     visual_qa_failures = _visual_qa_failures(visual_qa, frames_root)
+    # The content-sufficiency step's findings on the commit this visit starts from that the
+    # build owes (route `develop`): the design meets its tier's bar, the build does not.
+    sufficiency_failures = [
+        {k: f.get(k) for k in ("check", "severity", "owner", "summary", "observed", "bar")
+         if f.get(k) is not None}
+        for f in (sufficiency or {}).get("findings") or []
+        if isinstance(f, dict) and f.get("route") == "develop" and f.get("severity") != "minor"
+    ]
     failures = [
         {"check": c.get("id"), "summary": c.get("summary"), "output_tail": c.get("output_tail")}
         for c in (previous_checks or {}).get("checks") or []
@@ -685,7 +693,8 @@ def build_brief(*, title_id, engine, iteration, key, baseline, design, assets, s
                          ("tech-plan", tech_plan), ("qa-report", qa),
                          ("review-report", review), ("playability-report", playability),
                          ("production-quality-report", production),
-                         ("visual-qa-report", visual_qa))
+                         ("visual-qa-report", visual_qa),
+                         ("content-sufficiency-report", sufficiency))
             if c
         ],
         "design": {
@@ -753,6 +762,8 @@ def build_brief(*, title_id, engine, iteration, key, baseline, design, assets, s
         "playability_failures": playability_failures,
         "production_failures": production_failures,
         "visual_qa_failures": visual_qa_failures,
+        "sufficiency_failures": sufficiency_failures,
+        "sufficiency_commit": (sufficiency or {}).get("commit") if sufficiency_failures else None,
         "gated_commit": ((production if production_failures else None)
                          or (visual_qa if visual_qa_failures else None) or {}).get("commit"),
         "played_commit": (playability or {}).get("commit") if playability_failures else None,
@@ -1815,7 +1826,8 @@ def render_markdown(brief):
                     f"show is wrong, and say in `known_issues` that no reason was given.")
         elif brief.get("qa_defects") or brief.get("review_blockers") or \
                 brief.get("previous_failures") or brief.get("playability_failures") or \
-                brief.get("production_failures") or brief.get("visual_qa_failures"):
+                brief.get("production_failures") or brief.get("visual_qa_failures") or \
+                brief.get("sufficiency_failures"):
             add("Fix what sent it back first (below); a pass that does not fix it is one "
                 "fewer left.")
         else:
@@ -1894,6 +1906,26 @@ def render_markdown(brief):
                 + (" Frame: `" + failure["frame"] + "`" if failure.get("frame") else "")
                 + (" Frames: " + ", ".join(f"`{f}`" for f in failure["frames"])
                    if failure.get("frames") else ""))
+        add("")
+
+    if brief.get("sufficiency_failures"):
+        add("## Fix first: what the content audit counted on the build\n")
+        add(f"The content-sufficiency step counted the content of "
+            f"`{(brief.get('sufficiency_commit') or '')[:12]}` - its "
+            "`public/content/units.json` and what the play probe showed in every unit, played "
+            "in order and entered through the unit link (`?wgf-probe=1&wgf-unit=<unit id>`) - "
+            "against the bars of the design's quality tier "
+            "(core/reference/quality-benchmark.yaml). The design meets these bars and the "
+            "build does not: build what the design states, unit by unit. Never invent a unit, "
+            "an element or a number the design does not state; where the design is silent, "
+            "record the gap in `design_gaps`. Every entity of a content role carries its "
+            "`kind` while a unit is in play.\n")
+        for failure in brief["sufficiency_failures"]:
+            line = (f"- `{failure.get('check')}` ({failure.get('severity')}): "
+                    f"{failure.get('summary')}")
+            if failure.get("bar") is not None:
+                line += f" Bar: {_inline(failure['bar'])}."
+            add(line)
         add("")
 
     if brief.get("review_blockers"):

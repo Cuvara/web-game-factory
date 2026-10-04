@@ -77,12 +77,14 @@ factory:
   #   wgf_strategy   the `strategy` step (scripts/wgf_strategy/)
   #   wgf_release    the `release` step (scripts/wgf_release/, docs/release-module.md)
   #   wgf_visualqa   the `visual-qa` step (scripts/wgf_visualqa/, docs/visual-qa-module.md)
+  #   wgf_sufficiency the `content-sufficiency` step (scripts/wgf_sufficiency/,
+  #                  docs/content-sufficiency-module.md)
   #   wgf_listing    the `store-listing` and `listing-validation` steps (scripts/wgf_listing/,
   #                  docs/store-listing-module.md)
   #   wgf_publish    the `platform-validate` and `publish` steps (scripts/wgf_publish/,
   #                  docs/publish-module.md)
   steps:
-    modules: [wgf_discovery, wgf_strategy, wgf_init, wgf_assets, wgf_develop, wgf_review, wgf_verification, wgf_design, wgf_sdk, wgf_techplan, wgf_release, wgf_playability, wgf_production, wgf_visualqa, wgf_listing, wgf_publish]
+    modules: [wgf_discovery, wgf_strategy, wgf_init, wgf_assets, wgf_develop, wgf_review, wgf_verification, wgf_design, wgf_sdk, wgf_techplan, wgf_release, wgf_playability, wgf_production, wgf_visualqa, wgf_sufficiency, wgf_listing, wgf_publish]
 
   # The strategy module (scripts/wgf_strategy): by default it ranks the opportunity's
   # candidate platforms by audience fit and makes the best one required. A project that has

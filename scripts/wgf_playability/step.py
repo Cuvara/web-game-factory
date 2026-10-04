@@ -54,7 +54,14 @@ SESSION_MARGIN_S = 45
 PROJECTS = (("desktop", 1280, 720), ("mobile", 393, 851))
 # The bot's records per viewport (bot.spec.ts): <out>/<project>/<name>.json.
 RECORDS = ("first-session", "act", "win", "lose", "pause", "traverse", "persist", "session",
-           "showcase")
+           "showcase", "survey")
+# How the survey is run (`survey`), and which entity roles carry a kind (`probe`): read by
+# the content-sufficiency step too, which counts what the survey recorded.
+SUFFICIENCY_PATH = os.path.join(paths.REFERENCE, "content-sufficiency.yaml")
+# Where the content data file of the commit played is kept, under the records directory, for
+# the content-sufficiency step (scripts/wgf_sufficiency) to measure the build that was played.
+CONTENT_DATA = "public/content/units.json"
+CONTENT_COPY = os.path.join("content", "units.json")
 _NO_BROWSER = ("Executable doesn't exist", "browserType.launch", "playwright install")
 # The control actions that leave a finished unit for the next one. A vocabulary, not a bar: the
 # design's own control action ids naming one of these words are added to it.
@@ -187,7 +194,10 @@ class PlayabilityStep(WorkflowStep):
             }
             content_settings, truncated, total_s = self._content_settings(design, qa, settings)
             settings.update(content_settings)
-            blocked = self._play(repo, out, logs, settings, context, total_s)
+            settings.update(self._survey_settings(design, self.params))
+            self._keep_content_data(repo, out)
+            blocked = self._play(repo, out, logs, settings, context, total_s,
+                                 survey_s=settings["survey_ms"] / 1000.0)
             judged = copy.deepcopy(rules)
             judged["_idle_ms"] = settings["idle_ms"]
             judged["_truncated"] = truncated
@@ -272,6 +282,38 @@ class PlayabilityStep(WorkflowStep):
             "reset_in_unit": bool(genre.get("reset_in_unit")),
         }, truncated, total_s
 
+    @staticmethod
+    def _survey_settings(design, params, path=None):
+        """The survey's CFG: every unit the design lists (but `optional` ones) when the step
+        is asked for a survey (`with: survey: true`) and the design authors its units; else
+        no unit, and the bot records that no survey was asked for."""
+        rules = load_file(path or SUFFICIENCY_PATH)
+        survey = rules.get("survey") or {}
+        probe = rules.get("probe") or {}
+        content, mode, _units = analysis.content_units(design)
+        listed = [u for u in (content or {}).get("units") or []
+                  if isinstance(u, dict) and u.get("id") and u.get("tier") != "optional"]
+        listed.sort(key=lambda u: (u.get("index") if isinstance(u.get("index"), int)
+                                   else 10 ** 6, str(u.get("id"))))
+        asked = bool((params or {}).get("survey")) and mode == "authored"
+        return {
+            "survey_units": [str(u["id"]) for u in listed] if asked else [],
+            "survey_projects": list(survey.get("projects") or []),
+            "survey_unit_ms": int((survey.get("unit_s") or 0) * 1000),
+            "survey_ms": int((survey.get("total_s") or 0) * 1000) if asked and listed else 0,
+            "kind_roles": list(probe.get("kind_roles") or []),
+            "not_content_roles": list(probe.get("not_content_roles") or []),
+        }
+
+    @staticmethod
+    def _keep_content_data(repo, out):
+        """Copy the commit's content data file beside the records, when it ships one."""
+        source = os.path.join(repo, *CONTENT_DATA.split("/"))
+        if os.path.isfile(source):
+            target = os.path.join(out, CONTENT_COPY)
+            os.makedirs(os.path.dirname(target), exist_ok=True)
+            shutil.copyfile(source, target)
+
     # -- running ------------------------------------------------------------------------
 
     def _env(self, context):
@@ -301,7 +343,7 @@ class PlayabilityStep(WorkflowStep):
                         f"the environment, not the game ({os.path.join(logs, name + '.log')})")
         return None
 
-    def _play(self, repo, out, logs, settings, context, bot_total_s=0):
+    def _play(self, repo, out, logs, settings, context, bot_total_s=0, survey_s=0):
         """Run the bot. None when it ran (whatever it found); else why it could not."""
         port = _free_port()
         os.makedirs(os.path.join(repo, "tests", "wgf-play"), exist_ok=True)
@@ -318,8 +360,13 @@ class PlayabilityStep(WorkflowStep):
         env.update(sandbox_env(guard.url))
         # The bot's own budget decides the timeout, not a fixed number: two viewports of
         # bot_total_s and of the showcase (its window, the start before it and the last state
-        # it stages), plus the install-free start-up and the report.
-        timeout = int(2 * (bot_total_s or 0) + 2 * (SHOWCASE_S + 45) + 120)
+        # it stages), plus the install-free start-up and the report - and the survey's window
+        # with a start per unit, on the projects it runs on.
+        survey_units = len(settings.get("survey_units") or [])
+        survey = (len(settings.get("survey_projects") or [])
+                  * (survey_s + survey_units * (settings["start_timeout_ms"] / 1000.0 + 2) + 60)
+                  if survey_units else 0)
+        timeout = int(2 * (bot_total_s or 0) + 2 * (SHOWCASE_S + 45) + 120 + survey)
         try:
             run = self._run(["pnpm", "exec", "playwright", "test", "-c",
                              "playwright.wgf-play.config.ts"], repo, timeout,

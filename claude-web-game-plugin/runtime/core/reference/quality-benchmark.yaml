@@ -16,8 +16,13 @@
 # and the strategy's budget, the larger of the two, on what it declares - units, elements,
 # introductions, combinations, structure kinds, layouts, objective kinds, groups and their
 # milestones, designed play and difficulty (scripts/wgf_design/content.py, rules
-# content.tier_*; blocking). No check reads the built content yet. Wiring another check is a
-# change to the consumers named under `consumers`, each with its own tests.
+# content.tier_*; blocking). The content-sufficiency step reads `content` and `progression` on
+# the BUILT content (1.4.0): the content data file the played commit ships and what its play
+# probe showed in every unit, counted the same way at the design's tier
+# (scripts/wgf_sufficiency, how each is measured in core/reference/content-sufficiency.yaml),
+# and `presentation.assets.distinct_climax_art` on the drawings the build shows in its climax
+# units. Wiring another check is a change to the consumers named under `consumers`, each with
+# its own tests.
 #
 # Calibration. Every bar records its `basis`:
 #   measured-2   both calibration releases meet it (the audit says which bars the unattended
@@ -36,7 +41,7 @@
 # game presents together (world, tier, chapter). Every count is over the units the release
 # ships at the tier being judged.
 
-version: 1.3.0
+version: 1.4.0
 
 tiers:
   # `mvp` is the genre model's prototype bar and is not restated here. `release` is what a
@@ -160,9 +165,10 @@ consumers:
   # Where each block is read, or is meant to be read once wired. The strategy reads
   # `content.units` and `content.elements` to commit the release budget; the design step
   # holds a design at its tier to every `content` bar (content.tier_*); the assets step reads
-  # `presentation.assets.distinct_climax_art`. Nothing reads the built content yet.
-  content: [scripts/wgf_strategy/planner.py, scripts/wgf_design/content.py, scripts/wgf_playability/analysis.py]
-  progression: [scripts/wgf_design/content.py, scripts/wgf_playability/analysis.py]
+  # `presentation.assets.distinct_climax_art`; the content-sufficiency step counts `content`
+  # and `progression` on the built content.
+  content: [scripts/wgf_strategy/planner.py, scripts/wgf_design/content.py, scripts/wgf_sufficiency/audit.py]
+  progression: [scripts/wgf_design/content.py, scripts/wgf_sufficiency/audit.py]
   features: [scripts/wgf_design/consistency.py, scripts/wgf_techplan/devplan.py]
-  presentation: [scripts/wgf_visualqa, scripts/wgf_production, scripts/wgf_assets/climax.py]
+  presentation: [scripts/wgf_visualqa, scripts/wgf_production, scripts/wgf_assets/climax.py, scripts/wgf_sufficiency/audit.py]
   store_listing: [scripts/wgf_listing]

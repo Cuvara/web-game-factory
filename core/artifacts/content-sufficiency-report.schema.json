@@ -1,0 +1,255 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://webgamefactory.dev/schemas/artifacts/content-sufficiency-report.schema.json",
+  "title": "Content sufficiency report",
+  "description": "Whether the BUILT game carries the content its quality tier asks for, measured on the build rather than on the design: the content data file the played commit ships (public/content/units.json) and what its play probe reported while the playability bot traversed the units in order and surveyed every unit through the probe's unit link - units shipped and reached, distinct elements and element combinations (the probe's entities[].kind), structural variety and near-identical units, groups that bring something new, difficulty that asks for new skills, objective kinds, climax units with art of their own, gated unlocks, designed play, and every design commitment present in the build. Bars: core/reference/quality-benchmark.yaml at the design's quality tier and the genre family's (core/reference/genre-models.yaml); how each is measured: core/reference/content-sufficiency.yaml. Every failure is a typed finding with its route: `design-gap` when the design itself is short of the bar, `develop` when the build is short of a design that meets it. Automation evidence.",
+  "x-wgf": {
+    "id": "content-sufficiency-report",
+    "kind": "artifact",
+    "format": "json",
+    "version": "1.0.0",
+    "producer": "title:prototype",
+    "consumers": [
+      "title:design",
+      "title:prototype",
+      "title:prototype-review",
+      "release:qa"
+    ],
+    "repo_path": "<game-repo>/qa/content-sufficiency/<commit>.json",
+    "run_path": "<storage>/workflows/<run-id>/artifacts/content-sufficiency-report/v<n>.json",
+    "required_for_gates": []
+  },
+  "type": "object",
+  "required": [
+    "provenance",
+    "title_id",
+    "commit",
+    "measurement_class",
+    "checks",
+    "findings",
+    "failed",
+    "routes",
+    "verdict"
+  ],
+  "properties": {
+    "provenance": {
+      "$ref": "shared/provenance.schema.json#/$defs/provenance"
+    },
+    "title_id": {
+      "type": "string"
+    },
+    "commit": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{40}$",
+      "description": "The commit the playability step played, whose records and content data were measured."
+    },
+    "measurement_class": {
+      "const": "automation-bot"
+    },
+    "quality_tier": {
+      "enum": [
+        "mvp",
+        "release",
+        null
+      ],
+      "description": "The tier the build was held to: the design's build_spec.content.quality_tier, else the strategy's; null when neither states one (only the family's MVP bar applies)."
+    },
+    "generation_mode": {
+      "enum": [
+        "authored",
+        "parametric",
+        "procedural",
+        null
+      ],
+      "description": "The design's build_spec.content.generation.mode; null without a content contract."
+    },
+    "checks": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "id",
+          "status",
+          "required",
+          "summary"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^content\\.[a-z_]+$"
+          },
+          "status": {
+            "enum": [
+              "PASS",
+              "FAIL",
+              "WARNING",
+              "SKIPPED",
+              "BLOCKED"
+            ]
+          },
+          "required": {
+            "type": "boolean"
+          },
+          "summary": {
+            "type": "string"
+          },
+          "measured": {},
+          "expected": {},
+          "evidence": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "route": {
+            "enum": [
+              "develop",
+              "design-gap"
+            ]
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "findings": {
+      "type": "array",
+      "description": "One typed finding per FAIL or WARNING check, in the shape a quality scorecard and specialist routing read: what failed, the quality dimension, its severity, the observed value against the bar, the discipline that owns it and where it routes. A `design-gap` finding carries the design gap the design step repairs (prototype-report design_gaps shape).",
+      "items": {
+        "type": "object",
+        "required": [
+          "id",
+          "check",
+          "dimension",
+          "severity",
+          "summary",
+          "owner",
+          "route"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "check": {
+            "type": "string"
+          },
+          "dimension": {
+            "type": "string",
+            "description": "The quality dimension it scores: content, level-design, difficulty, progression."
+          },
+          "severity": {
+            "enum": [
+              "blocker",
+              "major",
+              "minor"
+            ]
+          },
+          "summary": {
+            "type": "string"
+          },
+          "observed": {},
+          "bar": {},
+          "owner": {
+            "type": "string",
+            "description": "The discipline that owns the fix: level-design, gameplay, game-design."
+          },
+          "route": {
+            "enum": [
+              "develop",
+              "design-gap"
+            ]
+          },
+          "evidence": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "design_gap": {
+            "type": "object",
+            "required": [
+              "field",
+              "question",
+              "severity"
+            ],
+            "properties": {
+              "field": {
+                "type": "string"
+              },
+              "question": {
+                "type": "string"
+              },
+              "assumed": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "severity": {
+                "enum": [
+                  "blocking",
+                  "minor"
+                ]
+              },
+              "unit": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": false
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "failed": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "Ids of the required checks that failed."
+    },
+    "routes": {
+      "type": "array",
+      "items": {
+        "enum": [
+          "design-gap",
+          "develop"
+        ]
+      },
+      "description": "Where the failures go back to; the step returns the first (design-gap before develop: the design grows before the build catches up with it)."
+    },
+    "skipped_checks": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "id",
+          "reason"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
+      "description": "Checks that measured nothing because nothing they measure is claimed. A skip is never a pass."
+    },
+    "blocked_reason": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "verdict": {
+      "enum": [
+        "PASS",
+        "FAIL",
+        "BLOCKED"
+      ]
+    }
+  },
+  "additionalProperties": false
+}

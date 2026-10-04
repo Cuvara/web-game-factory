@@ -27,7 +27,7 @@ from wgflib import genre_models, jsonschema_lite, paths
 from wgf_assets.raster import RasterError, decode_png
 
 __all__ = ["judge", "frame_stats", "changed_fraction", "objective_seen", "PROBE_SCHEMA",
-           "content_units", "persisted_metrics"]
+           "content_units", "persisted_metrics", "persisted_measures", "UNIT_REACHED"]
 
 PROBE_SCHEMA = os.path.join(paths.ARTIFACTS, "shared", "play-probe.schema.json")
 _WORD = re.compile(r"[a-z0-9]+")
@@ -484,27 +484,42 @@ def _variety_check(ctx):
                    truncated=ctx["truncated"].get("traverse"))]
 
 
-def persisted_metrics(design):
-    """The metric names the probe would report for what the design says persists at MVP.
+# A probe measure that is not a metric: the content block's unit reached.
+UNIT_REACHED = "content.unit_index"
+
+
+def persisted_measures(design, measures=None):
+    """(metric names, unit reached) the probe would report for what the design says persists
+    at MVP: the metric names, and whether an entry is measured by the unit reached
+    (`content.unit_index`).
 
     By reference, never by matching words: a persisted entry's `delivered_by` names a HUD
-    element, and that element names the metric. A persisted best is the probe schema's own
-    recommended `best`.
+    element, and that element names the metric. Otherwise its kind's probe measure
+    (core/reference/design-depth.yaml `playability.persists.probe_measures`): a persisted
+    best is the probe schema's own recommended `best`, stage progress the unit reached.
     """
+    if measures is None:
+        measures = {"best-score": "best"}
     spec = (design or {}).get("build_spec") or {}
     hud = {h.get("id"): h.get("metric") for h in spec.get("hud") or []
            if isinstance(h, dict) and h.get("id")}
-    names = set()
+    names, unit = set(), False
     depth = spec.get("depth") or {}
     for entry in ((depth.get("meta_loop") or {}).get("persists") or []):
         if not isinstance(entry, dict) or entry.get("tier") != "mvp":
             continue
-        metric = hud.get(entry.get("delivered_by"))
-        if metric:
+        metric = hud.get(entry.get("delivered_by")) or measures.get(entry.get("kind"))
+        if metric == UNIT_REACHED:
+            unit = True
+        elif metric:
             names.add(metric)
-        elif entry.get("kind") == "best-score":
-            names.add("best")
-    return names
+    return names, unit
+
+
+def persisted_metrics(design, measures=None):
+    """The metric names the probe would report for what the design says persists at MVP
+    (persisted_measures, without the unit reached)."""
+    return persisted_measures(design, measures)[0]
 
 
 def _depth_checks(ctx):
@@ -516,11 +531,13 @@ def _depth_checks(ctx):
 
     # What survives a reload.
     persist = records.get("persist") or {}
-    names = persisted_metrics(ctx["design"])
-    if not names:
+    names, unit = persisted_measures(
+        ctx["design"], (qa.get("persists") or {}).get("probe_measures"))
+    if not names and not unit:
         out += _skips(project, ("progression.persists",),
-                      "the design's meta loop persists nothing at the mvp tier "
-                      "(build_spec.depth.meta_loop.persists)")
+                      "the design's meta loop persists nothing at the mvp tier the probe "
+                      "reports (build_spec.depth.meta_loop.persists: no HUD metric, no kind "
+                      "in design-depth.yaml playability.persists.probe_measures)")
     else:
         before, after = persist.get("before") or {}, persist.get("after") or {}
         resumed = persist.get("after_resumed") or {}
@@ -539,9 +556,12 @@ def _depth_checks(ctx):
         if was_index is not None:
             now_index = ((resumed.get("content") or after.get("content") or {}) or {}) \
                 .get("unit_index")
-            measured["content.unit_index"] = {"before": was_index, "after": now_index}
             if now_index != was_index:
-                lost.append("content.unit_index")
+                lost.append(UNIT_REACHED)
+            # Stage progress is shown only past the first unit: a build that saves nothing
+            # starts at unit 1 too.
+            if now_index != was_index or not unit or was_index > 1:
+                measured[UNIT_REACHED] = {"before": was_index, "after": now_index}
         if genre.get("checkpoint"):
             lose = records.get("lose") or {}
             at_loss = ((lose.get("contentAtEnd") or {}) or {}).get("progress") or {}
@@ -551,9 +571,14 @@ def _depth_checks(ctx):
             if not at_loss or back.get("value") != at_loss.get("value"):
                 lost.append("checkpoint")
         required = ctx["mode"] in (qa.get("persists") or {}).get("required_generations", [])
+        wanted = sorted(names) + ([UNIT_REACHED] if unit else [])
         out.append(_check("progression.persists", project, bool(measured) and not lost,
                           ("the probe reports none of what the design says persists "
-                           f"({', '.join(sorted(names))})" if not measured else
+                           f"({', '.join(wanted)})"
+                           + (f": the bot reached no unit past the first before the reload "
+                              f"(content.unit_index {was_index}), so the unit reached was not "
+                              f"shown to survive" if unit and was_index is not None else "")
+                           if not measured else
                            f"lost across a reload: {', '.join(lost)}" if lost else
                            f"survived a reload: {', '.join(sorted(measured))}"),
                           required=required, measured=measured,

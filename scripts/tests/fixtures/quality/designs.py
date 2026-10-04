@@ -9,6 +9,12 @@ closing on a climax with its own art; three structure kinds and a climax arena; 
 objective kinds and a scored secondary goal; difficulty that rises within a group, dips at
 the start of the next, and rises on every escalating axis at the climax.
 
+What the design keeps across a reload is the seed's own meta loop: stage progress for most
+families, a best for some. The probe measures stage progress by the unit reached
+(core/reference/design-depth.yaml `playability.persists.probe_measures`), so nothing is added
+to make persistence measurable. `UnreportedPersistenceAuthor` keeps the same content with a
+meta loop the probe cannot report, for the anti-gaming case.
+
 Nothing here judges the result. The design step does - the same step a real run calls, with
 every rule of core/reference/design-consistency-rules.yaml and the content.tier_* bars of
 core/reference/quality-benchmark.yaml at the release tier - and the suite fails if it
@@ -32,7 +38,7 @@ from wgf_design import seed as seeding  # noqa: E402
 from wgf_design.authors import Resolved  # noqa: E402
 
 AUTHOR = "release-seed-fixture"
-AUTHOR_SEED_PERSISTENCE = "release-seed-persistence-fixture"
+AUTHOR_UNREPORTED = "release-unreported-persistence-fixture"
 UNITS_PER_GROUP = 4
 # Per slot of a group: what the unit is for, how it is built and what it asks for.
 SLOT_PURPOSE = ("teach", "test", "twist", "climax")
@@ -158,7 +164,7 @@ class ReleaseSeedAuthor(seeding.GenreSeedAuthor):
     """The family's seed, its content laid out for the release tier (see the module doc)."""
 
     name = AUTHOR
-    measurable_persistence = True
+    unreported_persistence = False
 
     def synthesize(self, family_id, models, strategy, entry):
         resolved = super().synthesize(family_id, models, strategy, entry)
@@ -189,37 +195,32 @@ class ReleaseSeedAuthor(seeding.GenreSeedAuthor):
                                                       "clean clear"}]
         a["content_units"] = len(units)
         depth = copy.deepcopy(resolved.depth)
-        if self.measurable_persistence:
-            # What a release keeps across a reload must be something the probe reports:
-            # playability measures a persisted HUD metric or a best score
-            # (wgf_playability.analysis.persisted_metrics), never a progression step's id.
-            persists = (depth.get("meta") or {}).get("persists") or []
-            if not any(p.get("kind") == "best-score" and p.get("tier") == "mvp"
-                       for p in persists):
-                anchor = next((p.get("delivered_by") for p in persists
-                               if p.get("tier") == "mvp" and p.get("delivered_by")), None)
-                persists.append({"kind": "best-score", "what": "The best result on each unit",
-                                 "tier": "mvp", "delivered_by": anchor})
+        if self.unreported_persistence:
+            # Every MVP entry the seed keeps becomes cosmetics: a kind no probe measure
+            # reports, delivered by no HUD metric.
+            for entry in (depth.get("meta") or {}).get("persists") or []:
+                if entry.get("tier") == "mvp":
+                    entry["kind"] = "cosmetics"
         return Resolved(resolved.archetype_id, a, resolved.experience, depth,
                         resolved.why, resolved.applied)
 
 
-class SeedPersistenceAuthor(ReleaseSeedAuthor):
-    """The same release-tier content, with the seed's own meta loop: what it keeps across a
-    reload is named by a progression step, which no probe metric reports."""
+class UnreportedPersistenceAuthor(ReleaseSeedAuthor):
+    """The same release-tier content, with a meta loop whose MVP entries are a kind the probe
+    reports nothing of."""
 
-    name = AUTHOR_SEED_PERSISTENCE
-    measurable_persistence = False
+    name = AUTHOR_UNREPORTED
+    unreported_persistence = True
 
 
 register_author(AUTHOR, ReleaseSeedAuthor)
-register_author(AUTHOR_SEED_PERSISTENCE, SeedPersistenceAuthor)
+register_author(AUTHOR_UNREPORTED, UnreportedPersistenceAuthor)
 
 
-def design(family_id, measurable_persistence=True):
+def design(family_id, unreported_persistence=False):
     """(the game-design the real design step writes for family `family_id` at the release
     tier, the step result)."""
     import test_design_seed as seeds
-    result = seeds.design_for(family_id, author=AUTHOR if measurable_persistence
-                              else AUTHOR_SEED_PERSISTENCE)
+    result = seeds.design_for(family_id, author=AUTHOR_UNREPORTED if unreported_persistence
+                              else AUTHOR)
     return (result.artifacts[0].content if result.artifacts else None), result

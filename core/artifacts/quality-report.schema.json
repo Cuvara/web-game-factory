@@ -7,7 +7,7 @@
     "id": "quality-report",
     "kind": "artifact",
     "format": "json",
-    "version": "1.0.0",
+    "version": "1.1.0",
     "producer": "title:prototype",
     "consumers": [
       "title:design",
@@ -797,6 +797,18 @@
         "type": "string"
       },
       "description": "Dimensions measured later in the run: the store, once its listing exists."
+    },
+    "ledger": {
+      "type": "object",
+      "description": "The run's finding ledger as the gate advanced it on this build's reports and its own (scripts/wgf_triage/ledger.py): every finding with its lifecycle, which open ones a gate raised (`open`: they hold the build BLOCKED) and which wait for the person at G4 (`awaiting`). Absent when the gate was blocked before scoring. Added in 1.1.0.",
+      "required": ["blocking_severities", "open", "awaiting", "lifecycle"],
+      "properties": {
+        "blocking_severities": { "type": "array", "items": { "$ref": "./shared/quality-finding.schema.json#/$defs/severity" } },
+        "open": { "type": "array", "items": { "type": "string" } },
+        "awaiting": { "type": "array", "items": { "type": "string" } },
+        "lifecycle": { "type": "array", "items": { "$ref": "./shared/quality-finding.schema.json#/$defs/record" } }
+      },
+      "additionalProperties": false
     },
     "blocked_reason": {
       "type": [

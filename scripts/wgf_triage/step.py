@@ -15,7 +15,9 @@
        pass a triage routed): the next pending group is routed. Otherwise the current
        build's failing reports, and the G4 decision that sent it back, are normalized afresh
        (findings.py). Findings routed `assets` by a report the assets step has run after are
-       dropped: that work is done, and develop integrates it.
+       not routed again: that work is done, and develop integrates it. They are recorded in
+       the ledger as handed to the assets step, implemented by its asset-manifest, so the
+       next measurement verifies them like any other.
     3. Grouped by owner, in visit order (routing.py, core/reference/specialist-routing.yaml).
        A group whose label this step's `on:` does not route is held, with why (store copy
        before the listing exists). A `design` group goes first and alone: the others are
@@ -25,7 +27,9 @@
        report of the producer that raised it.
     5. The run's finding ledger (`lifecycle`, lifecycle.py): every finding detected,
        classified, assigned, implemented, verified, closed - verified and closed only on the
-       raising producer's re-measurement of a newer build, and never past a regression.
+       raising producer's re-measurement of a newer build, and never past a regression. It
+       continues from the newest ledger in the run (ledger.previous_lifecycle): the quality
+       gate advances it too, on the reports it sees (ledger.remeasure).
 
 Outcomes:
 
@@ -46,23 +50,20 @@ import json
 import os
 import re
 
-from wgflib import paths, provenance
+from wgflib import provenance
 from wgflib.jsonschema_lite import Validator
 from wgflib.workflow import ArtifactOutput, StepResult, WorkflowStep
 from wgflib.workflow.contracts import load_registry
-from wgflib.yamllite import load_file
 
 from . import findings as normalizer
+from . import ledger as ledgers
 from . import lifecycle as lifecycles
+from .ledger import GATE_REPORTS
 from .routing import Routing, RoutingError
 
 __all__ = ["TriageStep", "GATE_REPORTS", "NEXT_SPECIALIST", "FINDINGS_MARKER",
            "read_typed_findings"]
 
-# The reports a build is judged by, in the order they are read.
-GATE_REPORTS = ("playability-report", "production-quality-report", "visual-qa-report",
-                "content-sufficiency-report", "review-report", "qa-report",
-                "listing-validation-report", "quality-report")
 # The route develop returns after a specialist visit while this triage has pending groups.
 NEXT_SPECIALIST = "next-specialist"
 # How a G4 decision names its typed findings (`wgf decide <run> iterate --findings FILE`):
@@ -70,12 +71,6 @@ NEXT_SPECIALIST = "next-specialist"
 FINDINGS_MARKER = re.compile(r"^findings: (\S+) (sha256:[0-9a-f]{64})\s*$", re.M)
 REQUEST_REF = ("https://webgamefactory.dev/schemas/artifacts/shared/"
                "quality-finding.schema.json#/$defs/request")
-RUBRIC_PATH = os.path.join(paths.REFERENCE, "visual-qa-rubric.yaml")
-_FAILING = {"playability-report": ("FAIL",), "production-quality-report": ("FAIL",),
-            "visual-qa-report": ("FAIL",), "content-sufficiency-report": ("FAIL",),
-            "review-report": ("request-changes",),
-            "qa-report": ("fail",), "listing-validation-report": ("FAIL",),
-            "quality-report": ("FAIL",)}
 
 
 def _utc_now():
@@ -94,23 +89,7 @@ def _load(inputs, artifact_type):
     return content if isinstance(content, dict) else None
 
 
-def _build(report, commit, verification):
-    """The build a report measured: its own commit (the sdk commit for review of sdk and
-    for verification), else the build's; and the bundle digest verification recorded for
-    that commit, when it built it."""
-    report = report or {}
-    measured = (report.get("commit") or report.get("reviewed_commit")
-                or (report.get("build_ref") or {}).get("commit_sha")
-                or (report.get("build") or {}).get("commit") or commit)
-    digest = None
-    if isinstance(verification, dict) and measured and \
-            (verification.get("commit") or {}).get("sha") == measured:
-        digest = (verification.get("build_artifact") or {}).get("content_hash")
-    return {"commit": measured, "digest": digest}
-
-
-def _failing(kind, report):
-    return isinstance(report, dict) and report.get("verdict") in _FAILING.get(kind, ())
+_build = ledgers.build_of_report
 
 
 def read_typed_findings(note, run_dir):
@@ -188,17 +167,10 @@ class TriageStep(WorkflowStep):
         def build_of(kind):
             return _build(reports.get(kind), commit, verification)
 
-        normalized = {}   # every newest report's findings, for the ledger and for fresh triage
-        rubric = load_file(RUBRIC_PATH) if os.path.isfile(RUBRIC_PATH) else {}
-        for kind, report in reports.items():
-            if report is None:
-                continue
-            normalized[kind] = (normalizer.normalize(
-                kind, report, routing, ref=inputs.refs.get(kind), dimension_3d=dimension_3d,
-                playability=reports.get("playability-report"), rubric=rubric)
-                if _failing(kind, report) else [])
-            for finding in normalized[kind]:
-                finding["build"] = build_of(kind)
+        # every newest report's findings, for the ledger and for fresh triage
+        normalized = ledgers.normalize_reports(reports, inputs.refs, routing,
+                                               dimension_3d=dimension_3d, commit=commit,
+                                               verification=verification)
 
         decision = _load(inputs, "decision-record")
         decision_seq = _seq(inputs, "decision-record")
@@ -227,7 +199,7 @@ class TriageStep(WorkflowStep):
         # The run's finding ledger moves on in _report, once this triage's group is chosen.
         self._now = self.clock()
         self._life = dict(
-            previous=(previous or {}).get("lifecycle") or [],
+            previous=ledgers.previous_lifecycle(inputs.refs, lambda t: _load(inputs, t)),
             failing={kind: {f["id"] for f in items} for kind, items in normalized.items()},
             seqs={kind: _seq(inputs, kind) for kind in normalized},
             reports={kind: report for kind, report in reports.items() if report is not None},
@@ -253,11 +225,17 @@ class TriageStep(WorkflowStep):
                 found.extend(human)
             else:
                 found.append(self._note_finding(routing, decision, inputs))
-        # Findings an assets pass that ran after their report (or decision) already handled.
+        # Findings an assets pass that ran after their report (or decision) already handled:
+        # not routed again, recorded in the ledger as made again by the assets step.
         manifest_seq = _seq(inputs, "asset-manifest")
-        found = [f for f in found if not (
-            f.get("route") == "assets"
-            and manifest_seq > _seq(inputs, f["source"]["producer"]))]
+        handed = [f for f in found if f.get("route") == "assets"
+                  and manifest_seq > _seq(inputs, f["source"]["producer"])]
+        if handed:
+            manifest = _load(inputs, "asset-manifest") or {}
+            made = {"specialist": "assets", "seq": manifest_seq,
+                    "artifact_id": (manifest.get("provenance") or {}).get("artifact_id")}
+            self._life["handed"] = [(f, made) for f in self._unique(handed)]
+        found = [f for f in found if f not in handed]
         if not found and entered and entered.rpartition(".")[2] not in ("success", ""):
             found.append(self._unnamed(routing, entered))
         found = self._unique(found)
@@ -456,7 +434,8 @@ class TriageStep(WorkflowStep):
             decision_seq=life.get("decision_seq", -1), human_ids=life.get("human_ids") or set(),
             selected=selected, triage_id=artifact_id,
             routing_version=life.get("routing_version") or routing.version,
-            build_of=life.get("build_of") or (lambda kind: {"commit": commit, "digest": None}))
+            build_of=life.get("build_of") or (lambda kind: {"commit": commit, "digest": None}),
+            handed=life.get("handed"))
         body = {
             "provenance": provenance.build(
                 "triage-report",

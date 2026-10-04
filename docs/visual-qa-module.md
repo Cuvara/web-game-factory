@@ -112,6 +112,7 @@ run directory):
 | FAILED, not retryable | a verdict still malformed once the repair rounds and both fresh attempts are spent (`malformed-verdict`, with the last errors); a judge that could not start, or that changed a frame or a guarded path; a frame whose sha256 is not the one playability recorded; bad configuration or rubric |
 | FAILED, retryable | the judge timed out, went idle, or exited non-zero |
 | WAITING_FOR_INPUT | a required input is not in the run |
+| BLOCKED (no report) | the run pinned the rubric (new-game `pinned_references`) and its copy is gone, or was edited after the run started |
 
 ## The judge
 
@@ -128,6 +129,14 @@ visualqa:
     verdict_from: stdout      # file: it writes {verdict} | stdout: the last JSON object printed
   # rubric: core/reference/visual-qa-rubric.yaml
 ```
+
+**Which rubric.** Without `rubric`, the step reads the copy of
+`core/reference/visual-qa-rubric.yaml` the run pinned when it started (new-game
+`pinned_references`, scripts/wgflib/workflow/references.py): an edit made while the run is
+going applies to the next run, never to this one's build, and the quality gate holds the
+visual scores to the same pinned file. A copy whose digest is not the one the run recorded
+blocks the step. A run that pinned nothing reads the live file. A `rubric` configured by path
+is read as configured. The report's `rubric` names the file read and its sha256.
 
 The shipped config has `kind: none` and a commented, read-only headless example: the only
 tool in the session reads files (the brief and the PNG frames, which the host reads as

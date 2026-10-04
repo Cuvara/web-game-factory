@@ -67,11 +67,11 @@ GATE_REPORTS = {"playability": "playability-report",
 _DESIGNS = {}
 
 
-def design_of(family, measurable_persistence=True):
+def design_of(family, unreported_persistence=False):
     """The release-tier design the real design step writes for `family` (cached)."""
-    key = (family, measurable_persistence)
+    key = (family, unreported_persistence)
     if key not in _DESIGNS:
-        design, result = designs.design(family, measurable_persistence)
+        design, result = designs.design(family, unreported_persistence)
         if design is None:
             raise AssertionError(f"the design step refused the {family} release design: "
                                  f"{result.error}")
@@ -103,12 +103,12 @@ class _Case(unittest.TestCase):
 
     # -- running ----------------------------------------------------------------------------
 
-    def world(self, genre, defects=(), fixes=None, measurable_persistence=True):
+    def world(self, genre, defects=(), fixes=None, unreported_persistence=False):
         spec = GENRES[genre]
         checkout = os.path.join(self.scratch, f"game-{genre}")
         os.makedirs(os.path.join(checkout, ".git"), exist_ok=True)
         return worlds.World({"defects": list(defects), "fixes": copy.deepcopy(fixes or {})},
-                            design_of(spec["family"], measurable_persistence), checkout)
+                            design_of(spec["family"], unreported_persistence), checkout)
 
     def api(self, world, extra=None, store="store"):
         data = {"storage": {"fsync": False},
@@ -416,8 +416,14 @@ class IntentionalDegradations(_Case):
         self.assertEqual((present["route"], present["measured"]["placeholder"]),
                          ("assets", present["assets"]))
         # Routed straight to the step that owns art (new-game: production-quality `assets`
-        # -> assets); triage then drops the finding as handed over, never as resolved.
+        # -> assets); triage does not route it again, and records it in the run's ledger as
+        # handed to the assets step - implemented by its manifest, never resolved by it.
         self.assertEqual(self.routes(state, "production-quality").count("assets"), 3)
+        ledger = {r["id"]: r for r in self.newest(api, state, "triage-report")["lifecycle"]}
+        handed = [r for fid, r in ledger.items() if "assets.present" in fid]
+        self.assertTrue(handed, sorted(ledger))
+        self.assertTrue(all(r["status"] == "implemented" and r["fix"]["specialist"] == "assets"
+                            and r["fix"]["artifact_id"] for r in handed), handed)
         entered = [e for e in state.trail if e["step"] == "assets"]
         self.assertGreaterEqual(len(entered), 3)
         typed = triage_findings.normalize("production-quality-report", report, Routing.load())
@@ -460,6 +466,20 @@ class IntentionalDegradations(_Case):
         self.assertEqual(sfx["dimension"], "audio")
 
 
+    def test_12_flat_progression_counted_on_the_build(self):
+        """The build ships its levels as a flat list - no gated unlocks - while what it saves
+        across a reload still works. content-sufficiency counts gated unlocks on the built
+        content (units.json), not the design's progression steps, so the build fails
+        content.progression and the systems designer owns it. (A WS-13 gap until the count
+        moved to the build: it passed every gate.)"""
+        case, _w, api, state, report = self.degrade("flat-progression")
+        check = next(c for c in report["checks"] if c["id"] == "content.progression")
+        self.assertEqual((check["measured"]["build"], check["route"]), (0, "develop"))
+        self.assertGreaterEqual(check["measured"]["design"], 2)
+        play = self.newest(api, state, "playability-report")
+        self.assertEqual(play["verdict"], "PASS")  # what it saves still survives a reload
+        self.assert_routed_through_triage(case, api, state)
+
     def test_11_store_copy_claiming_content_the_build_lacks(self):
         """After G4: the store copy says the game has more levels than the build measured.
         listing-validation's count check (wgf_listing.buildfacts, as the real step runs it)
@@ -496,9 +516,8 @@ class Recovery(_Case):
 
     def ledger(self, api, state):
         """The run's finding ledger as triage would advance it now: the real step, executed
-        on the run's newest artifacts, outside the run (the run itself is not changed). In
-        the run, the ledger moves only when triage runs - and after the last fix nothing
-        sends the build back to triage (docs/quality-consistency-tests.md, "Gaps")."""
+        on the run's newest artifacts, outside the run (the run itself is not changed). It
+        must agree with the ledger the quality gate advanced in the run."""
         step_def = api.definition_for(state).step("triage")
         refs = {t: state.latest_of_type(t) for t in step_def.inputs}
         inputs = StepInputs({t: r for t, r in refs.items() if r is not None},
@@ -538,25 +557,38 @@ class Recovery(_Case):
     def test_content_restored_by_the_level_designer_is_verified_on_the_new_commit(self):
         case, world, api, state = self.recover(
             "remove-content", {"level-designer": {"fixes": ["remove-content"]}})
-        self.assertEqual(world.visits, ["level-designer"])
+        # The last group gone takes its gate with it (content.progression, the systems
+        # designer's): both owners visit the one build, the level designer first.
+        self.assertEqual(world.visits, ["level-designer", "systems-designer"])
         dev = self.assert_measured_again(api, state, case)
         fid = "content-sufficiency-report:content-sufficiency:content.units_shipped"
-        # The run's own ledger stops where triage last ran: the finding assigned, the fix
-        # never recorded as measured (a gap: docs/quality-consistency-tests.md, "Gaps").
-        in_run = {r["id"]: r for r in self.newest(api, state, "triage-report")["lifecycle"]}
-        self.assertEqual(in_run[fid]["status"], "assigned")
-        # Advanced on the fixed build's reports, the finding is implemented by the owner's
-        # visit, verified by the gate that raised it, and closed once every gate measured it.
+        # No triage runs after the gates measured the fix: the last triage left the finding
+        # unverified...
+        triaged = {r["id"]: r for r in self.newest(api, state, "triage-report")["lifecycle"]}
+        self.assertIn(triaged[fid]["status"], ("assigned", "implemented"))
+        # ...and the quality gate, which sees every report of the fixed build, advanced the
+        # run's ledger before G4: implemented by the owner's visit, verified by the gate that
+        # raised it, closed once every gate measured it. Nothing blocking is left open.
+        quality_report = self.newest(api, state, "quality-report")
+        self.assertEqual(quality_report["ledger"]["open"], [])
+        in_run = {r["id"]: r for r in quality_report["ledger"]["lifecycle"]}
+        self.assertEqual(in_run[fid]["status"], "closed", in_run[fid])
         ledger = self.ledger(api, state)
-        finding = ledger[fid]
+        self.assertEqual(ledger[fid]["status"], in_run[fid]["status"])
+        finding = in_run[fid]
         self.assertEqual(finding["status"], "closed", finding)
         self.assertEqual(finding["fix"]["specialist"], "level-designer")
-        self.assertEqual(finding["fix"]["commit"], dev)
+        visit = next(p for p in self.every(api, state, "prototype-report")
+                     if (p.get("specialist") or {}).get("role") == "level-designer")
+        self.assertEqual(finding["fix"]["commit"], visit["build_ref"]["commit_sha"])
         statuses = [h["status"] for h in finding["history"]]
         self.assertEqual(statuses, ["detected", "classified", "assigned", "implemented",
                                     "verified", "closed"])
         self.assertEqual(finding["verification"]["verdict"], "passed")
         self.assertEqual(finding["verification"]["build"]["commit"], dev)
+        # The gate the lost group took with it is verified on the same build.
+        progression = in_run["content-sufficiency-report:content-sufficiency:content.progression"]
+        self.assertIn(progression["status"], ("verified", "closed"))
         # Only now is it released.
         state = self.decide(api, state)
         self.assertEqual(state.status, RunStatus.COMPLETED, self.story(api, state))
@@ -579,10 +611,13 @@ class Recovery(_Case):
         self.assertIn("content-sufficiency-report:content-sufficiency:content.units_shipped",
                       targets["verification"]["regressions"])
         self.assertEqual(after_ui["selected"]["label"], "level-designer")
-        # Once the regression is fixed too, the ui finding is verified on that build.
-        ledger = self.ledger(api, state)
-        self.assertIn(ledger["production-quality-report:ui.targets@mobile"]["status"],
+        # Once the regression is fixed too, the ui finding is verified on that build - in the
+        # run, by the quality gate before G4.
+        quality_report = self.newest(api, state, "quality-report")
+        in_run = {r["id"]: r for r in quality_report["ledger"]["lifecycle"]}
+        self.assertIn(in_run["production-quality-report:ui.targets@mobile"]["status"],
                       ("verified", "closed"))
+        self.assertEqual(quality_report["ledger"]["open"], [])
         state = self.decide(api, state)
         self.assertEqual(state.status, RunStatus.COMPLETED, self.story(api, state))
         self.assertTrue(api.quality(state)["release_ready"])
@@ -594,6 +629,13 @@ class Recovery(_Case):
         self.assert_measured_again(api, state, case)
         manifest = self.newest(api, state, "asset-manifest")
         self.assertFalse(any(item.get("placeholder") for item in manifest["items"]))
+        # The finding the gate sent straight to assets is in the run's ledger, implemented by
+        # the remade manifest and verified when the production gate passed the new build.
+        in_run = {r["id"]: r for r in self.newest(api, state, "quality-report")["ledger"]
+                  ["lifecycle"]}
+        handed = [r for fid, r in in_run.items() if "assets.present" in fid]
+        self.assertTrue(handed and all(r["status"] in ("verified", "closed") for r in handed),
+                        sorted(in_run))
         state = self.decide(api, state)
         self.assertEqual(state.status, RunStatus.COMPLETED, self.story(api, state))
 
@@ -724,6 +766,32 @@ class AntiGaming(_Case):
                 with self.assertRaisesRegex(EngineError, "unmet upstream"):
                     api.run(RunRequest(run_id=state.run_id, scope="release"))
 
+    def test_a_rubric_edited_mid_run_does_not_apply_to_it(self):
+        """visual-qa reads the rubric the run pinned: a pass bar lowered in the live file after
+        the start leaves the running build held to the pinned one, and a pinned copy edited in
+        the run blocks visual-qa, which starts nothing downstream."""
+        with open(os.path.join(paths.REFERENCE, "visual-qa-rubric.yaml"),
+                  encoding="utf-8") as handle:
+            text = handle.read()
+        live = os.path.join(self.scratch, "live-rubric.yaml")
+        with open(live, "w", encoding="utf-8") as handle:
+            handle.write(text.replace("\npass_bar: 3\n", "\npass_bar: 1\n"))
+        api = self.api(self.world("arcade-2d"))
+        with mock.patch("wgf_visualqa.rubric.RUBRIC_PATH", live):
+            state = self.to_g4(api)
+        report = self.newest(api, state, "visual-qa-report")
+        self.assertEqual(report["rubric"]["pass_bar"], 3)
+        self.assertIn(references.DIRECTORY, report["rubric"]["path"].replace("\\", "/"))
+        pinned = os.path.join(api.store.run_dir(state.run_id), references.DIRECTORY, "core",
+                              "reference", "visual-qa-rubric.yaml")
+        with open(pinned, "a", encoding="utf-8") as handle:
+            handle.write("\n# lowered in the run\n")
+        state = api.run(RunRequest(run_id=state.run_id, scope="visual-qa", force=True))
+        self.assertEqual(state.status, RunStatus.BLOCKED, self.story(api, state))
+        self.assertIn("edited after the start", state.message)
+        with self.assertRaisesRegex(EngineError, "unmet upstream"):
+            api.run(RunRequest(run_id=state.run_id, scope="release"))
+
     def test_tier_mvp_is_development_never_release(self):
         world = self.world("arcade-2d")
         api = self.api(world, {"strategy": {"quality_tier": "mvp"}})
@@ -747,10 +815,33 @@ class AntiGaming(_Case):
         readiness = api.quality(state)
         self.assertFalse(readiness["release_ready"])
 
+    def test_seed_stage_progress_is_measured_on_the_build(self):
+        """WS-13 gap: the puzzle, platformer, strategy and simulation seeds keep only stage
+        progress, which playability SKIPPED, so the floor blocked a clean release build that
+        no developer visit could fix. The probe reports the unit reached
+        (content.unit_index): stage progress is measured on it, and the run - on the seed's
+        own meta loop, nothing added - reaches G4."""
+        for genre in ("puzzle-casual", "platformer-content", "strategy-content",
+                      "simulation-systems"):
+            with self.subTest(genre=genre):
+                design = design_of(GENRES[genre]["family"])
+                kinds = {p["kind"] for p in design["build_spec"]["depth"]["meta_loop"]
+                         ["persists"] if p["tier"] == "mvp"}
+                self.assertIn("stage-progress", kinds)
+                api = self.api(self.world(genre), store=f"store-{genre}")
+                state = self.to_g4(api)
+                play = self.newest(api, state, "playability-report")
+                persists = [c for c in play["checks"] if c["id"] == "progression.persists"]
+                self.assertTrue(persists)
+                for check in persists:
+                    self.assertEqual(check["status"], "PASS", check["summary"])
+                    self.assertIn("content.unit_index", check["measured"])
+                self.assertEqual(play["skipped_checks"], [])
+
     def test_a_skipped_check_is_not_green(self):
         """A design whose meta loop keeps nothing a probe can report: the playability step
         skips progression.persists and passes - and the quality floor does not."""
-        world = self.world("puzzle-casual", measurable_persistence=False)
+        world = self.world("puzzle-casual", unreported_persistence=True)
         api = self.api(world)
         state = self.start(api)
         self.assertEqual(state.status, RunStatus.BLOCKED, self.story(api, state))
@@ -796,25 +887,6 @@ class AntiGaming(_Case):
         report = self.newest(api, state, "content-sufficiency-report")
         self.assert_names("content-sufficiency-report", report, ["content.units_shipped"])
         self.assertFalse(api.quality(state)["release_ready"])
-
-
-# -- gaps --------------------------------------------------------------------------------------
-
-class KnownGaps(_Case):
-    """A degradation the Factory does not detect yet. The test states what should happen and
-    is expected to fail until a gate measures it; when one does, it passes unexpectedly and
-    this marker must go (docs/quality-consistency-tests.md, "Gaps")."""
-
-    @unittest.expectedFailure
-    def test_gap_a_build_without_gated_unlocks_is_not_detected(self):
-        """The build ships its levels as a flat list - no gated unlocks - while what it saves
-        across a reload still works. content-sufficiency counts the design's progression steps
-        when the content data states no unlocks (wgf_sufficiency/audit.py content.progression),
-        so the build passes every gate."""
-        world = self.world("simulation-systems", ["flat-progression"])
-        api = self.api(world)
-        state = self.start(api)
-        self.assertEqual(state.status, RunStatus.BLOCKED, self.story(api, state))
 
 
 if __name__ == "__main__":

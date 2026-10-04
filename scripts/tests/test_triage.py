@@ -619,6 +619,68 @@ class FindingLifecycle(unittest.TestCase):
         self.assertEqual(new["build"], {"commit": c, "digest": "sha256:" + "d" * 64})
         self.assertEqual(new["status"], "assigned")  # the generalist visits it now
 
+    def production(self, commit, verdict="FAIL"):
+        return {"title_id": "demo", "commit": commit, "verdict": verdict,
+                "provenance": {"artifact_id": f"production-quality-report-{commit[:4]}"},
+                "checks": [{"id": "assets.present", "status": verdict, "required": True,
+                            "summary": "placeholders: player", "route": "assets"}]}
+
+    def test_a_finding_a_gate_sent_straight_to_assets_is_in_the_ledger(self):
+        """WS-13: production-quality's `assets` route goes to the assets step, not through
+        triage; the triage after it used to drop the finding as handed over, so the ledger
+        never held it. Now it is recorded, implemented by the remade manifest, and verified
+        when the gate passes the next build."""
+        a, b = "a" * 40, "b" * 40
+        fid = "production-quality-report:assets.present"
+        docs = {"game-design": DESIGN_2D, "prototype-report": self.proto(a, 1),
+                "production-quality-report": self.production(a),
+                "asset-manifest": {"provenance": {"artifact_id": "asset-manifest-demo-2"}}}
+        seqs = {"prototype-report": 5, "production-quality-report": 8, "asset-manifest": 9}
+        first = run_triage(docs, seqs=seqs, entered="assets.success")
+        self.assertIsNone(first.route)  # nothing routed again: develop integrates the art
+        record = self.records(first)[fid]
+        self.assertEqual([h["status"] for h in record["history"]],
+                         ["detected", "classified", "assigned", "implemented"])
+        self.assertEqual((record["fix"]["specialist"], record["fix"]["artifact_id"]),
+                         ("assets", "asset-manifest-demo-2"))
+        # The gate passes the build develop made with the new art: verified, then closed.
+        docs.update({"triage-report": first.artifacts[0].content,
+                     "prototype-report": self.proto(b, 2),
+                     "production-quality-report": self.production(b, "PASS"),
+                     "visual-qa-report": self.vqa(b, dark=False, ui=False)})
+        seqs.update({"triage-report": 10, "prototype-report": 11,
+                     "production-quality-report": 13, "visual-qa-report": 14})
+        second = run_triage(docs, seqs=seqs, entered="visual-qa.develop")
+        record = self.records(second)[fid]
+        self.assertEqual(record["status"], "closed")
+        self.assertEqual(record["verification"]["build"]["commit"], b)
+
+    def test_a_finding_its_gate_passes_with_no_recorded_fix_is_verified(self):
+        """A group still pending, or fixed by another visit's change: the raising gate's
+        measurement of a newer build verifies it, and the history says no fix was recorded.
+        Without a newer measurement it stays open."""
+        from wgf_triage import lifecycle
+        record = {"id": self.UI, "dimension": "ui", "severity": "major", "owner": "ui",
+                  "route": "develop", "status": "assigned", "summary": "ui",
+                  "source": {"producer": "visual-qa-report", "check": "score:ui_polish"},
+                  "build": {"commit": "a" * 40, "digest": None}, "evidence_refs": [],
+                  "history": [], "verification": None, "fix": None, "detected_seq": 8}
+
+        def advance(seq):
+            return lifecycle.advance(
+                [dict(record)], at="t", current=[], failing={"visual-qa-report": set()},
+                seqs={"visual-qa-report": seq}, reports={}, proto=None, proto_seq=5,
+                decision=None, decision_seq=-1, human_ids=set(), selected=None,
+                triage_id="tr", routing_version="1.3.0",
+                build_of=lambda k: {"commit": "b" * 40, "digest": None})[0]
+        self.assertEqual(advance(8)["status"], "assigned")  # the same report: not re-measured
+        out = advance(12)
+        self.assertEqual(out["status"], "closed")
+        self.assertIsNone(out["fix"])
+        self.assertIn("no fix was recorded", out["history"][0]["note"])
+        self.assertEqual(lifecycle.unresolved([dict(record)], ("major",)), [record])
+        self.assertEqual(lifecycle.unresolved([out], ("major",)), [])
+
     def test_a_human_finding_is_verified_by_the_next_g4(self):
         records = {"decision-record:g4-1": {
             "id": "decision-record:g4-1", "dimension": "audio", "severity": "major",

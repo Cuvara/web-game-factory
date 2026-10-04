@@ -135,9 +135,10 @@ class Gate(unittest.TestCase):
         self.base = tempfile.mkdtemp(prefix="wgf-quality-")
         self.addCleanup(shutil.rmtree, self.base, ignore_errors=True)
 
-    def run_step(self, docs, previous=None, environment=None):
+    def run_step(self, docs, previous=None, environment=None, seqs=None):
         class Inputs:
-            refs = {k: types.SimpleNamespace(content_hash=None) for k in docs}
+            refs = {k: types.SimpleNamespace(content_hash=None, seq=(seqs or {}).get(k, 0))
+                    for k in docs}
 
             def __contains__(self, k):
                 return k in docs
@@ -427,6 +428,119 @@ class Gate(unittest.TestCase):
         del docs["content-sufficiency-report"]
         result = self.run_step(docs)
         self.assertEqual(result.outcome, StepOutcome.WAITING_FOR_INPUT)
+
+
+def ledger_record(fid, producer, *, status="assigned", severity="major", detected_seq=3,
+                  artifact_id=None):
+    """One finding of the run's ledger, as triage leaves it (wgf_triage.lifecycle)."""
+    steps = ("detected", "classified", "assigned")
+    history = [{"status": step, "at": "2026-10-05T00:00:00Z", "by": artifact_id,
+                "build": DEV, "note": None} for step in steps[:steps.index(status) + 1]]
+    return {"id": fid, "dimension": "content", "severity": severity, "owner": "level-designer",
+            "route": "develop", "status": status, "summary": fid,
+            "source": {"producer": producer, "step": None, "check": fid.split(":", 1)[-1],
+                       "project": None, "artifact_id": artifact_id, "content_hash": None},
+            "build": {"commit": DEV, "digest": None}, "evidence_refs": [],
+            "task": {"change": "fix it", "acceptance": ["its gate passes"]},
+            "fix": None, "verification": None, "detected_seq": detected_seq,
+            "history": history}
+
+
+class Ledger(unittest.TestCase):
+    """WS-13 gap: the run's finding ledger advanced only in triage, so after the last
+    specialist fix the run reached G4 and release with that finding still `assigned`. The
+    quality gate - which sees every report of the build - advances it, and holds the build
+    while a blocking finding a gate raised is open; release refuses while any is."""
+
+    FID = "content-sufficiency-report:content-sufficiency:content.units_shipped"
+    # Run-local order: the failing report (3), the triage (4), the specialist's visit (5),
+    # then every gate measuring the visit's build (10+).
+    SEQS = {"triage-report": 4, "prototype-report": 5, "playability-report": 10,
+            "production-quality-report": 11, "visual-qa-report": 12,
+            "content-sufficiency-report": 13, "review-report": 14, "qa-report": 15,
+            "verification-report": 15, "sdk-report": 9}
+
+    def run_gate(self, records, prototype=None, extra=None):
+        docs = release_build()
+        docs["triage-report"] = {"title_id": "demo", "lifecycle": records}
+        if prototype:
+            docs["prototype-report"] = dict(docs["prototype-report"], **prototype)
+        docs.update(extra or {})
+        gate = Gate("test_a_build_holding_every_floor_at_release_is_a_release")
+        gate.base = tempfile.mkdtemp(prefix="wgf-quality-ledger-")
+        self.addCleanup(shutil.rmtree, gate.base, ignore_errors=True)
+        return gate.run_step(docs, seqs=dict(self.SEQS, **{k: 16 for k in extra or {}})), docs
+
+    def test_the_last_specialist_fix_is_verified_and_closed_by_the_gate(self):
+        visit = {"provenance": {"artifact_id": "wgf:prototype-report:demo:visit-2"},
+                 "iteration": 2,
+                 "specialist": {"role": "level-designer", "findings": [self.FID]}}
+        result, _docs = self.run_gate([ledger_record(self.FID, "content-sufficiency-report")],
+                                      prototype=visit)
+        self.assertEqual(result.outcome, StepOutcome.SUCCESS, result.error)
+        ledger = result.artifacts[0].content["ledger"]
+        record = next(r for r in ledger["lifecycle"] if r["id"] == self.FID)
+        self.assertEqual([h["status"] for h in record["history"]],
+                         ["detected", "classified", "assigned", "implemented", "verified",
+                          "closed"])
+        self.assertEqual(record["fix"]["specialist"], "level-designer")
+        self.assertEqual(record["verification"]["producer"], "content-sufficiency-report")
+        self.assertEqual(record["verification"]["verdict"], "passed")
+        self.assertEqual(ledger["open"], [])
+
+    def test_a_finding_whose_gate_passes_a_newer_build_is_verified_with_no_fix(self):
+        result, _docs = self.run_gate([ledger_record(self.FID, "content-sufficiency-report")])
+        record = result.artifacts[0].content["ledger"]["lifecycle"][0]
+        self.assertEqual(record["status"], "closed")
+        self.assertIsNone(record["fix"])
+        self.assertIn("no fix was recorded", record["history"][-2]["note"])
+
+    def test_an_open_blocking_finding_blocks_a_build_that_holds_every_floor(self):
+        # Raised by a gate whose report has not measured the build since: nothing verified it.
+        fid = "review-report:blocker:restart-leak"
+        records = [ledger_record(fid, "review-report", severity="blocker", detected_seq=20)]
+        result, docs = self.run_gate(records)
+        self.assertEqual(result.outcome, StepOutcome.BLOCKED)
+        report = result.artifacts[0].content
+        self.assertEqual(report["verdict"], "BLOCKED")
+        self.assertEqual(report["ledger"]["open"], [fid])
+        self.assertIn(fid, report["blocked_reason"])
+        self.assertEqual(report["release_decision"]["decision"], "not-release")
+        # Release refuses on the same ledger, whatever the quality-report says.
+        loaded = dict(docs)
+        refs = {k: types.SimpleNamespace(content_hash=None, seq=self.SEQS.get(k, 0))
+                for k in loaded}
+        refs["triage-report"].seq = 4
+        self.assertIn("open-findings", [r.code for r in lineage.ledger_refusals(refs, loaded)])
+
+    def test_a_minor_finding_never_holds_the_build(self):
+        fid = "visual-qa-report:finding:hud-kerning"
+        records = [ledger_record(fid, "visual-qa-report", severity="minor", detected_seq=20)]
+        result, _docs = self.run_gate(records)
+        self.assertEqual(result.outcome, StepOutcome.SUCCESS, result.error)
+
+    def test_a_persons_finding_waits_for_g4_and_is_verified_by_its_pass(self):
+        fid = "decision-record:g4-1"
+        record = ledger_record(fid, "decision-record", artifact_id="wgf:decision-record:demo:1")
+        visit = {"provenance": {"artifact_id": "wgf:prototype-report:demo:visit-2"},
+                 "iteration": 2, "specialist": {"role": "gameplay", "findings": [fid]}}
+        result, docs = self.run_gate([record], prototype=visit)
+        self.assertEqual(result.outcome, StepOutcome.SUCCESS, result.error)
+        ledger = result.artifacts[0].content["ledger"]
+        self.assertEqual((ledger["open"], ledger["awaiting"]), ([], [fid]))
+        # At release, G4 passed after the fix: verified, and nothing is refused.
+        loaded = dict(docs, **{"quality-report": result.artifacts[0].content,
+                               "decision-record": {"decision": "pass", "provenance": {
+                                   "artifact_id": "wgf:decision-record:demo:2"}}})
+        refs = {k: types.SimpleNamespace(content_hash=None, seq=self.SEQS.get(k, 0))
+                for k in loaded}
+        refs["quality-report"].seq, refs["decision-record"].seq = 17, 18
+        self.assertEqual(lineage.ledger_refusals(refs, loaded), [])
+        # Sent back again at G4 for something else: a person's finding stays open only when
+        # the iterate names it again (typed findings), which this one does not.
+        loaded["decision-record"] = {"decision": "iterate", "rationale": "",
+                                     "provenance": {"artifact_id": "wgf:decision-record:demo:3"}}
+        self.assertEqual([r.code for r in lineage.ledger_refusals(refs, loaded)], [])
 
 
 class Contract(unittest.TestCase):

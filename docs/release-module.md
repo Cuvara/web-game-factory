@@ -94,6 +94,8 @@ when its preconditions held is what makes a draft mean something. The refusals a
 | `quality-commit-mismatch` | FAILED | the newest quality-report scored another commit, or another development commit, than the build shipped |
 | `stale-quality-report` | FAILED | the newest quality-report did not pin the run's newest qa, verification, prototype, sdk, review, playability, production-quality, visual-qa or content-sufficiency report: work came after it |
 | `quality-not-release` | FAILED | the newest quality-report decided `not-release` |
+| `open-findings` | FAILED | the run's finding ledger (the newest triage-report's or quality-report's, advanced on the newest reports and G4's decision: `wgf_triage.ledger.remeasure`) holds a finding of a blocking severity (`specialist-routing.yaml` `ledger.blocking_severities`) that is not verified: nothing measured it fixed on a newer build ([specialist-routing.md](specialist-routing.md)) |
+| `ledger-unreadable` | FAILED | the ledger cannot be advanced (unusable routing data) |
 | `verified-dirty-tree` | BLOCKED | verification ran on uncommitted changes, which no commit reproduces |
 | `dirty-checkout` | BLOCKED | the checkout has uncommitted or untracked changes |
 | `bundle-not-verified` | BLOCKED | the build output on disk is not the bundle verification digested |

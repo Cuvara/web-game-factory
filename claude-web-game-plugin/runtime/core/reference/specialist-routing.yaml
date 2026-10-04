@@ -20,7 +20,8 @@
 # is a change to the quality-finding schema first (its `dimension` enum), then here.
 
 # 1.1.0: content-sufficiency-report (workflow 10).
-version: 1.2.0
+# 1.3.0: `ledger` - which findings hold a build back until they are verified.
+version: 1.3.0
 
 # The quality dimensions, as the quality-finding schema enumerates them.
 dimensions: [content, level-design, difficulty, progression, gameplay, art-2d, environment-3d, lighting-material, ui, audio, feel, store-copy, platform]
@@ -66,6 +67,15 @@ specialists:
 
 # What owns a finding nothing below maps: the generalist.
 default_dimension: gameplay
+
+# The run's finding ledger (scripts/wgf_triage/lifecycle.py, docs/specialist-routing.md).
+# A finding of one of these severities that is still open - detected, classified, assigned
+# or implemented, not yet verified on a re-measurement - holds the build back: the quality
+# gate is BLOCKED while one raised by a gate report is open (a person's G4 finding is
+# verified by the next G4 decision, so it waits for G4), and release refuses while any is.
+# `blocker`: the producer failed the build on it; `major`: a defect it saw beside them.
+ledger:
+  blocking_severities: [blocker, major]
 
 # Route order across a build's groups. `design` first: a scope or content increase the
 # design must state changes what every other group would be built on, so the others are

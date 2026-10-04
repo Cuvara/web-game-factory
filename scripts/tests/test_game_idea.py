@@ -288,6 +288,9 @@ class RealModules(Scratch):
             "steps": {"modules": ["wgf_discovery", "wgf_strategy", "wgf_design"]},
             "storage": {"fsync": False},
             "design": design or {},
+            # The built-in design author writes MVP-sized content: at tier release the
+            # design is held to the quality benchmark (content.tier_*).
+            "strategy": {"quality_tier": "mvp"},
             "discovery": dict({"corpus": os.path.join(DISCOVERY, "corpus"),
                                "backlog": os.path.join(DISCOVERY, "backlog"), "as_of": AS_OF},
                               **discovery),

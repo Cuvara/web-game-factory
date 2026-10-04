@@ -212,6 +212,24 @@ five `features.*` rules). `compose.finalize` lists each cut feature in
 `scope.tiers.out_of_scope` with its reason, and `wgflib.gate_evidence` shows G3 and G4 the cut
 and deferred features. Craft: `core/craft/feature-evaluation.md`.
 
+**`game-design` 1.12.0** states the quality tier in the content contract, all optional:
+`build_spec.content.quality_tier` (`mvp` or `release`; the strategy's
+`concept.content_model.quality_tier` when absent, and never lower than it),
+`build_spec.content.elements[]` (`id`, `kind`, `description`: what the units are made of
+beyond their mechanics, of the family's `budget.element_kinds`), `build_spec.content.groups[]`
+(`id`, `name`, `theme`) and `build_spec.content.secondary_goals[]` (`id`, `kind`,
+`description`: stars, collectibles, par), and on each unit `group`, `structure`, `elements[]`
+and `objective_kind`; a unit's `introduces` may name an element. At a tier the design step
+holds the content to the strategy's content budget and `core/reference/quality-benchmark.yaml`
+`content` at that tier, the larger of the two (nine `content.tier_*` rules, blocking):
+distinct elements and their reuse, introduction points and how late the last arrives, the
+share of units with their own combination of elements, structure kinds and repeated layouts,
+objective kinds and the share of one kind, groups (count, size, contiguity, each introducing an
+element, each closed by the family's `budget.milestone` as a `climax` unit), designed play, and
+difficulty over every unit of the release. A generated design is held on elements, structure
+kinds, objective kinds, groups and designed play. A design short of its tier fails, with a
+finding that names what is short. 1.11.0 artifacts remain valid.
+
 **`title-strategy` 1.4.0** adds `concept.content_model`: the content shape the title commits
 to before design starts — the genre family, `unit_kind`, `progression`, `difficulty_shape`,
 `difficulty_axes[]`, `min_units` (the family's `units.min_mvp`) and `source`, which says

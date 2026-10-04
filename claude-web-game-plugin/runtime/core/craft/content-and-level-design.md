@@ -2,8 +2,10 @@
 
 **Serves** `genre`, `genre.session_profile`, `build_spec.content.unit_kind`,
 `build_spec.content.units[]`, `.content.generation`, `build_spec.difficulty.axes`,
-`.difficulty.model`, `build_spec.mastery`, `build_spec.progression.model`, and the strategy's
-`prototype_must_prove`.
+`.difficulty.model`, `build_spec.mastery`, `build_spec.progression.model`,
+`build_spec.content.quality_tier`, `.content.elements`, `.content.groups`,
+`.content.secondary_goals`, the units' `group`, `structure`, `elements` and `objective_kind`,
+and the strategy's `prototype_must_prove` and `concept.content_model.budget`.
 
 A loop worth repeating still needs somewhere to happen. The content units are that
 somewhere: the levels, waves, tracks, encounters, scenarios, shifts or run-segments the
@@ -165,6 +167,58 @@ different** — the mode changes who writes the numbers, never whether they are 
   elites at once). An endless game's ramp *is* a parametric unit sequence; it is not an
   excuse to have none.
 
+## The release tier
+
+The strategy states the run's quality tier (`concept.content_model.quality_tier`) and, at
+`release`, a content budget: units, groups, distinct elements, introduction points and
+designed play, each the larger of the family's genre model and
+`core/reference/quality-benchmark.yaml`. The design states the same tier in
+`build_spec.content.quality_tier` (never a lower one) and is held to that budget and to the
+benchmark's `content` bars at the tier, the larger of the two (the `content.tier_*` rules). The
+benchmark's bars were measured on releases a person judged shippable; the unit count alone
+did not separate them from the builds that were not, so the bars count what the units are
+made of. Every count is mechanical, so declare what is counted:
+
+- **Elements.** List what the units are made of beyond the mechanics in
+  `build_spec.content.elements` — each obstacle, hazard, enemy, target, block or segment kind
+  that changes what the player does, of the family's `budget.element_kinds` — and name the
+  ones each unit uses in its `elements`. A unit's mechanics count too. A number-only change
+  (speed, count, width) is never an element.
+- **Introduce, then combine.** Spread the introductions: a new element first appears at many
+  points, the last one in the final third, and every element is used again after it arrives.
+  Most units use a combination of elements no other unit uses: later units combine what
+  earlier ones taught instead of repeating a set at higher numbers.
+- **Structure.** Give each unit its `structure` — one id shared by every unit built the same
+  way: a static field, a moving field, a path with turns, an arena, a climax. A release has
+  several structure kinds, and few units repeat another's layout (structure, elements and
+  parameters).
+- **Objectives.** Give each unit its `objective_kind` (clear-all, survive, reach-exit,
+  collect, beat-time...). A release asks for more than one kind, and no one kind fills most of
+  its units. A scored secondary goal — stars, collectibles, a par time — in
+  `build_spec.content.secondary_goals` is a kind of its own.
+- **Groups.** Where the family presents units in groups (`budget.group_kind`: world, chapter,
+  cup, region), name each unit's `group` and list the groups in `build_spec.content.groups`.
+  A group's units run one after another, every group brings an element the player has not
+  met, and where the family names a `budget.milestone` each group closes with it — a unit of
+  purpose `climax`. The milestone is the family's own: a capstone level, a cup final, a siege
+  map, a set-piece encounter. A boss is one milestone, not the default. Name what each
+  milestone unit draws of its own in its `art` (its antagonist or set piece), one drawing per
+  milestone: the assets step holds climax units to distinct art. A family whose units are one
+  sequence (`group_kind: null`) is not asked for groups.
+- **Designed play.** The units' `expected_duration_s` add up to the budget's designed play:
+  more units, not longer ones.
+- **Difficulty asks for new skills.** Over every unit of the release, not only the MVP: more
+  than one axis escalates from the first unit to the last, consecutive units change the
+  family's variety dimensions, a run of units that differ only in their numbers (the same
+  objective kind, elements and structure) is short, and relief arrives on a regular beat.
+
+A generated design (`parametric`, `procedural`) lists representative units, so it is held on
+what it can state — elements, structure kinds, objective kinds, groups and designed play —
+and the order, combinations and difficulty sequence are measured on the build. At tier `mvp`
+the benchmark states no bars and the family's own bars apply. A design short of its tier
+fails with a finding that names the rule, what is short and by how much; repair the content,
+never the tier.
+
 ## Mastery
 
 `build_spec.mastery` names the family's mastery `model` and what shows the player got better:
@@ -257,5 +311,8 @@ makes it a game.
 - **Introduce-and-abandon.** A mechanic that appears in exactly one unit. Cut it or reuse it.
 - **Bonus content first.** Optional units built before the spine is complete, so the MVP has
   six units and no climax.
+- **A release that is a prototype.** Twelve units of one element in one list: the count of a
+  release, the content of a demo. The tier rules count elements, structures, objective kinds
+  and groups for this reason.
 - **Acceptance that is an opinion.** "The level is fun", "difficulty feels right". Nothing
   outside the game can decide either, so neither is ever checked.

@@ -121,4 +121,13 @@ one's description.
 
 | Secrets | Variables |
 |---|---|
-| `WGF_CF_API_TOKEN`, `WGF_POKI_AUTH_JSON`, `WGF_YANDEX_CONSOLE_SESSION` (reserved), `WGF_CRAZYGAMES_TOKEN` (reserved), `WGF_GAMEVUI_TOKEN` (reserved) | `WGF_CF_ACCOUNT_ID`, `WGF_CF_PROJECT_PREFIX` (default `wgf`), `WGF_YANDEX_APP_ID`, `WGF_POKI_GAME_ID`, `WGF_CRAZYGAMES_GAME_ID`, `WGF_GAMEVUI_GAME_ID` |
+| `WGF_CF_API_TOKEN` (develop preview deploy), `WGF_LIVE_OPT_IN` (`1` runs the live portal SDK validation suite; not a credential) | `WGF_CF_ACCOUNT_ID`, `WGF_CF_PROJECT_PREFIX` (default `wgf`), `WGF_Y8_APP_ID`, `WGF_Y8_GAME_ID`, `WGF_GAMEMONETIZE_GAME_ID` (public ids a build bakes in) |
+
+CI never publishes a game to a portal, so **no portal credential belongs in CI or in the
+organization**: publication is the Factory's `publish` group, behind a person's G6, acting with
+a session a person captured locally and kept outside every repository
+(`docs/publish-module.md`). The script only reconciles the names it manages and never deletes
+one. The names it managed before - secrets `WGF_POKI_AUTH_JSON`,
+`WGF_YANDEX_CONSOLE_SESSION`, `WGF_CRAZYGAMES_TOKEN`, `WGF_GAMEVUI_TOKEN`; variables
+`WGF_POKI_GAME_ID`, `WGF_CRAZYGAMES_GAME_ID`, `WGF_GAMEVUI_GAME_ID`, `WGF_YANDEX_APP_ID` - are
+read by no workflow; a person should delete them from an organization that still holds them.

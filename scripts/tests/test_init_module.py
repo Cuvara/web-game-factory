@@ -390,8 +390,16 @@ class InitStepTest(InitCase):
         self.execute()
         self.assertEqual(missing_infrastructure(self.local), [])
         for path in ("packages/platform-sdk", ".github/workflows/ci.yml",
-                     ".github/workflows/publish.yml", "tests/unit", "config/platforms"):
+                     "tests/unit", "config/platforms"):
             self.assertTrue(os.path.exists(os.path.join(self.local, path)), path)
+
+    def test_a_template_without_ci_publication_is_accepted(self):
+        # CI never publishes a game (contract 2.1.0): the fixture template, built from the
+        # contract, has no publish.yml and no scripts/publish/, and init accepts it.
+        result = self.execute()
+        self.assertEqual(result.outcome, StepOutcome.SUCCESS, result.error)
+        for path in (".github/workflows/publish.yml", "scripts/publish"):
+            self.assertFalse(os.path.exists(os.path.join(self.local, path)), path)
 
     def test_init_writes_nothing_into_the_generated_project(self):
         self.execute()

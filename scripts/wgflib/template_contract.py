@@ -63,7 +63,7 @@ __all__ = [
     "ASPECTS",
 ]
 
-CONTRACT_VERSION = "2.0.0"
+CONTRACT_VERSION = "2.1.0"
 
 # (version, Factory release, change). Newest last; its version is CONTRACT_VERSION.
 CONTRACT_LOG = (
@@ -79,11 +79,15 @@ CONTRACT_LOG = (
                        "directory that follow from it are required entries the Factory did "
                        "not require before, so a repository generated from a template "
                        "without them is now refused"),
+    ("2.1.0", "2.8.0", "INFRASTRUCTURE - scripts/publish/ and .github/workflows/publish.yml: "
+                       "CI never publishes a game to a portal (publication is the Factory's "
+                       "publish group, behind a person's G6), so a repository without either "
+                       "is accepted; the pinned template still ships both"),
 )
 # contract_digest() of the entries CONTRACT_LOG's last line describes. A change to any entry
 # fails test_template_contract until it is recorded: bump CONTRACT_VERSION if acceptance
 # changed (above), add a CONTRACT_LOG line either way, then update this.
-CONTRACT_DIGEST = "sha256:aedf128c63a59ed48651192f403704f496341384e1eae0922035d89692c9f7ae"
+CONTRACT_DIGEST = "sha256:e7336384259522a1cb992178b91bc61026315ca9b2da495f0b0dff9760d92dd0"
 
 # -- engines ----------------------------------------------------------------------------------
 
@@ -142,7 +146,6 @@ INFRASTRUCTURE = (
     (SHARED_MJS, "the game-repository side of the content hash"),
     ("scripts/verify/", "package facts and the assertion evaluator"),
     ("scripts/release/", "release packaging and manifest"),
-    ("scripts/publish/", "publication records"),
     ("tests/unit/", "unit test layer"),
     ("tests/integration/", "integration test layer"),
     ("tests/e2e/", "end-to-end test layer"),
@@ -151,7 +154,6 @@ INFRASTRUCTURE = (
     (".github/workflows/build.yml", "develop preview builds"),
     (".github/workflows/verify.yml", "the verify_suite_green guard"),
     (".github/workflows/release.yml", "release candidates"),
-    (".github/workflows/publish.yml", "gate G6"),
     (".github/workflows/campaign.yml", "gate G7"),
 )
 

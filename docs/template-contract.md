@@ -25,6 +25,11 @@ encodes `build_target`, the build-target rule contract 1.0.0 always had. **Contr
 (Factory 2.3.0): `phaserjs` joined the `engine.type` enum, so `packages/phaser-framework/`
 and `src/rendering/phaserjs/` became required entries — a repository generated from a
 template that predates them is now refused, which is exactly what a major means.
+**Contract 2.1.0** (Factory 2.8.0): CI never publishes a game to a portal - publication is the
+Factory's `publish` group, behind a person's G6 (`docs/publish-module.md`) - so
+`.github/workflows/publish.yml` and `scripts/publish/` are no longer required. A repository
+without them is accepted; the pinned template (v1.2.0) still ships both, and the drift test
+still passes against it because removing an assumption never breaks it.
 
 Like all of `wgflib`, the module names no renderer or portal (`test_core_security.Coupling`).
 The engines are the `engine.type` enum of `core/artifacts/tech-plan.schema.json` (the list
@@ -36,7 +41,7 @@ by the template's naming convention: `packages/<engine without "js">-framework/`
 
 | Kind | Names | Read by |
 |---|---|---|
-| Required paths (`INFRASTRUCTURE`) | root config, `packages/*`, `config/platforms/`, `scripts/{verify,release,publish}/`, `tests/{unit,integration,e2e,verify}/`, `.github/workflows/*` | init's `missing_infrastructure` |
+| Required paths (`INFRASTRUCTURE`) | root config, `packages/*`, `config/platforms/`, `scripts/{verify,release}/`, `tests/{unit,integration,e2e,verify}/`, `.github/workflows/*` | init's `missing_infrastructure` |
 | Template source (`SOURCE_PATHS`) | `src/main.ts`, `src/rendering/*`, `src/game/boot-scene.ts`, `src/platform/`, `tests/e2e/smoke.spec.ts`, platform-sdk `types.ts`/`registry.ts` | develop brief and checks, SDK inspector |
 | Package manager | `pnpm`, `pnpm-lock.yaml` | verify, sdk, release |
 | npm scripts (`NPM_SCRIPTS`) | `build`, `typecheck`, `lint`, `format`, `format:write`, `test`, `test:unit`, `test:integration`, `test:e2e`, `test:verify`, `sdk:conformance`, `test:sdk:browser`, `release:package`, `release:manifest` | verify, develop, sdk, release |

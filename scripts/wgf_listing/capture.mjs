@@ -9,7 +9,8 @@
 // never acted through; every input is a real pointer, touch or key event; the oracle (only
 // with `?wgf-probe=1`) plays well. It judges nothing: it writes what it saw to <out>/
 // capture.json - per viewport the frame of each scene with the probe state at that moment,
-// the recording with how many milliseconds precede play, the branding images - and the
+// then, when the probe declares the optional showcase (play.showcase), a frame of each state
+// it stages on request (`showcase-<asset>`, docs/template-contract.md), the recording with how many milliseconds precede play, the branding images - and the
 // Python side decides what is a screenshot.
 //
 // Factory tooling: it contains no game, and is not part of one.
@@ -50,6 +51,9 @@ const UTILITY = /pause|resume|menu|settings|sound|mute|music|fullscreen/i;
 const settings = Object.assign({
   start_timeout_ms: 30000, play_ms: 20000, input_pause_ms: 120, settle_ms: 400,
   excluded_states: ["loading", "other"],
+  // The showcase: at most this many staged states per viewport, how long one may take to
+  // stage and report play, how long the screen settles before the frame, the whole window.
+  showcase_max: 6, showcase_stage_ms: 6000, showcase_settle_ms: 1000, showcase_ms: 30000,
 }, job.settings ?? {});
 
 fs.mkdirSync(job.out, { recursive: true });
@@ -164,6 +168,54 @@ async function play(page, touch, ms, onTick) {
   return { reached, inputs, playedMs: Date.now() - t0 };
 }
 
+// The targets the probe's optional showcase declares (play.showcase.targets()), or null.
+async function showcaseTargets(page) {
+  return page.evaluate(() => {
+    const sc = window.__wgf__?.play?.showcase;
+    if (!sc || typeof sc.targets !== "function" || typeof sc.show !== "function") return null;
+    try {
+      const targets = sc.targets();
+      return Array.isArray(targets) ? targets.filter((t) => typeof t === "string" && t) : null;
+    } catch {
+      return null;
+    }
+  });
+}
+
+// One state the game stages on request (play.showcase.show(asset): a real state of the built
+// game in which that runtime asset is drawn - a later level, a boss), as the playability bot
+// asks for it: wait until the probe reports play, let the screen settle, keep the frame as the
+// scene `showcase-<asset>` with the probe state. It judges nothing; selection does.
+async function showcaseVisit(page, dir, target, shots) {
+  const t0 = Date.now();
+  const answer = await page.evaluate(async ({ id, ms }) => {
+    try {
+      const staged = await Promise.race([Promise.resolve(window.__wgf__.play.showcase.show(id)),
+                                         new Promise((resolve) => setTimeout(() => resolve("timeout"), ms))]);
+      return staged === "timeout" ? "timeout" : staged === false ? "refused" : "staged";
+    } catch (error) {
+      return `error: ${String(error).slice(0, 200)}`;
+    }
+  }, { id: target, ms: settings.showcase_stage_ms });
+  if (answer !== "staged") return { target, outcome: answer.startsWith("error") ? "error" : answer, detail: answer, ms: Date.now() - t0 };
+  let s = null;
+  while (Date.now() - t0 < settings.showcase_stage_ms) {
+    s = await snap(page);
+    if (s?.state === "playing") break;
+    await page.waitForTimeout(100);
+  }
+  if (s?.state !== "playing") return { target, outcome: "timeout", detail: `staged, but the probe reported ${s?.state ?? "nothing"}`, ms: Date.now() - t0 };
+  await settle(page, settings.settle_ms);
+  await page.waitForTimeout(settings.showcase_settle_ms);
+  const after = await snap(page);
+  const scene = `showcase-${target.replace(/[^A-Za-z0-9_-]+/g, "-")}`;
+  const file = await frame(page, dir, scene);
+  const state = after?.state ?? s.state;
+  shots.push({ scene, file, state, probe_state_before: s.state, excluded: settings.excluded_states.includes(state),
+               showcase: true, target });
+  return { target, outcome: "staged", scene, state, ms: Date.now() - t0 };
+}
+
 async function captureViewport(browser, viewport) {
   const dir = path.join(job.out, viewport.id);
   fs.mkdirSync(dir, { recursive: true });
@@ -173,7 +225,7 @@ async function captureViewport(browser, viewport) {
   const context = await browser.newContext(options);
   const page = await context.newPage();
   const record = { id: viewport.id, width: viewport.width, height: viewport.height, mobile: Boolean(viewport.mobile),
-                   ran: false, errors: [], shots: [], start: null, play: null };
+                   ran: false, errors: [], shots: [], start: null, play: null, showcase: null };
   page.on("pageerror", (e) => record.errors.push(String(e.message).slice(0, 300)));
   const touch = Boolean(viewport.mobile);
   const shots = record.shots;
@@ -210,6 +262,19 @@ async function captureViewport(browser, viewport) {
       if (record.play.reached && resultScene) {
         await page.waitForTimeout(settings.settle_ms);
         await shoot(resultScene, await snap(page), { elapsed_ms: record.play.playedMs, inputs: record.play.inputs });
+      }
+      // After play and its result: the states the game stages on request, if it offers any.
+      const declared = await showcaseTargets(page);
+      if (declared) {
+        record.showcase = { declared, visits: [] };
+        const t0 = Date.now();
+        for (const target of declared.slice(0, settings.showcase_max)) {
+          if (Date.now() - t0 > settings.showcase_ms) {
+            record.showcase.visits.push({ target, outcome: "skipped", detail: "showcase window spent" });
+            continue;
+          }
+          record.showcase.visits.push(await showcaseVisit(page, dir, target, shots));
+        }
       }
     }
   } catch (error) {

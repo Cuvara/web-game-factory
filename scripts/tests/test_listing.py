@@ -298,7 +298,9 @@ class FakeCapture:
     """capture.run_capture's contract, without a browser: synthetic frames per scene and
     viewport, a synthetic recording, the branding images the job asks for. `plan` makes
     attempt N behave: "ok" (default), "few" (two indistinct play frames), "dark", "blocked",
-    "crash", "no-trailer"."""
+    "crash", "no-trailer"; "few-showcase" is "few" with three distinct frames of states the
+    probe's showcase staged, "few-showcase-same" with showcase frames that are dark or the same
+    as play."""
 
     def __init__(self, plan=None):
         self.plan = list(plan or [])
@@ -332,7 +334,7 @@ class FakeCapture:
             for s_index, scene in enumerate(job["scenes"]):
                 if isinstance(scene["state"], list):
                     continue  # no result screen reached
-                if behaviour == "few":
+                if behaviour.startswith("few"):
                     # Every play frame the same (indistinct); only the title differs.
                     seed = 200 + index if scene["id"] == "title" else 100 + index
                 else:
@@ -344,6 +346,16 @@ class FakeCapture:
                     rich_png(path, viewport["width"], viewport["height"], seed=seed)
                 shots.append({"scene": scene["id"], "file": path, "state": scene["state"],
                               "excluded": False, "elapsed_ms": 1000 * s_index})
+            if behaviour.startswith("few-showcase"):
+                for t_index, target in enumerate(("boss", "embers", "laser-bolt")):
+                    path = os.path.join(out, viewport["id"], f"showcase-{target}.png")
+                    if behaviour == "few-showcase-same" and t_index == 0:
+                        dark_png(path, viewport["width"], viewport["height"])
+                    else:
+                        seed = 100 + index if behaviour == "few-showcase-same" else 300 + t_index * 7 + index
+                        rich_png(path, viewport["width"], viewport["height"], seed=seed)
+                    shots.append({"scene": f"showcase-{target}", "file": path, "state": "playing",
+                                  "excluded": False, "showcase": True, "target": target})
             viewports.append({"id": viewport["id"], "width": viewport["width"], "height": viewport["height"],
                               "mobile": bool(viewport.get("mobile")), "ran": True, "errors": [],
                               "shots": shots, "start": {"playingMs": 1200}, "play": {"playedMs": 15000, "inputs": 40}})
@@ -734,6 +746,33 @@ class Selection(unittest.TestCase):
         reasons = sorted(d["reason"].split(":")[0] for d in dropped)
         self.assertEqual(reasons, ["indistinct from play-mid (landscape)", "state loading is excluded", "too dark"])
 
+    def test_showcase_frames_fill_in_for_play_that_does_not_change(self):
+        # Three play frames of one dark board (the same seed) and the states the probe's
+        # showcase staged: the showcase frames are the screenshots play could not give.
+        shots = [self.shot("play-early", 4), self.shot("play-mid", 4), self.shot("play-late", 4),
+                 self.shot("showcase-boss", 11), self.shot("showcase-embers", 23),
+                 self.shot("showcase-laser-bolt", 37)]
+        chosen, dropped = pkg.select_screenshots(shots, self.reference)
+        self.assertEqual([c["scene"] for c in chosen],
+                         ["play-mid", "showcase-boss", "showcase-embers", "showcase-laser-bolt"])
+        self.assertEqual(sorted(d["reason"] for d in dropped),
+                         ["indistinct from play-mid (landscape)"] * 2)
+
+    def test_a_showcase_frame_meets_the_same_bars(self):
+        shots = [self.shot("play-mid", 4), self.shot("showcase-boss", 4),
+                 self.shot("showcase-embers", 0, dark=True), self.shot("showcase-laser-bolt", 0, state="loading")]
+        chosen, dropped = pkg.select_screenshots(shots, self.reference)
+        self.assertEqual([c["scene"] for c in chosen], ["play-mid"])
+        reasons = sorted(d["reason"].split(":")[0] for d in dropped)
+        self.assertEqual(reasons, ["indistinct from play-mid (landscape)", "state loading is excluded", "too dark"])
+
+    def test_showcase_ranks_after_play_the_player_acted_in_and_before_the_rest(self):
+        shots = [self.shot("title", 1, "title"), self.shot("result", 2, "won"), self.shot("play-early", 3),
+                 self.shot("showcase-boss", 5), self.shot("play-late", 7), self.shot("play-mid", 9)]
+        chosen, _ = pkg.select_screenshots(shots, self.reference)
+        self.assertEqual([c["scene"] for c in chosen],
+                         ["play-mid", "play-late", "showcase-boss", "play-early", "result", "title"])
+
     def test_the_maximum_holds(self):
         shots = [self.shot(f"play-mid", s, viewport=f"v{s}") for s in range(12)]
         chosen, _ = pkg.select_screenshots(shots, self.reference, maximum=4)
@@ -877,6 +916,24 @@ class TheStep(ListingCase):
         self.assertEqual(listing["capture"]["attempts"], 3)
         self.assertEqual(len(listing["screenshots"]), 2)
         self.assertEqual(listing["status"], "incomplete")
+        self.assertIn("screenshots-insufficient", [p["code"] for p in listing["problems"]])
+
+    def test_showcase_frames_make_up_for_play_frames_that_never_change(self):
+        one = {"listing": {"capture": {"viewports": [{"id": "landscape", "width": 320, "height": 180}]}}}
+        result, fake = self.capture(FakeCapture(plan=["few-showcase"]), context=self.context(config=one))
+        self.assertEqual(result.outcome, StepOutcome.SUCCESS)
+        self.assertEqual(len([c for c in fake.calls if c.get("viewports")]), 1)  # no retry needed
+        listing = self.listing_of(result)
+        scenes = [s["scene"] for s in listing["screenshots"]]
+        self.assertEqual(scenes, ["play-mid", "showcase-boss", "showcase-embers", "showcase-laser-bolt", "title"])
+        self.assertNotIn("screenshots-insufficient", [p["code"] for p in listing["problems"]])
+
+    def test_showcase_frames_below_the_bars_do_not_count(self):
+        one = {"listing": {"capture": {"viewports": [{"id": "landscape", "width": 320, "height": 180}]}}}
+        result, fake = self.capture(FakeCapture(plan=["few-showcase-same"] * 3), context=self.context(config=one))
+        listing = self.listing_of(result)
+        self.assertEqual(len([c for c in fake.calls if c.get("viewports")]), 3)
+        self.assertEqual([s["scene"] for s in listing["screenshots"]], ["play-mid", "title"])
         self.assertIn("screenshots-insufficient", [p["code"] for p in listing["problems"]])
 
     def test_dark_frames_make_the_package_incomplete_not_a_lie(self):

@@ -204,6 +204,30 @@ factory:
     # The console executor's timeouts, ms: action 5000, navigation 60000, upload from the
     # profile (upload_timeout_s) else 900000.
     # timeouts: {}
+    # The bounded adaptive mode (docs/publish-module.md): when a REVERSIBLE intent of a
+    # console flow drifts on a portal whose profile says `adaptive: allowed`, the resolver
+    # below may propose one locator for the same intent, one overlay to dismiss or one path
+    # on the console; the executor checks every proposal before it acts and writes what
+    # worked to drift.json as a proposed profile change. Never an irreversible action, a
+    # value, a declaration, or anything past a login. Off unless true here AND a resolver
+    # is configured.
+    adaptive: false
+    # Lower the budget (never above 3 per intent, 10 per visit):
+    # adaptive_bounds: {max_per_intent: 3, max_per_visit: 10}
+    # The release role through the agent runner: kind none (default) or command. argv
+    # placeholders {request} (the redacted drift request), {answer} (answer_from: file),
+    # {schema} (the answer's JSON schema), {prompt}; answer_from: stdout (the last JSON
+    # object it prints) or file. Its environment is the agents' allowlist plus
+    # factory.agents.env_passthrough, never a WGF_PUBLISH_* or publish env_passthrough
+    # variable. Give it no tools, no browser and no MCP server: it reads one file.
+    resolver:
+      kind: none
+    # resolver:
+    #   kind: command
+    #   answer_from: stdout
+    #   timeout_seconds: 180
+    #   argv: [claude, -p, "{prompt}", --model, sonnet, --safe-mode, --strict-mcp-config,
+    #          --tools, "Read", --allowedTools, "Read({request})"]
 
   # The assets step (scripts/wgf_assets). Every key is optional; a step's `with:` block
   # overrides any of them. See docs/assets-module.md.

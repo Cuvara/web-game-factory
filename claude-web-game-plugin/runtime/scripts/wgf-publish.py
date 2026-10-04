@@ -21,6 +21,12 @@
                                                                  kept (wgf_publish/observe.py)
     python3 scripts/wgf-publish.py observe-summary DIR          an observation's summary and its
                                                                  field inventory as JSON
+    python3 scripts/wgf-publish.py drift-review <run-id|DIR> [--platform ID]
+            [--apply --profile-out FILE]                         the bounded adaptive mode's
+                                                                 drift.json proposals; --apply
+                                                                 writes a NEW profile file for a
+                                                                 person to review and commit -
+                                                                 never the shipped profile
 
 No session is ever captured or saved (profile 2.1.0, credential `human-login`): the publish
 step's console executor opens a headed browser and a person logs in there, live, each visit;
@@ -187,6 +193,80 @@ def cmd_observe_summary(args):
     return 0
 
 
+def _run_root(target):
+    """A directory as given, else the run's directory in the Factory's run store."""
+    if os.path.isdir(target):
+        return os.path.abspath(target)
+    from wgflib.workflow.config import load_config
+    return os.path.join(load_config().storage_directory(), "workflows", target)
+
+
+def cmd_drift_review(args):
+    from wgf_publish import adaptive
+    root = _run_root(args.target)
+    files = adaptive.find_drift_files(root)
+    if not files:
+        print(f"no drift.json under {root}: no adaptive exchange was recorded")
+        return 0
+    by_portal = {}
+    for path in files:
+        document = adaptive.load_drift(path)
+        portal = (document.get("profile") or {}).get("id") or document.get("portal")
+        for entry in document.get("entries") or []:
+            by_portal.setdefault(portal, []).append(entry)
+            print(f"== {os.path.relpath(path, root)}  {portal}  intent {entry.get('intent')}"
+                  + (f" ({entry.get('locale')})" if entry.get("locale") else "")
+                  + f"  outcome {entry.get('outcome')}")
+            print(f"   why: {entry.get('why')}")
+            print(f"   proposal: {json.dumps(entry.get('proposal'), ensure_ascii=False)}")
+            failed = [c.get("check") for c in entry.get("checks") or [] if not c.get("ok")]
+            if failed:
+                print(f"   refused by: {', '.join(failed)}")
+            if entry.get("proposed_patch"):
+                print("   proposed profile change (review; never applied by the Factory):")
+                for line in entry["proposed_patch"].splitlines():
+                    print(f"     {line}")
+    if not args.apply:
+        return 0
+    if not args.profile_out:
+        print("error: --apply needs --profile-out FILE (a new file; the shipped profile is "
+              "never edited)", file=sys.stderr)
+        return 2
+    portals = [p for p in by_portal if p]
+    platform = args.platform or (portals[0] if len(portals) == 1 else None)
+    if platform is None or platform not in by_portal:
+        print(f"error: name the platform (--platform): drift recorded for {', '.join(portals)}",
+              file=sys.stderr)
+        return 2
+    source = publication.publication_profiles(args.extra or ()).get(platform)
+    if source is None:
+        print(f"error: no publication profile for {platform!r}", file=sys.stderr)
+        return 2
+    out = os.path.abspath(os.path.expanduser(args.profile_out))
+    shipped = {os.path.realpath(p) for p in publication.publication_profiles(args.extra or ()).values()}
+    if os.path.exists(out) or os.path.realpath(out) in shipped:
+        print(f"error: {out} exists; --profile-out writes a NEW file, never over a profile",
+              file=sys.stderr)
+        return 2
+    with open(source, encoding="utf-8") as handle:
+        text = handle.read()
+    profile = publication.load_publication_profile(platform, args.extra or ())
+    version = adaptive.bump_patch(profile.get("version"))
+    patched, applied, skipped = adaptive.patched_profile_text(text, by_portal[platform], version)
+    for problem in skipped:
+        print(f"skipped: {problem}")
+    if not applied:
+        print("nothing to apply: no adaptive resolution held its post-condition")
+        return 1
+    os.makedirs(os.path.dirname(out) or ".", exist_ok=True)
+    with open(out, "w", encoding="utf-8", newline="\n") as handle:
+        handle.write(patched)
+    print(f"wrote {out}: {platform} {profile.get('version')} -> {version}, the locator that "
+          f"worked put first in {', '.join(applied)}. A person reviews it, then commits it as "
+          f"the profile's new version.")
+    return 0
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     parser.add_argument("--extra", action="append", help="another publication profiles directory")
@@ -229,6 +309,13 @@ def main(argv=None):
     summary = sub.add_parser("observe-summary")
     summary.add_argument("dir")
     summary.set_defaults(run=cmd_observe_summary)
+    review = sub.add_parser("drift-review", help="the adaptive mode's proposed profile changes")
+    review.add_argument("target", metavar="run", help="a run id, or a run or visit directory")
+    review.add_argument("--platform", help="the portal whose proposals --apply writes")
+    review.add_argument("--apply", action="store_true",
+                        help="write the proposals into a NEW profile file (--profile-out)")
+    review.add_argument("--profile-out", help="the new profile file --apply writes")
+    review.set_defaults(run=cmd_drift_review)
     args = parser.parse_args(argv)
     return args.run(args)
 

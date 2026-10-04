@@ -13,6 +13,17 @@ the headed browser window the executor opens (credential `human-login`, profile 
 storage state is captured, loaded or saved, `wgf-publish.py capture` is gone, and a live
 visit stops `UPLOAD_COMPLETE` - the review request runs only in a later visit a person
 confirmed. Where 2.11 and 2.15 below say "capture", read "log in live in the window".
+Landed: 2.6, the bounded adaptive mode (`scripts/wgf_publish/adaptive.py`, the executor's
+checks in `browser/console.spec.ts`; `docs/publish-module.md`, "Bounded adaptive mode").
+As built: off unless `factory.publish.adaptive: true` AND a resolver agent is configured
+(`factory.publish.resolver`, `kind: none | command`); the snapshot is the roles, names,
+labels and states of the page, without a screenshot; the request and the answer pass
+through two files (`drift-request.json`, `drift-response.json`), so the browser process
+never runs a model; an intent's optional `page` pattern (profile schema, additive) is the
+page check; session, find_game, status_gate and request_review never adapt; an irreversible
+intent's drift asks the resolver only for a suggestion, recorded and never acted on; and
+`wgf-publish.py drift-review` prints `drift.json` and, with `--apply`, writes a new profile
+file for a person to commit - never the shipped one.
 
 ## The decision this document implements
 

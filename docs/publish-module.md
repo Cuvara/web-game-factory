@@ -229,11 +229,10 @@ recorded with its rung; never coordinates. Every action's post-condition (`expec
 value read back, an element shown, text, a status word) is checked after it. A ladder that
 matches nothing or several elements, or a failed post-condition, ends the visit with a
 `drift` result naming the intent: `UNKNOWN` (`ambiguous-portal-state`) on a reversible
-intent, `drift-irreversible` on the request. `resolveDrift(intent, snapshot)` in the spec is
-the hook the bounded adaptive mode (`docs/portal-publishing-architecture.md` 2.6) will fill;
-today it returns `stop`. A failed post-condition after the irreversible click is never
-retried: a person reads the portal. A profile `status.error` shown after an action is
-`PLATFORM_ERROR` with its text.
+intent, `drift-irreversible` on the request - unless the bounded adaptive mode (below)
+resolves a reversible intent's drift. A failed post-condition after the irreversible click
+is never retried: a person reads the portal. A profile `status.error` shown after an action
+is `PLATFORM_ERROR` with its text.
 
 **The live login handoff.** The browser is headed (headless only for the tests' fixture
 portal) and its context is fresh: no storage state in, none out, no persistent profile; the
@@ -264,10 +263,94 @@ screenshot on a page that is not the logged-in console.
 `<run>/<step>/<visit>-<attempt>/actions.jsonl` (`Publication.actions_log`, run-relative):
 portal, phase, intent id, class, action, the locator used, its rung and `source: profile`,
 the element's role and name, the value's sha256 (the value itself only for public listing
-copy; files by name and sha256), the result and the post-condition's, `adaptive: false`,
-`human_intervention` (true for login waits), timestamps, and pre/post screenshot paths with
-their hashes. The adapter scrubs every line with `wgflib.redact` after the run; no
-password, token, cookie or one-time code is ever written.
+copy; files by name and sha256), the result and the post-condition's, `adaptive` (false
+unless the line is the bounded adaptive mode's), `human_intervention` (true for login
+waits), timestamps, and pre/post screenshot paths with their hashes. The adapter scrubs every
+line with `wgflib.redact` after the run; no password, token, cookie or one-time code is ever
+written.
+
+### Bounded adaptive mode
+
+`scripts/wgf_publish/adaptive.py` (the resolver side) and the checks in
+`browser/console.spec.ts` (`docs/portal-publishing-architecture.md` 2.6). The Playwright
+executor stays the only thing that operates the browser; an agent may only help it past
+reversible UI drift - a renamed label, a moved element, a tour popover in the way - for the
+same predefined intent.
+
+**When.** A **reversible** intent's ladder matches nothing or several elements, or its
+post-condition fails, and all of: the profile says `adaptive: allowed`; the installation
+sets `factory.publish.adaptive: true` (default false; `factory.publish.platforms.<id>.
+adaptive: false` turns one portal off); a resolver agent is configured
+(`factory.publish.resolver`, `kind: command`). Otherwise drift stops as above, and the stop
+says why the mode was unavailable. Never adaptive: `irreversible` and `human` intents; the
+`session`, `find_game` (the identity choice - which game), `status_gate` and
+`request_review` phases; a `read` intent; an intent with no `names`.
+
+**The request.** The executor pauses and takes a snapshot of the logged-in console page:
+each visible control, link, heading, label and dialog with its role, accessible name,
+labels, placeholder, text, stable attributes and state; every input value replaced by
+`<value>` (or empty); hidden and password inputs left out; never on a login, CAPTCHA,
+second-factor or anti-bot page (no snapshot, no request: the visit stops); no cookie,
+header, storage or network traffic. It writes `drift-request.json` beside `actions.jsonl` -
+the intent (id, phase, action, the roles that fit it, its `names`, the failed ladder, the
+post-condition with the value masked, the `page` pattern), why it drifted, the page's url
+path, the snapshot and its sha256, the `dismissable` names, the remaining budget - and
+waits for `drift-response.json` (the resolver's timeout + 30 s; then `stop`). A Responder
+thread of the step reads the request, scrubs it with `wgflib.redact`, keeps only those keys,
+and asks the resolver. The browser process never runs a model.
+
+**The resolver** is the release role run through the Factory's agent runner, like the
+review and assets steps' agents: `argv` under `wgflib.procs` (its own process tree,
+timeout), placeholders `{request}`, `{answer}`, `{schema}` (the answer's JSON schema),
+`{prompt}`; `answer_from: stdout` (the last JSON object it prints) or `file`. Its
+environment is `wgflib.agentenv`'s allowlist plus `factory.agents.env_passthrough`, minus
+every publish variable (`WGF_PUBLISH_*` and `factory.publish.env_passthrough`). Give it no
+tools, no browser and no MCP server: it reads one file and answers. Its answer is parsed
+strictly into exactly one of `resolve` (one locator rung for the same intent: role + name,
+label, placeholder, text, testid, css or xpath - never an index, coordinates, a script or
+keys), `dismiss` (one overlay), `navigate` (a url path) or `stop`; anything else, a crash, a
+non-zero exit or a timeout is `stop`.
+
+**The executor's checks**, every one recorded, all of which must pass before it acts: the
+proposal kind fits the intent; it carries no value (a value only ever comes from the job)
+and no other action (a fill never becomes a click); the page is on an allowed origin and is
+the intent's page (its `page` pattern; else, on a game's own phases, that game's page); the
+locator is one well-formed rung that resolves to exactly one visible (for an upload,
+attached), enabled element; its role fits the intent's action (fill: textbox; select:
+combobox or listbox; upload: file input; click: button or link); one of its accessible
+names, labels or placeholder is in the intent's `names` (case-folded) - for a dismiss, in
+the profile's `dismissable`; and none of its names, its text or the locator's own text
+matches the deny vocabulary (`wgflib.publication.DENY_VOCABULARY` plus the profile's
+`deny`). A navigate must be a path (`/...`) that stays on an allowed origin (and on the
+intent's `page`, when it names one). The budget: `adaptive_bounds`, at most 3 per intent and
+10 per visit, lowered by `factory.publish.adaptive_bounds`, never raised. A refused proposal
+stops the visit `UNKNOWN` (`ambiguous-portal-state`) with the proposal and the checks
+recorded. A resolved element is acted on exactly as a profile locator would be, and its
+post-condition checked the same way; a failure is never adapted again. After a dismiss or a
+navigate the profile's own ladder is tried again.
+
+**An irreversible intent** that drifts stops `drift-irreversible` as before. With the mode
+on, the resolver is asked once for a suggestion (`suggestion_only` in the request); it is
+recorded in `drift.json`, `actions.jsonl` and the outcome's message as a suggestion, and
+never checked against the page or acted on: a person confirms the locator by correcting the
+profile, or requests review by hand.
+
+**What is recorded.** Every adaptive line in `actions.jsonl` carries `adaptive: true`,
+`source: adaptive`, the snapshot hash, the proposal, each check with its result, whether it
+`acted`, and the outcome. A record of a visit in which any adaptive action ran (a resolved
+element acted on, an overlay dismissed, a navigation) is
+`measurement_class: automation-console-adaptive`. Each visit's `drift.json` lists the
+drifted intents: the failed ladder, why, the proposal, the checks, the outcome (`ok`,
+`refused`, `stopped`, `acted`, `post-condition-failed`, `suggestion`), the locator that
+worked, and a `proposed_patch` - a YAML snippet putting it first in the intent's ladder.
+Nothing edits a profile:
+
+```bash
+python3 scripts/wgf-publish.py drift-review <run-id|DIR>          # every proposal, every check
+python3 scripts/wgf-publish.py drift-review <run-id> --apply --profile-out new.yaml
+        # a NEW profile file, version bumped, the locators that held their post-condition
+        # first in their ladders: a person reviews it and commits it as the next version
+```
 
 **Playwright MCP is not the submission executor.** It stays what it was: the QA and
 self-playtest tool pinned in `workspace/config/mcp-playwright-localhost.json`, localhost
@@ -403,7 +486,8 @@ profile; the observer never edits one.
 Every record carries `evidence[]` (guard verdicts, the package file with its hash, the
 Playwright run's exit code and tail, screenshots by run-relative path and sha256, the
 status text read back), a `measurement_class` (`automation-check` for the validating step,
-`automation-console` for a console run, `human` for a person's `done`), the `workflow`
+`automation-console` for a console run, `automation-console-adaptive` when the bounded
+adaptive mode acted in it, `human` for a person's `done`), the `workflow`
 reference, and the `submission` block (method, idempotency key, portal draft id, dry run,
 attempts, the G6 record and manifest hash it was authorized by). `external_approval` on the
 release-manifest stays `not-claimed`: a portal's moderation verdict is transcribed by a
@@ -450,6 +534,9 @@ factory:
     platforms: {}                     # crazygames: {terms_confirmed: true}
     # profiles_extra: []              # more publication profiles (tests)
     # timeouts: {}                    # action / navigation / upload, ms
+    adaptive: false                   # the bounded adaptive mode; also needs a resolver
+    # adaptive_bounds: {max_per_intent: 3, max_per_visit: 10}   # lower only
+    resolver: {kind: none}            # none | command: {argv, answer_from, timeout_seconds}
 ```
 
 A step's `with:` overrides any key, plus `repo_dir` for the checkout (the one precedence
@@ -477,7 +564,17 @@ upload (`UPLOAD_COMPLETE`, nothing requested) and a confirmed visit requesting r
 (`SUBMITTED` from the status text; a third visit clicks nothing), ids issued on create
 (`IDS_ISSUED`, then the rebuilt visit uploads to the same game), drift on a reversible and on
 the irreversible intent, a refused upload, pending declarations, `actions.jsonl` complete
-and free of secrets, and no storage-state file anywhere. `scripts/tests/test_publish_registry.py`
+and free of secrets, and no storage-state file anywhere. `scripts/tests/test_publish_adaptive.py`
+(RELEASE): the strict answer parser, the budget, the configuration (off by default), the
+resolver's environment without publish variables, a command resolver run under
+`wgflib.procs`, the request/response protocol, the flow's `adaptive` block, the measurement
+class, `drift.json` and `drift-review`; and, with `WGF_PUBLISH_BROWSER_TEST=1`, a SCRIPTED
+resolver (never a model) against the fixture portal's drift modes: a good resolution (acted,
+post-condition held, patch proposed, nothing secret in the request), and refusals of a name
+outside the vocabulary, a deny-vocabulary name, a fill turned click, a resolver-supplied
+value, a foreign origin and a path off the console, the wrong page, an ambiguous locator, a
+spent budget, a dismissable overlay and a destructive one, the irreversible intent (a
+suggestion only), the mode turned off, and a malformed answer. `scripts/tests/test_publish_registry.py`
 (RELEASE) covers the portal registry. `scripts/tests/test_publish_observe.py`
 (RELEASE): the observer's scrubbing, summary and exit codes around a stand-in browser, its
 spec's source (no action call, no session kept), and - with `WGF_PUBLISH_BROWSER_TEST=1` -

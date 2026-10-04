@@ -1,0 +1,5168 @@
+{
+ "format": 1,
+ "kind": "old-factory-baseline",
+ "baseline_main": "8daeec84b7bb6a9454335e275480a3fdf670f141",
+ "script": "docs/benchmark/baseline.py",
+ "status": "OBSERVED BASELINE - what the old Factory produced and recorded; not expected findings for the new Factory",
+ "games": [
+  {
+   "game": "Brick Breaker Worlds",
+   "dimension": "2D",
+   "run_id": "new-game-20261003-081154-4e5e0a",
+   "project": "C:\\Users\\duycu\\wgf-runs\\val-2d\\project",
+   "repo": "C:\\Users\\duycu\\wgf-runs\\val-2d\\games\\brick-breaker-worlds",
+   "workflow": {
+    "workflow_id": "new-game",
+    "workflow_version": 7,
+    "status": "WAITING",
+    "cursor": "publish-review"
+   },
+   "idea": "A 2D brick-breaker arcade game (PixiJS): paddle and ball with satisfying juice, 4 themed worlds of hand-designed levels with new brick types and hazards introduced per world, power-ups (multi-ball, wide paddle, laser), star rating per level, level unlocks and saved progress, boss levels, and an endless mode for replay. Desktop and mobile touch.",
+   "factory": {
+    "worktree": "C:\\Users\\duycu\\wgf-runs\\val-2d\\factory",
+    "head": "1c78dc6b2af3",
+    "dirty": false,
+    "head_moves": 12,
+    "at": {
+     "run_start": "cc9e2ffcc0ef",
+     "last_develop_start": "2a114ab23467",
+     "last_playability_start": "2a114ab23467",
+     "last_visual_qa_start": "2a114ab23467",
+     "last_verify_start": "2a114ab23467",
+     "release_start": "1c78dc6b2af3",
+     "platform_validate_start": "1c78dc6b2af3"
+    },
+    "commits": [
+     {
+      "sha": "cc9e2ffcc0ef",
+      "subject": "Merge pull request #24 from Cuvara/quality/reference-context",
+      "date": "2026-10-03T14:35:20+07:00",
+      "on_main": true
+     },
+     {
+      "sha": "2a114ab23467",
+      "subject": "Merge remote-tracking branch 'origin/main' into work/val-2d",
+      "date": "2026-10-04T12:32:45+07:00",
+      "on_main": false,
+      "main_parent": "096f9d73ff5e",
+      "tree_equals_main_parent": true
+     },
+     {
+      "sha": "1c78dc6b2af3",
+      "subject": "Merge remote-tracking branch 'origin/main' into work/val-2d",
+      "date": "2026-10-04T13:35:05+07:00",
+      "on_main": false,
+      "main_parent": "d67b24b11717",
+      "tree_equals_main_parent": true
+     }
+    ],
+    "note": "commit in force at each point, from the worktree reflog; the run read the Factory from this worktree throughout"
+   },
+   "release": {
+    "file": "artifacts/release-manifest/v1.json",
+    "artifact_id": "wgf:release-manifest:brick-breaker-worlds:20261004-01",
+    "schema_version": "1.3.0",
+    "content_hash": "sha256:946e455a79f86d3fab6dbb618378a9fbc70049eba7fb479fa5780fc6572e2cb0",
+    "release_id": "r1",
+    "version": "0.1.0",
+    "state": "draft",
+    "commit_sha": "96f5ceaa7abf165594b06cfb8c69eec9f0612ec1",
+    "commit_subject": "feat(game): development iteration 17",
+    "frozen_at": null,
+    "packages": [
+     {
+      "platform_id": "poki",
+      "filename": "poki.zip",
+      "size_mb": 6.077,
+      "checksum": "sha256:697622cafe6fd5f7c46971e8c1857496d2fb50ab04ff0c47602fab836cef9dd7",
+      "content_digest": "sha256:1c470233b4997360a34a50fcb41d844c0e5f7251dbf3dab0dc25f6a62eb686b8",
+      "files": 78
+     }
+    ],
+    "packages_on_disk": [
+     {
+      "filename": "poki.zip",
+      "exists": true,
+      "sha256_matches_manifest": true
+     }
+    ],
+    "target_platforms": [
+     {
+      "id": "poki",
+      "role": "required",
+      "profile_version": "1.1.0"
+     },
+     {
+      "id": "crazygames",
+      "role": "optional",
+      "profile_version": "1.1.0"
+     },
+     {
+      "id": "yandex",
+      "role": "optional",
+      "profile_version": "1.1.0"
+     }
+    ],
+    "template": {
+     "repository": "Cuvara/web-game-template",
+     "commit_sha": "b1062619457f427bac91b45f6a96762f256a945a",
+     "version": "1.2.0",
+     "source": "CHANGELOG.md (first release heading)"
+    },
+    "evidence": {
+     "status": "PASS_MOCK",
+     "qa_report": {
+      "artifact_id": "wgf:qa-report:brick-breaker-worlds:20261004-03",
+      "content_hash": "sha256:e69ce523b1647e8432f8973bf3aafce8cc114abc524c35499357bfb7d59e6d78",
+      "verdict": "pass",
+      "evidence_status": "PASS_MOCK"
+     },
+     "verification_report": {
+      "artifact_id": "wgf:verification-report:brick-breaker-worlds:20261004-03",
+      "content_hash": "sha256:7e015d87272ecfc5ac11001a685102b9046ccd7ddf98b2e9de6504cc10f4b060",
+      "verdict": "PASS",
+      "evidence_status": "PASS_MOCK"
+     },
+     "commit_lineage": [
+      {
+       "source": "qa-report",
+       "commit_sha": "96f5ceaa7abf165594b06cfb8c69eec9f0612ec1"
+      },
+      {
+       "source": "verification-report",
+       "commit_sha": "96f5ceaa7abf165594b06cfb8c69eec9f0612ec1"
+      },
+      {
+       "source": "sdk-report",
+       "commit_sha": "96f5ceaa7abf165594b06cfb8c69eec9f0612ec1"
+      },
+      {
+       "source": "sdk-report.base",
+       "commit_sha": "96f5ceaa7abf165594b06cfb8c69eec9f0612ec1"
+      },
+      {
+       "source": "prototype-report",
+       "commit_sha": "96f5ceaa7abf165594b06cfb8c69eec9f0612ec1"
+      },
+      {
+       "source": "checkout",
+       "commit_sha": "96f5ceaa7abf165594b06cfb8c69eec9f0612ec1"
+      }
+     ],
+     "review": {
+      "verdict": "approve",
+      "reviewed_commit": "96f5ceaa7abf165594b06cfb8c69eec9f0612ec1",
+      "artifact_id": "wgf:review-report:brick-breaker-worlds:20261004-04",
+      "content_hash": "sha256:7671c1c14393bee30d972e121215a9e3b4f3232433fbb17d9f0d30d110c0a3eb",
+      "status": "approved"
+     },
+     "bundle_hash": "sha256:a165ecada7849c0489c5d73ed115f62d2404ea6812d8ab2063a82e40d82074d3",
+     "platforms": [
+      {
+       "platform_id": "poki",
+       "role": "required",
+       "readiness": "ready",
+       "evidence_status": "PASS_MOCK",
+       "portal_status": "BLOCKED_EXTERNAL",
+       "external_approval": "not-claimed"
+      },
+      {
+       "platform_id": "crazygames",
+       "role": "optional",
+       "readiness": "not-ready",
+       "evidence_status": "FAIL",
+       "portal_status": "BLOCKED_EXTERNAL",
+       "external_approval": "not-claimed"
+      },
+      {
+       "platform_id": "yandex",
+       "role": "optional",
+       "readiness": "not-ready",
+       "evidence_status": "FAIL",
+       "portal_status": "BLOCKED_EXTERNAL",
+       "external_approval": "not-claimed"
+      }
+     ],
+     "package_audit": {
+      "status": "PASS",
+      "rules": [
+       "index.html at the archive root",
+       "no sourcemaps (*.map)",
+       "no test files",
+       "no environment or secret files",
+       "no secret-looking content",
+       "no absolute or parent-relative entry names"
+      ]
+     },
+     "reproducibility": {
+      "archive_bytes": "timestamp-dependent",
+      "note": "Packaged from the verified bundle without rebuilding it, so this commit and bundle package to the same bytes again. The archives embed each file's modification time, so a fresh build of identical content gives a different checksum; content_digest does not change."
+     },
+     "store_listing": {
+      "status": "complete",
+      "artifact_id": "wgf:store-listing:brick-breaker-worlds:20261004-04",
+      "content_hash": "sha256:1354bdc6895bcd9c48b108466da5d32654ff426c3f0002b17cf2a9b7b8566222",
+      "path": "listing/",
+      "trailer": "recorded",
+      "branding": "browser-composed",
+      "screenshots": 5,
+      "validation": {
+       "artifact_id": "wgf:listing-validation-report:brick-breaker-worlds:20261004-04",
+       "content_hash": "sha256:4118c3bc3c2f4c6928f033de5bfe4a8cc597d735e2f3b5490f6e85183a1a643c",
+       "verdict": "PASS",
+       "unknown": 20
+      }
+     },
+     "source_manifest_hash": "sha256:70a66f060e9c4ab7138353b7dce3fba7fcb6bf2c96db592d0e919ac821302647"
+    },
+    "dist_digest": {
+     "status": "built",
+     "path": "dist",
+     "content_hash": "sha256:a165ecada7849c0489c5d73ed115f62d2404ea6812d8ab2063a82e40d82074d3",
+     "files": 97,
+     "bytes": 10707557
+    },
+    "inputs": [
+     {
+      "artifact_id": "wgf:listing-validation-report:brick-breaker-worlds:20261004-04",
+      "file": "artifacts/listing-validation-report/v4.json"
+     },
+     {
+      "artifact_id": "wgf:production-quality-report:brick-breaker-worlds:20261004-16",
+      "file": "artifacts/production-quality-report/v16.json"
+     },
+     {
+      "artifact_id": "wgf:prototype-report:brick-breaker-worlds:20261004-24",
+      "file": "artifacts/prototype-report/v29.json"
+     },
+     {
+      "artifact_id": "wgf:qa-report:brick-breaker-worlds:20261004-03",
+      "file": "artifacts/qa-report/v3.json"
+     },
+     {
+      "artifact_id": "wgf:review-report:brick-breaker-worlds:20261004-04",
+      "file": "artifacts/review-report/v9.json"
+     },
+     {
+      "artifact_id": "wgf:scaffold-record:brick-breaker-worlds:20261003-02",
+      "file": "artifacts/scaffold-record/v2.json"
+     },
+     {
+      "artifact_id": "wgf:sdk-report:brick-breaker-worlds:20261004-04",
+      "file": "artifacts/sdk-report/v4.json"
+     },
+     {
+      "artifact_id": "wgf:store-listing:brick-breaker-worlds:20261004-04",
+      "file": "artifacts/store-listing/v4.json"
+     },
+     {
+      "artifact_id": "wgf:verification-report:brick-breaker-worlds:20261004-03",
+      "file": "artifacts/verification-report/v3.json"
+     },
+     {
+      "artifact_id": "wgf:visual-qa-report:brick-breaker-worlds:20261004-06",
+      "file": "artifacts/visual-qa-report/v5.json"
+     }
+    ]
+   },
+   "gates": {
+    "final": {
+     "playability": {
+      "file": "artifacts/playability-report/v23.json",
+      "artifact_id": "wgf:playability-report:brick-breaker-worlds:20261004-19",
+      "schema_version": "1.2.0",
+      "content_hash": "sha256:ada438cd971b478f62b92012114e774b4832722a6366625817f09ca917c23b94",
+      "verdict": "PASS",
+      "commit": "96f5ceaa7abf165594b06cfb8c69eec9f0612ec1",
+      "measurement_class": "automation-bot",
+      "checks": 42,
+      "status_counts": {
+       "PASS": 38,
+       "WARNING": 4
+      },
+      "failed_checks": [],
+      "skipped_checks": [],
+      "non_pass": [
+       {
+        "id": "content.variety",
+        "project": "desktop",
+        "status": "WARNING",
+        "required": false,
+        "summary": "the probe reports no `entities[].kind`, so the 1 new kind(s) each unit must introduce could not be measured"
+       },
+       {
+        "id": "depth.session_length",
+        "project": "desktop",
+        "status": "WARNING",
+        "required": false,
+        "summary": "one oracle session with instant retries lasted 25604 ms; the bot's window was cut to 220000 ms to fit the time budget; the designed closing beat (World 1's boss down with the World 2 gate on the map showing the stars still needed out of 18 - the player leaves a few stars short of opening it, knowing which level to replay.) arrived at 25587 ms"
+       },
+       {
+        "id": "content.variety",
+        "project": "mobile",
+        "status": "WARNING",
+        "required": false,
+        "summary": "the probe reports no `entities[].kind`, so the 1 new kind(s) each unit must introduce could not be measured"
+       },
+       {
+        "id": "depth.session_length",
+        "project": "mobile",
+        "status": "WARNING",
+        "required": false,
+        "summary": "one oracle session with instant retries lasted 35759 ms; the bot's window was cut to 220000 ms to fit the time budget; the designed closing beat (World 1's boss down with the World 2 gate on the map showing the stars still needed out of 18 - the player leaves a few stars short of opening it, knowing which level to replay.) arrived at 35740 ms"
+       }
+      ]
+     },
+     "production-quality": {
+      "file": "artifacts/production-quality-report/v16.json",
+      "artifact_id": "wgf:production-quality-report:brick-breaker-worlds:20261004-16",
+      "schema_version": "1.0.0",
+      "content_hash": "sha256:6ea00f7be5a01c95fd732986b650c4dced98b382d43141be37edeb887ce08fb5",
+      "verdict": "PASS",
+      "commit": "96f5ceaa7abf165594b06cfb8c69eec9f0612ec1",
+      "measurement_class": "automation-bot",
+      "checks": 19,
+      "failed": [],
+      "routes": [],
+      "non_pass": [
+       {
+        "id": "scene.no_primitives",
+        "project": "desktop",
+        "status": "WARNING",
+        "required": false,
+        "summary": "exempt: the design's visual_identity.primitive_style allows primitives (A brick-breaker's cast is abstract light shapes: neon tube bricks, a light-bar paddle, a glowing disc ball and pill capsules. The art direction is geometric by design, and none of them is a character standing in for a cube.); drawn as primitives: bricks-left-bar (goal)"
+       },
+       {
+        "id": "scene.no_primitives",
+        "project": "mobile",
+        "status": "WARNING",
+        "required": false,
+        "summary": "exempt: the design's visual_identity.primitive_style allows primitives (A brick-breaker's cast is abstract light shapes: neon tube bricks, a light-bar paddle, a glowing disc ball and pill capsules. The art direction is geometric by design, and none of them is a character standing in for a cube.); drawn as primitives: bricks-left-bar (goal)"
+       }
+      ]
+     },
+     "visual-qa": {
+      "file": "artifacts/visual-qa-report/v5.json",
+      "artifact_id": "wgf:visual-qa-report:brick-breaker-worlds:20261004-06",
+      "schema_version": "1.3.0",
+      "content_hash": "sha256:a5686d85b808a9d7f8e8914d3fb11d4e8813ee81d031e88362114ad1c9586ce5",
+      "verdict": "PASS",
+      "commit": "96f5ceaa7abf165594b06cfb8c69eec9f0612ec1",
+      "measurement_class": "automation-agent",
+      "rubric": {
+       "path": "core/reference/visual-qa-rubric.yaml",
+       "version": "1.2.0",
+       "pass_bar": 3
+      },
+      "judge": {
+       "kind": "command",
+       "argv0": "claude",
+       "model": "sonnet",
+       "verdict_from": "stdout"
+      },
+      "judge_runs": 2,
+      "judge_repairs": 1,
+      "frames": 52,
+      "scores": {
+       "art_completeness": 4,
+       "character_readability": 4,
+       "environment": 4,
+       "ui_polish": 4,
+       "typography": 4,
+       "composition": 3,
+       "consistency": 5,
+       "no_debug": 5
+      },
+      "mean_score": 4.125,
+      "min_score": 3,
+      "look": {
+       "verdict": "finished-game",
+       "reason": "A cohesive neon-signage identity with drawn bricks, paddle, capsules, boss and embers, per-world backdrops, a designed wordmark, and a consistent glowing pill-plus-square UI that is on par with the quality bar; the narrow desktop layout is the main thing holding it back."
+      },
+      "findings": [
+       {
+        "id": "desktop-board-narrow-column",
+        "severity": "minor",
+        "category": "composition",
+        "frame": null,
+        "route": "develop",
+        "summary": "On desktop the play board is a narrow portrait column with large empty side areas, and the hint card floats detached at the left. The layout is not re-composed for landscape."
+       },
+       {
+        "id": "end-won-card-clipped",
+        "severity": "minor",
+        "category": "composition",
+        "frame": "desktop/end-won",
+        "route": "develop",
+        "summary": "The Level Clear card is clipped at the bottom of the 720px viewport mid-entrance, so the Replay and Next buttons are cut off and Map is out of view in this frame. The settled card in state-won is fine."
+       },
+       {
+        "id": "hint-covers-ember",
+        "severity": "minor",
+        "category": "readability",
+        "frame": "mobile/state-showcase-embers",
+        "route": "develop",
+        "summary": "The onboarding hint card overlaps the falling ember, hiding the world 4 threat."
+       },
+       {
+        "id": "world1-backdrop-faint",
+        "severity": "minor",
+        "category": "composition",
+        "frame": "desktop/first-session-1s",
+        "route": "assets",
+        "summary": "The cyan alley backdrop inside the board is very low-contrast, and the world 1 scene feels sparse compared with the furnace world."
+       }
+      ],
+      "failed": [],
+      "routes": []
+     },
+     "review": {
+      "file": "artifacts/review-report/v8.json",
+      "artifact_id": "wgf:review-report:brick-breaker-worlds:20261004-05",
+      "schema_version": "1.1.0",
+      "content_hash": "sha256:fac60dd69d2db7c39b2dd8340f99fbdb006a18e569a4e6f094d5b4df0792f79f",
+      "verdict": "approve",
+      "reviewed_commit": "96f5ceaa7abf165594b06cfb8c69eec9f0612ec1",
+      "baseline_commit": "8916d1976d6d6942beb07ecefa66e064017a6330",
+      "iteration": 5,
+      "blockers": [],
+      "failure": null,
+      "isolation_intact": true,
+      "duration_s": 12.727,
+      "notes": "Docs-only commit (brief.json, brief.md, checks.json, report.json); no source, content or test change, matching the report's 'no game change' claim. Checks are green and the report carries the correct visit key. Game code was not re-audited here since it is unchanged from iteration 16. Three units remain reported as partial (w1-l2, w2-l3, w4-l8), with their design gaps declared in the report."
+     },
+     "sdk": {
+      "file": "artifacts/sdk-report/v4.json",
+      "artifact_id": "wgf:sdk-report:brick-breaker-worlds:20261004-04",
+      "schema_version": "1.2.0",
+      "content_hash": "sha256:cc637c8644897d5919d4990e333444ba3ac56a02fd78db3fc943910caa1e0129",
+      "commit": "96f5ceaa7abf165594b06cfb8c69eec9f0612ec1",
+      "platforms": [
+       {
+        "platform_id": "poki",
+        "profile_version": "1.1.0",
+        "status": "working",
+        "features": {
+         "working": 12,
+         "not-required": 1
+        }
+       },
+       {
+        "platform_id": "crazygames",
+        "profile_version": "1.1.0",
+        "status": "working",
+        "features": {
+         "working": 12,
+         "not-required": 1
+        }
+       },
+       {
+        "platform_id": "yandex",
+        "profile_version": "1.1.0",
+        "status": "working",
+        "features": {
+         "working": 12,
+         "not-required": 1
+        }
+       }
+      ]
+     },
+     "sdk-review": {
+      "file": "artifacts/review-report/v9.json",
+      "artifact_id": "wgf:review-report:brick-breaker-worlds:20261004-04",
+      "schema_version": "1.1.0",
+      "content_hash": "sha256:7671c1c14393bee30d972e121215a9e3b4f3232433fbb17d9f0d30d110c0a3eb",
+      "verdict": "approve",
+      "reviewed_commit": "96f5ceaa7abf165594b06cfb8c69eec9f0612ec1",
+      "baseline_commit": "96f5ceaa7abf165594b06cfb8c69eec9f0612ec1",
+      "iteration": 4,
+      "blockers": [],
+      "failure": null,
+      "isolation_intact": true,
+      "duration_s": 40.104,
+      "notes": "The commit is docs-only (brief, checks and report refresh); no game or src code changed, so the game is unchanged from iteration 16. The brief calls it the SDK commit on top of the development commit but names the same sha for both; the actual SDK change is dfc166c, a one-line header edit to src/platform/integration-plan.ts. The seam is intact: no portal SDK is called from game code, the integration plan matches the design (rewarded continue at game-over, interstitial at level-complete, breakOnContinue for poki), ads pause and mute the game, and the rewarded and interstitial policies match the brief and read their numbers from tuning data. The partial units w1-l2, w2-l3 and w4-l8 and the other design gaps are reported in report.json as the brief requires. I read the code and docs only and did not run the test suite; I relied on the recorded checks, which all passed."
+     },
+     "verify": {
+      "file": "artifacts/verification-report/v3.json",
+      "artifact_id": "wgf:verification-report:brick-breaker-worlds:20261004-03",
+      "schema_version": "1.1.0",
+      "content_hash": "sha256:7e015d87272ecfc5ac11001a685102b9046ccd7ddf98b2e9de6504cc10f4b060",
+      "verdict": "PASS",
+      "evidence_status": "PASS_MOCK",
+      "commit": {
+       "sha": "96f5ceaa7abf165594b06cfb8c69eec9f0612ec1",
+       "dirty": false,
+       "repository": "C:\\Users\\duycu\\wgf-runs\\val-2d\\games\\brick-breaker-worlds"
+      },
+      "gameplay_driver": "repository-playwright",
+      "build_artifact": {
+       "status": "built",
+       "path": "dist",
+       "content_hash": "sha256:a165ecada7849c0489c5d73ed115f62d2404ea6812d8ab2063a82e40d82074d3",
+       "files": 97,
+       "bytes": 10707557
+      },
+      "summary": {
+       "total": 59,
+       "PASS": 51,
+       "FAIL": 2,
+       "BLOCKED": 0,
+       "WARNING": 6
+      },
+      "failed_checks": [
+       "platform.build-target:crazygames",
+       "platform.build-target:yandex"
+      ],
+      "blocked_checks": [],
+      "warning_checks": [
+       "quality.content:variety",
+       "quality.depth:session-length",
+       "policy.assertions:crazygames",
+       "policy.assertions:yandex",
+       "assets.manifest",
+       "assets.loading"
+      ],
+      "platform_readiness": [
+       {
+        "platform_id": "poki",
+        "role": "required",
+        "readiness": "ready",
+        "evidence_status": "PASS_MOCK",
+        "portal_status": "BLOCKED_EXTERNAL"
+       },
+       {
+        "platform_id": "crazygames",
+        "role": "optional",
+        "readiness": "not-ready",
+        "evidence_status": "FAIL",
+        "portal_status": "BLOCKED_EXTERNAL"
+       },
+       {
+        "platform_id": "yandex",
+        "role": "optional",
+        "readiness": "not-ready",
+        "evidence_status": "FAIL",
+        "portal_status": "BLOCKED_EXTERNAL"
+       }
+      ]
+     },
+     "verify:qa": {
+      "file": "artifacts/qa-report/v3.json",
+      "artifact_id": "wgf:qa-report:brick-breaker-worlds:20261004-03",
+      "schema_version": "1.2.0",
+      "content_hash": "sha256:e69ce523b1647e8432f8973bf3aafce8cc114abc524c35499357bfb7d59e6d78",
+      "verdict": "pass",
+      "evidence_status": "PASS_MOCK",
+      "release_id": "candidate-96f5ceaa7abf",
+      "build_ref": {
+       "commit_sha": "96f5ceaa7abf165594b06cfb8c69eec9f0612ec1",
+       "artifact_hash": "sha256:a165ecada7849c0489c5d73ed115f62d2404ea6812d8ab2063a82e40d82074d3"
+      },
+      "suites": [
+       {
+        "name": "build",
+        "passed": 4,
+        "failed": 0,
+        "skipped": 0
+       },
+       {
+        "name": "typecheck",
+        "passed": 1,
+        "failed": 0,
+        "skipped": 0
+       },
+       {
+        "name": "lint",
+        "passed": 1,
+        "failed": 0,
+        "skipped": 0
+       },
+       {
+        "name": "unit",
+        "passed": 1,
+        "failed": 0,
+        "skipped": 0
+       },
+       {
+        "name": "integration",
+        "passed": 1,
+        "failed": 0,
+        "skipped": 0
+       },
+       {
+        "name": "gameplay-quality",
+        "passed": 9,
+        "failed": 0,
+        "skipped": 0
+       },
+       {
+        "name": "smoke",
+        "passed": 10,
+        "failed": 0,
+        "skipped": 0
+       },
+       {
+        "name": "performance",
+        "passed": 1,
+        "failed": 0,
+        "skipped": 0
+       },
+       {
+        "name": "platform-validation",
+        "passed": 17,
+        "failed": 2,
+        "skipped": 0
+       },
+       {
+        "name": "e2e",
+        "passed": 40,
+        "failed": 0,
+        "skipped": 0
+       }
+      ],
+      "blocking_defects": [],
+      "perf_results": [
+       {
+        "device_class": "lowend-android-proxy",
+        "fps": 13,
+        "within_budget": true,
+        "note": "CPU-throttled desktop proxy, not a device measurement",
+        "time_to_interactive_s": 0.244,
+        "bundle_mb": 10.212
+       }
+      ]
+     },
+     "store-listing": {
+      "file": "artifacts/store-listing/v4.json",
+      "artifact_id": "wgf:store-listing:brick-breaker-worlds:20261004-04",
+      "schema_version": "1.1.0",
+      "content_hash": "sha256:1354bdc6895bcd9c48b108466da5d32654ff426c3f0002b17cf2a9b7b8566222",
+      "status": "complete",
+      "commit": "96f5ceaa7abf165594b06cfb8c69eec9f0612ec1",
+      "measurement_class": "automation-bot",
+      "screenshots": 5,
+      "platforms": [
+       "poki",
+       "crazygames",
+       "yandex"
+      ],
+      "problems": [
+       {
+        "code": "trailer-note",
+        "severity": "info",
+        "message": "no mp4 encoder (libx264) in the bundled ffmpeg",
+        "subject": "trailer"
+       }
+      ]
+     },
+     "listing-validation": {
+      "file": "artifacts/listing-validation-report/v4.json",
+      "artifact_id": "wgf:listing-validation-report:brick-breaker-worlds:20261004-04",
+      "schema_version": "1.0.0",
+      "content_hash": "sha256:4118c3bc3c2f4c6928f033de5bfe4a8cc597d735e2f3b5490f6e85183a1a643c",
+      "verdict": "PASS",
+      "commit": "96f5ceaa7abf165594b06cfb8c69eec9f0612ec1",
+      "checks": 60,
+      "sections": {
+       "assets": "PASS",
+       "metadata": "PASS",
+       "screenshots": "PASS",
+       "video": "PASS",
+       "grounding": "PASS",
+       "platforms": "PASS"
+      },
+      "failed": [],
+      "unknown": 20,
+      "warnings": [
+       "metadata.ru.short_description",
+       "metadata.ru.long_description",
+       "metadata.ru.features"
+      ],
+      "platforms": [
+       {
+        "platform_id": "poki",
+        "status": "PASS",
+        "spec_status": "unverified",
+        "unknown": 6
+       },
+       {
+        "platform_id": "crazygames",
+        "status": "PASS",
+        "spec_status": "unverified",
+        "unknown": 8
+       },
+       {
+        "platform_id": "yandex",
+        "status": "PASS",
+        "spec_status": "unverified",
+        "unknown": 6
+       }
+      ]
+     },
+     "platform-validate": {
+      "file": "artifacts/platform-publication-poki/v1.json",
+      "artifact_id": "wgf:platform-publication:brick-breaker-worlds-poki:20261004-01",
+      "schema_version": "1.1.0",
+      "content_hash": "sha256:c40652075f27b8a14fb6dec309539b34e735fe160b1edb36b58dc0dccf4f442d",
+      "state": "validated",
+      "readiness": "HUMAN_REQUIRED",
+      "measurement_class": "automation-check",
+      "guards": [
+       {
+        "candidate_frozen": "GREEN"
+       },
+       {
+        "store_metadata_complete": "GREEN"
+       },
+       {
+        "package_shaped_to_profile": "GREEN"
+       },
+       {
+        "assertions_pass": "GREEN"
+       },
+       {
+        "metadata_and_locales_present": "GREEN"
+       }
+      ],
+      "package": {
+       "filename": "poki.zip",
+       "size_mb": 6.077,
+       "checksum": "sha256:697622cafe6fd5f7c46971e8c1857496d2fb50ab04ff0c47602fab836cef9dd7",
+       "content_digest": "sha256:1c470233b4997360a34a50fcb41d844c0e5f7251dbf3dab0dc25f6a62eb686b8",
+       "verified_on_disk": true
+      },
+      "human_required": {
+       "reason": "no-automated-method",
+       "detail": "the portal's cli (poki-cli) is the supported way in; no adapter drives it here, so a person runs it with the packaged release"
+      }
+     },
+     "assets": {
+      "file": "artifacts/asset-manifest/v5.json",
+      "artifact_id": "wgf:asset-manifest:brick-breaker-worlds:20261004-06",
+      "schema_version": "1.4.0",
+      "content_hash": "sha256:21a6b233fd76760971024efc26e5cdd1c019954c8c41da5546bd9f6801bdb32a",
+      "items": 34,
+      "complete": false,
+      "placeholders": 0,
+      "issues": 1
+     },
+     "greybox-playability": {
+      "file": "artifacts/playability-report/v15.json",
+      "artifact_id": "wgf:playability-report:brick-breaker-worlds:20261003-06",
+      "schema_version": "1.2.0",
+      "content_hash": "sha256:1ca350444f50d68eab87e35080ef78665ecb1f6671edb65e7582fa6f349491dd",
+      "verdict": "PASS",
+      "commit": "312b7c4afd22bf60c2ae39f8807c6b4e228ce49e",
+      "measurement_class": "automation-bot",
+      "checks": 42,
+      "status_counts": {
+       "PASS": 38,
+       "WARNING": 4
+      },
+      "failed_checks": [],
+      "skipped_checks": [],
+      "non_pass": [
+       {
+        "id": "content.variety",
+        "project": "desktop",
+        "status": "WARNING",
+        "required": false,
+        "summary": "the probe reports no `entities[].kind`, so the 1 new kind(s) each unit must introduce could not be measured"
+       },
+       {
+        "id": "depth.session_length",
+        "project": "desktop",
+        "status": "WARNING",
+        "required": false,
+        "summary": "one oracle session with instant retries lasted 31814 ms; the bot's window was cut to 220000 ms to fit the time budget; the designed closing beat (World 1's boss down with the World 2 gate on the map showing the stars still needed out of 18 - the player leaves a few stars short of opening it, knowing which level to replay.) arrived at 31796 ms"
+       },
+       {
+        "id": "content.variety",
+        "project": "mobile",
+        "status": "WARNING",
+        "required": false,
+        "summary": "the probe reports no `entities[].kind`, so the 1 new kind(s) each unit must introduce could not be measured"
+       },
+       {
+        "id": "depth.session_length",
+        "project": "mobile",
+        "status": "WARNING",
+        "required": false,
+        "summary": "one oracle session with instant retries lasted 27275 ms; the bot's window was cut to 220000 ms to fit the time budget; the designed closing beat (World 1's boss down with the World 2 gate on the map showing the stars still needed out of 18 - the player leaves a few stars short of opening it, knowing which level to replay.) arrived at 27261 ms"
+       }
+      ]
+     }
+    },
+    "history": {
+     "playability-report": [
+      {
+       "v": 1,
+       "produced_at": "2026-10-03T09:59:40Z",
+       "verdict": "FAIL",
+       "commit": "7ea83f08d8c0",
+       "failed": [
+        "desktop:entities.visible",
+        "desktop:lose.reachable",
+        "desktop:start.objective",
+        "mobile:entities.visible",
+        "mobile:lose.reachable",
+        "mobile:start.objective",
+        "mobile:win.reachable"
+       ]
+      },
+      {
+       "v": 2,
+       "produced_at": "2026-10-03T10:21:49Z",
+       "verdict": "FAIL",
+       "commit": "0a71328fecc3",
+       "failed": [
+        "desktop:restart.works",
+        "mobile:restart.works"
+       ]
+      },
+      {
+       "v": 3,
+       "produced_at": "2026-10-03T10:54:29Z",
+       "verdict": "FAIL",
+       "commit": "c7f205e10559",
+       "failed": [
+        "desktop:restart.works",
+        "mobile:restart.works"
+       ]
+      },
+      {
+       "v": 4,
+       "produced_at": "2026-10-03T11:44:29Z",
+       "verdict": "PASS",
+       "commit": "e97664367e88",
+       "failed": []
+      },
+      {
+       "v": 5,
+       "produced_at": "2026-10-03T13:30:41Z",
+       "verdict": "PASS",
+       "commit": "4f8cbe55d617",
+       "failed": []
+      },
+      {
+       "v": 6,
+       "produced_at": "2026-10-03T13:51:38Z",
+       "verdict": "PASS",
+       "commit": "b5989c50f311",
+       "failed": []
+      },
+      {
+       "v": 7,
+       "produced_at": "2026-10-03T14:54:33Z",
+       "verdict": "PASS",
+       "commit": "4049163a7653",
+       "failed": []
+      },
+      {
+       "v": 8,
+       "produced_at": "2026-10-03T15:20:16Z",
+       "verdict": "PASS",
+       "commit": "d5e20ad7b7b8",
+       "failed": []
+      },
+      {
+       "v": 9,
+       "produced_at": "2026-10-03T15:39:59Z",
+       "verdict": "PASS",
+       "commit": "f55653dc5943",
+       "failed": []
+      },
+      {
+       "v": 10,
+       "produced_at": "2026-10-03T15:57:45Z",
+       "verdict": "PASS",
+       "commit": "f55653dc5943",
+       "failed": []
+      },
+      {
+       "v": 11,
+       "produced_at": "2026-10-03T16:21:28Z",
+       "verdict": "FAIL",
+       "commit": "44fa9068c802",
+       "failed": [
+        "desktop:start.playable",
+        "desktop:win.reachable"
+       ]
+      },
+      {
+       "v": 12,
+       "produced_at": "2026-10-03T16:43:37Z",
+       "verdict": "PASS",
+       "commit": "41942aba7270",
+       "failed": []
+      },
+      {
+       "v": 13,
+       "produced_at": "2026-10-03T18:28:17Z",
+       "verdict": "PASS",
+       "commit": "55ab02d932ee",
+       "failed": []
+      },
+      {
+       "v": 14,
+       "produced_at": "2026-10-03T22:59:12Z",
+       "verdict": "FAIL",
+       "commit": "c4039f4b47ea",
+       "failed": [
+        "desktop:progression.persists",
+        "mobile:content.units_reachable",
+        "mobile:depth.ramp",
+        "mobile:progression.persists"
+       ]
+      },
+      {
+       "v": 15,
+       "produced_at": "2026-10-03T23:51:56Z",
+       "verdict": "PASS",
+       "commit": "312b7c4afd22",
+       "failed": []
+      },
+      {
+       "v": 16,
+       "produced_at": "2026-10-04T00:41:20Z",
+       "verdict": "PASS",
+       "commit": "b358677c351c",
+       "failed": []
+      },
+      {
+       "v": 17,
+       "produced_at": "2026-10-04T01:19:26Z",
+       "verdict": "PASS",
+       "commit": "82f2d65f9f7c",
+       "failed": []
+      },
+      {
+       "v": 18,
+       "produced_at": "2026-10-04T01:50:31Z",
+       "verdict": "PASS",
+       "commit": "76da8796ea2d",
+       "failed": []
+      },
+      {
+       "v": 19,
+       "produced_at": "2026-10-04T02:15:42Z",
+       "verdict": "PASS",
+       "commit": "9cf0c1ef1457",
+       "failed": []
+      },
+      {
+       "v": 20,
+       "produced_at": "2026-10-04T03:09:01Z",
+       "verdict": "PASS",
+       "commit": "f662c5106324",
+       "failed": []
+      },
+      {
+       "v": 21,
+       "produced_at": "2026-10-04T03:49:05Z",
+       "verdict": "PASS",
+       "commit": "e8c2571e6c29",
+       "failed": []
+      },
+      {
+       "v": 22,
+       "produced_at": "2026-10-04T04:40:09Z",
+       "verdict": "PASS",
+       "commit": "8916d1976d6d",
+       "failed": []
+      },
+      {
+       "v": 23,
+       "produced_at": "2026-10-04T05:54:23Z",
+       "verdict": "PASS",
+       "commit": "96f5ceaa7abf",
+       "failed": []
+      }
+     ],
+     "production-quality-report": [
+      {
+       "v": 1,
+       "produced_at": "2026-10-03T13:31:40Z",
+       "verdict": "FAIL",
+       "commit": "4f8cbe55d617",
+       "failed": [
+        "assets.loaded",
+        "assets.present",
+        "assets.runtime",
+        "desktop:ui.text",
+        "mobile:ui.targets",
+        "mobile:ui.text"
+       ]
+      },
+      {
+       "v": 2,
+       "produced_at": "2026-10-03T13:52:43Z",
+       "verdict": "FAIL",
+       "commit": "b5989c50f311",
+       "failed": [
+        "assets.loaded",
+        "assets.present",
+        "assets.runtime",
+        "desktop:ui.text",
+        "mobile:ui.targets",
+        "mobile:ui.text"
+       ]
+      },
+      {
+       "v": 3,
+       "produced_at": "2026-10-03T14:55:25Z",
+       "verdict": "FAIL",
+       "commit": "4049163a7653",
+       "failed": [
+        "assets.runtime"
+       ]
+      },
+      {
+       "v": 4,
+       "produced_at": "2026-10-03T15:21:07Z",
+       "verdict": "FAIL",
+       "commit": "d5e20ad7b7b8",
+       "failed": [
+        "assets.runtime"
+       ]
+      },
+      {
+       "v": 5,
+       "produced_at": "2026-10-03T15:40:53Z",
+       "verdict": "FAIL",
+       "commit": "f55653dc5943",
+       "failed": [
+        "assets.runtime"
+       ]
+      },
+      {
+       "v": 6,
+       "produced_at": "2026-10-03T15:59:32Z",
+       "verdict": "FAIL",
+       "commit": "f55653dc5943",
+       "failed": [
+        "assets.runtime"
+       ]
+      },
+      {
+       "v": 7,
+       "produced_at": "2026-10-03T16:45:32Z",
+       "verdict": "PASS",
+       "commit": "41942aba7270",
+       "failed": []
+      },
+      {
+       "v": 8,
+       "produced_at": "2026-10-03T18:30:20Z",
+       "verdict": "PASS",
+       "commit": "55ab02d932ee",
+       "failed": []
+      },
+      {
+       "v": 9,
+       "produced_at": "2026-10-04T00:42:55Z",
+       "verdict": "FAIL",
+       "commit": "b358677c351c",
+       "failed": [
+        "assets.present",
+        "assets.runtime"
+       ]
+      },
+      {
+       "v": 10,
+       "produced_at": "2026-10-04T01:21:01Z",
+       "verdict": "FAIL",
+       "commit": "82f2d65f9f7c",
+       "failed": [
+        "assets.runtime"
+       ]
+      },
+      {
+       "v": 11,
+       "produced_at": "2026-10-04T01:52:05Z",
+       "verdict": "FAIL",
+       "commit": "76da8796ea2d",
+       "failed": [
+        "assets.runtime"
+       ]
+      },
+      {
+       "v": 12,
+       "produced_at": "2026-10-04T02:17:27Z",
+       "verdict": "FAIL",
+       "commit": "9cf0c1ef1457",
+       "failed": [
+        "assets.runtime"
+       ]
+      },
+      {
+       "v": 13,
+       "produced_at": "2026-10-04T03:12:17Z",
+       "verdict": "PASS",
+       "commit": "f662c5106324",
+       "failed": []
+      },
+      {
+       "v": 14,
+       "produced_at": "2026-10-04T03:52:21Z",
+       "verdict": "PASS",
+       "commit": "e8c2571e6c29",
+       "failed": []
+      },
+      {
+       "v": 15,
+       "produced_at": "2026-10-04T04:43:21Z",
+       "verdict": "FAIL",
+       "commit": "8916d1976d6d",
+       "failed": [
+        "assets.runtime"
+       ]
+      },
+      {
+       "v": 16,
+       "produced_at": "2026-10-04T05:57:39Z",
+       "verdict": "PASS",
+       "commit": "96f5ceaa7abf",
+       "failed": []
+      }
+     ],
+     "visual-qa-report": [
+      {
+       "v": 1,
+       "produced_at": "2026-10-03T16:46:49Z",
+       "verdict": "PASS",
+       "commit": "41942aba7270",
+       "mean_score": 3.75,
+       "min_score": 3,
+       "scores": {
+        "art_completeness": 4,
+        "character_readability": 4,
+        "environment": 3,
+        "ui_polish": 3,
+        "typography": 4,
+        "composition": 3,
+        "consistency": 4,
+        "no_debug": 5
+       },
+       "findings": 5,
+       "failed": []
+      },
+      {
+       "v": 2,
+       "produced_at": "2026-10-03T18:36:19Z",
+       "verdict": "PASS",
+       "commit": "55ab02d932ee",
+       "mean_score": 4.0,
+       "min_score": 3,
+       "scores": {
+        "art_completeness": 4,
+        "character_readability": 4,
+        "environment": 4,
+        "ui_polish": 4,
+        "typography": 4,
+        "composition": 3,
+        "consistency": 4,
+        "no_debug": 5
+       },
+       "findings": 3,
+       "failed": []
+      },
+      {
+       "v": 3,
+       "produced_at": "2026-10-04T03:14:41Z",
+       "verdict": "PASS",
+       "commit": "f662c5106324",
+       "mean_score": 4.125,
+       "min_score": 4,
+       "scores": {
+        "art_completeness": 4,
+        "character_readability": 4,
+        "environment": 4,
+        "ui_polish": 4,
+        "typography": 4,
+        "composition": 4,
+        "consistency": 4,
+        "no_debug": 5
+       },
+       "findings": 5,
+       "failed": []
+      },
+      {
+       "v": 4,
+       "produced_at": "2026-10-04T03:54:15Z",
+       "verdict": "PASS",
+       "commit": "e8c2571e6c29",
+       "mean_score": 4.0,
+       "min_score": 3,
+       "scores": {
+        "art_completeness": 4,
+        "character_readability": 4,
+        "environment": 4,
+        "ui_polish": 4,
+        "typography": 4,
+        "composition": 3,
+        "consistency": 4,
+        "no_debug": 5
+       },
+       "findings": 6,
+       "failed": []
+      },
+      {
+       "v": 5,
+       "produced_at": "2026-10-04T05:59:51Z",
+       "verdict": "PASS",
+       "commit": "96f5ceaa7abf",
+       "mean_score": 4.125,
+       "min_score": 3,
+       "scores": {
+        "art_completeness": 4,
+        "character_readability": 4,
+        "environment": 4,
+        "ui_polish": 4,
+        "typography": 4,
+        "composition": 3,
+        "consistency": 5,
+        "no_debug": 5
+       },
+       "findings": 4,
+       "failed": []
+      }
+     ],
+     "review-report": [
+      {
+       "v": 1,
+       "produced_at": "2026-10-03T16:47:38Z",
+       "verdict": "approve",
+       "reviewed_commit": "41942aba7270",
+       "blockers": []
+      },
+      {
+       "v": 2,
+       "produced_at": "2026-10-03T16:50:18Z",
+       "verdict": "no-verdict",
+       "reviewed_commit": "086a7932bb55",
+       "blockers": []
+      },
+      {
+       "v": 3,
+       "produced_at": "2026-10-03T18:37:00Z",
+       "verdict": "request-changes",
+       "reviewed_commit": "55ab02d932ee",
+       "blockers": [
+        {
+         "id": "out-of-scope-armored-hazards-bosses",
+         "severity": "blocker",
+         "file": "src/game/tuning.ts",
+         "summary": "The brief's 'Not now - do not build' list names armored bricks, world hazards and boss levels, and the GDD marks them post-mvp. This commit adds all three: BRICKS.armoredHits, HAZARD (danger line, embers, paddle shrink) and BOSS (four bosses), with matching logic in sim.ts, levels.ts and the pixijs renderer. Scope expansion against an explicit prohibition."
+        },
+        {
+         "id": "star-gates-and-level-count-changed",
+         "severity": "blocker",
+         "file": "src/game/tuning.ts",
+         "summary": "GAME-005 and the GDD require World 2/3/4 to need 5/11/18 total stars, with 12 levels in four worlds of three. STARS now has worldGates [0,10,26,44], levelsPerWorld 8 and levels 32, and RAMP was rewritten to 32 entries. This breaks the acceptance criterion and the design's pacing (36 stars, natural stop after World 1)."
+        },
+        {
+         "id": "tests-assert-changed-rules",
+         "severity": "major",
+         "file": "tests/unit/stars-and-unlocks.test.ts",
+         "summary": "Unit tests for stars, unlocks and level select were rewritten to the new 32-level and 10/26/44 gates, and a 298-line levels-and-hazards test was added. They now pin the out-of-scope behaviour instead of the design's rules, so passing checks are not evidence of design fidelity."
+        },
+        {
+         "id": "level-query-bypasses-unlocks",
+         "severity": "minor",
+         "file": "src/game/session.ts",
+         "summary": "?level=N opens any level straight into play regardless of save or unlock state, and is not gated behind a dev build. In a shipped build it lets players bypass the star-gate progression."
+        }
+       ]
+      },
+      {
+       "v": 4,
+       "produced_at": "2026-10-04T03:15:09Z",
+       "verdict": "approve",
+       "reviewed_commit": "f662c5106324",
+       "blockers": []
+      },
+      {
+       "v": 5,
+       "produced_at": "2026-10-04T03:16:08Z",
+       "verdict": "approve",
+       "reviewed_commit": "dfc166c86b3c",
+       "blockers": []
+      },
+      {
+       "v": 6,
+       "produced_at": "2026-10-04T03:54:53Z",
+       "verdict": "approve",
+       "reviewed_commit": "e8c2571e6c29",
+       "blockers": []
+      },
+      {
+       "v": 7,
+       "produced_at": "2026-10-04T03:56:01Z",
+       "verdict": "approve",
+       "reviewed_commit": "e8c2571e6c29",
+       "blockers": []
+      },
+      {
+       "v": 8,
+       "produced_at": "2026-10-04T06:00:14Z",
+       "verdict": "approve",
+       "reviewed_commit": "96f5ceaa7abf",
+       "blockers": []
+      },
+      {
+       "v": 9,
+       "produced_at": "2026-10-04T06:01:31Z",
+       "verdict": "approve",
+       "reviewed_commit": "96f5ceaa7abf",
+       "blockers": []
+      }
+     ],
+     "sdk-report": [
+      {
+       "v": 1,
+       "produced_at": "2026-10-03T16:47:59Z",
+       "commit": "086a7932bb55"
+      },
+      {
+       "v": 2,
+       "produced_at": "2026-10-04T03:15:39Z",
+       "commit": "dfc166c86b3c"
+      },
+      {
+       "v": 3,
+       "produced_at": "2026-10-04T03:55:21Z",
+       "commit": "e8c2571e6c29"
+      },
+      {
+       "v": 4,
+       "produced_at": "2026-10-04T06:00:42Z",
+       "commit": "96f5ceaa7abf"
+      }
+     ],
+     "verification-report": [
+      {
+       "v": 1,
+       "produced_at": "2026-10-04T03:23:39Z",
+       "verdict": "FAIL",
+       "evidence_status": "FAIL",
+       "commit": "dfc166c86b3c"
+      },
+      {
+       "v": 2,
+       "produced_at": "2026-10-04T04:03:47Z",
+       "verdict": "PASS",
+       "evidence_status": "PASS_MOCK",
+       "commit": "e8c2571e6c29"
+      },
+      {
+       "v": 3,
+       "produced_at": "2026-10-04T06:11:48Z",
+       "verdict": "PASS",
+       "evidence_status": "PASS_MOCK",
+       "commit": "96f5ceaa7abf"
+      }
+     ],
+     "qa-report": [
+      {
+       "v": 1,
+       "produced_at": "2026-10-04T03:23:39Z",
+       "verdict": "fail",
+       "evidence_status": "FAIL"
+      },
+      {
+       "v": 2,
+       "produced_at": "2026-10-04T04:03:47Z",
+       "verdict": "pass",
+       "evidence_status": "PASS_MOCK"
+      },
+      {
+       "v": 3,
+       "produced_at": "2026-10-04T06:11:48Z",
+       "verdict": "pass",
+       "evidence_status": "PASS_MOCK"
+      }
+     ],
+     "store-listing": [
+      {
+       "v": 1,
+       "produced_at": "2026-10-04T06:20:42Z",
+       "status": "incomplete",
+       "commit": "96f5ceaa7abf"
+      },
+      {
+       "v": 2,
+       "produced_at": "2026-10-04T06:27:26Z",
+       "status": "incomplete",
+       "commit": "96f5ceaa7abf"
+      },
+      {
+       "v": 3,
+       "produced_at": "2026-10-04T06:34:25Z",
+       "status": "incomplete",
+       "commit": "96f5ceaa7abf"
+      },
+      {
+       "v": 4,
+       "produced_at": "2026-10-04T06:39:34Z",
+       "status": "complete",
+       "commit": "96f5ceaa7abf"
+      }
+     ],
+     "listing-validation-report": [
+      {
+       "v": 1,
+       "produced_at": "2026-10-04T06:20:58Z",
+       "verdict": "FAIL",
+       "commit": "96f5ceaa7abf"
+      },
+      {
+       "v": 2,
+       "produced_at": "2026-10-04T06:27:33Z",
+       "verdict": "FAIL",
+       "commit": "96f5ceaa7abf"
+      },
+      {
+       "v": 3,
+       "produced_at": "2026-10-04T06:34:40Z",
+       "verdict": "FAIL",
+       "commit": "96f5ceaa7abf"
+      },
+      {
+       "v": 4,
+       "produced_at": "2026-10-04T06:40:15Z",
+       "verdict": "PASS",
+       "commit": "96f5ceaa7abf"
+      }
+     ],
+     "platform-publication-poki": [
+      {
+       "v": 1,
+       "produced_at": "2026-10-04T06:41:23Z",
+       "state": "validated",
+       "readiness": "HUMAN_REQUIRED"
+      }
+     ],
+     "asset-manifest": [
+      {
+       "v": 1,
+       "produced_at": "2026-10-03T11:58:23Z",
+       "items": 26,
+       "placeholders": 1
+      },
+      {
+       "v": 2,
+       "produced_at": "2026-10-03T13:36:33Z",
+       "items": 26,
+       "placeholders": 1
+      },
+      {
+       "v": 3,
+       "produced_at": "2026-10-03T14:05:18Z",
+       "items": 26,
+       "placeholders": 0
+      },
+      {
+       "v": 4,
+       "produced_at": "2026-10-03T23:58:35Z",
+       "items": 34,
+       "placeholders": 1
+      },
+      {
+       "v": 5,
+       "produced_at": "2026-10-04T00:49:14Z",
+       "items": 34,
+       "placeholders": 0
+      }
+     ]
+    }
+   },
+   "decisions": [
+    {
+     "file": "artifacts/decision-record-strategy-review/v1.json",
+     "artifact_id": "wgf:decision-record:brick-breaker-worlds-g2:20261003-01",
+     "gate_id": "G2",
+     "transition": "strategy -> design",
+     "decision": "approved",
+     "decided_by": {
+      "role": "portfolio-owner",
+      "mode": "auto-approved",
+      "identifier": "automation"
+     },
+     "decided_at": "2026-10-03T08:13:01.920Z",
+     "rationale": "G2 auto-approved: the run was started with G2 in its auto_approve list (factory.checkpoints.auto_approve, or a mock run's own reversible gates)",
+     "subject": [
+      {
+       "artifact_id": "wgf:title-strategy:brick-breaker-worlds:20261003-01",
+       "file": "artifacts/title-strategy/v1.json"
+      }
+     ]
+    },
+    {
+     "file": "artifacts/decision-record-strategy-review/v2.json",
+     "artifact_id": "wgf:decision-record:brick-breaker-worlds-g2:20261003-02",
+     "gate_id": "G2",
+     "transition": "strategy -> design",
+     "decision": "approved",
+     "decided_by": {
+      "role": "portfolio-owner",
+      "mode": "auto-approved",
+      "identifier": "automation"
+     },
+     "decided_at": "2026-10-03T08:26:29.598Z",
+     "rationale": "G2 auto-approved: the run was started with G2 in its auto_approve list (factory.checkpoints.auto_approve, or a mock run's own reversible gates)",
+     "subject": [
+      {
+       "artifact_id": "wgf:title-strategy:brick-breaker-worlds:20261003-02",
+       "file": "artifacts/title-strategy/v2.json"
+      }
+     ]
+    },
+    {
+     "file": "artifacts/decision-record-tech-plan-review/v1.json",
+     "artifact_id": "wgf:decision-record:brick-breaker-worlds-g3:20261003-01",
+     "gate_id": "G3",
+     "transition": "tech-plan -> scaffolding",
+     "decision": "approved",
+     "decided_by": {
+      "role": "portfolio-owner",
+      "mode": "auto-approved",
+      "identifier": "automation"
+     },
+     "decided_at": "2026-10-03T08:35:36.388Z",
+     "rationale": "G3 auto-approved: the run was started with G3 in its auto_approve list (factory.checkpoints.auto_approve, or a mock run's own reversible gates)",
+     "subject": [
+      {
+       "artifact_id": "wgf:game-design:brick-breaker-worlds:20261003-02",
+       "file": "artifacts/game-design/v2.json"
+      },
+      {
+       "artifact_id": "wgf:tech-plan:brick-breaker-worlds:20261003-01",
+       "file": "artifacts/tech-plan/v1.json"
+      }
+     ]
+    },
+    {
+     "file": "artifacts/decision-record-strategy-review/v3.json",
+     "artifact_id": "wgf:decision-record:brick-breaker-worlds-g2:20261003-03",
+     "gate_id": "G2",
+     "transition": "strategy -> design",
+     "decision": "approved",
+     "decided_by": {
+      "role": "portfolio-owner",
+      "mode": "auto-approved",
+      "identifier": "automation"
+     },
+     "decided_at": "2026-10-03T18:41:07.156Z",
+     "rationale": "G2 auto-approved: the run was started with G2 in its auto_approve list (factory.checkpoints.auto_approve, or a mock run's own reversible gates)",
+     "subject": [
+      {
+       "artifact_id": "wgf:title-strategy:brick-breaker-worlds:20261003-03",
+       "file": "artifacts/title-strategy/v3.json"
+      }
+     ]
+    },
+    {
+     "file": "artifacts/decision-record-tech-plan-review/v2.json",
+     "artifact_id": "wgf:decision-record:brick-breaker-worlds-g3:20261003-02",
+     "gate_id": "G3",
+     "transition": "tech-plan -> scaffolding",
+     "decision": "approved",
+     "decided_by": {
+      "role": "portfolio-owner",
+      "mode": "auto-approved",
+      "identifier": "automation"
+     },
+     "decided_at": "2026-10-03T21:47:04.149Z",
+     "rationale": "G3 auto-approved: the run was started with G3 in its auto_approve list (factory.checkpoints.auto_approve, or a mock run's own reversible gates)",
+     "subject": [
+      {
+       "artifact_id": "wgf:game-design:brick-breaker-worlds:20261003-04",
+       "file": "artifacts/game-design/v3.json"
+      },
+      {
+       "artifact_id": "wgf:tech-plan:brick-breaker-worlds:20261003-02",
+       "file": "artifacts/tech-plan/v2.json"
+      }
+     ]
+    },
+    {
+     "file": "artifacts/decision-record-prototype-review/v1.json",
+     "artifact_id": "wgf:decision-record:brick-breaker-worlds-g4:20261004-03",
+     "gate_id": "G4",
+     "transition": "prototype-review -> production",
+     "decision": "pass",
+     "decided_by": {
+      "role": "portfolio-owner",
+      "mode": "human",
+      "identifier": "human"
+     },
+     "decided_at": "2026-10-04T06:14:03.998Z",
+     "rationale": "G4 PASS on 96f5cea (game code 8916d19). Evidence: playability v23 PASS (content units_reachable, progression.persists, depth.ramp), production-quality v16 PASS, visual-qa v5 PASS (all >=4 except composition 3), review v9 approve 0 blockers vs design v3, sdk/sdk-review PASS, verification v3 PASS (PASS_MOCK). Player audit 2: no material deficiency across 32 levels, 4 bosses. Known minors accepted: shared boss drawing, portrait column on desktop (design), ball can enter HUD band in late levels, real Poki SDK sandbox localStorage logs. Final human approval of the game is still required before G6.",
+     "subject": [
+      {
+       "artifact_id": "wgf:game-design:brick-breaker-worlds:20261003-04",
+       "file": "artifacts/game-design/v3.json"
+      },
+      {
+       "artifact_id": "wgf:playability-report:brick-breaker-worlds:20261004-19",
+       "file": "artifacts/playability-report/v23.json"
+      },
+      {
+       "artifact_id": "wgf:prototype-report:brick-breaker-worlds:20261004-24",
+       "file": "artifacts/prototype-report/v29.json"
+      },
+      {
+       "artifact_id": "wgf:qa-report:brick-breaker-worlds:20261004-03",
+       "file": "artifacts/qa-report/v3.json"
+      },
+      {
+       "artifact_id": "wgf:review-report:brick-breaker-worlds:20261004-04",
+       "file": "artifacts/review-report/v9.json"
+      },
+      {
+       "artifact_id": "wgf:title-strategy:brick-breaker-worlds:20261003-03",
+       "file": "artifacts/title-strategy/v3.json"
+      },
+      {
+       "artifact_id": "wgf:verification-report:brick-breaker-worlds:20261004-03",
+       "file": "artifacts/verification-report/v3.json"
+      }
+     ]
+    },
+    {
+     "file": "artifacts/decision-record-release-review/v1.json",
+     "artifact_id": "wgf:decision-record:brick-breaker-worlds-g5:20261004-02",
+     "gate_id": "G5",
+     "transition": "rc -> approved",
+     "decision": "approved",
+     "decided_by": {
+      "role": "portfolio-owner",
+      "mode": "human",
+      "identifier": "human"
+     },
+     "decided_at": "2026-10-04T06:42:06.616Z",
+     "rationale": "G5 approve r1 v0.1.0 (96f5cea, poki.zip sha256 697622ca...): platform-validate PASS, all 5 publication guards green, qa-report pass, verification PASS (PASS_MOCK). Poki readiness HUMAN_REQUIRED (no automated submission method). G6 left to the human.",
+     "subject": [
+      {
+       "artifact_id": "wgf:qa-report:brick-breaker-worlds:20261004-03",
+       "file": "artifacts/qa-report/v3.json"
+      },
+      {
+       "artifact_id": "wgf:release-manifest:brick-breaker-worlds:20261004-01",
+       "file": "artifacts/release-manifest/v1.json"
+      },
+      {
+       "artifact_id": "wgf:verification-report:brick-breaker-worlds:20261004-03",
+       "file": "artifacts/verification-report/v3.json"
+      }
+     ]
+    }
+   ],
+   "content": {
+    "design": {
+     "file": "artifacts/game-design/v3.json",
+     "artifact_id": "wgf:game-design:brick-breaker-worlds:20261003-04",
+     "schema_version": "1.9.0",
+     "content_hash": "sha256:47afad0035448931fd6ca9e70023264ab1bf99f4684363f691d4e47feff43852"
+    },
+    "source": "public/content/units.json @ 96f5ceaa7abf (git show), design wgf:game-design:brick-breaker-worlds:20261003-04",
+    "unit_kind": "round",
+    "generation": {
+     "mode": "authored"
+    },
+    "units": 32,
+    "groups": {
+     "world 1": 8,
+     "world 2": 8,
+     "world 3": 8,
+     "world 4": 8
+    },
+    "purposes": {
+     "teach": 6,
+     "breather": 7,
+     "test": 11,
+     "twist": 4,
+     "climax": 4
+    },
+    "distinct_mechanics": 12,
+    "mechanics": [
+     "armored-bricks",
+     "ball-rebound",
+     "boss-fight",
+     "bricks",
+     "descending-field",
+     "explosive-bricks",
+     "falling-embers",
+     "paddle-drag",
+     "power-ups",
+     "sliding-rows",
+     "star-rating",
+     "steel-bricks"
+    ],
+    "distinct_cell_kinds": 10,
+    "cell_kinds_units": {
+     "#": 28,
+     "A": 13,
+     "B": 4,
+     "L": 11,
+     "M": 20,
+     "S": 9,
+     "W": 20,
+     "X": 8,
+     "m": 4,
+     "w": 4
+    },
+    "structure_kinds": {
+     "static": 10,
+     "boss": 4,
+     "slides": 8,
+     "descend": 8,
+     "embers": 6
+    },
+    "distinct_structure_kinds": 5,
+    "mechanics_per_unit": {
+     "min": 4,
+     "mean": 5.94,
+     "max": 8
+    },
+    "distinct_mechanic_combinations": 24,
+    "distinct_element_combinations": 29,
+    "distinct_element_combination_share": 0.906,
+    "repeated_layouts": 0,
+    "introduction_points": 10,
+    "last_introduction_at_unit": 27,
+    "objective_classes": {
+     "clear the board": 20,
+     "clear without losing a ball": 4,
+     "defeat the boss": 4,
+     "clear before the descending field lands": 4
+    },
+    "objective_kinds": {
+     "break all N bricks": 17,
+     "clear N bricks without losing a ball for three stars": 1,
+     "break all N bricks around the armored posts": 1,
+     "wear down the boss": 2,
+     "break all N bricks while a row slides across the board": 1,
+     "break all N bricks between two sliding rows": 1,
+     "clear N bricks without losing a ball": 2,
+     "break all N bricks through two sliding steel rows": 1,
+     "break all N bricks before the field drops to the red line": 1,
+     "clear N bricks and keep the lowest row off the red line": 1,
+     "break all N bricks while a steel row slides under the falling field": 1,
+     "clear N bricks without losing a ball as the field creeps down": 1,
+     "wear down the boss before its shell reaches the line": 1,
+     "wear down the furnace boss": 1
+    },
+    "distinct_objectives": 32,
+    "climax_units": [
+     {
+      "unit": "w1-l8",
+      "kind": "sentinel",
+      "health": 8,
+      "art_ids": [
+       "boss"
+      ],
+      "art_is_kind_specific": false
+     },
+     {
+      "unit": "w2-l8",
+      "kind": "prism",
+      "health": 10,
+      "art_ids": [
+       "boss"
+      ],
+      "art_is_kind_specific": false
+     },
+     {
+      "unit": "w3-l8",
+      "kind": "crusher",
+      "health": 12,
+      "art_ids": [
+       "boss"
+      ],
+      "art_is_kind_specific": false
+     },
+     {
+      "unit": "w4-l8",
+      "kind": "forge",
+      "health": 14,
+      "art_ids": [
+       "boss"
+      ],
+      "art_is_kind_specific": false
+     }
+    ],
+    "distinct_boss_art": 1,
+    "difficulty_axes": [
+     "density",
+     "precision",
+     "speed",
+     "variety"
+    ],
+    "difficulty_first_last": {
+     "first": {
+      "speed": 0.05,
+      "density": 0.08,
+      "variety": 0.09,
+      "precision": 0.17
+     },
+     "last": {
+      "speed": 0.4,
+      "density": 0.6,
+      "variety": 0.91,
+      "precision": 0.7
+     }
+    },
+    "designed_play_s": 854,
+    "expected_duration_s": {
+     "min": 16,
+     "mean": 26.69,
+     "max": 50
+    },
+    "par_sum_s": 1149,
+    "design_session": {
+     "first_session_seconds": 220,
+     "target_seconds": 300,
+     "time_to_first_play_s": 5
+    },
+    "per_unit": [
+     {
+      "id": "w1-l1",
+      "group": "world 1",
+      "purpose": "teach",
+      "mechanics": 5,
+      "cell_kinds": [
+       "#",
+       "M"
+      ],
+      "structure": [
+       "static"
+      ],
+      "introduces": [
+       "paddle-drag",
+       "ball-rebound",
+       "bricks",
+       "power-ups",
+       "star-rating",
+       "multi-ball"
+      ],
+      "objective_kind": "break all N bricks",
+      "objective_class": "clear the board",
+      "expected_duration_s": 16,
+      "par_time_s": 22,
+      "boss": null,
+      "layout": ".#######.|####M####"
+     },
+     {
+      "id": "w1-l2",
+      "group": "world 1",
+      "purpose": "teach",
+      "mechanics": 4,
+      "cell_kinds": [
+       "#",
+       "W"
+      ],
+      "structure": [
+       "static"
+      ],
+      "introduces": [
+       "wide-paddle"
+      ],
+      "objective_kind": "break all N bricks",
+      "objective_class": "clear the board",
+      "expected_duration_s": 18,
+      "par_time_s": 24,
+      "boss": null,
+      "layout": "#########|##.#W#.##|..##.##.."
+     },
+     {
+      "id": "w1-l3",
+      "group": "world 1",
+      "purpose": "teach",
+      "mechanics": 5,
+      "cell_kinds": [
+       "#",
+       "L"
+      ],
+      "structure": [
+       "static"
+      ],
+      "introduces": [
+       "laser"
+      ],
+      "objective_kind": "break all N bricks",
+      "objective_class": "clear the board",
+      "expected_duration_s": 20,
+      "par_time_s": 27,
+      "boss": null,
+      "layout": "#########|##.#L#.##|..##.##.."
+     },
+     {
+      "id": "w1-l4",
+      "group": "world 1",
+      "purpose": "teach",
+      "mechanics": 5,
+      "cell_kinds": [
+       "#",
+       "A",
+       "W"
+      ],
+      "structure": [
+       "static"
+      ],
+      "introduces": [
+       "armored-bricks"
+      ],
+      "objective_kind": "break all N bricks",
+      "objective_class": "clear the board",
+      "expected_duration_s": 22,
+      "par_time_s": 30,
+      "boss": null,
+      "layout": "#########|##A#A#A##|...#W#..."
+     },
+     {
+      "id": "w1-l5",
+      "group": "world 1",
+      "purpose": "breather",
+      "mechanics": 6,
+      "cell_kinds": [
+       "#",
+       "L",
+       "M",
+       "W"
+      ],
+      "structure": [
+       "static"
+      ],
+      "introduces": [],
+      "objective_kind": "clear N bricks without losing a ball for three stars",
+      "objective_class": "clear without losing a ball",
+      "expected_duration_s": 18,
+      "par_time_s": 24,
+      "boss": null,
+      "layout": "#M#####W#|####L####|.#.....M."
+     },
+     {
+      "id": "w1-l6",
+      "group": "world 1",
+      "purpose": "test",
+      "mechanics": 5,
+      "cell_kinds": [
+       "#",
+       "A",
+       "M",
+       "W"
+      ],
+      "structure": [
+       "static"
+      ],
+      "introduces": [],
+      "objective_kind": "break all N bricks around the armored posts",
+      "objective_class": "clear the board",
+      "expected_duration_s": 24,
+      "par_time_s": 32,
+      "boss": null,
+      "layout": "#########|A#######A|..#M#W#.."
+     },
+     {
+      "id": "w1-l7",
+      "group": "world 1",
+      "purpose": "twist",
+      "mechanics": 6,
+      "cell_kinds": [
+       "#",
+       "A",
+       "L",
+       "M",
+       "W"
+      ],
+      "structure": [
+       "static"
+      ],
+      "introduces": [],
+      "objective_kind": "break all N bricks",
+      "objective_class": "clear the board",
+      "expected_duration_s": 26,
+      "par_time_s": 35,
+      "boss": null,
+      "layout": "#W#####L#|####M####|A.A.A.A.A"
+     },
+     {
+      "id": "w1-l8",
+      "group": "world 1",
+      "purpose": "climax",
+      "mechanics": 6,
+      "cell_kinds": [
+       "A",
+       "B",
+       "m",
+       "w"
+      ],
+      "structure": [
+       "boss"
+      ],
+      "introduces": [
+       "boss-fight"
+      ],
+      "objective_kind": "wear down the boss",
+      "objective_class": "defeat the boss",
+      "expected_duration_s": 38,
+      "par_time_s": 51,
+      "boss": {
+       "kind": "sentinel",
+       "health": 8
+      },
+      "layout": "..AAAAA..|AAABBBAAA|AAABBBAAA|AmAAAAAwA"
+     },
+     {
+      "id": "w2-l1",
+      "group": "world 2",
+      "purpose": "breather",
+      "mechanics": 5,
+      "cell_kinds": [
+       "#",
+       "M",
+       "S",
+       "W"
+      ],
+      "structure": [
+       "static"
+      ],
+      "introduces": [
+       "steel-bricks"
+      ],
+      "objective_kind": "break all N bricks",
+      "objective_class": "clear the board",
+      "expected_duration_s": 20,
+      "par_time_s": 27,
+      "boss": null,
+      "layout": ".###M###.|S#######S|#W#######|..##.##.."
+     },
+     {
+      "id": "w2-l2",
+      "group": "world 2",
+      "purpose": "teach",
+      "mechanics": 6,
+      "cell_kinds": [
+       "#",
+       "M",
+       "W"
+      ],
+      "structure": [
+       "slides"
+      ],
+      "introduces": [
+       "sliding-rows"
+      ],
+      "objective_kind": "break all N bricks while a row slides across the board",
+      "objective_class": "clear the board",
+      "expected_duration_s": 22,
+      "par_time_s": 30,
+      "boss": null,
+      "layout": "####M####|.######..|##W######|...###..."
+     },
+     {
+      "id": "w2-l3",
+      "group": "world 2",
+      "purpose": "test",
+      "mechanics": 6,
+      "cell_kinds": [
+       "#",
+       "A",
+       "L",
+       "M",
+       "S"
+      ],
+      "structure": [
+       "slides"
+      ],
+      "introduces": [],
+      "objective_kind": "break all N bricks",
+      "objective_class": "clear the board",
+      "expected_duration_s": 24,
+      "par_time_s": 32,
+      "boss": null,
+      "layout": "A#######A|####L####|..S#M#S..|..#####..|...###..."
+     },
+     {
+      "id": "w2-l4",
+      "group": "world 2",
+      "purpose": "twist",
+      "mechanics": 7,
+      "cell_kinds": [
+       "#",
+       "L",
+       "S"
+      ],
+      "structure": [
+       "slides"
+      ],
+      "introduces": [],
+      "objective_kind": "break all N bricks between two sliding rows",
+      "objective_class": "clear the board",
+      "expected_duration_s": 26,
+      "par_time_s": 35,
+      "boss": null,
+      "layout": "####L####|.S####S..|#########|..S####S.|...###..."
+     },
+     {
+      "id": "w2-l5",
+      "group": "world 2",
+      "purpose": "breather",
+      "mechanics": 6,
+      "cell_kinds": [
+       "#",
+       "L",
+       "M",
+       "W"
+      ],
+      "structure": [
+       "slides"
+      ],
+      "introduces": [],
+      "objective_kind": "clear N bricks without losing a ball",
+      "objective_class": "clear without losing a ball",
+      "expected_duration_s": 20,
+      "par_time_s": 27,
+      "boss": null,
+      "layout": "#M#####W#|#########|..####...|..#L#M#.."
+     },
+     {
+      "id": "w2-l6",
+      "group": "world 2",
+      "purpose": "test",
+      "mechanics": 6,
+      "cell_kinds": [
+       "#",
+       "A",
+       "S"
+      ],
+      "structure": [
+       "slides"
+      ],
+      "introduces": [],
+      "objective_kind": "break all N bricks",
+      "objective_class": "clear the board",
+      "expected_duration_s": 26,
+      "par_time_s": 35,
+      "boss": null,
+      "layout": "A#######A|S#######S|#########|..S###S..|...#.#..."
+     },
+     {
+      "id": "w2-l7",
+      "group": "world 2",
+      "purpose": "test",
+      "mechanics": 6,
+      "cell_kinds": [
+       "#",
+       "M",
+       "S",
+       "W"
+      ],
+      "structure": [
+       "slides"
+      ],
+      "introduces": [],
+      "objective_kind": "break all N bricks through two sliding steel rows",
+      "objective_class": "clear the board",
+      "expected_duration_s": 28,
+      "par_time_s": 38,
+      "boss": null,
+      "layout": "####M####|.S#####S.|#W#######|..S###S..|.######.."
+     },
+     {
+      "id": "w2-l8",
+      "group": "world 2",
+      "purpose": "climax",
+      "mechanics": 8,
+      "cell_kinds": [
+       "A",
+       "B",
+       "m",
+       "w"
+      ],
+      "structure": [
+       "boss",
+       "slides"
+      ],
+      "introduces": [],
+      "objective_kind": "wear down the boss",
+      "objective_class": "defeat the boss",
+      "expected_duration_s": 42,
+      "par_time_s": 56,
+      "boss": {
+       "kind": "prism",
+       "health": 10
+      },
+      "layout": "..AAAAAA.|AAABBBAAA|AAABBBAAA|AAAA.AAAA|.AwAAAmA."
+     },
+     {
+      "id": "w3-l1",
+      "group": "world 3",
+      "purpose": "breather",
+      "mechanics": 5,
+      "cell_kinds": [
+       "#",
+       "M",
+       "W"
+      ],
+      "structure": [
+       "descend"
+      ],
+      "introduces": [
+       "descending-field"
+      ],
+      "objective_kind": "break all N bricks before the field drops to the red line",
+      "objective_class": "clear before the descending field lands",
+      "expected_duration_s": 20,
+      "par_time_s": 27,
+      "boss": null,
+      "layout": "#.#.#.#.#|#.#.#.#.#|#.#.#.#.#|#.#.#.#.#|#.W.#.#.#|#.#.M.#.#"
+     },
+     {
+      "id": "w3-l2",
+      "group": "world 3",
+      "purpose": "test",
+      "mechanics": 5,
+      "cell_kinds": [
+       "#",
+       "M",
+       "W"
+      ],
+      "structure": [
+       "descend"
+      ],
+      "introduces": [],
+      "objective_kind": "clear N bricks and keep the lowest row off the red line",
+      "objective_class": "clear before the descending field lands",
+      "expected_duration_s": 24,
+      "par_time_s": 32,
+      "boss": null,
+      "layout": "##.###.##|#.#.#.#.#|#.#.M.#.#|#.W.#.#.#|#.#.#.#.#|#.#.#.#.#"
+     },
+     {
+      "id": "w3-l3",
+      "group": "world 3",
+      "purpose": "test",
+      "mechanics": 6,
+      "cell_kinds": [
+       "#",
+       "A",
+       "M",
+       "W"
+      ],
+      "structure": [
+       "descend"
+      ],
+      "introduces": [],
+      "objective_kind": "break all N bricks",
+      "objective_class": "clear the board",
+      "expected_duration_s": 26,
+      "par_time_s": 35,
+      "boss": null,
+      "layout": "A.#.#.#.A|.#.#.#.#.|#.#.M.#.#|#.W.#.#.#|#.#.#.#.#|#.#.#.#.#|#.#.#.#.#"
+     },
+     {
+      "id": "w3-l4",
+      "group": "world 3",
+      "purpose": "twist",
+      "mechanics": 7,
+      "cell_kinds": [
+       "#",
+       "M",
+       "S",
+       "W"
+      ],
+      "structure": [
+       "descend",
+       "slides"
+      ],
+      "introduces": [],
+      "objective_kind": "break all N bricks while a steel row slides under the falling field",
+      "objective_class": "clear before the descending field lands",
+      "expected_duration_s": 28,
+      "par_time_s": 38,
+      "boss": null,
+      "layout": ".#.#.#.#.|#.#.#.#.#|#.#.#.#.#|#.#.#.#.#|#.#.#.#.#|#.W.#.#.#|#.#.M.#.#|..SSSS..."
+     },
+     {
+      "id": "w3-l5",
+      "group": "world 3",
+      "purpose": "breather",
+      "mechanics": 6,
+      "cell_kinds": [
+       "#",
+       "L",
+       "M",
+       "W"
+      ],
+      "structure": [
+       "descend"
+      ],
+      "introduces": [],
+      "objective_kind": "clear N bricks without losing a ball as the field creeps down",
+      "objective_class": "clear without losing a ball",
+      "expected_duration_s": 22,
+      "par_time_s": 30,
+      "boss": null,
+      "layout": "#M.##.##.|#.#.W.#.#|#.#.#.L.#|M.#.#.#.#|#.#.#.#.#|#.#.#.#.#"
+     },
+     {
+      "id": "w3-l6",
+      "group": "world 3",
+      "purpose": "test",
+      "mechanics": 6,
+      "cell_kinds": [
+       "#",
+       "A",
+       "M",
+       "W"
+      ],
+      "structure": [
+       "descend"
+      ],
+      "introduces": [],
+      "objective_kind": "break all N bricks",
+      "objective_class": "clear before the descending field lands",
+      "expected_duration_s": 28,
+      "par_time_s": 38,
+      "boss": null,
+      "layout": "..AAAAA..|#.#.#.#.#|#.#.#.#.#|#.#.#.#.#|#.W.#.#.#|#.#.#.#.#|#.M.#.#.#"
+     },
+     {
+      "id": "w3-l7",
+      "group": "world 3",
+      "purpose": "test",
+      "mechanics": 6,
+      "cell_kinds": [
+       "#",
+       "M",
+       "S",
+       "W"
+      ],
+      "structure": [
+       "descend"
+      ],
+      "introduces": [],
+      "objective_kind": "break all N bricks",
+      "objective_class": "clear the board",
+      "expected_duration_s": 30,
+      "par_time_s": 40,
+      "boss": null,
+      "layout": "#.#.#.#.#|S.S.S.S.S|#.#.M.#.#|S.S.S.S.S|#.W.#.#.#|#.#.#.#.#|#.#.#.#.#|#.#.#.#.#|#.#.#.#.#"
+     },
+     {
+      "id": "w3-l8",
+      "group": "world 3",
+      "purpose": "climax",
+      "mechanics": 7,
+      "cell_kinds": [
+       "A",
+       "B",
+       "m",
+       "w"
+      ],
+      "structure": [
+       "boss",
+       "descend"
+      ],
+      "introduces": [],
+      "objective_kind": "wear down the boss before its shell reaches the line",
+      "objective_class": "defeat the boss",
+      "expected_duration_s": 44,
+      "par_time_s": 59,
+      "boss": {
+       "kind": "crusher",
+       "health": 12
+      },
+      "layout": ".AAAAAAA.|AAABBBAAA|AAABBBAAA|AAAAAAAAA|AmAAAAAw."
+     },
+     {
+      "id": "w4-l1",
+      "group": "world 4",
+      "purpose": "breather",
+      "mechanics": 5,
+      "cell_kinds": [
+       "#",
+       "L",
+       "M",
+       "W",
+       "X"
+      ],
+      "structure": [
+       "static"
+      ],
+      "introduces": [
+       "explosive-bricks"
+      ],
+      "objective_kind": "break all N bricks",
+      "objective_class": "clear the board",
+      "expected_duration_s": 22,
+      "par_time_s": 30,
+      "boss": null,
+      "layout": "#M#####W#|####X####|####L####|.#######."
+     },
+     {
+      "id": "w4-l2",
+      "group": "world 4",
+      "purpose": "test",
+      "mechanics": 5,
+      "cell_kinds": [
+       "#",
+       "L",
+       "M",
+       "W",
+       "X"
+      ],
+      "structure": [
+       "static"
+      ],
+      "introduces": [],
+      "objective_kind": "break all N bricks",
+      "objective_class": "clear the board",
+      "expected_duration_s": 26,
+      "par_time_s": 35,
+      "boss": null,
+      "layout": "#M#####W#|###XX####|#########|####L####"
+     },
+     {
+      "id": "w4-l3",
+      "group": "world 4",
+      "purpose": "teach",
+      "mechanics": 6,
+      "cell_kinds": [
+       "#",
+       "L",
+       "M",
+       "W",
+       "X"
+      ],
+      "structure": [
+       "embers"
+      ],
+      "introduces": [
+       "falling-embers"
+      ],
+      "objective_kind": "break all N bricks",
+      "objective_class": "clear the board",
+      "expected_duration_s": 28,
+      "par_time_s": 38,
+      "boss": null,
+      "layout": "#M#####W#|####X####|#########|####L####"
+     },
+     {
+      "id": "w4-l4",
+      "group": "world 4",
+      "purpose": "twist",
+      "mechanics": 6,
+      "cell_kinds": [
+       "#",
+       "A",
+       "X"
+      ],
+      "structure": [
+       "embers"
+      ],
+      "introduces": [],
+      "objective_kind": "break all N bricks",
+      "objective_class": "clear the board",
+      "expected_duration_s": 30,
+      "par_time_s": 40,
+      "boss": null,
+      "layout": "..AAAAA..|##X###X##|#########|#########|..##.##.."
+     },
+     {
+      "id": "w4-l5",
+      "group": "world 4",
+      "purpose": "breather",
+      "mechanics": 6,
+      "cell_kinds": [
+       "#",
+       "X"
+      ],
+      "structure": [
+       "embers"
+      ],
+      "introduces": [],
+      "objective_kind": "clear N bricks without losing a ball",
+      "objective_class": "clear without losing a ball",
+      "expected_duration_s": 24,
+      "par_time_s": 32,
+      "boss": null,
+      "layout": "#########|###XX####|#########|.#######."
+     },
+     {
+      "id": "w4-l6",
+      "group": "world 4",
+      "purpose": "test",
+      "mechanics": 7,
+      "cell_kinds": [
+       "#",
+       "A",
+       "S",
+       "X"
+      ],
+      "structure": [
+       "embers"
+      ],
+      "introduces": [],
+      "objective_kind": "break all N bricks",
+      "objective_class": "clear the board",
+      "expected_duration_s": 30,
+      "par_time_s": 40,
+      "boss": null,
+      "layout": "A#######A|##X###X##|#########|#########|SS.....SS|...#.#..."
+     },
+     {
+      "id": "w4-l7",
+      "group": "world 4",
+      "purpose": "test",
+      "mechanics": 7,
+      "cell_kinds": [
+       "#",
+       "L",
+       "M",
+       "S",
+       "W",
+       "X"
+      ],
+      "structure": [
+       "embers"
+      ],
+      "introduces": [],
+      "objective_kind": "break all N bricks",
+      "objective_class": "clear the board",
+      "expected_duration_s": 32,
+      "par_time_s": 43,
+      "boss": null,
+      "layout": "#M#####W#|XSS.S.SSX|####L####|SS.S.S.SS|#########|#########"
+     },
+     {
+      "id": "w4-l8",
+      "group": "world 4",
+      "purpose": "climax",
+      "mechanics": 8,
+      "cell_kinds": [
+       "A",
+       "B",
+       "X",
+       "m",
+       "w"
+      ],
+      "structure": [
+       "boss",
+       "embers"
+      ],
+      "introduces": [],
+      "objective_kind": "wear down the furnace boss",
+      "objective_class": "defeat the boss",
+      "expected_duration_s": 50,
+      "par_time_s": 67,
+      "boss": {
+       "kind": "forge",
+       "health": 14
+      },
+      "layout": "..AAAAAA.|.XAAAAAX.|AAABBBAAA|AAABBBAAA|AAAAAAAAA|.AAwAmAA."
+     }
+    ]
+   },
+   "costs": {
+    "developer_budget": {
+     "max_sessions": 14,
+     "max_cost": 110,
+     "cost_from": {
+      "jsonl_key": "total_cost_usd"
+     }
+    },
+    "budget_raises": [
+     {
+      "decided_at": "2026-10-03T22:01:31.157Z",
+      "decided_by": "human",
+      "max_sessions": 18,
+      "resume_nonce": "25c8baafdc0bd031"
+     }
+    ],
+    "developer_sessions": 18,
+    "developer_cost_usd": 62.86,
+    "developer_by_step": {
+     "greybox": {
+      "sessions": 7,
+      "cost_usd": 39.3294
+     },
+     "develop": {
+      "sessions": 11,
+      "cost_usd": 23.5325
+     }
+    },
+    "developer_sessions_detail": [
+     {
+      "step": "greybox",
+      "at": "2026-10-03T08:36:26.294Z",
+      "cost_usd": 0.3169,
+      "transcript": "1-1.log"
+     },
+     {
+      "step": "greybox",
+      "at": "2026-10-03T09:43:32.145Z",
+      "cost_usd": 9.6581,
+      "transcript": "1-2.log"
+     },
+     {
+      "step": "greybox",
+      "at": "2026-10-03T10:05:30.223Z",
+      "cost_usd": 2.1233,
+      "transcript": "2-1.log"
+     },
+     {
+      "step": "greybox",
+      "at": "2026-10-03T10:06:38.985Z",
+      "cost_usd": 0.1682,
+      "transcript": "2-2.log"
+     },
+     {
+      "step": "greybox",
+      "at": "2026-10-03T10:33:32.809Z",
+      "cost_usd": 0.6882,
+      "transcript": "3-1.log"
+     },
+     {
+      "step": "develop",
+      "at": "2026-10-03T13:14:43.972Z",
+      "cost_usd": 9.5994,
+      "transcript": "1-1.log"
+     },
+     {
+      "step": "develop",
+      "at": "2026-10-03T13:36:58.239Z",
+      "cost_usd": 0.1892,
+      "transcript": "2-1.log"
+     },
+     {
+      "step": "develop",
+      "at": "2026-10-03T14:20:50.609Z",
+      "cost_usd": 2.1642,
+      "transcript": "3-1.log"
+     },
+     {
+      "step": "develop",
+      "at": "2026-10-03T15:06:11.336Z",
+      "cost_usd": 0.7493,
+      "transcript": "4-1.log"
+     },
+     {
+      "step": "develop",
+      "at": "2026-10-03T15:28:02.373Z",
+      "cost_usd": 0.8259,
+      "transcript": "5-1.log"
+     },
+     {
+      "step": "develop",
+      "at": "2026-10-03T16:05:24.312Z",
+      "cost_usd": 0.8475,
+      "transcript": "6-1.log"
+     },
+     {
+      "step": "develop",
+      "at": "2026-10-03T16:29:25.748Z",
+      "cost_usd": 1.6405,
+      "transcript": "7-1.log"
+     },
+     {
+      "step": "greybox",
+      "at": "2026-10-03T22:35:21.475Z",
+      "cost_usd": 18.9679,
+      "transcript": "5-1.log"
+     },
+     {
+      "step": "greybox",
+      "at": "2026-10-03T23:33:07.365Z",
+      "cost_usd": 7.4068,
+      "transcript": "6-1.log"
+     },
+     {
+      "step": "develop",
+      "at": "2026-10-04T00:18:20.227Z",
+      "cost_usd": 3.6195,
+      "transcript": "10-1.log"
+     },
+     {
+      "step": "develop",
+      "at": "2026-10-04T01:00:21.880Z",
+      "cost_usd": 1.8104,
+      "transcript": "11-1.log"
+     },
+     {
+      "step": "develop",
+      "at": "2026-10-04T01:26:09.956Z",
+      "cost_usd": 1.0474,
+      "transcript": "12-1.log"
+     },
+     {
+      "step": "develop",
+      "at": "2026-10-04T01:55:28.622Z",
+      "cost_usd": 1.0392,
+      "transcript": "13-1.log"
+     }
+    ],
+    "agent_processes_spawned": {
+     "assets:claude": 92,
+     "design:claude": 11,
+     "develop:claude": 11,
+     "greybox:claude": 7,
+     "review:claude": 5,
+     "sdk-review:claude": 4,
+     "visual-qa:claude": 9
+    },
+    "agent_processes_total": 139,
+    "uncounted": "only developer sessions record a cost; design, asset-author, judge, reviewer and copy sessions record none, and lead/worker/delegated-agent sessions outside the engine are not in the run at all",
+    "human_decisions": {
+     "develop:done": 6,
+     "greybox:done": 5,
+     "prototype-review:pass": 1,
+     "release-review:approve": 1
+    },
+    "handoff_visits": 11,
+    "resumes": 29
+   },
+   "timing": {
+    "created_at": "2026-10-03T08:11:54.310Z",
+    "first_event": "2026-10-03T08:11:54.321Z",
+    "g4_pass_at": "2026-10-04T06:14:04.006Z",
+    "release_drafted_at": "2026-10-04T06:40:18.389Z",
+    "g6_waiting_since": "2026-10-04T06:42:06.836Z",
+    "wall_h_to_g4": 22.04,
+    "wall_h_to_release": 22.47,
+    "wall_h_to_g6_wait": 22.5,
+    "engine_step_time_h": 15.87,
+    "status": "WAITING",
+    "cursor": "publish-review",
+    "visits": {
+     "research": 3,
+     "strategy": 3,
+     "strategy-review": 3,
+     "design": 4,
+     "tech-plan": 2,
+     "tech-plan-review": 2,
+     "init": 2,
+     "greybox": 6,
+     "greybox-playability": 6,
+     "assets": 5,
+     "develop": 17,
+     "playability": 17,
+     "production-quality": 16,
+     "visual-qa": 5,
+     "review": 5,
+     "sdk": 4,
+     "sdk-review": 4,
+     "verify": 3,
+     "prototype-review": 2,
+     "store-listing": 4,
+     "listing-validation": 4,
+     "release": 1,
+     "platform-validate": 1,
+     "release-review": 1,
+     "publish-review": 1
+    },
+    "executions": {
+     "research": 4,
+     "strategy": 3,
+     "strategy-review": 3,
+     "design": 4,
+     "tech-plan": 2,
+     "tech-plan-review": 2,
+     "init": 2,
+     "greybox": 14,
+     "greybox-playability": 6,
+     "assets": 6,
+     "develop": 24,
+     "playability": 19,
+     "production-quality": 16,
+     "visual-qa": 6,
+     "review": 5,
+     "sdk": 4,
+     "sdk-review": 4,
+     "verify": 3,
+     "prototype-review": 3,
+     "store-listing": 4,
+     "listing-validation": 4,
+     "release": 1,
+     "platform-validate": 1,
+     "release-review": 2,
+     "publish-review": 1
+    },
+    "trail_entries": 142,
+    "failed_step_events": 30,
+    "blocked_events": [
+     {
+      "at": "2026-10-03T10:55:09.192Z",
+      "step": "greybox",
+      "message": "loop limit: greybox has been entered 3 time(s) since the run last started or resumed (max_visits=3). Resume to allow more."
+     },
+     {
+      "at": "2026-10-03T15:40:54.028Z",
+      "step": "develop",
+      "message": "loop limit: develop has been entered through 'production-quality.develop' 2 time(s) in this run (max_visits_by_route.production-quality.develop=2). Resume to grant that loop more passes."
+     },
+     {
+      "at": "2026-10-04T02:17:27.337Z",
+      "step": "develop",
+      "message": "loop limit: develop has been entered through 'production-quality.develop' 2 time(s) in this run (max_visits_by_route.production-quality.develop=2). Resume to grant that loop more passes."
+     },
+     {
+      "at": "2026-10-04T06:34:40.290Z",
+      "step": "store-listing",
+      "message": "loop limit: store-listing has been entered through 'listing-validation.listing' 2 time(s) in this run (max_visits_by_route.listing-validation.listing=2). Resume to grant that loop more passes."
+     }
+    ]
+   }
+  },
+  {
+   "game": "Sky Marble",
+   "dimension": "3D",
+   "run_id": "new-game-20261003-082542-0de9b5",
+   "project": "C:\\Users\\duycu\\wgf-runs\\val-3d\\project",
+   "repo": "C:\\Users\\duycu\\wgf-runs\\val-3d\\games\\sky-marble",
+   "workflow": {
+    "workflow_id": "new-game",
+    "workflow_version": 7,
+    "status": "WAITING",
+    "cursor": "publish-review"
+   },
+   "idea": "A 3D low-poly marble-roll game (Three.js): tilt/steer a marble across floating sky-island courses, ramps, moving platforms, gaps and bumpers; collect gems, beat the par time for stars; 3 themed worlds of hand-designed courses, unlocks and saved progress, a time-trial mode with personal bests. Chase camera, desktop keys and mobile touch.",
+   "factory": {
+    "worktree": "C:\\Users\\duycu\\wgf-runs\\val-3d\\factory",
+    "head": "cbb7e14612c0",
+    "dirty": false,
+    "head_moves": 15,
+    "at": {
+     "run_start": "cc9e2ffcc0ef",
+     "last_develop_start": "aa5b333124af",
+     "last_playability_start": "aa5b333124af",
+     "last_visual_qa_start": "aa5b333124af",
+     "last_verify_start": "aa5b333124af",
+     "release_start": "cbb7e14612c0",
+     "platform_validate_start": "cbb7e14612c0"
+    },
+    "commits": [
+     {
+      "sha": "cc9e2ffcc0ef",
+      "subject": "Merge pull request #24 from Cuvara/quality/reference-context",
+      "date": "2026-10-03T14:35:20+07:00",
+      "on_main": true
+     },
+     {
+      "sha": "aa5b333124af",
+      "subject": "Merge remote-tracking branch 'origin/main' into work/val-3d",
+      "date": "2026-10-04T05:24:57+07:00",
+      "on_main": false,
+      "main_parent": "f2285576cc8a",
+      "tree_equals_main_parent": true
+     },
+     {
+      "sha": "cbb7e14612c0",
+      "subject": "Merge remote-tracking branch 'origin/main' into work/val-3d",
+      "date": "2026-10-04T07:46:46+07:00",
+      "on_main": false,
+      "main_parent": "5a8adf466656",
+      "tree_equals_main_parent": true
+     }
+    ],
+    "note": "commit in force at each point, from the worktree reflog; the run read the Factory from this worktree throughout"
+   },
+   "release": {
+    "file": "artifacts/release-manifest/v3.json",
+    "artifact_id": "wgf:release-manifest:sky-marble:20261004-01",
+    "schema_version": "1.3.0",
+    "content_hash": "sha256:1fbabf0e3fcb025f5736428033010608cdfd461c25cf76a41ee1f552f8c7a4ca",
+    "release_id": "r1",
+    "version": "0.1.0",
+    "state": "draft",
+    "commit_sha": "64ff4c69f05cc259fa9bfda72305fd988ff94d0e",
+    "commit_subject": "feat(game): development iteration 13",
+    "frozen_at": null,
+    "packages": [
+     {
+      "platform_id": "poki",
+      "filename": "poki.zip",
+      "size_mb": 1.716,
+      "checksum": "sha256:e301327464b7944e015c5df022fc4776cf5127a77046dea52b5b4c82169348c2",
+      "content_digest": "sha256:d7ca844cb60eebb37594e5f4d5dee84947b5619d9c482ce6b8c88524ad1293c9",
+      "files": 52
+     }
+    ],
+    "packages_on_disk": [
+     {
+      "filename": "poki.zip",
+      "exists": true,
+      "sha256_matches_manifest": true
+     }
+    ],
+    "target_platforms": [
+     {
+      "id": "poki",
+      "role": "required",
+      "profile_version": "1.1.0"
+     },
+     {
+      "id": "yandex",
+      "role": "optional",
+      "profile_version": "1.1.0"
+     },
+     {
+      "id": "crazygames",
+      "role": "optional",
+      "profile_version": "1.1.0"
+     }
+    ],
+    "template": {
+     "repository": "Cuvara/web-game-template",
+     "commit_sha": "b1062619457f427bac91b45f6a96762f256a945a",
+     "version": "1.2.0",
+     "source": "CHANGELOG.md (first release heading)"
+    },
+    "evidence": {
+     "status": "PASS_MOCK",
+     "qa_report": {
+      "artifact_id": "wgf:qa-report:sky-marble:20261003-04",
+      "content_hash": "sha256:c55ff5fdd4f7b96393c24ba410ca2aed44cc890f504b94fe772b4efaff3e5285",
+      "verdict": "pass",
+      "evidence_status": "PASS_MOCK"
+     },
+     "verification_report": {
+      "artifact_id": "wgf:verification-report:sky-marble:20261003-04",
+      "content_hash": "sha256:d9c5ccd958ac8ba12f8a27bf2b2b01a6c9d808369bb65e06160e5da852e6c31d",
+      "verdict": "PASS",
+      "evidence_status": "PASS_MOCK"
+     },
+     "commit_lineage": [
+      {
+       "source": "qa-report",
+       "commit_sha": "64ff4c69f05cc259fa9bfda72305fd988ff94d0e"
+      },
+      {
+       "source": "verification-report",
+       "commit_sha": "64ff4c69f05cc259fa9bfda72305fd988ff94d0e"
+      },
+      {
+       "source": "sdk-report",
+       "commit_sha": "64ff4c69f05cc259fa9bfda72305fd988ff94d0e"
+      },
+      {
+       "source": "sdk-report.base",
+       "commit_sha": "64ff4c69f05cc259fa9bfda72305fd988ff94d0e"
+      },
+      {
+       "source": "prototype-report",
+       "commit_sha": "64ff4c69f05cc259fa9bfda72305fd988ff94d0e"
+      },
+      {
+       "source": "checkout",
+       "commit_sha": "64ff4c69f05cc259fa9bfda72305fd988ff94d0e"
+      }
+     ],
+     "review": {
+      "verdict": "approve",
+      "reviewed_commit": "64ff4c69f05cc259fa9bfda72305fd988ff94d0e",
+      "artifact_id": "wgf:review-report:sky-marble:20261003-04",
+      "content_hash": "sha256:1ae763810c9c008ef95584dbf49411dee2f488f5a3b4cfa6f90addf8217b0eff",
+      "status": "approved"
+     },
+     "bundle_hash": "sha256:27f7f3f78f4f9bb53acee73526644a9f27b04a4d0e74103478e62284a7566f1b",
+     "platforms": [
+      {
+       "platform_id": "poki",
+       "role": "required",
+       "readiness": "ready",
+       "evidence_status": "PASS_MOCK",
+       "portal_status": "BLOCKED_EXTERNAL",
+       "external_approval": "not-claimed"
+      },
+      {
+       "platform_id": "yandex",
+       "role": "optional",
+       "readiness": "not-ready",
+       "evidence_status": "FAIL",
+       "portal_status": "BLOCKED_EXTERNAL",
+       "external_approval": "not-claimed"
+      },
+      {
+       "platform_id": "crazygames",
+       "role": "optional",
+       "readiness": "not-ready",
+       "evidence_status": "FAIL",
+       "portal_status": "BLOCKED_EXTERNAL",
+       "external_approval": "not-claimed"
+      }
+     ],
+     "package_audit": {
+      "status": "PASS",
+      "rules": [
+       "index.html at the archive root",
+       "no sourcemaps (*.map)",
+       "no test files",
+       "no environment or secret files",
+       "no secret-looking content",
+       "no absolute or parent-relative entry names"
+      ]
+     },
+     "reproducibility": {
+      "archive_bytes": "timestamp-dependent",
+      "note": "Packaged from the verified bundle without rebuilding it, so this commit and bundle package to the same bytes again. The archives embed each file's modification time, so a fresh build of identical content gives a different checksum; content_digest does not change."
+     },
+     "store_listing": {
+      "status": "complete",
+      "artifact_id": "wgf:store-listing:sky-marble:20261004-08",
+      "content_hash": "sha256:d684eeb49e11785ded005b5f4d46ffeb1aee0f1a45f38bd14fe31424bda0c629",
+      "path": "listing/",
+      "trailer": "recorded",
+      "branding": "browser-composed",
+      "screenshots": 5,
+      "validation": {
+       "artifact_id": "wgf:listing-validation-report:sky-marble:20261004-07",
+       "content_hash": "sha256:3429f4e2be47c33b8b05193a7bc88ea44268dd9905680e885f1be64bac668bcd",
+       "verdict": "PASS",
+       "unknown": 20
+      }
+     },
+     "source_manifest_hash": "sha256:68f104ded0b2537df4dcff349340e23bb6d149a20165581d7c2de493184525f8"
+    },
+    "dist_digest": {
+     "status": "built",
+     "path": "dist",
+     "content_hash": "sha256:27f7f3f78f4f9bb53acee73526644a9f27b04a4d0e74103478e62284a7566f1b",
+     "files": 56,
+     "bytes": 6338806
+    },
+    "inputs": [
+     {
+      "artifact_id": "wgf:listing-validation-report:sky-marble:20261004-07",
+      "file": "artifacts/listing-validation-report/v7.json"
+     },
+     {
+      "artifact_id": "wgf:production-quality-report:sky-marble:20261003-14",
+      "file": "artifacts/production-quality-report/v13.json"
+     },
+     {
+      "artifact_id": "wgf:prototype-report:sky-marble:20261003-30",
+      "file": "artifacts/prototype-report/v24.json"
+     },
+     {
+      "artifact_id": "wgf:qa-report:sky-marble:20261003-04",
+      "file": "artifacts/qa-report/v4.json"
+     },
+     {
+      "artifact_id": "wgf:review-report:sky-marble:20261003-04",
+      "file": "artifacts/review-report/v12.json"
+     },
+     {
+      "artifact_id": "wgf:scaffold-record:sky-marble:20261003-01",
+      "file": "artifacts/scaffold-record/v1.json"
+     },
+     {
+      "artifact_id": "wgf:sdk-report:sky-marble:20261003-04",
+      "file": "artifacts/sdk-report/v4.json"
+     },
+     {
+      "artifact_id": "wgf:store-listing:sky-marble:20261004-08",
+      "file": "artifacts/store-listing/v8.json"
+     },
+     {
+      "artifact_id": "wgf:verification-report:sky-marble:20261003-04",
+      "file": "artifacts/verification-report/v4.json"
+     },
+     {
+      "artifact_id": "wgf:visual-qa-report:sky-marble:20261003-12",
+      "file": "artifacts/visual-qa-report/v10.json"
+     }
+    ]
+   },
+   "gates": {
+    "final": {
+     "playability": {
+      "file": "artifacts/playability-report/v15.json",
+      "artifact_id": "wgf:playability-report:sky-marble:20261003-13",
+      "schema_version": "1.2.0",
+      "content_hash": "sha256:bb6acca222b72591497d1053c53f75f3ca64fb58576bf8ac15bf22a49defa1aa",
+      "verdict": "PASS",
+      "commit": "64ff4c69f05cc259fa9bfda72305fd988ff94d0e",
+      "measurement_class": "automation-bot",
+      "checks": 40,
+      "status_counts": {
+       "PASS": 28,
+       "SKIPPED": 8,
+       "WARNING": 4
+      },
+      "failed_checks": [],
+      "skipped_checks": [
+       {
+        "id": "content.units_reachable",
+        "reason": "the design states no content units (build_spec.content), so there is no unit sequence to play through"
+       },
+       {
+        "id": "content.objective_shown",
+        "reason": "the design states no content units (build_spec.content), so there is no unit sequence to play through"
+       },
+       {
+        "id": "content.win_lose_per_unit",
+        "reason": "the design states no content units (build_spec.content), so there is no unit sequence to play through"
+       },
+       {
+        "id": "difficulty.axes_progress",
+        "reason": "the design declares no difficulty axes of a genre family (genre.family + build_spec.difficulty.axes), so no axis can be judged"
+       }
+      ],
+      "non_pass": [
+       {
+        "id": "content.units_reachable",
+        "project": "desktop",
+        "status": "SKIPPED",
+        "required": true,
+        "summary": "the design states no content units (build_spec.content), so there is no unit sequence to play through"
+       },
+       {
+        "id": "content.objective_shown",
+        "project": "desktop",
+        "status": "SKIPPED",
+        "required": true,
+        "summary": "the design states no content units (build_spec.content), so there is no unit sequence to play through"
+       },
+       {
+        "id": "content.win_lose_per_unit",
+        "project": "desktop",
+        "status": "SKIPPED",
+        "required": true,
+        "summary": "the design states no content units (build_spec.content), so there is no unit sequence to play through"
+       },
+       {
+        "id": "difficulty.axes_progress",
+        "project": "desktop",
+        "status": "SKIPPED",
+        "required": true,
+        "summary": "the design declares no difficulty axes of a genre family (genre.family + build_spec.difficulty.axes), so no axis can be judged"
+       },
+       {
+        "id": "content.variety",
+        "project": "desktop",
+        "status": "WARNING",
+        "required": false,
+        "summary": "the probe reports no `entities[].kind`, so the arrival of a new kind of content (the schedule's first is at 8 s) could not be measured"
+       },
+       {
+        "id": "progression.persists",
+        "project": "desktop",
+        "status": "WARNING",
+        "required": false,
+        "summary": "the probe reports none of what the design says persists (best)"
+       },
+       {
+        "id": "content.units_reachable",
+        "project": "mobile",
+        "status": "SKIPPED",
+        "required": true,
+        "summary": "the design states no content units (build_spec.content), so there is no unit sequence to play through"
+       },
+       {
+        "id": "content.objective_shown",
+        "project": "mobile",
+        "status": "SKIPPED",
+        "required": true,
+        "summary": "the design states no content units (build_spec.content), so there is no unit sequence to play through"
+       },
+       {
+        "id": "content.win_lose_per_unit",
+        "project": "mobile",
+        "status": "SKIPPED",
+        "required": true,
+        "summary": "the design states no content units (build_spec.content), so there is no unit sequence to play through"
+       },
+       {
+        "id": "difficulty.axes_progress",
+        "project": "mobile",
+        "status": "SKIPPED",
+        "required": true,
+        "summary": "the design declares no difficulty axes of a genre family (genre.family + build_spec.difficulty.axes), so no axis can be judged"
+       },
+       {
+        "id": "content.variety",
+        "project": "mobile",
+        "status": "WARNING",
+        "required": false,
+        "summary": "the probe reports no `entities[].kind`, so the arrival of a new kind of content (the schedule's first is at 8 s) could not be measured"
+       },
+       {
+        "id": "progression.persists",
+        "project": "mobile",
+        "status": "WARNING",
+        "required": false,
+        "summary": "the probe reports none of what the design says persists (best)"
+       }
+      ]
+     },
+     "production-quality": {
+      "file": "artifacts/production-quality-report/v13.json",
+      "artifact_id": "wgf:production-quality-report:sky-marble:20261003-14",
+      "schema_version": "1.0.0",
+      "content_hash": "sha256:1f3ec11a82278847be8ad9ac21f6acf6d5177d6af29d46b53219825e90bba4dd",
+      "verdict": "PASS",
+      "commit": "64ff4c69f05cc259fa9bfda72305fd988ff94d0e",
+      "measurement_class": "automation-bot",
+      "checks": 19,
+      "failed": [],
+      "routes": [],
+      "non_pass": []
+     },
+     "visual-qa": {
+      "file": "artifacts/visual-qa-report/v10.json",
+      "artifact_id": "wgf:visual-qa-report:sky-marble:20261003-12",
+      "schema_version": "1.3.0",
+      "content_hash": "sha256:d61f9a19423cb13d45de93902999f0f0a650adb4aae5a45710e4ebb2661d56db",
+      "verdict": "PASS",
+      "commit": "64ff4c69f05cc259fa9bfda72305fd988ff94d0e",
+      "measurement_class": "automation-agent",
+      "rubric": {
+       "path": "core/reference/visual-qa-rubric.yaml",
+       "version": "1.2.0",
+       "pass_bar": 3
+      },
+      "judge": {
+       "kind": "command",
+       "argv0": "claude",
+       "model": "sonnet",
+       "verdict_from": "stdout"
+      },
+      "judge_runs": 1,
+      "judge_repairs": 0,
+      "frames": 35,
+      "scores": {
+       "art_completeness": 4,
+       "character_readability": 4,
+       "environment": 4,
+       "ui_polish": 4,
+       "typography": 4,
+       "composition": 4,
+       "consistency": 5,
+       "no_debug": 5
+      },
+      "mean_score": 4.25,
+      "min_score": 4,
+      "look": {
+       "verdict": "finished-game",
+       "reason": "A coherent dusk-diorama with modelled low-poly islands, gems, gate and marble, a distinctive hand-cut paper UI in the specified display and body faces, and deliberate portrait and landscape layouts. It reaches the finish level of the quality bar frames in its own style."
+      },
+      "findings": [
+       {
+        "id": "wordmark-faded-low-contrast",
+        "severity": "minor",
+        "category": "readability",
+        "frame": "desktop/persist-after-reload",
+        "route": "develop",
+        "summary": "The 'Sky Marble' wordmark is semi-transparent and brownish over the scene, so contrast is low, and no Play button or other call to action is visible in the frame. The same happens on mobile/persist-after-reload. It looks like a mid-fade, but as captured it is weak."
+       },
+       {
+        "id": "intro-card-covers-course",
+        "severity": "minor",
+        "category": "composition",
+        "frame": "desktop/first-session-1s",
+        "route": "develop",
+        "summary": "The course intro card sits over the middle of the track and hides the goal gate and gems ahead in the first moments. The same occurs on mobile/first-session-1s."
+       },
+       {
+        "id": "marble-colour-dull",
+        "severity": "minor",
+        "category": "readability",
+        "frame": null,
+        "route": "assets",
+        "summary": "The marble reads dark brick-red rather than the brief's bright coral. Its cream swirl band is muted against the sage track, so it is less of the brightest-thing-on-screen than the identity asks."
+       }
+      ],
+      "failed": [],
+      "routes": []
+     },
+     "review": {
+      "file": "artifacts/review-report/v11.json",
+      "artifact_id": "wgf:review-report:sky-marble:20261003-08",
+      "schema_version": "1.1.0",
+      "content_hash": "sha256:61e292f417fbe8fe8ed4624f53e6a7b7841f6f5411a2c19e67fe8a7907720ba4",
+      "verdict": "approve",
+      "reviewed_commit": "64ff4c69f05cc259fa9bfda72305fd988ff94d0e",
+      "baseline_commit": "5137eb3a7df1259991465f4c9a8dcf8a6f2da2bd",
+      "iteration": 8,
+      "blockers": [],
+      "failure": null,
+      "isolation_intact": true,
+      "duration_s": 18.181,
+      "notes": "Docs-only commit. Pause-on-hidden-tab: src/scenes/play-scene.ts update() returns at line 178 while state is 'paused' (after hud.step(), which only bumps the data-steps loop counter), so the run clock and simulation do not advance after the tab returns; only #resume() (player input) restarts play. smoke.spec.ts @pause-resume (lines 351-370) asserts this, and the template-owned lifecycle test requires data-steps to resume, so bind.ts rightly stays unchanged. The verify failures are 30s/5s Playwright timeouts with no cause found in the code I read; the developer's account (parallel desktop+mobile 3D runs on a one-worker machine) is consistent with that, and checks.json records smoke passing at one worker, though I did not run the tests myself (read-only). The insecure-requests failure comes from the template adapter loading the Poki SDK over http from localhost, outside game code. Verify will re-judge the timeouts after approval."
+     },
+     "sdk": {
+      "file": "artifacts/sdk-report/v4.json",
+      "artifact_id": "wgf:sdk-report:sky-marble:20261003-04",
+      "schema_version": "1.2.0",
+      "content_hash": "sha256:6feff1609d84f73acf738d58aa7c8a2e4d91c350d904839894345368391d6e1b",
+      "commit": "64ff4c69f05cc259fa9bfda72305fd988ff94d0e",
+      "platforms": [
+       {
+        "platform_id": "poki",
+        "profile_version": "1.1.0",
+        "status": "working",
+        "features": {
+         "working": 12,
+         "not-required": 1
+        }
+       },
+       {
+        "platform_id": "yandex",
+        "profile_version": "1.1.0",
+        "status": "working",
+        "features": {
+         "working": 12,
+         "not-required": 1
+        }
+       },
+       {
+        "platform_id": "crazygames",
+        "profile_version": "1.1.0",
+        "status": "working",
+        "features": {
+         "working": 12,
+         "not-required": 1
+        }
+       }
+      ]
+     },
+     "sdk-review": {
+      "file": "artifacts/review-report/v12.json",
+      "artifact_id": "wgf:review-report:sky-marble:20261003-04",
+      "schema_version": "1.1.0",
+      "content_hash": "sha256:1ae763810c9c008ef95584dbf49411dee2f488f5a3b4cfa6f90addf8217b0eff",
+      "verdict": "approve",
+      "reviewed_commit": "64ff4c69f05cc259fa9bfda72305fd988ff94d0e",
+      "baseline_commit": "64ff4c69f05cc259fa9bfda72305fd988ff94d0e",
+      "iteration": 4,
+      "blockers": [],
+      "failure": null,
+      "isolation_intact": true,
+      "duration_s": 39.892,
+      "notes": "The commit changes only docs/development/* and docs/GDD.md; no src, tests or public file changed since 5137eb3, and the sha equals the development commit. I read the source and did not run anything. Pause on a hidden tab holds the run: bind.ts resumes the 'hidden' reason so the loop counter data-steps restarts (as the template lifecycle test requires), but PlayScene.pause() sets state 'paused' and opens the menu, and update() returns early in that state (src/scenes/play-scene.ts:173-178, 472-496), so the run clock and marble stay frozen until the player presses Resume. The @pause-resume smoke test asserts this. The verify failures are all Playwright timeouts (boot, lit scene, lifecycle, responsive, fallback-follows-boot); I found no cause in the code, and checks.json records the same 18 tests passing at --workers=1 behind the network guard. Verify must confirm it again. The insecure-requests failure comes from the template's Poki adapter loading the SDK over http from localhost, outside game code. Minor doc inconsistency: the GDD specifies six courses but courses.ts defines twelve (the GDD lists an optional extra-course-set), and report.json mvp notes say 'Six courses' while known_issues says twelve; reconcile and list the extra content under design_gaps."
+     },
+     "verify": {
+      "file": "artifacts/verification-report/v4.json",
+      "artifact_id": "wgf:verification-report:sky-marble:20261003-04",
+      "schema_version": "1.1.0",
+      "content_hash": "sha256:d9c5ccd958ac8ba12f8a27bf2b2b01a6c9d808369bb65e06160e5da852e6c31d",
+      "verdict": "PASS",
+      "evidence_status": "PASS_MOCK",
+      "commit": {
+       "sha": "64ff4c69f05cc259fa9bfda72305fd988ff94d0e",
+       "dirty": false,
+       "repository": "C:\\Users\\duycu\\wgf-runs\\val-3d\\games\\sky-marble"
+      },
+      "gameplay_driver": "repository-playwright",
+      "build_artifact": {
+       "status": "built",
+       "path": "dist",
+       "content_hash": "sha256:27f7f3f78f4f9bb53acee73526644a9f27b04a4d0e74103478e62284a7566f1b",
+       "files": 56,
+       "bytes": 6338806
+      },
+      "summary": {
+       "total": 59,
+       "PASS": 47,
+       "FAIL": 2,
+       "BLOCKED": 0,
+       "WARNING": 10
+      },
+      "failed_checks": [
+       "platform.build-target:yandex",
+       "platform.build-target:crazygames"
+      ],
+      "blocked_checks": [],
+      "warning_checks": [
+       "quality.content:objective-shown",
+       "quality.content:units-reachable",
+       "quality.content:variety",
+       "quality.content:win-lose-per-unit",
+       "quality.difficulty:axes-progress",
+       "quality.progression:persists",
+       "policy.assertions:yandex",
+       "policy.assertions:crazygames",
+       "assets.manifest",
+       "assets.loading"
+      ],
+      "platform_readiness": [
+       {
+        "platform_id": "poki",
+        "role": "required",
+        "readiness": "ready",
+        "evidence_status": "PASS_MOCK",
+        "portal_status": "BLOCKED_EXTERNAL"
+       },
+       {
+        "platform_id": "yandex",
+        "role": "optional",
+        "readiness": "not-ready",
+        "evidence_status": "FAIL",
+        "portal_status": "BLOCKED_EXTERNAL"
+       },
+       {
+        "platform_id": "crazygames",
+        "role": "optional",
+        "readiness": "not-ready",
+        "evidence_status": "FAIL",
+        "portal_status": "BLOCKED_EXTERNAL"
+       }
+      ]
+     },
+     "verify:qa": {
+      "file": "artifacts/qa-report/v4.json",
+      "artifact_id": "wgf:qa-report:sky-marble:20261003-04",
+      "schema_version": "1.2.0",
+      "content_hash": "sha256:c55ff5fdd4f7b96393c24ba410ca2aed44cc890f504b94fe772b4efaff3e5285",
+      "verdict": "pass",
+      "evidence_status": "PASS_MOCK",
+      "release_id": "candidate-64ff4c69f05c",
+      "build_ref": {
+       "commit_sha": "64ff4c69f05cc259fa9bfda72305fd988ff94d0e",
+       "artifact_hash": "sha256:27f7f3f78f4f9bb53acee73526644a9f27b04a4d0e74103478e62284a7566f1b"
+      },
+      "suites": [
+       {
+        "name": "build",
+        "passed": 4,
+        "failed": 0,
+        "skipped": 0
+       },
+       {
+        "name": "typecheck",
+        "passed": 1,
+        "failed": 0,
+        "skipped": 0
+       },
+       {
+        "name": "lint",
+        "passed": 1,
+        "failed": 0,
+        "skipped": 0
+       },
+       {
+        "name": "unit",
+        "passed": 1,
+        "failed": 0,
+        "skipped": 0
+       },
+       {
+        "name": "integration",
+        "passed": 1,
+        "failed": 0,
+        "skipped": 0
+       },
+       {
+        "name": "gameplay-quality",
+        "passed": 9,
+        "failed": 0,
+        "skipped": 0
+       },
+       {
+        "name": "smoke",
+        "passed": 10,
+        "failed": 0,
+        "skipped": 0
+       },
+       {
+        "name": "performance",
+        "passed": 1,
+        "failed": 0,
+        "skipped": 0
+       },
+       {
+        "name": "platform-validation",
+        "passed": 17,
+        "failed": 2,
+        "skipped": 0
+       },
+       {
+        "name": "e2e",
+        "passed": 18,
+        "failed": 0,
+        "skipped": 0
+       }
+      ],
+      "blocking_defects": [],
+      "perf_results": [
+       {
+        "device_class": "lowend-android-proxy",
+        "fps": 11,
+        "within_budget": true,
+        "note": "CPU-throttled desktop proxy, not a device measurement",
+        "time_to_interactive_s": 0.113,
+        "bundle_mb": 6.045
+       }
+      ]
+     },
+     "store-listing": {
+      "file": "artifacts/store-listing/v8.json",
+      "artifact_id": "wgf:store-listing:sky-marble:20261004-08",
+      "schema_version": "1.1.0",
+      "content_hash": "sha256:d684eeb49e11785ded005b5f4d46ffeb1aee0f1a45f38bd14fe31424bda0c629",
+      "status": "complete",
+      "commit": "64ff4c69f05cc259fa9bfda72305fd988ff94d0e",
+      "measurement_class": "automation-bot",
+      "screenshots": 5,
+      "platforms": [
+       "poki",
+       "yandex",
+       "crazygames"
+      ],
+      "problems": [
+       {
+        "code": "trailer-note",
+        "severity": "info",
+        "message": "no mp4 encoder (libx264) in the bundled ffmpeg",
+        "subject": "trailer"
+       }
+      ]
+     },
+     "listing-validation": {
+      "file": "artifacts/listing-validation-report/v7.json",
+      "artifact_id": "wgf:listing-validation-report:sky-marble:20261004-07",
+      "schema_version": "1.0.0",
+      "content_hash": "sha256:3429f4e2be47c33b8b05193a7bc88ea44268dd9905680e885f1be64bac668bcd",
+      "verdict": "PASS",
+      "commit": "64ff4c69f05cc259fa9bfda72305fd988ff94d0e",
+      "checks": 60,
+      "sections": {
+       "assets": "PASS",
+       "metadata": "PASS",
+       "screenshots": "PASS",
+       "video": "PASS",
+       "grounding": "PASS",
+       "platforms": "PASS"
+      },
+      "failed": [],
+      "unknown": 20,
+      "warnings": [],
+      "platforms": [
+       {
+        "platform_id": "poki",
+        "status": "PASS",
+        "spec_status": "unverified",
+        "unknown": 6
+       },
+       {
+        "platform_id": "yandex",
+        "status": "PASS",
+        "spec_status": "unverified",
+        "unknown": 6
+       },
+       {
+        "platform_id": "crazygames",
+        "status": "PASS",
+        "spec_status": "unverified",
+        "unknown": 8
+       }
+      ]
+     },
+     "platform-validate": {
+      "file": "artifacts/platform-publication-poki/v3.json",
+      "artifact_id": "wgf:platform-publication:sky-marble-poki:20261004-03",
+      "schema_version": "1.1.0",
+      "content_hash": "sha256:7996c031c11dfabd4a88749926e61526b0ab122e392f108bcbeb87ac8ff4f458",
+      "state": "validated",
+      "readiness": "HUMAN_REQUIRED",
+      "measurement_class": "automation-check",
+      "guards": [
+       {
+        "candidate_frozen": "GREEN"
+       },
+       {
+        "store_metadata_complete": "GREEN"
+       },
+       {
+        "package_shaped_to_profile": "GREEN"
+       },
+       {
+        "assertions_pass": "GREEN"
+       },
+       {
+        "metadata_and_locales_present": "GREEN"
+       }
+      ],
+      "package": {
+       "filename": "poki.zip",
+       "size_mb": 1.716,
+       "checksum": "sha256:e301327464b7944e015c5df022fc4776cf5127a77046dea52b5b4c82169348c2",
+       "content_digest": "sha256:d7ca844cb60eebb37594e5f4d5dee84947b5619d9c482ce6b8c88524ad1293c9",
+       "verified_on_disk": true
+      },
+      "human_required": {
+       "reason": "no-automated-method",
+       "detail": "the portal's cli (poki-cli) is the supported way in; no adapter drives it here, so a person runs it with the packaged release"
+      }
+     },
+     "assets": {
+      "file": "artifacts/asset-manifest/v4.json",
+      "artifact_id": "wgf:asset-manifest:sky-marble:20261003-08",
+      "schema_version": "1.4.0",
+      "content_hash": "sha256:7cb72fe9f86c930a7d93921972398f6bb6d118b28c2283ad0da2905753ffa056",
+      "items": 26,
+      "complete": false,
+      "placeholders": 0,
+      "issues": 0
+     },
+     "greybox-playability": {
+      "file": "artifacts/playability-report/v2.json",
+      "artifact_id": "wgf:playability-report:sky-marble:20261003-02",
+      "schema_version": "1.1.0",
+      "content_hash": "sha256:0551ca82f388c06f192b05cd8a028d3e3da0f8600e5fabf8934d11f904e1079a",
+      "verdict": "PASS",
+      "commit": "5d4be2da7d381d5fcf997f05697d6a52c5006763",
+      "measurement_class": "automation-bot",
+      "checks": 24,
+      "status_counts": {
+       "PASS": 24
+      },
+      "failed_checks": [],
+      "skipped_checks": null,
+      "non_pass": []
+     }
+    },
+    "history": {
+     "playability-report": [
+      {
+       "v": 1,
+       "produced_at": "2026-10-03T11:00:52Z",
+       "verdict": "FAIL",
+       "commit": "7abfea039077",
+       "failed": [
+        "desktop:lose.reachable",
+        "mobile:lose.reachable"
+       ]
+      },
+      {
+       "v": 2,
+       "produced_at": "2026-10-03T11:48:55Z",
+       "verdict": "PASS",
+       "commit": "5d4be2da7d38",
+       "failed": []
+      },
+      {
+       "v": 3,
+       "produced_at": "2026-10-03T13:32:33Z",
+       "verdict": "PASS",
+       "commit": "c2d113c50f1e",
+       "failed": []
+      },
+      {
+       "v": 4,
+       "produced_at": "2026-10-03T14:27:12Z",
+       "verdict": "PASS",
+       "commit": "5da69e345cb3",
+       "failed": []
+      },
+      {
+       "v": 5,
+       "produced_at": "2026-10-03T15:19:43Z",
+       "verdict": "PASS",
+       "commit": "3cae2dde59ce",
+       "failed": []
+      },
+      {
+       "v": 6,
+       "produced_at": "2026-10-03T15:47:11Z",
+       "verdict": "PASS",
+       "commit": "4c35c259ec13",
+       "failed": []
+      },
+      {
+       "v": 7,
+       "produced_at": "2026-10-03T16:44:24Z",
+       "verdict": "PASS",
+       "commit": "6e76fb218913",
+       "failed": []
+      },
+      {
+       "v": 8,
+       "produced_at": "2026-10-03T17:40:47Z",
+       "verdict": "PASS",
+       "commit": "a52275ac3a3b",
+       "failed": []
+      },
+      {
+       "v": 9,
+       "produced_at": "2026-10-03T18:20:47Z",
+       "verdict": "PASS",
+       "commit": "7e2f23b2d0aa",
+       "failed": []
+      },
+      {
+       "v": 10,
+       "produced_at": "2026-10-03T18:40:11Z",
+       "verdict": "PASS",
+       "commit": "79ed6e8e7eb1",
+       "failed": []
+      },
+      {
+       "v": 11,
+       "produced_at": "2026-10-03T19:02:26Z",
+       "verdict": "PASS",
+       "commit": "2944b3b41412",
+       "failed": []
+      },
+      {
+       "v": 12,
+       "produced_at": "2026-10-03T19:36:55Z",
+       "verdict": "PASS",
+       "commit": "ba4c33700ac5",
+       "failed": []
+      },
+      {
+       "v": 13,
+       "produced_at": "2026-10-03T20:08:01Z",
+       "verdict": "PASS",
+       "commit": "36eb8397e7e8",
+       "failed": []
+      },
+      {
+       "v": 14,
+       "produced_at": "2026-10-03T20:30:10Z",
+       "verdict": "PASS",
+       "commit": "5137eb3a7df1",
+       "failed": []
+      },
+      {
+       "v": 15,
+       "produced_at": "2026-10-03T22:47:34Z",
+       "verdict": "PASS",
+       "commit": "64ff4c69f05c",
+       "failed": []
+      }
+     ],
+     "production-quality-report": [
+      {
+       "v": 1,
+       "produced_at": "2026-10-03T13:34:18Z",
+       "verdict": "FAIL",
+       "commit": "c2d113c50f1e",
+       "failed": [
+        "assets.loaded",
+        "assets.present",
+        "assets.runtime",
+        "desktop:ui.text",
+        "mobile:ui.targets",
+        "mobile:ui.text"
+       ]
+      },
+      {
+       "v": 2,
+       "produced_at": "2026-10-03T14:31:00Z",
+       "verdict": "FAIL",
+       "commit": "5da69e345cb3",
+       "failed": [
+        "assets.present",
+        "assets.runtime",
+        "desktop:ui.overlap",
+        "desktop:ui.text",
+        "mobile:ui.text"
+       ]
+      },
+      {
+       "v": 3,
+       "produced_at": "2026-10-03T15:22:54Z",
+       "verdict": "FAIL",
+       "commit": "3cae2dde59ce",
+       "failed": [
+        "assets.runtime",
+        "desktop:scene.contrast",
+        "desktop:ui.text",
+        "mobile:ui.text"
+       ]
+      },
+      {
+       "v": 4,
+       "produced_at": "2026-10-03T15:54:36Z",
+       "verdict": "PASS",
+       "commit": "4c35c259ec13",
+       "failed": []
+      },
+      {
+       "v": 5,
+       "produced_at": "2026-10-03T16:47:44Z",
+       "verdict": "PASS",
+       "commit": "6e76fb218913",
+       "failed": []
+      },
+      {
+       "v": 6,
+       "produced_at": "2026-10-03T17:45:53Z",
+       "verdict": "PASS",
+       "commit": "a52275ac3a3b",
+       "failed": []
+      },
+      {
+       "v": 7,
+       "produced_at": "2026-10-03T18:25:43Z",
+       "verdict": "PASS",
+       "commit": "7e2f23b2d0aa",
+       "failed": []
+      },
+      {
+       "v": 8,
+       "produced_at": "2026-10-03T18:45:10Z",
+       "verdict": "PASS",
+       "commit": "79ed6e8e7eb1",
+       "failed": []
+      },
+      {
+       "v": 9,
+       "produced_at": "2026-10-03T19:07:30Z",
+       "verdict": "PASS",
+       "commit": "2944b3b41412",
+       "failed": []
+      },
+      {
+       "v": 10,
+       "produced_at": "2026-10-03T19:42:01Z",
+       "verdict": "PASS",
+       "commit": "ba4c33700ac5",
+       "failed": []
+      },
+      {
+       "v": 11,
+       "produced_at": "2026-10-03T20:12:50Z",
+       "verdict": "PASS",
+       "commit": "36eb8397e7e8",
+       "failed": []
+      },
+      {
+       "v": 12,
+       "produced_at": "2026-10-03T20:35:07Z",
+       "verdict": "PASS",
+       "commit": "5137eb3a7df1",
+       "failed": []
+      },
+      {
+       "v": 13,
+       "produced_at": "2026-10-03T22:51:49Z",
+       "verdict": "PASS",
+       "commit": "64ff4c69f05c",
+       "failed": []
+      }
+     ],
+     "visual-qa-report": [
+      {
+       "v": 1,
+       "produced_at": "2026-10-03T15:56:11Z",
+       "verdict": "FAIL",
+       "commit": "4c35c259ec13",
+       "mean_score": 3.875,
+       "min_score": 3,
+       "scores": {
+        "art_completeness": 3,
+        "character_readability": 4,
+        "environment": 3,
+        "ui_polish": 4,
+        "typography": 5,
+        "composition": 4,
+        "consistency": 3,
+        "no_debug": 5
+       },
+       "findings": 7,
+       "failed": [
+        "state:desktop/win:outcome_understandable"
+       ]
+      },
+      {
+       "v": 2,
+       "produced_at": "2026-10-03T16:49:10Z",
+       "verdict": "PASS",
+       "commit": "6e76fb218913",
+       "mean_score": 3.875,
+       "min_score": 3,
+       "scores": {
+        "art_completeness": 4,
+        "character_readability": 4,
+        "environment": 3,
+        "ui_polish": 4,
+        "typography": 4,
+        "composition": 3,
+        "consistency": 4,
+        "no_debug": 5
+       },
+       "findings": 4,
+       "failed": []
+      },
+      {
+       "v": 3,
+       "produced_at": "2026-10-03T17:47:25Z",
+       "verdict": "FAIL",
+       "commit": "a52275ac3a3b",
+       "mean_score": 3.375,
+       "min_score": 3,
+       "scores": {
+        "art_completeness": 3,
+        "character_readability": 3,
+        "environment": 3,
+        "ui_polish": 4,
+        "typography": 4,
+        "composition": 3,
+        "consistency": 3,
+        "no_debug": 4
+       },
+       "findings": 8,
+       "failed": [
+        "mean:3.38",
+        "look:unremarkable"
+       ]
+      },
+      {
+       "v": 4,
+       "produced_at": "2026-10-03T18:28:04Z",
+       "verdict": "PASS",
+       "commit": "7e2f23b2d0aa",
+       "mean_score": 3.875,
+       "min_score": 3,
+       "scores": {
+        "art_completeness": 3,
+        "character_readability": 3,
+        "environment": 4,
+        "ui_polish": 4,
+        "typography": 4,
+        "composition": 4,
+        "consistency": 4,
+        "no_debug": 5
+       },
+       "findings": 3,
+       "failed": []
+      },
+      {
+       "v": 5,
+       "produced_at": "2026-10-03T18:47:20Z",
+       "verdict": "PASS",
+       "commit": "79ed6e8e7eb1",
+       "mean_score": 4.0,
+       "min_score": 3,
+       "scores": {
+        "art_completeness": 4,
+        "character_readability": 3,
+        "environment": 4,
+        "ui_polish": 4,
+        "typography": 4,
+        "composition": 4,
+        "consistency": 4,
+        "no_debug": 5
+       },
+       "findings": 4,
+       "failed": []
+      },
+      {
+       "v": 6,
+       "produced_at": "2026-10-03T19:19:17Z",
+       "verdict": "PASS",
+       "commit": "2944b3b41412",
+       "mean_score": 4.375,
+       "min_score": 4,
+       "scores": {
+        "art_completeness": 4,
+        "character_readability": 4,
+        "environment": 4,
+        "ui_polish": 5,
+        "typography": 5,
+        "composition": 4,
+        "consistency": 4,
+        "no_debug": 5
+       },
+       "findings": 3,
+       "failed": []
+      },
+      {
+       "v": 7,
+       "produced_at": "2026-10-03T19:50:30Z",
+       "verdict": "PASS",
+       "commit": "ba4c33700ac5",
+       "mean_score": 4.125,
+       "min_score": 4,
+       "scores": {
+        "art_completeness": 4,
+        "character_readability": 4,
+        "environment": 4,
+        "ui_polish": 4,
+        "typography": 4,
+        "composition": 4,
+        "consistency": 4,
+        "no_debug": 5
+       },
+       "findings": 4,
+       "failed": []
+      },
+      {
+       "v": 8,
+       "produced_at": "2026-10-03T20:14:05Z",
+       "verdict": "PASS",
+       "commit": "36eb8397e7e8",
+       "mean_score": 4.125,
+       "min_score": 4,
+       "scores": {
+        "art_completeness": 4,
+        "character_readability": 4,
+        "environment": 4,
+        "ui_polish": 4,
+        "typography": 4,
+        "composition": 4,
+        "consistency": 4,
+        "no_debug": 5
+       },
+       "findings": 3,
+       "failed": []
+      },
+      {
+       "v": 9,
+       "produced_at": "2026-10-03T20:36:10Z",
+       "verdict": "PASS",
+       "commit": "5137eb3a7df1",
+       "mean_score": 4.125,
+       "min_score": 4,
+       "scores": {
+        "art_completeness": 4,
+        "character_readability": 4,
+        "environment": 4,
+        "ui_polish": 4,
+        "typography": 4,
+        "composition": 4,
+        "consistency": 4,
+        "no_debug": 5
+       },
+       "findings": 3,
+       "failed": []
+      },
+      {
+       "v": 10,
+       "produced_at": "2026-10-03T22:53:16Z",
+       "verdict": "PASS",
+       "commit": "64ff4c69f05c",
+       "mean_score": 4.25,
+       "min_score": 4,
+       "scores": {
+        "art_completeness": 4,
+        "character_readability": 4,
+        "environment": 4,
+        "ui_polish": 4,
+        "typography": 4,
+        "composition": 4,
+        "consistency": 5,
+        "no_debug": 5
+       },
+       "findings": 3,
+       "failed": []
+      }
+     ],
+     "review-report": [
+      {
+       "v": 1,
+       "produced_at": "2026-10-03T16:50:20Z",
+       "verdict": "approve",
+       "reviewed_commit": "6e76fb218913",
+       "blockers": []
+      },
+      {
+       "v": 2,
+       "produced_at": "2026-10-03T16:51:38Z",
+       "verdict": "approve",
+       "reviewed_commit": "68e7446b274b",
+       "blockers": []
+      },
+      {
+       "v": 3,
+       "produced_at": "2026-10-03T18:28:36Z",
+       "verdict": "request-changes",
+       "reviewed_commit": "7e2f23b2d0aa",
+       "blockers": [
+        {
+         "id": "css-fibre-datauri-unresolved-ref",
+         "severity": "blocker",
+         "file": "src/ui/styles.css",
+         "summary": "The verification blocker vr-build-asset-resolution is not fixed. The --fibre data-URI SVG contains filter='url%28%23n%29', and the bundle checker reads it as an unresolved local reference '%23n' in the built CSS. The commit leaves this line untouched, so the 'Fix first' item fails again. Move the texture to a real file under public/ or encode the data URI so no url(#...) reference remains."
+        }
+       ]
+      },
+      {
+       "v": 4,
+       "produced_at": "2026-10-03T18:47:42Z",
+       "verdict": "approve",
+       "reviewed_commit": "79ed6e8e7eb1",
+       "blockers": []
+      },
+      {
+       "v": 5,
+       "produced_at": "2026-10-03T18:48:24Z",
+       "verdict": "approve",
+       "reviewed_commit": "79ed6e8e7eb1",
+       "blockers": []
+      },
+      {
+       "v": 6,
+       "produced_at": "2026-10-03T19:19:42Z",
+       "verdict": "approve",
+       "reviewed_commit": "2944b3b41412",
+       "blockers": []
+      },
+      {
+       "v": 7,
+       "produced_at": "2026-10-03T19:20:34Z",
+       "verdict": "approve",
+       "reviewed_commit": "2944b3b41412",
+       "blockers": []
+      },
+      {
+       "v": 8,
+       "produced_at": "2026-10-03T19:51:07Z",
+       "verdict": "request-changes",
+       "reviewed_commit": "ba4c33700ac5",
+       "blockers": [
+        {
+         "id": "verify-blockers-not-addressed",
+         "severity": "blocker",
+         "file": null,
+         "summary": "This iteration was sent back by verify.fail with six blocking defects (vr-gameplay-boot, vr-gameplay-start, vr-gameplay-core-loop, vr-gameplay-pause-resume, vr-gameplay-responsive, vr-platform-fallback). The commit changes only docs/development/*.json and brief.md. There is no change under src/, tests/ or public/, so none of the defects is fixed."
+        },
+        {
+         "id": "pause-hidden-tab-steps-advance",
+         "severity": "blocker",
+         "file": "tests/e2e/lifecycle.spec.ts",
+         "summary": "The lifecycle test requires the simulation step counter (data-steps) to stay constant while the tab is hidden. The developer's known_issues says data-steps still advances while the pause menu waits behind a returning tab. This matches the failing pause-resume and core-loop verification checks on desktop and mobile, and the code was not changed. Pause must stop the simulation and resume must continue it."
+        },
+        {
+         "id": "smoke-boot-timeouts-unexplained",
+         "severity": "major",
+         "file": "tests/e2e/smoke.spec.ts",
+         "summary": "The gate saw boot and lit-scene smoke tests exceed 30 s on desktop and flake on mobile, and the no-portal-SDK fallback boot fail. Nothing in the commit fixes or explains this. checks.json says smoke passed locally, and the report says the template's insecure-requests test fails when the network is reachable."
+        },
+        {
+         "id": "report-stale",
+         "severity": "major",
+         "file": "docs/development/report.json",
+         "summary": "report.json was not updated for this iteration. It still says the e2e run did not happen because of the port 4173 conflict, so it does not describe the build at this commit."
+        },
+        {
+         "id": "stray-files",
+         "severity": "minor",
+         "file": "tests/zz-alt-port.config.mjs",
+         "summary": "A leftover scratch Playwright config is in the tests tree. The developer asked for it to be deleted. The unused template boot-scene at src/game/boot-scene.ts is also still present."
+        }
+       ]
+      },
+      {
+       "v": 9,
+       "produced_at": "2026-10-03T20:14:40Z",
+       "verdict": "request-changes",
+       "reviewed_commit": "36eb8397e7e8",
+       "blockers": [
+        {
+         "id": "verify-blockers-not-addressed",
+         "severity": "blocker",
+         "file": null,
+         "summary": "The commit changes no code under src/, tests/e2e/ or public/. The six verify.fail defects (gameplay boot, start, core-loop, pause-resume, responsive, platform fallback) are attributed to verify running desktop and mobile in parallel, and nothing in the repo shows they are resolved. This is unproven until verify passes on this commit."
+        },
+        {
+         "id": "pause-hidden-tab-steps-advance",
+         "severity": "blocker",
+         "file": "src/platform/bind.ts",
+         "summary": "known_issues says that after a hidden tab becomes visible, the game loop (data-steps) advances again while the run waits behind the pause menu. The brief requires pause to stop the simulation and resume only on player input (GAME-008). The code is unchanged. The lifecycle test only asserts steps resume when the tab is visible, so it does not guard this."
+        },
+        {
+         "id": "smoke-boot-timeouts-unexplained",
+         "severity": "major",
+         "file": "tests/e2e/smoke.spec.ts",
+         "summary": "The boot and lit-scene timeouts, and the no-portal-SDK fallback failure, are blamed on the gate's parallelism with no change. The template's insecure-requests test still fails when the network is reachable, because the adapter loads the Poki SDK over http from localhost. This is not fixed."
+        },
+        {
+         "id": "boot-scene-unused-template-file",
+         "severity": "minor",
+         "file": "src/game/boot-scene.ts",
+         "summary": "The unused template BootScene is still present. The report justifies keeping it because the template's sdk-matrix tests import it. The scratch config tests/zz-alt-port.config.mjs is deleted."
+        }
+       ]
+      },
+      {
+       "v": 10,
+       "produced_at": "2026-10-03T20:36:34Z",
+       "verdict": "request-changes",
+       "reviewed_commit": "5137eb3a7df1",
+       "blockers": [
+        {
+         "id": "verify-blockers-not-addressed",
+         "severity": "blocker",
+         "file": null,
+         "summary": "The commit changes only docs/development/*. No code in src/, tests/e2e/ or public/ changed, so the six verify.fail defects (boot, start, core-loop, pause-resume, responsive, platform fallback) are neither fixed nor shown to pass. The blocker from the previous review stands."
+        },
+        {
+         "id": "pause-hidden-tab-steps-advance",
+         "severity": "blocker",
+         "file": "src/platform/bind.ts",
+         "summary": "bind.ts is unchanged. The developer's own known_issues says the game loop (data-steps) advances again after a hidden tab becomes visible while the run waits behind the pause menu. GAME-008 requires that pause stops the simulation and that resume happens only on player input. The lifecycle test does not guard this."
+        },
+        {
+         "id": "smoke-boot-timeouts-unexplained",
+         "severity": "major",
+         "file": "tests/e2e/smoke.spec.ts",
+         "summary": "The smoke test is unchanged. The boot and lit-scene timeouts and the no-portal-SDK fallback failure are still blamed on parallelism without a fix. The template's insecure-requests test still fails because the adapter loads the Poki SDK over http from localhost."
+        }
+       ]
+      },
+      {
+       "v": 11,
+       "produced_at": "2026-10-03T22:53:44Z",
+       "verdict": "approve",
+       "reviewed_commit": "64ff4c69f05c",
+       "blockers": []
+      },
+      {
+       "v": 12,
+       "produced_at": "2026-10-03T22:55:12Z",
+       "verdict": "approve",
+       "reviewed_commit": "64ff4c69f05c",
+       "blockers": []
+      }
+     ],
+     "sdk-report": [
+      {
+       "v": 1,
+       "produced_at": "2026-10-03T16:50:45Z",
+       "commit": "68e7446b274b"
+      },
+      {
+       "v": 2,
+       "produced_at": "2026-10-03T18:47:53Z",
+       "commit": "79ed6e8e7eb1"
+      },
+      {
+       "v": 3,
+       "produced_at": "2026-10-03T19:19:53Z",
+       "commit": "2944b3b41412"
+      },
+      {
+       "v": 4,
+       "produced_at": "2026-10-03T22:54:22Z",
+       "commit": "64ff4c69f05c"
+      }
+     ],
+     "verification-report": [
+      {
+       "v": 1,
+       "produced_at": "2026-10-03T16:59:53Z",
+       "verdict": "FAIL",
+       "evidence_status": "FAIL",
+       "commit": "68e7446b274b"
+      },
+      {
+       "v": 2,
+       "produced_at": "2026-10-03T18:50:15Z",
+       "verdict": "PASS",
+       "evidence_status": "PASS_MOCK",
+       "commit": "79ed6e8e7eb1"
+      },
+      {
+       "v": 3,
+       "produced_at": "2026-10-03T19:24:41Z",
+       "verdict": "FAIL",
+       "evidence_status": "FAIL",
+       "commit": "2944b3b41412"
+      },
+      {
+       "v": 4,
+       "produced_at": "2026-10-03T22:58:25Z",
+       "verdict": "PASS",
+       "evidence_status": "PASS_MOCK",
+       "commit": "64ff4c69f05c"
+      }
+     ],
+     "qa-report": [
+      {
+       "v": 1,
+       "produced_at": "2026-10-03T16:59:53Z",
+       "verdict": "fail",
+       "evidence_status": "FAIL"
+      },
+      {
+       "v": 2,
+       "produced_at": "2026-10-03T18:50:15Z",
+       "verdict": "pass",
+       "evidence_status": "PASS_MOCK"
+      },
+      {
+       "v": 3,
+       "produced_at": "2026-10-03T19:24:41Z",
+       "verdict": "fail",
+       "evidence_status": "FAIL"
+      },
+      {
+       "v": 4,
+       "produced_at": "2026-10-03T22:58:25Z",
+       "verdict": "pass",
+       "evidence_status": "PASS_MOCK"
+      }
+     ],
+     "store-listing": [
+      {
+       "v": 1,
+       "produced_at": "2026-10-03T23:09:05Z",
+       "status": "incomplete",
+       "commit": "64ff4c69f05c"
+      },
+      {
+       "v": 2,
+       "produced_at": "2026-10-03T23:12:50Z",
+       "status": "incomplete",
+       "commit": "64ff4c69f05c"
+      },
+      {
+       "v": 3,
+       "produced_at": "2026-10-03T23:16:40Z",
+       "status": "incomplete",
+       "commit": "64ff4c69f05c"
+      },
+      {
+       "v": 4,
+       "produced_at": "2026-10-03T23:26:36Z",
+       "status": "complete",
+       "commit": "64ff4c69f05c"
+      },
+      {
+       "v": 5,
+       "produced_at": "2026-10-04T00:51:18Z",
+       "status": "complete",
+       "commit": "64ff4c69f05c"
+      },
+      {
+       "v": 6,
+       "produced_at": "2026-10-04T01:01:55Z",
+       "status": "complete",
+       "commit": "64ff4c69f05c"
+      },
+      {
+       "v": 7,
+       "produced_at": "2026-10-04T01:11:33Z",
+       "status": "incomplete",
+       "commit": "64ff4c69f05c"
+      },
+      {
+       "v": 8,
+       "produced_at": "2026-10-04T01:15:07Z",
+       "status": "complete",
+       "commit": "64ff4c69f05c"
+      }
+     ],
+     "listing-validation-report": [
+      {
+       "v": 1,
+       "produced_at": "2026-10-03T23:09:51Z",
+       "verdict": "FAIL",
+       "commit": "64ff4c69f05c"
+      },
+      {
+       "v": 2,
+       "produced_at": "2026-10-03T23:13:35Z",
+       "verdict": "FAIL",
+       "commit": "64ff4c69f05c"
+      },
+      {
+       "v": 3,
+       "produced_at": "2026-10-03T23:17:26Z",
+       "verdict": "FAIL",
+       "commit": "64ff4c69f05c"
+      },
+      {
+       "v": 4,
+       "produced_at": "2026-10-03T23:27:09Z",
+       "verdict": "PASS",
+       "commit": "64ff4c69f05c"
+      },
+      {
+       "v": 5,
+       "produced_at": "2026-10-04T01:02:40Z",
+       "verdict": "PASS",
+       "commit": "64ff4c69f05c"
+      },
+      {
+       "v": 6,
+       "produced_at": "2026-10-04T01:12:06Z",
+       "verdict": "BLOCKED",
+       "commit": "64ff4c69f05c"
+      },
+      {
+       "v": 7,
+       "produced_at": "2026-10-04T01:15:41Z",
+       "verdict": "PASS",
+       "commit": "64ff4c69f05c"
+      }
+     ],
+     "platform-publication-poki": [
+      {
+       "v": 1,
+       "produced_at": "2026-10-03T23:34:00Z",
+       "state": "validated",
+       "readiness": "HUMAN_REQUIRED"
+      },
+      {
+       "v": 2,
+       "produced_at": "2026-10-04T01:02:43Z",
+       "state": "validated",
+       "readiness": "HUMAN_REQUIRED"
+      },
+      {
+       "v": 3,
+       "produced_at": "2026-10-04T01:15:44Z",
+       "state": "validated",
+       "readiness": "HUMAN_REQUIRED"
+      }
+     ],
+     "asset-manifest": [
+      {
+       "v": 1,
+       "produced_at": "2026-10-03T12:53:58Z",
+       "items": 26,
+       "placeholders": 1
+      },
+      {
+       "v": 2,
+       "produced_at": "2026-10-03T13:43:33Z",
+       "items": 26,
+       "placeholders": 1
+      },
+      {
+       "v": 3,
+       "produced_at": "2026-10-03T14:43:15Z",
+       "items": 26,
+       "placeholders": 0
+      },
+      {
+       "v": 4,
+       "produced_at": "2026-10-03T18:00:57Z",
+       "items": 26,
+       "placeholders": 0
+      }
+     ]
+    }
+   },
+   "decisions": [
+    {
+     "file": "artifacts/decision-record-strategy-review/v1.json",
+     "artifact_id": "wgf:decision-record:sky-marble-g2:20261003-01",
+     "gate_id": "G2",
+     "transition": "strategy -> design",
+     "decision": "approved",
+     "decided_by": {
+      "role": "portfolio-owner",
+      "mode": "auto-approved",
+      "identifier": "automation"
+     },
+     "decided_at": "2026-10-03T08:25:42.896Z",
+     "rationale": "G2 auto-approved: the run was started with G2 in its auto_approve list (factory.checkpoints.auto_approve, or a mock run's own reversible gates)",
+     "subject": [
+      {
+       "artifact_id": "wgf:title-strategy:sky-marble:20261003-01",
+       "file": "artifacts/title-strategy/v1.json"
+      }
+     ]
+    },
+    {
+     "file": "artifacts/decision-record-tech-plan-review/v1.json",
+     "artifact_id": "wgf:decision-record:sky-marble-g3:20261003-01",
+     "gate_id": "G3",
+     "transition": "tech-plan -> scaffolding",
+     "decision": "approved",
+     "decided_by": {
+      "role": "portfolio-owner",
+      "mode": "auto-approved",
+      "identifier": "automation"
+     },
+     "decided_at": "2026-10-03T08:33:57.809Z",
+     "rationale": "G3 auto-approved: the run was started with G3 in its auto_approve list (factory.checkpoints.auto_approve, or a mock run's own reversible gates)",
+     "subject": [
+      {
+       "artifact_id": "wgf:game-design:sky-marble:20261003-01",
+       "file": "artifacts/game-design/v1.json"
+      },
+      {
+       "artifact_id": "wgf:tech-plan:sky-marble:20261003-01",
+       "file": "artifacts/tech-plan/v1.json"
+      }
+     ]
+    },
+    {
+     "file": "artifacts/decision-record-prototype-review/v1.json",
+     "artifact_id": "wgf:decision-record:sky-marble-g4:20261003-02",
+     "gate_id": "G4",
+     "transition": "prototype-review -> prototype",
+     "decision": "iterate",
+     "decided_by": {
+      "role": "portfolio-owner",
+      "mode": "human",
+      "identifier": "human"
+     },
+     "decided_at": "2026-10-03T18:53:58.594Z",
+     "rationale": "Lead (on the operator's standing instruction for this validation run; final approval stays with the human): verify v2 PASS, playability v10, PQ v8, VQA v5 PASS, review v5 APPROVE. Iterate once: the player marble's swirl band sits inside the shell and reads as a plain red sphere (VQA major); fix (hugSwirl) must land before store-listing captures screenshots.",
+     "subject": [
+      {
+       "artifact_id": "wgf:game-design:sky-marble:20261003-01",
+       "file": "artifacts/game-design/v1.json"
+      },
+      {
+       "artifact_id": "wgf:prototype-report:sky-marble:20261003-20",
+       "file": "artifacts/prototype-report/v19.json"
+      },
+      {
+       "artifact_id": "wgf:qa-report:sky-marble:20261003-02",
+       "file": "artifacts/qa-report/v2.json"
+      },
+      {
+       "artifact_id": "wgf:title-strategy:sky-marble:20261003-01",
+       "file": "artifacts/title-strategy/v1.json"
+      },
+      {
+       "artifact_id": "wgf:verification-report:sky-marble:20261003-02",
+       "file": "artifacts/verification-report/v2.json"
+      }
+     ]
+    },
+    {
+     "file": "artifacts/decision-record-prototype-review/v2.json",
+     "artifact_id": "wgf:decision-record:sky-marble-g4:20261003-04",
+     "gate_id": "G4",
+     "transition": "prototype-review -> production",
+     "decision": "pass",
+     "decided_by": {
+      "role": "portfolio-owner",
+      "mode": "human",
+      "identifier": "human"
+     },
+     "decided_at": "2026-10-03T23:06:06.334Z",
+     "rationale": "Lead (operator's standing instruction for this validation run; final approval stays with the human): verify qa-report v4 PASS (PASS_MOCK), playability v15, PQ v13, VQA v10 PASS, review v12 APPROVE, sdk-review done; player audits 1-3: 12 authored courses in 3 tiers won, persistence OK; marble band visible, dusk world authored. Known non-blocking: no separate time-trial mode (out of design scope; PB per course), settings = sound toggle.",
+     "subject": [
+      {
+       "artifact_id": "wgf:game-design:sky-marble:20261003-01",
+       "file": "artifacts/game-design/v1.json"
+      },
+      {
+       "artifact_id": "wgf:playability-report:sky-marble:20261003-13",
+       "file": "artifacts/playability-report/v15.json"
+      },
+      {
+       "artifact_id": "wgf:prototype-report:sky-marble:20261003-30",
+       "file": "artifacts/prototype-report/v24.json"
+      },
+      {
+       "artifact_id": "wgf:qa-report:sky-marble:20261003-04",
+       "file": "artifacts/qa-report/v4.json"
+      },
+      {
+       "artifact_id": "wgf:review-report:sky-marble:20261003-04",
+       "file": "artifacts/review-report/v12.json"
+      },
+      {
+       "artifact_id": "wgf:title-strategy:sky-marble:20261003-01",
+       "file": "artifacts/title-strategy/v1.json"
+      },
+      {
+       "artifact_id": "wgf:verification-report:sky-marble:20261003-04",
+       "file": "artifacts/verification-report/v4.json"
+      }
+     ]
+    },
+    {
+     "file": "artifacts/decision-record-release-review/v1.json",
+     "artifact_id": "wgf:decision-record:sky-marble-g5:20261004-04",
+     "gate_id": "G5",
+     "transition": "rc -> approved",
+     "decision": "approved",
+     "decided_by": {
+      "role": "portfolio-owner",
+      "mode": "human",
+      "identifier": "human"
+     },
+     "decided_at": "2026-10-04T01:16:03.966Z",
+     "rationale": "G5 approve (Worker B, per Lead rule): release r1 on 64ff4c6; qa-report v4 PASS (PASS_MOCK), verification PASS; platform-validate: poki every guard GREEN (candidate_frozen, store_metadata_complete, package_shaped_to_profile, assertions_pass, metadata_and_locales_present); readiness HUMAN_REQUIRED only because Poki submission goes through poki-cli run by a person (no adapter) - a genuinely external hand-off. Listing v8 validated (en + ru copy corrected against the build: 12 courses, star gates on courses 5 and 9).",
+     "subject": [
+      {
+       "artifact_id": "wgf:qa-report:sky-marble:20261003-04",
+       "file": "artifacts/qa-report/v4.json"
+      },
+      {
+       "artifact_id": "wgf:release-manifest:sky-marble:20261004-01",
+       "file": "artifacts/release-manifest/v3.json"
+      },
+      {
+       "artifact_id": "wgf:verification-report:sky-marble:20261003-04",
+       "file": "artifacts/verification-report/v4.json"
+      }
+     ]
+    }
+   ],
+   "content": {
+    "design": {
+     "file": "artifacts/game-design/v1.json",
+     "artifact_id": "wgf:game-design:sky-marble:20261003-01",
+     "schema_version": "1.8.0",
+     "content_hash": "sha256:8befdb59227e5a8fcb1c29b2ec63f1e73d553abfcc6ba84b4eec2976d25bb26d"
+    },
+    "source": "src/game/courses.ts @ 64ff4c69f05c (git show, evaluated by node), design wgf:game-design:sky-marble:20261003-01 (schema 1.8.0, no build_spec.content)",
+    "unit_kind": "course (not a content-contract unit: no public/content/units.json)",
+    "units": 12,
+    "groups": {
+     "Meadow Isles": 4,
+     "Sunset Cliffs": 4,
+     "Storm Peaks": 4
+    },
+    "purposes": null,
+    "distinct_mechanics": 7,
+    "mechanics": [
+     "marble-roll",
+     "course-terrain",
+     "fall-respawn",
+     "checkpoints",
+     "gems",
+     "par-stars",
+     "course-unlock"
+    ],
+    "segment_kinds_units": {
+     "jump": 12,
+     "line": 12,
+     "turn": 12,
+     "mover": 8,
+     "drop": 4
+    },
+    "feature_kinds_units": {
+     "bumpers": 7,
+     "rails": 1,
+     "slope": 8,
+     "plaza": 6,
+     "narrow": 8,
+     "walls": 5,
+     "drop-landing": 2
+    },
+    "distinct_element_kinds": 12,
+    "distinct_structure_kinds": 5,
+    "elements_per_unit": {
+     "min": 4,
+     "mean": 7.08,
+     "max": 11
+    },
+    "distinct_element_combinations": 12,
+    "distinct_element_combination_share": 1.0,
+    "objective_classes": {
+     "reach the goal gate (+ par stars, gems)": 12
+    },
+    "climax_units": [],
+    "climax_note": "the design declares no climax or boss unit; the last course of each tier is not marked as one",
+    "unlock_gates": {
+     "5": 8,
+     "9": 18
+    },
+    "par_sum_s": 345.5,
+    "par_s": {
+     "min": 18,
+     "mean": 28.79,
+     "max": 39
+    },
+    "length_m": {
+     "min": 234.0,
+     "mean": 335.41,
+     "max": 440.1
+    },
+    "gems_total": 120,
+    "design_session": {
+     "first_session_seconds": 220,
+     "target_seconds": 300,
+     "time_to_first_play_s": 5
+    },
+    "per_unit": [
+     {
+      "id": 1,
+      "name": "First Roll",
+      "group": "Meadow Isles",
+      "segments": 10,
+      "segment_kinds": [
+       "jump",
+       "line",
+       "turn"
+      ],
+      "features": [
+       "bumpers",
+       "rails"
+      ],
+      "elements": 5,
+      "turns": 1,
+      "length_m": 234.0,
+      "width": 8,
+      "gems": 10,
+      "checkpoints": 3,
+      "par_s": 18,
+      "unlock_stars": 0
+     },
+     {
+      "id": 2,
+      "name": "Twin Bends",
+      "group": "Meadow Isles",
+      "segments": 12,
+      "segment_kinds": [
+       "jump",
+       "line",
+       "turn"
+      ],
+      "features": [
+       "slope"
+      ],
+      "elements": 4,
+      "turns": 4,
+      "length_m": 256.5,
+      "width": 7.5,
+      "gems": 10,
+      "checkpoints": 3,
+      "par_s": 20,
+      "unlock_stars": 0
+     },
+     {
+      "id": 3,
+      "name": "Drifting Isles",
+      "group": "Meadow Isles",
+      "segments": 14,
+      "segment_kinds": [
+       "jump",
+       "line",
+       "mover",
+       "turn"
+      ],
+      "features": [],
+      "elements": 4,
+      "turns": 3,
+      "length_m": 260.3,
+      "width": 7,
+      "gems": 10,
+      "checkpoints": 3,
+      "par_s": 21,
+      "unlock_stars": 0
+     },
+     {
+      "id": 4,
+      "name": "Bumper Garden",
+      "group": "Meadow Isles",
+      "segments": 14,
+      "segment_kinds": [
+       "jump",
+       "line",
+       "mover",
+       "turn"
+      ],
+      "features": [
+       "bumpers",
+       "plaza",
+       "slope"
+      ],
+      "elements": 7,
+      "turns": 3,
+      "length_m": 273.2,
+      "width": 6.5,
+      "gems": 10,
+      "checkpoints": 3,
+      "par_s": 24,
+      "unlock_stars": 0
+     },
+     {
+      "id": 5,
+      "name": "Narrow Way",
+      "group": "Sunset Cliffs",
+      "segments": 18,
+      "segment_kinds": [
+       "jump",
+       "line",
+       "mover",
+       "turn"
+      ],
+      "features": [
+       "narrow",
+       "slope"
+      ],
+      "elements": 6,
+      "turns": 4,
+      "length_m": 342.0,
+      "width": 6.5,
+      "gems": 10,
+      "checkpoints": 3,
+      "par_s": 27,
+      "unlock_stars": 8
+     },
+     {
+      "id": 6,
+      "name": "Stone Chicane",
+      "group": "Sunset Cliffs",
+      "segments": 13,
+      "segment_kinds": [
+       "jump",
+       "line",
+       "turn"
+      ],
+      "features": [
+       "narrow",
+       "walls"
+      ],
+      "elements": 5,
+      "turns": 4,
+      "length_m": 307.1,
+      "width": 6,
+      "gems": 10,
+      "checkpoints": 3,
+      "par_s": 29,
+      "unlock_stars": 0
+     },
+     {
+      "id": 7,
+      "name": "Cliff Steps",
+      "group": "Sunset Cliffs",
+      "segments": 22,
+      "segment_kinds": [
+       "drop",
+       "jump",
+       "line",
+       "mover",
+       "turn"
+      ],
+      "features": [
+       "bumpers",
+       "drop-landing",
+       "narrow",
+       "plaza",
+       "slope"
+      ],
+      "elements": 10,
+      "turns": 4,
+      "length_m": 365.4,
+      "width": 6,
+      "gems": 10,
+      "checkpoints": 3,
+      "par_s": 29,
+      "unlock_stars": 0
+     },
+     {
+      "id": 8,
+      "name": "Sunset Run",
+      "group": "Sunset Cliffs",
+      "segments": 20,
+      "segment_kinds": [
+       "drop",
+       "jump",
+       "line",
+       "mover",
+       "turn"
+      ],
+      "features": [
+       "bumpers",
+       "narrow",
+       "plaza",
+       "slope",
+       "walls"
+      ],
+      "elements": 10,
+      "turns": 4,
+      "length_m": 376.0,
+      "width": 5.5,
+      "gems": 10,
+      "checkpoints": 3,
+      "par_s": 33.5,
+      "unlock_stars": 0
+     },
+     {
+      "id": 9,
+      "name": "Hairpin Rise",
+      "group": "Storm Peaks",
+      "segments": 16,
+      "segment_kinds": [
+       "jump",
+       "line",
+       "turn"
+      ],
+      "features": [
+       "bumpers",
+       "narrow",
+       "plaza",
+       "slope"
+      ],
+      "elements": 7,
+      "turns": 5,
+      "length_m": 356.9,
+      "width": 5.5,
+      "gems": 10,
+      "checkpoints": 3,
+      "par_s": 31,
+      "unlock_stars": 18
+     },
+     {
+      "id": 10,
+      "name": "Switchbacks",
+      "group": "Storm Peaks",
+      "segments": 21,
+      "segment_kinds": [
+       "drop",
+       "jump",
+       "line",
+       "mover",
+       "turn"
+      ],
+      "features": [
+       "narrow",
+       "slope",
+       "walls"
+      ],
+      "elements": 8,
+      "turns": 5,
+      "length_m": 401.6,
+      "width": 5,
+      "gems": 10,
+      "checkpoints": 4,
+      "par_s": 35,
+      "unlock_stars": 0
+     },
+     {
+      "id": 11,
+      "name": "The Gauntlet",
+      "group": "Storm Peaks",
+      "segments": 20,
+      "segment_kinds": [
+       "jump",
+       "line",
+       "mover",
+       "turn"
+      ],
+      "features": [
+       "bumpers",
+       "narrow",
+       "plaza",
+       "walls"
+      ],
+      "elements": 8,
+      "turns": 4,
+      "length_m": 411.8,
+      "width": 5,
+      "gems": 10,
+      "checkpoints": 4,
+      "par_s": 39,
+      "unlock_stars": 0
+     },
+     {
+      "id": 12,
+      "name": "The Summit",
+      "group": "Storm Peaks",
+      "segments": 23,
+      "segment_kinds": [
+       "drop",
+       "jump",
+       "line",
+       "mover",
+       "turn"
+      ],
+      "features": [
+       "bumpers",
+       "drop-landing",
+       "narrow",
+       "plaza",
+       "slope",
+       "walls"
+      ],
+      "elements": 11,
+      "turns": 4,
+      "length_m": 440.1,
+      "width": 4.5,
+      "gems": 10,
+      "checkpoints": 4,
+      "par_s": 39,
+      "unlock_stars": 0
+     }
+    ]
+   },
+   "costs": {
+    "developer_budget": {
+     "max_sessions": 14,
+     "max_cost": 110,
+     "cost_from": {
+      "jsonl_key": "total_cost_usd"
+     }
+    },
+    "budget_raises": [],
+    "developer_sessions": 9,
+    "developer_cost_usd": 29.25,
+    "developer_by_step": {
+     "greybox": {
+      "sessions": 6,
+      "cost_usd": 20.4184
+     },
+     "develop": {
+      "sessions": 3,
+      "cost_usd": 8.8283
+     }
+    },
+    "developer_sessions_detail": [
+     {
+      "step": "greybox",
+      "at": "2026-10-03T09:46:10.572Z",
+      "cost_usd": 17.617,
+      "transcript": "1-1.log"
+     },
+     {
+      "step": "greybox",
+      "at": "2026-10-03T09:47:22.504Z",
+      "cost_usd": 0.1926,
+      "transcript": "1-2.log"
+     },
+     {
+      "step": "greybox",
+      "at": "2026-10-03T09:48:18.088Z",
+      "cost_usd": 0.1543,
+      "transcript": "1-3.log"
+     },
+     {
+      "step": "greybox",
+      "at": "2026-10-03T11:08:43.880Z",
+      "cost_usd": 1.8146,
+      "transcript": "3-1.log"
+     },
+     {
+      "step": "greybox",
+      "at": "2026-10-03T11:09:46.375Z",
+      "cost_usd": 0.1831,
+      "transcript": "3-2.log"
+     },
+     {
+      "step": "greybox",
+      "at": "2026-10-03T11:25:12.975Z",
+      "cost_usd": 0.4568,
+      "transcript": "3-3.log"
+     },
+     {
+      "step": "develop",
+      "at": "2026-10-03T13:23:34.726Z",
+      "cost_usd": 6.288,
+      "transcript": "1-1.log"
+     },
+     {
+      "step": "develop",
+      "at": "2026-10-03T13:44:00.867Z",
+      "cost_usd": 0.2154,
+      "transcript": "2-1.log"
+     },
+     {
+      "step": "develop",
+      "at": "2026-10-03T14:11:47.458Z",
+      "cost_usd": 2.3249,
+      "transcript": "2-2.log"
+     }
+    ],
+    "agent_processes_spawned": {
+     "assets:claude": 175,
+     "design:claude": 2,
+     "develop:claude": 3,
+     "greybox:claude": 6,
+     "review:claude": 8,
+     "sdk-review:claude": 4,
+     "store-listing:claude": 9,
+     "visual-qa:claude": 17
+    },
+    "agent_processes_total": 224,
+    "uncounted": "only developer sessions record a cost; design, asset-author, judge, reviewer and copy sessions record none, and lead/worker/delegated-agent sessions outside the engine are not in the run at all",
+    "human_decisions": {
+     "develop:done": 11,
+     "develop:iterate": 1,
+     "greybox:done": 3,
+     "prototype-review:iterate": 1,
+     "prototype-review:pass": 1,
+     "release-review:approve": 1
+    },
+    "handoff_visits": 14,
+    "resumes": 45
+   },
+   "timing": {
+    "created_at": "2026-10-03T08:25:42.271Z",
+    "first_event": "2026-10-03T08:25:42.275Z",
+    "g4_pass_at": "2026-10-03T23:06:06.338Z",
+    "release_drafted_at": "2026-10-04T01:15:43.730Z",
+    "g6_waiting_since": "2026-10-04T01:16:04.265Z",
+    "wall_h_to_g4": 14.67,
+    "wall_h_to_release": 16.83,
+    "wall_h_to_g6_wait": 16.84,
+    "engine_step_time_h": 9.18,
+    "status": "WAITING",
+    "cursor": "publish-review",
+    "visits": {
+     "research": 1,
+     "strategy": 1,
+     "strategy-review": 1,
+     "design": 1,
+     "tech-plan": 1,
+     "tech-plan-review": 1,
+     "init": 1,
+     "greybox": 4,
+     "greybox-playability": 2,
+     "assets": 5,
+     "develop": 13,
+     "playability": 13,
+     "production-quality": 13,
+     "visual-qa": 10,
+     "review": 8,
+     "sdk": 4,
+     "sdk-review": 4,
+     "verify": 4,
+     "prototype-review": 2,
+     "store-listing": 8,
+     "listing-validation": 7,
+     "release": 3,
+     "platform-validate": 3,
+     "release-review": 3,
+     "publish-review": 1
+    },
+    "executions": {
+     "research": 1,
+     "strategy": 1,
+     "strategy-review": 1,
+     "design": 1,
+     "tech-plan": 1,
+     "tech-plan-review": 1,
+     "init": 1,
+     "greybox": 11,
+     "greybox-playability": 2,
+     "assets": 8,
+     "develop": 30,
+     "playability": 13,
+     "production-quality": 14,
+     "visual-qa": 12,
+     "review": 8,
+     "sdk": 4,
+     "sdk-review": 4,
+     "verify": 4,
+     "prototype-review": 4,
+     "store-listing": 8,
+     "listing-validation": 7,
+     "release": 3,
+     "platform-validate": 3,
+     "release-review": 4,
+     "publish-review": 1
+    },
+    "trail_entries": 141,
+    "failed_step_events": 27,
+    "blocked_events": [
+     {
+      "at": "2026-10-03T20:14:40.419Z",
+      "step": "develop",
+      "message": "loop limit: develop has been entered through 'review.request-changes' 2 time(s) in this run (max_visits_by_route.review.request-changes=2). Resume to grant that loop more passes."
+     },
+     {
+      "at": "2026-10-03T23:17:26.809Z",
+      "step": "store-listing",
+      "message": "loop limit: store-listing has been entered through 'listing-validation.listing' 2 time(s) in this run (max_visits_by_route.listing-validation.listing=2). Resume to grant that loop more passes."
+     },
+     {
+      "at": "2026-10-04T01:12:06.926Z",
+      "step": "listing-validation",
+      "message": "listing validation blocked: every failed check needs a person: feature bullet 0 shares no word with its source 'feature:marble-roll'; feature bullet 1 shares no wo; feature bullet 0 shares no word with its source 'feature:marble-roll'; feature bullet 1 shares no wo"
+     }
+    ]
+   }
+  }
+ ]
+}

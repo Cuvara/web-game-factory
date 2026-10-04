@@ -201,8 +201,10 @@ made of. Every count is mechanical, so declare what is counted:
   A group's units run one after another, every group brings an element the player has not
   met, and where the family names a `budget.milestone` each group closes with it — a unit of
   purpose `climax`. The milestone is the family's own: a capstone level, a cup final, a siege
-  map, a set-piece encounter. A boss is one milestone, not the default. A family whose units
-  are one sequence (`group_kind: null`) is not asked for groups.
+  map, a set-piece encounter. A boss is one milestone, not the default. Name what each
+  milestone unit draws of its own in its `art` (its antagonist or set piece), one drawing per
+  milestone: the assets step holds climax units to distinct art. A family whose units are one
+  sequence (`group_kind: null`) is not asked for groups.
 - **Designed play.** The units' `expected_duration_s` add up to the budget's designed play:
   more units, not longer ones.
 - **Difficulty asks for new skills.** Over every unit of the release, not only the MVP: more

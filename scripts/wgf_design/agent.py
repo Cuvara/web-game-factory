@@ -154,7 +154,8 @@ PROMPT_CONTENT = (
       " larger of the two: declare the elements in build_spec.content.elements and name them"
       " in each unit's `elements`, give each unit its `structure`, `objective_kind` and - where"
       " the family has groups (genre_model.budget.group_kind) - its `group`, close each group"
-      " with a `climax` unit where the family names a milestone, and score secondary goals in"
+      " with a `climax` unit where the family names a milestone (its own drawing in the unit's"
+      " `art`), and score secondary goals in"
       " build_spec.content.secondary_goals. A design short of its tier fails; it is never"
       " passed at a lower tier than the strategy committed to."
 )

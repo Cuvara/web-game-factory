@@ -28,7 +28,9 @@ ROOT = os.path.dirname(SCRIPTS)
 sys.path.insert(0, SCRIPTS)
 sys.path.insert(0, HERE)
 
+from wgflib import paths as wgf_paths  # noqa: E402
 from wgflib.hashing import content_hash  # noqa: E402
+from wgflib.yamllite import load_file  # noqa: E402
 from wgflib.workflow.api import RunRequest, WorkflowAPI  # noqa: E402
 from wgflib.workflow.config import FactoryConfig  # noqa: E402
 from wgflib.workflow.contracts import ArtifactContracts  # noqa: E402
@@ -58,7 +60,9 @@ def commit_all(repo, message="fixture: the game as develop committed it"):
 def game_config(platforms, ad_kinds=("interstitial", "rewarded")):
     lines = ["game: {id: demo-game, name: Demo, version: 0.1.0}", "engine: {type: pixijs}", "platforms:"]
     for platform_id, role in platforms:
-        lines.append(f"  - {{ id: {platform_id}, profile: {platform_id}@1.1.0, role: {role} }}")
+        # Pinned at the profile's current version, as a tech plan made today would pin it.
+        version = load_file(os.path.join(wgf_paths.PLATFORMS, f"{platform_id}.yaml"))["version"]
+        lines.append(f"  - {{ id: {platform_id}, profile: {platform_id}@{version}, role: {role} }}")
     lines.append(f"monetization: {{ad_kinds: [{', '.join(ad_kinds)}], iap: false}}")
     lines.append("publishing: {enabled: false}")
     return "\n".join(lines) + "\n"
@@ -232,7 +236,7 @@ class FailurePaths(Case):
 
     def test_a_moved_profile_pin_blocks(self):
         with open(os.path.join(self.repo, "game.config.yaml"), "w", encoding="utf-8") as handle:
-            handle.write(game_config([("yandex", "required")]).replace("yandex@1.1.0", "yandex@9.0.0"))
+            handle.write(game_config([("yandex", "required")]).replace("yandex@1.2.0", "yandex@9.0.0"))
         result = self.run_step()
         self.assertEqual(result.outcome, StepOutcome.BLOCKED)
         self.assertIn("yandex@9.0.0", result.message or result.error)
@@ -242,7 +246,7 @@ class FailurePaths(Case):
         # pinned version (wgf_init.profiles.pin_identity).
         from wgf_init.profiles import vendor_profiles
         self.configure([("yandex", "required")])
-        vendor_profiles(self.repo, [{"id": "yandex", "profile": "yandex@1.1.0",
+        vendor_profiles(self.repo, [{"id": "yandex", "profile": "yandex@1.2.0",
                                      "role": "required"}])
         self.commit = commit_all(self.repo)
         result = self.run_step()
@@ -321,7 +325,7 @@ class ReleaseBoundary(unittest.TestCase):
 
 class Plan(unittest.TestCase):
     def test_required_features_follow_profile_and_game_config(self):
-        config = {"platforms": [{"id": "yandex", "profile": "yandex@1.1.0", "role": "required"},
+        config = {"platforms": [{"id": "yandex", "profile": "yandex@1.2.0", "role": "required"},
                                 {"id": "generic-web", "profile": "generic-web@1.1.0", "role": "optional"}],
                   "monetization": {"ad_kinds": ["rewarded"]}}
         yandex, generic = integration_plan(config)

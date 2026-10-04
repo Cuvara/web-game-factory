@@ -213,8 +213,8 @@ game:
 engine:
   type: pixijs
 platforms:
-  - { id: yandex, profile: yandex@1.1.0, role: required }
-  - { id: crazygames, profile: crazygames@1.1.0, role: optional }
+  - { id: yandex, profile: yandex@1.2.0, role: required }
+  - { id: crazygames, profile: crazygames@1.2.0, role: optional }
   - { id: poki, profile: poki@1.1.0, role: optional }
   - { id: gamevui, profile: gamevui@1.1.0, role: optional }
 monetization:

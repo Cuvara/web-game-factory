@@ -990,7 +990,7 @@ class PlatformAndPolicy(VerificationCase):
         self.assertEqual(result.outcome, StepOutcome.BLOCKED)
 
     def test_an_optional_platform_that_is_not_ready_does_not_block_release(self):
-        self.add_platform("- { id: yandex, profile: yandex@1.1.0, role: optional }")
+        self.add_platform("- { id: yandex, profile: yandex@1.2.0, role: optional }")
         results = {"generic-web": fixture("assertions-generic-web.json"),
                    "yandex": [{"criterion_id": "yandex_sdk_present", "measured": "none",
                                "breached": True, "evaluated_at": NOW, "severity": "blocking"}]}
@@ -1019,7 +1019,7 @@ class PlatformAndPolicy(VerificationCase):
         # The 2.1.2 production run: one bundle, booting the first required platform's
         # adapter, was reported ready for two optional portals whose SDK it never loads -
         # their assertions passed because `platform_sdk` echoes the platform asked about.
-        self.add_platform("- { id: yandex, profile: yandex@1.1.0, role: optional }")
+        self.add_platform("- { id: yandex, profile: yandex@1.2.0, role: optional }")
         result, report, _ = self.verify(runner=self.all_assertions_pass())
         self.assertEqual(self.check(report, "platform.build-target:generic-web")["status"],
                          "PASS")
@@ -1036,7 +1036,7 @@ class PlatformAndPolicy(VerificationCase):
 
     def test_a_second_required_platform_fails_the_verdict(self):
         # One bundle cannot be two portals' build: a second required platform is unshippable.
-        self.add_platform("- { id: yandex, profile: yandex@1.1.0, role: required }")
+        self.add_platform("- { id: yandex, profile: yandex@1.2.0, role: required }")
         result, report, _ = self.verify(runner=self.all_assertions_pass())
         self.assertEqual(self.check(report, "platform.build-target:yandex")["status"], "FAIL")
         self.assertEqual(result.route, "fail")

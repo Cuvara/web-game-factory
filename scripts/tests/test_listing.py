@@ -19,6 +19,7 @@ import tempfile
 import textwrap
 import types
 import unittest
+import unittest.mock
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 SCRIPTS = os.path.dirname(HERE)
@@ -411,6 +412,26 @@ class ListingCase(unittest.TestCase):
     def context(self, **kw):
         return Context(self.run_dir, **kw)
 
+    def image_sizes_unstated(self):
+        """The real profiles, with their image sizes and formats left unstated: this case's
+        masters are fixture-small (reference-small.yaml), so a portal's real 512 px icon would
+        be above every master. For tests about locales, copy and age ratings, not images."""
+        real = platforms.load_profile
+
+        def load(platform_id, directory=None):
+            profile = copy.deepcopy(real(platform_id, directory))
+            block = profile.get("store_listing") or {}
+            for image in [block.get("icon")] + list(block.get("covers") or []):
+                if isinstance(image, dict):
+                    image.update(sizes=None, formats=None)
+            if isinstance(block.get("screenshots"), dict):
+                block["screenshots"]["formats"] = None
+            return profile
+
+        patcher = unittest.mock.patch.object(platforms, "load_profile", load)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
     def capture(self, fake=None, artifacts=None, context=None, **params):
         fake = fake or FakeCapture()
         step = listing_step(fake, repo_dir=self.game.root, **params)
@@ -717,9 +738,9 @@ class Platforms(unittest.TestCase):
 
     def test_targets_come_from_the_scaffold_record(self):
         scaffold = {"game_config": {"platforms": [{"id": "poki", "profile": "poki@1.1.0", "role": "required"},
-                                                  {"id": "yandex", "profile": "yandex@1.1.0", "role": "optional"}]}}
-        self.assertEqual(platforms.targets(scaffold), [("poki", "required", "1.1.0"), ("yandex", "optional", "1.1.0")])
-        self.assertEqual(platforms.targets(scaffold, ["yandex"]), [("yandex", "optional", "1.1.0")])
+                                                  {"id": "yandex", "profile": "yandex@1.2.0", "role": "optional"}]}}
+        self.assertEqual(platforms.targets(scaffold), [("poki", "required", "1.1.0"), ("yandex", "optional", "1.2.0")])
+        self.assertEqual(platforms.targets(scaffold, ["yandex"]), [("yandex", "optional", "1.2.0")])
         self.assertEqual(platforms.locales_for(platforms.load_profile("yandex")), ["ru"])
         self.assertIsNotNone(platforms.block_hash(platforms.load_profile("poki")))
         self.assertIsNone(platforms.block_hash({}))
@@ -997,7 +1018,8 @@ class TheStep(ListingCase):
         self.assertEqual(result.outcome, StepOutcome.WAITING_FOR_INPUT)
 
     def test_a_platform_requiring_an_age_rating_gets_the_configured_one(self):
-        platforms_ = [{"id": "yandex", "profile": "yandex@1.1.0", "role": "required"}]
+        self.image_sizes_unstated()
+        platforms_ = [{"id": "yandex", "profile": "yandex@1.2.0", "role": "required"}]
         result, _ = self.capture(artifacts=self.game.evidence(platforms=platforms_))
         listing = self.listing_of(result)
         self.assertEqual(listing["status"], "incomplete")
@@ -1076,10 +1098,11 @@ class Validation(ListingCase):
         self.assertIn("grounding.en", report["failed"])
 
     def test_a_game_with_its_own_ru_keys_gets_a_grounded_yandex_rendition_and_passes(self):
+        self.image_sizes_unstated()
         self.game = GameBuild(os.path.join(self.scratch, "own-keys"), strings={
             "en": {"game.title": "Fixture Game", "play.objective": "Tap on the beat to switch lanes and keep the combo alive."},
             "ru": {"game.title": "Fixture Game", "play.objective": "Нажимайте в такт, чтобы менять полосу."}})
-        platforms_ = [{"id": "yandex", "profile": "yandex@1.1.0", "role": "optional"}]
+        platforms_ = [{"id": "yandex", "profile": "yandex@1.2.0", "role": "optional"}]
         result, _ = self.capture(artifacts=self.game.evidence(platforms=platforms_),
                                  context=self.context(config={"listing": {"age_rating": {"default": "12+"}}}))
         listing = self.listing_of(result)
@@ -1102,7 +1125,7 @@ class Validation(ListingCase):
         # listing until the loop limit.
         self.game = GameBuild(os.path.join(self.scratch, "en-only"), strings={
             "en": {"title.heading": "Fixture Game", "hud.objective": "Tap on the beat to switch lanes."}})
-        platforms_ = [{"id": "yandex", "profile": "yandex@1.1.0", "role": "required"}]
+        platforms_ = [{"id": "yandex", "profile": "yandex@1.2.0", "role": "required"}]
         result, _ = self.capture(artifacts=self.game.evidence(platforms=platforms_),
                                  context=self.context(config={"listing": {"age_rating": {"default": "12+"}}}))
         listing = self.listing_of(result)
@@ -1168,7 +1191,8 @@ class Validation(ListingCase):
         self.assertIsNone(step._report_of_this_build(None, self.game.root, self.game.head, context))
 
     def test_only_a_person_can_fix_it_blocks(self):
-        platforms_ = [{"id": "yandex", "profile": "yandex@1.1.0", "role": "required"}]
+        self.image_sizes_unstated()
+        platforms_ = [{"id": "yandex", "profile": "yandex@1.2.0", "role": "required"}]
         result, _ = self.capture(artifacts=self.game.evidence(platforms=platforms_))
         listing = self.listing_of(result)
         outcome, report = self.validate(listing)
@@ -1194,6 +1218,53 @@ class Validation(ListingCase):
         checks, _ = validate(listing, self.run_dir, reference, profiles, listing["facts"])
         video = next(c for c in checks if c["id"] == "video.trailer")
         self.assertEqual((video["status"], video["fix"]), ("FAIL", "configure"))
+
+
+class MasterChoice(unittest.TestCase):
+    MASTERS = [{"id": "thumbnail-16x9", "family": "thumbnail", "width": 1280, "height": 720},
+               {"id": "thumbnail-1x1", "family": "thumbnail", "width": 1024, "height": 1024},
+               {"id": "thumbnail-2x3", "family": "thumbnail", "width": 1200, "height": 1800}]
+
+    def test_an_aspect_no_master_has_is_cut_from_the_nearest_not_the_largest(self):
+        req = {"source": "thumbnail", "sizes": [(800, 470)]}
+        self.assertEqual(pkg._master_for(req, self.MASTERS)["id"], "thumbnail-16x9")
+
+    def test_an_exact_aspect_wins(self):
+        req = {"source": "thumbnail", "aspect": "2:3", "sizes": [(800, 1200)]}
+        self.assertEqual(pkg._master_for(req, self.MASTERS)["id"], "thumbnail-2x3")
+
+
+class PlatformVideoBounds(unittest.TestCase):
+    """A platform's stated video bounds are checked against the included trailer, not only
+    its format: a profile saying 20 s maximum must not pass a 30 s recording."""
+
+    def setUp(self):
+        self.run_dir = tempfile.mkdtemp(prefix="wgf-video-")
+        self.addCleanup(shutil.rmtree, self.run_dir, ignore_errors=True)
+        path = make_webm(os.path.join(self.run_dir, "p", "trailer.webm"), duration_s=30.0,
+                         width=1280, height=720)
+        self.made = [{"id": "trailer", "path": "p/trailer.webm", "sha256": media.sha256_of(path)}]
+
+    def problems(self, **bounds):
+        from wgf_listing.validation import _video_problems
+        return _video_problems(self.made, bounds, self.run_dir, {})
+
+    def test_bounds_the_recording_meets_pass(self):
+        self.assertEqual(self.problems(max_seconds=30, max_mb=50, min_width=1280, aspect="16:9"), [])
+
+    def test_each_bound_the_recording_misses_is_named(self):
+        problems = self.problems(max_seconds=20, min_height=1080, aspect="2:3")
+        self.assertEqual(len(problems), 3)
+        self.assertIn("30.0 s > 20 s", problems[0])
+        self.assertIn("720 px high < 1080", problems[1])
+        self.assertIn("is not 2:3", problems[2])
+
+    def test_null_bounds_are_not_checked(self):
+        self.assertEqual(self.problems(max_seconds=None, min_height=None, aspect=None), [])
+
+    def test_a_changed_file_is_a_problem(self):
+        self.made[0]["sha256"] = "sha256:" + "0" * 64
+        self.assertEqual(self.problems(), ["trailer missing or changed"])
 
 
 # -- the mock, the engine and the release ----------------------------------------------------

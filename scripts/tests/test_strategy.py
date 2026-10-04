@@ -189,6 +189,39 @@ class Planner(unittest.TestCase):
         self.assertEqual([p["id"] for p in body["platform_set"]], ["yandex"])
         self.assertFalse(body["platform_compatibility"][0]["compatible"])
 
+    def test_a_persons_platform_choice_replaces_the_ranking(self):
+        # The fit ranking makes yandex required for this audience; a person chose otherwise.
+        body = plan_strategy(opportunity(), PROFILES, "neon-drift", None,
+                             platforms=["crazygames", "yandex"])
+        self.assertEqual([(p["id"], p["role"]) for p in body["platform_set"]],
+                         [("crazygames", "required"), ("yandex", "optional")])
+        required = next(p for p in body["platform_set"] if p["role"] == "required")
+        self.assertIn("chosen first by a person", required["rationale"])
+        self.assertTrue(any("chosen by a person" in d for d in body["production_scope"]["scope_decisions"]))
+
+    def test_a_chosen_platform_need_not_be_a_candidate_but_must_have_a_profile(self):
+        body = plan_strategy(opportunity(candidate_platforms=["yandex"]), PROFILES,
+                             "neon-drift", None, platforms=["crazygames"])
+        self.assertEqual([p["id"] for p in body["platform_set"]], ["crazygames"])
+        with self.assertRaises(StrategyRefused):
+            plan_strategy(opportunity(), PROFILES, "neon-drift", None, platforms=["nowhere"])
+
+    def test_a_platform_choice_keeps_the_compatibility_checks_and_the_cap(self):
+        # gamevui cannot carry rewarded: chosen first, it is still left out, and said so.
+        body = plan_strategy(opportunity(), PROFILES, "neon-drift", None,
+                             platforms=["gamevui", "yandex"])
+        self.assertEqual([(p["id"], p["role"]) for p in body["platform_set"]],
+                         [("yandex", "required")])
+        self.assertTrue(any("gamevui" in r["description"] for r in body["risks"]))
+        with self.assertRaises(StrategyRefused):
+            plan_strategy(opportunity(), PROFILES, "neon-drift", Policy(max_platforms=1),
+                          platforms=["yandex", "crazygames"])
+
+    def test_a_malformed_platform_choice_is_refused(self):
+        for value in ([], "yandex", ["yandex", "yandex"], [""]):
+            with self.assertRaises(StrategyRefused, msg=repr(value)):
+                plan_strategy(opportunity(), PROFILES, "neon-drift", None, platforms=value)
+
     def test_platform_sprawl_is_capped(self):
         body = plan(opportunity(candidate_platforms=["yandex", "crazygames", "poki"]),
                     Policy(max_platforms=2))
@@ -455,6 +488,26 @@ class StepUnit(unittest.TestCase):
                          opportunity()["provenance"]["content_hash"])
         self.assertEqual(provenance["content_hash"], content_hash(artifact))
         self.assertEqual(output.metadata["required_platform"], "yandex")
+
+    def test_the_platform_choice_comes_from_with_then_the_project_config(self):
+        context = FakeContext()
+        context.config = {"strategy": {"platforms": ["crazygames", "yandex"]}}
+        result = step().execute(fake_inputs(opportunity()), context)
+        self.assertEqual(result.artifacts[0].metadata["required_platform"], "crazygames")
+        # `with:` wins over the configuration, and is not mistaken for a policy key.
+        result = step({"platforms": ["yandex"], "max_platforms": 2}).execute(
+            fake_inputs(opportunity()), context)
+        self.assertEqual(result.outcome, StepOutcome.SUCCESS, result.error)
+        self.assertEqual([p["id"] for p in result.artifacts[0].content["platform_set"]],
+                         ["yandex"])
+        # Policy comes from the configuration too: a fourth platform needs max_platforms.
+        context.config = {"strategy": {"platforms": ["yandex", "crazygames", "y8", "poki"]}}
+        result = step().execute(fake_inputs(opportunity()), context)
+        self.assertEqual((result.outcome, result.retryable), (StepOutcome.FAILED, False))
+        context.config["strategy"]["max_platforms"] = 4
+        result = step().execute(fake_inputs(opportunity()), context)
+        self.assertEqual(result.outcome, StepOutcome.SUCCESS, result.error)
+        self.assertEqual(len(result.artifacts[0].content["platform_set"]), 4)
 
     def test_title_id_falls_back_to_the_opportunity(self):
         result = step().execute(fake_inputs(opportunity(title_id=None)), FakeContext(None))

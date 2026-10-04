@@ -163,6 +163,23 @@ def _sentence(value):
     return value[:1].upper() + value[1:] if value else value
 
 
+def operator_platforms(value):
+    """A person's choice of target platforms (`with: {platforms: [...]}` or
+    factory.strategy.platforms): a non-empty list of distinct platform ids, the first the
+    required one. It replaces the opportunity's candidate list and the fit ranking - never
+    the compatibility checks, and never G2, which still approves the strategy. None: no
+    choice made."""
+    if value is None:
+        return None
+    if not isinstance(value, list) or not value or \
+            not all(isinstance(v, str) and v.strip() for v in value):
+        raise StrategyRefused("strategy platforms must be a non-empty list of platform ids")
+    ids = [v.strip() for v in value]
+    if len(set(ids)) != len(ids):
+        raise StrategyRefused(f"strategy platforms repeat an id: {', '.join(ids)}")
+    return ids
+
+
 def _placement_supported(profile, placement):
     capabilities = profile.get("capabilities") or {}
     ads = profile.get("ads") or {}
@@ -228,6 +245,7 @@ class _Plan:
         self.risks = []
         self.assumptions = []
         self.decisions = []
+        self.operator = None
         # Set by content(): the content shape the title commits to, or None when no genre
         # family covers the opportunity.
         self.content_model = None
@@ -520,7 +538,22 @@ class _Plan:
 
         candidates = []
         compatibility = {}
-        for platform_id in self.opp.get("candidate_platforms") or []:
+        source = self.operator if self.operator is not None else \
+            self.opp.get("candidate_platforms") or []
+        if self.operator is not None:
+            missing = [p for p in self.operator if p not in self.profiles]
+            if missing:
+                raise StrategyRefused(f"the chosen platforms {', '.join(missing)} have no "
+                                      f"platform profile in core/reference/platforms/")
+            if len(self.operator) > int(self.policy.max_platforms):
+                raise StrategyRefused(f"{len(self.operator)} platforms chosen, policy "
+                                      f"max_platforms is {int(self.policy.max_platforms)}: "
+                                      f"raise max_platforms deliberately or choose fewer")
+            proposed = self.opp.get("candidate_platforms") or []
+            self.decisions.append(
+                f"Platforms chosen by a person, required first: {', '.join(self.operator)} "
+                f"(the opportunity proposed {', '.join(proposed) or 'none'})")
+        for platform_id in source:
             if platform_id in compatibility:
                 continue
             profile = self.profiles.get(platform_id)
@@ -571,7 +604,16 @@ class _Plan:
             raise StrategyRefused(f"no candidate platform supports {primary} monetization")
 
         order = {p: i for i, p in enumerate(candidates)}
-        ranked = sorted(compatible, key=lambda p: (-self._fit(p, secondary), order[p]))
+        if self.operator is not None:
+            # A person's order stands: the fit ranking is the strategy's own guess at what a
+            # person would choose, and here a person chose.
+            ranked = [p for p in candidates if p in compatible]
+            if ranked[0] != candidates[0]:
+                self.risk(f"The platform chosen as required ({candidates[0]}) cannot carry "
+                          f"{primary} monetization; {ranked[0]} is required instead", "high",
+                          "G2 reviewer confirms the required platform")
+        else:
+            ranked = sorted(compatible, key=lambda p: (-self._fit(p, secondary), order[p]))
         required = ranked[0]
         chosen = ranked[:max(1, int(self.policy.max_platforms))]
         dropped = [p for p in ranked if p not in chosen]
@@ -763,7 +805,10 @@ class _Plan:
         for platform_id in self.chosen:
             profile = self.profiles[platform_id]
             name = profile.get("name", platform_id)
-            if platform_id == self.required:
+            if platform_id == self.required and self.operator is not None:
+                rationale = (f"Primary: chosen first by a person among {', '.join(self.operator)}"
+                             f"; the title is not shippable without it.")
+            elif platform_id == self.required:
                 rationale = (f"Primary: best audience fit among compatible candidates"
                              f"{self._fit_reason(profile)}; the title is not shippable "
                              f"without it.")
@@ -1108,13 +1153,17 @@ class _Plan:
                 "to improve on")
 
 
-def plan_strategy(opportunity, profiles, title_id, policy=None, vocabulary=None):
+def plan_strategy(opportunity, profiles, title_id, policy=None, vocabulary=None,
+                  platforms=None):
     """The body of a title-strategy for `opportunity`. Raises StrategyRefused.
     `vocabulary` maps research codes onto strategy terms: {"control_schemes": {control id:
-    scheme}} (the research vocabulary's `control_scheme` attributes)."""
+    scheme}} (the research vocabulary's `control_scheme` attributes). `platforms` is a
+    person's choice of target platform ids, first = required (see operator_platforms); None
+    ranks the opportunity's candidates."""
     if not isinstance(opportunity, dict):
         raise StrategyRefused("opportunity content is not a JSON object")
     plan = _Plan(opportunity, profiles, title_id, policy or Policy(), vocabulary)
+    plan.operator = operator_platforms(platforms)
     plan.check_opportunity()
     plan.scope()
     plan.controls()

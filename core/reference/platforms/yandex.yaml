@@ -15,7 +15,9 @@
 
 id: yandex
 name: Yandex Games
-version: 1.1.0  # 1.1.0: the store_listing block (listing requirements, null = unknown)
+version: 1.2.0  # 1.2.0: the listing figures read from the draft form docs (2026-10-04),
+                #        screenshots_min 2 per platform, requirement-numbered rejections
+                # 1.1.0: the store_listing block (listing requirements, null = unknown)
 status: unverified
 docs: https://yandex.ru/dev/games/
 
@@ -33,8 +35,14 @@ capabilities:
   analytics: platform-provided
 
 requirements:
+  # The docs make no language mandatory: 2.14 requires every game to detect its language
+  # through environment.i18n.lang, and 8.2.3 that every declared language is translated
+  # (https://yandex.com/dev/games/doc/en/requirements/2/14). ru stays required here because
+  # the portal's primary audience reads it - a Factory choice, not a portal rule.
   locales_required: [ru]
   locales_recommended: [en, tr]
+  # 1.21: at most 100 MB uncompressed; 1.22: index.html at the archive root, no spaces or
+  # Cyrillic in file names (https://yandex.com/dev/games/doc/en/concepts/requirements).
   max_bundle_mb: 100
   orientation: [landscape, portrait]
   loading_api: required
@@ -43,16 +51,26 @@ requirements:
   external_requests: restricted
 
 ads:
+  # The docs leave frequency to the portal ("controlled by Yandex Games"; an over-frequent
+  # call just ends in onClose - https://yandex.com/dev/games/doc/en/sdk/sdk-adv). 60 s is the
+  # Factory's own floor, which the template's adapter also keeps.
   interstitial_min_interval_s: 60
   rewarded_available: true
   banner_available: true
   notes: >
     The SDK must be told when gameplay pauses and resumes around ad playback, or audio and
-    input leak through the ad.
+    input leak through the ad (4.7: sound and gameplay paused during fullscreen ads; 1.3:
+    sound stops when the game loses focus). The portal shows a startup ad by itself with no
+    callbacks; only game_api_pause / game_api_resume cover it. 4.4: ads only at logical
+    pauses - in a real-time game with levels under 5 minutes, never during play. 4.5:
+    rewarded is optional for the player, the button names the reward, and the reward is a
+    bonus that never gates the core game.
 
 metadata_requirements:
   descriptions_locales: [ru]
-  screenshots_min: 3
+  # "at least 2 screenshots for each selected platform"
+  # (https://yandex.com/dev/games/doc/en/console/add-new-game/draft).
+  screenshots_min: 2
   icon_required: true
   age_rating_required: true
 
@@ -64,28 +82,43 @@ review:
     - Game does not report loading progress through the SDK.
     - Ads shown before any gameplay.
     - External network requests to undeclared domains.
+    - Language not detected through environment.i18n.lang (2.14), or a declared language
+      left untranslated (8.2.3).
+    - Progress lost on refresh or orientation change, or kept only for logged-in players
+      (1.9, 1.2.2).
+    - Ads during active play in a real-time game (4.4), or sound audible during an ad (4.7).
+    - External links, store links or redirects (8.4); third-party ads (4.1).
 
-# What the portal's listing takes. Every figure here is a starting value (status
-# unverified): a limit that is null is UNKNOWN to validation and never passed. The locales
+# What the portal's listing takes, read from the draft form documentation on 2026-10-04
+# (https://yandex.com/dev/games/doc/en/console/add-new-game/draft) and the media rules of
+# https://yandex.com/dev/games/doc/en/concepts/requirements (5.x, 8.3). Still unverified: the
+# figures were read from the documentation, not from the console form itself. The locales
 # follow the binding requirement above: the listing texts are needed in ru.
 store_listing:
   status: unverified
-  source: null
+  source: https://yandex.com/dev/games/doc/en/console/add-new-game/draft (read 2026-10-04)
   notes: >
-    Read the exact icon and cover sizes, the screenshot bounds and the description limits
-    from the developer console's own form, then set status: verified with the source.
-  title: {required: true, max_chars: null}
-  short_description: {required: true, max_chars: null}
-  long_description: {required: true, max_chars: null}
-  tags: {required: false, min: null, max: null, allowed: null}
-  categories: {required: true, min: 1, max: null, allowed: null}
+    Required fields (5.2): title, description, how to play, categories, icon, cover,
+    screenshots. "How to play" (100-1000 chars), the SEO description (50-160) and keywords
+    (100 chars) have no field in this block; the long description stands for the
+    description. Screenshots are 16:9 or 9:16 with a long side of 1280-2560 px, JPEG or
+    24-bit PNG - a PNG with an alpha channel may be refused. At least 70% of screenshots and
+    video show real gameplay (5.1.1); no screenshot as icon or cover (5.6); no borders,
+    rounded corners, system UI or portal badges in media (8.3.3, 8.3.4); the title is the
+    same in every language (5.1.3). Age ratings: 0+, 6+, 12+, 16+, 18+ (2.7).
+  title: {required: true, max_chars: 50}
+  short_description: {required: true, max_chars: 70}
+  long_description: {required: true, min_chars: 100, max_chars: 1000}
+  tags: {required: false, min: null, max: 20, allowed: null}
+  categories: {required: true, min: 1, max: 2, allowed: null}
   locales: [ru]
-  age_rating: {required: true, system: null}
-  icon: {id: icon, required: true, sizes: null, aspect: "1:1", formats: null, max_kb: null, source: icon}
+  age_rating: {required: true, system: "Yandex Games (0+, 6+, 12+, 16+, 18+)"}
+  icon: {id: icon, required: true, sizes: [{width: 512, height: 512}], aspect: "1:1", formats: [png], max_kb: null, source: icon}
   covers:
-    - {id: cover, label: Cover image, required: true, sizes: null, aspect: null, formats: null, max_kb: null, source: thumbnail}
-  screenshots: {required: true, min: 3, max: null, sizes: null, aspect: null, formats: null, max_kb: null}
-  video: {required: false, formats: null, min_seconds: null, max_seconds: null, max_mb: null}
+    - {id: cover, label: Cover image, required: true, sizes: [{width: 800, height: 470}], aspect: null, formats: [png], max_kb: null, source: thumbnail}
+    - {id: hero, label: Hero image, required: false, sizes: [{width: 1560, height: 520}], aspect: "3:1", formats: [png, jpg], max_kb: null, source: promo}
+  screenshots: {required: true, min: 2, max: null, sizes: null, aspect: null, formats: [png, jpg], max_kb: null}
+  video: {required: false, formats: [mp4], min_seconds: null, max_seconds: 28, max_mb: 100, min_height: 400}
 
 assertions:
   - id: yandex_bundle_size
@@ -104,7 +137,7 @@ assertions:
     check: { left: package.insecure_requests, op: eq, right: 0 }
     severity: blocking
   - id: yandex_screenshots
-    check: { left: metadata.screenshots, op: gte, right: 3 }
+    check: { left: metadata.screenshots, op: gte, right: 2 }
     severity: warning
 
 scoring_hints:

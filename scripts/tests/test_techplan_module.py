@@ -397,7 +397,7 @@ class PortalRegistrations(unittest.TestCase):
     def test_a_registered_game_id_reaches_the_game_config_entry(self):
         self.register(f"gamedistribution: {{game_id: {self.GD_ID}}}\n")
         entry = self.entry(self.plan(self.targeting("gamedistribution")), "gamedistribution")
-        self.assertEqual(entry, {"id": "gamedistribution", "profile": "gamedistribution@1.1.0",
+        self.assertEqual(entry, {"id": "gamedistribution", "profile": "gamedistribution@1.2.0",
                                  "role": "optional", "game_id": self.GD_ID})
 
     def test_an_optional_game_id_is_written_only_when_registered(self):

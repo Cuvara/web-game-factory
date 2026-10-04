@@ -10,7 +10,9 @@
 
 id: y8
 name: Y8
-version: 1.1.0  # 1.1.0: the store_listing block (listing requirements, null = unknown)
+version: 1.2.0  # 1.2.0: no external links or foreign ads (developer.y8.com, read 2026-10-04),
+                #        the published review rules as common rejections
+                # 1.1.0: the store_listing block (listing requirements, null = unknown)
 status: unverified
 docs: https://docs.y8.com/
 
@@ -18,7 +20,8 @@ capabilities:
   # https://docs.y8.com/sdk/advertising/ — interstitials and rewarded ads. No banner is documented.
   ads: [interstitial, rewarded]
   iap: false
-  # https://docs.y8.com/sdk/cloud-storage/ — signed-in players only.
+  # https://docs.y8.com/sdk/cloud-storage/ — signed-in players only; at most 30 KB a value,
+  # one write per key every 5 s.
   cloud_saves: true
   # The platform offers both; the template's Platform contract does not expose them yet.
   leaderboards: true
@@ -34,6 +37,10 @@ requirements:
   max_bundle_mb: null
   # No loading or game-ready API exists in the SDK.
   loading_api: none
+  # https://developer.y8.com/games?new=1 — "external links" and "unauthorized ads, ad scripts,
+  # pop-ups, redirects" are not allowed; "You cannot use your own ads or ads from another
+  # company inside your game" (https://developer.y8.com/).
+  no_external_links: true
 
 ads:
   # "By default Y8 allows one roughly every 180 seconds, configurable per game." The SDK
@@ -50,7 +57,13 @@ review:
   # "While your game is in review, the platform serves Google's test creatives" — review
   # exists; its length is not documented.
   process: manual
-  common_rejections: []
+  # https://developer.y8.com/ : "Y8 reviews every game before publishing it"; resubmission
+  # cooldowns grow from 6 h to 5 days.
+  common_rejections:
+    - External links, redirects or pop-ups (https://developer.y8.com/games?new=1).
+    - Ads other than Y8's own, or rewarded or encouraged ad clicks.
+    - Broken gameplay on the devices chosen at submission.
+    - Guests unable to play (https://docs.y8.com/best-practices/).
 
 # What the portal's listing takes. docs.y8.com documents no listing requirement (as read on
 # 2026-09-24), so everything here is null - UNKNOWN to validation, never passed - until read
@@ -75,3 +88,6 @@ assertions:
     rationale: >
       The Y8 SDK is loaded from https://cdn.y8.com/minimal-sdk/2-0/y8.min.js at runtime;
       a build for Y8 without it earns nothing and counts no plays.
+  - id: y8_no_external_links
+    check: { left: package.external_links, op: eq, right: 0 }
+    severity: blocking

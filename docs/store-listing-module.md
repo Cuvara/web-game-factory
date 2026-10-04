@@ -48,7 +48,7 @@ disk to hash to `verification-report.build_artifact.content_hash`. Anything else
 
 | Where | What |
 |---|---|
-| the run, `<run>/store-listing/<visit>-<attempt>/package/` | the canonical package: `branding/` (icon-1024/512/256, logo-wordmark, thumbnail-16x9/4x3/1x1, promo-1920x1080), `screenshots/<viewport>-<nn>-<scene>.png`, `trailer/trailer.webm` (and `trailer.mp4` when an encoder is there; else `trailer/frames/` + `storyboard.json`), `copy/<locale>.json`, `platforms/<id>/` (the rendition: resized images, `listing.json` with the cut texts), `listing.json` (the artifact), `validation.json` (the report) |
+| the run, `<run>/store-listing/<visit>-<attempt>/package/` | the canonical package: `branding/` (icon-1024/512/256, logo-wordmark, thumbnail-16x9/4x3/1x1/2x3, promo-1920x1080), `screenshots/<viewport>-<nn>-<scene>.png`, `trailer/trailer.webm` (and `trailer.mp4` when an encoder is there; else `trailer/frames/` + `storyboard.json`), `copy/<locale>.json`, `platforms/<id>/` (the rendition: resized images, `listing.json` with the cut texts), `listing.json` (the artifact), `validation.json` (the report) |
 | the run, `<run>/store-listing/<visit>-<attempt>/capture/` | the raw capture: every frame taken, `capture.json`, the recording, the capture logs |
 | the run | `store-listing` and `listing-validation-report` artifacts, every file named with its sha256 and a path relative to the run directory |
 | the game repository, `release/<release-id>/listing/` | the whole package, copied by the release step beside the archives; `release-manifest.store_metadata` names its files |

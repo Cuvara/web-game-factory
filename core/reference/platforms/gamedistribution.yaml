@@ -7,6 +7,8 @@
 # Sources:
 #   SDK      https://github.com/GameDistribution/GD-HTML5 (README, wiki) at 4873abe, 1.43.58
 #   Rules    https://static.gamedistribution.com/developer/developers-guidelines.html
+#   Design   https://static.gamedistribution.com/developer/design-guidelines.html
+#   Terms    https://static.gamedistribution.com/terms/developer.html (2025-06-19)
 #
 # requirements.game_id: required — the portal issues a 32-hex Game ID per title, and a build
 # without one fails. It reaches game.config.yaml platforms[].game_id through the tech plan.
@@ -14,7 +16,9 @@
 
 id: gamedistribution
 name: GameDistribution
-version: 1.1.0  # 1.1.0: the store_listing block (listing requirements, null = unknown)
+version: 1.2.0  # 1.2.0: the listing text, genre, tag and age-group rules of the guidelines
+                #        (read 2026-10-04); sound required; the optional thumbnails
+                # 1.1.0: the store_listing block (listing requirements, null = unknown)
 status: unverified
 docs: https://github.com/GameDistribution/GD-HTML5/wiki
 
@@ -47,7 +51,9 @@ requirements:
   https_only: true
   # §6: no outgoing links of any kind.
   no_external_links: true
-  # Per title, from the developer panel; game.config.yaml platforms[].game_id.
+  # Per title, from the developer panel; game.config.yaml platforms[].game_id. The docs give
+  # no format; the 32-hex pattern is what every official example and the template's adapter
+  # take (https://github.com/GameDistribution/GD-HTML5/blob/master/index.html).
   game_id: required
   game_id_pattern: "^[0-9A-Fa-f]{32}$"
   # §3.1: "We do not permit external hosting of games, except for Real Multiplayer games."
@@ -73,7 +79,8 @@ metadata_requirements:
   screenshots_min: 0
   # "512×512, 512×384 and 200×120" thumbnails.
   icon_required: true
-  age_rating_required: false
+  # §5.5: an age group is mandatory, with optional "kids friendly" and "no blood" flags.
+  age_rating_required: true
 
 review:
   process: manual
@@ -83,22 +90,34 @@ review:
     - A reward granted without a completed rewarded impression.
     - Outgoing links, app-store references, third-party analytics or trackers.
     - Default language other than English.
+    - No background music or sound effects (§1.2), overlapping UI, poor visuals.
+    - Thumbnails stretched, blurred, cropped, bordered or text-only (design guidelines).
+    - Unlabelled AI-generated or deepfake content (§1.5).
 
-# What the portal's listing takes. The three thumbnail sizes are the ones the developer
-# guidelines name (see the comment on metadata_requirements); their formats, size limits
-# and the text limits were not read and stay null - UNKNOWN to validation, never passed.
+# What the portal's listing takes: the guidelines' §5 and the design guidelines, read on
+# 2026-10-04. Thumbnail formats and byte limits, screenshots and video are not documented:
+# null, UNKNOWN to validation.
 store_listing:
   status: unverified
-  source: https://static.gamedistribution.com/developer/developers-guidelines.html
-  notes: Thumbnail sizes from the guidelines; formats, size caps and text limits not read.
+  source: https://static.gamedistribution.com/developer/developers-guidelines.html §5, https://static.gamedistribution.com/developer/design-guidelines.html (read 2026-10-04)
+  notes: >
+    Description and instructions are 200-500 characters each, in standard English, naming the
+    game at least once; this block's long description stands for the description, and the
+    instructions are a manual field. 1-2 genres (categories) and 1-5 tags. No logo or small
+    detail on the 200x120 thumbnail. The 1280x720 and 1280x550 thumbnails are optional.
   title: {required: true, max_chars: null}
   short_description: {required: true, max_chars: null}
-  long_description: {required: false, max_chars: null}
+  long_description: {required: true, min_chars: 200, max_chars: 500}
+  tags: {required: true, min: 1, max: 5, allowed: null}
+  categories: {required: true, min: 1, max: 2, allowed: null}
   locales: [en]
+  age_rating: {required: true, system: "GameDistribution age groups"}
   icon: {id: icon, required: true, sizes: [{width: 512, height: 512}], aspect: "1:1", formats: null, max_kb: null, source: icon}
   covers:
     - {id: thumbnail-512x384, label: Thumbnail 512x384, required: true, sizes: [{width: 512, height: 384}], aspect: "4:3", formats: null, max_kb: null, source: thumbnail}
     - {id: thumbnail-200x120, label: Thumbnail 200x120, required: true, sizes: [{width: 200, height: 120}], aspect: "5:3", formats: null, max_kb: null, source: thumbnail}
+    - {id: thumbnail-1280x720, label: Thumbnail 1280x720, required: false, sizes: [{width: 1280, height: 720}], aspect: "16:9", formats: null, max_kb: null, source: thumbnail}
+    - {id: thumbnail-1280x550, label: Thumbnail 1280x550, required: false, sizes: [{width: 1280, height: 550}], aspect: null, formats: null, max_kb: null, source: promo}
   screenshots: {required: false, min: 0, max: null, sizes: null, aspect: null, formats: null, max_kb: null}
   video: {required: false, formats: null, min_seconds: null, max_seconds: null, max_mb: null}
 

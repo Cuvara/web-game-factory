@@ -57,6 +57,7 @@ class Settings:
         profiles_extra    directories with more publication profiles (tests: the fixture)
         platforms         {platform id: {terms_confirmed, adapter, console_url}}
         timeouts          {action, navigation, upload} ms for the console executor
+        login_timeout_s   how long a person has to log in on a portal's page (Job)
     """
 
     def __init__(self, config, params, environ=None):

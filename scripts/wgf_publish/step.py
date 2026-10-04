@@ -50,6 +50,7 @@ idempotency key and the game by the registry, and a platform already SUBMITTED o
 is returned as it is: nothing is uploaded or submitted twice.
 """
 
+import contextlib
 import os
 import re
 
@@ -418,6 +419,7 @@ class PublishStep(WorkflowStep):
                                                     f"visit creates or finds the game only",
                                      phase="identity"))
         platform_settings = settings.platform(pid)
+        ident = self._identity(visit, pid, entry)
         metadata = common.store_metadata(root, visit.release_id, visit.manifest).get(pid) or {}
         scratch = os.path.join(context.run_dir, context.current_step,
                                f"{context.visit}-{context.attempt}", pid) \
@@ -434,14 +436,18 @@ class PublishStep(WorkflowStep):
                   logger=context.logger, timeouts=settings.timeouts,
                   console_url=platform_settings.get("console_url"),
                   run_process=self.run_process,
-                  known_ids=reg.lookup_candidates(pid) if reg else [],
+                  known_ids=reg.lookup_candidates(
+                      pid, config_game_id=ident["config_game_id"],
+                      config_app_id=ident["config_app_id"]) if reg else [],
                   registry_status=reg.status(pid) if reg else None,
-                  required_ids=required)
+                  required_ids=required, identity=ident,
+                  login_timeout_s=settings.get("login_timeout_s"),
+                  # A game the registry knows is never created again: the visit finds it.
+                  allow_create=(reg.status(pid) if reg else "NOT_CREATED") == "NOT_CREATED")
         try:
             if scratch:
                 os.makedirs(scratch, exist_ok=True)
-            with StorageState(credential, job.scratch_dir) as storage:
-                job.storage_state = storage.path
+            with self._session(credential, job):
                 result = adapter.publish(job)
         except CredentialError as exc:
             raise _Refused(outcomes.HUMAN_REQUIRED, "human", "credential-missing", str(exc))
@@ -491,7 +497,8 @@ class PublishStep(WorkflowStep):
                            state=result.state or prior.get("state"), submission=submission,
                            verified_state=result.verified_state,
                            measurement_class=result.measurement_class,
-                           human_required=human_required, phase=result.phase_reached)
+                           human_required=human_required, phase=result.phase_reached,
+                           waiting=self._login_waiting(pid, outcome, result))
 
     @staticmethod
     def _resume_for(outcome, pid):
@@ -501,6 +508,63 @@ class PublishStep(WorkflowStep):
         if outcome in (outcomes.AUTH_REQUIRED, outcomes.CAPTCHA_REQUIRED):
             return "a person logs in (wgf-publish.py capture), then wgf resume <run-id>"
         return "wgf decide <run-id> done --note <portal reference> (or abandon)"
+
+    @staticmethod
+    @contextlib.contextmanager
+    def _session(credential, job):
+        """A captured storage state's private copy, for a profile that still names one; a
+        person logs in on the portal's own page for every other (`human-login`): nothing is
+        copied, nothing is kept."""
+        if getattr(credential, "kind", None) == "storage-state":
+            with StorageState(credential, job.scratch_dir) as storage:
+                job.storage_state = storage.path
+                yield
+        else:
+            yield
+
+    def _identity(self, visit, pid, entry):
+        """What names the game on the portal (job.identity): the registry's game id, the ids
+        game.config.yaml carries for the platform, and the exact title."""
+        config_entry = {}
+        title = None
+        if visit.root:
+            from wgflib.yamllite import YamlError, load
+            from wgflib import template_contract as contract
+            try:
+                with open(os.path.join(visit.root, contract.GAME_CONFIG), encoding="utf-8") as h:
+                    config = load(h.read()) or {}
+            except (OSError, YamlError):
+                config = {}
+            config_entry = next((p for p in config.get("platforms") or []
+                                 if isinstance(p, dict) and str(p.get("id")) == pid), {})
+            title = (config.get("game") or {}).get("name")
+            listing = common.listing_text(visit.root, visit.release_id, pid)
+            title = next((str(t.get("title")) for t in listing.values() if t.get("title")),
+                         title)
+        identity_ = {"portal_game_id": (entry or {}).get("external_game_id"),
+                     "config_game_id": config_entry.get("game_id"),
+                     "config_app_id": config_entry.get("app_id"),
+                     "title": title}
+        return {k: (str(v) if v not in (None, "") else None) for k, v in identity_.items()}
+
+    @staticmethod
+    def _login_waiting(pid, outcome, result):
+        """The record's `waiting` block from the visit's last login handoff, when it ended
+        waiting for a person to log in."""
+        if outcomes.waiting_state_for(outcome) != outcomes.WAITING_FOR_HUMAN_LOGIN \
+                or not result.login_handoffs:
+            return None
+        last = result.login_handoffs[-1] or {}
+        block = {"state": outcomes.WAITING_FOR_HUMAN_LOGIN, "portal": pid,
+                 "step": result.phase_reached or "check_session",
+                 "reason": str(last.get("reason") or outcomes.human_reason_for(outcome)),
+                 "action": str(last.get("action") or "a person logs in on the portal's page"),
+                 "resume": str(last.get("resume") or "wgf resume <run-id>")}
+        if last.get("url"):
+            block["url"] = str(last["url"])
+        if last.get("at"):
+            block["at"] = str(last["at"])
+        return block
 
     # -- the registry -----------------------------------------------------------------------
 
@@ -713,10 +777,11 @@ class PublishStep(WorkflowStep):
                   console_url=visit.settings.platform(pid).get("console_url"),
                   run_process=self.run_process,
                   known_ids=reg.lookup_candidates(pid) if reg else [],
-                  registry_status=reg.status(pid) if reg else None)
+                  registry_status=reg.status(pid) if reg else None,
+                  identity=self._identity(visit, pid, entry),
+                  login_timeout_s=visit.settings.get("login_timeout_s"), allow_create=False)
         try:
-            with StorageState(credential, job.scratch_dir) as storage:
-                job.storage_state = storage.path
+            with self._session(credential, job):
                 result = adapter.publish(job)
         except CredentialError as exc:
             visit.notes[pid] = (SKIPPED, f"{pid}: not read: {exc}")

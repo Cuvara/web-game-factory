@@ -169,7 +169,10 @@ decide` or `resume` carries neither.
 ### The portal registry around the adapter
 
 Before the adapter runs, `registry.lookup_candidates` gives the job the ids `find_game` tries
-first (`job.known_ids`) and the registry's status (`job.registry_status`). After it, what the
+first (`job.known_ids`, the registry's then game.config.yaml's), the registry's status
+(`job.registry_status`), what names the game (`job.identity`: the registry's portal game id,
+game.config.yaml's `game_id`/`app_id` for the platform, the listing's title) and whether a
+game may be created at all (`job.allow_create`: only when the registry knows none there). After it, what the
 visit observed is recorded: `DRAFT` when the build reached a draft (with the build and
 listing hashes, through `invalidate_if_changed`), `DRAFT_CREATED` with the ids the portal
 issued, `PENDING_REVIEW`, `PUBLISHED` or `REJECTED` only with the portal's status text as
@@ -233,7 +236,11 @@ From every platform's state after the visit:
 
 A record's `state` advances only from what was observed: `submitted` (or `live`) from the
 portal's status text; unchanged otherwise. Every waiting record carries a `waiting` block
-(state, portal, step, reason, action, resume).
+(state, portal, step, reason, action, resume); a visit that ended waiting for a login takes
+it from the adapter's last login handoff (`Publication.login_handoffs`: the page's origin
+and path, what the person does, what resumes). A profile that still names a captured
+storage state gets its private copy for the run; one whose credential is `human-login` gets
+none - a person logs in on the portal's own page.
 
 **Nothing retries the request.** The step's `retry` is `max_attempts: 1` in the workflow,
 every failure it returns is `retryable=False`, and `max_visits` bounds how often a person
@@ -493,6 +500,7 @@ factory:
     platforms: {}                     # crazygames: {terms_confirmed: true}
     # profiles_extra: []              # more publication profiles (tests)
     # timeouts: {}                    # action / navigation / upload, ms
+    # login_timeout_s: 900            # how long a person has to log in on a portal's page
 ```
 
 A step's `with:` overrides any key, plus `repo_dir` for the checkout (the one precedence

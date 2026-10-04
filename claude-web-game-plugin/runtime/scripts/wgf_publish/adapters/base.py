@@ -37,6 +37,13 @@ class Job:
                           the registry does not hold yet (identity.issued_on_create): the
                           visit creates (or finds) the game, returns IDS_ISSUED with
                           created_ids, and uploads nothing.
+        identity          what names the game: {portal_game_id (the registry's),
+                          config_game_id, config_app_id (game.config.yaml's for this
+                          platform), title (the listing's, else the game's name)}.
+        allow_create      False when the registry already knows a game here: find it, never
+                          create another (True only for NOT_CREATED).
+        login_timeout_s   factory.publish.login_timeout_s: how long a person has to log in on
+                          the portal's page; None lets the adapter use its default.
     """
 
     def __init__(self, *, platform_id, release_id, idempotency_key, package_path, package,
@@ -44,7 +51,7 @@ class Job:
                  storage_state=None, logger=None, timeouts=None, console_url=None,
                  run_process=None, listing=None, platform_profile=None, live=None,
                  submit_confirmed=False, track=False, known_ids=None, registry_status=None,
-                 required_ids=None):
+                 required_ids=None, identity=None, allow_create=True, login_timeout_s=None):
         self.platform_id = platform_id
         self.release_id = release_id
         self.idempotency_key = idempotency_key
@@ -74,6 +81,9 @@ class Job:
         self.known_ids = list(known_ids or [])
         self.registry_status = registry_status or "NOT_CREATED"
         self.required_ids = list(required_ids or [])
+        self.identity = dict(identity or {})
+        self.allow_create = bool(allow_create)
+        self.login_timeout_s = login_timeout_s
 
 
 class Publication:

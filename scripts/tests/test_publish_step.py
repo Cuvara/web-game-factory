@@ -422,6 +422,37 @@ class Registry(MultiCase):
                          ("UNKNOWN", "human"))
         self.assertEqual(entry["history"][-1]["to"], "DRAFT")
 
+    def test_the_job_names_the_game_and_never_creates_a_known_one(self):
+        self.registry().record("yandex", status="DRAFT_CREATED", external_game_id="ya-9",
+                               association="created-by-factory", by="automation")
+        self.live_config["publish"]["login_timeout_s"] = 600
+        script = Script(y8=[issued("y8")], yandex=[uploaded("yandex")],
+                        crazygames=[uploaded("crazygames")])
+        self.submit(script)
+        jobs = {j.platform_id: j for j in script.jobs}
+        self.assertEqual(jobs["yandex"].identity, {"portal_game_id": "ya-9",
+                                                   "config_game_id": None,
+                                                   "config_app_id": None,
+                                                   "title": "Fixture Game"})
+        self.assertFalse(jobs["yandex"].allow_create)
+        self.assertTrue(jobs["crazygames"].allow_create)
+        self.assertEqual(jobs["yandex"].login_timeout_s, 600)
+
+    def test_a_login_handoff_is_the_record_s_waiting_block(self):
+        handoff = {"at": NOW, "url": "https://console.example/login", "reason": "login",
+                   "action": "log in on the opened page; handle CAPTCHA/2FA yourself",
+                   "resume": "the console page is detected", "resolved_at": None}
+        login = Publication(outcomes.AUTH_REQUIRED, "yandex: a person must log in",
+                            human_reason="login", login_handoffs=[handoff],
+                            phase_reached="check_session")
+        script = Script(y8=[issued("y8")], yandex=[login], crazygames=[uploaded("crazygames")])
+        result = self.submit(script)
+        waiting = self.records["yandex"]["waiting"]
+        self.assertEqual((waiting["state"], waiting["url"], waiting["step"], waiting["resume"]),
+                         ("WAITING_FOR_HUMAN_LOGIN", "https://console.example/login",
+                          "check_session", "the console page is detected"))
+        self.assertEqual(result.data["waiting_state"], "WAITING_FOR_HUMAN_LOGIN")
+
     def test_a_pending_review_uploads_nothing_and_blocks_no_other_platform(self):
         reg = self.registry()
         reg.record("crazygames", status="DRAFT_CREATED", external_game_id="cg-1",

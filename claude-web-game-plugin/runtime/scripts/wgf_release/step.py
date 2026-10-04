@@ -62,7 +62,8 @@ SEMVER = re.compile(r"^[0-9]+\.[0-9]+\.[0-9]+$")
 DEFAULT_TIMEOUTS = {"git": 30, "package": 900, "manifest": 300}
 INPUTS = ("qa-report", "verification-report", "sdk-report", "prototype-report",
           "scaffold-record", "review-report", "production-quality-report", "visual-qa-report",
-          "store-listing", "listing-validation-report", "quality-report")
+          "store-listing", "listing-validation-report", "quality-report",
+          "playability-report", "content-sufficiency-report")
 LISTING_DIR = "listing"
 
 

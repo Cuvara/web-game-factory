@@ -47,8 +47,9 @@ Each criterion states: the `dimension` it scores, the `metric`, how it is measur
 ## Dimensions and floors
 
 Twelve dimensions: gameplay, content, variety, progression, visual, UI, audio, consistency,
-polish, technical/performance, platform readiness, store. Each has a `min_score` per tier and
-a `preferred` target. A dimension is at its floor only when every blocker criterion met its
+polish, technical/performance, platform readiness, store. Each has a `min_score` at the
+release tier and a `preferred` target; at tier mvp a dimension's floor is its blocker criteria
+alone. A dimension is at its floor only when every blocker criterion met its
 minimum and its score reaches `min_score`; no averaging passes a dimension below its floor
 (`docs/quality-gate-module.md`).
 

@@ -77,7 +77,8 @@ only when
 
 * every blocker criterion of it met its minimum (an UNMEASURED blocker does not), and
 * no blocker finding of it is still open from an earlier build (below), and
-* its score reaches `min_score` at the tier.
+* its score reaches `min_score` at the tier (the release tier states one; at tier mvp a
+  dimension's floor is its blocker criteria alone, and its score is reported).
 
 No average carries a dimension past a failed blocker, and no dimension's score carries
 another's: `overall_score` is reported and decides nothing. A dimension below its floor is a
@@ -161,8 +162,8 @@ G4's `required_artifacts` include the quality-report (`core/lifecycle/gates.yaml
 the checkpoint shows its scorecard: each dimension's score against its floor, the open
 findings and the release decision (`wgflib/gate_evidence.py`). Release refuses
 (`docs/release-module.md`) unless the newest quality-report PASSED exactly the build it ships
-- its commit and development commit - pins the run's newest qa, verification, prototype,
-production-quality and visual-qa reports, and decided `release` (or `development` where the
+- its commit and development commit - pins the run's newest qa, verification, prototype, sdk,
+review, playability, production-quality, visual-qa and content-sufficiency reports, and decided `release` (or `development` where the
 installation allows it). A workflow without the quality gate says so with `with:
 required_quality: false` on its release step.
 

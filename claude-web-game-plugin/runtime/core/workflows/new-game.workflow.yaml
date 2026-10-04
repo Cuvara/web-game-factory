@@ -516,7 +516,9 @@ workflow:
     - id: release
       type: release
       stage: release:draft
-      inputs: [qa-report, verification-report, sdk-report, prototype-report, scaffold-record, review-report, production-quality-report, visual-qa-report, store-listing, listing-validation-report, quality-report]
+      # playability-report and content-sufficiency-report are read only to tell whether the
+      # quality-report scored the run's newest of them.
+      inputs: [qa-report, verification-report, sdk-report, prototype-report, scaffold-record, review-report, production-quality-report, visual-qa-report, store-listing, listing-validation-report, quality-report, playability-report, content-sufficiency-report]
       outputs: [release-manifest]
       with:
         required_gates: [G4]

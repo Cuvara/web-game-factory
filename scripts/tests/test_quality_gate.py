@@ -278,6 +278,22 @@ class Gate(unittest.TestCase):
         self.assertIsNone(report["quality_tier"])
         self.assertEqual(report["release_decision"]["decision"], "development")
 
+    def test_at_tier_mvp_only_blockers_hold_a_dimension_below_its_floor(self):
+        # Release-tier shortfalls are findings at mvp, never a floor: a development build.
+        docs = release_build(tier="mvp")
+        for check in docs["content-sufficiency-report"]["checks"]:
+            if check["id"] in ("content.elements", "content.combinations", "content.structure"):
+                check.update(status="FAIL", required=False)
+        result = self.run_step(docs)
+        self.assertEqual(result.outcome, StepOutcome.SUCCESS, result.error)
+        report = result.artifacts[0].content
+        variety = self.dimension(report, "variety")
+        self.assertEqual(variety["status"], "PASS")
+        self.assertLess(variety["score"], 75)
+        self.assertIsNone(variety["min_score"])
+        self.assertIn("quality:floor.variety",
+                      [f["id"] for f in report["findings"] if f["severity"] == "minor"])
+
     def test_a_tier_mvp_build_below_a_universal_blocker_still_fails(self):
         docs = release_build(tier="mvp")
         docs["qa-report"]["blocking_defects"] = [{"id": "D-1"}]
@@ -577,6 +593,12 @@ class Release(unittest.TestCase):
         refs = {"visual-qa-report": types.SimpleNamespace(content_hash="sha256:" + "9" * 64)}
         self.assertEqual(self.codes(lineage.quality_refusals(refs, loaded)),
                          ["stale-quality-report"])
+        # Every report the gate scored, not only the ones release ships on.
+        for artifact_type in ("playability-report", "content-sufficiency-report",
+                              "review-report", "sdk-report"):
+            refs = {artifact_type: types.SimpleNamespace(content_hash="sha256:" + "8" * 64)}
+            self.assertEqual(self.codes(lineage.quality_refusals(refs, loaded)),
+                             ["stale-quality-report"], artifact_type)
 
 
 class GateEvidence(unittest.TestCase):

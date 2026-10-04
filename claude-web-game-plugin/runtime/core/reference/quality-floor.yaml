@@ -54,23 +54,24 @@ references:
   quality-benchmark: core/reference/quality-benchmark.yaml
   visual-qa-rubric: core/reference/visual-qa-rubric.yaml
 
-# The scored dimensions. `min_score` is the dimension's floor per tier; `preferred` is the
-# target a release aims at (reported, never required). `phase: listing` - the store - is
+# The scored dimensions. `min_score` is the dimension's score floor per tier; `preferred` is
+# the target a release aims at (reported, never required). At tier mvp - a development build,
+# never a release - a dimension's floor is its blocker criteria alone; its score is reported. `phase: listing` - the store - is
 # measured once the store listing exists, after G4; before it, the dimension is DEFERRED to
 # listing-validation, which release requires separately (docs/quality-gate-module.md).
 dimensions:
-  gameplay:     {label: Gameplay,               owner: gameplay,     min_score: {mvp: 60, release: 75}, preferred: 95, basis: proposed}
-  content:      {label: Content sufficiency,    owner: level-design, min_score: {mvp: 60, release: 75}, preferred: 95, basis: proposed}
-  variety:      {label: Variety,                owner: level-design, min_score: {mvp: 50, release: 75}, preferred: 90, basis: proposed}
-  progression:  {label: Progression,            owner: game-design,  min_score: {mvp: 50, release: 75}, preferred: 90, basis: proposed}
-  visual:       {label: Visual,                 owner: art,          min_score: {mvp: 60, release: 75}, preferred: 90, basis: proposed}
-  ui:           {label: UI,                     owner: ui,           min_score: {mvp: 60, release: 75}, preferred: 95, basis: proposed}
-  audio:        {label: Audio,                  owner: audio,        min_score: {mvp: 50, release: 75}, preferred: 90, basis: proposed}
-  consistency:  {label: Consistency,            owner: art,          min_score: {mvp: 50, release: 75}, preferred: 90, basis: proposed}
-  polish:       {label: Polish,                 owner: gameplay,     min_score: {mvp: 50, release: 75}, preferred: 90, basis: proposed}
-  technical:    {label: Technical/performance,  owner: engineering,  min_score: {mvp: 60, release: 75}, preferred: 95, basis: proposed}
-  platform:     {label: Platform readiness,     owner: engineering,  min_score: {mvp: 50, release: 75}, preferred: 95, basis: proposed}
-  store:        {label: Store,                  owner: release,      min_score: {mvp: 50, release: 75}, preferred: 95, basis: proposed, phase: listing}
+  gameplay:     {label: Gameplay,               owner: gameplay,     min_score: {release: 75}, preferred: 95, basis: proposed}
+  content:      {label: Content sufficiency,    owner: level-design, min_score: {release: 75}, preferred: 95, basis: proposed}
+  variety:      {label: Variety,                owner: level-design, min_score: {release: 75}, preferred: 90, basis: proposed}
+  progression:  {label: Progression,            owner: game-design,  min_score: {release: 75}, preferred: 90, basis: proposed}
+  visual:       {label: Visual,                 owner: art,          min_score: {release: 75}, preferred: 90, basis: proposed}
+  ui:           {label: UI,                     owner: ui,           min_score: {release: 75}, preferred: 95, basis: proposed}
+  audio:        {label: Audio,                  owner: audio,        min_score: {release: 75}, preferred: 90, basis: proposed}
+  consistency:  {label: Consistency,            owner: art,          min_score: {release: 75}, preferred: 90, basis: proposed}
+  polish:       {label: Polish,                 owner: gameplay,     min_score: {release: 75}, preferred: 90, basis: proposed}
+  technical:    {label: Technical/performance,  owner: engineering,  min_score: {release: 75}, preferred: 95, basis: proposed}
+  platform:     {label: Platform readiness,     owner: engineering,  min_score: {release: 75}, preferred: 95, basis: proposed}
+  store:        {label: Store,                  owner: release,      min_score: {release: 75}, preferred: 95, basis: proposed, phase: listing}
 
 # Which report must describe which commit of the build. `development` is the commit develop
 # made (the prototype-report's, the sdk-report's base): the gates that play and judge the

@@ -90,7 +90,7 @@ when its preconditions held is what makes a draft mean something. The refusals a
 | `no-quality-report` | BLOCKED | the step's `required_quality` (default true) and the run holds no quality-report: run `quality-gate` first ([quality-gate-module.md](quality-gate-module.md)) |
 | `quality-not-passed` | FAILED | the newest quality-report's verdict is not PASS: a dimension is below its floor, or its evidence was stale |
 | `quality-commit-mismatch` | FAILED | the newest quality-report scored another commit, or another development commit, than the build shipped |
-| `stale-quality-report` | FAILED | the newest quality-report did not pin the run's newest qa, verification, prototype, production-quality or visual-qa report: work came after it |
+| `stale-quality-report` | FAILED | the newest quality-report did not pin the run's newest qa, verification, prototype, sdk, review, playability, production-quality, visual-qa or content-sufficiency report: work came after it |
 | `quality-not-release` | FAILED | the newest quality-report decided `not-release` |
 | `quality-development-tier` | FAILED | the newest quality-report decided `development` (a run at tier mvp) and `factory.release.allow_development_tier` is not true |
 | `verified-dirty-tree` | BLOCKED | verification ran on uncommitted changes, which no commit reproduces |

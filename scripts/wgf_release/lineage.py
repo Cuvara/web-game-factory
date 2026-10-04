@@ -64,8 +64,9 @@ DEFAULT_REQUIRED_LISTING = True
 DEFAULT_REQUIRED_QUALITY = True
 # The reports a quality-report must have scored for its verdict to be about the run's
 # newest evidence (it pins them by content hash).
-QUALITY_PINS = ("qa-report", "verification-report", "prototype-report",
-                "production-quality-report", "visual-qa-report")
+QUALITY_PINS = ("qa-report", "verification-report", "prototype-report", "sdk-report",
+                "review-report", "playability-report", "production-quality-report",
+                "visual-qa-report", "content-sufficiency-report")
 
 
 def _short(sha):

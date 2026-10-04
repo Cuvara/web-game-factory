@@ -447,12 +447,15 @@ def score(spec, criteria, loaded, refs, tier, build, previous=None, evidence_ent
             findings[criterion_id]["first_seen"] = old.get("first_seen") or previous_build
             continue
         now = by_id.get(criterion_id)
-        if now is not None and now["status"] == "PASS" and newer:
+        if now is None:
+            # The criterion no longer applies to this game at this tier: nothing to carry.
+            continue
+        if now["status"] == "PASS" and newer:
             closed = dict(old, status="closed",
                           closed_on={"commit": build.get("commit"), "digest": build.get("digest")})
             findings[criterion_id] = closed
             continue
-        if now is not None and now["status"] == "DEFERRED":
+        if now["status"] == "DEFERRED":
             continue
         # Passing again on the build it was raised on is no re-measurement: it stays open.
         kept = dict(old)

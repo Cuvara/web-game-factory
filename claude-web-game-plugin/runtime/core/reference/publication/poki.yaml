@@ -6,13 +6,16 @@
 # HUMAN_REQUIRED (no-automated-method) and a person runs the CLI with the packaged release.
 
 id: poki
-version: 1.0.0
+version: 2.0.0
 status: unverified
 docs: https://developers.poki.com/
 
 submission:
   method: cli
   automation_terms: permitted   # the portal's own tool
+  content_policy:
+    ai_generated_text: unknown
+    ai_generated_assets: unknown
   api:
     docs: https://developers.poki.com/
     tool: poki-cli

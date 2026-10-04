@@ -39,7 +39,8 @@ __all__ = ["PUBLICATION_DIR", "GUARDS", "RELEASE_GUARDS", "PLATFORM_GUARDS", "QU
            "store_metadata_complete", "metadata_and_locales_present",
            "package_shaped_to_profile", "assertions_pass", "all_targeted_validated",
            "required_all_live", "none_permanently_rejected", "human_reason", "readiness",
-           "idempotency_key", "GuardResult"]
+           "idempotency_key", "GuardResult", "DENY_VOCABULARY", "FORBIDDEN_INTENT_WORDS",
+           "INTENT_CLASSES", "deny_vocabulary", "flow_problems"]
 
 PUBLICATION_DIR = os.path.join(paths.REFERENCE, "publication")
 
@@ -118,6 +119,124 @@ def load_publication_profile(platform_id, extra_dirs=()):
         raise ValueError(f"{path}: id {profile.get('id') if isinstance(profile, dict) else None!r}"
                          f" is not the filename stem {platform_id!r}")
     return profile
+
+
+# -- publication profile flow rules (2.0.0) --------------------------------------------------
+#
+# What core/artifacts/shared/publication-profile.schema.json cannot say about a console flow,
+# checked by scripts/check-integrity.py over core's profiles and available to any reader of a
+# profile (profiles_extra included). Kept here, beside the profile loader, because the
+# executor that runs profile intents and resolves drift (docs/portal-publishing-architecture.md
+# Part 2.6) refuses on the same vocabulary: one list, never two that drift apart.
+
+# Names no adaptive resolution may ever match, in every profile (Part 2.6, check 4). A
+# profile's `deny` adds the console's own words for them (translations). Matched case-folded
+# at the start of a word: "publish" refuses "Publishing", "pay" refuses "Payout".
+DENY_VOCABULARY = ("submit", "publish", "release", "review", "send", "delete", "remove",
+                   "cancel", "withdraw", "archive", "accept", "agree", "confirm", "sign", "pay",
+                   "price", "tax", "rating", "i own", "licence", "license")
+
+# Intents that may not appear in a flow at all, adaptive or not (Part 2.5): nothing the
+# Factory runs cancels a pending review, withdraws or deletes a game, or replaces the build
+# under review.
+FORBIDDEN_INTENT_WORDS = ("cancel", "withdraw", "delet", "remov", "unpublish", "retract")
+
+INTENT_CLASSES = ("reversible", "irreversible", "human")
+_STATE_LISTS = ("submitted_states", "approved_states", "live_states", "rejected_states",
+                "pending_states")
+_LOCATOR_TEXT = ("name", "label", "placeholder", "text", "testid", "css", "xpath")
+
+
+def _vocabulary_hit(text, vocabulary):
+    """The first word of `vocabulary` that starts a word of `text`, case-folded; or None."""
+    folded = str(text).casefold()
+    for word in vocabulary:
+        if re.search(r"(?<!\w)" + re.escape(str(word).casefold()), folded):
+            return word
+    return None
+
+
+def deny_vocabulary(profile):
+    """The base deny vocabulary plus the profile's own `deny` words."""
+    extra = ((profile or {}).get("submission") or {}).get("deny") or []
+    return tuple(DENY_VOCABULARY) + tuple(str(w) for w in extra)
+
+
+def flow_problems(profile):
+    """The flow rules a schema cannot state, as a list of messages (empty: none broken).
+
+      * every intent has a class (reversible | irreversible | human), and its id is unique;
+      * no intent cancels, withdraws, deletes, removes or unpublishes anything - by its id,
+        its accepted names or any locator text;
+      * every irreversible intent carries a profile locator ladder and no adaptive `names`,
+        and every request_review intent is irreversible;
+      * an intent's adaptive `names`, and the `dismissable` overlay names, match nothing in
+        the deny vocabulary - such a resolution would be refused, so the profile may not
+        offer it;
+      * every *_states word is one of `status.states`; a flow with an irreversible intent
+        names its `pending_states`, so status_gate can stop before an upload over a pending
+        review; an `expect.status_in` names a list the profile fills.
+    """
+    submission = (profile or {}).get("submission") or {}
+    flow = submission.get("flow") or []
+    deny = deny_vocabulary(profile)
+    problems = []
+    seen = set()
+    irreversible = False
+    status = submission.get("status") or {}
+    for index, intent in enumerate(flow):
+        if not isinstance(intent, dict):
+            problems.append(f"flow[{index}]: not an intent")
+            continue
+        iid = intent.get("id") or f"flow[{index}]"
+        if iid in seen:
+            problems.append(f"intent {iid}: id appears twice in the flow")
+        seen.add(iid)
+        kind = intent.get("class")
+        if kind not in INTENT_CLASSES:
+            problems.append(f"intent {iid}: no class (one of {', '.join(INTENT_CLASSES)})")
+        texts = [iid.replace(".", " ").replace("_", " ")] + list(intent.get("names") or [])
+        for locator in intent.get("target") or []:
+            if isinstance(locator, dict):
+                texts += [str(locator[k]) for k in _LOCATOR_TEXT if locator.get(k)]
+        for text in texts:
+            hit = _vocabulary_hit(text, FORBIDDEN_INTENT_WORDS)
+            if hit:
+                problems.append(f"intent {iid}: {text!r} is a {hit}* action - a flow never "
+                                f"cancels, withdraws or deletes (no such intent may exist)")
+                break
+        if kind == "irreversible":
+            irreversible = True
+            if not intent.get("action") or not [
+                    loc for loc in intent.get("target") or [] if isinstance(loc, dict) and loc]:
+                problems.append(f"intent {iid}: irreversible without a profile locator ladder "
+                                f"(`action` and `target`): it is never resolved adaptively")
+            if intent.get("names"):
+                problems.append(f"intent {iid}: irreversible intents carry no adaptive `names`")
+        if intent.get("phase") == "request_review" and kind != "irreversible":
+            problems.append(f"intent {iid}: a request_review intent is irreversible, not {kind}")
+        for name in intent.get("names") or []:
+            hit = _vocabulary_hit(name, deny)
+            if hit:
+                problems.append(f"intent {iid}: accepted name {name!r} matches the deny "
+                                f"vocabulary ({hit!r}); an adaptive resolution to it would be "
+                                f"refused - drop it from `names`")
+        listed = (intent.get("expect") or {}).get("status_in")
+        if listed and not status.get(listed):
+            problems.append(f"intent {iid}: expect.status_in {listed} is empty or missing")
+    for name in submission.get("dismissable") or []:
+        hit = _vocabulary_hit(name, deny)
+        if hit:
+            problems.append(f"dismissable {name!r} matches the deny vocabulary ({hit!r})")
+    states = list(status.get("states") or [])
+    for key in _STATE_LISTS:
+        for word in status.get(key) or []:
+            if word not in states:
+                problems.append(f"status.{key}: {word!r} is not one of status.states")
+    if irreversible and not status.get("pending_states"):
+        problems.append("the flow requests review but status.pending_states is empty: "
+                        "status_gate could not stop before an upload over a pending review")
+    return problems
 
 
 # -- release guards --------------------------------------------------------------------------

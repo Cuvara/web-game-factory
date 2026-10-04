@@ -5,7 +5,8 @@ A subclass supplies the selector map for its portal (`selectors()`), the console
 from the publication profile, and the phases are fixed: authenticate, find_existing, upload
 (skipped when the idempotency key is already on a draft), configure, submit (only when the
 job says so - once), verify. The executor's result is mapped here into the common outcomes;
-the portal's own status words are mapped through the profile's `verification` lists.
+the portal's own status words are mapped through the profile's `status` lists (publication
+profile 2.0.0; `verification` before).
 
 Selector maps for live portals are hypotheses until a person has run them against the real
 console (profile `status: verified`); until then the step never reaches this adapter for
@@ -107,7 +108,7 @@ class ConsoleAdapter(PublicationAdapter):
             problems.append("the publication profile names no console url")
         if not job.package_path or not os.path.isfile(job.package_path):
             problems.append(f"the package {job.package.get('filename')} is not on disk")
-        limit = (self.submission.get("console") or {}).get("upload_max_mb")
+        limit = (self.submission.get("constraints") or {}).get("upload_max_mb")
         size = job.package.get("size_mb")
         if limit is not None and isinstance(size, (int, float)) and size > limit:
             problems.append(f"{size} MB exceeds the console's {limit} MB upload limit")
@@ -318,8 +319,7 @@ class ConsoleAdapter(PublicationAdapter):
         status_text = str(verify.get("status_text") or "").strip()
         submitted_phase = phases.get("submit") or {}
         clicked = submitted_phase.get("outcome") == "ok"
-        verification = self.submission.get("verification") or {}
-        observed = self._classify(status_text, verification)
+        observed = self._classify(status_text, self.submission.get("status") or {})
         verified_state = {"observed": status_text or "(no status text)", "at": utc_now(),
                           "source": f"console status text ({self.selectors().get('status_text')})",
                           **({"url": verify["url"]} if verify.get("url") else {})}
@@ -357,10 +357,10 @@ class ConsoleAdapter(PublicationAdapter):
                            evidence=evidence)
 
     @staticmethod
-    def _classify(status_text, verification):
+    def _classify(status_text, status):
         text = status_text.casefold()
         for kind in ("rejected", "live", "submitted"):
-            for word in verification.get(f"{kind}_states") or []:
+            for word in status.get(f"{kind}_states") or []:
                 if str(word).casefold() == text:
                     return kind
         return None

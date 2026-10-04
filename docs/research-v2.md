@@ -165,8 +165,9 @@ family - without one relaxed rule. The selection rationale names which road a sh
 **One family is not one genre: a family carries one seed, and that seed is one game.** A
 family's `seed` block is a complete starting design, so the entry a family builds is the entry
 whose concept that seed describes - and the design consistency rules are what hold it to that
-(`concept_mechanics_carried`, `design_adds_no_foreign_mechanic`: the design may name no
-mechanic the strategy does not, and must name every mechanic its concept does). `block-puzzle`,
+(`concept_mechanics_carried`, `design_adds_no_foreign_mechanic`: compared as the mechanic ids
+of `core/reference/mechanic-lexicon.yaml`, the design may build no core mechanic the brief and
+strategy do not imply, and must build every mechanic its concept names). `block-puzzle`,
 `sort-puzzle` and `idle-merge` therefore stay capability gaps even though a family lists their
 genre nodes: the puzzle seed is a slide-and-clear colour grid, not a board the player drops
 given shapes onto, and the simulation seed is a served-shift tycoon, not a merge idler. Each

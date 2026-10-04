@@ -119,7 +119,13 @@ consistency result is atomic.
    Craft: `core/craft/feature-evaluation.md`.
 
 10. **Run the consistency check.** Evaluate `core/reference/design-consistency-rules.yaml`
-    and write the result into `game_design.consistency`. This is the exit guard.
+    and write the result into `game_design.consistency`. This is the exit guard. The concept
+    rules compare mechanics, not words: the brief and the strategy are read as the mechanic
+    ids of `core/reference/mechanic-lexicon.yaml`, the design as its `build_spec` mechanics,
+    the content units that use them and the controls that drive them. A paraphrase of the
+    brief is the same mechanic; renaming a mechanic the brief does not imply does not make it
+    implied. A pillar the brief or design names (risk/reward) is held by a mechanic the units
+    use, never by its words.
 
 ## Returning here from the build
 

@@ -12,7 +12,20 @@
 # artifact plus the resolved platform profiles. Keep them few and obvious — a rule nobody
 # understands gets waived, and a waived rule is worse than no rule.
 
-version: 1.4.0  # 1.2.1: match never the bare verb; 1.3.0: scope_fits_session_count applies only without a genre family; 1.4.0: detail_terms
+version: 2.0.0  # 1.2.1: match never the bare verb; 1.3.0: scope_fits_session_count applies only without a genre family; 1.4.0: detail_terms; 2.0.0: mechanics, not words (below)
+
+# 2.0.0. The concept rules compared words: "tap hops" in a design read as a foreign `jump`
+# for a brief that asked for hops, a goal gate read as a checkpoint `gate`, and an author
+# repairing a breach renamed its words until the check stopped seeing the mechanic it had
+# added. They now compare mechanic ids. The brief and the strategy are normalized to ids
+# through the mechanic lexicon (synonyms and verbs are data there); the design is its
+# build_spec mechanics, the content units that use them and the controls that drive them,
+# each read as the id it is. A paraphrase is the same id; a renamed mechanic is still its id,
+# or is unrecognised when the lexicon does not know it and the brief never says it.
+# `concept_terms` and `detail_terms` moved into the lexicon (`kind: defining | detail`), and
+# pillar_realized_by_mechanic is new. Changing the lexicon's words changes what these rules
+# decide, so the ruleset pins its version and refuses another.
+lexicon: { id: mechanic-lexicon, version: 1.0.0 }
 
 rules:
   - id: rewarded_ads_need_reward_moments
@@ -86,11 +99,11 @@ rules:
   - id: concept_mechanics_carried
     label: The design's core mechanic is the one the strategy approved
     severity: blocking
-    # `concept.*` is a projection (wgf_design consistency.concept_view): the concept terms
-    # below found in the strategy's concept (one-liner, core mechanic, core loop) and in the
-    # design's own statement of its game (core loop, the MVP mechanics it defines, the MVP
-    # controls). Text the design copies from the strategy MVP is not counted: a design that
-    # repeats "drop into a column" while defining a swap is still a swap game.
+    # `concept.*` is a projection (wgf_design consistency.concept_view) in mechanic ids of
+    # core/reference/mechanic-lexicon.yaml: the defining and detail ids the strategy's concept
+    # (one-liner, core mechanic, core loop) names, against the ids of the design's MVP
+    # mechanics and MVP controls. A design whose mechanics are a swap is a swap game, whatever
+    # its prose repeats from the strategy.
     when: { left: concept.uncarried, op: neq, right: [] }
     rationale: >
       The design is what the developer builds and what the reviewer judges against. A design
@@ -98,13 +111,30 @@ rules:
       G2 approved, and the build is then either unfaithful to the design or to the strategy.
 
   - id: design_adds_no_foreign_mechanic
-    label: The design introduces no core mechanic the strategy does not name
+    label: The design introduces no core mechanic the brief and strategy do not imply
     severity: blocking
+    # A core mechanic is an MVP mechanic a content unit uses, a control drives or the design
+    # calls `core` (every MVP mechanic when the design lists no content), and every MVP
+    # control. Foreign: a defining id among them that the brief and the strategy nowhere
+    # imply, or a driven mechanic the lexicon does not know whose words they never use.
     when: { left: concept.foreign, op: neq, right: [] }
     rationale: >
       A swap-to-match design for a drop-and-merge strategy, or a checkpoint clock for a
       dodge-the-walls strategy, keeps every word of the concept and still changes the game.
-      A mechanic the strategy does not name is a strategy change and goes back to G2.
+      A mechanic the brief and strategy do not imply is a strategy change and goes back to
+      G2. A paraphrase of the brief ("tap hops" for a jump) is not one.
+
+  - id: pillar_realized_by_mechanic
+    label: Every pillar the brief or design asks for is realized by a mechanic in play
+    severity: blocking
+    # `concept.pillars_unrealized`: the lexicon pillars the brief, the strategy or the
+    # design's pillars name (risk/reward, time pressure) for which no MVP mechanic a content
+    # unit uses is one of the pillar's `realized_by` ids.
+    when: { left: concept.pillars_unrealized, op: neq, right: [] }
+    rationale: >
+      "Risk/reward decisions" is a promise about play. The words appearing in the design
+      keep none of it; a mechanic the units use - an optional pickup off the safe line, a
+      multiplier, a shortcut - does.
 
   - id: first_reward_within_first_session
     label: First reward must land inside the first session
@@ -140,45 +170,6 @@ rules:
     rationale: >
       An open-ended progression with no designed end state produces an endless content
       obligation, which is exactly what a 7-14 day production model cannot service.
-
-# The concept terms the two concept rules compare. Each entry is one mechanic; its words are
-# the ways a strategy or a design says it. Only mechanics that change what the game IS belong
-# here - never genre words (puzzle, arcade), feel words or platform words. A new archetype
-# whose mechanic is missing from this list is not checked for it, so add it here with the
-# archetype.
-concept_terms:
-  drop: [drop, drops, dropped, dropping]
-  swap: [swap, swaps, swapping, swapped]
-  # Never the bare verb: "the telegraphed zone always matches the zone the ball is struck
-  # toward" is a goalkeeper design, not a match-3 one, and it breached this rule.
-  match: [match-3, match 3, match three, matches three, matching three, line of three, lines of three]
-  merge: [merge, merges, merged, merging]
-  column: [column, columns]
-  lane: [lane, lanes]
-  steer: [steer, steers, steering]
-  wall: [wall, walls]
-  crash: [crash, crashes, crashed]
-  gate: [gate, gates, checkpoint, checkpoints]
-  clock: [clock, timer, countdown, time limit]
-  move-limit: [move limit, moves remaining, moves left]
-  jump: [jump, jumps, jumping, hop, hops]
-  shoot: [shoot, shoots, shooting]
-  timed-tap: [timed tap, sweep, sweeps]
-  lock: [lock, locks, locked]
-  # Mechanics that define the genre families' games (core/reference/genre-models.yaml).
-  # Only words that change what the game IS: `wave` is a unit kind, and `place`, `price`,
-  # `slide`, `survive` or `upgrade` name verbs many games share - deliberately not here.
-  tower: [tower, towers, turret, turrets]
-  race: [race, races, racing, rival, rivals]
-  exit: [exit, exits, goal flag, exit door]
-  aim: [aim, aims, aiming]
-
-# Terms that count for `concept.uncarried` (the strategy names them, so the design must carry
-# them) but never for `concept.foreign`: walls, crashes and locks are details most games
-# have - an ice puzzle's penguin stops at a wall, its door has a lock, its goal is an exit - and a design that
-# names one has not changed what the game is. A term absent from this list is defining both
-# ways.
-detail_terms: [wall, crash, lock, exit]
 
 evaluation:
   pass_condition: No rule with severity=blocking is breached.

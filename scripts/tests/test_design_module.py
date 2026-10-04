@@ -36,7 +36,7 @@ from wgf_design import archetypes, authors, compose, consistency, content, ident
 from wgf_design import features as feature_check  # noqa: E402
 from wgf_design.platforms import load_platforms  # noqa: E402
 from wgf_design.step import SCHEMA_VERSION, DesignStep  # noqa: E402
-from wgflib import paths  # noqa: E402
+from wgflib import mechanics, paths  # noqa: E402
 from wgflib.yamllite import load_file  # noqa: E402
 
 STRATEGY_PATH = os.path.join(ROOT, "workspace", "titles", "neon-drift", "title-strategy.json")
@@ -143,6 +143,28 @@ def variant(**changes):
     for key, value in changes.items():
         strategy[key] = value
     return rehash(strategy)
+
+
+SHOOT = {"id": "shoot", "name": "Shoot", "tier": "mvp", "progression_role": "core",
+         "description": "Shoot.", "rules": ["Shooting is instant."]}
+
+
+def add_shoot(draft):
+    """A mechanic the strategy does not imply, built as one: in build_spec, a core mechanic
+    every content unit uses. Prose alone is not a mechanic (rules 2.0.0)."""
+    spec = draft["build_spec"]
+    spec["mechanics"].append(copy.deepcopy(SHOOT))
+    for unit in (spec.get("content") or {}).get("units") or []:
+        unit["mechanics"].append(SHOOT["id"])
+    return draft
+
+
+def drop_shoot(draft):
+    spec = draft["build_spec"]
+    spec["mechanics"] = [m for m in spec["mechanics"] if m["id"] != SHOOT["id"]]
+    for unit in (spec.get("content") or {}).get("units") or []:
+        unit["mechanics"] = [m for m in unit["mechanics"] if m != SHOOT["id"]]
+    return draft
 
 
 class DesignFromWorkedExample(unittest.TestCase):
@@ -372,46 +394,165 @@ class StrategyMvpFolding(unittest.TestCase):
         self.assertIn("Strategy MVP: Localization: en, ru.", localization["acceptance"])
 
 
-class ConceptFidelity(unittest.TestCase):
-    """design-consistency-rules concept_mechanics_carried / design_adds_no_foreign_mechanic."""
+def concept_design(mechanics, actions=(), units=None, pillars=(), core_loop="x"):
+    """A design reduced to what the concept rules read: MVP mechanics, controls, units."""
+    spec = {"mechanics": [dict({"tier": "mvp", "description": "", "rules": ["x"]}, **m)
+                          for m in mechanics],
+            "controls": {"actions": [dict({"tier": "mvp", "touch": "", "mouse": "",
+                                           "keyboard": ""}, **a) for a in actions]}}
+    if units is not None:
+        spec["content"] = {"unit_kind": "level", "generation": {"mode": "authored"},
+                           "units": [{"id": f"u{i}", "tier": "mvp", "mechanics": list(u)}
+                                     for i, u in enumerate(units, 1)]}
+    return {"core_loop": core_loop, "pillars": list(pillars), "build_spec": spec}
 
-    TERMS = consistency.load_rules()["concept_terms"]
+
+# The live brief of validation run B (docs/handoff/2026-10-03-two-game-validation.md).
+MARBLE = ("A 3D low-poly marble-roll game (Three.js): tilt/steer a marble across floating "
+          "sky-island courses, ramps, moving platforms, gaps and bumpers; collect gems, beat "
+          "the par time for stars; 3 themed worlds of hand-designed courses, unlocks and saved "
+          "progress, a time-trial mode with personal bests. Chase camera, desktop keys and "
+          "mobile touch.")
+
+
+class ConceptFidelity(unittest.TestCase):
+    """design-consistency-rules 2.0.0: concept_mechanics_carried, design_adds_no_foreign_mechanic
+    and pillar_realized_by_mechanic compare mechanic ids (core/reference/mechanic-lexicon.yaml),
+    not words."""
+
+    LEXICON = consistency.load_lexicon()
 
     def view(self, design, strategy):
-        return consistency.concept_view(design, strategy, self.TERMS)
+        return consistency.concept_view(design, strategy, self.LEXICON)
 
-    def test_a_mechanic_the_strategy_names_must_be_in_the_designs_own_text(self):
+    def test_a_mechanic_the_strategy_names_must_be_built(self):
         strategy = {"one_liner": "drop pieces into a column"}
-        design = {"core_loop": "swap two pieces", "features": [
-            {"id": "strategy-drop", "tier": "mvp", "name": "drop pieces into a column", "description": "x"},
-            {"id": "swap", "tier": "mvp", "name": "Swap", "description": "swap two",
-             "acceptance": ["Strategy MVP: drop pieces into a column."]}]}
+        # Prose that repeats the strategy is not the design building the mechanic.
+        design = concept_design([{"id": "swap", "name": "Swap"}],
+                                [{"id": "swap", "action": "Swap", "mechanic": "swap"}],
+                                core_loop="drop pieces into a column")
         view = self.view(design, strategy)
-        # Folded-in strategy text is not the design carrying the mechanic.
         self.assertEqual(view["uncarried"], ["column", "drop"])
         self.assertEqual(view["foreign"], ["swap"])
 
     def test_a_faithful_design_carries_everything_and_adds_nothing(self):
         strategy = {"one_liner": "drop pieces into a column; equal neighbours merge"}
-        design = {"core_loop": "drop into a column, neighbours merge", "features": [],
-                  "build_spec": {"controls": {"actions": [{"tier": "mvp", "action": "Drop", "touch": "Tap a column"}]}}}
+        design = concept_design(
+            [{"id": "track", "name": "Seven-column track"}, {"id": "drop", "name": "Drop a piece"},
+             {"id": "merge-cascade", "name": "Merge and cascade"}],
+            [{"id": "drop", "action": "Drop", "mechanic": "drop", "touch": "Tap a column"}],
+            units=[["track", "drop", "merge-cascade"]])
         view = self.view(design, strategy)
         self.assertEqual((view["uncarried"], view["foreign"]), ([], []))
 
     def test_words_are_matched_whole(self):
         # "gateway" is not a gate; "seven-column" is a column.
-        found = consistency._terms_in("a gateway to a seven-column track", self.TERMS)
-        self.assertEqual(found, {"column"})
+        self.assertEqual(mechanics.ids_in("a gateway to a seven-column track", self.LEXICON),
+                         {"column"})
 
     def test_the_english_verb_to_match_is_not_the_match_mechanic(self):
         # A goalkeeper design: "the telegraphed zone always matches the zone the ball is
         # struck toward" read as match-3 and descoped the run (2026-10-02).
-        self.assertEqual(consistency._terms_in(
+        self.assertEqual(mechanics.ids_in(
             "the telegraphed zone always matches the zone the ball is struck toward, on a "
-            "night match day", self.TERMS), set())
-        self.assertEqual(consistency._terms_in("swap to match three gems", self.TERMS),
-                         {"swap", "match"})
+            "night match day", self.LEXICON), set())
+        self.assertEqual(mechanics.ids_in("swap to match three gems", self.LEXICON),
+                         {"swap", "match", "collect"})
 
+    def test_tap_hops_in_the_brief_is_not_a_foreign_jump(self):
+        # Validation finding 8 (F14): the brief asked for "tap hops", the design built a jump,
+        # and the jump was refused as foreign because the check never read the brief and
+        # matched words. A paraphrase of the brief is the same mechanic id.
+        strategy = {"brief": "A bunny that tap hops from cloud to cloud",
+                    "one_liner": "A one-touch arcade game: tap to rise from cloud to cloud."}
+        for name in ("Jump", "Hop", "Leap"):
+            with self.subTest(name=name):
+                design = concept_design(
+                    [{"id": name.lower(), "name": name}],
+                    [{"id": "tap", "action": name, "mechanic": name.lower()}],
+                    units=[[name.lower()]])
+                self.assertEqual(self.view(design, strategy)["foreign"], [])
+
+    def test_the_marble_brief_paraphrased_adds_nothing(self):
+        # Run B's design, as mechanics: a goal gate is the course's exit, never a checkpoint
+        # gate; rolling a tilted marble is steering; gems are collected.
+        strategy = {"brief": MARBLE, "one_liner": MARBLE}
+        design = concept_design(
+            [{"id": "tilt-roll", "name": "Tilt to roll the marble"},
+             {"id": "gems", "name": "Gems"},
+             {"id": "goal-gate", "name": "Goal gate"},
+             {"id": "par-timer", "name": "Par timer and stars"},
+             {"id": "bumpers", "name": "Bumpers"}],
+            [{"id": "tilt", "action": "Tilt", "mechanic": "tilt-roll"}],
+            units=[["tilt-roll", "gems", "goal-gate", "par-timer", "bumpers"]])
+        view = self.view(design, strategy)
+        self.assertEqual(view["foreign"], [])
+        self.assertIn("exit", view["design_terms"])
+        self.assertNotIn("gate", view["design_terms"])
+
+    def test_a_renamed_added_mechanic_is_still_caught(self):
+        # Validation finding 3: repair rounds renamed the words until the check stopped seeing
+        # the mechanic. A synonym is the same id, a description still says what an unknown
+        # name is, and a control-driven mechanic nobody can name is unrecognised.
+        strategy = {"one_liner": "drop pieces into a column; equal neighbours merge"}
+        base = [{"id": "drop", "name": "Drop a piece"}, {"id": "merge", "name": "Merge"}]
+        cases = {
+            "synonym": ({"id": "trade-places", "name": "Trade places"}, ["swap"]),
+            "described": ({"id": "trade", "name": "Trade",
+                           "description": "Swap two adjacent pieces."}, ["swap"]),
+            "unknown": ({"id": "shuffle", "name": "Shuffle"}, ["shuffle (unrecognised)"]),
+        }
+        for label, (added, foreign) in cases.items():
+            with self.subTest(label=label):
+                design = concept_design(
+                    base + [added],
+                    [{"id": "drop", "action": "Drop", "mechanic": "drop"},
+                     {"id": "extra", "action": "Use it", "mechanic": added["id"]}],
+                    units=[["drop", "merge", added["id"]]])
+                self.assertEqual(self.view(design, strategy)["foreign"], foreign)
+
+    def test_an_unknown_mechanic_the_brief_names_in_its_own_words_is_not_foreign(self):
+        strategy = {"brief": "Juggle three balls; a dropped ball ends the run",
+                    "one_liner": "Juggle three balls."}
+        design = concept_design([{"id": "juggle", "name": "Juggle"}],
+                                [{"id": "juggle", "action": "Juggle", "mechanic": "juggle"}],
+                                units=[["juggle"]])
+        self.assertEqual(self.view(design, strategy)["foreign"], [])
+
+    def test_a_pillar_needs_a_mechanic_a_unit_uses(self):
+        strategy = {"brief": "A cave diver: risk/reward decisions on every dive",
+                    "one_liner": "Steer a diver through caves."}
+        bare = concept_design([{"id": "steer", "name": "Steer"}],
+                              [{"id": "steer", "action": "Steer", "mechanic": "steer"}],
+                              units=[["steer"]],
+                              pillars=["Risk and reward on every dive"])
+        view = self.view(bare, strategy)
+        self.assertEqual((view["pillars_asked"], view["pillars_unrealized"]),
+                         (["risk-reward"], ["risk-reward"]))
+        # Built, but no unit asks for it: still unrealized.
+        unused = concept_design([{"id": "steer", "name": "Steer"},
+                                 {"id": "pearls", "name": "Optional pearls to collect"}],
+                                [{"id": "steer", "action": "Steer", "mechanic": "steer"}],
+                                units=[["steer"]])
+        self.assertEqual(self.view(unused, strategy)["pillars_unrealized"], ["risk-reward"])
+        used = copy.deepcopy(unused)
+        used["build_spec"]["content"]["units"][0]["mechanics"].append("pearls")
+        self.assertEqual(self.view(used, strategy)["pillars_unrealized"], [])
+
+    def test_a_pillar_no_mechanic_realizes_breaches_the_rule(self):
+        strategy = variant(brief="A lane runner built on risk/reward decisions")
+        design = copy.deepcopy(run_step(load_strategy()).artifacts[0].content)
+        design["pillars"] = ["Risk and reward on every lane change"]
+        for unit in design["build_spec"]["content"]["units"]:
+            unit["mechanics"] = [m for m in unit["mechanics"] if m == "lane-switch"]
+        block, blocking, _ = consistency.evaluate(design, strategy, load_platforms(strategy), NOW)
+        self.assertIn("pillar_realized_by_mechanic", blocking)
+
+    def test_the_ruleset_refuses_a_lexicon_at_another_version(self):
+        rules = copy.deepcopy(consistency.load_rules())
+        rules["lexicon"]["version"] = "0.0.1"
+        with self.assertRaises(ValueError):
+            consistency.load_lexicon(rules)
 
     def test_identity_is_stable_per_title(self):
         first = identity.choose("neon-drift", ["neon-night", "riso-arcade"])[0]
@@ -519,7 +660,7 @@ class FailurePaths(unittest.TestCase):
                 Foreign.rounds.append(list((brief.get("repair") or {}).get("problems") or []))
                 draft = super().draft(brief)
                 if not brief.get("repair"):
-                    draft["core_loop"] += " Shoot the gate to open it."
+                    add_shoot(draft)
                 return draft
 
         Foreign.rounds = []
@@ -564,9 +705,7 @@ class FailurePaths(unittest.TestCase):
             repairs = True
 
             def draft(self, brief):
-                draft = super().draft(brief)
-                draft["core_loop"] += " Shoot the gate to open it."
-                return draft
+                return add_shoot(super().draft(brief))
 
         authors.register_author("stubborn", Stubborn)
         self.addCleanup(authors.AUTHORS.pop, "stubborn", None)
@@ -577,24 +716,29 @@ class FailurePaths(unittest.TestCase):
         self.assertIn("design_adds_no_foreign_mechanic", result.error)
         self.assertEqual(result.artifacts[0].content["consistency"]["status"], "fail")
 
-    def test_a_detail_term_is_never_foreign(self):
+    def test_a_detail_mechanic_is_never_foreign(self):
         # Walls, crashes and locks are details most games have: a penguin that stops at a
         # wall and a door with a lock have not changed what the game is. They still count
         # when the strategy's concept names them and the design drops them.
         class Walled(authors.ArchetypeAuthor):
             def draft(self, brief):
                 draft = super().draft(brief)
-                draft["core_loop"] += " The piece stops at a wall; a locked door opens with a key."
+                spec = draft["build_spec"]
+                spec["mechanics"].append({"id": "locked-walls", "name": "Locked walls",
+                                          "tier": "mvp", "progression_role": "core",
+                                          "description": "A locked wall opens with a key.",
+                                          "rules": ["A key opens one locked wall."]})
+                for unit in (spec.get("content") or {}).get("units") or []:
+                    unit["mechanics"].append("locked-walls")
                 return draft
 
         authors.register_author("walled", Walled)
         self.addCleanup(authors.AUTHORS.pop, "walled", None)
         result = run_step(load_strategy(), params={"author": "walled"})
         self.assertEqual(result.outcome, StepOutcome.SUCCESS, result.error)
-        rules = consistency.load_rules()
-        self.assertEqual(sorted(rules["detail_terms"]), ["crash", "exit", "lock", "wall"])
-        for term in rules["detail_terms"]:
-            self.assertIn(term, rules["concept_terms"])
+        lexicon = consistency.load_lexicon()
+        self.assertEqual(sorted(m for m, e in lexicon["mechanics"].items()
+                                if e["kind"] == "detail"), ["crash", "exit", "lock", "wall"])
 
     def test_a_resumed_execution_continues_the_repair_of_the_last_draft(self):
         # A repairing author that used up its rounds leaves its last rejected draft and the
@@ -612,12 +756,8 @@ class FailurePaths(unittest.TestCase):
                 Stubborn.briefs.append(copy.deepcopy(brief.get("repair")))
                 if brief.get("repair") and brief["repair"].get("round") == 0:
                     # The resumed repair: fix what was asked, starting from the kept draft.
-                    draft = copy.deepcopy(brief["repair"]["previous_draft"])
-                    draft["core_loop"] = draft["core_loop"].replace(" Shoot the gate to open it.", "")
-                    return draft
-                draft = super().draft(brief)
-                draft["core_loop"] += " Shoot the gate to open it."
-                return draft
+                    return drop_shoot(copy.deepcopy(brief["repair"]["previous_draft"]))
+                return add_shoot(super().draft(brief))
 
         Stubborn.briefs = []
         authors.register_author("stubborn-last", Stubborn)

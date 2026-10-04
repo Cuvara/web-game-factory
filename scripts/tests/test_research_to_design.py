@@ -112,12 +112,11 @@ class ResearchToDesign(unittest.TestCase):
         """The breached rules, and - for the two concept rules - which mechanic words the
         design and the strategy disagree on. A genre family's seed wording and a catalog
         entry's concept wording have to name the same mechanics, and when they do not this is
-        where it shows: `uncarried` is a word the concept names and the design does not,
-        `foreign` a word the design names and the strategy nowhere does."""
+        where it shows: `uncarried` a mechanic the concept names and the design does not
+        build, `foreign` a mechanic the design builds that nothing implies."""
         if not {"concept_mechanics_carried", "design_adds_no_foreign_mechanic"} & set(breached):
             return breached
-        view = consistency.concept_view(design, artifact("title-strategy"),
-                                        consistency.load_rules().get("concept_terms") or {})
+        view = consistency.concept_view(design, artifact("title-strategy"))
         return (f"{breached}: uncarried {view['uncarried']}, foreign {view['foreign']} "
                 f"(the genre model's seed wording and the catalog entry's concept wording "
                 f"name different mechanics)")

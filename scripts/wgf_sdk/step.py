@@ -8,7 +8,10 @@
                                         ──► sdk-report: per platform, per feature, how observed
 
 The integration phase runs when the run holds a game-design and a scaffold-record; without
-them (`wgf sdk` on its own) the step verifies what is already there. A feature both phases
+them (`wgf sdk` on its own) the step verifies what is already there. When the run's newest
+tech-plan names other platforms than the checkout's game.config.yaml - a title retargeted
+after develop (docs/platform-targets-2026-10.md) - the phase first writes the tech plan's
+platforms and their pinned profiles (targets.py), and commits them with the integration. A feature both phases
 report takes the worse status: an adapter that works in a game that does not call it is not
 working, and neither is a wired game on an adapter that fails.
 
@@ -66,6 +69,7 @@ from wgf_verification.lineage import same_commit
 
 from . import commit as sdk_commit
 from . import evidence as ev
+from . import targets
 from .integration import IntegrationPhase, PhaseBlocked, SeamMissing
 from .plan import FEATURES, PlanError, integration_plan, load_game_config
 from .runner import CommandRunner
@@ -291,6 +295,20 @@ class SdkStep(WorkflowStep):
                                      integration_runner)
             if ledger is not None:
                 ledger.start(key)
+            tech_plan = inputs.load("tech-plan") if "tech-plan" in inputs else None
+            try:
+                retargeted = targets.sync(game_repo, tech_plan, self.profiles_dir)
+            except targets.SyncError as exc:
+                return StepResult.blocked(str(exc))
+            if retargeted:
+                context.logger.info("sdk retargets the checkout to the tech plan's platforms",
+                                    platforms=[p.get("id") for p in
+                                               targets.planned_platforms(tech_plan)])
+                try:
+                    config = load_game_config(game_repo)
+                    plans = integration_plan(config, self.profiles_dir, game_repo=game_repo)
+                except PlanError as exc:
+                    return StepResult.blocked(str(exc))
             try:
                 integrated = phase.run(game_repo, design, scaffold, title_id)
             except PhaseBlocked as exc:
@@ -301,7 +319,7 @@ class SdkStep(WorkflowStep):
             if integrated["integration"]["tests"]["status"] != "failed":
                 try:
                     sha, created = sdk_commit.commit(
-                        git, key, title_id, integrated["integration"]["files"],
+                        git, key, title_id, integrated["integration"]["files"] + retargeted,
                         integrated["integration"]["tests"], ledger=ledger)
                 except sdk_commit.CommitRefused as exc:
                     return StepResult.blocked(str(exc))

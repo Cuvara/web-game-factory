@@ -154,6 +154,7 @@ class IntegrationPhase:
         break_on_continue = [t for t in (self._setting("break_on_continue", []) or [])
                              if t in target_ids]
         placements = design_placements(design)
+        self._cover_targets(placements, design, target_ids, notes)
         self._forbid_moments(placements, target_ids)
         declared = (game_config.get("monetization") or {}).get("ad_kinds")
         placement_records, plan_placements = self._placements(placements, declared)
@@ -244,6 +245,44 @@ class IntegrationPhase:
             else:
                 used[platform_id] = substitute
         return used
+
+    @staticmethod
+    def _cover_targets(placements, design, target_ids, notes):
+        """Give a placement every target the design never considered whose profile offers its
+        kind.
+
+        A placement that names its platforms names the ones its design knew of. A target
+        added later - a retarget after the design, or a design written for other platforms -
+        is in none of those lists, and would ship with no ads at all (both 2026-10 audits:
+        the integration plan named crazygames, yandex and poki; a y8 build had zero
+        placements). Considered = the platforms the design's constraints or any placement
+        names: a target among them that a placement leaves out was left out on purpose and
+        stays out."""
+        considered = {str(c.get("platform_id")) for c in
+                      design.get("platform_constraints_applied") or [] if isinstance(c, dict)}
+        for placement in placements:
+            considered |= set(placement.platforms or ())
+        offered = {}
+        for platform_id in target_ids:
+            try:
+                profile = load_file(os.path.join(paths.PLATFORMS, f"{platform_id}.yaml")) or {}
+            except (OSError, YamlError, ValueError):
+                profile = {}
+            offered[platform_id] = set((profile.get("capabilities") or {}).get("ads") or [])
+        added = {}
+        for placement in placements:
+            if placement.platforms is None:
+                continue  # every platform already
+            extra = [t for t in target_ids if t not in placement.platforms
+                     and t not in considered and placement.kind in offered.get(t, ())]
+            if extra:
+                placement.platforms = list(placement.platforms) + extra
+                for platform_id in extra:
+                    added.setdefault(platform_id, []).append(placement.id)
+        for platform_id, ids in sorted(added.items()):
+            notes.append(f"{platform_id} is a target no design placement or constraint names "
+                         f"(the design predates it): it gets {', '.join(ids)}, whose kinds its "
+                         "profile offers")
 
     def _forbid_moments(self, placements, target_ids):
         """Narrow interstitial placements away from platforms that forbid their moment."""

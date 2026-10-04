@@ -303,11 +303,15 @@ workflow:
         request-changes: develop
 
     # Integrates the template's platform SDK into the game the design and init produced:
-    # it reads the design's placements, and writes into the repository init created.
+    # it reads the design's placements, and writes into the repository init created. When
+    # the newest tech-plan names other platforms than the checkout targets - a title
+    # retargeted after develop, re-planned through G2 and G3 - it first writes those
+    # platforms and their pinned profiles, committed with its integration, so a retarget
+    # re-runs sdk onwards and never develop (docs/platform-targets-2026-10.md).
     - id: sdk
       type: sdk
       stage: title:prototype
-      inputs: [game-design, scaffold-record, prototype-report]
+      inputs: [game-design, scaffold-record, prototype-report, tech-plan]
       outputs: [sdk-report]
       max_visits: 21
 

@@ -302,7 +302,7 @@ names a portal, a selector or a URL.
 | Method | Adapter | What happens |
 |---|---|---|
 | `api` / `cli` | `ManualAdapter` | The portal's own documented tool is the supported way in (Poki's CLI). No adapter drives one yet: HUMAN_REQUIRED, the person runs the tool with the packaged release |
-| `console` | `ConsoleAdapter` (the profile's flow; `crazygames` and `yandex` subclasses add nothing yet; `FixturePortalAdapter` for the tests) | The intent runner over the publication profile's flow, below. A console profile without a flow is HUMAN_REQUIRED |
+| `console` | `ConsoleAdapter` (the profile's flow); one `PortalAdapter` subclass per publishing target - `yandex`, `crazygames`, `y8`, `gamedistribution`, `gamepix` - each with its own status vocabulary, review handling and human handoffs (below); `FixturePortalAdapter` for the tests | The intent runner over the publication profile's flow, below. A console profile without a flow is HUMAN_REQUIRED |
 | `email` | `ManualAdapter` | GameVui: the person emails the package; HUMAN_REQUIRED |
 | `manual` | `ManualAdapter` | generic-web: nothing to submit; HUMAN_REQUIRED |
 
@@ -310,6 +310,48 @@ names a portal, a selector or a URL.
 (checked 2026-10-02: CrazyGames and Yandex document their web consoles only; Y8 and GameVui
 likewise). The console path exists because that is the only path those portals offer; an
 adapter never invents an API.
+
+### One adapter per portal
+
+`scripts/wgf_publish/adapters/{yandex,crazygames,y8,gamedistribution,gamepix}.py`, registered
+in `adapters/__init__.py` (`PORTALS`). Each subclasses `PortalAdapter` (`adapters/portal.py`,
+the hooks only) over `ConsoleAdapter`, so every click is still the profile's flow run by the
+intent runner; what differs per portal is in the adapter's own module and its own profile,
+never in a shared table (`test_publish_portals.py` checks that no two adapters share one):
+
+- `STATUS`: the portal's status words (its profile's `status.states`, kept equal by a test)
+  mapped to the portal registry's status;
+- `HANDOFFS`: each `human` intent of its profile, with the `human_required` reason (legal or
+  declaration) and what the person does; a visit stopping for them says so;
+- `refuse(job)`: the portal's checks before the console is contacted;
+- `adjust(...)`: the portal's reading of what the run observed, after the generic mapping.
+
+A `Publication` may ask the step to record a registry status the portal's own words establish
+and ids kept beside the game (`Publication.registry`: `status`, `other_ids`, `note`); the
+registry's rules still apply (an evidence-bound status needs the status text read). The job
+carries the registry entry (`Job.registry_entry`) so an adapter can read its own history.
+These two fields are the only step hooks the adapters needed. A confirmed visit never clicks
+the request over a rejection: the adapter counts the portal's rejected words as "already
+requested" for the runner, and verify reads the rejection back.
+
+| Portal | Own flow (profile) | Status words -> registry | Review handling | Human handoffs | Status |
+|---|---|---|---|---|---|
+| Yandex | "Add app"; "Create draft" at upload (optional - an update of a live game; the live version stays); Archive; one "Description and Promotion" tab per locale, run language by language; Icon, Cover, Screenshots; Save; "Submit for moderation" | Created DRAFT, Waiting for moderation PENDING_REVIEW, Verified VERIFIED, Published PUBLISHED, Rejected REJECTED | One moderation per game (review-pending, never requested again); at most 2 new-game requests per account, counted from this project's registries (review-pending); Verified (Postpone publication) stops HUMAN_REQUIRED - Publish is a person's irreversible click; a rejection records its cooldown (24 h doubling to 16 days) in `other_ids.next_request_after`, and a confirmed request before it is refused | contract/YAN (legal), age rating, categories, Postpone publication, AI-descriptions switch, Developer's comment | IMPLEMENTED, FIXTURE_VALIDATED; UNVERIFIED on the live console |
+| CrazyGames | "Submit a game"; Game name, Create; the build as a zip or as files (both modeled, each optional; neither found is UNKNOWN); Description, Controls, Cover; Save draft; "Submit for QA" | Draft DRAFT, In review PENDING_REVIEW, Basic Launch PUBLISHED, Full Launch PUBLISHED, Rejected REJECTED | Basic Launch is reported live with monetization off; Full Launch is CrazyGames' decision - a profile intent naming it is refused before the console; an update of a live game is "processed the same working day" (reported) | terms (legal), exclusivity (legal), warranties, payout (legal), Progress Save and orientation | IMPLEMENTED, FIXTURE_VALIDATED; UNVERIFIED on the live console |
+| Y8 | `studio.check` (the Studio first); "Create Your Game", Game Name, Create: Game ID and App ID issued -> IDS_ISSUED; Feedback tab read at read_status; Game file; Basic Info tab; Description, Instructions, Thumbnail; Save; "Submit for Reviews" | Draft DRAFT, Pending PENDING_REVIEW, Approved PUBLISHED, Rejected REJECTED | No Studio stops HUMAN_REQUIRED (legal) before anything is created; the Feedback tab is status evidence and quoted with a rejection; cooldowns 0, 6 h, 12 h, 24 h, 2 d, 5 d recorded in `other_ids.next_request_after`; never re-requested automatically | the Studio (name permanent), payout (YMP or AFP) | IMPLEMENTED, FIXTURE_VALIDATED; UNVERIFIED on the live console |
+| GameDistribution | No create: a person creates the game and enters its Game ID in game.config.yaml (whether the panel issues it before an upload is not stated); the game is found by `config:game_id`; Zip file, Title, Description, Instructions, Thumbnail 512x512, Save; no request intent | Draft DRAFT, Pending PENDING_REVIEW, Live PUBLISHED, Rejected REJECTED | Unconfirmed prerequisites (`developer-account`, `developer-terms`, `self-hosting`) stop HUMAN_REQUIRED (legal) before the panel; a build without a Game ID stops HUMAN_REQUIRED; the publication request is the panel's designated button - a person clicks it, a later visit reads Pending | pre-roll watched once (activates the SDK), rewarded flag, age groups | IMPLEMENTED, FIXTURE_VALIDATED; UNVERIFIED on the live panel; HUMAN_ACTION_REQUIRED: the prerequisites |
+| GamePix | "Add new game", Game name, Create; Game file, Description, Icon, Cover, Save; no request intent; status words all hypotheses | Draft DRAFT, In review PENDING_REVIEW, Published PUBLISHED, Rejected REJECTED | BLOCKED before the dashboard unless the build carries the GamePix SDK (manifest `platform_sdk: gamepix`, or the archive references gamepix.sdk.js): the pinned template has none; the submit is a person's | Allow Distribution / exclusivity (legal), child-directed (COPPA), AI declarations (content_policy `disclose`, from a person's statement only), the testkit | IMPLEMENTED, FIXTURE_VALIDATED (with an SDK-carrying archive); UNVERIFIED on the live dashboard; HUMAN_ACTION_REQUIRED: a template release with the GamePix SDK adapter, and the pin moved to it |
+
+Every locator the adapters' flows add is `basis: documented` (with its source) or `basis:
+hypothesis` and named under the profile's `unknowns`; nothing is `observed`. The profiles stay
+`status: unverified` and `automation_terms: unverified`, so on a real installation the step
+stops HUMAN_REQUIRED before any of these adapters runs. FIXTURE_VALIDATED means: core's
+profile, unchanged, with only what it lists as unknown overlaid (session markers, the games
+list, where the status and the game id are shown, how a declaration shows as done), ran
+through the real executor in headless Chromium against that portal's flavor of the fixture
+portal (`scripts/tests/fixtures/publish/flavors.py`, `PORTAL_FLAVOR=<id>`). A person's
+observation of the real console (`wgf-publish.py observe <id>`) corrects the profile - data,
+not code.
 
 ### The console executor: a profile-driven intent runner, not Playwright MCP
 
@@ -635,6 +677,22 @@ the real executor in headless Chromium: create, `IDS_ISSUED`, `DRAFT_CREATED`, t
 and built in, `platform_ids_present` GREEN, G5 and G6 again, the upload, a person's `submit`,
 one request, `SUBMITTED` from the status text (verify and the sdk step's write are test
 doubles there; the release, platform-validate and submit steps are real).
+`scripts/tests/test_publish_portals.py` (RELEASE): the five portal adapters - each resolves
+to its own class, no two share a behaviour table, each status table is its profile's words
+and each handoff table its profile's human intents, the cooldown tables are the profiles',
+the test-only headless mode needs the loopback fixture; Yandex Verified (a person's Publish,
+registry VERIFIED), its language tabs run language by language, a third new-game request
+refused; a rejection's cooldown recorded and a confirmed request refused inside it;
+CrazyGames' Full Launch never clicked and Basic Launch reported live, both upload shapes;
+Y8 without a Studio; GameDistribution's prerequisites and Game ID; GamePix without its SDK
+BLOCKED. With `WGF_PUBLISH_BROWSER_TEST=1`, each through the real executor in headless
+Chromium against its fixture flavor: dry run, live upload `UPLOAD_COMPLETE`, a confirmed
+visit reading the portal's own submitted word, and its distinctive stop (Yandex: a second
+moderation refused, Verified -> a person's Publish, an update through Create draft;
+CrazyGames: Basic Launch with Full Launch never clicked, the files shape; Y8: no Studio ->
+HUMAN_REQUIRED, ids -> `IDS_ISSUED`, a rejection's feedback read; GameDistribution:
+prerequisites -> HUMAN_REQUIRED, found by its Game ID, the person's request read back;
+GamePix: no SDK -> BLOCKED, the declarations a person's).
 `scripts/tests/test_publish_observe.py`
 (RELEASE): the observer's scrubbing, summary and exit codes around a stand-in browser, its
 spec's source (no action call, no session kept), and - with `WGF_PUBLISH_BROWSER_TEST=1` -

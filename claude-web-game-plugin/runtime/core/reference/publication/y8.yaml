@@ -14,7 +14,8 @@
 # uploaded.
 
 id: y8
-version: 2.1.0
+version: 2.2.0  # 2.2.0: the Y8 adapter's flow - the Studio check, create confirm, Feedback tab,
+                #        upload, Basic Info tab, save - the undocumented parts as hypotheses
 status: unverified
 docs: https://docs.y8.com/
 
@@ -34,6 +35,11 @@ unknowns:
   - The session markers (logged in, login form, challenges) on the console page.
   - Where the console shows the Game ID and the App ID, and how My Games is laid out.
   - Whether "Submit for Reviews" is the button's exact label (it is the public flow summary).
+  - How the console shows that the account has a Studio (studio.check reads a "My Games" link - a hypothesis).
+  - The create form's confirm button (create.confirm "Create" is a hypothesis).
+  - The game's tabs - "Basic Info" and "Feedback" are named by public pages; their roles and the Feedback panel's layout are hypotheses.
+  - Whether a new game shows a status word before it is submitted ("Draft" is a hypothesis).
+  - The markers by which the Studio and the payout choice show as done.
 
 submission:
   method: console
@@ -75,6 +81,15 @@ submission:
     basis: hypothesis
 
   flow:
+    - id: studio.check
+      phase: find_game
+      class: reversible
+      action: read
+      target: [{role: link, name: "My Games"}]
+      basis: hypothesis
+      note: >
+        The Studio comes first. Read before anything is created: a console without the
+        Studio's mark stops for a person to create it (the adapter: HUMAN_REQUIRED, legal).
     - id: declare.studio
       phase: human_fields
       class: human
@@ -101,6 +116,76 @@ submission:
       basis: documented
       source: https://docs.y8.com/studio/create-game/
       note: Creating a game asks only for its name and issues the Game ID.
+    - id: create.confirm
+      phase: create_game
+      class: reversible
+      action: click
+      target: [{role: button, name: "Create"}]
+      names: [Create]
+      basis: hypothesis
+    - id: feedback.open
+      phase: read_status
+      class: reversible
+      action: click
+      optional: true
+      target: [{role: tab, name: "Feedback"}]
+      basis: hypothesis
+      note: The game's Feedback tab, where Y8's review feedback appears (developer.y8.com).
+    - id: feedback.read
+      phase: read_status
+      class: reversible
+      action: read
+      optional: true
+      target: [{role: region, name: "Feedback"}]
+      basis: hypothesis
+      note: Read as status evidence; quoted with a rejection.
+    - id: upload.build
+      phase: upload_build
+      class: reversible
+      action: upload
+      value: package.file
+      target: [{label: "Game file"}]
+      basis: hypothesis
+      note: The build, under My Games; zip or files is unknown (unknowns).
+    - id: tab.basic_info
+      phase: fill_metadata
+      class: reversible
+      action: click
+      target: [{role: tab, name: "Basic Info"}]
+      basis: hypothesis
+    - id: field.description
+      phase: fill_metadata
+      class: reversible
+      action: fill
+      value: listing.text.en.description
+      target: [{label: "Description"}]
+      names: [Description]
+      expect: {value_equals: listing.text.en.description}
+      basis: hypothesis
+    - id: field.instructions
+      phase: fill_metadata
+      class: reversible
+      action: fill
+      value: listing.text.en.how_to_play
+      target: [{label: "Instructions"}]
+      names: [Instructions, How to play]
+      expect: {value_equals: listing.text.en.how_to_play}
+      basis: hypothesis
+    - id: media.thumbnail
+      phase: upload_media
+      class: reversible
+      action: upload
+      value: listing.media.cover
+      target: [{label: "Thumbnail"}]
+      names: [Thumbnail]
+      basis: hypothesis
+    - id: draft.save
+      phase: save_draft
+      class: reversible
+      action: click
+      target: [{role: button, name: "Save"}]
+      names: [Save]
+      basis: hypothesis
     - id: declare.payout
       phase: human_fields
       class: human
@@ -116,7 +201,7 @@ submission:
       note: The label is the public page's flow summary, not read on the console.
 
   status:
-    states: [Pending, Approved, Rejected]
+    states: [Draft, Pending, Approved, Rejected]
     submitted_states: [Pending]
     live_states: [Approved]
     rejected_states: [Rejected]

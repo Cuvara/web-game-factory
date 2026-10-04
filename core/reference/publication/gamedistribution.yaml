@@ -21,8 +21,11 @@
 #   5. request publication with "the designated button within your control panel";
 #   6. review and QA; the game is "activated" or the developer gets feedback.
 # GameDistribution is create-before-build like Y8: a first release needs the Game ID from the
-# panel before the build that is uploaded. No panel label is documented, so no intent below
-# acts: every phase is a person's, and the publish step stops HUMAN_REQUIRED.
+# panel before the build that is uploaded. Whether creating the game issues it is not stated,
+# so the flow creates nothing: a person creates the game and enters its Game ID in
+# game.config.yaml, and the adapter finds the game by it. No panel label is documented: the
+# upload, listing and save intents below are hypotheses (unknowns), and with `status:
+# unverified` the publish step stops HUMAN_REQUIRED before contacting the panel.
 #
 # Domain: NOT required for the developer account (the registration form's Website field is
 # optional). It is required to self-host: a self-hosted submission is a zipped index.html
@@ -31,7 +34,9 @@
 # terms 2.9) - the `self-hosting` prerequisite below.
 
 id: gamedistribution
-version: 2.1.0  # 2.1.0: re-read from public pages 2026-10-04; prerequisites, fields, human flow
+version: 2.2.0  # 2.2.0: the GameDistribution adapter - the account and terms prerequisites;
+                #        upload, listing fields and save as hypotheses; still no create, no request
+                # 2.1.0: re-read from public pages 2026-10-04; prerequisites, fields, human flow
 status: unverified
 docs: https://github.com/GameDistribution/GD-HTML5/wiki
 
@@ -46,6 +51,18 @@ sources:
   - {url: "https://static.gamedistribution.com/terms/developer.html", read: "2026-10-04", note: "Developer Game License Agreement, last updated 19 June 2025."}
 
 prerequisites:
+  - id: developer-account
+    reason: legal
+    note: >
+      A GameDistribution developer account, registered by a person: First name, Last name,
+      Email, Country and Company are required by the registration form (Website optional).
+    source: https://gamedistribution.com/developers/
+  - id: developer-terms
+    reason: legal
+    note: >
+      The Developer Terms and Platform Privacy Policy, and Azerion Connect's terms, accepted
+      by a person at registration (two checkboxes).
+    source: https://gamedistribution.com/developers/, https://static.gamedistribution.com/terms/developer.html
   - id: self-hosting
     reason: legal
     when: {hosting: self-hosted}
@@ -56,7 +73,9 @@ prerequisites:
     source: https://static.gamedistribution.com/terms/developer.html (2.9), https://static.gamedistribution.com/developer/developers-guidelines.html (3.1), https://github.com/GameDistribution/GD-HTML5 (README)
 
 unknowns:
-  - Every panel label, and the panel's layout - the creation of a game, the build upload view, the iframe button, the publication request button.
+  - Every panel label, and the panel's layout - the creation of a game, the build upload view, the iframe button, the publication request button (upload.zip, field.*, media.thumbnail and draft.save are hypotheses).
+  - The panel's games list and where it shows a game's Game ID (the adapter finds the game by the Game ID game.config.yaml carries).
+  - The markers by which the pre-roll activation, the rewarded flag and the age groups show as done.
   - Whether creating a game in the panel issues the Game ID before any upload (derived, not stated).
   - The upload size limit and file-count limit, and the zip's expected layout.
   - The panel's listing fields beyond guidelines section 5 (screenshots, video, image formats and byte limits).
@@ -101,6 +120,58 @@ submission:
     basis: hypothesis
 
   flow:
+    - id: upload.zip
+      phase: upload_build
+      class: reversible
+      action: upload
+      value: package.file
+      target: [{label: "Zip file"}]
+      basis: hypothesis
+      note: The zip upload of the game's upload view (the README documents a zip; the label is a hypothesis).
+    - id: field.title
+      phase: fill_metadata
+      class: reversible
+      action: fill
+      value: listing.title
+      target: [{label: "Title"}]
+      names: [Title, Game title]
+      expect: {value_equals: listing.title}
+      basis: hypothesis
+    - id: field.description
+      phase: fill_metadata
+      class: reversible
+      action: fill
+      value: listing.text.en.description
+      target: [{label: "Description"}]
+      names: [Description]
+      expect: {value_equals: listing.text.en.description}
+      basis: hypothesis
+      note: 200-500 characters of standard English (guidelines 5.3); listing-validation checks the copy.
+    - id: field.instructions
+      phase: fill_metadata
+      class: reversible
+      action: fill
+      value: listing.text.en.how_to_play
+      target: [{label: "Instructions"}]
+      names: [Instructions]
+      expect: {value_equals: listing.text.en.how_to_play}
+      basis: hypothesis
+    - id: media.thumbnail
+      phase: upload_media
+      class: reversible
+      action: upload
+      value: listing.media.icon
+      target: [{label: "Thumbnail 512x512"}]
+      names: [Thumbnail]
+      basis: hypothesis
+      note: The mandatory 512x512 thumbnail (guidelines 5.6); the other sizes are not mapped yet.
+    - id: draft.save
+      phase: save_draft
+      class: reversible
+      action: click
+      target: [{role: button, name: "Save"}]
+      names: [Save]
+      basis: hypothesis
     - id: declare.preroll
       phase: human_fields
       class: human

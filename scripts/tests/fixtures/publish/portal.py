@@ -59,7 +59,17 @@ Behaviour is set per run with PORTAL_MODE (comma-separated):
     slow-upload     the upload answers after PORTAL_DELAY seconds (default 3)
 
 PORTAL_SEED is a JSON list of games the account already holds:
-[{"id", "title", "status", "build"?}] - a duplicate by title, a pending review, a draft.
+[{"id", "title", "status", "build"?, "live"?, "app_id"?, "feedback"?}] - a duplicate by
+title, a pending review, a draft, a live game.
+
+PORTAL_FLAVOR=<yandex|crazygames|y8|gamedistribution|gamepix> serves that portal's console
+instead of the generic one above (flavors.py: laid out as its publication profile describes
+it); /login, the session, the challenges and /state.json stay the same. Modes a flavor adds:
+`files-upload` (crazygames: the build as files), `no-studio` (y8: no Studio yet).
+
+    POST /test/game {"id", "status"?, "feedback"?, "live"?}
+                                   what the portal - or a person in it - did meanwhile (a
+                                   moderation's outcome, a person's own click). Tests only.
 """
 
 import argparse
@@ -74,18 +84,27 @@ import time
 import urllib.parse
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import flavors  # noqa: E402
+
 SESSION = "fixture-session-token-0001"
 MODES = set(filter(None, os.environ.get("PORTAL_MODE", "").split(",")))
 DELAY = float(os.environ.get("PORTAL_DELAY", "3"))
 LOCALES = [l for l in os.environ.get("PORTAL_LOCALES", "en,ru").split(",") if l]
 
 STATE = {"games": [], "next_id": 1, "creates": 0, "uploads": 0, "saves": 0, "requests": 0,
-         "double_requests": 0, "logins": 0, "challenges": 0}
+         "double_requests": 0, "logins": 0, "challenges": 0, "limit_refusals": 0,
+         "draft_creates": 0, "publish_clicks": 0, "full_launch_clicks": 0}
 for seeded in json.loads(os.environ.get("PORTAL_SEED") or "[]"):
     STATE["games"].append({"id": seeded["id"], "title": seeded["title"],
                            "status": seeded.get("status", "Draft"), "build": seeded.get("build"),
                            "listing": {}, "media": {}, "saved": False,
-                           "requested": seeded.get("status") == "Waiting for moderation"})
+                           "requested": seeded.get("status") in (
+                               "Waiting for moderation", "In review", "Pending"),
+                           "live": bool(seeded.get("live")), "app_id": seeded.get("app_id"),
+                           "feedback": seeded.get("feedback")})
+FLAVOR = (flavors.FLAVORS[os.environ["PORTAL_FLAVOR"]](STATE, MODES, LOCALES)
+          if os.environ.get("PORTAL_FLAVOR") else None)
 OBSERVE = {"saves": 0, "views": 0}
 OBSERVE_PAGE = (
     "<div id='dashboard'><header>Signed in as <span class='account'>dev.person@example.com"
@@ -289,6 +308,13 @@ class Handler(BaseHTTPRequestHandler):
         challenge = self._challenge(path)
         if challenge is not None:
             return self._send(200, challenge)
+        if FLAVOR is not None and path in ("/console", "/console/new"):
+            with LOCK:
+                body = (FLAVOR.list_page(STATE["games"]) if path == "/console"
+                        else FLAVOR.new_page())
+            if body is None:
+                return self._send(404, page("Not found", "<p>no such page</p>"))
+            return self._send(200, page("Console", body))
         if path == "/console":
             with LOCK:
                 rows = "".join(
@@ -310,7 +336,12 @@ class Handler(BaseHTTPRequestHandler):
                 game = game_by_id(parts[3]) if len(parts) > 3 else None
             if game is None:
                 return self._send(404, page("Not found", "<p>no such game</p>"))
-            issued = len(parts) > 4 and parts[4] == "created" and "ids-on-create" in MODES
+            issued = len(parts) > 4 and parts[4] == "created" and (
+                "ids-on-create" in MODES or (FLAVOR is not None and FLAVOR.issues_ids))
+            if FLAVOR is not None:
+                with LOCK:
+                    body = FLAVOR.game_page(game, issued=issued)
+                return self._send(200, page(game["title"] or "Game", body))
             return self._send(200, game_page(game, issued=issued))
         if path == "/console/observe":
             with LOCK:
@@ -320,6 +351,16 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_POST(self):
         path = urllib.parse.urlparse(self.path).path
+        if path == "/test/game":
+            length = int(self.headers.get("Content-Length") or 0)
+            change = json.loads(self.rfile.read(length) or b"{}")
+            with LOCK:
+                game = game_by_id(str(change.get("id")))
+                if game is None:
+                    return self._send(404, b"{}", "application/json")
+                game.update({k: change[k] for k in ("status", "feedback", "live", "requested")
+                             if k in change})
+            return self._send(200, b"{}", "application/json")
         if path == "/login":
             self._form()
             with LOCK:
@@ -343,13 +384,15 @@ class Handler(BaseHTTPRequestHandler):
                 game_id = f"g{STATE['next_id']:04d}"
                 STATE["next_id"] += 1
                 STATE["creates"] += 1
-                game = {"id": game_id, "title": str(form.get("name") or ""), "status": "Draft",
+                game = {"id": game_id, "title": str(form.get("name") or ""),
+                        "status": FLAVOR.CREATED_STATUS if FLAVOR is not None else "Draft",
                         "build": None, "listing": {}, "media": {}, "saved": False,
-                        "requested": False}
-                if "ids-on-create" in MODES:
+                        "requested": False, "live": False}
+                if "ids-on-create" in MODES or (FLAVOR is not None and FLAVOR.issues_ids):
                     game["app_id"] = f"app-{STATE['next_id'] + 4000}"
                 STATE["games"].append(game)
-            suffix = "/created" if "ids-on-create" in MODES else ""
+            suffix = "/created" if ("ids-on-create" in MODES or (
+                FLAVOR is not None and FLAVOR.issues_ids)) else ""
             return self._redirect(f"/console/game/{game_id}{suffix}")
         if path.startswith("/console/game/"):
             parts = path.split("/")
@@ -359,6 +402,8 @@ class Handler(BaseHTTPRequestHandler):
             if game is None:
                 return self._send(404, page("Not found", "<p>no such game</p>"))
             gid = game["id"]
+            if FLAVOR is not None:
+                return self._flavor_post(game, action)
             if action == "upload":
                 form = self._form()
                 if "slow-upload" in MODES:
@@ -397,6 +442,34 @@ class Handler(BaseHTTPRequestHandler):
                 OBSERVE["saves"] += 1
             return self._redirect("/console/observe")
         return self._send(404, page("Not found", "<p>no such page</p>"))
+
+
+def _flavor_post(self, game, action):
+    """A flavor's game actions: save (the build and the listing), request, its own."""
+    gid = game["id"]
+    form = self._form()
+    if action == "save":
+        if "upload-fail" in MODES and any(isinstance(form.get(n), list) for n in FLAVOR.BUILD):
+            return self._send(500, page("Error", "<div id='dashboard'><p id='upload-error'>"
+                                                 "Upload failed: storage unavailable</p></div>"))
+        with LOCK:
+            FLAVOR.save(game, form)
+        return self._redirect(f"/console/game/{gid}")
+    if action == "request":
+        with LOCK:
+            code, why = FLAVOR.request(game)
+        if code == 409:
+            return self._send(409, page("Conflict", f"<div id='dashboard'><p id='upload-error'>"
+                                                    f"Refused: {html.escape(why)}</p></div>"))
+        return self._redirect(f"/console/game/{gid}")
+    with LOCK:
+        done = FLAVOR.other(game, action)
+    if done is None:
+        return self._send(404, page("Not found", "<p>no such action</p>"))
+    return self._redirect(f"/console/game/{gid}")
+
+
+Handler._flavor_post = _flavor_post
 
 
 def main(argv=None):

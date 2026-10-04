@@ -10,7 +10,8 @@
 # otherwise.
 
 id: yandex
-version: 2.1.0
+version: 2.2.0  # 2.2.0: the Yandex adapter's flow - Create draft at upload, the language tabs,
+                #        media and save as hypotheses (docs/publish-module.md, Yandex)
 status: unverified
 docs: https://yandex.com/dev/games/doc/en/
 
@@ -34,6 +35,11 @@ unknowns:
   - Whether a CAPTCHA, a second factor or an anti-bot check protects Yandex ID for the console.
   - The session markers (logged in, login form, challenges) on the console page.
   - Where the console shows the app id, and how the game list is laid out.
+  - How the per-language "Description and Promotion" tabs are named and switched (tab.language names a tab by the locale code - a hypothesis).
+  - Whether icon, cover and screenshots are uploaded once or per language tab, and their upload widgets (media.* are hypotheses).
+  - Whether the draft is saved with a button and its label (draft.save "Save" is a hypothesis).
+  - How the console shows the "Create draft" result for a live game (draft.create is documented; what the page shows after it is not).
+  - The markers by which a person's declarations (contract, age rating, categories, Postpone publication, AI descriptions, Developer's comment) show as done.
 
 submission:
   method: console
@@ -75,7 +81,7 @@ submission:
       basis: documented
       source: https://yandex.com/dev/games/doc/en/console/add-new-game
     - id: draft.create
-      phase: create_game
+      phase: upload_build
       class: reversible
       action: click
       target: [{role: button, name: "Create draft"}, {text: "Create draft"}]
@@ -83,7 +89,10 @@ submission:
       optional: true
       basis: documented
       source: https://yandex.com/dev/games/doc/en/console/update-game
-      note: An update of a live game starts a new draft on the Draft tab; the live version stays during review.
+      note: >
+        An update of a live game starts a new draft on the Draft tab; the live version stays
+        during review. Optional: a new app has no live version and shows no such button. At
+        upload_build so it runs on a found game too (create_game runs only for a new one).
     - id: upload.archive
       phase: upload_build
       class: reversible
@@ -95,6 +104,17 @@ submission:
       note: >
         No `names`: the console labels the field "Archive", and "archive" is deny vocabulary,
         so an adaptive resolution would be refused - drift here stops for a person.
+    - id: tab.language
+      phase: fill_metadata
+      class: reversible
+      action: click
+      per_locale: true
+      target: [{role: tab, name: "<locale>"}]
+      basis: hypothesis
+      note: >
+        The per-language "Description and Promotion" tab, opened before that language's
+        fields (the adapter runs the per-locale intents language by language). Naming a tab
+        by its locale code is a hypothesis (unknowns).
     - id: field.title
       phase: fill_metadata
       class: reversible
@@ -125,6 +145,38 @@ submission:
       names: [How to play, Как играть]
       expect: {value_equals: listing.text.<locale>.how_to_play}
       basis: documented
+    - id: media.icon
+      phase: upload_media
+      class: reversible
+      action: upload
+      value: listing.media.icon
+      target: [{label: "Icon"}]
+      names: [Icon, Иконка]
+      basis: hypothesis
+    - id: media.cover
+      phase: upload_media
+      class: reversible
+      action: upload
+      value: listing.media.cover
+      target: [{label: "Cover"}]
+      names: [Cover, Обложка]
+      basis: hypothesis
+    - id: media.screenshots
+      phase: upload_media
+      class: reversible
+      action: upload
+      value: listing.media.screenshots
+      multiple: true
+      target: [{label: "Screenshots"}]
+      names: [Screenshots, Скриншоты]
+      basis: hypothesis
+    - id: draft.save
+      phase: save_draft
+      class: reversible
+      action: click
+      target: [{role: button, name: "Save"}]
+      names: [Save, Сохранить]
+      basis: hypothesis
     - id: declare.contract
       phase: human_fields
       class: human
@@ -143,7 +195,9 @@ submission:
       class: human
       note: >
         Postpone publication, so a passed moderation lands in Verified and the Publish click
-        stays a person's. The later Publish click on a Verified game is a person's too.
+        stays a person's. The later Publish click on a Verified game is a person's too - an
+        irreversible act no intent of this flow names (the adapter stops HUMAN_REQUIRED on
+        Verified).
     - id: declare.ai_descriptions
       phase: human_fields
       class: human

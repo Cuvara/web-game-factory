@@ -625,6 +625,27 @@ class PerPlatform(MultiCase):
         self.assertEqual(self.registry().get("yandex")["submission_status"], "Published")
         self.assertIn("nothing to read", result.message)
 
+    def test_a_portal_adapter_s_registry_reading_is_recorded_under_the_registry_s_rules(self):
+        reg = self.registry()
+        reg.record("yandex", status="DRAFT_CREATED", external_game_id="ya-1",
+                   association="created-by-factory", by="automation", other_ids={"kept": "1"})
+        reg.record("yandex", status="PENDING_REVIEW", by="automation",
+                   evidence=[portal_registry.evidence_item("portal-status", "x", "In review")])
+        self.done_by_hand("yandex")
+
+        def verified(job):
+            self.assertEqual(job.registry_entry["status"], "PENDING_REVIEW")
+            return Publication(outcomes.HUMAN_REQUIRED, "yandex: Verified; Publish is a person's",
+                               human_reason="manual-submission", state="submitted",
+                               status_text="Verified",
+                               registry={"status": "VERIFIED",
+                                         "other_ids": {"next_request_after": NOW}})
+        self.submit(Script(yandex=[verified]), environ={"WGF_PUBLISH_TRACK": "1"}, gates=())
+        entry = self.registry().get("yandex")
+        self.assertEqual(entry["status"], "VERIFIED")
+        self.assertEqual(entry["other_ids"], {"kept": "1", "next_request_after": NOW})
+        self.assertEqual(self.records["yandex"]["outcome"], outcomes.HUMAN_REQUIRED)
+
     def test_a_validation_of_another_manifest_is_stale(self):
         old = self.records["yandex"]
         self.game.commit("src/main.ts", "export const game = 3;\n", "a fix")

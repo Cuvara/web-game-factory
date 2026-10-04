@@ -31,16 +31,26 @@ from .base import Job, ManualAdapter, Publication, PublicationAdapter
 from .console import ConsoleAdapter
 from .crazygames import CrazyGamesAdapter
 from .fixture import FixturePortalAdapter
+from .gamedistribution import GameDistributionAdapter
+from .gamepix import GamePixAdapter
+from .portal import PortalAdapter
+from .y8 import Y8Adapter
 from .yandex import YandexAdapter
 
-__all__ = ["resolve", "REGISTRY", "Job", "Publication", "PublicationAdapter", "ManualAdapter",
-           "ConsoleAdapter"]
+__all__ = ["resolve", "REGISTRY", "PORTALS", "Job", "Publication", "PublicationAdapter",
+           "ManualAdapter", "ConsoleAdapter", "PortalAdapter"]
 
-REGISTRY = {
-    "fixture-portal": FixturePortalAdapter,
-    "crazygames": CrazyGamesAdapter,
+# The publishing targets, each with its own adapter (wgf_publish/adapters/<id>.py): its own
+# status vocabulary, review handling and human handoffs over its own profile's flow.
+PORTALS = {
     "yandex": YandexAdapter,
+    "crazygames": CrazyGamesAdapter,
+    "y8": Y8Adapter,
+    "gamedistribution": GameDistributionAdapter,
+    "gamepix": GamePixAdapter,
 }
+
+REGISTRY = dict(PORTALS, **{"fixture-portal": FixturePortalAdapter})
 
 
 def resolve(platform_id, profile, settings=None):

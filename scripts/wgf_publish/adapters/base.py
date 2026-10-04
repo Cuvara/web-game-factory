@@ -45,6 +45,9 @@ class Job:
                           create another (True only for NOT_CREATED).
         login_timeout_s   factory.publish.login_timeout_s: how long a person has to log in on
                           the portal's page; None lets the adapter use its default.
+        registry_entry    the portal registry's entry for the game here (a copy), or None:
+                          what a portal adapter reads its own history from (rejections and
+                          the resubmission cooldown they started, a publication before).
     """
 
     def __init__(self, *, platform_id, release_id, idempotency_key, package_path, package,
@@ -52,7 +55,8 @@ class Job:
                  logger=None, timeouts=None, console_url=None,
                  run_process=None, listing=None, platform_profile=None, live=None,
                  submit_confirmed=False, track=False, known_ids=None, registry_status=None,
-                 required_ids=None, identity=None, allow_create=True, login_timeout_s=None):
+                 required_ids=None, identity=None, allow_create=True, login_timeout_s=None,
+                 registry_entry=None):
         self.platform_id = platform_id
         self.release_id = release_id
         self.idempotency_key = idempotency_key
@@ -84,6 +88,7 @@ class Job:
         self.identity = dict(identity or {})
         self.allow_create = bool(allow_create)
         self.login_timeout_s = login_timeout_s
+        self.registry_entry = dict(registry_entry) if registry_entry else None
 
 
 class Publication:
@@ -94,7 +99,7 @@ class Publication:
                  verified_state=None, evidence=(), human_reason=None, resume_with=None,
                  submitted=False, measurement_class="automation-console", found_game=None,
                  created_ids=None, uploaded=False, saved=False, status_text=None,
-                 login_handoffs=(), actions_log=None, phase_reached=None):
+                 login_handoffs=(), actions_log=None, phase_reached=None, registry=None):
         if outcome not in outcomes.OUTCOMES:
             raise ValueError(f"unknown publication outcome {outcome!r}")
         self.outcome = outcome
@@ -126,6 +131,12 @@ class Publication:
         self.login_handoffs = list(login_handoffs)
         self.actions_log = actions_log
         self.phase_reached = phase_reached
+        # What a portal adapter asks the step to record in the portal registry beyond what
+        # the outcome implies: {"status": a registry status the portal's own words establish
+        # (Yandex's Verified is VERIFIED), "other_ids": {name: str} merged into the entry's
+        # (a resubmission cooldown's next allowed time), "note": str}. The registry's own
+        # rules still apply: an evidence-bound status needs the status text read.
+        self.registry = dict(registry or {})
 
 
 class PublicationAdapter:

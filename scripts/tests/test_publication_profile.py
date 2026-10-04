@@ -384,16 +384,21 @@ class FlowRulesTest(unittest.TestCase):
         self_hosted = {"id": "gamedistribution", "hosting": "self-hosted",
                        "game_url": "https://games.example.com/x/"}
         hosted = {"id": "gamedistribution"}  # the default hosting is never written
+        account = ["developer-account", "developer-terms"]
+        terms = {"terms_confirmed": True, "prerequisites_confirmed": account}
         reason = pub.human_reason(profile, terms, True, self_hosted)
         self.assertEqual(reason[0], "legal")
         self.assertIn("prerequisite self-hosting", reason[1])
         # Unknown entry: every prerequisite applies; an unknown is never read as satisfied.
         self.assertEqual(pub.human_reason(profile, terms, True)[0], "legal")
         self.assertEqual(pub.unmet_prerequisites(profile, terms, hosted), [])
+        # The account and its terms apply to every release.
+        self.assertEqual([p["id"] for p in pub.unmet_prerequisites(profile, {}, hosted)], account)
         self.assertEqual(pub.unmet_prerequisites(
-            profile, {"prerequisites_confirmed": ["self-hosting"]}, self_hosted), [])
+            profile, {"prerequisites_confirmed": account + ["self-hosting"]}, self_hosted), [])
         self.assertIsNone(pub.human_reason(
-            profile, {"terms_confirmed": True, "prerequisites_confirmed": ["self-hosting"]},
+            profile, {"terms_confirmed": True,
+                      "prerequisites_confirmed": account + ["self-hosting"]},
             True, self_hosted))
         self.assertEqual(pub.readiness({}, pub.human_reason(profile, terms, True, self_hosted)),
                          pub.HUMAN_REQUIRED)
@@ -418,7 +423,13 @@ class FlowRulesTest(unittest.TestCase):
         policy = profile["submission"]["content_policy"]
         self.assertEqual((policy["ai_generated_text"], policy["ai_generated_assets"]),
                          ("disclose", "disclose"))
-        self.assertTrue(all(i["class"] == "human" for i in profile["submission"]["flow"]))
+        flow = profile["submission"]["flow"]
+        # The dashboard's submit control is not public: no intent requests review, and every
+        # automated intent is a hypothesis (unknowns).
+        self.assertFalse([i for i in flow if i["phase"] == "request_review"])
+        self.assertTrue(all(i.get("basis") == "hypothesis" for i in flow if i["class"] != "human"))
+        self.assertTrue({"declare.distribution", "declare.child-directed", "declare.ai"}
+                        <= {i["id"] for i in flow if i["class"] == "human"})
         self.assertTrue(profile["unknowns"])
 
     def test_a_flow_of_human_intents_only_needs_no_pending_states(self):

@@ -4,9 +4,11 @@
 # only, read 2026-10-04 (docs/platform-targets-2026-10.md, GamePix): nobody has logged in,
 # created an account, uploaded or submitted for this file. GamePix publishes no upload or
 # submission API (its API is for publishers pulling the catalogue); games are submitted in the
-# GamePix Dashboard behind a login. The public pages name no dashboard control, so the flow
-# holds no automated intent: every phase is a person's, and the publish step stops
-# HUMAN_REQUIRED.
+# GamePix Dashboard behind a login. The public pages name no dashboard control: every
+# automated intent below is a hypothesis (unknowns), the submit control has none (a person
+# submits), and with `status: unverified` the publish step stops HUMAN_REQUIRED before
+# contacting the dashboard. The adapter refuses BLOCKED first unless the build carries the
+# GamePix SDK.
 #
 # Domain: none required - the developer sign-up asks for no website, and GamePix hosts the
 # game ("GamePix will host your games on secure servers", developers page).
@@ -16,7 +18,8 @@
 # is described the day the pin moves, not so it can be published to today.
 
 id: gamepix
-version: 2.0.0
+version: 2.1.0  # 2.1.0: the GamePix adapter's flow - create, upload, listing, media and save,
+                #        and the status words, all hypotheses; the submit stays a person's
 status: unverified
 docs: https://partners.gamepix.com/developers
 
@@ -40,6 +43,9 @@ unknowns:
   - The payment and tax forms.
   - Whether a CAPTCHA, a second factor or an anti-bot check protects the dashboard login.
   - The session markers (logged in, login form, challenges) on the dashboard.
+  - The dashboard's games list, and its create, name and confirm controls (create.*, upload.zip, field.description, media.*, draft.save are hypotheses).
+  - The status words (Draft, In review, Published, Rejected are hypotheses).
+  - The markers by which the distribution choice, the child-directed and AI declarations and the testkit run show as done.
 
 submission:
   method: console
@@ -75,6 +81,68 @@ submission:
     basis: hypothesis
 
   flow:
+    - id: create.open
+      phase: create_game
+      class: reversible
+      action: click
+      target: [{role: button, name: "Add new game"}]
+      names: [Add new game, New game]
+      basis: hypothesis
+    - id: create.name
+      phase: create_game
+      class: reversible
+      action: fill
+      value: identity.title
+      target: [{label: "Game name"}]
+      names: [Game name, Title]
+      expect: {value_equals: identity.title}
+      basis: hypothesis
+    - id: create.confirm
+      phase: create_game
+      class: reversible
+      action: click
+      target: [{role: button, name: "Create"}]
+      names: [Create]
+      basis: hypothesis
+    - id: upload.zip
+      phase: upload_build
+      class: reversible
+      action: upload
+      value: package.file
+      target: [{label: "Game file"}]
+      basis: hypothesis
+    - id: field.description
+      phase: fill_metadata
+      class: reversible
+      action: fill
+      value: listing.text.en.description
+      target: [{label: "Description"}]
+      names: [Description]
+      expect: {value_equals: listing.text.en.description}
+      basis: hypothesis
+    - id: media.icon
+      phase: upload_media
+      class: reversible
+      action: upload
+      value: listing.media.icon
+      target: [{label: "Icon"}]
+      names: [Icon]
+      basis: hypothesis
+    - id: media.cover
+      phase: upload_media
+      class: reversible
+      action: upload
+      value: listing.media.cover
+      target: [{label: "Cover"}]
+      names: [Cover]
+      basis: hypothesis
+    - id: draft.save
+      phase: save_draft
+      class: reversible
+      action: click
+      target: [{role: button, name: "Save"}]
+      names: [Save]
+      basis: hypothesis
     - id: declare.distribution
       phase: human_fields
       class: human
@@ -110,7 +178,12 @@ submission:
       source: https://partners.gamepix.com/guidelines/submission
 
   status:
-    states: []
+    # Hypotheses (unknowns): no public page shows the dashboard's words.
+    states: [Draft, In review, Published, Rejected]
+    submitted_states: [In review]
+    live_states: [Published]
+    rejected_states: [Rejected]
+    pending_states: [In review]
 
   constraints:
     upload_max_mb: null

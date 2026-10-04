@@ -82,7 +82,18 @@ checkout: the bundle is served read-only, Playwright is resolved from the checko
    read, never acted through; the oracle plays well - on a landscape and a portrait viewport
    (the design's orientation first), and takes the scenes `core/reference/store-listing.yaml`
    names: the title screen, play early, play after several inputs, play late, the result
-   screen. A separate context records `trailer.seconds` of play as video; Playwright's
+   screen. When the probe declares the optional showcase (`play.showcase`, "the play probe
+   showcase" in `docs/template-contract.md`), the script then asks it, after play and its
+   result screen, to stage up to `showcase_max` (6) of its targets, one by one, as the
+   playability bot does: `show(id)` within 6 s, the probe reporting `playing`, the screen
+   settled about 1 s, then a frame `showcase-<asset>` with its probe state; each visit is
+   recorded in `capture.json` (`showcase.visits`: staged, refused, timeout, error, skipped once
+   the 30 s window is spent). These are real states of the shipped build that the first
+   seconds of level 1 never reach (a later level, a boss), so selection takes them as
+   candidates, ranked after `play-mid`/`play-late` and before `play-early`, under exactly the
+   same readability and distinctness bars. A game without a showcase is captured as before;
+   the recording is of play only, and the copy never reads the showcase. A separate context
+   records `trailer.seconds` of play as video; Playwright's
    bundled ffmpeg (found through its registry, else under the browsers path) cuts it to play
    and, when it has an H.264 encoder, derives an mp4 - else the listing says `untrimmed` or
    `webm only`.

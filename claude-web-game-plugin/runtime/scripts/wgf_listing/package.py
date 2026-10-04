@@ -1,6 +1,7 @@
 """Laying the canonical package out, and rendering each platform's listing from it.
 
-    select_screenshots()   which captured frames are screenshots: play first, the title last;
+    select_screenshots()   which captured frames are screenshots: play first, then the
+                           states the probe's showcase staged, the title last;
                            nothing in an excluded probe state, nothing below the readability
                            floors, nothing indistinguishable from an earlier one
     canonical_icons()      the smaller icon masters from the 1024 one (pure Python)
@@ -24,10 +25,21 @@ from . import imaging, media
 from .copywriter import fit_list, fit_text
 
 __all__ = ["select_screenshots", "canonical_icons", "render_platform", "file_record",
-           "relative_to", "write_json", "SCENE_ORDER"]
+           "relative_to", "write_json", "SCENE_ORDER", "SHOWCASE_PREFIX"]
 
-# Play frames lead; the result screen shows the stakes; the title screen comes last.
-SCENE_ORDER = ("play-mid", "play-late", "play-early", "result", "title")
+# Play frames lead; the result screen shows the stakes; the title screen comes last. The
+# states the probe's optional showcase stages (`showcase-<asset>`: a later level, a boss of
+# the shipped build) are real play the first seconds of level 1 never reach, so they rank
+# after the play the player acted in (play-mid, play-late) and before play just begun, which
+# is the frame most like the others: being compared after them, the early frame is the one
+# dropped as indistinct, not a showcase. Every one meets the same bars as any other frame.
+SHOWCASE_PREFIX = "showcase-"
+SCENE_ORDER = ("play-mid", "play-late", "showcase", "play-early", "result", "title")
+
+
+def _scene_rank(scene, order):
+    scene = scene or ""
+    return order.get("showcase" if scene.startswith(SHOWCASE_PREFIX) else scene, 99)
 
 
 def relative_to(path, run_dir):
@@ -66,7 +78,7 @@ def select_screenshots(shots, reference, *, maximum=None):
     excluded_states = set(capture.get("excluded_states") or ())
     maximum = maximum or ((reference or {}).get("renditions") or {}).get("screenshots", {}).get("max")
     order = {scene: index for index, scene in enumerate(SCENE_ORDER)}
-    ordered = sorted(shots, key=lambda s: (order.get(s.get("scene"), 99), s.get("viewport") or ""))
+    ordered = sorted(shots, key=lambda s: (_scene_rank(s.get("scene"), order), s.get("viewport") or ""))
     chosen, dropped = [], []
     for shot in ordered:
         if not os.path.isfile(shot.get("file") or ""):

@@ -1,0 +1,230 @@
+{
+  "title_id": "mock-title",
+  "build": {
+    "commit": "0000000000000000000000000000000000000000",
+    "development_commit": "0000000000000000000000000000000000000000",
+    "digest": null
+  },
+  "quality_tier": "mvp",
+  "benchmark": {
+    "floor": {
+      "path": "core/reference/quality-floor.yaml",
+      "version": "0.0.0",
+      "sha256": "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+    },
+    "quality_benchmark": {
+      "path": "core/reference/quality-benchmark.yaml",
+      "version": "0.0.0",
+      "sha256": "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+    },
+    "visual_qa_rubric": {
+      "path": "core/reference/visual-qa-rubric.yaml",
+      "version": "0.0.0",
+      "sha256": "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+    },
+    "pinned": false
+  },
+  "contract": {
+    "universal": 0,
+    "family": null,
+    "genre": null,
+    "resolved_by": "none",
+    "via_node": null,
+    "render": null,
+    "criteria": 0
+  },
+  "evidence": [],
+  "dimensions": [
+    {
+      "id": "gameplay",
+      "label": "gameplay",
+      "score": null,
+      "min_score": null,
+      "preferred": null,
+      "status": "UNMEASURED",
+      "regression": false,
+      "blockers_failed": [],
+      "open_findings": [],
+      "criteria": [],
+      "owner": "gameplay",
+      "reason": "Mock scorecard: no report was read."
+    },
+    {
+      "id": "content",
+      "label": "content",
+      "score": null,
+      "min_score": null,
+      "preferred": null,
+      "status": "UNMEASURED",
+      "regression": false,
+      "blockers_failed": [],
+      "open_findings": [],
+      "criteria": [],
+      "owner": "level-design",
+      "reason": "Mock scorecard: no report was read."
+    },
+    {
+      "id": "variety",
+      "label": "variety",
+      "score": null,
+      "min_score": null,
+      "preferred": null,
+      "status": "UNMEASURED",
+      "regression": false,
+      "blockers_failed": [],
+      "open_findings": [],
+      "criteria": [],
+      "owner": "level-design",
+      "reason": "Mock scorecard: no report was read."
+    },
+    {
+      "id": "progression",
+      "label": "progression",
+      "score": null,
+      "min_score": null,
+      "preferred": null,
+      "status": "UNMEASURED",
+      "regression": false,
+      "blockers_failed": [],
+      "open_findings": [],
+      "criteria": [],
+      "owner": "game-design",
+      "reason": "Mock scorecard: no report was read."
+    },
+    {
+      "id": "visual",
+      "label": "visual",
+      "score": null,
+      "min_score": null,
+      "preferred": null,
+      "status": "UNMEASURED",
+      "regression": false,
+      "blockers_failed": [],
+      "open_findings": [],
+      "criteria": [],
+      "owner": "art",
+      "reason": "Mock scorecard: no report was read."
+    },
+    {
+      "id": "ui",
+      "label": "ui",
+      "score": null,
+      "min_score": null,
+      "preferred": null,
+      "status": "UNMEASURED",
+      "regression": false,
+      "blockers_failed": [],
+      "open_findings": [],
+      "criteria": [],
+      "owner": "ui",
+      "reason": "Mock scorecard: no report was read."
+    },
+    {
+      "id": "audio",
+      "label": "audio",
+      "score": null,
+      "min_score": null,
+      "preferred": null,
+      "status": "UNMEASURED",
+      "regression": false,
+      "blockers_failed": [],
+      "open_findings": [],
+      "criteria": [],
+      "owner": "audio",
+      "reason": "Mock scorecard: no report was read."
+    },
+    {
+      "id": "consistency",
+      "label": "consistency",
+      "score": null,
+      "min_score": null,
+      "preferred": null,
+      "status": "UNMEASURED",
+      "regression": false,
+      "blockers_failed": [],
+      "open_findings": [],
+      "criteria": [],
+      "owner": "art",
+      "reason": "Mock scorecard: no report was read."
+    },
+    {
+      "id": "polish",
+      "label": "polish",
+      "score": null,
+      "min_score": null,
+      "preferred": null,
+      "status": "UNMEASURED",
+      "regression": false,
+      "blockers_failed": [],
+      "open_findings": [],
+      "criteria": [],
+      "owner": "gameplay",
+      "reason": "Mock scorecard: no report was read."
+    },
+    {
+      "id": "technical",
+      "label": "technical",
+      "score": null,
+      "min_score": null,
+      "preferred": null,
+      "status": "UNMEASURED",
+      "regression": false,
+      "blockers_failed": [],
+      "open_findings": [],
+      "criteria": [],
+      "owner": "engineering",
+      "reason": "Mock scorecard: no report was read."
+    },
+    {
+      "id": "platform",
+      "label": "platform",
+      "score": null,
+      "min_score": null,
+      "preferred": null,
+      "status": "UNMEASURED",
+      "regression": false,
+      "blockers_failed": [],
+      "open_findings": [],
+      "criteria": [],
+      "owner": "engineering",
+      "reason": "Mock scorecard: no report was read."
+    },
+    {
+      "id": "store",
+      "label": "store",
+      "score": null,
+      "min_score": null,
+      "preferred": null,
+      "status": "DEFERRED",
+      "regression": false,
+      "blockers_failed": [],
+      "open_findings": [],
+      "criteria": [],
+      "owner": "release",
+      "reason": "Mock scorecard: no report was read."
+    }
+  ],
+  "criteria": [],
+  "findings": [],
+  "regression": {
+    "benchmark_version": "0.0.0",
+    "below_floor": [],
+    "previous": null,
+    "dropped": [],
+    "regressed_criteria": []
+  },
+  "overall_score": null,
+  "release_decision": {
+    "decision": "development",
+    "reasons": [
+      "Mock scorecard: nothing was scored, so nothing is a release."
+    ]
+  },
+  "failed": [],
+  "routes": [],
+  "deferred": [
+    "store"
+  ],
+  "blocked_reason": null,
+  "verdict": "PASS"
+}

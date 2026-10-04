@@ -359,6 +359,7 @@ def review_report(prototype, sdk=None, verdict="approve", reviewed_commit=None):
 def step(**params):
     # These tests predate the store listing; the ones about it set this themselves.
     params.setdefault("required_listing", False)
+    params.setdefault("required_quality", False)
     definition = StepDefinition({
         "id": "release", "type": "release",
         "inputs": ["qa-report", "verification-report", "sdk-report", "prototype-report",
@@ -378,6 +379,7 @@ class ReleaseCase(unittest.TestCase):
         params.setdefault("repo_dir", self.game.root)
         # These tests predate the store listing; the ones about it set this themselves.
         params.setdefault("required_listing", False)
+        params.setdefault("required_quality", False)
         instance = step(**{k: v for k, v in params.items() if v is not None})
         instance.environ = self.game.environ(flags)
         instance.clock = staticmethod(lambda: NOW)
@@ -472,7 +474,11 @@ class Drafting(ReleaseCase):
         self.assertIn("exited", context.events)
 
     def test_evidence_is_carried_never_upgraded(self):
-        manifest = self.release().artifacts[0].content
+        result = self.release()
+        manifest = result.artifacts[0].content
+        # The release decision states the class: PASS_MOCK is never read as PASS (MV-4).
+        self.assertIn("evidence PASS_MOCK (observed only against stand-ins", result.message)
+        self.assertIn("not a PASS", result.message)
         evidence = manifest["evidence"]
         self.assertEqual(evidence["status"], "PASS_MOCK")
         self.assertEqual({p["platform_id"]: (p["evidence_status"], p["portal_status"])
@@ -647,6 +653,7 @@ class ThroughTheEngine(ReleaseCase):
                         repo_dir: %s
                         required_gates: []    # this workflow has no G4 checkpoint
                         required_listing: false   # nor the store-listing steps
+                        required_quality: false   # nor the quality gate
                       next: $end
                 """ % json.dumps(self.game.root)))
         return path

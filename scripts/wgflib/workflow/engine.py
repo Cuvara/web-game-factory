@@ -65,7 +65,7 @@ import secrets
 import time
 
 from .. import procs
-from . import integrity, quality
+from . import integrity, quality, references
 from ..hashing import CanonicalizationError, content_hash
 from .context import StepLogger, WorkflowContext
 from .contracts import check_lineage
@@ -194,8 +194,20 @@ class WorkflowEngine:
         self._require_implementations(scope_ids)
 
         now = self.clock()
+        run_id = self.run_id_factory(self.definition.id)
+        params = dict(params or {})
+        # The reference files this workflow's steps judge against, copied into the run and
+        # pinned by digest in its params: an edit made during the run applies to the next
+        # one (references.py; corroborated like every param).
+        try:
+            pinned = references.collect(self.definition.pinned_references)
+        except references.PinError as exc:
+            raise EngineError(str(exc))
+        if pinned:
+            params[references.PARAM] = {path: references.digest(data)
+                                        for path, data in pinned.items()}
         state = RunState(
-            run_id=self.run_id_factory(self.definition.id),
+            run_id=run_id,
             workflow_id=self.definition.id,
             workflow_version=self.definition.version,
             workflow_source=self.definition.source,
@@ -205,9 +217,11 @@ class WorkflowEngine:
             project_id=project_id,
             created_at=now,
             updated_at=now,
-            params=dict(params or {}),
+            params=params,
         )
         self.store.create(state)
+        if pinned:
+            references.pin(pinned, self.store.run_dir(run_id))
         # The params are recorded here as well as in state.json, so that resume can refuse a
         # state.json whose params were edited afterwards (integrity.params_problems).
         self._emit(state, Events.WORKFLOW_STARTED,

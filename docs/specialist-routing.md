@@ -65,6 +65,7 @@ No consumer branches on a game, an engine name or a family id.
 | listing-validation-report | each required FAIL check, by section (`metadata` and `grounding` to store-copy, `platforms` to platform, `screenshots`, `video` and `assets` to art-2d) | listing |
 | a G4 decision | each typed finding a person gave (`from_requests`), or else the note, as one generalist finding | the owner's, or `design` / `assets` when the person asks for it |
 | quality-scorecard (WS-7) | its findings as they are, with owner and route recomputed from the routing data | the owner's, or `design` |
+| quality-report (WS-7, the `quality-gate` step) | each open finding in a dimension the report held below its floor, its quality dimension mapped onto a routing dimension (`producers.quality-report.dimensions`), with observed value, expected threshold and asset ids | the owner's; `design` for a `design-gap` finding, `assets` for an `assets` one |
 
 A finding id is `<producer>:<check>[@<viewport>]`, for example
 `visual-qa-report:score:environment` or `playability-report:content.variety@mobile`. It stays

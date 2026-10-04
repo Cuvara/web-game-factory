@@ -61,9 +61,9 @@ class ParsesValidDefinitions(unittest.TestCase):
             ["research", "strategy", "strategy-review", "design", "tech-plan",
              "tech-plan-review", "init", "greybox", "greybox-playability", "assets", "triage", "develop",
              "playability", "production-quality", "visual-qa", "content-sufficiency", "review", "sdk",
-             "sdk-review", "verify", "prototype-review", "store-listing", "listing-validation",
-             "release", "listing-triage", "platform-validate", "release-review", "publish-review",
-             "submit"],
+             "sdk-review", "verify", "quality-gate", "prototype-review", "store-listing",
+             "listing-validation", "release", "listing-triage", "platform-validate", "release-review",
+             "publish-review", "submit"],
         )
         # The store listing is made after G4 passes and before release ships it; a failed
         # validation goes back to the listing step through listing-triage (its findings, the
@@ -124,7 +124,7 @@ class ParsesValidDefinitions(unittest.TestCase):
         self.assertEqual(g4.on, {"iterate": "triage", "kill": "$end"})
         self.assertEqual(g4.inputs, ["qa-report", "verification-report", "prototype-report",
                                      "title-strategy", "game-design", "playability-report",
-                                     "review-report"])
+                                     "review-report", "quality-report"])
         self.assertEqual(definition.step("design").on, {"descope": "$fail"})
         self.assertEqual(definition.resolve_scope("plan"),
                          ["strategy", "strategy-review", "design", "tech-plan",
@@ -308,7 +308,12 @@ class RouteScopedVisitLimits(unittest.TestCase):
                          {"playability.fail": 2, "production-quality.develop": 2,
                           "visual-qa.develop": 2, "content-sufficiency.develop": 2,
                           "content-sufficiency.design-gap": 1, "review.request-changes": 2,
-                          "sdk-review.request-changes": 2, "verify.fail": 2, "iterate": 2})
+                          "sdk-review.request-changes": 2, "verify.fail": 2, "iterate": 2,
+                          "quality-gate.develop": 2, "quality-gate.assets": 2,
+                          "quality-gate.design-gap": 1})
+        # The quality gate goes through triage like every gate (workflow 11).
+        self.assertEqual(definition.step("quality-gate").on,
+                         {"develop": "triage", "assets": "triage", "design-gap": "triage"})
         # What triage routes on to develop is bounded per specialist.
         self.assertEqual(develop.max_visits_by_route["triage.gameplay"], 16)
         self.assertEqual({k for k, v in develop.max_visits_by_route.items() if v == 4},
@@ -340,8 +345,8 @@ class RouteScopedVisitLimits(unittest.TestCase):
         self.assertEqual(greybox.max_visits, 1 + sum(greybox.max_visits_by_route.values())
                          + sum(design.max_visits_by_route.values()))
         for step_id in ("playability", "production-quality", "visual-qa", "content-sufficiency", "review", "sdk",
-                        "sdk-review", "verify", "prototype-review", "store-listing",
-                        "listing-validation"):
+                        "sdk-review", "verify", "quality-gate", "prototype-review",
+                        "store-listing", "listing-validation"):
             self.assertGreaterEqual(definition.step(step_id).max_visits, develop.max_visits,
                                     step_id)
 

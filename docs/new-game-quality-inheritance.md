@@ -7,7 +7,7 @@ what it could skip before WS-12, and how that was closed. Paths are `file:line` 
 commit.
 
 The rules are data: [core/reference/quality-policy.yaml](../core/reference/quality-policy.yaml)
-(1.0.0). The engine applies them without naming a step
+(1.1.0; 1.1.0 added rule 5, `skipped_checks`, below). The engine applies them without naming a step
 ([scripts/wgflib/workflow/quality.py](../scripts/wgflib/workflow/quality.py), called from
 `engine.py`); the test file is
 [scripts/tests/test_quality_inheritance.py](../scripts/tests/test_quality_inheritance.py).
@@ -52,10 +52,12 @@ The rules are data: [core/reference/quality-policy.yaml](../core/reference/quali
    timeout, and not answered by automation: it waits for a person, as G4 does, and `wgf
    status` says why (`Held:`; `pending.held_for_person`, with no timeout eligibility).
 
-`content-sufficiency` (WS-4) is in the workflow and enforced like every required step.
-`quality-gate` (WS-7) is listed as required and `pending`: the floor enforces it from the
-first definition that adds a step with that id, with nothing else to change. Until then
-`wgf status` lists it as not yet enforced.
+`content-sufficiency` (WS-4) and `quality-gate` (WS-7, workflow 10,
+[quality-gate-module.md](quality-gate-module.md)) are in the workflow and enforced like every
+required step (quality-policy 1.2.0: nothing is `pending`). A required step a later
+workstream declares before its workflow has it is listed `pending`: the floor enforces it
+from the first definition that adds a step with that id, and until then `wgf status` lists
+it as not yet enforced.
 
 ## Entry points
 
@@ -99,15 +101,37 @@ release without it. Every BYPASS below is closed; the test that proves it is nam
 | review, sdk-review | `review` steps | required; `reviewer.kind: none` passes the step as `skipped`, and release refuses it unless `release.allow_unreviewed`, which makes the run development |
 | regression checks | `verify` | required, current at G4 and release |
 | WS-8 specialist iteration (coming) | `develop` with `with: specialist` | routes into `develop`; every check after `develop` becomes stale and runs again |
-| WS-7 final quality gate (coming) | `quality-gate` | declared required and pending |
+| WS-7 final quality gate | `quality-gate` | required, current at G4 and release; `release` also checks its quality-report passed the build it ships and pins the newest reports of it (`wgf_release/lineage.py`) |
 
 ## Residual risks (not closed here)
 
-- **A check whose result is weaker than its name.** develop counts a skipped check (a missing
-  `package.json` script, no browser for smoke) as green (`wgf_develop/checks.py`); verify
-  carries PASS_MOCK evidence into a release-manifest; playability makes a check non-required
-  when the probe reports no entity kinds. These are module rules, not entry points: the
-  workstream that owns the module (WS-4 for the probe) should decide each.
+- **A check whose result is weaker than its name** - closed for develop and playability by
+  policy rule 5 (`skipped_checks`, quality-policy 1.1.0, read by
+  `scripts/wgflib/check_strength.py`; tests in `scripts/tests/test_check_strength.py`,
+  `test_develop_module.py`, `test_playability.py`):
+  - *develop* (`wgf_develop/checks.py`) used to count a skipped check - a script the
+    `package.json` lacks, no browser for the smoke suite - as green. At a tier whose class is
+    under `skipped_checks.not_passed_at` (`release`, the run's `params.quality.tier`, else the
+    tier the brief was built for) the skip stays `skipped` in `checks.json` but is `required`
+    and `blocking`: the build is not green, nothing is committed, and the next attempt's
+    brief carries a finding naming the missing script or tool. At `mvp` (or an unknown tier)
+    the skip does not hold the build up but is stated - the step's message says "SKIPPED, not
+    measured" with the tier, and the prototype-report's session notes list it. A failure is
+    never turned into a skip; only a skip is ever made weaker than a pass.
+  - *playability* (`wgf_playability/analysis.py`) left `content.variety` a WARNING when the
+    probe reported no `entities[].kind`. The play-probe schema requires `kind` of every
+    content-role entity while a content unit is in play (WS-4), so on the same basis, at the
+    release tier, a probe that reports no kind while a unit is in play fails `content.variety`
+    (required, route `develop`). Below it the check stays the unmeasured WARNING with its
+    reason.
+  - An exception is data, not code: a `skipped_checks.optional` entry (step, check, tiers,
+    platforms, why) declares a check optional; none is shipped.
+  - *verify's PASS_MOCK* is kept and carried, not blocked: no real-device evidence is
+    available here, and the MV-4 `measurement_class` rule forbids reading a weaker class as a
+    stronger one, not shipping on it. The release-manifest carries it per platform as before,
+    and the release step's message now states it ("evidence PASS_MOCK (observed only against
+    stand-ins ...: not a PASS)"); G4/G6 read the same class from the qa-report and
+    verification-report.
 - **`factory.listing.platforms`** validates a subset of the scaffold's platforms; it is a
   person's platform choice, so it is not a downgrade condition, and release does not
   cross-check it (WS-9).

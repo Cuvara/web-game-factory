@@ -68,6 +68,9 @@ submission:
     issued_on_create:
       - {key: external_game_id, read: [{label: "Game ID"}]}
       - {key: app_id, read: [{label: "App ID"}]}
+    # Where each issued id reaches the build: the sdk step writes the registry's ids into
+    # this platform's entry in game.config.yaml, and the build is made again.
+    build_config: {external_game_id: "platforms[].game_id", app_id: "platforms[].app_id"}
     title_match: exact-casefold
     basis: hypothesis
 

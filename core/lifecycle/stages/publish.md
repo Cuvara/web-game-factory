@@ -37,6 +37,18 @@ required. It is a policy change, so it is recorded.
   it with `wgf decide <run> done --note <portal reference>`. The idempotency key is looked up
   before any upload; the submit is attempted once; the portal's own status, read back, is the
   only thing that advances the record. See docs/publish-module.md.
+- Every packaged platform is handled on its own: one record each, one portal at a time, and
+  a wait, a failure or a pending review on one never changes another's. The G6 decision pins
+  the release-manifest, the store listing and its validation; any of them changed after G6
+  and nothing is uploaded until G6 is decided again. The package must be the one verified
+  for that platform.
+- Upload and request are separate acts. A live visit uploads the build and saves the draft,
+  then waits; a person answers `submit` (the review is requested once), `hold` (the draft
+  stays) or `abandon`. A passing QA is never permission to publish.
+- A portal that issues the build's ids only when the game is created (its publication
+  profile's `identity.issued_on_create`) is created first: the ids are recorded in the
+  portal registry, written into the build, and the build is made, verified, released and
+  authorized again before anything is uploaded there.
 - A login, a CAPTCHA, a second factor, unconfirmed terms or a missing session stop the step
   for a person. Nothing is bypassed.
 

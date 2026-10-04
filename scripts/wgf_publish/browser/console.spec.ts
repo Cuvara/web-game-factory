@@ -81,7 +81,8 @@ type Flow = {
   identity: { list_url?: string; game_url?: string; row?: Ladder; row_title?: Ladder;
               row_id?: { attr?: string; within?: Ladder }; page_id?: Ladder;
               issued_on_create: { key: string; read: Ladder; attr?: string }[];
-              candidates: Candidate[]; build_ids: Record<string, string>; title: string | null };
+              candidates: Candidate[]; build_ids: Record<string, string>; title: string | null;
+              pending_ids?: string[] };
   status: { read?: Ladder; error?: Ladder; states: string[]; submitted_states: string[];
             pending_states: string[]; live_states: string[]; approved_states: string[];
             rejected_states: string[] };
@@ -864,6 +865,12 @@ async function phaseUpload() {
   if (flow.submit_confirmed) return skipped("upload_build", "a submit-confirmation visit uploads nothing");
   if (!flow.changes_allowed) {
     return stopVisit("upload_build", "dry-run", "dry run: the visit stops before the upload");
+  }
+  const pending = flow.identity.pending_ids || [];
+  if (pending.length && !result.created) {
+    // A game found here whose issued ids nobody recorded: the build cannot carry them yet.
+    return stopVisit("upload_build", "ambiguous-portal-state",
+                     `the game was found but the ${pending.join(", ")} the portal issued are not recorded: a person records them, the build is made again`);
   }
   if (!intentsOf("upload_build").length) {
     return stopVisit("upload_build", "manual-upload", "the profile has no upload_build intents: a person uploads the build");

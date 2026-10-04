@@ -41,6 +41,7 @@ import re
 
 from wgflib import redact
 
+from .. import identity as ids
 from .. import outcomes
 from ..browser import BrowserExecutor
 from ..evidence import Evidence, file_sha256, relative_to_run
@@ -311,7 +312,15 @@ class ConsoleAdapter(PublicationAdapter):
         candidates = [{"source": s, "id": str(sources[s])}
                       for s in identity.get("portal_id_from") or [] if sources.get(s)]
         headless, test_human = self.browser_mode(job)
-        confirmed = bool(job.submit and getattr(job, "submit_confirmed", False))
+        # live: the build may be uploaded and the draft saved (job.live; a Job without it
+        # says so through submit). track: read the status, change nothing.
+        live = bool(getattr(job, "live", job.submit))
+        track = bool(getattr(job, "track", False))
+        confirmed = bool(live and job.submit and getattr(job, "submit_confirmed", False)
+                         and not track)
+        # An id the step says the portal has not issued yet is not the build's, whatever the
+        # config holds: the visit creates (or finds) the game and stops IDS_ISSUED.
+        pending_ids = set(getattr(job, "required_ids", None) or [])
         uploads = [f for i in intents if i.get("phase") == "upload_build" for f in i.get("files") or []]
         return {
             "portal": self.platform_id,
@@ -325,19 +334,21 @@ class ConsoleAdapter(PublicationAdapter):
             "test_human": test_human.replace(os.sep, "/") if (headless and test_human) else None,
             "login_timeout_ms": int(self.login_timeout_s(job) * 1000),
             "poll_ms": int(self.settings.get("poll_ms") or 1000),
-            "mode": "live" if job.submit else "dry-run",
-            "changes_allowed": bool(job.submit or self.dry_run_uploads),
+            "mode": "live" if live and not track else "dry-run",
+            "changes_allowed": bool((live or self.dry_run_uploads) and not track),
             "submit_confirmed": confirmed,
-            "allow_create": bool(getattr(job, "allow_create", True)),
+            "allow_create": bool(getattr(job, "allow_create", True)) and not track,
             "session": {k: session[k] for k in ("logged_in", "login", "captcha", "two_factor",
                                                 "anti_bot", "authenticated_url") if session.get(k)},
             "identity": {**{k: identity[k] for k in ("list_url", "game_url", "row", "row_title",
                                                      "row_id", "page_id") if identity.get(k)},
-                         "issued_on_create": list(identity.get("issued_on_create") or []),
+                         "issued_on_create": [dict(e, read=e.get("read") or []) for e in
+                                              ids.issued_entries({"submission": self.submission})],
+                         "pending_ids": sorted(pending_ids),
                          "candidates": candidates,
                          "build_ids": {k: str(v) for k, v in (
                              ("external_game_id", ident["config_game_id"]),
-                             ("app_id", ident["config_app_id"])) if v},
+                             ("app_id", ident["config_app_id"])) if v and k not in pending_ids},
                          "title": ident["title"]},
             "status": {"read": status.get("read"), "error": status.get("error"),
                        **{k: [str(w) for w in status.get(k) or []] for k in (
@@ -567,7 +578,7 @@ class ConsoleAdapter(PublicationAdapter):
         pending_text = "; ".join(f"{h.get('id')} ({h.get('note') or 'a person does it'}"
                                  + (f", {h['url']}" if h.get("url") else "") + ")"
                                  for h in pending)
-        if not job.submit:
+        if flow["mode"] != "live":
             return Publication(outcomes.DRY_RUN,
                                f"{pid}: dry run: game {game_id or '(none)'} "
                                f"{'found' if common['found_existing'] else 'prepared'}, build "

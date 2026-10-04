@@ -70,12 +70,17 @@ class StepInputs:
     content. `missing` lists the declared types the run does not hold yet - whether that is
     fatal is the step's call, because a step run on its own (`wgf verify`) may legitimately
     have nothing upstream of it.
+
+    `every(type)` is the newest ArtifactRef of each artifact id of that type, oldest first
+    (a type kept per platform has one id per platform); `load_ref(ref)` reads one of them.
+    Every one was checked against its contract like `refs`.
     """
 
-    def __init__(self, refs, loader, missing):
+    def __init__(self, refs, loader, missing, every=None):
         self.refs = dict(refs)
         self.missing = list(missing)
         self._loader = loader
+        self._every = {t: list(found) for t, found in (every or {}).items()}
 
     def __contains__(self, artifact_type):
         return artifact_type in self.refs
@@ -83,6 +88,16 @@ class StepInputs:
     def load(self, artifact_type):
         ref = self.refs.get(artifact_type)
         return None if ref is None else self._loader(ref)
+
+    def every(self, artifact_type):
+        found = self._every.get(artifact_type)
+        if found is None:
+            ref = self.refs.get(artifact_type)
+            return [ref] if ref is not None else []
+        return list(found)
+
+    def load_ref(self, ref):
+        return self._loader(ref)
 
 
 class StepRegistry:

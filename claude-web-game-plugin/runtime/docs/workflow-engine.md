@@ -181,6 +181,11 @@ class WorkflowStep:
 `inputs.load(type)` reads it (and refuses it if the file changed since it was recorded);
 `inputs.missing` lists declared types the run does not have. Whether a missing input is fatal
 is the step's decision — `wgf verify` run on its own legitimately has nothing upstream.
+`inputs.every(type)` is the newest `ArtifactRef` of each artifact id of that type, oldest
+first, and `inputs.load_ref(ref)` reads one: a type kept per platform
+(`platform-publication-<platform>`) has one id per platform, and a step that acts on every
+platform reads each one's own newest record. Every one is checked against its contract
+before the step runs, like `refs`; lineage still pins the newest of the type.
 
 A step returns a `StepResult`:
 
@@ -438,6 +443,13 @@ it) and a cancelled one. Like `--from`, it is an explicit fresh start of that sl
 step gets a fresh `max_visits` budget and every route limit a fresh budget too (a plain
 resume refills only the route that stopped the run). The developer-session budget is never
 refilled by either.
+
+`wgf publish --run <run-id> --platform <id>` (repeatable) and `--track` are the publish
+step's, for this command only: the CLI sets `WGF_PUBLISH_PLATFORMS` / `WGF_PUBLISH_TRACK=1`
+in its own process, which the step reads; a later `decide` or `resume` carries neither.
+`--track` narrows the slice to its publish step and re-runs it even when it completed (a
+read-only visit), so it needs `--run` and refuses `--force`; `--platform` needs `--run` or
+`--resume`.
 
 A run keeps the settings it was started with. So `--mock`, `--mock-plan`, `--hold-gates`,
 `--project` and an `IDEA` with `--resume` or `--run`, `--from` with `--run` (it runs the command's own
@@ -818,9 +830,10 @@ cancelled (or a slice that left its scope on a failure), `2` usage, `3` waiting 
 `wgf release` prepares a release — a `release-manifest` in state `draft` — and stops, and so
 does `wgf new-game`. Publication is the workflow's `publish` group, continued in the run that
 drafted the release: `wgf publish --run <run-id>` runs platform validation and stops at G5
-and then G6, each decided by a person; the portal submission follows only a G6 `publish`, and
-is a dry run unless the installation sets `factory.publish.mode: live` and
-`WGF_PUBLISH_LIVE=1` ([publish-module.md](publish-module.md)). The Claude plugin's surface
+and then G6, each decided by a person; the portal upload follows only a G6 `publish`, is a dry
+run unless the installation sets `factory.publish.mode: live` and `WGF_PUBLISH_LIVE=1`, and
+the review request waits for a person's `wgf decide <run-id> submit` per platform
+([publish-module.md](publish-module.md)). The Claude plugin's surface
 for it is `/web-game-factory:new-game publish <run-id>`.
 
 ### `wgf new-game`

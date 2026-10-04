@@ -116,6 +116,21 @@ SCENARIOS = {
                    created_ids={"external_game_id": "g0003", "app_id": "app-4004"},
                    stop={"phase": "create_game", "code": "ids-issued", "reason": "ids issued"}),
 }
+# A visit a person confirmed (`submit`): the game the upload visit made is found, review is
+# requested once, and the status is read back.
+_CONFIRMED = dict(created=False, game_id=None, uploaded=False, saved=False,
+                  request_attempted=True, requested=True,
+                  found_game={"id": "g0007", "title": "Fixture Game", "status_text": "Draft",
+                              "source": "registry"})
+SCENARIOS.update({
+    "submitted": _result(status_text="Waiting for moderation", **_CONFIRMED),
+    "ambiguous": _result(status_text="Processing", **_CONFIRMED),
+    "rejected": _result(status_text="Rejected", **_CONFIRMED),
+})
+
+
+SUBMIT_DECISION = {"decision": "submit", "decided_by": "human", "note": "looked at the draft",
+                   "decided_at": "2026-10-04T10:00:00Z"}
 
 
 class FakeConsole:
@@ -143,6 +158,53 @@ class FakeConsole:
         return ProcessResult(argv, returncode=0, stdout="1 passed")
 
 
+class PublishInputs(Inputs):
+    """Inputs with one platform-publication per platform (StepInputs.every)."""
+
+    def __init__(self, artifacts, publications=None):
+        super().__init__(artifacts)
+        from wgflib.workflow.model import ArtifactRef
+        records = list(publications or [artifacts["platform-publication"]])
+        self.records = {}
+        self._every = []
+        for n, record in enumerate(records):
+            ref = ArtifactRef(id=f"platform-publication-{record['platform_id']}",
+                              type="platform-publication", version=1,
+                              location=f"artifacts/p{n}.json", checksum="sha256:" + "0" * 64,
+                              content_hash=record["provenance"]["content_hash"], seq=n)
+            self.records[ref.id] = record
+            self._every.append(ref)
+
+    def every(self, artifact_type):
+        if artifact_type == "platform-publication":
+            return list(self._every)
+        return [self.refs[artifact_type]] if artifact_type in self.refs else []
+
+    def load_ref(self, ref):
+        if ref.type == "platform-publication":
+            return self.records[ref.id]
+        return self.contents.get(ref.type)
+
+
+def listing_placeholders():
+    """The store-listing and listing-validation-report a --mock run carries."""
+    from wgflib import provenance
+    from wgflib.workflow.mock import DEFAULT_EPOCH, FIXTURES, FIXTURE_SLUG
+    out = {}
+    for n, artifact_type in enumerate(("store-listing", "listing-validation-report"), 1):
+        with open(os.path.join(FIXTURES, f"{artifact_type}.json"), encoding="utf-8") as handle:
+            body = json.loads(handle.read().replace(FIXTURE_SLUG, "fixture-game"))
+        artifact = {"provenance": provenance.build(
+            artifact_type,
+            artifact_id=provenance.artifact_id(artifact_type, "fixture-game", DEFAULT_EPOCH, n),
+            produced_by=provenance.producer("release"), produced_at=DEFAULT_EPOCH,
+            inputs=[], title_id="fixture-game")}
+        artifact.update(body)
+        provenance.seal(artifact)
+        out[artifact_type] = artifact
+    return out
+
+
 class PublishCase(unittest.TestCase):
     """A drafted release in a fixture game repository, and the inputs the publish steps read."""
 
@@ -162,6 +224,12 @@ class PublishCase(unittest.TestCase):
         self.run_dir = os.path.join(self.scratch, "run")
         os.makedirs(self.run_dir)
         self.environ = {k: v for k, v in self.game.environ(()).items()}
+        # The portal registry is written under the scratch directory, never the project's.
+        self.titles = os.path.join(self.scratch, "titles")
+        for cls in (PublishStep, PlatformValidateStep):
+            self.addCleanup(setattr, cls, "titles_dir", cls.__dict__.get("titles_dir"))
+            cls.titles_dir = self.titles
+        self.listing = listing_placeholders()
 
     # -- fixtures ---------------------------------------------------------------------------
 
@@ -252,34 +320,45 @@ class PublishCase(unittest.TestCase):
             self.assertEqual(CONTRACTS.problems("platform-publication", artifact.content), [])
         return result
 
-    def g6(self, manifest=None, mode="human", decision="approved", gate="G6"):
+    def g6(self, manifest=None, mode="human", decision="approved", gate="G6", listing=None,
+           validation=None):
         manifest = manifest or self.manifest
+        subject = [manifest, listing or self.listing["store-listing"],
+                   validation or self.listing["listing-validation-report"]]
         return seal("decision-record", {
             "gate_id": gate, "machine": "release", "transition": "approved -> validating",
-            "subject": [{"artifact_id": manifest["provenance"]["artifact_id"],
-                         "artifact_type": "release-manifest",
-                         "content_hash": manifest["provenance"]["content_hash"]}],
+            "subject": [{"artifact_id": a["provenance"]["artifact_id"],
+                         "artifact_type": a["provenance"]["artifact_type"],
+                         "content_hash": a["provenance"]["content_hash"]} for a in subject],
             "decision": decision,
             "decided_by": {"role": "portfolio-owner", "mode": mode, "identifier": "human"},
             "decided_at": NOW, "rationale": "fixture"}, schema_version="1.0.0")
 
     def publish(self, publication, *, console=None, config=None, params=None, g6=None,
-                decision=None, gates=("G4", "G5", "G6"), environ=None, manifest=None):
+                decision=None, gates=("G4", "G5", "G6"), environ=None, manifest=None,
+                publications=None, adapter=None, verification=None, listing=None,
+                visit=1):
         params = dict(params or {})
         params.setdefault("repo_dir", self.game.root)
         instance = PublishStep(StepDefinition(
             {"id": "submit", "type": "publish",
              "inputs": ["release-manifest", "platform-publication", "decision-record",
-                        "scaffold-record"], "outputs": ["platform-publication"],
+                        "scaffold-record", "verification-report", "store-listing",
+                        "listing-validation-report"], "outputs": ["platform-publication"],
              "with": params}, retry=None, max_visits=None))
         instance.environ = dict(self.environ, **(environ or {}))
         instance.run_process = console or FakeConsole()
+        if adapter is not None:
+            instance.adapter_factory = adapter
         artifacts = {"release-manifest": manifest or self.manifest,
                      "platform-publication": publication,
                      "decision-record": g6 or self.g6(),
-                     "scaffold-record": self.evidence["scaffold-record"]}
-        result = instance.execute(Inputs(artifacts),
-                                  self.context("submit", config, decision, gates))
+                     "scaffold-record": self.evidence["scaffold-record"],
+                     "verification-report": verification or self.evidence["verification-report"]}
+        artifacts.update(listing or self.listing)
+        context = self.context("submit", config, decision, gates)
+        context.visit = context.execution = visit
+        result = instance.execute(PublishInputs(artifacts, publications), context)
         for artifact in result.artifacts:
             self.assertEqual(CONTRACTS.problems("platform-publication", artifact.content), [],
                              json.dumps(artifact.content, indent=1)[:2000])
@@ -607,7 +686,7 @@ class Publish(PublishCase):
         other["changelog"] = ["another release"]
         other["provenance"]["content_hash"] = "sha256:" + "f" * 64
         result = self.go(g6=self.g6(manifest=other))
-        self.assertEqual(result.data["code"], "g6-manifest-mismatch")
+        self.assertEqual(result.data["code"], "g6-stale")
         result = self.go(g6=self.g6(gate="G5"))
         self.assertEqual(result.data["code"], "g6-record-missing")
 
@@ -629,6 +708,16 @@ class Publish(PublishCase):
                          self.manifest["provenance"]["content_hash"])
         self.assertIn("nothing submitted", result.message)
 
+    def submitted(self, scenario="submitted", first="fresh"):
+        """Live: upload (visit 1), then a person's submit (visit 2). (result, console)."""
+        config, env = self.live()
+        uploaded = self.go(console=FakeConsole(first), config=config, environ=env)
+        self.assertEqual(uploaded.artifacts[0].content["outcome"], "UPLOAD_COMPLETE",
+                         uploaded.message)
+        console = FakeConsole(scenario)
+        return self.publish(uploaded.artifacts[0].content, console=console, config=config,
+                            environ=env, decision=SUBMIT_DECISION), console
+
     def live(self):
         config = dict(self.config)
         config["publish"] = dict(config["publish"], mode="live")
@@ -644,14 +733,28 @@ class Publish(PublishCase):
         result = self.go(console=console, config=config, environ=env)
         self.assertEqual(result.outcome, StepOutcome.WAITING_FOR_HUMAN, result.error or result.message)
         self.assertEqual(result.data["waiting_state"], "WAITING_FOR_HUMAN_SUBMIT_CONFIRMATION")
-        self.assertEqual(result.data["choices"], ["submit", "hold", "abandon"])
+        self.assertEqual(result.data["choices"], ["submit", "hold", "abandon", "done"])
         self.assertEqual(console.flows[0]["mode"], "live")
         self.assertFalse(console.flows[0]["submit_confirmed"])  # the request is never automatic
         record = result.artifacts[0].content
         self.assertEqual((record["outcome"], record["state"]), ("UPLOAD_COMPLETE", "validated"))
         self.assertEqual(record["human_required"]["reason"], "submit-confirmation")
+        self.assertEqual(record["waiting"]["state"], "WAITING_FOR_HUMAN_SUBMIT_CONFIRMATION")
         self.assertEqual(record["submission"]["portal_draft_id"], "g0001")
         self.assertNotIn("submitted_at", record["submission"])
+        # A person answers submit: the review is requested once and read back.
+        console = FakeConsole("submitted")
+        result = self.publish(record, console=console, config=config, environ=env,
+                              decision=SUBMIT_DECISION)
+        self.assertEqual((result.outcome, result.route), (StepOutcome.SUCCESS, "submitted"),
+                         result.error or result.message)
+        self.assertEqual(console.flows[0]["mode"], "live")
+        self.assertTrue(console.flows[0]["submit_confirmed"])
+        record = result.artifacts[0].content
+        self.assertEqual((record["outcome"], record["state"]), ("SUBMITTED", "submitted"))
+        self.assertEqual(record["verified_state"]["observed"], "Waiting for moderation")
+        self.assertEqual(record["measurement_class"], "automation-console")
+        self.assertIn("submitted_at", record["submission"])
 
     def test_a_game_the_title_recorded_is_used_and_an_unrecorded_one_stops(self):
         config, env = self.live()
@@ -671,9 +774,17 @@ class Publish(PublishCase):
                          result.error or result.message)
         self.assertEqual(result.artifacts[0].content["outcome"], "IDS_ISSUED")
 
+    def test_an_existing_draft_with_the_key_is_reused_never_uploaded_again(self):
+        result, console = self.submitted("submitted", first="existing")
+        self.assertEqual(result.route, "submitted", result.error or result.message)
+        self.assertEqual(result.artifacts[0].content["submission"]["portal_draft_id"], "g0007")
+        candidates = console.flows[0]["identity"]["candidates"]
+        self.assertIn({"source": "idempotency-key", "id": result.artifacts[0].content[
+            "submission"]["idempotency_key"]}, candidates)
+
     def test_a_submitted_record_is_returned_as_it_is_without_contacting_the_portal(self):
         config, env = self.live()
-        first = self.go(decision={"decision": "done", "decided_by": "human", "note": "by hand"})
+        first, _ = self.submitted()
         submitted = first.artifacts[0].content
         console = FakeConsole("fresh")
         again = self.publish(submitted, console=console, config=config, environ=env)
@@ -701,6 +812,19 @@ class Publish(PublishCase):
         self.assertEqual(record["outcome"], "UNKNOWN")
         self.assertEqual(record["human_required"]["reason"], "ambiguous-portal-state")
         self.assertEqual(record["state"], "validated")
+
+    def test_an_ambiguous_portal_state_after_a_submit_is_never_a_success(self):
+        result, _ = self.submitted("ambiguous")
+        self.assertEqual(result.outcome, StepOutcome.WAITING_FOR_HUMAN)
+        record = result.artifacts[0].content
+        self.assertEqual(record["outcome"], "UNKNOWN")
+        self.assertEqual(record["human_required"]["reason"], "ambiguous-portal-state")
+        self.assertEqual(record["state"], "validated")
+
+    def test_a_rejection_read_back_is_a_failure_a_person_records(self):
+        result, _ = self.submitted("rejected")
+        self.assertEqual((result.outcome, result.retryable), (StepOutcome.FAILED, False))
+        self.assertEqual(result.artifacts[0].content["outcome"], "REJECTED")
 
     def test_an_upload_error_and_a_crash_are_failures_not_retried(self):
         result = self.go(console=FakeConsole("upload-error"))
@@ -823,30 +947,14 @@ class ThroughTheEngine(PublishCase):
                     - id: submit
                       type: publish
                       stage: release:submitting
-                      inputs: [release-manifest, platform-publication, decision-record, scaffold-record]
+                      inputs: [release-manifest, platform-publication, decision-record, scaffold-record, verification-report, store-listing, listing-validation-report]
                       outputs: [platform-publication]
                       retry: {max_attempts: 1}
                       with: {repo_dir: %(repo)s}
                 """ % {"repo": json.dumps(self.game.root)}))
         return path
 
-    @staticmethod
-    def listing_placeholders():
-        from wgflib import provenance
-        from wgflib.workflow.mock import DEFAULT_EPOCH, FIXTURES, FIXTURE_SLUG
-        out = {}
-        for n, artifact_type in enumerate(("store-listing", "listing-validation-report"), 1):
-            with open(os.path.join(FIXTURES, f"{artifact_type}.json"), encoding="utf-8") as handle:
-                body = json.loads(handle.read().replace(FIXTURE_SLUG, "fixture-game"))
-            artifact = {"provenance": provenance.build(
-                artifact_type,
-                artifact_id=provenance.artifact_id(artifact_type, "fixture-game", DEFAULT_EPOCH, n),
-                produced_by=provenance.producer("release"), produced_at=DEFAULT_EPOCH,
-                inputs=[], title_id="fixture-game")}
-            artifact.update(body)
-            provenance.seal(artifact)
-            out[artifact_type] = artifact
-        return out
+    listing_placeholders = staticmethod(listing_placeholders)
 
     def api(self, console, publish_config):
         from wgflib.workflow import ArtifactOutput, StepResult, WorkflowStep
@@ -1015,6 +1123,274 @@ class Browser(PublishCase):
             self.assertTrue(shot["content_hash"].startswith("sha256:"))
         actions = [e for e in content["evidence"] if e.get("path", "").endswith("actions.jsonl")]
         self.assertEqual(len(actions), 1)
+
+
+
+@unittest.skipUnless(enabled("WGF_PUBLISH_BROWSER_TEST"),
+                     "set WGF_PUBLISH_BROWSER_TEST=1 to drive the fixture portal with Chromium")
+class CreateBeforeBuildEndToEnd(PublishCase):
+    """A Y8-style create-before-build portal, end to end: the real engine, the real release,
+    platform-validate and submit steps, and the real console executor in headless Chromium
+    against portal.py (`ids-on-create`). The fixture profile is generic-web's, with the ids
+    the portal issues on create and where the build carries them.
+
+    Test doubles, because a unit test cannot run the real ones: `test.verify` stands in for
+    verify (GameRepository.build_platforms writes the per-platform bundle and its config from
+    game.config.yaml, the way verify's platform_builds does - no pnpm build), `test.sdk` for
+    the sdk step's portal-id write (the same identity.sync the sdk step calls, then a commit),
+    and `test.metadata` for the person or release role writing store-metadata.json into the
+    newest release directory. The test plays the person: G5, G6, and `submit`."""
+
+    setUpClass = classmethod(Browser.setUpClass.__func__)
+    portal = Browser.portal
+    state_of = Browser.state_of
+
+    def setUp(self):
+        super().setUp()
+        # One target: the game is built and released for generic-web only.
+        self.game.commit("game.config.yaml", textwrap.dedent("""            game:
+              id: fixture-game
+              name: Fixture Game
+              version: 0.1.0
+            build:
+              output: dist
+            platforms:
+              - { id: generic-web, profile: generic-web@1.1.0, role: required }
+            """), "one target")
+
+    def workflow(self):
+        path = os.path.join(self.scratch, "create-before-build.workflow.yaml")
+        with open(path, "w", encoding="utf-8") as handle:
+            handle.write(textwrap.dedent("""\
+                workflow:
+                  id: create-before-build
+                  version: 1
+                  start: verify
+                  steps:
+                    - id: sdk
+                      type: test.sdk
+                      stage: title:prototype
+                    - id: verify
+                      type: test.verify
+                      stage: release:qa
+                      outputs: [prototype-report, sdk-report, scaffold-record, verification-report, qa-report, review-report, production-quality-report, visual-qa-report, store-listing, listing-validation-report]
+                      max_visits: 3
+                    - id: release
+                      type: release
+                      stage: release:draft
+                      inputs: [qa-report, verification-report, sdk-report, prototype-report, scaffold-record, review-report, production-quality-report, visual-qa-report]
+                      outputs: [release-manifest]
+                      with: {repo_dir: %(repo)s, required_gates: [], required_listing: false}
+                      max_visits: 3
+                    - id: metadata
+                      type: test.metadata
+                      stage: release:draft
+                      inputs: [release-manifest]
+                      max_visits: 3
+                    - id: platform-validate
+                      type: platform-validate
+                      stage: release:validating
+                      inputs: [release-manifest, verification-report, qa-report, sdk-report, scaffold-record]
+                      outputs: [platform-publication]
+                      with: {repo_dir: %(repo)s}
+                      max_visits: 3
+                    - id: release-review
+                      type: human-checkpoint
+                      stage: release:rc
+                      inputs: [qa-report, verification-report, release-manifest]
+                      outputs: [decision-record]
+                      with: {gate: G5, choices: [approve, reject]}
+                      max_visits: 3
+                      on: {reject: $end}
+                    - id: publish-review
+                      type: human-checkpoint
+                      stage: release:approved
+                      inputs: [release-manifest, platform-publication, store-listing, listing-validation-report]
+                      outputs: [decision-record]
+                      with: {gate: G6, choices: [publish, reject]}
+                      max_visits: 3
+                      on: {reject: $end}
+                    - id: submit
+                      type: publish
+                      stage: release:submitting
+                      inputs: [release-manifest, platform-publication, decision-record, scaffold-record, verification-report, store-listing, listing-validation-report]
+                      outputs: [platform-publication]
+                      retry: {max_attempts: 1}
+                      with: {repo_dir: %(repo)s}
+                      max_visits: 5
+                      on: {platform-ids: sdk}
+                """ % {"repo": json.dumps(self.game.root.replace(os.sep, "/"))}))
+        return path
+
+    def profiles(self):
+        """generic-web's fixture profile, issuing a Game ID and an App ID on create."""
+        directory = os.path.join(self.scratch, "publication")
+        os.makedirs(directory, exist_ok=True)
+        with open(os.path.join(PROFILES, "generic-web.yaml"), encoding="utf-8") as handle:
+            text = handle.read()
+        anchor = "    title_match: exact-casefold\n"
+        self.assertIn(anchor, text)
+        text = text.replace(anchor, anchor + textwrap.indent(textwrap.dedent("""\
+            issued_on_create:
+              - {key: external_game_id, read: [{label: "Game ID"}]}
+              - {key: app_id, read: [{label: "App ID"}]}
+            build_config: {external_game_id: "platforms[].game_id", app_id: "platforms[].app_id"}
+            """), "    "), 1)
+        with open(os.path.join(directory, "generic-web.yaml"), "w", encoding="utf-8",
+                  newline="\n") as handle:
+            handle.write(text)
+        return directory
+
+    def engine(self, port):
+        from wgflib.workflow import ArtifactOutput, StepResult, WorkflowStep
+        from wgflib.workflow.api import WorkflowAPI
+        from wgflib.workflow.config import FactoryConfig
+        from wgf_publish import common, identity
+        from wgf_release import ReleaseStep
+        import wgf_publish.browser as browser
+        case = self
+        self.verified = 0
+
+        class Sdk(WorkflowStep):
+            type = "test.sdk"
+
+            def execute(self, inputs, context):
+                settings = common.Settings(context.config, {})
+                profiles = {"generic-web": common.publication_profile_for("generic-web",
+                                                                          settings)}
+                written = identity.sync(case.game.root, "fixture-game", profiles, case.titles)
+                if written:
+                    with open(case.game.path("game.config.yaml"), encoding="utf-8") as handle:
+                        case.game.commit("game.config.yaml", handle.read(), "sdk: portal ids")
+                return StepResult.success([], message=f"wrote {written}")
+
+        class Verify(WorkflowStep):
+            type = "test.verify"
+
+            def execute(self, inputs, context):
+                case.verified += 1
+                builds = case.game.build_platforms(("generic-web",))
+                case.evidence = case.game.evidence(run_id=context.run_id, platform_builds=builds)
+                evidence = case.with_assertions(case.evidence)
+                evidence.update(listing_placeholders())
+                return StepResult.success([ArtifactOutput(t, a) for t, a in evidence.items()])
+
+        class Metadata(WorkflowStep):
+            type = "test.metadata"
+
+            def execute(self, inputs, context):
+                case.release_dir = case.game.path(
+                    "release", inputs.load("release-manifest")["release_id"])
+                case.write_metadata()
+                return StepResult.success([], message=case.release_dir)
+
+        module = type(sys)("wgf_publish_test_create_before_build")
+        module.register = lambda registry: [registry.register(c.type, c)
+                                            for c in (Sdk, Verify, Metadata)]
+        sys.modules[module.__name__] = module
+        self.addCleanup(sys.modules.pop, module.__name__, None)
+        saved = {(cls, name): cls.__dict__.get(name) for cls, name in (
+            (ReleaseStep, "environ"), (ReleaseStep, "clock"), (PlatformValidateStep, "environ"),
+            (PublishStep, "environ"), (PublishStep, "run_process"))}
+        self.addCleanup(lambda: [setattr(cls, name, value) for (cls, name), value
+                                 in saved.items()])
+        env = dict(self.game.environ(()))
+        ReleaseStep.environ = env
+        ReleaseStep.clock = staticmethod(lambda: NOW)
+        PlatformValidateStep.environ = env
+        # Live twice over: factory.publish.mode live AND WGF_PUBLISH_LIVE=1.
+        # The real pnpm and Playwright, not the fixture game's fake pnpm shim.
+        PublishStep.environ = dict(self.environ, PATH=os.environ.get("PATH", ""),
+                                   WGF_PUBLISH_LIVE="1")
+
+        def run_in_template(argv, cwd=None, **kwargs):
+            return browser.procs.run(argv, cwd=case.template, **kwargs)
+        PublishStep.run_process = staticmethod(run_in_template)
+        publish = self.settings(mode="live", profiles_extra=[self.profiles()],
+                                timeouts={"action": 2500, "navigation": 8000, "upload": 20000})
+        publish["publish"]["platforms"]["generic-web"].update(
+            console_url=f"http://127.0.0.1:{port}/", test_headless=True, poll_ms=250)
+        config = FactoryConfig({"steps": {"modules": ["wgf_release", "wgf_publish",
+                                                      module.__name__]},
+                                "storage": {"fsync": False}, "publish": publish["publish"]})
+        return WorkflowAPI(config=config, store_dir=os.path.join(self.scratch, "store"),
+                           workflow=self.workflow())
+
+    def test_create_ids_rebuild_validate_g6_upload_submit(self):
+        from wgf_publish import registry as portal_registry
+        from wgflib.workflow.api import RunRequest
+        from wgflib.workflow.model import RunStatus
+        port = self.portal("open,ids-on-create")
+        api = self.engine(port)
+
+        def answer(state, choice, note=None):
+            return api.run(RunRequest(resume=state.run_id, decision=choice, decided_by="human",
+                                      note=note))
+
+        def guard(record, name):
+            return next(g for g in record["guards"] if g.get("id", g.get("guard")) == name)
+
+        def record(state):
+            stored = api.store.load(state.run_id)
+            return api.store.read_artifact(state.run_id, stored.latest_artifact(
+                "platform-publication-generic-web"))
+
+        # 1. Verify, release, validate: the ids are not issued yet, so the guard is GREEN.
+        state = api.run(RunRequest(project_id="fixture-game"))
+        self.assertEqual((state.status, state.cursor), (RunStatus.WAITING, "release-review"),
+                         state.message)
+        validated = record(state)
+        self.assertEqual(validated["readiness"], "READY", validated["guards"])
+        self.assertIn("not issued yet", json.dumps(guard(validated, "platform_ids_present")))
+        state = answer(state, "approve")
+        # 2. G6, then the first visit creates the game and stops IDS_ISSUED: nothing uploaded.
+        state = answer(state, "publish", note="ship it")
+        self.assertEqual((state.status, state.cursor), (RunStatus.WAITING, "release-review"),
+                         state.message)
+        portal = self.state_of(port)
+        self.assertEqual((portal["creates"], portal["uploads"], portal["requests"]), (1, 0, 0))
+        game = portal["games"][0]
+        trail = [e["step"] for e in state.trail]
+        self.assertEqual(trail[trail.index("sdk") - 1], "submit")  # route platform-ids
+        entry = portal_registry.load("fixture-game", self.titles).get("generic-web")
+        self.assertEqual((entry["status"], entry["external_game_id"], entry["app_id"]),
+                         ("DRAFT_CREATED", game["id"], game["app_id"]))
+        # 3. sdk wrote the ids into game.config.yaml; verify built and release packaged again.
+        self.assertEqual(self.verified, 2)
+        with open(self.game.path("game.config.yaml"), encoding="utf-8") as handle:
+            config = handle.read()
+        self.assertIn(f"game_id: {game['id']}", config)
+        self.assertIn(f"app_id: {game['app_id']}", config)
+        with open(self.game.path("build", "platforms", "generic-web", "game.config.json"),
+                  encoding="utf-8") as handle:
+            self.assertIn(game["app_id"], handle.read())
+        # 4. platform-validate on the rebuilt release: platform_ids_present is GREEN on the ids.
+        validated = record(state)
+        self.assertEqual(validated["readiness"], "READY", validated["guards"])
+        self.assertIn("carries", json.dumps(guard(validated, "platform_ids_present")))
+        # 5. G5 and G6 again (the manifest changed); the visit uploads to the same game.
+        state = answer(state, "approve")
+        state = answer(state, "publish", note="the rebuilt release")
+        self.assertEqual((state.status, state.cursor), (RunStatus.WAITING, "submit"),
+                         state.message)
+        self.assertEqual(api.pending(state)["choices"], ["submit", "hold", "abandon", "done"])
+        uploaded = record(state)
+        self.assertEqual(uploaded["outcome"], "UPLOAD_COMPLETE", uploaded.get("evidence"))
+        self.assertEqual(uploaded["waiting"]["state"], "WAITING_FOR_HUMAN_SUBMIT_CONFIRMATION")
+        portal = self.state_of(port)
+        self.assertEqual((portal["creates"], portal["uploads"], portal["requests"]), (1, 1, 0))
+        # 6. A person answers submit: review is requested once, read back from the status text.
+        state = answer(state, "submit", note="looked at the draft")
+        self.assertEqual(state.status, RunStatus.COMPLETED, state.message)
+        submitted = record(state)
+        self.assertEqual((submitted["outcome"], submitted["state"]), ("SUBMITTED", "submitted"),
+                         submitted.get("evidence"))
+        self.assertEqual(submitted["verified_state"]["observed"], "Waiting for moderation")
+        portal = self.state_of(port)
+        self.assertEqual((portal["creates"], portal["uploads"], portal["requests"],
+                          portal["double_requests"]), (1, 1, 1, 0))
+        entry = portal_registry.load("fixture-game", self.titles).get("generic-web")
+        self.assertEqual(entry["status"], "PENDING_REVIEW")
 
 
 if __name__ == "__main__":

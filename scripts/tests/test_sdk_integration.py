@@ -1124,6 +1124,36 @@ class Commits(SdkCase):
         self.assertEqual(git(self.repo, "rev-list", "--count", f"{base}..HEAD").stdout.strip(),
                          "1")
 
+    def test_a_portal_s_issued_ids_are_written_into_the_build_in_its_commit(self):
+        # A create-before-build portal (y8: identity.issued_on_create): the ids the submit
+        # step recorded in the portal registry reach game.config.yaml in the sdk commit.
+        from wgf_publish import registry as portal_registry
+        titles = os.path.join(self.scratch, "titles")
+        self.addCleanup(setattr, SdkStep, "titles_dir", SdkStep.__dict__.get("titles_dir"))
+        SdkStep.titles_dir = titles
+        portal_registry.load("mock-title", titles).record(
+            "y8", status="DRAFT_CREATED", by="automation", external_game_id="y8-4711",
+            app_id="app-0042", association="created-by-factory")
+        make_repo(self.repo)
+        base = self.head()
+        plan = self.tech_plan({"id": "yandex", "profile": "yandex@1.2.0", "role": "required"},
+                              {"id": "y8", "profile": "y8@1.2.0", "role": "optional"})
+        result = self.execute(prototype_report=prototype_at(base), tech_plan=plan)
+        self.assertEqual(result.outcome, StepOutcome.SUCCESS, result.error or result.message)
+        with open(os.path.join(self.repo, "game.config.yaml"), encoding="utf-8") as handle:
+            after = handle.read()
+        self.assertIn("  - { id: y8, profile: y8@1.2.0, role: optional, game_id: y8-4711, "
+                      "app_id: app-0042 }\n", after)
+        self.assertIn("  - { id: yandex, profile: yandex@1.2.0, role: required }\n", after)
+        self.assertIn("game.config.yaml",
+                      git(self.repo, "diff", "--name-only", base, "HEAD").stdout.split())
+        self.assertEqual(git(self.repo, "status", "--porcelain").stdout, "")
+        # Again: the retarget rewrites the platforms, the ids are written back, nothing new.
+        again = self.execute(prototype_report=prototype_at(base), tech_plan=plan)
+        self.assertEqual(again.outcome, StepOutcome.SUCCESS, again.error or again.message)
+        self.assertEqual(git(self.repo, "rev-list", "--count", f"{base}..HEAD").stdout.strip(),
+                         "1")
+
     def test_a_tech_plan_that_agrees_with_the_checkout_writes_nothing_of_it(self):
         make_repo(self.repo)
         base = self.head()

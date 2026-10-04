@@ -7,6 +7,8 @@
                                          store-metadata.json a person or the release role wrote
     core/reference/platforms/<id>    ──► metadata requirements, bundle limit
     core/reference/publication/<id>  ──► how the portal is reached, and whether a person must
+    the portal registry              ──► a create-before-build portal's issued ids, which the
+                                         build must carry (platform_ids_present)
                                      ──► one platform-publication per packaged platform:
                                          every guard's verdict, the assertion results, the
                                          package as found, and a `readiness`
@@ -33,7 +35,8 @@ from wgflib import checkout as checkouts
 from wgflib import publication as pub
 from wgflib.workflow import StepOutcome, StepResult, WorkflowStep
 
-from . import common
+from . import common, identity
+from . import registry as portal_registry
 from .evidence import Evidence
 from .session import CredentialError, read_credential
 
@@ -43,6 +46,7 @@ __all__ = ["PlatformValidateStep"]
 class PlatformValidateStep(WorkflowStep):
     type = "platform-validate"
     environ = None  # replaceable in tests
+    titles_dir = None  # the portal registry's titles directory; None: the project's
 
     def execute(self, inputs, context):
         with checkouts.StepLease(context) as lease:
@@ -81,6 +85,11 @@ class PlatformValidateStep(WorkflowStep):
         metadata = common.store_metadata(root, release_id, manifest)
         profiles = {pid: common.profile_for(pid) for pid in targets}
 
+        try:
+            registry = portal_registry.load(title_id, self.titles_dir) if title_id else None
+        except portal_registry.RegistryError as exc:
+            return StepResult.blocked(f"the portal registry for {title_id} cannot be read: "
+                                      f"{exc}")
         frozen = pub.candidate_frozen(manifest)
         complete = pub.store_metadata_complete(manifest, profiles, metadata)
 
@@ -111,6 +120,11 @@ class PlatformValidateStep(WorkflowStep):
                 "assertions_pass": pub.assertions_pass(pid, results),
                 "metadata_and_locales_present": pub.metadata_and_locales_present(
                     pid, profile, manifest, metadata),
+                # A create-before-build portal (identity.issued_on_create): once the portal
+                # issued the ids, a build without them is never uploaded.
+                "platform_ids_present": identity.platform_ids_present(
+                    pid, publication_profile, registry.get(pid) if registry else None, root,
+                    verification),
             }
             try:
                 credential = read_credential(publication_profile, settings.data, env)

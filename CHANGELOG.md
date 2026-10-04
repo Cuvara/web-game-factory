@@ -9,6 +9,33 @@ and `core/` is still the contract.
 
 ## [Unreleased]
 
+**The submit step acts per platform, behind G6's integrity, with a person's submit**
+([docs/publish-module.md](docs/publish-module.md)). Every packaged platform is handled on
+its own (`StepInputs.every`, `RunState.latest_by_id`): one `platform-publication-<platform>`
+each, and a wait, a failure or a pending review on one never writes another's record. Before
+any upload, G6 must pin by content hash the release-manifest, the store listing and the
+listing-validation-report the step holds (else BLOCKED `g6-stale`), the package must be the
+bundle verify built for that platform (`build-mismatch`, `wrong-platform`), and the record
+must be for this manifest (`stale-validation`). The portal registry is read before the
+adapter (`job.known_ids`, `registry_status`, `identity`, `allow_create`) and written after
+it, a status only from the portal's own text. `UPLOAD_COMPLETE` waits for a person:
+`submit` (review requested once, in a later visit), `hold`, `abandon`, or `done` (the person
+requested review by hand). **Create-before-build portals**: a profile's
+`identity.issued_on_create` ids are read after create; the visit stops `IDS_ISSUED`
+(registry `DRAFT_CREATED`), routes `platform-ids` to `sdk`, which writes them into
+game.config.yaml through `identity.build_config`; the build is made, verified, released and
+authorized (G5, G6) again; platform-validate's new guard `platform_ids_present` refuses a
+build that lacks them. `wgf publish --platform <id>` acts on those platforms only and
+`--track` reads every known game's status without changing anything
+(`WGF_PUBLISH_PLATFORMS`, `WGF_PUBLISH_TRACK`). The login wait becomes the record's
+`waiting` block from the executor's last login handoff. **Publication profile 2.1.0**
+(additive) gains `identity.build_config`, keyed by the same `key` as
+`issued_on_create` (Y8: `{external_game_id: "platforms[].game_id", app_id:
+"platforms[].app_id"}`). To bring a create-before-build profile forward: write each issued
+id as `{key, read}` and add `build_config`; a bare string (`game_id`) is still read as the
+same key. Nothing else needs to change: a run without issued ids, or on one platform, behaves
+as before.
+
 **The console executor runs the profile's flow, and a person logs in live** (portal
 publishing workstream 3, [docs/publish-module.md](docs/publish-module.md)). The executor is
 a generic intent runner over the publication profile's `submission.flow`: session,

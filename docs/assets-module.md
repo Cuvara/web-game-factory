@@ -197,7 +197,9 @@ Only kinds the policy lets be SVG are authored: `sprite`, `ui`, `icon`, `backgro
 What the author wrote is recorded in `src/assets/authored.json` (path → request key, file
 hash, author): a re-executed step reuses a file whose request is unchanged - same description,
 readability, role, spec, palette, bars and author - instead of asking again. Changing any of
-them asks again.
+them asks again. The 3D model author's models are recorded in the same ledger (path →
+request key, file hash, the spec it was built from, its node names, its verdict), and reused
+the same way: see [Re-entry](#re-entry).
 
 ### The set author
 
@@ -389,6 +391,21 @@ item skips the library (it would hand over the same file); every other item is r
 library file is deterministic, an authored file comes from the ledger, a placeholder from the
 same bytes.
 
+**3D models keep their bytes.** A model the model author made on an earlier visit, and that
+the re-entry does not concern, is reused from the ledger byte for byte - the author is not
+asked, in `each` or `set` mode (the set session gets only the models sent back). Asked
+again, an author writes a new spec and Blender gives the parts new node names, and a game
+that composes a model's parts by node name (three.js `getObjectByName`) breaks: the audit's
+3D game lost its part lookups to a re-entry that rebuilt every model
+([quality-gap-audit-2026-10.md](quality-gap-audit-2026-10.md), I-21). A model is asked
+again when its requirement, model spec, look, camera or author mode changed, when it is
+sent back, or when the file in the checkout is no longer the bytes the ledger recorded. A
+model that *is* sent back carries `current` {path, nodes, spec} in the author's request -
+the model the game ships now, its node names and the spec it was built from - and the
+author is told to keep every part id that makes one of those names. A remade model that
+lost one is a `model-nodes-renamed` warning naming them, so develop, which runs next, knows
+which lookups must follow.
+
 **When nothing can change.** No configured author able to remake any concerned requirement
 (`factory.assets.author` for 2D SVG, `factory.assets.model_author` for 3D models) blocks the
 step: a library or placeholder would hand over the same file and the loop would spend its
@@ -399,6 +416,25 @@ In `new-game` (workflow 5) both production gates route `assets` here (budgets
 `production-quality.assets: 2`, `visual-qa.assets: 2`), and the run then continues to
 `develop` as on the first pass: develop integrates what was rebuilt, and its brief carries
 the reports' failures.
+
+## Distinct climax art
+
+A climax unit (game-design `build_spec.content.units[]`, `purpose: climax`, tier `mvp` or
+`post-mvp`) is met as a new antagonist or set piece. When the run's quality tier sets
+`presentation.assets.distinct_climax_art` in `core/reference/quality-benchmark.yaml` (the
+tier is `factory.strategy.quality_tier`, or the step's `with: quality_tier`; `release` when
+unset; the `mvp` tier states no such bar, so nothing is checked), the step holds each
+climax unit's `art` (game-design 1.10.0: asset ids, or variant ids such as `boss-2`) to it
+(`scripts/wgf_assets/climax.py`):
+
+| Code | Severity | When |
+|---|---|---|
+| `climax-art-unassigned` | warning, no item | the unit names no art, or nothing it names resolves (an unknown id; a counted asset by its base id - name a variant): nothing can be checked, and the assets step cannot decide what a unit is |
+| `climax-art-shared` | error, on the drawing's item | every drawing the unit names is another climax unit's too (four bosses, one sprite); or one of its own drawings is the same file as another climax unit's, or has its silhouette (asset-quality `variants.min_silhouette_distance`, SVG and PNG): a recolour |
+
+An error keeps the item from being production-ready. Placeholders are not compared. The
+evidence for the bar is the 2D calibration release's four bosses, one drawing tinted per
+world ([quality-gap-audit-2026-10.md](quality-gap-audit-2026-10.md)).
 
 ## Fonts and audio: the producers
 
@@ -796,6 +832,16 @@ file in the author's request; BLOCKED without an author, FAILED when authors del
 nothing), the regression against a real judge verdict (`fixtures/visual-qa/`: the arena-dodge
 design and the verdict that named "the player", never `craft`), the 3D model author hook
 (given a plain mapping as context), and every quality check.
+
+`scripts/tests/test_assets_reentry.py` — a re-entry that refuses one 3D model remakes that
+model only (each and set mode) and the others keep their bytes, so every node a game composes
+by name (`fixtures/assets/compose-by-node-name/composition.json`) still resolves; the
+remade model's author is handed `current`; an author that renames is a
+`model-nodes-renamed` warning on the refused model alone; a re-executed step reuses every
+model, a changed requirement or a file changed by hand is asked again. Distinct climax art:
+four climax units drawn with one drawing (the audit's case), two climax assets drawn as one
+silhouette, a counted boss with a drawing per climax (passes), unassigned art, and the bar
+read from the benchmark at the run's tier.
 
 `scripts/tests/test_models.py` covers the model spec, the GLB inspector, the Blender layer
 (with a fake Blender through the real process layer), the step with models, three.js loading,

@@ -8,7 +8,7 @@
     "id": "game-design",
     "kind": "artifact",
     "format": "json",
-    "version": "1.9.0",
+    "version": "1.10.0",
     "template": "templates/gdd.md",
     "producer": "title:design",
     "consumers": ["title:tech-plan", "title:prototype", "title:prototype-review", "title:production", "release:qa", "title:scaffolding", "release:store-listing"],
@@ -431,6 +431,11 @@
                     "minItems": 1,
                     "items": { "type": "string", "minLength": 12 },
                     "description": "What must be true of the built unit. The developer builds against these; two near-identical lines across units mean the units are not distinct."
+                  },
+                  "art": {
+                    "type": "array",
+                    "items": { "type": "string", "pattern": "^[a-z][a-z0-9-]*$" },
+                    "description": "The build_spec.assets ids that draw what is particular to this unit - its antagonist, boss or set piece - one drawing each: an asset id, or a variant id (`boss-2`, the second drawing of an asset with `count` 4). A climax unit names its own: two climax units drawn with one drawing, or with a tint of it, fail core/reference/quality-benchmark.yaml `presentation.assets.distinct_climax_art` (the assets step checks it). Added in 1.10.0."
                   },
                   "variation_from_previous": {
                     "type": "array",

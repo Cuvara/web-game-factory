@@ -104,6 +104,18 @@ def load(data):
     return document, binary
 
 
+def node_names(data):
+    """The names of a glTF's nodes, in document order (unnamed nodes skipped); [] when the
+    bytes are not a glTF this module reads. What game code that composes a model by node
+    name looks up (three.js `getObjectByName`)."""
+    try:
+        document, _binary = load(data)
+    except GltfError:
+        return []
+    return [node["name"] for node in document.get("nodes") or []
+            if isinstance(node, dict) and isinstance(node.get("name"), str) and node["name"]]
+
+
 # -- small matrix helpers (column-major 4x4, as glTF stores them) -----------------------------
 
 IDENTITY = (1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0)

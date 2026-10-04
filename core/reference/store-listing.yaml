@@ -14,7 +14,8 @@
 # Platform-neutral on purpose: no portal is named here. A platform's own numbers live in its
 # profile; a value a profile does not state stays null there and is reported UNKNOWN.
 
-version: 1.0.0
+version: 1.1.0  # 1.1.0: thumbnail-1x1 1024 (was 512), a portrait thumbnail-2x3 master, a 1080p
+               #        trailer (was 720p) of 18 s of play (was 20)
 
 # -- the canonical package ----------------------------------------------------------------
 # Paths inside the package directory, relative to it. Deterministic: the same build makes
@@ -38,9 +39,12 @@ renditions:
     - {id: icon-512, width: 512, height: 512}
     - {id: icon-256, width: 256, height: 256}
   thumbnail:
+    # Large enough for every size a shipped profile states (the 800x800 square and the
+    # 800x1200 portrait cover among them): a platform image is only ever downscaled.
     - {id: thumbnail-16x9, width: 1280, height: 720}
     - {id: thumbnail-4x3, width: 1024, height: 768}
-    - {id: thumbnail-1x1, width: 512, height: 512}
+    - {id: thumbnail-1x1, width: 1024, height: 1024}
+    - {id: thumbnail-2x3, width: 1200, height: 1800}
   promo:
     - {id: promo-1920x1080, width: 1920, height: 1080}
   logo:
@@ -54,8 +58,10 @@ renditions:
     min: 3
     max: 8
   trailer:
-    width: 1280
-    height: 720
+    # 1080p: the largest a shipped profile asks for (a 1080p preview video); a smaller
+    # platform bound is met by the same file.
+    width: 1920
+    height: 1080
     min_seconds: 8
     max_seconds: 30
     # The container the browser records natively. Other containers are derived only when an
@@ -103,7 +109,9 @@ capture:
   # play, through the game's own inputs. Trimmed to play when an encoder is available; else
   # kept whole and reported untrimmed.
   trailer:
-    seconds: 20
+    # 18 s of play plus the held result screen stays inside the shortest stated video bound
+    # (20 s).
+    seconds: 18
     avoid_states: [loading, title, paused, other]
 
 # -- copy ---------------------------------------------------------------------------------

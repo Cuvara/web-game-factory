@@ -740,7 +740,7 @@ def make_git_template(root, bootstrap=True):
 
 class GameConfigRewrite(unittest.TestCase):
     PLAN = {"engine": {"type": "threejs"},
-            "platforms": [{"id": "yandex", "profile": "yandex@1.1.0", "role": "required"},
+            "platforms": [{"id": "yandex", "profile": "yandex@1.2.0", "role": "required"},
                           {"id": "poki", "profile": "poki@1.1.0", "role": "optional"}],
             "monetization": {"ad_kinds": ["rewarded"], "iap": True}}
 
@@ -775,12 +775,12 @@ class GameConfigRewrite(unittest.TestCase):
         # Before this, a plan's game_id was dropped on the floor: the line writer knew only
         # id, profile and role, and a GameDistribution build then failed in the template.
         platforms = [
-            {"id": "gamedistribution", "profile": "gamedistribution@1.1.0", "role": "required",
+            {"id": "gamedistribution", "profile": "gamedistribution@1.2.0", "role": "required",
              "game_id": "0123456789abcdef0123456789abcdef", "hosting": "self-hosted",
              "game_url": "https://games.example.com/neon/?v=1"},
             {"id": "gamemonetize", "profile": "gamemonetize@1.1.0", "role": "optional",
              "game_id": "gm-title_0001"},
-            {"id": "y8", "profile": "y8@1.1.0", "role": "optional"},
+            {"id": "y8", "profile": "y8@1.2.0", "role": "optional"},
         ]
         text = apply_game_config(GAME_CONFIG, dict(self.PLAN, platforms=platforms))
         self.assertEqual(yaml_load(text)["platforms"], platforms)

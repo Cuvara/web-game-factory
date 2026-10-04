@@ -168,6 +168,15 @@ def _master_for(requirement, masters):
         matching = [m for m in candidates if _aspect_matches(m["width"], m["height"], wanted_aspect)]
         if matching:
             candidates = matching
+        elif candidates:
+            # No master has the aspect (800x470 is not quite 16:9): crop the nearest one, never
+            # the largest - a portrait master cropped to a landscape cover loses the picture.
+            try:
+                a, b = (int(x) for x in str(wanted_aspect).split(":"))
+                nearest = min(abs(m["width"] / m["height"] - a / b) for m in candidates)
+                candidates = [m for m in candidates if abs(m["width"] / m["height"] - a / b) == nearest]
+            except (ValueError, ZeroDivisionError):
+                pass
     return max(candidates, key=lambda m: m["width"] * m["height"]) if candidates else None
 
 

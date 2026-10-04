@@ -8,9 +8,10 @@
     "id": "triage-report",
     "kind": "artifact",
     "format": "json",
-    "version": "1.0.0",
+    "version": "1.0.1",
     "producer": "title:prototype",
-    "consumers": ["title:prototype", "title:design", "title:prototype-review"],
+    "consumers": ["title:prototype", "title:design", "title:prototype-review", "release:store-listing"],
+    "updated_by": ["release:store-listing"],
     "run_path": "<storage>/workflows/<run-id>/artifacts/triage-report/v<n>.json",
     "required_for_gates": []
   },

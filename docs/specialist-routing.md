@@ -90,8 +90,8 @@ re-entry. The step:
 3. **Groups by owner, in order.** `design` comes first and alone: the other groups are
    `deferred`, and the gates measure the rebuilt game again. Then `assets` (one group), then
    each develop specialist. A group whose label the step's `on:` does not map is `held`, with
-   the reason. Example: store copy before the listing exists, which listing-validation routes
-   to store-listing after G4.
+   the reason. Example: store copy before the listing exists, which `listing-triage` (the
+   same step after G4, whose `on:` takes `listing`) routes to store-listing.
 4. **Routes one group.** The step returns SUCCESS with the group's label: `design`, `assets`,
    or the specialist's role id. The workflow maps each specialist label to `develop`. With
    nothing failed (the first build) the result is a plain SUCCESS. If every finding is held,
@@ -250,10 +250,10 @@ again on the repaired design.
 
 ## What is not done
 
-- **Store copy.** Copy findings are normalized and owned by `copywriter` (route `listing`).
-  The listing loop (`listing-validation` → `store-listing`) is unchanged, and the
-  store-listing step does not yet brief its writer as the copywriter with the findings.
-  WS-9 makes the copywriter the default writer.
+- **Store copy** is done (WS-9): listing-validation's `listing` goes to `listing-triage`, a
+  triage step after G4 whose `on:` takes `listing`; every listing finding is one
+  store-listing pass (`routing.WHOLE_PASS`, like design and assets), and the store-listing
+  step briefs its copywriter with the store-copy findings ([store-listing-module.md](store-listing-module.md)).
 - **The scorecard.** WS-7's `quality-scorecard` is accepted by `normalize` as a producer.
   Wiring it in means adding it to triage's inputs in the workflow and to
   `wgf_triage.step.GATE_REPORTS`.

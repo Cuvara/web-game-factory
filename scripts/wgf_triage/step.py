@@ -345,8 +345,8 @@ class TriageStep(WorkflowStep):
                 takeable.append(group)
                 continue
             why = (f"route `{group['label']}` ({group['owner']}) is not taken from this step: "
-                   + ("store copy is written by store-listing after G4, and "
-                      "listing-validation routes it there" if group["route"] == "listing"
+                   + ("store copy is written by store-listing after G4, and the "
+                      "triage after listing-validation routes it there" if group["route"] == "listing"
                       else "the workflow maps no step to it"))
             held.extend({"finding": fid, "reason": why} for fid in group["findings"])
         return takeable, held

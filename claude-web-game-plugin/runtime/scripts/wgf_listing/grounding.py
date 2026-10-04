@@ -14,9 +14,19 @@ A text the build contradicts is an error too (`contradicted-claim`): a count of 
 units other than the one the build ships ("six courses" when the build names twelve), or
 "no buttons" when the controls name one. The facts carry the build's own figures where it
 has them (facts.py), so a design figure the build outgrew is refused here.
+
+Where the build was measured (facts `measured`: the content-sufficiency report of the listed
+build), every count of a counted noun is held to it (buildfacts.count_problems, codes
+`count-mismatch` and `unmeasured-count`), in every locale; a feature the design's evaluation
+cut or deferred may not be named (`excluded-feature`). A bullet in another language than its
+source fact is grounded on that fact's numbers, not on English words it happens to share
+(`bullet-number-unbacked`): a translation shares no words with its source, and a text that
+borrows English terms to pass is no translation.
 """
 
 import re
+
+from . import buildfacts
 
 __all__ = ["check", "backed", "RATING_WORDS", "content_words", "contradictions"]
 
@@ -90,9 +100,11 @@ def _unit_stems(facts, locale):
 
 
 def contradictions(text, facts, locale=None):
-    """[(phrase, why)] for what `text` says that the build contradicts."""
+    """[(phrase, why)] for what `text` says that the build contradicts. A unit count is
+    left to buildfacts.count_problems where the build was measured."""
     out = []
-    units = facts.get("content_units")
+    measured = ((facts.get("measured") or {}).get("counts") or {})
+    units = facts.get("content_units") if "units" not in measured else None
     stems = _unit_stems(facts, locale) if isinstance(units, int) and not isinstance(units, bool) else ()
     if stems:
         tokens = _TOKEN.findall(text or "")
@@ -164,9 +176,23 @@ def backed(backing, facts):
     return False
 
 
-def check(texts, facts, claims, *, locale=None, where="copy"):
+def _language(locale):
+    return (locale or "en").split("-")[0]
+
+
+def _source_language(source):
+    """The language a bullet's source fact is written in: a game string's locale, else
+    English (the design)."""
+    if isinstance(source, str) and source.startswith("string:"):
+        return _language(source.split(":")[1])
+    return "en"
+
+
+def check(texts, facts, claims, *, locale=None, where="copy", counts=None):
     """[problem] for the texts of one locale: {"title", "short_description",
-    "long_description", "features": [{"text", "source"}], "promo": [...], ...}."""
+    "long_description", "features": [{"text", "source"}], "promo": [...], ...}. `counts` is
+    core/reference/store-listing.yaml `counts`: with it, every count is held to the build's
+    measured one."""
     problems = []
     joined = []
     for field, value in (texts or {}).items():
@@ -205,6 +231,9 @@ def check(texts, facts, claims, *, locale=None, where="copy"):
                              "message": f"{where} {field}" + (f" ({locale})" if locale else "")
                                         + f" says {phrase!r}, which the build contradicts: {why}",
                              "subject": field})
+    if counts:
+        problems.extend(buildfacts.count_problems(texts, facts, counts, locale=locale, where=where))
+    problems.extend(buildfacts.excluded_feature_claims(texts, facts, locale=locale, where=where))
     for field, text in joined:
         for word in RATING_WORDS:
             if _term_pattern(word).search(text):
@@ -240,6 +269,18 @@ def check(texts, facts, claims, *, locale=None, where="copy"):
                                         f"is not a fact of this build", "subject": f"features[{index}]"})
             continue
         reference = fact_texts.get(source, "")
+        if reference and _language(locale) != _source_language(source):
+            # Another language than its source: held to the source's numbers and the
+            # build's measured counts, never to shared words.
+            allowed = buildfacts.numbers_in(reference) | {
+                c.get("value") for c in ((facts.get("measured") or {}).get("counts") or {}).values()}
+            stray = sorted(buildfacts.numbers_in(text, locale) - allowed)
+            if stray:
+                problems.append({"code": "bullet-number-unbacked", "severity": "error",
+                                 "message": f"feature bullet {index} ({locale}) states "
+                                            f"{', '.join(map(str, stray))}, which its source "
+                                            f"{source!r} does not", "subject": f"features[{index}]"})
+            continue
         if reference and not (content_words(text) & content_words(reference)):
             problems.append({"code": "bullet-unrelated", "severity": "error",
                              "message": f"feature bullet {index} shares no word with its source "

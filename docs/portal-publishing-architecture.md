@@ -51,10 +51,13 @@ under the executor's checks; irreversible and human intents never adapt.
 3                          create the game (name only) on the console
 4                          read the issued Game ID and App ID (profile identity.issued_on_create)
 5                          registry: DRAFT_CREATED with both ids; outcome IDS_ISSUED, nothing uploaded
-6                          route platform-ids -> sdk writes them into game.config.yaml
-                           (identity.build_config) -> verify -> release: the Y8 package is
-                           rebuilt with its ids
-7                          platform-validate again: guard platform_ids_present
+6                          route platform-ids leaves the publish slice; the run names sdk next:
+                           `wgf sdk --run <id> --force` writes the ids into game.config.yaml
+                           (identity.build_config); `wgf new-game --run <id>` re-runs
+                           sdk-review, verify, quality-gate, G4, store listing and release
+                           on the rebuilt build (nothing before sdk)
+7                          `wgf publish --run <id>`: platform-validate again (guard
+                           platform_ids_present)
 8                          G5, G6 asked again (the manifest changed); upload -> UPLOAD_COMPLETE
 9                          stop before the irreversible request
 10                         a person decides submit | hold | abandon | done

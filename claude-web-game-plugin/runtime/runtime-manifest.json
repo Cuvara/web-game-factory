@@ -159,7 +159,7 @@
     "core/templates/release-report.md": "sha256:91111a02b6a23b13268716e214c8edcd4d57ad1c1d5eb0bc0169ec07efe14ffc",
     "core/templates/tech-plan.md": "sha256:6d72544d3300faa203554412990479d0be57974ce43c7426e31969406951c0fa",
     "core/workflows/new-game.workflow.yaml": "sha256:48e8b7019541ff91731bbc2b250a078700592a4c7a71205f095b4179996d0e82",
-    "docs/portal-publishing-architecture.md": "sha256:3adf20c758d154c503af84184e1b62bda88296028ec9284d669ab85505cfcec1",
+    "docs/portal-publishing-architecture.md": "sha256:2933ecef287b2ee9b5d419655d8f18e99aca84d6cae643d5509b3094ce7a5871",
     "docs/publish-module.md": "sha256:333484fba31ea65a067c24bca4ee77dc16c1ae78a1eeadcc01c71cb8ea68bdd5",
     "docs/workflow-engine.md": "sha256:d315d778c70246a79d72ecce5f846042fa56fdebc78f11013e58d39dcf9cc9a2",
     "scripts/wgf-assets.py": "sha256:cf49f5b78d40227e0c562be6920aaf5a5e03aec0987c0256e1637ce7198ea09f",

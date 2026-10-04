@@ -49,6 +49,7 @@ reasons `legal`, `declaration`, `ai-text-policy`, `duplicate-candidate`, `review
 `drift-irreversible`, `anti-bot`, and `measurement_class: automation-console-adaptive`. The
 console adapter reads `status` and `constraints.upload_max_mb`; nothing else changes
 behaviour yet - the executor runs profile intents from workstream 3.
+
 **One build, one package and one publication per target platform** on the pinned template
 (contract 1, v1.2.0), with no template release and no game migration. For a title with more
 than one target, `verify` builds each platform against `build/platforms/<id>/game.config.json`

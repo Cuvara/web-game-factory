@@ -464,6 +464,43 @@ class Content(Judge):
         self.assertEqual(failed["status"], "FAIL")
         self.assertIn("best", failed["summary"])
 
+    def stage_only(self, kind="stage-progress"):
+        """The design's meta loop keeps only the stage reached, delivered by a progression
+        step, as the genre seeds' do: no HUD metric names it."""
+        design = copy.deepcopy(CONTENT_DESIGN)
+        design["build_spec"]["depth"]["meta_loop"]["persists"] = [
+            {"kind": kind, "what": "the waves cleared and the wave reached", "tier": "mvp",
+             "delivered_by": "waves-2-3"}]
+        return design
+
+    def test_stage_progress_is_measured_by_the_unit_reached(self):
+        """WS-13 gap: stage progress was SKIPPED - the probe measure was only a HUD metric or
+        a best - though the probe reports the unit reached (content.unit_index). It is the
+        stage's measure (design-depth.yaml playability.persists.probe_measures)."""
+        check = self.judge(self.stage_only())["progression.persists"]
+        self.assertEqual(check["status"], "PASS", check["summary"])
+        self.assertTrue(check["required"])
+        self.assertEqual(check["measured"], {"content.unit_index": {"before": 2, "after": 2}})
+        # A build that saves nothing comes back at the first unit: lost, FAIL.
+        self.records["persist"]["after_resumed"]["content"]["unit_index"] = 1
+        failed = self.judge(self.stage_only())["progression.persists"]
+        self.assertEqual(failed["status"], "FAIL")
+        self.assertIn("lost across a reload: content.unit_index", failed["summary"])
+
+    def test_stage_progress_at_the_first_unit_shows_nothing_and_is_not_a_pass(self):
+        """Unit 1 before and after is also what a build that saves nothing reports: the bot
+        must have reached a later unit for stage progress to be shown surviving."""
+        for side in ("before", "after_resumed"):
+            self.records["persist"][side]["content"]["unit_index"] = 1
+        check = self.judge(self.stage_only())["progression.persists"]
+        self.assertEqual(check["status"], "FAIL")
+        self.assertIn("reached no unit past the first", check["summary"])
+
+    def test_a_kind_the_probe_cannot_report_is_skipped_never_passed(self):
+        checks = self.judge(self.stage_only(kind="cosmetics"))
+        self.assertEqual(checks["progression.persists"]["status"], "SKIPPED")
+        self.assertIn("probe_measures", checks["progression.persists"]["summary"])
+
     def test_parametric_designs_skip_content_checks_and_skipped_is_never_pass(self):
         design = copy.deepcopy(CONTENT_DESIGN)
         design["build_spec"]["content"]["generation"] = {"mode": "parametric",

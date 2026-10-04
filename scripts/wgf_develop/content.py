@@ -41,13 +41,21 @@ boot and by this module:
          "success": "The player reaches the exit flag",
          "failure": "A fall costs a life and restarts the level"}
       ],
+      "unlocks": [
+        {"id": "open-w2", "opens": "w2", "after": "w1",
+         "condition": "Clear the last level of world 1"}
+      ],
       "tuning": {"jump": {"height_px": 96, "coyote_ms": 90}}
     }
 
 `units` is the design's units of the tiers built, by the design's ids, in the design's index
 order, with the design's values - including, where the design states them (game-design
 1.12.0), each unit's `group`, `structure`, `elements` and `objective_kind`, which is what the
-release tier is counted on. `tuning` carries every `build_spec.mechanics[].parameters` key as data,
+release tier is counted on. `unlocks` states, as data, every gate between the units the
+build ships: what it opens (a unit or group id the file carries), after what, and on what
+condition - one per `build_spec.progression.steps` entry that gates content. The
+content-sufficiency step counts gated unlocks here, on the build, never on the design's steps
+(`content.progression`): a build without them ships its units as a flat list. `tuning` carries every `build_spec.mechanics[].parameters` key as data,
 so a playtest changes a number rather than the code. Nothing here is the developer's to
 invent: where the design is silent, the gap goes in the development report's `design_gaps`
 and the unit is `partial` or `cut`.

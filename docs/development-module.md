@@ -144,7 +144,9 @@ the game, regenerated on every visit and committed with the code it asked for. I
   `metrics.difficulty.<axis>`) and
   `mastery` (the mastery signals are shown on the result screen and persisted through the
   seam). `progression`'s acceptance is tightened with them: after a page reload the probe
-  reports the same `content.unit_index` and `metrics.best` before any input.
+  reports the same `content.unit_index` and `metrics.best` before any input, and every
+  progression step that gates content is stated in `public/content/units.json` `unlocks`
+  (`{id, opens, after, condition}`), where content-sufficiency counts the gates.
 - **What this run builds: the quality tier.** The approved tech plan's
   `dev_plan.build_scope` (tech-plan 1.1.0, from the run's quality tier and
   `core/reference/quality-benchmark.yaml` `tiers[].builds`) says which design tiers and which

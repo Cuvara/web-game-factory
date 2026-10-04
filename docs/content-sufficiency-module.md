@@ -131,7 +131,7 @@ lists every skip in `skipped_checks`, and the step names them in its summary.
 | `content.difficulty` | Axes that escalate first unit to last; runs of units that change only their numbers; relief | `content.difficulty.min_escalating_axes`, `relief_every_units`, genre-models `variety.max_consecutive_scaling_only_units` |
 | `content.objectives` | Objective kinds (`objective_kind`, else the normalized objective), plus the design's secondary goals; the share of the most common kind | `content.objectives.*` |
 | `content.climax` | Every group closes with a climax unit where the family names a milestone. Climax units each name their own art, and no two share one. The build does not draw two climax units with the same assets | `content.difficulty.min_climax_per_group`, `presentation.assets.distinct_climax_art` |
-| `content.progression` | Gated unlocks: the data file's `unlocks`, else its units' `unlock`. When the data states none, the design's progression steps are counted, and the summary says so | `progression.min_gated_unlocks` |
+| `content.progression` | Gated unlocks on the built content: the data file's `unlocks` entries that open a unit the build ships, or a group one of them is in, behind a stated `after` or `condition`, and its units carrying `unlock`. An entry opening nothing shipped, or with no condition, is void and listed. A data file that states none is a flat list: 0, whatever the design's progression steps say (the design's count only decides the route) | `progression.min_gated_unlocks` |
 | `content.playtime` | Designed play of the shipped units. The oracle's measured durations are reported, not judged: a perfect player is a lower bound | `content.units.min_total_designed_s` |
 | `content.drift` | Every shipped unit carries the design's commitments: `index`, `objective`, every mechanic, and `group`, `structure`, `objective_kind`, `purpose`, `elements` and `art` wherever the data states them | No departure |
 
@@ -193,8 +193,9 @@ WS-8 finding contract (specialist routing, WS-7 scorecard) reads the same fields
 - It does not check that the content is fun, readable or well paced. Playability, visual QA
   and people judge that.
 - The oracle's durations are a lower bound on playtime, so they are reported and never judged.
-- Gated unlocks are read from the content data where it states them. Without that, the
-  design's count stands in, and the summary says so.
+- Gated unlocks are counted on the content data the build ships. The probe's survey enters
+  every unit directly, as a level select would, so it cannot show that a gate holds in play;
+  that a stated gate is enforced is review's and playability's to judge.
 - A unit the survey could not enter is unreached. The step does not tell a missing unit
   link from a missing unit; the summary names the survey's own account.
 

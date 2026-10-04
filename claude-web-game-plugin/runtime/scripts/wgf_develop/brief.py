@@ -76,7 +76,10 @@ REQUIRED_SYSTEMS = (
                 "through the seam."),
     ("progression", "The design's progression and difficulty ramp, persisted through the "
                     "integration seam's save/load: after a page reload the probe reports the "
-                    "same content.unit_index and metrics.best before any input."),
+                    "same content.unit_index and metrics.best before any input. Every "
+                    "progression step that gates content is enforced in play and stated in "
+                    "public/content/units.json `unlocks` ({id, opens, after, condition}: a "
+                    "unit or group the file carries) - the gates are counted there."),
     ("ui", "Menus and screens the design lists (ux.screens), readable on a phone held in "
            "one hand."),
     ("hud", "In-run HUD: score and whatever else the loop needs the player to see."),

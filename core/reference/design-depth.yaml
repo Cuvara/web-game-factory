@@ -15,7 +15,9 @@
 # Change a value only with a reason a person could defend from playtest or live data; a
 # looser bar here lets a single-loop prototype through as a game.
 
-version: 1.1.0  # 1.1.0: playability bars for the content and depth checks
+# 1.1.0: playability bars for the content and depth checks
+# 1.2.0: playability.persists.probe_measures - what the probe reports of a persisted kind
+version: 1.2.0
 
 meta_loop:
   # Persisting only these is a scoreboard, not a meta loop: at least one persisted entry
@@ -107,3 +109,15 @@ playability:
   persists:
     # Generation modes for which progression.persists is required; others get WARNING.
     required_generations: [authored]
+    # What the play probe reports of an MVP `meta_loop.persists` entry whose `delivered_by`
+    # names no HUD metric, by its kind: a metric name, or `content.unit_index` - the unit the
+    # player has reached, which the probe's `content` block reports with every unit
+    # (play-probe `content.unit_index`, required with `content`). Stage progress is the unit
+    # reached: it survives a reload when the probe reports the same unit_index back in play,
+    # and is measured only once the bot has reached a unit past the first (unit 1 is also
+    # where a build that saves nothing starts). A kind not listed here and not delivered by a
+    # HUD metric is not measurable: the check is SKIPPED, and the quality floor fails a
+    # release build on it.
+    probe_measures:
+      best-score: best
+      stage-progress: content.unit_index

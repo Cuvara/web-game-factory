@@ -39,6 +39,7 @@ from wgflib.yamllite import load_file
 from wgf_design.content import quality_tier
 
 __all__ = ["RULES_PATH", "BENCHMARK_PATH", "load_rules", "load_benchmark", "owed_units",
+           "built_unlocks",
            "observations", "layout_of", "similarity", "audit", "CHECK_ORDER"]
 
 RULES_PATH = os.path.join(paths.REFERENCE, "content-sufficiency.yaml")
@@ -730,7 +731,8 @@ def audit(design, strategy, data, records, rules=None, benchmark=None, models=No
                     measured={"build": _plain(measured), "design": _plain(declared)},
                     expected=stated))
 
-    # Progression: gated unlocks between groups.
+    # Progression: gated unlocks between groups, counted on the BUILT content - the gates
+    # the build's data file states to content it ships - never on the design's steps.
     want = bars.progression("min_gated_unlocks")
     if want is None:
         add(_skip("content.progression", f"tier {tier or 'none'} states no "
@@ -739,20 +741,24 @@ def audit(design, strategy, data, records, rules=None, benchmark=None, models=No
         owed_tiers = ("mvp", "post-mvp") if tier == "release" else ("mvp",)
         declared = [s for s in (spec.get("progression") or {}).get("steps") or []
                     if isinstance(s, dict) and s.get("tier") in owed_tiers]
-        unlocks = (data or {}).get("unlocks")
-        built = (len(unlocks) if isinstance(unlocks, list) else
-                 sum(1 for u in built_units.values() if u.get("unlock")) or None)
-        counted = built if built is not None else len(declared)
-        problems = ([f"{counted} gated unlock(s); the bar is {want:g} "
-                     f"(progression.min_gated_unlocks)"] if counted < want else [])
+        gates, void = built_unlocks(data, shipped, built_units)
+        problems = []
+        if len(gates) < want:
+            problems.append(
+                (f"the build gates {len(gates)} unlock(s) of the content it ships; the bar is "
+                 f"{want:g} (progression.min_gated_unlocks)")
+                + ("" if gates or void else
+                   ": its content data states none (public/content/units.json `unlocks`, or a "
+                   "unit's `unlock`), so the units are a flat list")
+                + (f"; {len(void)} stated unlock(s) open nothing the build ships or say not "
+                   f"what opens them: {_ids(void)}" if void else ""))
         design_problems = ([f"the design states {len(declared)} progression step(s) at the tier"]
                            if len(declared) < want else [])
         add(_judged("content.progression", problems, design_problems,
-                    f"{counted} gated unlock(s)"
-                    + ("" if built is not None else " (the content data states none; the "
-                       "design's progression steps are counted)"),
-                    measured={"build": built, "design": len(declared)},
-                    expected=f">= {want:g}"))
+                    f"the build gates {len(gates)} unlock(s): {_ids(gates)}",
+                    measured={"build": len(gates), "gates": gates, "void": void,
+                              "design": len(declared)},
+                    expected=f">= {want:g} gated unlocks in the build's content data"))
 
     # Drift: every design commitment of a shipped unit is the build's.
     drift = []
@@ -782,6 +788,32 @@ def audit(design, strategy, data, records, rules=None, benchmark=None, models=No
                "every shipped unit carries the design's commitments",
                measured={"drift": drift[:40]}, route="develop" if drift else None))
     return _finish(out, rules, order=True)
+
+
+def built_unlocks(data, shipped, built_units):
+    """([gate], [void]): the gated unlocks the build's content data states - `unlocks`
+    entries ({opens, after | condition}) and units carrying `unlock` - that open a unit the
+    build ships or a group one of them belongs to, behind a stated condition. An entry that
+    opens nothing shipped, or states no condition, is void: a gate to no content is not
+    progression."""
+    units = {u.get("id") for u in shipped if u.get("id")}
+    groups = {b.get("group") or u.get("group") for u in shipped
+              for b in [built_units.get(u.get("id")) or {}]} - {None}
+    gates, void = [], []
+    for n, entry in enumerate((data or {}).get("unlocks") or [], 1):
+        if not isinstance(entry, dict):
+            void.append(f"unlocks[{n}]")
+            continue
+        opens = entry.get("opens")
+        label = str(entry.get("id") or opens or f"unlocks[{n}]")
+        if isinstance(opens, str) and (opens in units or opens in groups)                 and (entry.get("after") or entry.get("condition")):
+            gates.append(label)
+        else:
+            void.append(label)
+    for unit_id, unit in built_units.items():
+        if unit.get("unlock") and unit_id in units:
+            gates.append(str(unit_id))
+    return gates, void
 
 
 def _plain(value):

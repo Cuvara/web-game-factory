@@ -109,8 +109,9 @@ def design_of(units, tier="release", mode="authored", groups=GROUPS):
                             "units": units}}}
 
 
-def data_of(units, drop=(), **overrides):
-    """The content data file a developer writes from the design's table."""
+def data_of(units, drop=(), unlocks=True, **overrides):
+    """The content data file a developer writes from the design's table: each group after
+    the first opened by clearing the one before (`unlocks`), unless `unlocks` is False."""
     built = []
     for unit in units:
         if unit["id"] in drop:
@@ -120,8 +121,17 @@ def data_of(units, drop=(), **overrides):
         entry["layout"] = copy.deepcopy(unit["parameters"])
         entry.update(overrides.get(unit["id"], {}))
         built.append(entry)
-    return {"schema": "wgf-content/1", "unit_kind": "level", "generation": {"mode": "authored"},
+    data = {"schema": "wgf-content/1", "unit_kind": "level", "generation": {"mode": "authored"},
             "units": built}
+    if unlocks:
+        groups = []
+        for unit in units:
+            if unit.get("group") not in groups:
+                groups.append(unit.get("group"))
+        data["unlocks"] = [{"id": f"open-{later}", "opens": later, "after": earlier,
+                            "condition": f"clear the {earlier} climax"}
+                           for earlier, later in zip(groups, groups[1:])]
+    return data
 
 
 def survey_of(units, traversed=3, entered=None, kinds=None, assets=None, unkinded=0):
@@ -253,6 +263,60 @@ class FewerUnitsThanDesigned(unittest.TestCase):
         result = run(design_of(units, groups=GROUPS[:2]), data_of(units), survey_of(units))
         shipped = status(result, "content.units_shipped")
         self.assertEqual((shipped["status"], shipped["route"]), ("FAIL", "design-gap"))
+
+
+class GatedUnlocks(unittest.TestCase):
+    """WS-13 gap: content.progression counted the DESIGN's progression steps when the content
+    data stated no unlocks, so a build shipping its levels as a flat list passed. Gated
+    unlocks are counted on the built content: the gates units.json states to content the
+    build ships."""
+
+    def test_a_flat_level_list_fails_though_the_design_states_its_steps(self):
+        units = varied_units()
+        result = run(design_of(units), data_of(units, unlocks=False), survey_of(units))
+        check = status(result, "content.progression")
+        self.assertEqual((check["status"], check["route"]), ("FAIL", "develop"))
+        self.assertEqual(check["measured"]["build"], 0)
+        self.assertEqual(check["measured"]["design"], 3)
+        self.assertIn("flat list", check["summary"])
+        finding = next(f for f in result["findings"] if f["check"] == "content.progression")
+        self.assertEqual(finding["route"], "develop")
+
+    def test_the_gates_the_build_states_are_counted(self):
+        units = varied_units()
+        result = run(design_of(units), data_of(units), survey_of(units))
+        check = status(result, "content.progression")
+        self.assertEqual(check["status"], "PASS")
+        self.assertEqual(check["measured"]["gates"], [f"open-{g}" for g in GROUPS[1:]])
+        self.assertEqual(check["measured"]["build"], len(GROUPS) - 1)
+
+    def test_a_gate_to_content_the_build_does_not_ship_counts_for_nothing(self):
+        units = varied_units()
+        data = data_of(units)
+        # Two gates open groups nobody built; the third states no condition.
+        data["unlocks"] = [{"id": "ghost-1", "opens": "w9", "after": GROUPS[0]},
+                           {"id": "ghost-2", "opens": "w8", "condition": "find it"},
+                           {"id": "free", "opens": GROUPS[1]}]
+        result = run(design_of(units), data, survey_of(units))
+        check = status(result, "content.progression")
+        self.assertEqual(check["status"], "FAIL")
+        self.assertEqual(check["measured"]["void"], ["ghost-1", "ghost-2", "free"])
+
+    def test_a_unit_carrying_its_unlock_is_a_gate(self):
+        units = varied_units()
+        gated = {units[4]["id"]: {"unlock": "clear world 1"},
+                 units[8]["id"]: {"unlock": "clear world 2"}}
+        result = run(design_of(units), data_of(units, unlocks=False, **gated), survey_of(units))
+        self.assertEqual(status(result, "content.progression")["status"], "PASS")
+
+    def test_a_design_short_of_the_bar_is_a_design_gap(self):
+        units = varied_units()
+        design = design_of(units)
+        design["build_spec"]["progression"]["steps"] = design["build_spec"]["progression"][
+            "steps"][:1]
+        result = run(design, data_of(units, unlocks=False), survey_of(units))
+        check = status(result, "content.progression")
+        self.assertEqual((check["status"], check["route"]), ("FAIL", "design-gap"))
 
 
 class UnreachableUnits(unittest.TestCase):

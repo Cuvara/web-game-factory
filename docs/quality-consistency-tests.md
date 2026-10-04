@@ -4,9 +4,9 @@
 
 `scripts/tests/test_quality_consistency.py` is the Core Acceptance Suite's `QUALITY` category
 (`scripts/tests/core_suite.py`, `bin/wgf test-core --only QUALITY`). It runs the shipped
-`new-game` workflow through the real engine on six genres. It puts each of ten degradations
-into a build that is otherwise release quality, plus one into the store copy, and checks four
-things:
+`new-game` workflow through the real engine on six genres. It puts each of eleven
+degradations into a build that is otherwise release quality, plus one into the store copy, and
+checks four things:
 
 - a gate detects the degradation;
 - the run stops (no G4, no release);
@@ -24,7 +24,7 @@ only. It starts no agent session and makes no network call. On Windows it runs i
 | Step | In this suite |
 |---|---|
 | engine, routing, loop budgets, gates G2-G4, quality policy (`params.quality`), pinned references | real (`scripts/wgflib/workflow`) |
-| design | the design the **real design step** writes at the release tier. The author (`fixtures/quality/designs.py`) lays the family's seed out as a release: groups of four units, two new elements per group, three structure kinds and a climax arena, four objective kinds, a secondary goal, and difficulty with relief. The design module's own rules (consistency, `content.tier_*` against `quality-benchmark.yaml`) must pass it, or the suite fails |
+| design | the design the **real design step** writes at the release tier. The author (`fixtures/quality/designs.py`) lays the family's seed out as a release: groups of four units, two new elements per group, three structure kinds and a climax arena, four objective kinds, a secondary goal, and difficulty with relief. What it keeps across a reload is the seed's own meta loop, unchanged. The design module's own rules (consistency, `content.tier_*` against `quality-benchmark.yaml`) must pass it, or the suite fails |
 | init, assets, develop, sdk, review, verify | fixtures (`fixtures/quality/world.py`). The developer builds what the design describes and adds the scenario's degradations. Entered by triage as a specialist (the real `wgf_develop.specialist.resolve`), it removes only the degradations that specialist owns in the scenario's fix map. It records the visit in the prototype-report's `specialist` block and returns `next-specialist` while groups are pending, as the real develop step does |
 | playability | the **real step**, with only its bot replaced. It clones nothing, builds nothing and opens no browser. It writes the records and frames `bot.spec.ts` writes, from the build, and the real `analysis.judge` judges them. The records are first-session, act, win, lose, pause, traverse, persist, session and survey, plus `content/units.json` |
 | production-quality, content-sufficiency, quality-gate, triage | the **real modules** |
@@ -100,26 +100,29 @@ and stops BLOCKED. Every case proves the following:
 | 9 | duplicate level (one level ships another's layout) | platformer | content-sufficiency | `content.structure` (2 of 12 repeated, bar 10%) | level-designer |
 | 10 | one dimension below the floor (3 sfx against 8) while every other dimension is high | simulation | quality-gate | `floor.sfx`; `failed == ["audio"]`, overall score above 75, decision `not-release` | the assets step, finding owned by audio-designer |
 | 11 | store copy claims 20 levels where the build measured 12 (after G4) | platformer | listing-validation | `grounding.counts.en` | listing-triage -> store-listing, finding owned by copywriter |
+| 12 | flat progression (no gated unlocks in the content data; persistence still works) | simulation | content-sufficiency | `content.progression` (0 gates on the build, the design states its steps) | systems-designer |
 
 Case 11 comes after G4, so G4 is asked and passed; what stops is release. Cases 8 and 10
 pass every producing gate. Only the quality floor holds them back, and it
 does not average a dimension away. In case 6 the gate sends the build straight to the
-assets step, as `new-game` routes `production-quality.assets`. Triage then drops the
-finding as handed over. The test shows that the gate's report, normalized by triage's own
-normalizer, gives a typed finding with route `assets`.
+assets step, as `new-game` routes `production-quality.assets`. The triage after the assets
+step does not route the finding again: it records it in the ledger as handed to the assets
+step, implemented by the remade manifest. The test shows that the gate's report, normalized
+by triage's own normalizer, gives a typed finding with route `assets`, and that the ledger
+holds it.
 
 ## C. Recovery
 
 | Test | Proves |
 |---|---|
-| `test_content_restored_by_the_level_designer_is_verified_on_the_new_commit` | The level designer's visit makes a new commit. Every gate measures it again; the failing report is about the old commit and the passing one about the new. In the ledger, the finding moves `detected -> classified -> assigned -> implemented -> verified -> closed`. It is implemented by the specialist's commit and verified by the gate that raised it, re-measuring that commit. Only then are G4 and release reached, and the run is release-ready |
+| `test_content_restored_by_the_level_designer_is_verified_on_the_new_commit` | The level designer's visit makes a new commit (the systems designer visits the same build after it: the lost group took its gate with it, `content.progression`). Every gate measures it again; the failing report is about the old commit and the passing one about the new. In the run's own ledger - the quality gate advances it, since no triage runs after the last fix - the finding moves `detected -> classified -> assigned -> implemented -> verified -> closed`. It is implemented by the specialist's commit and verified by the gate that raised it, re-measuring that commit. Only then are G4 and release reached, and the run is release-ready |
 | `test_a_fix_that_regresses_another_gate_is_not_verified` | The ui fix makes the production gate pass but drops content. The next triage keeps the ui finding `implemented` with verdict `regressed`, names the content finding as the regression, and routes the level designer. After that fix, the ui finding is verified and the run is released |
-| `test_art_made_again_through_the_assets_step` | The assets step makes the placeholder again, the gates pass the new build, and the run is released |
+| `test_art_made_again_through_the_assets_step` | The assets step makes the placeholder again, the gates pass the new build, and the run is released. The finding the gate sent straight to assets is in the ledger, verified on the new build |
 | `test_store_copy_rewritten_by_the_copywriter_is_validated_again` | listing-triage routes the copywriter's finding to store-listing. The rewritten copy is validated again (`FAIL`, then `PASS`), and only then is the release drafted |
 | `test_a_quality_gate_finding_is_closed_only_on_a_newer_build` | The quality-report's own finding lifecycle closes the performance finding on the newer build's commit (`closed_on`). The newer report names the failed build as its `previous` |
 
-The ledger is read by running the real triage step on the run's newest artifacts, outside
-the run. See the gaps below for why that is needed.
+The run's ledger is read from the newest quality-report (`ledger`), and checked against the
+real triage step run on the same artifacts, outside the run.
 
 ## D. Anti-gaming
 
@@ -128,24 +131,25 @@ the run. See the gaps below for why that is needed.
 | `test_evidence_about_an_older_commit_is_stale_and_blocks` | After a new build (`develop --force`), G4 asked again stops at the quality floor. The quality gate, shown the new build beside the old build's reports, is BLOCKED (`another build`) and scores nothing. Release refuses |
 | `test_a_benchmark_edited_mid_run_does_not_apply_to_it` | The live benchmark is lowered after the run started (near-identical levels allowed at 50%). The running build is still held to the pinned 10%, and its duplicate level blocks the run. A run started after the edit pins the edited file and is held to it |
 | `test_a_pinned_reference_edited_in_the_run_blocks` | A bar edited in the run's own pinned copy blocks the step that reads it: the floor blocks the quality gate, the benchmark blocks content-sufficiency. The engine then starts nothing downstream |
+| `test_a_rubric_edited_mid_run_does_not_apply_to_it` | A pass bar lowered in the live visual-qa rubric after the start does not reach the running build: visual-qa reads the pinned copy (`pass_bar` 3). A pinned copy edited in the run blocks visual-qa, and nothing downstream starts |
 | `test_tier_mvp_is_development_never_release` | `strategy.quality_tier: mvp`. Every artifact and the run are `development`, and the run is never release-ready |
 | `test_a_downgraded_configuration_is_development` | `sdk.run_tests: false` makes the run `development`, with the reasons recorded |
-| `test_a_skipped_check_is_not_green` | The design's meta loop keeps only what a progression step names, which no probe metric reports. Playability skips `progression.persists` and passes. The quality floor fails `floor.content_checks_measured` and `floor.progression_persists`, and the run never reaches G4 |
+| `test_seed_stage_progress_is_measured_on_the_build` | The puzzle, platformer, strategy and simulation seeds keep only stage progress. Playability measures it by the unit reached (`content.unit_index`), nothing is skipped, and each run reaches G4 on the seed's own meta loop |
+| `test_a_skipped_check_is_not_green` | The design's meta loop keeps only a kind no probe measure reports (cosmetics, no HUD metric). Playability skips `progression.persists` and passes. The quality floor fails `floor.content_checks_measured` and `floor.progression_persists`, and the run never reaches G4 |
 | `test_an_unmeasured_check_is_not_green` | A probe that names no entity kind fails `probe.valid` on both viewports, because element variety cannot be counted. Unmeasured is never a pass |
 | `test_content_deleted_after_qa_is_measured_again` | Content is deleted after every gate passed the build. G4 asked on the old reports stops at the floor, and release will not start. Going on measures the new build, which fails `content.units_shipped` |
 
 ## Gaps
 
-Each item below was found by this suite. Where the fix was small and inside the gate's own
-module, it was fixed. The others are open, and the suite states them.
+Each item below was found by this suite and fixed at its module. Each has a regression test.
 
-| Gap | Status |
-|---|---|
-| content-sufficiency read the **live** `quality-benchmark.yaml`, not the run's pinned copy. A bar lowered mid-run reached the running build. The quality gate reads that report's checks, so it passed the build too: a duplicate-level build reached G4. | **Fixed** in `scripts/wgf_sufficiency/step.py`: the bars come from the run's pin, and an edited pin is BLOCKED. Tests: `test_a_benchmark_edited_mid_run_does_not_apply_to_it`, `test_a_pinned_reference_edited_in_the_run_blocks`, `test_content_sufficiency.Step` |
-| A build with **no gated unlocks** (a flat level list) whose persistence still works passes every gate. `content.progression` counts the design's progression steps when the content data states no `unlocks` (documented in [content-sufficiency-module.md](content-sufficiency-module.md)). | Open. `KnownGaps.test_gap_a_build_without_gated_unlocks_is_not_detected` is an expected failure until a gate measures unlocks on the build |
-| The run's **finding ledger** advances only when triage runs. After the last fix passes every gate, nothing sends the build back to triage, so the run reaches G4 and release with that finding still `assigned`. The verification is only visible when triage runs again. | Open. Asserted in `test_content_restored_by_the_level_designer_is_verified_on_the_new_commit`. The fix belongs to the workflow, for example a triage pass, or a ledger update, on the way to G4 |
-| A release-tier design whose meta loop persists only `stage-progress` named by a progression step leaves `progression.persists` SKIPPED. Of the six genres here, every seed except arcade and racing is like this. The quality floor then fails a clean build and routes it to develop, which no developer visit can fix. The design step accepts such a design at the release tier. | Open. The suite's release author adds a persisted best score. `test_a_skipped_check_is_not_green` uses the seed's own loop |
-| visual-qa reads the **live** `visual-qa-rubric.yaml` (`factory.visualqa.rubric` default), not the copy `new-game` pins. A mid-run rubric edit applies to the running build's visual-qa. The quality gate still holds the visual scores to the pinned floor and benchmark. | Open. The same fix as content-sufficiency's, in `scripts/wgf_visualqa` |
+| Gap | Fix | Tests |
+|---|---|---|
+| content-sufficiency read the **live** `quality-benchmark.yaml`, not the run's pinned copy. A bar lowered mid-run reached the running build, and a duplicate-level build reached G4. | `scripts/wgf_sufficiency/step.py`: the bars come from the run's pin, and an edited pin is BLOCKED. | `test_a_benchmark_edited_mid_run_does_not_apply_to_it`, `test_a_pinned_reference_edited_in_the_run_blocks`, `test_content_sufficiency.Step` |
+| A build with **no gated unlocks** (a flat level list) whose persistence still works passed every gate: `content.progression` counted the design's progression steps when the content data stated no `unlocks`. | `scripts/wgf_sufficiency/audit.py`: gated unlocks are counted on the built content only - `units.json` `unlocks` that open a unit the build ships, or its group, behind a stated condition, and units carrying `unlock`. None is a flat list: 0, routed `develop` (or `design-gap` when the design itself states too few steps). The develop brief and content contract say to state them. | `test_12_flat_progression_counted_on_the_build`, `test_content_sufficiency.GatedUnlocks` |
+| The run's **finding ledger** advanced only when triage ran. After the last fix nothing sent the build back to triage, so the run reached G4 and release with that finding still `assigned`. | `scripts/wgf_triage/ledger.py`: the quality gate advances the ledger on every report of the build and its own (quality-report `ledger`), and is BLOCKED while a blocking finding a gate raised is open; release advances it once more and refuses with `open-findings`. The blocking severities are `specialist-routing.yaml` `ledger.blocking_severities`. A finding a gate routed straight to the assets step is recorded too. | `test_content_restored_by_the_level_designer_is_verified_on_the_new_commit`, `test_art_made_again_through_the_assets_step`, `test_6_placeholder_assets_go_to_the_assets_step`, `test_quality_gate.Ledger`, `test_triage.FindingLifecycle` |
+| A release-tier design whose meta loop persists only `stage-progress` left `progression.persists` SKIPPED - every seed but arcade and racing - and the floor failed a clean build no developer visit could fix. | `scripts/wgf_playability/analysis.py` with `design-depth.yaml` 1.2.0 `playability.persists.probe_measures`: stage progress is measured by the unit reached, `content.unit_index`, which the play probe already reports with every unit and the bot already compares across the reload. It counts only once the bot reached a unit past the first. The design is not asked to add a score: the meta-loop rule already refuses a design that keeps only a score, and the progress the player builds is the stage. The suite's release author no longer adds a best score. | `test_seed_stage_progress_is_measured_on_the_build`, `test_a_skipped_check_is_not_green`, `test_playability.Content.test_stage_progress_*` |
+| visual-qa read the **live** `visual-qa-rubric.yaml`, not the copy `new-game` pins. | `scripts/wgf_visualqa/step.py`: without a configured rubric it reads the run's pinned copy, and an edited copy BLOCKS it. | `test_a_rubric_edited_mid_run_does_not_apply_to_it`, `test_visual_qa.ThePinnedRubric` |
 
 ## Running it
 

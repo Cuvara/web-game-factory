@@ -24,6 +24,7 @@ sha256 (store-listing.schema.json). See docs/store-listing-module.md.
 """
 
 import datetime
+import json
 import os
 import shutil
 
@@ -170,7 +171,9 @@ class StoreListingStep(WorkflowStep):
         strings = read_strings(dist)
         runtime_assets = read_runtime_assets(dist)
         facts = extract(design, sdk_report=loaded.get("sdk-report"), scaffold=scaffold, strings=strings,
-                        runtime_assets=runtime_assets, game_config=game_config)
+                        runtime_assets=runtime_assets, game_config=game_config,
+                        prototype_report=self._report_of_this_build(loaded.get("prototype-report"), root,
+                                                                    head_sha, context))
         self._ctx["facts"] = facts
 
         targets = platforms.targets(scaffold, self.settings.platforms)
@@ -471,9 +474,56 @@ class StoreListingStep(WorkflowStep):
                               severity="error" if not rid.startswith("logo") else "warning", subject=rid)
         return {"method": method, "source_asset": hero_id, "items": items}
 
+    def _report_of_this_build(self, report, root, head_sha, context):
+        """The prototype-report when its commit is the listed one or an ancestor of it (the
+        sdk step commits after develop), else None: scope deltas of another line of work
+        say nothing about this build."""
+        commit = ((report or {}).get("build_ref") or {}).get("commit_sha") or ""
+        if not commit:
+            return None
+        if same_commit(commit, head_sha):
+            return report
+        ancestor = procs.run(["git", "merge-base", "--is-ancestor", commit, head_sha], cwd=root, timeout=30)
+        if ancestor.ok:
+            return report
+        context.logger.info("prototype-report not of this build", report_commit=commit[:12],
+                            listed=head_sha[:12])
+        return None
+
+    def _supplied(self, locales):
+        """{locale: localeCopy} a person wrote under factory.listing.copy_dir, and
+        {locale: path}. A file that is not a localeCopy is a problem, never used."""
+        directory = self.settings.copy_dir_for(self._ctx.get("title_id"))
+        copies, where = {}, {}
+        if not directory or not os.path.isdir(directory):
+            return copies, where
+        for locale in locales:
+            path = os.path.join(directory, f"{locale}.json")
+            if not os.path.isfile(path):
+                continue
+            try:
+                with open(path, encoding="utf-8") as handle:
+                    data = json.load(handle)
+            except (OSError, ValueError) as exc:
+                self._problem("copy-supplied-invalid", f"{path}: not readable JSON ({exc})", subject=locale)
+                continue
+            shape = _supplied_shape(data)
+            if shape:
+                self._problem("copy-supplied-invalid", f"{path}: {shape}", subject=locale)
+                continue
+            copies[locale] = data
+            where[locale] = path
+        return copies, where
+
     def _copy(self, context, facts, locales, reference, scratch):
-        copies, writer = write_copy(facts, locales, reference, writer_settings=self.settings.writer,
-                                    workdir=scratch, logger=context.logger)
+        supplied, where = self._supplied(locales)
+        self._ctx["supplied"] = where
+        copies, writer = write_copy(facts, [l for l in locales if l not in supplied], reference,
+                                    writer_settings=self.settings.writer, workdir=scratch,
+                                    logger=context.logger)
+        copies = {locale: supplied[locale] if locale in supplied else copies.get(locale) for locale in locales}
+        if supplied:
+            context.logger.info("store copy supplied by a person", locales=sorted(supplied))
         grounded_problems = []
         for locale, text in copies.items():
             if text is None:
@@ -592,7 +642,10 @@ class StoreListingStep(WorkflowStep):
             "package_dir": pkg.relative_to(package_dir, context.run_dir) if package_dir else "",
             "facts": facts or ctx.get("facts") or {"title": ctx["title_id"], "sources": {}},
             "copy": {"locales": locales, "writer": writer or {"kind": self.settings.writer_kind},
-                     "grounding": ctx.get("grounding") or {"checked": False, "problems": []}},
+                     "grounding": ctx.get("grounding") or {"checked": False, "problems": []},
+                     **({"supplied": {loc: os.path.abspath(p).replace(os.sep, "/")
+                                      for loc, p in ctx["supplied"].items() if loc in locales}}
+                        if ctx.get("supplied") else {})},
             "branding": branding or {"method": "none", "items": []},
             "screenshots": list(screenshots),
             "trailer": trailer or {"status": "none", "reason": message},
@@ -639,6 +692,39 @@ class StoreListingStep(WorkflowStep):
         if status != "complete":
             context.logger.warning("store listing incomplete", problems=[p["code"] for p in errors][:10])
         return StepResult.success([output], message=summary)
+
+
+_COPY_TEXT = ("title", "short_description", "long_description")
+_COPY_KEYS = {"title", "subtitle", "subtitle_variants", "short_description", "long_description", "features",
+              "controls", "tags", "categories", "promo", "age_rating"}
+
+
+def _supplied_shape(data):
+    """What makes a person's copy file not a localeCopy, or None."""
+    if not isinstance(data, dict):
+        return "not a JSON object"
+    unknown = sorted(set(data) - _COPY_KEYS)
+    if unknown:
+        return f"unknown field(s) {', '.join(unknown)}"
+    for field in _COPY_TEXT:
+        if not isinstance(data.get(field), str) or not data[field].strip():
+            return f"`{field}` must be a non-empty string"
+    features = data.get("features")
+    if not isinstance(features, list) or not all(
+            isinstance(f, dict) and set(f) == {"text", "source"}
+            and isinstance(f["text"], str) and isinstance(f["source"], str) for f in features):
+        return "`features` must be a list of {text, source}"
+    for field in ("subtitle_variants", "tags", "categories", "promo"):
+        if field in data and not (isinstance(data[field], list) and all(isinstance(v, str) for v in data[field])):
+            return f"`{field}` must be a list of strings"
+    if "tags" not in data:
+        return "`tags` is required"
+    for field in ("subtitle", "controls"):
+        if field in data and not isinstance(data[field], str):
+            return f"`{field}` must be a string"
+    if "age_rating" in data and not (data["age_rating"] is None or isinstance(data["age_rating"], str)):
+        return "`age_rating` must be a string or null"
+    return None
 
 
 def _family_kind(family):

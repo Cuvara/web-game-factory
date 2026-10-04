@@ -131,10 +131,13 @@ def validate(listing, run_dir, reference, profiles, facts=None):
 
     # -- metadata: the canonical copy ---------------------------------------------------
     locales = (listing.get("copy") or {}).get("locales") or {}
+    # A locale a person wrote (copy.supplied) is fixed by that person, not by another pass.
+    supplied = (listing.get("copy") or {}).get("supplied") or {}
     if not locales:
         checks.add("metadata.locales", "metadata", False, "the listing carries no copy in any locale",
                    fix="rewrite")
     for locale, text in sorted(locales.items()):
+        fix = "configure" if locale in supplied else "rewrite"
         for field in ("title", "short_description", "long_description"):
             value = text.get(field) or ""
             bounds = copy_bounds.get(field) or {}
@@ -150,7 +153,7 @@ def validate(listing, run_dir, reference, profiles, facts=None):
                        + ("" if present and not over and not under else
                           (" (empty)" if not present else f", bounds {minimum}-{maximum}")),
                        locale=locale, measured=len(value), expected={"min_chars": minimum, "max_chars": maximum},
-                       required=(not present) or over or locale == "en", fix="rewrite")
+                       required=(not present) or over or locale == "en", fix=fix)
         features = text.get("features") or []
         fb = copy_bounds.get("features") or {}
         ok = (fb.get("min") is None or len(features) >= fb["min"]) and (fb.get("max") is None or len(features) <= fb["max"]) \
@@ -158,20 +161,20 @@ def validate(listing, run_dir, reference, profiles, facts=None):
         checks.add(f"metadata.{locale}.features", "metadata", ok,
                    f"{len(features)} feature bullet(s) ({locale})", locale=locale, measured=len(features),
                    expected={"min": fb.get("min"), "max": fb.get("max"), "max_chars": fb.get("max_chars")},
-                   required=locale == "en", fix="rewrite")
+                   required=locale == "en", fix=fix)
         tags = text.get("tags") or []
         tb = copy_bounds.get("tags") or {}
         ok = (tb.get("min") is None or len(tags) >= tb["min"]) and (tb.get("max") is None or len(tags) <= tb["max"])
         checks.add(f"metadata.{locale}.tags", "metadata", ok, f"{len(tags)} tag(s) ({locale})",
                    locale=locale, measured=len(tags), expected={"min": tb.get("min"), "max": tb.get("max")},
-                   fix="rewrite")
+                   fix=fix)
         if copy_bounds.get("first_sentence_names_the_verb"):
             first = re.split(r"(?<=[.!?])\s+", (text.get("short_description") or "").strip())[0]
             starts_with_filler = bool(re.match(r"^(a|an|the|this|welcome|experience|enjoy)\b", first, re.I))
             checks.add(f"metadata.{locale}.first_sentence", "metadata", not starts_with_filler,
                        f"the short description opens with {first[:60]!r}"
                        + ("" if not starts_with_filler else ": it should name what the player does"),
-                       locale=locale, required=False, fix="rewrite")
+                       locale=locale, required=False, fix=fix)
 
     # -- screenshots ------------------------------------------------------------------------
     shots = listing.get("screenshots") or []
@@ -268,8 +271,9 @@ def validate(listing, run_dir, reference, profiles, facts=None):
         problems = [p for p in grounding.check(text, facts, claims, locale=locale) if p["severity"] == "error"]
         problems_total += len(problems)
         checks.add(f"grounding.{locale}", "grounding", not problems,
-                   "no unbacked claim" if not problems else "; ".join(p["message"][:120] for p in problems[:4]),
-                   locale=locale, measured=len(problems), fix="rewrite")
+                   ("no unbacked claim" if not problems else "; ".join(p["message"][:120] for p in problems[:4]))
+                   + (f" (supplied: {supplied[locale]})" if locale in supplied and problems else ""),
+                   locale=locale, measured=len(problems), fix="configure" if locale in supplied else "rewrite")
     for rendition in listing.get("platforms") or []:
         for locale, text in sorted((rendition.get("text") or {}).items()):
             problems = [p for p in grounding.check(text, facts, claims, locale=locale,
@@ -278,7 +282,8 @@ def validate(listing, run_dir, reference, profiles, facts=None):
             if problems:
                 checks.add(f"grounding.{rendition['platform_id']}.{locale}", "grounding", False,
                            "; ".join(p["message"][:120] for p in problems[:4]),
-                           platform_id=rendition["platform_id"], locale=locale, fix="rewrite")
+                           platform_id=rendition["platform_id"], locale=locale,
+                           fix="configure" if locale in supplied else "rewrite")
     if not locales:
         checks.add("grounding.copy", "grounding", False, "nothing to ground: no copy", fix="rewrite")
 
@@ -292,6 +297,13 @@ def validate(listing, run_dir, reference, profiles, facts=None):
         files = {f.get("requirement"): [] for f in rendition.get("files") or []}
         for f in rendition.get("files") or []:
             files.setdefault(f.get("requirement"), []).append(f)
+        # A required locale no copy could be written in leaves its texts and lists empty; that
+        # is the locale's gap, which only a person closes (ship the strings, configure a
+        # writer). Rewriting cannot, so those checks are not routed back to the listing.
+        no_copy = sorted(r["locale"] for r in reqs if r["kind"] == "locale"
+                         and r["locale"] not in (rendition.get("text") or {}))
+        gap = f" (no copy in required locale {', '.join(no_copy)})" if no_copy else ""
+        empty_fix = "configure" if no_copy else "rewrite"
         for req in reqs:
             cid = f"platforms.{pid}.{req['id']}"
             if req["kind"] == "locale":
@@ -306,9 +318,9 @@ def validate(listing, run_dir, reference, profiles, facts=None):
                     continue
                 if req.get("max_chars") is None:
                     entry = checks.add(cid, "platforms", present_any,
-                                       f"{pid}: {req['field']} {'present' if present_any else 'missing'}; the "
+                                       f"{pid}: {req['field']} {'present' if present_any else 'missing' + gap}; the "
                                        "profile states no length limit (UNKNOWN)",
-                                       platform_id=pid, unknown=present_any, fix="configure" if present_any else "rewrite")
+                                       platform_id=pid, unknown=present_any, fix="configure" if present_any else empty_fix)
                     if present_any:
                         unknown.append(req["id"])
                 else:
@@ -317,8 +329,9 @@ def validate(listing, run_dir, reference, profiles, facts=None):
                     entry = checks.add(cid, "platforms", present_any and not over,
                                        f"{pid}: {req['field']} within {req['max_chars']} chars"
                                        + (f"; over in {', '.join(over)}" if over else "")
-                                       + ("" if present_any else "; missing"),
-                                       platform_id=pid, expected={"max_chars": req["max_chars"]}, fix="rewrite")
+                                       + ("" if present_any else "; missing" + gap),
+                                       platform_id=pid, expected={"max_chars": req["max_chars"]},
+                                       fix="rewrite" if present_any else empty_fix)
             elif req["kind"] == "list":
                 counts = {loc: len((t or {}).get(req["field"]) or []) for loc, t in (rendition.get("text") or {}).items()}
                 worst = min(counts.values()) if counts else 0
@@ -326,15 +339,17 @@ def validate(listing, run_dir, reference, profiles, facts=None):
                     continue
                 ok = (req.get("min") is None or worst >= req["min"]) and (req.get("max") is None or max(counts.values() or [0]) <= req["max"])
                 if not req["known"]:
-                    entry = checks.add(cid, "platforms", worst > 0, f"{pid}: {req['field']} present; the profile "
-                                                                     "states no bound (UNKNOWN)",
-                                       platform_id=pid, unknown=worst > 0, fix="configure" if worst > 0 else "rewrite")
+                    entry = checks.add(cid, "platforms", worst > 0,
+                                       f"{pid}: {req['field']} {'present' if worst > 0 else 'missing' + gap}; "
+                                       "the profile states no bound (UNKNOWN)",
+                                       platform_id=pid, unknown=worst > 0, fix="configure" if worst > 0 else empty_fix)
                     if worst > 0:
                         unknown.append(req["id"])
                 else:
-                    entry = checks.add(cid, "platforms", ok, f"{pid}: {req['field']} {counts}",
+                    entry = checks.add(cid, "platforms", ok, f"{pid}: {req['field']} {counts}" + ("" if counts else gap),
                                        platform_id=pid, measured=counts,
-                                       expected={"min": req.get("min"), "max": req.get("max")}, fix="rewrite")
+                                       expected={"min": req.get("min"), "max": req.get("max")},
+                                       fix="rewrite" if counts else empty_fix)
             elif req["kind"] == "image":
                 made = files.get(req["image_id"]) or []
                 if req.get("required") is False:
@@ -419,7 +434,8 @@ def validate(listing, run_dir, reference, profiles, facts=None):
             elif req["kind"] == "age_rating":
                 if not req.get("required"):
                     continue
-                stated = any((t or {}).get("age_rating") for t in (rendition.get("text") or {}).values())
+                stated = bool(rendition.get("age_rating")) or any(
+                    (t or {}).get("age_rating") for t in (rendition.get("text") or {}).values())
                 entry = checks.add(cid, "platforms", stated,
                                    f"{pid}: age rating {'stated' if stated else 'missing (factory.listing.age_rating)'}",
                                    platform_id=pid, fix="configure")

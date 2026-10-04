@@ -614,7 +614,7 @@ class ReleaseStep(WorkflowStep):
             icon = next((shipped(f) for f in rendition.get("files") or [] if f.get("kind") == "icon"), None)
             if icon:
                 entry["icon"] = icon
-            rating = next((t.get("age_rating") for t in texts.values() if t.get("age_rating")), None)
+            rating = rendition.get("age_rating") or next((t.get("age_rating") for t in texts.values() if t.get("age_rating")), None)
             if rating:
                 entry["age_rating"] = rating
             store_metadata[rendition["platform_id"]] = entry

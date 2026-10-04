@@ -187,13 +187,30 @@ def render_platform(platform, requirements, *, canonical, copies, out_dir, run_d
     def problem(code, message, severity="error", subject=None):
         unmet.append({"code": code, "severity": severity, "message": message, "subject": subject})
 
+    # The age rating is the platform's, not a locale's: resolved once from configuration,
+    # stated on the rendition whether or not any copy could be written.
+    rating_required = any(req.get("required") for req in requirements if req["kind"] == "age_rating")
+    rating = None
+    if rating_required:
+        value = (age_rating.get(pid) or age_rating.get("default")) if isinstance(age_rating, dict) else age_rating
+        if not value:  # else one a writer stated in a required locale's copy
+            value = next((copies[r["locale"]].get("age_rating") for r in requirements
+                          if r["kind"] == "locale" and (copies.get(r["locale"]) or {}).get("age_rating")), None)
+        rating = str(value) if value else None
+        if rating is None:
+            problem("age-rating-missing", f"{pid} requires an age rating and nothing in the "
+                                          f"run states one: set factory.listing.age_rating "
+                                          f"({pid} or default)", subject="age_rating")
+
     required_locales = [r["locale"] for r in requirements if r["kind"] == "locale"]
     for locale in required_locales:
         copy = copies.get(locale)
         if not copy:
             problem("locale-missing", f"{pid} requires the listing texts in `{locale}`, and none "
-                                      f"could be written in it (no agent writer, and the build ships "
-                                      f"no `{locale}` strings)", subject=locale)
+                                      f"could be written in it: the build ships no `{locale}` string "
+                                      f"the writer can read as the game's title and objective or "
+                                      f"rules, and no agent writer is configured "
+                                      f"(factory.listing.writer)", subject=locale)
             continue
         cut = json.loads(json.dumps(copy))
         for req in requirements:
@@ -217,16 +234,8 @@ def render_platform(platform, requirements, *, canonical, copies, out_dir, run_d
                                 severity="warning", subject=field)
                     items = mapped
                 cut[field] = fit_list(items, req.get("max"), req.get("max_chars"))
-        rating = (req for req in requirements if req["kind"] == "age_rating")
-        for req in rating:
-            if req.get("required"):
-                value = age_rating.get(pid) or age_rating.get("default") if isinstance(age_rating, dict) else age_rating
-                if value:
-                    cut["age_rating"] = str(value)
-                elif not cut.get("age_rating"):
-                    problem("age-rating-missing", f"{pid} requires an age rating and nothing in the "
-                                                  f"run states one: set factory.listing.age_rating "
-                                                  f"({pid} or default)", subject="age_rating")
+        if rating:
+            cut["age_rating"] = rating
         text[locale] = cut
     if not required_locales and copies.get("en"):
         text["en"] = copies["en"]
@@ -381,7 +390,7 @@ def render_platform(platform, requirements, *, canonical, copies, out_dir, run_d
         "platform_id": pid, "profile_version": platform.get("profile_version") or "unknown",
         "role": platform.get("role") or "required", "spec_status": platform.get("spec_status") or "absent",
         "dir": relative_to(out_dir, run_dir), "listing": relative_to(listing_path, run_dir),
-        "files": files, "text": text, "locales_required": required_locales, "unmet": unmet,
+        "files": files, "text": text, "locales_required": required_locales, "age_rating": rating, "unmet": unmet,
     }
     return entry, derive
 

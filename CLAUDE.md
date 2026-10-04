@@ -414,6 +414,9 @@ seen by the engine — validate what you write there with ajv.
   copy, per-platform renditions under `core/reference/store-listing.yaml` and the profiles'
   `store_listing` blocks), its validation with UNKNOWN requirements named, the release
   shipping it; `scripts/wgf-listing.py`
+- `docs/platform-targets-2026-10.md` — Yandex, CrazyGames, Y8, GameDistribution and GamePix
+  requirements as documented on 2026-10-04 (with sources), the profile 1.2.0 changes, and how
+  a finished title is retargeted (`factory.strategy.platforms`, one package per release today)
 - `docs/platform-sdk-verification.md` — how platform SDK integration is verified, and where the
   platform profiles disagree with current portal documentation
 - `docs/review-module.md` — the `review` step: enforced read-only reviewer, verdict contract

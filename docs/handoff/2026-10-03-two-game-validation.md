@@ -6,7 +6,7 @@ verified. It is written from the run's own records: the lead's state file, the p
 dogfood findings (F01-F26) and the descriptions of PRs #25, #26 and #28-#39. Nothing here
 goes beyond them; where they do not say, this document says so.
 
-**Status: every fix PR listed below was open, not merged, when this was written.** The plan
+**Status: every fix PR listed below was open, not merged, when this was written.** See "Outcome (2026-10-04)" at the end for what was merged and what the runs reached. The plan
 in the lead's PR map is: merge #34 first (it turns `main` green), then one integration branch
 of `main` plus every other PR, the plugin runtime regenerated once, one CI run, one merge. The
 goldens on Linux after that integration have not run yet (see "Not verified").
@@ -123,3 +123,48 @@ Next tier, from the same file:
   already holds the port.
 - **Runs A and B**: their outcome after the fixes, and their G4 decisions, are not in the
   sources.
+
+## Outcome (2026-10-04)
+
+Written after both runs reached G6. Sources: the lead's state file, the workers' reports and
+the merge commits on `main`.
+
+**Integration.** Every fix PR above (#25, #26, #28-#39) is merged. Later fixes came from the
+same runs and were merged as integration batches: `c67fcc9`, `aec02b1`, `f228557`, `5a8adf4`,
+`549e0e8`, then #41, #42 (`096f9d7`) and the listing showcase (`d67b24b`). `main` was green
+with both goldens on Linux at `f9d789d`, `c67fcc9`, `f228557` and `549e0e8`. The CI result
+for `d67b24b` is in its own run.
+
+**Runs.** Both reached G6 (publish-review). Nothing was submitted, and `WGF_PUBLISH_LIVE` was
+never set. G4 and G5 were recorded by the lead. The human's approval of each game, and G6,
+are still outstanding.
+
+| Run | Game | Release | Evidence class |
+|---|---|---|---|
+| A `new-game-20261003-081154-4e5e0a` | Brick Breaker Worlds (2D, PixiJS): 32 levels, 4 worlds, 4 bosses | r1 v0.1.0, `96f5cea`, `poki.zip` 6.08 MB | PASS_MOCK |
+| B `new-game-20261003-082542-0de9b5` | Sky Marble (3D, three.js) | r1, `64ff4c6`, `poki.zip` 1.72 MB | PASS_MOCK |
+
+### Defects found after the first writing
+
+| # | Defect and evidence | Status |
+|---|---|---|
+| 21 | (above) Later-level assets could not be judged. | Fixed: the probe's optional `play.showcase` (`d6e15a7`). The bot stages each declared target and production-quality credits it only from pixels in the frame. |
+| 23 | `verify` ignored the develop section of the dict configuration a step receives when sizing its e2e workers (B). | `74ef0c4`, `f5616ad` |
+| 24 | The visual-qa judge's slightly malformed structured reply failed the step after two attempts. No repair round showed the judge the validation error (B, twice). | `bc5de94` |
+| 25 | A review/verify ordering deadlock, and the read-only review guard (B). | `4aac3a4`, `c1be772`, `91acb76`, `ededa2e` |
+| 26 | The listing failed Yandex: required-locale copy was missing and there was no per-platform age rating (B). The copy was grounded only on the design, not on the build. | `a2ce3d8`, `3ea0f42` |
+| 27 | `assets.formats` treated source code under `src/assets/` as an asset ("unsupported format: src/assets/manifest.ts"). The craft guides' reference port keeps its loader there (A). | #41 |
+| 28 | production-quality judged a small fast mover over the box it swept during the ~1 s screenshot. An ember (~22x30) swept 23x230, which diluted its changed share below the bar ("embers: fails at rendered") although the frame plainly drew it (A). | #42: the bot records `own: [w, h]` and the gate slides a window of that size along the box. Bars are unchanged. |
+| 29 | The store-listing capture played only the first ~12 s of level 1. The frames differed by 0.3-3.3 % against a 5 % bar, and the title and result states were never reached, so 2 screenshots were usable against CrazyGames' 4 (A). | `d67b24b`: the capture also shoots the probe's showcase states under the same bars. In run A the package reached 5 screenshots. |
+
+### Still open
+
+- 2, 3/8, 9, 19, 22 above.
+- Listing copy: the controls line lists touch only (desktop mouse and keys are not stated).
+  The `ru` copy from the template writer is the in-game objective line only. A real
+  description needs the agent copywriter or copy supplied by a person.
+- The real Poki SDK (not the bots' stub) logs "localStorage ... sandboxed" errors from its own
+  frame (A). The game keeps working. Run Poki's QA tool before publishing.
+- Game-side minors, recorded in each review package: A's four bosses share one drawing, A's
+  ball can enter the HUD band in late levels, and A is a portrait column on desktop by design.
+- Verification evidence for both games is PASS_MOCK. There are no real-device measurements.

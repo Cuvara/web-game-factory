@@ -7,6 +7,25 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). The Fac
 released as a whole (`v1.0.0` is Core v1, frozen); schemas still carry their own versions,
 and `core/` is still the contract.
 
+## [Unreleased]
+
+**The console fills every listing field, per locale** (portal publishing workstream 1,
+[docs/portal-publishing-architecture.md](docs/portal-publishing-architecture.md) Part 4).
+The console adapter never filled a description: it asked the store metadata for a
+`description` key, but the store metadata stores `descriptions` keyed by locale.
+`ConsoleAdapter.listing_fields` now fills title, short and long description, controls, tags
+and categories from the shipped store listing's rendition
+(`release/<id>/listing/platforms/<pid>/listing.json`), falling back to the store metadata.
+A `{locale}` in a field's selector makes the field per locale. Required fields and locales
+come from the platform profile's `store_listing` block and `metadata_requirements`. A
+required field with no value, or with no console field, is reported (BLOCKED) before
+anything is contacted. In the browser, the executor reads every value back before and after
+saving. A required field missing from the page ends `configure` as an error. Optional fields
+the step did not fill are named in the record. The fixture portal has per-locale
+short/long description fields (`PORTAL_LOCALES`) and a `missing-field` mode. No schema or
+artifact changes; the Yandex and CrazyGames selector maps, still hypotheses, report the
+required fields they do not name.
+
 ## [2.7.0] - 2026-10-03
 
 Research that proposes several opportunities from a coded game corpus, and designs that say

@@ -13,8 +13,6 @@ __all__ = ["YandexAdapter"]
 
 
 class YandexAdapter(ConsoleAdapter):
-    metadata_fields = ("title", "description")
-
     def selectors(self):
         base = (self.base_url(None) or "https://games.yandex.com/console/").rstrip("/")
         return {

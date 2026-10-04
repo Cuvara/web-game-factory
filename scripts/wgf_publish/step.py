@@ -159,6 +159,8 @@ class PublishStep(WorkflowStep):
             metadata = common.store_metadata(root, release_id, manifest).get(pid) or {}
             job = Job(platform_id=pid, release_id=release_id, idempotency_key=key,
                       package_path=path, package=package, metadata=metadata, checkout=root,
+                      listing=common.listing_text(root, release_id, pid),
+                      platform_profile=common.profile_for(pid),
                       release_dir=common.release_dir(root, release_id), run_dir=context.run_dir,
                       scratch_dir=scratch or common.release_dir(root, release_id),
                       submit=submit, env=settings.game_env(context.config),

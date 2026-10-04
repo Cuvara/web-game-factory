@@ -52,6 +52,27 @@ STORAGE_STATE = {"cookies": [{"name": "session", "value": COOKIE, "domain": "127
 METADATA = {"generic-web": {"title": "Fixture Game", "descriptions": {"en": "A fixture."},
                             "screenshots": ["s1.png"], "icon": "icon.png",
                             "locales_included": ["en"]}}
+# A shipped store listing's rendition texts (store-listing localeCopy), in two locales.
+LISTING = {
+    "en": {"title": "Fixture Game", "short_description": "Merge towers, hold the line.",
+           "long_description": "Merge matching towers to build stronger ones and hold the line "
+                               "against every wave.",
+           "controls": "Mouse: drag to merge. Touch: drag to merge.",
+           "tags": ["merge", "tower defense", "casual"], "categories": ["Puzzle"]},
+    "ru": {"title": "Fixture Game", "short_description": "Объединяй башни, держи оборону.",
+           "long_description": "Объединяй одинаковые башни, строй сильнее и держи оборону "
+                               "против каждой волны.",
+           "controls": "Мышь: перетащи. Касание: перетащи.",
+           "tags": ["слияние", "башни"], "categories": ["Головоломки"]},
+}
+# A platform that asks for every listing field, in ru (shaped like Yandex's profile).
+STRICT_PLATFORM = {
+    "store_listing": {"title": {"required": True}, "short_description": {"required": True},
+                      "long_description": {"required": True}, "tags": {"required": False},
+                      "categories": {"required": True}, "locales": ["ru"]},
+    "metadata_requirements": {"descriptions_locales": ["ru"]},
+    "requirements": {"locales_required": ["ru"]},
+}
 # The results a Playwright console run writes, by scenario (browser/console.spec.ts).
 SCENARIOS = {
     "fresh": {"authenticate": {"outcome": "ok"},
@@ -150,6 +171,14 @@ class PublishCase(unittest.TestCase):
         with open(os.path.join(self.release_dir, "store-metadata.json"), "w",
                   encoding="utf-8") as handle:
             json.dump(METADATA if metadata is None else metadata, handle)
+
+    def write_listing(self, text=None, platform_id="generic-web"):
+        """The store listing the release shipped: its rendition for `platform_id`."""
+        directory = os.path.join(self.release_dir, "listing", "platforms", platform_id)
+        os.makedirs(directory, exist_ok=True)
+        with open(os.path.join(directory, "listing.json"), "w", encoding="utf-8") as handle:
+            json.dump({"platform_id": platform_id, "text": LISTING if text is None else text},
+                      handle, ensure_ascii=False)
 
     def verification(self, assertions=()):
         """The run's verification-report with policy.assertions:generic-web recorded."""
@@ -733,6 +762,127 @@ class Publish(PublishCase):
                                           "submit", "verify"])
         self.assertTrue(flow["package"].endswith("generic-web.zip"))
 
+    def test_the_shipped_listing_reaches_the_console_field_by_field_and_locale_by_locale(self):
+        self.write_listing()
+        console = FakeConsole("fresh")
+        result = self.go(console=console)
+        self.assertEqual(result.route, "dry-run", result.error or result.message)
+        fields = {f["key"]: f["value"] for f in console.flows[0]["fields"]}
+        self.assertEqual(fields["title"], "Fixture Game")
+        for locale in ("en", "ru"):
+            self.assertEqual(fields[f"description:{locale}"], LISTING[locale]["long_description"])
+            self.assertEqual(fields[f"short_description:{locale}"],
+                             LISTING[locale]["short_description"])
+        self.assertEqual((fields["controls"], fields["tags"], fields["categories"]),
+                         (LISTING["en"]["controls"], "merge, tower defense, casual", "Puzzle"))
+        noted = [e for e in result.artifacts[0].content["evidence"]
+                 if e.get("phase") == "prepare" and "listing fields" in e["summary"]]
+        self.assertEqual(sorted(noted[0]["data"]["fields"]), sorted(fields))
+
+
+# -- listing fields --------------------------------------------------------------------------
+
+class ListingFields(unittest.TestCase):
+    """adapters/console.py: every listing field the console has, per locale, from the shipped
+    listing; a required field with no value, or none on the console, is reported."""
+
+    def tearDown(self):
+        redact.forget()
+
+    def job(self, listing=None, metadata=None, platform=None, **kwargs):
+        from wgf_publish.adapters import Job
+        return Job(platform_id="generic-web", release_id="r1", idempotency_key="k",
+                   package_path=None, package={"filename": "generic-web.zip"},
+                   metadata=metadata or {}, checkout=None, release_dir=None, run_dir=None,
+                   scratch_dir=None, submit=False, env={}, hooks={}, listing=listing,
+                   platform_profile=platform, **kwargs)
+
+    @staticmethod
+    def fixture():
+        return FixturePortalAdapter("generic-web", {"submission": {"method": "console"}},
+                                    {"console_url": "http://127.0.0.1:1/"})
+
+    def test_every_field_is_filled_per_locale_from_the_listing(self):
+        adapter = self.fixture()
+        job = self.job(LISTING, platform=STRICT_PLATFORM)
+        fields, problems, unfilled = adapter.listing_fields(job)
+        self.assertEqual((problems, unfilled), ([], []))
+        values = {f["key"]: f["value"] for f in fields}
+        self.assertEqual(sorted(values), sorted([
+            "title", "short_description:ru", "short_description:en", "description:ru",
+            "description:en", "controls", "tags", "categories"]))
+        for locale in ("en", "ru"):
+            self.assertEqual(values[f"short_description:{locale}"],
+                             LISTING[locale]["short_description"])
+            self.assertEqual(values[f"description:{locale}"], LISTING[locale]["long_description"])
+        # Language-neutral and single fields come from the platform's first required locale.
+        self.assertEqual(values["controls"], LISTING["ru"]["controls"])
+        self.assertEqual(values["tags"], "слияние, башни")
+        self.assertEqual(values["categories"], "Головоломки")
+        by_key = {f["key"]: f for f in fields}
+        self.assertEqual(by_key["description:ru"]["selector"], 'textarea[name="description[ru]"]')
+        self.assertTrue(by_key["description:ru"]["required"])
+        self.assertFalse(by_key["description:en"]["required"])
+        self.assertEqual(adapter.metadata(job), values)
+
+    def test_descriptions_fall_back_to_the_store_metadata_by_locale(self):
+        # The bug this replaces: store metadata carries `descriptions` keyed by locale, and the
+        # console was handed only a `description` key nothing wrote, so no description was filled.
+        metadata = {"title": "Fixture Game", "descriptions": {"en": "A fixture.", "ru": "Фикстура."},
+                    "locales_included": ["en", "ru"]}
+        platform = {"metadata_requirements": {"descriptions_locales": ["en", "ru"]}}
+        fields, problems, unfilled = self.fixture().listing_fields(self.job(metadata=metadata,
+                                                                            platform=platform))
+        self.assertEqual(problems, [])
+        values = {f["key"]: f["value"] for f in fields}
+        self.assertEqual(values, {"title": "Fixture Game", "description:en": "A fixture.",
+                                  "description:ru": "Фикстура."})
+        self.assertIn("short_description:en", unfilled)  # optional and absent: said, not hidden
+
+    def test_a_missing_required_field_is_reported_and_nothing_is_contacted(self):
+        text = json.loads(json.dumps(LISTING))
+        del text["ru"]["short_description"]
+        text["ru"]["categories"] = text["en"]["categories"] = []  # in no locale at all
+        adapter = self.fixture()
+        job = self.job(text, platform=STRICT_PLATFORM)
+        problems = adapter.listing_fields(job)[1]
+        self.assertIn("the shipped listing has no short_description (ru), which generic-web "
+                      "requires", problems)
+        self.assertIn("the shipped listing has no categories, which generic-web requires",
+                      problems)
+        calls = []
+        job.run_process = lambda *a, **k: calls.append(a)
+        result = adapter.publish(job)
+        self.assertEqual(result.outcome, outcomes.BLOCKED)
+        self.assertIn("short_description (ru)", result.message)
+        self.assertEqual(calls, [])
+        # The title is required wherever there is a console field for it; it is one field,
+        # so any locale of the listing that has it serves.
+        problems = adapter.listing_fields(self.job({"en": {"short_description": "x"}}))[1]
+        self.assertIn("the shipped listing has no title, which generic-web requires", problems)
+        fields = adapter.listing_fields(self.job({"en": {"title": "Fixture Game"}},
+                                                 platform=STRICT_PLATFORM))[0]
+        self.assertEqual(fields[0]["value"], "Fixture Game")
+
+    def test_a_required_field_the_console_map_lacks_is_reported(self):
+        from wgf_publish import common
+        from wgf_publish.adapters.crazygames import CrazyGamesAdapter
+        from wgf_publish.adapters.yandex import YandexAdapter
+        yandex = YandexAdapter("yandex", pub.load_publication_profile("yandex"))
+        job = self.job(LISTING, platform=common.profile_for("yandex"))
+        problems = yandex.listing_fields(job)[1]
+        for name in ("short_description", "categories"):
+            self.assertIn(f"the yandex console map names no field for the required listing "
+                          f"field {name}", problems)
+        self.assertEqual({f["key"] for f in yandex.listing_fields(job)[0]}, {"title", "description"})
+        self.assertEqual(yandex.metadata(job)["description"], LISTING["ru"]["long_description"])
+        # One description field, two required locales: it cannot take both.
+        crazy = CrazyGamesAdapter("crazygames", pub.load_publication_profile("crazygames"))
+        problems = crazy.listing_fields(self.job(LISTING, platform={
+            "metadata_requirements": {"descriptions_locales": ["en", "ru"]}}))[1]
+        self.assertIn("the crazygames console map has one description field but description is "
+                      "required in en, ru", problems)
+
 
 # -- through the engine ----------------------------------------------------------------------
 
@@ -925,8 +1075,10 @@ class Browser(PublishCase):
         if template.ensure_dependencies(cls.template) is not None:
             pass
 
-    def portal(self, mode=""):
+    def portal(self, mode="", locales=None):
         env = dict(os.environ, PORTAL_MODE=mode)
+        if locales:
+            env["PORTAL_LOCALES"] = locales
         process = subprocess.Popen([sys.executable, PORTAL, "--port", "0"], stdout=subprocess.PIPE,
                                    stderr=subprocess.STDOUT, text=True, env=env)
 
@@ -1017,6 +1169,41 @@ class Browser(PublishCase):
         result = self.console_publish(port, record, live=True)
         self.assertEqual(result.outcome, StepOutcome.WAITING_FOR_HUMAN, result.message)
         self.assertEqual(result.artifacts[0].content["outcome"], "UNKNOWN")
+
+    def test_every_listing_field_is_filled_and_kept_and_a_missing_one_is_reported(self):
+        self.write_listing()
+        port = self.portal()
+        record = self.ready_for(port)
+        result = self.console_publish(port, record, live=False)
+        self.assertEqual(result.route, "dry-run", result.error or result.message)
+        listing = self.state_of(port)["drafts"][0]["listing"]
+        expected = {"title": "Fixture Game", "controls": LISTING["en"]["controls"],
+                    "tags": "merge, tower defense, casual", "categories": "Puzzle"}
+        for locale in ("en", "ru"):
+            expected[f"short_description[{locale}]"] = LISTING[locale]["short_description"]
+            expected[f"description[{locale}]"] = LISTING[locale]["long_description"]
+        self.assertEqual(listing, expected)
+        filled = [e for e in result.artifacts[0].content["evidence"]
+                  if e.get("phase") == "configure" and (e.get("data") or {}).get("filled")]
+        self.assertEqual(len(filled[0]["data"]["filled"]), len(expected))
+        # The page lacks the ru description, which generic-web does not require: reported as
+        # skipped in the record, not hidden.
+        port = self.portal("missing-field")
+        record = self.ready_for(port)
+        result = self.console_publish(port, record, live=False)
+        self.assertEqual(result.route, "dry-run", result.error or result.message)
+        evidence = [e for e in result.artifacts[0].content["evidence"]
+                    if e.get("phase") == "configure" and (e.get("data") or {}).get("skipped")]
+        self.assertEqual(evidence[0]["data"]["skipped"], ["description:ru"])
+        # A required field the page lacks (generic-web requires the en description) stops
+        # the run at configure, before anything is saved.
+        port = self.portal("missing-field", locales="en")
+        record = self.ready_for(port)
+        result = self.console_publish(port, record, live=False)
+        self.assertEqual((result.outcome, result.retryable), (StepOutcome.FAILED, False))
+        self.assertEqual(result.artifacts[0].content["outcome"], "PLATFORM_ERROR")
+        self.assertIn("required listing field description:en", result.error)
+        self.assertNotIn("listing", self.state_of(port)["drafts"][0])
 
     def test_an_upload_the_portal_refuses_is_a_platform_error(self):
         port = self.portal("upload-fail")

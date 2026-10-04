@@ -161,10 +161,13 @@ The `publish` group (`core/workflows/new-game.workflow.yaml:89`): `platform-vali
    `("title", "description")` (`adapters/console.py:42`) and `metadata()` reads
    `job.metadata.get(field)` (`:95-103`), but the store metadata the release writes uses
    `descriptions` keyed by locale (`wgf_release/step.py:596-604`;
-   `release-manifest.schema.json:110`). The `description` key never exists.
+   `release-manifest.schema.json:110`). The `description` key never exists. *Fixed by
+   workstream 1 (Part 4).*
 2. **Only title and description are mapped.** Icon, cover, screenshots, video, categories,
    tags, controls, how-to-play and per-locale fields from the store listing are not
-   uploaded or filled.
+   uploaded or filled. *The text fields - title, short and long description per locale,
+   controls, tags, categories - are filled since workstream 1; media and how-to-play remain
+   (workstream 5, and profile 2.0.0's `fields`).*
 3. **Existing-game detection matches only the idempotency key** in a draft name
    (`console.spec.ts:151-169`). A game made by hand, or a new version of a live game, is not
    found: the executor would create a duplicate.
@@ -772,7 +775,11 @@ any test. "Fixture" is `scripts/tests/fixtures/publish/portal.py`, extended.
 1. **Fix the metadata path (bug).** `adapters/console.py`: map `descriptions` by locale and
    every listing field the profile names; add a fixture page with a description field per
    locale. Tests: `test_publish_module.py` fake console asserts every field filled.
-   Independent.
+   Independent. *Done (2026-10-04): `ConsoleAdapter.listing_fields` reads the shipped
+   listing's rendition and the platform profile's `store_listing` block; see
+   `docs/publish-module.md`, "The listing fields". The Yandex and CrazyGames selector maps
+   still name only title and description, so a required field they lack is reported until
+   workstream 10 writes them from the real consoles.*
 2. **Publication profile 2.0.0 (data + schema).** `core/artifacts/shared/publication-profile.schema.json`
    (`flow`, `identity`, `session`, `status.pending_states`, `fields`, `content_policy`,
    `adaptive`, `dismissable`, deny vocabulary), `platform-publication.schema.json` (new

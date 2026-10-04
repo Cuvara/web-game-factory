@@ -182,10 +182,29 @@ timeouts, `submit: true|false`. Fixed phases:
 authenticate    open the console with the captured session: logged in | login form | CAPTCHA | 2FA
 find_existing   a draft carrying the idempotency key?            -> found, draft id
 upload          none found: new draft, setInputFiles, wait for the acknowledgement or the error
-configure       fill the listing fields on the draft's page, save
+configure       fill every listing field, read each back, save, read each back again
 submit          only when the flow says so: click once, wait for the acknowledgement
 verify          read the portal's own status text back
 ```
+
+**The listing fields** (`ConsoleAdapter.listing_fields`). A console fills a field when its
+selector map names `field_<name>` for one of `title`, `short_description`, `description`
+(the long description), `controls`, `tags`, `categories`; a selector containing `{locale}`
+is a per-locale field, filled once per locale. The locales are the platform profile's
+`store_listing.locales`, `metadata_requirements.descriptions_locales` and
+`requirements.locales_required` (these are required), then every other locale the listing
+carries. Values come from the shipped store listing - the platform's rendition,
+`release/<id>/listing/platforms/<pid>/listing.json`, its `text.<locale>` - and fall back to
+the store metadata (`title`, `descriptions.<locale>`); tags and categories are joined with
+`, `. Nothing is invented. A field is required when the platform profile's `store_listing`
+block marks it `required` (in the required locales), when it is a description in
+`descriptions_locales`, or when it is the title. A required field with no value, one the
+selector map does not name, or a per-language field the console has once while two locales
+require it, is a problem: the step returns BLOCKED with the list before anything is
+contacted. In the browser, a required field missing from the page, or a value the console
+does not keep after saving, ends `configure` as an error (PLATFORM_ERROR); an optional
+field without a value, or without a field on the page, is named in the record's evidence,
+never silently skipped.
 
 Every wait has a timeout from the profile; every request to an origin outside
 `allowed_origins` is aborted at the browser; screenshots are taken only on console pages

@@ -144,6 +144,26 @@ class ContractShapeTest(unittest.TestCase):
         self.assertEqual(evidence.COMMANDS["browser"], ("pnpm", "test:sdk:browser"))
 
 
+class PerPlatformBuildTest(unittest.TestCase):
+    def test_the_contract_marker(self):
+        of = contract.template_contract_of
+        self.assertEqual(of({}), 1)
+        self.assertEqual(of({"wgf": {"template": {"version": "1.2.0"}}}), 1)
+        self.assertEqual(of({"wgf": {"template": {"contract": 2}}}), 2)
+        self.assertEqual(of({"wgf": {"template": {"contract": True}}}), 1)
+        self.assertEqual(of({"wgf": {"template": {"contract": "2"}}}), 1)
+        two = {"wgf": {"template": {"contract": 2}}, "scripts": {"build:platforms": "x"}}
+        self.assertTrue(contract.builds_per_platform(two))
+        self.assertFalse(contract.builds_per_platform({"wgf": two["wgf"], "scripts": {}}))
+        self.assertFalse(contract.builds_per_platform({"scripts": two["scripts"]}))
+
+    def test_the_layout(self):
+        self.assertEqual(contract.platform_dist_dir("y8"), "build/platforms/y8/dist")
+        self.assertEqual(contract.platform_build_config("y8"),
+                         "build/platforms/y8/game.config.json")
+        self.assertEqual(contract.platform_build_record("y8"), "build/platforms/y8/build.json")
+
+
 class BuildTargetTest(unittest.TestCase):
     """template_contract.build_target: the one platform a contract-1 bundle boots."""
 
@@ -183,6 +203,25 @@ class PinnedTemplateDriftTest(unittest.TestCase):
         with open(os.path.join(cls.root, contract.PACKAGE_JSON), encoding="utf-8") as handle:
             cls.package = json.load(handle)
         cls.scripts = cls.package.get("scripts") or {}
+
+    def test_the_per_platform_build_override_is_honoured(self):
+        # wgf_verification.platform_builds builds each platform against its own config
+        # through WGF_GAME_CONFIG, and release packages each through it: the build, the
+        # fact collector and the packager must all read the config it names, and the
+        # bundles they write must stay out of the tracked tree.
+        override = f'process.env["{contract.GAME_CONFIG_ENV}"]'
+        self.assertIn(override, _read(self.root, "vite.config.ts"))
+        self.assertIn(override, _read(self.root, contract.SHARED_MJS))
+        for path in (contract.COLLECT_FACTS, "scripts/release/package.mjs",
+                     "scripts/release/make-manifest.mjs"):
+            text = _read(self.root, path)
+            self.assertIn("readGameConfig(", text, path)
+        for path in (contract.COLLECT_FACTS, "scripts/release/package.mjs"):
+            self.assertIn("build?.output", _read(self.root, path), path)
+        self.assertIn("/build/", _read(self.root, ".gitignore").splitlines())
+        # The pinned release declares no contract marker: it is contract 1.
+        self.assertEqual(contract.template_contract_of(self.package), 1)
+        self.assertFalse(contract.builds_per_platform(self.package))
 
     def test_infrastructure_is_present(self):
         from wgf_init.infrastructure import missing_infrastructure

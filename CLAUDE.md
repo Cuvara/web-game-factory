@@ -476,6 +476,10 @@ seen by the engine — validate what you write there with ajv.
 - `docs/handoff/2026-10-03-two-game-validation.md` — the 2D and 3D validation runs and the
   plugin `/new-game` dogfood on Windows: every defect found, its fix PR or open, and what is
   still unverified
+- `docs/quality-gap-audit-2026-10.md` — what people added to the two validation games after
+  the unattended run (content, level design, polish, copy), what the Factory could detect,
+  plan, delegate and validate of it, and the workstreams; its bars are
+  `core/reference/quality-benchmark.yaml` (reference only, not wired)
 - `docs/research-v2.md` — Research V2: the game corpus and vocabulary, teardown records,
   market cells (demand, supply, saturation, competition, trend), counted patterns, the five
   opportunity generators, capability gaps, the research handoff strategy and design read,

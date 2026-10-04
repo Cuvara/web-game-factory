@@ -121,6 +121,7 @@
     "core/reference/publication/poki.yaml": "sha256:cfefb48acb64c3da5be9e35c63c6a5f820345342bbff15f07bf09195fc4ccdc3",
     "core/reference/publication/y8.yaml": "sha256:7e2844db1f777107a964472a5d4cba1a05f93fafae91385e74a1f1a732eeaf50",
     "core/reference/publication/yandex.yaml": "sha256:e30a944e69ad677c312fdf80e48b0941a0e72a48c3bdb954593cd604df05487f",
+    "core/reference/quality-benchmark.yaml": "sha256:518de6f00669c8f0ae6a1f06803f40a306e446fac16cd10e9eeabddfa07ffe8e",
     "core/reference/research-analysis.yaml": "sha256:cbbfb33f712523d306b458a19fa25456119557abe2e0c4e57a0c8cc505cfdc3e",
     "core/reference/research-vocabulary.yaml": "sha256:c3a48ca1cc4498e1fef0160b3f4c478cca1cf5025c4a01777f019cb6b1ce0bef",
     "core/reference/scoring/portfolio-default.v1.yaml": "sha256:27ca9350c988fa2b9531d05fef35eff80a5fddeda34fc3c04bac344c792faaa5",

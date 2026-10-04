@@ -1,0 +1,151 @@
+# Quality benchmark: what a release-tier web game measurably carries, in genre-neutral terms.
+#
+# The genre models (core/reference/genre-models.yaml) say what shape a game of a family has
+# and how many units a prototype (`units.min_mvp`) and a release (`units.min_total`) carry.
+# Those bars are defaults, not measurements, and they count units only: a twelve-unit game
+# whose units all use one element passes them four times over. This file is the other half:
+# the quantities a finished release was measured to have once a person judged it shippable,
+# stated so a check can count them on the BUILT content (the content data file, the play
+# probe, the gate reports), not only on the design.
+#
+# Status: reference data only. No check reads this file yet. Wiring it is a change to the
+# consumers named under `consumers`, each with its own tests.
+#
+# Calibration. Every bar records its `basis`:
+#   measured-2   both calibration releases meet it (the audit says which bars the unattended
+#                builds a person judged insufficient fall below, and which they do not)
+#   measured-1   only one release could be measured on it, or one release does not meet it
+#   proposed     a defensible default no release has been measured against
+# Two releases are not a population. Every bar here is a floor a person judged necessary,
+# not a target, and is to be recalibrated as releases accumulate - never to let one build
+# pass. The releases, the measurements and the source of each number are in the audit that
+# introduced this file (docs/quality-gap-audit-2026-10.md); core names no title.
+#
+# Counting. "unit" is a design content unit (level, course, wave, track...). "element" is a
+# distinct thing a unit is made of that changes what the player does: a mechanic id, an
+# obstacle, hazard or enemy kind, a brick or block kind, a structural segment kind. A
+# number-only change (speed, count, width) is never an element. "group" is a set of units the
+# game presents together (world, tier, chapter). Every count is over the units the release
+# ships at the tier being judged.
+
+version: 1.0.0
+
+tiers:
+  # `mvp` is the genre model's prototype bar and is not restated here. `release` is what a
+  # title that is to be published carries; `premium` is reserved and has no bars.
+  - id: mvp
+    bars_from: core/reference/genre-models.yaml families.<family>.units.min_mvp
+  - id: release
+    bars_from: this file
+  - id: premium
+    bars_from: none yet
+
+content:
+  units:
+    # Units the release ships. The larger of this and the family's units.min_total applies.
+    min_total: {release: 12, basis: measured-2}
+    # Units per group, and groups: content arrives in themed sets, not one list.
+    min_groups: {release: 3, basis: measured-2}
+    min_units_per_group: {release: 4, basis: measured-2}
+    # Total designed play across all units (sum of expected_duration_s, or of par times).
+    min_total_designed_s: {release: 300, basis: measured-2}
+
+  elements:
+    # Distinct elements across the release's units (see Counting).
+    min_distinct: {release: 8, basis: measured-2}
+    # Distinct points at which a new element first appears (unit index of first use).
+    min_introduction_points: {release: 6, basis: measured-1}
+    # The last new element arrives in the final third of the units or later: variety keeps
+    # arriving, it is not all front-loaded.
+    last_introduction_min_position: {release: 0.66, basis: measured-1}
+    # Every element is used in at least this many units (mirrors genre-models
+    # variety.mechanic_reuse_min_units, counted on the build).
+    min_units_per_element: {release: 2, basis: measured-1}
+
+  combinations:
+    # Share of units whose set of elements no other unit has (distinct combination ratio).
+    min_distinct_ratio: {release: 0.7, basis: measured-2}
+
+  structure:
+    # Share of units whose layout (grid, path, spawn table) duplicates another unit's.
+    max_repeated_layout_ratio: {release: 0.1, basis: measured-2}
+    # Distinct structural kinds of unit: static field, moving field, path with turns, arena,
+    # climax (boss, finale, survival hold)... named by the design per unit.
+    min_structure_kinds: {release: 3, basis: measured-2}
+
+  objectives:
+    # Distinct objective kinds, counting a scored secondary goal (stars, collectibles, par)
+    # as a kind. A release with one primary objective needs secondary goals to meet it.
+    min_kinds: {release: 2, basis: measured-2}
+    # Share of units sharing one normalized primary objective (genre-models
+    # variety.max_identical_objectives_ratio, counted on the build).
+    max_identical_ratio: {release: 0.5, basis: measured-1}
+
+  difficulty:
+    # Axes that escalate over the units and are reported by the build.
+    min_escalating_axes: {release: 2, basis: measured-2}
+    # Relief units (breather purpose, or every axis dips) at least once per this many units.
+    relief_every_units: {release: 6, basis: measured-1}
+    # Climax units (boss, finale, gate test) at least one per group.
+    min_climax_per_group: {release: 1, basis: measured-1}
+
+progression:
+  # Gated unlocks between groups (stars, boss, score), not a flat list.
+  min_gated_unlocks: {release: 2, basis: measured-2}
+  # Per-unit records persisted (best, stars, time) and restored on reload.
+  per_unit_records_persist: {release: true, basis: measured-2}
+  # A per-unit rating with more than one step (stars 1-3, medals).
+  min_rating_steps: {release: 3, basis: measured-2}
+
+features:
+  # Player-facing systems beyond the core verb: power-ups, assist, unit select or map,
+  # pause, settings, rewarded offer, locale switch, records... each listed in the design.
+  min_player_facing: {release: 8, basis: measured-2}
+  # Every feature the brief or strategy names is built, or recorded as cut with a reason a
+  # person accepted. A silent drop is a breach.
+  max_unaccounted_brief_features: {release: 0, basis: measured-2}
+  # Every candidate feature carries an evaluation (player value, cost, risk, tier).
+  evaluation_required: {release: true, basis: proposed}
+
+presentation:
+  visual_qa:
+    # core/reference/visual-qa-rubric.yaml scores (0-5). The rubric's own pass bars stay the
+    # gate; these are what the measured releases reached.
+    min_dimension: {release: 3, basis: measured-2}
+    min_mean: {release: 4.0, basis: measured-2}
+    max_major_findings: {release: 0, basis: measured-2}
+    max_minor_findings: {release: 4, basis: measured-2}
+  production_quality:
+    # Every check of core/reference/production-quality.yaml passes on both viewports, and
+    # every readable asset is judged in a frame (including assets that first appear in
+    # later units: the probe's showcase).
+    all_checks_pass: {release: true, basis: measured-2}
+    later_unit_assets_judged: {release: true, basis: measured-1}
+  playability:
+    # No content, difficulty or variety check is SKIPPED for a release with authored units.
+    content_checks_skipped: {release: 0, basis: measured-1}
+  assets:
+    min_sfx: {release: 8, basis: measured-2}
+    min_music_tracks: {release: 1, basis: measured-2}
+    # Every climax unit's antagonist or set piece has its own drawing or model.
+    distinct_climax_art: {release: true, basis: proposed}
+
+store_listing:
+  min_screenshots: {release: 5, basis: measured-2}
+  # Screenshots from units after the first group, or from the probe's showcase states.
+  min_later_content_screenshots: {release: 1, basis: measured-1}
+  trailer_s: {release: [15, 30], basis: measured-2}
+  # Every number the copy states (units, groups, elements) equals the build's count.
+  copy_counts_match_build: {release: true, basis: measured-1}
+  # Every required locale has a full description, not a single objective line.
+  full_description_per_required_locale: {release: true, basis: measured-1}
+  # Controls name every input the build accepts on desktop and touch.
+  controls_cover_all_inputs: {release: true, basis: measured-1}
+
+consumers:
+  # Where each block is meant to be read once wired (none reads it yet).
+  content: [scripts/wgf_design/content.py, scripts/wgf_playability/analysis.py]
+  progression: [scripts/wgf_design/content.py, scripts/wgf_playability/analysis.py]
+  features: [scripts/wgf_design/consistency.py, scripts/wgf_techplan/devplan.py]
+  presentation: [scripts/wgf_visualqa, scripts/wgf_production]
+  store_listing: [scripts/wgf_listing]

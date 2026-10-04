@@ -78,6 +78,14 @@ each such decision, and each one that fell back to a default because research ha
    `risks` carries the opportunity's risks forward and adds the ones this plan introduces;
    `assumptions` names what the plan takes as true and what would show it false.
 
+8. **Say only what the brief and the content model allow.** A run started from a game idea
+   carries it as `brief`. What the brief asks of the game - hand-designed levels, unlocks, a
+   second mode - is read through the `brief_intents` of `core/reference/mechanic-lexicon.yaml`
+   and shapes the text: hand-designed content is authored content, and what the brief asks
+   for is not listed in `out_of_scope`. A statement that contradicts the brief or the
+   resolved content model (a "data-driven ramp, not hand-built levels" for a brief of
+   hand-designed courses) is refused, not handed to G2.
+
 ## Optimize for rapid production
 
 Strategy is where a title is kept small, because every later stage inherits its scope. The

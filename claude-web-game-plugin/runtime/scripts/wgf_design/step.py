@@ -332,16 +332,26 @@ class DesignStep(WorkflowStep):
             # author was never shown, so a design whose only fault was three assets too
             # many died at `descope` with the fix one round away.
             ruleset = self.rules or consistency.load_rules()
-            concept = consistency.concept_view(
-                design, strategy, ruleset.get("concept_terms") or {},
-                tuple(ruleset.get("detail_terms") or ()))
+            lexicon = consistency.load_lexicon(ruleset)
+            concept = consistency.concept_view(design, strategy, lexicon)
+            realizing = {pid: (entry or {}).get("realized_by") or []
+                         for pid, entry in (lexicon.get("pillars") or {}).items()}
             notes = {
                 "concept_mechanics_carried":
-                    f"The strategy's concept names {concept.get('uncarried')} and the "
-                    "design's core loop, MVP features and MVP controls do not.",
+                    f"The strategy's concept names the mechanics {concept.get('uncarried')} "
+                    "and no MVP mechanic or MVP control of the design builds them.",
                 "design_adds_no_foreign_mechanic":
-                    f"The design's own text names {concept.get('foreign')}, which the "
-                    "strategy nowhere does - remove it, or say it in the strategy's words.",
+                    f"The design builds the mechanics {concept.get('foreign')} as core "
+                    "mechanics, and neither the brief nor the strategy implies them. Remove "
+                    "each one with the content units and controls that use it; renaming it "
+                    "does not change what it is, and a new mechanic is a strategy change for "
+                    "G2.",
+                "pillar_realized_by_mechanic":
+                    "The pillars " + ", ".join(
+                        f"{pid} (realized by one of {', '.join(realizing.get(pid, []))})"
+                        for pid in concept.get("pillars_unrealized") or [])
+                    + " are asked for and no MVP mechanic a content unit uses realizes them. "
+                    "Build the mechanic into the units; restating the pillar realizes nothing.",
             }
             for rule_id in blocking:
                 stated = consistency.breach_problems(block, [rule_id], ruleset) or [

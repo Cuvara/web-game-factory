@@ -289,6 +289,82 @@ class Judge(unittest.TestCase):
         self.assertTrue(chain["measured"]["striker"]["rendered"], chain["measured"]["striker"])
         self.assertTrue(chain["measured"]["striker"]["visible"], chain["measured"]["striker"])
 
+    @staticmethod
+    def later_level_records():
+        """Records of a build whose striker first appears after the opening level: no test
+        that starts on a fresh save ever sees it drawn."""
+        recs = records()
+        keep = lambda es: [e for e in es if e["id"] != "striker"]  # noqa: E731
+        recs["first-session"]["samples"][0]["entities"] = keep(recs["first-session"]["samples"][0]["entities"])
+        recs["first-session"]["ui"]["playing"]["entities"] = keep(recs["first-session"]["ui"]["playing"]["entities"])
+        recs["win"]["sampled"]["frames"] = [[x for x in f if x[0] != "striker"]
+                                         for f in recs["win"]["sampled"]["frames"]]
+        return recs
+
+    def showcase(self, recs, frame):
+        """The bot's showcase record: the game staged the striker's level on request."""
+        recs["showcase"] = {"applies": True, "declared": ["striker"],
+                            "visits": [{"target": "striker", "staged": True, "reported_drawn": True,
+                                        "captured": True, "frame": frame}],
+                            "asset_requests": REQUESTS, "runtime_assets": RUNTIME, "errors": [],
+                            "ui": {"showcase-striker": dict(screen("playing"), frame=frame,
+                                                            showcase=True, target="striker",
+                                                            entities=entities())}}
+        return recs
+
+    def test_a_later_level_asset_is_credited_from_the_state_the_game_showcases(self):
+        # Brick Breaker Worlds, 2026-10-04: boss, embers and laser-bolt exist only in later
+        # levels, and every bot test starts on level 1. The probe's showcase stages the state
+        # where the asset is drawn; its frame is what credits it.
+        frames = tempfile.mkdtemp(prefix="wgf-pq-showcase-")
+        self.addCleanup(shutil.rmtree, frames, ignore_errors=True)
+        write_frame(frames, "state-showcase-striker", sprites=True)
+        chain = next(c for c in self.judge({"desktop": self.showcase(self.later_level_records(),
+                                                                     "state-showcase-striker")},
+                                           frames={"desktop": frames}) if c["id"] == "assets.runtime")
+        self.assertEqual(chain["status"], "PASS", chain["summary"])
+        striker = chain["measured"]["striker"]
+        self.assertTrue(striker["rendered"] and striker["visible"] and striker["showcase"], striker)
+        self.assertGreater(striker["visible_measured"]["largest_area_fraction"], 0)
+
+    def test_a_showcased_asset_the_frame_does_not_show_is_not_credited(self):
+        # The probe names the striker in the staged state, but the frame is bare background:
+        # an asset listed and not drawn still fails at rendered.
+        frames = tempfile.mkdtemp(prefix="wgf-pq-showcase-")
+        self.addCleanup(shutil.rmtree, frames, ignore_errors=True)
+        write_frame(frames, "state-showcase-striker", sprites=False)
+        recs = self.showcase(self.later_level_records(), "state-showcase-striker")
+        chain = next(c for c in self.judge({"desktop": recs}, frames={"desktop": frames})
+                     if c["id"] == "assets.runtime")
+        self.assertEqual(chain["status"], "FAIL")
+        self.assertEqual(chain["measured"]["striker"]["failed_at"], "rendered")
+        self.assertNotIn("showcase", chain["measured"]["striker"])
+        # And a staged state whose frame was never written credits nothing either.
+        recs = self.showcase(self.later_level_records(), "state-showcase-missing")
+        chain = next(c for c in self.judge({"desktop": recs}, frames={"desktop": frames})
+                     if c["id"] == "assets.runtime")
+        self.assertEqual(chain["measured"]["striker"]["failed_at"], "rendered")
+
+    def test_a_game_without_a_showcase_is_judged_as_before(self):
+        before = self.judge({"desktop": self.later_level_records()})
+        recs = self.later_level_records()
+        recs["showcase"] = {"applies": False, "reason": "the probe declares no showcase (play.showcase)"}
+        after = self.judge({"desktop": recs})
+        self.assertEqual(before, after)
+        chain = next(c for c in after if c["id"] == "assets.runtime")
+        self.assertEqual(chain["measured"]["striker"]["failed_at"], "rendered")
+
+    def test_the_showcase_record_is_read_from_the_records_dir(self):
+        from wgf_production.step import load_records
+        directory = tempfile.mkdtemp(prefix="wgf-pq-records-")
+        self.addCleanup(shutil.rmtree, directory, ignore_errors=True)
+        os.makedirs(os.path.join(directory, "desktop"))
+        for name in ("win", "showcase"):
+            with open(os.path.join(directory, "desktop", f"{name}.json"), "w", encoding="utf-8") as h:
+                json.dump({"applies": True}, h)
+        found, _frames = load_records(directory, ["desktop"])
+        self.assertEqual(sorted(found["desktop"]), ["showcase", "win"])
+
     def test_the_chain_stops_at_the_first_broken_link(self):
         greybox = next(c for c in self.judge({"desktop": records(asset=False, render="primitive")})
                        if c["id"] == "assets.runtime")

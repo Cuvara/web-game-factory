@@ -81,6 +81,31 @@ Every entity a player reads:
   buttons by their centres.
 - `assets_loaded`: every runtime id loaded, parents and variants.
 
+### Assets that first appear after the opening unit
+
+Every bot test starts on a fresh save, so it only meets the opening unit. A readable asset
+that first appears later (a boss, a hazard of level 4) is never seen drawn, and the
+production gate fails it at `rendered`. Do not move content into the first unit or force a
+screen on every boot to satisfy the bot. Declare the optional showcase instead, only with
+`?wgf-probe=1`:
+
+```ts
+play.showcase = {
+  // Runtime asset ids of readable entities the opening play does not show.
+  targets: () => ["boss", "embers", "laser-bolt"],
+  // Put the running game into a real state of play where that asset is drawn: load the
+  // unit it first appears in (and, for something transient, spawn it there).
+  show: async (id) => { await game.enterUnit(unitOf(id)); return true; },
+};
+```
+
+The bot calls it in its own last test, waits until `snapshot()` reports `playing` with an
+entity drawn from that asset, and keeps a frame of the screen. The gate credits the asset
+only where the frame shows it at the reported box: a probe that names an asset the screen
+does not draw is still caught. `show` stages a state through the game's own systems - the
+same loading, rendering and assets a player meets there - never a test scene drawn for the
+bot.
+
 ## 3. The regression guard: an end-to-end test that fails without the art
 
 Ship one Playwright test in the game repository that proves the art is wired, and keep it.

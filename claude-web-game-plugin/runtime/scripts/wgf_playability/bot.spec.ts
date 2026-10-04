@@ -17,6 +17,10 @@
 // When the probe reports `audio`, every record carries the samples it saw (state, music,
 // playing, measured level), and the first session also records the level while the page has
 // lost focus - the platform rule every portal shares: no sound when the player looks away.
+// When the probe declares the optional showcase capability (play.showcase), a last test asks
+// it to stage, one by one, the real states where each asset it names is drawn - later levels a
+// fresh save never reaches - and keeps a frame of each, so the production gate can see those
+// assets drawn too. It is never used to play or to judge play.
 // Factory tooling: it contains no game, and is not part of one.
 
 import { test, type Page } from "@playwright/test";
@@ -76,6 +80,8 @@ const CFG = JSON.parse(fs.readFileSync(process.env.WGF_PLAY_CONFIG as string, "u
   advance_actions: string[];
   // The family says a unit can be restarted from inside it (genre-models qa.reset_in_unit).
   reset_in_unit: boolean;
+  // The showcase test's whole window, when the game's probe offers to stage states.
+  showcase_ms: number;
 };
 const URL = "/?wgf-probe=1";
 
@@ -92,6 +98,10 @@ function write(project: string, name: string, data: unknown): void {
 // The roles a glimpse is taken for, and how many a test takes.
 const GLIMPSE_ROLES = new Set(["player", "threat", "goal", "target", "projectile", "collectible", "hazard"]);
 const GLIMPSES = 6;
+// The showcase (Watch.showcase): at most this many staged states per test, and how long one
+// may take to stage and to report its asset drawn.
+const SHOWCASE_MAX = 16;
+const SHOWCASE_STAGE_MS = 6000;
 
 // What one test saw beside play itself: page errors, every response for a file under
 // /assets/ (and the runtime manifest's body), the runtime asset ids the probe reported
@@ -165,29 +175,84 @@ class Watch {
       && !shown.has(e.asset) && !this.glimpsed.has(e.asset));
     if (!fresh?.asset) return;
     const name = `glimpse-${fresh.asset}`;
-    // A screenshot takes up to a second here, and the frame it keeps is somewhere inside
-    // that second: a falling pickup moves past its own box meanwhile. So each entity's box
-    // is the one it swept between the snapshots just before and just after the shot; an
-    // entity gone by then (caught) is looked for again at its next appearance.
+    // An entity gone by the end of the shot (caught) is looked for again at its next appearance.
+    const shot = await this.capture(name);
+    if (!shot || !shot.entities.some((e) => e.id === fresh.id)) return;
+    this.glimpsed.add(fresh.asset);
+    this.frames.push(`state-${name}`);
+    this.ui[name] = { probe_state: shot.state, frame: `state-${name}`, viewport: shot.viewport,
+                      elements: [], texts: [], overlaps: [], probe_ui: [], glimpse: true,
+                      entities: shot.entities };
+  }
+
+  // A frame `state-<name>.png` of the screen now, with the entities the probe reports in it.
+  // A screenshot takes up to a second here, and the frame it keeps is somewhere inside that
+  // second: a falling pickup moves past its own box meanwhile. So each entity's box is the one
+  // it swept between the snapshots just before and just after the shot, and an entity gone by
+  // then is left out. Null when the probe did not answer.
+  async capture(name: string): Promise<{ state: string; viewport: number[] | null; entities: Snapshot["entities"] } | null> {
     const before = this.saw(await snap(this.page));
-    const shot = path.join(dir(this.project), "frames", `state-${name}.png`);
-    await this.page.screenshot({ path: shot });
+    await this.page.screenshot({ path: path.join(dir(this.project), "frames", `state-${name}.png`) });
     const after = this.saw(await snap(this.page));
-    const later = new Map((after?.entities ?? []).map((e) => [e.id, e]));
-    if (!before || !later.has(fresh.id)) return;
-    const swept = before.entities.filter((e) => later.has(e.id)).map((e) => {
+    if (!before || !after) return null;
+    const later = new Map((after.entities ?? []).map((e) => [e.id, e]));
+    const entities = before.entities.filter((e) => later.has(e.id)).map((e) => {
       const a = later.get(e.id)!;
       const x = Math.min(e.x, a.x), y = Math.min(e.y, a.y);
       return { ...e, x, y, w: Math.max(e.x + e.w, a.x + a.w) - x, h: Math.max(e.y + e.h, a.y + a.h) - y,
                visible: e.visible && a.visible };
     });
-    this.glimpsed.add(fresh.asset);
-    this.frames.push(`state-${name}`);
     const viewport = this.page.viewportSize();
-    this.ui[name] = { probe_state: before.state, frame: `state-${name}`,
-                      viewport: viewport ? [viewport.width, viewport.height] : null,
-                      elements: [], texts: [], overlaps: [], probe_ui: [], glimpse: true,
-                      entities: swept };
+    return { state: before.state, viewport: viewport ? [viewport.width, viewport.height] : null, entities };
+  }
+
+  // One state the game stages on request through its probe's optional showcase capability
+  // (play.showcase.show(asset): a real state of the built game in which that runtime asset is
+  // drawn - the level it first appears in, its boss, its pickup). The bot waits until the
+  // probe reports play with an entity drawn from the asset (or one of its variants), lets the
+  // screen settle, and keeps the frame `state-showcase-<asset>` with the entities in it,
+  // exactly as a glimpse of play. It credits nothing itself: the production gate reads the
+  // frame, and counts an entity only where its box in the frame is not the background.
+  async showcase(target: string): Promise<Record<string, unknown>> {
+    const t0 = Date.now();
+    const staged = await this.page.evaluate(async ({ id, ms }) => {
+      const sc = (window as unknown as { __wgf__?: { play?: { showcase?: { show?(a: string): unknown } } } })
+        .__wgf__?.play?.showcase;
+      if (!sc || typeof sc.show !== "function") return "no show()";
+      try {
+        const answer = await Promise.race([Promise.resolve(sc.show(id)),
+                                           new Promise((resolve) => setTimeout(() => resolve("timeout"), ms))]);
+        return answer === "timeout" ? "timeout" : answer === false ? "refused" : "staged";
+      } catch (error) {
+        return `error: ${String(error).slice(0, 200)}`;
+      }
+    }, { id: target, ms: SHOWCASE_STAGE_MS });
+    if (staged !== "staged") return { target, staged: false, reason: staged, ms: Date.now() - t0 };
+    const entry = (this.runtimeAssets as { assets?: Record<string, { variants?: unknown }> } | null)?.assets?.[target];
+    const drawings = new Set<string>([target, ...(Array.isArray(entry?.variants) ? entry.variants as string[] : [])]);
+    const drawn = (s: Snapshot | null): boolean => s?.state === "playing"
+      && (s.entities ?? []).some((e) => e.visible && e.asset && drawings.has(e.asset));
+    let s: Snapshot | null = null;
+    while (Date.now() - t0 < SHOWCASE_STAGE_MS) {
+      s = this.saw(await snap(this.page));
+      if (drawn(s)) break;
+      await this.page.waitForTimeout(100);
+    }
+    if (!drawn(s)) {
+      return { target, staged: true, reported_drawn: false, state: s?.state ?? null, ms: Date.now() - t0 };
+    }
+    // An entrance (a fade, a drop-in) is not what the state shows: let it finish.
+    await settle(this.page);
+    await this.page.waitForTimeout(300);
+    const name = `showcase-${target}`;
+    const shot = await this.capture(name);
+    if (!shot) return { target, staged: true, reported_drawn: true, captured: false, ms: Date.now() - t0 };
+    this.frames.push(`state-${name}`);
+    this.ui[name] = { probe_state: shot.state, frame: `state-${name}`, viewport: shot.viewport,
+                      elements: [], texts: [], overlaps: [], probe_ui: [], showcase: true, target,
+                      entities: shot.entities };
+    return { target, staged: true, reported_drawn: true, captured: true, frame: `state-${name}`,
+             ms: Date.now() - t0 };
   }
 
   record(): Record<string, unknown> {
@@ -1131,4 +1196,52 @@ test("session: a first session's length and ramp", async ({ page }, info) => {
                               beat_at_ms: beatAtMs, ended_on: endedOn, runs, windows,
                               target_ms: CFG.session_target_ms, window_ms: CFG.window_ms,
                               ...watch.record(), frames });
+});
+
+// -- the showcase ---------------------------------------------------------------------------
+
+// The runtime asset ids the probe offers to stage (play.showcase.targets()), or null when the
+// game declares no showcase.
+async function showcaseTargets(page: Page): Promise<string[] | null> {
+  return page.evaluate(() => {
+    const sc = (window as unknown as { __wgf__?: { play?: { showcase?: { targets?(): unknown; show?: unknown } } } })
+      .__wgf__?.play?.showcase;
+    if (!sc || typeof sc.targets !== "function" || typeof sc.show !== "function") return null;
+    try {
+      const targets = sc.targets();
+      return Array.isArray(targets) ? [...new Set(targets.filter((t): t is string => typeof t === "string"))] : [];
+    } catch {
+      return [];
+    }
+  });
+}
+
+// After the first-session tests, which all start on a fresh save and so only ever meet the
+// opening content: the states where the assets of later content are drawn, when the game
+// offers to stage them. Each is a real state of the built game, rendered by it and captured
+// like a state frame; the bot never plays through the showcase, and no playability check reads
+// it. A game whose probe declares no showcase gets a record that says so and nothing else.
+test("showcase: the states where later assets are drawn, if the game stages them", async ({ page }, info) => {
+  const project = info.project.name;
+  const frames: string[] = [];
+  const watch = new Watch(page, project, frames);
+  const touch = Boolean(info.project.use.hasTouch);
+  const started = await start(page, touch, watch);
+  const declared = started.playingMs !== null ? await showcaseTargets(page) : null;
+  if (declared === null) {
+    write(project, "showcase", { applies: false, reason: started.playingMs === null
+      ? "play never began" : "the probe declares no showcase (play.showcase)" });
+    return;
+  }
+  const visits: Record<string, unknown>[] = [];
+  const t0 = Date.now();
+  for (const target of declared.slice(0, SHOWCASE_MAX)) {
+    if (Date.now() - t0 > CFG.showcase_ms) {
+      visits.push({ target, staged: false, reason: "showcase window spent" });
+      continue;
+    }
+    visits.push(await watch.showcase(target));
+  }
+  write(project, "showcase", { ...started, applies: true, declared, visits,
+                               skipped: declared.slice(SHOWCASE_MAX), ...watch.record(), frames });
 });

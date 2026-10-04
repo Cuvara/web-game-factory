@@ -34,7 +34,7 @@ __all__ = ["ProductionQualityStep", "RULES_PATH", "REQUIRED_INPUTS", "load_rules
 RULES_PATH = os.path.join(paths.REFERENCE, "production-quality.yaml")
 REQUIRED_INPUTS = ("playability-report", "asset-manifest", "game-design", "scaffold-record")
 # The bot's records per viewport (scripts/wgf_playability/bot.spec.ts).
-RECORDS = ("first-session", "act", "win", "lose", "pause")
+RECORDS = ("first-session", "act", "win", "lose", "pause", "showcase")
 ROUTE_ORDER = ("assets", "develop")
 
 

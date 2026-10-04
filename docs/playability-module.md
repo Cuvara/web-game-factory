@@ -79,7 +79,7 @@ The bot reads the game's play probe (`core/artifacts/shared/play-probe.schema.js
 The bot acts **only** through real input at the listed positions, never through the
 probe. The developer brief embeds the schema, so a developer knows how the build is judged.
 
-### The bot's eight tests, per viewport
+### The bot's nine tests, per viewport
 
 - **First session:** opens the game. If the title screen lists a begin input (`play`,
   `start`, ...), the bot presses it. Then it makes no input at all for the idle window,
@@ -114,13 +114,26 @@ probe. The developer brief embeds the schema, so a developer knows how the build
   to the design's own first-session length. Records how long play lasted, each attempt's
   oracle input rate per third of it, when the designed closing beat first arrived, and the
   difficulty in each `endless_window_s` window.
+- **Showcase** (only when the probe declares the optional `play.showcase`; see
+  [template-contract.md](template-contract.md#the-play-probe-showcase)): last, after every
+  fresh-save test, which all only meet the opening content. The bot reads
+  `play.showcase.targets()` (at most 16) and, for each runtime asset id, calls
+  `play.showcase.show(id)`, waits up to 6 s for the probe to report `playing` with a visible
+  entity drawn from that asset (or one of its runtime-manifest `variants`), lets the screen
+  settle, and keeps the frame `state-showcase-<id>.png` with the entities in it (each box
+  swept between the snapshots before and after the shot, as for a glimpse of play) under
+  `ui["showcase-<id>"]` (`showcase: true`). `visits[]` records what each call did (staged,
+  refused, timed out, never reported drawn). Its window is `SHOWCASE_S` (90 s), outside the
+  time budget below, so a game without a showcase plays exactly as before; its record is then
+  `{applies: false}`. No playability check reads it beyond `page.errors`: it exists for the
+  production gate, which credits an asset in a staged frame only where the frame shows it.
 
 The time budget (`design-depth.yaml playability.time_budget.bot_total_s`) is a hard cap per
 viewport. What the first five tests cost is subtracted; the rest is shared between the
 traverse, persist and session windows in proportion to what they asked for, and every check
 judged from a window that was cut carries `measured.truncated: true` - and, where the
 shortfall is the budget's rather than the build's, drops to a warning. The bot's process
-timeout is `2 x bot_total_s + 120` s, not a fixed number.
+timeout is `2 x (bot_total_s + SHOWCASE_S + 45) + 120` s, not a fixed number.
 
 ### What every record also carries
 

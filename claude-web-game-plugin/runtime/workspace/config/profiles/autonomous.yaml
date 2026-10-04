@@ -56,6 +56,7 @@ factory:
       # reply overflows the host's output limit, and `claude -p` then returns only its tail.
       # Edit is allowed on that one file only: {draft_rule} is the draft's absolute path as
       # a permission rule names it (`//` and the POSIX form, `//c/Users/...` on Windows).
+      # Glob and Grep are read-only and let the agent search a request too large to page.
       draft_from: file
       argv:
         - claude
@@ -66,9 +67,9 @@ factory:
         - --safe-mode
         - --strict-mcp-config
         - --tools
-        - "Read,Edit"
+        - "Read,Glob,Grep,Edit"
         - --allowedTools
-        - "Read,Edit({draft_rule})"
+        - "Read,Glob,Grep,Edit({draft_rule})"
         - --disallowedTools
         - "Write,NotebookEdit,Bash,WebFetch,WebSearch"
         - --permission-mode

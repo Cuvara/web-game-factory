@@ -798,9 +798,9 @@ factory:
     #     - --safe-mode
     #     - --strict-mcp-config
     #     - --tools
-    #     - "Read,Edit"
+    #     - "Read,Glob,Grep,Edit"
     #     - --allowedTools
-    #     - "Read,Edit({draft_rule})"
+    #     - "Read,Glob,Grep,Edit({draft_rule})"
     #     - --disallowedTools
     #     - "Write,NotebookEdit,Bash,WebFetch,WebSearch"
     #     - --permission-mode

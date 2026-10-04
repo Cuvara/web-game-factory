@@ -206,7 +206,6 @@ workflow:
       # 7 = the first visit + 2 playability passes + 4 returns after a design repair (two
       # design-gap sources and triage's design).
       max_visits: 7
-      max_visits: 6
       max_visits_by_route:
         greybox-playability.fail: 2
       on:

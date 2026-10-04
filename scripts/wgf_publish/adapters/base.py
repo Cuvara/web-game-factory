@@ -21,13 +21,18 @@ class Job:
     def __init__(self, *, platform_id, release_id, idempotency_key, package_path, package,
                  metadata, checkout, release_dir, run_dir, scratch_dir, submit, env, hooks,
                  storage_state=None, logger=None, timeouts=None, console_url=None,
-                 run_process=None):
+                 run_process=None, listing=None, platform_profile=None):
         self.platform_id = platform_id
         self.release_id = release_id
         self.idempotency_key = idempotency_key
         self.package_path = package_path
         self.package = package or {}
         self.metadata = metadata or {}
+        # {locale: copy} of the shipped store listing's rendition for this platform, and the
+        # platform profile (core/reference/platforms/<id>.yaml) whose store_listing block
+        # and metadata_requirements say which listing fields and locales are required.
+        self.listing = listing or {}
+        self.platform_profile = platform_profile or {}
         self.checkout = checkout
         self.release_dir = release_dir
         self.run_dir = run_dir

@@ -7,8 +7,6 @@ __all__ = ["FixturePortalAdapter"]
 
 
 class FixturePortalAdapter(ConsoleAdapter):
-    metadata_fields = ("title", "description")
-
     def console_url(self, job):
         return self.base_url(job).rstrip("/") + "/console"
 
@@ -30,7 +28,11 @@ class FixturePortalAdapter(ConsoleAdapter):
             "upload_error": "#upload-error",
             "draft_id": "#draft-id",
             "field_title": "input[name=title]",
-            "field_description": "textarea[name=description]",
+            "field_short_description": 'textarea[name="short_description[{locale}]"]',
+            "field_description": 'textarea[name="description[{locale}]"]',
+            "field_controls": "textarea[name=controls]",
+            "field_tags": "input[name=tags]",
+            "field_categories": "input[name=categories]",
             "save_button": "button#save",
             "saved": "#saved",
             "submit_button": "button#submit",

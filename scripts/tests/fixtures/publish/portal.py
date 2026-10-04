@@ -12,9 +12,12 @@ Pages (the fixture adapter's selector map, scripts/wgf_publish/adapters/fixture.
                                    draft's name in the row
     GET  /console/new              input[name=name], input[type=file], button#upload
     POST /console/upload           creates the draft (status Created); redirects to its page
-    GET  /console/draft/<id>       #draft-id, #status, the listing form (input[name=title],
-                                   textarea[name=description], button#save, #saved after a
-                                   save), button#submit
+    GET  /console/draft/<id>       #draft-id, #status, the listing form, button#save, #saved
+                                   after a save, button#submit. The listing form has
+                                   input[name=title], one textarea[name="short_description[<l>]"]
+                                   and textarea[name="description[<l>]"] per locale <l> of
+                                   PORTAL_LOCALES (default en,ru), textarea[name=controls],
+                                   input[name=tags], input[name=categories]
     POST /console/draft/<id>/save
     POST /console/draft/<id>/submit  status -> "Waiting for moderation"; a second submit of
                                    a submitted draft is refused (409) and counted
@@ -29,6 +32,7 @@ misbehave the way a real one does:
     upload-fail    POST /console/upload answers 500 with #upload-error
     ambiguous      a submitted draft's status reads "Processing" (a word no profile maps)
     slow-upload    the upload answers after PORTAL_DELAY seconds (default 3)
+    missing-field  the listing form has no description field for the last locale
 
 The session cookie the storage state must carry: `session=fixture-session-token-0001`.
 """
@@ -49,6 +53,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 SESSION = "fixture-session-token-0001"
 MODES = set(filter(None, os.environ.get("PORTAL_MODE", "").split(",")))
 DELAY = float(os.environ.get("PORTAL_DELAY", "3"))
+LOCALES = [l for l in os.environ.get("PORTAL_LOCALES", "en,ru").split(",") if l]
 
 STATE = {"drafts": [], "next_id": 1, "double_submits": 0, "uploads": 0, "logins": 0}
 LOCK = threading.Lock()
@@ -57,6 +62,29 @@ LOCK = threading.Lock()
 def page(title, body):
     return (f"<!doctype html><html><head><meta charset='utf-8'><title>{html.escape(title)}"
             f"</title></head><body>{body}</body></html>").encode("utf-8")
+
+
+def listing_names():
+    """The listing form's field names, in page order."""
+    names = ["title"]
+    for locale in LOCALES:
+        names.append(f"short_description[{locale}]")
+        if not ("missing-field" in MODES and locale == LOCALES[-1]):
+            names.append(f"description[{locale}]")
+    return names + ["controls", "tags", "categories"]
+
+
+def listing_form(draft):
+    values = draft.get("listing") or {}
+    out = []
+    for name in listing_names():
+        value = html.escape(values.get(name) or "")
+        attr = html.escape(name)
+        if name.startswith(("short_description", "description", "controls")):
+            out.append(f"<label>{attr}<textarea name=\"{attr}\">{value}</textarea></label>")
+        else:
+            out.append(f"<label>{attr}<input name=\"{attr}\" value=\"{value}\"></label>")
+    return "".join(out)
 
 
 def draft_by_id(draft_id):
@@ -169,8 +197,7 @@ class Handler(BaseHTTPRequestHandler):
                 f"<div id='dashboard'><h1>Draft</h1><span id='draft-id'>{html.escape(draft['id'])}</span>"
                 f"<p>Status: <span id='status'>{html.escape(status)}</span></p>"
                 f"<form method='post' action='/console/draft/{html.escape(draft['id'])}/save'>"
-                f"<input name='title' value='{html.escape(draft.get('title') or '')}'>"
-                f"<textarea name='description'>{html.escape(draft.get('description') or '')}</textarea>"
+                f"{listing_form(draft)}"
                 f"<button id='save' type='submit'>Save</button></form>{saved}"
                 f"<form method='post' action='/console/draft/{html.escape(draft['id'])}/submit'>"
                 f"<button id='submit' type='submit'>Submit for moderation</button></form></div>")))
@@ -208,8 +235,8 @@ class Handler(BaseHTTPRequestHandler):
                 draft = draft_by_id(draft_id)
                 if draft is None:
                     return self._send(404, page("Not found", "<p>no such draft</p>"))
-                draft["title"] = str(form.get("title") or "")
-                draft["description"] = str(form.get("description") or "")
+                draft["listing"] = {name: str(form[name]).replace("\r\n", "\n")
+                                    for name in listing_names() if name in form}
                 draft["saved"] = True
             return self._redirect(f"/console/draft/{draft_id}")
         if path.startswith("/console/draft/") and path.endswith("/submit"):

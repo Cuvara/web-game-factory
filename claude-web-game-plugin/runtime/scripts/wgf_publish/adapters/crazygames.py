@@ -14,8 +14,6 @@ __all__ = ["CrazyGamesAdapter"]
 
 
 class CrazyGamesAdapter(ConsoleAdapter):
-    metadata_fields = ("title", "description")
-
     def selectors(self):
         base = (self.base_url(None) or "https://developer.crazygames.com/").rstrip("/")
         return {

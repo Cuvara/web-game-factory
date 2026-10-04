@@ -12,7 +12,9 @@
 //   find_existing  look for a draft carrying the idempotency key -> ok (found or not)
 //   upload         when none was found: create the draft, set the file, wait for the upload
 //                  to be acknowledged, read the draft id -> ok | error | timeout
-//   configure      fill the listing fields and save -> ok | error
+//   configure      fill every listing field the flow names, read each back, save, and read
+//                  each back again; a required field the page lacks, or a value the console
+//                  did not keep, is an error, never skipped -> ok (filled, skipped) | error
 //   submit         ONLY when the flow says `submit: true`: click submit once, wait for the
 //                  acknowledgement -> ok | error
 //   verify         read the portal's own status text back -> ok (with the text) | error
@@ -33,9 +35,20 @@ type Flow = {
   submit: boolean;
   key: string;
   package: string | null;
-  metadata: Record<string, string>;
+  fields: ListingField[];
   selectors: Record<string, string>;
   timeouts: { action: number; navigation: number; upload: number };
+};
+
+// One listing field to fill: the adapter resolved the selector (per locale) and the value
+// from the shipped store listing; this file never decides either.
+type ListingField = {
+  key: string;
+  field: string;
+  locale: string | null;
+  selector: string;
+  value: string;
+  required: boolean;
 };
 
 type PhaseResult = {
@@ -47,6 +60,8 @@ type PhaseResult = {
   url?: string;
   screenshot?: string;
   text?: string;
+  filled?: string[];
+  skipped?: string[];
 };
 
 const flowPath = process.env.WGF_PUBLISH_FLOW!;
@@ -204,17 +219,34 @@ test("publication console flow", async ({ browser }) => {
         write();
       } else if (phase === "configure") {
         await onDraftPage(page, draftId);
-        for (const [field, value] of Object.entries(flow.metadata || {})) {
-          const s = sel(`field_${field}`);
-          if (s) await page.locator(s).first().fill(value);
+        const filled: string[] = [];
+        const skipped: string[] = [];
+        for (const f of flow.fields || []) {
+          const locator = page.locator(f.selector).first();
+          if ((await page.locator(f.selector).count()) === 0) {
+            if (f.required) return fail(phase, "error", `the console has no field for the required listing field ${f.key} (${f.selector})`);
+            skipped.push(f.key);
+            continue;
+          }
+          await locator.fill(f.value);
+          if ((await locator.inputValue()) !== f.value) {
+            return fail(phase, "error", `the console field for ${f.key} did not take its value`);
+          }
+          filled.push(f.key);
         }
         const save = sel("save_button");
         if (save) {
           await page.locator(save).first().click();
           const saved = sel("saved");
           if (saved) await page.locator(saved).first().waitFor({ state: "visible" });
+          for (const f of (flow.fields || []).filter((x) => filled.includes(x.key))) {
+            const kept = await page.locator(f.selector).first().inputValue().catch(() => null);
+            if (kept !== f.value) {
+              return fail(phase, "error", `the console did not keep ${f.key} after saving`);
+            }
+          }
         }
-        result.phases[phase] = { outcome: "ok", url: page.url() };
+        result.phases[phase] = { outcome: "ok", url: page.url(), filled, skipped };
         write();
       } else if (phase === "submit") {
         if (!flow.submit) {

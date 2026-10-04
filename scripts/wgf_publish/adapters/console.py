@@ -36,10 +36,35 @@ _STOPS = {
 }
 
 
+# The listing fields a console can be asked to fill, by the name its selector map uses
+# (`field_<name>`, with `{locale}` in the selector for a field the console has per locale):
+# where the value comes from in the shipped listing's localeCopy (first non-empty), the
+# store-metadata fallback, the platform profile's store_listing key that says whether it is
+# required, and whether its text is per language (a console with one field for it cannot take
+# two required locales). `description` is the long description, as
+# store_metadata.descriptions is.
+LISTING_FIELDS = {
+    "title": {"copy": ("title",), "metadata": "title", "profile": "title"},
+    "short_description": {"copy": ("short_description",), "profile": "short_description",
+                          "translated": True},
+    "description": {"copy": ("long_description", "short_description"), "metadata": "descriptions",
+                    "profile": "long_description", "translated": True},
+    "controls": {"copy": ("controls",), "profile": "controls", "translated": True},
+    "tags": {"copy": ("tags",), "profile": "tags"},
+    "categories": {"copy": ("categories",), "profile": "categories"},
+}
+
+
+def _unique(items):
+    out = []
+    for item in items:
+        if item is not None and str(item) not in out:
+            out.append(str(item))
+    return out
+
+
 class ConsoleAdapter(PublicationAdapter):
     method = "console"
-    # The listing fields the portal's console has, by metadata key: subclasses extend.
-    metadata_fields = ("title", "description")
 
     def selectors(self):
         """{name: css selector or url}. See browser/console.spec.ts for the names."""
@@ -89,18 +114,101 @@ class ConsoleAdapter(PublicationAdapter):
         if job.storage_state is None and (self.submission.get("credential") or {}).get(
                 "kind", "none") == "storage-state":
             problems.append("no captured session (storage state) for this run")
+        problems.extend(self.listing_fields(job)[1])
         return problems
 
+    def listing_fields(self, job):
+        """(fields, problems, unfilled): every listing field the console has, filled from the
+        shipped listing.
+
+        A console field is a `field_<name>` selector whose name is in LISTING_FIELDS; one with
+        `{locale}` in it is filled once per locale. Locales: the platform profile's
+        `store_listing.locales`, `metadata_requirements.descriptions_locales` and
+        `requirements.locales_required` first (required), then every other locale the listing
+        carries (filled when the console has the field). Values come from the listing's
+        `localeCopy` (release/<id>/listing/platforms/<pid>/listing.json), else the store
+        metadata; nothing is invented. A required field with no value, or one the console map
+        does not name, is a problem - never a blank or skipped field. An optional field with
+        no value is in `unfilled`, so the record says what was left out."""
+        selectors = self.selectors()
+        texts = job.listing or {}
+        metadata = job.metadata or {}
+        platform = job.platform_profile or {}
+        block = platform.get("store_listing") or {}
+        wants = platform.get("metadata_requirements") or {}
+        required_locales = _unique(list(block.get("locales") or [])
+                                   + list(wants.get("descriptions_locales") or [])
+                                   + list((platform.get("requirements") or {}).get(
+                                       "locales_required") or []))
+        description_locales = [str(x) for x in wants.get("descriptions_locales") or []]
+        locales = _unique(required_locales + list(texts) + list(metadata.get("locales_included") or [])
+                          + list((metadata.get("descriptions") or {})))
+        primary = (required_locales or locales or ["en"])[0]
+        fields, problems, unfilled = [], [], []
+        for name, spec in LISTING_FIELDS.items():
+            selector = selectors.get(f"field_{name}")
+            in_profile = name == "title" or (block.get(spec["profile"]) or {}).get("required") is True
+            needed_in = _unique((required_locales or [primary] if in_profile else [])
+                                + (description_locales if spec.get("metadata") == "descriptions"
+                                   else []))
+            if not selector:
+                if needed_in:
+                    problems.append(f"the {self.platform_id} console map names no field for the "
+                                    f"required listing field {name}")
+                continue
+            per_locale = "{locale}" in selector
+            if per_locale:
+                targets = locales
+            else:
+                if spec.get("translated") and len(needed_in) > 1:
+                    problems.append(f"the {self.platform_id} console map has one {name} field but "
+                                    f"{name} is required in {', '.join(needed_in)}")
+                targets = [needed_in[0] if needed_in else primary]
+            for locale in targets:
+                required = locale in needed_in
+                key = f"{name}:{locale}" if per_locale else name
+                value = self._listing_value(spec, texts, metadata, locale)
+                if value is None and not per_locale and not spec.get("translated"):
+                    # One field, not per language (the title is the same in every language):
+                    # any locale of the listing that has it.
+                    value = next((v for v in (self._listing_value(spec, texts, metadata, other)
+                                              for other in locales) if v is not None), None)
+                if value is None:
+                    if required:
+                        problems.append(f"the shipped listing has no {name}"
+                                        + (f" ({locale})" if per_locale or spec.get("translated")
+                                           else "") + f", which {self.platform_id} requires")
+                    else:
+                        unfilled.append(key)
+                    continue
+                fields.append({"key": key, "field": name, "locale": locale if per_locale else None,
+                               "selector": selector.replace("{locale}", locale),
+                               "value": redact.scrub_text(value), "required": required})
+        return fields, _unique(problems), unfilled
+
+    @staticmethod
+    def _listing_value(spec, texts, metadata, locale):
+        """The field's value in `locale` as a string, or None: the listing's copy first, then
+        the store metadata (title; descriptions by locale)."""
+        copy = texts.get(locale) or {}
+        for key in spec["copy"]:
+            value = copy.get(key)
+            if isinstance(value, list):
+                value = ", ".join(str(v).strip() for v in value if str(v).strip())
+            if isinstance(value, str) and value.strip():
+                return value.strip()
+        fallback = spec.get("metadata")
+        if fallback == "descriptions":
+            value = (metadata.get("descriptions") or {}).get(locale)
+        elif fallback:
+            value = metadata.get(fallback)
+        else:
+            value = None
+        return value.strip() if isinstance(value, str) and value.strip() else None
+
     def metadata(self, job):
-        """The listing fields, as strings, scrubbed - the console gets exactly these."""
-        out = {}
-        for field in self.metadata_fields:
-            value = job.metadata.get(field)
-            if isinstance(value, dict):  # descriptions keyed by locale: the first required
-                value = next(iter(value.values()), "")
-            if value:
-                out[field] = redact.scrub_text(str(value))
-        return out
+        """{field key: value}: the listing fields the console gets, scrubbed."""
+        return {f["key"]: f["value"] for f in self.listing_fields(job)[0]}
 
     def flow(self, job):
         return {
@@ -112,7 +220,7 @@ class ConsoleAdapter(PublicationAdapter):
             "submit": bool(job.submit),
             "key": job.idempotency_key,
             "package": job.package_path,
-            "metadata": self.metadata(job),
+            "fields": self.listing_fields(job)[0],
             "selectors": {k: v for k, v in self.selectors().items() if v},
             "timeouts": self.timeouts(job),
         }
@@ -129,9 +237,18 @@ class ConsoleAdapter(PublicationAdapter):
                                    timeout_s=self.timeouts(job)["upload"] // 1000 + 600)
         log = os.path.join(job.scratch_dir, "logs", "console.log")
         os.makedirs(os.path.dirname(log), exist_ok=True)
+        fields, _, unfilled = self.listing_fields(job)
+        noted = [Evidence("observation", f"listing fields for the console: "
+                                         f"{', '.join(f['key'] for f in fields) or 'none'}"
+                                         + (f"; not filled, no value in the listing and not "
+                                            f"required: {', '.join(unfilled)}" if unfilled else ""),
+                          phase="prepare", data={"fields": [f["key"] for f in fields],
+                                                 "unfilled": unfilled})]
         try:
             run = executor.execute(self.flow(job), log_path=log)
-            return self._interpret(job, run)
+            publication = self._interpret(job, run)
+            publication.evidence[:0] = noted
+            return publication
         finally:
             executor.cleanup()
 
@@ -168,6 +285,13 @@ class ConsoleAdapter(PublicationAdapter):
                                                       phase=name))
             if phase.get("url"):
                 evidence.append(Evidence("observation", f"{name}: at {phase['url']}", phase=name))
+            if phase.get("filled") or phase.get("skipped"):
+                evidence.append(Evidence(
+                    "observation", f"{name}: filled {', '.join(phase.get('filled') or []) or 'nothing'}"
+                    + (f"; no console field for optional {', '.join(phase['skipped'])}"
+                       if phase.get("skipped") else ""), phase=name,
+                    data={"filled": list(phase.get("filled") or []),
+                          "skipped": list(phase.get("skipped") or [])}))
             if phase.get("draft_id"):
                 draft_id = str(phase["draft_id"])
             if phase.get("found"):

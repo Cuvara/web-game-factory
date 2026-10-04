@@ -12,7 +12,7 @@ import re
 from wgflib import paths, provenance
 from wgflib.workflow import ArtifactOutput, StepResult, WorkflowStep
 
-from .planner import Policy, StrategyRefused, plan_strategy
+from .planner import DEFAULT_QUALITY_TIER, Policy, StrategyRefused, plan_strategy
 from .profiles import load_profiles, load_vocabulary
 
 __all__ = ["StrategyStep", "SCHEMA_VERSION", "READS_OPPORTUNITY_MAJOR"]
@@ -63,15 +63,18 @@ class StrategyStep(WorkflowStep):
                                      "opportunity a title", retryable=False)
         try:
             # factory.strategy in the project's configuration, under the step's `with:`:
-            # `platforms` is a person's platform choice, every other key policy
-            # (max_platforms for a fourth target).
+            # `platforms` is a person's platform choice, `quality_tier` the tier the content
+            # budget is committed for (mvp | release, default release), every other key
+            # policy (max_platforms for a fourth target).
             config = getattr(context, "config", None) or {}
             params = dict(config.get("strategy") or {})
             params.update(self.params or {})
             platforms = params.pop("platforms", None)
+            tier = params.pop("quality_tier", None)
             policy = Policy.from_params(params)
             body = plan_strategy(opportunity, load_profiles(self.profiles_dir), title_id,
-                                 policy, load_vocabulary(), platforms=platforms)
+                                 policy, load_vocabulary(), platforms=platforms,
+                                 quality_tier=tier)
         except StrategyRefused as exc:
             context.logger.warning("strategy refused", reason=str(exc))
             return StepResult.failed(f"strategy refused: {exc}", retryable=False)
@@ -87,6 +90,7 @@ class StrategyStep(WorkflowStep):
                 "required_platform": required,
                 "timebox_days": body["timebox_days"],
                 "scope_complexity": body["production_scope"]["scope_complexity"],
+                "quality_tier": tier or DEFAULT_QUALITY_TIER,
             })],
             message=f"title-strategy for {title_id}: {required} primary, "
                     f"{body['timebox_days']} days - awaiting G2",

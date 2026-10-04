@@ -2,8 +2,9 @@
 
 `plan_strategy(opportunity, profiles, title_id, policy)` returns the body of a
 title-strategy artifact (everything but provenance) or raises StrategyRefused. It reads
-nothing but its arguments and the versioned genre models (core/reference/genre-models.yaml),
-so the same opportunity and profiles always produce the same strategy - which is what makes it
+nothing but its arguments, the versioned genre models (core/reference/genre-models.yaml) and
+the quality benchmark (core/reference/quality-benchmark.yaml), so the same opportunity and
+profiles always produce the same strategy - which is what makes it
 testable, and what lets a G2 reviewer re-derive it.
 
 What it decides, following core/lifecycle/stages/strategy.md:
@@ -20,6 +21,12 @@ What it decides, following core/lifecycle/stages/strategy.md:
                 coded them, else the family's own default. An opportunity that resolves to no
                 family (nothing before Research V2 did) commits to no content model, and the
                 concept reads as it always has.
+  budget        the content the run's quality tier commits to (factory.strategy.quality_tier,
+                default release): at `release`, units, groups and distinct elements from the
+                larger of the genre model's and the quality benchmark's bars, in the family's
+                own unit, group and element kinds, with why that volume is enough; at `mvp`,
+                the prototype's units. At `release` the `content` exclusion narrows to a
+                second mode: the budget's groups are content sets the title commits to.
   brief         what the person's idea asks of the game, read through the brief intents of
                 core/reference/mechanic-lexicon.yaml: hand-designed content makes the content
                 shape authored and the text say so, a mode or the unlocks the brief names stay
@@ -49,7 +56,8 @@ import re
 from wgflib import genre_models, mechanics
 
 __all__ = ["Policy", "StrategyRefused", "plan_strategy", "contradictions", "brief_intents",
-           "PLANNABLE_STATES"]
+           "PLANNABLE_STATES", "QUALITY_TIERS", "DEFAULT_QUALITY_TIER",
+           "resolve_quality_tier"]
 
 PLANNABLE_STATES = ("discovered", "scored", "shortlisted", "approved", "promoted")
 
@@ -115,6 +123,19 @@ EXCLUSIONS = (
     ("content", "A second mode or content set — one proves the loop; more is content, not "
                 "validation", ()),
 )
+
+# The `content` exclusion on a release-tier strategy: its budget's groups are content sets
+# the strategy has just committed to, so only a second mode stays excluded.
+RELEASE_CONTENT_EXCLUSION = ("A second mode; the release's content is the budget in "
+                             "concept.content_model.budget, and nothing beyond it")
+
+# The run's quality tier (factory.strategy.quality_tier). `release`: the content budget is
+# what a published title carries (core/reference/quality-benchmark.yaml). `mvp`: the
+# prototype's units only, for a run that stops at G4. Default release - new-game ends in a
+# drafted release, and an MVP-sized release was judged "a demo, not a game"
+# (docs/quality-gap-audit-2026-10.md, finding 1).
+QUALITY_TIERS = ("mvp", "release")
+DEFAULT_QUALITY_TIER = "release"
 
 
 class StrategyRefused(ValueError):
@@ -235,6 +256,21 @@ def _plural(unit_kind):
     return f"{unit_kind}s"
 
 
+def resolve_quality_tier(value):
+    """The run's quality tier: `value` checked, or the default when None."""
+    if value is None:
+        return DEFAULT_QUALITY_TIER
+    if value not in QUALITY_TIERS:
+        raise StrategyRefused(f"quality_tier must be one of {', '.join(QUALITY_TIERS)}, "
+                              f"not {value!r}")
+    return value
+
+
+def _bar(block, key, tier):
+    """A quality-benchmark bar's value at `tier`, or None when the bar states none."""
+    entry = (block or {}).get(key)
+    value = entry.get(tier) if isinstance(entry, dict) else None
+    return value if isinstance(value, (int, float)) and not isinstance(value, bool) else None
 def brief_intents(brief, lexicon=None):
     """The ids of the lexicon's `brief_intents` whose phrases `brief` contains."""
     lexicon = lexicon if lexicon is not None else mechanics.load()
@@ -294,8 +330,11 @@ def contradictions(body, lexicon=None):
 
 
 class _Plan:
-    def __init__(self, opportunity, profiles, title_id, policy, vocabulary=None):
+    def __init__(self, opportunity, profiles, title_id, policy, vocabulary=None,
+                 tier=DEFAULT_QUALITY_TIER, benchmark=None):
         self.opp = opportunity
+        self.tier = tier
+        self.benchmark = benchmark or {}
         research = opportunity.get("research")
         self.research = research if isinstance(research, dict) and \
             research.get("research_version") == 2 else None
@@ -592,8 +631,10 @@ class _Plan:
             "difficulty_axes": list(axes),
             "min_units": int(units.get("min_mvp") or 1),
             "source": source,
+            "quality_tier": self.tier,
         }
-        self._content_total = int(units.get("min_total") or self.content_model["min_units"])
+        self.content_model["budget"] = self._budget(model, genre_models.load())
+        self._content_total = self.content_model["budget"]["units"]
         if self.research is not None:
             detail = (f"{family} ({model.get('label', family)}): "
                       f"{self.content_model['min_units']} {_plural(unit_kind)} in the MVP, "
@@ -607,6 +648,127 @@ class _Plan:
                 self.apply("concept.content_model", "default",
                            f"{detail} - the genre model's default; research coded no content "
                            f"shape for this cell")
+
+    def _budget(self, model, models):
+        """`concept.content_model.budget`: the content the title commits to at its quality
+        tier, counted in the family's own unit, group and element kinds. At `release` every
+        quantity is the larger of the genre model's bar and the quality benchmark's; at `mvp`
+        it is the prototype's units and nothing more. `basis` records both numbers behind
+        each quantity; the justification is written by body(), once the session and the
+        platforms are known."""
+        units = model.get("units") or {}
+        shape = model.get("budget") or {}
+        min_mvp = int(units.get("min_mvp") or 1)
+        references = [f"genre-models@{models.get('version')}"]
+        if self.tier == "mvp":
+            return {"units": min_mvp, "references": references,
+                    "basis": [{"quantity": "units", "genre_model": min_mvp, "value": min_mvp}]}
+
+        content = self.benchmark.get("content") or {}
+        references.append(f"quality-benchmark@{self.benchmark.get('version')}")
+        family_total = int(units.get("min_total") or min_mvp)
+        bench_total = _bar(content.get("units"), "min_total", self.tier)
+        total = max(family_total, int(bench_total or 0), min_mvp)
+        basis = [{"quantity": "units", "genre_model": family_total}]
+        if bench_total is not None:
+            basis[0]["benchmark"] = int(bench_total)
+        budget = {"units": total, "references": references, "basis": basis}
+
+        group_kind = shape.get("group_kind")
+        groups = _bar(content.get("units"), "min_groups", self.tier)
+        per_group = _bar(content.get("units"), "min_units_per_group", self.tier)
+        if isinstance(group_kind, str) and group_kind and groups:
+            groups, per_group = int(groups), int(per_group or 1)
+            total = max(total, groups * per_group)
+            budget["groups"] = {"kind": group_kind, "count": groups,
+                                "min_units_per_group": per_group}
+            basis.append({"quantity": "groups", "benchmark": groups, "value": groups})
+            basis.append({"quantity": "min_units_per_group", "benchmark": per_group,
+                          "value": per_group})
+        budget["units"] = basis[0]["value"] = total
+
+        elements = content.get("elements")
+        distinct = _bar(elements, "min_distinct", self.tier)
+        if distinct:
+            budget["elements"] = {"count": int(distinct),
+                                  "kinds": [str(k) for k in shape.get("element_kinds") or []]}
+            intro = _bar(elements, "min_introduction_points", self.tier)
+            if intro:
+                budget["elements"]["min_introduction_points"] = int(intro)
+            basis.append({"quantity": "elements", "benchmark": int(distinct),
+                          "value": int(distinct)})
+        designed = _bar(content.get("units"), "min_total_designed_s", self.tier)
+        if designed:
+            budget["designed_play_s"] = int(designed)
+            basis.append({"quantity": "designed_play_s", "benchmark": int(designed),
+                          "value": int(designed)})
+        return budget
+
+    def _justify(self, platform_names):
+        """Why the budget's volume is enough, per the five things a G2 reviewer weighs. Each
+        line is derived from the numbers the budget and the plan already hold."""
+        content = self.content_model
+        budget = content["budget"]
+        kind, kinds = content["unit_kind"], _plural(content["unit_kind"])
+        units = budget["units"]
+        target = self.session_body["target_seconds"]
+        per_day = self.session_body["sessions_per_day_target"]
+        portals = (" and ".join([", ".join(platform_names[:-1]), platform_names[-1]])
+                   if len(platform_names) > 1 else "".join(platform_names))
+        if self.tier == "mvp":
+            return {
+                "session_length": (
+                    f"The {units} MVP {kinds} only have to show the loop more than once in a "
+                    f"{target}-second session; volume is not what a tier-mvp run tests."),
+                "progression_structure": (
+                    f"{content['progression']} over {units} {kinds}: enough to see the "
+                    f"difficulty move, not a progression a player finishes."),
+                "mechanics": "The core loop's own elements; no element budget at tier mvp.",
+                "replayability": self._replayability(),
+                "platform_expectations": (
+                    f"A tier-mvp build is evidence for G4, not a release for {portals}; "
+                    f"publishing it needs a new strategy at tier release."),
+            }
+        designed = budget.get("designed_play_s") or 0
+        sessions = int(math.ceil(designed / float(target))) if designed else 0
+        lines = {
+            "session_length": (
+                f"{units} {kinds} carry at least {designed} s of designed play, {sessions} "
+                f"or more full {target}-second sessions of new {kinds}, the floor measured on "
+                f"releases a person judged shippable; at {per_day:g} sessions a day the "
+                f"replay system, not new {kinds}, carries the days after."
+                if designed else
+                f"{units} {kinds} at a {target}-second session."),
+        }
+        groups = budget.get("groups")
+        if groups:
+            lines["progression_structure"] = (
+                f"{content['progression']}: {groups['count']} {groups['kind']}s of at least "
+                f"{groups['min_units_per_group']} {kinds} each, each {groups['kind']} gated "
+                f"behind the last, so there is always a next {groups['kind']} in view and "
+                f"each one is a themed set rather than more of one list.")
+        else:
+            lines["progression_structure"] = (
+                f"{content['progression']}: one sequence of {units} {kinds}; this family has "
+                f"no group above the {kind}, so progression is the sequence itself and the "
+                f"record kept per {kind}.")
+        elements = budget.get("elements")
+        if elements:
+            named = ", ".join(elements["kinds"]) or "distinct elements"
+            intro = elements.get("min_introduction_points")
+            lines["mechanics"] = (
+                f"At least {elements['count']} distinct elements ({named}) across the "
+                f"{kinds}" + (f", introduced at {intro} or more points" if intro else "")
+                + f", so later {kinds} change what the player does, not only a number.")
+        else:
+            lines["mechanics"] = "The quality benchmark states no element bar at this tier."
+        lines["replayability"] = (
+            f"{self._replayability()}; each {kind} keeps its own best result to replay for.")
+        lines["platform_expectations"] = (
+            f"{portals} list finished games beside this one: a release with "
+            f"{units} {kinds} and new elements in later ones reads as a game, where the "
+            f"{content['min_units']}-{kind} prototype would read as a demo.")
+        return lines
 
     # -- platforms and monetization -------------------------------------------------------
 
@@ -889,6 +1051,8 @@ class _Plan:
         if concept.get("subgenre"):
             concept_body["subgenre"] = concept["subgenre"]
         if content is not None:
+            content["budget"]["justification"] = self._justify(
+                [self.profiles[p].get("name", p) for p in self.chosen])
             concept_body["content_model"] = content
 
         platform_set = []
@@ -983,6 +1147,13 @@ class _Plan:
         reworded = {}
         for i in sorted(self.intents):
             reworded.update((self.intent_entries.get(i) or {}).get("replaces_exclusion") or {})
+        # A release-tier budget commits to content sets (its groups): "a second content
+        # set" is no longer excluded, only a second mode is.
+        if content is not None and content["quality_tier"] == "release" \
+                and "content" not in reworded and "content" not in kept:
+            reworded["content"] = RELEASE_CONTENT_EXCLUSION
+            self.decisions.append(f"Exclusion narrowed to the release budget (content): "
+                                  f"\"{RELEASE_CONTENT_EXCLUSION}\"")
         for key, exclusion, keywords in EXCLUSIONS:
             exclusion = reworded.get(key, exclusion)
             if (keywords and _has(asked, keywords)) or key in kept:
@@ -1096,6 +1267,28 @@ class _Plan:
         if [locale for locale in locales if locale != "en"]:
             systems.append("Localization string table")
         cap = ASSET_CAP[self.asset_complexity]
+        if content is not None:
+            budget = content["budget"]
+            committed = [f"{budget['units']} {_plural(content['unit_kind'])}"]
+            if budget.get("groups"):
+                committed.append(f"{budget['groups']['count']} "
+                                 f"{budget['groups']['kind']}s")
+            if budget.get("elements"):
+                committed.append(f"{budget['elements']['count']} distinct elements")
+            self.decisions.append(
+                f"Quality tier {self.tier}: the content budget is "
+                f"{', '.join(committed)} (concept.content_model.budget)"
+                + (", the larger of the genre model's and the quality benchmark's bars"
+                   if self.tier == "release" else ", the MVP only: this run is not a release"))
+            if self.tier == "release":
+                self.assume(
+                    f"The release content budget ({', '.join(committed)}) can be built "
+                    f"inside the {self.timebox}-day timebox",
+                    "tech-plan milestones summing past the timebox (guard plan_fits_timebox)")
+        else:
+            self.decisions.append(
+                f"Quality tier {self.tier}: no genre family covers the concept, so no "
+                f"content budget is committed here; design states the content shape")
         decisions = list(self.decisions) + [
             f"One required platform ({self.required}); every other platform is optional",
             f"Replay comes from a system ({replay.split(':')[0].lower()}), not from more "
@@ -1256,15 +1449,21 @@ class _Plan:
 
 
 def plan_strategy(opportunity, profiles, title_id, policy=None, vocabulary=None,
-                  platforms=None):
+                  platforms=None, quality_tier=None, benchmark=None):
     """The body of a title-strategy for `opportunity`. Raises StrategyRefused.
     `vocabulary` maps research codes onto strategy terms: {"control_schemes": {control id:
     scheme}} (the research vocabulary's `control_scheme` attributes). `platforms` is a
     person's choice of target platform ids, first = required (see operator_platforms); None
-    ranks the opportunity's candidates."""
+    ranks the opportunity's candidates. `quality_tier` is the run's tier (mvp | release; None
+    = release); `benchmark` is core/reference/quality-benchmark.yaml, read when None."""
     if not isinstance(opportunity, dict):
         raise StrategyRefused("opportunity content is not a JSON object")
-    plan = _Plan(opportunity, profiles, title_id, policy or Policy(), vocabulary)
+    tier = resolve_quality_tier(quality_tier)
+    if benchmark is None:
+        from .profiles import load_benchmark
+        benchmark = load_benchmark()
+    plan = _Plan(opportunity, profiles, title_id, policy or Policy(), vocabulary,
+                 tier=tier, benchmark=benchmark)
     plan.operator = operator_platforms(platforms)
     plan.check_opportunity()
     plan.scope()

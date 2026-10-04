@@ -90,10 +90,15 @@ factory:
   # required: the strategy targets exactly those that can carry the monetization, and G2
   # still approves it. Changing it on a title is a new strategy - wgf resume <run> --from
   # strategy - never an edit downstream (docs/platform-targets-2026-10.md).
+  # `quality_tier` is what the strategy budgets content for: `release` (the default) commits
+  # the units, groups and elements a published title carries - the larger of the genre
+  # model's and core/reference/quality-benchmark.yaml's bars - and `mvp` only the
+  # prototype's units, for a run meant to stop at G4 (docs/factory-lifecycle.md).
   # Every other key is strategy policy (wgf_strategy/planner.py Policy), e.g. max_platforms
   # (default 3) for a fourth target.
   # strategy:
   #   platforms: [yandex, crazygames, y8]
+  #   quality_tier: release
 
   # The tech-plan module (scripts/wgf_techplan, docs/techplan-module.md): engine from the
   # design, pinned platforms from the strategy, a heuristic dev plan. Every key is optional.

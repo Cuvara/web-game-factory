@@ -86,6 +86,20 @@ each such decision, and each one that fell back to a default because research ha
    resolved content model (a "data-driven ramp, not hand-built levels" for a brief of
    hand-designed courses) is refused, not handed to G2.
 
+9. **Commit the content budget for the run's quality tier** (`concept.content_model`
+   `quality_tier` and `budget`). The tier is the installation's
+   (`factory.strategy.quality_tier`: `mvp` or `release`, default `release`). At `release`
+   the budget is the content a published title carries: units, groups where the genre family
+   has them, and distinct elements, each the larger of the family's bar
+   (`core/reference/genre-models.yaml` `units.min_total`) and the quality benchmark's
+   (`core/reference/quality-benchmark.yaml` `content`), counted in the family's own kinds -
+   tracks in cups, waves, run-segments - never "levels and bosses" by default. `basis`
+   records both numbers behind each quantity, and `justification` says why the volume is
+   enough: session length, progression structure, mechanics, replayability and what the
+   target platforms expect. At `mvp` the budget is the prototype's units, for a run that
+   ends at G4. At `release`, `out_of_scope` no longer excludes "a second content set" - the
+   budget's groups are content sets - only a second mode.
+
 ## Optimize for rapid production
 
 Strategy is where a title is kept small, because every later stage inherits its scope. The

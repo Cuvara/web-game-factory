@@ -687,7 +687,9 @@ def build_brief(*, title_id, engine, iteration, key, baseline, design, assets, s
     failures = [
         {"check": c.get("id"), "summary": c.get("summary"), "output_tail": c.get("output_tail")}
         for c in (previous_checks or {}).get("checks") or []
-        if c.get("status") == "failed"
+        # A skip the run's tier held against the build is not passed either: its finding
+        # names what was missing.
+        if c.get("status") == "failed" or c.get("blocking")
     ]
     host_skills = dict(DEFAULT_SKILLS)
     host_skills.update(skills or {})

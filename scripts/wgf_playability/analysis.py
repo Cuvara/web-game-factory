@@ -376,6 +376,14 @@ def _variety_check(ctx):
     genre = ctx["qa"].get("genre") or {}
     traverse = ctx["records"].get("traverse") or {}
     kinds_reported = _kinds_reported(traverse)
+    # At a tier where an unmeasured check is not passed (core/reference/quality-policy.yaml
+    # rule 5, `kinds_required`), a probe that names no kind while a content unit is in play
+    # fails: the play-probe schema requires `kind` of every content-role entity then, so the
+    # omission is the build's, not the bot's.
+    omitted = (f"the probe reports no `entities[].kind` while a content unit is in play, so "
+               f"element variety cannot be counted on the build; the play probe requires the "
+               f"`kind` of every content-role entity then (threat, goal, target, projectile, "
+               f"collectible, hazard), and {ctx.get('kinds_required')}")
     schedule = [e for e in (ctx["depth"].get("content_schedule") or [])
                 if isinstance(e, dict) and e.get("tier") == "mvp"
                 and isinstance(e.get("at_s"), (int, float))]
@@ -406,6 +414,14 @@ def _variety_check(ctx):
             if len(fresh) < want_new:
                 new_short.append(f"unit {unit.get('index')}: {len(fresh)} new kind(s)")
             seen |= set(unit.get("kinds") or [])
+        if not kinds_reported and ctx.get("kinds_required"):
+            return [_check("content.variety", project, False, omitted, required=True,
+                           measured={"changed_pairs_share": share, "kinds_reported": [],
+                                     "units_played": len(played)},
+                           expected=f">= {bar} of consecutive unit pairs changed, and >= "
+                                    f"{want_new} new entity kind(s) per unit, read from "
+                                    "`entities[].kind`",
+                           truncated=ctx["truncated"].get("traverse"))]
         measurable = bool(kinds_reported) or want_new == 0
         problems = ([f"only {share} of consecutive units change their kinds or mechanics"]
                     if share < bar else [])
@@ -442,6 +458,12 @@ def _variety_check(ctx):
     slack = bars.get("first_new_kind_slack_s")
     bar_ms = (arrives + slack) * 1000
     rows = [r for r in traverse.get("snapshots") or [] if isinstance(r, dict)]
+    in_unit = any(isinstance(r.get("unit_id"), str) for r in rows)
+    if not kinds_reported and in_unit and ctx.get("kinds_required"):
+        return [_check("content.variety", project, False, omitted, required=True,
+                       measured={"snapshots": len(rows), "kinds_reported": []},
+                       expected=f"a kind not on screen at the start, by {bar_ms / 1000} s, "
+                                "read from `entities[].kind`")]
     if not kinds_reported:
         return [_check("content.variety", project, False,
                        "the probe reports no `entities[].kind`, so the arrival of a new kind of "
@@ -628,12 +650,18 @@ def _depth_checks(ctx):
     return out
 
 
-def judge(records, frames_dir, design, rules, experience_rules, project, qa=None):
+def judge(records, frames_dir, design, rules, experience_rules, project, qa=None,
+          kinds_required=None):
     """Checks (dicts per playability-report.schema.json) for one viewport.
 
     `qa` is the merged bars (wgflib.genre_models.qa_of): core/reference/design-depth.yaml's
     `playability` block with the genre family's `qa` overrides. Loaded from the reference files
     when not given.
+
+    `kinds_required`, when set, is why entity kinds the probe omits while a content unit is in
+    play fail content.variety instead of leaving it unmeasured (the run's tier holds an
+    unmeasured check not passed: core/reference/quality-policy.yaml rule 5). None keeps the
+    unmeasured check a WARNING with its reason.
     """
     spec = ((design or {}).get("build_spec") or {})
     ex = spec.get("experience") or {}
@@ -647,7 +675,8 @@ def judge(records, frames_dir, design, rules, experience_rules, project, qa=None
            "qa": qa if qa is not None else genre_models.qa_of(design),
            "axes": genre_models.axes_of(design),
            "family": genre_models.for_design(design) or {},
-           "truncated": rules.get("_truncated") or {}}
+           "truncated": rules.get("_truncated") or {},
+           "kinds_required": kinds_required}
     checks = []
     add = checks.append
 

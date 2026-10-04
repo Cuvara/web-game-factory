@@ -509,10 +509,9 @@ workflow:
     # package is copied to release/<release-id>/listing/ and store_metadata is filled from
     # it, which is what G6's store_metadata_complete reads. A workflow without the listing
     # steps says so with `required_listing: false`. And it refuses unless the newest
-    # quality-report passed exactly the build it ships (its commit and development commit)
-    # with the decision `release` - a `development` build (tier mvp) is drafted only where
-    # the installation says so (factory.release.allow_development_tier), and recorded as
-    # such. A workflow without the quality gate says so with `required_quality: false`.
+    # quality-report passed exactly the build it ships (its commit and development commit);
+    # a `development` decision (tier mvp) is drafted and recorded as such, never as a
+    # release. A workflow without the quality gate says so with `required_quality: false`.
     - id: release
       type: release
       stage: release:draft

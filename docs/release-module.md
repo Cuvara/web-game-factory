@@ -56,6 +56,8 @@ all optional fields):
 | `packages[].checksum` / `content_digest` / `files` | sha256 of the archive; sha256 over its entry names and contents; entry count |
 | `template` | template repository and commit (scaffold-record) and version, with where the version was read |
 | `workflow` | run id, workflow, step, visit, execution, idempotency key |
+| `evidence.quality_report` | since 1.5.0: the quality-report that passed the build - its artifact id and hash, verdict, decision (`release`, or `development` at tier mvp, carried as such), tier, floor and benchmark versions ([quality-gate-module.md](quality-gate-module.md)) |
+| `evidence.quality` | since 1.4.0: the drafting run's quality class (`release` or `development`), tier, policy and benchmark versions, and why it is development (core/reference/quality-policy.yaml, [new-game-quality-inheritance.md](new-game-quality-inheritance.md)). A `development` manifest is never a release: its run cannot reach `release:submitting` |
 
 ## When it refuses
 
@@ -92,7 +94,6 @@ when its preconditions held is what makes a draft mean something. The refusals a
 | `quality-commit-mismatch` | FAILED | the newest quality-report scored another commit, or another development commit, than the build shipped |
 | `stale-quality-report` | FAILED | the newest quality-report did not pin the run's newest qa, verification, prototype, sdk, review, playability, production-quality, visual-qa or content-sufficiency report: work came after it |
 | `quality-not-release` | FAILED | the newest quality-report decided `not-release` |
-| `quality-development-tier` | FAILED | the newest quality-report decided `development` (a run at tier mvp) and `factory.release.allow_development_tier` is not true |
 | `verified-dirty-tree` | BLOCKED | verification ran on uncommitted changes, which no commit reproduces |
 | `dirty-checkout` | BLOCKED | the checkout has uncommitted or untracked changes |
 | `bundle-not-verified` | BLOCKED | the build output on disk is not the bundle verification digested |
@@ -208,7 +209,6 @@ decision, not a workflow's:
 | Key | Default | |
 |---|---|---|
 | `allow_unreviewed` | `false` | `true` drafts a build whose newest review is `skipped` or absent, recorded as **UNREVIEWED** in `evidence.review.note` and the step's message. It never waives a review of another commit, a request for changes, or a gate |
-| `allow_development_tier` | `false` | `true` drafts a build whose quality-report decided `development` (a run at quality tier mvp; the golden runs set it), recorded in `evidence.quality.decision` (release-manifest 1.4.0). It never waives a quality-report that failed, scored another build or decided `not-release` |
 
 ### Why the release step checks G4 itself
 

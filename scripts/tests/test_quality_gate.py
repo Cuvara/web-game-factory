@@ -581,12 +581,14 @@ class Release(unittest.TestCase):
         self.assertEqual(self.codes(lineage.quality_refusals({}, loaded)),
                          ["quality-commit-mismatch"])
 
-    def test_a_development_build_is_drafted_only_where_the_installation_allows_it(self):
+    def test_a_development_build_is_drafted_and_recorded_as_such(self):
         loaded = self.report(release_decision={"decision": "development", "reasons": []},
                              quality_tier="mvp")
-        self.assertEqual(self.codes(lineage.quality_refusals({}, loaded)),
-                         ["quality-development-tier"])
-        self.assertEqual(lineage.quality_refusals({}, loaded, allow_development=True), [])
+        self.assertEqual(lineage.quality_refusals({}, loaded), [])
+        refs = {"quality-report": types.SimpleNamespace(content_hash="sha256:" + "7" * 64)}
+        recorded = lineage.quality_evidence(refs, loaded)
+        self.assertEqual((recorded["decision"], recorded["quality_tier"], recorded["verdict"]),
+                         ("development", "mvp", "PASS"))
 
     def test_a_report_predating_the_newest_reports_is_stale(self):
         loaded = self.report()

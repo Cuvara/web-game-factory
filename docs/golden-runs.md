@@ -31,8 +31,8 @@ run is an `mvp` run of endless (parametric) ports, so `content-sufficiency` coun
 list: its unit checks are SKIPPED with that reason and it passes
 ([content-sufficiency-module.md](content-sufficiency-module.md)). At `mvp` the quality gate
 holds the universal floor's mvp blockers and decides `development`, never release
-([quality-gate-module.md](quality-gate-module.md)); the harness sets
-`release.allow_development_tier` so release drafts it, recorded as such. The replay developer ports the whole game in
+([quality-gate-module.md](quality-gate-module.md)); release drafts it and records it as such
+(`evidence.quality_report`). The replay developer ports the whole game in
 the greybox phase - with no assets yet, each port draws its fallback primitives - and
 develop's production visit commits the assets step's files, imported from the port's art
 library, on an unchanged game that now draws them (see *The production gates*, below). Each playability step plays each port from outside through its play probe

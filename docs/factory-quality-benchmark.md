@@ -77,7 +77,7 @@ The dimension floors (`min_score`) and the criteria that read no benchmark bar
    and the rubric under `pinned_references`; a run copies them at its start and is scored
    against those copies for its whole life. Every quality-report records the versions and
    digests it was scored against (`benchmark`), and the release manifest carries the floor
-   and benchmark versions (`evidence.quality`). An edit takes effect at the next run.
+   and benchmark versions (`evidence.quality_report`). An edit takes effect at the next run.
 4. **Regression is against the pinned version.** A dimension below its floor under the
    pinned benchmark is a QUALITY REGRESSION; a dimension score that dropped since the run's
    previous build is listed in `regression.dropped`.
@@ -93,5 +93,5 @@ The dimension floors (`min_score`) and the criteria that read no benchmark bar
 * The `quality-gate` step scores the build before G4 and routes a dimension below its floor
   back to design, assets or develop.
 * G4 is decided on the quality-report and shows its scorecard.
-* Release refuses a build whose quality-report did not pass exactly that build with the
-  decision `release` (or `development` where the installation allows it).
+* Release refuses a build whose quality-report did not pass exactly that build; a
+  `development` decision (tier mvp) is drafted and recorded as such, never as a release.

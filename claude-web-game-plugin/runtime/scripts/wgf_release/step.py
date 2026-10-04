@@ -38,6 +38,7 @@ import shutil
 
 from wgflib import agentenv, checkout, provenance
 from wgflib import template_contract as contract
+from wgflib.workflow import quality as run_quality
 from wgflib.workflow import ArtifactOutput, StepOutcome, StepResult, WorkflowStep
 from wgflib.workflow.contracts import ArtifactContracts
 from wgflib.yamllite import YamlError, load_file
@@ -126,6 +127,32 @@ def _read_json(path):
         return None
 
 
+def _run_quality(context):
+    """evidence.quality: the class of the run drafting this manifest, as the quality policy
+    holds it (wgflib.workflow.quality) - its snapshot and every downgrade it recorded. A run
+    without a snapshot is `development`: nothing says it was held to the release tier."""
+    environment = getattr(context, "environment", None)
+    environment = environment if isinstance(environment, dict) else {}
+    read = getattr(context, "read_events", None)
+    try:
+        events = list(read()) if callable(read) else []
+    except Exception:  # an unreadable log costs the downgrades, so never claim release
+        events = None
+    klass, reasons = run_quality.run_class(environment, events or [])
+    if events is None:
+        klass, reasons = run_quality.DEVELOPMENT, reasons + [
+            "the run's event log could not be read"]
+    taken = environment.get(run_quality.PARAM)
+    taken = taken if isinstance(taken, dict) else {}
+    out = {"class": klass}
+    for key in ("tier", "policy", "benchmark"):
+        if isinstance(taken.get(key), str) and taken[key]:
+            out[key] = taken[key]
+    if reasons:
+        out["reasons"] = [str(r) for r in reasons if r]
+    return out
+
+
 class _Refused(Exception):
     def __init__(self, refusals):
         super().__init__("; ".join(r.message for r in refusals))
@@ -205,20 +232,13 @@ class ReleaseStep(WorkflowStep):
         if not isinstance(allow_unreviewed, bool):
             return StepResult.failed("factory.release.allow_unreviewed must be true or false, "
                                      f"not {allow_unreviewed!r}", retryable=False)
-        # Whether a development build (quality tier mvp) may be drafted: the installation's
-        # (factory.release.allow_development_tier, default false - never a workflow's `with:`).
-        allow_development = ((context.config or {}).get("release") or {}).get(
-            "allow_development_tier", False)
-        if not isinstance(allow_development, bool):
-            return StepResult.failed("factory.release.allow_development_tier must be true or "
-                                     f"false, not {allow_development!r}", retryable=False)
         try:
             refusals = evidence_refusals(
                 inputs.refs, loaded, getattr(context, "run_id", None),
                 gates_passed=getattr(context, "gates_passed", None) or (),
                 required_gates=required_gates, allow_unreviewed=allow_unreviewed,
                 required_reports=required_reports, required_listing=required_listing,
-                required_quality=required_quality, allow_development=allow_development)
+                required_quality=required_quality)
             if refusals:
                 raise _Refused(refusals)
             # The step's own `with:` only: a factory.release key is not a checkout path.
@@ -737,11 +757,12 @@ class ReleaseStep(WorkflowStep):
             artifact["store_metadata"] = store_metadata
         if listing_evidence:
             artifact["evidence"]["store_listing"] = listing_evidence
-        quality = quality_evidence(refs, loaded)
-        if quality:
-            artifact["evidence"]["quality"] = quality
+        quality_report = quality_evidence(refs, loaded)
+        if quality_report:
+            artifact["evidence"]["quality_report"] = quality_report
         if workflow.get("run_id"):
             artifact["workflow"] = workflow
+        artifact["evidence"]["quality"] = _run_quality(context)
         template = self._template(root, loaded.get("scaffold-record"))
         if template:
             artifact["template"] = template

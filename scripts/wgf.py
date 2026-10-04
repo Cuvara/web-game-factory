@@ -19,6 +19,7 @@ Every command that does work is a slice of one workflow definition, executed by 
     wgf <cmd> --resume <run-id> [...]    the same as `wgf resume`, whatever <cmd> is
     wgf <cmd> --run <run-id>             run that slice inside an existing run, reusing its
                                          artifacts; steps it already completed are skipped
+                                         while nothing before them has run since
     wgf new-game --from develop          start a run at a later step
 
     wgf status [run-id]                  where a run stands (default: the latest run)
@@ -202,7 +203,33 @@ def render_ended(state, definition):
     return line + (f": {ended['note']}" if ended.get("note") else "")
 
 
-def render_status(state, definition, live=None, pending=None):
+def render_quality(quality):
+    """The run's quality class and readiness (wgflib.workflow.quality.report), or None.
+
+    A run is called a release only when it is release-ready: release class, and the step
+    that drafts the release passed, current, with the quality floor met. Everything else is
+    said to be development or not (yet) ready, with why."""
+    if not quality:
+        return None
+    tier = f"tier {quality['tier']}" if quality.get("tier") else "no tier recorded"
+    versions = ", ".join(v for v in (
+        f"policy {quality['policy']}" if quality.get("policy") else None,
+        quality.get("benchmark")) if v)
+    if quality.get("class") == "release":
+        head = ("release-ready" if quality.get("release_ready")
+                else "release class, not release-ready")
+    else:
+        head = "development - never a release"
+    lines = [f"Quality: {head} ({tier}" + (f"; {versions}" if versions else "") + ")"]
+    for reason in quality.get("reasons") or ():
+        lines.append(f"         - {reason}")
+    pending = quality.get("not_yet_enforced") or []
+    if pending:
+        lines.append(f"         not in this workflow yet, so not enforced: {', '.join(pending)}")
+    return "\n".join(lines)
+
+
+def render_status(state, definition, live=None, pending=None, quality=None):
     marks = _symbols()
     lines = [
         f"Workflow: {state.workflow_id} (v{state.workflow_version})",
@@ -244,6 +271,9 @@ def render_status(state, definition, live=None, pending=None):
     ended = render_ended(state, definition)
     if ended:
         lines.append(ended)
+    rendered = render_quality(quality)
+    if rendered:
+        lines.append(rendered)
     if state.exit and state.exit.get("next") not in (None, "$end"):
         lines.append(f"Next:   {state.exit['next']} (outside this run's scope; "
                      f"wgf {state.exit['next']} --run {state.run_id})")
@@ -253,6 +283,10 @@ def render_status(state, definition, live=None, pending=None):
     timeout = render_timeout((pending or {}).get("timeout"), state.run_id)
     if timeout:
         lines.append(timeout)
+    held = (pending or {}).get("held_for_person")
+    if held:
+        lines.append(f"Held:   {pending.get('gate')} waits for a person this time - no automatic "
+                     f"or timeout approval: {'; '.join(held)}")
     evidence = gate_evidence.render((pending or {}).get("evidence"))
     if evidence:
         lines.append("")
@@ -553,7 +587,8 @@ def _drive(api, args, request):
     if not args.json:
         definition = api.definition_for(state)
         print()
-        print(render_status(state, definition, pending=api.pending(state)))
+        print(render_status(state, definition, pending=api.pending(state),
+                            quality=api.quality(state)))
         ended = ended_by_decision(state)
         if ended is not None:
             print(f"\nWorkflow ended by a decision: {ended['decision']} at {ended['step']}.")
@@ -657,10 +692,11 @@ def cmd_status(args):
         # liveness, the decision it waits for (with any timeout eligibility), and the
         # decision that ended it. Reading them changes nothing.
         print(json.dumps(dict(state.to_dict(), liveness=live, pending=pending,
-                              ended_by=ended_by_decision(state)),
+                              ended_by=ended_by_decision(state),
+                              quality=api.quality(state)),
                          indent=2, ensure_ascii=False))
     else:
-        print(render_status(state, definition, live, pending))
+        print(render_status(state, definition, live, pending, quality=api.quality(state)))
     return status_exit_code(state)
 
 
@@ -945,6 +981,12 @@ def cmd_where(args):
         },
         "profiles": profiles,
     }
+    # What a new run would be held to (core/reference/quality-policy.yaml): its tier and
+    # class, and why a run would be refused before it starts (`refused`, empty when none).
+    try:
+        where["quality"] = WorkflowAPI(config=config, store_dir=os.devnull).preflight()
+    except (ValueError, OSError, DefinitionError, YamlError) as exc:
+        where["quality"] = {"error": str(exc)}
     if args.json:
         print(json.dumps(where, indent=2))
     else:

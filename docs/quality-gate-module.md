@@ -99,9 +99,10 @@ release separately requires the listing's validation (`docs/release-module.md`).
 | `mvp` or none | yes | `development` | PASS |
 | `mvp` or none | no | `development` | FAIL |
 
-A run at tier mvp is a development build: its decision is never `release`. Release refuses
-a `development` decision unless the installation sets `factory.release.allow_development_tier`
-(the golden runs do), and records it in the manifest's `evidence.quality`.
+A run at tier mvp is a development build: its decision is never `release`. Release drafts
+it and records the decision in the manifest's `evidence.quality_report`, beside the run's own
+class (`evidence.quality`, the quality policy of WS-12): a development build is never a
+release, and the policy keeps its run from a live submission.
 
 ## Findings and their lifecycle
 
@@ -163,9 +164,10 @@ the checkpoint shows its scorecard: each dimension's score against its floor, th
 findings and the release decision (`wgflib/gate_evidence.py`). Release refuses
 (`docs/release-module.md`) unless the newest quality-report PASSED exactly the build it ships
 - its commit and development commit - pins the run's newest qa, verification, prototype, sdk,
-review, playability, production-quality, visual-qa and content-sufficiency reports, and decided `release` (or `development` where the
-installation allows it). A workflow without the quality gate says so with `with:
-required_quality: false` on its release step.
+review, playability, production-quality, visual-qa and content-sufficiency reports, and did
+not decide `not-release` (a `development` decision is drafted and recorded as such). A
+workflow without the quality gate says so with `with: required_quality: false` on its release
+step.
 
 ## Running it
 

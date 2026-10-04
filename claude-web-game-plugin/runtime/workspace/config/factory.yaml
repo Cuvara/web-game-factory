@@ -173,13 +173,6 @@ factory:
     # evidence.review says UNREVIEWED. It never waives a request for changes, an approval
     # of another commit, or G4.
     allow_unreviewed: false
-    # Release refuses (`quality-development-tier`) a build whose quality-report decided
-    # `development` - a run at quality tier mvp, which the quality gate never calls a release
-    # (docs/quality-gate-module.md). `true` is an explicit, recorded exception for an
-    # installation that drafts development builds (a golden run, an internal test portal):
-    # the manifest's evidence.quality says `development`. It never waives a quality-report
-    # that failed, judged another build, or decided `not-release`.
-    allow_development_tier: false
 
   # The publish module (scripts/wgf_publish, docs/publish-module.md): the `publish` group
   # of the workflow - release:validating (platform-validate), G5, G6, release:submitting

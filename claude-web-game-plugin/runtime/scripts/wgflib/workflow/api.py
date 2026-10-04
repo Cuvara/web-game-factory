@@ -14,7 +14,7 @@ import re
 import unicodedata
 
 from .. import budget, gate_evidence, paths, procs
-from . import checkpoint, integrity, mock
+from . import checkpoint, integrity, mock, quality
 from .config import ConfigError, load_config
 from .definition import WORKFLOWS, load_definition
 from .engine import EngineError, WorkflowEngine
@@ -297,6 +297,27 @@ class WorkflowAPI:
             mock.register(registry)  # registered last, so mocks replace real modules
         return registry
 
+    def quality_policy(self):
+        """core/reference/quality-policy.yaml (wgflib.workflow.quality). Fail closed: no run
+        is started or driven without it."""
+        try:
+            return quality.load_policy()
+        except quality.PolicyError as exc:
+            raise ConfigError(f"the quality policy cannot be read: {exc}; no run is started "
+                              f"or driven without it")
+
+    def quality(self, state):
+        """quality.report for `state`: its tier, class, why, and whether it is release-ready.
+        A policy or definition that cannot be read costs the readiness, never the run."""
+        events = self.store.read_events(state.run_id, [])
+        try:
+            definition = self.definition_for(state)
+            policy = quality.load_policy()
+        except (OSError, ValueError):
+            klass, reasons = quality.run_class(state.params, events)
+            return {"class": klass, "reasons": reasons, "release_ready": False}
+        return quality.report(state, definition, events, policy)
+
     def engine(self, use_mock, workflow_ref=None):
         overrides = dict(self._overrides)
         if use_mock:
@@ -311,6 +332,7 @@ class WorkflowAPI:
             config=self.config.data,
             subscribers=self.subscribers,
             artifact_validator=ArtifactContracts(untyped=definition.untyped_artifacts),
+            quality_policy=self.quality_policy(),
             **overrides,
         )
 
@@ -434,12 +456,71 @@ class WorkflowAPI:
         develop_budget = self.config.develop_budget
         if develop_budget is not None:
             params[budget.PARAM] = develop_budget
+        # The quality policy, snapshotted the same way: the tier the run builds to, its class
+        # (release or development) and why, and the policy and benchmark versions it started
+        # under. Every step that budgets or judges content reads the tier from here, never
+        # from a configuration changed since; a later configuration only lowers the class
+        # (QUALITY_DOWNGRADED, recorded by the engine when a drive begins).
+        try:
+            params[quality.PARAM] = quality.snapshot(engine.quality_policy, self.config.data,
+                                                     engine.definition, mock=request.mock)
+            # A run the configuration cannot take to its tier is not started at all - the
+            # way a timeout window on an irreversible gate is refused - rather than failing
+            # hours later at the step that cannot meet it.
+            refused = quality.preflight_refusals(
+                engine.quality_policy, self.config.data, engine.definition,
+                self._new_run_steps(engine.definition, request), mock=request.mock,
+                implementation=self._implementation(engine.registry, engine.definition))
+        except quality.PolicyError as exc:
+            raise ConfigError(str(exc))
+        if refused:
+            raise ConfigError(
+                f"no run is started: at quality tier {params[quality.PARAM]['tier']} "
+                + "; ".join(refused) + " (core/reference/quality-policy.yaml preflight)")
 
         scope = request.scope
         if scope == engine.definition.id:
             scope = None
         return engine.start(scope=scope, start_at=request.from_step,
                             project_id=request.project_id, params=params)
+
+    @staticmethod
+    def _new_run_steps(definition, request):
+        """The step ids a new run of `request` would execute: its scope from --from on."""
+        scope = None if request.scope == definition.id else request.scope
+        ids = definition.resolve_scope(scope)
+        if request.from_step in ids:
+            ids = ids[ids.index(request.from_step):]
+        return ids
+
+    @staticmethod
+    def _implementation(registry, definition):
+        """step id -> the module implementing it in `registry`, or None."""
+        def module_of(step_id):
+            if not step_id or not definition.has_step(step_id):
+                return None
+            try:
+                factory = registry.resolve(definition.step(step_id).type)
+            except Exception:
+                return None
+            return getattr(factory, "__module__", None)
+        return module_of
+
+    def preflight(self, workflow_ref=None):
+        """What a new, non-mock run of the whole workflow would be under the configuration
+        now: {"tier", "class", "reasons", "refused"}. Read-only; `wgf where` reports it."""
+        policy = self.quality_policy()
+        definition = self.definition(workflow_ref)
+        taken = quality.snapshot(policy, self.config.data, definition)
+        try:
+            registry = self.registry(False)
+        except Exception:  # a module that cannot be imported: the run would say so itself
+            registry = self.registry(False, load_modules=False)
+        return {"tier": taken["tier"], "class": taken["class"],
+                "reasons": taken.get("reasons") or [],
+                "refused": quality.preflight_refusals(
+                    policy, self.config.data, definition, definition.step_ids,
+                    implementation=self._implementation(registry, definition))}
 
     @staticmethod
     def _refuse_idea_without_reader(definition, request):
@@ -501,7 +582,29 @@ class WorkflowAPI:
             evidence = self._evidence(state, definition.step(info["step"]).inputs)
             if evidence:
                 info["evidence"] = evidence
+            held = self._held(state, definition.step(info["step"]).inputs, info.get("gate"))
+            if held:
+                # gates.yaml hold_for_person_when: this decision is a person's, so no
+                # timeout will approve it - say so instead of an eligibility it lacks.
+                info["held_for_person"] = held
+                info["timeout"] = None
         return info
+
+    def _held(self, state, inputs, gate):
+        """checkpoint.hold_for_person over the run's newest artifact of each input type."""
+        if not gate:
+            return []
+        refs = {t: state.latest_of_type(t) for t in inputs or ()}
+        refs = {t: r for t, r in refs.items() if r is not None}
+
+        class _Inputs:
+            def __init__(self, store, run_id):
+                self.refs, self._store, self._run_id = refs, store, run_id
+
+            def load(self, artifact_type):
+                return self._store.read_artifact(self._run_id, self.refs[artifact_type])
+
+        return checkpoint.hold_for_person(gate, _Inputs(self.store, state.run_id))
 
     def _evidence(self, state, inputs):
         """gate_evidence.summarize over the newest artifact of each of the waiting step's

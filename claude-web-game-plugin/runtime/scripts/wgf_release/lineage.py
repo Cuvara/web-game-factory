@@ -22,9 +22,9 @@ A draft release is only prepared from:
     step's `required_reports`, default both) are PASS for the development commit the
     released sdk commit sits on - a build whose art or UI they did not pass is not released;
   * the quality gate: the newest quality-report PASSED exactly the build released - its
-    commit and development commit - and pins the run's newest reports of it, with the
-    decision `release`; a `development` decision (a run at quality tier mvp) only where the
-    installation allows it (factory.release.allow_development_tier), recorded as such;
+    commit and development commit - and pins the run's newest reports of it; a `development`
+    decision (a run at quality tier mvp) is drafted and recorded as such
+    (evidence.quality_report), never as a release;
   * a verification of a clean tree: a verified working tree with uncommitted changes is not
     reproducible from any commit.
 
@@ -323,12 +323,11 @@ def listing_refusals(refs, loaded, required=DEFAULT_REQUIRED_LISTING):
     return out
 
 
-def quality_refusals(refs, loaded, required=DEFAULT_REQUIRED_QUALITY,
-                     allow_development=False):
+def quality_refusals(refs, loaded, required=DEFAULT_REQUIRED_QUALITY):
     """[Refusal] for the quality gate: no quality-report (BLOCKED when required: run
     quality-gate), one that did not PASS, one about another build than the released one or
-    that predates the run's newest reports of it, a `not-release` decision, or a
-    `development` decision the installation does not allow."""
+    that predates the run's newest reports of it, or a `not-release` decision. A
+    `development` decision (tier mvp) is no refusal: the manifest carries it as such."""
     out = []
     report = loaded.get("quality-report")
     if report is None:
@@ -370,18 +369,12 @@ def quality_refusals(refs, loaded, required=DEFAULT_REQUIRED_QUALITY,
                            "the newest quality-report decided not-release: "
                            + "; ".join((report.get("release_decision") or {}).get("reasons")
                                        or [])[:400]))
-    elif decision == "development" and not allow_development:
-        out.append(Refusal(FAILED, "quality-development-tier",
-                           f"the newest quality-report decided `development` (quality tier "
-                           f"{report.get('quality_tier') or 'none'}): a run at tier mvp is a "
-                           "development build, never a release. Build at tier release, or "
-                           "set factory.release.allow_development_tier for an installation "
-                           "that drafts development builds (recorded in the manifest)."))
     return out
 
 
 def quality_evidence(refs, loaded):
-    """The manifest's evidence.quality: the quality-report that cleared the build, or None."""
+    """The manifest's evidence.quality_report: the quality-report that cleared the build, or
+    None."""
     report = loaded.get("quality-report")
     ref = refs.get("quality-report")
     if report is None or ref is None:
@@ -411,7 +404,7 @@ def evidence_refusals(refs, loaded, run_id, *, gates_passed,
                       required_gates=DEFAULT_REQUIRED_GATES, allow_unreviewed=False,
                       required_reports=DEFAULT_REQUIRED_REPORTS,
                       required_listing=DEFAULT_REQUIRED_LISTING,
-                      required_quality=False, allow_development=False):
+                      required_quality=False):
     """Every precondition on the run's evidence that does not hold. `refs` are the newest
     ArtifactRefs per type, `loaded` their contents.
 
@@ -504,7 +497,7 @@ def evidence_refusals(refs, loaded, run_id, *, gates_passed,
     out.extend(gate_refusals(gates_passed, required_gates))
     out.extend(production_refusals(loaded, required_reports))
     out.extend(listing_refusals(refs, loaded, required_listing))
-    out.extend(quality_refusals(refs, loaded, required_quality, allow_development))
+    out.extend(quality_refusals(refs, loaded, required_quality))
     if (vr.get("commit") or {}).get("dirty") is None:
         out.append(Refusal(BLOCKED, "verified-tree-unknown",
                            "the verification could not establish whether its working tree "

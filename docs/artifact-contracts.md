@@ -204,6 +204,15 @@ to before design starts — the genre family, `unit_kind`, `progression`, `diffi
 whether research decided it (`research`) or the family's default did (`default`). Design
 starts from this rather than inventing a shape. Optional; 1.3.0 artifacts remain valid.
 
+**`title-strategy` 1.5.0** adds `concept.content_model.quality_tier` (`mvp` | `release`, from
+`factory.strategy.quality_tier`, default `release`) and `concept.content_model.budget`: the
+content committed for that tier - `units`, `groups` (`kind`, `count`, `min_units_per_group`;
+absent when the family has no group above the unit), `elements` (`count`, the family's
+`kinds`, `min_introduction_points`), `designed_play_s` - with `basis` (the genre model's and
+the quality benchmark's number behind each quantity), `references` (the reference files as
+id@version) and `justification` (session length, progression structure, mechanics,
+replayability, platform expectations). Optional; 1.4.0 artifacts remain valid.
+
 **`opportunity` 1.3.0** carries it one step earlier, in the research block
 (`shared/research-opportunity.schema.json`): `capability.genre_model` is the genre family the
 cell's genre node resolves to, or `null` when no family lists it — which is itself a

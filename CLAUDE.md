@@ -427,6 +427,10 @@ seen by the engine — validate what you write there with ajv.
   one exists, a deterministic direct-Playwright run of its console where none does, a person
   otherwise), the idempotency key, the captured session, redaction, dry-run vs live, the
   fixture portal; Playwright MCP is not the submission executor
+- `docs/portal-publishing-architecture.md` — DESIGN, not implemented (2026-10-04): publishing
+  leaves CI; the agent-owned portal publisher (profile-driven Playwright flows, bounded
+  adaptive mode, no duplicates, human intents), the audit behind it, the four portals'
+  console facts, and the implementation split. The rules above hold until it lands
 - `docs/core-contracts.md` — every pipeline boundary, lineage rules, the validator
 - `docs/checkouts.md` — where the game checkout is: one precedence for every step
   (`with:` → `WGF_GAME_REPO` → scaffold-record `local_path` → `factory.checkouts`), the

@@ -89,6 +89,19 @@ terminals: abandoned, sunset
 Criteria written at review time get written to justify the decision already made. Writing
 them in advance, under a gate, while the idea is cheap, is what makes `abandon` real.
 
+**A run states its quality tier, and strategy budgets the content for it.**
+`factory.strategy.quality_tier` is `mvp` or `release`; the strategy records it in
+`concept.content_model.quality_tier` and commits `concept.content_model.budget` for it -
+units, groups where the genre family has them, distinct elements and designed play, each
+the larger of the family's `units.min_total` and `core/reference/quality-benchmark.yaml`,
+with the bars behind each number and why the volume is enough. The default is `release`
+because `new-game` ends in a drafted release, not at G4: with the MVP as the only number
+the strategy committed, the release was the MVP by construction, and both validation games
+had to be raised to a release by hand after a person called the unattended build "a demo,
+not a game" (`docs/quality-gap-audit-2026-10.md`, findings 1 and 5). A run meant to stop
+at G4 - a prototype to test the bet - sets `quality_tier: mvp`, and its budget is the MVP's
+units. The tier changes what the strategy commits to, never a gate's bar.
+
 **`design` has no gate of its own.** Design and tech-plan approve together at G3. Splitting
 them adds a gate to a cycle that already has too many, and approving a design whose plan does
 not fit the timebox decides nothing.

@@ -8,7 +8,7 @@
     "id": "title-strategy",
     "kind": "artifact",
     "format": "json",
-    "version": "1.4.0",
+    "version": "1.5.0",
     "producer": "title:strategy",
     "consumers": ["title:strategy", "title:design", "title:tech-plan", "title:prototype", "title:prototype-review", "title:production", "title:live", "release:store-listing"],
     "repo_path": "workspace/titles/<title-id>/title-strategy.json",
@@ -188,7 +188,76 @@
             "difficulty_shape": { "type": "string" },
             "difficulty_axes": { "type": "array", "items": { "type": "string" } },
             "min_units": { "type": "integer", "description": "The fewest content units the MVP carries, from the family's `units.min_mvp`." },
-            "source": { "enum": ["research", "default"] }
+            "source": { "enum": ["research", "default"] },
+            "quality_tier": {
+              "enum": ["mvp", "release"],
+              "description": "The quality tier the run builds to (`factory.strategy.quality_tier`, default `release`): `release` commits the content a published title carries (core/reference/quality-benchmark.yaml), `mvp` the prototype's units only, for a run that ends at G4. Added in 1.5.0."
+            },
+            "budget": {
+              "type": "object",
+              "required": ["units"],
+              "description": "The content the title commits to at its quality tier, counted in the family's own unit, group and element kinds (core/reference/genre-models.yaml `units` and `budget`). At `release` every quantity is the larger of the genre model's bar and the quality benchmark's; at `mvp` it is the MVP's units. Added in 1.5.0.",
+              "properties": {
+                "units": { "type": "integer", "minimum": 1, "description": "Content units (of `unit_kind`) the release carries." },
+                "groups": {
+                  "type": "object",
+                  "required": ["kind", "count", "min_units_per_group"],
+                  "description": "The sets of units the game presents together. Absent when the family has no group above the unit, or at tier mvp.",
+                  "properties": {
+                    "kind": { "type": "string", "description": "What one group is for this family: world, chapter, cup, region..." },
+                    "count": { "type": "integer", "minimum": 1 },
+                    "min_units_per_group": { "type": "integer", "minimum": 1 }
+                  },
+                  "additionalProperties": false
+                },
+                "elements": {
+                  "type": "object",
+                  "required": ["count", "kinds"],
+                  "description": "Distinct elements across the units: things that change what the player does (the family's `element_kinds`), never a number-only change. Absent at tier mvp.",
+                  "properties": {
+                    "count": { "type": "integer", "minimum": 1 },
+                    "kinds": { "type": "array", "items": { "type": "string" } },
+                    "min_introduction_points": { "type": "integer", "minimum": 1 }
+                  },
+                  "additionalProperties": false
+                },
+                "designed_play_s": { "type": "integer", "minimum": 1, "description": "Total designed play across the units, in seconds." },
+                "references": {
+                  "type": "array",
+                  "items": { "type": "string", "pattern": "^[a-z][a-z0-9-]*@[0-9]+[.][0-9]+[.][0-9]+$" },
+                  "description": "The reference files the budget was drawn from, as id@version."
+                },
+                "basis": {
+                  "type": "array",
+                  "description": "Each quantity with the bars behind it: the genre model's and the benchmark's, and the value committed (the larger).",
+                  "items": {
+                    "type": "object",
+                    "required": ["quantity", "value"],
+                    "properties": {
+                      "quantity": { "type": "string" },
+                      "genre_model": { "type": "number" },
+                      "benchmark": { "type": "number" },
+                      "value": { "type": "number" }
+                    },
+                    "additionalProperties": false
+                  }
+                },
+                "justification": {
+                  "type": "object",
+                  "required": ["session_length", "progression_structure", "mechanics", "replayability", "platform_expectations"],
+                  "description": "Why this volume is sufficient, on the five things a G2 reviewer weighs.",
+                  "properties": {
+                    "session_length": { "type": "string" },
+                    "progression_structure": { "type": "string" },
+                    "mechanics": { "type": "string" },
+                    "replayability": { "type": "string" },
+                    "platform_expectations": { "type": "string" }
+                  },
+                  "additionalProperties": false
+                }
+              },
+              "additionalProperties": false
+            }
           },
           "additionalProperties": false
         }

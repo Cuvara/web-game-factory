@@ -8,9 +8,12 @@
 # stated so a check can count them on the BUILT content (the content data file, the play
 # probe, the gate reports), not only on the design.
 #
-# Status: mostly reference data. One bar is wired: `presentation.assets.distinct_climax_art`
-# (the assets step, scripts/wgf_assets/climax.py). Wiring the others is a change to the
-# consumers named under `consumers`, each with its own tests.
+# Status: the strategy reads `content` (1.1.0): a release-tier title-strategy commits a
+# content budget - units, groups, elements, designed play - from the larger of these bars and
+# the family's genre model (scripts/wgf_strategy/planner.py). One check reads it (1.2.0):
+# `presentation.assets.distinct_climax_art`, in the assets step (scripts/wgf_assets/climax.py).
+# Wiring another check is a change to the consumers named under `consumers`, each with its
+# own tests.
 #
 # Calibration. Every bar records its `basis`:
 #   measured-2   both calibration releases meet it (the audit says which bars the unattended
@@ -29,7 +32,7 @@
 # game presents together (world, tier, chapter). Every count is over the units the release
 # ships at the tier being judged.
 
-version: 1.1.0
+version: 1.2.0
 
 tiers:
   # `mvp` is the genre model's prototype bar and is not restated here. `release` is what a
@@ -133,7 +136,7 @@ presentation:
     # one drawing, and no climax drawing is a copy or recolour of another's (the same
     # silhouette under asset-quality.yaml variants.min_silhouette_distance). Evidence: the
     # 2D calibration release's four bosses were one drawing, tinted per world; the audit
-    # proposes the bar, no release meets it yet. Read by the assets step (1.1.0).
+    # proposes the bar, no release meets it yet. Read by the assets step (1.2.0).
     distinct_climax_art: {release: true, basis: proposed}
 
 store_listing:
@@ -149,8 +152,10 @@ store_listing:
   controls_cover_all_inputs: {release: true, basis: measured-1}
 
 consumers:
-  # Where each block is meant to be read once wired. Wired so far: presentation.assets.distinct_climax_art.
-  content: [scripts/wgf_design/content.py, scripts/wgf_playability/analysis.py]
+  # Where each block is read, or is meant to be read once wired. The strategy reads
+  # `content.units` and `content.elements` to commit the release budget; the assets step
+  # reads `presentation.assets.distinct_climax_art`.
+  content: [scripts/wgf_strategy/planner.py, scripts/wgf_design/content.py, scripts/wgf_playability/analysis.py]
   progression: [scripts/wgf_design/content.py, scripts/wgf_playability/analysis.py]
   features: [scripts/wgf_design/consistency.py, scripts/wgf_techplan/devplan.py]
   presentation: [scripts/wgf_visualqa, scripts/wgf_production, scripts/wgf_assets/climax.py]

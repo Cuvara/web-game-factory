@@ -224,7 +224,11 @@ def render_platform(platform, requirements, *, canonical, copies, out_dir, run_d
                                           f"({pid} or default)", subject="age_rating")
 
     required_locales = [r["locale"] for r in requirements if r["kind"] == "locale"]
-    for locale in required_locales:
+    # Every locale the canonical copy has reaches the rendition, cut to the platform's limits:
+    # the required ones first; the others because a portal takes descriptions per locale
+    # (the release's store_metadata.descriptions and the console fields read them here).
+    other_locales = [loc for loc in sorted(copies) if copies.get(loc) and loc not in required_locales]
+    for locale in required_locales + other_locales:
         copy = copies.get(locale)
         if not copy:
             problem("locale-missing", f"{pid} requires the listing texts in `{locale}`, and none "
@@ -258,8 +262,6 @@ def render_platform(platform, requirements, *, canonical, copies, out_dir, run_d
         if rating:
             cut["age_rating"] = rating
         text[locale] = cut
-    if not required_locales and copies.get("en"):
-        text["en"] = copies["en"]
 
     masters = canonical.get("masters") or []
     for req in requirements:

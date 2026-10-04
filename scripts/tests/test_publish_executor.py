@@ -27,6 +27,7 @@ sys.path.insert(0, SCRIPTS)
 sys.path.insert(0, HERE)
 
 from testenv import enabled  # noqa: E402
+from campaign_fixture import write_campaign  # noqa: E402
 from wgf_publish import outcomes  # noqa: E402
 from wgf_publish import browser as browser_module  # noqa: E402
 from wgf_publish.adapters import ConsoleAdapter, Job, resolve  # noqa: E402
@@ -94,12 +95,11 @@ class Release:
         self.package = os.path.join(self.release_dir, "generic-web.zip")
         with open(self.package, "wb") as handle:
             handle.write(b"PK\x05\x06" + b"\0" * 18)
-        for name in ("icon.png", "cover.png", "shot-1.png", "shot-2.png"):
-            with open(os.path.join(self.release_dir, "listing", name), "wb") as handle:
-                handle.write(PNG)
+        # The shipped campaign: the rendition's icon.png, cover.png, shot-1.png, shot-2.png
+        # under listing/platforms/generic-web/, the canonical captures beside them.
+        self.canonical, self.rendition = write_campaign(self.release_dir, "generic-web",
+                                                        text=LISTING)
         self.metadata = {"title": TITLE, "descriptions": {"en": "A fixture."},
-                         "icon": "listing/icon.png", "cover": "listing/cover.png",
-                         "screenshots": ["listing/shot-1.png", "listing/shot-2.png"],
                          "locales_included": ["en", "ru"]}
 
     def job(self, *, live=False, confirmed=False, identity=None, checkout=None, console_url=None,
@@ -263,13 +263,16 @@ class Flow(ExecutorCase):
         self.assertTrue(self.flow(live=True, confirmed=True)["submit_confirmed"])
 
     def test_a_missing_required_value_blocks_before_anything_runs(self):
-        self.release.metadata = dict(self.release.metadata, icon=None)
+        shutil.rmtree(os.path.join(self.release.release_dir, "listing"))
+        write_campaign(self.release.release_dir, "generic-web", text=LISTING, icon=False,
+                       canonical_extra={"branding": {"method": "none", "items": []}})
         publication, runner = self.run_fake(completed())
         self.assertEqual(publication.outcome, outcomes.BLOCKED)
         self.assertIn("media.icon", publication.message)
         self.assertEqual(runner.flows, [])
         # An optional one (the cover) is left out and named.
-        self.release.metadata = dict(self.release.metadata, icon="listing/icon.png", cover=None)
+        shutil.rmtree(os.path.join(self.release.release_dir, "listing"))
+        write_campaign(self.release.release_dir, "generic-web", text=LISTING, cover=False)
         publication, runner = self.run_fake(completed())
         self.assertNotIn("media.cover", [i["id"] for i in runner.flows[0]["intents"]])
         self.assertIn("media.cover", publication.evidence[0].summary)
@@ -635,6 +638,12 @@ class Browser(ExecutorCase):
         self.assertEqual(game["listing"]["description[ru]"], LISTING["ru"]["long_description"])
         self.assertEqual(game["media"], {"icon": ["icon.png"], "cover": ["cover.png"],
                                          "screenshots": ["shot-1.png", "shot-2.png"]})
+        # Exactly the platform rendition's files (listing/platforms/generic-web/), never the
+        # canonical captures they were cut from: the bytes the portal received are theirs.
+        rendition = os.path.join(self.release.release_dir, "listing", "platforms", "generic-web")
+        self.assertEqual(game["media_sizes"], {
+            k: [os.path.getsize(os.path.join(rendition, n)) for n in names]
+            for k, names in game["media"].items()})
 
     def test_live_upload_then_a_confirmed_visit_requests_review_once(self):
         self.portal("open")

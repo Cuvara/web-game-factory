@@ -2,13 +2,13 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://webgamefactory.dev/schemas/artifacts/platform-publication.schema.json",
   "title": "Platform Publication",
-  "description": "The status of one release on one platform. Publication is not atomic — Yandex can reject what CrazyGames approved — so each (release × platform) pair carries its own state, and the release computes its quorum from these.\n\nThe rejection path is the important one. A rejection MUST emit a compliance finding that versions the platform profile, either as a new assertion or an entry in review.common_rejections. A rejection that only sets a status field teaches the factory nothing, and the next title hits the same wall. This is the highest-return feedback loop in the system.\n\nSince 1.1.0 the record also carries what the Factory's own publication steps established: a `readiness` (READY, BLOCKED, HUMAN_REQUIRED, UNKNOWN) computed at release:validating from the publication guards, an `outcome` of the last publication attempt at release:submitting, the `submission` method and its idempotency key and portal draft id, every piece of evidence (hashed, redacted), and a `measurement_class` saying who observed the portal state. `state` is set only from an observed portal state, never from the success of a click; a state the step could not observe stays where it was and the outcome says `UNKNOWN`. Every 1.1.0 field is optional, so a 1.0.0 record written by hand still validates.\n\n1.2.0 (additive, docs/portal-publishing-architecture.md): the portal's own game id (`submission.portal_game_id`), the stop reasons of the profile-driven publisher (`legal`, `declaration`, `ai-text-policy`, `duplicate-candidate`, `review-pending`, `drift-irreversible`, `anti-bot`), and `automation-console-adaptive` for a record any bounded adaptive action contributed to.",
+  "description": "The status of one release on one platform. Publication is not atomic — Yandex can reject what CrazyGames approved — so each (release × platform) pair carries its own state, and the release computes its quorum from these.\n\nThe rejection path is the important one. A rejection MUST emit a compliance finding that versions the platform profile, either as a new assertion or an entry in review.common_rejections. A rejection that only sets a status field teaches the factory nothing, and the next title hits the same wall. This is the highest-return feedback loop in the system.\n\nSince 1.1.0 the record also carries what the Factory's own publication steps established: a `readiness` (READY, BLOCKED, HUMAN_REQUIRED, UNKNOWN) computed at release:validating from the publication guards, an `outcome` of the last publication attempt at release:submitting, the `submission` method and its idempotency key and portal draft id, every piece of evidence (hashed, redacted), and a `measurement_class` saying who observed the portal state. `state` is set only from an observed portal state, never from the success of a click; a state the step could not observe stays where it was and the outcome says `UNKNOWN`. Every 1.1.0 field is optional, so a 1.0.0 record written by hand still validates.\n\n1.2.0 (additive, docs/portal-publishing-architecture.md): the portal's own game id (`submission.portal_game_id`), the stop reasons of the profile-driven publisher (`legal`, `declaration`, `ai-text-policy`, `duplicate-candidate`, `review-pending`, `drift-irreversible`, `anti-bot`), and `automation-console-adaptive` for a record any bounded adaptive action contributed to.\n\n1.3.0 (additive): `submission.campaign_hash`, the hash of the campaign (store-listing rendition texts and files) the platform was filled from.",
 
   "x-wgf": {
     "id": "platform-publication",
     "kind": "artifact",
     "format": "json",
-    "version": "1.2.0",
+    "version": "1.3.0",
     "producer": "release:validating",
     "updated_by": ["release:submitting"],
     "consumers": ["release:approved", "release:submitting", "release:partially-live", "title:live"],
@@ -102,6 +102,7 @@
         "submitted_at": { "type": "string", "format": "date-time" },
         "submitted_by": { "type": "string" },
         "package_filename": { "type": "string" },
+        "campaign_hash": { "$ref": "./shared/provenance.schema.json#/$defs/hash", "description": "Since 1.3.0. The content hash of the campaign this platform was filled from (wgf_publish.campaign: the platform's rendition texts and the bytes of every listing file, with the store-listing G6 pinned) - the same value the portal registry records as campaign_hash." },
         "checklist": {
           "type": "array",
           "items": {

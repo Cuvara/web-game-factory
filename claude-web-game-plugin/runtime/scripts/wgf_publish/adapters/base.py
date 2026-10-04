@@ -45,6 +45,9 @@ class Job:
                           create another (True only for NOT_CREATED).
         login_timeout_s   factory.publish.login_timeout_s: how long a person has to log in on
                           the portal's page; None lets the adapter use its default.
+        campaign          the store listing the release shipped for this platform
+                          (wgf_publish.campaign): every listing text and medium an intent
+                          names comes from it, the rendition's files first.
     """
 
     def __init__(self, *, platform_id, release_id, idempotency_key, package_path, package,
@@ -53,7 +56,7 @@ class Job:
                  run_process=None, listing=None, platform_profile=None, live=None,
                  submit_confirmed=False, track=False, known_ids=None, registry_status=None,
                  required_ids=None, identity=None, allow_create=True, login_timeout_s=None,
-                 adaptive=None):
+                 adaptive=None, campaign=None):
         # The bounded adaptive mode's settings for this visit (wgf_publish/adaptive.py
         # settings_for), resolved by the step from the run's configuration; None: from config.
         self.adaptive = adaptive
@@ -88,6 +91,9 @@ class Job:
         self.identity = dict(identity or {})
         self.allow_create = bool(allow_create)
         self.login_timeout_s = login_timeout_s
+        # The shipped campaign (wgf_publish.campaign.Campaign) every listing value comes
+        # from; None: read from release_dir when first needed.
+        self.campaign = campaign
 
 
 class Publication:

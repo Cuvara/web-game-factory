@@ -30,6 +30,7 @@ sys.path.insert(0, HERE)
 from test_release_module import (CONTRACTS, NOW, Context, GameRepository, Inputs,  # noqa: E402
                                  seal, step as release_step)
 from testenv import enabled  # noqa: E402
+from campaign_fixture import write_campaign  # noqa: E402
 from wgf_publish import PlatformValidateStep, PublishStep, register  # noqa: E402
 from wgf_publish import outcomes  # noqa: E402
 from wgf_publish.adapters import ConsoleAdapter, ManualAdapter, resolve  # noqa: E402
@@ -233,8 +234,17 @@ class PublishCase(unittest.TestCase):
 
     # -- fixtures ---------------------------------------------------------------------------
 
+    def write_campaign(self, text=None, platform_id="generic-web", **kw):
+        """The campaign the release shipped (campaign_fixture): of the manifest's commit,
+        the store-listing G6 pins."""
+        kw.setdefault("commit", self.manifest["commit_sha"])
+        kw.setdefault("listing_hash", self.listing["store-listing"]["provenance"]["content_hash"])
+        return write_campaign(self.release_dir, platform_id, text=text, **kw)
+
     def write_metadata(self, metadata=None):
         metadata = METADATA if metadata is None else metadata
+        if "generic-web" in metadata:
+            self.write_campaign()
         with open(os.path.join(self.release_dir, "store-metadata.json"), "w",
                   encoding="utf-8") as handle:
             json.dump(metadata, handle)
@@ -246,11 +256,7 @@ class PublishCase(unittest.TestCase):
 
     def write_listing(self, text=None, platform_id="generic-web"):
         """The store listing the release shipped: its rendition for `platform_id`."""
-        directory = os.path.join(self.release_dir, "listing", "platforms", platform_id)
-        os.makedirs(directory, exist_ok=True)
-        with open(os.path.join(directory, "listing.json"), "w", encoding="utf-8") as handle:
-            json.dump({"platform_id": platform_id, "text": LISTING if text is None else text},
-                      handle, ensure_ascii=False)
+        self.write_campaign(LISTING if text is None else text, platform_id)
 
     def verification(self, assertions=()):
         """The run's verification-report with policy.assertions:generic-web recorded."""
@@ -899,6 +905,52 @@ class Publish(PublishCase):
                  if e.get("phase") == "prepare" and "flow for the console" in e["summary"]]
         self.assertIn("field.description", noted[0]["data"]["intents"])
 
+    # -- the campaign: what fills the portal, checked before anything is uploaded -----------
+
+    def test_the_campaign_hash_is_recorded_and_is_the_shipped_campaigns(self):
+        from wgf_publish import campaign
+        result = self.go(console=FakeConsole("fresh"))
+        self.assertEqual(result.route, "dry-run", result.error or result.message)
+        record = result.artifacts[0].content
+        shipped = campaign.load(self.release_dir, "generic-web")
+        self.assertEqual(record["submission"]["campaign_hash"], shipped.campaign_hash())
+        checked = [e for e in record["evidence"] if e.get("phase") == "prepare"
+                   and "campaign media checked" in e["summary"]]
+        self.assertEqual(checked[0]["data"]["campaign_hash"], shipped.campaign_hash())
+
+    def test_media_without_capture_provenance_or_a_placeholder_is_never_uploaded(self):
+        from campaign_fixture import placeholder_png
+        cases = {
+            "capture-commit-mismatch": dict(commit="b" * 40),
+            "placeholder": dict(rendition_extra=[({"id": "screenshot-09", "kind": "screenshot",
+                                                   "rel": "platforms/generic-web/shot-9.png",
+                                                   "source": "landscape-01-play",
+                                                   "requirement": "screenshots"},
+                                                  placeholder_png(64, 36))]),
+            "no-provenance": dict(canonical_extra={"capture": {"kind": "none"}}),
+        }
+        for code, kw in cases.items():
+            with self.subTest(code):
+                shutil.rmtree(os.path.join(self.release_dir, "listing"))
+                self.write_campaign(**kw)
+                console = FakeConsole("fresh")
+                result = self.go(console=console)
+                self.assertEqual((result.outcome, result.retryable), (StepOutcome.FAILED, False))
+                record = result.artifacts[0].content
+                self.assertEqual(record["outcome"], "INVALID_METADATA")
+                self.assertIn("invalid-media", json.dumps(record["evidence"]))
+                self.assertIn(code, record["evidence"][-1]["summary"])
+                self.assertEqual(console.flows, [])
+
+    def test_a_shipped_listing_g6_did_not_pin_is_stale(self):
+        shutil.rmtree(os.path.join(self.release_dir, "listing"))
+        self.write_campaign(listing_hash="sha256:" + "d" * 64)
+        console = FakeConsole("fresh")
+        result = self.go(console=console)
+        self.assertEqual(result.outcome, StepOutcome.BLOCKED)
+        self.assertIn("g6-stale", result.message)
+        self.assertEqual(console.flows, [])
+
 
 # -- through the engine ----------------------------------------------------------------------
 
@@ -1279,9 +1331,9 @@ class CreateBeforeBuildEndToEnd(PublishCase):
             type = "test.metadata"
 
             def execute(self, inputs, context):
-                case.release_dir = case.game.path(
-                    "release", inputs.load("release-manifest")["release_id"])
-                case.write_metadata()
+                case.manifest = inputs.load("release-manifest")
+                case.release_dir = case.game.path("release", case.manifest["release_id"])
+                case.write_metadata()  # and the campaign, captured from this release's commit
                 return StepResult.success([], message=case.release_dir)
 
         module = type(sys)("wgf_publish_test_create_before_build")

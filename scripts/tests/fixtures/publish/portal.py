@@ -390,6 +390,8 @@ class Handler(BaseHTTPRequestHandler):
                                        if isinstance(v, str)}
                     game["media"] = {k: [f["filename"] for f in v] for k, v in form.items()
                                      if isinstance(v, list)}
+                    game["media_sizes"] = {k: [f.get("size") for f in v] for k, v in form.items()
+                                           if isinstance(v, list)}
                     game["saved"] = True
                 return self._redirect(f"/console/game/{gid}")
             if action == "request":

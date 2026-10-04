@@ -154,7 +154,8 @@ def requirements(profile, reference):
                     "known": "screenshots_min" in meta})
         out.append({"id": "video", "kind": "video", "required": None, "formats": None,
                     "min_seconds": None, "max_seconds": None, "max_mb": None,
-                    "min_width": None, "min_height": None, "aspect": None, "known": False})
+                    "min_width": None, "min_height": None, "aspect": None, "orientation": None,
+                    "known": False})
         out.append({"id": "age_rating", "kind": "age_rating",
                     "required": meta.get("age_rating_required"), "system": None,
                     "known": "age_rating_required" in meta})
@@ -185,7 +186,7 @@ def requirements(profile, reference):
                     "formats": video.get("formats"), "min_seconds": video.get("min_seconds"),
                     "max_seconds": video.get("max_seconds"), "max_mb": video.get("max_mb"),
                     "min_width": video.get("min_width"), "min_height": video.get("min_height"),
-                    "aspect": video.get("aspect"),
+                    "aspect": video.get("aspect"), "orientation": video.get("orientation"),
                     "known": "required" in video})
         rating = block.get("age_rating") if isinstance(block.get("age_rating"), dict) else {}
         out.append({"id": "age_rating", "kind": "age_rating",

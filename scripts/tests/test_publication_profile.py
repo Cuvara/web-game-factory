@@ -509,8 +509,8 @@ class PlatformPublicationTest(unittest.TestCase):
         found = errors(record, PUBLICATION_SCHEMA)
         return [e for e in found if not str(getattr(e, "pointer", "")).startswith("/provenance")]
 
-    def test_the_contract_is_1_2_0(self):
-        self.assertEqual(PUBLICATION_SCHEMA["x-wgf"]["version"], "1.2.0")
+    def test_the_contract_is_1_3_0(self):
+        self.assertEqual(PUBLICATION_SCHEMA["x-wgf"]["version"], "1.3.0")
 
     def test_the_new_human_required_reasons(self):
         for reason in ("legal", "declaration", "ai-text-policy", "duplicate-candidate",

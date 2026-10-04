@@ -167,6 +167,70 @@ decide` or `resume` carries neither.
    advance: a person logs in, live, in the window the executor opens; a tool's token
    (`credential.kind: token`) must be set and allowlisted, or it is HUMAN_REQUIRED.
 
+7. **The campaign** (`scripts/wgf_publish/campaign.py`): the store listing the release
+   shipped (`release/<id>/listing/`) must be the `store-listing` G6 pinned (its
+   `listing.json` carries that content hash, else BLOCKED `g6-stale`), and its media must
+   pass the portal's checks before anything is uploaded (below): any failure is
+   `INVALID_METADATA` `invalid-media`, FAILED, not retryable, nothing contacted. What is
+   UNKNOWN is recorded in the evidence, never passed as verified.
+
+### The campaign: every listing value from the shipped package
+
+All portal listing data comes from the canonical campaign package - the store-listing the
+`store-listing` step captured from the verified production build, shipped by `release`
+under `release/<id>/listing/` (docs/store-listing-module.md). A portal adapter never
+invents campaign content: `resolve_value` in `adapters/console.py` delegates every
+`listing.` path to `wgf_publish.campaign`, and a value the package does not hold is `None`
+(the executor refuses a required intent with no value; an optional one is left out and
+named).
+
+| Path | Resolves to |
+|---|---|
+| `listing.text.<locale>.title`, `.subtitle`, `.short_description` | the rendition's copy in that locale |
+| `listing.text.<locale>.description` / `.long_description` | the long description (else the short) |
+| `listing.text.<locale>.how_to_play` / `.instructions` / `.controls` | the controls text |
+| `listing.text.<locale>.feature_bullets` / `.features` | the feature bullets, one per line |
+| `listing.text.<locale>.tags` / `.categories` / `.promo` | joined with commas |
+| `listing.text.<locale>.keywords` / `.seo_description` | only where the copy has them |
+| `listing.<field>` | the same in the primary locale, then any other |
+| `listing.media.icon`, `.logo` | the rendition's icon / logo |
+| `listing.media.cover` / `.thumbnail(s)`, `.hero` / `.hero_image` / `.promo` | the rendition's covers and promotional images |
+| `listing.media.screenshots` | every rendition screenshot (a list: an intent with `multiple`) |
+| `listing.media.trailer` / `.video` / `.gameplay_video` | the recorded trailer; `_landscape` / `_portrait` (or `horizontal_` / `vertical_`) keep one orientation |
+| `listing.media.<locale>.<kind>` | a locale's own files (store-listing 1.2.0 `files[].locale`), else the shared ones |
+
+The rendition's files (`listing/platforms/<pid>/`, sized for that portal) are used whenever
+the rendition has the kind; the canonical originals only when it has none. The age rating
+and content declarations are never a value: they are a person's act in the console (the
+profile's `human` intents); `campaign.surfaced` reports the rating the listing states, for
+that person, in the step's evidence.
+
+**The media check** (`campaign.check_media`), run by this step's prepare and - its
+provenance and portal-profile part - by `listing-validation`: from the platform profile's
+`store_listing` block, sizes, aspect, file type, file size, count (min/max) and, for the
+video, container, length, size, minimum resolution and orientation (`video.orientation`);
+from the publication profile's `fields` and upload intents, required media, `formats`,
+`max_count`, an intent's `accept` file types and `multiple` (one file for a single input),
+and per-locale media (`locales: per-locale`: a locale with files of its own must cover
+every required locale; shared files serving every locale are reported UNKNOWN
+`media-locale-shared`). A limit stated as `null`, or only as prose (`size: "16:9, up to
+28 s"`), is UNKNOWN - reported, never passed as verified. A file nothing uploads (no
+intent) that the portal does not require is never a refusal. **Provenance**: every
+screenshot and video must trace to the capture of the verified build - the canonical
+`listing.json` (commit, `measurement_class: automation-bot`, `capture.kind: browser`), the
+screenshot's capture record (`source`, its file's sha256) or the recorded trailer - and the
+capture commit must be the shipped build's (`release-manifest.commit_sha`): otherwise
+`no-provenance` or `capture-commit-mismatch`. An asset-pipeline placeholder
+(`<id>.placeholder.<ext>`, or the procedural backend's flat image) is `placeholder`. A file
+whose bytes differ from its record is `media-changed`.
+
+**The campaign hash** (`Campaign.campaign_hash()`): one sha256 over the platform's rendition
+texts, its age rating, the bytes of every listing file and the store-listing content hash
+they came from. The step records it as `submission.campaign_hash` (platform-publication
+1.3.0) and as the portal registry's `campaign_hash`; a `submit` after the campaign on the
+portal changed is `g6-stale`. Because the shipped listing must carry the G6-pinned
+store-listing hash, the registry's hash always derives from what G6 approved.
+
 ### The portal registry around the adapter
 
 Before the adapter runs, `registry.lookup_candidates` gives the job the ids `find_game` tries
@@ -714,7 +778,15 @@ outside the vocabulary, a deny-vocabulary name, a fill turned click, a resolver-
 value, a foreign origin and a path off the console, the wrong page, an ambiguous locator, a
 spent budget, a dismissable overlay and a destructive one, the irreversible intent (a
 suggestion only), the mode turned off, and a malformed answer. `scripts/tests/test_publish_registry.py`
-(RELEASE) covers the portal registry. `scripts/tests/test_publish_step.py` (RELEASE) covers the submit
+(RELEASE) covers the portal registry. `scripts/tests/test_publish_campaign.py` (RELEASE)
+covers the campaign: every text field and medium in two locales, the rendition before the
+canonical package, a locale's own media, missing optional against missing required, the age
+rating surfaced and never filled, the campaign hash, every media check (too small, wrong
+aspect, too big, wrong type, too many and too few, a missing locale, a video too long or in
+the wrong orientation or container, UNKNOWN limits), a placeholder, a capture from another
+commit or with no capture record, and the description of every locale carried from the
+listing through the release's `store_metadata` to the console field. The browser dry run
+checks the fixture portal's media inputs received exactly the rendition's files. `scripts/tests/test_publish_step.py` (RELEASE) covers the submit
 step across y8, yandex and crazygames with a scripted adapter: G6 for another manifest, not
 a person's, a store listing or listing validation changed after G6, a package from another
 bundle or another platform's build, changed bytes; an upload waiting for a person, then

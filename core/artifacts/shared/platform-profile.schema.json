@@ -234,7 +234,8 @@
             "min_width": { "type": ["integer", "null"], "minimum": 1 },
             "min_height": { "type": ["integer", "null"], "minimum": 1 },
             "aspect": { "type": ["string", "null"], "pattern": "^[0-9]+:[0-9]+$" },
-            "hosted": { "type": ["string", "null"], "description": "Where the portal wants the video: `upload`, or a video host's name when it takes only a link." }
+            "hosted": { "type": ["string", "null"], "description": "Where the portal wants the video: `upload`, or a video host's name when it takes only a link." },
+            "orientation": { "type": ["array", "null"], "items": { "enum": ["landscape", "portrait"] }, "description": "The orientations the portal takes a video in; null: not known (UNKNOWN, never passed)." }
           },
           "additionalProperties": false
         },

@@ -92,7 +92,7 @@ are the only recorded "not the game" causes.
 | code | `typecheck`, `lint`, `unit`, `integration` | the repository's scripts — the names the template's CI gives qa-report suites |
 | gameplay | `boot`, `loading`, `start`, `input`, `core-loop`, `progression`, `game-over`, `restart`, `pause-resume`, `responsive` | a browser against the built bundle — see below |
 | gameplay | `quality.report-commit`, `quality.<group>:<check>` | the playability-report: what the bot measured about the design's content, difficulty, progression and depth, carried not re-measured — see below |
-| policy | `runtime-facts`, `assertions:<platform>`, `asset-licenses` | `test:verify`; the template's `collect-facts.mjs` / `evaluate-assertions.mjs` against the **pinned** profile; the asset manifest |
+| policy | `runtime-facts`, `assertions:<platform>`, `assertion-warnings:<platform>`, `asset-licenses` | `test:verify`; the template's `collect-facts.mjs` / `evaluate-assertions.mjs` against the **pinned** profile (a breached `blocking` assertion FAILs `assertions:<platform>`; breached `warning`-severity ones go on the optional `assertion-warnings:<platform>`, so they never weaken the release's evidence); the asset manifest |
 | platform | `profile:<p>`, `sdk-init:<p>`, `hooks:<p>`, `requirements:<p>`, `fallback` | vendored `config/platforms/`; sdk-report per platform and feature (`BLOCKED` when it names another commit; `PASS_MOCK` unless observed live); declared ad kinds; shipped locales; a boot with no portal SDK present |
 | assets | `manifest`, `missing`, `formats`, `paths`, `runtime-manifest`, `loading` | asset-manifest vs files named after each item id under `public/`, `src/assets/`, `assets/` (source code under `src/assets/` is the bundler's input, not an asset); extensions per asset type; asset paths in `src/`; `public/assets/assets.json` against the repository with the assets module's validator (broken references FAIL; a stale hash, unlisted/unused file or large texture is a WARNING; absent is a WARNING) ([assets-module.md](assets-module.md#validation)); failed requests while playing |
 
@@ -136,7 +136,11 @@ Per platform, then:
 - `platform.requirements:<id>` - locales read from its own bundle;
 - `policy.assertions:<id>` - `collect-facts` and `evaluate-assertions` run with its
   `WGF_GAME_CONFIG`, so `package.size_mb`, `package.locales` and the screenshots count are
-  measured on its bundle. The **runtime** facts (`test:verify`: https, loading, fps) are
+  measured on its bundle. A breached warning-severity assertion is reported on the optional
+  `policy.assertion-warnings:<id>`, not here: with every target required, a WARNING here
+  would be UNVERIFIED evidence and refuse the release, though the profile says the breach
+  does not stop one (`yandex_screenshots` counts store screenshots, which do not exist until
+  `store-listing`; `listing-validation` judges them). The **runtime** facts (`test:verify`: https, loading, fps) are
   measured once, in a local browser against the build target's bundle - the same game code
   with another adapter, and no portal SDK loads there in any case.
 

@@ -332,7 +332,7 @@
     "scripts/wgf_verification/checks/build.py": "sha256:05cfd1f96dd8206be2718695dc3e9ab8b19db3b26ed49642f3ebd2ceea05f7e4",
     "scripts/wgf_verification/checks/code.py": "sha256:58d6720cec6f22eccaca1feac6947ad8fc51fb4521ddb1da338b8e44435210e6",
     "scripts/wgf_verification/checks/gameplay.py": "sha256:d69b0e5f1b817765859ec34b19d7418c0d2e4b2bd4f7a39de7d6a65da01a46e5",
-    "scripts/wgf_verification/checks/platform.py": "sha256:44bf897d30ddabc1c1be22a821c5418f177ad29a4b33f02101eef31f9ce34919",
+    "scripts/wgf_verification/checks/platform.py": "sha256:eb2a8d600dce8f62aa2c85b14b11abf3870474fae0785c0afae501f3a0c0044e",
     "scripts/wgf_verification/checks/quality.py": "sha256:e88413ca56c8eec19099788a50a47c845404189bae0d2af5110cbc9174398f07",
     "scripts/wgf_verification/lineage.py": "sha256:92fbf318cb25905ec51748b4ea99f8c2726480ac12948145dc4e4fb39f515547",
     "scripts/wgf_verification/model.py": "sha256:db60dd1e5017ebdf0c36ca26750608b18b651129985408c0be40c22a842679d3",

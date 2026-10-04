@@ -1007,9 +1007,56 @@ class PlatformAndPolicy(VerificationCase):
         runner = FakeRunner({"evaluate-assertions": lambda c, cwd, env: FakeRunner.evaluate(
             c, cwd, env, results=results)})
         result, report, _ = self.verify(runner=runner)
-        self.assertEqual(self.check(report, "policy.assertions:generic-web")["status"],
-                         "WARNING")
         self.assertEqual(result.outcome, StepOutcome.SUCCESS)
+        # The required check states what it established: every blocking assertion holds.
+        check = self.check(report, "policy.assertions:generic-web")
+        self.assertEqual((check["status"], check["evidence_status"]), ("PASS", "PASS"))
+        self.assertTrue(check["required"])
+        # The breach stays a WARNING, on an optional check of its own, with the measurement.
+        warned = self.check(report, "policy.assertion-warnings:generic-web")
+        self.assertEqual((warned["status"], warned["required"]), ("WARNING", False))
+        self.assertIn("generic_web_fps (measured 20)", warned["message"])
+        self.assertIn("policy.assertion-warnings:generic-web",
+                      report["platform_readiness"][0]["warnings"])
+        # ... so a warning does not make the evidence too weak for a release to draft.
+        self.assertNotEqual(report["evidence_status"], "UNVERIFIED")
+
+    def test_a_store_metadata_warning_on_a_required_target_leaves_the_evidence_releasable(self):
+        # Both golden runs, after every target became required: yandex's warning-severity
+        # yandex_screenshots counts store screenshots, which do not exist until store-listing
+        # runs after verify. The required policy.assertions:yandex was a WARNING, so
+        # UNVERIFIED, and release refused the draft: "evidence-too-weak".
+        self.add_platform("- { id: yandex, profile: yandex@1.2.0, role: optional }")
+        sdk = fixture("inputs/sdk-report.json")
+        sdk["platforms"].append(dict(sdk["platforms"][0], platform_id="yandex",
+                                     profile_version="1.2.0"))
+        results = {"generic-web": fixture("assertions-generic-web.json"),
+                   "yandex": [
+                       {"criterion_id": "yandex_sdk_present", "measured": "yandex",
+                        "breached": False, "evaluated_at": NOW, "severity": "blocking"},
+                       {"criterion_id": "yandex_screenshots", "measured": 0,
+                        "breached": True, "evaluated_at": NOW, "severity": "warning"}]}
+        def build_with_ru(command, cwd, env):  # ru is a yandex requirement
+            outcome = honoring_build(command, cwd, env)
+            with open(os.path.join(cwd, "dist", "locales", "ru.json"), "w") as handle:
+                handle.write("{}")
+            return outcome
+
+        runner = FakeRunner({"pnpm build": build_with_ru,
+                             "evaluate-assertions": lambda c, cwd, env: FakeRunner.evaluate(
+                                 c, cwd, env, results=results[c[c.index("--platform") + 1]])})
+        result, report, qa = self.verify(runner=runner,
+                                         inputs=self.inputs(**{"sdk-report": sdk}))
+
+        check = self.check(report, "policy.assertions:yandex")
+        self.assertEqual((check["status"], check["required"]), ("PASS", True))
+        self.assertEqual(self.check(report, "policy.assertion-warnings:yandex")["status"],
+                         "WARNING")
+        self.assertNotIn("UNVERIFIED", [c["evidence_status"] for c in report["checks"]
+                                        if c["required"]])
+        self.assertIn(report["evidence_status"], ("PASS", "PASS_MOCK"))
+        self.assertEqual(qa["evidence_status"], report["evidence_status"])
+        self.assertEqual(result.outcome, StepOutcome.SUCCESS, result.message)
 
     def test_missing_sdk_evidence_blocks(self):
         result, report, _ = self.verify(inputs=self.inputs(**{"sdk-report": None}))

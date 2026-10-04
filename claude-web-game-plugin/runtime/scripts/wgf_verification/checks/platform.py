@@ -313,7 +313,9 @@ def check_policy(session):
     if performance is not None:
         out.append(session.record(performance))
     for platform in session.platforms:
-        out.append(session.record(_assertions(session, platform)))
+        checks = _assertions(session, platform)
+        for check in checks if isinstance(checks, list) else [checks]:
+            out.append(session.record(check))
     return out
 
 
@@ -430,8 +432,25 @@ def _assertions(session, platform):
                      message="breached: " + ", ".join(
                          f"{r['criterion_id']} (measured {r.get('measured')!r})"
                          for r in blocking))
-    if warnings:
-        return Check(cid, title=title, status=WARNING, evidence=evidence, **common,
-                     message="warnings: " + ", ".join(r["criterion_id"] for r in warnings))
-    return Check(cid, title=title, status=PASS, evidence=evidence, **common,
-                 message=f"all {len(results)} assertion(s) hold")
+    if not warnings:
+        return Check(cid, title=title, status=PASS, evidence=evidence, **common,
+                     message=f"all {len(results)} assertion(s) hold")
+    # A warning-severity breach does not stop a release: the profile says so by its
+    # severity. Reported on this check it would, because a required WARNING carries no
+    # evidence stronger than UNVERIFIED and a release refuses that - with every target
+    # required, any target's warning would. So this check states what its evidence
+    # establishes - every blocking assertion holds, measured on this platform's bundle - and
+    # the breached warnings go on an optional check of their own, still a WARNING, with the
+    # same evidence. yandex_screenshots is one: it counts store screenshots, which
+    # store-listing captures after verify and listing-validation judges.
+    warned = f"policy.assertion-warnings:{pid}"
+    named = ", ".join(f"{r['criterion_id']} (measured {r.get('measured')!r})"
+                      for r in warnings)
+    return [
+        Check(cid, title=title, status=PASS, evidence=evidence, **common,
+              message=f"every blocking assertion holds; {len(warnings)} warning-severity "
+                      f"breach(es) of {len(results)} assertion(s), reported on {warned}"),
+        Check(warned, title="Platform profile assertion warnings",
+              status=WARNING, evidence=list(evidence), category="policy", required=False,
+              platform_id=pid, message="warning-severity assertion(s) breached: " + named),
+    ]

@@ -249,7 +249,9 @@ class InitCase(unittest.TestCase):
         """Pin the Factory to `commit` of TEMPLATE for this test, whatever the real lock says
         and whatever WGF_TEMPLATE_COMMIT is set to outside."""
         lock = {"repository": TEMPLATE, "url": url, "commit": commit, "ref": "test",
-                "validated_on": "2026-09-24"}
+                "validated_on": "2026-09-24",
+                # The real pin's adapter registry: tech-plan refuses a lock without it.
+                "platform_adapters": list(template_pin.platform_adapters())}
         patcher = mock.patch.object(template_pin, "load_lock", lambda path=None: dict(lock))
         patcher.start()
         self.addCleanup(patcher.stop)

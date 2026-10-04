@@ -66,7 +66,11 @@ workflow:
   # an asset made again, or the specialist's own label, mapped to develop, whose brief is
   # then that specialist's (docs/specialist-routing.md). The loop budgets move with it: per
   # source on triage, per specialist on develop.
-  version: 10
+  # 11: store copy grounded in the build - listing-validation's failures go through
+  # `listing-triage` (a triage after G4) to store-listing, whose copywriter is briefed with
+  # the store-copy findings; store-listing reads the content-sufficiency report of the build
+  # it lists (every count the copy states is a measured one) and the triage-report.
+  version: 11
   description: Discover an opportunity, plan a title, build it, verify it and prepare its first release.
   start: research
 
@@ -496,15 +500,20 @@ workflow:
     # branding from the game's own assets and identity, screenshots and a gameplay recording
     # of real play, copy grounded in the design and the shipped build (checked against
     # core/reference/store-listing.yaml `claims`), and one rendition per targeted platform
-    # under its profile's `store_listing` block. Re-entered from listing-validation (route
-    # `listing`) with the failing report, it captures, renders or rewrites again what the
-    # report names. No browser, no build or an unpassed G4 is BLOCKED, never a silent pass;
-    # a package that is not complete is FAILED with the listing kept as evidence.
+    # under its profile's `store_listing` block. The copy is held to the build: every count
+    # it states is one the content-sufficiency report of the listed build measured, its
+    # controls name every input the build accepts, every required locale is a full
+    # description, written by the copywriter agent at the release tier
+    # (docs/store-listing-module.md). Re-entered through listing-triage (route `listing`)
+    # with the failing report and the triage-report, it captures, renders or rewrites again
+    # what the report names, the copywriter briefed with the store-copy findings. No browser,
+    # no build or an unpassed G4 is BLOCKED, never a silent pass; a package that is not
+    # complete is FAILED with the listing kept as evidence.
     - id: store-listing
       type: store-listing
       stage: release:store-listing
-      description: Capture the verified build's store package - branding, screenshots, trailer, grounded copy, one rendition per platform. Re-entered with the failing listing-validation-report.
-      inputs: [qa-report, verification-report, sdk-report, prototype-report, game-design, title-strategy, scaffold-record, asset-manifest, playability-report, listing-validation-report]
+      description: Capture the verified build's store package - branding, screenshots, trailer, copy grounded in the build's measured content, one rendition per platform. Re-entered through listing-triage with the failing listing-validation-report and the copywriter's findings.
+      inputs: [qa-report, verification-report, sdk-report, prototype-report, game-design, title-strategy, scaffold-record, asset-manifest, playability-report, content-sufficiency-report, listing-validation-report, triage-report]
       outputs: [store-listing]
       with:
         required_gates: [G4]
@@ -513,14 +522,16 @@ workflow:
       # loop's own budget.
       max_visits: 59
       max_visits_by_route:
-        listing-validation.listing: 2
+        listing-triage.listing: 2
 
     # Every required text present and within its limits, every file present with the
     # dimensions, format and size required, screenshots real frames and distinct, the
-    # trailer within bounds or an honest fallback, the copy free of unbacked claims, and
-    # every platform rendition against its profile's block. FAIL (route `listing`) goes back
-    # to store-listing with the report; a requirement a profile leaves null is UNKNOWN,
-    # listed per platform, never passed. BLOCKED (no listing to judge) stops the run.
+    # trailer within bounds or an honest fallback, the copy free of unbacked claims and of
+    # counts the build did not measure, its controls naming every input, every required
+    # locale a full description, and every platform rendition against its profile's block.
+    # FAIL (route `listing`) goes through listing-triage back to store-listing with the
+    # report; a requirement a profile leaves null is UNKNOWN, listed per platform, never
+    # passed. BLOCKED (no listing to judge, or only a person can fix it) stops the run.
     - id: listing-validation
       type: listing-validation
       stage: release:store-listing
@@ -528,7 +539,7 @@ workflow:
       outputs: [listing-validation-report]
       max_visits: 59
       on:
-        listing: store-listing
+        listing: listing-triage
 
     # Drafts a release only from the newest passing qa-report, whose commit the
     # verification-report, sdk-report, prototype-report and the clean checkout all share.
@@ -557,6 +568,27 @@ workflow:
       # below are the `publish` group: `wgf publish --run <run-id>` continues this same run
       # through them, reusing its artifacts (docs/publish-module.md).
       next: $end
+
+    # The listing's failures as quality findings (docs/specialist-routing.md): the same
+    # triage step as before G4, here after it, where route `listing` can be taken. Its
+    # findings - store copy the copywriter's, screenshots and art the 2D artist's, a platform
+    # rendition the integrator's - are one store-listing pass (routing.py WHOLE_PASS), whose
+    # copywriter is briefed with the store-copy ones. A finding no store-listing pass can
+    # act on was already BLOCKED by listing-validation, for a person. It is listed after
+    # release, which ends `wgf new-game` ($end), so no step falls through into it; it is
+    # entered only by listing-validation's `listing`, and leads only to store-listing.
+    - id: listing-triage
+      type: triage
+      stage: release:store-listing
+      description: Normalize the store listing's failures into quality findings and route them to store-listing, the copywriter briefed with the store-copy ones.
+      inputs: [game-design, prototype-report, listing-validation-report, triage-report]
+      outputs: [triage-report]
+      max_visits: 59
+      max_visits_by_route:
+        listing-validation.listing: 2
+      on:
+        listing: store-listing
+      next: store-listing
 
     # -- publication: the `publish` group ------------------------------------------------
     #

@@ -125,8 +125,12 @@ def fast_case(key):
             # `wgf publish --run`, and a golden run never contacts a portal.
             definition = load_definition("new-game")
             publish = set(definition.resolve_scope("publish"))
+            # listing-triage is entered only when listing-validation fails (route `listing`);
+            # a golden listing passes, so the run never visits it.
+            on_failure_only = {"listing-triage"}
             self.assertEqual(harness.step_ids(),
-                             [s for s in definition.step_ids if s not in publish])
+                             [s for s in definition.step_ids
+                              if s not in publish and s not in on_failure_only])
             ids = harness.step_ids()
             self.assertEqual(ids[ids.index("sdk") + 1], "sdk-review")
             self.assertEqual(dict(games.EXPECTED_STEPS)["sdk-review"], "SUCCESS")

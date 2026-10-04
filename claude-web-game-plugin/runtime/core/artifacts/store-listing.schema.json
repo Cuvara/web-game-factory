@@ -8,7 +8,7 @@
     "id": "store-listing",
     "kind": "artifact",
     "format": "json",
-    "version": "1.1.0",
+    "version": "1.2.0",
     "producer": "release:store-listing",
     "consumers": ["release:store-listing", "release:draft", "release:approved", "release:validating", "release:submitting"],
     "repo_path": "<game-repo>/release/<release-id>/listing/listing.json",
@@ -67,7 +67,11 @@
             "argv0": { "type": "string" },
             "model": { "type": ["string", "null"] },
             "runs": { "type": "integer", "minimum": 0 },
-            "fallback": { "type": "boolean", "description": "True when a configured command writer failed and the template writer's texts are what shipped." }
+            "fallback": { "type": "boolean", "description": "True when a configured command writer failed and the template writer's texts are what shipped." },
+            "required": { "enum": ["template", "command"], "description": "Since 1.2.0. The writer the run's tier asks for (core/reference/store-listing.yaml `writer`): the copywriter agent (`command`) at the release tier. listing-validation fails a listing whose copy another writer wrote." },
+            "tier": { "type": "string", "description": "Since 1.2.0. The run's quality tier the copy was written at." },
+            "role": { "type": "string", "description": "Since 1.2.0. The role the command writer was briefed as (core/roles/roles.yaml `copywriter`)." },
+            "findings": { "type": "array", "items": { "type": "string" }, "description": "Since 1.2.0. The store-copy findings (quality-finding ids) the writer was briefed to fix, from the triage that routed this pass." }
           },
           "additionalProperties": false
         },
@@ -368,6 +372,69 @@
           }
         },
         "endless": { "type": "boolean" },
+        "features_excluded": {
+          "type": "array",
+          "description": "Since 1.2.0. The design's features its evaluation deferred or cut (or, unevaluated, tiered optional): what the copy may never name.",
+          "items": {
+            "type": "object",
+            "required": ["id", "name"],
+            "properties": {
+              "id": { "type": "string" },
+              "name": { "type": "string" },
+              "decision": { "type": "string" },
+              "reason": { "type": "string" }
+            },
+            "additionalProperties": false
+          }
+        },
+        "quality": {
+          "type": "object",
+          "description": "Since 1.2.0. The run's quality tier, where it was read, and the core/reference/quality-benchmark.yaml `store_listing` bars stated at it.",
+          "properties": {
+            "tier": { "type": ["string", "null"] },
+            "where": { "type": ["string", "null"] },
+            "bars": { "type": "object" }
+          },
+          "additionalProperties": false
+        },
+        "measured": {
+          "type": "object",
+          "description": "Since 1.2.0. What the build measured: the content-sufficiency report of the listed build (its commit, or the development commit the sdk commit sits on), and the counts read from it (core/reference/store-listing.yaml `counts`). Every count the copy states must equal one of these.",
+          "required": ["source", "counts"],
+          "properties": {
+            "source": {
+              "type": "object",
+              "properties": {
+                "artifact_id": { "type": ["string", "null"] },
+                "content_hash": { "type": ["string", "null"] },
+                "commit": { "type": "string" },
+                "quality_tier": { "type": ["string", "null"] },
+                "verdict": { "type": ["string", "null"] }
+              },
+              "additionalProperties": false
+            },
+            "counts": {
+              "type": "object",
+              "additionalProperties": {
+                "type": "object",
+                "required": ["value"],
+                "properties": {
+                  "value": { "type": "integer", "minimum": 0 },
+                  "kind": { "type": ["string", "null"] },
+                  "measured_by": { "type": ["string", "null"] }
+                },
+                "additionalProperties": false
+              }
+            }
+          },
+          "additionalProperties": false
+        },
+        "probe_inputs": {
+          "type": "object",
+          "description": "Since 1.2.0. Device -> the control action ids the play probe reported on it while the listing was captured (a pointer on a mobile viewport is touch, on a desktop one the mouse; a key is the keyboard). The controls text names every device here and every one the design's actions bind.",
+          "propertyNames": { "enum": ["touch", "mouse", "keyboard", "gamepad"] },
+          "additionalProperties": { "type": "array", "items": { "type": "string" } }
+        },
         "strings": { "type": "object", "description": "The game's own on-screen strings read from the shipped bundle's locale files, keyed by locale then key.", "additionalProperties": { "type": "object", "additionalProperties": { "type": "string" } } },
         "sources": {
           "type": "object",

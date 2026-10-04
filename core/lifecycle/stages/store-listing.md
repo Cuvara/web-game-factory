@@ -3,7 +3,8 @@
 **Machine** release · **Sub-activity within** `draft` · **Kind** automatic + AI-assisted
 **Role** release · **Inputs** `qa-report`, `verification-report`, `sdk-report`,
 `prototype-report`, `game-design`, `title-strategy`, `scaffold-record`, `asset-manifest`,
-`playability-report` · **Outputs** `store-listing`, `listing-validation-report`
+`playability-report`, `content-sufficiency-report`, `triage-report` · **Outputs**
+`store-listing`, `listing-validation-report`
 
 Everything a portal asks for beside the package: icon, logo and thumbnails; screenshots
 and a gameplay recording; the title, descriptions, feature bullets, tags and categories; one
@@ -28,8 +29,11 @@ A screenshot is a frame of the verified build, played through its own play probe
 is composed from the game's own assets, palette and faces. A description says what the
 player does, in words the design and the game's own strings use. A claim the build cannot
 back (multiplayer, leaderboards, levels, offline) is a grounding failure, whoever wrote the
-text (`core/reference/store-listing.yaml` `claims`). A platform requirement nobody has read
-from the portal stays `null` in the profile and is reported **UNKNOWN**, never passed.
+text (`core/reference/store-listing.yaml` `claims`). A count the copy states is one the
+build MEASURED - the content-sufficiency report of the listed build - never one the design
+planned; the controls text names every input the build accepts; every required locale is a
+full description in its own language. A platform requirement nobody has read from the
+portal stays `null` in the profile and is reported **UNKNOWN**, never passed.
 
 ## Procedure
 
@@ -42,18 +46,27 @@ from the portal stays `null` in the profile and is reported **UNKNOWN**, never p
    orientation, locales), `sdk-report` (capabilities observed working per platform),
    `scaffold-record` (the targeted platforms), the bundle's own locale strings, and the
    runtime asset manifest (which asset draws the player). Record where each came from.
+   From the `content-sufficiency-report` of this build (its commit, or the development
+   commit the listed one sits on) read the measured counts - units shipped, groups, climax
+   units - and from the design's feature evaluation what was included and what was cut;
+   record the run's quality tier and the `store_listing` bars of
+   `core/reference/quality-benchmark.yaml` stated at it.
 3. **Capture.** Serve the bundle locally, open it in a headless browser behind the refusing
    proxy, and play it through its probe on a landscape and a portrait viewport: the title
    screen, play early, play after several inputs, play late, the result screen. A frame in
    a `loading` or `other` state is never a screenshot; a frame below the readability floors
    or indistinguishable from an earlier one is dropped. Record `seconds` of oracle-driven
-   play as the trailer. Too few usable frames: play again, longer, up to `retries`.
+   play as the trailer. Too few usable frames: play again, longer, up to `retries`. Record
+   the inputs the probe reported on each viewport: they are devices the controls text names.
 4. **Brand.** Compose the icon, logo and promotional image from the game's own material
    in the browser; with no browser, derive them from the best gameplay frame and say so
    (`branding.method`).
-5. **Write.** Produce every text per required locale from the facts - the Factory's own
-   writer, or a configured agent writer whose texts go through the same grounding check -
-   within the canonical bounds, the first sentence naming the core verb.
+5. **Write.** Produce every text per required locale from the facts - at the release
+   tier the copywriter (an agent writer, `core/roles/roles.yaml`), for a development run the
+   Factory's own template writer; both through the same grounding check - within the
+   canonical bounds, the first sentence naming the core verb, every count a measured one,
+   the controls naming every input the build accepts, every required locale a full
+   description (`core/reference/store-listing.yaml` `counts`, `controls`, `copy`, `writer`).
 6. **Render per platform.** From the canonical package, under each targeted platform's
    `store_listing` block: resize and crop to the sizes it names, cut texts to its limits,
    map tags through its vocabulary. Something it asks for that the package cannot make (a
@@ -61,9 +74,11 @@ from the portal stays `null` in the profile and is reported **UNKNOWN**, never p
 7. **Validate** (`listing-validation`): every required text present and within bounds,
    every file present with the dimensions, format and size required, screenshots real and
    distinct, the trailer within bounds or an honestly reported fallback, the copy free of
-   unbacked claims, every platform rendition against its block. FAIL goes back to step 3
-   with the report, which names what to capture, render or rewrite again; UNKNOWN is listed
-   per platform.
+   unbacked claims and of counts the build did not measure, its controls and each
+   required locale's description complete, every platform rendition against its block.
+   FAIL goes through triage - its failures as quality findings, store copy the copywriter's
+   - back to step 3 with the report, which names what to capture, render or rewrite again,
+   the copywriter briefed with its findings; UNKNOWN is listed per platform.
 
 ## What is not done here
 

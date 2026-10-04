@@ -174,9 +174,10 @@ reading, and `DocumentedIoContract` fails if the two disagree.
 | `sdk-review` | `review` | `sdk-report`, `prototype-report`, `game-design`, `scaffold-record`, `qa-report` | `review-report` |
 | `verify` | `verify` | `prototype-report`, `sdk-report`, `game-design`, `scaffold-record`, `asset-manifest`, `playability-report` | `verification-report`, `qa-report` |
 | `prototype-review` | `human-checkpoint` | `qa-report`, `verification-report`, `prototype-report`, `title-strategy`, `game-design`, `playability-report`, `review-report` | `decision-record` |
-| `store-listing` | `store-listing` | `qa-report`, `verification-report`, `sdk-report`, `prototype-report`, `game-design`, `title-strategy`, `scaffold-record`, `asset-manifest`, `playability-report`, `listing-validation-report` | `store-listing` |
+| `store-listing` | `store-listing` | `qa-report`, `verification-report`, `sdk-report`, `prototype-report`, `game-design`, `title-strategy`, `scaffold-record`, `asset-manifest`, `playability-report`, `content-sufficiency-report`, `listing-validation-report`, `triage-report` | `store-listing` |
 | `listing-validation` | `listing-validation` | `store-listing`, `game-design`, `sdk-report`, `scaffold-record` | `listing-validation-report` |
 | `release` | `release` | `qa-report`, `verification-report`, `sdk-report`, `prototype-report`, `scaffold-record`, `review-report`, `production-quality-report`, `visual-qa-report`, `store-listing`, `listing-validation-report` | `release-manifest` |
+| `listing-triage` | `triage` | `game-design`, `prototype-report`, `listing-validation-report`, `triage-report` | `triage-report` |
 | `platform-validate` | `platform-validate` | `release-manifest`, `verification-report`, `qa-report`, `sdk-report`, `scaffold-record` | `platform-publication` |
 | `release-review` | `human-checkpoint` | `qa-report`, `verification-report`, `release-manifest` | `decision-record` |
 | `publish-review` | `human-checkpoint` | `release-manifest`, `platform-publication`, `store-listing`, `listing-validation-report` | `decision-record` |

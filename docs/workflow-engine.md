@@ -532,8 +532,9 @@ pass through assets enters develop once more) and the four design returns - and 
 what a loop meets first; every step after develop (playability, production-quality,
 visual-qa, content-sufficiency, review, sdk, sdk-review, verify, prototype-review), each
 visited at most once per develop visit, carries 59 as well, and so do store-listing and
-listing-validation, which add listing-validation's own route back into store-listing
-(`listing-validation.listing: 2`).
+listing-validation, which add listing-validation's own route back into store-listing -
+through `listing-triage` since workflow 11 (`listing-triage.listing: 2` on store-listing,
+`listing-validation.listing: 2` on listing-triage).
 A reviewer that never approves blocks the run on its own
 third request for changes; a verification that always fails, on its third failure; a third
 G4 iterate stops for a person too; none spends another's budget. What a whole run may spend

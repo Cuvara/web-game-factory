@@ -14,8 +14,13 @@
 # Platform-neutral on purpose: no portal is named here. A platform's own numbers live in its
 # profile; a value a profile does not state stays null there and is reported UNKNOWN.
 
-version: 1.1.0  # 1.1.0: thumbnail-1x1 1024 (was 512), a portrait thumbnail-2x3 master, a 1080p
+version: 1.2.0  # 1.1.0: thumbnail-1x1 1024 (was 512), a portrait thumbnail-2x3 master, a 1080p
                #        trailer (was 720p) of 18 s of play (was 20)
+               # 1.2.0: copy grounded in the build - `counts` (every count the copy states is
+               #        one the content-sufficiency report of the listed build measured),
+               #        `controls` (every input the build accepts, per locale), `copy.subtitle`
+               #        generic words, `copy.full_description` (what every required locale
+               #        carries), `writer` (the copywriter agent at the release tier)
 
 # -- the canonical package ----------------------------------------------------------------
 # Paths inside the package directory, relative to it. Deterministic: the same build makes
@@ -128,6 +133,19 @@ copy:
   categories: {min: 1, max: 3}
   promo: {variants: 3, max_chars: 200}
   controls: {max_chars: 200}
+  # A subtitle made only of these words, the genre's labels and the listing's own tags says
+  # nothing about this game ("Puzzle", "A casual arcade game"): it is refused.
+  subtitle_generic_words:
+    en: [game, games, a, an, the, in, of, and, for, casual, fun, free, online, browser, html5, web, play, arcade, mobile, new, best, "2d", "3d"]
+    ru: [игра, игры, онлайн, бесплатно, в, и, для, казуальная, новая, лучшая]
+  # A full description: every required locale carries these texts, each non-empty, the long
+  # description at least `copy.long_description.min_chars` and not the short description or
+  # one line repeated. Required where the run's tier holds
+  # core/reference/quality-benchmark.yaml store_listing.full_description_per_required_locale;
+  # a warning otherwise.
+  full_description:
+    fields: [title, short_description, long_description, controls]
+    min_sentences: 2
   # The first sentence of every description says what the player DOES: the core verb, not
   # the fantasy (core/craft/store-listing.md).
   first_sentence_names_the_verb: true
@@ -161,6 +179,85 @@ claims:
   - {id: story, terms: [story, campaign, narrative], backed_by: [feature:story, feature:campaign, feature:narrative]}
   - {id: boss, terms: [boss, bosses, boss fights], backed_by: [feature:boss]}
   - {id: endless, terms: [endless, infinite, never-ending], backed_by: [design:endless]}
+
+# -- counts -------------------------------------------------------------------------------
+# A number the copy states before one of these nouns is a count of something the build has,
+# and it must equal what the build MEASURED: the content-sufficiency report of the listed
+# build (its commit, or the development commit the listed sdk commit sits on), never the
+# design's plan ("six courses" when twelve ship). A count with no measured fact behind it is
+# refused where the run's tier holds core/reference/quality-benchmark.yaml
+# store_listing.copy_counts_match_build, and a warning otherwise. A count of a subset ("the
+# last two levels") or of something per unit ("ten gems per level") is not a count of these.
+#
+#   measured_by   where the value is read: a content-sufficiency check id and the path in its
+#                 `measured` (`count: length` counts a list's items or a map's keys), or
+#                 `design: features.included` - the design's features whose WS-5 evaluation
+#                 included them (or, unevaluated, tiered mvp), whose id or name holds `match`
+#   kind_from     the design field naming the noun in this game (`build_spec.content.unit_kind`,
+#                 `scope.content_unit_kind`) or the genre family's (`genre-models:budget.group_kind`)
+#   nouns         per locale, matched as a word or a word's stem (Russian declines): the
+#                 generic words for the fact. The design's own kind word is added to `en`, and
+#                 the game's own strings give the word in any other locale that names it
+counts:
+  units:
+    measured_by: {check: content.units_shipped, path: shipped}
+    kind_from: [build_spec.content.unit_kind, scope.content_unit_kind]
+    nouns:
+      en: [level, stage, course, track, mission, puzzle, round, wave, arena, map, board]
+      ru: [уровн, этап, трасс, мисси, головоломк, раунд, волн, арен, карт]
+  groups:
+    measured_by: {check: content.groups, path: build.groups, count: length}
+    kind_from: [genre-models:budget.group_kind]
+    nouns:
+      en: [world, chapter, cup, region, zone, episode, league, island, area]
+      ru: [мир, мира, мирах, глав, кубк, кубок, регион, зон, эпизод, лиг, остров]
+  climax:
+    measured_by: {check: content.climax, path: build.climax_units, count: length}
+    nouns:
+      en: [boss, bosses, boss fight, finale, showdown]
+      ru: [босс, финал]
+  modes:
+    measured_by: {design: features.included, match: mode}
+    nouns:
+      en: [mode, game mode]
+      ru: [режим]
+
+# -- controls -----------------------------------------------------------------------------
+# The controls text names every input the build accepts: each device the design's MVP
+# `build_spec.controls.actions` give a binding for, and each the play probe reported while
+# the listing was captured (a pointer on a desktop viewport is the mouse, on a mobile one
+# touch; a key is the keyboard). Read per locale: a locale whose words are not listed here
+# cannot be checked, and says so (UNKNOWN), never passed. Required where the run's tier
+# holds quality-benchmark.yaml store_listing.controls_cover_all_inputs.
+controls:
+  devices:
+    touch:
+      en: [touch, tap, swipe, drag, finger]
+      ru: [касан, нажат, нажим, косн, тап, свайп, палец, пальц, экран]
+    mouse:
+      en: [mouse, click, cursor]
+      ru: [мыш, клик, щелч, щёлк, щелк, курсор]
+    keyboard:
+      en: [keyboard, key, keys, arrow, wasd, space, spacebar, enter]
+      ru: [клавиатур, клавиш, стрелк, пробел, wasd]
+    gamepad:
+      en: [gamepad, controller, joystick]
+      ru: [геймпад, контроллер, джойстик]
+
+# -- the writer ---------------------------------------------------------------------------
+# Who writes the store copy at each run tier (factory.listing.writer.kind `auto`, the
+# default). `command` is the copywriter agent (core/roles/roles.yaml `copywriter`):
+# at the release tier it writes every required locale in full; the Factory's deterministic
+# template writer, which quotes the design and never translates, is for development runs.
+# At the release tier a listing whose copy the agent did not write - no agent configured, or
+# the agent's text refused twice and the template's standing in - fails listing-validation
+# (`metadata.writer`): configure the agent, or supply the copy (factory.listing.copy_dir).
+writer:
+  by_tier:
+    release: command
+    mvp: template
+  # A tier the run does not state (no quality snapshot, no design or strategy tier).
+  default: template
 
 # -- categories ---------------------------------------------------------------------------
 # Tags and categories come from the research vocabulary's genre tree

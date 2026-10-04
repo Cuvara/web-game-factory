@@ -4,7 +4,8 @@
     python3 scripts/wgf-listing.py validate <package-dir> [--json]
     python3 scripts/wgf-listing.py copy --design game-design.json [--scaffold scaffold-record.json]
                                         [--sdk sdk-report.json] [--dist ../my-game/dist]
-                                        [--locale en --locale ru] [--json]
+                                        [--sufficiency content-sufficiency-report.json]
+                                        [--tier release|mvp] [--locale en --locale ru] [--json]
     python3 scripts/wgf-listing.py requirements [PLATFORM ...] [--json]
 
     validate       judge a package the store-listing step wrote (its listing.json names the
@@ -13,7 +14,9 @@
                    (a person must act), 2 unusable input.
     copy           the Factory's own writer over a design (and the bundle's strings when
                    --dist is given), with the grounding check: what a run's listing would
-                   say in each locale, to read before a run.
+                   say in each locale, to read before a run. --sufficiency holds every count
+                   to that report's measurements (as the step does with the report of the
+                   build it lists); --tier applies that tier's store bars.
     requirements   the requirement list each platform profile's `store_listing` block
                    yields, with what is UNKNOWN - the questions a person answers by reading
                    the portal.
@@ -31,7 +34,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from wgflib import paths  # noqa: E402
 from wgflib.yamllite import load_file  # noqa: E402
 
-from wgf_listing import copywriter, facts as facts_module, grounding, platforms  # noqa: E402
+from wgf_listing import buildfacts, copywriter, facts as facts_module, grounding, platforms  # noqa: E402
 from wgf_listing.settings import REFERENCE_PATH  # noqa: E402
 from wgf_listing.validation import validate  # noqa: E402
 
@@ -92,9 +95,17 @@ def cmd_copy(args):
     facts = facts_module.extract(design, sdk_report=sdk, scaffold=scaffold, strings=strings,
                                  runtime_assets=runtime, game_config=game_config)
     reference = load_file(args.reference or REFERENCE_PATH)
+    facts["quality"] = {"tier": args.tier, "where": "--tier", "bars": buildfacts.store_bars(args.tier)}
+    if args.sufficiency:
+        report = _load(args.sufficiency)
+        measured = buildfacts.measured_counts(report, design, reference, commits=[report.get("commit")])
+        if measured is not None:
+            facts["measured"] = measured
     locales = args.locale or ["en"] + [l for l in strings if l != "en"]
-    copies, writer = copywriter.write_copy(facts, locales, reference)
-    problems = {locale: grounding.check(text, facts, reference.get("claims") or [], locale=locale)
+    copies, writer = copywriter.write_copy(facts, locales, reference, tier=args.tier,
+                                           writer_settings={"kind": "template"})
+    problems = {locale: grounding.check(text, facts, reference.get("claims") or [], locale=locale,
+                                        counts=reference.get("counts"))
                 for locale, text in copies.items() if text is not None}
     _print({"facts": facts, "copy": copies, "writer": writer, "grounding": problems}, args.json)
     if not args.json:
@@ -145,6 +156,8 @@ def main(argv=None):
     copy_p.add_argument("--scaffold")
     copy_p.add_argument("--sdk")
     copy_p.add_argument("--dist", help="the built bundle, for its locale strings and runtime assets")
+    copy_p.add_argument("--sufficiency", help="a content-sufficiency-report: the counts the copy may state")
+    copy_p.add_argument("--tier", help="the run's quality tier (release, mvp): its store bars apply")
     copy_p.add_argument("--locale", action="append")
     copy_p.add_argument("--json", action="store_true")
     copy_p.set_defaults(handler=cmd_copy)

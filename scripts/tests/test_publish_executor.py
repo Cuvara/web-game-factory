@@ -289,7 +289,7 @@ class Flow(ExecutorCase):
         self.assertEqual((live.kind, live.usable, live.value), ("human-login", True, None))
         with StorageState(live, self.tmp) as state:
             self.assertIsNone(state.path)
-        self.assertEqual(os.listdir(self.tmp), ["release", "run"])
+        self.assertEqual(sorted(os.listdir(self.tmp)), ["release", "run"])
 
     def test_resolve_value_never_invents(self):
         job = self.release.job()

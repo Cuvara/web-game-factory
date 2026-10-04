@@ -138,7 +138,14 @@ def _campaign_checks(checks, listing, run_dir, pid, profile, publication_profile
     findings = campaign.check_media(campaign.from_listing(listing, run_dir, pid), profile,
                                     publication_profile, profile_limits=False)
     failed, unknown = [], []
+    # A medium this platform's block already failed (not rendered, wrong size) is that one
+    # problem, with that one fix: the campaign check of the canonical fallback (every size of
+    # the master) would only restate it as a re-render that cannot help.
+    image_failed = {item["id"] for item in checks.items
+                    if item.get("status") == "FAIL" and item.get("platform_id") == pid}
     for n, finding in enumerate(findings, 1):
+        if f"platforms.{pid}.image:{finding.get('subject')}" in image_failed:
+            continue
         cid = f"platforms.{pid}.media.{finding['code']}.{n}"
         is_unknown = finding["status"] == "UNKNOWN"
         entry = checks.add(cid, "platforms", False, f"{pid}: {finding['message']}",
